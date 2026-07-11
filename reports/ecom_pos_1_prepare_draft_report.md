@@ -1,221 +1,371 @@
 # FASE ECOM.POS.1 — Preparar pedidos aceptados como borradores POS
 
-- Fecha: 2026-07-10 (`America/Merida`)
+- Fecha de corrección: 2026-07-11 (`America/Mexico_City`)
 - Repositorio: `fdxruli/Lanzo-POS`
 - Rama: `fase-ecom-pos-1`
-- Base: `main` en `b7dc505` (merge del PR #86)
+- PR: `#88 — FASE ECOM.POS.1 — Preparar pedidos aceptados como órdenes activas del POS`
+- Base: `main`
 - Proyecto Supabase: `odlrhijtfyavryeqivaa`
-- Migración local: `20260711022044_ecom_pos_1_prepare_order_draft.sql`
-- Migración aplicada: `20260711024125 / ecom_pos_1_prepare_order_draft`
+- Estado del PR: `draft`
 
-## Estado
+## Estado actual
 
-`ECOM.POS.1 PASS`.
+`ECOM.POS.1.1 PENDING GLOBAL VALIDATION`.
 
-Un pedido `accepted` puede reclamarse con exclusión mutua, convertirse en una orden activa local determinística y revisarse dentro del POS. La preparación no llama `processSale`, no crea una venta y no afecta caja, inventario, lotes, clientes, crédito, comandas, pagos, `converted_sale_id` ni el estado principal del pedido.
+La corrección funcional, la alineación de migraciones, las pruebas SQL transaccionales y la verificación read-only de Supabase están completas. El PR **no** se declara listo para revisión porque este entorno no pudo ejecutar `npm ci`, ESLint, Vitest, `npm run build`, `npm run lint` ni `npm run test:ci`: no existe un checkout local accesible, la red del contenedor no resuelve `github.com` y el commit actual no tiene GitHub Actions disponibles. El check automático de Vercel no se usa como evidencia.
 
-## Arquitectura
+No se debe conservar ni reutilizar la declaración anterior `ECOM.POS.1 PASS`, porque fue emitida antes de detectar que los pedidos creados por el checkout real no contenían `source_product_id`.
 
-El flujo implementado es:
+## Corrección ECOM.POS.1.1
 
-1. La bandeja obtiene el detalle autorizado, incluidos `sourceProductId`, `publishedProductId` y el estado seguro de `posDraft`.
-2. `ecommerce_admin_claim_pos_draft` bloquea la fila con `FOR UPDATE`, valida `accepted`, permiso y aislamiento por licencia, y crea un claim de 15 minutos.
-3. `ecommercePosDraftService` resuelve todos los artículos contra `useProductStore.getState().menu`.
-4. Si falta un producto, se libera el claim y no se crea ningún borrador parcial.
-5. `useActiveOrders.upsertEcommerceDraft` inserta atómicamente la orden `ecom-<order_uuid>` o activa la pestaña ya existente.
-6. `ecommerce_admin_confirm_pos_draft` cambia únicamente `pos_draft_status` a `prepared` y registra el evento.
-7. El POS muestra procedencia, modalidad, total esperado y advertencias de conciliación.
-8. El checkout se bloquea tanto al iniciar el pago como dentro de `handleProcessOrder`.
-9. La liberación llama primero a Supabase; solo después del éxito elimina la orden local.
+### Drift de migración corregido
 
-## Modelo de datos
+La migración ya aplicada en producción estaba registrada como:
 
-Se agregaron nueve columnas a `public.ecommerce_orders`:
+```text
+20260711024125 / ecom_pos_1_prepare_order_draft
+```
 
-- `pos_draft_status text not null default 'none'`;
-- `pos_draft_id text`;
-- `pos_claim_token uuid`;
-- `pos_claim_request_key text`;
-- `pos_claimed_at timestamptz`;
-- `pos_claim_expires_at timestamptz`;
-- `pos_claim_actor_type text`;
-- `pos_claim_actor_ref text`;
-- `pos_draft_prepared_at timestamptz`.
+El archivo local se renombró sin modificar su contenido:
 
-Los constraints permiten exclusivamente `none`, `claimed`, `prepared` y `released`, y exigen coherencia completa entre token, request key, actor, draft ID y timestamps. El índice `ix_ecommerce_orders_license_pos_draft_expiry` cubre `(license_id, pos_draft_status, pos_claim_expires_at)`.
+```text
+supabase/migrations/20260711024125_ecom_pos_1_prepare_order_draft.sql
+```
 
-## RPC e idempotencia
+Se eliminó el nombre local incorrecto `20260711022044_ecom_pos_1_prepare_order_draft.sql`.
 
-### `ecommerce_admin_claim_pos_draft`
+No se reaplicó esta migración y no se ejecutó `migration repair`, `db push` ni `--include-all`.
 
-- usa `SECURITY DEFINER` y `SET search_path=''`;
-- reutiliza la autorización custom-auth existente;
-- requiere `ecommerce=true` y `pos=true` para staff;
-- filtra siempre por el `license_id` autorizado;
-- usa `FOR UPDATE`;
-- acepta solo `status='accepted'` y `converted_sale_id is null`;
-- devuelve el mismo token para el mismo request key y dispositivo;
-- bloquea un segundo dispositivo con `ECOMMERCE_POS_DRAFT_IN_PROGRESS`;
-- reemplaza claims `claimed` vencidos;
-- nunca reemplaza `prepared` sin liberación explícita.
+### Migración correctiva de mapeo
 
-El token se genera con `extensions.gen_random_uuid()`. `pos_claim_actor_ref` guarda el UUID interno del dispositivo, no el fingerprint.
+Producción ya registraba antes de esta corrección:
 
-### `ecommerce_admin_confirm_pos_draft`
+```text
+20260711122554 / ecom_pos_1_1_product_mapping_and_guards
+```
 
-Valida token, dueño, vigencia, licencia y estado; luego escribe exclusivamente los campos del borrador y el evento `order_pos_draft_prepared`. La misma combinación `order_id + token + draft_id` es idempotente.
+La rama ahora contiene el archivo correspondiente:
 
-### `ecommerce_admin_release_pos_draft`
+```text
+supabase/migrations/20260711122554_ecom_pos_1_1_product_mapping_and_guards.sql
+```
 
-Permite liberar `claimed` o `prepared` al dispositivo dueño, o mediante una operación administrativa autorizada. Limpia todos los campos del claim, deja `pos_draft_status='released'`, conserva `status='accepted'` y registra `order_pos_draft_released`.
+No se reaplicó una versión ya registrada.
 
-## Detalle y eventos
+La migración correctiva:
 
-`ecommerce_admin_get_order` ahora expone por artículo:
+- confirma que `source_product_id`, `product_id` y `local_product_ref` son `text`;
+- completa artículos existentes con `coalesce(product_id, local_product_ref)`;
+- valida simultáneamente `published_product_id`, `portal_id` y `license_id`;
+- instala un trigger servidor `BEFORE INSERT OR UPDATE` para futuras filas;
+- no confía en un ID enviado por el navegador;
+- deja `source_product_id=NULL` cuando la publicación no tiene vínculo local;
+- actualiza `private.ecommerce_order_pos_snapshot_v1` con fallback defensivo y join aislado por portal/licencia;
+- mantiene los helpers privados sin `EXECUTE` para `PUBLIC`, `anon` y `authenticated`.
 
-- `sourceProductId`;
-- `publishedProductId`;
-- nombre, precio, cantidad, total y opciones aceptadas.
+## Evidencia real de producto
 
-También expone `posDraft` con estado, draft ID y timestamps. `claimToken` solo aparece para el mismo dispositivo dueño con permiso POS vigente.
+Verificación read-only de producción:
 
-El historial reconoce:
+```text
+ecommerce_order_items totales: 4
+con source_product_id: 4
+mapeables todavía en NULL: 0
 
-- `order_pos_draft_claimed`;
-- `order_pos_draft_prepared`;
-- `order_pos_draft_released`.
+publicaciones activas: 11
+con product_id: 0
+con local_product_ref: 11
+```
 
-El payload público permite únicamente `draftId`, `deviceRole` y `reasonCode`. No contiene fingerprint, claim token, security token, staff token ni PII.
+Los snapshots de `EC-00000010`, `EC-00000011` y `EC-00000012` devolvieron un artículo cada uno y todos incluyeron `sourceProductId`.
 
-## Grants y seguridad
+## Protección centralizada de efectos
 
-Verificación de producción:
+Se agregó `src/services/ecommerce/ecommercePosDraftGuards.js` como contrato único:
 
-- tres RPC nuevas: `anon=true`, `authenticated=true`, `PUBLIC=false`;
-- tres RPC nuevas: `SECURITY DEFINER=true`, `search_path=''`;
-- helpers `ecommerce_pos_draft_authorize_v1` y `ecommerce_order_pos_snapshot_v1`: cerrados para `anon`, `authenticated` y `PUBLIC`;
-- cero `SELECT` directo cliente sobre pedidos, artículos, eventos, dispositivos, usuarios staff o sesiones staff;
-- nueve columnas, dos constraints y el índice nuevo presentes.
+```text
+isEcommercePosDraft(order) => order?.origin === 'ecommerce'
+isEcommercePosEffectBlocked(order) => mismo criterio
+ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+```
 
-Los advisors reportan las seis advertencias esperadas por RPC `SECURITY DEFINER` ejecutable por `anon/authenticated`. Son intencionales: Lanzo usa la publishable key sin Supabase Auth y cada RPC ejecuta la autorización custom de licencia, dispositivo, security token, sesión staff, permisos, feature flag, rate limit y `license_id`. El advisor también marca el índice nuevo como no usado inmediatamente después de su creación; es informativo y esperado.
+Durante `ECOM.POS.1`, cualquier orden con `origin='ecommerce'` permanece bloqueada sin depender de `ecommerceDraftStatus`.
 
-Referencias de los advisors: [RPC SECURITY DEFINER para anon](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [RPC SECURITY DEFINER para authenticated](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable), [índice aún no usado](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index).
+### Checkout y caja
 
-## Mapeo local y PII
+`useCheckoutFlow` bloquea antes de cualquier efecto:
 
-`ecommercePosDraftService`:
+- `handleInitiateCheckout`;
+- `handleProcessOrder`;
+- `handleQuickCajaSubmit`.
 
-- exige `sourceProductId` para todos los artículos;
-- rechaza productos inexistentes, eliminados, archivados o inactivos;
-- construye líneas desde el producto POS real;
-- conserva `item.unitPrice` como precio visible;
-- guarda `currentPosPrice` para conciliación;
-- agrega snapshot, opciones, origen y `priceSource='ecommerce_snapshot'`;
-- marca `needsInventoryResolution` para productos con lotes;
-- no selecciona ni compromete lotes;
-- no modifica permanentemente productos locales.
+El guard se ejecuta antes de abrir pago/caja rápida, verificar sesión o llamar `processSale`.
 
-La orden persistida no contiene nombre del cliente, teléfono, dirección, notas ni URL de WhatsApp. `ecommerceLicenseIdentity` es una identidad local compuesta de 128 bits derivada de licencia y actor; no contiene la clave de licencia en claro.
+Estados cubiertos por pruebas añadidas:
 
-## Aislamiento y carreras
+- `claimed`;
+- `prepared`;
+- estado faltante;
+- estado desconocido;
+- regresión de una orden POS normal.
 
-La preparación captura una identidad de licencia/actor/permisos. Antes de escribir y después de cada await comprueba que siga vigente. Logout, cambio de licencia, cambio de staff o revocación de `ecommerce/pos` invalida la respuesta y libera el claim cuando corresponde.
+### Operaciones de órdenes activas
 
-`EcommerceOrdersRuntime` elimina fail-closed los borradores de otro contexto. El servicio colapsa doble click por `context + order_id`, y `useActiveOrders` reutiliza la pestaña determinística sin duplicar artículos.
+Se añadió una capa central instalada por `EcommerceOrdersRuntime` sobre:
 
-## UI y bloqueo de checkout
+- `saveOrderAsOpen`;
+- `closeOrder`;
+- `lockOrderForCheckout`.
 
-La bandeja muestra:
+Para ecommerce devuelve:
 
-- `Preparar en Punto de Venta` para `none/released`;
-- `Continuar preparación` para claim propio;
-- `En preparación en otro dispositivo` para claim ajeno;
-- `Abrir en Punto de Venta` y `Liberar borrador` para `prepared`.
+```text
+success: false
+code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+```
 
-El POS muestra un banner sin PII con código, modalidad, total esperado y estado. Advierte diferencias de subtotal/precio y lotes pendientes, y permite volver al detalle autorizado.
+Las implementaciones originales no se invocan, por lo que no se escribe en `STORES.SALES`, no se cierra una venta y no se toma un lock de checkout.
 
-`useCheckoutFlow` bloquea `handleInitiateCheckout`, `handleProcessOrder` y el retorno desde caja rápida con el código estable `ECOMMERCE_POS_CHECKOUT_NOT_ENABLED`. Las órdenes POS normales conservan el flujo de pago.
+`EcommerceOrdersRuntime` está montado desde `Layout`, por lo que la protección se instala en el runtime global del POS.
+
+### Restaurante, cocina y división de cuenta
+
+`useTableManagement` bloquea al inicio de:
+
+- `handleSaveAsOpen`;
+- reconciliaciones previas a split/cobro de mesa;
+- `handleQuickTableAction`;
+- `handleOpenSplitBill`;
+- `handleConfirmSplitBill`.
+
+El bloqueo ocurre antes de:
+
+- prompt de mesa;
+- `saveOrderAsOpen`;
+- escritura de `fulfillmentStatus='pending'`;
+- lectura/escritura de venta abierta;
+- `restaurantOrdersRepository.upsertRestaurantOrderFromLocalSale`;
+- `splitOpenTableOrder`;
+- cierre cloud posterior al split.
+
+### Apartados
+
+`useLayawayFlow` bloquea tanto `handleInitiateLayaway` como `handleConfirmLayaway`.
+
+Una orden ecommerce no abre el modal, no llama `layawayRepo.create`, no registra pago inicial, no mueve caja y no limpia la orden como si el apartado hubiera sido creado.
+
+### UI y móvil
+
+`OrderSummary` muestra el banner ecommerce y conserva la acción segura `Liberar borrador` y el regreso al detalle.
+
+Para ecommerce se ocultan visualmente:
+
+- cobrar;
+- guardar/enviar a cocina;
+- dividir cuenta;
+- apartar;
+- identificador/acceso de mesa;
+- descuentos embebidos;
+- acciones de edición operativa.
+
+`MobilePosCart` reutiliza `OrderSummary` y ahora también omite el `OrderDiscountPanel` separado cuando la orden activa es ecommerce.
+
+`PosFloatingBar` únicamente abre el carrito o la bandeja de mesas; no ejecuta cobro. Las acciones posteriores siguen atravesando los guards lógicos.
+
+## Estado remoto como fuente de verdad
+
+`prepareEcommerceOrderPosDraft` ya no abre una copia local solo por existir.
+
+La reutilización local exige simultáneamente:
+
+- pedido remoto `accepted`;
+- remoto `posDraft.status='prepared'`;
+- `isClaimedByCurrentActor=true`;
+- claim token remoto presente;
+- `draftId` remoto igual al determinístico local;
+- mismo `ecommerceOrderId`;
+- misma identidad local de licencia/actor;
+- mismo claim token;
+- estado local `prepared`.
+
+Comportamiento fail-closed:
+
+- remoto `released`: elimina la copia local, reclama de nuevo y confirma con token nuevo;
+- remoto `claimed` por otro dispositivo: no abre y no intenta un claim redundante;
+- remoto `prepared` por otro dispositivo: no abre;
+- token diferente: no reutiliza la copia;
+- `draftId` diferente: conflicto y recarga;
+- pedido ya no `accepted`: elimina/invalida la copia;
+- estado remoto desconocido: oculta acciones y devuelve conflicto.
+
+## Propiedad del claim en la bandeja
+
+La UI distingue:
+
+- `prepared` propio con token y `draftId`: `Abrir en Punto de Venta` + `Liberar borrador`;
+- `prepared` ajeno para staff: mensaje informativo, sin abrir ni liberar;
+- `prepared` ajeno para admin: liberación administrativa con confirmación explícita;
+- `claimed` propio con token: `Continuar preparación`;
+- `claimed` ajeno: mensaje informativo;
+- estado desconocido: acciones ocultas y mensaje de conflicto/recarga.
+
+La liberación administrativa omite token únicamente para administrador, conforme al contrato de la RPC.
+
+## Fallos compensatorios y recuperación
+
+Si falla contexto, mapeo, upsert o confirmación, el servicio intenta liberar remotamente antes de retirar la copia local.
+
+Si también falla la liberación compensatoria:
+
+- la orden conserva `origin='ecommerce'`;
+- queda en `ecommerceDraftStatus='error_releasing'`;
+- conserva el claim token necesario;
+- marca `ecommerceReleaseRecoveryRequired=true`;
+- todos los guards financieros/operativos continúan bloqueándola;
+- `retryReleaseEcommerceDraft` permite reintentar la liberación;
+- una liberación exitosa elimina después la copia local.
+
+No se convierte en una orden normal.
+
+## Protección de PII
+
+El borrador local conserva únicamente datos operativos del pedido y del claim.
+
+No persiste:
+
+- nombre del cliente;
+- teléfono;
+- dirección;
+- notas;
+- URL de WhatsApp.
+
+Las pruebas añadidas construyen el detalle remoto con PII y verifican que no aparezca en el borrador serializado.
 
 ## Pruebas SQL
 
-Se ejecutó primero la migración completa dentro de `BEGIN/ROLLBACK`; después de aplicarla se repitió `supabase/tests/ecom_pos_1_prepare_draft_test.sql` dentro de otra transacción con rollback.
+Se actualizó:
 
-Resultado: `ECOM.POS.1 SQL PASS`.
+```text
+supabase/tests/ecom_pos_1_prepare_draft_test.sql
+```
 
-Casos cubiertos:
+La prueba reproduce el checkout real con `published_product_id` definido y `source_product_id=NULL`.
 
-- admin y staff `ecommerce+pos` reclaman;
-- staff sin uno de los dos permisos queda bloqueado;
-- sesión inválida bloqueada;
-- `new`, `rejected` y `converted_to_sale` bloqueados;
-- request key idempotente;
+Casos ejecutados en producción dentro de `BEGIN/ROLLBACK`:
+
+- trigger servidor resuelve `local_product_ref`;
+- backfill deja cero artículos mapeables sin resolver;
+- publicación de otra licencia no mapea;
+- publicación de otro portal no mapea;
+- publicación sin vínculo queda sin mapping;
+- snapshot usa fallback seguro;
+- helpers privados continúan cerrados;
+- tablas continúan sin grants directos;
+- `PUBLIC` no ejecuta la RPC;
+- claim idempotente;
 - segundo dispositivo bloqueado;
-- claim vencido reemplazable;
-- token incorrecto bloqueado;
-- confirmación válida y repetida;
-- liberación válida, administrativa y ajena bloqueada;
-- grants públicos/privados exactos;
-- tablas cerradas.
+- confirmación idempotente;
+- liberación propia y administrativa controlada;
+- cero efectos financieros;
+- rollback completo.
 
-La verificación final confirmó que `EC-00000010`, `EC-00000011` y `EC-00000012` conservaron sus estados previos, `converted_sale_id=NULL`, `pos_draft_status='none'`, token nulo, cero dispositivos temporales y cero eventos temporales.
+Resultado final:
 
-## Pruebas frontend y regresión
+```text
+ECOM.POS.1.1 SQL PASS
+```
 
-Suites específicas nuevas/modificadas: **6 PASS, 46 pruebas PASS**.
+La primera iteración del fixture de portal falló por el guard que exige portal activo; la transacción se revirtió. El fixture se corrigió sin relajar producción y la ejecución final pasó.
 
-La regresión ampliada ejecutó ecommerce, bandeja/ruta, catálogo/checkout público, navegación, órdenes activas, checkout, ventas, inventario y notificaciones:
+## Pruebas frontend añadidas o ampliadas
 
-- **22 suites PASS**;
-- **175 pruebas PASS**;
-- cuatro fallos heredados en `inventoryFlow` y `processSaleCore` se reprodujeron idénticos en `main`.
+Se añadieron/ampliaron pruebas para:
 
-`npm run test:ci`:
+- `ecommercePosDraftService` y contrato real de mapping;
+- reconciliación remoto/local;
+- confirmación fallida + liberación fallida + reintento;
+- checkout fail-closed para todos los estados;
+- wrappers centrales de órdenes activas;
+- restaurante/cocina/split;
+- apartados;
+- propiedad del claim en `EcommerceOrdersPage`;
+- carrito móvil y panel de descuentos;
+- PII ausente del borrador.
 
-| Checkout | Suites | Pruebas | Resultado |
-| --- | ---: | ---: | --- |
-| `main` | 81 pass / 26 fail | 484 pass / 74 fail | baseline heredado |
-| `fase-ecom-pos-1` | 84 pass / 26 fail | 502 pass / 74 fail | +3 suites y +18 pruebas; mismos fallos |
+Archivos relevantes:
 
-Los 26 archivos fallidos son exactamente los mismos en ambos checkouts.
+```text
+src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
+src/services/ecommerce/__tests__/installEcommercePosActiveOrderGuards.test.js
+src/hooks/pos/__tests__/useCheckoutFlow.ecommerce.test.jsx
+src/hooks/pos/__tests__/useTableManagement.ecommerce.test.jsx
+src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
+src/pages/__tests__/EcommerceOrdersPage.claimOwnership.test.jsx
+src/components/pos/__tests__/MobilePosCart.ecommerce.test.jsx
+src/components/pos/__tests__/EcommercePosDraftBanner.test.jsx
+```
 
-## ESLint y build
+### Estado de ejecución frontend
 
-ESLint específico de toda la superficie modificada: **PASS**, cero errores y cero warnings.
+```text
+ESLint específico: NO EJECUTADO EN ESTE ENTORNO
+Vitest específico: NO EJECUTADO EN ESTE ENTORNO
+Regresión: NO EJECUTADA EN ESTE ENTORNO
+npm run build: NO EJECUTADO EN ESTE ENTORNO
+npm run lint: NO EJECUTADO EN ESTE ENTORNO
+npm run test:ci: NO EJECUTADO EN ESTE ENTORNO
+comparación global contra main: PENDIENTE
+```
 
-`npm run lint`:
+Motivo verificable:
 
-| Checkout | Errores | Warnings | Comparación |
-| --- | ---: | ---: | --- |
-| `main` | 156 | 226 | baseline |
-| `fase-ecom-pos-1` | 156 | 226 | cero nuevos |
+- el contenedor no pudo clonar el repositorio: `Could not resolve host: github.com`;
+- no existe checkout local disponible;
+- el commit no tiene GitHub Actions asociados;
+- no se creó ningún workflow temporal;
+- no se usó Vercel como sustituto.
 
-`npm run build`:
+Los resultados históricos del reporte anterior no deben tratarse como validación de los cambios de `ECOM.POS.1.1`.
 
-- rama: **PASS**, 3,285 módulos transformados, PWA generada;
-- `main`: **PASS**, 3,283 módulos transformados, PWA generada.
+## Verificación final de Supabase
 
-## Efectos financieros y operativos
+Producción, read-only:
 
-No se llamó `processSale` durante preparación. No se creó venta local/cloud, pago, movimiento de caja, reserva permanente, descuento de inventario, lote definitivo, cliente, deuda, crédito, comanda, WhatsApp automático ni conversión ecommerce.
+- migración `20260711024125` registrada: PASS;
+- migración `20260711122554` registrada: PASS;
+- archivo local con versiones coincidentes: PASS;
+- 4/4 artículos reales con `source_product_id`: PASS;
+- 0 artículos mapeables todavía nulos: PASS;
+- snapshots de `EC-00000010–12` con `sourceProductId`: PASS;
+- trigger de mapping presente: PASS;
+- `PUBLIC` sin `EXECUTE` sobre claim: PASS;
+- helpers privados cerrados: PASS;
+- grants directos cliente sobre tablas: 0;
+- claims residuales en `EC-00000010–12`: 0;
+- estados de pedidos reales no modificados durante la verificación read-only.
 
 ## Vercel
 
-Vercel no fue utilizado manualmente. No se creó ni validó preview, no se usó API/CLI/agente, no se promovió deployment y ningún check automático se usó como evidencia.
+No se invocó manualmente Vercel mediante API, CLI o agentes. No se creó, forzó, promovió ni validó preview. La integración automática de GitHub puede registrar un check, pero no se utiliza como evidencia.
 
-## Resultado final
+## Estado de aceptación
 
 ```text
-ECOM.POS.1 PASS
-
-Claim seguro: PASS
-Idempotencia: PASS
-Mapeo de productos: PASS
-Orden activa POS: PASS
-Aislamiento de licencia: PASS
-Protección de PII: PASS
-Checkout bloqueado: PASS
-Efectos financieros: NINGUNO
+Mapeo de pedidos reales: PASS
+Migraciones alineadas: PASS
+Checkout fail-closed implementado: PASS DE REVISIÓN ESTÁTICA
+Venta abierta bloqueada implementada: PASS DE REVISIÓN ESTÁTICA
+Cocina y split bloqueados implementados: PASS DE REVISIÓN ESTÁTICA
+Apartados bloqueados implementados: PASS DE REVISIÓN ESTÁTICA
+Reconciliación remoto/local implementada: PASS DE REVISIÓN ESTÁTICA
+Protección de PII: PASS DE REVISIÓN ESTÁTICA + COBERTURA AÑADIDA
 Supabase: PASS
-Build global: PASS
+SQL: PASS
+ESLint: PENDIENTE
+Vitest: PENDIENTE
+Build global: PENDIENTE
+Línea base main: PENDIENTE
 Vercel manual: NO UTILIZADO
 ```
+
+El PR #88 debe permanecer en draft. No marcar `ready for review`, no declarar `ECOM.POS.1.1 PASS` y no mergear hasta ejecutar la validación frontend/global íntegra y corregir únicamente regresiones introducidas por esta rama.
