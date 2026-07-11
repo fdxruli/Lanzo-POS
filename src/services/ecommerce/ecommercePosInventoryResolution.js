@@ -891,53 +891,97 @@ const loadOrderInventoryInputs = async ({ order, deps = {} }) => {
 export const getEcommerceDraftBatchOptions = async ({ orderId, lineId, now = new Date(), deps = {} } = {}) => {
   const activeOrders = getActiveOrdersState(deps);
   const order = activeOrders.activeOrders?.get(orderId);
-  const itemIndex = order?.items?.findIndex((entry, index) => String(getLineId(entry, index)) === String(lineId)) ?? -1;
-  if (!order || itemIndex < 0) return { success: false, code: 'ECOMMERCE_INVENTORY_LINE_NOT_FOUND', options: [] };
-
-  const { products, batchesByProduct } = await loadOrderInventoryInputs({ order, deps });
-  const productMap = new Map(products.map((product) => [String(product.id), product]));
-  const item = order.items[itemIndex];
-  const productId = getRealProductId(item);
-  const product = productMap.get(String(productId)) || null;
-  if (!product || !isBatchManagedProduct(product)) {
-    return { success: false, code: 'ECOMMERCE_INVENTORY_BATCH_NOT_APPLICABLE', options: [] };
+  if (!order) {
+    return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_DRAFT_INVALID', options: [] };
+  }
+  if (
+    order.origin !== 'ecommerce'
+    || order.ecommerceDraftStatus !== 'prepared'
+    || !order.ecommerceLicenseIdentity
+    || order.ecommerceLicenseIdentity !== getContextIdentity(deps)
+  ) {
+    return { success: false, changed: false, code: 'ECOMMERCE_POS_DRAFT_PERMISSION_DENIED', options: [] };
   }
 
-  const ledger = createInventoryLedger({ products, batchesByProduct, now });
-  (order.items || []).forEach((entry, index) => {
-    if (index === itemIndex || !isManualBatchSelection(entry)) return;
-    const entryProductId = getRealProductId(entry);
-    const entryProduct = productMap.get(String(entryProductId)) || null;
-    const entryBatches = batchesByProduct.get(entryProductId) || batchesByProduct.get(String(entryProductId)) || [];
-    resolveLineWithLedger({ item: entry, product: entryProduct, batches: entryBatches, now, ledger });
-  });
+  const itemIndex = order.items?.findIndex((entry, index) => String(getLineId(entry, index)) === String(lineId)) ?? -1;
+  if (itemIndex < 0) {
+    return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_LINE_NOT_FOUND', options: [] };
+  }
 
-  const quantityMetadata = getRequiredQuantityMetadata(item, product);
-  const summary = ledger.batchSummariesByProduct.get(String(productId))
-    || summarizeBatchCandidates({
-      batches: batchesByProduct.get(productId) || batchesByProduct.get(String(productId)) || [],
-      product,
-      productId,
-      now
+  const expectation = captureOrderExpectation(order);
+  const attemptId = createAttempt(orderId);
+
+  try {
+    const { products, batchesByProduct } = await loadOrderInventoryInputs({ order, deps });
+    if (!isExpectedOrderCurrent({
+      order: getActiveOrdersState(deps).activeOrders?.get(orderId),
+      orderId,
+      expectation,
+      attemptId,
+      deps
+    })) {
+      return { ...staleResult(), options: [] };
+    }
+
+    const productMap = new Map(products.map((product) => [String(product.id), product]));
+    const item = order.items[itemIndex];
+    const productId = getRealProductId(item);
+    const product = productMap.get(String(productId)) || null;
+    if (!product || !isBatchManagedProduct(product)) {
+      return {
+        success: false,
+        changed: false,
+        code: 'ECOMMERCE_INVENTORY_BATCH_NOT_APPLICABLE',
+        options: []
+      };
+    }
+
+    const ledger = createInventoryLedger({ products, batchesByProduct, now });
+    (order.items || []).forEach((entry, index) => {
+      if (index === itemIndex || !isManualBatchSelection(entry)) return;
+      const entryProductId = getRealProductId(entry);
+      const entryProduct = productMap.get(String(entryProductId)) || null;
+      const entryBatches = batchesByProduct.get(entryProductId) || batchesByProduct.get(String(entryProductId)) || [];
+      resolveLineWithLedger({ item: entry, product: entryProduct, batches: entryBatches, now, ledger });
     });
-  const recommendedId = summary.orderedValid.find((entry) => (
-    getRemainingBatchQuantity(ledger, productId, entry.batchId) > EPSILON
-  ))?.batchId || null;
-  const options = summary.orderedValid.map((entry) => {
-    const availableQuantity = getRemainingBatchQuantity(ledger, productId, entry.batchId);
-    return {
-      batchId: entry.batchId,
-      batchNumber: getBatchDisplayCode(entry.batch),
-      expirationDate: extractCalendarDate(getBatchExpiryValue(entry.batch)),
-      availableQuantity,
-      isRecommended: Boolean(recommendedId && String(recommendedId) === String(entry.batchId)),
-      canCoverRequested: availableQuantity + EPSILON >= quantityMetadata.requiredInventoryQuantity,
-      requestedSaleQuantity: quantityMetadata.requestedSaleQuantity,
-      requiredInventoryQuantity: quantityMetadata.requiredInventoryQuantity
-    };
-  });
 
-  return { success: true, product, item, options };
+    const quantityMetadata = getRequiredQuantityMetadata(item, product);
+    const summary = ledger.batchSummariesByProduct.get(String(productId))
+      || summarizeBatchCandidates({
+        batches: batchesByProduct.get(productId) || batchesByProduct.get(String(productId)) || [],
+        product,
+        productId,
+        now
+      });
+    const recommendedId = summary.orderedValid.find((entry) => (
+      getRemainingBatchQuantity(ledger, productId, entry.batchId) > EPSILON
+    ))?.batchId || null;
+    const options = summary.orderedValid.map((entry) => {
+      const availableQuantity = getRemainingBatchQuantity(ledger, productId, entry.batchId);
+      return {
+        batchId: entry.batchId,
+        batchNumber: getBatchDisplayCode(entry.batch),
+        expirationDate: extractCalendarDate(getBatchExpiryValue(entry.batch)),
+        availableQuantity,
+        isRecommended: Boolean(recommendedId && String(recommendedId) === String(entry.batchId)),
+        canCoverRequested: availableQuantity + EPSILON >= quantityMetadata.requiredInventoryQuantity,
+        requestedSaleQuantity: quantityMetadata.requestedSaleQuantity,
+        requiredInventoryQuantity: quantityMetadata.requiredInventoryQuantity
+      };
+    });
+
+    return { success: true, product, item, options };
+  } catch (error) {
+    const failure = markEcommerceInventoryReadFailure({
+      orderId,
+      ...expectation,
+      attemptId,
+      error,
+      now,
+      deps
+    });
+    return { ...failure, options: [] };
+  }
 };
 
 export const selectEcommerceDraftBatch = async ({
