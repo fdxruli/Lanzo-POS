@@ -7,7 +7,10 @@ import {
   canPrepareEcommercePosDraft,
   getEcommercePosContextIdentity
 } from '../../../services/ecommerce/ecommercePosDraftService';
+import { installEcommercePosActiveOrderGuards } from '../../../services/ecommerce/installEcommercePosActiveOrderGuards';
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
+
+installEcommercePosActiveOrderGuards();
 
 const getLicenseIdentity = (licenseDetails = {}) => (
   licenseDetails?.license_key ||
