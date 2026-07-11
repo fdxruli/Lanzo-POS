@@ -159,6 +159,28 @@ describe('useTableManagement ecommerce guard', () => {
     expect(deps.fetchActiveTablesCount).not.toHaveBeenCalled();
   });
 
+  it('blocks a quick action on a normal table while an ecommerce draft is the live active order', async () => {
+    const deps = makeDeps();
+    const { result } = renderHook(() => useTableManagement(deps));
+
+    let response;
+    await act(async () => {
+      response = await result.current.handleQuickTableAction({
+        id: 'normal-table-order',
+        origin: undefined,
+        items: [{ id: 'product-2', quantity: 1, price: 30 }]
+      }, 'checkout');
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED
+    });
+    expect(mocks.activeState.loadOpenOrder).not.toHaveBeenCalled();
+    expect(deps.handleInitiateCheckout).not.toHaveBeenCalled();
+    expect(mocks.cloudStatus).not.toHaveBeenCalled();
+  });
+
   it('blocks opening and confirming split bill before any operational effect', async () => {
     const deps = makeDeps();
     const { result } = renderHook(() => useTableManagement(deps));
