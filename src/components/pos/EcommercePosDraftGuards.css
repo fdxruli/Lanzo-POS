@@ -1,0 +1,16 @@
+/* ECOM.POS.1.1: ecommerce drafts remain review-only in every OrderSummary surface. */
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-action-btn--primary,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-action-btn--save,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-action-btn--split,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-action-btn--layaway,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-discount-mobile-slot,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-discount-desktop-slot,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .table-identifier-field,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .btn-mesas-header,
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-edit-notice {
+  display: none !important;
+}
+
+.pos-order-container:has(.ecommerce-pos-draft-banner) .order-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
