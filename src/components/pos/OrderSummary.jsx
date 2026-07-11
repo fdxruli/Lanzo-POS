@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import {
@@ -38,6 +39,7 @@ import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import OrderDiscountPanel from './OrderDiscountPanel';
+import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
 import './OrderSummaryRestInv2.css';
 
@@ -105,7 +107,11 @@ export default function OrderSummary({
   activeTablesCount = 0,
   kitchenRejectedOpenCount = 0,
 }) {
+  const navigate = useNavigate();
   const currentOrderId = useActiveOrders((state) => state.currentOrderId);
+  const currentOrder = useActiveOrders((state) => (
+    state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
+  ));
   const currentOrderItems = useActiveOrders((state) => (
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items : undefined
   ));
@@ -188,6 +194,28 @@ export default function OrderSummary({
 
   const total = getTotalPrice();
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
+  const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
+  const ecommerceLocalSubtotal = useMemo(() => order.reduce(
+    (sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)),
+    0
+  ), [order]);
+  const ecommerceWarnings = useMemo(() => {
+    if (!isEcommerceDraft) return [];
+    const warnings = [];
+    if (Math.abs(ecommerceLocalSubtotal - Number(currentOrder.expectedSubtotal || 0)) > 0.009) {
+      warnings.push('El subtotal local no coincide con el subtotal ecommerce.');
+    }
+    if (order.some((item) => Math.abs(Number(item.currentPosPrice || 0) - Number(item.ecommerceSnapshotPrice || 0)) > 0.009)) {
+      warnings.push('Hay precios POS actuales diferentes al precio aceptado por el cliente.');
+    }
+    if (order.some((item) => item.needsInventoryResolution)) {
+      warnings.push('Hay productos con lote pendiente de resolver en la siguiente fase.');
+    }
+    if (order.some((item) => item.ecommerceProductMissing)) {
+      warnings.push('Hay un producto faltante en el catálogo local.');
+    }
+    return warnings;
+  }, [currentOrder, ecommerceLocalSubtotal, isEcommerceDraft, order]);
 
   const handleQuantityChange = (lineId, change) => {
     const item = order.find((orderItem, index) => getCartLineId(orderItem, index) === lineId);
@@ -311,6 +339,28 @@ export default function OrderSummary({
   };
 
   const handleCancelOrder = async () => {
+    if (isEcommerceDraft) {
+      const confirmed = await showConfirmModal(
+        'El pedido seguirá aceptado en la bandeja y podrá prepararse nuevamente. No se registrará ninguna venta.',
+        {
+          title: 'Liberar borrador',
+          type: 'warning',
+          confirmButtonText: 'Liberar borrador',
+          cancelButtonText: 'Volver'
+        }
+      );
+      if (!confirmed) return;
+
+      const result = await useActiveOrders.getState().releaseEcommerceDraft(currentOrderId, 'released_from_pos');
+      if (result?.success === false) {
+        showMessageModal(result.message || 'No se pudo liberar el borrador. Intenta nuevamente.', null, { type: 'error' });
+        return;
+      }
+      if (isMobileModal) onClose?.();
+      showMessageModal('Borrador liberado. El pedido continúa aceptado.', null, { type: 'success' });
+      return;
+    }
+
     const confirmMessage = (isEditMode && showRestaurantActions)
       ? '¿Descartar los cambios no guardados y salir de la mesa?'
       : '¿Vaciar carrito?';
@@ -406,6 +456,13 @@ export default function OrderSummary({
       </header>
 
       <div className={showRestaurantActions ? 'restaurant-order-scroll' : 'order-summary-main'}>
+      {isEcommerceDraft && (
+        <EcommercePosDraftBanner
+          order={currentOrder}
+          warnings={ecommerceWarnings}
+          onOpenDetail={() => navigate(`/pedidos-online?order=${currentOrder.ecommerceOrderId}`)}
+        />
+      )}
       {isEditMode && showRestaurantActions && (
         <div className="order-edit-notice" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
@@ -701,7 +758,7 @@ export default function OrderSummary({
                 onClick={handleCancelOrder}
               >
                 <X size={19} aria-hidden="true" />
-                {(isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar'}
+                {isEcommerceDraft ? 'Liberar borrador' : ((isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar')}
               </button>
             </div>
           </footer>

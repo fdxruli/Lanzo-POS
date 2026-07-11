@@ -34,7 +34,9 @@ const OrderTabs = ({
           let displayName = '';
           const shortId = order.id.replace('sal-', '').substring(0, 4).toUpperCase();
           
-          if (order.folio && order.tableData) {
+          if (order.origin === 'ecommerce' && order.ecommerceOrderCode) {
+            displayName = `Online ${order.ecommerceOrderCode}`;
+          } else if (order.folio && order.tableData) {
             displayName = `${order.tableData} | F-${order.folio}`;
           } else if (order.folio) {
             displayName = `Folio ${order.folio}`;

@@ -14,6 +14,13 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDER_INVALID_TRANSITION: 'El pedido ya no permite esta acción.',
   ECOMMERCE_REJECTION_REASON_REQUIRED: 'Escribe un motivo de rechazo de al menos 3 caracteres.',
   ECOMMERCE_REJECTION_REASON_TOO_LONG: 'El motivo de rechazo no puede superar 300 caracteres.',
+  ECOMMERCE_POS_DRAFT_IN_PROGRESS: 'Este pedido ya está siendo preparado en otro dispositivo.',
+  ECOMMERCE_POS_DRAFT_ALREADY_PREPARED: 'Este pedido ya tiene un borrador preparado en Punto de Venta.',
+  ECOMMERCE_POS_DRAFT_CLAIM_EXPIRED: 'La reserva para preparar este pedido venció. Intenta nuevamente.',
+  ECOMMERCE_POS_DRAFT_TOKEN_INVALID: 'No se pudo validar la reserva de este borrador.',
+  ECOMMERCE_POS_DRAFT_PERMISSION_DENIED: 'Necesitas permisos de ecommerce y Punto de Venta para preparar este pedido.',
+  ECOMMERCE_POS_DRAFT_PRODUCT_MISSING: 'Uno o más productos del pedido ya no están disponibles en el Punto de Venta.',
+  ECOMMERCE_POS_DRAFT_PREPARE_FAILED: 'No se pudo preparar el pedido en Punto de Venta.',
   ECOMMERCE_ORDER_ACTION_FAILED: 'No se pudo completar la acción sobre el pedido.',
   INVALID_RPC_RESPONSE: 'El servidor devolvió una respuesta inválida.',
   SUPABASE_NOT_CONFIGURED: 'No se pudo conectar con el servicio de pedidos.',
@@ -84,6 +91,8 @@ const normalizePagination = (pagination = {}) => ({
 
 const normalizeItem = (item = {}) => ({
   id: safeText(item.id),
+  sourceProductId: safeText(item.sourceProductId),
+  publishedProductId: safeText(item.publishedProductId),
   productName: safeText(item.productName, 'Producto'),
   unitPrice: safeNumber(item.unitPrice),
   quantity: safeNumber(item.quantity),
@@ -107,6 +116,7 @@ const normalizeEvent = (event = {}) => ({
 const normalizeDetail = (order = {}) => ({
   id: safeText(order.id),
   code: safeText(order.code),
+  licenseIdentity: safeText(order.licenseIdentity),
   status: safeText(order.status, 'new'),
   channel: safeText(order.channel, 'public_store'),
   fulfillmentMethod: safeText(order.fulfillmentMethod, 'pickup'),
@@ -141,6 +151,15 @@ const normalizeDetail = (order = {}) => ({
     whatsappUrl: typeof order.contact?.whatsappUrl === 'string' && order.contact.whatsappUrl.startsWith('https://wa.me/')
       ? order.contact.whatsappUrl
       : null
+  },
+  posDraft: {
+    status: safeText(order.posDraft?.status, 'none'),
+    draftId: safeText(order.posDraft?.draftId) || null,
+    claimedAt: order.posDraft?.claimedAt || null,
+    expiresAt: order.posDraft?.expiresAt || null,
+    preparedAt: order.posDraft?.preparedAt || null,
+    isClaimedByCurrentActor: Boolean(order.posDraft?.isClaimedByCurrentActor),
+    claimToken: safeText(order.posDraft?.claimToken) || null
   }
 });
 
@@ -273,6 +292,56 @@ const mutateOrder = async (rpcName, { licenseDetails, orderId, reason } = {}) =>
 export const markEcommerceOrderSeen = (args) => mutateOrder('ecommerce_admin_mark_order_seen', args);
 export const acceptEcommerceOrder = (args) => mutateOrder('ecommerce_admin_accept_order', args);
 export const rejectEcommerceOrder = (args) => mutateOrder('ecommerce_admin_reject_order', args);
+
+const mutatePosDraft = async (rpcName, {
+  licenseDetails,
+  orderId,
+  requestKey,
+  claimToken,
+  draftId,
+  reason
+} = {}) => {
+  if (!orderId) return normalizeFailure({ code: 'ECOMMERCE_ORDER_NOT_FOUND' });
+
+  try {
+    const authArgs = await buildAuthArgs(licenseDetails);
+    const payload = await callRpc(rpcName, {
+      ...authArgs,
+      p_order_id: orderId,
+      ...(rpcName === 'ecommerce_admin_claim_pos_draft' ? { p_request_key: safeText(requestKey) } : {}),
+      ...(rpcName === 'ecommerce_admin_confirm_pos_draft' ? {
+        p_claim_token: safeText(claimToken) || null,
+        p_draft_id: safeText(draftId)
+      } : {}),
+      ...(rpcName === 'ecommerce_admin_release_pos_draft' ? {
+        p_claim_token: safeText(claimToken) || null,
+        p_reason: safeText(reason, 'abandoned')
+      } : {})
+    });
+
+    if (payload.success === false) return payload;
+    return {
+      success: true,
+      changed: Boolean(payload.changed),
+      order: payload.order ? normalizeDetail(payload.order) : null
+    };
+  } catch (error) {
+    const code = error?.code || error?.message || 'ECOMMERCE_POS_DRAFT_PREPARE_FAILED';
+    return { success: false, code, message: getEcommerceOrderErrorMessage({ code }) };
+  }
+};
+
+export const claimEcommerceOrderPosDraft = (args) => (
+  mutatePosDraft('ecommerce_admin_claim_pos_draft', args)
+);
+
+export const confirmEcommerceOrderPosDraft = (args) => (
+  mutatePosDraft('ecommerce_admin_confirm_pos_draft', args)
+);
+
+export const releaseEcommerceOrderPosDraft = (args) => (
+  mutatePosDraft('ecommerce_admin_release_pos_draft', args)
+);
 
 export const ecommerceOrderServiceInternals = Object.freeze({
   buildAuthArgs,

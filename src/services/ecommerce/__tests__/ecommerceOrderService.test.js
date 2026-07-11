@@ -21,10 +21,13 @@ vi.mock('../../Logger', () => ({
 
 import {
   acceptEcommerceOrder,
+  claimEcommerceOrderPosDraft,
+  confirmEcommerceOrderPosDraft,
   getEcommerceOrder,
   listEcommerceOrders,
   markEcommerceOrderSeen,
-  rejectEcommerceOrder
+  rejectEcommerceOrder,
+  releaseEcommerceOrderPosDraft
 } from '../ecommerceOrderService';
 
 const licenseDetails = { license_key: 'license-fixture' };
@@ -42,7 +45,7 @@ const orderDetail = {
   totals: { subtotal: '20', total: '20', currency: 'MXN' },
   payment: { method: 'on_delivery', status: 'pending' },
   timestamps: { createdAt: '2026-07-10T12:00:00Z' },
-  items: [{ id: 'item', productName: 'Producto', unitPrice: '20', quantity: '1', lineTotal: '20' }],
+  items: [{ id: 'item', sourceProductId: 'local-product', publishedProductId: 'published-product', productName: 'Producto', unitPrice: '20', quantity: '1', lineTotal: '20' }],
   events: [{ eventType: 'order_created', actorType: 'public_customer', actorLabel: 'Cliente', message: 'Pedido creado', payload: {} }],
   contact: { whatsappUrl: 'https://wa.me/529610000000' }
 };
@@ -177,11 +180,40 @@ describe('ecommerceOrderService', () => {
     expect(listResult.orders[0]).not.toHaveProperty('secret');
     expect(detailResult.order).not.toHaveProperty('secret');
     expect(detailResult.order.items[0]).toEqual(expect.objectContaining({
+      sourceProductId: 'local-product',
+      publishedProductId: 'published-product',
       quantity: 1,
       unitPrice: 20,
       lineTotal: 20
     }));
     expect(detailResult.order.contact.whatsappUrl).toBe('https://wa.me/529610000000');
+  });
+
+  it('uses exact auth-only RPC contracts for claim, confirm and release', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { success: true, changed: true, order: { ...orderDetail, posDraft: { status: 'claimed', claimToken: 'claim-token' } } },
+      error: null
+    });
+
+    await claimEcommerceOrderPosDraft({ licenseDetails, orderId: orderDetail.id, requestKey: 'request-1' });
+    await confirmEcommerceOrderPosDraft({ licenseDetails, orderId: orderDetail.id, claimToken: 'claim-token', draftId: `ecom-${orderDetail.id}` });
+    await releaseEcommerceOrderPosDraft({ licenseDetails, orderId: orderDetail.id, claimToken: 'claim-token', reason: 'abandoned' });
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(1, 'ecommerce_admin_claim_pos_draft', expect.objectContaining({
+      p_order_id: orderDetail.id,
+      p_request_key: 'request-1'
+    }));
+    expect(mocks.rpc).toHaveBeenNthCalledWith(2, 'ecommerce_admin_confirm_pos_draft', expect.objectContaining({
+      p_order_id: orderDetail.id,
+      p_claim_token: 'claim-token',
+      p_draft_id: `ecom-${orderDetail.id}`
+    }));
+    expect(mocks.rpc).toHaveBeenNthCalledWith(3, 'ecommerce_admin_release_pos_draft', expect.objectContaining({
+      p_order_id: orderDetail.id,
+      p_claim_token: 'claim-token',
+      p_reason: 'abandoned'
+    }));
+    expect(JSON.stringify(mocks.loggerError.mock.calls)).not.toContain('claim-token');
   });
 
   it('accepts only https://wa.me links in normalized detail', async () => {
