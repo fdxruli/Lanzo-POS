@@ -34,6 +34,8 @@ vi.mock('../../../services/db/dexie', () => ({
 }));
 
 vi.mock('../../../services/ecommerce/ecommercePosInventoryResolution', () => ({
+  ECOMMERCE_INVENTORY_READ_FAILED: 'ECOMMERCE_INVENTORY_READ_FAILED',
+  ECOMMERCE_INVENTORY_STALE_RESPONSE: 'ECOMMERCE_INVENTORY_STALE_RESPONSE',
   getEcommerceDraftBatchOptions: mocks.getBatchOptions,
   getEcommerceInventoryLineMessage: (item) => item.inventoryMessage || 'Inventario pendiente de resolver.',
   revalidateEcommerceDraftInventory: mocks.revalidate,
@@ -67,10 +69,13 @@ const buildOrder = (overrides = {}) => ({
   ...overrides
 });
 
+const installOrder = (order) => {
+  mocks.activeState = { activeOrders: new Map([[order.id, order]]) };
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  const order = buildOrder();
-  mocks.activeState = { activeOrders: new Map([[order.id, order]]) };
+  installOrder(buildOrder());
   mocks.productState = { menu: [] };
   mocks.revalidate.mockResolvedValue({ success: true });
   mocks.getBatchOptions.mockResolvedValue({ success: true, options: [] });
@@ -119,7 +124,7 @@ describe('EcommercePosDraftBanner inventory resolution', () => {
         inventoryResolution: { mode: 'batch', status: 'conflict', code: 'NO_VALID_BATCH' }
       }]
     });
-    mocks.activeState = { activeOrders: new Map([[order.id, order]]) };
+    installOrder(order);
     mocks.getBatchOptions.mockResolvedValue({
       success: true,
       options: [{
@@ -146,5 +151,102 @@ describe('EcommercePosDraftBanner inventory resolution', () => {
       lineId: 'line-batch',
       batchId: 'batch-1'
     })));
+  });
+
+  it('does not keep showing inventory ready after a current read failure', async () => {
+    const order = buildOrder({
+      ecommerceInventoryStatus: 'ready',
+      items: [{
+        id: 'product-1',
+        lineId: 'line-ready',
+        name: 'Producto exacto',
+        quantity: 2,
+        inventoryMessage: 'Existencia suficiente: 5 disponibles / 2 requeridos',
+        inventoryResolution: { mode: 'exact', status: 'resolved', code: null }
+      }]
+    });
+    installOrder(order);
+    mocks.revalidate.mockResolvedValue({
+      success: false,
+      code: 'ECOMMERCE_INVENTORY_READ_FAILED',
+      message: 'No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.'
+    });
+
+    render(<EcommercePosDraftBanner order={order} />);
+
+    await waitFor(() => expect(screen.getByText('Requiere atención')).toBeInTheDocument());
+    expect(screen.queryByText('Listo')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo comprobar el inventario local');
+  });
+
+  it('ignores a stale response without showing an operational error', async () => {
+    const order = buildOrder({ ecommerceInventoryStatus: 'ready' });
+    installOrder(order);
+    mocks.revalidate.mockResolvedValue({
+      success: false,
+      stale: true,
+      changed: false,
+      code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE'
+    });
+
+    render(<EcommercePosDraftBanner order={order} />);
+
+    await waitFor(() => expect(mocks.revalidate).toHaveBeenCalled());
+    expect(screen.getByText('Listo')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('allows the resolve button to recover the UI after a read failure', async () => {
+    const order = buildOrder({ ecommerceInventoryStatus: 'ready' });
+    installOrder(order);
+    mocks.revalidate
+      .mockResolvedValueOnce({
+        success: false,
+        code: 'ECOMMERCE_INVENTORY_READ_FAILED',
+        message: 'No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.'
+      })
+      .mockResolvedValueOnce({ success: true, changed: true });
+
+    render(<EcommercePosDraftBanner order={order} />);
+    await waitFor(() => expect(screen.getByText('Requiere atención')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resolver inventario' }));
+
+    await waitFor(() => expect(screen.getByText('Listo')).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps a manual batch visible when an older automatic response returns stale', async () => {
+    const order = buildOrder({
+      ecommerceInventoryStatus: 'ready',
+      items: [{
+        id: 'product-1',
+        lineId: 'line-batch',
+        name: 'Producto por lote',
+        quantity: 2,
+        batchId: 'batch-b',
+        batchManagement: { enabled: true },
+        inventoryMessage: 'Lote seleccionado: LOT-B · Caduca 2026-10-30 · 4 disponibles',
+        inventoryResolution: {
+          mode: 'batch',
+          status: 'resolved',
+          code: null,
+          batchId: 'batch-b',
+          selectionMode: 'manual'
+        }
+      }]
+    });
+    installOrder(order);
+    mocks.revalidate.mockResolvedValue({
+      success: false,
+      stale: true,
+      code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE'
+    });
+
+    render(<EcommercePosDraftBanner order={order} />);
+    await waitFor(() => expect(mocks.revalidate).toHaveBeenCalled());
+
+    expect(screen.getByText(/Lote seleccionado: LOT-B/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
