@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   activeState: null,
@@ -77,6 +77,10 @@ beforeEach(() => {
   mocks.selectBatch.mockResolvedValue({ success: true });
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('EcommercePosDraftBanner inventory resolution', () => {
   it('separates prepared draft state from inventory conflict and removes the legacy next-phase warning', async () => {
     const order = mocks.activeState.activeOrders.get('ecom-order-1');
@@ -94,7 +98,9 @@ describe('EcommercePosDraftBanner inventory resolution', () => {
     expect(screen.queryByText(/siguiente fase/i)).not.toBeInTheDocument();
     expect(screen.getByText('El precio cambió.')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Resolver inventario' }));
+    const resolveButton = await screen.findByRole('button', { name: 'Resolver inventario' });
+    mocks.revalidate.mockClear();
+    fireEvent.click(resolveButton);
     await waitFor(() => expect(mocks.revalidate).toHaveBeenCalledWith(expect.objectContaining({
       orderId: 'ecom-order-1'
     })));
