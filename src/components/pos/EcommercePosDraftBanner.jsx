@@ -16,6 +16,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { useProductStore } from '../../store/useProductStore';
 import { db, STORES } from '../../services/db/dexie';
 import {
+  ECOMMERCE_INVENTORY_READ_FAILED,
+  ECOMMERCE_INVENTORY_STALE_RESPONSE,
   getEcommerceDraftBatchOptions,
   getEcommerceInventoryLineMessage,
   revalidateEcommerceDraftInventory,
@@ -48,6 +50,9 @@ const isBatchLine = (item = {}) => Boolean(
 );
 
 const legacyInventoryWarning = /lote pendiente.*siguiente fase/i;
+const isStaleResponse = (result) => Boolean(
+  result?.stale || result?.code === ECOMMERCE_INVENTORY_STALE_RESPONSE
+);
 
 export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDetail }) {
   const storedOrder = useActiveOrders((state) => (
@@ -58,6 +63,7 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
   const effectiveOrder = storedOrder || order;
   const [isResolving, setIsResolving] = useState(false);
   const [resolutionError, setResolutionError] = useState('');
+  const [hasLocalReadFailure, setHasLocalReadFailure] = useState(false);
   const [batchDialog, setBatchDialog] = useState(null);
   const [isLoadingBatches, setIsLoadingBatches] = useState(false);
   const [isSelectingBatch, setIsSelectingBatch] = useState(false);
@@ -114,8 +120,22 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
     });
     setIsResolving(false);
 
-    if (result?.success === false && announceFailure) {
-      setResolutionError(result.message || 'No se pudo comprobar el inventario local.');
+    if (isStaleResponse(result)) return result;
+
+    if (result?.success === true) {
+      setHasLocalReadFailure(false);
+      setResolutionError('');
+      return result;
+    }
+
+    if (result?.code === ECOMMERCE_INVENTORY_READ_FAILED) {
+      setHasLocalReadFailure(true);
+      setResolutionError(result.message || 'No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.');
+      return result;
+    }
+
+    if (announceFailure) {
+      setResolutionError(result?.message || 'No se pudo comprobar el inventario local.');
     }
     return result;
   }, [canResolveInventory, products, storedOrder]);
@@ -137,10 +157,14 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
 
   if (effectiveOrder?.origin !== 'ecommerce') return null;
 
-  const inventoryStatus = effectiveOrder.ecommerceInventoryStatus || 'pending';
+  const hasStoredReadFailure = effectiveOrder.ecommerceInventoryError?.code === 'INVENTORY_READ_FAILED';
+  const inventoryStatus = hasLocalReadFailure || hasStoredReadFailure
+    ? 'conflict'
+    : (effectiveOrder.ecommerceInventoryStatus || 'pending');
   const inventoryMeta = INVENTORY_STATUS_META[inventoryStatus] || INVENTORY_STATUS_META.pending;
   const InventoryIcon = inventoryMeta.Icon;
   const safeWarnings = warnings.filter((warning) => !legacyInventoryWarning.test(String(warning || '')));
+  const displayedResolutionError = resolutionError || effectiveOrder.ecommerceInventoryError?.message || '';
   const canRunResolution = Boolean(
     storedOrder?.id
     && storedOrder.ecommerceDraftStatus === 'prepared'
@@ -178,12 +202,26 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
     });
     setIsSelectingBatch(false);
 
+    if (isStaleResponse(result)) {
+      setBatchDialog(null);
+      return;
+    }
+
+    if (result?.code === ECOMMERCE_INVENTORY_READ_FAILED) {
+      setHasLocalReadFailure(true);
+      setResolutionError(result.message || 'No se pudo comprobar el inventario local. Intenta resolverlo nuevamente.');
+      setBatchDialog(null);
+      return;
+    }
+
     if (result?.success === false) {
       setResolutionError('El lote cambió o ya no tiene existencia suficiente. Actualiza la resolución.');
       setBatchDialog(null);
       await runResolution();
       return;
     }
+
+    setHasLocalReadFailure(false);
     setBatchDialog(null);
   };
 
@@ -237,9 +275,9 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
         </ul>
       )}
 
-      {resolutionError && (
+      {displayedResolutionError && (
         <p className="ecommerce-inventory-error" role="alert">
-          <AlertTriangle size={15} aria-hidden="true" />{resolutionError}
+          <AlertTriangle size={15} aria-hidden="true" />{displayedResolutionError}
         </p>
       )}
 
@@ -316,6 +354,10 @@ EcommercePosDraftBanner.propTypes = {
     ecommerceOrderCode: PropTypes.string,
     ecommerceDraftStatus: PropTypes.string,
     ecommerceInventoryStatus: PropTypes.string,
+    ecommerceInventoryError: PropTypes.shape({
+      code: PropTypes.string,
+      message: PropTypes.string
+    }),
     fulfillmentMethod: PropTypes.string,
     expectedTotal: PropTypes.number,
     currency: PropTypes.string,
