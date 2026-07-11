@@ -1,17 +1,23 @@
 # HOTFIX ECOM.ORDERS.1.3 — Runtime y navegación de pedidos
 
-Fecha: 2026-07-10  
-Repositorio: `fdxruli/Lanzo-POS`  
-Rama: `hotfix-ecom-orders-1-3`  
-Proyecto Supabase: `odlrhijtfyavryeqivaa`
+- Fecha de implementación: 2026-07-10
+- Fecha de validación global: 2026-07-10 (`America/Merida`)
+- Repositorio: `fdxruli/Lanzo-POS`
+- Rama: `hotfix-ecom-orders-1-3`
+- HEAD funcional inicial validado: `9fec4f4b2c491e7e548ef739780bfedd92d2627a`
+- Base `origin/main`: `cecfdd8f735e33fa6cf70359e173451e9c4b7ad5`
+- HEAD final validado: el commit de la rama que contiene este reporte; su SHA exacto se publica en la descripción del PR #86 después del push
+- Node.js: `v24.14.0`
+- npm: `11.9.0`
+- Proyecto Supabase: `odlrhijtfyavryeqivaa`
 
 ## Estado
 
 `ECOM.ORDERS.1.3` quedó implementado y aplicado en Supabase mediante una migración nueva y controlada.
 
-La validación SQL y runtime real es **PASS**. Las pruebas enfocadas de los archivos modificados son **PASS**. El PR debe permanecer en **draft** porque el entorno disponible no puede clonar GitHub ni reconstruir el checkout completo del repositorio para certificar honestamente todas las suites de regresión y el `npm run build` global sobre la rama final.
+La validación SQL/runtime previamente completada es **PASS**. La validación global posterior se ejecutó sobre un checkout íntegro del repositorio, con la rama y base correctas, dependencias instaladas desde el lockfile y comparación directa contra un worktree limpio de `origin/main`.
 
-No se declara `ECOM.ORDERS.1.3 PASS` hasta completar esa validación global desde un checkout íntegro.
+Resultado: **ECOM.ORDERS.1.3 VALIDACIÓN GLOBAL PASS**. No se detectaron regresiones nuevas atribuibles al PR #86.
 
 ## 1. Causa raíz
 
@@ -231,101 +237,160 @@ Visibilidad cubierta:
 - rol `null`: oculto;
 - feature inbox deshabilitada: oculto.
 
-## 11. Pruebas frontend enfocadas
+## 11. Preparación reproducible del checkout
 
-Se creó un workspace local reproducible con los archivos modificados y sus dependencias directas.
-
-### ESLint específico
-
-Resultado: **PASS**, sin errores ni warnings, para:
-
-- `Navbar.jsx`;
-- pruebas de Navbar;
-- `Layout.jsx`;
-- prueba de ausencia del shortcut;
-- `ecommerceOrderService.js` y su prueba;
-- `cloudNotificationService.js` y su prueba.
-
-### Vitest enfocado
-
-Resultado:
+Se ejecutó sobre un clone completo, no shallow y sin sparse checkout:
 
 ```text
-4 archivos de prueba PASS
-24 pruebas PASS
-0 pruebas fallidas
+git fetch origin
+git checkout hotfix-ecom-orders-1-3
+git pull --ff-only origin hotfix-ecom-orders-1-3
 ```
 
-Cobertura:
+Se confirmó:
 
-- Navbar desktop y drawer móvil;
-- badge 0, número y `99+`;
-- matriz admin/staff/rol nulo/feature;
-- ausencia en bottom nav;
-- cierre del drawer;
-- ausencia del shortcut en Layout;
-- normalización ecommerce;
-- mapeo y logging seguro de `42501`;
-- custom-auth de las cinco RPC de notificaciones.
+- rama correcta;
+- árbol limpio antes de validar;
+- HEAD remoto del PR #86;
+- `origin/main` y merge-base en `cecfdd8f735e33fa6cf70359e173451e9c4b7ad5`;
+- base con el PR #85 ya integrado.
 
-### Build enfocado
+`npm ci`: **PASS**, 675 paquetes instalados desde `package-lock.json`.
 
-Se ejecutó `npm run build` en el workspace enfocado que importa Navbar, servicio ecommerce y servicio de notificaciones.
+La caché de npm se dirigió a `/tmp` porque la caché predeterminada del contenedor no era escribible. No se actualizó ninguna dependencia y `package.json`/`package-lock.json` permanecieron sin cambios. El warning de engine de `react-zxing@2.1.0` bajo Node 24 aparece igual en ambos checkouts y no impidió instalación, pruebas ni build.
 
-Resultado: **PASS**.
+## 12. ESLint específico
+
+Resultado: **PASS**, 0 errores y 0 warnings de ESLint, para toda la superficie JavaScript/JSX modificada:
+
+- `Navbar.jsx`;
+- `Layout.jsx`;
+- pruebas de Navbar y Layout;
+- `ecommerceOrderService.js` y su prueba;
+- prueba de `cloudNotificationService`.
+
+También pasó ESLint después de reforzar la prueba de Navbar con aserciones del focus trap y del bloqueo durante backup. No se agregaron desactivaciones de reglas.
+
+## 13. Vitest específico y regresiones relacionadas
+
+### Hotfix
+
+```text
+4 suites PASS
+25 pruebas PASS
+0 fallos
+```
+
+La matriz cubre navegación desktop/móvil, drawer, bottom nav, badges, permisos fail-closed, shortcut eliminado, error `42501`, logging seguro y custom-auth de notificaciones.
+
+### Ecommerce
+
+Se ejecutaron todas las suites encontradas con `ecommerce`, además de la ruta pública del catálogo/checkout:
+
+```text
+17 suites PASS
+123 pruebas PASS
+0 fallos
+```
+
+Incluye bandeja, capacidades, aislamiento, respuestas tardías, carreras de filtro/detalle, cierre de detalle, `markSeen`, aceptar/rechazar, carrito, catálogo paginado, checkout e idempotencia.
+
+### Centro de Notificaciones
+
+Se ejecutaron todas las suites existentes localizadas por `notification|support` que ejercen la superficie solicitada:
+
+```text
+5 suites PASS
+18 pruebas PASS
+0 fallos
+```
+
+Incluye listar, marcar leída, marcar todas, archivar, refresh operativo, `required_permission=ecommerce`, deep link y reutilización del listener realtime.
+
+No existen en este checkout suites adicionales con nombre o referencia a `NotificationCenterDrawer`, `NotificationTabs`, `createNotificationSlice` o soporte que amplíen esa matriz.
+
+### Navegación
+
+La matriz directamente relacionada con el hotfix quedó en:
+
+```text
+5 suites PASS
+30 pruebas PASS
+0 fallos
+```
+
+Además de los casos del hotfix, se validaron Escape, overlay, focus trap completo, retorno de foco, bloqueo durante backup y acciones de respaldo FREE/PRO. Los guards no modificados de Caja, Pedidos-Rest., Productos, Clientes, Reportes, Configuración y Acerca de se conservaron en el diff.
+
+La búsqueda amplia también localizó dos suites heredadas sin anotación jsdom: `Navbar.backupPro.test.jsx` y `useNavigationGuard.test.jsx`. Con la configuración predeterminada producen 10 fallos por ausencia de `document` tanto en `main` como en el PR. La primera se ejecutó adicionalmente con su entorno DOM correcto y pasó 2/2. No se modificó configuración global ni código ajeno al hotfix para ocultar este baseline.
+
+## 14. Build global real
+
+`npm run build`: **PASS**.
 
 ```text
 vite build
-1694 módulos transformados
-build completado
+3283 módulos transformados
+chunks y CSS generados
+PWA generateSW completado
+exit code 0
 ```
 
-## 12. Validación global pendiente
+No hubo imports o estilos faltantes. `NavbarEcommerce.css` resolvió correctamente. Las únicas referencias textuales a `EcommerceOrdersNavShortcut` y `ecommerce-orders-nav-shortcut` están en la prueba que exige su ausencia; no quedan referencias productivas.
 
-El entorno de ejecución no puede resolver ni clonar dominios de GitHub. El conector permite leer y modificar archivos, pero no entrega un checkout completo al contenedor.
+No se utilizó un build enfocado ni un preview de Vercel como evidencia.
 
-Por esa limitación no se presenta como ejecutado sobre el repositorio íntegro:
+## 15. Línea base global contra `main`
 
-- `npm run build` global;
-- la regresión completa de `EcommerceOrdersPage`;
-- la regresión completa de `createEcommerceOrderSlice`;
-- la regresión completa de `NotificationCenterDrawer`;
-- la regresión completa de `notificationRealtimeService`.
+Se creó un worktree limpio en `origin/main` y se ejecutaron los mismos comandos con el mismo lockfile, Node y npm.
 
-Esos módulos no fueron modificados y la validación runtime real de pedidos/notificaciones pasó, pero el criterio exige resultados reproducidos; por eso el PR permanece draft.
+### `npm run lint`
 
-## 13. Vercel
+| Checkout | Errores | Warnings | Resultado |
+| --- | ---: | ---: | --- |
+| `origin/main` | 156 | 226 | baseline heredado |
+| PR #86 | 156 | 226 | 0 nuevos |
 
-Vercel omitido por instrucción explícita.
+### `npm run test:ci`
 
-No se utilizó:
+| Checkout | Suites fallidas | Pruebas fallidas | Suites PASS | Pruebas PASS |
+| --- | ---: | ---: | ---: | ---: |
+| `origin/main` | 27 | 76 | 78 | 464 |
+| PR #86 | 26 | 74 | 81 | 484 |
 
-- Vercel CLI;
-- API de Vercel;
-- agentes de Vercel;
-- aliases;
-- redeploy;
-- preview;
-- commits vacíos o archivos artificiales para disparar deployments.
+No hay archivos de prueba fallidos nuevos en el PR. `Navbar.test.jsx`, que falla en `main` por ejecutarse sin DOM, pasa en el PR junto con la cobertura ampliada. La diferencia global es favorable al PR: una suite y dos pruebas fallidas menos, además de las pruebas nuevas en PASS.
 
-## 14. Estado de cierre
+Conclusión: **SIN REGRESIONES NUEVAS RESPECTO DE `main`**.
 
-Estado actual:
+## 16. Supabase
+
+Supabase permaneció **SIN CAMBIOS** durante esta validación.
+
+No se aplicaron migraciones, no se modificaron grants, permisos, sesiones, pedidos, notificaciones ni datos. No se tocaron los pedidos protegidos. La validación SQL/runtime anterior se aceptó como completada y no se repitió.
+
+## 17. Vercel
+
+No se invocó manualmente Vercel mediante API, CLI o agentes.
+
+La integración automática de GitHub registró un check de Vercel para el commit del PR. Ese check no fue solicitado, forzado ni utilizado como criterio de validación de ECOM.ORDERS.1.3.
+
+La validación del hotfix se realizó mediante ESLint, Vitest y npm run build sobre el checkout íntegro.
+
+## 18. Estado de cierre
 
 ```text
-Runtime RPC: PASS
-Staff caja1: PASS
-Navegación móvil: PASS en pruebas enfocadas
-Navegación desktop: PASS en pruebas enfocadas
-Centro de Notificaciones: PASS
-Seguridad SQL: PASS
+ECOM.ORDERS.1.3 VALIDACIÓN GLOBAL PASS
+
 ESLint específico: PASS
-Vitest enfocado: PASS — 24 pruebas
-Build enfocado: PASS
-Build global del checkout completo: PENDIENTE
-Vercel: OMITIDO
+Pruebas hotfix: PASS
+Regresión ecommerce: PASS
+Regresión notificaciones: PASS
+Regresión navegación: PASS
+Build global: PASS
+Línea base global: SIN REGRESIONES NUEVAS
+Supabase: SIN CAMBIOS
+Vercel manual: NO UTILIZADO
 ```
 
-No declarar `ECOM.ORDERS.1.3 PASS` ni marcar el PR ready for review hasta ejecutar la regresión completa y el build global desde un checkout íntegro.
+El PR #86 queda apto para marcarse ready for review después del commit documental, push y repetición de la matriz sobre ese HEAD final.
 
 No mergear automáticamente.

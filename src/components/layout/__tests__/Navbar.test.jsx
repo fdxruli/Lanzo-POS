@@ -114,7 +114,18 @@ describe('Navbar mobile menu', () => {
 
     expect(screen.getByRole('dialog', { name: 'Menú principal' }))
       .toHaveAttribute('aria-hidden', 'false');
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cerrar menú' }));
+    const closeButton = screen.getByRole('button', { name: 'Cerrar menú' });
+    const aboutLink = within(drawer).getByRole('link', { name: /Acerca de/i });
+
+    expect(document.activeElement).toBe(closeButton);
+
+    aboutLink.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(closeButton);
+
+    closeButton.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(aboutLink);
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -187,6 +198,20 @@ describe('Navbar ecommerce orders access', () => {
     const badges = [...document.querySelectorAll('.ecommerce-nav-badge')];
     expect(badges).toHaveLength(2);
     badges.forEach((badge) => expect(badge).toHaveTextContent('99+'));
+  });
+
+  it('blocks online-order navigation while a backup is running', () => {
+    state.app = createAppState({ isBackupLoading: true });
+    renderNavbar();
+
+    const desktopLink = document.querySelector(
+      '.desktop-sidebar a[href="/pedidos-online"]'
+    );
+
+    expect(desktopLink).toHaveAttribute('aria-disabled', 'true');
+    expect(desktopLink).toHaveAttribute('tabindex', '-1');
+    expect(fireEvent.click(desktopLink)).toBe(false);
+    expect(screen.getByRole('button', { name: 'Abrir menú principal' })).toBeDisabled();
   });
 
   it('shows the link to staff with ecommerce permission', () => {
