@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
-  buildPosSyncAuthContext: vi.fn()
+  buildPosSyncAuthContext: vi.fn(),
+  loggerError: vi.fn()
 }));
 
 vi.mock('../../supabase', () => ({
@@ -12,6 +13,10 @@ vi.mock('../../supabase', () => ({
 
 vi.mock('../../sync/posSyncClient', () => ({
   buildPosSyncAuthContext: mocks.buildPosSyncAuthContext
+}));
+
+vi.mock('../../Logger', () => ({
+  default: { error: mocks.loggerError }
 }));
 
 import {
@@ -53,6 +58,40 @@ beforeEach(() => {
 });
 
 describe('ecommerceOrderService', () => {
+  it('normalizes a successful RPC made through the public Supabase client', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        success: true,
+        orders: [{
+          id: orderDetail.id,
+          code: orderDetail.code,
+          status: 'new',
+          customerName: 'Cliente',
+          itemCount: '2',
+          total: '20.50',
+          currency: 'MXN'
+        }],
+        counts: { new: '1', total: '1' },
+        pagination: { limit: '50', offset: '0', hasMore: false }
+      },
+      error: null
+    });
+
+    const result = await listEcommerceOrders({ licenseDetails });
+
+    expect(result).toMatchObject({
+      success: true,
+      orders: [{
+        id: orderDetail.id,
+        code: orderDetail.code,
+        itemCount: 2,
+        total: 20.5
+      }],
+      counts: { new: 1, total: 1 }
+    });
+    expect(mocks.loggerError).not.toHaveBeenCalled();
+  });
+
   it('sends the exact admin auth context with a null staff token', async () => {
     mocks.rpc.mockResolvedValue({
       data: {
@@ -163,6 +202,50 @@ describe('ecommerceOrderService', () => {
     expect(foreignHost.order.contact.whatsappUrl).toBeNull();
   });
 
+  it('maps PostgREST 42501 to a safe access error and logs no auth arguments', async () => {
+    mocks.buildPosSyncAuthContext.mockResolvedValue({
+      licenseKey: 'license-fixture',
+      deviceFingerprint: 'device-fixture',
+      securityToken: 'security-fixture',
+      staffSessionToken: 'staff-token-fixture'
+    });
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: '42501',
+        message: 'permission denied for function ecommerce_admin_list_orders',
+        details: 'role anon cannot execute function',
+        hint: 'grant execute'
+      }
+    });
+
+    const result = await listEcommerceOrders({ licenseDetails });
+
+    expect(result).toEqual({
+      success: false,
+      code: 'ECOMMERCE_ORDERS_RPC_ACCESS_DENIED',
+      message: 'No se pudo autorizar el acceso a los pedidos online. Actualiza la aplicación e intenta nuevamente.'
+    });
+    expect(mocks.loggerError).toHaveBeenCalledWith(
+      '[ecommerceOrderService] RPC failed',
+      {
+        rpcName: 'ecommerce_admin_list_orders',
+        code: '42501',
+        message: 'permission denied for function ecommerce_admin_list_orders',
+        details: 'role anon cannot execute function'
+      }
+    );
+
+    const serializedLogs = JSON.stringify(mocks.loggerError.mock.calls);
+    expect(serializedLogs).not.toContain('license-fixture');
+    expect(serializedLogs).not.toContain('device-fixture');
+    expect(serializedLogs).not.toContain('security-fixture');
+    expect(serializedLogs).not.toContain('staff-token-fixture');
+    expect(serializedLogs).not.toContain('p_license_key');
+    expect(serializedLogs).not.toContain('p_security_token');
+    expect(serializedLogs).not.toContain('p_staff_session_token');
+  });
+
   it('maps safe server codes and never exposes raw PostgREST messages', async () => {
     mocks.rpc
       .mockResolvedValueOnce({
@@ -175,7 +258,11 @@ describe('ecommerceOrderService', () => {
       })
       .mockResolvedValueOnce({
         data: null,
-        error: { message: 'relation private.secret_table does not exist' }
+        error: {
+          code: 'XX000',
+          message: 'relation private.secret_table does not exist',
+          details: 'internal failure'
+        }
       });
 
     const denied = await listEcommerceOrders({ licenseDetails });
@@ -189,7 +276,8 @@ describe('ecommerceOrderService', () => {
     expect(JSON.stringify(denied)).not.toContain('internal SQL');
     expect(failed).toMatchObject({
       success: false,
-      code: 'ECOMMERCE_ORDER_ACTION_FAILED'
+      code: 'ECOMMERCE_ORDER_ACTION_FAILED',
+      message: 'No se pudo completar la acción sobre el pedido.'
     });
     expect(JSON.stringify(failed)).not.toContain('secret_table');
   });

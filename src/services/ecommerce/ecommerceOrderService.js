@@ -1,8 +1,10 @@
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
+import Logger from '../Logger';
 
 const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDERS_ACCESS_DENIED: 'No tienes permiso para administrar pedidos online.',
+  ECOMMERCE_ORDERS_RPC_ACCESS_DENIED: 'No se pudo autorizar el acceso a los pedidos online. Actualiza la aplicación e intenta nuevamente.',
   ECOMMERCE_ORDER_INBOX_DISABLED: 'La bandeja de pedidos online no está disponible para esta licencia.',
   ECOMMERCE_STAFF_SESSION_REQUIRED: 'Inicia sesión como personal para administrar pedidos online.',
   ECOMMERCE_STAFF_SESSION_INVALID: 'Tu sesión de personal venció. Inicia sesión nuevamente.',
@@ -167,13 +169,26 @@ const buildAuthArgs = async (licenseDetails = {}) => {
   };
 };
 
+const logRpcFailure = (rpcName, error = {}) => {
+  Logger.error('[ecommerceOrderService] RPC failed', {
+    rpcName,
+    code: error.code || null,
+    message: error.message || null,
+    details: error.details || null
+  });
+};
+
 const callRpc = async (name, args) => {
   if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED');
 
   const { data, error } = await supabaseClient.rpc(name, args);
   if (error) {
-    const safeError = new Error('ECOMMERCE_ORDER_ACTION_FAILED');
-    safeError.code = 'ECOMMERCE_ORDER_ACTION_FAILED';
+    logRpcFailure(name, error);
+    const code = String(error.code || '') === '42501'
+      ? 'ECOMMERCE_ORDERS_RPC_ACCESS_DENIED'
+      : 'ECOMMERCE_ORDER_ACTION_FAILED';
+    const safeError = new Error(code);
+    safeError.code = code;
     throw safeError;
   }
 

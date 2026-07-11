@@ -6,7 +6,6 @@ import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
 import DataSafetyModal from '../common/DataSafetyModal';
 import EcommerceOrdersRuntime from '../ecommerce/orders/EcommerceOrdersRuntime';
-import EcommerceOrdersNavShortcut from '../ecommerce/orders/EcommerceOrdersNavShortcut';
 import { useStatsStore } from '../../store/useStatsStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useProductStore } from '../../store/useProductStore';
@@ -100,7 +99,6 @@ function Layout() {
 
       <Navbar />
       <EcommerceOrdersRuntime />
-      <EcommerceOrdersNavShortcut />
 
       <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''}`.trim()}>
         {shouldShowTicker && <Ticker />}

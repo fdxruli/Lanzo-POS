@@ -5,6 +5,7 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useBackupManager } from '../../hooks/useBackupManager';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
+import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrderCapabilities';
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import Logo from '../common/Logo';
@@ -24,9 +25,11 @@ import {
   RefreshCw,
   ShieldAlert,
   AlertCircle,
-  FolderKey
+  FolderKey,
+  ShoppingBag
 } from 'lucide-react';
 import './Navbar.css';
+import './NavbarEcommerce.css';
 
 function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -37,11 +40,11 @@ function Navbar() {
   const { status: backupStatus } = useBackupManager();
 
   const { isVolatile } = usePersistentStorage();
-  const isVolatileDismissed = useAppStore(state => state.isVolatileDismissed);
-  const setVolatileDismissed = useAppStore(state => state.setVolatileDismissed);
-  const backupRiskLevel = useBackupRiskStore(state => state.riskLevel);
+  const isVolatileDismissed = useAppStore((state) => state.isVolatileDismissed);
+  const setVolatileDismissed = useAppStore((state) => state.setVolatileDismissed);
+  const backupRiskLevel = useBackupRiskStore((state) => state.riskLevel);
 
-  const companyName = useAppStore(state => state.companyProfile?.name);
+  const companyName = useAppStore((state) => state.companyProfile?.name);
   const updateAvailable = useAppStore((state) => state.updateAvailable);
   const isInstallable = useAppStore((state) => state.isInstallable);
   const isIOS = useAppStore((state) => state.isIOS);
@@ -55,11 +58,20 @@ function Navbar() {
   const showBackupNotice = useAppStore((state) => state.showBackupNotice);
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  useAppStore((state) => state.currentDeviceRole);
-  useAppStore((state) => state.currentStaffUser);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const ecommerceNewCount = useAppStore((state) => state.ecommerceOrderCounts?.new || 0);
 
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
+  const canAccessOnlineOrders = canAccessEcommerceOrders(licenseDetails, {
+    currentDeviceRole,
+    currentStaffUser
+  });
+  const normalizedEcommerceNewCount = Math.max(Number(ecommerceNewCount) || 0, 0);
+  const ecommerceBadge = normalizedEcommerceNewCount > 99
+    ? '99+'
+    : String(normalizedEcommerceNewCount);
 
   const toggleMenu = () => setIsMobileMenuOpen((prev) => !prev);
   const closeMenu = () => setIsMobileMenuOpen(false);
@@ -115,25 +127,37 @@ function Navbar() {
     };
   }, [isMobileMenuOpen]);
 
-  const preventNavigationWhileBackup = (e) => {
+  const preventNavigationWhileBackup = (event) => {
     if (!isBackupLoading) return false;
-    e.preventDefault();
-    e.stopPropagation();
+    event.preventDefault();
+    event.stopPropagation();
     return true;
   };
 
-  const handleProtectedNavClick = (e) => {
-    if (preventNavigationWhileBackup(e)) return;
+  const handleProtectedNavClick = (event) => {
+    if (preventNavigationWhileBackup(event)) return;
     closeMenu();
   };
 
-  const handleProtectedMenuToggle = (e) => {
-    if (preventNavigationWhileBackup(e)) return;
+  const handleProtectedMenuToggle = (event) => {
+    if (preventNavigationWhileBackup(event)) return;
     toggleMenu();
   };
 
   const drawerLinks = [
-    { to: '/clientes', label: 'Clientes', description: 'Directorio, crédito y apartados', icon: <Users size={21} /> },
+    ...(canAccessOnlineOrders ? [{
+      to: '/pedidos-online',
+      label: 'Pedidos online',
+      description: 'Pedidos recibidos desde la tienda',
+      icon: <ShoppingBag size={21} />,
+      badge: normalizedEcommerceNewCount > 0 ? ecommerceBadge : null
+    }] : []),
+    {
+      to: '/clientes',
+      label: 'Clientes',
+      description: 'Directorio, crédito y apartados',
+      icon: <Users size={21} />
+    },
     ...(features.hasKDS ? [{
       to: '/pedidos',
       label: 'Monitor Cocina',
@@ -146,7 +170,12 @@ function Navbar() {
       description: 'Preferencias, respaldos y negocio',
       icon: <Settings size={21} />
     },
-    { to: '/acerca-de', label: 'Acerca de', description: 'Información y versión de Lanzo', icon: <Info size={21} /> }
+    {
+      to: '/acerca-de',
+      label: 'Acerca de',
+      description: 'Información y versión de Lanzo',
+      icon: <Info size={21} />
+    }
   ];
 
   const routePermissions = {
@@ -156,7 +185,7 @@ function Navbar() {
     '/productos': 'products',
     '/clientes': 'customers',
     '/ventas': 'reports',
-    // Configuracion es la entrada general: requiere admin/settings.
+    // Configuración es la entrada general: requiere admin/settings.
     // license/devices/sync/inventory solo habilitan tabs internos tras entrar.
     '/configuracion': 'settings'
   };
@@ -167,14 +196,25 @@ function Navbar() {
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const showLocalBackupIndicators = !isCloudLicense;
   const effectiveBackupRiskLevel = showLocalBackupIndicators ? backupRiskLevel : 0;
-  const backupNotice = showLocalBackupIndicators ? getBackupRuntimeNotice(backupStatus, needsDriveReauth) : null;
-  const hasDismissedBackupNotice = showLocalBackupIndicators && backupNotice?.key === dismissedBackupNotice;
+  const backupNotice = showLocalBackupIndicators
+    ? getBackupRuntimeNotice(backupStatus, needsDriveReauth)
+    : null;
+  const hasDismissedBackupNotice = (
+    showLocalBackupIndicators &&
+    backupNotice?.key === dismissedBackupNotice
+  );
   const hasMenuAction = updateAvailable || isInstallable || hasDismissedBackupNotice;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
-  const getDesktopClass = ({ isActive }) => `nav-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
-  const getBottomClass = ({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
-  const getDrawerClass = ({ isActive }) => `drawer-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
+  const getDesktopClass = ({ isActive }) => (
+    `nav-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`
+  );
+  const getBottomClass = ({ isActive }) => (
+    `bottom-nav-item ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`
+  );
+  const getDrawerClass = ({ isActive }) => (
+    `drawer-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`
+  );
 
   const pwaActionBaseStyle = {
     width: '100%',
@@ -231,7 +271,10 @@ function Navbar() {
     <>
       {!isAboutPage && (
         <div className="mobile-top-bar">
-          <div className="mobile-brand" style={{ width: '100%', justifyContent: 'center', position: 'relative' }}>
+          <div
+            className="mobile-brand"
+            style={{ width: '100%', justifyContent: 'center', position: 'relative' }}
+          >
             <Logo style={{ height: '40px', width: 'auto' }} />
             <div className="mobile-notification-slot">
               <NotificationBell className="notification-bell--mobile" />
@@ -303,7 +346,9 @@ function Navbar() {
           {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
           <span>Menú</span>
           {hasMenuAction && <span style={menuBadgeStyle} aria-hidden="true" />}
-          {hasMenuAction && <span className="sr-only">Hay acciones pendientes en el menú</span>}
+          {hasMenuAction && (
+            <span className="sr-only">Hay acciones pendientes en el menú</span>
+          )}
         </button>
       </nav>
 
@@ -357,6 +402,14 @@ function Navbar() {
                   <span className="drawer-link-label">{link.label}</span>
                   <span className="drawer-link-description">{link.description}</span>
                 </span>
+                {link.badge && (
+                  <span
+                    className="ecommerce-nav-badge"
+                    aria-label={`${link.badge} pedidos nuevos`}
+                  >
+                    {link.badge}
+                  </span>
+                )}
                 {link.to === '/configuracion' && effectiveBackupRiskLevel === 1 && (
                   <span className="drawer-link-alert" title="Respaldo recomendado">
                     <AlertCircle size={19} />
@@ -365,20 +418,23 @@ function Navbar() {
                 )}
               </NavLink>
 
-              {link.to === '/configuracion' && showLocalBackupIndicators && isVolatile && isVolatileDismissed && (
-                <button
-                  type="button"
-                  className="drawer-warning-action"
-                  onClick={() => {
-                    setVolatileDismissed(false);
-                    closeMenu();
-                  }}
-                  aria-label="Mostrar aviso de riesgo de pérdida de datos"
-                  title="Riesgo de pérdida de datos"
-                >
-                  <ShieldAlert size={20} />
-                </button>
-              )}
+              {link.to === '/configuracion' &&
+                showLocalBackupIndicators &&
+                isVolatile &&
+                isVolatileDismissed && (
+                  <button
+                    type="button"
+                    className="drawer-warning-action"
+                    onClick={() => {
+                      setVolatileDismissed(false);
+                      closeMenu();
+                    }}
+                    aria-label="Mostrar aviso de riesgo de pérdida de datos"
+                    title="Riesgo de pérdida de datos"
+                  >
+                    <ShieldAlert size={20} />
+                  </button>
+                )}
             </div>
           ))}
 
@@ -397,7 +453,9 @@ function Navbar() {
                   className="drawer-system-action drawer-system-action--backup"
                   aria-label={backupNotice.navbarLabel}
                 >
-                  <span className="drawer-system-action-icon"><FolderKey size={18} /></span>
+                  <span className="drawer-system-action-icon">
+                    <FolderKey size={18} />
+                  </span>
                   {backupNotice.navbarLabel}
                 </button>
               )}
@@ -410,7 +468,9 @@ function Navbar() {
                   className="drawer-system-action drawer-system-action--update"
                   aria-label="Actualizar sistema"
                 >
-                  <span className="drawer-system-action-icon"><RefreshCw size={18} /></span>
+                  <span className="drawer-system-action-icon">
+                    <RefreshCw size={18} />
+                  </span>
                   {isUpdating ? 'Actualizando...' : 'Actualizar Sistema'}
                 </button>
               )}
@@ -423,7 +483,9 @@ function Navbar() {
                   className="drawer-system-action drawer-system-action--install"
                   aria-label="Instalar app"
                 >
-                  <span className="drawer-system-action-icon"><Download size={18} /></span>
+                  <span className="drawer-system-action-icon">
+                    <Download size={18} />
+                  </span>
                   {isInstalling ? 'Instalando...' : installButtonLabel}
                 </button>
               )}
@@ -440,7 +502,9 @@ function Navbar() {
             </span>
             <span className="sidebar-brand-copy">
               <span className="sidebar-brand-product">Lanzo POS</span>
-              <strong className="sidebar-business-name">{companyName || 'Tu negocio'}</strong>
+              <strong className="sidebar-business-name">
+                {companyName || 'Tu negocio'}
+              </strong>
             </span>
           </div>
           <div className="sidebar-notification-slot">
@@ -460,6 +524,29 @@ function Navbar() {
           >
             <Store size={20} /> Punto de Venta
           </NavLink>
+
+          {canAccessOnlineOrders && (
+            <NavLink
+              to="/pedidos-online"
+              className={({ isActive }) => (
+                `${getDesktopClass({ isActive })} ecommerce-nav-link`
+              )}
+              onClick={handleProtectedNavClick}
+              aria-disabled={isBackupLoading}
+              tabIndex={isBackupLoading ? -1 : 0}
+            >
+              <ShoppingBag size={20} />
+              <span className="ecommerce-nav-link-label">Pedidos online</span>
+              {normalizedEcommerceNewCount > 0 && (
+                <span
+                  className="ecommerce-nav-badge"
+                  aria-label={`${ecommerceBadge} pedidos nuevos`}
+                >
+                  {ecommerceBadge}
+                </span>
+              )}
+            </NavLink>
+          )}
 
           <NavLink
             to="/caja"
@@ -532,14 +619,33 @@ function Navbar() {
               <Settings size={20} /> Configuracion
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {effectiveBackupRiskLevel === 1 && <span title="Respaldo recomendado" style={{ display: 'flex', alignItems: 'center' }}><AlertCircle size={18} color="#ff4444" /></span>}
+              {effectiveBackupRiskLevel === 1 && (
+                <span
+                  title="Respaldo recomendado"
+                  style={{ display: 'flex', alignItems: 'center' }}
+                >
+                  <AlertCircle size={18} color="#ff4444" />
+                </span>
+              )}
               {showLocalBackupIndicators && isVolatile && isVolatileDismissed && (
                 <button
                   type="button"
-                  onClick={(e) => { e.preventDefault(); setVolatileDismissed(false); }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setVolatileDismissed(false);
+                  }}
                   title="Riesgo de pérdida de datos"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
-                ><ShieldAlert size={18} color="#d97706" /></button>
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                >
+                  <ShieldAlert size={18} color="#d97706" />
+                </button>
               )}
             </div>
           </NavLink>
@@ -555,7 +661,14 @@ function Navbar() {
           </NavLink>
 
           {hasMenuAction && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                marginTop: '6px'
+              }}
+            >
               {hasDismissedBackupNotice && (
                 <button
                   type="button"
@@ -570,7 +683,13 @@ function Navbar() {
               )}
 
               {updateAvailable && (
-                <button type="button" onClick={runUpdate} disabled={isUpdating || isBackupLoading} style={updateButtonStyle} aria-label="Actualizar sistema">
+                <button
+                  type="button"
+                  onClick={runUpdate}
+                  disabled={isUpdating || isBackupLoading}
+                  style={updateButtonStyle}
+                  aria-label="Actualizar sistema"
+                >
                   <RefreshCw size={16} />
                   {isUpdating ? 'Actualizando...' : 'Actualizar Sistema'}
                 </button>
