@@ -25,6 +25,7 @@ const FILTERS = Object.freeze([
   { key: 'rejected', label: 'Rechazados' }
 ]);
 
+const KNOWN_POS_DRAFT_STATES = new Set(['none', 'released', 'claimed', 'prepared']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const formatMoney = (value, currency = 'MXN') => {
@@ -129,10 +130,29 @@ function OrderDetail({
   onPrepare,
   onRelease,
   canPrepareInPos,
+  isAdmin,
   actionLoading,
   posActionLoading
 }) {
   if (!order && !loading && !error) return null;
+
+  const posDraftStatus = order?.posDraft?.status || 'none';
+  const hasOwnedClaim = Boolean(
+    order?.posDraft?.isClaimedByCurrentActor === true
+    && order?.posDraft?.claimToken
+  );
+  const isClaimedByCurrentActor = posDraftStatus === 'claimed' && hasOwnedClaim;
+  const isClaimedByAnotherActor = posDraftStatus === 'claimed' && !hasOwnedClaim;
+  const isPreparedByCurrentActor = Boolean(
+    posDraftStatus === 'prepared'
+    && hasOwnedClaim
+    && order?.posDraft?.draftId
+  );
+  const isPreparedByAnotherActor = posDraftStatus === 'prepared' && !isPreparedByCurrentActor;
+  const hasUnknownPosDraftState = Boolean(
+    order?.status === 'accepted'
+    && !KNOWN_POS_DRAFT_STATES.has(posDraftStatus)
+  );
 
   return (
     <div
@@ -245,7 +265,8 @@ function OrderDetail({
                   </button>
                 </>
               )}
-              {order.status === 'accepted' && canPrepareInPos && ['none', 'released'].includes(order.posDraft?.status) && (
+
+              {order.status === 'accepted' && canPrepareInPos && ['none', 'released'].includes(posDraftStatus) && (
                 <button
                   type="button"
                   className="ui-button ui-button--primary"
@@ -256,24 +277,26 @@ function OrderDetail({
                   {posActionLoading === 'prepare' ? 'Preparando…' : 'Preparar en Punto de Venta'}
                 </button>
               )}
-              {order.status === 'accepted' && canPrepareInPos && order.posDraft?.status === 'claimed' && (
-                order.posDraft.isClaimedByCurrentActor ? (
-                  <button
-                    type="button"
-                    className="ui-button ui-button--primary"
-                    onClick={onPrepare}
-                    disabled={Boolean(posActionLoading) || loading}
-                  >
-                    <Store size={17} />
-                    {posActionLoading === 'prepare' ? 'Preparando…' : 'Continuar preparación'}
-                  </button>
-                ) : (
-                  <button type="button" className="ui-button ui-button--secondary" disabled>
-                    En preparación en otro dispositivo
-                  </button>
-                )
+
+              {order.status === 'accepted' && canPrepareInPos && isClaimedByCurrentActor && (
+                <button
+                  type="button"
+                  className="ui-button ui-button--primary"
+                  onClick={onPrepare}
+                  disabled={Boolean(posActionLoading) || loading}
+                >
+                  <Store size={17} />
+                  {posActionLoading === 'prepare' ? 'Preparando…' : 'Continuar preparación'}
+                </button>
               )}
-              {order.status === 'accepted' && canPrepareInPos && order.posDraft?.status === 'prepared' && (
+
+              {order.status === 'accepted' && canPrepareInPos && isClaimedByAnotherActor && (
+                <button type="button" className="ui-button ui-button--secondary" disabled>
+                  En preparación en otro dispositivo
+                </button>
+              )}
+
+              {order.status === 'accepted' && canPrepareInPos && isPreparedByCurrentActor && (
                 <>
                   <button
                     type="button"
@@ -287,12 +310,36 @@ function OrderDetail({
                   <button
                     type="button"
                     className="ui-button ui-button--danger"
-                    onClick={onRelease}
+                    onClick={() => onRelease({ administrative: false })}
                     disabled={Boolean(posActionLoading) || loading}
                   >
                     {posActionLoading === 'release' ? 'Liberando…' : 'Liberar borrador'}
                   </button>
                 </>
+              )}
+
+              {order.status === 'accepted' && canPrepareInPos && isPreparedByAnotherActor && (
+                <>
+                  <button type="button" className="ui-button ui-button--secondary" disabled>
+                    Preparado en otro dispositivo
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="ui-button ui-button--danger"
+                      onClick={() => onRelease({ administrative: true })}
+                      disabled={Boolean(posActionLoading) || loading}
+                    >
+                      {posActionLoading === 'release' ? 'Liberando…' : 'Liberar administrativamente'}
+                    </button>
+                  )}
+                </>
+              )}
+
+              {hasUnknownPosDraftState && (
+                <button type="button" className="ui-button ui-button--secondary" disabled>
+                  Estado en conflicto. Actualiza el pedido.
+                </button>
               )}
             </footer>
           </>
@@ -376,6 +423,7 @@ export default function EcommerceOrdersPage() {
   const staffSession = useMemo(() => ({ currentDeviceRole, currentStaffUser }), [currentDeviceRole, currentStaffUser]);
   const canAccess = canAccessEcommerceOrders(licenseDetails, staffSession);
   const canPrepareInPos = canPrepareEcommerceOrderInPos(licenseDetails, staffSession);
+  const isAdmin = currentDeviceRole === 'admin';
 
   useEffect(() => {
     if (!canAccess) return;
@@ -464,15 +512,19 @@ export default function EcommerceOrdersPage() {
     }
   };
 
-  const handleReleaseDraft = async () => {
+  const handleReleaseDraft = async ({ administrative = false } = {}) => {
     const visibleOrder = selectedOrder;
     if (!visibleOrder?.id || selectedLoading || actionLoading || posAction) return;
+
+    const confirmationMessage = administrative
+      ? 'Este borrador fue preparado en otro dispositivo. Al liberarlo, ese dispositivo perderá su reserva local y el pedido podrá prepararse nuevamente.'
+      : 'El pedido seguirá aceptado en la bandeja y podrá prepararse nuevamente. No se registrará ninguna venta.';
     const confirmed = await showConfirmModal(
-      'El pedido seguirá aceptado en la bandeja y podrá prepararse nuevamente. No se registrará ninguna venta.',
+      confirmationMessage,
       {
-        title: 'Liberar borrador',
+        title: administrative ? 'Liberar borrador de otro dispositivo' : 'Liberar borrador',
         type: 'warning',
-        confirmButtonText: 'Liberar borrador',
+        confirmButtonText: administrative ? 'Liberar administrativamente' : 'Liberar borrador',
         cancelButtonText: 'Volver'
       }
     );
@@ -483,19 +535,34 @@ export default function EcommerceOrdersPage() {
     try {
       const localDraftId = getEcommercePosDraftId(visibleOrderId);
       const localDraft = useActiveOrders.getState().activeOrders.get(localDraftId);
-      const result = localDraft?.origin === 'ecommerce'
+      const remoteToken = visibleOrder.posDraft?.claimToken || null;
+      const ownsRemoteClaim = visibleOrder.posDraft?.isClaimedByCurrentActor === true && Boolean(remoteToken);
+      const localMatchesRemote = Boolean(
+        !administrative
+        && ownsRemoteClaim
+        && localDraft?.origin === 'ecommerce'
+        && localDraft.ecommerceOrderId === visibleOrderId
+        && localDraft.ecommerceClaimToken === remoteToken
+        && localDraft.ecommerceDraftStatus === 'prepared'
+      );
+
+      const result = localMatchesRemote
         ? await useActiveOrders.getState().releaseEcommerceDraft(localDraftId, 'released_from_inbox')
         : await releaseEcommerceOrderPosDraft({
           licenseDetails,
           orderId: visibleOrderId,
-          claimToken: visibleOrder.posDraft?.claimToken,
-          reason: 'released_from_inbox'
+          claimToken: administrative ? null : remoteToken,
+          reason: administrative ? 'administrative_release_other_device' : 'released_from_inbox'
         });
 
       if (useAppStore.getState().selectedEcommerceOrder?.id !== visibleOrderId) return;
       if (result?.success === false) {
         showMessageModal(result.message || 'No se pudo liberar el borrador. Intenta nuevamente.', null, { type: 'error' });
         return;
+      }
+
+      if (localDraft?.origin === 'ecommerce') {
+        useActiveOrders.getState().removeEcommerceDraftLocal(localDraftId);
       }
       await openOrder?.(visibleOrderId, { force: true, markSeen: false });
       await refreshOrders?.({ background: true });
@@ -556,6 +623,7 @@ export default function EcommerceOrdersPage() {
         actionLoading={actionLoading}
         posActionLoading={posAction && posAction.orderId === selectedOrder?.id ? posAction.type : null}
         canPrepareInPos={canPrepareInPos}
+        isAdmin={isAdmin}
         onClose={handleCloseDetail}
         onAccept={() => {
           if (!selectedLoading && !actionLoading) setDialogMode('accept');
