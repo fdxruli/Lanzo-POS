@@ -1,5 +1,6 @@
 import PublicStoreErrorBoundary from '../components/ecommerce/public/PublicStoreErrorBoundary';
 import PublicStoreState from '../components/ecommerce/public/PublicStoreState';
+import PublicLanzoLandingPage from '../pages/PublicLanzoLandingPage';
 import PublicStorePage from '../pages/PublicStorePage';
 
 export function PublicStoreNotFoundPage() {
@@ -33,6 +34,11 @@ const withPublicBoundary = (element) => (
 );
 
 export const publicStoreRoutes = [
+  {
+    path: '/conoce-lanzo',
+    element: withPublicBoundary(<PublicLanzoLandingPage />),
+    errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />),
+  },
   {
     path: '/tienda/:slug',
     element: withPublicBoundary(<PublicStorePage />),

@@ -38,6 +38,8 @@ describe('public store routing', () => {
     expect(isPublicStorePath('/tienda/')).toBe(true);
     expect(isPublicStorePath('/tienda/mi-negocio')).toBe(true);
     expect(isPublicStorePath('/tienda/mi-negocio/')).toBe(true);
+    expect(isPublicStorePath('/conoce-lanzo')).toBe(true);
+    expect(isPublicStorePath('/conoce-lanzo/')).toBe(true);
     expect(isPublicStorePath('/')).toBe(false);
     expect(isPublicStorePath('/configuracion')).toBe(false);
     expect(isPublicStorePath('/tienda/uno/dos')).toBe(false);
@@ -70,5 +72,14 @@ describe('public store routing', () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/tienda'] });
     render(<RouterProvider router={router} />);
     expect(screen.getByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
+  });
+
+  it('opens the Lanzo landing without mounting the POS shell', () => {
+    const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/conoce-lanzo?tienda=mi-negocio'] });
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('heading', { name: 'Vende mejor, sin complicarte.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/tienda/mi-negocio');
+    expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
   });
 });
