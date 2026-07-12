@@ -1,4 +1,4 @@
--- FASE ECOM.POS.3 / ECOM.POS.3.1
+-- FASE ECOM.POS.3 / ECOM.POS.3.1 / ECOM.POS.3.1.1
 -- Contrato remoto atomico e idempotente para reservar, verificar, cancelar y
 -- completar la conversion de un pedido ecommerce en una venta POS.
 --
@@ -721,8 +721,9 @@ exception
 end;
 $function$;
 
--- ECOM.POS.3.1: redefine la firma historica de liberacion para que draft, claim
--- y reserva de conversion queden consistentes dentro del mismo bloqueo FOR UPDATE.
+-- ECOM.POS.3.1.1: la liberacion administrativa es fail-closed. Una reserva
+-- activa puede corresponder a una venta confirmada solo en Dexie cuyo shadow
+-- remoto aun no existe; por ello public.pos_sales nunca autoriza liberarla.
 create or replace function public.ecommerce_admin_release_pos_draft(
   p_license_key text,
   p_device_fingerprint text,
@@ -741,9 +742,7 @@ declare
   v_auth jsonb;
   v_license_id uuid;
   v_order public.ecommerce_orders%rowtype;
-  v_sale_check jsonb;
   v_reason text := left(coalesce(nullif(btrim(p_reason), ''), 'abandoned'), 80);
-  v_released_conversion boolean := false;
 begin
   v_auth := private.ecommerce_pos_draft_authorize_v1(
     p_license_key,
@@ -799,47 +798,25 @@ begin
     return private.ecommerce_orders_error_v1('ECOMMERCE_ORDER_INVALID_TRANSITION');
   end if;
 
+  if coalesce(v_order.pos_conversion_status, 'idle') = 'reserved' then
+    return private.ecommerce_orders_error_v1(
+      'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
+      'El pedido tiene una conversion reservada. No puede liberarse desde la bandeja porque podria existir una venta local aun no sincronizada.'
+    );
+  end if;
+
+  if coalesce(v_order.pos_conversion_status, 'idle') <> 'idle' then
+    return private.ecommerce_orders_error_v1(
+      'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
+      'El estado de conversion requiere revision antes de liberar el borrador.'
+    );
+  end if;
+
   if v_auth->>'actor_type' <> 'admin' and (
     v_order.pos_claim_actor_ref <> v_auth->>'device_id'
     or v_order.pos_claim_token is distinct from p_claim_token
   ) then
     return private.ecommerce_orders_error_v1('ECOMMERCE_POS_DRAFT_TOKEN_INVALID');
-  end if;
-
-  if coalesce(v_order.pos_conversion_status, 'idle') = 'reserved' then
-    if v_auth->>'actor_type' <> 'admin'
-       and v_order.pos_conversion_actor_ref <> v_auth->>'device_id' then
-      return private.ecommerce_orders_error_v1(
-        'ECOMMERCE_POS_CONVERSION_CLAIM_LOST',
-        'La reserva pertenece a otro dispositivo o intento.'
-      );
-    end if;
-
-    v_sale_check := private.ecommerce_pos_sale_lookup_v2(
-      v_license_id,
-      v_order.pos_conversion_sale_id,
-      v_order.pos_conversion_key
-    );
-    if coalesce((v_sale_check->>'success')::boolean, false) is false then
-      return v_sale_check;
-    end if;
-    if coalesce((v_sale_check->>'saleExists')::boolean, false) is true then
-      return private.ecommerce_orders_error_v1(
-        'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
-        'Existe una venta asociada. No se libero el borrador ni la reserva.',
-        jsonb_build_object(
-          'saleId', v_order.pos_conversion_sale_id,
-          'conversionKey', v_order.pos_conversion_key,
-          'attemptId', v_order.pos_conversion_attempt_id
-        )
-      );
-    end if;
-    v_released_conversion := true;
-  elsif coalesce(v_order.pos_conversion_status, 'idle') <> 'idle' then
-    return private.ecommerce_orders_error_v1(
-      'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
-      'El estado de conversion requiere revision antes de liberar el borrador.'
-    );
   end if;
 
   update public.ecommerce_orders
@@ -860,39 +837,6 @@ begin
       pos_conversion_started_at = null,
       updated_at = now()
   where id = v_order.id;
-
-  if v_released_conversion then
-    insert into public.ecommerce_order_events(
-      order_id,
-      portal_id,
-      license_id,
-      event_type,
-      actor_type,
-      actor_ref,
-      message,
-      payload
-    ) values (
-      v_order.id,
-      v_order.portal_id,
-      v_order.license_id,
-      'pos_conversion_admin_released',
-      v_auth->>'actor_type',
-      coalesce(nullif(v_auth->>'staff_user_id', ''), v_auth->>'device_id'),
-      'Reserva de conversion liberada administrativamente antes de venta',
-      jsonb_build_object(
-        'reason', v_reason,
-        'actorLabel', v_auth->>'actor_label',
-        'deviceRole', v_auth->>'device_role',
-        'deviceId', v_auth->>'device_id',
-        'previousAttemptId', v_order.pos_conversion_attempt_id,
-        'reservedSaleId', v_order.pos_conversion_sale_id,
-        'conversionKey', v_order.pos_conversion_key,
-        'previousDraftStatus', v_order.pos_draft_status,
-        'previousConversionStatus', v_order.pos_conversion_status,
-        'releasedAt', now()
-      )
-    );
-  end if;
 
   insert into public.ecommerce_order_events(
     order_id,
@@ -915,7 +859,7 @@ begin
       'reasonCode', v_reason,
       'deviceRole', v_auth->>'device_role',
       'actorLabel', v_auth->>'actor_label',
-      'conversionReleased', v_released_conversion
+      'conversionReleased', false
     )
   );
 
@@ -923,10 +867,7 @@ begin
     v_license_id,
     v_order.id,
     v_order.status,
-    case when v_released_conversion
-      then 'pos_conversion_admin_released'
-      else 'order_pos_draft_released'
-    end
+    'order_pos_draft_released'
   );
 
   return jsonb_build_object(
@@ -934,14 +875,14 @@ begin
     'changed', true,
     'idempotent', false,
     'contractVersion', 2,
-    'conversionReleased', v_released_conversion,
+    'conversionReleased', false,
     'order', private.ecommerce_order_pos_snapshot_v1(v_order.id, v_license_id, v_auth)
   );
 exception
   when others then
     return private.ecommerce_orders_error_v1(
       'ECOMMERCE_POS_DRAFT_PREPARE_FAILED',
-      'No se pudo liberar el borrador y su reserva de conversion.'
+      'No se pudo liberar el borrador.'
     );
 end;
 $function$;
