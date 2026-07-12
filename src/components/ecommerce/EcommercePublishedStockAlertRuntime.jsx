@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useEcommercePublishedStockAlerts } from '../../hooks/useEcommercePublishedStockAlerts';
 import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import {
@@ -7,6 +8,7 @@ import {
   isNotificationCenterEnabled,
   shouldUseLocalTicker
 } from '../../services/notifications/notificationCapabilities';
+import { TICKER_INVENTORY_ALERT_EVENT } from '../../services/tickerAlertEvents';
 import { useAppStore } from '../../store/useAppStore';
 
 export default function EcommercePublishedStockAlertRuntime() {
@@ -30,12 +32,33 @@ export default function EcommercePublishedStockAlertRuntime() {
     shouldUseLocalTicker(licenseDetails)
     || canUseNotificationSurface
   );
-
-  useEcommercePublishedStockAlerts({
+  const {
+    contextKey,
+    invalidate,
+    load
+  } = useEcommercePublishedStockAlerts({
     enabled,
     autoLoad: enabled,
     reason: 'application-runtime'
   });
+
+  useEffect(() => {
+    if (!enabled || !contextKey || typeof window === 'undefined') return undefined;
+
+    const handleInventoryChange = () => {
+      invalidate?.({ reason: 'inventory-event' });
+      void load?.({
+        force: true,
+        reason: 'inventory-event',
+        background: true
+      });
+    };
+
+    window.addEventListener(TICKER_INVENTORY_ALERT_EVENT, handleInventoryChange);
+    return () => {
+      window.removeEventListener(TICKER_INVENTORY_ALERT_EVENT, handleInventoryChange);
+    };
+  }, [contextKey, enabled, invalidate, load]);
 
   return null;
 }
