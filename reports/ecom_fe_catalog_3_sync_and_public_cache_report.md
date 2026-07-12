@@ -11,8 +11,7 @@
 - Base y merge-base confirmados: `main` en `66315c445836bbf662224671c14524994acd0f13`
 - HEAD inicial real de ECOM.FE.CATALOG.3.2: `af0f9977527b0bffeb11bc08cffb5cb044c8b7ae`
 - HEAD funcional de ECOM.FE.CATALOG.3.2: `521cf646c3aae2ea600d5475836de2b041fda9a0`
-- HEAD de cierre documental anterior: `d97e99e391e407695f558d04d916e61b6e80f904`
-- El HEAD final exacto se registra en la descripción del PR y en la entrega final, ya que el commit que contiene este reporte pasa a ser el nuevo HEAD.
+- El HEAD final exacto queda registrado en la descripción del PR y en la entrega final, porque el commit que contiene este reporte pasa a ser el nuevo HEAD.
 - Merge automático: **no realizado**
 
 La corrección se limitó a los dos defectos residuales solicitados: transición segura a `source_missing` y prioridad de la disponibilidad efectiva sobre las etiquetas de inventario. Las correcciones anteriores de ECOM.FE.CATALOG.3.1 permanecen sin debilitarse.
