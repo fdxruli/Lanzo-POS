@@ -183,7 +183,19 @@ function useTickerVisibility() {
   };
 }
 
-function toTickerMessage(alert) {
+export function toTickerMessage(alert) {
+  if (alert.type === 'ecommerce-published-out-of-stock') {
+    const count = Number(alert.count || 0);
+    const singular = count === 1;
+    return {
+      ...alert,
+      icon: AlertTriangle,
+      text: singular
+        ? '⚠ Tienes 1 producto publicado sin stock. Revísalo en Portal online.'
+        : `⚠ Tienes ${count} productos publicados sin stock. Revísalos en Portal online.`
+    };
+  }
+
   if (alert.type === 'low-stock') {
     return {
       ...alert,
