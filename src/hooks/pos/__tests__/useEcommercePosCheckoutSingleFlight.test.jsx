@@ -110,6 +110,25 @@ describe('useEcommercePosCheckoutSingleFlight', () => {
     expect(mocks.state.updateOrder).not.toHaveBeenCalled();
   });
 
+  it('preserves the canonical contention path for a lock owned elsewhere', async () => {
+    setOrder({
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.IDLE,
+      isLockedForCheckout: true
+    });
+    const contention = {
+      success: false,
+      reason: 'La orden ya está siendo cobrada desde otro dispositivo.'
+    };
+    const checkout = {
+      handleInitiateCheckout: vi.fn(() => Promise.resolve(contention))
+    };
+    const { result } = renderHook(() => useEcommercePosCheckoutSingleFlight({ checkout }));
+
+    await expect(result.current.handleInitiateCheckout()).resolves.toBe(contention);
+
+    expect(checkout.handleInitiateCheckout).toHaveBeenCalledTimes(1);
+  });
+
   it('clears a stale visual marker and allows a real retry', async () => {
     setOrder({ ecommerceCheckoutInitiationStatus: 'starting' });
     const checkout = {
