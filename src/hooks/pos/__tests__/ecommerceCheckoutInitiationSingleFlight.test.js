@@ -52,19 +52,30 @@ describe('ecommerce checkout initiation single-flight', () => {
     expect(getEcommerceCheckoutInitiation('ecom-order-1')).toBeNull();
   });
 
-  it('does not clear a newer entry with a token it does not own', async () => {
-    const deferred = createDeferred();
-    const operation = runEcommerceCheckoutInitiationSingleFlight({
+  it('does not let an old operation clear a newer entry for the same order', async () => {
+    const firstDeferred = createDeferred();
+    const firstOperation = runEcommerceCheckoutInitiationSingleFlight({
       orderId: 'ecom-order-1',
-      run: () => deferred.promise
+      run: () => firstDeferred.promise
     });
-    const current = getEcommerceCheckoutInitiation('ecom-order-1');
+    const firstToken = getEcommerceCheckoutInitiation('ecom-order-1').token;
 
-    expect(clearEcommerceCheckoutInitiationIfOwned('ecom-order-1', Symbol('stale'))).toBe(false);
-    expect(getEcommerceCheckoutInitiation('ecom-order-1')).toBe(current);
+    firstDeferred.resolve({ success: true, attempt: 'a' });
+    await firstOperation;
 
-    deferred.resolve({ success: true });
-    await operation;
+    const secondDeferred = createDeferred();
+    const secondOperation = runEcommerceCheckoutInitiationSingleFlight({
+      orderId: 'ecom-order-1',
+      run: () => secondDeferred.promise
+    });
+    const secondEntry = getEcommerceCheckoutInitiation('ecom-order-1');
+
+    expect(secondEntry.token).not.toBe(firstToken);
+    expect(clearEcommerceCheckoutInitiationIfOwned('ecom-order-1', firstToken)).toBe(false);
+    expect(getEcommerceCheckoutInitiation('ecom-order-1')).toBe(secondEntry);
+
+    secondDeferred.resolve({ success: true, attempt: 'b' });
+    await secondOperation;
     expect(getEcommerceCheckoutInitiation('ecom-order-1')).toBeNull();
   });
 
@@ -117,5 +128,21 @@ describe('ecommerce checkout initiation single-flight', () => {
       { orderId: 'a' },
       { orderId: 'b' }
     ]);
+  });
+
+  it('does not change a successful result when visual cleanup throws', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(runEcommerceCheckoutInitiationSingleFlight({
+      orderId: 'ecom-order-1',
+      run: () => Promise.resolve({ success: true }),
+      onSettled: () => {
+        throw new Error('visual cleanup failed');
+      }
+    })).resolves.toEqual({ success: true });
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(getEcommerceCheckoutInitiation('ecom-order-1')).toBeNull();
+    consoleError.mockRestore();
   });
 });
