@@ -63,6 +63,7 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const [isCheckingRemote, setIsCheckingRemote] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const checkSequenceRef = useRef(0);
+  const orderId = order?.id || null;
 
   const conversionStatus = order?.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
   const isConfirmationPending = CONFIRMATION_STATUSES.has(conversionStatus)
@@ -70,22 +71,28 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const isBusy = BUSY_STATUSES.has(conversionStatus);
 
   const verifyRemoteState = useCallback(async () => {
-    if (!order?.id || order.origin !== 'ecommerce') return null;
+    if (!orderId) return null;
+    const liveOrder = useActiveOrders.getState().activeOrders.get(orderId);
+    if (!liveOrder || liveOrder.origin !== 'ecommerce') return null;
+
     const checkSequence = checkSequenceRef.current + 1;
     checkSequenceRef.current = checkSequence;
     setIsCheckingRemote(true);
 
-    const result = await getEcommercePosConversionRemoteState({ order, licenseDetails });
+    const result = await getEcommercePosConversionRemoteState({
+      order: liveOrder,
+      licenseDetails
+    });
     if (checkSequenceRef.current !== checkSequence) return result;
 
-    const latestOrder = useActiveOrders.getState().activeOrders.get(order.id);
+    const latestOrder = useActiveOrders.getState().activeOrders.get(orderId);
     if (!latestOrder || latestOrder.origin !== 'ecommerce') {
       setIsCheckingRemote(false);
       return result;
     }
 
     if (result.success === false) {
-      useActiveOrders.getState().updateOrder(order.id, {
+      useActiveOrders.getState().updateOrder(orderId, {
         ecommerceRemoteContractVersion: result.remoteContractVersion || 0,
         ecommerceRemoteClaimOwned: false,
         ecommerceRemoteClaimValid: false,
@@ -97,7 +104,7 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
       return result;
     }
 
-    useActiveOrders.getState().updateOrder(order.id, {
+    useActiveOrders.getState().updateOrder(orderId, {
       ecommerceRemoteContractVersion: result.remoteContractVersion || 0,
       ecommerceRemoteClaimOwned: result.claimOwned === true,
       ecommerceRemoteClaimValid: result.claimValid === true,
@@ -112,17 +119,17 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     });
     setIsCheckingRemote(false);
     return result;
-  }, [licenseDetails, order]);
+  }, [licenseDetails, orderId]);
 
   useEffect(() => {
-    if (!order?.id || order.origin !== 'ecommerce') return undefined;
+    if (!orderId || order?.origin !== 'ecommerce') return undefined;
     let active = true;
 
     const recoverAndVerify = async () => {
-      await recoverEcommercePosConversion({ orderId: order.id });
+      await recoverEcommercePosConversion({ orderId });
       if (!active) return;
 
-      const latestOrder = useActiveOrders.getState().activeOrders.get(order.id);
+      const latestOrder = useActiveOrders.getState().activeOrders.get(orderId);
       const latestStatus = latestOrder?.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
       if (
         latestOrder
@@ -139,7 +146,7 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
       active = false;
       checkSequenceRef.current += 1;
     };
-  }, [order?.id, order?.ecommerceInventoryResolvedAt, order?.ecommerceInventoryStatus, verifyRemoteState]);
+  }, [orderId, order?.origin, order?.ecommerceInventoryResolvedAt, order?.ecommerceInventoryStatus, verifyRemoteState]);
 
   const checkoutEnabled = useMemo(() => (
     order?.ecommerceDraftStatus === 'prepared'
@@ -157,10 +164,10 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const blockedMessage = getBlockedMessage(order, isCheckingRemote);
 
   const handleRetryConfirmation = async () => {
-    if (isRetrying || !order?.id) return;
+    if (isRetrying || !orderId) return;
     setIsRetrying(true);
     try {
-      await retryEcommerceConversionConfirmation({ orderId: order.id });
+      await retryEcommerceConversionConfirmation({ orderId });
     } finally {
       setIsRetrying(false);
     }
