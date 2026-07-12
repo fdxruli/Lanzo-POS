@@ -84,11 +84,16 @@ export const createEcommerceCatalogSyncService = (options = {}) => {
     }, delay);
   };
 
+  const retrySafeClearTimeout = (handle) => {
+    retryPersistenceMode = null;
+    return clearTimeoutFn(handle);
+  };
+
   service = createBaseEcommerceCatalogSyncService({
     ...options,
     outbox,
     setTimeoutFn: retrySafeSetTimeout,
-    clearTimeoutFn
+    clearTimeoutFn: retrySafeClearTimeout
   });
   return service;
 };
