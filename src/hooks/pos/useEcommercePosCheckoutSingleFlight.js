@@ -53,10 +53,16 @@ export function useEcommercePosCheckoutSingleFlight({ checkout }) {
       });
     }
 
+    const expectedOrderId = order.id;
+    const expectedOrigin = 'ecommerce';
+
     return runEcommerceCheckoutInitiationSingleFlight({
-      orderId: order.id,
+      orderId: expectedOrderId,
       onStart: ({ orderId }) => updateInitiationStatus(orderId, 'starting'),
-      run: () => checkout.handleInitiateCheckout(),
+      run: () => checkout.handleInitiateCheckout({
+        expectedOrderId,
+        expectedOrigin
+      }),
       onSettled: ({ orderId }) => updateInitiationStatus(orderId, null)
     });
   }, [checkout]);
