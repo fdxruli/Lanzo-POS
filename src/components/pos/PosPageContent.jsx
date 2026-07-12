@@ -8,11 +8,13 @@ import PosModals from './PosModals';
 import PosToast from './PosToast';
 import PosFloatingBar from './PosFloatingBar';
 import OrderTabs from './OrderTabs';
+import EcommercePosConversionPanel from './EcommercePosConversionPanel';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
 import './RestaurantCloudStatus.css';
+import './EcommercePosConversionPanel.css';
 
 const ActiveOrderControls = () => {
     const activeOrders = useActiveOrders((state) => state.activeOrders);
@@ -123,7 +125,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         showOutofStockCategory={data.hasOutOfStockItems}
                         showExpiredCategory={data.hasExpiredItems}
                     />
-                    <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}`}>
+                    <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}${isEcommerceDraft ? ' pos-summary-stack--ecommerce' : ''}`}>
                         <OrderSummary
                             onOpenPayment={actions.handleInitiateCheckout}
                             onOpenSplit={isEcommerceDraft ? blockUnsupportedEcommerceAction : actions.handleOpenSplitBill}
@@ -135,6 +137,12 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                             activeTablesCount={data.activeTablesCount}
                             kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
                         />
+                        {isEcommerceDraft && (
+                            <EcommercePosConversionPanel
+                                order={currentOrder}
+                                onCheckout={actions.handleInitiateCheckout}
+                            />
+                        )}
                         {!features.hasTables && !isEcommerceDraft && (
                             <OrderDiscountPanel />
                         )}
