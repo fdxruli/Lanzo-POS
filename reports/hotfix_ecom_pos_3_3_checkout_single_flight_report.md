@@ -3,375 +3,412 @@
 ## Estado
 
 ```text
-IMPLEMENTACIÓN COMPLETA
-VALIDACIÓN CRÍTICA PARCIAL: PASS
-VALIDACIÓN GLOBAL Y MANUAL: PENDIENTE
-PR DRAFT
+ECOM.POS.3.3.1 IMPLEMENTACIÓN: COMPLETA
+VALIDACIÓN ENFOCADA LOCAL: PASS
+VALIDACIÓN GLOBAL DEL REPOSITORIO: PENDIENTE
+ACEPTACIÓN MANUAL: PENDIENTE
+PR: DRAFT
 ```
 
-No se declara `HOTFIX ECOM.POS.3.3 PASS` porque todavía faltan el checkout íntegro, las suites globales y la aceptación manual solicitada.
-
-## Rama y base
+No se declara `ECOM.POS.3.3.1 CORRECCIÓN DE IDENTIDAD PASS` mientras no se ejecuten sobre un checkout íntegro del repositorio:
 
 ```text
-Repositorio: fdxruli/Lanzo-POS
-Rama: hotfix-ecom-pos-3-3
-PR: #91
-Base: main @ a66c099c49a620264b1573d8c81002356ffbf17b
-HEAD de implementación antes de actualizar este reporte: 4c0882e5070d8b89a217883747e4a2861b3d9397
-Estado del PR: DRAFT
-```
-
-El PR #90 ya estaba mergeado en `main` antes de crear la rama. No se reutilizó `fase-ecom-pos-3`.
-
-## Reproducción real
-
-Con un pedido ecommerce preparado e inventario listo, una ráfaga de clics sobre `Cobrar pedido` podía iniciar varias ejecuciones concurrentes de `handleInitiateCheckout()` antes de que React reflejara el estado bloqueado.
-
-La protección canónica evitaba ventas duplicadas, pero los inicios locales competían durante:
-
-```text
-recuperación
-lectura remota
-búsqueda idempotente
-creación del attemptId
-lock local
-reserva remota
-```
-
-Los síntomas observados eran:
-
-```text
-La orden ya está siendo cobrada desde otro dispositivo.
-No se pudo identificar el intento de cobro.
-```
-
-El modal podía no abrirse. Con un clic único, el flujo funcionaba correctamente.
-
-## Causa raíz
-
-`useEcommercePosCheckoutGate.handleInitiateCheckout()` generaba el `attemptId` y establecía `VALIDATING` después de varias operaciones asíncronas. El estado React y el atributo `disabled` se actualizaban demasiado tarde para excluir eventos ya ingresados.
-
-El lock Dexie y la reserva remota continuaban protegiendo contra ventas dobles; el defecto era la ausencia de una exclusión síncrona local antes del primer `await`.
-
-## Implementación
-
-### 1. Single-flight global por `orderId`
-
-Se agregó un registro compartido a nivel de módulo:
-
-```text
-Map<orderId, { token, promise }>
-```
-
-La primera llamada:
-
-1. normaliza `order.id`;
-2. crea `Symbol(orderId)`;
-3. registra la promesa compartida en el `Map`;
-4. establece el indicador visual `starting`;
-5. libera la ejecución asíncrona del gate.
-
-El registro queda publicado antes de que `run()` ejecute recuperación, lecturas, `createAttemptId`, lock o reserva.
-
-Las llamadas adicionales para la misma orden reciben exactamente la misma promesa y no alcanzan efectos secundarios.
-
-Pedidos distintos conservan entradas independientes y pueden iniciar checkout en paralelo.
-
-### 2. Compare-and-clear
-
-La limpieza solo elimina la entrada cuando el token propietario sigue siendo el actual:
-
-```text
-current?.token === ownedToken
-```
-
-Una operación A antigua no puede borrar la entrada perteneciente a una operación B posterior.
-
-La limpieza visual se ejecuta después de retirar la entrada y una excepción visual no convierte un resultado exitoso en una promesa rechazada.
-
-### 3. AttemptId estable
-
-Una ráfaga local utiliza una sola ejecución del gate. Por diseño:
-
-```text
-createAttemptId: 1
-recoverEcommercePosConversion: 1
-getEcommercePosConversionRemoteState: 1
-findEcommerceSale: 1
-lockOrderForCheckout: 1
-ecommerce_begin_pos_conversion: 1
-```
-
-El `attemptId` creado por esa ejecución se conserva al pasar a `payment_pending` y se usa para el lock y la reserva canónica.
-
-### 4. Estado visual inmediato
-
-Mientras existe una promesa viva para la orden, el panel muestra:
-
-```text
-Iniciando cobro…
-```
-
-El botón permanece deshabilitado. El indicador visual no sustituye al single-flight.
-
-Un estado persistido `starting` o `validating` sin entrada viva en el `Map` se trata como obsoleto: no mantiene el botón bloqueado y el siguiente clic puede reintentar.
-
-### 5. Propiedad del intento
-
-`useEcommercePosCheckoutGate` ahora captura el `ownedAttemptId` y comprueba propiedad antes y después de los `await` críticos.
-
-Las rutas antiguas no pueden modificar ni limpiar:
-
-```text
-ecommerceConversionAttemptId
-ecommerceConversionActorIdentity
-ecommerceCheckoutLockAttemptId
-ecommerceCheckoutLockActorIdentity
-ecommerceCheckoutSnapshot
-ecommerceConversionStatus
-```
-
-La protección cubre:
-
-- cancelación remota previa a venta;
-- cierre del modal;
-- lectura del estado remoto;
-- revalidación de inventario;
-- búsqueda idempotente de venta;
-- selección del modo de venta;
-- resultado del cobro;
-- confirmación remota;
-- quick caja.
-
-Cuando una respuesta pertenece a un intento obsoleto, termina silenciosamente con `ECOMMERCE_STALE_CHECKOUT_ATTEMPT`, sin mensajes ni limpieza del intento vigente.
-
-### 6. Fallo y reintento
-
-Si el primer inicio falla:
-
-- el `finally` retira la entrada single-flight;
-- no queda una promesa rechazada dentro del `Map`;
-- el indicador visual se limpia;
-- un `VALIDATING` persistido sin promesa viva no impide el siguiente intento;
-- el siguiente clic puede crear una operación y un `attemptId` nuevos.
-
-### 7. Éxito y `payment_pending`
-
-Cuando el primer inicio abre el modal:
-
-- todas las llamadas duplicadas reciben el mismo resultado;
-- el estado pasa a `payment_pending`;
-- el lock conserva el `attemptId` propietario;
-- clics posteriores durante `payment_pending` o `processing_sale` se ignoran sin mensajes ni efectos.
-
-### 8. Lock local y otro dispositivo
-
-No se debilitó `lockOrderForCheckout()`.
-
-El wrapper no interpreta por sí solo `isLockedForCheckout` como duplicado local. Un lock preexistente con conversión local inactiva sigue llegando al checkout canónico, preservando la contención real y el mensaje para otra pestaña, contexto o dispositivo.
-
-### 9. Reserva remota
-
-Los clics absorbidos por el single-flight no alcanzan `installEcommercePosActiveOrderGuards`. Por tanto, la reserva `ecommerce_begin_pos_conversion(...)` se ejecuta como máximo una vez por inicio local.
-
-No se modificó el contrato remoto ni Supabase.
-
-### 10. POS normal
-
-Las órdenes no ecommerce pasan directamente al checkout canónico. No se modificó la lógica normal de efectivo, fiado, tarjeta, `STOCK_WARNING` ni `Sí, Vender Igual`.
-
-## Archivos modificados
-
-```text
-src/components/pos/EcommercePosConversionPanel.jsx
-src/components/pos/__tests__/EcommercePosConversionPanel.test.jsx
-src/hooks/pos/useEcommercePosCheckoutGate.js
-src/hooks/pos/usePos.js
-```
-
-## Archivos agregados
-
-```text
-src/hooks/pos/ecommerceCheckoutInitiationSingleFlight.js
-src/hooks/pos/useEcommercePosCheckoutSingleFlight.js
-src/hooks/pos/__tests__/ecommerceCheckoutInitiationSingleFlight.test.js
-src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx
-src/hooks/pos/__tests__/useEcommercePosCheckoutGate.singleFlight.test.jsx
-reports/hotfix_ecom_pos_3_3_checkout_single_flight_report.md
-```
-
-## Cobertura agregada
-
-Las pruebas nuevas o ampliadas cubren:
-
-- diez llamadas simultáneas y una sola promesa;
-- una sola ejecución subyacente;
-- una creación de `attemptId`;
-- una recuperación, lectura remota y búsqueda idempotente;
-- un lock local y una reserva remota simulados;
-- resultado compartido y cero mensajes para duplicados locales;
-- `payment_pending` sin segundo inicio;
-- fallo seguido de reintento;
-- `starting` y `validating` obsoletos sin bloqueo permanente;
-- intento A lento incapaz de cerrar, limpiar o sobrescribir el intento B;
-- dos pedidos distintos concurrentes;
-- preservación de la contención canónica de otro dispositivo;
-- paso directo del checkout POS normal;
-- estado visual inmediato solo mientras existe un single-flight vivo.
-
-## Validación ejecutada
-
-### Inspección estructural del PR
-
-```text
-Base de rama: PASS
-Rama separada de main: PASS
-PR único: #91
-PR draft: PASS
-PR mergeado: NO
-Archivos cambiados: 10
-Supabase: SIN CAMBIOS
-Migraciones: NINGUNA
-SQL de escritura: NINGUNO
-Workflows temporales: NINGUNO
-Vercel manual: NO UTILIZADO
-```
-
-La lista de archivos modificados contiene únicamente frontend, hooks, pruebas y este reporte.
-
-### Prueba ejecutable del núcleo single-flight
-
-Comandos ejecutados sobre una copia exacta del helper:
-
-```bash
-node --check /mnt/data/work/ecom-single-flight-check/ecommerceCheckoutInitiationSingleFlight.mjs
-node /mnt/data/work/ecom-single-flight-check/check.mjs
-```
-
-Resultado exacto:
-
-```json
-{
-  "rapidClicks": 20,
-  "starts": 1,
-  "runs": 1,
-  "settles": 1,
-  "sharedPromise": true,
-  "retryAfterFailure": true,
-  "differentOrdersConcurrent": true,
-  "staleTokenCannotClearNewEntry": true
-}
-```
-
-Resultado:
-
-```text
-20 clics simultáneos: UN SOLO INICIO
-Resultado compartido: PASS
-Fallo y reintento: PASS
-Pedidos diferentes concurrentes: PASS
-Compare-and-clear A/B: PASS
-```
-
-### Parseo y transpilación
-
-Comandos ejecutados:
-
-```bash
-node --check /mnt/data/work/useEcommercePosCheckoutGate.modified.js
-node --check /mnt/data/work/hotfix-static/src/hooks/pos/useEcommercePosCheckoutSingleFlight.js
-```
-
-Se ejecutó además `typescript.transpileModule` con `target ES2022`, `module ESNext` y `jsx react-jsx` sobre ambos archivos.
-
-Resultado:
-
-```text
-useEcommercePosCheckoutGate.js: PASS
-useEcommercePosCheckoutSingleFlight.js: PASS
-```
-
-### ESLint específico crítico
-
-Se ejecutó ESLint con las mismas reglas del `eslint.config.js` del repositorio sobre:
-
-```text
-src/hooks/pos/ecommerceCheckoutInitiationSingleFlight.js
-src/hooks/pos/useEcommercePosCheckoutSingleFlight.js
-src/hooks/pos/useEcommercePosCheckoutGate.js
-```
-
-Resultado:
-
-```text
-3 archivos críticos: PASS
-Errores: 0
-Advertencias del código: 0
-```
-
-La única salida adicional fue la advertencia de detección de versión de React en el workspace parcial, porque React no estaba instalado en ese workspace de validación; no corresponde a un defecto del código.
-
-## Validación no completada
-
-La sesión no dispone de `gh` y el contenedor no puede resolver los hosts de GitHub, por lo que no fue posible obtener un checkout íntegro del repositorio. No se inventan resultados para los comandos pendientes:
-
-```text
-npm ci sobre checkout íntegro
-ESLint sobre todos los archivos modificados
+npm ci
 suites enfocadas reales del repositorio
 npm run build
 npm run lint
 npm run test:ci
 git diff --check origin/main...HEAD
 git status --short
-comparación global contra checkout limpio de main
+comparación global contra main
 ```
 
-No existen ejecuciones de GitHub Actions asociadas al HEAD. El estado automático de Vercel reportó un límite externo de builds; no se creó, forzó, promovió ni validó ningún preview manual.
+Tampoco se declara aceptación manual hasta repetir los cobros reales solicitados.
 
-## Validación funcional pendiente
-
-No se ejecutó desde esta sesión la aceptación manual con el POS real. Permanecen pendientes:
+## Rama y alcance
 
 ```text
-10–20 clics rápidos con pedido real
-efectivo
-fiado
-inventario una vez
-caja una vez
-deuda y ledger una vez
-otro dispositivo, mismo pedido
-POS normal y STOCK_WARNING
+Repositorio: fdxruli/Lanzo-POS
+Rama: hotfix-ecom-pos-3-3
+PR: #91
+Base: main
+Estado del PR: DRAFT
+Merge automático: NO
 ```
 
-Las pruebas manuales informadas antes del hotfix ya confirmaban efectivo, fiado, inventario y prevención de una segunda venta, pero no sustituyen la validación del nuevo HEAD.
+Restricciones respetadas:
 
-## Restricciones respetadas
+- no se modificó `main`;
+- no se creó otro PR;
+- no se modificó Supabase;
+- no se crearon ni modificaron migraciones;
+- no se ejecutó SQL contra producción;
+- no se crearon workflows temporales;
+- no se creó, forzó, promovió ni validó un preview manual en Vercel;
+- no se usaron `.skip`, `.todo`, `eslint-disable` ni mocks destinados a ocultar el comportamiento real.
 
-- `main`: sin modificación directa;
-- rama `fase-ecom-pos-3`: no reutilizada;
-- PR adicional: no creado;
-- merge automático: no realizado;
-- PR: permanece draft;
-- Supabase: sin cambios;
-- migraciones: ninguna;
-- SQL de escritura: ninguno;
-- workflows temporales: ninguno;
-- previews Vercel: no creados, forzados, promovidos ni validados;
-- pruebas existentes: no eliminadas ni debilitadas;
-- `.skip`, `.todo`, `eslint-disable`: no utilizados.
+## ECOM.POS.3.3 — Single-flight del inicio
 
-## Conclusión actual
+La primera parte del hotfix mantiene un registro single-flight compartido por `orderId`:
+
+- la primera llamada registra síncronamente la operación;
+- 10–20 llamadas rápidas reciben la misma promesa;
+- recuperación, lecturas, `attemptId`, lock y reserva se ejecutan una vez;
+- `payment_pending` y `processing_sale` ignoran clics posteriores;
+- un fallo retira únicamente su entrada mediante compare-and-clear;
+- pedidos distintos conservan entradas independientes;
+- la contención canónica de otra pestaña o dispositivo no se reemplaza por un mensaje local falso.
+
+## ECOM.POS.3.3.1 — Identidad estricta del checkout
+
+### Cruce A/B original
+
+El gate capturaba la orden ecommerce A. Después de varias operaciones asíncronas invocaba el checkout canónico sin indicar la orden esperada. El checkout canónico volvía a leer `currentOrderId`; si el usuario ya había seleccionado B, la ejecución antigua de A podía adquirir un lock, abrir un modal o continuar con datos de B mientras el gate seguía actualizando A.
+
+Además, la función de propiedad del intento aceptaba una orden inexistente como propietaria:
 
 ```text
-Single-flight por orderId: IMPLEMENTADO
-20 clics ejecutables sobre el núcleo: UN SOLO INICIO
-AttemptId/lock/reserva en prueba de integración agregada: UNA VEZ
-Propiedad A/B: IMPLEMENTADA Y CUBIERTA
-Reintento tras estado obsoleto: IMPLEMENTADO Y CUBIERTO
+orden A ausente + respuesta tardía A => owner = true
+```
+
+Eso permitía que A intentara cerrar el modal global, liberar un lock o limpiar un snapshot que ya pertenecía a B.
+
+### `expectedOrderId` y `expectedOrigin`
+
+El contrato interno del checkout canónico acepta ahora:
+
+```js
+handleInitiateCheckout({
+  expectedOrderId,
+  expectedOrigin
+})
+```
+
+El gate ecommerce siempre llama:
+
+```js
+checkout.handleInitiateCheckout({
+  expectedOrderId: orderId,
+  expectedOrigin: 'ecommerce'
+});
+```
+
+Las llamadas POS normales continúan funcionando sin argumentos:
+
+```js
+handleInitiateCheckout();
+```
+
+Cuando existe `expectedOrderId`, esa identidad es la fuente de verdad para:
+
+- leer la orden;
+- validar el target;
+- adquirir el lock;
+- persistir `checkoutAttemptId`;
+- construir el snapshot;
+- validar FEFO;
+- validar o abrir caja;
+- abrir el modal de pago;
+- procesar la venta;
+- liberar el lock.
+
+No se sustituye posteriormente por `currentOrderId`, `pos.activeOrderId` u otra orden activa.
+
+### Revalidación del target
+
+Se agregó `resolveCheckoutTarget(...)` y un resultado controlado:
+
+```text
+ECOMMERCE_CHECKOUT_TARGET_CHANGED
+```
+
+Mensaje:
+
+```text
+La orden activa cambió durante el inicio del cobro. Vuelve a abrir el pedido e inténtalo nuevamente.
+```
+
+El target estricto requiere simultáneamente:
+
+```text
+activeOrders.has(expectedOrderId)
+currentOrderId === expectedOrderId
+order.id === expectedOrderId
+order.origin === expectedOrigin
+```
+
+El checkout revalida después de las operaciones asíncronas relevantes, incluyendo preparación previa, cocina, persistencia de mesa, lectura Dexie, lock, propiedad del lock, FEFO, caja y antes de abrir el modal.
+
+Política A → B:
+
+```text
+A se aborta.
+B permanece seleccionada.
+A no bloquea B.
+A no abre el modal de B.
+A no pasa a payment_pending.
+A libera únicamente su lock y su reserva si ya los había adquirido.
+```
+
+### Propiedad estricta del intento
+
+La propiedad local quedó estricta:
+
+```js
+if (!orderId || !ownedAttemptId) return false;
+
+const current = getOrderById(orderId);
+return Boolean(current)
+  && current.ecommerceConversionAttemptId === ownedAttemptId;
+```
+
+Una orden inexistente ya no autoriza acciones locales.
+
+Se separaron los conceptos:
+
+- `isAttemptOwner(...)` para propiedad del intento local;
+- `isCheckoutTargetStillActive(...)` para selección y existencia del target;
+- `ownsCheckoutSnapshot(...)` para propiedad del snapshot/modal/lock;
+- contexto inmutable para recuperar o cancelar la reserva remota de A.
+
+### Snapshot canónico con ownership
+
+El snapshot canónico contiene explícitamente:
+
+```js
+{
+  orderId,
+  checkoutAttemptId,
+  origin
+}
+```
+
+Las rutas de cierre, error y liberación exigen coincidencia exacta de:
+
+```text
+snapshot.orderId === expectedOrderId
+snapshot.checkoutAttemptId === expectedCheckoutAttemptId
+```
+
+Cuando no coincide, devuelven un no-op exitoso:
+
+```text
+success: true
+ignored: true
+staleAttempt: true
+code: ECOMMERCE_STALE_CHECKOUT_ATTEMPT
+```
+
+En ese caso no se ejecuta:
+
+- `modal.closeModal`;
+- `unlockOrder`;
+- limpieza de `checkoutSnapshotRef`;
+- advertencia al usuario;
+- modificación de otra orden.
+
+### Reserva remota separada del modal global
+
+Antes de los `await` se captura un contexto inmutable con:
+
+```js
+{
+  localOrderId,
+  ecommerceOrderId,
+  attemptId,
+  actorIdentity,
+  claimToken,
+  conversionKey,
+  saleId,
+  orderSnapshot
+}
+```
+
+Ese contexto puede cancelar o recuperar exclusivamente la reserva remota de A aunque A ya no esté en `activeOrders`.
+
+No autoriza cerrar el modal actual, liberar el lock de B, limpiar el snapshot de B ni modificar B.
+
+Si el cambio A → B ocurre después de que A adquirió el lock, el wrapper de `unlockOrder`:
+
+1. captura el contexto inmutable de A;
+2. libera el lock local de A;
+3. cancela únicamente la reserva remota de A;
+4. limpia A solo si el mismo `attemptId` todavía le pertenece;
+5. deja B intacta.
+
+Si el cambio ocurre antes del lock y la reserva remota aún está en `idle`, el settlement del single-flight devuelve A de `validating` a `idle` sin tocar B.
+
+### Un solo checkout por pestaña
+
+El single-flight sigue dividido por `orderId`, pero el checkout canónico y el modal son globales para la pestaña.
+
+Si B ya posee el snapshot activo y A intenta iniciar:
+
+```text
+POS_CHECKOUT_ALREADY_ACTIVE_FOR_ANOTHER_ORDER
+```
+
+A no adquiere lock, no invalida B y no cierra su modal.
+
+Pedidos distintos en pestañas o dispositivos separados conservan independencia mediante sus locks y reservas remotas.
+
+### Protección de `removeOrder`
+
+`removeOrder` protege ahora los estados:
+
+```text
+validating
+payment_pending
+processing_sale
+sale_created
+confirmation_pending
+```
+
+Comportamiento:
+
+- `validating`: eliminación rechazada mientras el inicio, lock o reserva estén activos;
+- `payment_pending`: eliminación rechazada hasta cancelar el checkout por la ruta propietaria;
+- `processing_sale`, `sale_created`, `confirmation_pending`: orden preservada para recuperación o confirmación.
+
+La orden no se elimina antes de comprobar ownership y estado operativo.
+
+## Archivos principales modificados
+
+```text
+src/hooks/pos/checkoutTargetIdentity.js
+src/hooks/pos/useEcommercePosCheckoutGate.js
+src/hooks/pos/useEcommercePosCheckoutSingleFlight.js
+src/hooks/pos/usePosCheckout.js
+src/services/ecommerce/installEcommercePosActiveOrderGuards.js
+src/hooks/pos/__tests__/checkoutTargetIdentity.test.js
+src/hooks/pos/__tests__/useEcommercePosCheckoutGate.singleFlight.test.jsx
+src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx
+src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
+src/services/ecommerce/__tests__/installEcommercePosActiveOrderGuards.test.js
+```
+
+Los archivos previos de ECOM.POS.3.3 para UI y helper single-flight permanecen dentro del mismo PR.
+
+## Pruebas agregadas o ampliadas
+
+Se cubrieron expresamente:
+
+1. veinte llamadas simultáneas sobre A comparten una ejecución;
+2. un solo `attemptId`, lock y reserva;
+3. A cambia a B mientras recuperación está pendiente;
+4. A cambia a B después del lock;
+5. A desaparece antes de una respuesta tardía;
+6. A desaparece y B mantiene su intento vigente;
+7. snapshot B frente a cierre o fallo de A;
+8. B activo impide que A reemplace el checkout global;
+9. `removeOrder` durante `validating`;
+10. `removeOrder` durante `payment_pending`;
+11. limpieza exclusiva de la reserva de A con contexto inmutable;
+12. contención canónica de otro dispositivo;
+13. POS normal sin argumentos;
+14. efectivo;
+15. tarjeta;
+16. fiado;
+17. `STOCK_WARNING` y `Sí, Vender Igual` sin reacquirir el lock.
+
+Las pruebas A/B usan órdenes distintas:
+
+```text
+ecom-order-a
+ecom-order-b
+```
+
+## Validación ejecutada en esta sesión
+
+### Parseo y ESLint enfocado
+
+Se ejecutó sobre los módulos de implementación modificados:
+
+```text
+node --check: PASS
+ESLint enfocado: PASS
+Errores: 0
+Advertencias del código: 0
+```
+
+### Harness enfocado ejecutando módulos reales
+
+Debido a que el entorno no pudo obtener un checkout íntegro desde GitHub, se creó un harness local temporal que carga los módulos reales modificados y sustituye únicamente sus dependencias externas por dobles controlados.
+
+Resultado acumulado:
+
+```text
+Test files: 6 PASS
+Tests: 23 PASS
+Failures: 0
+```
+
+Cobertura del harness:
+
+- helper de identidad y ownership;
+- helper single-flight;
+- wrapper single-flight React;
+- gate ecommerce React;
+- checkout canónico React;
+- guards de órdenes activas;
+- A/B antes y después del lock;
+- cierre owner-aware;
+- efectivo, tarjeta, fiado y stock warning.
+
+Este resultado valida la lógica modificada, pero no reemplaza las suites del repositorio completo.
+
+## Validación pendiente
+
+El entorno de ejecución no pudo resolver los hosts de GitHub y no dispone de un checkout completo del repositorio. Permanecen pendientes:
+
+```text
+npm ci en el repositorio completo
+ESLint sobre todos los archivos modificados dentro del checkout real
+suites enfocadas reales del repositorio
+panel ecommerce
+npm run build
+npm run lint
+npm run test:ci
+git diff --check origin/main...HEAD
+git status --short
+comparación de fallos contra un checkout limpio de main
+```
+
+No se crearon workflows temporales para suplir esta limitación.
+
+## Aceptación manual pendiente
+
+Todavía debe comprobarse en la aplicación real:
+
+- 10–20 clics rápidos sobre el mismo pedido;
+- cambio A → B durante recuperación;
+- cambio A → B después del lock;
+- efectivo;
+- tarjeta;
+- fiado y ledger;
+- `STOCK_WARNING` / `Sí, Vender Igual`;
+- cancelación del modal;
+- mismo pedido desde otro dispositivo;
+- pedidos distintos desde dispositivos separados;
+- POS normal.
+
+## Resultado actual
+
+```text
+expectedOrderId: IMPLEMENTADO
+Orden A abre B: BLOQUEADO POR PRUEBAS ENFOCADAS
+Cambio A → B: ABORTO SEGURO EN PRUEBAS ENFOCADAS
+Orden inexistente como owner: BLOQUEADO
+Respuesta antigua A cierra B: NO EN PRUEBAS ENFOCADAS
+Respuesta antigua A libera lock B: NO EN PRUEBAS ENFOCADAS
+Snapshot con ownership: PASS ENFOCADO
+Remove validating: PROTEGIDO
+Remove payment_pending: PROTEGIDO
+Single-flight clics rápidos: PASS ENFOCADO
+POS normal: PASS ENFOCADO
 Supabase: SIN CAMBIOS
 Migraciones: NINGUNA
 Estado del PR: DRAFT
-HOTFIX ECOM.POS.3.3 PASS: NO DECLARADO — VALIDACIÓN GLOBAL Y MANUAL PENDIENTE
 ```
+
+La entrega final permanece bloqueada por validación global y aceptación manual; no se debe mergear automáticamente.
