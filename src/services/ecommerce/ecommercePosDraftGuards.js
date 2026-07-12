@@ -1,13 +1,18 @@
 export const ECOMMERCE_POS_CHECKOUT_NOT_ENABLED = 'ECOMMERCE_POS_CHECKOUT_NOT_ENABLED';
+export const ECOMMERCE_POS_CHECKOUT_NOT_ELIGIBLE = 'ECOMMERCE_POS_CHECKOUT_NOT_ELIGIBLE';
 
-export const ECOMMERCE_POS_CHECKOUT_MESSAGE = 'Este pedido online está preparado para revisión. El cobro y la conversión definitiva se habilitarán en la siguiente fase.';
+export const ECOMMERCE_POS_CHECKOUT_MESSAGE = 'Este pedido online todavía no cumple todas las condiciones para cobrar.';
 
 export const isEcommercePosDraft = (order) => order?.origin === 'ecommerce';
 
-export const isEcommercePosEffectBlocked = (order) => isEcommercePosDraft(order);
+export const isEcommercePosEffectBlocked = (order, effect = 'checkout') => {
+  if (!isEcommercePosDraft(order)) return false;
+  if (effect !== 'checkout') return true;
+  return order?.ecommerceCheckoutGateStatus !== 'authorized';
+};
 
-export const getEcommercePosBlockedResult = () => ({
+export const getEcommercePosBlockedResult = (order = null) => ({
   success: false,
-  code: ECOMMERCE_POS_CHECKOUT_NOT_ENABLED,
-  message: ECOMMERCE_POS_CHECKOUT_MESSAGE
+  code: order?.ecommerceCheckoutGateCode || ECOMMERCE_POS_CHECKOUT_NOT_ELIGIBLE,
+  message: order?.ecommerceCheckoutGateMessage || ECOMMERCE_POS_CHECKOUT_MESSAGE
 });
