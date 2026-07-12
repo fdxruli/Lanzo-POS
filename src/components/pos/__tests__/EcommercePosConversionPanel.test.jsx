@@ -6,6 +6,10 @@ import {
   ECOMMERCE_CONVERSION_STATUS,
   ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION
 } from '../../../services/ecommerce/ecommercePosCheckoutConversion';
+import {
+  ecommerceCheckoutInitiationSingleFlightInternals,
+  runEcommerceCheckoutInitiationSingleFlight
+} from '../../../hooks/pos/ecommerceCheckoutInitiationSingleFlight';
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -61,8 +65,17 @@ const createOrder = (overrides = {}) => ({
   ...overrides
 });
 
+const createDeferred = () => {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  ecommerceCheckoutInitiationSingleFlightInternals.resetEcommerceCheckoutInitiations();
   mocks.state.updateOrder = mocks.updateOrder;
   mocks.recover.mockResolvedValue({ success: true, changed: false });
   mocks.retry.mockResolvedValue({ success: true });
@@ -134,6 +147,35 @@ describe('EcommercePosConversionPanel', () => {
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     expect(mocks.onCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows immediate starting feedback only while the single-flight is live', async () => {
+    const deferred = createDeferred();
+    const order = createOrder({ ecommerceCheckoutInitiationStatus: 'starting' });
+    mocks.state.activeOrders = new Map([[order.id, order]]);
+    const operation = runEcommerceCheckoutInitiationSingleFlight({
+      orderId: order.id,
+      run: () => deferred.promise
+    });
+
+    render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
+
+    expect(screen.getAllByText('Iniciando cobro…').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Iniciando cobro…' })).toBeDisabled();
+
+    deferred.resolve({ success: true });
+    await operation;
+  });
+
+  it('does not keep checkout disabled for a persisted starting marker without a live flight', async () => {
+    const order = createOrder({ ecommerceCheckoutInitiationStatus: 'starting' });
+    mocks.state.activeOrders = new Map([[order.id, order]]);
+
+    render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
+
+    const button = screen.getByRole('button', { name: 'Cobrar pedido' });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByText('Iniciando cobro…')).not.toBeInTheDocument();
   });
 
   it('disables duplicate interaction while processing the sale', () => {
