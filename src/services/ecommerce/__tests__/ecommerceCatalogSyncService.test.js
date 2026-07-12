@@ -47,6 +47,8 @@ const local = (id = 'product-1', overrides = {}) => ({
 });
 
 const outbox = () => ({
+  rememberPortal: vi.fn().mockResolvedValue(true),
+  getRememberedPortal: vi.fn().mockResolvedValue(null),
   enqueue: vi.fn().mockResolvedValue(1),
   list: vi.fn().mockResolvedValue({ entries: [], productRefs: [], fullReconcile: false }),
   acknowledge: vi.fn().mockResolvedValue(0),
@@ -275,6 +277,11 @@ describe('ecommerceCatalogSyncService', () => {
 
     connected = true;
     await service.syncNow({ fullReconcile: true });
+    expect(queue.rememberPortal).toHaveBeenCalledWith({
+      scopeIdentity: expect.any(String),
+      portalId: 'portal-1'
+    });
+
     connected = false;
     await service.syncNow({ productIds: ['product-1'], fullReconcile: false });
     expect(queue.enqueue).toHaveBeenCalled();
@@ -283,5 +290,34 @@ describe('ecommerceCatalogSyncService', () => {
     await service.syncNow({ fullReconcile: false });
     expect(syncBatch).toHaveBeenCalledTimes(2);
     expect(queue.acknowledge).toHaveBeenCalled();
+  });
+
+  it('queues changes after a new runtime starts completely offline', async () => {
+    const queue = outbox();
+    queue.getRememberedPortal.mockResolvedValue('portal-1');
+    const getPortal = vi.fn();
+    const service = createEcommerceCatalogSyncService({
+      getState: adminState,
+      getPortal,
+      getPublishedProducts: vi.fn(),
+      syncBatch: vi.fn(),
+      localSource: localSource(),
+      outbox: queue,
+      online: () => false
+    });
+
+    const result = await service.syncNow({
+      productIds: ['product-1'],
+      fullReconcile: false,
+      reason: 'offline-after-reload'
+    });
+
+    expect(result).toMatchObject({ success: true, queued: true, count: 1 });
+    expect(getPortal).not.toHaveBeenCalled();
+    expect(queue.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      portalId: 'portal-1',
+      productRefs: ['product-1'],
+      fullReconcile: false
+    }));
   });
 });
