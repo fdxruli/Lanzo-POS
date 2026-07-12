@@ -24,6 +24,8 @@ import { isCloudCommittedSale } from './salesCloud/salesCloudCancellationMapper'
 
 export { updateDailyStats, getFastDashboardStats } from './sales/statsService';
 
+const ecommerceSalePromises = new Map();
+
 const sendReceiptWhatsApp = (params) => sendReceiptWhatsAppBase({
     ...params,
     loadData,
@@ -32,7 +34,6 @@ const sendReceiptWhatsApp = (params) => sendReceiptWhatsAppBase({
     Logger
 });
 
-// 1. Renombramos la logica original a una funcion interna (no exportada)
 const _processSaleInternal = async (params) => {
     return processSaleCore(params, {
         loadData,
@@ -63,46 +64,114 @@ const _splitOpenTableOrderInternal = async (params) => {
     });
 };
 
-// 2. Exportamos la funcion publica con la logica de Retry
-// Esto permite que la UI siga llamando a "processSale" sin cambios, pero ahora tiene superpoderes.
-export const processSale = async (params, maxRetries = 3) => {
-    Logger.info('Iniciando proceso de venta (Safe Mode)...');
+const getEcommerceCheckoutContext = (params = {}) => {
+    const checkout = params?.paymentData?.__ecommerceCheckout;
+    return checkout?.origin === 'ecommerce' && checkout?.idempotencyKey
+        ? checkout
+        : null;
+};
+
+const isClosedSale = (sale = {}) => String(sale.status || '').toLowerCase() === 'closed';
+
+const findExistingEcommerceSale = async (params = {}) => {
+    const checkout = getEcommerceCheckoutContext(params);
+    if (!checkout) return null;
+
+    try {
+        if (params.activeOrderId) {
+            const deterministicSale = await db.table(STORES.SALES).get(params.activeOrderId);
+            if (deterministicSale && isClosedSale(deterministicSale)) return deterministicSale;
+        }
+
+        return await db.table(STORES.SALES)
+            .filter((sale) => (
+                isClosedSale(sale)
+                && (
+                    sale?.metadata?.idempotencyKey === checkout.idempotencyKey
+                    || sale?.metadata?.ecommerceConversionKey === checkout.idempotencyKey
+                    || sale?.idempotencyKey === checkout.idempotencyKey
+                )
+            ))
+            .first();
+    } catch (error) {
+        Logger.warn('No se pudo consultar la idempotencia ecommerce antes de vender:', error);
+        return null;
+    }
+};
+
+const idempotentSaleResult = (sale) => ({
+    success: true,
+    saleId: sale.id,
+    cloudSaleId: sale.cloudSaleId || sale.cloud_sale_id || null,
+    timestamp: sale.timestamp,
+    folio: sale.folio,
+    idempotentReplay: true,
+    postEffectsFailed: false,
+    pendingSyncRequired: false
+});
+
+const normalizeEcommerceStockFailure = (result, checkout) => {
+    if (!checkout || result?.success === true) return result;
+    if (!['STOCK_WARNING', 'RACE_CONDITION'].includes(result?.errorType)) return result;
+
+    return {
+        success: false,
+        errorType: 'ECOMMERCE_INVENTORY_CHANGED',
+        code: 'ECOMMERCE_INVENTORY_CHANGED',
+        message: 'El inventario cambió. Resuélvelo nuevamente.',
+        originalErrorType: result.errorType
+    };
+};
+
+const runProcessSaleWithRetry = async (params, maxRetries = 3) => {
+    const ecommerceCheckout = getEcommerceCheckoutContext(params);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        // Llamamos a la logica interna
-        const result = await _processSaleInternal(params);
+        if (ecommerceCheckout) {
+            const existingSale = await findExistingEcommerceSale(params);
+            if (existingSale) return idempotentSaleResult(existingSale);
+        }
 
-        // Si fue exitoso, retornamos inmediatamente
-        if (result.success) {
+        const rawResult = await _processSaleInternal(params);
+        const result = normalizeEcommerceStockFailure(rawResult, ecommerceCheckout);
+
+        if (result.success) return result;
+
+        if (ecommerceCheckout && result.errorType === 'ECOMMERCE_INVENTORY_CHANGED') {
             return result;
         }
 
-        // Si es un error de concurrencia (Race Condition) y nos quedan intentos
         if (result.errorType === 'RACE_CONDITION' && attempt < maxRetries) {
-            const delay = 100 * attempt; // 100ms, 200ms, 300ms...
+            const delay = 100 * attempt;
             Logger.warn(`[Retry ${attempt}/${maxRetries}] Race condition detectada en inventario. Reintentando en ${delay}ms...`);
-
-            // Pausa (Backoff)
-            await new Promise(r => setTimeout(r, delay));
-
-            // IMPORTANTE: Al reintentar, la funcion _processSaleInternal volvera a:
-            // 1. Leer el stock fresco (src/services/sales/stockValidation.js)
-            // 2. Recalcular lotes disponibles
-            // 3. Intentar guardar
+            await new Promise(resolve => setTimeout(resolve, delay));
             continue;
         }
 
-        // Si es otro tipo de error (ej: tarjeta rechazada, validacion fallida), no reintentamos
         return result;
     }
 
-    // Si agotamos los intentos
     Logger.error('Fallo en venta tras multiples intentos de concurrencia.');
     return {
         success: false,
         errorType: 'MAX_RETRIES',
         message: 'El sistema esta muy ocupado. Por favor intenta cobrar de nuevo.'
     };
+};
+
+export const processSale = async (params, maxRetries = 3) => {
+    Logger.info('Iniciando proceso de venta (Safe Mode)...');
+    const ecommerceCheckout = getEcommerceCheckoutContext(params);
+    if (!ecommerceCheckout) return runProcessSaleWithRetry(params, maxRetries);
+
+    const key = ecommerceCheckout.idempotencyKey;
+    if (ecommerceSalePromises.has(key)) return ecommerceSalePromises.get(key);
+
+    const promise = runProcessSaleWithRetry(params, maxRetries);
+    ecommerceSalePromises.set(key, promise);
+    return promise.finally(() => {
+        if (ecommerceSalePromises.get(key) === promise) ecommerceSalePromises.delete(key);
+    });
 };
 
 export const splitOpenTableOrder = async (params, maxRetries = 3) => {
@@ -212,7 +281,7 @@ export const cancelSale = async ({
     );
 
     if (result.success) {
-      try {
+        try {
             if (result.restoreStock && result.restoredInventoryValue > 0) {
                 await useStatsStore.getState().adjustInventoryValue(result.restoredInventoryValue);
             }
@@ -258,33 +327,36 @@ export const moveCancelledSaleToTrash = async (saleId) => {
                 const sale = await db.table(STORES.SALES).get(saleId);
                 if (!sale) {
                     const error = new Error('La venta ya no existe en el historial.');
-                    error.code = 'NOT_FOUND';
-                    throw error;
-                }
-                if (sale.status !== 'cancelled') {
-                    const error = new Error('Solo las ventas canceladas pueden moverse a papelera.');
-                    error.code = 'NOT_CANCELLED';
+                    error.code = 'SALE_NOT_FOUND';
                     throw error;
                 }
 
-                const deletedAt = new Date().toISOString();
                 await db.table(STORES.DELETED_SALES).put({
                     ...sale,
-                    deletedAt,
-                    deletedTimestamp: deletedAt,
-                    deletedReason: 'Venta cancelada archivada',
-                    originalStore: STORES.SALES
+                    deletedAt: new Date().toISOString(),
+                    originalId: sale.id
                 });
                 await db.table(STORES.SALES).delete(sale.id);
             }
         );
-        return { success: true, code: 'MOVED_TO_TRASH', saleId };
+
+        return { success: true };
     } catch (error) {
-        Logger.error('Error moviendo venta cancelada a papelera:', error);
+        Logger.error('No se pudo mover la venta cancelada a la papelera:', error);
         return {
             success: false,
-            code: error?.code || 'TRASH_FAILED',
-            message: error?.message || 'No se pudo mover la venta a papelera.'
+            code: error?.code || 'SALE_TRASH_FAILED',
+            message: error?.message || 'No se pudo mover la venta a la papelera.'
         };
     }
 };
+
+export const salesServiceInternals = Object.freeze({
+    getEcommerceCheckoutContext,
+    findExistingEcommerceSale,
+    idempotentSaleResult,
+    normalizeEcommerceStockFailure,
+    runProcessSaleWithRetry,
+    ecommerceSalePromises,
+    clearEcommerceSalePromisesForTests: () => ecommerceSalePromises.clear()
+});
