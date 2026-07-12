@@ -7,7 +7,11 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_ADMIN_ACCESS_DENIED: 'No tienes permiso para administrar el portal online.',
   ECOMMERCE_STAFF_SESSION_REQUIRED: 'Inicia sesion como personal para administrar el portal online.',
   ECOMMERCE_STAFF_SESSION_INVALID: 'Tu sesion de personal no es valida. Inicia sesion nuevamente.',
-  ECOMMERCE_STAFF_PERMISSION_DENIED: 'No tienes permiso para administrar el portal online.'
+  ECOMMERCE_STAFF_PERMISSION_DENIED: 'No tienes permiso para administrar el portal online.',
+  ECOMMERCE_CLOUD_CATALOG_REQUIRES_PRO: 'La sincronizacion automatica requiere Lanzo Nube.',
+  ECOMMERCE_CATALOG_SYNC_BATCH_TOO_LARGE: 'La sincronizacion incluye demasiados productos en un solo lote.',
+  ECOMMERCE_CATALOG_SYNC_DUPLICATE_REF: 'La sincronizacion contiene productos duplicados.',
+  ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catalogo cambio durante la sincronizacion. Se reintentara con la revision vigente.'
 };
 
 const SAFE_CONTEXT_MESSAGES = new Set([
@@ -132,6 +136,16 @@ export const createEcommerceAdminService = ({
         p_is_published: Boolean(isPublished)
       },
       'No se pudo cambiar la publicacion del producto.'
+    ),
+
+    syncPublishedCatalog: ({ projections, idempotencyKey, expectedCatalogRevision }) => callRpc(
+      'ecommerce_admin_sync_published_catalog',
+      {
+        p_projections: Array.isArray(projections) ? projections : [],
+        p_idempotency_key: idempotencyKey || null,
+        p_expected_catalog_revision: expectedCatalogRevision || null
+      },
+      'No se pudo sincronizar el catalogo publicado.'
     )
   };
 };
@@ -143,3 +157,4 @@ export const saveEcommercePortal = ecommerceAdminService.saveEcommercePortal;
 export const listPublishedProducts = ecommerceAdminService.listPublishedProducts;
 export const savePublishedProduct = ecommerceAdminService.savePublishedProduct;
 export const setProductPublished = ecommerceAdminService.setProductPublished;
+export const syncPublishedCatalog = ecommerceAdminService.syncPublishedCatalog;
