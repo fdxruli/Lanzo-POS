@@ -5,8 +5,7 @@ import { showMessageModal } from '../../services/utils';
 import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCashierService';
 import {
   ECOMMERCE_CONVERSION_STATUS,
-  buildEcommerceCheckoutSnapshot,
-  getEcommerceCheckoutEligibility
+  buildEcommerceCheckoutSnapshot
 } from '../../services/ecommerce/ecommercePosCheckoutConversion';
 import {
   ECOMMERCE_SALE_READ_FAILED,
@@ -114,19 +113,36 @@ const buildSnapshotIgnoringTransientStatus = (order, context) => buildEcommerceC
   ecommerceConvertedSaleId: null
 }, context);
 
-const buildConversionContext = ({ order, attemptId, actorIdentity } = {}) => ({
-  localOrderId: order?.id || null,
-  ecommerceOrderId: order?.ecommerceOrderId || null,
-  attemptId: attemptId || order?.ecommerceConversionAttemptId || null,
-  actorIdentity: actorIdentity || order?.ecommerceConversionActorIdentity || null,
-  claimToken: order?.ecommerceClaimToken || null,
-  conversionKey: order?.ecommerceCheckoutSnapshot?.ecommerceConversionKey || null,
-  saleId: order?.id || null,
-  orderSnapshot: order ? {
-    ...order,
-    ecommerceConversionAttemptId: attemptId || order.ecommerceConversionAttemptId || null
-  } : null
-});
+const buildConversionContext = ({
+  order,
+  attemptId,
+  actorIdentity,
+  conversionKey = null
+} = {}) => {
+  const immutableConversionKey = conversionKey
+    || order?.ecommerceCheckoutSnapshot?.ecommerceConversionKey
+    || null;
+
+  return {
+    localOrderId: order?.id || null,
+    ecommerceOrderId: order?.ecommerceOrderId || null,
+    attemptId: attemptId || order?.ecommerceConversionAttemptId || null,
+    actorIdentity: actorIdentity || order?.ecommerceConversionActorIdentity || null,
+    claimToken: order?.ecommerceClaimToken || null,
+    conversionKey: immutableConversionKey,
+    saleId: order?.id || null,
+    orderSnapshot: order ? {
+      ...order,
+      ecommerceConversionAttemptId: attemptId || order.ecommerceConversionAttemptId || null,
+      ecommerceCheckoutSnapshot: immutableConversionKey
+        ? {
+            ...(order.ecommerceCheckoutSnapshot || {}),
+            ecommerceConversionKey: immutableConversionKey
+          }
+        : (order.ecommerceCheckoutSnapshot || null)
+    } : null
+  };
+};
 
 const releaseRemoteReservationBeforeSale = async ({
   order = null,
@@ -354,12 +370,12 @@ export function useEcommercePosCheckoutGate({ checkout }) {
     }
 
     const context = buildEligibilityContext({ order, remote, existingSale, state });
-    const eligibility = getEcommerceCheckoutEligibility(order, context);
-    if (!eligibility.eligible) {
+    const preflightSnapshot = buildSnapshotIgnoringTransientStatus(order, context);
+    if (!preflightSnapshot.eligible) {
       return failBeforeSale({
         orderId,
-        code: eligibility.code,
-        message: eligibility.message,
+        code: preflightSnapshot.code,
+        message: preflightSnapshot.message,
         closeCanonicalCheckout: null,
         preserveReservation: remote.conversionStatus === 'reserved'
       });
@@ -385,7 +401,12 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       return buildTargetChangedResult();
     }
 
-    const conversionContext = buildConversionContext({ order, attemptId, actorIdentity });
+    const conversionContext = buildConversionContext({
+      order,
+      attemptId,
+      actorIdentity,
+      conversionKey: preflightSnapshot.snapshot.ecommerceConversionKey
+    });
     const result = await checkout.handleInitiateCheckout({
       expectedOrderId: orderId,
       expectedOrigin: 'ecommerce'
