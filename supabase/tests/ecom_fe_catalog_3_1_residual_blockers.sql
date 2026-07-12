@@ -101,8 +101,8 @@ begin
   if v_definition is null
      or v_definition not like '%ecommerce_projection_payload_hash%'
      or v_definition not like '%ecommerce_source_revision_decision%'
-     or v_definition not like '%when v_source_state = ''unverified'' then pp.source_available%'
-     or v_definition not like '%when v_source_state = ''unverified'' then pp.stock_snapshot%'
+     or v_definition not like '%when v_source_state = ''unverified'' or v_source_available is null%then pp.source_available%'
+     or v_definition not like '%when v_source_state = ''unverified'' or v_stock_snapshot is null%then pp.stock_snapshot%'
      or v_definition not like '%when v_source_state = ''unverified'' then pp.source_revision%'
      or v_definition not like '%when v_source_state = ''unverified'' then pp.source_payload_hash%' then
     raise exception 'CATALOG3_1_RESIDUAL_TEST: RPC no longer preserves confirmed unverified snapshot';
