@@ -105,7 +105,14 @@ const getRawAvailableStock = (product = {}) => {
 
 const isSellableBatch = (batch, product, now) => {
   if (!isBatchActiveForFefo(batch)) return false;
-  if (BLOCKED_BATCH_STATUSES.has(toStatus(batch?.status))) return false;
+  if (
+    batch?.isBlocked === true
+    || batch?.is_blocked === true
+    || batch?.blocked === true
+    || BLOCKED_BATCH_STATUSES.has(toStatus(batch?.status))
+  ) {
+    return false;
+  }
 
   const available = getAvailableBatchStock(batch);
   if (!Number.isFinite(available) || available <= EPSILON) return false;
@@ -424,12 +431,17 @@ export const createEcommercePublishedStockAlertService = ({
       return { ...cached.snapshot, cached: true, reason };
     }
 
-    if (inFlightByContext.has(contextKey)) {
-      return inFlightByContext.get(contextKey);
-    }
-
     const contextEpoch = currentEpoch(contextKey);
     const requestGlobalEpoch = globalEpoch;
+    const currentFlight = inFlightByContext.get(contextKey);
+    if (
+      currentFlight
+      && currentFlight.contextEpoch === contextEpoch
+      && currentFlight.globalEpoch === requestGlobalEpoch
+    ) {
+      return currentFlight.promise;
+    }
+
     const requestPromise = (async () => {
       const result = await evaluateCore({ ...options, reason });
       const currentContextKey = getEcommercePublishedStockAlertContextKey(
@@ -453,11 +465,16 @@ export const createEcommercePublishedStockAlertService = ({
       return result;
     })();
 
-    inFlightByContext.set(contextKey, requestPromise);
+    const flight = {
+      promise: requestPromise,
+      contextEpoch,
+      globalEpoch: requestGlobalEpoch
+    };
+    inFlightByContext.set(contextKey, flight);
     try {
       return await requestPromise;
     } finally {
-      if (inFlightByContext.get(contextKey) === requestPromise) {
+      if (inFlightByContext.get(contextKey)?.promise === requestPromise) {
         inFlightByContext.delete(contextKey);
       }
     }
