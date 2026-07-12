@@ -31,7 +31,13 @@ import {
   savePublishedProduct,
   setProductPublished
 } from '../../services/ecommerce/ecommerceAdminService';
+import {
+  ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT
+} from '../../services/ecommerce/ecommerceCatalogSyncService';
 import EcommerceProductPublishModal from './EcommerceProductPublishModal';
+import EcommerceCatalogSyncPanel, {
+  EcommerceCatalogSyncBadge
+} from './EcommerceCatalogSyncPanel';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -172,7 +178,8 @@ export default function EcommercePortalSettings() {
   const [plan, setPlan] = useState({ code: 'free_trial', name: 'Plan Free' });
   const [features, setFeatures] = useState({
     customSlug: false,
-    maxPublishedProducts: 10
+    maxPublishedProducts: 10,
+    cloudCatalogSource: false
   });
   const [form, setForm] = useState(() => portalForm(null, companyProfile));
   const [products, setProducts] = useState([]);
@@ -194,7 +201,9 @@ export default function EcommercePortalSettings() {
     canAccess,
     currentDeviceRole
   });
-  const isPro = features.customSlug === true || plan.code === 'pro_monthly';
+  const isPro = features.cloudCatalogSource === true
+    || features.customSlug === true
+    || plan.code === 'pro_monthly';
   const publishedCount = products.filter((product) => product.isPublished).length;
   const maxProducts = features.maxPublishedProducts < 0
     ? Number.MAX_SAFE_INTEGER
@@ -249,7 +258,8 @@ export default function EcommercePortalSettings() {
     setPlan(result.plan || { code: 'free_trial', name: 'Plan Free' });
     setFeatures(result.features || {
       customSlug: false,
-      maxPublishedProducts: 10
+      maxPublishedProducts: 10,
+      cloudCatalogSource: false
     });
     setForm(portalForm(nextPortal, companyProfile));
 
@@ -467,6 +477,18 @@ export default function EcommercePortalSettings() {
     const nextProducts = await loadProducts();
     reconcileStockProducts?.({ portal, publishedProducts: nextProducts });
     await evaluateStock({ nextPortal: portal, nextProducts, reason });
+    return nextProducts;
+  };
+
+  const requestCatalogSync = (productIds = [], reason = 'portal-product-change') => {
+    if (!isPro) return;
+    window.dispatchEvent(new CustomEvent(ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT, {
+      detail: {
+        productIds,
+        fullReconcile: productIds.length === 0,
+        reason
+      }
+    }));
   };
 
   const saveProduct = async (payload) => {
@@ -476,6 +498,7 @@ export default function EcommercePortalSettings() {
       return false;
     }
     await refreshAfterProductMutation('published-product-saved');
+    requestCatalogSync([payload.localProductRef], 'published-product-saved');
     toast.success(payload.id ? 'Producto actualizado.' : 'Producto publicado.');
     return true;
   };
@@ -491,6 +514,7 @@ export default function EcommercePortalSettings() {
     setBusyProductId(null);
     if (!result.success) return toast.error(result.message);
     await refreshAfterProductMutation('published-product-toggled');
+    requestCatalogSync([product.localProductRef], 'published-product-toggled');
     toast.success(product.isPublished ? 'Producto despublicado.' : 'Producto publicado.');
   };
 
@@ -519,7 +543,7 @@ export default function EcommercePortalSettings() {
           </span>
           <h2>Tu tienda sencilla para compartir por WhatsApp</h2>
           <p>
-            Configura lo que veran tus clientes. La ruta publica y la recepcion de pedidos se habilitaran en fases posteriores.
+            Configura lo que veran tus clientes. La sincronizacion PRO mantiene vinculados solo los campos elegidos.
           </p>
         </div>
         <PlanBadge isPro={isPro} />
@@ -527,8 +551,8 @@ export default function EcommercePortalSettings() {
 
       <div className="ecom-admin-plan-copy">
         {isPro
-          ? 'Lanzo Nube incluye portal online con productos ilimitados, stock visible y pedidos en tiempo real. Estas capacidades se habilitaran por fases.'
-          : 'Tu Plan Free incluye una mini tienda online con hasta 10 productos publicados.'}
+          ? 'Lanzo Nube incluye catalogo ilimitado y sincronizacion automatica de los campos vinculados, sin sobrescribir personalizaciones manuales.'
+          : 'Tu Plan Free incluye una mini tienda online con hasta 10 productos publicados y cache publico.'}
       </div>
 
       {!portal ? (
@@ -573,7 +597,7 @@ export default function EcommercePortalSettings() {
               <span>Link reservado</span>
               <strong>{reservedLink}</strong>
               <small>
-                El enlace ya queda reservado. La pagina publica se activara en la siguiente fase.
+                Revisión actual del catálogo: {portal.catalogRevision || 1}.
               </small>
             </div>
             <button type="button" className="btn btn-secondary" onClick={copyLink}>
@@ -604,7 +628,7 @@ export default function EcommercePortalSettings() {
           <div>
             <span className="ecom-admin-eyebrow">Datos publicos basicos</span>
             <h3>Informacion de tu tienda</h3>
-            <p>Estos datos se mostraran cuando se active la ruta publica.</p>
+            <p>Estos datos se muestran en la ruta publica.</p>
           </div>
           <Save size={22} />
         </div>
@@ -794,11 +818,18 @@ export default function EcommercePortalSettings() {
           </button>
         </div>
 
+        <EcommerceCatalogSyncPanel
+          isPro={isPro}
+          products={products}
+          catalogRevision={portal?.catalogRevision}
+          onRefresh={loadProducts}
+        />
+
         <StockReviewBanner snapshot={stockSnapshot} />
 
         {!isPro && (
           <div className={`ecom-admin-limit ${limitReached ? 'is-blocked' : ''}`}>
-            <Lock size={17} /> Plan Free permite publicar hasta 10 productos. Actualiza a Lanzo Nube para productos ilimitados.
+            <Lock size={17} /> Plan Free permite publicar hasta 10 productos. La sincronizacion automatica requiere Lanzo Nube.
           </div>
         )}
         {products.length === 0 ? (
@@ -835,6 +866,9 @@ export default function EcommercePortalSettings() {
                       <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
                         {product.isPublished ? 'Publicado' : 'Oculto'}
                       </span>
+                      {isPro && (
+                        <EcommerceCatalogSyncBadge status={product.syncStatus} />
+                      )}
                     </div>
                     {warningText && (
                       <span
@@ -850,7 +884,9 @@ export default function EcommercePortalSettings() {
                       {product.categoryName || 'Sin categoria'} · ${numberOr(product.price).toFixed(2)}
                     </span>
                     <small>
-                      {product.isAvailable ? 'Disponible' : 'No disponible'} · Orden {product.displayOrder || 0}
+                      {product.isAvailable ? 'Disponible' : 'No disponible'}
+                      {' · '}Manual: {product.manualAvailable === false ? 'desactivado' : 'activo'}
+                      {' · '}Orden {product.displayOrder || 0}
                     </small>
                   </div>
                   <div className="ecom-admin-product-actions">

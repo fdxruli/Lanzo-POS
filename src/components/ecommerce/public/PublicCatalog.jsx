@@ -14,7 +14,7 @@ const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX
 function PublicProductCard({ product, onAdd }) {
   const isAvailable = isPublicProductAvailable(product);
   const stockLabel = getPublicProductStockLabel(product);
-  const isOutOfStock = stockLabel === 'Agotado';
+  const isUnavailableStockLabel = stockLabel === 'Agotado' || stockLabel === 'No disponible';
 
   return (
     <article className="public-product-card ui-card">
@@ -34,7 +34,7 @@ function PublicProductCard({ product, onAdd }) {
           <div>
             <strong>{formatCurrency(product.price, product.currency)}</strong>
             {stockLabel ? (
-              <span className={`public-product-card__stock${isOutOfStock ? ' is-unavailable' : ''}`}>
+              <span className={`public-product-card__stock${isUnavailableStockLabel ? ' is-unavailable' : ''}`}>
                 {stockLabel}
               </span>
             ) : null}

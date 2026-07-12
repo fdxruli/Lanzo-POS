@@ -1,0 +1,112 @@
+.ecom-admin-sync-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 28%, var(--border-color));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-color) 7%, var(--card-background-color));
+}
+
+.ecom-admin-sync-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ecom-admin-sync-panel__heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ecom-admin-sync-panel__heading small,
+.ecom-admin-sync-summary {
+  color: var(--text-light);
+  font-size: .82rem;
+}
+
+.ecom-admin-sync-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ecom-admin-sync-summary span,
+.ecom-admin-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--light-background);
+  font-size: .73rem;
+  font-weight: 700;
+}
+
+.ecom-admin-sync-badge.is-success { color: var(--ui-text-success, #176b3a); background: var(--ui-bg-success-soft, #e7f6ed); }
+.ecom-admin-sync-badge.is-warning { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
+.ecom-admin-sync-badge.is-danger { color: var(--ui-text-danger, var(--error-color)); background: var(--ui-bg-danger-soft, #fdecec); }
+.ecom-admin-sync-badge.is-neutral { color: var(--text-light); background: var(--light-background); }
+
+.ecom-admin-sync-fields {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.ecom-admin-sync-fields legend {
+  padding: 0 6px;
+  color: var(--text-color, var(--text-dark));
+  font-weight: 700;
+}
+
+.ecom-admin-sync-master,
+.ecom-admin-sync-field-grid label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ecom-admin-sync-master span,
+.ecom-admin-sync-field-grid label span {
+  display: grid;
+  gap: 2px;
+}
+
+.ecom-admin-sync-master small,
+.ecom-admin-sync-field-grid small {
+  color: var(--text-light);
+  font-size: .76rem;
+}
+
+.ecom-admin-sync-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ecom-admin-sync-field-grid label {
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--light-background);
+}
+
+.ecom-admin-sync-field-grid label.is-linked {
+  border-color: color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+  color: var(--primary-color);
+}
+
+.ecom-admin-sync-field-grid label.is-manual {
+  color: var(--text-light);
+}
+
+@media (max-width: 760px) {
+  .ecom-admin-sync-panel__heading { align-items: stretch; flex-direction: column; }
+  .ecom-admin-sync-field-grid { grid-template-columns: 1fr; }
+}

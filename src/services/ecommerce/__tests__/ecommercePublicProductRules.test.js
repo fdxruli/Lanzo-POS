@@ -62,4 +62,31 @@ describe('ecommercePublicProductRules', () => {
     expect(isPublicProductAvailable(product)).toBe(false);
     expect(getPublicProductStockLabel(product)).toBe('Agotado');
   });
+
+  it('distinguishes confirmed stock exhaustion from manual unavailability', () => {
+    expect(getPublicProductStockLabel({
+      isAvailable: false,
+      stock: { mode: 'status', status: 'available' },
+    })).toBe('No disponible');
+
+    expect(getPublicProductStockLabel({
+      isAvailable: false,
+      stock: { mode: 'exact', status: 'available', quantity: 5 },
+    })).toBe('No disponible');
+
+    expect(getPublicProductStockLabel({
+      isAvailable: false,
+      stock: { mode: 'status', status: 'out_of_stock' },
+    })).toBe('Agotado');
+
+    expect(getPublicProductStockLabel({
+      isAvailable: false,
+      stock: { mode: 'exact', status: 'out_of_stock', quantity: 0 },
+    })).toBe('Agotado');
+
+    expect(getPublicProductStockLabel({
+      isAvailable: true,
+      stock: { mode: 'exact', status: 'available', quantity: 5 },
+    })).toBe('5 disponibles');
+  });
 });
