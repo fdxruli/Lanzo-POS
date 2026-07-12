@@ -11,7 +11,9 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_CLOUD_CATALOG_REQUIRES_PRO: 'La sincronizacion automatica requiere Lanzo Nube.',
   ECOMMERCE_CATALOG_SYNC_BATCH_TOO_LARGE: 'La sincronizacion incluye demasiados productos en un solo lote.',
   ECOMMERCE_CATALOG_SYNC_DUPLICATE_REF: 'La sincronizacion contiene productos duplicados.',
-  ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catalogo cambio durante la sincronizacion. Se reintentara con la revision vigente.'
+  ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catalogo cambio durante la sincronizacion. Se reintentara con la revision vigente.',
+  ECOMMERCE_CATALOG_SOURCE_STALE: 'Un dispositivo tiene una version anterior del producto.',
+  ECOMMERCE_CATALOG_SOURCE_CONFLICT: 'La revision del producto requiere reconciliacion.'
 };
 
 const SAFE_CONTEXT_MESSAGES = new Set([
@@ -22,11 +24,20 @@ const SAFE_CONTEXT_MESSAGES = new Set([
 
 const normalizeFailure = (data, fallback) => {
   const code = data?.code || data?.error?.code || 'ECOMMERCE_ADMIN_ERROR';
+  const status = Number(
+    data?.status
+    ?? data?.statusCode
+    ?? data?.error?.status
+    ?? data?.error?.statusCode
+  );
 
   return {
     ...(data || {}),
     success: false,
     code,
+    name: data?.name || data?.error?.name || null,
+    status: Number.isFinite(status) ? status : null,
+    retryable: data?.retryable === true || data?.error?.retryable === true,
     message: SAFE_ERROR_MESSAGES[code]
       || data?.message
       || data?.error?.message
@@ -47,7 +58,10 @@ export const createEcommerceAdminService = ({
     }
 
     if (!isOnline()) {
-      throw new Error('Necesitas conexion a internet para configurar el portal online.');
+      const error = new Error('Necesitas conexion a internet para configurar el portal online.');
+      error.code = 'ECOMMERCE_ADMIN_OFFLINE';
+      error.retryable = true;
+      throw error;
     }
 
     const licenseKey = getLicenseKeyFromDetails(getLicenseDetails());
@@ -82,7 +96,7 @@ export const createEcommerceAdminService = ({
       const { data, error } = await rpc(name, { ...context, ...payload });
 
       if (error) {
-        return normalizeFailure({ code: error.code }, fallback);
+        return normalizeFailure(error, fallback);
       }
 
       if (data?.success === true) {
@@ -96,11 +110,13 @@ export const createEcommerceAdminService = ({
         ? error.message
         : null;
 
-      return {
-        success: false,
+      return normalizeFailure({
         code,
+        name: error?.name,
+        status: error?.status ?? error?.statusCode,
+        retryable: error?.retryable === true,
         message: SAFE_ERROR_MESSAGES[code] || safeContextMessage || fallback
-      };
+      }, fallback);
     }
   };
 
