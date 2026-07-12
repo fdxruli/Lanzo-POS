@@ -151,7 +151,10 @@ describe('EcommercePosConversionPanel', () => {
 
   it('shows immediate starting feedback only while the single-flight is live', async () => {
     const deferred = createDeferred();
-    const order = createOrder({ ecommerceCheckoutInitiationStatus: 'starting' });
+    const order = createOrder({
+      ecommerceCheckoutInitiationStatus: 'starting',
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.VALIDATING
+    });
     mocks.state.activeOrders = new Map([[order.id, order]]);
     const operation = runEcommerceCheckoutInitiationSingleFlight({
       orderId: order.id,
@@ -167,8 +170,11 @@ describe('EcommercePosConversionPanel', () => {
     await operation;
   });
 
-  it('does not keep checkout disabled for a persisted starting marker without a live flight', async () => {
-    const order = createOrder({ ecommerceCheckoutInitiationStatus: 'starting' });
+  it('does not keep checkout disabled for persisted starting and validating state without a live flight', async () => {
+    const order = createOrder({
+      ecommerceCheckoutInitiationStatus: 'starting',
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.VALIDATING
+    });
     mocks.state.activeOrders = new Map([[order.id, order]]);
 
     render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
