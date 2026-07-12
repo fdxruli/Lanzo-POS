@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { CheckCircle2, CreditCard, LoaderCircle, RefreshCw, ReceiptText, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { getEcommerceCheckoutInitiation } from '../../hooks/pos/ecommerceCheckoutInitiationSingleFlight';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import {
   ECOMMERCE_CONVERSION_STATUS,
@@ -78,7 +79,8 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const conversionStatus = order?.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
   const isConfirmationPending = CONFIRMATION_STATUSES.has(conversionStatus)
     || Boolean(order?.ecommerceConvertedSaleId);
-  const isStarting = order?.ecommerceCheckoutInitiationStatus === 'starting';
+  const isStarting = order?.ecommerceCheckoutInitiationStatus === 'starting'
+    && Boolean(getEcommerceCheckoutInitiation(orderId));
   const isBusy = isStarting || BUSY_STATUSES.has(conversionStatus);
 
   const verifyRemoteState = useCallback(async () => {
