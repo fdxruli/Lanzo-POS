@@ -2,303 +2,202 @@
 
 ## Estado
 
-**IMPLEMENTACIÓN COMPLETADA / VALIDACIÓN EJECUTABLE PENDIENTE**
+**IMPLEMENTACIÓN FUNCIONAL COMPLETADA / VALIDACIÓN MANUAL PENDIENTE**
 
-No se declara `ECOM.FE.CATALOG.2 PASS` porque en el entorno disponible no fue posible ejecutar `npm ci`, ESLint, Vitest, build ni `test:ci`. El PR permanece en draft.
+No se declara `ECOM.FE.CATALOG.2 PASS`.
+
+El PR permanece en **DRAFT**. En esta corrección puntual no se ejecutaron pruebas, build, lint, Vitest, `test:ci` ni validación global.
 
 ## Referencias
 
 - Repositorio: `fdxruli/Lanzo-POS`
 - Rama: `fase-ecom-fe-catalog-2`
 - PR: `#92 — FASE ECOM.FE.CATALOG.2 — Alertar productos publicados sin stock`
-- Base confirmada de `main`: `dc4eef71b87200fdbe0835d84ea602f72fe79d0f`
-- HEAD de implementación revisado antes de este reporte: `dc0fd2430f69336f496dec4237d9f2aef5d80714`
+- Base del PR confirmada al iniciar: `main@dc4eef71b87200fdbe0835d84ea602f72fe79d0f`
+- HEAD inicial de `ECOM.FE.CATALOG.2.1`: `646065c56eb062da733dc9f68e28a002ac75b82d`
+- HEAD funcional después de corregir código y copy: `821401d63b9e222e04a9bae437a1ee600f20d305`
+- HEAD final: commit actual de `fase-ecom-fe-catalog-2` que contiene este reporte; su SHA exacto queda registrado en la descripción del PR y en la entrega final para evitar conservar una referencia autorreferencial obsoleta dentro del mismo commit.
 - Estado del PR: `DRAFT`
 
-## Objetivo
+## Objetivo de la corrección puntual
 
-Detectar únicamente productos publicados en el portal ecommerce cuyo stock vendible local y canónico esté confirmado en cero o negativo, y presentar una alerta operacional agregada según el plan:
+Se corrigieron exclusivamente los pendientes de `ECOM.FE.CATALOG.2.1`:
 
-- Plan Free: ticker local.
-- Lanzo Nube / PRO: Centro de Notificaciones como alerta operacional local.
-- Todos los administradores autorizados: banner general y warning individual dentro de la lista existente de Portal online.
+1. eliminar el límite efectivo de 500 productos del selector administrativo;
+2. proteger la paginación contra cursores repetidos;
+3. deduplicar productos entre páginas;
+4. impedir que un error intermedio confirme un catálogo parcial;
+5. actualizar el copy obsoleto del modal PRO;
+6. mantener intacta la arquitectura de alertas ya implementada.
 
-No se agregó una segunda lista de productos.
+## Carga completa del catálogo administrativo
 
-## Arquitectura local compartida
+Archivo modificado:
 
-Se creó un evaluador único en:
+- `src/components/ecommerce/EcommercePortalSettings.jsx`
+
+`loadLocalCatalog()` conserva el cache existente:
+
+```js
+if (localProducts.length > 0) return true;
+```
+
+La primera apertura del modal recorre todas las páginas mediante:
+
+```js
+productRepository.listProductsPage({
+  limit: 500,
+  status: 'active',
+  cursor
+});
+```
+
+El valor `500` se conserva únicamente como tamaño técnico de página. Ya no funciona como límite total del catálogo.
+
+La paginación continúa mientras exista un `nextCursor` válido y termina cuando:
+
+- `nextCursor` es `null`, `undefined` o una cadena vacía;
+- la página devuelta está vacía;
+- `nextCursor` es igual al cursor actual;
+- `nextCursor` ya fue visitado.
+
+Con esto, un catálogo PRO con más de 500 productos activos puede ser recorrido completo por el selector administrativo en condiciones normales.
+
+## Protección contra cursores repetidos
+
+La carga mantiene:
+
+```js
+const visitedCursors = new Set();
+```
+
+Antes de solicitar una página con cursor se comprueba que dicho cursor no haya sido utilizado. También se comprueba el cursor siguiente antes de continuar.
+
+Esto evita ciclos en secuencias como:
+
+- `A → A`;
+- `A → B → A`;
+- página vacía con cursor persistente.
+
+Una respuesta defectuosa de paginación no puede mantener la interfaz en un ciclo infinito.
+
+## Deduplicación estable
+
+Los productos de todas las páginas se acumulan temporalmente y se deduplican al finalizar por `String(product.id)`.
+
+Solo se conservan filas que cumplan:
+
+```js
+product?.id
+product.isActive !== false
+```
+
+Se conserva la primera aparición de cada producto, por lo que el orden final es estable.
+
+No se agregó una lectura por producto ni un patrón N+1.
+
+## Manejo de errores y confirmación atómica
+
+Cada página debe devolver un objeto válido con `data` como arreglo. Una respuesta malformada se trata como error de lectura.
+
+Si una página o la carga de categorías falla:
+
+- no se ejecuta `setLocalProducts(...)`;
+- no se abre el modal con un catálogo parcial;
+- se utiliza el `toast.error` existente;
+- `loadLocalCatalog()` retorna `false`;
+- `loadingCatalog` vuelve a `false` mediante `finally`.
+
+El catálogo y las categorías se asignan al estado únicamente después de completar correctamente toda la operación.
+
+## Copy actualizado del modal PRO
+
+Archivo modificado:
+
+- `src/components/ecommerce/EcommerceProductPublishModal.jsx`
+
+Texto final para Lanzo Nube / PRO:
+
+> Las alertas utilizan el inventario disponible en este dispositivo. La sincronización automática del catálogo público se habilitará en una fase posterior.
+
+El texto de Plan Free se conservó.
+
+El copy ya no presenta `ECOM.FE.CATALOG.2` como una fase futura ni promete sincronización cloud actualmente inexistente.
+
+## Arquitectura de alertas conservada
+
+No se modificaron:
 
 - `src/services/ecommerce/ecommercePublishedStockAlertService.js`
 - `src/services/ecommerce/ecommercePublishedStockLocalSource.js`
-- `src/services/ecommerce/ecommercePublishedStockAlertConstants.js`
-
-El store compartido vive en:
-
 - `src/store/slices/createEcommercePublishedStockAlertSlice.js`
-
-Las superficies consumen el mismo snapshot mediante:
-
 - `src/hooks/useEcommercePublishedStockAlerts.js`
 - `src/components/ecommerce/EcommercePublishedStockAlertRuntime.jsx`
+- `src/components/notifications/NotificationBell.jsx`
+- `src/components/notifications/EcommercePublishedStockOperationalAlert.jsx`
+- `src/hooks/useTickerAlerts.js`
+- `src/services/tickerAlerts.js`
 
-La invalidación por inventario se centralizó en un único runtime mediante el evento existente:
+Se conserva:
 
-- `lanzo:ticker-inventory-alert`
+- snapshot compartido;
+- TTL de 2 minutos;
+- single-flight;
+- epochs;
+- compare-and-commit;
+- separación por licencia, staff y dispositivo;
+- ticker agregado para Plan Free;
+- tarjeta operacional local para PRO;
+- contador cloud separado;
+- deep link a Portal online;
+- invalidación mediante `lanzo:ticker-inventory-alert`;
+- estados `in_stock`, `out_of_stock`, `not_tracked`, `unverified`, `source_missing` e `inactive_source`.
 
-Esto evita que ticker, campana y Portal online mantengan caches paralelos o ejecuten evaluaciones independientes.
+No se creó una segunda lista de productos sin stock y los errores de lectura no se convierten en stock cero.
 
-## Motivo para no generar notificación cloud
+## Evaluación masiva sin N+1
 
-La alerta PRO no se persiste ni se mezcla con las notificaciones cloud porque el inventario vendible actual reside en la fuente local/canónica del POS y el snapshot público puede estar desactualizado.
+El evaluador de alertas continúa resolviendo productos publicados mediante `bulkGet`, con chunks técnicos cuando corresponde.
 
-La implementación:
+La corrección del selector administrativo no modifica el evaluador masivo, el repositorio de productos, `loadDataPaginated(...)`, `productRepository.listProductsPage(...)` ni `productLocalRepository.listProductsPage(...)`.
 
-- no crea UUID sintéticos;
-- no agrega la alerta al arreglo de notificaciones cloud;
-- no llama acciones de marcar leída o archivar;
-- no modifica `notificationsUnreadCount`;
-- no modifica `refresh_operational_notifications(...)`;
-- no modifica `list_pos_notifications(...)`.
+## Archivos modificados por ECOM.FE.CATALOG.2.1
 
-La alerta PRO se presenta como una tarjeta operacional local separada dentro del drawer.
+- `src/components/ecommerce/EcommercePortalSettings.jsx`
+- `src/components/ecommerce/EcommerceProductPublishModal.jsx`
+- `reports/ecom_fe_catalog_2_published_stock_alerts_report.md`
 
-## Fuente canónica de stock
+## Validación
 
-El evaluador reutiliza:
-
-- `getAvailableStock(...)` para stock físico menos reservas;
-- `getAvailableBatchStock(...)` para lotes;
-- `isBatchActiveForFefo(...)` y `getBatchExpiryStatus(...)` para lotes activos y vigentes;
-- `getInventoryQuantityForSale(...)` para factor de conversión de la unidad vendible;
-- `normalizeStock(...)` para la precisión estándar del POS.
-
-Se consideran:
-
-- stock simple;
-- cantidades reservadas;
-- stock por lotes;
-- lotes inactivos, eliminados, bloqueados, vencidos o sin stock vendible;
-- factor de conversión;
-- productos sin control de inventario;
-- errores y datos no verificables.
-
-Una lectura fallida o un lote activo con stock inválido no se transforma en cero. Se clasifica como `unverified`, salvo que exista otro lote vendible confirmado que demuestre stock positivo.
-
-Los productos con receta se clasifican como `unverified` en esta fase porque confirmar su stock vendible requeriría resolver en bloque todos los ingredientes y modificadores; no se inventa stock directo para ellos.
-
-## Estados de evaluación
-
-- `in_stock`: stock vendible confirmado mayor que cero.
-- `out_of_stock`: lectura exitosa, control de inventario confirmado y stock vendible menor o igual que cero.
-- `not_tracked`: producto sin control de inventario.
-- `unverified`: error de lectura, receta o datos activos que no permiten confirmar stock.
-- `source_missing`: referencia local inexistente.
-- `inactive_source`: producto local inactivo o eliminado.
-
-`source_missing`, `inactive_source`, `unverified` y `not_tracked` no incrementan `outOfStockCount`.
-
-## Carga eficiente
-
-- Productos locales: `bulkGet` por todos los `localProductRef`, dividido únicamente en chunks técnicos de 500.
-- Lotes: consultas indexadas `where('productId').anyOf(...)`, divididas en chunks de 200.
-- No existe una consulta por cada producto publicado.
-- No se usa el límite administrativo de 500 productos para evaluar alertas.
-- Se agregaron pruebas para 601 productos y 410 lotes.
-
-## Single-flight, TTL y respuestas antiguas
-
-- TTL: 2 minutos.
-- Cache separado por licencia, rol, identidad staff y dispositivo.
-- Single-flight por contexto y epoch.
-- `force: true` omite TTL.
-- Una invalidación incrementa el epoch y permite iniciar una lectura fresca aunque exista una lectura anterior pendiente.
-- Una respuesta iniciada con otra licencia, sesión o epoch retorna `stale: true` y no se confirma en el store.
-- El store aplica compare-and-commit con `contextKey` y `requestEpoch`.
-- Durante refresh seguro se conserva el último resultado del mismo contexto.
-
-## Plan Free
-
-El ticker recibe como máximo una alerta agregada:
-
-```js
-{
-  id: 'ecommerce-published-out-of-stock',
-  type: 'ecommerce-published-out-of-stock',
-  count,
-  urgency: WARNING,
-  route: '/configuracion?tab=portal-online&focus=products'
-}
-```
-
-No incluye nombres de productos. Solo se agrega cuando:
-
-- `shouldUseLocalTicker(...)` habilita el ticker local;
-- el portal está `published`;
-- `outOfStockCount > 0`.
-
-El ticker summary de PRO mantiene su arquitectura actual.
-
-## Lanzo Nube / PRO
-
-Se agregó una tarjeta operacional local dentro del Centro de Notificaciones:
-
-- título: `Productos publicados sin stock`;
-- contenido agregado;
-- acción: `Revisar productos`;
-- no descartable;
-- no persistida;
-- sin UUID cloud.
-
-La campana conserva el contador cloud y usa un indicador visual/accesible separado para la alerta local.
-
-La alerta desaparece cuando:
-
-- `outOfStockCount` llega a cero;
-- el portal deja de estar publicado;
-- cambia la licencia o sesión;
-- se pierde autorización.
-
-## Portal online
-
-La lista existente de productos sigue siendo la superficie principal.
-
-Se agregó:
-
-- banner agregado para `out_of_stock`;
-- aviso separado para productos que requieren revisión;
-- warning individual accesible por tarjeta;
-- identificador estable `ecommerce-published-products`;
-- soporte de foco mediante el deep link.
-
-Los warnings administrativos se muestran aunque el portal esté pausado o en borrador. Las alertas externas de ticker/centro se muestran únicamente con portal publicado.
-
-Después de crear, publicar, pausar o guardar el portal, y después de guardar, publicar o despublicar un producto, el snapshot se invalida y se recalcula con `force: true`.
-
-La despublicación reconcilia primero el snapshot visible para retirar inmediatamente el producto y después ejecuta la lectura real.
-
-## Permisos
-
-- Administrador local autorizado: puede evaluar y abrir Portal online.
-- Staff PRO: requiere `settings === true` y `ecommerce === true` para la lectura administrativa.
-- La superficie del Centro de Notificaciones requiere además `notifications === true`.
-- Staff sin permisos no recibe conteos ni deep link operativo.
-- No se creó un permiso nuevo.
-
-## Deep link
-
-Ruta implementada:
+Por instrucción expresa, en esta tarea no se ejecutaron:
 
 ```text
-/configuracion?tab=portal-online&focus=products
-```
-
-`SettingsPage` consume `tab`, enfoca `#ecommerce-published-products`, hace scroll y elimina `focus` mediante navegación `replace`.
-
-## Invalidación y recuperación
-
-`notifyProductsChanged(...)` emite también `lanzo:ticker-inventory-alert`.
-
-El runtime compartido escucha una sola vez el evento, invalida el cache y fuerza evaluación en background. Esto cubre los flujos que ya notifican cambios de producto/inventario sin introducir llamadas completas dentro de cada venta, merma o ajuste.
-
-Cuando el stock se repone o se despublica el último producto afectado, el conteo llega a cero y desaparecen banner, ticker y alerta PRO sin recargar la aplicación.
-
-## Pruebas agregadas o actualizadas
-
-- `ecommercePublishedStockAlertService.test.js`
-  - stock cero, negativo y positivo;
-  - despublicado y referencia ausente;
-  - `not_tracked`, `source_missing`, `inactive_source`, `unverified`;
-  - lotes agotados, vencidos, bloqueados y vendibles;
-  - reservas;
-  - factor de conversión;
-  - más de 500 productos;
-  - single-flight;
-  - cambio de licencia;
-  - portal pausado.
-- `ecommercePublishedStockAlertInvalidation.test.js`
-  - invalidación con lectura anterior pendiente;
-  - nueva lectura por epoch;
-  - respuesta anterior descartada.
-- `ecommercePublishedStockMalformedBatch.test.js`
-  - lote activo no verificable;
-  - lote verificable positivo junto a lote corrupto.
-- `ecommercePublishedStockLocalSource.test.js`
-  - 601 productos con `bulkGet`;
-  - 410 lotes por consulta indexada, sin N+1.
-- `EcommercePortalSettings.stockAlerts.test.jsx`
-  - banner y warning individual;
-  - estados diferenciados;
-  - producto despublicado;
-  - recálculo después de despublicar.
-- `tickerAlerts.ecommerce.test.js`
-  - alerta FREE agregada;
-  - sin nombres;
-  - portal pausado sin alerta.
-- `NotificationBell.test.jsx`
-  - indicador local separado;
-  - contador cloud intacto;
-  - tarjeta local sin marcar ni archivar cloud.
-- `notificationCapabilities.ecommerce.test.js`
-  - matriz `notifications + settings + ecommerce`.
-
-## Validación solicitada
-
-Comandos requeridos:
-
-```bash
 npm ci
-npx eslint <archivos modificados>
-npx vitest run <suites enfocadas>
 npm run build
 npm run lint
 npm run test:ci
-git diff --check origin/main...HEAD
-git status --short
+Vitest
+ESLint
 ```
 
-### Resultado en este entorno
+Tampoco se ejecutó validación global ni se declaró que las pruebas pasaron.
 
-- `git ls-remote https://github.com/fdxruli/Lanzo-POS.git HEAD`: **BLOQUEADO**, el runtime no pudo resolver `github.com`.
-- Checkout local íntegro: **NO DISPONIBLE** por el bloqueo de red anterior.
-- `npm ci`: **NO EJECUTADO**; no existe checkout local.
-- ESLint específico: **NO EJECUTADO**.
-- Vitest enfocado: **NO EJECUTADO**.
-- Regresión relacionada: **NO EJECUTADA**.
-- `npm run build`: **NO EJECUTADO**.
-- `npm run lint`: **NO EJECUTADO**.
-- `npm run test:ci`: **NO EJECUTADO**.
-- GitHub Actions asociados al commit: **NINGUNO DISPONIBLE**.
-- Estado automático Vercel: **FAIL EXTERNO**, `build-rate-limit`; no se creó ni forzó preview manual.
-- Comparación GitHub `main...fase-ecom-fe-catalog-2`: **ahead 32 / behind 0** al generar este reporte.
-- Auditoría de archivos modificados: **sin archivos de Supabase, migraciones o tienda pública**.
-- Revisión estática del diff: **COMPLETADA**, incluyendo corrección de runtime faltante, single-flight por epoch, listener central y fail-closed de lotes.
-
-## Fallos heredados o externos
-
-No se confirmó un fallo funcional heredado de `main` porque no existe una ejecución de línea base comparable.
-
-Bloqueos externos actuales:
-
-1. resolución DNS de `github.com` no disponible desde el runtime local;
-2. ausencia de workflows de GitHub Actions para el HEAD;
-3. límite de builds de Vercel.
+La validación funcional y global queda pendiente de ejecución manual sobre el HEAD final.
 
 ## Alcance no modificado
 
 - Supabase: sin cambios.
-- Migraciones: ninguna.
+- Migraciones: sin cambios.
+- SQL: no ejecutado.
 - RPC, grants, RLS, tablas y funciones: sin cambios.
-- `refresh_operational_notifications(...)`: sin cambios.
-- `list_pos_notifications(...)`: sin cambios.
 - Tienda pública: sin cambios.
 - Checkout ecommerce: sin cambios.
-- Ventas POS, caja, reservas y semántica operativa: sin cambios.
-- Workflows temporales: ninguno.
-- Preview manual de Vercel: ninguno.
+- Workflows temporales de GitHub Actions: ninguno.
+- Preview manual de Vercel: no creado, no forzado, no promovido y no validado.
+- PR: no mergeado y no marcado ready for review.
 
 ## Conclusión
 
-La implementación y su cobertura automatizada quedaron preparadas en el PR draft #92. La fase debe permanecer como **VALIDACIÓN PENDIENTE** hasta ejecutar los comandos obligatorios sobre un checkout íntegro y comparar los resultados globales con `main`.
+La corrección funcional `ECOM.FE.CATALOG.2.1` quedó implementada. El límite efectivo de 500 productos fue eliminado mediante paginación por `nextCursor`, existen barreras contra cursores repetidos y páginas vacías, el catálogo se deduplica por `id`, los errores no confirman resultados parciales y el copy PRO fue actualizado.
 
-No corresponde declarar `ECOM.FE.CATALOG.2 PASS` mientras esos comandos sigan sin ejecutarse.
+El PR #92 debe permanecer en **DRAFT / VALIDACIÓN MANUAL PENDIENTE** hasta completar la validación manual solicitada.
