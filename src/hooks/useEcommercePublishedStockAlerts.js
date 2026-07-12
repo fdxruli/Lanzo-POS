@@ -1,6 +1,5 @@
 import { useEffect, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { TICKER_INVENTORY_ALERT_EVENT } from '../services/tickerAlertEvents';
 import { getEcommercePublishedStockAlertContextKey } from '../services/ecommerce/ecommercePublishedStockAlertService';
 
 export function useEcommercePublishedStockAlerts({
@@ -36,24 +35,6 @@ export function useEcommercePublishedStockAlerts({
     if (!enabled || !autoLoad || !contextKey) return;
     void load?.({ force: false, reason, background: false });
   }, [autoLoad, contextKey, enabled, load, reason]);
-
-  useEffect(() => {
-    if (!enabled || !contextKey || typeof window === 'undefined') return undefined;
-
-    const handleInventoryChange = () => {
-      invalidate?.({ reason: 'inventory-event' });
-      void load?.({
-        force: true,
-        reason: 'inventory-event',
-        background: true
-      });
-    };
-
-    window.addEventListener(TICKER_INVENTORY_ALERT_EVENT, handleInventoryChange);
-    return () => {
-      window.removeEventListener(TICKER_INVENTORY_ALERT_EVENT, handleInventoryChange);
-    };
-  }, [contextKey, enabled, invalidate, load]);
 
   return {
     snapshot: safeSnapshot,
