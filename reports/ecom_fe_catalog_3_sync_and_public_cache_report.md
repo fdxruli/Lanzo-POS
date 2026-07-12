@@ -10,7 +10,8 @@
 - Estado del PR: **draft**
 - Base y merge-base confirmados: `main` en `66315c445836bbf662224671c14524994acd0f13`
 - HEAD inicial real de ECOM.FE.CATALOG.3.2: `af0f9977527b0bffeb11bc08cffb5cb044c8b7ae`
-- HEAD funcional previo a esta actualización documental: `521cf646c3aae2ea600d5475836de2b041fda9a0`
+- HEAD funcional de ECOM.FE.CATALOG.3.2: `521cf646c3aae2ea600d5475836de2b041fda9a0`
+- HEAD documental previo a registrar este valor: `dbcaf17aded1f9ed7aa6a5ee177ce31e9b6513a1`
 - Merge automático: **no realizado**
 
 La corrección se limitó a los dos defectos residuales solicitados: transición segura a `source_missing` y prioridad de la disponibilidad efectiva sobre las etiquetas de inventario. Las correcciones anteriores de ECOM.FE.CATALOG.3.1 permanecen sin debilitarse.
