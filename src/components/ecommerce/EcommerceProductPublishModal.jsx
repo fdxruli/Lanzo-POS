@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link2, LoaderCircle, Save, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getEcommercePortal } from '../../services/ecommerce/ecommerceAdminService';
 
 const MANUAL_SYNC_CONFIG = Object.freeze({
   name: 'manual',
@@ -23,6 +24,7 @@ const SYNC_FIELD_LABELS = Object.freeze({
   price: 'Precio',
   image: 'Imagen'
 });
+const STOCK_MODES = Object.freeze(['hidden', 'status', 'exact']);
 
 const emptyForm = {
   id: null,
@@ -35,6 +37,8 @@ const emptyForm = {
   isPublished: true,
   displayOrder: 0,
   imageUrl: null,
+  stockMode: 'hidden',
+  stockTracked: false,
   syncConfig: MANUAL_SYNC_CONFIG
 };
 
@@ -55,6 +59,34 @@ const normalizeSyncConfig = (value, fallback = MANUAL_SYNC_CONFIG) => (
   }, {})
 );
 
+const normalizeStockMode = (value) => (STOCK_MODES.includes(value) ? value : 'hidden');
+const isProductStockTracked = (product = {}) => {
+  if (
+    product.sourceState === 'not_tracked'
+    || product.trackStock === false
+    || product.track_stock === false
+  ) return false;
+
+  const stockValue = product.stock ?? product.quantity;
+  return (
+    product.trackStock === true
+    || product.track_stock === true
+    || product.manageStock === true
+    || product.manage_stock === true
+    || product.batchManagement?.enabled === true
+    || product.batch_management?.enabled === true
+    || (stockValue !== null && stockValue !== undefined && stockValue !== '')
+    || product.sourceState === 'in_stock'
+    || product.sourceState === 'out_of_stock'
+    || product.sourceState === 'unverified'
+  );
+};
+
+const resolveStockMode = ({ isPro, featureEnabled, stockTracked, requestedMode }) => {
+  if (!isPro || !featureEnabled || !stockTracked) return 'hidden';
+  return normalizeStockMode(requestedMode);
+};
+
 export default function EcommerceProductPublishModal({
   open,
   editingProduct,
@@ -68,6 +100,8 @@ export default function EcommerceProductPublishModal({
 }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [stockFeatureLoading, setStockFeatureLoading] = useState(false);
+  const [stockVisibilityEnabled, setStockVisibilityEnabled] = useState(false);
   const allFieldsLinked = useMemo(
     () => Object.values(form.syncConfig).every((mode) => mode === 'source'),
     [form.syncConfig]
@@ -83,6 +117,10 @@ export default function EcommerceProductPublishModal({
       });
       return;
     }
+
+    const linkedProduct = localProducts.find(
+      (product) => String(product.id) === String(editingProduct.localProductRef || '')
+    );
     setForm({
       id: editingProduct.id,
       localProductRef: editingProduct.localProductRef || '',
@@ -94,20 +132,54 @@ export default function EcommerceProductPublishModal({
       isPublished: editingProduct.isPublished !== false,
       displayOrder: editingProduct.displayOrder || 0,
       imageUrl: editingProduct.imageUrl || null,
+      stockMode: normalizeStockMode(editingProduct.stockMode),
+      stockTracked: linkedProduct
+        ? isProductStockTracked(linkedProduct)
+        : isProductStockTracked(editingProduct),
       syncConfig: isPro
         ? normalizeSyncConfig(editingProduct.syncConfig, MANUAL_SYNC_CONFIG)
         : MANUAL_SYNC_CONFIG
     });
-  }, [editingProduct, isPro, limitReached, open]);
+  }, [editingProduct, isPro, limitReached, localProducts, open]);
+
+  useEffect(() => {
+    let active = true;
+    if (!open || !isPro) {
+      setStockFeatureLoading(false);
+      setStockVisibilityEnabled(false);
+      return () => { active = false; };
+    }
+
+    setStockFeatureLoading(true);
+    void getEcommercePortal().then((result) => {
+      if (!active) return;
+      setStockVisibilityEnabled(
+        result?.success === true && result?.features?.stockVisibility === true
+      );
+      setStockFeatureLoading(false);
+    }, () => {
+      if (!active) return;
+      setStockVisibilityEnabled(false);
+      setStockFeatureLoading(false);
+    });
+
+    return () => { active = false; };
+  }, [isPro, open]);
 
   if (!open) return null;
 
   const chooseProduct = (event) => {
     const product = localProducts.find((item) => String(item.id) === event.target.value);
     if (!product) {
-      setForm((current) => ({ ...current, localProductRef: '' }));
+      setForm((current) => ({
+        ...current,
+        localProductRef: '',
+        stockMode: 'hidden',
+        stockTracked: false
+      }));
       return;
     }
+    const stockTracked = isProductStockTracked(product);
     setForm((current) => ({
       ...current,
       localProductRef: String(product.id),
@@ -115,7 +187,9 @@ export default function EcommerceProductPublishModal({
       publicDescription: product.description || '',
       price: String(product.price ?? 0),
       categoryName: categoriesById.get(product.categoryId) || product.category || '',
-      imageUrl: publicUrl(product.imageUrl || product.image)
+      imageUrl: publicUrl(product.imageUrl || product.image),
+      stockTracked,
+      stockMode: stockTracked ? current.stockMode : 'hidden'
     }));
   };
 
@@ -139,10 +213,10 @@ export default function EcommerceProductPublishModal({
   const submit = async (event) => {
     event.preventDefault();
     const price = Number(form.price);
-    if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catalogo local.');
-    if (!form.publicName.trim()) return toast.error('El nombre publico es obligatorio.');
-    if (!Number.isFinite(price) || price < 0) return toast.error('El precio publico debe ser mayor o igual a cero.');
-    if (!editingProduct && limitReached && form.isPublished) return toast.error('Plan Free ya alcanzo el limite de 10 productos.');
+    if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catálogo local.');
+    if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
+    if (!Number.isFinite(price) || price < 0) return toast.error('El precio público debe ser mayor o igual a cero.');
+    if (!editingProduct && limitReached && form.isPublished) return toast.error('Plan Free ya alcanzó el límite de 10 productos.');
 
     setSaving(true);
     const saved = await onSave({
@@ -158,13 +232,24 @@ export default function EcommerceProductPublishModal({
       isPublished: form.isPublished,
       displayOrder: Math.max(0, Math.trunc(safeNumber(form.displayOrder, 0))),
       imageUrl: publicUrl(form.imageUrl),
-      stockMode: 'hidden',
+      stockMode: resolveStockMode({
+        isPro,
+        featureEnabled: stockVisibilityEnabled,
+        stockTracked: form.stockTracked,
+        requestedMode: form.stockMode
+      }),
       syncConfig: isPro ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
       metadata: { source: 'admin_ui' }
     });
     setSaving(false);
     if (saved) onClose();
   };
+
+  const stockSelectorDisabled = (
+    stockFeatureLoading
+    || !stockVisibilityEnabled
+    || !form.stockTracked
+  );
 
   return (
     <div className="ecom-admin-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -181,7 +266,7 @@ export default function EcommerceProductPublishModal({
 
         <form onSubmit={submit}>
           <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Producto del catalogo local *</span>
+            <span className="form-label">Producto del catálogo local *</span>
             <select className="form-input" value={form.localProductRef} onChange={chooseProduct} disabled={Boolean(editingProduct)} required>
               <option value="">Selecciona un producto</option>
               {localProducts.map((product) => {
@@ -197,7 +282,7 @@ export default function EcommerceProductPublishModal({
             <small className="ecom-admin-help">
               {isPro
                 ? 'Lanzo Nube puede mantener vinculados los campos elegidos sin sobrescribir los campos manuales.'
-                : 'Se guarda una copia publica; tu producto local no se modifica.'}
+                : 'Se guarda una copia pública; tu producto local no se modifica.'}
             </small>
           </label>
 
@@ -238,15 +323,15 @@ export default function EcommerceProductPublishModal({
           )}
 
           <label className="form-group">
-            <span className="form-label">Nombre publico *</span>
+            <span className="form-label">Nombre público *</span>
             <input className="form-input" value={form.publicName} disabled={isPro && form.syncConfig.name === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
           </label>
           <label className="form-group">
-            <span className="form-label">Precio publico *</span>
+            <span className="form-label">Precio público *</span>
             <input className="form-input" type="number" min="0" step="0.01" value={form.price} disabled={isPro && form.syncConfig.price === 'source'} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} required />
           </label>
           <label className="form-group">
-            <span className="form-label">Categoria publica</span>
+            <span className="form-label">Categoría pública</span>
             <input className="form-input" value={form.categoryName} disabled={isPro && form.syncConfig.category === 'source'} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
           </label>
           <label className="form-group">
@@ -254,9 +339,37 @@ export default function EcommerceProductPublishModal({
             <input className="form-input" type="number" min="0" step="1" value={form.displayOrder} onChange={(event) => setForm((current) => ({ ...current, displayOrder: event.target.value }))} />
           </label>
           <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Descripcion publica</span>
+            <span className="form-label">Descripción pública</span>
             <textarea className="form-textarea" rows={4} value={form.publicDescription} disabled={isPro && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
           </label>
+
+          {isPro && (
+            <label className="form-group ecom-admin-span-2">
+              <span className="form-label">Visibilidad del inventario</span>
+              <select
+                className="form-input"
+                value={stockSelectorDisabled ? 'hidden' : form.stockMode}
+                disabled={stockSelectorDisabled}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  stockMode: normalizeStockMode(event.target.value)
+                }))}
+              >
+                <option value="hidden">Ocultar stock</option>
+                <option value="status">Mostrar Disponible / Agotado</option>
+                <option value="exact">Mostrar cantidad exacta</option>
+              </select>
+              <small className="ecom-admin-help">
+                {stockFeatureLoading
+                  ? 'Validando la función de inventario público…'
+                  : !stockVisibilityEnabled
+                    ? 'La visibilidad de inventario no está habilitada para esta licencia.'
+                    : !form.stockTracked
+                      ? 'Este producto no controla inventario; el stock permanecerá oculto.'
+                      : 'La disponibilidad pública también respeta el control manual del producto.'}
+              </small>
+            </label>
+          )}
 
           <div className="ecom-admin-modal-toggles ecom-admin-span-2">
             <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible manualmente para clientes</label>
@@ -270,7 +383,7 @@ export default function EcommerceProductPublishModal({
 
           <footer className="ecom-admin-span-2">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
+            <button type="submit" className="btn btn-primary" disabled={saving || stockFeatureLoading}>
               {saving ? <LoaderCircle className="ecom-admin-spin" size={17} /> : <Save size={17} />}
               Guardar producto
             </button>
@@ -284,5 +397,8 @@ export default function EcommerceProductPublishModal({
 export const ecommerceProductPublishModalInternals = Object.freeze({
   MANUAL_SYNC_CONFIG,
   SOURCE_SYNC_CONFIG,
-  normalizeSyncConfig
+  normalizeSyncConfig,
+  normalizeStockMode,
+  isProductStockTracked,
+  resolveStockMode
 });
