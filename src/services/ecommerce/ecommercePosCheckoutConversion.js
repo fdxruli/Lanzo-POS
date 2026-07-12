@@ -244,6 +244,7 @@ export function buildEcommerceCheckoutSnapshot(order, context = {}) {
     };
   });
 
+  const previousSnapshot = order.ecommerceCheckoutSnapshot || null;
   const snapshot = {
     ecommerceOrderId: order.ecommerceOrderId,
     ecommerceOrderCode: order.ecommerceOrderCode || null,
@@ -251,8 +252,8 @@ export function buildEcommerceCheckoutSnapshot(order, context = {}) {
     ecommerceLicenseIdentity: order.ecommerceLicenseIdentity,
     ecommerceActorIdentity: context.actorIdentity || null,
     ecommerceConversionKey: eligibility.conversionKey,
-    orderRevision: toFiniteNumber(order.revision, 0),
-    orderUpdatedAt: order.updatedAt || null,
+    orderRevision: previousSnapshot?.orderRevision ?? toFiniteNumber(order.revision, 0),
+    orderUpdatedAt: previousSnapshot?.orderUpdatedAt ?? order.updatedAt ?? null,
     inventoryResolutionVersion: order.ecommerceInventoryResolutionVersion,
     inventoryResolvedAt: order.ecommerceInventoryResolvedAt,
     expectedSubtotal: eligibility.totals.expectedSubtotal,
