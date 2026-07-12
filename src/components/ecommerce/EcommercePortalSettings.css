@@ -141,6 +141,27 @@
 .ecom-admin-form-actions { align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; }
 .ecom-admin-form-actions > span { display: inline-flex; align-items: center; gap: 7px; color: var(--text-light); font-size: .85rem; }
 
+#ecommerce-published-products { scroll-margin-top: 90px; }
+#ecommerce-published-products:focus { outline: 2px solid color-mix(in srgb, var(--primary-color) 55%, transparent); outline-offset: 4px; }
+.ecom-admin-stock-alerts { display: grid; gap: 10px; margin: 0 0 16px; }
+.ecom-admin-stock-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--ui-text-warning, #8a5a00) 32%, var(--border-color));
+  border-radius: 11px;
+  color: var(--ui-text-warning, #8a5a00);
+  background: var(--ui-bg-warning-soft, #fff3cd);
+}
+.ecom-admin-stock-alert.is-review {
+  color: var(--ui-text-info, var(--primary-color));
+  border-color: color-mix(in srgb, var(--primary-color) 28%, var(--border-color));
+  background: var(--ui-bg-info-soft, color-mix(in srgb, var(--primary-color) 10%, transparent));
+}
+.ecom-admin-stock-alert > div { display: grid; gap: 3px; }
+.ecom-admin-stock-alert p { margin: 0; color: inherit; line-height: 1.45; }
+
 .ecom-admin-limit { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; padding: 10px 12px; border-radius: 9px; color: var(--ui-text-info, var(--primary-color)); background: var(--ui-bg-info-soft, color-mix(in srgb, var(--primary-color) 10%, transparent)); font-size: .86rem; }
 .ecom-admin-limit.is-blocked { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
 .ecom-admin-products-empty, .ecom-admin-state { display: grid; place-items: center; gap: 7px; padding: 36px 18px; color: var(--text-light); text-align: center; }
@@ -150,6 +171,7 @@
 .ecom-admin-product-list { display: grid; gap: 10px; }
 .ecom-admin-product { align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background-color); }
 .ecom-admin-product.is-hidden { opacity: .7; }
+.ecom-admin-product.has-stock-warning { border-color: color-mix(in srgb, var(--ui-text-warning, #8a5a00) 38%, var(--border-color)); }
 .ecom-admin-product-image { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; overflow: hidden; border-radius: 10px; color: var(--text-light); background: var(--light-background); }
 .ecom-admin-product-image img { width: 100%; height: 100%; object-fit: cover; }
 .ecom-admin-product > div:nth-child(2) { display: grid; flex: 1; gap: 3px; min-width: 0; }
@@ -157,6 +179,26 @@
 .ecom-admin-product > div > span, .ecom-admin-product > div > small { overflow: hidden; color: var(--text-light); text-overflow: ellipsis; white-space: nowrap; }
 .ecom-admin-mini-status { padding: 3px 7px; color: var(--text-light); background: var(--light-background); font-size: .7rem; }
 .ecom-admin-mini-status.is-on { color: var(--ui-text-success, #176b3a); background: var(--ui-bg-success-soft, #e7f6ed); }
+.ecom-admin-stock-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--ui-text-warning, #8a5a00) !important;
+  background: var(--ui-bg-warning-soft, #fff3cd);
+  font-size: .76rem;
+  font-weight: 800;
+  white-space: normal !important;
+}
+.ecom-admin-stock-warning.status-source_missing,
+.ecom-admin-stock-warning.status-inactive_source,
+.ecom-admin-stock-warning.status-unverified {
+  color: var(--ui-text-danger, var(--error-color)) !important;
+  background: var(--ui-bg-danger-soft, #fdecec);
+}
 .ecom-admin-product-actions { display: flex; gap: 6px; }
 .ecom-admin-icon-button { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-color, var(--text-dark)); background: var(--card-background-color); cursor: pointer; }
 .ecom-admin-icon-button:hover:not(:disabled) { border-color: var(--primary-color); color: var(--primary-color); }
@@ -178,4 +220,5 @@
   .ecom-admin-badges { justify-content: flex-start; }
   .ecom-admin-product { align-items: flex-start; }
   .ecom-admin-product-actions { flex-direction: column; }
+  .ecom-admin-stock-alert { padding: 12px; }
 }
