@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const state = {
-    currentOrderId: 'ecom-order-1',
+    currentOrderId: 'ecom-order-a',
     activeOrders: new Map(),
     updateOrder: vi.fn((orderId, patch) => {
       const order = state.activeOrders.get(orderId);
@@ -100,8 +100,8 @@ const createDeferred = () => {
   return { promise, resolve, reject };
 };
 
-const buildReadyOrder = () => ({
-  id: 'ecom-order-1',
+const buildReadyOrder = (id = 'ecom-order-a', patch = {}) => ({
+  id,
   origin: 'ecommerce',
   items: [{
     id: 'product-1',
@@ -117,11 +117,11 @@ const buildReadyOrder = () => ({
   }],
   revision: 1,
   updatedAt: '2026-07-12T05:00:00.000Z',
-  ecommerceOrderId: 'online-order-1',
-  ecommerceOrderCode: 'WEB-1',
+  ecommerceOrderId: `online-${id}`,
+  ecommerceOrderCode: id === 'ecom-order-a' ? 'WEB-A' : 'WEB-B',
   ecommerceLicenseIdentity: 'context-1',
   ecommerceDraftStatus: 'prepared',
-  ecommerceClaimToken: 'claim-token-1',
+  ecommerceClaimToken: `claim-${id}`,
   ecommerceInventoryStatus: 'ready',
   ecommerceInventoryResolvedAt: '2026-07-12T05:00:00.000Z',
   ecommerceInventoryResolutionVersion: 1,
@@ -135,24 +135,25 @@ const buildReadyOrder = () => ({
   expectedDiscountTotal: 0,
   expectedTaxTotal: 0,
   expectedTotal: 100,
-  currency: 'MXN'
+  currency: 'MXN',
+  ...patch
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
   ecommerceCheckoutInitiationSingleFlightInternals.resetEcommerceCheckoutInitiations();
-  mocks.state.currentOrderId = 'ecom-order-1';
+  mocks.state.currentOrderId = 'ecom-order-a';
   mocks.state.activeOrders = new Map([
-    ['ecom-order-1', buildReadyOrder()]
+    ['ecom-order-a', buildReadyOrder('ecom-order-a')]
   ]);
-  mocks.createAttemptId.mockReturnValue('attempt-1');
+  mocks.createAttemptId.mockReturnValue('attempt-a');
   vi.stubGlobal('crypto', { randomUUID: mocks.createAttemptId });
   mocks.recoverConversion.mockResolvedValue({ success: true });
-  mocks.getRemoteState.mockResolvedValue({
+  mocks.getRemoteState.mockImplementation(async ({ order }) => ({
     success: true,
     remoteContractVersion: 2,
     draftStatus: 'prepared',
-    draftId: 'ecom-order-1',
+    draftId: order.id,
     claimOwned: true,
     claimValid: true,
     conversionStatus: 'idle',
@@ -160,21 +161,27 @@ beforeEach(() => {
     conversionAttemptId: null,
     reservedSaleId: null,
     convertedSaleId: null
-  });
+  }));
   mocks.findSale.mockResolvedValue(null);
   mocks.cancelRemote.mockResolvedValue({ success: true });
 });
 
 describe('ecommerce checkout gate single-flight integration', () => {
-  it('runs attempt creation, recovery, lock and reservation only once for ten rapid clicks', async () => {
+  it('runs attempt creation, recovery, lock and reservation only once for twenty rapid clicks', async () => {
     const deferred = createDeferred();
-    const checkoutResult = { success: true, modalOpened: true };
+    const checkoutResult = {
+      success: true,
+      modalOpened: true,
+      orderId: 'ecom-order-a',
+      checkoutAttemptId: 'canonical-attempt-a',
+      origin: 'ecommerce'
+    };
     const canonicalCheckout = {
-      handleInitiateCheckout: vi.fn(async () => {
+      handleInitiateCheckout: vi.fn(async (options) => {
         mocks.lockOrderForCheckout();
         mocks.beginRemoteConversion();
-        const order = mocks.state.activeOrders.get('ecom-order-1');
-        mocks.state.updateOrder('ecom-order-1', {
+        const order = mocks.state.activeOrders.get(options.expectedOrderId);
+        mocks.state.updateOrder(options.expectedOrderId, {
           isLockedForCheckout: true,
           ecommerceCheckoutLockAttemptId: order.ecommerceConversionAttemptId,
           ecommerceCheckoutLockActorIdentity: order.ecommerceConversionActorIdentity,
@@ -191,18 +198,22 @@ describe('ecommerce checkout gate single-flight integration', () => {
 
     let calls;
     act(() => {
-      calls = Array.from({ length: 10 }, () => result.current.handleInitiateCheckout());
+      calls = Array.from({ length: 20 }, () => result.current.handleInitiateCheckout());
     });
 
     expect(calls.every((promise) => promise === calls[0])).toBe(true);
     expect(
-      mocks.state.activeOrders.get('ecom-order-1').ecommerceCheckoutInitiationStatus
+      mocks.state.activeOrders.get('ecom-order-a').ecommerceCheckoutInitiationStatus
     ).toBe('starting');
 
     await waitFor(() => {
       expect(canonicalCheckout.handleInitiateCheckout).toHaveBeenCalledTimes(1);
     });
 
+    expect(canonicalCheckout.handleInitiateCheckout).toHaveBeenCalledWith({
+      expectedOrderId: 'ecom-order-a',
+      expectedOrigin: 'ecommerce'
+    });
     expect(mocks.createAttemptId).toHaveBeenCalledTimes(1);
     expect(mocks.recoverConversion).toHaveBeenCalledTimes(1);
     expect(mocks.getRemoteState).toHaveBeenCalledTimes(1);
@@ -214,63 +225,126 @@ describe('ecommerce checkout gate single-flight integration', () => {
     await act(async () => {
       deferred.resolve(checkoutResult);
       await expect(Promise.all(calls)).resolves.toEqual(
-        Array.from({ length: 10 }, () => checkoutResult)
+        Array.from({ length: 20 }, () => checkoutResult)
       );
     });
 
-    const finalOrder = mocks.state.activeOrders.get('ecom-order-1');
-    expect(finalOrder.ecommerceConversionAttemptId).toBe('attempt-1');
-    expect(finalOrder.ecommerceCheckoutLockAttemptId).toBe('attempt-1');
+    const finalOrder = mocks.state.activeOrders.get('ecom-order-a');
+    expect(finalOrder.ecommerceConversionAttemptId).toBe('attempt-a');
+    expect(finalOrder.ecommerceCheckoutLockAttemptId).toBe('attempt-a');
+    expect(finalOrder.ecommerceCanonicalCheckoutAttemptId).toBe('canonical-attempt-a');
     expect(finalOrder.ecommerceConversionStatus).toBe(ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING);
     expect(finalOrder.ecommerceCheckoutInitiationStatus).toBeNull();
   });
 
-  it('does not let a delayed cleanup from attempt A modify attempt B', async () => {
+  it('aborts A before canonical checkout when recovery resolves after selection changes to B', async () => {
+    const recovery = createDeferred();
+    const orderA = buildReadyOrder('ecom-order-a');
+    const orderB = buildReadyOrder('ecom-order-b');
+    mocks.state.activeOrders = new Map([
+      [orderA.id, orderA],
+      [orderB.id, orderB]
+    ]);
+    mocks.state.currentOrderId = orderA.id;
+    mocks.recoverConversion.mockReturnValueOnce(recovery.promise);
+
+    const canonicalCheckout = {
+      handleInitiateCheckout: vi.fn()
+    };
+    const { result } = renderHook(() => useEcommercePosCheckoutGate({
+      checkout: canonicalCheckout
+    }));
+
+    let initiation;
+    act(() => {
+      initiation = result.current.handleInitiateCheckout({
+        expectedOrderId: orderA.id,
+        expectedOrigin: 'ecommerce'
+      });
+    });
+
+    await waitFor(() => expect(mocks.recoverConversion).toHaveBeenCalledWith({
+      orderId: orderA.id
+    }));
+    mocks.state.currentOrderId = orderB.id;
+    recovery.resolve({ success: true });
+
+    await expect(initiation).resolves.toMatchObject({
+      success: false,
+      aborted: true,
+      targetChanged: true,
+      code: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED'
+    });
+    expect(canonicalCheckout.handleInitiateCheckout).not.toHaveBeenCalled();
+    expect(mocks.lockOrderForCheckout).not.toHaveBeenCalled();
+    expect(mocks.beginRemoteConversion).not.toHaveBeenCalled();
+    expect(mocks.showMessage).not.toHaveBeenCalled();
+    expect(mocks.state.activeOrders.get(orderA.id).ecommerceConversionStatus)
+      .toBe(ECOMMERCE_CONVERSION_STATUS.IDLE);
+    expect(mocks.state.activeOrders.get(orderB.id)).toEqual(orderB);
+  });
+
+  it('treats a missing order and a missing attempt id as non-owners', () => {
+    expect(ecommercePosCheckoutGateInternals.isAttemptOwner('missing-order', 'attempt-a')).toBe(false);
+    expect(ecommercePosCheckoutGateInternals.isAttemptOwner('ecom-order-a', null)).toBe(false);
+  });
+
+  it('lets remote cleanup for disappeared A finish without closing or modifying B', async () => {
     const cancellation = createDeferred();
     const closeCanonicalCheckout = vi.fn();
-    const attemptA = {
-      ...buildReadyOrder(),
+    const orderA = buildReadyOrder('ecom-order-a', {
       ecommerceConversionAttemptId: 'attempt-a',
       ecommerceConversionActorIdentity: 'admin:device',
       ecommerceCheckoutLockAttemptId: 'attempt-a',
       ecommerceCheckoutLockActorIdentity: 'admin:device',
+      ecommerceCanonicalCheckoutAttemptId: 'canonical-attempt-a',
       ecommerceCheckoutSnapshot: {
         ecommerceConversionKey: 'conversion-key-a'
       },
       ecommerceRemoteConversionStatus: 'reserved',
       isLockedForCheckout: true
-    };
-    mocks.state.activeOrders = new Map([[attemptA.id, attemptA]]);
-    mocks.cancelRemote.mockReturnValueOnce(cancellation.promise);
-
-    const staleCleanup = ecommercePosCheckoutGateInternals.failBeforeSale({
-      orderId: attemptA.id,
-      code: 'ATTEMPT_A_FAILED',
-      message: 'El intento A falló.',
-      closeCanonicalCheckout,
-      releaseRemoteReservation: true,
-      releaseReason: 'attempt_a_failed',
-      ownedAttemptId: 'attempt-a'
     });
-
-    await waitFor(() => expect(mocks.cancelRemote).toHaveBeenCalledTimes(1));
-
-    const attemptB = {
-      ...attemptA,
+    const orderB = buildReadyOrder('ecom-order-b', {
       ecommerceConversionAttemptId: 'attempt-b',
       ecommerceConversionActorIdentity: 'staff:device',
       ecommerceCheckoutLockAttemptId: 'attempt-b',
       ecommerceCheckoutLockActorIdentity: 'staff:device',
+      ecommerceCanonicalCheckoutAttemptId: 'canonical-attempt-b',
       ecommerceCheckoutSnapshot: {
         ecommerceConversionKey: 'conversion-key-b'
       },
-      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
-    };
-    mocks.state.activeOrders.set(attemptB.id, attemptB);
+      ecommerceRemoteConversionStatus: 'reserved',
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING,
+      isLockedForCheckout: true
+    });
+    mocks.state.activeOrders = new Map([[orderA.id, orderA]]);
+    mocks.state.currentOrderId = orderA.id;
+    mocks.cancelRemote.mockReturnValueOnce(cancellation.promise);
+
+    const staleCleanup = ecommercePosCheckoutGateInternals.failBeforeSale({
+      orderId: orderA.id,
+      code: 'ATTEMPT_A_FAILED',
+      message: 'El intento A falló.',
+      closeCanonicalCheckout,
+      expectedCheckoutAttemptId: 'canonical-attempt-a',
+      releaseRemoteReservation: true,
+      releaseReason: 'attempt_a_failed',
+      ownedAttemptId: 'attempt-a',
+      conversionContext: ecommercePosCheckoutGateInternals.buildConversionContext({
+        order: orderA,
+        attemptId: 'attempt-a',
+        actorIdentity: 'admin:device'
+      })
+    });
+
+    await waitFor(() => expect(mocks.cancelRemote).toHaveBeenCalledTimes(1));
+
+    mocks.state.activeOrders.delete(orderA.id);
+    mocks.state.activeOrders.set(orderB.id, orderB);
+    mocks.state.currentOrderId = orderB.id;
 
     cancellation.resolve({ success: true });
-    await expect(staleCleanup).resolves.toEqual({
-      success: false,
+    await expect(staleCleanup).resolves.toMatchObject({
       ignored: true,
       staleAttempt: true,
       code: 'ECOMMERCE_STALE_CHECKOUT_ATTEMPT'
@@ -279,15 +353,6 @@ describe('ecommerce checkout gate single-flight integration', () => {
     expect(closeCanonicalCheckout).not.toHaveBeenCalled();
     expect(mocks.updateConversion).not.toHaveBeenCalled();
     expect(mocks.showMessage).not.toHaveBeenCalled();
-    expect(mocks.state.activeOrders.get(attemptB.id)).toMatchObject({
-      ecommerceConversionAttemptId: 'attempt-b',
-      ecommerceConversionActorIdentity: 'staff:device',
-      ecommerceCheckoutLockAttemptId: 'attempt-b',
-      ecommerceCheckoutLockActorIdentity: 'staff:device',
-      ecommerceCheckoutSnapshot: {
-        ecommerceConversionKey: 'conversion-key-b'
-      },
-      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
-    });
+    expect(mocks.state.activeOrders.get(orderB.id)).toEqual(orderB);
   });
 });
