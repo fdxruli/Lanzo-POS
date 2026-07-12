@@ -64,6 +64,14 @@ const flush = async () => {
   await Promise.resolve();
 };
 
+const waitForCondition = async (predicate) => {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+  }
+  throw new Error('Expected async condition was not reached');
+};
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -139,8 +147,9 @@ describe('ecommerceCatalogSyncService', () => {
     });
 
     const active = service.syncNow({ productIds: ['product-1'], fullReconcile: false });
-    await flush();
+    await waitForCondition(() => syncBatch.mock.calls.length === 1);
     service.scheduleSync({ productIds: ['product-1'], reason: 'during-flight' });
+    expect(typeof resolveFirst).toBe('function');
     resolveFirst({
       success: true,
       updatedCount: 1,
