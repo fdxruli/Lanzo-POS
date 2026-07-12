@@ -17,6 +17,10 @@ import {
   mapLocalCreditCheckoutToCloudSale
 } from './salesCloudCashierMapper';
 
+const CLOUD_RECOVERY_PAGE_LIMIT = 500;
+const CLOUD_RECOVERY_MAX_PAGES = 20;
+const CLOUD_SALE_VERIFICATION_PENDING = 'ECOMMERCE_SALE_VERIFICATION_PENDING';
+
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
 const isExperimentalFlagEnabled = () => {
@@ -78,7 +82,7 @@ const friendlyCloudCashierError = (error) => {
     CLOUD_BATCH_ALLOCATION_MISMATCH: 'Las cantidades por lote no cuadran con la cantidad vendida. Revisa el producto e intenta de nuevo.',
     SALE_CREDIT_DUPLICATE_OR_CONFLICT: 'La venta fiada ya fue registrada o hay un conflicto de folio. Actualiza ventas antes de reintentar.',
     EXPIRED_BATCH_BLOCKED: 'Este lote ya está vencido y no puede venderse. Muévelo a merma o corrige la fecha si fue un error.',
-    INSUFFICIENT_NON_EXPIRED_STOCK: 'No hay stock vigente suficiente para completar la venta. Revisa los lotes vencidos en Caducidad.',
+    INSUFFICIENT_NON_EXPIRED_STOCK: 'No hay stock vigente suficiente para completar esta venta. Revisa los lotes vencidos en Caducidad.',
     STRICT_EXPIRY_REQUIRED: 'Este producto requiere fecha de caducidad por lote antes de poder venderse.'
   };
 
@@ -87,6 +91,164 @@ const friendlyCloudCashierError = (error) => {
   mapped.code = code;
   mapped.originalError = error;
   return mapped;
+};
+
+const getCloudSaleMetadata = (sale = {}) => (
+  sale.metadata && typeof sale.metadata === 'object' ? sale.metadata : {}
+);
+
+const getEcommerceBusinessIdempotencyKey = (sale = {}) => {
+  const metadata = getCloudSaleMetadata(sale);
+  const key = metadata.ecommerceConversionKey || metadata.idempotencyKey || null;
+  const isEcommerce = sale.origin === 'ecommerce'
+    || metadata.origin === 'ecommerce'
+    || Boolean(metadata.ecommerceOrderId);
+  return isEcommerce && key ? String(key) : null;
+};
+
+const buildCloudSaleIdempotencyKey = ({ sale, payload, deviceId }) => (
+  getEcommerceBusinessIdempotencyKey(sale)
+  || `${payload.idempotencyKey}:${deviceId}`
+);
+
+const getCloudSaleConversionKey = (sale = {}) => {
+  const metadata = getCloudSaleMetadata(sale);
+  return sale.idempotency_key
+    || sale.idempotencyKey
+    || metadata.ecommerceConversionKey
+    || metadata.idempotencyKey
+    || null;
+};
+
+const matchesCommittedCloudSale = (sale = {}, { localSaleId, idempotencyKey }) => {
+  const localId = sale.local_sale_id || sale.localSaleId || null;
+  const conversionKey = getCloudSaleConversionKey(sale);
+  return (
+    (localSaleId && (localId === localSaleId || sale.id === localSaleId))
+    || (idempotencyKey && conversionKey === idempotencyKey)
+  );
+};
+
+const normalizeCloudSalesPayload = (payload = {}) => ({
+  sales: Array.isArray(payload.sales) ? payload.sales : (payload.sale ? [payload.sale] : []),
+  items: Array.isArray(payload.items) ? payload.items : [],
+  payments: Array.isArray(payload.payments) ? payload.payments : []
+});
+
+const buildRecoveryDateFrom = (startedAt) => {
+  const parsed = startedAt ? new Date(startedAt) : new Date();
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  safeDate.setHours(safeDate.getHours() - 24);
+  return safeDate.toISOString();
+};
+
+const saveRecoveredCloudSale = async ({ localSaleId, idempotencyKey, payload, cloudSale }) => {
+  const normalized = normalizeCloudSalesPayload(payload);
+  const cloudSaleId = cloudSale.id;
+  const items = normalized.items.filter((item) => (
+    item.sale_id === cloudSaleId || item.saleId === cloudSaleId
+  ));
+  const payments = normalized.payments.filter((payment) => (
+    payment.sale_id === cloudSaleId || payment.saleId === cloudSaleId
+  ));
+  const metadata = {
+    ...getCloudSaleMetadata(cloudSale),
+    origin: 'ecommerce',
+    idempotencyKey,
+    ecommerceConversionKey: idempotencyKey
+  };
+  const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+    localSale: {
+      id: localSaleId,
+      status: 'closed',
+      sourceMode: 'cloud_committed',
+      metadata
+    },
+    response: {
+      ...payload,
+      sale: { ...cloudSale, local_sale_id: localSaleId, metadata },
+      items,
+      payments
+    }
+  });
+
+  if (!localSale) {
+    const error = new Error('CLOUD_SALE_LOCAL_RECOVERY_FAILED');
+    error.code = 'CLOUD_SALE_LOCAL_RECOVERY_FAILED';
+    throw error;
+  }
+  return localSale;
+};
+
+const findAndRecoverCloudSale = async ({ localSaleId, idempotencyKey, startedAt, licenseKey }) => {
+  let directPayload = null;
+  try {
+    directPayload = await salesCloudRepository.getSale({
+      licenseKey,
+      saleId: localSaleId,
+      force: true
+    });
+    const direct = normalizeCloudSalesPayload(directPayload);
+    const directSale = direct.sales.find((sale) => (
+      matchesCommittedCloudSale(sale, { localSaleId, idempotencyKey })
+    ));
+    if (directSale) {
+      const localSale = await saveRecoveredCloudSale({
+        localSaleId,
+        idempotencyKey,
+        payload: directPayload,
+        cloudSale: directSale
+      });
+      return { success: true, exists: true, saleId: localSale.id, cloudSaleId: directSale.id, localSale };
+    }
+  } catch (error) {
+    Logger.warn('[SalesCloud/Cashier] Consulta directa de recuperación no concluyente:', error);
+  }
+
+  const dateFrom = buildRecoveryDateFrom(startedAt);
+  let offset = 0;
+
+  for (let page = 0; page < CLOUD_RECOVERY_MAX_PAGES; page += 1) {
+    const payload = await salesCloudRepository.pullSalesSnapshot({
+      licenseKey,
+      limit: CLOUD_RECOVERY_PAGE_LIMIT,
+      offset,
+      dateFrom,
+      dateTo: null,
+      includeDeleted: true,
+      force: true
+    });
+    if (payload?.success === false) {
+      const error = new Error(payload.message || payload.code || 'CLOUD_SALE_VERIFICATION_FAILED');
+      error.code = payload.code || 'CLOUD_SALE_VERIFICATION_FAILED';
+      throw error;
+    }
+
+    const normalized = normalizeCloudSalesPayload(payload);
+    const cloudSale = normalized.sales.find((sale) => (
+      matchesCommittedCloudSale(sale, { localSaleId, idempotencyKey })
+    ));
+    if (cloudSale) {
+      const localSale = await saveRecoveredCloudSale({
+        localSaleId,
+        idempotencyKey,
+        payload,
+        cloudSale
+      });
+      return { success: true, exists: true, saleId: localSale.id, cloudSaleId: cloudSale.id, localSale };
+    }
+
+    if (normalized.sales.length < CLOUD_RECOVERY_PAGE_LIMIT) {
+      return { success: true, exists: false };
+    }
+    offset += CLOUD_RECOVERY_PAGE_LIMIT;
+  }
+
+  return {
+    success: false,
+    code: CLOUD_SALE_VERIFICATION_PENDING,
+    message: 'La consulta cloud no pudo completarse dentro del límite seguro de paginación.'
+  };
 };
 
 export const salesCloudCashierService = {
@@ -141,6 +303,49 @@ export const salesCloudCashierService = {
     };
   },
 
+  async verifyCommittedSale({
+    localSaleId,
+    idempotencyKey,
+    startedAt = null,
+    licenseDetails = null
+  } = {}) {
+    if (!localSaleId || !idempotencyKey) {
+      return {
+        success: false,
+        code: 'CLOUD_SALE_VERIFICATION_INVALID_ARGUMENT',
+        message: 'Faltan identificadores estables para comprobar la venta cloud.'
+      };
+    }
+
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    const licenseKey = getLicenseKeyFromDetails(details) || context.licenseKey;
+    if (!licenseKey || !context.online) {
+      return {
+        success: false,
+        code: CLOUD_SALE_VERIFICATION_PENDING,
+        message: 'No se pudo consultar la venta cloud. El pedido permanece reservado.'
+      };
+    }
+
+    try {
+      return await findAndRecoverCloudSale({
+        localSaleId,
+        idempotencyKey,
+        startedAt,
+        licenseKey
+      });
+    } catch (error) {
+      Logger.error('[SalesCloud/Cashier] No se pudo verificar la venta cloud:', error);
+      return {
+        success: false,
+        code: CLOUD_SALE_VERIFICATION_PENDING,
+        message: 'No se pudo confirmar todavía si la venta cloud fue registrada.',
+        error
+      };
+    }
+  },
+
   async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null } = {}) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
@@ -161,7 +366,11 @@ export const salesCloudCashierService = {
       ? mapLocalCreditCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled })
       : mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled });
 
-    const idempotencyKey = `${payload.idempotencyKey}:${context.deviceId}`;
+    const idempotencyKey = buildCloudSaleIdempotencyKey({
+      sale,
+      payload,
+      deviceId: context.deviceId
+    });
 
     try {
       const createSale = creditSale
@@ -215,5 +424,20 @@ export const salesCloudCashierService = {
     }
   }
 };
+
+export const salesCloudCashierServiceInternals = Object.freeze({
+  CLOUD_RECOVERY_PAGE_LIMIT,
+  CLOUD_RECOVERY_MAX_PAGES,
+  CLOUD_SALE_VERIFICATION_PENDING,
+  getRuntimeContext,
+  getEcommerceBusinessIdempotencyKey,
+  buildCloudSaleIdempotencyKey,
+  getCloudSaleConversionKey,
+  matchesCommittedCloudSale,
+  normalizeCloudSalesPayload,
+  buildRecoveryDateFrom,
+  saveRecoveredCloudSale,
+  findAndRecoverCloudSale
+});
 
 export default salesCloudCashierService;
