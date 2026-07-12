@@ -41,6 +41,10 @@ export const createEcommerceCatalogSyncOutboxDatabase = (
   database.version(1).stores({
     changes: '&key, scopeHash, portalId, productRef, fullReconcile, updatedAt, [scopeHash+portalId]'
   });
+  database.version(2).stores({
+    changes: '&key, scopeHash, portalId, productRef, fullReconcile, updatedAt, [scopeHash+portalId]',
+    scopes: '&scopeHash, portalId, updatedAt'
+  });
   return database;
 };
 
@@ -58,6 +62,30 @@ export const createEcommerceCatalogSyncOutbox = ({
     const scopeHash = await hashEcommerceCatalogSyncScope(scopeIdentity);
     if (!scopeHash) throw new Error('ECOMMERCE_CATALOG_SYNC_SCOPE_REQUIRED');
     return scopeHash;
+  };
+
+  const rememberPortal = async ({ scopeIdentity, portalId }) => {
+    const normalizedPortalId = asText(portalId);
+    if (!normalizedPortalId) return false;
+    const scopeHash = await resolveScope(scopeIdentity);
+    await ensureOpen();
+    await database.table('scopes').put({
+      scopeHash,
+      portalId: normalizedPortalId,
+      updatedAt: now()
+    });
+    return true;
+  };
+
+  const getRememberedPortal = async ({ scopeIdentity }) => {
+    const scopeHash = await resolveScope(scopeIdentity);
+    await ensureOpen();
+    const record = await database.table('scopes').get(scopeHash);
+    if (!record || record.updatedAt < now() - OUTBOX_MAX_AGE_MS) {
+      if (record) await database.table('scopes').delete(scopeHash);
+      return null;
+    }
+    return asText(record.portalId) || null;
   };
 
   const enqueue = async ({
@@ -98,7 +126,14 @@ export const createEcommerceCatalogSyncOutbox = ({
       });
     }
 
-    await database.table('changes').bulkPut(records);
+    await database.transaction('rw', database.table('changes'), database.table('scopes'), async () => {
+      await database.table('changes').bulkPut(records);
+      await database.table('scopes').put({
+        scopeHash,
+        portalId: normalizedPortalId,
+        updatedAt: timestamp
+      });
+    });
     return records.length;
   };
 
@@ -137,18 +172,25 @@ export const createEcommerceCatalogSyncOutbox = ({
 
   const cleanup = async () => {
     await ensureOpen();
-    return database.table('changes')
-      .where('updatedAt')
-      .below(now() - OUTBOX_MAX_AGE_MS)
-      .delete();
+    const cutoff = now() - OUTBOX_MAX_AGE_MS;
+    const [changesDeleted, scopesDeleted] = await Promise.all([
+      database.table('changes').where('updatedAt').below(cutoff).delete(),
+      database.table('scopes').where('updatedAt').below(cutoff).delete()
+    ]);
+    return changesDeleted + scopesDeleted;
   };
 
   const clear = async () => {
     await ensureOpen();
-    await database.table('changes').clear();
+    await database.transaction('rw', database.table('changes'), database.table('scopes'), async () => {
+      await database.table('changes').clear();
+      await database.table('scopes').clear();
+    });
   };
 
   return {
+    rememberPortal,
+    getRememberedPortal,
     enqueue,
     list,
     acknowledge,
