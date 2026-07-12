@@ -24,6 +24,7 @@ import {
   claimEcommerceOrderPosDraft,
   confirmEcommerceOrderPosDraft,
   getEcommerceOrder,
+  getEcommerceOrderErrorMessage,
   listEcommerceOrders,
   markEcommerceOrderSeen,
   rejectEcommerceOrder,
@@ -214,6 +215,34 @@ describe('ecommerceOrderService', () => {
       p_reason: 'abandoned'
     }));
     expect(JSON.stringify(mocks.loggerError.mock.calls)).not.toContain('claim-token');
+  });
+
+  it('maps conversion review to a safe message without exposing reservation internals', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        success: false,
+        code: 'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
+        message: 'attemptId=internal conversionKey=internal claimToken=internal'
+      },
+      error: null
+    });
+
+    const result = await releaseEcommerceOrderPosDraft({
+      licenseDetails,
+      orderId: orderDetail.id,
+      claimToken: 'claim-token',
+      reason: 'admin_release'
+    });
+
+    expect(result).toEqual({
+      success: false,
+      code: 'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
+      message: 'Este pedido tiene un cobro en revisión y no puede liberarse todavía. Verifica la venta antes de continuar.'
+    });
+    expect(getEcommerceOrderErrorMessage({ code: result.code })).toBe(result.message);
+    expect(JSON.stringify(result)).not.toContain('attemptId');
+    expect(JSON.stringify(result)).not.toContain('conversionKey');
+    expect(JSON.stringify(result)).not.toContain('claimToken');
   });
 
   it('accepts only https://wa.me links in normalized detail', async () => {
