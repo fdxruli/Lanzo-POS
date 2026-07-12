@@ -60,6 +60,23 @@ describe('ecommerceCatalogSyncOutbox', () => {
       .toEqual(['product-a']);
     expect((await outbox.list({ scopeIdentity: 'license-a', portalId: 'portal-b' })).productRefs)
       .toEqual([]);
+    expect(await outbox.getRememberedPortal({ scopeIdentity: 'license-a' })).toBe('portal-a');
+    expect(await outbox.getRememberedPortal({ scopeIdentity: 'license-b' })).toBe('portal-b');
+  });
+
+  it('persists the safe portal scope even before changes are enqueued', async () => {
+    const outbox = createOutbox('catalog-outbox-remembered-portal');
+    await outbox.rememberPortal({
+      scopeIdentity: 'license-a:admin:device-a',
+      portalId: 'portal-a'
+    });
+
+    expect(await outbox.getRememberedPortal({
+      scopeIdentity: 'license-a:admin:device-a'
+    })).toBe('portal-a');
+    expect(await outbox.getRememberedPortal({
+      scopeIdentity: 'license-b:admin:device-b'
+    })).toBeNull();
   });
 
   it('stores hashes instead of raw license identities and no products or tokens', async () => {
@@ -71,12 +88,17 @@ describe('ecommerceCatalogSyncOutbox', () => {
       reason: 'offline-change'
     });
 
-    const records = await outbox.database.table('changes').toArray();
+    const records = [
+      ...await outbox.database.table('changes').toArray(),
+      ...await outbox.database.table('scopes').toArray()
+    ];
     const serialized = JSON.stringify(records);
     expect(serialized).not.toContain('SECRET-LICENSE');
     expect(serialized).not.toContain('SECRET-TOKEN');
     expect(serialized).not.toContain('publicName');
-    expect(records[0]).toMatchObject({ portalId: 'portal-a', productRef: 'product-1' });
+    expect(records.some((record) => (
+      record.portalId === 'portal-a' && record.productRef === 'product-1'
+    ))).toBe(true);
   });
 
   it('acknowledges only confirmed entries', async () => {
@@ -94,5 +116,6 @@ describe('ecommerceCatalogSyncOutbox', () => {
     })).toBe(1);
     expect((await outbox.list({ scopeIdentity: 'license-a', portalId: 'portal-a' })).entries)
       .toHaveLength(0);
+    expect(await outbox.getRememberedPortal({ scopeIdentity: 'license-a' })).toBe('portal-a');
   });
 });
