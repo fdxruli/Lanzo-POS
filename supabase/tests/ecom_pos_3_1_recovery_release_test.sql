@@ -40,6 +40,9 @@ begin
   if v_release_def not like '%pos_conversion_admin_released%' then
     raise exception 'admin release must create the dedicated audit event';
   end if;
+  if v_release_def not like '%pos_conversion_actor_ref <> v_auth->>''device_id''%' then
+    raise exception 'a normal device must not release a reservation owned by another device';
+  end if;
 
   if v_release_def not like '%pos_conversion_status = ''idle''%'
      or v_release_def not like '%pos_conversion_attempt_id = null%'
@@ -75,11 +78,6 @@ begin
      )
      or has_function_privilege(
        'authenticated',
-       'private.ecommerce_pos_sale_lookup_v2(uuid,text,text)',
-       'execute'
-     )
-     or has_function_privilege(
-       'public',
        'private.ecommerce_pos_sale_lookup_v2(uuid,text,text)',
        'execute'
      ) then
