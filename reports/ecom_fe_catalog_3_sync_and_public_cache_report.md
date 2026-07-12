@@ -1,369 +1,365 @@
 # ECOM.FE.CATALOG.3 — Sincronización automática y caché del catálogo público
 
-## Estado del PR
+## Estado
+
+**CORRECCIONES ECOM.FE.CATALOG.3.1 IMPLEMENTADAS / VALIDACIÓN PENDIENTE**
 
 - Repositorio: `fdxruli/Lanzo-POS`
 - Rama: `fase-ecom-fe-catalog-3`
 - PR: `#93 — FASE ECOM.FE.CATALOG.3 — Sincronización automática y caché del catálogo público`
-- Estado: **draft**
+- Estado del PR: **draft**
+- Base: `main`
+- Base y merge-base confirmados: `66315c445836bbf662224671c14524994acd0f13`
+- HEAD inicial real de la corrección: `6b32df3f02aaa092f004c0a9906f1be794e5fab1`
+- HEAD funcional previo a esta actualización documental: `bc0950319eac669ac27c5ece7b711480154e6a08`
+- Relación comprobada antes de actualizar este reporte: `ahead`, `behind_by: 0`
 - Merge automático: **no realizado**
-- Base real de `main`: `66315c445836bbf662224671c14524994acd0f13`
-- Merge base confirmado: `66315c445836bbf662224671c14524994acd0f13`
-- HEAD funcional antes de este commit documental: `329e5e6b027721c001a2a88fde05a879a98bdf92`
-- La rama está `ahead` de `main` y `behind_by: 0` al cerrar la implementación funcional.
 
-## Migraciones creadas
+El HEAD final del PR es el commit que contiene esta actualización documental y debe consultarse en el propio PR. El PR debe permanecer en draft hasta completar la validación ejecutable, las pruebas SQL seguras y las pruebas manuales.
 
-1. `supabase/migrations/20260712192900_ecom_fe_catalog_3_legacy_availability_snapshot.sql`
-   - Captura transitoriamente la disponibilidad efectiva previa para conservar exactamente las filas existentes durante el backfill.
-2. `supabase/migrations/20260712193000_ecom_fe_catalog_3_sync_and_public_cache.sql`
-   - Agrega revisión monótona, modelo source/manual, estados operacionales, RPC batch, contrato público versionado e idempotencia.
-3. `supabase/migrations/20260712193100_ecom_fe_catalog_3_backfill_and_trigger_fix.sql`
-   - Restaura el snapshot legacy, endurece la separación entre disponibilidad manual y de fuente, normaliza `not_tracked`, calcula la firma pública efectiva y elimina la tabla transitoria.
+## Archivos modificados por ECOM.FE.CATALOG.3.1
 
-Las migraciones están versionadas en el repositorio, pero **no fueron aplicadas a producción**. No se ejecutó `supabase db push`, `supabase migration repair`, SQL de escritura remoto ni modificación manual de funciones o tablas remotas.
+- `src/services/ecommerce/ecommerceAdminService.js`
+- `src/services/ecommerce/ecommerceCatalogSyncService.js`
+- `src/services/ecommerce/ecommerceCatalogSyncOutbox.js`
+- `src/services/ecommerce/ecommercePublicCatalogCache.js`
+- `src/components/ecommerce/EcommerceProductPublishModal.jsx`
+- `src/services/ecommerce/__tests__/ecommerceCatalogSyncService.test.js`
+- `src/services/ecommerce/__tests__/ecommerceCatalogSyncOutbox.test.js`
+- `src/services/ecommerce/__tests__/ecommercePublicCatalogCache.test.js`
+- `src/components/ecommerce/__tests__/EcommerceProductPublishModal.stockMode.test.jsx`
+- `supabase/migrations/20260712210000_ecom_fe_catalog_3_1_source_revision_schema.sql`
+- `supabase/migrations/20260712210100_ecom_fe_catalog_3_1_sync_rpc.sql`
+- `supabase/tests/ecom_fe_catalog_3_sync_and_revision.sql`
+- `reports/ecom_fe_catalog_3_sync_and_public_cache_report.md`
 
-## Modelo de campos vinculados y manuales
+La corrección conserva la arquitectura original de la fase: autosync únicamente PRO, caché público FREE/PRO, revisión monótona del catálogo, campos `source | manual`, disponibilidad efectiva manual/fuente, paginación versionada, carrito reconciliado, checkout bloqueado durante validación, RPC batch, outbox IndexedDB, debounce, single-flight, dirty y stale protection.
 
-Cada producto publicado incorpora `sync_config` JSONB con los campos:
+## 1. Lecturas locales fail-closed
 
-```json
-{
-  "name": "source | manual",
-  "description": "source | manual",
-  "category": "source | manual",
-  "price": "source | manual",
-  "image": "source | manual"
-}
-```
+### Productos
 
-- Las filas existentes se conservan inicialmente en modo `manual` para no sobrescribir nombre, descripción, categoría, precio ni imagen.
-- Las publicaciones nuevas de Lanzo Nube pueden iniciar vinculadas y convertir campos individuales a manual.
-- Plan Free fuerza configuración manual y no expone sincronización automática.
-- `is_published`, `display_order`, opciones públicas y disponibilidad manual nunca son sobrescritos por el runtime de sincronización.
+`getProductsByIds` ya no convierte una excepción en `new Map()`. Una falla de IndexedDB genera `ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED`, se clasifica como reintentable, aborta antes de llamar a la RPC y conserva el trabajo en el outbox.
 
-## Disponibilidad efectiva
+Por tanto:
 
-Se separaron:
+- una falla técnica no produce `source_missing`;
+- no se envía `sourceAvailable: false`;
+- no se modifica stock;
+- no se modifican campos públicos;
+- se conserva el último snapshot confirmado.
 
-- `manual_available`: decisión del administrador.
-- `source_available`: estado confirmado de la fuente local.
-- `is_available`: proyección efectiva persistida.
+`source_missing` se produce únicamente cuando la lectura masiva terminó correctamente y el ID solicitado no existe en el resultado.
 
-La regla aplicada es:
+### Categorías
+
+Una falla de lectura de categorías omite `fields.category` del payload. El servidor distingue así entre:
+
+- propiedad presente con `null`: borrar el valor vinculado;
+- propiedad ausente: no evaluada, conservar el valor público anterior.
+
+### Lotes
+
+Una falla de lectura de lotes continúa como `unverified`, con:
 
 ```text
-is_available = manual_available AND source_available
+sourceAvailable: null
+stockSnapshot: null
 ```
 
-La publicación pública además requiere `is_published = true`. El trigger de compatibilidad solo interpreta una escritura legacy de `is_available` como cambio manual cuando `source_available` no cambió. Por ello, una sincronización automática nunca reactiva un producto deshabilitado manualmente ni convierte una falta de stock de fuente en una decisión manual permanente.
+La RPC conserva `source_available`, `stock_snapshot`, revisión confirmada y hash confirmados. No inventa stock cero ni altera la disponibilidad efectiva.
 
-## Estados de sincronización
+## 2. Firma idempotente completa
 
-Se agregaron:
+La llave cliente es:
 
-- `sync_status`: `synced`, `pending`, `review`, `error`, `manual`.
-- `source_state`: `source_missing`, `inactive_source`, `unverified`, `not_tracked`, `in_stock`, `out_of_stock` y `manual` para compatibilidad.
-- `source_revision`, `last_sync_attempt_at`, `last_synced_at` y `sync_error_code` seguro.
-
-No se guardan mensajes SQL, payloads completos, tokens ni metadatos sensibles.
-
-## RPC batch administrativa
-
-Se creó `ecommerce_admin_sync_published_catalog`.
-
-Características:
-
-- reutiliza `private.ecommerce_admin_authorize_v2`;
-- acepta admin y staff según la autorización administrativa vigente;
-- verifica `ecommerce_cloud_catalog_source` server-side;
-- aísla por licencia y portal;
-- valida pertenencia de cada producto al portal autorizado;
-- máximo técnico de 200 proyecciones por lote, con múltiples lotes permitidos;
-- rechaza IDs y referencias duplicadas;
-- rechaza columnas arbitrarias y tipos no permitidos;
-- usa una llave idempotente y tabla privada de respuestas;
-- valida revisión esperada;
-- ejecuta cada invocación dentro de la transacción de la función;
-- devuelve únicamente conteos seguros y la nueva revisión.
-
-La proyección enviada contiene solo identificadores necesarios, revisión de fuente, estado, disponibilidad, stock confirmado y campos públicos sincronizables. No incluye costos, proveedores, ventas, clientes, recetas completas, tokens ni información privada del negocio.
-
-## Idempotencia
-
-- El cliente genera una firma del lote normalizado.
-- La llave incorpora portal, índice de chunk, firma y revisión esperada.
-- El servidor guarda hash de solicitud y respuesta en `private.ecommerce_catalog_sync_requests`.
-- Reutilizar la misma llave con otro payload produce conflicto seguro.
-- Las entradas antiguas se purgan después de siete días.
-
-## Revisión monótona del catálogo
-
-`ecommerce_portals.catalog_revision` inicia en `1` y aumenta dentro de la misma transacción cuando cambia la firma que realmente observa el cliente:
-
-- alta o baja pública;
-- publicación/despublicación;
-- nombre, descripción, categoría, precio, imagen;
-- disponibilidad efectiva;
-- orden;
-- stock público efectivo según la feature y el modo;
-- opciones públicas.
-
-No aumenta por:
-
-- intentos o fechas internas de sincronización;
-- código de error;
-- estado operacional interno;
-- una cantidad de stock que el plan o modo oculta al público.
-
-No se usa `max(updated_at)`.
-
-## Contrato público versionado
-
-`ecommerce_get_portal_by_slug` retorna:
-
-```json
-{
-  "catalogRevision": 1,
-  "cachePolicy": {
-    "schemaVersion": 1,
-    "freshSeconds": 300,
-    "maxStaleSeconds": 86400
-  }
-}
+```text
+ecom-catalog-sync:<portal>:<hash-semantico-completo>
 ```
 
-`ecommerce_get_catalog` conserva la firma pública anterior y agrega una sobrecarga con `p_catalog_revision`. Si la revisión esperada no coincide, devuelve `ECOMMERCE_CATALOG_REVISION_CHANGED`. La paginación mantiene orden determinista por `display_order`, `public_name` e `id`.
+La normalización incluye:
 
-El frontend solo activa el caché versionado cuando el servidor entrega una revisión explícita. Esto mantiene compatibilidad segura si el frontend se despliega antes que las migraciones.
+- `publishedProductId`;
+- `localProductRef`;
+- `sourceRevision`;
+- `sourceState`;
+- `sourceAvailable`;
+- `stockSnapshot`;
+- `fields.name`;
+- `fields.description`;
+- `fields.category`;
+- `fields.price`;
+- `fields.image`.
 
-## Runtime de sincronización PRO
+La serialización usa orden estable de propiedades, normalización de `null`, strings y números, y orden estable de productos por identificadores. No incluye timestamps locales, motivos, `batchIndex` ni posición accidental del chunk.
 
-Componentes principales:
+El servidor calcula el hash sobre el JSONB completo. Reusar una llave con otro payload devuelve `ECOMMERCE_IDEMPOTENCY_CONFLICT`; repetir exactamente el mismo lote devuelve la respuesta idempotente.
 
-- `ecommerceCatalogSyncService.js`
-- `EcommerceCatalogSyncRuntime.jsx`
-- `ecommerceCatalogSyncOutbox.js`
-- infraestructura masiva de `ecommercePublishedStockLocalSource.js`
+Se agregaron pruebas para cambio solo de stock, cambio solo de precio, distinto orden de propiedades, distinto orden de productos y repetición idéntica.
 
-Eventos considerados:
+## 3. Errores reintentables y outbox
 
-- `PRODUCT_SYNC_EVENT`;
-- `lanzo:ticker-inventory-alert`;
-- `online`;
-- `visibilitychange` a visible;
-- solicitud manual desde Portal online;
-- cambio de licencia, rol de dispositivo o sesión staff mediante invalidación de contexto.
+La clasificación reconoce:
 
-## Single-flight, dirty y protección stale
+- navegador offline;
+- `TypeError`, `AbortError`, `TimeoutError`;
+- errores conocidos de red y fetch;
+- HTTP 502, 503 y 504;
+- códigos PostgreSQL/PostgREST de conexión, timeout, bloqueo o recursos temporales;
+- mensajes conocidos de red temporal.
 
-- Debounce por defecto: 900 ms.
-- Los IDs se coalescen en un `Set`.
-- Existe una única ejecución activa por runtime/contexto.
-- Un evento durante una ejecución marca `dirty`.
-- Al terminar se realiza una repetición consolidada; una tercera acumulación se agenda como seguimiento consolidado.
-- Cada commit se protege con `contextKey` y `contextEpoch`.
-- Cambiar licencia, rol o sesión staff invalida timers y respuestas pendientes.
-- Una respuesta antigua no puede actualizar el estado del contexto nuevo.
-- Si el evento no trae IDs confiables se solicita reconciliación masiva.
-- La evaluación local obtiene productos, categorías y lotes en bloque, con chunks técnicos, sin consulta por producto.
+Los fallos reintentables en `getPortal`, `listPublishedProducts`, lectura local de productos y `syncBatch` persisten:
 
-## Cola offline
+- referencias originales, o reconciliación completa;
+- portal autorizado recordado cuando existe;
+- motivo técnico seguro;
+- timestamp;
+- ámbito cifrado mediante hash, sin licencia ni tokens en claro.
 
-Base independiente: `lanzo-ecommerce-catalog-sync-outbox`.
+El outbox admite además un ámbito de portal pendiente para fallos que ocurren antes de poder resolver el portal.
 
-La cola almacena exclusivamente:
+### Reconocimiento y fallo parcial
 
-- hash del ámbito de licencia/contexto;
-- `portalId` previamente autorizado;
-- referencia local del producto o bandera de reconciliación completa;
-- motivo seguro y timestamp.
+Las entradas se reconocen únicamente después de que todos los chunks correspondientes terminan correctamente.
 
-No almacena licencia en claro, tokens, sesión staff ni productos completos. Las entradas están aisladas por hash de ámbito y portal, se coalescen por producto, sobreviven recargas y solo se eliminan después de confirmación. La asociación segura `scopeHash + portalId` permite encolar también cuando un runtime nuevo inicia completamente offline.
+Si un chunk posterior falla, `replacePending` reemplaza atómicamente el trabajo anterior por las referencias todavía no confirmadas. Los chunks ya confirmados no se reenvían indefinidamente y los pendientes no se pierden.
 
-## Diseño del caché público IndexedDB
+### Reintento
 
-Base independiente: `lanzo-public-store-cache`.
+Se conserva el reintento por:
 
-No importa ni inicializa el store del POS, la Dexie privada del negocio, servicios de licencia ni `useAppStore`.
+- inicio del runtime;
+- evento `online`;
+- aplicación visible;
+- acción manual;
+- backoff limitado con jitter: 2 s, 5 s, 15 s, 30 s y máximo 60 s.
 
-Tablas:
+Los timers se cancelan al invalidar licencia, dispositivo, rol o sesión staff.
 
-- `pages`: clave por slug, revisión, offset, límite y versión de esquema.
-- `portals`: snapshot público mínimo para fallback offline.
+## 4. Protección cross-device
 
-Datos permitidos:
+La revisión de fuente cliente utiliza:
 
-- slug;
-- revisión;
-- versión;
-- página, offset, límite y paginación;
-- productos públicos normalizados;
-- timestamps de creación y último acceso.
+- `version:<decimal-canonico>`;
+- `timestamp:<epoch-ms>`;
+- `opaque:<valor>` cuando no existe una revisión comparable.
 
-Un sanitizador descarta payloads malformados y claves potencialmente privadas como cliente, teléfono, dirección de checkout, notas, pedidos, idempotencia, tokens, licencia, staff, costos y proveedores. No se guardan respuestas administrativas.
+No se utiliza el texto fijo `local`. La normalización decimal no pierde precisión para versiones mayores que el rango seguro de JavaScript.
 
-## Política de caché
+Se agregaron a `ecommerce_published_products`:
 
-- `schemaVersion`: 1.
-- `freshSeconds`: 300.
-- `maxStaleSeconds`: 86400.
-- La revisión server-side, no el TTL, determina vigencia.
-- Limpieza por esquema, expiración, revisión obsoleta, máximo de tiendas/páginas y acceso menos reciente.
-- La limpieza es asíncrona y no bloquea el primer render.
+- `source_revision_kind`;
+- `source_revision_order`;
+- `source_payload_hash`.
 
-## Comportamiento con la misma revisión
+La RPC bloquea cada fila y decide:
 
-Flujo esperado en una segunda entrada o recarga:
+- revisión menor: `stale`, sin sobrescribir;
+- revisión igual y mismo payload: idempotente;
+- revisión igual y payload diferente: conflicto/review;
+- revisión mayor: aplicar;
+- revisión opaca o incomparable: conflicto, salvo repetición exacta de la misma revisión y payload.
 
-1. una RPC ligera a `ecommerce_get_portal_by_slug` confirma la revisión;
-2. la página se obtiene de IndexedDB;
-3. no se ejecuta `ecommerce_get_catalog` para páginas ya cacheadas.
+El resultado incluye estados por producto y conteos seguros:
 
-Las páginas posteriores también consultan primero IndexedDB.
+- `staleCount`;
+- `conflictCount`;
+- `reviewCount`;
+- `updatedCount`;
+- `skippedCount`.
 
-## Comportamiento al cambiar revisión
+Un lote mixto puede aplicar productos válidos y reportar stale/conflict en otros. Una respuesta tardía no puede restaurar un precio o snapshot anterior.
 
-- No se reutilizan páginas de la revisión anterior.
-- Se muestra `Actualizando catálogo…`.
-- El checkout queda bloqueado.
-- La primera página nueva reemplaza el estado visible de forma controlada.
-- `ECOMMERCE_CATALOG_REVISION_CHANGED` reinicia desde offset cero una sola vez y evita ciclos.
-- Las revisiones antiguas se limpian en segundo plano.
-- Los guards existentes por slug, generación, offsets solicitados, paginación y deduplicación se conservaron.
+## 5. Caché público mediante allowlists
 
-## Comportamiento offline
+Se eliminó la blacklist amplia y se implementaron sanitizadores explícitos:
 
-Si existe caché dentro de `maxStaleSeconds`:
+- `sanitizePublicPortal`;
+- `sanitizePublicHours`;
+- `sanitizePublicFeatures`;
+- `sanitizePublicProduct`;
+- `sanitizePublicOptions`;
+- allowlists separadas para tema y settings públicos.
 
-- se permite navegación de solo lectura;
-- se muestra aviso de falta de conexión;
-- el checkout permanece deshabilitado;
-- no se presentan precios o stock como confirmados.
+### Portal conservado offline
 
-Sin caché válido se mantiene el estado de tienda no disponible/error. Nunca se reutiliza información entre slugs ni se usa caché vencido indefinidamente.
+- `slug`;
+- `name`;
+- `headline`;
+- `description`;
+- `templateCode`;
+- `customizationLevel`;
+- tema público permitido;
+- `logoUrl`;
+- `coverImageUrl`;
+- `whatsappPhone`;
+- `address`;
+- `businessType`;
+- `orderingEnabled`;
+- `pickupEnabled`;
+- `deliveryEnabled`;
+- `scheduledOrdersEnabled`;
+- `minOrderTotal`;
+- `maxOrderItems`;
+- `maxItemQuantity`;
+- `stockMode`;
+- settings públicos permitidos.
 
-## Reconciliación del carrito
+### Features conservadas
 
-La llave de reconciliación incluye slug y `catalogRevision`.
+- `whatsappCheckout`;
+- `orderInbox`;
+- `customSlug`;
+- `brandingCustomization`;
+- `layoutCustomization`;
+- `businessHours`;
+- `deliveryPickupSettings`;
+- `stockVisibility`;
+- `realtimeOrders`.
 
-Al cambiar la revisión:
+### Horarios
 
-- se actualizan precio y disponibilidad;
-- se limita cantidad por stock vigente;
-- se eliminan productos inexistentes solo después de agotar la paginación;
-- se cargan páginas adicionales para resolver IDs persistidos;
-- se mantiene el aviso de reconciliación;
-- un producto de una revisión anterior no puede confirmar checkout.
+Se conservan exclusivamente los campos públicos de `weekly` y `exceptions` definidos por el contrato.
 
-El servidor continúa siendo la autoridad final sobre precio, disponibilidad y creación del pedido.
+### Productos y opciones
 
-## Diferencias FREE / PRO
+Los productos se reducen a ID, contenido público, precio, moneda, imagen, disponibilidad, orden, stock público y opciones públicas allowlisted. Las opciones aceptan únicamente claves públicas escalares y colecciones explícitas.
 
-### Plan Free
+El caché no admite respuestas de checkout ni conserva cliente, teléfono o dirección de checkout, notas, pedido, idempotencia, token, licencia, staff, costo, proveedor o datos arbitrarios del backend.
 
-- máximo 10 productos;
-- snapshot y edición manual;
-- stock público oculto;
-- alertas locales de productos publicados sin stock;
-- caché público IndexedDB habilitado;
-- sin autosync cloud, stock exacto público ni controles de sincronización.
+## 6. Política de stock público PRO
 
-### Lanzo Nube / PRO
+`EcommerceProductPublishModal` incorpora el selector:
 
-- autosync solo cuando `ecommerce_cloud_catalog_source === true`;
-- campos vinculados actualizables y campos manuales preservados;
-- evaluación masiva de producto, categoría, stock y lotes;
-- cola offline;
-- resumen, badges, última sincronización y botón `Sincronizar ahora`.
+```text
+Visibilidad del inventario
+- Ocultar stock
+- Mostrar Disponible / Agotado
+- Mostrar cantidad exacta
+```
 
-## Pruebas agregadas
+Mapeo:
 
-Frontend y servicios:
+```text
+hidden | status | exact
+```
 
-- `ecommercePublicCatalogCache.test.js`
-- `ecommercePublicService.catalogCache.test.js`
-- `ecommerceCatalogSyncOutbox.test.js`
-- `ecommerceCatalogSyncService.test.js`
-- `usePublicCart.catalogRevision.test.jsx`
+Reglas finales:
 
-Cobertura incluida:
+- FREE no expone el selector y fuerza `hidden`;
+- PRO consulta la feature server-side `ecommerce_stock_visibility`;
+- feature deshabilitada fuerza `hidden`;
+- fallo al validar la feature bloquea el guardado, para no alterar silenciosamente una política existente;
+- edición carga y conserva el modo existente;
+- `not_tracked` fuerza `hidden`;
+- `unverified`, `source_missing` e `inactive_source` no publican cero inventado;
+- `status` publica solo disponible/agotado;
+- `exact` publica cantidad confirmada no negativa;
+- la disponibilidad pública continúa respetando el control manual.
 
-- aislamiento de slug/revisión/esquema;
-- segunda entrada sin nueva RPC de catálogo;
-- cambio de revisión;
-- fallback offline;
-- descarte de payload malformado y datos privados;
-- FREE sin autosync;
-- 20 eventos rápidos consolidados;
-- single-flight y repetición dirty;
-- IDs duplicados coalescidos;
-- `source_missing` y `unverified`;
-- cola offline, aislamiento y recarga completamente offline;
-- reconciliación del carrito por revisión y paginación pendiente.
+La RPC administrativa existente valida plan, feature y valores permitidos server-side. Las migraciones correctivas endurecen además la proyección pública de stock.
 
-SQL local/transaccional:
+## Migraciones finales
 
-- `supabase/tests/ecom_fe_catalog_3_sync_and_revision.sql`
-- backfill, revisión inicial, incremento público, ausencia de incremento interno, disponibilidad efectiva, autorización/feature, duplicados, límite, idempotencia, revisión esperada, paginación versionada y ausencia de grants directos.
+Migraciones originales de la fase, todavía pendientes:
 
-## Validación ejecutada y pendiente
+1. `20260712192900_ecom_fe_catalog_3_legacy_availability_snapshot.sql`
+2. `20260712193000_ecom_fe_catalog_3_sync_and_public_cache.sql`
+3. `20260712193100_ecom_fe_catalog_3_backfill_and_trigger_fix.sql`
 
-Validación realizada mediante inspección del diff y contratos a través del conector de GitHub:
+Migraciones correctivas posteriores:
 
-- rama parte exactamente del HEAD confirmado de `main`;
-- merge base coincide con `main`;
-- rama no está detrás de `main`;
-- PR abierto, no mergeado y draft;
-- revisión estática de compatibilidad de firmas públicas;
-- revisión de separación FREE/PRO;
-- revisión de ausencia de credenciales y PII en estructuras persistidas;
-- revisión de ausencia de `.skip`, `.todo`, `eslint-disable`, workflows temporales y reglas genéricas de Service Worker.
+4. `20260712210000_ecom_fe_catalog_3_1_source_revision_schema.sql`
+5. `20260712210100_ecom_fe_catalog_3_1_sync_rpc.sql`
 
-No fue posible ejecutar en este entorno:
+Se eligieron migraciones posteriores para mantener una secuencia legible y no reescribir el bloque funcional previo. Toda la cadena debe validarse desde cero en una base local antes de aplicar a producción.
+
+**Ninguna migración fue aplicada.** No se ejecutó `supabase db push`, `supabase migration repair`, SQL de escritura remoto ni modificación manual de tablas, funciones, permisos, datos o configuración de Supabase producción.
+
+## Pruebas agregadas o ampliadas
+
+### JavaScript / React
+
+- fallos de lectura de productos, categorías y lotes;
+- distinción entre error y `source_missing`;
+- preservación de disponibilidad y stock para `unverified`;
+- firma idempotente completa;
+- clasificación de errores transitorios;
+- portal/lista/sync reintentables;
+- fallo en segundo chunk;
+- reconocimiento solo tras éxito;
+- cancelación de backoff;
+- aislamiento y privacidad del outbox;
+- allowlists del portal, features, horarios, productos y options;
+- conservación offline de `orderingEnabled`, `orderInbox`, `maxOrderItems`, `whatsappPhone` y `address`;
+- exclusión de PII, credenciales y checkout;
+- FREE hidden;
+- PRO status/exact;
+- feature deshabilitada;
+- `not_tracked`;
+- edición existente;
+- fallo de validación server-side de la feature.
+
+### SQL
+
+`supabase/tests/ecom_fe_catalog_3_sync_and_revision.sql` valida de forma transaccional:
+
+- columnas y helpers de revisión;
+- 10→9 stale;
+- 10→10 mismo payload idempotente;
+- 10→10 distinto payload conflicto;
+- 10→11 actualización;
+- revisiones opacas en conflicto;
+- hash estable y sensible a stock/precio;
+- revisión monótona pública;
+- disponibilidad manual/fuente;
+- `not_tracked` oculto;
+- `unverified` sin cantidad inventada;
+- contrato de la RPC y locks;
+- validación server-side de stock mode;
+- paginación versionada;
+- ausencia de grants privados o directos.
+
+## Validación realizada
+
+En el entorno disponible se efectuó:
+
+- revisión del estado real del PR, HEAD, base y merge-base;
+- comprobación de que el HEAD inicial no tenía commits posteriores que resolvieran los seis puntos;
+- `node --check` sobre los servicios JavaScript modificados: **PASS**;
+- parseo/transpilación TypeScript de los archivos JS/JSX y pruebas modificados: **PASS**;
+- comprobación estructural de delimitadores `$$` de los SQL: **PASS**;
+- comparación GitHub de la rama frente a `main`: `ahead`, `behind_by: 0` antes de este commit documental.
+
+## Validación pendiente
+
+Este entorno no pudo obtener un checkout íntegro mediante red directa a GitHub. Por ello no se ejecutaron todavía:
 
 ```text
 npm ci
 ESLint enfocado
-suites Vitest
+Vitest enfocado
 npm run build
 npm run lint
 npm run test:ci
 git diff --check
 git status --short
-pruebas SQL locales
-comparación ejecutable contra un checkout limpio de main
+pruebas SQL en base local/transaccional
+comparación ejecutable equivalente contra main
+pruebas manuales
 ```
 
-Motivo: el entorno conectado permite operar el repositorio mediante la API de GitHub, pero no dispone de un checkout autenticado del repositorio privado, `gh`, dependencias instaladas ni acceso de red del contenedor al repositorio. Por ello, **no se declara PASS** para build, lint o tests y el PR permanece draft.
+No existen ejecuciones de GitHub Actions asociadas al HEAD funcional revisado. El único estado remoto observado fue Vercel fallando por límite de deployments/build rate; no se considera un defecto del código ni una validación aprobada y no se creó, forzó, promovió ni validó ningún preview manual.
 
-## Comparación con main
+## Estado de cierre
 
-- Base y merge base: `66315c445836bbf662224671c14524994acd0f13`.
-- `behind_by: 0` al cerrar implementación funcional.
-- Los cambios se limitan a catálogo ecommerce, tienda pública, carrito, runtime, caché, pruebas y migraciones nuevas.
-- No se modificó el contrato de cobro ecommerce ni la conversión de pedidos a ventas POS.
-- No se ejecutó una comparación de comandos contra un checkout limpio de `main`; queda pendiente de la validación manual posterior.
-
-## Vercel
-
-No se creó, forzó, promovió ni validó manualmente ninguna preview de Vercel. GitHub reportó un deployment automático asociado al PR, pero no fue iniciado por esta tarea ni se utilizó como evidencia de validación.
-
-## Riesgos y pendientes reales
-
-1. Aplicar y revisar las tres migraciones en una tarea separada, primero en entorno local/transaccional y después según el proceso de despliegue de Supabase.
-2. Ejecutar instalación, ESLint, suites enfocadas, regresiones, build, lint global, `test:ci`, `git diff --check` y `git status --short` sobre checkout íntegro.
-3. Ejecutar las pruebas SQL locales.
-4. Realizar pruebas manuales de segunda entrada con cero RPC de catálogo, cambio de revisión, navegación offline, recuperación de conexión, carrito persistido y controles PRO/FREE.
-5. Mantener el PR en draft hasta completar todos los puntos anteriores.
-
-## Confirmaciones
-
-- Migraciones aplicadas a producción: **no**.
-- SQL remoto de escritura: **no**.
-- Cambios manuales en Supabase: **no**.
-- Preview manual de Vercel: **no**.
-- PII o credenciales en caché público: **no**.
-- PII, tokens o productos completos en outbox: **no**.
-- PR mergeado: **no**.
-- PR draft: **sí**.
+- Correcciones ECOM.FE.CATALOG.3.1: **implementadas**.
+- Validación ejecutable completa: **pendiente**.
+- Pruebas SQL: **pendientes de ejecución segura**.
+- Pruebas manuales: **pendientes**.
+- Migraciones: **sin aplicar**.
+- Supabase producción: **sin cambios**.
+- Flujo de cobro ecommerce / conversión a venta POS: **sin cambios**.
+- PR: debe continuar **draft**.
+- Ready for review: **no**.
+- Merge: **no realizado**.
