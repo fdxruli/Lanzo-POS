@@ -2,196 +2,231 @@
 
 ## Estado
 
-**BLOQUEANTES RESIDUALES ECOM.FE.CATALOG.3.1 CORREGIDOS / VALIDACIÓN EJECUTABLE PENDIENTE**
+**CORRECCIONES ECOM.FE.CATALOG.3.2 IMPLEMENTADAS / VALIDACIÓN GLOBAL PENDIENTE**
 
 - Repositorio: `fdxruli/Lanzo-POS`
 - Rama: `fase-ecom-fe-catalog-3`
 - PR: `#93 — FASE ECOM.FE.CATALOG.3 — Sincronización automática y caché del catálogo público`
 - Estado del PR: **draft**
-- Base y merge-base: `main` en `66315c445836bbf662224671c14524994acd0f13`
-- HEAD histórico previo a la serie ECOM.FE.CATALOG.3.1: `6b32df3f02aaa092f004c0a9906f1be794e5fab1`
-- HEAD inicial de la revisión que detectó los bloqueantes: `12ec335b6ea5a0ab87f411a41c56b9f859636334`
-- HEAD inicial de esta corrección residual: `5b2ad1e2512cbc02d7d6391b5fd6d463977932fb`
-- HEAD funcional previo a esta actualización documental: `ea8004b0b3ffd3b8a7b043e84574e1c39976f183`
+- Base y merge-base confirmados: `main` en `66315c445836bbf662224671c14524994acd0f13`
+- HEAD inicial real de ECOM.FE.CATALOG.3.2: `af0f9977527b0bffeb11bc08cffb5cb044c8b7ae`
+- HEAD funcional previo a esta actualización documental: `521cf646c3aae2ea600d5475836de2b041fda9a0`
 - Merge automático: **no realizado**
 
-La implementación funcional de los dos bloqueantes residuales quedó incorporada. El PR debe permanecer en draft porque todavía faltan la instalación íntegra, las pruebas ejecutables completas, las pruebas SQL en una base local o transaccional y las pruebas manuales.
+La corrección se limitó a los dos defectos residuales solicitados: transición segura a `source_missing` y prioridad de la disponibilidad efectiva sobre las etiquetas de inventario. Las correcciones anteriores de ECOM.FE.CATALOG.3.1 permanecen sin debilitarse.
 
-## Archivos modificados por la corrección residual
+## Archivos modificados por ECOM.FE.CATALOG.3.2
 
-- `src/services/ecommerce/ecommerceCatalogSyncServiceBase.js`
-- `src/services/ecommerce/ecommerceCatalogSyncService.js`
-- `src/services/ecommerce/__tests__/ecommerceCatalogSyncService.retryOutbox.test.js`
-- `supabase/migrations/20260712210200_ecom_fe_catalog_3_1_residual_blockers.sql`
-- `supabase/tests/ecom_fe_catalog_3_1_residual_blockers.sql`
+- `src/services/ecommerce/ecommercePublicProductRules.js`
+- `src/services/ecommerce/__tests__/ecommercePublicProductRules.test.js`
+- `src/components/ecommerce/public/PublicCatalog.jsx`
+- `supabase/migrations/20260712210300_ecom_fe_catalog_3_2_source_missing.sql`
+- `supabase/tests/ecom_fe_catalog_3_2_source_missing.sql`
 - `reports/ecom_fe_catalog_3_sync_and_public_cache_report.md`
 
-La implementación original del servicio se conservó sin cambios funcionales en `ecommerceCatalogSyncServiceBase.js`. El punto de importación público continúa siendo `ecommerceCatalogSyncService.js`, que ahora aplica la política segura de reintento antes de crear el servicio.
-
-## Bloqueante B1 — `unverified` interceptado como conflicto
+## 1. `source_missing` después de una sincronización previa
 
 ### Defecto
 
-La RPC calculaba el hash completo y ejecutaba `private.ecommerce_source_revision_decision(...)` antes de aplicar su rama especial de preservación para `sourceState = 'unverified'`.
+El frontend ya producía correctamente:
 
-Una fila confirmada seguida por la misma revisión con una proyección técnica `unverified` podía producir:
-
-```text
-misma revisión + hash diferente = conflict
+```json
+{
+  "sourceRevision": null,
+  "sourceState": "source_missing",
+  "sourceAvailable": false,
+  "stockSnapshot": null,
+  "fields": {}
+}
 ```
 
-La función terminaba el producto mediante `continue` antes de registrar `SOURCE_UNVERIFIED`.
-
-### Corrección
-
-La migración correctiva:
+Sin embargo, una fila previamente sincronizada conservaba revisión y hash confirmados. La decisión general interpretaba la revisión entrante nula y el nuevo payload como conflicto, por lo que la RPC terminaba el producto antes de aplicar:
 
 ```text
-20260712210200_ecom_fe_catalog_3_1_residual_blockers.sql
+source_state = source_missing
+source_available = false
+is_available = false
 ```
 
-introduce tres defensas complementarias.
+El producto eliminado del origen podía continuar disponible públicamente.
 
-#### 1. Hash técnico explícito
+### Migración correctiva
 
-`private.ecommerce_projection_payload_hash(...)` marca las proyecciones `unverified` con el prefijo:
+Se agregó, sin aplicarla:
 
 ```text
-unverified:<sha256>
+supabase/migrations/20260712210300_ecom_fe_catalog_3_2_source_missing.sql
 ```
 
-La llave idempotente del lote no cambia: la RPC continúa calculando el hash de solicitud sobre el JSONB completo antes de procesar cada producto.
+La migración identifica la ausencia confirmada mediante:
 
-#### 2. Decisión de revisión fail-closed
+```text
+source-missing:<sha256>
+```
 
-`private.ecommerce_source_revision_decision(...)` aplica estas reglas para un hash técnico `unverified`:
+La marca técnica no sustituye la idempotencia del lote. Solamente permite distinguir `source_missing` de una actualización normal de campos públicos.
 
-- revisión comparable inferior: `stale`;
-- revisión comparable igual: `apply` únicamente para registrar el estado técnico;
-- revisión comparable superior: `apply`;
-- revisión opaca idéntica: `apply`;
+### Reglas de concurrencia
+
+Para una proyección `source_missing`:
+
+- revisión comparable anterior: `stale`;
+- revisión comparable igual: `apply` o `idempotent` si ya se aplicó el mismo estado;
+- revisión comparable posterior: `apply`;
+- revisión opaca igual: `apply` o `idempotent`;
 - revisión opaca distinta: `conflict`;
-- producto sin revisión confirmada previa: `apply`.
+- revisión entrante nula contra una revisión comparable almacenada: `apply`, porque el cliente actual no posee tombstone local pero la ausencia proviene de una lectura exitosa;
+- ausencia sin historial previo: `apply`.
 
-No se debilita la protección cross-device para proyecciones normales.
+Una revisión explícitamente anterior nunca puede aplicar la ausencia.
 
-#### 3. Guard de preservación completa
+La función también permite que una lectura confirmada posterior restaure un producto que estaba en `source_missing` cuando usa la misma revisión o una superior. Una revisión menor continúa siendo `stale`.
 
-Se endureció `private.ecommerce_published_product_sync_guard()` para que una actualización `unverified` sobre una fila existente conserve:
+### Estado aplicado
 
-- `public_name`;
-- `public_description`;
-- `category_name`;
-- `price`;
-- `image_url`;
-- `source_available`;
-- `stock_snapshot`;
-- `stock_updated_at`;
-- `source_revision`;
-- `source_revision_kind`;
-- `source_revision_order`;
-- `source_payload_hash`.
-
-La RPC puede registrar:
+Cuando la decisión es válida, la fila publicada se conserva y queda:
 
 ```text
-source_state = unverified
+source_state = source_missing
+source_available = false
+is_available = false
 sync_status = review
-sync_error_code = SOURCE_UNVERIFIED
+sync_error_code = SOURCE_MISSING
 ```
 
-sin restaurar campos antiguos ni perder el último snapshot confirmado. El cambio a estado no verificado puede ocultar el stock público y aumentar la revisión del catálogo cuando cambia la proyección pública efectiva, pero no inventa stock cero.
+No se elimina ni despublica el producto.
 
-## Bloqueante B2 — backoff ampliaba un fallo parcial
+### Conservación de campos públicos
+
+El guard server-side impide que `source_missing` modifique:
+
+- nombre;
+- descripción;
+- categoría;
+- precio;
+- imagen.
+
+También conserva internamente:
+
+- último `stock_snapshot` confirmado;
+- `stock_updated_at`;
+- última revisión comparable, cuando la ausencia entrante no incluye revisión.
+
+El hash almacenado sí cambia a la marca técnica `source-missing:` para que la concurrencia reconozca el estado y permita una recuperación posterior.
+
+El contrato público ya oculta el stock para estados distintos de `in_stock` y `out_of_stock`. Por tanto, el snapshot histórico no publica cantidad ni inventa cero.
+
+## 2. Etiquetas de stock contradictorias
 
 ### Defecto
 
-Después de que `replacePending` guardaba únicamente las referencias no confirmadas, el callback interno del backoff ejecutaba `scheduleSync()` sin IDs. La implementación base interpreta una lista vacía como reconciliación completa.
+`isPublicProductAvailable(product)` ya daba prioridad a:
 
-Por tanto, el siguiente intento podía reenviar productos ya confirmados.
+```js
+product.isAvailable === false
+```
+
+pero `getPublicProductStockLabel(product)` evaluaba primero `stock.mode` y `stock.status`. Esto permitía mostrar simultáneamente:
+
+```text
+Disponible / No disponible
+5 disponibles / No disponible
+```
 
 ### Corrección
 
-El servicio público ahora envuelve las operaciones de persistencia reintentable:
+`getPublicProductStockLabel(product)` ahora comienza con:
 
-```text
-enqueue
-replacePending
+```js
+if (product?.isAvailable === false) {
+  return 'No disponible';
+}
 ```
 
-Cuando la persistencia termina correctamente, el timer del backoff no llama al callback base que genera una reconciliación completa. En su lugar agenda una solicitud interna con un marcador que no corresponde a ningún producto real:
+Consecuencias:
 
-```text
-productIds: [__lanzo_catalog_outbox_retry__]
-fullReconcile: false
-```
+- deshabilitado manualmente + stock disponible: `No disponible`;
+- deshabilitado manualmente + cantidad positiva: `No disponible`;
+- disponible + falta real de stock: `Agotado`;
+- disponible + cantidad positiva: `X disponibles`.
 
-`executeOnce` combina esa solicitud con las referencias reales leídas del outbox. El marcador no genera proyección y únicamente se procesan los productos pendientes.
+`PublicCatalog.jsx` aplica la clase visual `is-unavailable` tanto a `Agotado` como a `No disponible`. El botón continúa mostrando `No disponible` y permanece deshabilitado.
 
-Si la escritura del outbox falla, se conserva una ruta de recuperación mediante reconciliación completa, porque en ese caso no existe una lista persistida confiable que pueda drenarse.
-
-La marca interna de persistencia se limpia cuando se cancela un timer por cambio de contexto o reprogramación. Los reintentos deliberadamente completos por inicio del runtime, evento `online`, visibilidad o acción manual no cambian.
-
-## Pruebas agregadas
+## Pruebas enfocadas
 
 ### JavaScript
 
-`ecommerceCatalogSyncService.retryOutbox.test.js` cubre el flujo completo:
+Se actualizó:
 
-1. 201 productos generan dos chunks;
-2. el primer chunk termina correctamente;
-3. el segundo devuelve HTTP/PostgREST 503;
-4. `replacePending` conserva únicamente `product-200`;
-5. se ejecuta realmente el callback del backoff;
-6. el tercer envío contiene exactamente una proyección;
-7. el outbox se reconoce después del éxito.
+```text
+src/services/ecommerce/__tests__/ecommercePublicProductRules.test.js
+```
 
-Esta prueba cubre la parte que la prueba anterior no ejecutaba: el alcance real del siguiente intento automático.
+Casos agregados:
+
+```text
+isAvailable false + status available => No disponible
+isAvailable false + exact quantity 5 => No disponible
+isAvailable true + status out_of_stock => Agotado
+isAvailable true + exact quantity 5 => 5 disponibles
+```
+
+Validación ejecutada en el entorno disponible:
+
+- `node --check` de `ecommercePublicProductRules.js`: **PASS**;
+- `node --check` de la prueba enfocada: **PASS**;
+- ejecución directa con `node:assert/strict` de los cuatro casos: **PASS**;
+- parseo JSX de `PublicCatalog.jsx` mediante el parser TypeScript: **PASS**;
+- `git diff --check` sobre la reproducción exacta de los archivos JS/JSX modificados: **PASS**.
+
+No se ejecutó Vitest porque el entorno no dispone del checkout íntegro ni de sus dependencias instaladas.
 
 ### SQL
 
-`ecom_fe_catalog_3_1_residual_blockers.sql` valida:
+Se agregó:
 
-- payload confirmado sin marcador técnico;
-- payload `unverified` con marcador técnico;
-- revisión `10 → 10 unverified`: `apply`, no conflicto;
-- revisión `10 → 9 unverified`: `stale`;
-- revisión `10 → 11 unverified`: `apply`;
-- revisión opaca igual: `apply`;
-- revisión opaca distinta: `conflict`;
-- la RPC continúa usando los helpers de hash y revisión;
-- la RPC conserva disponibilidad, stock, revisión y hash;
-- el trigger conserva nombre, descripción, categoría, precio e imagen;
-- una actualización transaccional real intenta cambiar todos esos campos durante `unverified` y confirma que solo cambia el estado técnico.
+```text
+supabase/tests/ecom_fe_catalog_3_2_source_missing.sql
+```
 
-La prueba está envuelta en `begin`/`rollback` y debe ejecutarse únicamente en una base local o transaccional segura.
+La prueba transaccional cubre:
 
-## Validación realizada en esta intervención
+1. fila confirmada en `version:10`, disponible y con stock 5;
+2. payload `source_missing` con revisión nula;
+3. payload `source_missing` con revisión igual;
+4. payload con revisión anterior `version:9`, esperado `stale`;
+5. conservación física de la fila publicada;
+6. conservación de nombre, descripción, categoría, precio e imagen;
+7. `source_available = false` e `is_available = false`;
+8. `sync_status = review` y `sync_error_code = SOURCE_MISSING`;
+9. conservación interna del stock 5 y de la revisión 10;
+10. ocultamiento de cantidad en el contrato público;
+11. recuperación posterior mediante una proyección confirmada con revisión válida.
 
-- Estado real del PR confirmado: abierto, draft y no mergeado.
-- Rama confirmada basada en `main`, `behind_by: 0`.
-- Revisión estática de los archivos modificados.
-- `node --check` del wrapper `ecommerceCatalogSyncService.js`: **PASS**.
-- `node --check` de `ecommerceCatalogSyncService.retryOutbox.test.js`: **PASS**.
-- Secuencia, privilegios y delimitadores de las nuevas funciones SQL revisados estáticamente.
+La prueba está envuelta en `begin`/`rollback`.
 
-No se pudo obtener un checkout íntegro del repositorio desde el entorno disponible, por lo que siguen pendientes:
+No fue ejecutada en esta intervención porque el entorno no dispone de PostgreSQL, Supabase CLI ni una base local/transaccional. No se ejecutó SQL remoto.
+
+## Validaciones globales pendientes
+
+No se declara validación global PASS. Continúan pendientes para la fase posterior:
 
 ```text
 npm ci
-ESLint enfocado
-Vitest enfocado
+Vitest real enfocado y global
+ESLint enfocado y global
 npm run build
 npm run lint
 npm run test:ci
-git diff --check
+git diff --check sobre checkout íntegro
 git status --short
 pruebas SQL locales/transaccionales
-comparación ejecutable contra main
 pruebas manuales
 ```
 
-## Migraciones finales pendientes de aplicar
+No se ejecutaron `npm run build`, `npm run lint` ni `npm run test:ci` en esta corrección puntual.
+
+## Migraciones pendientes de aplicar
 
 1. `20260712192900_ecom_fe_catalog_3_legacy_availability_snapshot.sql`
 2. `20260712193000_ecom_fe_catalog_3_sync_and_public_cache.sql`
@@ -199,6 +234,7 @@ pruebas manuales
 4. `20260712210000_ecom_fe_catalog_3_1_source_revision_schema.sql`
 5. `20260712210100_ecom_fe_catalog_3_1_sync_rpc.sql`
 6. `20260712210200_ecom_fe_catalog_3_1_residual_blockers.sql`
+7. `20260712210300_ecom_fe_catalog_3_2_source_missing.sql`
 
 **Ninguna migración fue aplicada.**
 
@@ -210,13 +246,11 @@ supabase migration repair
 SQL de escritura remoto
 ```
 
-No se modificaron tablas, funciones, datos, permisos ni configuraciones de Supabase producción.
-
 ## Estado final requerido
 
 - PR: abierto.
 - Draft: sí.
-- Ready for review: no, hasta completar todas las validaciones.
+- Ready for review: no.
 - Merge: no realizado.
 - `main`: no modificado directamente.
 - Supabase producción: no modificado.
