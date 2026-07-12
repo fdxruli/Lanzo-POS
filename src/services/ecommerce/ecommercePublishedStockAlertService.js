@@ -103,29 +103,74 @@ const getRawAvailableStock = (product = {}) => {
   return { verified: true, available: getAvailableStock(product) };
 };
 
-const isSellableBatch = (batch, product, now) => {
-  if (!isBatchActiveForFefo(batch)) return false;
+const getVerifiedBatchAvailableStock = (batch = {}) => {
+  const stockValue = batch.stock ?? batch.quantity;
+  const committedValue = batch.committedStock ?? batch.committed_stock ?? 0;
+  const stock = Number(stockValue);
+  const committedStock = Number(committedValue);
+
+  if (
+    stockValue === null
+    || stockValue === undefined
+    || stockValue === ''
+    || !Number.isFinite(stock)
+    || !Number.isFinite(committedStock)
+    || committedStock < 0
+  ) {
+    return { verified: false, available: null };
+  }
+
+  return {
+    verified: true,
+    available: getAvailableBatchStock(batch)
+  };
+};
+
+const getSellableBatchState = (batch, product, now) => {
+  if (!isBatchActiveForFefo(batch)) {
+    return { verified: true, sellable: false, available: 0 };
+  }
   if (
     batch?.isBlocked === true
     || batch?.is_blocked === true
     || batch?.blocked === true
     || BLOCKED_BATCH_STATUSES.has(toStatus(batch?.status))
   ) {
-    return false;
+    return { verified: true, sellable: false, available: 0 };
   }
 
-  const available = getAvailableBatchStock(batch);
-  if (!Number.isFinite(available) || available <= EPSILON) return false;
+  const stockState = getVerifiedBatchAvailableStock(batch);
+  if (!stockState.verified) {
+    return { verified: false, sellable: false, available: null };
+  }
+  if (stockState.available <= EPSILON) {
+    return { verified: true, sellable: false, available: 0 };
+  }
 
   const expiryMode = getExpirationMode(product);
-  if (!EXPIRY_REQUIRED_MODES.has(expiryMode)) return true;
+  if (!EXPIRY_REQUIRED_MODES.has(expiryMode)) {
+    return {
+      verified: true,
+      sellable: true,
+      available: stockState.available
+    };
+  }
 
   const expiryStatus = getBatchExpiryStatus({
     expiryDate: getBatchExpiryValue(batch)
   }, now);
+  const sellable = expiryStatus === 'valid' || expiryStatus === 'expires_today';
 
-  return expiryStatus === 'valid' || expiryStatus === 'expires_today';
+  return {
+    verified: true,
+    sellable,
+    available: sellable ? stockState.available : 0
+  };
 };
+
+const isSellableBatch = (batch, product, now) => (
+  getSellableBatchState(batch, product, now).sellable
+);
 
 const getSellableUnitStock = (inventoryStock, product) => {
   const inventoryPerSaleUnit = Number(getInventoryQuantityForSale(
@@ -196,9 +241,22 @@ const classifyProduct = ({
       });
     }
 
-    inventoryStock = (batches || [])
-      .filter((batch) => isSellableBatch(batch, localProduct, now))
-      .reduce((sum, batch) => sum + getAvailableBatchStock(batch), 0);
+    const batchStates = (batches || []).map((batch) => (
+      getSellableBatchState(batch, localProduct, now)
+    ));
+    inventoryStock = batchStates
+      .filter((state) => state.sellable)
+      .reduce((sum, state) => sum + state.available, 0);
+
+    if (
+      inventoryStock <= EPSILON
+      && batchStates.some((state) => state.verified === false)
+    ) {
+      return makeResult({
+        publishedProduct,
+        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+      });
+    }
   } else {
     const stockState = getRawAvailableStock(localProduct);
     if (!stockState.verified) {
@@ -490,6 +548,8 @@ export const createEcommercePublishedStockAlertService = ({
 export const ecommercePublishedStockAlertServiceInternals = Object.freeze({
   classifyProduct,
   getRawAvailableStock,
+  getVerifiedBatchAvailableStock,
+  getSellableBatchState,
   getSellableUnitStock,
   isBatchManaged,
   isProductInactive,
