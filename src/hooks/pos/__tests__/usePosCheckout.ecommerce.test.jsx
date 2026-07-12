@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -96,13 +96,26 @@ import {
 } from '../../../services/ecommerce/ecommercePosDraftGuards';
 
 const STALE_CODE = 'POS_CHECKOUT_SNAPSHOT_STALE';
+const ECOMMERCE_TARGET_CHANGED = 'ECOMMERCE_CHECKOUT_TARGET_CHANGED';
+const STALE_ATTEMPT = 'ECOMMERCE_STALE_CHECKOUT_ATTEMPT';
+
+const createDeferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
 
 const makeOrder = ({
   id = 'order-a',
   origin,
   ecommerceDraftStatus,
   isSaved = true,
-  isLockedForCheckout = false
+  isLockedForCheckout = false,
+  ...overrides
 } = {}) => ({
   id,
   origin,
@@ -112,7 +125,8 @@ const makeOrder = ({
   lockedAt: isLockedForCheckout ? '2026-07-11T12:00:00.000Z' : null,
   items: [{ id: 'product-1', name: 'Producto', quantity: 1, price: 20 }],
   total: 20,
-  tableData: 'Mesa 1'
+  tableData: 'Mesa 1',
+  ...overrides
 });
 
 const setOrders = (orders, currentOrderId = orders[0]?.id || null) => {
@@ -188,10 +202,10 @@ const expectEcommerceBlocked = (result) => {
   });
 };
 
-const initiateCheckout = async (hookResult) => {
+const initiateCheckout = async (hookResult, options) => {
   let response;
   await act(async () => {
-    response = await hookResult.current.handleInitiateCheckout();
+    response = await hookResult.current.handleInitiateCheckout(options);
   });
   return response;
 };
@@ -308,7 +322,7 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
       response = await result.current.handleProcessOrder({ paymentMethod: 'tarjeta' });
     });
 
-    expectEcommerceBlocked(response);
+    expect(response).toMatchObject({ success: false, code: STALE_CODE });
     expect(mocks.processSale).not.toHaveBeenCalled();
     expect(deps.pos.verifySessionIntegrity).not.toHaveBeenCalled();
     expect(mocks.activeState.unlockOrder).toHaveBeenCalledTimes(1);
@@ -375,7 +389,7 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
       response = await result.current.handleQuickCajaSubmit({ openingAmount: 100 });
     });
 
-    expectEcommerceBlocked(response);
+    expect(response).toMatchObject({ success: false, code: STALE_CODE });
     expect(deps.pos.abrirCaja).not.toHaveBeenCalled();
     expect(deps.modal.openModal).not.toHaveBeenCalledWith('payment');
     expect(mocks.activeState.unlockOrder).toHaveBeenCalledTimes(1);
@@ -525,5 +539,149 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(deps.modal.closeModal).toHaveBeenCalledWith('quickCaja');
     expect(deps.modal.openModal).toHaveBeenCalledWith('payment');
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+  });
+
+  it('releases only A when selection changes to B after A acquired the lock', async () => {
+    const fefo = createDeferred();
+    const orderA = makeOrder({
+      id: 'ecom-order-a',
+      origin: 'ecommerce',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceCheckoutGateStatus: 'authorized'
+    });
+    const orderB = makeOrder({
+      id: 'ecom-order-b',
+      origin: 'ecommerce',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceCheckoutGateStatus: 'authorized'
+    });
+    setOrders([orderA, orderB], orderA.id);
+    mocks.fefo.mockReturnValueOnce(fefo.promise);
+    const deps = makeDeps();
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    let initiation;
+    act(() => {
+      initiation = result.current.handleInitiateCheckout({
+        expectedOrderId: orderA.id,
+        expectedOrigin: 'ecommerce'
+      });
+    });
+
+    await waitFor(() => {
+      expect(mocks.activeState.lockOrderForCheckout).toHaveBeenCalledWith(orderA.id);
+    });
+    switchToOrder(orderB);
+    fefo.resolve({ blocked: false, warnings: [] });
+
+    await expect(initiation).resolves.toMatchObject({
+      success: false,
+      code: ECOMMERCE_TARGET_CHANGED
+    });
+    expect(mocks.activeState.unlockOrder).toHaveBeenCalledTimes(1);
+    expect(mocks.activeState.unlockOrder).toHaveBeenCalledWith(orderA.id);
+    expect(mocks.activeState.unlockOrder).not.toHaveBeenCalledWith(orderB.id);
+    expect(mocks.activeState.activeOrders.get(orderA.id).isLockedForCheckout).toBe(false);
+    expect(mocks.activeState.activeOrders.get(orderB.id)).toEqual(orderB);
+    expect(deps.modal.openModal).not.toHaveBeenCalledWith('payment');
+    expect(deps.modal.closeModal).not.toHaveBeenCalled();
+  });
+
+  it('does not let stale A close or unlock the active snapshot of B', async () => {
+    const orderA = makeOrder({
+      id: 'ecom-order-a',
+      origin: 'ecommerce',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceCheckoutGateStatus: 'authorized'
+    });
+    const orderB = makeOrder({
+      id: 'ecom-order-b',
+      origin: 'ecommerce',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceCheckoutGateStatus: 'authorized'
+    });
+    setOrders([orderA, orderB], orderB.id);
+    const deps = makeDeps();
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    const startedB = await initiateCheckout(result, {
+      expectedOrderId: orderB.id,
+      expectedOrigin: 'ecommerce'
+    });
+    expect(startedB).toMatchObject({ success: true, orderId: orderB.id });
+    expect(mocks.activeState.activeOrders.get(orderB.id).isLockedForCheckout).toBe(true);
+    deps.modal.closeModal.mockClear();
+    mocks.activeState.unlockOrder.mockClear();
+
+    switchToOrder(orderA);
+    let staleClose;
+    await act(async () => {
+      staleClose = await result.current.handlePaymentModalClose({
+        expectedOrderId: orderA.id,
+        expectedCheckoutAttemptId: 'canonical-attempt-a'
+      });
+    });
+
+    expect(staleClose).toMatchObject({
+      ignored: true,
+      staleAttempt: true,
+      code: STALE_ATTEMPT
+    });
+    expect(deps.modal.closeModal).not.toHaveBeenCalled();
+    expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+    expect(mocks.activeState.activeOrders.get(orderB.id).isLockedForCheckout).toBe(true);
+
+    switchToOrder(mocks.activeState.activeOrders.get(orderB.id));
+    await act(async () => {
+      await result.current.handlePaymentModalClose({
+        expectedOrderId: orderB.id,
+        expectedCheckoutAttemptId: startedB.checkoutAttemptId
+      });
+    });
+    expect(mocks.activeState.unlockOrder).toHaveBeenCalledWith(orderB.id);
+    expect(deps.modal.closeModal).toHaveBeenCalledWith('payment');
+  });
+
+  it('does not invalidate B when A tries to start while B owns the tab checkout', async () => {
+    const orderA = makeOrder({
+      id: 'ecom-order-a',
+      origin: 'ecommerce',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceCheckoutGateStatus: 'authorized'
+    });
+    const orderB = makeOrder({
+      id: 'ecom-order-b',
+      origin: 'ecommerce',
+      ecommerceDraftStatus: 'prepared',
+      ecommerceCheckoutGateStatus: 'authorized'
+    });
+    setOrders([orderA, orderB], orderB.id);
+    const deps = makeDeps();
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    const startedB = await initiateCheckout(result, {
+      expectedOrderId: orderB.id,
+      expectedOrigin: 'ecommerce'
+    });
+    switchToOrder(orderA);
+    const startA = await initiateCheckout(result, {
+      expectedOrderId: orderA.id,
+      expectedOrigin: 'ecommerce'
+    });
+
+    expect(startedB).toMatchObject({ success: true, orderId: orderB.id });
+    expect(startA).toMatchObject({
+      success: false,
+      ignored: true,
+      code: 'POS_CHECKOUT_ALREADY_ACTIVE_FOR_ANOTHER_ORDER',
+      orderId: orderB.id,
+      checkoutAttemptId: startedB.checkoutAttemptId
+    });
+    expect(mocks.activeState.lockOrderForCheckout).toHaveBeenCalledTimes(1);
+    expect(mocks.activeState.lockOrderForCheckout).toHaveBeenCalledWith(orderB.id);
+    expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+    expect(mocks.activeState.activeOrders.get(orderB.id).isLockedForCheckout).toBe(true);
+    expect(mocks.activeState.activeOrders.get(orderA.id).isLockedForCheckout).toBe(false);
+    expect(deps.modal.closeModal).not.toHaveBeenCalled();
   });
 });
