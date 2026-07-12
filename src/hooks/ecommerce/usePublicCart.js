@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Big from 'big.js';
 import {
   getPublicProductMaxQuantity,
-  isPublicProductAvailable,
+  isPublicProductAvailable
 } from '../../services/ecommerce/ecommercePublicProductRules';
 
 const CART_VERSION = 1;
@@ -55,20 +55,32 @@ function getMaximumNotice(product, effectiveMaximum, portalMaximum) {
   return `La cantidad máxima por producto es ${effectiveMaximum}.`;
 }
 
+const entriesChanged = (before, after) => (
+  before.length !== after.length
+  || before.some((entry, index) => (
+    entry.id !== after[index]?.id || entry.quantity !== after[index]?.quantity
+  ))
+);
+
 export default function usePublicCart({
   slug,
   products = [],
   catalogReady = false,
   catalogExhausted = false,
+  catalogRevision = null,
   maxItemQuantity = 99,
   maxOrderItems = 30,
-  minOrderTotal = 0,
+  minOrderTotal = 0
 }) {
   const storageKey = useMemo(() => getPublicCartStorageKey(slug), [slug]);
+  const reconciliationKey = useMemo(
+    () => `${storageKey}:catalog:${catalogRevision || 'unversioned'}`,
+    [catalogRevision, storageKey]
+  );
   const [entries, setEntries] = useState([]);
   const entriesRef = useRef([]);
   const [loadedStorageKey, setLoadedStorageKey] = useState(null);
-  const [reconciledStorageKey, setReconciledStorageKey] = useState(null);
+  const [reconciledCatalogKey, setReconciledCatalogKey] = useState(null);
   const [notice, setNotice] = useState('');
 
   const safeMaxItemQuantity = Math.max(1, Math.floor(Number(maxItemQuantity) || 99));
@@ -84,7 +96,7 @@ export default function usePublicCart({
   );
 
   const storageLoaded = loadedStorageKey === storageKey;
-  const isReconciled = reconciledStorageKey === storageKey;
+  const isReconciled = reconciledCatalogKey === reconciliationKey;
   const pendingProductIds = useMemo(() => {
     if (!storageLoaded || isReconciled) return [];
     return entries.filter((entry) => !productMap.has(entry.id)).map((entry) => entry.id);
@@ -94,15 +106,23 @@ export default function usePublicCart({
   useEffect(() => {
     commitEntries(readStoredEntries(storageKey));
     setLoadedStorageKey(storageKey);
-    setReconciledStorageKey(null);
+    setReconciledCatalogKey(null);
     setNotice('');
   }, [commitEntries, storageKey]);
+
+  useEffect(() => {
+    if (!storageLoaded) return;
+    setReconciledCatalogKey((current) => (
+      current === reconciliationKey ? current : null
+    ));
+  }, [reconciliationKey, storageLoaded]);
 
   useEffect(() => {
     if (!catalogReady || !storageLoaded || isReconciled) return;
     if (!catalogExhausted && pendingProductIds.length > 0) return;
 
-    const reconciledEntries = entriesRef.current.reduce((nextEntries, entry) => {
+    const previousEntries = entriesRef.current;
+    const reconciledEntries = previousEntries.reduce((nextEntries, entry) => {
       if (nextEntries.length >= safeMaxOrderItems) return nextEntries;
       const product = productMap.get(entry.id);
       if (!product || !isPublicProductAvailable(product)) return nextEntries;
@@ -112,13 +132,16 @@ export default function usePublicCart({
 
       nextEntries.push({
         id: entry.id,
-        quantity: clampInteger(entry.quantity, 1, effectiveMaximum),
+        quantity: clampInteger(entry.quantity, 1, effectiveMaximum)
       });
       return nextEntries;
     }, []);
 
     commitEntries(reconciledEntries);
-    setReconciledStorageKey(storageKey);
+    setReconciledCatalogKey(reconciliationKey);
+    if (entriesChanged(previousEntries, reconciledEntries)) {
+      setNotice('Actualizamos tu carrito con los precios y la disponibilidad vigentes.');
+    }
   }, [
     catalogExhausted,
     catalogReady,
@@ -127,10 +150,10 @@ export default function usePublicCart({
     pendingProductIds.length,
     pendingProductIdsKey,
     productMap,
+    reconciliationKey,
     safeMaxItemQuantity,
     safeMaxOrderItems,
-    storageKey,
-    storageLoaded,
+    storageLoaded
   ]);
 
   useEffect(() => {
@@ -144,7 +167,7 @@ export default function usePublicCart({
 
       window.sessionStorage.setItem(storageKey, JSON.stringify({
         version: CART_VERSION,
-        items: entries.map(({ id, quantity }) => ({ id, quantity })),
+        items: entries.map(({ id, quantity }) => ({ id, quantity }))
       }));
     } catch {
       // La tienda sigue siendo utilizable aunque sessionStorage no esté disponible.
@@ -170,7 +193,7 @@ export default function usePublicCart({
       product,
       quantity,
       maxQuantity: effectiveMaximum,
-      lineTotal,
+      lineTotal
     });
     return lines;
   }, []), [entries, productMap, safeMaxItemQuantity]);
@@ -237,7 +260,7 @@ export default function usePublicCart({
       } else if (Number.isFinite(parsedQuantity) && parsedQuantity > 0) {
         result.push({
           ...entry,
-          quantity: clampInteger(parsedQuantity, 1, effectiveMaximum),
+          quantity: clampInteger(parsedQuantity, 1, effectiveMaximum)
         });
       }
       return result;
@@ -294,6 +317,6 @@ export default function usePublicCart({
     decrement,
     removeProduct,
     clearCart,
-    clearNotice,
+    clearNotice
   };
 }
