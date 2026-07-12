@@ -4,359 +4,486 @@
 
 **ECOM.POS.3 BLOCKED — CONTRATO REMOTO PENDIENTE**
 
-La implementación frontend/local y el contrato SQL quedaron versionados en la rama `fase-ecom-pos-3`, pero el checkout ecommerce permanece **fail-closed** hasta que la migración `20260711235900_ecom_pos_3_complete_conversion.sql` sea autorizada, aplicada y validada en Supabase producción.
+**ECOM.POS.3.1 implementada en código y pendiente de validación ejecutable/remota.**
 
-No se declara `PASS` y el PR debe permanecer como **draft**.
+El PR `#90` debe permanecer como **draft**. La migración fue actualizada en el repositorio, pero no se aplicó en Supabase producción. No se ejecutó smoke test contra producción y no se utilizó Vercel como evidencia.
 
-## Precondición de `main`
+## Rama y PR
 
-Validación realizada antes de crear la rama:
+- Repositorio: `fdxruli/Lanzo-POS`
+- Rama: `fase-ecom-pos-3`
+- PR: `#90 — FASE ECOM.POS.3 — Cobrar y convertir pedidos ecommerce en ventas POS`
+- Base: `main`
+- Merge automático: no realizado
+- Estado requerido del PR: draft
+- HEAD final: consultar la descripción actualizada del PR #90 y la entrega de esta revisión; un archivo versionado no puede contener de forma autorreferencial el SHA del commit que lo contiene.
 
-- PR `#89 — FASE ECOM.POS.2 — Resolver inventario y lotes de pedidos preparados`: **mergeado**.
-- `main` contiene `ECOM.POS.2`, `ECOM.POS.2.1` y `ECOM.POS.2.1.1`: **confirmado**.
-- Rama o PR abierto previo para `ECOM.POS.3`: **no existía**.
-- Rama creada desde el `main` actualizado: `fase-ecom-pos-3`.
-- `main` no fue modificado directamente.
+## Precondición histórica de ECOM.POS.3
 
-## Elegibilidad
+Antes de crear la rama se confirmó:
 
-Se agregó `getEcommerceCheckoutEligibility(order, context)` como función pura central.
+- PR #89 mergeado;
+- `main` con ECOM.POS.2, ECOM.POS.2.1 y ECOM.POS.2.1.1;
+- ausencia de otra rama o PR abierto para ECOM.POS.3;
+- creación de `fase-ecom-pos-3` desde `main` actualizado.
 
-Bloquea con códigos estructurados:
+---
 
-- `ECOMMERCE_DRAFT_NOT_PREPARED`
-- `ECOMMERCE_CONTEXT_MISMATCH`
-- `ECOMMERCE_PERMISSION_DENIED`
-- `ECOMMERCE_INVENTORY_NOT_READY`
-- `ECOMMERCE_INVENTORY_STALE`
-- `ECOMMERCE_PRODUCT_MISSING`
-- `ECOMMERCE_BATCH_MISSING`
-- `ECOMMERCE_TOTAL_MISMATCH`
-- `ECOMMERCE_CONVERSION_IN_PROGRESS`
-- `ECOMMERCE_ALREADY_CONVERTED`
-- `ECOMMERCE_CLAIM_LOST`
-- `ECOMMERCE_REMOTE_CONVERSION_CONTRACT_PENDING`
+# ECOM.POS.3.1 — Recuperación e idempotencia fail-closed
 
-La elegibilidad no depende únicamente de `ecommerceInventoryStatus === 'ready'`. También comprueba:
+## Objetivo correctivo
 
-- borrador `prepared`;
-- contexto POS actual;
-- permisos vigentes `ecommerce + pos`;
-- claim remoto vigente;
-- contrato remoto versión 1;
-- ausencia de venta anterior;
-- ausencia de conversión en curso;
-- todas las líneas mapeadas;
-- cantidades positivas;
-- `needsInventoryResolution === false`;
-- `inventoryResolution.status === 'resolved'`;
-- cantidad real de inventario disponible en la resolución;
-- lote obligatorio presente en productos administrados por lote;
-- subtotal, entrega, descuentos, impuestos, total y moneda aceptados.
+ECOM.POS.3.1 corrige tres bloqueantes:
 
-## Estado de conversión
+1. recuperación insegura de `processing_sale` cuando la venta cloud existe pero aún no se materializó en Dexie;
+2. reservas `pos_conversion_status = 'reserved'` huérfanas al liberar administrativamente un borrador;
+3. lectura de idempotencia local fail-open cuando Dexie no puede determinar si ya existe una venta ecommerce.
 
-Se mantiene separado de `ecommerceDraftStatus`:
+La arquitectura original se conserva:
 
-- `idle`
-- `validating`
-- `payment_pending`
-- `processing_sale`
-- `sale_created`
-- `confirmation_pending`
-- `completed`
-- `error`
-
-Metadatos locales utilizados:
-
-- `ecommerceConversionAttemptId`
-- `ecommerceConversionActorIdentity`
-- `ecommerceConvertedSaleId`
-- `ecommerceConversionStartedAt`
-- `ecommerceConversionCompletedAt`
-- `ecommerceConversionError`
-- `ecommerceCheckoutSnapshot`
-- `ecommerceRemoteContractVersion`
-
-No se persisten teléfono, dirección, tokens de claim ni otros datos sensibles dentro del snapshot o de los metadatos de la venta.
-
-## Snapshot inmutable
-
-`buildEcommerceCheckoutSnapshot(...)` produce y congela profundamente:
-
-- pedido y código ecommerce;
-- identidad derivada del claim, sin guardar el token;
-- identidad de licencia y actor;
-- clave determinista de conversión;
-- revisión y fecha de la orden;
-- versión y fecha de resolución de inventario;
-- subtotal, entrega, descuentos, impuestos, total y moneda aceptados;
-- líneas con ID, item ecommerce, producto local, cantidad aceptada, precio aceptado, total de línea, lote y cantidad real de inventario.
-
-El precio actual del catálogo no reemplaza el precio aceptado.
-
-## Checkout lock
-
-No se creó otro checkout.
-
-`useEcommercePosCheckoutGate` envuelve `usePosCheckout` y reutiliza:
-
-- snapshot canónico;
+- checkout canónico;
 - lock canónico;
-- modal de pago;
-- validación de caja;
-- `processSale`;
-- flujo de inventario y lotes;
-- persistencia de venta;
-- efectos de caja.
+- modal de pago y QuickCaja canónicos;
+- `processSale` canónico;
+- snapshot financiero inmutable;
+- reserva remota antes de vender;
+- confirmación ecommerce posterior a la venta;
+- clave determinista `ecommerce:<ecommerceOrderId>`;
+- guards condicionales únicamente para `order.origin === 'ecommerce'`.
 
-`installEcommercePosActiveOrderGuards` permite el lock ecommerce únicamente cuando existe una autorización explícita del intento. Guardar venta abierta, pausar, cocina, split, apartado y edición libre continúan bloqueados.
+## Archivos modificados por ECOM.POS.3.1
 
-El lock se libera por las rutas canónicas de cancelación, cierre permitido, fallo previo a venta y fallo de revalidación.
+### Implementación
 
-## Revalidación doble
+- `src/services/salesService.js`
+- `src/services/salesCloud/salesCloudCashierService.js`
+- `src/services/ecommerce/ecommercePosConversionService.js`
+- `src/hooks/pos/useEcommercePosCheckoutGate.js`
+- `supabase/migrations/20260711235900_ecom_pos_3_complete_conversion.sql`
 
-### Después de adquirir el lock y antes de abrir pago
+### Pruebas
 
-1. Verifica contrato remoto y claim.
-2. Busca una venta previa por idempotencia.
-3. Ejecuta `revalidateEcommerceDraftInventory(...)`.
-4. Trata `READ_FAILED` y `STALE_RESPONSE` como bloqueo.
-5. Recalcula elegibilidad.
-6. Construye el snapshot inmutable.
-7. Fija el total aceptado en el snapshot canónico.
+- `src/services/__tests__/salesService.ecommerce.test.js`
+- `src/services/salesCloud/__tests__/salesCloudCashierService.ecommerce.test.js`
+- `src/services/ecommerce/__tests__/ecommercePosConversionService.test.js`
+- `src/hooks/pos/__tests__/useEcommercePosCheckoutGate.test.js`
+- `supabase/tests/ecom_pos_3_1_recovery_release_test.sql`
 
-### Después de confirmar el pago y antes de `processSale`
+### Documentación
 
-1. Revalida actor, permisos y contexto.
-2. Vuelve a leer claim y conversión remota.
-3. Revalida inventario exacto y lotes.
-4. Busca una venta previa.
-5. Reconstruye el snapshot.
-6. Exige igualdad exacta con el snapshot bloqueado.
-7. Solo entonces ejecuta el flujo canónico de venta.
+- `reports/ecom_pos_3_checkout_conversion_report.md`
+- descripción del PR #90
 
-Si cambia el pedido o inventario, no se crea venta, no se afecta caja y el borrador permanece recuperable.
+Durante la revisión se restauró además el comportamiento de `moveCancelledSaleToTrash` de `main`, porque el diff de ECOM.POS.3 había eliminado accidentalmente la validación que permite enviar a papelera únicamente ventas canceladas. Esta restauración evita una regresión ajena al alcance ecommerce.
 
-## Política `STOCK_WARNING`
+---
 
-Para ecommerce:
+## Bloqueante 1 — Recuperación segura de `processing_sale`
 
-- `STOCK_WARNING` y `RACE_CONDITION` se normalizan a `ECOMMERCE_INVENTORY_CHANGED`;
-- no se presenta ni ejecuta “Sí, Vender Igual”;
-- no se reintenta automáticamente la venta;
-- el inventario vuelve a conflicto;
-- se conserva el borrador;
-- se libera el lock.
+### Causa raíz
 
-Para órdenes POS normales, el comportamiento histórico de `STOCK_WARNING`, override y cancelación no cambia.
+La recuperación anterior consultaba únicamente Dexie. Si no encontraba una venta, trataba la ausencia local como prueba de que el commit no ocurrió y cancelaba la reserva remota.
 
-## `processSale` canónico
+En el modo cloud existe una ventana válida:
 
-No se creó una función paralela de venta ecommerce.
+1. el RPC cloud confirma la venta;
+2. todavía no se guarda el snapshot local;
+3. la aplicación se interrumpe;
+4. Dexie aparece vacío aunque la venta sí existe remotamente.
 
-`processSaleCore` mantiene el mismo flujo de:
+Cancelar la reserva en esa ventana reabría la posibilidad de un cobro duplicado.
 
-- validación de stock;
-- carga y validación de lotes;
-- `inventoryFlow`;
-- transacción segura de venta;
-- caja;
-- post-efectos;
-- shadow/cloud cuando corresponda.
+### Corrección
 
-La rama ecommerce únicamente agrega validación del snapshot financiero y metadatos mínimos:
+`recoverEcommercePosConversion(...)` ahora separa resultados y estados:
 
-- `origin: 'ecommerce'`
-- `ecommerceOrderId`
-- `ecommerceOrderCode`
-- `ecommerceConversionKey`
-- `idempotencyKey`
-- totales aceptados y moneda
+#### `validating` y `payment_pending`
 
-No hay decrementos ecommerce adicionales antes o después del flujo canónico.
+Solo pueden liberar la reserva cuando se confirma positivamente:
 
-## Idempotencia
+- ausencia de venta local;
+- ausencia de venta cloud cuando el modo sea cloud o desconocido;
+- reserva remota todavía perteneciente al mismo `attemptId` y dispositivo;
+- ausencia de conversión remota completada.
 
-Clave determinista:
+#### `processing_sale`
+
+No libera la reserva por una lectura vacía de Dexie.
+
+Orden de recuperación:
+
+1. relee `ecommerce_get_pos_conversion_state(...)`;
+2. consulta una venta local cerrada con la clave exacta;
+3. si el modo fue cloud o es desconocido, consulta el módulo canónico `salesCloud` por:
+   - `local_sale_id` / sale ID estable;
+   - clave idempotente ecommerce;
+   - paginación del snapshot cloud cuando la lectura directa no sea concluyente;
+4. si encuentra la venta cloud, reconstruye el snapshot local con `salesCloudLocalRepository`;
+5. conserva el mismo `saleId`;
+6. pasa a `confirmation_pending`;
+7. no abre pago ni ejecuta `processSale` otra vez.
+
+### Resultado incierto
+
+Cuando falla la lectura local, cloud o remota:
+
+```text
+ECOMMERCE_SALE_VERIFICATION_PENDING
+```
+
+Mensaje:
+
+```text
+No se pudo confirmar todavía si la venta fue registrada. El pedido permanece reservado para evitar un cobro duplicado.
+```
+
+Se conservan:
+
+- `ecommerceConversionAttemptId`;
+- `ecommerceCheckoutSnapshot`;
+- `ecommerceConvertedSaleId`, cuando exista;
+- reserva remota;
+- borrador local.
+
+El checkout queda bloqueado.
+
+### Identidad cloud estable
+
+Para ecommerce, el commit cloud utiliza directamente:
 
 ```text
 ecommerce:<ecommerceOrderId>
 ```
 
-Protecciones:
+No agrega sufijo por dispositivo. El backend cloud ya protege idempotencia por licencia + key.
 
-- promesas concurrentes con la misma clave se coalescen;
-- antes de vender se busca una venta cerrada por ID determinista o metadatos;
-- una venta encontrada se devuelve como replay idempotente;
-- doble clic no inicia dos ejecuciones de `processSale`;
-- una recarga en `processing_sale`, `sale_created` o `confirmation_pending` busca la venta antes de permitir otra acción;
-- la confirmación pendiente reutiliza el `saleId` y nunca vuelve a abrir pago.
+Las ventas POS normales conservan el formato histórico con sufijo del dispositivo. No se modificó su contrato de idempotencia.
 
-## Contrato remoto
+---
 
-El repositorio no contenía una operación atómica para completar la conversión. Se versionó, sin aplicarla, la migración:
+## Bloqueante 2 — Liberación administrativa y reservas huérfanas
 
-```text
-supabase/migrations/20260711235900_ecom_pos_3_complete_conversion.sql
-```
+### Causa raíz
 
-Agrega:
-
-### `ecommerce_get_pos_conversion_state(...)`
-
-- autentica licencia, dispositivo, token de seguridad y sesión staff;
-- devuelve `contractVersion = 1`;
-- valida pertenencia y vigencia del claim;
-- devuelve venta convertida, clave y estado remoto.
-
-### `ecommerce_complete_pos_conversion(...)`
-
-- bloquea la fila con `FOR UPDATE`;
-- valida licencia, pedido, estado, draft, claim, dispositivo y clave determinista;
-- escribe atómicamente `converted_to_sale`, `converted_sale_id`, `converted_at` y `pos_conversion_key`;
-- archiva la visibilidad del pedido;
-- registra evento y broadcast;
-- mismo `saleId` y misma clave: éxito idempotente;
-- otro `saleId`: conflicto bloqueante.
-
-El frontend interpreta RPC inexistente o schema cache sin actualizar como:
+La versión histórica de:
 
 ```text
-ECOMMERCE_REMOTE_CONVERSION_CONTRACT_PENDING
+ecommerce_admin_release_pos_draft(...)
 ```
 
-Nunca lo interpreta como autorización.
+limpiaba draft y claim, pero desconocía:
 
-## Recuperación y confirmación pendiente
+- `pos_conversion_status`;
+- `pos_conversion_attempt_id`;
+- `pos_conversion_sale_id`;
+- `pos_conversion_key`;
+- `pos_conversion_actor_ref`;
+- `pos_conversion_started_at`.
 
-Después de una venta creada:
+Una reserva podía quedar permanentemente `reserved` después de liberar el borrador.
 
-1. conserva `ecommerceConvertedSaleId`;
-2. marca `sale_created`;
-3. intenta confirmación remota;
-4. solo tras éxito marca `completed` y elimina el borrador local.
+### Corrección aplicada en la migración
 
-Si falla la confirmación:
+La misma firma pública fue redefinida de forma compatible.
 
-- estado `confirmation_pending`;
-- venta e inventario no se repiten;
-- caja no se repite;
-- borrador permanece local;
-- UI muestra “Venta registrada / Confirmación del pedido online pendiente”;
-- únicas acciones: `Reintentar confirmación` y `Ver venta`.
+La operación:
 
-La recuperación tras recarga busca la venta cerrada por la clave idempotente. Si la encuentra, continúa únicamente con confirmación remota.
+- autentica licencia, dispositivo y sesión mediante el helper vigente;
+- bloquea la orden con `FOR UPDATE`;
+- mantiene idempotencia para un draft ya liberado y conversión `idle`;
+- rechaza cualquier liberación cuando:
+  - `converted_sale_id is not null`;
+  - `pos_conversion_status = 'completed'`;
+  - `status = 'converted_to_sale'`;
+- impide que un dispositivo normal libere una reserva perteneciente a otro dispositivo;
+- consulta el read model remoto de ventas antes de limpiar una reserva;
+- devuelve fail-closed cuando la verificación no está disponible:
 
-## Permisos
+```text
+ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED
+```
 
-Se reutiliza el contrato vigente del POS:
+### Limpieza atómica autorizada
 
-- dispositivo admin; o
-- staff con `ecommerce === true` y `pos === true`.
+Cuando se demuestra ausencia de venta, la misma transacción limpia:
 
-Los permisos, actor y contexto se revalidan:
+- draft y claim históricos;
+- `pos_conversion_status = 'idle'`;
+- `pos_conversion_attempt_id = null`;
+- `pos_conversion_sale_id = null`;
+- `pos_conversion_key = null`;
+- `pos_conversion_actor_ref = null`;
+- `pos_conversion_started_at = null`.
 
-- al determinar elegibilidad;
-- antes de adquirir el lock;
-- antes de `processSale`.
+No se utiliza antigüedad como prueba de ausencia de venta.
 
-No se inventó un permiso nuevo incompatible con el modelo actual.
+### Auditoría
 
-## UI
+Cuando existía una reserva, se registra:
 
-Se agregó un panel independiente que muestra:
+```text
+pos_conversion_admin_released
+```
 
-- Estado del pedido
-- Estado del inventario
-- Estado de conversión
+Payload no sensible:
 
-Comportamiento:
+- razón;
+- actor y dispositivo;
+- intento anterior;
+- sale ID reservado;
+- clave de conversión;
+- estado anterior del draft;
+- estado anterior de conversión;
+- timestamp.
 
-- inventario pendiente/conflict: `Cobrar pedido` deshabilitado;
-- RPC pendiente: `Cobrar pedido` deshabilitado;
-- contrato, claim, permisos e inventario válidos: checkout controlado habilitado;
-- validando/procesando: interacciones duplicadas deshabilitadas;
-- `confirmation_pending`: no muestra cobro; solo reintento y venta;
-- cantidades y productos ecommerce son de solo lectura;
-- descuentos, cocina, venta abierta, split y apartado permanecen ocultos o bloqueados.
+No se almacenan claim tokens ni security tokens.
 
-## Pruebas agregadas
+La operación también conserva el evento histórico:
 
-- `ecommercePosCheckoutConversion.test.js`
-  - elegibilidad;
-  - lotes;
-  - contexto;
-  - permisos;
-  - claim;
-  - contrato remoto;
-  - totales;
-  - snapshot inmutable;
-  - estados de conversión.
-- `processSaleCore.ecommerce.test.js`
-  - precios aceptados;
-  - cargos ecommerce;
-  - cambios de cantidad/lote;
-  - total autoritativo;
-  - sanitización del payload interno.
-- `EcommercePosConversionPanel.test.jsx`
-  - conflict;
-  - contrato remoto pendiente;
-  - checkout habilitado;
-  - procesamiento;
-  - confirmación pendiente;
-  - reintento sin volver a cobrar.
-- `installEcommercePosActiveOrderGuards.test.js`
-  - borrador ecommerce de solo lectura;
-  - operaciones bloqueadas;
-  - regresión de orden POS normal.
+```text
+order_pos_draft_released
+```
+
+### Cancelación normal
+
+`ecommerce_cancel_pos_conversion(...)` también consulta la venta remota antes de limpiar una reserva. Una venta encontrada o una verificación no concluyente bloquean la cancelación.
+
+---
+
+## Bloqueante 3 — Idempotencia local fail-closed
+
+### Causa raíz
+
+`salesService` capturaba errores de Dexie y devolvía `null`. Esto mezclaba:
+
+- venta comprobada como inexistente;
+- imposibilidad de leer ventas.
+
+Después, `_processSaleInternal(...)` podía ejecutarse como si no existiera una venta anterior.
+
+### Corrección
+
+La lectura devuelve un resultado estructurado:
+
+```js
+{ success: true, sale: existingSale || null }
+```
+
+O, ante fallo:
+
+```js
+{
+  success: false,
+  code: 'ECOMMERCE_SALE_READ_FAILED'
+}
+```
+
+Antes de vender:
+
+- una lectura fallida impide llamar `_processSaleInternal` y `processSaleCore`;
+- no se modifica caja;
+- no se descuenta inventario ni lote;
+- no se cancela automáticamente la reserva;
+- se devuelve un error recuperable.
+
+Después de un error interno:
+
+- se realiza una segunda lectura idempotente;
+- si encuentra venta, devuelve replay idempotente;
+- si la lectura falla, devuelve `ECOMMERCE_SALE_READ_FAILED`;
+- no interpreta el error original como evidencia de ausencia;
+- no ejecuta un retry automático ecommerce.
+
+Las ventas POS normales continúan usando el retry de `RACE_CONDITION` y no pasan por la lectura ecommerce.
+
+---
+
+## Contrato remoto vigente
+
+El contrato requerido es:
+
+```text
+contractVersion = 2
+```
+
+Cuatro RPC públicas:
+
+```text
+ecommerce_get_pos_conversion_state(...)
+ecommerce_begin_pos_conversion(...)
+ecommerce_cancel_pos_conversion(...)
+ecommerce_complete_pos_conversion(...)
+```
+
+Operación administrativa compatible:
+
+```text
+ecommerce_admin_release_pos_draft(...)
+```
+
+Helper privado añadido:
+
+```text
+private.ecommerce_pos_sale_lookup_v2(...)
+```
+
+El helper privado no tiene grants para `anon` ni `authenticated`. Las tablas ecommerce continúan sin acceso directo de clientes.
+
+---
+
+## Política final de recuperación
+
+| Estado local | Venta encontrada | Consulta concluyente sin venta | Consulta fallida/incierta |
+|---|---|---|---|
+| `validating` | `confirmation_pending` | cancela reserva propia y libera lock | conserva reserva y bloquea |
+| `payment_pending` | `confirmation_pending` | cancela reserva propia y libera lock | conserva reserva y bloquea |
+| `processing_sale` | reconstruye local si es cloud; `confirmation_pending` | cancela solo tras ausencia local+cloud positiva | `ECOMMERCE_SALE_VERIFICATION_PENDING`; conserva todo |
+| `sale_created` | `confirmation_pending` | no libera; requiere revisión | conserva reserva y bloquea |
+| `confirmation_pending` | reintenta únicamente confirmación | no libera; requiere revisión | conserva reserva y bloquea |
+| `completed` | limpia borrador residual | no aplica | no aplica |
+
+---
+
+## Pruebas añadidas o actualizadas
+
+### `salesService.ecommerce.test.js`
+
+- fallo Dexie antes de vender;
+- `_processSaleInternal` no llamado;
+- segunda lectura fallida después de error interno;
+- reserva marcada para conservación;
+- venta POS normal sin guard ecommerce;
+- retry POS normal de `RACE_CONDITION` conservado.
+
+### `salesCloudCashierService.ecommerce.test.js`
+
+- ecommerce usa clave estable sin sufijo de dispositivo;
+- POS normal conserva sufijo histórico;
+- recuperación cloud por `local_sale_id`;
+- reconstrucción local;
+- ausencia cloud concluyente;
+- consulta cloud incierta.
+
+### `ecommercePosConversionService.test.js`
+
+- `processing_sale` + venta cloud + Dexie vacío;
+- reserva no cancelada;
+- recuperación a `confirmation_pending`;
+- consulta cloud incierta;
+- lectura Dexie fallida;
+- liberación únicamente después de ausencia positiva;
+- `payment_pending` local recuperable.
+
+### `useEcommercePosCheckoutGate.test.js`
+
+- propiedad del lock por actor e intento;
+- resultado incierto conserva snapshot e intento.
+
+### `ecom_pos_3_1_recovery_release_test.sql`
+
+Verifica estructuralmente:
+
+- `FOR UPDATE`;
+- rechazo de conversión completada;
+- `ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED`;
+- limpieza completa de campos;
+- auditoría `pos_conversion_admin_released`;
+- protección contra otro dispositivo;
+- contractVersion 2;
+- existencia de los cuatro RPC;
+- grants compatibles;
+- helper privado no ejecutable por roles cliente.
+
+No se eliminaron ni debilitaron pruebas existentes. No se añadieron `.skip`, `.todo`, `eslint-disable` ni workflows temporales.
+
+---
 
 ## Validación técnica
 
-Estado al crear el reporte:
+### Comandos solicitados
 
-- checkout limpio / `npm ci`: **pendiente de ejecución en CI del PR**;
-- ESLint específico: **pendiente**;
-- Vitest específico: **pendiente**;
-- build: **pendiente**;
-- lint global: **pendiente**;
-- `test:ci`: **pendiente**;
-- `git diff --check`: **pendiente de comprobación final**;
-- comparación contra `main`: rama creada desde el `main` requerido; sin divergencia observada al inicio.
+```text
+npm ci
+ESLint específico
+Vitest específico
+npm run build
+npm run lint
+npm run test:ci
+git diff --check origin/main...HEAD
+git status --short
+```
 
-Los resultados reales se actualizarán en este reporte y en la descripción del PR. No se declarará `PASS` por ausencia de evidencia.
+### Resultado real disponible
 
-## Smoke test
+No fue posible ejecutar los comandos Node en el entorno disponible porque no existía un checkout local y el intento de obtenerlo falló por red:
 
-No se ejecuta un cobro real mientras el RPC no exista en producción. El comportamiento seguro esperado y verificable en código/pruebas es:
+```text
+git clone --depth 1 --branch fase-ecom-pos-3 https://github.com/fdxruli/Lanzo-POS.git
+fatal: unable to access 'https://github.com/fdxruli/Lanzo-POS.git/': Could not resolve host: github.com
+```
 
-- pedido sin stock: bloqueado, sin venta ni caja;
-- lote válido pero RPC ausente: inventario listo, checkout bloqueado por contrato remoto;
-- cambio antes del pago: revalidación bloquea;
-- cambio dentro del modal: `processSale` no se ejecuta;
-- doble clic: una promesa/venta;
-- fallo remoto después de venta: `confirmation_pending`;
-- reintento: reutiliza `saleId`, sin pago ni descuento adicional de inventario;
-- recuperación remota: completa y elimina únicamente el borrador local.
+No se creó un workflow temporal para eludir esta limitación.
+
+GitHub no reportó ejecuciones de Actions para el HEAD consultado durante esta revisión. El único contexto externo observado fue Vercel, que no se utilizó, promovió ni consideró evidencia.
+
+Por honestidad, los siguientes resultados permanecen pendientes:
+
+- `npm ci`: no ejecutado;
+- ESLint específico: no ejecutado;
+- Vitest específico: no ejecutado;
+- build: no ejecutado;
+- lint global: no ejecutado;
+- `test:ci`: no ejecutado;
+- `git diff --check`: no ejecutado sobre checkout real;
+- `git status --short`: no disponible sin checkout.
+
+Se realizó revisión estática del diff, contratos existentes de `salesCloud`, firma SQL, grants y rutas canónicas. Esta revisión no sustituye la validación ejecutable.
+
+## Comparación contra `main`
+
+La rama continúa basada en `main`, sin commits detrás en la comparación consultada durante la corrección. Los cambios correctivos se limitaron a recuperación, idempotencia, cloud cashier, migración, pruebas y documentación. También se restauró la validación de papelera exactamente conforme a `main`.
+
+La comparación final exacta y el HEAD se registran en la descripción del PR y en la entrega de esta tarea después del último commit documental.
+
+---
 
 ## Supabase
 
 - Producción: **sin cambios**.
-- Migración: **solo versionada**.
-- Aplicación/validación del contrato: **requiere autorización explícita**.
+- Migración ECOM.POS.3/3.1: **solo versionada**.
+- RPC aplicadas: **no**.
+- RPC validadas en producción: **no**.
+- Modificaciones manuales: **ninguna**.
 
 ## Vercel
 
-- Preview manual: **no creado, intentado, forzado, promovido ni validado**.
-- Vercel: **no utilizado como evidencia**.
+- preview creado: no;
+- preview forzado: no;
+- promoción: no;
+- validación manual: no;
+- usado como evidencia: no.
 
-## Criterio de cierre pendiente
+## Smoke test
 
-Para cambiar a `ECOM.POS.3 PASS` se requiere:
+No se realizó smoke test real contra producción, conforme a la restricción de la tarea.
 
-1. autorizar y aplicar la migración remota;
-2. validar ambos RPC en el entorno autorizado;
-3. ejecutar smoke test real de una venta ecommerce;
-4. confirmar una sola venta, un solo descuento de inventario/lote y una sola actualización de caja;
-5. completar build, lint, Vitest y regresión sin fallos nuevos;
-6. mantener el PR draft hasta cerrar todos los bloqueos.
+---
+
+## Bloqueos pendientes
+
+No se puede declarar `PASS` ni marcar el PR ready for review mientras falte:
+
+1. validación ejecutable limpia de ESLint, Vitest, build, lint y `test:ci`;
+2. aplicación autorizada de la migración;
+3. validación de contractVersion 2 y los cuatro RPC;
+4. pruebas SQL en entorno de prueba;
+5. smoke test real autorizado;
+6. verificación real de una sola venta, una sola caja y un solo descuento de inventario/lote.
+
+## Resultado
+
+**ECOM.POS.3.1 CORREGIDA EN CÓDIGO — VALIDACIÓN Y CONTRATO REMOTO PENDIENTES**
+
+**ECOM.POS.3 BLOCKED — CONTRATO REMOTO PENDIENTE**
+
+El PR #90 permanece draft y no debe mergearse todavía.
