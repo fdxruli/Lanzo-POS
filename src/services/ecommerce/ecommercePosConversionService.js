@@ -27,7 +27,9 @@ const getLicenseKey = (licenseDetails = {}) => (
 
 const buildAuthArgs = async (licenseDetails = {}) => {
   const licenseKey = getLicenseKey(licenseDetails);
-  if (!licenseKey) throw Object.assign(new Error('LICENSE_KEY_REQUIRED'), { code: 'LICENSE_KEY_REQUIRED' });
+  if (!licenseKey) {
+    throw Object.assign(new Error('LICENSE_KEY_REQUIRED'), { code: 'LICENSE_KEY_REQUIRED' });
+  }
 
   const authContext = await buildPosSyncAuthContext({ licenseKey });
   if (!authContext.deviceFingerprint || !authContext.securityToken) {
@@ -187,6 +189,35 @@ const validateReservationArgs = ({ order, attemptId, saleId, conversionKey }) =>
   )
 );
 
+const callReservationRpc = async ({ rpcName, order, attemptId, saleId, conversionKey, extraArgs = {}, licenseDetails }) => {
+  if (!validateReservationArgs({ order, attemptId, saleId, conversionKey })) {
+    return {
+      success: false,
+      code: 'ECOMMERCE_POS_CONVERSION_INVALID_ARGUMENT',
+      message: 'Faltan datos requeridos para la conversión.'
+    };
+  }
+
+  try {
+    const authArgs = await buildAuthArgs(licenseDetails);
+    return callConversionRpc(rpcName, {
+      ...authArgs,
+      p_order_id: order.ecommerceOrderId,
+      p_claim_token: order.ecommerceClaimToken,
+      p_attempt_id: attemptId,
+      p_sale_id: saleId,
+      p_conversion_key: conversionKey,
+      ...extraArgs
+    });
+  } catch (error) {
+    return {
+      success: false,
+      code: error?.code || 'ECOMMERCE_POS_CONVERSION_FAILED',
+      message: 'No se pudo completar la operación remota de conversión.'
+    };
+  }
+};
+
 export async function beginEcommercePosConversionRemote({
   order,
   attemptId,
@@ -194,48 +225,37 @@ export async function beginEcommercePosConversionRemote({
   conversionKey = getEcommerceConversionKey(order?.ecommerceOrderId),
   licenseDetails = useAppStore.getState().licenseDetails
 } = {}) {
-  if (!validateReservationArgs({ order, attemptId, saleId, conversionKey })) {
+  const payload = await callReservationRpc({
+    rpcName: 'ecommerce_begin_pos_conversion',
+    order,
+    attemptId,
+    saleId,
+    conversionKey,
+    extraArgs: { p_draft_id: order?.id },
+    licenseDetails
+  });
+  if (payload.success === false) {
     return {
-      success: false,
-      code: 'ECOMMERCE_POS_CONVERSION_INVALID_ARGUMENT',
-      message: 'Faltan datos para reservar la conversión.'
+      ...payload,
+      code: payload.code || ECOMMERCE_REMOTE_RESERVATION_FAILED,
+      message: payload.message || 'No se pudo reservar el pedido para cobro.'
     };
   }
 
-  try {
-    const authArgs = await buildAuthArgs(licenseDetails);
-    const payload = await callConversionRpc('ecommerce_begin_pos_conversion', {
-      ...authArgs,
-      p_order_id: order.ecommerceOrderId,
-      p_claim_token: order.ecommerceClaimToken,
-      p_draft_id: order.id,
-      p_attempt_id: attemptId,
-      p_sale_id: saleId,
-      p_conversion_key: conversionKey
-    });
-    if (payload.success === false) return payload;
-
-    return {
-      success: true,
-      changed: payload.changed === true,
-      idempotent: payload.idempotent === true,
-      alreadyCompleted: payload.alreadyCompleted === true,
-      remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
-      orderId: payload.orderId || order.ecommerceOrderId,
-      conversionStatus: payload.conversionStatus || 'reserved',
-      conversionAttemptId: payload.conversionAttemptId || attemptId,
-      reservedSaleId: payload.reservedSaleId || saleId,
-      conversionStartedAt: payload.conversionStartedAt || null,
-      convertedSaleId: payload.convertedSaleId || null,
-      conversionKey: payload.conversionKey || conversionKey
-    };
-  } catch (error) {
-    return {
-      success: false,
-      code: error?.code || ECOMMERCE_REMOTE_RESERVATION_FAILED,
-      message: 'No se pudo reservar el pedido para cobro.'
-    };
-  }
+  return {
+    success: true,
+    changed: payload.changed === true,
+    idempotent: payload.idempotent === true,
+    alreadyCompleted: payload.alreadyCompleted === true,
+    remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
+    orderId: payload.orderId || order.ecommerceOrderId,
+    conversionStatus: payload.conversionStatus || 'reserved',
+    conversionAttemptId: payload.conversionAttemptId || attemptId,
+    reservedSaleId: payload.reservedSaleId || saleId,
+    conversionStartedAt: payload.conversionStartedAt || null,
+    convertedSaleId: payload.convertedSaleId || null,
+    conversionKey: payload.conversionKey || conversionKey
+  };
 }
 
 export async function cancelEcommercePosConversionRemote({
@@ -247,42 +267,31 @@ export async function cancelEcommercePosConversionRemote({
   reason = 'cancelled_before_sale',
   licenseDetails = useAppStore.getState().licenseDetails
 } = {}) {
-  if (!validateReservationArgs({ order, attemptId, saleId, conversionKey })) {
+  const payload = await callReservationRpc({
+    rpcName: 'ecommerce_cancel_pos_conversion',
+    order,
+    attemptId,
+    saleId,
+    conversionKey,
+    extraArgs: { p_reason: reason },
+    licenseDetails
+  });
+  if (payload.success === false) {
     return {
-      success: false,
-      code: 'ECOMMERCE_POS_CONVERSION_INVALID_ARGUMENT',
-      message: 'Faltan datos para liberar la reserva de conversión.'
+      ...payload,
+      code: payload.code || ECOMMERCE_REMOTE_RESERVATION_RELEASE_FAILED,
+      message: payload.message || 'No se pudo liberar la reserva remota de conversión.'
     };
   }
 
-  try {
-    const authArgs = await buildAuthArgs(licenseDetails);
-    const payload = await callConversionRpc('ecommerce_cancel_pos_conversion', {
-      ...authArgs,
-      p_order_id: order.ecommerceOrderId,
-      p_claim_token: order.ecommerceClaimToken,
-      p_attempt_id: attemptId,
-      p_sale_id: saleId,
-      p_conversion_key: conversionKey,
-      p_reason: reason
-    });
-    if (payload.success === false) return payload;
-
-    return {
-      success: true,
-      changed: payload.changed === true,
-      idempotent: payload.idempotent === true,
-      remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
-      orderId: payload.orderId || order.ecommerceOrderId,
-      conversionStatus: payload.conversionStatus || 'idle'
-    };
-  } catch (error) {
-    return {
-      success: false,
-      code: error?.code || ECOMMERCE_REMOTE_RESERVATION_RELEASE_FAILED,
-      message: 'No se pudo liberar la reserva remota de conversión.'
-    };
-  }
+  return {
+    success: true,
+    changed: payload.changed === true,
+    idempotent: payload.idempotent === true,
+    remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
+    orderId: payload.orderId || order.ecommerceOrderId,
+    conversionStatus: payload.conversionStatus || 'idle'
+  };
 }
 
 export async function completeEcommercePosConversionRemote({
@@ -292,70 +301,62 @@ export async function completeEcommercePosConversionRemote({
   conversionKey = getEcommerceConversionKey(order?.ecommerceOrderId),
   licenseDetails = useAppStore.getState().licenseDetails
 } = {}) {
-  if (!validateReservationArgs({ order, attemptId, saleId, conversionKey })) {
+  const payload = await callReservationRpc({
+    rpcName: 'ecommerce_complete_pos_conversion',
+    order,
+    attemptId,
+    saleId,
+    conversionKey,
+    extraArgs: { p_draft_id: order?.id },
+    licenseDetails
+  });
+  if (payload.success === false) {
     return {
-      success: false,
-      code: 'ECOMMERCE_POS_CONVERSION_INVALID_ARGUMENT',
-      message: 'Faltan datos para confirmar la conversión.'
+      ...payload,
+      code: payload.code || ECOMMERCE_REMOTE_CONFIRMATION_FAILED,
+      message: payload.message || 'La venta fue registrada, pero falta confirmar el pedido online.'
     };
   }
 
-  try {
-    const authArgs = await buildAuthArgs(licenseDetails);
-    const payload = await callConversionRpc('ecommerce_complete_pos_conversion', {
-      ...authArgs,
-      p_order_id: order.ecommerceOrderId,
-      p_claim_token: order.ecommerceClaimToken,
-      p_draft_id: order.id,
-      p_attempt_id: attemptId,
-      p_sale_id: saleId,
-      p_conversion_key: conversionKey
-    });
-    if (payload.success === false) return payload;
-
-    return {
-      success: true,
-      changed: payload.changed === true,
-      idempotent: payload.idempotent === true,
-      remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
-      orderId: payload.orderId || order.ecommerceOrderId,
-      orderStatus: payload.orderStatus || 'converted_to_sale',
-      conversionStatus: payload.conversionStatus || 'completed',
-      convertedSaleId: payload.convertedSaleId || saleId,
-      convertedAt: payload.convertedAt || null,
-      conversionKey: payload.conversionKey || conversionKey
-    };
-  } catch (error) {
-    return {
-      success: false,
-      code: error?.code || ECOMMERCE_REMOTE_CONFIRMATION_FAILED,
-      message: 'La venta fue registrada, pero falta confirmar el pedido online.'
-    };
-  }
+  return {
+    success: true,
+    changed: payload.changed === true,
+    idempotent: payload.idempotent === true,
+    remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
+    orderId: payload.orderId || order.ecommerceOrderId,
+    orderStatus: payload.orderStatus || 'converted_to_sale',
+    conversionStatus: payload.conversionStatus || 'completed',
+    convertedSaleId: payload.convertedSaleId || saleId,
+    convertedAt: payload.convertedAt || null,
+    conversionKey: payload.conversionKey || conversionKey
+  };
 }
+
+const getSaleConversionKey = (sale = {}) => (
+  sale?.metadata?.idempotencyKey
+  || sale?.metadata?.ecommerceConversionKey
+  || sale?.idempotencyKey
+  || null
+);
+
+const isValidEcommerceSale = (sale, conversionKey) => (
+  Boolean(sale)
+  && (sale.status === SALE_STATUS.CLOSED || sale.status === 'closed')
+  && getSaleConversionKey(sale) === conversionKey
+);
 
 export async function findEcommerceSale({ orderId, conversionKey } = {}) {
   const resolvedKey = conversionKey || getEcommerceConversionKey(orderId);
-  if (!orderId && !resolvedKey) return null;
+  if (!resolvedKey) return null;
 
   const deterministicId = orderId ? `ecom-${String(orderId).trim()}` : null;
   if (deterministicId) {
     const byId = await db.table(STORES.SALES).get(deterministicId);
-    const byIdKey = byId?.metadata?.idempotencyKey || byId?.metadata?.ecommerceConversionKey || null;
-    if (
-      (byId?.status === SALE_STATUS.CLOSED || byId?.status === 'closed')
-      && byIdKey === resolvedKey
-    ) return byId;
+    if (isValidEcommerceSale(byId, resolvedKey)) return byId;
   }
 
-  if (!resolvedKey) return null;
   return db.table(STORES.SALES)
-    .filter((sale) => (
-      (sale?.metadata?.idempotencyKey === resolvedKey
-        || sale?.metadata?.ecommerceConversionKey === resolvedKey
-        || sale?.idempotencyKey === resolvedKey)
-      && (sale?.status === SALE_STATUS.CLOSED || sale?.status === 'closed')
-    ))
+    .filter((sale) => isValidEcommerceSale(sale, resolvedKey))
     .first();
 }
 
@@ -391,25 +392,41 @@ export async function retryEcommerceConversionConfirmation({ orderId } = {}) {
 
   const conversionKey = order.ecommerceCheckoutSnapshot?.ecommerceConversionKey
     || getEcommerceConversionKey(order.ecommerceOrderId);
-  const sale = order.ecommerceConvertedSaleId
-    ? await db.table(STORES.SALES).get(order.ecommerceConvertedSaleId)
-    : await findEcommerceSale({ orderId: order.ecommerceOrderId, conversionKey });
-  const saleId = sale?.id || order.ecommerceConvertedSaleId || null;
+  let sale;
+  try {
+    sale = await findEcommerceSale({ orderId: order.ecommerceOrderId, conversionKey });
+  } catch (error) {
+    updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
+      ecommerceRemoteConversionStatus: 'reserved',
+      ecommerceConversionError: {
+        code: 'ECOMMERCE_SALE_READ_FAILED',
+        message: 'No se pudo comprobar la venta registrada. La reserva remota se conserva.'
+      }
+    });
+    return { success: false, code: 'ECOMMERCE_SALE_READ_FAILED', error };
+  }
 
-  if (!saleId) {
-    updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
+  if (!sale) {
+    updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
       ecommerceConvertedSaleId: null,
+      ecommerceRemoteConversionStatus: 'reserved',
       ecommerceConversionError: {
         code: 'ECOMMERCE_SALE_NOT_FOUND',
-        message: 'No se encontró una venta válida para confirmar.'
+        message: 'No se encontró una venta cerrada con la clave ecommerce esperada.'
       }
     });
     return { success: false, code: 'ECOMMERCE_SALE_NOT_FOUND' };
   }
 
+  const saleId = sale.id;
   if (!order.ecommerceConversionAttemptId) {
     const remote = await getEcommercePosConversionRemoteState({ order });
-    if (remote.success === true && remote.conversionOwned && remote.conversionAttemptId) {
+    if (
+      remote.success === true
+      && remote.conversionOwned === true
+      && remote.conversionAttemptId
+      && remote.reservedSaleId === saleId
+    ) {
       updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
         ecommerceConversionAttemptId: remote.conversionAttemptId,
         ecommerceRemoteConversionStatus: remote.conversionStatus,
@@ -450,7 +467,7 @@ const recoverInterruptedBeforeSale = async ({ order, orderId, status }) => {
   });
   await unlockLocalOrder(orderId);
 
-  if (cancellation.success === false && cancellation.code !== ECOMMERCE_REMOTE_CONTRACT_PENDING) {
+  if (cancellation.success === false) {
     updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
       ecommerceCheckoutGateStatus: 'blocked',
       ecommerceRemoteConversionStatus: 'reserved',
@@ -473,6 +490,8 @@ const recoverInterruptedBeforeSale = async ({ order, orderId, status }) => {
     ecommerceCheckoutSnapshot: null,
     ecommerceConversionAttemptId: null,
     ecommerceConversionActorIdentity: null,
+    ecommerceCheckoutLockAttemptId: null,
+    ecommerceCheckoutLockActorIdentity: null,
     ecommerceConversionError: {
       code: 'PROCESS_INTERRUPTED_BEFORE_SALE',
       message: 'El intento se interrumpió antes de encontrar una venta registrada.'
@@ -516,6 +535,7 @@ export async function recoverEcommercePosConversion({ orderId } = {}) {
   } catch (error) {
     updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
       ecommerceCheckoutGateStatus: 'blocked',
+      ecommerceRemoteConversionStatus: 'reserved',
       ecommerceConversionError: {
         code: 'ECOMMERCE_SALE_READ_FAILED',
         message: 'No se pudo comprobar si la venta ya fue registrada. No se liberó la reserva remota.'
@@ -553,6 +573,9 @@ export const ecommercePosConversionServiceInternals = Object.freeze({
   callConversionRpc,
   hashText,
   validateReservationArgs,
+  callReservationRpc,
+  getSaleConversionKey,
+  isValidEcommerceSale,
   unlockLocalOrder,
   recoverInterruptedBeforeSale
 });
