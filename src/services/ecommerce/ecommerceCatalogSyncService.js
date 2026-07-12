@@ -194,6 +194,17 @@ export const createEcommerceCatalogSyncService = ({
     return { success: true, queued: true, count };
   };
 
+  const resolveOfflinePortalId = async ({ scopeIdentity, contextKey }) => {
+    if (lastEligibleContext?.contextKey === contextKey) {
+      return lastEligibleContext.portalId;
+    }
+    try {
+      return await outbox.getRememberedPortal({ scopeIdentity });
+    } catch {
+      return null;
+    }
+  };
+
   const buildProjections = async ({ publishedProducts, requestedRefs, fullReconcile }) => {
     const linkedProducts = publishedProducts.filter((product) => (
       product?.isPublished === true && asText(product.localProductRef)
@@ -266,14 +277,17 @@ export const createEcommerceCatalogSyncService = ({
       });
     }
 
-    if (!online() && lastEligibleContext?.contextKey === contextKey) {
-      return enqueueOffline({
-        scopeIdentity,
-        portalId: lastEligibleContext.portalId,
-        productRefs: request.productRefs,
-        fullReconcile: request.fullReconcile,
-        reason: request.reason
-      });
+    if (!online()) {
+      const rememberedPortalId = await resolveOfflinePortalId({ scopeIdentity, contextKey });
+      if (rememberedPortalId) {
+        return enqueueOffline({
+          scopeIdentity,
+          portalId: rememberedPortalId,
+          productRefs: request.productRefs,
+          fullReconcile: request.fullReconcile,
+          reason: request.reason
+        });
+      }
     }
 
     publishStatus({
@@ -285,14 +299,17 @@ export const createEcommerceCatalogSyncService = ({
 
     const portalResult = await getPortal();
     if (portalResult?.success !== true) {
-      if (!online() && lastEligibleContext?.contextKey === contextKey) {
-        return enqueueOffline({
-          scopeIdentity,
-          portalId: lastEligibleContext.portalId,
-          productRefs: request.productRefs,
-          fullReconcile: request.fullReconcile,
-          reason: request.reason
-        });
+      if (!online()) {
+        const rememberedPortalId = await resolveOfflinePortalId({ scopeIdentity, contextKey });
+        if (rememberedPortalId) {
+          return enqueueOffline({
+            scopeIdentity,
+            portalId: rememberedPortalId,
+            productRefs: request.productRefs,
+            fullReconcile: request.fullReconcile,
+            reason: request.reason
+          });
+        }
       }
       return publishStatus({
         state: 'error',
@@ -325,6 +342,8 @@ export const createEcommerceCatalogSyncService = ({
     if (!isContextCurrent(contextKey, requestEpoch)) {
       return { success: false, stale: true };
     }
+
+    await outbox.rememberPortal({ scopeIdentity, portalId: portal.id });
 
     const productsResult = await getPublishedProducts();
     if (productsResult?.success !== true) {
