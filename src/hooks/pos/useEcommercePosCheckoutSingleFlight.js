@@ -25,8 +25,7 @@ const getCurrentOrder = () => {
 const isEcommerceCheckoutAlreadyActive = (order = {}) => (
   order.origin === 'ecommerce'
   && (
-    order.ecommerceCheckoutInitiationStatus === 'starting'
-    || order.isLockedForCheckout === true
+    order.isLockedForCheckout === true
     || Boolean(order.ecommerceConvertedSaleId)
     || ACTIVE_CHECKOUT_STATUSES.has(order.ecommerceConversionStatus)
   )
@@ -49,6 +48,10 @@ export function useEcommercePosCheckoutSingleFlight({ checkout }) {
 
     const existing = getEcommerceCheckoutInitiation(order.id);
     if (existing) return existing.promise;
+
+    if (order.ecommerceCheckoutInitiationStatus === 'starting') {
+      updateInitiationStatus(order.id, null);
+    }
 
     if (isEcommerceCheckoutAlreadyActive(order)) {
       return Promise.resolve({
