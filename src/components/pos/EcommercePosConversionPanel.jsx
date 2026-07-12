@@ -51,6 +51,16 @@ const getBlockedMessage = (order = {}, isCheckingRemote = false) => {
   if (order.ecommerceCheckoutGateCode === ECOMMERCE_REMOTE_CONTRACT_PENDING) {
     return 'El cobro seguirá bloqueado hasta aplicar y validar el contrato remoto de conversión.';
   }
+  if (order.ecommerceRemoteConversionStatus === 'reserved') {
+    if (order.ecommerceRemoteConversionOwned === true) {
+      return order.ecommerceConversionError?.message
+        || 'Este pedido conserva una reserva de conversión pendiente de recuperación.';
+    }
+    return 'Este pedido ya está siendo procesado por otro dispositivo o intento.';
+  }
+  if (order.ecommerceRemoteConversionStatus === 'unknown') {
+    return 'No se pudo confirmar si la reserva remota fue liberada. El cobro permanece bloqueado.';
+  }
   if (order.ecommerceRemoteClaimOwned === false || order.ecommerceRemoteClaimValid === false) {
     return 'La reserva del pedido ya no pertenece a este dispositivo o venció.';
   }
@@ -96,6 +106,8 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
         ecommerceRemoteContractVersion: result.remoteContractVersion || 0,
         ecommerceRemoteClaimOwned: false,
         ecommerceRemoteClaimValid: false,
+        ecommerceRemoteConversionStatus: 'unknown',
+        ecommerceRemoteConversionOwned: false,
         ecommerceCheckoutGateStatus: 'blocked',
         ecommerceCheckoutGateCode: result.code || ECOMMERCE_REMOTE_CONTRACT_PENDING,
         ecommerceCheckoutGateMessage: result.message || 'No se pudo comprobar el contrato remoto.'
@@ -108,14 +120,23 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
       ecommerceRemoteContractVersion: result.remoteContractVersion || 0,
       ecommerceRemoteClaimOwned: result.claimOwned === true,
       ecommerceRemoteClaimValid: result.claimValid === true,
+      ecommerceRemoteConversionStatus: result.conversionStatus || 'idle',
+      ecommerceRemoteConversionOwned: result.conversionOwned === true,
+      ecommerceRemoteConversionAttemptId: result.conversionAttemptId || null,
+      ecommerceRemoteReservedSaleId: result.reservedSaleId || null,
+      ecommerceRemoteConversionStartedAt: result.conversionStartedAt || null,
       ecommerceRemoteConvertedSaleId: result.convertedSaleId || null,
       ecommerceCheckoutGateStatus: 'blocked',
       ecommerceCheckoutGateCode: result.convertedSaleId
         ? 'ECOMMERCE_ALREADY_CONVERTED'
-        : null,
+        : (result.conversionStatus === 'reserved'
+          ? 'ECOMMERCE_POS_CONVERSION_IN_PROGRESS'
+          : null),
       ecommerceCheckoutGateMessage: result.convertedSaleId
         ? 'La venta ya existe; solo falta confirmar el pedido online.'
-        : null
+        : (result.conversionStatus === 'reserved'
+          ? 'Este pedido conserva una reserva remota de conversión.'
+          : null)
     });
     setIsCheckingRemote(false);
     return result;
@@ -154,6 +175,7 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     && order?.ecommerceRemoteContractVersion >= ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION
     && order?.ecommerceRemoteClaimOwned === true
     && order?.ecommerceRemoteClaimValid === true
+    && order?.ecommerceRemoteConversionStatus === 'idle'
     && !order?.ecommerceRemoteConvertedSaleId
     && !order?.ecommerceConvertedSaleId
     && !isConfirmationPending
