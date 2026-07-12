@@ -2,8 +2,9 @@ import Dexie from 'dexie';
 
 export const ECOMMERCE_CATALOG_SYNC_OUTBOX_DB_NAME = 'lanzo-ecommerce-catalog-sync-outbox';
 const OUTBOX_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const PENDING_PORTAL_ID = '__pending_portal__';
 
-const asText = (value) => String(value || '').trim();
+const asText = (value) => String(value ?? '').trim();
 const uniqueRefs = (values = []) => Array.from(new Set(
   values.map(asText).filter(Boolean)
 ));
@@ -50,6 +51,38 @@ export const createEcommerceCatalogSyncOutboxDatabase = (
 
 const defaultDatabase = createEcommerceCatalogSyncOutboxDatabase();
 
+const buildRecords = ({
+  scopeHash,
+  portalId,
+  productRefs,
+  fullReconcile,
+  reason,
+  timestamp
+}) => {
+  const refs = uniqueRefs(productRefs);
+  if (fullReconcile || refs.length === 0) {
+    return [{
+      key: `${scopeHash}:${portalId}:*`,
+      scopeHash,
+      portalId,
+      productRef: null,
+      fullReconcile: true,
+      reason: asText(reason).slice(0, 100),
+      updatedAt: timestamp
+    }];
+  }
+
+  return refs.map((productRef) => ({
+    key: `${scopeHash}:${portalId}:${encodeURIComponent(productRef)}`,
+    scopeHash,
+    portalId,
+    productRef,
+    fullReconcile: false,
+    reason: asText(reason).slice(0, 100),
+    updatedAt: timestamp
+  }));
+};
+
 export const createEcommerceCatalogSyncOutbox = ({
   database = defaultDatabase,
   now = () => Date.now()
@@ -66,7 +99,7 @@ export const createEcommerceCatalogSyncOutbox = ({
 
   const rememberPortal = async ({ scopeIdentity, portalId }) => {
     const normalizedPortalId = asText(portalId);
-    if (!normalizedPortalId) return false;
+    if (!normalizedPortalId || normalizedPortalId === PENDING_PORTAL_ID) return false;
     const scopeHash = await resolveScope(scopeIdentity);
     await ensureOpen();
     await database.table('scopes').put({
@@ -95,57 +128,50 @@ export const createEcommerceCatalogSyncOutbox = ({
     fullReconcile = false,
     reason = 'catalog-change'
   }) => {
-    const normalizedPortalId = asText(portalId);
-    if (!normalizedPortalId) return 0;
+    const normalizedPortalId = asText(portalId) || PENDING_PORTAL_ID;
     const scopeHash = await resolveScope(scopeIdentity);
     await ensureOpen();
 
     const timestamp = now();
-    const records = [];
-    if (fullReconcile || uniqueRefs(productRefs).length === 0) {
-      records.push({
-        key: `${scopeHash}:${normalizedPortalId}:*`,
-        scopeHash,
-        portalId: normalizedPortalId,
-        productRef: null,
-        fullReconcile: true,
-        reason: asText(reason).slice(0, 100),
-        updatedAt: timestamp
-      });
-    } else {
-      uniqueRefs(productRefs).forEach((productRef) => {
-        records.push({
-          key: `${scopeHash}:${normalizedPortalId}:${encodeURIComponent(productRef)}`,
-          scopeHash,
-          portalId: normalizedPortalId,
-          productRef,
-          fullReconcile: false,
-          reason: asText(reason).slice(0, 100),
-          updatedAt: timestamp
-        });
-      });
-    }
+    const records = buildRecords({
+      scopeHash,
+      portalId: normalizedPortalId,
+      productRefs,
+      fullReconcile,
+      reason,
+      timestamp
+    });
 
     await database.transaction('rw', database.table('changes'), database.table('scopes'), async () => {
       await database.table('changes').bulkPut(records);
-      await database.table('scopes').put({
-        scopeHash,
-        portalId: normalizedPortalId,
-        updatedAt: timestamp
-      });
+      if (normalizedPortalId !== PENDING_PORTAL_ID) {
+        await database.table('scopes').put({
+          scopeHash,
+          portalId: normalizedPortalId,
+          updatedAt: timestamp
+        });
+      }
     });
     return records.length;
   };
 
+  const readEntries = async ({ scopeHash, portalId }) => {
+    const portalIds = [portalId];
+    if (portalId !== PENDING_PORTAL_ID) portalIds.push(PENDING_PORTAL_ID);
+    const groups = await Promise.all(portalIds.map((candidate) => (
+      database.table('changes')
+        .where('[scopeHash+portalId]')
+        .equals([scopeHash, candidate])
+        .toArray()
+    )));
+    return groups.flat();
+  };
+
   const list = async ({ scopeIdentity, portalId }) => {
-    const normalizedPortalId = asText(portalId);
-    if (!normalizedPortalId) return { entries: [], productRefs: [], fullReconcile: false };
+    const normalizedPortalId = asText(portalId) || PENDING_PORTAL_ID;
     const scopeHash = await resolveScope(scopeIdentity);
     await ensureOpen();
-    const entries = await database.table('changes')
-      .where('[scopeHash+portalId]')
-      .equals([scopeHash, normalizedPortalId])
-      .toArray();
+    const entries = await readEntries({ scopeHash, portalId: normalizedPortalId });
     return {
       entries,
       productRefs: uniqueRefs(entries.map((entry) => entry.productRef)),
@@ -154,20 +180,57 @@ export const createEcommerceCatalogSyncOutbox = ({
   };
 
   const acknowledge = async ({ scopeIdentity, portalId, entries = null }) => {
-    const normalizedPortalId = asText(portalId);
-    if (!normalizedPortalId) return 0;
+    const normalizedPortalId = asText(portalId) || PENDING_PORTAL_ID;
     const scopeHash = await resolveScope(scopeIdentity);
     await ensureOpen();
     const keys = Array.isArray(entries)
       ? entries
-          .filter((entry) => entry?.scopeHash === scopeHash && entry?.portalId === normalizedPortalId)
+          .filter((entry) => (
+            entry?.scopeHash === scopeHash
+            && [normalizedPortalId, PENDING_PORTAL_ID].includes(entry?.portalId)
+          ))
           .map((entry) => entry.key)
-      : await database.table('changes')
-          .where('[scopeHash+portalId]')
-          .equals([scopeHash, normalizedPortalId])
-          .primaryKeys();
+      : (await readEntries({ scopeHash, portalId: normalizedPortalId })).map((entry) => entry.key);
     if (keys.length > 0) await database.table('changes').bulkDelete(keys);
     return keys.length;
+  };
+
+  const replacePending = async ({
+    scopeIdentity,
+    portalId,
+    entries = [],
+    productRefs = [],
+    fullReconcile = false,
+    reason = 'retryable-failure'
+  }) => {
+    const normalizedPortalId = asText(portalId) || PENDING_PORTAL_ID;
+    const scopeHash = await resolveScope(scopeIdentity);
+    await ensureOpen();
+    const timestamp = now();
+    const keys = entries
+      .filter((entry) => entry?.scopeHash === scopeHash)
+      .map((entry) => entry.key);
+    const records = buildRecords({
+      scopeHash,
+      portalId: normalizedPortalId,
+      productRefs,
+      fullReconcile,
+      reason,
+      timestamp
+    });
+
+    await database.transaction('rw', database.table('changes'), database.table('scopes'), async () => {
+      if (keys.length > 0) await database.table('changes').bulkDelete(keys);
+      await database.table('changes').bulkPut(records);
+      if (normalizedPortalId !== PENDING_PORTAL_ID) {
+        await database.table('scopes').put({
+          scopeHash,
+          portalId: normalizedPortalId,
+          updatedAt: timestamp
+        });
+      }
+    });
+    return records.length;
   };
 
   const cleanup = async () => {
@@ -194,6 +257,7 @@ export const createEcommerceCatalogSyncOutbox = ({
     enqueue,
     list,
     acknowledge,
+    replacePending,
     cleanup,
     clear,
     database
@@ -205,5 +269,7 @@ export const ecommerceCatalogSyncOutbox = createEcommerceCatalogSyncOutbox();
 export const ecommerceCatalogSyncOutboxInternals = Object.freeze({
   uniqueRefs,
   fallbackHash,
+  buildRecords,
+  PENDING_PORTAL_ID,
   OUTBOX_MAX_AGE_MS
 });
