@@ -159,6 +159,7 @@ const revalidateLockedEcommerceCheckout = async ({
   }
 
   updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.VALIDATING, {
+    total: snapshotResult.snapshot.expectedTotal,
     ecommerceCheckoutGateStatus: 'authorized',
     ecommerceCheckoutGateCode: null,
     ecommerceCheckoutGateMessage: null,
