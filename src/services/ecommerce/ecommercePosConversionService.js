@@ -1,0 +1,368 @@
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { useAppStore } from '../../store/useAppStore';
+import { db, STORES } from '../db/dexie';
+import { SALE_STATUS } from '../sales/financialStats';
+import { supabaseClient } from '../supabase';
+import { buildPosSyncAuthContext } from '../sync/posSyncClient';
+import {
+  ECOMMERCE_CONVERSION_STATUS,
+  ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
+  createEcommerceConversionPatch,
+  getEcommerceConversionKey
+} from './ecommercePosCheckoutConversion';
+
+export const ECOMMERCE_REMOTE_CONTRACT_PENDING = 'ECOMMERCE_REMOTE_CONVERSION_CONTRACT_PENDING';
+export const ECOMMERCE_REMOTE_CONFIRMATION_FAILED = 'REMOTE_CONFIRMATION_FAILED';
+export const ECOMMERCE_REMOTE_CONFIRMATION_CONFLICT = 'ECOMMERCE_POS_CONVERSION_CONFLICT';
+
+const getLicenseKey = (licenseDetails = {}) => (
+  licenseDetails.license_key
+  || licenseDetails.licenseKey
+  || licenseDetails.details?.license_key
+  || licenseDetails.details?.licenseKey
+  || null
+);
+
+const buildAuthArgs = async (licenseDetails = {}) => {
+  const licenseKey = getLicenseKey(licenseDetails);
+  if (!licenseKey) throw Object.assign(new Error('LICENSE_KEY_REQUIRED'), { code: 'LICENSE_KEY_REQUIRED' });
+
+  const authContext = await buildPosSyncAuthContext({ licenseKey });
+  if (!authContext.deviceFingerprint || !authContext.securityToken) {
+    throw Object.assign(
+      new Error('ECOMMERCE_ORDERS_AUTH_CONTEXT_INCOMPLETE'),
+      { code: 'ECOMMERCE_ORDERS_AUTH_CONTEXT_INCOMPLETE' }
+    );
+  }
+
+  return {
+    p_license_key: authContext.licenseKey,
+    p_device_fingerprint: authContext.deviceFingerprint,
+    p_security_token: authContext.securityToken,
+    p_staff_session_token: authContext.staffSessionToken || null
+  };
+};
+
+const parsePayload = (data) => {
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return { success: false, code: 'INVALID_RPC_RESPONSE' };
+    }
+  }
+  return data && typeof data === 'object'
+    ? data
+    : { success: false, code: 'INVALID_RPC_RESPONSE' };
+};
+
+const isMissingRpcError = (error = {}) => {
+  const code = String(error.code || '').toUpperCase();
+  const message = String(error.message || '').toLowerCase();
+  return (
+    code === 'PGRST202'
+    || code === '42883'
+    || message.includes('could not find the function')
+    || message.includes('does not exist')
+    || message.includes('schema cache')
+  );
+};
+
+const missingContractResult = () => ({
+  success: false,
+  code: ECOMMERCE_REMOTE_CONTRACT_PENDING,
+  remoteContractVersion: 0,
+  message: 'El contrato remoto de conversión todavía no está disponible.'
+});
+
+const callConversionRpc = async (rpcName, args) => {
+  if (!supabaseClient) return missingContractResult();
+
+  const { data, error } = await supabaseClient.rpc(rpcName, args);
+  if (error) {
+    if (isMissingRpcError(error)) return missingContractResult();
+    return {
+      success: false,
+      code: error.code || 'ECOMMERCE_POS_CONVERSION_FAILED',
+      message: 'No se pudo verificar o confirmar la conversión del pedido.'
+    };
+  }
+
+  const payload = parsePayload(data);
+  if (payload.success === false) {
+    return {
+      success: false,
+      code: payload.code || 'ECOMMERCE_POS_CONVERSION_FAILED',
+      message: payload.message || 'No se pudo verificar o confirmar la conversión del pedido.',
+      details: payload.details || null,
+      remoteContractVersion: Number(payload.contractVersion) || 0
+    };
+  }
+  return payload;
+};
+
+const hashText = (value) => {
+  const text = String(value || '');
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+export const getEcommerceClaimIdentity = (order = {}) => {
+  if (!order.ecommerceClaimToken) return null;
+  return `claim-${hashText(`${order.ecommerceOrderId}:${order.ecommerceClaimToken}`)}`;
+};
+
+export const getEcommerceActorIdentity = (state = useAppStore.getState()) => {
+  const staff = state.currentStaffUser || {};
+  const actorId = staff.id || staff.staff_user_id || staff.user_id || staff.username || 'device';
+  return `${state.currentDeviceRole || 'none'}:${actorId}`;
+};
+
+export async function getEcommercePosConversionRemoteState({
+  order,
+  licenseDetails = useAppStore.getState().licenseDetails
+} = {}) {
+  if (!order?.ecommerceOrderId || !order?.ecommerceClaimToken) {
+    return {
+      success: false,
+      code: 'ECOMMERCE_CLAIM_LOST',
+      remoteContractVersion: 0,
+      claimOwned: false,
+      claimValid: false
+    };
+  }
+
+  try {
+    const authArgs = await buildAuthArgs(licenseDetails);
+    const payload = await callConversionRpc('ecommerce_get_pos_conversion_state', {
+      ...authArgs,
+      p_order_id: order.ecommerceOrderId,
+      p_claim_token: order.ecommerceClaimToken
+    });
+    if (payload.success === false) return payload;
+
+    return {
+      success: true,
+      remoteContractVersion: Number(payload.contractVersion) || 0,
+      orderId: payload.orderId || order.ecommerceOrderId,
+      orderStatus: payload.orderStatus || null,
+      draftStatus: payload.draftStatus || null,
+      draftId: payload.draftId || null,
+      claimOwned: payload.claimOwned === true,
+      claimValid: payload.claimValid === true,
+      claimExpiresAt: payload.claimExpiresAt || null,
+      convertedSaleId: payload.convertedSaleId || null,
+      convertedAt: payload.convertedAt || null,
+      conversionKey: payload.conversionKey || null
+    };
+  } catch (error) {
+    return {
+      success: false,
+      code: error?.code || 'ECOMMERCE_POS_CONVERSION_STATE_FAILED',
+      message: 'No se pudo verificar el estado remoto del pedido.',
+      remoteContractVersion: 0
+    };
+  }
+}
+
+export async function completeEcommercePosConversionRemote({
+  order,
+  saleId,
+  conversionKey = getEcommerceConversionKey(order?.ecommerceOrderId),
+  licenseDetails = useAppStore.getState().licenseDetails
+} = {}) {
+  if (
+    !order?.ecommerceOrderId
+    || !order?.ecommerceClaimToken
+    || !order?.id
+    || !saleId
+    || !conversionKey
+  ) {
+    return {
+      success: false,
+      code: 'ECOMMERCE_POS_CONVERSION_INVALID_ARGUMENT',
+      message: 'Faltan datos para confirmar la conversión.'
+    };
+  }
+
+  try {
+    const authArgs = await buildAuthArgs(licenseDetails);
+    const payload = await callConversionRpc('ecommerce_complete_pos_conversion', {
+      ...authArgs,
+      p_order_id: order.ecommerceOrderId,
+      p_claim_token: order.ecommerceClaimToken,
+      p_draft_id: order.id,
+      p_sale_id: saleId,
+      p_conversion_key: conversionKey
+    });
+    if (payload.success === false) return payload;
+
+    return {
+      success: true,
+      changed: payload.changed === true,
+      idempotent: payload.idempotent === true,
+      remoteContractVersion: Number(payload.contractVersion) || ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
+      orderId: payload.orderId || order.ecommerceOrderId,
+      orderStatus: payload.orderStatus || 'converted_to_sale',
+      convertedSaleId: payload.convertedSaleId || saleId,
+      convertedAt: payload.convertedAt || null,
+      conversionKey: payload.conversionKey || conversionKey
+    };
+  } catch (error) {
+    return {
+      success: false,
+      code: error?.code || ECOMMERCE_REMOTE_CONFIRMATION_FAILED,
+      message: 'La venta fue registrada, pero falta confirmar el pedido online.'
+    };
+  }
+}
+
+export async function findEcommerceSale({ orderId, conversionKey } = {}) {
+  const resolvedKey = conversionKey || getEcommerceConversionKey(orderId);
+  if (!orderId && !resolvedKey) return null;
+
+  const deterministicId = orderId ? `ecom-${String(orderId).trim()}` : null;
+  if (deterministicId) {
+    const byId = await db.table(STORES.SALES).get(deterministicId);
+    if (byId?.status === SALE_STATUS.CLOSED || byId?.status === 'closed') return byId;
+  }
+
+  if (!resolvedKey) return null;
+  return db.table(STORES.SALES)
+    .filter((sale) => (
+      (sale?.metadata?.idempotencyKey === resolvedKey
+        || sale?.metadata?.ecommerceConversionKey === resolvedKey
+        || sale?.idempotencyKey === resolvedKey)
+      && (sale?.status === SALE_STATUS.CLOSED || sale?.status === 'closed')
+    ))
+    .first();
+}
+
+export const updateEcommerceConversionState = (orderId, status, values = {}) => {
+  const activeOrders = useActiveOrders.getState();
+  const order = activeOrders.activeOrders.get(orderId);
+  if (!order || order.origin !== 'ecommerce') return null;
+
+  const patch = createEcommerceConversionPatch(status, values);
+  activeOrders.updateOrder(orderId, patch);
+  return useActiveOrders.getState().activeOrders.get(orderId) || { ...order, ...patch };
+};
+
+export async function finalizeEcommerceConversionLocally({ orderId, saleId } = {}) {
+  const order = useActiveOrders.getState().activeOrders.get(orderId);
+  if (!order || order.origin !== 'ecommerce') return { success: true, removed: false };
+
+  updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.COMPLETED, {
+    ecommerceConvertedSaleId: saleId,
+    ecommerceConversionError: null,
+    ecommerceCheckoutSnapshot: null
+  });
+  useActiveOrders.getState().removeEcommerceDraftLocal(orderId);
+  return { success: true, removed: true, saleId };
+}
+
+export async function retryEcommerceConversionConfirmation({ orderId } = {}) {
+  const order = useActiveOrders.getState().activeOrders.get(orderId);
+  if (!order || order.origin !== 'ecommerce') {
+    return { success: false, code: 'ECOMMERCE_DRAFT_NOT_FOUND' };
+  }
+
+  const conversionKey = order.ecommerceCheckoutSnapshot?.ecommerceConversionKey
+    || getEcommerceConversionKey(order.ecommerceOrderId);
+  const sale = order.ecommerceConvertedSaleId
+    ? await db.table(STORES.SALES).get(order.ecommerceConvertedSaleId)
+    : await findEcommerceSale({ orderId: order.ecommerceOrderId, conversionKey });
+  const saleId = sale?.id || order.ecommerceConvertedSaleId || null;
+
+  if (!saleId) {
+    updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
+      ecommerceConvertedSaleId: null,
+      ecommerceConversionError: {
+        code: 'ECOMMERCE_SALE_NOT_FOUND',
+        message: 'No se encontró una venta válida para confirmar.'
+      }
+    });
+    return { success: false, code: 'ECOMMERCE_SALE_NOT_FOUND' };
+  }
+
+  const result = await completeEcommercePosConversionRemote({ order, saleId, conversionKey });
+  if (result.success === false) {
+    updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
+      ecommerceConvertedSaleId: saleId,
+      ecommerceConversionError: {
+        code: result.code || ECOMMERCE_REMOTE_CONFIRMATION_FAILED,
+        message: result.message || 'La venta fue registrada, pero falta confirmar el pedido online.'
+      }
+    });
+    return { ...result, saleId };
+  }
+
+  await finalizeEcommerceConversionLocally({ orderId, saleId });
+  return { ...result, saleId };
+}
+
+export async function recoverEcommercePosConversion({ orderId } = {}) {
+  const order = useActiveOrders.getState().activeOrders.get(orderId);
+  if (!order || order.origin !== 'ecommerce') {
+    return { success: false, code: 'ECOMMERCE_DRAFT_NOT_FOUND' };
+  }
+
+  const status = order.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
+  if (status === ECOMMERCE_CONVERSION_STATUS.COMPLETED) {
+    useActiveOrders.getState().removeEcommerceDraftLocal(orderId);
+    return { success: true, recoveredStatus: ECOMMERCE_CONVERSION_STATUS.COMPLETED };
+  }
+
+  if (![ 
+    ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
+    ECOMMERCE_CONVERSION_STATUS.SALE_CREATED,
+    ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING
+  ].includes(status)) {
+    return { success: true, recoveredStatus: status, changed: false };
+  }
+
+  const conversionKey = order.ecommerceCheckoutSnapshot?.ecommerceConversionKey
+    || getEcommerceConversionKey(order.ecommerceOrderId);
+  const sale = await findEcommerceSale({ orderId: order.ecommerceOrderId, conversionKey });
+
+  if (!sale) {
+    if (status === ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE) {
+      updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
+        ecommerceConvertedSaleId: null,
+        ecommerceConversionError: {
+          code: 'PROCESS_INTERRUPTED_BEFORE_SALE',
+          message: 'El intento se interrumpió antes de encontrar una venta registrada.'
+        }
+      });
+      return { success: true, recoveredStatus: ECOMMERCE_CONVERSION_STATUS.ERROR, changed: true };
+    }
+    return { success: false, code: 'ECOMMERCE_SALE_NOT_FOUND', recoveredStatus: status };
+  }
+
+  updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
+    ecommerceConvertedSaleId: sale.id,
+    ecommerceConversionError: order.ecommerceConversionError || {
+      code: ECOMMERCE_REMOTE_CONFIRMATION_FAILED,
+      message: 'La venta fue registrada, pero falta confirmar el pedido online.'
+    }
+  });
+  return {
+    success: true,
+    recoveredStatus: ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING,
+    saleId: sale.id,
+    changed: true
+  };
+}
+
+export const ecommercePosConversionServiceInternals = Object.freeze({
+  buildAuthArgs,
+  parsePayload,
+  isMissingRpcError,
+  missingContractResult,
+  callConversionRpc,
+  hashText
+});
