@@ -47,7 +47,7 @@ export default function EcommerceCatalogSyncPanel({
     const handleStatus = (event) => {
       setRuntimeStatus(event?.detail || ecommerceCatalogSyncService.getStatus());
       if (event?.detail?.state === 'synced' || event?.detail?.state === 'review') {
-        onRefresh?.();
+        void Promise.resolve(onRefresh?.()).catch(() => undefined);
       }
     };
     window.addEventListener(ECOMMERCE_CATALOG_SYNC_STATUS_EVENT, handleStatus);
