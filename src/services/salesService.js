@@ -24,6 +24,7 @@ import { isCloudCommittedSale } from './salesCloud/salesCloudCancellationMapper'
 
 export { updateDailyStats, getFastDashboardStats } from './sales/statsService';
 
+const ECOMMERCE_SALE_READ_FAILED = 'ECOMMERCE_SALE_READ_FAILED';
 const ecommerceSalePromises = new Map();
 
 const sendReceiptWhatsApp = (params) => sendReceiptWhatsAppBase({
@@ -87,22 +88,40 @@ const isMatchingEcommerceSale = (sale, checkout) => (
     && getSaleIdempotencyKey(sale) === checkout.idempotencyKey
 );
 
-const findExistingEcommerceSale = async (params = {}) => {
+const saleReadFailedResult = (error = null) => ({
+    success: false,
+    errorType: ECOMMERCE_SALE_READ_FAILED,
+    code: ECOMMERCE_SALE_READ_FAILED,
+    message: 'No se pudo comprobar si este pedido ya fue cobrado.',
+    retryable: true,
+    preserveEcommerceReservation: true,
+    ...(error ? { cause: error } : {})
+});
+
+const readExistingEcommerceSale = async (params = {}) => {
     const checkout = getEcommerceCheckoutContext(params);
-    if (!checkout) return null;
+    if (!checkout) return { success: true, sale: null };
 
     try {
         if (params.activeOrderId) {
             const deterministicSale = await db.table(STORES.SALES).get(params.activeOrderId);
-            if (isMatchingEcommerceSale(deterministicSale, checkout)) return deterministicSale;
+            if (isMatchingEcommerceSale(deterministicSale, checkout)) {
+                return { success: true, sale: deterministicSale };
+            }
         }
 
-        return await db.table(STORES.SALES)
-            .filter((sale) => isMatchingEcommerceSale(sale, checkout))
+        const sale = await db.table(STORES.SALES)
+            .filter((candidate) => isMatchingEcommerceSale(candidate, checkout))
             .first();
+        return { success: true, sale: sale || null };
     } catch (error) {
-        Logger.warn('No se pudo consultar la idempotencia ecommerce antes de vender:', error);
-        return null;
+        Logger.error('No se pudo consultar la idempotencia ecommerce antes de vender:', error);
+        return {
+            success: false,
+            code: ECOMMERCE_SALE_READ_FAILED,
+            message: 'No se pudo comprobar si este pedido ya fue cobrado.',
+            error
+        };
     }
 };
 
@@ -135,16 +154,20 @@ const runProcessSaleWithRetry = async (params, maxRetries = 3) => {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         if (ecommerceCheckout) {
-            const existingSale = await findExistingEcommerceSale(params);
-            if (existingSale) return idempotentSaleResult(existingSale);
+            const initialRead = await readExistingEcommerceSale(params);
+            if (initialRead.success === false) return saleReadFailedResult(initialRead.error);
+            if (initialRead.sale) return idempotentSaleResult(initialRead.sale);
         }
 
         const rawResult = await _processSaleInternal(params);
 
         if (ecommerceCheckout && rawResult?.success !== true) {
-            const committedByConcurrentContext = await findExistingEcommerceSale(params);
-            if (committedByConcurrentContext) {
-                return idempotentSaleResult(committedByConcurrentContext);
+            const verificationRead = await readExistingEcommerceSale(params);
+            if (verificationRead.success === false) {
+                return saleReadFailedResult(verificationRead.error);
+            }
+            if (verificationRead.sale) {
+                return idempotentSaleResult(verificationRead.sale);
             }
         }
 
@@ -367,10 +390,12 @@ export const moveCancelledSaleToTrash = async (saleId) => {
 };
 
 export const salesServiceInternals = Object.freeze({
+    ECOMMERCE_SALE_READ_FAILED,
     getEcommerceCheckoutContext,
     getSaleIdempotencyKey,
     isMatchingEcommerceSale,
-    findExistingEcommerceSale,
+    saleReadFailedResult,
+    readExistingEcommerceSale,
     idempotentSaleResult,
     normalizeEcommerceStockFailure,
     runProcessSaleWithRetry,
