@@ -134,7 +134,9 @@ export default function EcommerceProductPublishModal({
               })}
             </select>
             <small className="ecom-admin-help">
-              {isPro ? 'La sincronizacion cloud automatica queda para ECOM.FE.CATALOG.2.' : 'Se guarda una copia publica; tu producto local no se modifica.'}
+              {isPro
+                ? 'Las alertas utilizan el inventario disponible en este dispositivo. La sincronización automática del catálogo público se habilitará en una fase posterior.'
+                : 'Se guarda una copia publica; tu producto local no se modifica.'}
             </small>
           </label>
 
