@@ -47,7 +47,9 @@ Proyecto:
 odlrhijtfyavryeqivaa
 ```
 
-Las siete migraciones fueron descargadas desde la rama del PR, verificadas contra su SHA Git y ejecutadas en orden dentro de una transacción. La entrada correspondiente en `supabase_migrations.schema_migrations` se registró solamente después de ejecutar correctamente cada archivo y conserva el timestamp original del repositorio.
+La primera migración se ejecutó y registró en una transacción individual. Después, los siete archivos se descargaron directamente desde la rama del PR y se verificaron contra su SHA Git; la primera versión ya registrada se omitió de forma idempotente y las seis migraciones restantes se ejecutaron en orden dentro de una única transacción.
+
+Cada entrada de `supabase_migrations.schema_migrations` se registró solamente después de ejecutar correctamente su archivo y conserva el timestamp original del repositorio.
 
 Versiones aplicadas:
 
@@ -123,7 +125,7 @@ git diff --check sobre checkout íntegro
 pruebas manuales de sincronización PRO y caché público
 ```
 
-El check automático de Vercel para el HEAD del reporte terminó en **success**. No se realizó validación manual, promoción ni manipulación de previews.
+El check automático del HEAD `41a82fce5b8e942bf5717d6d106b1a5c95e94708` terminó en **success**. Los commits exclusivamente documentales posteriores pueden aparecer con `failure` por `build-rate-limit`. No se realizó validación manual, promoción ni manipulación de previews.
 
 ## Estado para merge
 
@@ -132,7 +134,6 @@ Corrección mínima frontend: PASS enfocado
 source_missing: PASS transaccional
 Migraciones Supabase: 7/7 aplicadas
 Historial remoto: alineado con los timestamps del repositorio
-Vercel check automático: success
 PR: draft
 Merge: no realizado
 Validación global/manual: pendiente
