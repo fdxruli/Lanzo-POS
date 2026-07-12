@@ -101,6 +101,7 @@ export default function EcommerceProductPublishModal({
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [stockFeatureLoading, setStockFeatureLoading] = useState(false);
+  const [stockFeatureError, setStockFeatureError] = useState(false);
   const [stockVisibilityEnabled, setStockVisibilityEnabled] = useState(false);
   const allFieldsLinked = useMemo(
     () => Object.values(form.syncConfig).every((mode) => mode === 'source'),
@@ -146,20 +147,27 @@ export default function EcommerceProductPublishModal({
     let active = true;
     if (!open || !isPro) {
       setStockFeatureLoading(false);
+      setStockFeatureError(false);
       setStockVisibilityEnabled(false);
       return () => { active = false; };
     }
 
     setStockFeatureLoading(true);
+    setStockFeatureError(false);
     void getEcommercePortal().then((result) => {
       if (!active) return;
-      setStockVisibilityEnabled(
-        result?.success === true && result?.features?.stockVisibility === true
-      );
+      if (result?.success !== true) {
+        setStockVisibilityEnabled(false);
+        setStockFeatureError(true);
+      } else {
+        setStockVisibilityEnabled(result?.features?.stockVisibility === true);
+        setStockFeatureError(false);
+      }
       setStockFeatureLoading(false);
     }, () => {
       if (!active) return;
       setStockVisibilityEnabled(false);
+      setStockFeatureError(true);
       setStockFeatureLoading(false);
     });
 
@@ -217,6 +225,9 @@ export default function EcommerceProductPublishModal({
     if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
     if (!Number.isFinite(price) || price < 0) return toast.error('El precio público debe ser mayor o igual a cero.');
     if (!editingProduct && limitReached && form.isPublished) return toast.error('Plan Free ya alcanzó el límite de 10 productos.');
+    if (isPro && stockFeatureError) {
+      return toast.error('No se pudo validar la política de inventario público. Intenta nuevamente.');
+    }
 
     setSaving(true);
     const saved = await onSave({
@@ -247,6 +258,7 @@ export default function EcommerceProductPublishModal({
 
   const stockSelectorDisabled = (
     stockFeatureLoading
+    || stockFeatureError
     || !stockVisibilityEnabled
     || !form.stockTracked
   );
@@ -348,7 +360,7 @@ export default function EcommerceProductPublishModal({
               <span className="form-label">Visibilidad del inventario</span>
               <select
                 className="form-input"
-                value={stockSelectorDisabled ? 'hidden' : form.stockMode}
+                value={stockSelectorDisabled && !stockFeatureError ? 'hidden' : form.stockMode}
                 disabled={stockSelectorDisabled}
                 onChange={(event) => setForm((current) => ({
                   ...current,
@@ -362,7 +374,9 @@ export default function EcommerceProductPublishModal({
               <small className="ecom-admin-help">
                 {stockFeatureLoading
                   ? 'Validando la función de inventario público…'
-                  : !stockVisibilityEnabled
+                  : stockFeatureError
+                    ? 'No se pudo validar la política de inventario. No se guardarán cambios hasta reintentar.'
+                    : !stockVisibilityEnabled
                     ? 'La visibilidad de inventario no está habilitada para esta licencia.'
                     : !form.stockTracked
                       ? 'Este producto no controla inventario; el stock permanecerá oculto.'
@@ -383,7 +397,7 @@ export default function EcommerceProductPublishModal({
 
           <footer className="ecom-admin-span-2">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={saving || stockFeatureLoading}>
+            <button type="submit" className="btn btn-primary" disabled={saving || stockFeatureLoading || stockFeatureError}>
               {saving ? <LoaderCircle className="ecom-admin-spin" size={17} /> : <Save size={17} />}
               Guardar producto
             </button>
