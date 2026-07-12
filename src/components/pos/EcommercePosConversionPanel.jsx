@@ -17,7 +17,6 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 
 const BUSY_STATUSES = new Set([
-  ECOMMERCE_CONVERSION_STATUS.VALIDATING,
   ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING,
   ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE
 ]);
@@ -79,8 +78,11 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const conversionStatus = order?.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
   const isConfirmationPending = CONFIRMATION_STATUSES.has(conversionStatus)
     || Boolean(order?.ecommerceConvertedSaleId);
-  const isStarting = order?.ecommerceCheckoutInitiationStatus === 'starting'
-    && Boolean(getEcommerceCheckoutInitiation(orderId));
+  const hasLiveInitiation = Boolean(getEcommerceCheckoutInitiation(orderId));
+  const isStarting = hasLiveInitiation && (
+    order?.ecommerceCheckoutInitiationStatus === 'starting'
+    || conversionStatus === ECOMMERCE_CONVERSION_STATUS.VALIDATING
+  );
   const isBusy = isStarting || BUSY_STATUSES.has(conversionStatus);
 
   const verifyRemoteState = useCallback(async () => {
