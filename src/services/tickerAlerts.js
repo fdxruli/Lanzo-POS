@@ -4,10 +4,9 @@ import {
   getAvailableStock
 } from './db/utils';
 import { daysBetween } from '../utils/dateUtils';
+import { ECOMMERCE_PUBLISHED_STOCK_ALERT_ROUTE } from './ecommerce/ecommercePublishedStockAlertConstants';
 
 export const TICKER_ALERT_POLL_INTERVAL_MS = 5 * 60 * 1000;
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const startOfLocalDay = (date) => (
   new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -30,6 +29,25 @@ const getExpiryDays = (targetDate, now) => {
   }
 };
 
+export function buildEcommercePublishedStockTickerAlert(snapshot) {
+  const count = Number(snapshot?.outOfStockCount || 0);
+  if (
+    snapshot?.success !== true
+    || snapshot?.portalStatus !== 'published'
+    || count <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    id: 'ecommerce-published-out-of-stock',
+    type: 'ecommerce-published-out-of-stock',
+    count,
+    urgency: 1,
+    route: ECOMMERCE_PUBLISHED_STOCK_ALERT_ROUTE
+  };
+}
+
 export async function queryTickerInventoryAlerts({
   limit = 8,
   now = new Date(),
@@ -40,8 +58,8 @@ export async function queryTickerInventoryAlerts({
   const expiryLimit = new Date(now);
   expiryLimit.setDate(expiryLimit.getDate() + EXPIRY_DAYS_THRESHOLD);
 
-  const lowerExpiryKey = toLocalDateKey(now);
-  const upperExpiryKey = `${toLocalDateKey(expiryLimit)}\uffff`;
+  const lowerExpiryKey = toLocalDateKey(startOfLocalDay(now));
+  const upperExpiryKey = `${toLocalDateKey(expiryLimit)}￿`;
 
   const [catalogSize, lowStockProducts, expiringBatches] = await Promise.all([
     database.table(STORES.MENU).count(),

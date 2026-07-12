@@ -97,6 +97,19 @@ export function canStaffAccessNotifications(_licenseDetails = {}, staffSession =
   return getStaffPermissions(staffSession).notifications === true;
 }
 
+export function canStaffAccessEcommerceOperationalAlert(
+  _licenseDetails = {},
+  staffSession = {}
+) {
+  if (!isStaffSession(staffSession)) return true;
+  const permissions = getStaffPermissions(staffSession);
+  return (
+    permissions.notifications === true
+    && permissions.settings === true
+    && permissions.ecommerce === true
+  );
+}
+
 export function canStaffAccessSupportCenter(_licenseDetails = {}, staffSession = {}) {
   if (!isStaffSession(staffSession)) return true;
   return getStaffPermissions(staffSession).support_center === true;

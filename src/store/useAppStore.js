@@ -5,6 +5,7 @@ import { createProfileSlice } from './slices/createProfileSlice';
 import { createPWASlice } from './slices/createPWASlice';
 import { createDriveSlice } from './slices/createDriveSlice';
 import { createNotificationSlice } from './slices/createNotificationSlice';
+import { createEcommercePublishedStockAlertSlice } from './slices/createEcommercePublishedStockAlertSlice';
 
 export const useAppStore = create((...a) => ({
   ...createUISlice(...a),
@@ -12,5 +13,6 @@ export const useAppStore = create((...a) => ({
   ...createProfileSlice(...a),
   ...createPWASlice(...a),
   ...createDriveSlice(...a),
-  ...createNotificationSlice(...a)
+  ...createNotificationSlice(...a),
+  ...createEcommercePublishedStockAlertSlice(...a)
 }));

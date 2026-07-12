@@ -41,6 +41,8 @@ export default function SettingsPage() {
     { key: 'test-ventas', allowed: import.meta.env.DEV }
   ].filter((tab) => tab.allowed), [canAccess, canManageEcommercePortal]);
 
+  const requestedFocus = searchParams.get('focus');
+
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     const tabMap = {
@@ -61,6 +63,36 @@ export default function SettingsPage() {
       visibleTabs
     }));
   }, [searchParams, visibleTabs]);
+
+  useEffect(() => {
+    if (activeTab !== 'portal-online' || requestedFocus !== 'products') return undefined;
+
+    let completed = false;
+    const focusProducts = () => {
+      if (completed) return;
+      const target = document.getElementById('ecommerce-published-products');
+      if (!target) return;
+
+      completed = true;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.focus({ preventScroll: true });
+
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('focus');
+      setSearchParams(nextParams, { replace: true });
+    };
+
+    focusProducts();
+    if (completed || typeof MutationObserver === 'undefined') return undefined;
+
+    const observer = new MutationObserver(focusProducts);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      completed = true;
+      observer.disconnect();
+    };
+  }, [activeTab, requestedFocus, searchParams, setSearchParams]);
 
   const handleTabChange = (tabKey) => {
     const param = tabKey === 'general' ? {} : { tab: tabKey };
