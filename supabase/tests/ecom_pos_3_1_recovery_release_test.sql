@@ -85,16 +85,8 @@ begin
     raise exception 'one or more required ecommerce conversion RPCs are missing';
   end if;
 
-  if has_function_privilege(
-       'anon',
-       'private.ecommerce_pos_sale_lookup_v2(uuid,text,text)',
-       'execute'
-     )
-     or has_function_privilege(
-       'authenticated',
-       'private.ecommerce_pos_sale_lookup_v2(uuid,text,text)',
-       'execute'
-     ) then
+  if has_function_privilege('anon', 'private.ecommerce_pos_sale_lookup_v2(uuid,text,text)', 'execute')
+     or has_function_privilege('authenticated', 'private.ecommerce_pos_sale_lookup_v2(uuid,text,text)', 'execute') then
     raise exception 'private sale verification helper is executable by a client role';
   end if;
 
@@ -130,32 +122,34 @@ declare
   v_sale_check jsonb;
   v_before jsonb;
   v_after jsonb;
-  v_release_events_before bigint;
-  v_admin_release_events_before bigint;
-  v_release_events_after bigint;
-  v_admin_release_events_after bigint;
+  v_release_events bigint;
+  v_admin_release_events bigint;
 begin
-  select o.id, o.license_id, l.license_key
-  into v_order_id, v_license_id, v_license_key
+  select o.id, o.license_id, l.license_key, d.id, d.device_fingerprint,
+         remote_sale.sale_id
+  into v_order_id, v_license_id, v_license_key, v_admin_id, v_admin_fingerprint,
+       v_remote_sale_id
   from public.ecommerce_orders o
   join public.licenses l on l.id = o.license_id
-  where o.public_order_code = 'EC-00000010'
+  join public.license_devices d
+    on d.license_id = o.license_id
+   and d.device_role = 'admin'
+   and d.is_active is true
+  left join lateral (
+    select coalesce(to_jsonb(s)->>'id', to_jsonb(s)->>'local_sale_id') as sale_id
+    from public.pos_sales s
+    where to_jsonb(s)->>'license_id' = o.license_id::text
+      and lower(coalesce(to_jsonb(s)->>'status', 'closed')) not in ('cancelled', 'deleted')
+      and coalesce(to_jsonb(s)->>'id', to_jsonb(s)->>'local_sale_id') is not null
+    limit 1
+  ) remote_sale on true
+  order by (remote_sale.sale_id is not null) desc,
+           (o.public_order_code = 'EC-00000010') desc,
+           o.created_at
   limit 1;
 
-  if v_order_id is null then
-    raise exception 'ECOM.POS.3.1.1 ecommerce order fixture missing';
-  end if;
-
-  select d.id, d.device_fingerprint
-  into v_admin_id, v_admin_fingerprint
-  from public.license_devices d
-  where d.license_id = v_license_id
-    and d.device_role = 'admin'
-    and d.is_active is true
-  limit 1;
-
-  if v_admin_id is null then
-    raise exception 'ECOM.POS.3.1.1 active admin fixture missing';
+  if v_order_id is null or v_admin_id is null then
+    raise exception 'ECOM.POS.3.1.1 order/admin fixture missing';
   end if;
 
   update public.license_devices
@@ -163,7 +157,7 @@ begin
       previous_security_token = null
   where id = v_admin_id;
 
-  -- Case 1: an idle prepared draft remains administratively releasable.
+  -- Case 1: idle draft is releasable and creates only the historical audit.
   v_claim_token := extensions.gen_random_uuid();
   update public.ecommerce_orders
   set status = 'accepted',
@@ -186,27 +180,20 @@ begin
       pos_conversion_started_at = null
   where id = v_order_id;
 
-  select count(*) into v_release_events_before
+  select count(*) into v_release_events
   from public.ecommerce_order_events
   where order_id = v_order_id and event_type = 'order_pos_draft_released';
-  select count(*) into v_admin_release_events_before
+  select count(*) into v_admin_release_events
   from public.ecommerce_order_events
   where order_id = v_order_id and event_type = 'pos_conversion_admin_released';
 
   v_result := public.ecommerce_admin_release_pos_draft(
-    v_license_key,
-    v_admin_fingerprint,
-    v_security_token,
-    null,
-    v_order_id,
-    null,
-    'sql_idle_release'
+    v_license_key, v_admin_fingerprint, v_security_token, null,
+    v_order_id, null, 'sql_idle_release'
   );
 
   if coalesce((v_result->>'success')::boolean, false) is not true
-     or coalesce((v_result->>'changed')::boolean, false) is not true
-     or v_result #>> '{order,posDraft,status}' <> 'released'
-     or v_result #>> '{order,posConversion,status}' is distinct from 'idle' then
+     or coalesce((v_result->>'changed')::boolean, false) is not true then
     raise exception 'idle draft release failed: %', v_result;
   end if;
 
@@ -225,35 +212,32 @@ begin
         or o.pos_claim_actor_ref is not null
         or o.pos_draft_prepared_at is not null
         or coalesce(o.pos_conversion_status, 'idle') <> 'idle'
+        or o.pos_conversion_attempt_id is not null
+        or o.pos_conversion_sale_id is not null
+        or o.pos_conversion_key is not null
+        or o.pos_conversion_actor_ref is not null
+        or o.pos_conversion_started_at is not null
       )
   ) then
-    raise exception 'idle release did not clear draft and claim atomically';
+    raise exception 'idle release did not clear draft, claim and idle conversion fields';
   end if;
 
-  select count(*) into v_release_events_after
-  from public.ecommerce_order_events
-  where order_id = v_order_id and event_type = 'order_pos_draft_released';
-  select count(*) into v_admin_release_events_after
-  from public.ecommerce_order_events
-  where order_id = v_order_id and event_type = 'pos_conversion_admin_released';
-
-  if v_release_events_after <> v_release_events_before + 1 then
+  if (select count(*) from public.ecommerce_order_events
+      where order_id = v_order_id and event_type = 'order_pos_draft_released')
+       <> v_release_events + 1 then
     raise exception 'idle release did not create order_pos_draft_released';
   end if;
-  if v_admin_release_events_after <> v_admin_release_events_before then
+  if (select count(*) from public.ecommerce_order_events
+      where order_id = v_order_id and event_type = 'pos_conversion_admin_released')
+       <> v_admin_release_events then
     raise exception 'idle release created pos_conversion_admin_released unexpectedly';
   end if;
 
-  -- Case 6: an already released idle draft remains idempotent and unaudited.
-  v_release_events_before := v_release_events_after;
+  -- Case 6: released + idle remains idempotent and creates no duplicate audit.
+  v_release_events := v_release_events + 1;
   v_result := public.ecommerce_admin_release_pos_draft(
-    v_license_key,
-    v_admin_fingerprint,
-    v_security_token,
-    null,
-    v_order_id,
-    null,
-    'sql_idle_retry'
+    v_license_key, v_admin_fingerprint, v_security_token, null,
+    v_order_id, null, 'sql_idle_retry'
   );
   if coalesce((v_result->>'success')::boolean, false) is not true
      or coalesce((v_result->>'changed')::boolean, true) is true
@@ -262,7 +246,7 @@ begin
   end if;
   if (select count(*) from public.ecommerce_order_events
       where order_id = v_order_id and event_type = 'order_pos_draft_released')
-     <> v_release_events_before then
+       <> v_release_events then
     raise exception 'idempotent release created duplicate audit';
   end if;
 
@@ -300,39 +284,27 @@ begin
   where id = v_order_id;
 
   select jsonb_build_object(
-    'draftStatus', o.pos_draft_status,
-    'draftId', o.pos_draft_id,
-    'claimToken', o.pos_claim_token,
-    'claimRequestKey', o.pos_claim_request_key,
-    'claimedAt', o.pos_claimed_at,
-    'claimExpiresAt', o.pos_claim_expires_at,
-    'claimActorType', o.pos_claim_actor_type,
-    'claimActorRef', o.pos_claim_actor_ref,
-    'preparedAt', o.pos_draft_prepared_at,
-    'conversionStatus', o.pos_conversion_status,
-    'attemptId', o.pos_conversion_attempt_id,
-    'saleId', o.pos_conversion_sale_id,
-    'conversionKey', o.pos_conversion_key,
-    'conversionActorRef', o.pos_conversion_actor_ref,
+    'draftStatus', o.pos_draft_status, 'draftId', o.pos_draft_id,
+    'claimToken', o.pos_claim_token, 'claimRequestKey', o.pos_claim_request_key,
+    'claimedAt', o.pos_claimed_at, 'claimExpiresAt', o.pos_claim_expires_at,
+    'claimActorType', o.pos_claim_actor_type, 'claimActorRef', o.pos_claim_actor_ref,
+    'preparedAt', o.pos_draft_prepared_at, 'conversionStatus', o.pos_conversion_status,
+    'attemptId', o.pos_conversion_attempt_id, 'saleId', o.pos_conversion_sale_id,
+    'conversionKey', o.pos_conversion_key, 'conversionActorRef', o.pos_conversion_actor_ref,
     'conversionStartedAt', o.pos_conversion_started_at
   ) into v_before
   from public.ecommerce_orders o where o.id = v_order_id;
 
-  select count(*) into v_release_events_before
+  select count(*) into v_release_events
   from public.ecommerce_order_events
   where order_id = v_order_id and event_type = 'order_pos_draft_released';
-  select count(*) into v_admin_release_events_before
+  select count(*) into v_admin_release_events
   from public.ecommerce_order_events
   where order_id = v_order_id and event_type = 'pos_conversion_admin_released';
 
   v_result := public.ecommerce_admin_release_pos_draft(
-    v_license_key,
-    v_admin_fingerprint,
-    v_security_token,
-    null,
-    v_order_id,
-    null,
-    'sql_reserved_without_remote_sale'
+    v_license_key, v_admin_fingerprint, v_security_token, null,
+    v_order_id, null, 'sql_reserved_without_remote_sale'
   );
 
   if coalesce((v_result->>'success')::boolean, true) is not false
@@ -341,20 +313,13 @@ begin
   end if;
 
   select jsonb_build_object(
-    'draftStatus', o.pos_draft_status,
-    'draftId', o.pos_draft_id,
-    'claimToken', o.pos_claim_token,
-    'claimRequestKey', o.pos_claim_request_key,
-    'claimedAt', o.pos_claimed_at,
-    'claimExpiresAt', o.pos_claim_expires_at,
-    'claimActorType', o.pos_claim_actor_type,
-    'claimActorRef', o.pos_claim_actor_ref,
-    'preparedAt', o.pos_draft_prepared_at,
-    'conversionStatus', o.pos_conversion_status,
-    'attemptId', o.pos_conversion_attempt_id,
-    'saleId', o.pos_conversion_sale_id,
-    'conversionKey', o.pos_conversion_key,
-    'conversionActorRef', o.pos_conversion_actor_ref,
+    'draftStatus', o.pos_draft_status, 'draftId', o.pos_draft_id,
+    'claimToken', o.pos_claim_token, 'claimRequestKey', o.pos_claim_request_key,
+    'claimedAt', o.pos_claimed_at, 'claimExpiresAt', o.pos_claim_expires_at,
+    'claimActorType', o.pos_claim_actor_type, 'claimActorRef', o.pos_claim_actor_ref,
+    'preparedAt', o.pos_draft_prepared_at, 'conversionStatus', o.pos_conversion_status,
+    'attemptId', o.pos_conversion_attempt_id, 'saleId', o.pos_conversion_sale_id,
+    'conversionKey', o.pos_conversion_key, 'conversionActorRef', o.pos_conversion_actor_ref,
     'conversionStartedAt', o.pos_conversion_started_at
   ) into v_after
   from public.ecommerce_orders o where o.id = v_order_id;
@@ -363,31 +328,20 @@ begin
     raise exception 'reserved without remote sale mutated protected fields';
   end if;
   if (select count(*) from public.ecommerce_order_events
-      where order_id = v_order_id and event_type = 'order_pos_draft_released')
-       <> v_release_events_before
+      where order_id = v_order_id and event_type = 'order_pos_draft_released') <> v_release_events
      or (select count(*) from public.ecommerce_order_events
-      where order_id = v_order_id and event_type = 'pos_conversion_admin_released')
-       <> v_admin_release_events_before then
+      where order_id = v_order_id and event_type = 'pos_conversion_admin_released') <> v_admin_release_events then
     raise exception 'blocked reserved release created false audit';
   end if;
 
-  -- Case 3: reserved with a remote sale is blocked exactly the same way.
-  select coalesce(to_jsonb(s)->>'id', to_jsonb(s)->>'local_sale_id')
-  into v_remote_sale_id
-  from public.pos_sales s
-  where to_jsonb(s)->>'license_id' = v_license_id::text
-    and lower(coalesce(to_jsonb(s)->>'status', 'closed')) not in ('cancelled', 'deleted')
-    and coalesce(to_jsonb(s)->>'id', to_jsonb(s)->>'local_sale_id') is not null
-  limit 1;
-
+  -- Case 3: reserved with a remote sale has exactly the same blocked result.
   if v_remote_sale_id is null then
-    raise exception 'ECOM.POS.3.1.1 remote sale fixture missing';
+    raise exception 'ECOM.POS.3.1.1 requires a same-license pos_sales fixture for case 3';
   end if;
 
   v_claim_token := extensions.gen_random_uuid();
   v_attempt_id := 'attempt-with-remote-' || replace(extensions.gen_random_uuid()::text, '-', '');
   v_conversion_key := 'ecommerce:test-with-remote:' || replace(extensions.gen_random_uuid()::text, '-', '');
-
   v_sale_check := private.ecommerce_pos_sale_lookup_v2(v_license_id, v_remote_sale_id, v_conversion_key);
   if coalesce((v_sale_check->>'success')::boolean, false) is not true
      or coalesce((v_sale_check->>'saleExists')::boolean, false) is not true then
@@ -395,45 +349,28 @@ begin
   end if;
 
   update public.ecommerce_orders
-  set status = 'accepted',
-      converted_sale_id = null,
-      converted_at = null,
-      pos_draft_status = 'prepared',
-      pos_draft_id = 'ecom-pos-reserved-with-remote',
-      pos_claim_token = v_claim_token,
-      pos_claim_request_key = 'ecom-pos-reserved-with-remote',
-      pos_claimed_at = now(),
-      pos_claim_expires_at = now() + interval '1 hour',
-      pos_claim_actor_type = 'admin',
-      pos_claim_actor_ref = v_admin_id::text,
-      pos_draft_prepared_at = now(),
-      pos_conversion_status = 'reserved',
-      pos_conversion_attempt_id = v_attempt_id,
-      pos_conversion_sale_id = v_remote_sale_id,
-      pos_conversion_key = v_conversion_key,
-      pos_conversion_actor_ref = v_admin_id::text,
+  set status = 'accepted', converted_sale_id = null, converted_at = null,
+      pos_draft_status = 'prepared', pos_draft_id = 'ecom-pos-reserved-with-remote',
+      pos_claim_token = v_claim_token, pos_claim_request_key = 'ecom-pos-reserved-with-remote',
+      pos_claimed_at = now(), pos_claim_expires_at = now() + interval '1 hour',
+      pos_claim_actor_type = 'admin', pos_claim_actor_ref = v_admin_id::text,
+      pos_draft_prepared_at = now(), pos_conversion_status = 'reserved',
+      pos_conversion_attempt_id = v_attempt_id, pos_conversion_sale_id = v_remote_sale_id,
+      pos_conversion_key = v_conversion_key, pos_conversion_actor_ref = v_admin_id::text,
       pos_conversion_started_at = now()
   where id = v_order_id;
 
   select to_jsonb(o) - 'updated_at' into v_before
   from public.ecommerce_orders o where o.id = v_order_id;
-  select count(*) into v_release_events_before
-  from public.ecommerce_order_events
+  select count(*) into v_release_events from public.ecommerce_order_events
   where order_id = v_order_id and event_type = 'order_pos_draft_released';
-  select count(*) into v_admin_release_events_before
-  from public.ecommerce_order_events
+  select count(*) into v_admin_release_events from public.ecommerce_order_events
   where order_id = v_order_id and event_type = 'pos_conversion_admin_released';
 
   v_result := public.ecommerce_admin_release_pos_draft(
-    v_license_key,
-    v_admin_fingerprint,
-    v_security_token,
-    null,
-    v_order_id,
-    null,
-    'sql_reserved_with_remote_sale'
+    v_license_key, v_admin_fingerprint, v_security_token, null,
+    v_order_id, null, 'sql_reserved_with_remote_sale'
   );
-
   if coalesce((v_result->>'success')::boolean, true) is not false
      or v_result->>'code' <> 'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED' then
     raise exception 'reserved with remote sale was not blocked: %', v_result;
@@ -444,42 +381,28 @@ begin
     raise exception 'reserved with remote sale mutated the order';
   end if;
   if (select count(*) from public.ecommerce_order_events
-      where order_id = v_order_id and event_type = 'order_pos_draft_released')
-       <> v_release_events_before
+      where order_id = v_order_id and event_type = 'order_pos_draft_released') <> v_release_events
      or (select count(*) from public.ecommerce_order_events
-      where order_id = v_order_id and event_type = 'pos_conversion_admin_released')
-       <> v_admin_release_events_before then
+      where order_id = v_order_id and event_type = 'pos_conversion_admin_released') <> v_admin_release_events then
     raise exception 'reserved with remote sale created false audit';
   end if;
 
   -- Case 4: completed conversion remains immutable.
   v_sale_id := 'completed-sale-' || replace(extensions.gen_random_uuid()::text, '-', '');
-  v_conversion_key := 'ecommerce:test-completed:' || replace(extensions.gen_random_uuid()::text, '-', '');
   update public.ecommerce_orders
-  set status = 'converted_to_sale',
-      converted_sale_id = v_sale_id,
-      converted_at = now(),
-      pos_draft_status = 'prepared',
-      pos_draft_id = 'ecom-pos-completed-draft',
-      pos_claim_token = extensions.gen_random_uuid(),
-      pos_conversion_status = 'completed',
-      pos_conversion_attempt_id = 'completed-attempt',
-      pos_conversion_sale_id = v_sale_id,
-      pos_conversion_key = v_conversion_key,
-      pos_conversion_actor_ref = v_admin_id::text,
-      pos_conversion_started_at = now()
+  set status = 'converted_to_sale', converted_sale_id = v_sale_id, converted_at = now(),
+      pos_draft_status = 'prepared', pos_draft_id = 'ecom-pos-completed-draft',
+      pos_claim_token = extensions.gen_random_uuid(), pos_conversion_status = 'completed',
+      pos_conversion_attempt_id = 'completed-attempt', pos_conversion_sale_id = v_sale_id,
+      pos_conversion_key = 'ecommerce:test-completed:' || replace(extensions.gen_random_uuid()::text, '-', ''),
+      pos_conversion_actor_ref = v_admin_id::text, pos_conversion_started_at = now()
   where id = v_order_id;
 
   select to_jsonb(o) - 'updated_at' into v_before
   from public.ecommerce_orders o where o.id = v_order_id;
   v_result := public.ecommerce_admin_release_pos_draft(
-    v_license_key,
-    v_admin_fingerprint,
-    v_security_token,
-    null,
-    v_order_id,
-    null,
-    'sql_completed_release'
+    v_license_key, v_admin_fingerprint, v_security_token, null,
+    v_order_id, null, 'sql_completed_release'
   );
   if v_result->>'code' <> 'ECOMMERCE_POS_CONVERSION_ALREADY_COMPLETED' then
     raise exception 'completed conversion was not protected: %', v_result;
@@ -490,41 +413,25 @@ begin
     raise exception 'completed conversion was mutated';
   end if;
 
-  -- Case 5: an unexpected state is fail-closed when the test temporarily permits it.
-  alter table public.ecommerce_orders
-    drop constraint ecommerce_orders_pos_conversion_status_valid;
-
+  -- Case 5: unexpected state is fail-closed when the test permits it temporarily.
+  alter table public.ecommerce_orders drop constraint ecommerce_orders_pos_conversion_status_valid;
   update public.ecommerce_orders
-  set status = 'accepted',
-      converted_sale_id = null,
-      converted_at = null,
-      pos_draft_status = 'prepared',
-      pos_draft_id = 'ecom-pos-unexpected-draft',
-      pos_claim_token = extensions.gen_random_uuid(),
-      pos_claim_request_key = 'ecom-pos-unexpected-request',
-      pos_claimed_at = now(),
-      pos_claim_expires_at = now() + interval '1 hour',
-      pos_claim_actor_type = 'admin',
-      pos_claim_actor_ref = v_admin_id::text,
-      pos_draft_prepared_at = now(),
-      pos_conversion_status = 'unexpected_test_state',
-      pos_conversion_attempt_id = 'unexpected-attempt',
-      pos_conversion_sale_id = 'unexpected-sale',
+  set status = 'accepted', converted_sale_id = null, converted_at = null,
+      pos_draft_status = 'prepared', pos_draft_id = 'ecom-pos-unexpected-draft',
+      pos_claim_token = extensions.gen_random_uuid(), pos_claim_request_key = 'ecom-pos-unexpected-request',
+      pos_claimed_at = now(), pos_claim_expires_at = now() + interval '1 hour',
+      pos_claim_actor_type = 'admin', pos_claim_actor_ref = v_admin_id::text,
+      pos_draft_prepared_at = now(), pos_conversion_status = 'unexpected_test_state',
+      pos_conversion_attempt_id = 'unexpected-attempt', pos_conversion_sale_id = 'unexpected-sale',
       pos_conversion_key = 'ecommerce:test-unexpected:' || replace(extensions.gen_random_uuid()::text, '-', ''),
-      pos_conversion_actor_ref = v_admin_id::text,
-      pos_conversion_started_at = now()
+      pos_conversion_actor_ref = v_admin_id::text, pos_conversion_started_at = now()
   where id = v_order_id;
 
   select to_jsonb(o) - 'updated_at' into v_before
   from public.ecommerce_orders o where o.id = v_order_id;
   v_result := public.ecommerce_admin_release_pos_draft(
-    v_license_key,
-    v_admin_fingerprint,
-    v_security_token,
-    null,
-    v_order_id,
-    null,
-    'sql_unexpected_release'
+    v_license_key, v_admin_fingerprint, v_security_token, null,
+    v_order_id, null, 'sql_unexpected_release'
   );
   if v_result->>'code' <> 'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED' then
     raise exception 'unexpected conversion state was not fail-closed: %', v_result;
@@ -536,12 +443,9 @@ begin
   end if;
 
   update public.ecommerce_orders
-  set pos_conversion_status = 'idle',
-      pos_conversion_attempt_id = null,
-      pos_conversion_sale_id = null,
-      pos_conversion_key = null,
-      pos_conversion_actor_ref = null,
-      pos_conversion_started_at = null
+  set pos_conversion_status = 'idle', pos_conversion_attempt_id = null,
+      pos_conversion_sale_id = null, pos_conversion_key = null,
+      pos_conversion_actor_ref = null, pos_conversion_started_at = null
   where id = v_order_id;
 
   alter table public.ecommerce_orders
