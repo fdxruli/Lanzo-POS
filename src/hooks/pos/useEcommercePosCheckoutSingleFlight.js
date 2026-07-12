@@ -9,10 +9,7 @@ import {
 const ACTIVE_CHECKOUT_STATUSES = new Set([
   ECOMMERCE_CONVERSION_STATUS.VALIDATING,
   ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING,
-  ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
-  ECOMMERCE_CONVERSION_STATUS.SALE_CREATED,
-  ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING,
-  ECOMMERCE_CONVERSION_STATUS.COMPLETED
+  ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE
 ]);
 
 const getCurrentOrder = () => {
@@ -24,11 +21,7 @@ const getCurrentOrder = () => {
 
 const isEcommerceCheckoutAlreadyActive = (order = {}) => (
   order.origin === 'ecommerce'
-  && (
-    order.isLockedForCheckout === true
-    || Boolean(order.ecommerceConvertedSaleId)
-    || ACTIVE_CHECKOUT_STATUSES.has(order.ecommerceConversionStatus)
-  )
+  && ACTIVE_CHECKOUT_STATUSES.has(order.ecommerceConversionStatus)
 );
 
 const updateInitiationStatus = (orderId, status) => {
