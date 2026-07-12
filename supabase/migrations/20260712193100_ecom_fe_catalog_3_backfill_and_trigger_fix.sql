@@ -56,6 +56,63 @@ begin
 end;
 $$;
 
+create or replace function private.ecommerce_product_public_signature(
+  p_product public.ecommerce_published_products
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path to ''
+as $$
+  select case
+    when p_product.id is null
+      or p_product.deleted_at is not null
+      or p_product.is_published is not true
+      then null
+    else jsonb_build_object(
+      'id', p_product.id,
+      'name', p_product.public_name,
+      'description', p_product.public_description,
+      'categoryName', p_product.category_name,
+      'price', p_product.price,
+      'currency', p_product.currency,
+      'imageUrl', p_product.image_url,
+      'isAvailable', p_product.is_available,
+      'displayOrder', p_product.display_order,
+      'stock', case
+        when private.ecommerce_license_feature_bool(
+          p_product.license_id,
+          'ecommerce_stock_visibility',
+          false
+        ) is not true then jsonb_build_object(
+          'mode', 'hidden', 'status', null, 'quantity', null
+        )
+        when p_product.stock_mode = 'status' then jsonb_build_object(
+          'mode', 'status',
+          'status', case
+            when coalesce(p_product.stock_snapshot, 1) > 0 then 'available'
+            else 'out_of_stock'
+          end,
+          'quantity', null
+        )
+        when p_product.stock_mode = 'exact' then jsonb_build_object(
+          'mode', 'exact',
+          'status', case
+            when coalesce(p_product.stock_snapshot, 0) > 0 then 'available'
+            else 'out_of_stock'
+          end,
+          'quantity', greatest(coalesce(p_product.stock_snapshot, 0), 0)
+        )
+        else jsonb_build_object(
+          'mode', 'hidden', 'status', null, 'quantity', null
+        )
+      end,
+      'options', p_product.options
+    )
+  end;
+$$;
+
 create or replace function private.ecommerce_bump_catalog_revision_on_product_change()
 returns trigger
 language plpgsql
