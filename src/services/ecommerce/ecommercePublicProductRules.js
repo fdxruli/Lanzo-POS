@@ -29,22 +29,30 @@ export function isPublicProductAvailable(product) {
 }
 
 export function getPublicProductStockLabel(product) {
-  if (product?.isAvailable === false) return 'No disponible';
-
   const stockMode = product?.stock?.mode || 'hidden';
   const stockStatus = product?.stock?.status || null;
+  const exactQuantity = getPublicProductExactQuantity(product);
 
+  if (stockMode === 'status' && stockStatus === 'out_of_stock') {
+    return 'Agotado';
+  }
+
+  if (
+    stockMode === 'exact'
+    && (stockStatus === 'out_of_stock' || exactQuantity === 0)
+  ) {
+    return 'Agotado';
+  }
+
+  if (product?.isAvailable === false) return 'No disponible';
   if (stockMode === 'hidden') return null;
 
   if (stockMode === 'status') {
     if (stockStatus === 'available') return 'Disponible';
-    if (stockStatus === 'out_of_stock') return 'Agotado';
     return null;
   }
 
   if (stockMode === 'exact') {
-    const exactQuantity = getPublicProductExactQuantity(product);
-    if (stockStatus === 'out_of_stock' || exactQuantity === 0) return 'Agotado';
     if (exactQuantity !== null) return `${exactQuantity} disponibles`;
     if (stockStatus === 'available') return 'Disponible';
   }
