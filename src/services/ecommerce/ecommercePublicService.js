@@ -166,7 +166,7 @@ function normalizePortalResult(data) {
       exceptions: asArray(hours.exceptions)
     },
     features: normalizeFeatures(data.features),
-    catalogRevision: asRevision(data.catalogRevision, 1),
+    catalogRevision: asRevision(data.catalogRevision),
     cachePolicy: normalizeCachePolicy(data.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY)
   };
 }
@@ -203,7 +203,7 @@ function normalizeCatalogResult(data, expectedRevision = null) {
   }).filter((item) => item.id);
 
   return {
-    catalogRevision: asRevision(data.catalogRevision, asRevision(expectedRevision, 1)),
+    catalogRevision: asRevision(data.catalogRevision, asRevision(expectedRevision)),
     items,
     pagination: {
       limit: Math.min(100, Math.max(1, Math.floor(asNumber(pagination.limit, 100)))),
@@ -345,7 +345,7 @@ export function createEcommercePublicService(
           p_slug: normalizedSlug
         });
         const result = normalizePortalResult(data);
-        if (cache && options.cache !== false) {
+        if (cache && options.cache !== false && result.catalogRevision) {
           void safely(() => cache.putPortal({ slug: normalizedSlug, result }));
           void safely(() => cache.deleteObsoleteRevisions({
             slug: normalizedSlug,
