@@ -9,6 +9,7 @@ declare
   v_unverified_same text;
   v_unverified_old text;
   v_definition text;
+  v_guard_definition text;
 begin
   v_confirmed_hash := private.ecommerce_projection_payload_hash(
     jsonb_build_object(
@@ -106,6 +107,27 @@ begin
      or v_definition not like '%when v_source_state = ''unverified'' then pp.source_revision%'
      or v_definition not like '%when v_source_state = ''unverified'' then pp.source_payload_hash%' then
     raise exception 'CATALOG3_1_RESIDUAL_TEST: RPC no longer preserves confirmed unverified snapshot';
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_guard_definition
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'private'
+    and p.proname = 'ecommerce_published_product_sync_guard'
+  limit 1;
+
+  if v_guard_definition is null
+     or v_guard_definition not like '%new.source_state = ''unverified''%'
+     or v_guard_definition not like '%new.public_name := old.public_name%'
+     or v_guard_definition not like '%new.public_description := old.public_description%'
+     or v_guard_definition not like '%new.category_name := old.category_name%'
+     or v_guard_definition not like '%new.price := old.price%'
+     or v_guard_definition not like '%new.image_url := old.image_url%'
+     or v_guard_definition not like '%new.source_available := old.source_available%'
+     or v_guard_definition not like '%new.stock_snapshot := old.stock_snapshot%'
+     or v_guard_definition not like '%new.source_revision := old.source_revision%'
+     or v_guard_definition not like '%new.source_payload_hash := old.source_payload_hash%' then
+    raise exception 'CATALOG3_1_RESIDUAL_TEST: unverified trigger does not preserve confirmed fields';
   end if;
 end;
 $$;
