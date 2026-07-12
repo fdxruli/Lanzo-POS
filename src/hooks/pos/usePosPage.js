@@ -33,7 +33,10 @@ export function usePosPage() {
         setTimeout(() => setToastMsg(null), 2000);
     }, []);
 
-    const total = orderTotals(activeOrder || { items: order }).total;
+    const ecommerceExpectedTotal = Number(activeOrder?.expectedTotal);
+    const total = activeOrder?.origin === 'ecommerce' && Number.isFinite(ecommerceExpectedTotal)
+        ? ecommerceExpectedTotal
+        : orderTotals(activeOrder || { items: order }).total;
     const totalItemsCount = order.reduce((acc, item) => acc + (item.saleType === 'bulk' ? 1 : item.quantity), 0);
 
     const processBarcode = useCallback(async (code) => {

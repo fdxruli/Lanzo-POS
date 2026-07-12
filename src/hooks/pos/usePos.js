@@ -8,6 +8,7 @@ import { usePrescriptionFlow } from './usePrescriptionFlow';
 import { useActiveTablesCount } from './useActiveTablesCount';
 import { usePosPage } from './usePosPage';
 import { usePosCheckout } from './usePosCheckout';
+import { useEcommercePosCheckoutGate } from './useEcommercePosCheckoutGate';
 
 export function usePos() {
     const features = useFeatureConfig();
@@ -18,7 +19,7 @@ export function usePos() {
     const tablesCount = useActiveTablesCount(features.hasTables);
     const prescription = usePrescriptionFlow(modals);
 
-    const checkout = usePosCheckout({
+    const canonicalCheckout = usePosCheckout({
         pos,
         posSearch: search,
         modal: modals,
@@ -27,6 +28,7 @@ export function usePos() {
         features,
         fetchActiveTablesCount: tablesCount.fetchActiveTablesCount
     });
+    const checkout = useEcommercePosCheckoutGate({ checkout: canonicalCheckout });
 
     const tables = useTableManagement({
         ...modals,

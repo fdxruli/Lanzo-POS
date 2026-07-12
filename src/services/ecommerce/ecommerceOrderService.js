@@ -21,6 +21,7 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_POS_DRAFT_PERMISSION_DENIED: 'Necesitas permisos de ecommerce y Punto de Venta para preparar este pedido.',
   ECOMMERCE_POS_DRAFT_PRODUCT_MISSING: 'Uno o más productos del pedido ya no están disponibles en el Punto de Venta.',
   ECOMMERCE_POS_DRAFT_PREPARE_FAILED: 'No se pudo preparar el pedido en Punto de Venta.',
+  ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED: 'Este pedido tiene un cobro en revisión y no puede liberarse todavía. Verifica la venta antes de continuar.',
   ECOMMERCE_ORDER_ACTION_FAILED: 'No se pudo completar la acción sobre el pedido.',
   INVALID_RPC_RESPONSE: 'El servidor devolvió una respuesta inválida.',
   SUPABASE_NOT_CONFIGURED: 'No se pudo conectar con el servicio de pedidos.',

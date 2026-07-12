@@ -8,12 +8,13 @@ import PosModals from './PosModals';
 import PosToast from './PosToast';
 import PosFloatingBar from './PosFloatingBar';
 import OrderTabs from './OrderTabs';
+import EcommercePosConversionPanel from './EcommercePosConversionPanel';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
-import { isEcommercePosEffectBlocked } from '../../services/ecommerce/ecommercePosDraftGuards';
 import './RestaurantCloudStatus.css';
+import './EcommercePosConversionPanel.css';
 
 const ActiveOrderControls = () => {
     const activeOrders = useActiveOrders((state) => state.activeOrders);
@@ -73,7 +74,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             : null
     ));
     const [isInitializing, setIsInitializing] = useState(true);
-    const isEcommerceDraft = isEcommercePosEffectBlocked(currentOrder);
+    const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
 
     useEffect(() => {
         const initializeOrders = async () => {
@@ -101,6 +102,11 @@ const PosPageContent = ({ data, ui, actions, features }) => {
 
     const openTablesShortcutTotal = data.activeTablesCount + data.kitchenRejectedOpenCount;
     const hasMobileFloatingBar = (features.hasTables && openTablesShortcutTotal > 0) || data.totalItemsCount > 0;
+    const blockUnsupportedEcommerceAction = () => showMessageModal(
+        'Este pedido online solo permite resolver inventario y cobrar.',
+        null,
+        { type: 'warning' }
+    );
 
     return (
         <>
@@ -119,18 +125,24 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         showOutofStockCategory={data.hasOutOfStockItems}
                         showExpiredCategory={data.hasExpiredItems}
                     />
-                    <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}`}>
+                    <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}${isEcommerceDraft ? ' pos-summary-stack--ecommerce' : ''}`}>
                         <OrderSummary
                             onOpenPayment={actions.handleInitiateCheckout}
-                            onOpenSplit={actions.handleOpenSplitBill}
-                            onOpenLayaway={actions.handleInitiateLayaway}
-                            showRestaurantActions={features.hasTables}
-                            canSplitOrder={features.hasTables && !!data.activeOrderId}
-                            onSaveOpenOrder={features.hasTables ? actions.handleSaveAsOpen : undefined}
+                            onOpenSplit={isEcommerceDraft ? blockUnsupportedEcommerceAction : actions.handleOpenSplitBill}
+                            onOpenLayaway={isEcommerceDraft ? blockUnsupportedEcommerceAction : actions.handleInitiateLayaway}
+                            showRestaurantActions={features.hasTables && !isEcommerceDraft}
+                            canSplitOrder={!isEcommerceDraft && features.hasTables && !!data.activeOrderId}
+                            onSaveOpenOrder={features.hasTables && !isEcommerceDraft ? actions.handleSaveAsOpen : undefined}
                             onOpenTables={() => ui.openModal('tables')}
                             activeTablesCount={data.activeTablesCount}
                             kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
                         />
+                        {isEcommerceDraft && (
+                            <EcommercePosConversionPanel
+                                order={currentOrder}
+                                onCheckout={actions.handleInitiateCheckout}
+                            />
+                        )}
                         {!features.hasTables && !isEcommerceDraft && (
                             <OrderDiscountPanel />
                         )}
@@ -152,12 +164,12 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 isOpen={ui.isMobileCartOpen}
                 onClose={ui.closeMobileCart}
                 onOpenPayment={actions.handleInitiateCheckout}
-                onOpenSplit={actions.handleOpenSplitBill}
-                onOpenLayaway={actions.handleInitiateLayaway}
-                onSaveOpenOrder={features.hasTables ? actions.handleSaveAsOpen : undefined}
+                onOpenSplit={isEcommerceDraft ? blockUnsupportedEcommerceAction : actions.handleOpenSplitBill}
+                onOpenLayaway={isEcommerceDraft ? blockUnsupportedEcommerceAction : actions.handleInitiateLayaway}
+                onSaveOpenOrder={features.hasTables && !isEcommerceDraft ? actions.handleSaveAsOpen : undefined}
                 onOpenTables={() => ui.openModal('tables')}
-                showRestaurantActions={features.hasTables}
-                canSplitOrder={features.hasTables && !!data.activeOrderId}
+                showRestaurantActions={features.hasTables && !isEcommerceDraft}
+                canSplitOrder={!isEcommerceDraft && features.hasTables && !!data.activeOrderId}
                 activeTablesCount={data.activeTablesCount}
                 kitchenRejectedOpenCount={data.kitchenRejectedOpenCount}
             />

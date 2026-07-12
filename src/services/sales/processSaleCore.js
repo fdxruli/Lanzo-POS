@@ -24,6 +24,129 @@ const CLOUD_INVENTORY_AUTHORITATIVE_MODES = new Set([
     'cloud_credit_inventory'
 ]);
 
+const toFiniteNumber = (value, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toCents = (value) => Math.round((toFiniteNumber(value) + Number.EPSILON) * 100);
+
+const getLineId = (item = {}, index = 0) => (
+    item.lineId || item.uniqueLineId || item.ecommerceOrderItemId || `${item.parentId || item.id || 'item'}-${index}`
+);
+
+const getEcommerceCheckout = (paymentData = {}) => {
+    const checkout = paymentData?.__ecommerceCheckout;
+    return checkout?.origin === 'ecommerce' && checkout?.snapshot ? checkout : null;
+};
+
+const sanitizePaymentData = (paymentData = {}) => {
+    const sanitized = { ...paymentData };
+    delete sanitized.__ecommerceCheckout;
+    return sanitized;
+};
+
+const applyAndValidateEcommerceSnapshot = ({ itemsToProcess, checkout, total }) => {
+    const snapshot = checkout?.snapshot;
+    const snapshotLines = Array.isArray(snapshot?.lines) ? snapshot.lines : [];
+    if (!snapshot || snapshotLines.length !== itemsToProcess.length) {
+        const error = new Error('El snapshot ecommerce no coincide con las líneas de la venta.');
+        error.code = 'ECOMMERCE_CHECKOUT_SNAPSHOT_MISMATCH';
+        throw error;
+    }
+
+    const snapshotByLine = new Map(snapshotLines.map((line) => [String(line.lineId), line]));
+    const seen = new Set();
+
+    itemsToProcess.forEach((item, index) => {
+        const lineId = String(getLineId(item, index));
+        const line = snapshotByLine.get(lineId);
+        if (!line || seen.has(lineId)) {
+            const error = new Error('Una línea ecommerce cambió antes de registrar la venta.');
+            error.code = 'ECOMMERCE_CHECKOUT_SNAPSHOT_MISMATCH';
+            throw error;
+        }
+        seen.add(lineId);
+
+        const productId = String(item.parentId || item.id || '');
+        const expectedProductId = String(line.productId || '');
+        const quantity = toFiniteNumber(item.quantity, Number.NaN);
+        const expectedQuantity = toFiniteNumber(line.quantity, Number.NaN);
+        const acceptedPrice = toFiniteNumber(line.unitPriceSnapshot, Number.NaN);
+        const itemBatchId = item.batchId || item.inventoryResolution?.batchId || null;
+        const expectedBatchId = line.batchId || null;
+
+        if (
+            !productId
+            || productId !== expectedProductId
+            || !Number.isFinite(quantity)
+            || !Number.isFinite(expectedQuantity)
+            || quantity !== expectedQuantity
+            || !Number.isFinite(acceptedPrice)
+            || acceptedPrice < 0
+            || String(itemBatchId || '') !== String(expectedBatchId || '')
+        ) {
+            const error = new Error('El pedido ecommerce cambió mientras se elegía el pago.');
+            error.code = 'ECOMMERCE_CHECKOUT_SNAPSHOT_MISMATCH';
+            throw error;
+        }
+
+        const lineTotal = Number((acceptedPrice * expectedQuantity).toFixed(2));
+        if (toCents(lineTotal) !== toCents(line.lineTotalSnapshot)) {
+            const error = new Error('El total de una línea ecommerce no coincide con el snapshot aceptado.');
+            error.code = 'ECOMMERCE_TOTAL_MISMATCH';
+            throw error;
+        }
+
+        item.price = acceptedPrice;
+        item.exactTotal = lineTotal;
+        item.lineSubtotal = lineTotal;
+        item.lineTotal = lineTotal;
+        item.discount = null;
+        item.discountAmount = 0;
+        item.discount_amount = 0;
+        if (expectedBatchId) item.batchId = expectedBatchId;
+    });
+
+    const expectedSubtotal = toFiniteNumber(snapshot.expectedSubtotal, Number.NaN);
+    const deliveryFee = toFiniteNumber(snapshot.expectedDeliveryFee, Number.NaN);
+    const discountTotal = toFiniteNumber(snapshot.expectedDiscountTotal, Number.NaN);
+    const taxTotal = toFiniteNumber(snapshot.expectedTaxTotal, Number.NaN);
+    const expectedTotal = toFiniteNumber(snapshot.expectedTotal, Number.NaN);
+    const lineSubtotal = itemsToProcess.reduce(
+        (sum, item) => sum + toFiniteNumber(item.lineSubtotal),
+        0
+    );
+    const composedTotal = expectedSubtotal - discountTotal + deliveryFee + taxTotal;
+
+    if (
+        ![expectedSubtotal, deliveryFee, discountTotal, taxTotal, expectedTotal].every(Number.isFinite)
+        || [expectedSubtotal, deliveryFee, discountTotal, taxTotal, expectedTotal].some((value) => value < 0)
+        || toCents(lineSubtotal) !== toCents(expectedSubtotal)
+        || toCents(composedTotal) !== toCents(expectedTotal)
+        || toCents(total) !== toCents(expectedTotal)
+    ) {
+        const error = new Error('El total del pedido cambió y debe revisarse antes de cobrar.');
+        error.code = 'ECOMMERCE_TOTAL_MISMATCH';
+        throw error;
+    }
+
+    return {
+        items: itemsToProcess,
+        subtotal: expectedSubtotal,
+        grossSubtotal: expectedSubtotal,
+        lineDiscountTotal: 0,
+        subtotalAfterLineDiscounts: expectedSubtotal,
+        saleDiscount: null,
+        saleDiscountAmount: discountTotal,
+        discountTotal,
+        deliveryFee,
+        taxTotal,
+        total: expectedTotal,
+        currency: String(snapshot.currency || 'MXN').toUpperCase()
+    };
+};
+
 export const processSaleCore = async ({
     order,
     paymentData,
@@ -54,8 +177,13 @@ export const processSaleCore = async ({
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
+        const ecommerceCheckout = getEcommerceCheckout(paymentData);
+        const isEcommerceSale = Boolean(ecommerceCheckout);
+        const safePaymentData = sanitizePaymentData(paymentData);
         const productMap = new Map(allProducts.map(p => [p.id, p]));
-        const saleDiscount = paymentData.saleDiscount || paymentData.discount || null;
+        const saleDiscount = isEcommerceSale
+            ? null
+            : (paymentData.saleDiscount || paymentData.discount || null);
 
         if (features.hasLabFields) {
             const restrictedItem = itemsToProcess.find(item => {
@@ -74,11 +202,8 @@ export const processSaleCore = async ({
             }
         }
 
-        // FASE 6C — primero decidimos si la venta será cloud inventory.
-        // En ese modo Supabase es la fuente oficial de stock/lotes; Dexie es solo caché.
-        // Por eso la validación local dura no debe bloquear antes de llegar a la RPC transaccional.
         const cloudCashierDecision = await salesCloudCashierService.shouldUseCloudCashierSale({
-            paymentData,
+            paymentData: safePaymentData,
             cart: itemsToProcess
         }).catch((decisionError) => {
             Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
@@ -112,23 +237,25 @@ export const processSaleCore = async ({
             );
         }
 
-        await normalizeAndValidatePricing({
-            itemsToProcess,
-            total,
-            saleDiscount,
-            loadData,
-            queryBatchesByProductIdAndActive,
-            STORES,
-            calculatePricingDetails,
-            Logger
-        });
+        if (!isEcommerceSale) {
+            await normalizeAndValidatePricing({
+                itemsToProcess,
+                total,
+                saleDiscount,
+                loadData,
+                queryBatchesByProductIdAndActive,
+                STORES,
+                calculatePricingDetails,
+                Logger
+            });
+        }
 
-        // REST.DISC.1 — soberanía financiera con descuentos monetarios.
-        // El subtotal bruto sale de precios/cantidades seguros; los descuentos solo afectan dinero.
         let totalNum;
         let financialTotals;
         try {
-            financialTotals = calculateDiscountedTotals(itemsToProcess, saleDiscount);
+            financialTotals = isEcommerceSale
+                ? applyAndValidateEcommerceSnapshot({ itemsToProcess, checkout: ecommerceCheckout, total })
+                : calculateDiscountedTotals(itemsToProcess, saleDiscount);
             totalNum = Money.init(financialTotals.total);
             const totalFrontendNum = Money.init(total);
 
@@ -141,16 +268,15 @@ export const processSaleCore = async ({
                 throw new Error(`El total final no cuadra con los descuentos aplicados. Total esperado: $${Money.toNumber(totalNum).toFixed(2)}.`);
             }
         } catch (e) {
+            if (e?.code) throw e;
             throw new Error(e.message || 'Error al auditar el total financiero de la venta.');
         }
 
-        // Defensa estricta de variables financieras
         let abonoSeguro, saldoSeguro;
         try {
-            abonoSeguro = Money.init(paymentData.amountPaid || 0);
-            saldoSeguro = Money.init(paymentData.saldoPendiente || 0);
+            abonoSeguro = Money.init(safePaymentData.amountPaid || 0);
+            saldoSeguro = Money.init(safePaymentData.saldoPendiente || 0);
 
-            // CORRECCIÓN: El ingreso contable jamás puede superar al total del ticket.
             if (abonoSeguro.gt(totalNum)) {
                 abonoSeguro = totalNum;
             }
@@ -159,12 +285,10 @@ export const processSaleCore = async ({
                 throw new Error('Los valores financieros no pueden ser negativos.');
             }
 
-            // Ecuación de balance: Abono + Saldo DEBE ser igual al Total exacto
             const balanceDiff = Math.abs(Number(Money.add(abonoSeguro, saldoSeguro)) - Number(totalNum));
             if (balanceDiff > 0.05) {
                 throw new Error(`Inconsistencia financiera: El abono y el saldo no cuadran con el total exacto de la venta ($${Number(totalNum).toFixed(2)}).`);
             }
-            // Forzamos el saldo para evitar discrepancias de fracciones de centavo
             saldoSeguro = Money.sub(totalNum, abonoSeguro);
             if (saldoSeguro.lt(0)) saldoSeguro = Money.init(0);
         } catch (e) {
@@ -192,6 +316,18 @@ export const processSaleCore = async ({
         const discountTotal = Money.toExactString(financialTotals.discountTotal);
         const subtotal = Money.toExactString(financialTotals.subtotal);
         const saleDiscountAudit = financialTotals.saleDiscount || null;
+        const ecommerceMetadata = isEcommerceSale ? {
+            origin: 'ecommerce',
+            ecommerceOrderId: ecommerceCheckout.ecommerceOrderId,
+            ecommerceOrderCode: ecommerceCheckout.ecommerceOrderCode || null,
+            ecommerceConversionKey: ecommerceCheckout.idempotencyKey,
+            idempotencyKey: ecommerceCheckout.idempotencyKey,
+            ecommerceAcceptedSubtotal: Money.toExactString(financialTotals.subtotal),
+            ecommerceAcceptedDeliveryFee: Money.toExactString(financialTotals.deliveryFee || 0),
+            ecommerceAcceptedDiscountTotal: Money.toExactString(financialTotals.discountTotal || 0),
+            ecommerceAcceptedTaxTotal: Money.toExactString(financialTotals.taxTotal || 0),
+            ecommerceCurrency: financialTotals.currency || 'MXN'
+        } : {};
 
         const sale = {
             id: activeOrderId || generateID('sal'),
@@ -203,30 +339,27 @@ export const processSaleCore = async ({
             discount_total: discountTotal,
             saleDiscount: saleDiscountAudit,
             total: Money.toExactString(totalNum),
-            customerId: paymentData.customerId,
-            paymentMethod: paymentData.paymentMethod,
+            customerId: safePaymentData.customerId,
+            paymentMethod: safePaymentData.paymentMethod,
             abono: Money.toExactString(abonoSeguro),
             saldoPendiente: Money.toExactString(saldoSeguro),
-            dueDate: paymentData.dueDate ? new Date(paymentData.dueDate).toISOString() : null,
-            creditStatus: paymentData.paymentMethod === 'fiado' ? 'VIGENTE' : null,
+            dueDate: safePaymentData.dueDate ? new Date(safePaymentData.dueDate).toISOString() : null,
+            creditStatus: safePaymentData.paymentMethod === 'fiado' ? 'VIGENTE' : null,
             status: SALE_STATUS.CLOSED,
-            fulfillmentStatus: features.hasKDS ? 'pending' : 'completed',
+            fulfillmentStatus: features.hasKDS && !isEcommerceSale ? 'pending' : 'completed',
             prescriptionDetails: tempPrescriptionData || null,
             metadata: {
                 discount: saleDiscountAudit,
                 discountTotal,
                 lineDiscountTotal: Money.toExactString(financialTotals.lineDiscountTotal),
                 subtotalAfterLineDiscounts: Money.toExactString(financialTotals.subtotalAfterLineDiscounts),
-                discountScope: saleDiscountAudit ? 'sale' : null
+                discountScope: saleDiscountAudit ? 'sale' : null,
+                ...ecommerceMetadata
             },
             postEffectsCompleted: false,
             syncStatus: 'PENDING'
         };
 
-        // FASE 6B/6C — Venta efectiva cloud con caja/folio y, si aplica, inventario cloud.
-        // Este bloque debe ir ANTES de executeSaleTransactionSafe para evitar doble venta.
-        // Si cloud cashier confirma la venta, NO se ejecuta la venta local ni shadow 6A.
-        // La decisión se resolvió antes del stock local para evitar falsos bloqueos con Dexie desactualizado.
         if (cloudCashierDecision?.useCloud) {
             let cloudResult;
 
@@ -234,7 +367,7 @@ export const processSaleCore = async ({
                 cloudResult = await salesCloudCashierService.processCloudCashierSale({
                     sale,
                     processedItems,
-                    paymentData: { ...paymentData, saleDiscount: saleDiscountAudit },
+                    paymentData: { ...safePaymentData, saleDiscount: saleDiscountAudit },
                     total: Money.toExactString(totalNum)
                 });
             } catch (cloudCashierError) {
@@ -256,7 +389,7 @@ export const processSaleCore = async ({
                 await runPostSaleEffectsForCloudCommittedSale({
                     sale: cloudSale,
                     processedItems,
-                    paymentData,
+                    paymentData: safePaymentData,
                     total: Money.toExactString(totalNum),
                     companyName,
                     features,
@@ -306,7 +439,6 @@ export const processSaleCore = async ({
                 return { success: false, errorType: 'RACE_CONDITION', message: 'El stock cambió mientras cobrabas. Intenta de nuevo.' };
             }
 
-            // Corrección: Lectura defensiva de la causa del fallo
             const errorMessage = transactionResult.error?.message
                 || transactionResult.message
                 || 'Falló la transacción de venta sin un mensaje de error específico.';
@@ -316,10 +448,6 @@ export const processSaleCore = async ({
 
         dispatchTickerInventoryAlert(transactionResult.criticalStockProductIds || []);
 
-        // ✅ SOBERANÍA LOCAL ESTABLECIDA
-        // La venta está segura en IndexedDB. De aquí en adelante, el éxito es inconmutable.
-        // Los efectos secundarios se aíslan en un contexto no-bloqueante.
-
         let postEffectsFailed = false;
         let postEffectsError = null;
         let inventoryChanges = null;
@@ -328,7 +456,7 @@ export const processSaleCore = async ({
             await runPostSaleEffects({
                 sale,
                 processedItems,
-                paymentData,
+                paymentData: safePaymentData,
                 total: Money.toExactString(totalNum),
                 companyName,
                 features,
@@ -340,7 +468,6 @@ export const processSaleCore = async ({
                 sendReceiptWhatsApp
             });
         } catch (postError) {
-            // Captura el error, pero NO lo re-lanzamos. La venta ya está segura.
             postEffectsFailed = true;
             postEffectsError = {
                 message: postError.message || 'Error desconocido en efectos posteriores',
@@ -350,8 +477,6 @@ export const processSaleCore = async ({
 
             Logger.warn('Post-Sale Effects Failed (Non-Blocking):', postEffectsError);
 
-            // 🛡️ NUEVO: Registrar cambios de inventario como PENDIENTES
-            // Esto previene que un pull posterior sobrescriba con datos viejos
             inventoryChanges = {
                 saleId: sale.id,
                 timestamp: sale.timestamp,
@@ -367,40 +492,23 @@ export const processSaleCore = async ({
                 reason: 'POST_SALE_EFFECTS_FAILED'
             };
 
-            // Registrar en syncMiddleware para prevenir sobrescrituras
-            // [Fase 1]: Desacoplar Ventas del Middleware temporalmente
-            // await syncMiddleware.registerLocalSaleChange(sale.id, inventoryChanges);
-            // await conflictResolver.markAsPendingSync(
-            //     STORES.SALES,
-            //     {
-            //         saleId: sale.id,
-            //         inventoryChanges,
-            //         status: SALE_STATUS.CLOSED
-            //     },
-            //     'POST_EFFECTS_SYNC_FAILED'
-            // );
-
             Logger.info(
-                `📌 Cambios de inventario registrados como PENDIENTES para prevenir sobrescrituras`,
+                'Cambios de inventario registrados como PENDIENTES para prevenir sobrescrituras',
                 { saleId: sale.id, itemsAffected: processedItems.length }
             );
         }
 
-        // FASE 6A: shadow/auditoria cloud. No bloquea venta local ni aplica caja/inventario/credito cloud.
         salesCloudShadowService.syncSaleShadowAfterLocalCommit(sale, {
             processedItems,
-            paymentData,
+            paymentData: safePaymentData,
             postEffectsFailed,
             postEffectsError
         }).catch((cloudSyncError) => {
             Logger.warn('Sales Cloud Shadow Sync Failed (Non-Blocking):', cloudSyncError);
         });
 
-        // ✅ Llamada silenciosa al evaluador de riesgo para prevenir Falacia del Estado Volátil (Volumen en memoria sin recarga)
         evaluator.ping();
 
-        // ✅ RETORNO RESILIENTE PWA
-        // Indica claramente: venta segura localmente, pero qué efectos fallaron
         return {
             success: true,
             saleId: sale.id,
@@ -408,13 +516,21 @@ export const processSaleCore = async ({
             folio: sale.folio,
             postEffectsFailed,
             postEffectsError: postEffectsFailed ? postEffectsError : null,
-            pendingSyncRequired: postEffectsFailed, // Trigger para Service Worker
+            pendingSyncRequired: postEffectsFailed,
             inventoryChangesTracked: postEffectsFailed ? inventoryChanges : null
         };
     } catch (error) {
         Logger.error('Service Error:', error);
-        return { success: false, message: error.message };
+        return { success: false, code: error?.code || null, message: error.message };
     } finally {
         Logger.timeEnd('Service:ProcessSale');
     }
 };
+
+export const processSaleCoreInternals = Object.freeze({
+    getEcommerceCheckout,
+    sanitizePaymentData,
+    applyAndValidateEcommerceSnapshot,
+    getLineId,
+    toCents
+});
