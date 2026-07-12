@@ -365,26 +365,33 @@ export const moveCancelledSaleToTrash = async (saleId) => {
                 const sale = await db.table(STORES.SALES).get(saleId);
                 if (!sale) {
                     const error = new Error('La venta ya no existe en el historial.');
-                    error.code = 'SALE_NOT_FOUND';
+                    error.code = 'NOT_FOUND';
+                    throw error;
+                }
+                if (sale.status !== 'cancelled') {
+                    const error = new Error('Solo las ventas canceladas pueden moverse a papelera.');
+                    error.code = 'NOT_CANCELLED';
                     throw error;
                 }
 
+                const deletedAt = new Date().toISOString();
                 await db.table(STORES.DELETED_SALES).put({
                     ...sale,
-                    deletedAt: new Date().toISOString(),
-                    originalId: sale.id
+                    deletedAt,
+                    deletedTimestamp: deletedAt,
+                    deletedReason: 'Venta cancelada archivada',
+                    originalStore: STORES.SALES
                 });
                 await db.table(STORES.SALES).delete(sale.id);
             }
         );
-
-        return { success: true };
+        return { success: true, code: 'MOVED_TO_TRASH', saleId };
     } catch (error) {
-        Logger.error('No se pudo mover la venta cancelada a la papelera:', error);
+        Logger.error('Error moviendo venta cancelada a papelera:', error);
         return {
             success: false,
-            code: error?.code || 'SALE_TRASH_FAILED',
-            message: error?.message || 'No se pudo mover la venta a la papelera.'
+            code: error?.code || 'TRASH_FAILED',
+            message: error?.message || 'No se pudo mover la venta a papelera.'
         };
     }
 };
