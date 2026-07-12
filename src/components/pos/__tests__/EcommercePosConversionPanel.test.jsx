@@ -2,7 +2,10 @@
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ECOMMERCE_CONVERSION_STATUS } from '../../../services/ecommerce/ecommercePosCheckoutConversion';
+import {
+  ECOMMERCE_CONVERSION_STATUS,
+  ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION
+} from '../../../services/ecommerce/ecommercePosCheckoutConversion';
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -50,9 +53,11 @@ const createOrder = (overrides = {}) => ({
   ecommerceInventoryStatus: 'ready',
   ecommerceInventoryResolvedAt: '2026-07-11T20:00:00.000Z',
   ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.IDLE,
-  ecommerceRemoteContractVersion: 1,
+  ecommerceRemoteContractVersion: ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
   ecommerceRemoteClaimOwned: true,
   ecommerceRemoteClaimValid: true,
+  ecommerceRemoteConversionStatus: 'idle',
+  ecommerceRemoteConversionOwned: false,
   ...overrides
 });
 
@@ -63,9 +68,11 @@ beforeEach(() => {
   mocks.retry.mockResolvedValue({ success: true });
   mocks.remote.mockResolvedValue({
     success: true,
-    remoteContractVersion: 1,
+    remoteContractVersion: ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION,
     claimOwned: true,
     claimValid: true,
+    conversionStatus: 'idle',
+    conversionOwned: false,
     convertedSaleId: null
   });
 });
@@ -87,6 +94,7 @@ describe('EcommercePosConversionPanel', () => {
       ecommerceRemoteContractVersion: 0,
       ecommerceRemoteClaimOwned: false,
       ecommerceRemoteClaimValid: false,
+      ecommerceRemoteConversionStatus: 'unknown',
       ecommerceCheckoutGateCode: 'ECOMMERCE_REMOTE_CONVERSION_CONTRACT_PENDING'
     });
     mocks.state.activeOrders = new Map([[order.id, order]]);
@@ -103,7 +111,20 @@ describe('EcommercePosConversionPanel', () => {
     expect(screen.getByText(/seguirá bloqueado hasta aplicar y validar el contrato remoto/i)).toBeInTheDocument();
   });
 
-  it('enables only the controlled checkout for a prepared and remotely valid order', async () => {
+  it('blocks a reservation owned by another device or attempt', () => {
+    const order = createOrder({
+      ecommerceRemoteConversionStatus: 'reserved',
+      ecommerceRemoteConversionOwned: false
+    });
+    mocks.state.activeOrders = new Map([[order.id, order]]);
+
+    render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
+
+    expect(screen.getByRole('button', { name: 'Cobrar pedido' })).toBeDisabled();
+    expect(screen.getByText(/procesado por otro dispositivo o intento/i)).toBeInTheDocument();
+  });
+
+  it('enables only the controlled checkout for a prepared and remotely idle order', async () => {
     const order = createOrder();
     mocks.state.activeOrders = new Map([[order.id, order]]);
 
@@ -117,7 +138,9 @@ describe('EcommercePosConversionPanel', () => {
 
   it('disables duplicate interaction while processing the sale', () => {
     const order = createOrder({
-      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
+      ecommerceRemoteConversionStatus: 'reserved',
+      ecommerceRemoteConversionOwned: true
     });
     mocks.state.activeOrders = new Map([[order.id, order]]);
 
@@ -130,6 +153,8 @@ describe('EcommercePosConversionPanel', () => {
   it('shows only confirmation recovery after a sale exists', async () => {
     const order = createOrder({
       ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING,
+      ecommerceRemoteConversionStatus: 'reserved',
+      ecommerceRemoteConversionOwned: true,
       ecommerceConvertedSaleId: 'sale-1'
     });
     mocks.state.activeOrders = new Map([[order.id, order]]);
