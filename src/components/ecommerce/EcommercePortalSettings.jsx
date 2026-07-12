@@ -376,13 +376,65 @@ export default function EcommercePortalSettings() {
     if (localProducts.length > 0) return true;
     setLoadingCatalog(true);
     try {
-      const [page, categories] = await Promise.all([
-        productRepository.listProductsPage({ limit: 500, status: 'active' }),
-        productRepository.listCategories()
-      ]);
-      setLocalProducts(
-        (page?.data || []).filter((product) => product?.id && product.isActive !== false)
-      );
+      const catalogProducts = [];
+      const visitedCursors = new Set();
+      let cursor = null;
+
+      while (true) {
+        const cursorKey = cursor === null || cursor === undefined || cursor === ''
+          ? null
+          : String(cursor);
+
+        if (cursorKey !== null) {
+          if (visitedCursors.has(cursorKey)) break;
+          visitedCursors.add(cursorKey);
+        }
+
+        const page = await productRepository.listProductsPage({
+          limit: 500,
+          status: 'active',
+          cursor
+        });
+
+        if (!page || !Array.isArray(page.data)) {
+          throw new Error('No se pudo leer el catalogo local.');
+        }
+
+        const pageProducts = page.data;
+        catalogProducts.push(...pageProducts);
+
+        const nextCursor = page.nextCursor;
+        const nextCursorKey = nextCursor === null
+          || nextCursor === undefined
+          || nextCursor === ''
+          ? null
+          : String(nextCursor);
+
+        if (
+          nextCursorKey === null
+          || pageProducts.length === 0
+          || nextCursorKey === cursorKey
+          || visitedCursors.has(nextCursorKey)
+        ) {
+          break;
+        }
+
+        cursor = nextCursor;
+      }
+
+      const categories = await productRepository.listCategories();
+      const uniqueProducts = [];
+      const productIds = new Set();
+
+      catalogProducts.forEach((product) => {
+        if (!product?.id || product.isActive === false) return;
+        const productId = String(product.id);
+        if (productIds.has(productId)) return;
+        productIds.add(productId);
+        uniqueProducts.push(product);
+      });
+
+      setLocalProducts(uniqueProducts);
       setCategoriesById(new Map(
         (categories || []).map((category) => [category.id, category.name])
       ));
