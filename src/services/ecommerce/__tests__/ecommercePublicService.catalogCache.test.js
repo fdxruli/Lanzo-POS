@@ -40,7 +40,18 @@ const createService = (rpc, name) => {
   const database = createEcommercePublicCatalogDatabase(name);
   databases.push(database);
   const cache = createEcommercePublicCatalogCache({ database });
-  return createEcommercePublicService({ rpc }, { cache });
+  return {
+    database,
+    service: createEcommercePublicService({ rpc }, { cache })
+  };
+};
+
+const waitForCachedPage = async (database) => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if ((await database.table('pages').count()) > 0) return;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+  }
+  throw new Error('Catalog page was not cached');
 };
 
 afterEach(async () => {
@@ -57,15 +68,14 @@ describe('ecommercePublicService catalog cache', () => {
       if (name === 'ecommerce_get_catalog') return { data: catalogResponse(7), error: null };
       throw new Error(`Unexpected RPC ${name}`);
     });
-    const service = createService(rpc, 'public-service-same-revision');
+    const { database, service } = createService(rpc, 'public-service-same-revision');
 
     const firstPortal = await service.getPublicPortalBySlug('mi-tienda');
     const firstCatalog = await service.getPublicCatalog('mi-tienda', {
       catalogRevision: firstPortal.catalogRevision,
       cachePolicy: firstPortal.cachePolicy
     });
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitForCachedPage(database);
 
     const secondPortal = await service.getPublicPortalBySlug('mi-tienda');
     const secondCatalog = await service.getPublicCatalog('mi-tienda', {
@@ -88,14 +98,14 @@ describe('ecommercePublicService catalog cache', () => {
       }
       throw new Error(`Unexpected RPC ${name}`);
     });
-    const service = createService(rpc, 'public-service-new-revision');
+    const { database, service } = createService(rpc, 'public-service-new-revision');
 
     const firstPortal = await service.getPublicPortalBySlug('mi-tienda');
     await service.getPublicCatalog('mi-tienda', {
       catalogRevision: firstPortal.catalogRevision,
       cachePolicy: firstPortal.cachePolicy
     });
-    await Promise.resolve();
+    await waitForCachedPage(database);
     revision = 3;
 
     const secondPortal = await service.getPublicPortalBySlug('mi-tienda');
@@ -121,14 +131,17 @@ describe('ecommercePublicService catalog cache', () => {
       if (name === 'ecommerce_get_portal_by_slug') return { data: portalResponse(5), error: null };
       return { data: catalogResponse(5), error: null };
     });
-    const service = createService(rpc, 'public-service-offline');
+    const { database, service } = createService(rpc, 'public-service-offline');
 
     const portal = await service.getPublicPortalBySlug('mi-tienda');
     await service.getPublicCatalog('mi-tienda', {
       catalogRevision: portal.catalogRevision,
       cachePolicy: portal.cachePolicy
     });
-    await Promise.resolve();
+    await waitForCachedPage(database);
+    for (let attempt = 0; attempt < 20 && (await database.table('portals').count()) === 0; attempt += 1) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+    }
     online = false;
 
     const offlinePortal = await service.getPublicPortalBySlug('mi-tienda');
