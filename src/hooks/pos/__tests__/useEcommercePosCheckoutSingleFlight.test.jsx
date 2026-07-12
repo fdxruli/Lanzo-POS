@@ -40,6 +40,7 @@ const makeOrder = (id, patch = {}) => ({
   origin: 'ecommerce',
   ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.IDLE,
   ecommerceCheckoutInitiationStatus: null,
+  ecommerceRemoteConversionStatus: 'idle',
   isLockedForCheckout: false,
   ecommerceConvertedSaleId: null,
   ...patch
@@ -128,6 +129,47 @@ describe('useEcommercePosCheckoutSingleFlight', () => {
       success: false,
       code: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED'
     });
+  });
+
+  it('resets only non-current A when target change aborts before lock acquisition', async () => {
+    const orderA = makeOrder('ecom-order-a');
+    const orderB = makeOrder('ecom-order-b');
+    mocks.state.activeOrders = new Map([
+      [orderA.id, orderA],
+      [orderB.id, orderB]
+    ]);
+    mocks.state.currentOrderId = orderA.id;
+
+    const checkout = {
+      handleInitiateCheckout: vi.fn(async () => {
+        mocks.state.updateOrder(orderA.id, {
+          ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.VALIDATING,
+          ecommerceConversionAttemptId: 'attempt-a',
+          ecommerceConversionActorIdentity: 'actor-a'
+        });
+        mocks.state.currentOrderId = orderB.id;
+        return {
+          success: false,
+          code: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED'
+        };
+      })
+    };
+    const { result } = renderHook(() => useEcommercePosCheckoutSingleFlight({ checkout }));
+
+    await expect(result.current.handleInitiateCheckout()).resolves.toMatchObject({
+      success: false,
+      code: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED'
+    });
+
+    expect(mocks.state.activeOrders.get(orderA.id)).toMatchObject({
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.IDLE,
+      ecommerceCheckoutInitiationStatus: null,
+      ecommerceConversionAttemptId: null,
+      ecommerceConversionActorIdentity: null,
+      ecommerceCanonicalCheckoutAttemptId: null,
+      ecommerceCheckoutGateCode: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED'
+    });
+    expect(mocks.state.activeOrders.get(orderB.id)).toEqual(orderB);
   });
 
   it('ignores clicks silently while payment is already pending', async () => {
