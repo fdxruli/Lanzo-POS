@@ -175,6 +175,7 @@ export function installEcommercePosActiveOrderGuards() {
   if (installed) return;
 
   const initialState = useActiveOrders.getState();
+  const originalUpdateOrderItems = initialState.updateOrderItems;
   const originalSaveOrderAsOpen = initialState.saveOrderAsOpen;
   const originalPauseOrder = initialState.pauseOrder;
   const originalCloseOrder = initialState.closeOrder;
@@ -183,6 +184,11 @@ export function installEcommercePosActiveOrderGuards() {
   const originalRemoveOrder = initialState.removeOrder;
 
   useActiveOrders.setState({
+    updateOrderItems: (orderId, updater) => {
+      const order = resolveOrder(orderId);
+      if (isEcommercePosDraft(order)) return false;
+      return originalUpdateOrderItems(orderId, updater);
+    },
     saveOrderAsOpen: async (orderId, orderSnapshot = null) => {
       const order = resolveOrder(orderId, orderSnapshot);
       if (isEcommercePosEffectBlocked(order, 'save_open')) return getEcommercePosBlockedResult(order);
