@@ -1,6 +1,28 @@
-import { useEffect, useState } from 'react';
-import { LoaderCircle, Save, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link2, LoaderCircle, Save, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+
+const MANUAL_SYNC_CONFIG = Object.freeze({
+  name: 'manual',
+  description: 'manual',
+  category: 'manual',
+  price: 'manual',
+  image: 'manual'
+});
+const SOURCE_SYNC_CONFIG = Object.freeze({
+  name: 'source',
+  description: 'source',
+  category: 'source',
+  price: 'source',
+  image: 'source'
+});
+const SYNC_FIELD_LABELS = Object.freeze({
+  name: 'Nombre',
+  description: 'Descripción',
+  category: 'Categoría',
+  price: 'Precio',
+  image: 'Imagen'
+});
 
 const emptyForm = {
   id: null,
@@ -12,7 +34,8 @@ const emptyForm = {
   isAvailable: true,
   isPublished: true,
   displayOrder: 0,
-  imageUrl: null
+  imageUrl: null,
+  syncConfig: MANUAL_SYNC_CONFIG
 };
 
 const safeNumber = (value, fallback = 0) => {
@@ -24,6 +47,13 @@ const publicUrl = (value) => {
   const text = typeof value === 'string' ? value.trim() : '';
   return /^https?:\/\//i.test(text) ? text : null;
 };
+
+const normalizeSyncConfig = (value, fallback = MANUAL_SYNC_CONFIG) => (
+  Object.keys(SYNC_FIELD_LABELS).reduce((result, field) => {
+    result[field] = value?.[field] === 'source' ? 'source' : fallback[field];
+    return result;
+  }, {})
+);
 
 export default function EcommerceProductPublishModal({
   open,
@@ -38,11 +68,19 @@ export default function EcommerceProductPublishModal({
 }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const allFieldsLinked = useMemo(
+    () => Object.values(form.syncConfig).every((mode) => mode === 'source'),
+    [form.syncConfig]
+  );
 
   useEffect(() => {
     if (!open) return;
     if (!editingProduct) {
-      setForm({ ...emptyForm, isPublished: !limitReached });
+      setForm({
+        ...emptyForm,
+        isPublished: !limitReached,
+        syncConfig: isPro ? SOURCE_SYNC_CONFIG : MANUAL_SYNC_CONFIG
+      });
       return;
     }
     setForm({
@@ -52,12 +90,15 @@ export default function EcommerceProductPublishModal({
       publicDescription: editingProduct.publicDescription || '',
       price: String(editingProduct.price ?? ''),
       categoryName: editingProduct.categoryName || '',
-      isAvailable: editingProduct.isAvailable !== false,
+      isAvailable: editingProduct.manualAvailable ?? editingProduct.isAvailable !== false,
       isPublished: editingProduct.isPublished !== false,
       displayOrder: editingProduct.displayOrder || 0,
-      imageUrl: editingProduct.imageUrl || null
+      imageUrl: editingProduct.imageUrl || null,
+      syncConfig: isPro
+        ? normalizeSyncConfig(editingProduct.syncConfig, MANUAL_SYNC_CONFIG)
+        : MANUAL_SYNC_CONFIG
     });
-  }, [editingProduct, limitReached, open]);
+  }, [editingProduct, isPro, limitReached, open]);
 
   if (!open) return null;
 
@@ -71,9 +112,27 @@ export default function EcommerceProductPublishModal({
       ...current,
       localProductRef: String(product.id),
       publicName: product.name || '',
+      publicDescription: product.description || '',
       price: String(product.price ?? 0),
       categoryName: categoriesById.get(product.categoryId) || product.category || '',
-      imageUrl: publicUrl(product.image)
+      imageUrl: publicUrl(product.imageUrl || product.image)
+    }));
+  };
+
+  const setFieldMode = (field, linked) => {
+    setForm((current) => ({
+      ...current,
+      syncConfig: {
+        ...current.syncConfig,
+        [field]: linked ? 'source' : 'manual'
+      }
+    }));
+  };
+
+  const setAllFieldsMode = (linked) => {
+    setForm((current) => ({
+      ...current,
+      syncConfig: linked ? SOURCE_SYNC_CONFIG : MANUAL_SYNC_CONFIG
     }));
   };
 
@@ -95,10 +154,12 @@ export default function EcommerceProductPublishModal({
       price,
       categoryName: form.categoryName.trim() || null,
       isAvailable: form.isAvailable,
+      manualAvailable: form.isAvailable,
       isPublished: form.isPublished,
       displayOrder: Math.max(0, Math.trunc(safeNumber(form.displayOrder, 0))),
       imageUrl: publicUrl(form.imageUrl),
       stockMode: 'hidden',
+      syncConfig: isPro ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
       metadata: { source: 'admin_ui' }
     });
     setSaving(false);
@@ -110,7 +171,7 @@ export default function EcommerceProductPublishModal({
       <section className="ecom-admin-modal" role="dialog" aria-modal="true" aria-labelledby="ecom-product-title">
         <header>
           <div>
-            <span className="ecom-admin-eyebrow">Snapshot controlado</span>
+            <span className="ecom-admin-eyebrow">Catálogo público</span>
             <h3 id="ecom-product-title">{editingProduct ? 'Editar producto publicado' : 'Publicar producto'}</h3>
           </div>
           <button type="button" className="ecom-admin-icon-button" onClick={onClose} aria-label="Cerrar">
@@ -135,22 +196,58 @@ export default function EcommerceProductPublishModal({
             </select>
             <small className="ecom-admin-help">
               {isPro
-                ? 'Las alertas utilizan el inventario disponible en este dispositivo. La sincronización automática del catálogo público se habilitará en una fase posterior.'
+                ? 'Lanzo Nube puede mantener vinculados los campos elegidos sin sobrescribir los campos manuales.'
                 : 'Se guarda una copia publica; tu producto local no se modifica.'}
             </small>
           </label>
 
+          {isPro && (
+            <fieldset className="ecom-admin-sync-fields ecom-admin-span-2">
+              <legend>Vinculación con el producto local</legend>
+              <label className="ecom-admin-sync-master">
+                <input
+                  type="checkbox"
+                  checked={allFieldsLinked}
+                  onChange={(event) => setAllFieldsMode(event.target.checked)}
+                />
+                <span>
+                  <strong>Mantener sincronizado con el producto local</strong>
+                  <small>Los campos manuales nunca se sobrescriben.</small>
+                </span>
+              </label>
+              <div className="ecom-admin-sync-field-grid">
+                {Object.entries(SYNC_FIELD_LABELS).map(([field, label]) => {
+                  const linked = form.syncConfig[field] === 'source';
+                  return (
+                    <label key={field} className={linked ? 'is-linked' : 'is-manual'}>
+                      <input
+                        type="checkbox"
+                        checked={linked}
+                        onChange={(event) => setFieldMode(field, event.target.checked)}
+                      />
+                      {linked ? <Link2 size={15} /> : <Unlink size={15} />}
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{linked ? 'Sincronizado con el producto local' : 'Este campo se administra manualmente'}</small>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+
           <label className="form-group">
             <span className="form-label">Nombre publico *</span>
-            <input className="form-input" value={form.publicName} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
+            <input className="form-input" value={form.publicName} disabled={isPro && form.syncConfig.name === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
           </label>
           <label className="form-group">
             <span className="form-label">Precio publico *</span>
-            <input className="form-input" type="number" min="0" step="0.01" value={form.price} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} required />
+            <input className="form-input" type="number" min="0" step="0.01" value={form.price} disabled={isPro && form.syncConfig.price === 'source'} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} required />
           </label>
           <label className="form-group">
             <span className="form-label">Categoria publica</span>
-            <input className="form-input" value={form.categoryName} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
+            <input className="form-input" value={form.categoryName} disabled={isPro && form.syncConfig.category === 'source'} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
           </label>
           <label className="form-group">
             <span className="form-label">Orden</span>
@@ -158,13 +255,18 @@ export default function EcommerceProductPublishModal({
           </label>
           <label className="form-group ecom-admin-span-2">
             <span className="form-label">Descripcion publica</span>
-            <textarea className="form-textarea" rows={4} value={form.publicDescription} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
+            <textarea className="form-textarea" rows={4} value={form.publicDescription} disabled={isPro && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
           </label>
 
           <div className="ecom-admin-modal-toggles ecom-admin-span-2">
-            <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible para clientes</label>
+            <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible manualmente para clientes</label>
             <label><input type="checkbox" checked={form.isPublished} onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))} disabled={!editingProduct && limitReached} /> Publicado</label>
           </div>
+          {isPro && (
+            <small className="ecom-admin-help ecom-admin-span-2">
+              La disponibilidad pública requiere que el producto esté publicado, habilitado manualmente y disponible en la fuente local.
+            </small>
+          )}
 
           <footer className="ecom-admin-span-2">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancelar</button>
@@ -178,3 +280,9 @@ export default function EcommerceProductPublishModal({
     </div>
   );
 }
+
+export const ecommerceProductPublishModalInternals = Object.freeze({
+  MANUAL_SYNC_CONFIG,
+  SOURCE_SYNC_CONFIG,
+  normalizeSyncConfig
+});
