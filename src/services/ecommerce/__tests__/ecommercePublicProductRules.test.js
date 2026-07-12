@@ -63,7 +63,7 @@ describe('ecommercePublicProductRules', () => {
     expect(getPublicProductStockLabel(product)).toBe('Agotado');
   });
 
-  it('prioritizes effective availability over positive stock labels', () => {
+  it('distinguishes confirmed stock exhaustion from manual unavailability', () => {
     expect(getPublicProductStockLabel({
       isAvailable: false,
       stock: { mode: 'status', status: 'available' },
@@ -75,8 +75,13 @@ describe('ecommercePublicProductRules', () => {
     })).toBe('No disponible');
 
     expect(getPublicProductStockLabel({
-      isAvailable: true,
+      isAvailable: false,
       stock: { mode: 'status', status: 'out_of_stock' },
+    })).toBe('Agotado');
+
+    expect(getPublicProductStockLabel({
+      isAvailable: false,
+      stock: { mode: 'exact', status: 'out_of_stock', quantity: 0 },
     })).toBe('Agotado');
 
     expect(getPublicProductStockLabel({
