@@ -27,8 +27,6 @@ $$;
 -- Para unverified se permite aplicar exclusivamente el estado tecnico cuando
 -- la revision es igual o superior. Una revision comparable anterior continua
 -- siendo stale y una revision opaca distinta continua requiriendo review.
--- La RPC ya preserva source_available, stock_snapshot, source_revision y
--- source_payload_hash cuando source_state = 'unverified'.
 create or replace function private.ecommerce_source_revision_decision(
   p_existing_kind text,
   p_existing_order numeric,
@@ -98,14 +96,77 @@ begin
 end;
 $$;
 
+-- La RPC aplica campos antes de su rama de preservacion de stock. Este guard
+-- impide que una proyeccion tecnica unverified, incluso con revision igual,
+-- sobrescriba nombre, descripcion, categoria, precio, imagen o snapshot.
+create or replace function private.ecommerce_published_product_sync_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path to ''
+as $$
+begin
+  new.sync_config := private.ecommerce_normalize_sync_config(
+    new.sync_config,
+    case when tg_op = 'UPDATE' then old.sync_config else null end
+  );
+
+  if tg_op = 'INSERT' then
+    new.manual_available := coalesce(new.is_available, new.manual_available, true);
+    new.source_available := coalesce(new.source_available, true);
+  elsif new.manual_available is not distinct from old.manual_available
+        and new.source_available is not distinct from old.source_available
+        and new.is_available is distinct from old.is_available then
+    new.manual_available := coalesce(new.is_available, old.manual_available, true);
+  end if;
+
+  new.manual_available := coalesce(new.manual_available, true);
+  new.source_available := coalesce(new.source_available, true);
+
+  if new.source_state = 'not_tracked' then
+    new.track_stock := false;
+    new.stock_mode := 'hidden';
+    new.stock_snapshot := null;
+  end if;
+
+  if tg_op = 'UPDATE' and new.source_state = 'unverified' then
+    new.public_name := old.public_name;
+    new.public_description := old.public_description;
+    new.category_name := old.category_name;
+    new.price := old.price;
+    new.image_url := old.image_url;
+    new.source_available := old.source_available;
+    new.stock_snapshot := old.stock_snapshot;
+    new.stock_updated_at := old.stock_updated_at;
+    new.source_revision := old.source_revision;
+    new.source_revision_kind := old.source_revision_kind;
+    new.source_revision_order := old.source_revision_order;
+    new.source_payload_hash := old.source_payload_hash;
+  end if;
+
+  new.is_available := new.manual_available and new.source_available;
+
+  if new.sync_status not in ('synced', 'pending', 'review', 'error', 'manual') then
+    new.sync_status := 'error';
+    new.sync_error_code := 'INVALID_SYNC_STATUS';
+  end if;
+
+  return new;
+end;
+$$;
+
 revoke all on function private.ecommerce_projection_payload_hash(jsonb)
   from public, anon, authenticated;
 revoke all on function private.ecommerce_source_revision_decision(
   text, numeric, text, text, text, numeric, text, text
 ) from public, anon, authenticated;
+revoke all on function private.ecommerce_published_product_sync_guard()
+  from public, anon, authenticated;
 
 grant execute on function private.ecommerce_projection_payload_hash(jsonb)
   to service_role;
 grant execute on function private.ecommerce_source_revision_decision(
   text, numeric, text, text, text, numeric, text, text
 ) to service_role;
+grant execute on function private.ecommerce_published_product_sync_guard()
+  to service_role;
