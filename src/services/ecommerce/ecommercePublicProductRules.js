@@ -29,6 +29,8 @@ export function isPublicProductAvailable(product) {
 }
 
 export function getPublicProductStockLabel(product) {
+  if (product?.isAvailable === false) return 'No disponible';
+
   const stockMode = product?.stock?.mode || 'hidden';
   const stockStatus = product?.stock?.status || null;
 
