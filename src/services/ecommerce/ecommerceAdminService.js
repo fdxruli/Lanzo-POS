@@ -155,14 +155,11 @@ export const createEcommerceAdminService = ({
     ),
 
     syncPublishedCatalog: ({ projections, idempotencyKey, expectedCatalogRevision }) => {
-      const revisionScope = Number.isSafeInteger(Number(expectedCatalogRevision))
-        ? Number(expectedCatalogRevision)
-        : 'none';
       return callRpc(
         'ecommerce_admin_sync_published_catalog',
         {
           p_projections: Array.isArray(projections) ? projections : [],
-          p_idempotency_key: `${idempotencyKey || 'catalog-sync'}:r${revisionScope}`,
+          p_idempotency_key: idempotencyKey || 'catalog-sync',
           p_expected_catalog_revision: expectedCatalogRevision || null
         },
         'No se pudo sincronizar el catalogo publicado.'
