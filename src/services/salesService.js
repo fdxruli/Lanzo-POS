@@ -73,6 +73,20 @@ const getEcommerceCheckoutContext = (params = {}) => {
 
 const isClosedSale = (sale = {}) => String(sale.status || '').toLowerCase() === 'closed';
 
+const getSaleIdempotencyKey = (sale = {}) => (
+    sale?.metadata?.idempotencyKey
+    || sale?.metadata?.ecommerceConversionKey
+    || sale?.idempotencyKey
+    || null
+);
+
+const isMatchingEcommerceSale = (sale, checkout) => (
+    Boolean(sale)
+    && isClosedSale(sale)
+    && Boolean(checkout?.idempotencyKey)
+    && getSaleIdempotencyKey(sale) === checkout.idempotencyKey
+);
+
 const findExistingEcommerceSale = async (params = {}) => {
     const checkout = getEcommerceCheckoutContext(params);
     if (!checkout) return null;
@@ -80,18 +94,11 @@ const findExistingEcommerceSale = async (params = {}) => {
     try {
         if (params.activeOrderId) {
             const deterministicSale = await db.table(STORES.SALES).get(params.activeOrderId);
-            if (deterministicSale && isClosedSale(deterministicSale)) return deterministicSale;
+            if (isMatchingEcommerceSale(deterministicSale, checkout)) return deterministicSale;
         }
 
         return await db.table(STORES.SALES)
-            .filter((sale) => (
-                isClosedSale(sale)
-                && (
-                    sale?.metadata?.idempotencyKey === checkout.idempotencyKey
-                    || sale?.metadata?.ecommerceConversionKey === checkout.idempotencyKey
-                    || sale?.idempotencyKey === checkout.idempotencyKey
-                )
-            ))
+            .filter((sale) => isMatchingEcommerceSale(sale, checkout))
             .first();
     } catch (error) {
         Logger.warn('No se pudo consultar la idempotencia ecommerce antes de vender:', error);
@@ -133,6 +140,14 @@ const runProcessSaleWithRetry = async (params, maxRetries = 3) => {
         }
 
         const rawResult = await _processSaleInternal(params);
+
+        if (ecommerceCheckout && rawResult?.success !== true) {
+            const committedByConcurrentContext = await findExistingEcommerceSale(params);
+            if (committedByConcurrentContext) {
+                return idempotentSaleResult(committedByConcurrentContext);
+            }
+        }
+
         const result = normalizeEcommerceStockFailure(rawResult, ecommerceCheckout);
 
         if (result.success) return result;
@@ -353,6 +368,8 @@ export const moveCancelledSaleToTrash = async (saleId) => {
 
 export const salesServiceInternals = Object.freeze({
     getEcommerceCheckoutContext,
+    getSaleIdempotencyKey,
+    isMatchingEcommerceSale,
     findExistingEcommerceSale,
     idempotentSaleResult,
     normalizeEcommerceStockFailure,
