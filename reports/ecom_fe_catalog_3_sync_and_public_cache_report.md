@@ -12,7 +12,7 @@
 - HEAD histórico previo a la serie ECOM.FE.CATALOG.3.1: `6b32df3f02aaa092f004c0a9906f1be794e5fab1`
 - HEAD inicial de la revisión que detectó los bloqueantes: `12ec335b6ea5a0ab87f411a41c56b9f859636334`
 - HEAD inicial de esta corrección residual: `5b2ad1e2512cbc02d7d6391b5fd6d463977932fb`
-- HEAD funcional previo a esta actualización documental: `25730f79a3b9896dfee775c681fcea3c0f871646`
+- HEAD funcional previo a esta actualización documental: `ea8004b0b3ffd3b8a7b043e84574e1c39976f183`
 - Merge automático: **no realizado**
 
 La implementación funcional de los dos bloqueantes residuales quedó incorporada. El PR debe permanecer en draft porque todavía faltan la instalación íntegra, las pruebas ejecutables completas, las pruebas SQL en una base local o transaccional y las pruebas manuales.
@@ -50,7 +50,7 @@ La migración correctiva:
 20260712210200_ecom_fe_catalog_3_1_residual_blockers.sql
 ```
 
-introduce dos defensas complementarias.
+introduce tres defensas complementarias.
 
 #### 1. Hash técnico explícito
 
@@ -130,7 +130,7 @@ fullReconcile: false
 
 Si la escritura del outbox falla, se conserva una ruta de recuperación mediante reconciliación completa, porque en ese caso no existe una lista persistida confiable que pueda drenarse.
 
-Los reintentos deliberadamente completos por inicio del runtime, evento `online`, visibilidad o acción manual no cambian.
+La marca interna de persistencia se limpia cuando se cancela un timer por cambio de contexto o reprogramación. Los reintentos deliberadamente completos por inicio del runtime, evento `online`, visibilidad o acción manual no cambian.
 
 ## Pruebas agregadas
 
@@ -161,18 +161,19 @@ Esta prueba cubre la parte que la prueba anterior no ejecutaba: el alcance real 
 - revisión opaca distinta: `conflict`;
 - la RPC continúa usando los helpers de hash y revisión;
 - la RPC conserva disponibilidad, stock, revisión y hash;
-- el trigger conserva también nombre, descripción, categoría, precio e imagen.
+- el trigger conserva nombre, descripción, categoría, precio e imagen;
+- una actualización transaccional real intenta cambiar todos esos campos durante `unverified` y confirma que solo cambia el estado técnico.
 
 La prueba está envuelta en `begin`/`rollback` y debe ejecutarse únicamente en una base local o transaccional segura.
 
 ## Validación realizada en esta intervención
 
 - Estado real del PR confirmado: abierto, draft y no mergeado.
-- Rama confirmada basada en `main`, `behind_by: 0` antes de modificar.
+- Rama confirmada basada en `main`, `behind_by: 0`.
 - Revisión estática de los archivos modificados.
 - `node --check` del wrapper `ecommerceCatalogSyncService.js`: **PASS**.
 - `node --check` de `ecommerceCatalogSyncService.retryOutbox.test.js`: **PASS**.
-- Secuencia y delimitadores de las nuevas funciones SQL revisados estáticamente.
+- Secuencia, privilegios y delimitadores de las nuevas funciones SQL revisados estáticamente.
 
 No se pudo obtener un checkout íntegro del repositorio desde el entorno disponible, por lo que siguen pendientes:
 
