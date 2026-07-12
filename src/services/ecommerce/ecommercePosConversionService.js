@@ -317,7 +317,7 @@ export async function recoverEcommercePosConversion({ orderId } = {}) {
     return { success: true, recoveredStatus: ECOMMERCE_CONVERSION_STATUS.COMPLETED };
   }
 
-  if (![ 
+  if (![
     ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
     ECOMMERCE_CONVERSION_STATUS.SALE_CREATED,
     ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING
@@ -331,8 +331,16 @@ export async function recoverEcommercePosConversion({ orderId } = {}) {
 
   if (!sale) {
     if (status === ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE) {
+      const activeOrders = useActiveOrders.getState();
+      if (typeof activeOrders.unlockOrder === 'function') {
+        await activeOrders.unlockOrder(orderId);
+      }
       updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
         ecommerceConvertedSaleId: null,
+        ecommerceCheckoutGateStatus: 'blocked',
+        ecommerceCheckoutSnapshot: null,
+        ecommerceConversionAttemptId: null,
+        ecommerceConversionActorIdentity: null,
         ecommerceConversionError: {
           code: 'PROCESS_INTERRUPTED_BEFORE_SALE',
           message: 'El intento se interrumpió antes de encontrar una venta registrada.'
