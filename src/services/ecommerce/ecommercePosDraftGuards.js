@@ -13,6 +13,6 @@ export const isEcommercePosEffectBlocked = (order, effect = 'checkout') => {
 
 export const getEcommercePosBlockedResult = (order = null) => ({
   success: false,
-  code: order?.ecommerceCheckoutGateCode || ECOMMERCE_POS_CHECKOUT_NOT_ELIGIBLE,
+  code: order?.ecommerceCheckoutGateCode || ECOMMERCE_POS_CHECKOUT_NOT_ENABLED,
   message: order?.ecommerceCheckoutGateMessage || ECOMMERCE_POS_CHECKOUT_MESSAGE
 });
