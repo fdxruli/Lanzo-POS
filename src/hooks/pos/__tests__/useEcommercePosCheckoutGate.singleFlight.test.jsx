@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     recoverConversion: vi.fn(),
     getRemoteState: vi.fn(),
     findSale: vi.fn(),
+    cancelRemote: vi.fn(),
     updateConversion: vi.fn((orderId, status, values = {}) => {
       state.updateOrder(orderId, {
         ecommerceConversionStatus: status,
@@ -60,7 +61,7 @@ vi.mock('../../../services/salesCloud/salesCloudCashierService', () => ({
 vi.mock('../../../services/ecommerce/ecommercePosConversionService', () => ({
   ECOMMERCE_SALE_READ_FAILED: 'ECOMMERCE_SALE_READ_FAILED',
   ECOMMERCE_SALE_VERIFICATION_PENDING: 'ECOMMERCE_SALE_VERIFICATION_PENDING',
-  cancelEcommercePosConversionRemote: vi.fn(),
+  cancelEcommercePosConversionRemote: (...args) => mocks.cancelRemote(...args),
   completeEcommercePosConversionRemote: vi.fn(),
   finalizeEcommerceConversionLocally: vi.fn(),
   findEcommerceSale: (...args) => mocks.findSale(...args),
@@ -83,7 +84,10 @@ vi.mock('../../../services/ecommerce/ecommercePosInventoryResolution', () => ({
 
 import { ECOMMERCE_CONVERSION_STATUS } from '../../../services/ecommerce/ecommercePosCheckoutConversion';
 import { ecommerceCheckoutInitiationSingleFlightInternals } from '../ecommerceCheckoutInitiationSingleFlight';
-import { useEcommercePosCheckoutGate } from '../useEcommercePosCheckoutGate';
+import {
+  ecommercePosCheckoutGateInternals,
+  useEcommercePosCheckoutGate
+} from '../useEcommercePosCheckoutGate';
 import { useEcommercePosCheckoutSingleFlight } from '../useEcommercePosCheckoutSingleFlight';
 
 const createDeferred = () => {
@@ -158,6 +162,7 @@ beforeEach(() => {
     convertedSaleId: null
   });
   mocks.findSale.mockResolvedValue(null);
+  mocks.cancelRemote.mockResolvedValue({ success: true });
 });
 
 describe('ecommerce checkout gate single-flight integration', () => {
@@ -218,5 +223,71 @@ describe('ecommerce checkout gate single-flight integration', () => {
     expect(finalOrder.ecommerceCheckoutLockAttemptId).toBe('attempt-1');
     expect(finalOrder.ecommerceConversionStatus).toBe(ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING);
     expect(finalOrder.ecommerceCheckoutInitiationStatus).toBeNull();
+  });
+
+  it('does not let a delayed cleanup from attempt A modify attempt B', async () => {
+    const cancellation = createDeferred();
+    const closeCanonicalCheckout = vi.fn();
+    const attemptA = {
+      ...buildReadyOrder(),
+      ecommerceConversionAttemptId: 'attempt-a',
+      ecommerceConversionActorIdentity: 'admin:device',
+      ecommerceCheckoutLockAttemptId: 'attempt-a',
+      ecommerceCheckoutLockActorIdentity: 'admin:device',
+      ecommerceCheckoutSnapshot: {
+        ecommerceConversionKey: 'conversion-key-a'
+      },
+      ecommerceRemoteConversionStatus: 'reserved',
+      isLockedForCheckout: true
+    };
+    mocks.state.activeOrders = new Map([[attemptA.id, attemptA]]);
+    mocks.cancelRemote.mockReturnValueOnce(cancellation.promise);
+
+    const staleCleanup = ecommercePosCheckoutGateInternals.failBeforeSale({
+      orderId: attemptA.id,
+      code: 'ATTEMPT_A_FAILED',
+      message: 'El intento A falló.',
+      closeCanonicalCheckout,
+      releaseRemoteReservation: true,
+      releaseReason: 'attempt_a_failed',
+      ownedAttemptId: 'attempt-a'
+    });
+
+    await waitFor(() => expect(mocks.cancelRemote).toHaveBeenCalledTimes(1));
+
+    const attemptB = {
+      ...attemptA,
+      ecommerceConversionAttemptId: 'attempt-b',
+      ecommerceConversionActorIdentity: 'staff:device',
+      ecommerceCheckoutLockAttemptId: 'attempt-b',
+      ecommerceCheckoutLockActorIdentity: 'staff:device',
+      ecommerceCheckoutSnapshot: {
+        ecommerceConversionKey: 'conversion-key-b'
+      },
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
+    };
+    mocks.state.activeOrders.set(attemptB.id, attemptB);
+
+    cancellation.resolve({ success: true });
+    await expect(staleCleanup).resolves.toEqual({
+      success: false,
+      ignored: true,
+      staleAttempt: true,
+      code: 'ECOMMERCE_STALE_CHECKOUT_ATTEMPT'
+    });
+
+    expect(closeCanonicalCheckout).not.toHaveBeenCalled();
+    expect(mocks.updateConversion).not.toHaveBeenCalled();
+    expect(mocks.showMessage).not.toHaveBeenCalled();
+    expect(mocks.state.activeOrders.get(attemptB.id)).toMatchObject({
+      ecommerceConversionAttemptId: 'attempt-b',
+      ecommerceConversionActorIdentity: 'staff:device',
+      ecommerceCheckoutLockAttemptId: 'attempt-b',
+      ecommerceCheckoutLockActorIdentity: 'staff:device',
+      ecommerceCheckoutSnapshot: {
+        ecommerceConversionKey: 'conversion-key-b'
+      },
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
+    });
   });
 });
