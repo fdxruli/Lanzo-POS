@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import OrderSummary from './OrderSummary';
 import OrderDiscountPanel from './OrderDiscountPanel';
+import EcommercePosConversionPanel from './EcommercePosConversionPanel';
 
 const currentOrderSelector = (state) => (
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
@@ -17,7 +18,7 @@ export default function MobilePosCart(props) {
     return (
         <div className="modal mobile-pos-cart-modal" style={{ display: 'flex', zIndex: 'var(--z-modal-base)', alignItems: 'flex-end' }} onClick={props.onClose}>
             <div className="modal-content" style={{ borderRadius: '20px 20px 0 0', width: '100%', height: '85vh', maxWidth: '100%', padding: '0', animation: 'slideUp 0.3s ease-out', overflow: 'hidden' }} onClick={(event) => event.stopPropagation()}>
-                <div className={`mobile-pos-cart-stack${props.showRestaurantActions ? ' mobile-pos-cart-stack--restaurant' : ''}`}>
+                <div className={`mobile-pos-cart-stack${props.showRestaurantActions ? ' mobile-pos-cart-stack--restaurant' : ''}${isEcommerceDraft ? ' mobile-pos-cart-stack--ecommerce' : ''}`}>
                     <OrderSummary
                         onOpenPayment={props.onOpenPayment}
                         onOpenSplit={props.onOpenSplit}
@@ -31,6 +32,12 @@ export default function MobilePosCart(props) {
                         activeTablesCount={props.activeTablesCount}
                         kitchenRejectedOpenCount={props.kitchenRejectedOpenCount}
                     />
+                    {isEcommerceDraft && (
+                        <EcommercePosConversionPanel
+                            order={currentOrder}
+                            onCheckout={props.onOpenPayment}
+                        />
+                    )}
                     {!props.showRestaurantActions && !isEcommerceDraft && <OrderDiscountPanel compact />}
                 </div>
             </div>
