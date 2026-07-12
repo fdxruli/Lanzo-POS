@@ -27,6 +27,10 @@ const REVISION_REVALIDATION_INTERVAL_MS = 120_000;
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('es-MX');
 const isOnlineNow = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+const normalizeRevision = (value) => {
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision > 0 ? revision : null;
+};
 
 function PublicStorePage() {
   const { slug = '' } = useParams();
@@ -119,15 +123,16 @@ function PublicStorePage() {
     }
 
     try {
-      const result = await getPublicCatalog(requestSlug, {
-        limit: 100,
-        offset: normalizedOffset,
-        catalogRevision: expectedRevision,
-        cachePolicy: cachePolicyRef.current,
-        offline
-      });
+      const catalogOptions = { limit: 100, offset: normalizedOffset };
+      if (expectedRevision !== null) {
+        catalogOptions.catalogRevision = expectedRevision;
+        catalogOptions.cachePolicy = cachePolicyRef.current;
+        catalogOptions.offline = offline;
+      }
+      const result = await getPublicCatalog(requestSlug, catalogOptions);
       if (!isCurrentRequest()) return false;
-      if (Number(result.catalogRevision) !== Number(expectedRevision)) {
+      const resultRevision = normalizeRevision(result.catalogRevision) || expectedRevision;
+      if (expectedRevision !== null && resultRevision !== expectedRevision) {
         throw new EcommercePublicError(
           'ECOMMERCE_CATALOG_REVISION_CHANGED',
           'El catálogo cambió mientras se cargaba. Se actualizará automáticamente.'
@@ -155,7 +160,7 @@ function PublicStorePage() {
       setPagination(nextPagination);
       setCatalogSource(result.source === 'cache' ? 'cache' : 'network');
       setOfflineCatalog(result.offline === true);
-      setCatalogValidated(result.offline !== true && connectionOnline);
+      setCatalogValidated(result.offline !== true && isOnlineNow());
       setCatalogReady(true);
       setCatalogRefreshing(false);
       revisionRestartCountRef.current = 0;
@@ -189,7 +194,7 @@ function PublicStorePage() {
         setCatalogLoadingMore(false);
       }
     }
-  }, [connectionOnline]);
+  }, []);
 
   useEffect(() => {
     const generation = requestGenerationRef.current + 1;
@@ -234,9 +239,9 @@ function PublicStorePage() {
       try {
         const result = await getPublicPortalBySlug(slug);
         if (!isCurrentRequest()) return;
-        const revision = Number(result.catalogRevision);
+        const revision = normalizeRevision(result.catalogRevision);
         activeCatalogRevisionRef.current = revision;
-        cachePolicyRef.current = result.cachePolicy;
+        cachePolicyRef.current = result.cachePolicy || null;
         setCatalogRevision(revision);
         setPortalResult(result);
         setCatalogSource(result.source === 'cache' ? 'cache' : 'network');
@@ -299,10 +304,10 @@ function PublicStorePage() {
         if (!isCurrentRequest()) return false;
         setConnectionOnline(true);
         setPortalResult(result);
-        cachePolicyRef.current = result.cachePolicy;
+        cachePolicyRef.current = result.cachePolicy || null;
 
-        const nextRevision = Number(result.catalogRevision);
-        if (nextRevision === Number(requestRevision)) {
+        const nextRevision = normalizeRevision(result.catalogRevision);
+        if (nextRevision === requestRevision) {
           setOfflineCatalog(false);
           setCatalogValidated(catalogReady);
           return true;
