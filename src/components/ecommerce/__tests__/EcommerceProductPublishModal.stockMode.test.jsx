@@ -42,7 +42,7 @@ const renderModal = ({
 };
 
 const chooseLocalProduct = () => {
-  fireEvent.change(screen.getByLabelText('Producto del catálogo local *'), {
+  fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
     target: { value: 'product-1' }
   });
 };
@@ -62,7 +62,7 @@ describe('EcommerceProductPublishModal stock visibility', () => {
     const { onSave } = renderModal({ isPro: false });
     chooseLocalProduct();
 
-    expect(screen.queryByLabelText('Visibilidad del inventario')).toBeNull();
+    expect(screen.queryByLabelText(/Visibilidad del inventario/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
@@ -75,7 +75,7 @@ describe('EcommerceProductPublishModal stock visibility', () => {
     const { onSave } = renderModal();
     chooseLocalProduct();
 
-    const selector = await screen.findByLabelText('Visibilidad del inventario');
+    const selector = await screen.findByLabelText(/Visibilidad del inventario/);
     await waitFor(() => expect(selector.disabled).toBe(false));
     fireEvent.change(selector, { target: { value: 'status' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
@@ -89,7 +89,7 @@ describe('EcommerceProductPublishModal stock visibility', () => {
     const { onSave } = renderModal();
     chooseLocalProduct();
 
-    const selector = await screen.findByLabelText('Visibilidad del inventario');
+    const selector = await screen.findByLabelText(/Visibilidad del inventario/);
     await waitFor(() => expect(selector.disabled).toBe(false));
     fireEvent.change(selector, { target: { value: 'exact' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
@@ -107,7 +107,7 @@ describe('EcommerceProductPublishModal stock visibility', () => {
     const { onSave } = renderModal();
     chooseLocalProduct();
 
-    const selector = await screen.findByLabelText('Visibilidad del inventario');
+    const selector = await screen.findByLabelText(/Visibilidad del inventario/);
     await waitFor(() => expect(selector.disabled).toBe(true));
     expect(selector.value).toBe('hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
@@ -123,7 +123,7 @@ describe('EcommerceProductPublishModal stock visibility', () => {
     });
     chooseLocalProduct();
 
-    const selector = await screen.findByLabelText('Visibilidad del inventario');
+    const selector = await screen.findByLabelText(/Visibilidad del inventario/);
     await waitFor(() => expect(selector.disabled).toBe(true));
     expect(selector.value).toBe('hidden');
     fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
@@ -157,10 +157,30 @@ describe('EcommerceProductPublishModal stock visibility', () => {
       }
     });
 
-    const selector = await screen.findByLabelText('Visibilidad del inventario');
+    const selector = await screen.findByLabelText(/Visibilidad del inventario/);
     await waitFor(() => {
       expect(selector.disabled).toBe(false);
       expect(selector.value).toBe('exact');
     });
+  });
+
+  it('blocks saving when the server feature cannot be validated', async () => {
+    getEcommercePortal.mockRejectedValue(new Error('network failed'));
+    const { onSave } = renderModal({
+      editingProduct: {
+        id: 'published-1',
+        localProductRef: 'product-1',
+        publicName: 'Producto publicado',
+        price: 50,
+        manualAvailable: true,
+        isPublished: true,
+        stockMode: 'exact',
+        sourceState: 'in_stock'
+      }
+    });
+
+    expect(await screen.findByText(/No se pudo validar la política de inventario/)).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Guardar producto' }).disabled).toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
