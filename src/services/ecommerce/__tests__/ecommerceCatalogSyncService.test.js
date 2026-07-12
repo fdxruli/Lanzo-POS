@@ -468,6 +468,15 @@ describe('ecommerceCatalogSyncService', () => {
   });
 });
 
+describe('catalog source revisions', () => {
+  it('keeps large monotonic server versions comparable without losing integer precision', () => {
+    expect(ecommerceCatalogSyncServiceInternals.normalizeSourceRevision(
+      { serverVersion: '9007199254740993' },
+      [{ serverVersion: '9007199254740994' }]
+    )).toBe('version:9007199254740994');
+  });
+});
+
 describe('catalog sync idempotency signature', () => {
   const projection = (overrides = {}) => ({
     publishedProductId: 'published-1',
