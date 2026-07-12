@@ -10,6 +10,11 @@ declare
   v_unverified_old text;
   v_definition text;
   v_guard_definition text;
+  v_license_id uuid;
+  v_portal_id uuid;
+  v_product_id uuid;
+  v_suffix text;
+  v_saved public.ecommerce_published_products%rowtype;
 begin
   v_confirmed_hash := private.ecommerce_projection_payload_hash(
     jsonb_build_object(
@@ -89,6 +94,128 @@ begin
     'opaque', null, 'opaque:device-b', v_unverified_same
   ) <> 'conflict' then
     raise exception 'CATALOG3_1_RESIDUAL_TEST: different opaque revision bypassed review';
+  end if;
+
+  select l.id into v_license_id
+  from public.licenses l
+  limit 1;
+
+  if v_license_id is null then
+    raise exception 'CATALOG3_1_RESIDUAL_TEST: local fixture requires one license';
+  end if;
+
+  select p.id into v_portal_id
+  from public.ecommerce_portals p
+  where p.license_id = v_license_id
+    and p.deleted_at is null
+  limit 1;
+
+  v_suffix := substring(md5(clock_timestamp()::text || random()::text), 1, 12);
+  if v_portal_id is null then
+    insert into public.ecommerce_portals (license_id, slug, name, status)
+    values (
+      v_license_id,
+      'catalog3-residual-' || v_suffix,
+      'Catalog 3 residual test',
+      'draft'
+    ) returning id into v_portal_id;
+  end if;
+
+  insert into public.ecommerce_published_products (
+    portal_id,
+    license_id,
+    source_type,
+    local_product_ref,
+    public_name,
+    public_description,
+    category_name,
+    price,
+    image_url,
+    is_published,
+    is_available,
+    manual_available,
+    source_available,
+    display_order,
+    track_stock,
+    stock_mode,
+    stock_snapshot,
+    stock_updated_at,
+    sync_config,
+    source_state,
+    sync_status,
+    source_revision,
+    source_revision_kind,
+    source_revision_order,
+    source_payload_hash
+  ) values (
+    v_portal_id,
+    v_license_id,
+    'local_snapshot',
+    'catalog3-residual-product-' || v_suffix,
+    'Nombre confirmado',
+    'Descripcion confirmada',
+    'Categoria confirmada',
+    50,
+    'https://example.com/confirmed.jpg',
+    true,
+    true,
+    true,
+    true,
+    0,
+    true,
+    'exact',
+    5,
+    now(),
+    jsonb_build_object(
+      'name', 'source',
+      'description', 'source',
+      'category', 'source',
+      'price', 'source',
+      'image', 'source'
+    ),
+    'in_stock',
+    'synced',
+    'version:10',
+    'version',
+    10,
+    v_confirmed_hash
+  ) returning id into v_product_id;
+
+  update public.ecommerce_published_products
+  set public_name = 'Nombre obsoleto',
+      public_description = 'Descripcion obsoleta',
+      category_name = 'Categoria obsoleta',
+      price = 1,
+      image_url = 'https://example.com/stale.jpg',
+      source_available = false,
+      stock_snapshot = 0,
+      stock_updated_at = now() + interval '1 minute',
+      source_revision = 'version:10',
+      source_revision_kind = 'version',
+      source_revision_order = 10,
+      source_payload_hash = v_unverified_same,
+      source_state = 'unverified',
+      sync_status = 'review',
+      sync_error_code = 'SOURCE_UNVERIFIED'
+  where id = v_product_id
+  returning * into v_saved;
+
+  if v_saved.public_name <> 'Nombre confirmado'
+     or v_saved.public_description <> 'Descripcion confirmada'
+     or v_saved.category_name <> 'Categoria confirmada'
+     or v_saved.price <> 50
+     or v_saved.image_url <> 'https://example.com/confirmed.jpg'
+     or v_saved.source_available is not true
+     or v_saved.stock_snapshot <> 5
+     or v_saved.source_revision <> 'version:10'
+     or v_saved.source_revision_kind <> 'version'
+     or v_saved.source_revision_order <> 10
+     or v_saved.source_payload_hash <> v_confirmed_hash
+     or v_saved.is_available is not true
+     or v_saved.source_state <> 'unverified'
+     or v_saved.sync_status <> 'review'
+     or v_saved.sync_error_code <> 'SOURCE_UNVERIFIED' then
+    raise exception 'CATALOG3_1_RESIDUAL_TEST: unverified update changed the confirmed snapshot';
   end if;
 
   select pg_get_functiondef(p.oid) into v_definition
