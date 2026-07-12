@@ -78,7 +78,8 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const conversionStatus = order?.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
   const isConfirmationPending = CONFIRMATION_STATUSES.has(conversionStatus)
     || Boolean(order?.ecommerceConvertedSaleId);
-  const isBusy = BUSY_STATUSES.has(conversionStatus);
+  const isStarting = order?.ecommerceCheckoutInitiationStatus === 'starting';
+  const isBusy = isStarting || BUSY_STATUSES.has(conversionStatus);
 
   const verifyRemoteState = useCallback(async () => {
     if (!orderId) return null;
@@ -210,7 +211,7 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
         </div>
         <div>
           <span className="ecommerce-conversion-panel__label">Estado de conversión</span>
-          <strong>{STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
+          <strong>{isStarting ? 'Iniciando cobro…' : STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
         </div>
       </div>
 
@@ -264,7 +265,11 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
           {isBusy || isCheckingRemote
             ? <LoaderCircle className="ecommerce-conversion-panel__spinner" size={20} aria-hidden="true" />
             : <CreditCard size={20} aria-hidden="true" />}
-          <span>{isBusy || isCheckingRemote ? STATUS_COPY[conversionStatus] || 'Comprobando…' : 'Cobrar pedido'}</span>
+          <span>
+            {isStarting
+              ? 'Iniciando cobro…'
+              : (isBusy || isCheckingRemote ? STATUS_COPY[conversionStatus] || 'Comprobando…' : 'Cobrar pedido')}
+          </span>
         </button>
       )}
     </section>
