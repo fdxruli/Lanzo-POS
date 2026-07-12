@@ -75,8 +75,25 @@ const getCategoryId = (product = {}) => asText(
 const normalizeVersionNumber = (value) => {
   const text = asText(value);
   if (!/^\d+(?:\.\d+)?$/.test(text)) return null;
-  const parsed = Number(text);
-  return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : null;
+  const [integerPart, fractionPart = ''] = text.split('.');
+  const normalizedInteger = integerPart.replace(/^0+(?=\d)/, '') || '0';
+  const normalizedFraction = fractionPart.replace(/0+$/, '');
+  return normalizedFraction
+    ? `${normalizedInteger}.${normalizedFraction}`
+    : normalizedInteger;
+};
+
+const compareVersionNumbers = (left, right) => {
+  const [leftInteger, leftFraction = ''] = left.split('.');
+  const [rightInteger, rightFraction = ''] = right.split('.');
+  if (leftInteger.length !== rightInteger.length) {
+    return leftInteger.length - rightInteger.length;
+  }
+  const integerOrder = leftInteger.localeCompare(rightInteger);
+  if (integerOrder !== 0) return integerOrder;
+  const fractionLength = Math.max(leftFraction.length, rightFraction.length);
+  return leftFraction.padEnd(fractionLength, '0')
+    .localeCompare(rightFraction.padEnd(fractionLength, '0'));
 };
 
 const normalizeSourceRevision = (product = {}, relatedRecords = []) => {
@@ -89,9 +106,8 @@ const normalizeSourceRevision = (product = {}, relatedRecords = []) => {
       ?? record.sync_version
     ))
     .filter((value) => value !== null)
-    .map(Number)
-    .filter(Number.isFinite);
-  if (versions.length > 0) return `version:${Math.max(...versions)}`;
+    .sort(compareVersionNumbers);
+  if (versions.length > 0) return `version:${versions.at(-1)}`;
 
   const timestamps = records
     .map((record) => (
@@ -904,6 +920,8 @@ export const ecommerceCatalogSyncServiceInternals = Object.freeze({
   chunk,
   buildProjection,
   normalizeSourceRevision,
+  normalizeVersionNumber,
+  compareVersionNumbers,
   statusToSourceAvailability,
   normalizeProjectionForSignature,
   stableStringify,
