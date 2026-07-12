@@ -49,7 +49,12 @@ export const runEcommerceCheckoutInitiationSingleFlight = ({
 
   const sharedPromise = operationPromise.finally(() => {
     if (!clearEcommerceCheckoutInitiationIfOwned(normalizedOrderId, token)) return;
-    onSettled?.({ orderId: normalizedOrderId, token });
+
+    try {
+      onSettled?.({ orderId: normalizedOrderId, token });
+    } catch (error) {
+      console.error('[ecommerceCheckoutSingleFlight] Error al limpiar el estado visual:', error);
+    }
   });
 
   ecommerceCheckoutInitiations.set(normalizedOrderId, {
