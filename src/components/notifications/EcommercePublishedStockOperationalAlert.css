@@ -1,0 +1,75 @@
+.notification-bell.has-local-operational-warning {
+  border-color: var(--ui-border-warning, #d6a100);
+}
+
+.notification-bell__warning-dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--ui-bg-surface);
+  border-radius: 999px;
+  background: var(--ui-color-warning, #d97706);
+}
+
+.notification-local-operational-alert {
+  order: -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--ui-border-warning, #d6a100);
+  border-radius: 12px;
+  background: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.notification-local-operational-alert__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-color-warning, #d97706) 14%, transparent);
+}
+
+.notification-local-operational-alert__copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.notification-local-operational-alert__copy strong {
+  color: var(--ui-text-strong);
+  font-size: .92rem;
+}
+
+.notification-local-operational-alert__copy p {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+.notification-local-operational-alert__copy button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-text-warning);
+  font-size: .8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.notification-local-operational-alert__copy button:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-brand);
+}
