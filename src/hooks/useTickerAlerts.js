@@ -1,16 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Logger from '../services/Logger';
 import {
+  buildEcommercePublishedStockTickerAlert,
   queryTickerInventoryAlerts,
   TICKER_ALERT_POLL_INTERVAL_MS
 } from '../services/tickerAlerts';
 import { TICKER_INVENTORY_ALERT_EVENT } from '../services/tickerAlertEvents';
+import { useEcommercePublishedStockAlerts } from './useEcommercePublishedStockAlerts';
 
 const EMPTY_SNAPSHOT = { catalogSize: 0, alerts: [] };
 
 export function useTickerAlerts(enabled = true) {
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
   const requestIdRef = useRef(0);
+  const { snapshot: ecommerceSnapshot } = useEcommercePublishedStockAlerts({
+    enabled,
+    reason: 'free_ticker'
+  });
 
   useEffect(() => {
     if (!enabled) {
@@ -57,5 +63,14 @@ export function useTickerAlerts(enabled = true) {
     };
   }, [enabled]);
 
-  return snapshot;
+  return useMemo(() => {
+    if (!enabled) return EMPTY_SNAPSHOT;
+    const ecommerceAlert = buildEcommercePublishedStockTickerAlert(ecommerceSnapshot);
+    return {
+      ...snapshot,
+      alerts: ecommerceAlert
+        ? [ecommerceAlert, ...(snapshot.alerts || [])]
+        : (snapshot.alerts || [])
+    };
+  }, [ecommerceSnapshot, enabled, snapshot]);
 }
