@@ -5,8 +5,7 @@ import { showMessageModal } from '../../services/utils';
 import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCashierService';
 import {
   ECOMMERCE_CONVERSION_STATUS,
-  buildEcommerceCheckoutSnapshot,
-  getEcommerceCheckoutEligibility
+  buildEcommerceCheckoutSnapshot
 } from '../../services/ecommerce/ecommercePosCheckoutConversion';
 import {
   ECOMMERCE_SALE_READ_FAILED,
@@ -29,6 +28,14 @@ import {
   ECOMMERCE_INVENTORY_STALE_RESPONSE,
   revalidateEcommerceDraftInventory
 } from '../../services/ecommerce/ecommercePosInventoryResolution';
+import {
+  ECOMMERCE_CHECKOUT_TARGET_CHANGED,
+  ECOMMERCE_STALE_CHECKOUT_ATTEMPT,
+  buildCheckoutTargetChangedResult,
+  buildStaleCheckoutAttemptResult
+} from './checkoutTargetIdentity';
+
+const STALE_CHECKOUT_ATTEMPT = ECOMMERCE_STALE_CHECKOUT_ATTEMPT;
 
 const createAttemptId = () => (
   globalThis.crypto?.randomUUID?.()
@@ -41,6 +48,41 @@ const getCurrentOrder = () => {
     ? activeOrders.activeOrders.get(activeOrders.currentOrderId) || null
     : null;
 };
+
+const getOrderById = (orderId) => (
+  useActiveOrders.getState().activeOrders.get(orderId) || null
+);
+
+const isCheckoutTargetStillActive = ({ orderId, expectedOrigin = 'ecommerce' } = {}) => {
+  if (!orderId) return false;
+  const state = useActiveOrders.getState();
+  const order = state.activeOrders.get(orderId) || null;
+  return Boolean(
+    order
+    && state.currentOrderId === orderId
+    && order.id === orderId
+    && (!expectedOrigin || order.origin === expectedOrigin)
+  );
+};
+
+const isAttemptOwner = (orderId, ownedAttemptId) => {
+  if (!orderId || !ownedAttemptId) return false;
+  const current = getOrderById(orderId);
+  return Boolean(current)
+    && current.ecommerceConversionAttemptId === ownedAttemptId;
+};
+
+const buildStaleAttemptResult = (result = {}) => buildStaleCheckoutAttemptResult(result);
+
+const buildTargetChangedResult = () => buildCheckoutTargetChangedResult({
+  expectedOrigin: 'ecommerce'
+});
+
+const isTargetChangedResult = (result) => (
+  result?.code === ECOMMERCE_CHECKOUT_TARGET_CHANGED
+  || result?.code === 'POS_CHECKOUT_TARGET_CHANGED'
+  || result?.targetChanged === true
+);
 
 const isEcommerceOrder = (order) => order?.origin === 'ecommerce';
 
@@ -71,43 +113,107 @@ const buildSnapshotIgnoringTransientStatus = (order, context) => buildEcommerceC
   ecommerceConvertedSaleId: null
 }, context);
 
-const releaseRemoteReservationBeforeSale = async ({ order, reason }) => {
+const buildConversionContext = ({
+  order,
+  attemptId,
+  actorIdentity,
+  conversionKey = null
+} = {}) => {
+  const immutableConversionKey = conversionKey
+    || order?.ecommerceCheckoutSnapshot?.ecommerceConversionKey
+    || null;
+
+  return {
+    localOrderId: order?.id || null,
+    ecommerceOrderId: order?.ecommerceOrderId || null,
+    attemptId: attemptId || order?.ecommerceConversionAttemptId || null,
+    actorIdentity: actorIdentity || order?.ecommerceConversionActorIdentity || null,
+    claimToken: order?.ecommerceClaimToken || null,
+    conversionKey: immutableConversionKey,
+    saleId: order?.id || null,
+    orderSnapshot: order ? {
+      ...order,
+      ecommerceConversionAttemptId: attemptId || order.ecommerceConversionAttemptId || null,
+      ecommerceCheckoutSnapshot: immutableConversionKey
+        ? {
+            ...(order.ecommerceCheckoutSnapshot || {}),
+            ecommerceConversionKey: immutableConversionKey
+          }
+        : (order.ecommerceCheckoutSnapshot || null)
+    } : null
+  };
+};
+
+const releaseRemoteReservationBeforeSale = async ({
+  order = null,
+  conversionContext = null,
+  reason
+}) => {
+  const context = conversionContext || buildConversionContext({ order });
+  const reservationOrder = order || context?.orderSnapshot;
+
   if (
-    !isEcommerceOrder(order)
-    || order.ecommerceConvertedSaleId
-    || !order.ecommerceConversionAttemptId
-    || !order.ecommerceCheckoutSnapshot?.ecommerceConversionKey
+    !isEcommerceOrder(reservationOrder)
+    || reservationOrder.ecommerceConvertedSaleId
+    || !context?.attemptId
+    || !context?.conversionKey
+    || !context?.localOrderId
   ) {
     return { success: true, skipped: true };
   }
 
   return cancelEcommercePosConversionRemote({
-    order,
-    attemptId: order.ecommerceConversionAttemptId,
-    saleId: order.id,
-    conversionKey: order.ecommerceCheckoutSnapshot.ecommerceConversionKey,
+    order: reservationOrder,
+    attemptId: context.attemptId,
+    saleId: context.saleId,
+    conversionKey: context.conversionKey,
     reason
   });
 };
+
+const hasLocalAttemptOwnership = ({ orderId, ownedAttemptId }) => (
+  ownedAttemptId
+    ? isAttemptOwner(orderId, ownedAttemptId)
+    : isCheckoutTargetStillActive({ orderId })
+);
 
 const failBeforeSale = async ({
   orderId,
   code,
   message,
   closeCanonicalCheckout,
+  expectedCheckoutAttemptId = null,
   releaseRemoteReservation = false,
   releaseReason = 'failed_before_sale',
-  preserveReservation = false
+  preserveReservation = false,
+  ownedAttemptId = null,
+  conversionContext = null
 }) => {
-  const order = useActiveOrders.getState().activeOrders.get(orderId) || null;
-  let cancellation = { success: true, skipped: true };
+  let order = getOrderById(orderId);
+  let localOwner = hasLocalAttemptOwnership({ orderId, ownedAttemptId });
 
+  let cancellation = { success: true, skipped: true };
   if (releaseRemoteReservation) {
-    cancellation = await releaseRemoteReservationBeforeSale({ order, reason: releaseReason });
+    cancellation = await releaseRemoteReservationBeforeSale({
+      order,
+      conversionContext,
+      reason: releaseReason
+    });
+    localOwner = hasLocalAttemptOwnership({ orderId, ownedAttemptId });
+    order = getOrderById(orderId) || order;
   }
 
+  if (!localOwner) return buildStaleAttemptResult({ cancellation });
+
   if (typeof closeCanonicalCheckout === 'function') {
-    await closeCanonicalCheckout();
+    const closeResult = await closeCanonicalCheckout({
+      expectedOrderId: orderId,
+      expectedCheckoutAttemptId
+    });
+    if (closeResult?.staleAttempt) return buildStaleAttemptResult(closeResult);
+    if (!hasLocalAttemptOwnership({ orderId, ownedAttemptId })) {
+      return buildStaleAttemptResult(closeResult);
+    }
   }
 
   const cancellationUncertain = cancellation.success === false && cancellation.skipped !== true;
@@ -115,6 +221,10 @@ const failBeforeSale = async ({
   const finalMessage = cancellationUncertain
     ? `${message} La reserva remota quedó pendiente de recuperación.`
     : message;
+
+  if (!hasLocalAttemptOwnership({ orderId, ownedAttemptId })) {
+    return buildStaleAttemptResult({ cancellation });
+  }
 
   updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
     ecommerceCheckoutGateStatus: 'blocked',
@@ -126,14 +236,18 @@ const failBeforeSale = async ({
       ecommerceConversionAttemptId: null,
       ecommerceConversionActorIdentity: null,
       ecommerceCheckoutLockAttemptId: null,
-      ecommerceCheckoutLockActorIdentity: null
+      ecommerceCheckoutLockActorIdentity: null,
+      ecommerceCanonicalCheckoutAttemptId: null
     }),
     ecommerceConversionError: {
       code: cancellationUncertain ? cancellation.code : code,
       message: finalMessage
     }
   });
-  showMessageModal(finalMessage, null, { type: 'warning' });
+
+  if (hasLocalAttemptOwnership({ orderId, ownedAttemptId })) {
+    showMessageModal(finalMessage, null, { type: 'warning' });
+  }
   return { success: false, code, message: finalMessage, cancellation };
 };
 
@@ -143,9 +257,12 @@ const hasOwnedCheckoutLock = (order, actorIdentity) => (
   && order?.ecommerceCheckoutLockAttemptId === order.ecommerceConversionAttemptId
   && order?.ecommerceCheckoutLockActorIdentity === actorIdentity
   && order?.ecommerceConversionActorIdentity === actorIdentity
+  && Boolean(order?.ecommerceCanonicalCheckoutAttemptId)
 );
 
-const markUncertainSaleResult = ({ orderId, code, message }) => {
+const markUncertainSaleResult = ({ orderId, code, message, ownedAttemptId = null }) => {
+  if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
+
   updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.ERROR, {
     ecommerceCheckoutGateStatus: 'blocked',
     ecommerceCheckoutGateCode: code,
@@ -154,16 +271,36 @@ const markUncertainSaleResult = ({ orderId, code, message }) => {
     ecommerceConversionRecoveryFromStatus: ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
     ecommerceConversionError: { code, message }
   });
-  showMessageModal(message, null, { type: 'warning' });
+  if (isAttemptOwner(orderId, ownedAttemptId)) {
+    showMessageModal(message, null, { type: 'warning' });
+  }
   return { success: false, code, message, saleVerificationPending: true };
 };
 
 export function useEcommercePosCheckoutGate({ checkout }) {
-  const handleInitiateCheckout = useCallback(async () => {
-    let order = getCurrentOrder();
-    if (!isEcommerceOrder(order)) return checkout.handleInitiateCheckout();
+  const handleInitiateCheckout = useCallback(async ({
+    expectedOrderId = null,
+    expectedOrigin = null
+  } = {}) => {
+    let order = expectedOrderId ? getOrderById(expectedOrderId) : getCurrentOrder();
 
-    const recovered = await recoverEcommercePosConversion({ orderId: order.id });
+    if (!isEcommerceOrder(order)) {
+      if (expectedOrigin === 'ecommerce' || expectedOrderId) return buildTargetChangedResult();
+      return checkout.handleInitiateCheckout();
+    }
+
+    const orderId = expectedOrderId || order.id;
+    if (
+      order.id !== orderId
+      || (expectedOrigin && order.origin !== expectedOrigin)
+      || !isCheckoutTargetStillActive({ orderId, expectedOrigin: 'ecommerce' })
+    ) {
+      return buildTargetChangedResult();
+    }
+
+    const recovered = await recoverEcommercePosConversion({ orderId });
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
+
     if (recovered?.success === false) {
       const message = recovered.message
         || order.ecommerceConversionError?.message
@@ -172,8 +309,8 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       return recovered;
     }
 
-    order = getCurrentOrder();
-    if (!order) return recovered;
+    order = getOrderById(orderId);
+    if (!order || !isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
 
     if (
       order.ecommerceConversionStatus === ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING
@@ -190,9 +327,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       order,
       licenseDetails: state.licenseDetails
     });
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
+
     if (remote.success === false) {
       return failBeforeSale({
-        orderId: order.id,
+        orderId,
         code: remote.code,
         message: remote.message || 'No se pudo comprobar el pedido online.',
         closeCanonicalCheckout: null
@@ -203,18 +342,20 @@ export function useEcommercePosCheckoutGate({ checkout }) {
     try {
       existingSale = await findEcommerceSale({ orderId: order.ecommerceOrderId });
     } catch {
+      if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
       return failBeforeSale({
-        orderId: order.id,
+        orderId,
         code: ECOMMERCE_SALE_READ_FAILED,
         message: 'No se pudo comprobar si el pedido ya tiene una venta registrada.',
         closeCanonicalCheckout: null,
         preserveReservation: remote.conversionStatus === 'reserved'
       });
     }
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
 
     if (existingSale || remote.convertedSaleId) {
       const saleId = existingSale?.id || remote.convertedSaleId;
-      updateEcommerceConversionState(order.id, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
+      updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
         ecommerceConvertedSaleId: saleId,
         ecommerceConversionAttemptId: order.ecommerceConversionAttemptId || remote.conversionAttemptId || null,
         ecommerceRemoteConversionStatus: remote.conversionStatus || 'completed',
@@ -229,12 +370,12 @@ export function useEcommercePosCheckoutGate({ checkout }) {
     }
 
     const context = buildEligibilityContext({ order, remote, existingSale, state });
-    const eligibility = getEcommerceCheckoutEligibility(order, context);
-    if (!eligibility.eligible) {
+    const preflightSnapshot = buildSnapshotIgnoringTransientStatus(order, context);
+    if (!preflightSnapshot.eligible) {
       return failBeforeSale({
-        orderId: order.id,
-        code: eligibility.code,
-        message: eligibility.message,
+        orderId,
+        code: preflightSnapshot.code,
+        message: preflightSnapshot.message,
         closeCanonicalCheckout: null,
         preserveReservation: remote.conversionStatus === 'reserved'
       });
@@ -242,7 +383,7 @@ export function useEcommercePosCheckoutGate({ checkout }) {
 
     const attemptId = createAttemptId();
     const actorIdentity = context.actorIdentity;
-    updateEcommerceConversionState(order.id, ECOMMERCE_CONVERSION_STATUS.VALIDATING, {
+    updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.VALIDATING, {
       ecommerceConversionAttemptId: attemptId,
       ecommerceConversionActorIdentity: actorIdentity,
       ecommerceCheckoutGateStatus: 'authorized',
@@ -251,17 +392,38 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       ecommerceRemoteContractVersion: remote.remoteContractVersion,
       ecommerceRemoteConversionStatus: 'idle',
       ecommerceSaleExecutionMode: 'unknown',
-      ecommerceConversionError: null
+      ecommerceConversionError: null,
+      ecommerceCanonicalCheckoutAttemptId: null
     });
 
-    const result = await checkout.handleInitiateCheckout();
-    order = getCurrentOrder();
+    order = getOrderById(orderId);
+    if (!isAttemptOwner(orderId, attemptId) || !isCheckoutTargetStillActive({ orderId })) {
+      return buildTargetChangedResult();
+    }
+
+    const conversionContext = buildConversionContext({
+      order,
+      attemptId,
+      actorIdentity,
+      conversionKey: preflightSnapshot.snapshot.ecommerceConversionKey
+    });
+    const result = await checkout.handleInitiateCheckout({
+      expectedOrderId: orderId,
+      expectedOrigin: 'ecommerce'
+    });
+
+    if (isTargetChangedResult(result)) return buildTargetChangedResult();
+    if (!isAttemptOwner(orderId, attemptId)) return buildStaleAttemptResult(result);
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
+
+    order = getOrderById(orderId);
     if (result?.success === true && isEcommerceOrder(order)) {
-      updateEcommerceConversionState(order.id, ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING, {
+      updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING, {
         ecommerceCheckoutGateStatus: 'authorized',
         ecommerceRemoteConversionStatus: 'reserved',
-        ecommerceCheckoutLockAttemptId: order.ecommerceConversionAttemptId,
-        ecommerceCheckoutLockActorIdentity: order.ecommerceConversionActorIdentity,
+        ecommerceCheckoutLockAttemptId: attemptId,
+        ecommerceCheckoutLockActorIdentity: actorIdentity,
+        ecommerceCanonicalCheckoutAttemptId: result.checkoutAttemptId || null,
         ecommerceConversionError: null
       });
       return result;
@@ -269,14 +431,17 @@ export function useEcommercePosCheckoutGate({ checkout }) {
 
     if (isEcommerceOrder(order) && !order.ecommerceConvertedSaleId) {
       return failBeforeSale({
-        orderId: order.id,
+        orderId,
         code: result?.code || 'ECOMMERCE_CHECKOUT_START_FAILED',
         message: result?.message || result?.reason || 'No se pudo iniciar el cobro.',
         closeCanonicalCheckout: null,
+        expectedCheckoutAttemptId: result?.checkoutAttemptId || null,
         releaseRemoteReservation: ['reserved', 'reserving', 'unknown'].includes(
           order.ecommerceRemoteConversionStatus
         ),
-        releaseReason: 'checkout_start_failed'
+        releaseReason: 'checkout_start_failed',
+        ownedAttemptId: attemptId,
+        conversionContext
       });
     }
     return result;
@@ -287,10 +452,21 @@ export function useEcommercePosCheckoutGate({ checkout }) {
     if (!isEcommerceOrder(order)) return checkout.handleProcessOrder(paymentData);
 
     const orderId = order.id;
+    const ownedAttemptId = order.ecommerceConversionAttemptId;
+    const expectedCheckoutAttemptId = order.ecommerceCanonicalCheckoutAttemptId;
     const storedSnapshot = order.ecommerceCheckoutSnapshot;
     const state = useAppStore.getState();
     const contextIdentity = getEcommercePosContextIdentity(state);
     const actorIdentity = getEcommerceActorIdentity(state);
+    const conversionContext = buildConversionContext({
+      order,
+      attemptId: ownedAttemptId,
+      actorIdentity
+    });
+
+    if (!isCheckoutTargetStillActive({ orderId }) || !isAttemptOwner(orderId, ownedAttemptId)) {
+      return buildStaleAttemptResult();
+    }
 
     if (!hasOwnedCheckoutLock(order, actorIdentity)) {
       return failBeforeSale({
@@ -298,8 +474,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: 'ECOMMERCE_CHECKOUT_LOCK_LOST',
         message: 'El lock de cobro ya no pertenece a este intento.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: 'checkout_lock_lost'
+        releaseReason: 'checkout_lock_lost',
+        ownedAttemptId,
+        conversionContext
       });
     }
 
@@ -313,8 +492,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: 'ECOMMERCE_PERMISSION_DENIED',
         message: 'El actor o sus permisos cambiaron durante el cobro.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: 'actor_or_permission_changed'
+        releaseReason: 'actor_or_permission_changed',
+        ownedAttemptId,
+        conversionContext
       });
     }
 
@@ -322,6 +504,9 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       order,
       licenseDetails: state.licenseDetails
     });
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
+
     if (
       remote.success === false
       || remote.claimOwned !== true
@@ -336,14 +521,20 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: remote.code || 'ECOMMERCE_CLAIM_LOST',
         message: remote.message || 'La reserva del pedido o de la conversión ya no pertenece a este intento.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: sameOwnedReservation,
         releaseReason: 'remote_claim_or_reservation_lost',
         preserveReservation: remote.success === false
-          || (remote.conversionStatus === 'reserved' && !sameOwnedReservation)
+          || (remote.conversionStatus === 'reserved' && !sameOwnedReservation),
+        ownedAttemptId,
+        conversionContext
       });
     }
 
     const inventoryResult = await revalidateEcommerceDraftInventory({ orderId });
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
+
     if (
       inventoryResult?.success !== true
       || inventoryResult?.stale === true
@@ -354,21 +545,16 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: inventoryResult?.code || 'ECOMMERCE_INVENTORY_NOT_READY',
         message: 'El inventario cambió. Resuélvelo nuevamente.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: 'inventory_changed_before_sale'
+        releaseReason: 'inventory_changed_before_sale',
+        ownedAttemptId,
+        conversionContext
       });
     }
 
-    order = getCurrentOrder();
-    if (!order) {
-      return failBeforeSale({
-        orderId,
-        code: 'ECOMMERCE_DRAFT_NOT_FOUND',
-        message: 'El borrador ya no está disponible.',
-        closeCanonicalCheckout: checkout.handlePaymentModalClose,
-        preserveReservation: true
-      });
-    }
+    order = getOrderById(orderId);
+    if (!order) return buildStaleAttemptResult();
 
     let existingSale;
     try {
@@ -377,14 +563,20 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         conversionKey: storedSnapshot?.ecommerceConversionKey
       });
     } catch {
+      if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
       return failBeforeSale({
         orderId,
         code: ECOMMERCE_SALE_READ_FAILED,
         message: 'No se pudo comprobar si la venta ya fue registrada. No se liberó la reserva remota.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
-        preserveReservation: true
+        expectedCheckoutAttemptId,
+        preserveReservation: true,
+        ownedAttemptId,
+        conversionContext
       });
     }
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
 
     if (existingSale || remote.convertedSaleId) {
       const saleId = existingSale?.id || remote.convertedSaleId;
@@ -394,7 +586,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         ecommerceCheckoutGateStatus: 'blocked',
         ecommerceConversionError: null
       });
-      await checkout.handlePaymentModalClose();
+      const closeResult = await checkout.handlePaymentModalClose({
+        expectedOrderId: orderId,
+        expectedCheckoutAttemptId
+      });
+      if (closeResult?.staleAttempt) return buildStaleAttemptResult(closeResult);
       return { success: true, saleId, idempotentReplay: true, confirmationPending: true };
     }
 
@@ -406,8 +602,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: snapshotResult.code,
         message: snapshotResult.message,
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: 'eligibility_changed_before_sale'
+        releaseReason: 'eligibility_changed_before_sale',
+        ownedAttemptId,
+        conversionContext
       });
     }
 
@@ -417,8 +616,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: 'ECOMMERCE_INVENTORY_STALE',
         message: 'El pedido o su inventario cambió mientras elegías el pago.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: 'snapshot_changed_before_sale'
+        releaseReason: 'snapshot_changed_before_sale',
+        ownedAttemptId,
+        conversionContext
       });
     }
 
@@ -446,15 +648,21 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         ? (cloudDecision.mode || 'cloud')
         : 'local';
     } catch (error) {
+      if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
       return failBeforeSale({
         orderId,
         code: error?.code || 'ECOMMERCE_SALE_MODE_VERIFICATION_FAILED',
         message: 'No se pudo determinar de forma segura cómo registrar la venta.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: 'sale_mode_verification_failed'
+        releaseReason: 'sale_mode_verification_failed',
+        ownedAttemptId,
+        conversionContext
       });
     }
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
+    if (!isCheckoutTargetStillActive({ orderId })) return buildTargetChangedResult();
 
     updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE, {
       ecommerceCheckoutGateStatus: 'authorized',
@@ -464,7 +672,13 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       ecommerceConversionError: null
     });
 
+    if (!isAttemptOwner(orderId, ownedAttemptId) || !isCheckoutTargetStillActive({ orderId })) {
+      return buildStaleAttemptResult();
+    }
+
     const saleResult = await checkout.handleProcessOrder(ecommercePaymentData, false);
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult(saleResult);
+
     if (saleResult?.success !== true) {
       const failureCode = saleResult?.errorType || saleResult?.code || 'PROCESS_SALE_FAILED';
       const inventoryChanged = [
@@ -476,8 +690,8 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         ? 'El inventario cambió. Resuélvelo nuevamente.'
         : (saleResult?.message || 'No se pudo registrar la venta.');
 
-      const latest = getCurrentOrder();
-      if (inventoryChanged && latest) {
+      const latest = getOrderById(orderId);
+      if (inventoryChanged && latest && isAttemptOwner(orderId, ownedAttemptId)) {
         useActiveOrders.getState().updateOrder(orderId, {
           ecommerceInventoryStatus: 'conflict',
           ecommerceInventoryResolvedAt: null,
@@ -493,13 +707,15 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         markUncertainSaleResult({
           orderId,
           code: ECOMMERCE_SALE_READ_FAILED,
-          message: 'No se pudo comprobar si este pedido ya fue cobrado. La reserva se conserva.'
+          message: 'No se pudo comprobar si este pedido ya fue cobrado. La reserva se conserva.',
+          ownedAttemptId
         });
         return { ...saleResult, preserveEcommerceReservation: true };
       }
 
       if (saleExecutionMode.startsWith('cloud')) {
         const recovery = await recoverEcommercePosConversion({ orderId });
+        if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult(saleResult);
         if (recovery?.saleVerificationPending) {
           return {
             ...saleResult,
@@ -517,14 +733,19 @@ export function useEcommercePosCheckoutGate({ checkout }) {
         code: failureCode,
         message,
         closeCanonicalCheckout: null,
+        expectedCheckoutAttemptId,
         releaseRemoteReservation: true,
-        releaseReason: inventoryChanged ? 'inventory_changed_during_sale' : 'process_sale_failed'
+        releaseReason: inventoryChanged ? 'inventory_changed_during_sale' : 'process_sale_failed',
+        ownedAttemptId,
+        conversionContext
       });
       return saleResult;
     }
 
     const saleId = saleResult.saleId;
-    order = getCurrentOrder() || order;
+    order = getOrderById(orderId) || order;
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult(saleResult);
+
     updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.SALE_CREATED, {
       ecommerceConvertedSaleId: saleId,
       ecommerceRemoteConversionStatus: 'reserved',
@@ -535,10 +756,11 @@ export function useEcommercePosCheckoutGate({ checkout }) {
     const confirmation = await completeEcommercePosConversionRemote({
       order,
       saleId,
-      attemptId: order.ecommerceConversionAttemptId,
+      attemptId: ownedAttemptId,
       conversionKey: storedSnapshot.ecommerceConversionKey,
       licenseDetails: state.licenseDetails
     });
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult(saleResult);
 
     if (confirmation.success === false) {
       updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING, {
@@ -550,49 +772,77 @@ export function useEcommercePosCheckoutGate({ checkout }) {
           message: confirmation.message || 'La venta fue registrada, pero falta confirmar el pedido online.'
         }
       });
-      showMessageModal(
-        'La venta fue registrada, pero falta confirmar el pedido online.',
-        null,
-        { type: 'warning' }
-      );
+      if (isAttemptOwner(orderId, ownedAttemptId)) {
+        showMessageModal(
+          'La venta fue registrada, pero falta confirmar el pedido online.',
+          null,
+          { type: 'warning' }
+        );
+      }
       return { ...saleResult, confirmationPending: true, confirmationError: confirmation };
     }
 
     await finalizeEcommerceConversionLocally({ orderId, saleId });
-    showMessageModal('Pedido convertido en venta correctamente.', null, { type: 'success' });
+    if (getOrderById(orderId)) {
+      showMessageModal('Pedido convertido en venta correctamente.', null, { type: 'success' });
+    }
     return { ...saleResult, ecommerceConversionCompleted: true };
   }, [checkout]);
 
   const closeEcommerceCheckoutSafely = useCallback(async ({ closeCanonical, reason }) => {
     const order = getCurrentOrder();
-    let cancellation = { success: true, skipped: true };
-    if (isEcommerceOrder(order) && !order.ecommerceConvertedSaleId) {
-      cancellation = await releaseRemoteReservationBeforeSale({ order, reason });
+    if (!isEcommerceOrder(order) || order.ecommerceConvertedSaleId) {
+      return closeCanonical();
     }
 
-    const result = await closeCanonical();
-    if (isEcommerceOrder(order) && !order.ecommerceConvertedSaleId) {
-      const cancellationUncertain = cancellation.success === false && cancellation.skipped !== true;
-      updateEcommerceConversionState(
-        order.id,
-        cancellationUncertain ? ECOMMERCE_CONVERSION_STATUS.ERROR : ECOMMERCE_CONVERSION_STATUS.IDLE,
-        {
-          ecommerceCheckoutGateStatus: 'blocked',
-          ecommerceRemoteConversionStatus: cancellationUncertain ? 'reserved' : 'idle',
-          ...(cancellationUncertain ? {} : {
-            ecommerceCheckoutSnapshot: null,
-            ecommerceConversionAttemptId: null,
-            ecommerceConversionActorIdentity: null,
-            ecommerceCheckoutLockAttemptId: null,
-            ecommerceCheckoutLockActorIdentity: null
-          }),
-          ecommerceConversionError: cancellationUncertain ? {
-            code: cancellation.code,
-            message: 'El pago se cerró, pero falta liberar la reserva remota de conversión.'
-          } : null
-        }
-      );
+    const orderId = order.id;
+    const ownedAttemptId = order.ecommerceConversionAttemptId;
+    const expectedCheckoutAttemptId = order.ecommerceCanonicalCheckoutAttemptId;
+    const conversionContext = buildConversionContext({
+      order,
+      attemptId: ownedAttemptId,
+      actorIdentity: order.ecommerceConversionActorIdentity
+    });
+
+    if (!isAttemptOwner(orderId, ownedAttemptId) || !isCheckoutTargetStillActive({ orderId })) {
+      return buildStaleAttemptResult();
     }
+
+    const cancellation = await releaseRemoteReservationBeforeSale({
+      order,
+      conversionContext,
+      reason
+    });
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult();
+
+    const result = await closeCanonical({
+      expectedOrderId: orderId,
+      expectedCheckoutAttemptId
+    });
+    if (result?.staleAttempt) return buildStaleAttemptResult(result);
+    if (!isAttemptOwner(orderId, ownedAttemptId)) return buildStaleAttemptResult(result);
+
+    const cancellationUncertain = cancellation.success === false && cancellation.skipped !== true;
+    updateEcommerceConversionState(
+      orderId,
+      cancellationUncertain ? ECOMMERCE_CONVERSION_STATUS.ERROR : ECOMMERCE_CONVERSION_STATUS.IDLE,
+      {
+        ecommerceCheckoutGateStatus: 'blocked',
+        ecommerceRemoteConversionStatus: cancellationUncertain ? 'reserved' : 'idle',
+        ...(cancellationUncertain ? {} : {
+          ecommerceCheckoutSnapshot: null,
+          ecommerceConversionAttemptId: null,
+          ecommerceConversionActorIdentity: null,
+          ecommerceCheckoutLockAttemptId: null,
+          ecommerceCheckoutLockActorIdentity: null,
+          ecommerceCanonicalCheckoutAttemptId: null
+        }),
+        ecommerceConversionError: cancellationUncertain ? {
+          code: cancellation.code,
+          message: 'El pago se cerró, pero falta liberar la reserva remota de conversión.'
+        } : null
+      }
+    );
     return result;
   }, []);
 
@@ -607,10 +857,28 @@ export function useEcommercePosCheckoutGate({ checkout }) {
   }), [checkout.handleQuickCajaClose, closeEcommerceCheckoutSafely]);
 
   const handleQuickCajaSubmit = useCallback(async (...args) => {
+    const initialOrder = getCurrentOrder();
+    const orderId = isEcommerceOrder(initialOrder) ? initialOrder.id : null;
+    const ownedAttemptId = initialOrder?.ecommerceConversionAttemptId || null;
+    const expectedCheckoutAttemptId = initialOrder?.ecommerceCanonicalCheckoutAttemptId || null;
+
+    if (orderId && (!isAttemptOwner(orderId, ownedAttemptId) || !isCheckoutTargetStillActive({ orderId }))) {
+      return buildStaleAttemptResult();
+    }
+
     const result = await checkout.handleQuickCajaSubmit(...args);
-    const order = getCurrentOrder();
-    if (result?.success !== false && isEcommerceOrder(order) && !order.ecommerceConvertedSaleId) {
-      updateEcommerceConversionState(order.id, ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING, {
+    if (!orderId) return result;
+
+    const order = getOrderById(orderId);
+    if (
+      result?.success !== false
+      && isEcommerceOrder(order)
+      && !order.ecommerceConvertedSaleId
+      && isAttemptOwner(orderId, ownedAttemptId)
+      && isCheckoutTargetStillActive({ orderId })
+      && order.ecommerceCanonicalCheckoutAttemptId === expectedCheckoutAttemptId
+    ) {
+      updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING, {
         ecommerceCheckoutGateStatus: 'authorized',
         ecommerceRemoteConversionStatus: 'reserved'
       });
@@ -629,12 +897,20 @@ export function useEcommercePosCheckoutGate({ checkout }) {
 }
 
 export const ecommercePosCheckoutGateInternals = Object.freeze({
+  STALE_CHECKOUT_ATTEMPT,
   createAttemptId,
   getCurrentOrder,
+  getOrderById,
+  isCheckoutTargetStillActive,
+  isAttemptOwner,
+  buildStaleAttemptResult,
+  buildTargetChangedResult,
+  isTargetChangedResult,
   isEcommerceOrder,
   isSameRemoteReservation,
   buildEligibilityContext,
   buildSnapshotIgnoringTransientStatus,
+  buildConversionContext,
   releaseRemoteReservationBeforeSale,
   failBeforeSale,
   hasOwnedCheckoutLock,

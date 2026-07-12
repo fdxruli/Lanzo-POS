@@ -9,6 +9,7 @@ import { useActiveTablesCount } from './useActiveTablesCount';
 import { usePosPage } from './usePosPage';
 import { usePosCheckout } from './usePosCheckout';
 import { useEcommercePosCheckoutGate } from './useEcommercePosCheckoutGate';
+import { useEcommercePosCheckoutSingleFlight } from './useEcommercePosCheckoutSingleFlight';
 
 export function usePos() {
     const features = useFeatureConfig();
@@ -28,7 +29,8 @@ export function usePos() {
         features,
         fetchActiveTablesCount: tablesCount.fetchActiveTablesCount
     });
-    const checkout = useEcommercePosCheckoutGate({ checkout: canonicalCheckout });
+    const ecommerceCheckout = useEcommercePosCheckoutGate({ checkout: canonicalCheckout });
+    const checkout = useEcommercePosCheckoutSingleFlight({ checkout: ecommerceCheckout });
 
     const tables = useTableManagement({
         ...modals,

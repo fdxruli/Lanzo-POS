@@ -7,6 +7,7 @@ import {
 } from './ecommercePosCheckoutConversion';
 import {
   beginEcommercePosConversionRemote,
+  cancelEcommercePosConversionRemote,
   findEcommerceSale,
   getEcommerceActorIdentity,
   getEcommerceClaimIdentity,
@@ -28,6 +29,17 @@ import {
 } from './ecommercePosDraftGuards';
 
 let installed = false;
+
+const REMOVAL_BLOCKED_STATUSES = new Set([
+  ECOMMERCE_CONVERSION_STATUS.VALIDATING,
+  ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
+]);
+
+const REMOVAL_PRESERVED_STATUSES = new Set([
+  ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
+  ECOMMERCE_CONVERSION_STATUS.SALE_CREATED,
+  ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING
+]);
 
 const resolveOrder = (orderId, orderSnapshot = null) => {
   if (orderSnapshot) return orderSnapshot;
@@ -53,7 +65,8 @@ const failLockedEcommerceCheckout = async ({
     ecommerceCheckoutSnapshot: preserveAttempt ? snapshot : null,
     ...(preserveAttempt ? {} : {
       ecommerceConversionAttemptId: null,
-      ecommerceConversionActorIdentity: null
+      ecommerceConversionActorIdentity: null,
+      ecommerceCanonicalCheckoutAttemptId: null
     }),
     ecommerceConversionError: { code, message }
   });
@@ -305,6 +318,104 @@ const revalidateLockedEcommerceCheckout = async ({
   return { success: true, ecommerceSnapshot: snapshotResult.snapshot };
 };
 
+const hasActiveEcommerceCheckout = (order) => Boolean(
+  order?.ecommerceCheckoutInitiationStatus === 'starting'
+  || order?.isLockedForCheckout === true
+  || Boolean(order?.ecommerceCanonicalCheckoutAttemptId)
+  || ['reserving', 'reserved', 'unknown'].includes(order?.ecommerceRemoteConversionStatus)
+);
+
+const getEcommerceRemovalGuardResult = (order) => ({
+  success: false,
+  code: 'ECOMMERCE_CHECKOUT_ACTIVE',
+  reason: order?.ecommerceConversionStatus === ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
+    ? 'Cancela el cobro antes de eliminar el pedido.'
+    : 'El pedido está iniciando un cobro. Espera a que termine o cancélalo de forma segura.',
+  message: order?.ecommerceConversionStatus === ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING
+    ? 'Cancela el cobro antes de eliminar el pedido.'
+    : 'El pedido está iniciando un cobro. Espera a que termine o cancélalo de forma segura.'
+});
+
+const buildImmutableConversionContext = (order) => ({
+  localOrderId: order?.id || null,
+  ecommerceOrderId: order?.ecommerceOrderId || null,
+  attemptId: order?.ecommerceConversionAttemptId || null,
+  actorIdentity: order?.ecommerceConversionActorIdentity || null,
+  claimToken: order?.ecommerceClaimToken || null,
+  conversionKey: order?.ecommerceCheckoutSnapshot?.ecommerceConversionKey || null,
+  saleId: order?.id || null,
+  orderSnapshot: order ? { ...order } : null
+});
+
+const releaseAbortedCheckoutReservation = async ({ order, context }) => {
+  if (
+    !isEcommercePosDraft(order)
+    || order.ecommerceConvertedSaleId
+    || !['reserving', 'reserved', 'unknown'].includes(order.ecommerceRemoteConversionStatus)
+    || !context?.attemptId
+    || !context?.conversionKey
+    || !context?.saleId
+  ) {
+    return { success: true, skipped: true };
+  }
+
+  return cancelEcommercePosConversionRemote({
+    order: context.orderSnapshot,
+    attemptId: context.attemptId,
+    saleId: context.saleId,
+    conversionKey: context.conversionKey,
+    reason: 'checkout_target_changed'
+  });
+};
+
+const settleAbortedCheckoutAfterUnlock = async ({ orderId, order, context }) => {
+  if (
+    !isEcommercePosDraft(order)
+    || order.ecommerceConversionStatus !== ECOMMERCE_CONVERSION_STATUS.VALIDATING
+    || useActiveOrders.getState().currentOrderId === orderId
+  ) {
+    return { success: true, skipped: true };
+  }
+
+  const cancellation = await releaseAbortedCheckoutReservation({ order, context });
+  const current = resolveOrder(orderId);
+  if (
+    !current
+    || current.ecommerceConversionAttemptId !== context.attemptId
+    || useActiveOrders.getState().currentOrderId === orderId
+  ) {
+    return { success: true, ignored: true, staleAttempt: true, cancellation };
+  }
+
+  const cancellationUncertain = cancellation.success === false && cancellation.skipped !== true;
+  updateEcommerceConversionState(
+    orderId,
+    cancellationUncertain
+      ? ECOMMERCE_CONVERSION_STATUS.ERROR
+      : ECOMMERCE_CONVERSION_STATUS.IDLE,
+    {
+      ecommerceCheckoutGateStatus: 'blocked',
+      ecommerceCheckoutGateCode: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED',
+      ecommerceCheckoutGateMessage: null,
+      ecommerceRemoteConversionStatus: cancellationUncertain ? 'reserved' : 'idle',
+      ...(cancellationUncertain ? {} : {
+        ecommerceCheckoutSnapshot: null,
+        ecommerceConversionAttemptId: null,
+        ecommerceConversionActorIdentity: null,
+        ecommerceCheckoutLockAttemptId: null,
+        ecommerceCheckoutLockActorIdentity: null,
+        ecommerceCanonicalCheckoutAttemptId: null
+      }),
+      ecommerceConversionError: cancellationUncertain ? {
+        code: cancellation.code || 'ECOMMERCE_RESERVATION_RELEASE_PENDING',
+        message: 'La orden cambió y la reserva remota quedó pendiente de recuperación.'
+      } : null
+    }
+  );
+
+  return { success: !cancellationUncertain, cancellation };
+};
+
 export function installEcommercePosActiveOrderGuards() {
   if (installed) return;
 
@@ -316,6 +427,20 @@ export function installEcommercePosActiveOrderGuards() {
   const originalLockOrderForCheckout = initialState.lockOrderForCheckout;
   const originalUnlockOrder = initialState.unlockOrder;
   const originalRemoveOrder = initialState.removeOrder;
+
+  const unlockOrder = async (orderId) => {
+    const order = resolveOrder(orderId);
+    const context = buildImmutableConversionContext(order);
+    const result = await originalUnlockOrder(orderId);
+    if (result?.success === false) return result;
+
+    const cleanup = await settleAbortedCheckoutAfterUnlock({
+      orderId,
+      order,
+      context
+    });
+    return { ...result, ecommerceCleanup: cleanup };
+  };
 
   useActiveOrders.setState({
     updateOrderItems: (orderId, updater) => {
@@ -350,19 +475,28 @@ export function installEcommercePosActiveOrderGuards() {
 
       return revalidateLockedEcommerceCheckout({ orderId, originalUnlockOrder });
     },
+    unlockOrder,
     removeOrder: async (orderId) => {
       const order = resolveOrder(orderId);
       const status = order?.ecommerceConversionStatus;
+
       if (
         isEcommercePosDraft(order)
-        && [
-          ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE,
-          ECOMMERCE_CONVERSION_STATUS.SALE_CREATED,
-          ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING
-        ].includes(status)
+        && (
+          REMOVAL_BLOCKED_STATUSES.has(status)
+          || (
+            !REMOVAL_PRESERVED_STATUSES.has(status)
+            && hasActiveEcommerceCheckout(order)
+          )
+        )
       ) {
+        return getEcommerceRemovalGuardResult(order);
+      }
+
+      if (isEcommercePosDraft(order) && REMOVAL_PRESERVED_STATUSES.has(status)) {
         return { success: true, preservedForEcommerceConfirmation: true };
       }
+
       return originalRemoveOrder(orderId);
     }
   });
@@ -371,10 +505,17 @@ export function installEcommercePosActiveOrderGuards() {
 }
 
 export const ecommercePosActiveOrderGuardsInternals = Object.freeze({
+  REMOVAL_BLOCKED_STATUSES,
+  REMOVAL_PRESERVED_STATUSES,
   resolveOrder,
   failLockedEcommerceCheckout,
   isSameRemoteReservation,
   revalidateLockedEcommerceCheckout,
+  hasActiveEcommerceCheckout,
+  getEcommerceRemovalGuardResult,
+  buildImmutableConversionContext,
+  releaseAbortedCheckoutReservation,
+  settleAbortedCheckoutAfterUnlock,
   resetForTests: () => {
     installed = false;
   }

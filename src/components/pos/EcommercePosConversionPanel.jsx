@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { CheckCircle2, CreditCard, LoaderCircle, RefreshCw, ReceiptText, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { getEcommerceCheckoutInitiation } from '../../hooks/pos/ecommerceCheckoutInitiationSingleFlight';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import {
   ECOMMERCE_CONVERSION_STATUS,
@@ -16,7 +17,6 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 
 const BUSY_STATUSES = new Set([
-  ECOMMERCE_CONVERSION_STATUS.VALIDATING,
   ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING,
   ECOMMERCE_CONVERSION_STATUS.PROCESSING_SALE
 ]);
@@ -78,7 +78,12 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
   const conversionStatus = order?.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE;
   const isConfirmationPending = CONFIRMATION_STATUSES.has(conversionStatus)
     || Boolean(order?.ecommerceConvertedSaleId);
-  const isBusy = BUSY_STATUSES.has(conversionStatus);
+  const hasLiveInitiation = Boolean(getEcommerceCheckoutInitiation(orderId));
+  const isStarting = hasLiveInitiation && (
+    order?.ecommerceCheckoutInitiationStatus === 'starting'
+    || conversionStatus === ECOMMERCE_CONVERSION_STATUS.VALIDATING
+  );
+  const isBusy = isStarting || BUSY_STATUSES.has(conversionStatus);
 
   const verifyRemoteState = useCallback(async () => {
     if (!orderId) return null;
@@ -210,7 +215,7 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
         </div>
         <div>
           <span className="ecommerce-conversion-panel__label">Estado de conversión</span>
-          <strong>{STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
+          <strong>{isStarting ? 'Iniciando cobro…' : STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
         </div>
       </div>
 
@@ -264,7 +269,11 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
           {isBusy || isCheckingRemote
             ? <LoaderCircle className="ecommerce-conversion-panel__spinner" size={20} aria-hidden="true" />
             : <CreditCard size={20} aria-hidden="true" />}
-          <span>{isBusy || isCheckingRemote ? STATUS_COPY[conversionStatus] || 'Comprobando…' : 'Cobrar pedido'}</span>
+          <span>
+            {isStarting
+              ? 'Iniciando cobro…'
+              : (isBusy || isCheckingRemote ? STATUS_COPY[conversionStatus] || 'Comprobando…' : 'Cobrar pedido')}
+          </span>
         </button>
       )}
     </section>
