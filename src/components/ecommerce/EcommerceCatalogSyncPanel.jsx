@@ -5,6 +5,7 @@ import {
   ECOMMERCE_CATALOG_SYNC_STATUS_EVENT,
   ecommerceCatalogSyncService
 } from '../../services/ecommerce/ecommerceCatalogSyncService';
+import './EcommerceCatalogSync.css';
 
 const STATUS_COPY = Object.freeze({
   synced: { label: 'Sincronizado con el producto local', tone: 'success' },
