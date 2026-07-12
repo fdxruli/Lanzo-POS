@@ -10,11 +10,33 @@ export const ECOMMERCE_PUBLIC_CACHE_POLICY = Object.freeze({
 
 const DEFAULT_MAX_STORES = 12;
 const DEFAULT_MAX_PAGES = 240;
-const FORBIDDEN_KEY_PATTERN = /(customer|client|phone|address|note|order|idempot|token|secret|license|staff|cost|supplier|provider)/i;
+const PUBLIC_OPTION_COLLECTION_KEYS = Object.freeze([
+  'groups', 'items', 'values', 'choices', 'options', 'variants',
+  'modifiers', 'addOns', 'sizes', 'flavors'
+]);
+const PUBLIC_OPTION_SCALAR_KEYS = Object.freeze([
+  'id', 'name', 'label', 'description', 'publicLabel', 'price', 'priceDelta',
+  'isAvailable', 'displayOrder', 'minSelections', 'maxSelections',
+  'minQuantity', 'maxQuantity', 'required', 'multiple', 'defaultSelected'
+]);
+const PUBLIC_SETTING_KEYS = Object.freeze([
+  'currency', 'locale', 'timezone', 'orderLeadMinutes', 'scheduledOrderLeadMinutes',
+  'estimatedPickupMinutes', 'estimatedDeliveryMinutes', 'pickupInstructions',
+  'deliveryInstructions', 'deliveryFee', 'freeDeliveryMinimum', 'primaryColor',
+  'accentColor', 'showBusinessAddress', 'allowOrderNotes'
+]);
+const PUBLIC_THEME_KEYS = Object.freeze([
+  'primaryColor', 'secondaryColor', 'accentColor', 'backgroundColor',
+  'textColor', 'fontFamily', 'borderRadius', 'mode'
+]);
 
 const asText = (value) => (typeof value === 'string' ? value.trim() : '');
 const asInteger = (value, fallback = 0) => {
   const parsed = Math.floor(Number(value));
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const asNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 const asRevision = (value) => {
@@ -28,34 +50,150 @@ const cloneJson = (value) => {
     return null;
   }
 };
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const trimText = (value, maxLength = 2_000) => asText(value).slice(0, maxLength);
 
-const sanitizePublicObject = (value, depth = 0) => {
-  if (depth > 8 || value === null || value === undefined) return null;
-  if (Array.isArray(value)) {
-    return value
-      .slice(0, 200)
-      .map((item) => sanitizePublicObject(item, depth + 1))
-      .filter((item) => item !== undefined);
+const sanitizeScalar = (value, key) => {
+  if (value === null) return null;
+  if (['isAvailable', 'required', 'multiple', 'defaultSelected', 'showBusinessAddress', 'allowOrderNotes'].includes(key)) {
+    return value === true;
   }
-  if (typeof value !== 'object') {
-    if (typeof value === 'string') return value.slice(0, 2_000);
-    if (typeof value === 'number' || typeof value === 'boolean') return value;
-    return null;
+  if ([
+    'price', 'priceDelta', 'displayOrder', 'minSelections', 'maxSelections',
+    'minQuantity', 'maxQuantity', 'orderLeadMinutes', 'scheduledOrderLeadMinutes',
+    'estimatedPickupMinutes', 'estimatedDeliveryMinutes', 'deliveryFee',
+    'freeDeliveryMinimum', 'borderRadius'
+  ].includes(key)) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
   }
+  if (typeof value === 'string') return trimText(value);
+  return null;
+};
 
-  return Object.entries(value).reduce((result, [key, item]) => {
-    if (!key || FORBIDDEN_KEY_PATTERN.test(key)) return result;
-    result[key] = sanitizePublicObject(item, depth + 1);
+const sanitizeAllowlistedObject = (value, keys) => {
+  if (!isRecord(value)) return {};
+  return keys.reduce((result, key) => {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) return result;
+    const sanitized = sanitizeScalar(value[key], key);
+    if (sanitized !== null) result[key] = sanitized;
     return result;
   }, {});
 };
 
-const sanitizeProduct = (rawProduct) => {
-  const product = rawProduct && typeof rawProduct === 'object' ? rawProduct : {};
-  const id = asText(product.id);
+const sanitizePublicTheme = (value) => sanitizeAllowlistedObject(value, PUBLIC_THEME_KEYS);
+const sanitizePublicSettings = (value) => sanitizeAllowlistedObject(value, PUBLIC_SETTING_KEYS);
+
+const sanitizeBusinessType = (value) => {
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item) => trimText(item, 80)).filter(Boolean);
+  }
+  const text = trimText(value, 80);
+  return text ? [text] : [];
+};
+
+const sanitizePublicOptions = (value, depth = 0) => {
+  if (!isRecord(value) || depth > 5) return {};
+  const result = {};
+
+  PUBLIC_OPTION_SCALAR_KEYS.forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) return;
+    const sanitized = sanitizeScalar(value[key], key);
+    if (sanitized !== null) result[key] = sanitized;
+  });
+
+  PUBLIC_OPTION_COLLECTION_KEYS.forEach((key) => {
+    if (!Array.isArray(value[key])) return;
+    result[key] = value[key]
+      .slice(0, 100)
+      .map((item) => sanitizePublicOptions(item, depth + 1))
+      .filter((item) => Object.keys(item).length > 0);
+  });
+
+  return result;
+};
+
+const sanitizePublicPortal = (rawPortal) => {
+  const portal = isRecord(rawPortal) ? rawPortal : {};
+  const slug = trimText(portal.slug, 80).toLowerCase();
+  if (!slug) return null;
+
+  return {
+    slug,
+    name: trimText(portal.name, 160),
+    headline: trimText(portal.headline, 240),
+    description: trimText(portal.description, 2_000),
+    templateCode: trimText(portal.templateCode, 80),
+    customizationLevel: trimText(portal.customizationLevel, 80),
+    theme: sanitizePublicTheme(portal.theme),
+    logoUrl: trimText(portal.logoUrl, 2_000),
+    coverImageUrl: trimText(portal.coverImageUrl, 2_000),
+    whatsappPhone: trimText(portal.whatsappPhone, 40),
+    address: trimText(portal.address, 500),
+    businessType: sanitizeBusinessType(portal.businessType),
+    orderingEnabled: portal.orderingEnabled === true,
+    pickupEnabled: portal.pickupEnabled === true,
+    deliveryEnabled: portal.deliveryEnabled === true,
+    scheduledOrdersEnabled: portal.scheduledOrdersEnabled === true,
+    minOrderTotal: Math.max(0, asNumber(portal.minOrderTotal, 0)),
+    maxOrderItems: Math.max(0, asInteger(portal.maxOrderItems, 0)),
+    maxItemQuantity: Math.max(0, asInteger(portal.maxItemQuantity, 0)),
+    stockMode: ['hidden', 'status', 'exact'].includes(portal.stockMode)
+      ? portal.stockMode
+      : 'hidden',
+    settings: sanitizePublicSettings(portal.settings)
+  };
+};
+
+const sanitizePublicHours = (rawHours) => {
+  const hours = isRecord(rawHours) ? rawHours : {};
+  const weekly = Array.isArray(hours.weekly) ? hours.weekly : [];
+  const exceptions = Array.isArray(hours.exceptions) ? hours.exceptions : [];
+
+  return {
+    weekly: weekly.slice(0, 14).map((item) => ({
+      weekday: Math.min(6, Math.max(0, asInteger(item?.weekday, 0))),
+      isOpen: item?.isOpen === true,
+      opensAt: trimText(item?.opensAt, 16) || null,
+      closesAt: trimText(item?.closesAt, 16) || null
+    })),
+    exceptions: exceptions.slice(0, 366).map((item) => ({
+      date: trimText(item?.date, 16),
+      isOpen: item?.isOpen === true,
+      opensAt: trimText(item?.opensAt, 16) || null,
+      closesAt: trimText(item?.closesAt, 16) || null,
+      reason: trimText(item?.reason, 240) || null
+    })).filter((item) => item.date)
+  };
+};
+
+const sanitizePublicFeatures = (rawFeatures) => {
+  const features = isRecord(rawFeatures) ? rawFeatures : {};
+  return {
+    whatsappCheckout: features.whatsappCheckout === true,
+    orderInbox: features.orderInbox === true,
+    customSlug: features.customSlug === true,
+    brandingCustomization: typeof features.brandingCustomization === 'boolean'
+      ? features.brandingCustomization
+      : trimText(features.brandingCustomization, 80),
+    layoutCustomization: typeof features.layoutCustomization === 'boolean'
+      ? features.layoutCustomization
+      : trimText(features.layoutCustomization, 80),
+    businessHours: features.businessHours === true,
+    deliveryPickupSettings: typeof features.deliveryPickupSettings === 'boolean'
+      ? features.deliveryPickupSettings
+      : trimText(features.deliveryPickupSettings, 80),
+    stockVisibility: features.stockVisibility === true,
+    realtimeOrders: features.realtimeOrders === true
+  };
+};
+
+const sanitizePublicProduct = (rawProduct) => {
+  const product = isRecord(rawProduct) ? rawProduct : {};
+  const id = trimText(product.id, 160);
   if (!id) return null;
 
-  const stock = product.stock && typeof product.stock === 'object' ? product.stock : {};
+  const stock = isRecord(product.stock) ? product.stock : {};
   const stockMode = ['hidden', 'status', 'exact'].includes(stock.mode) ? stock.mode : 'hidden';
   const quantity = stockMode === 'exact' && Number.isFinite(Number(stock.quantity))
     ? Math.max(0, Math.floor(Number(stock.quantity)))
@@ -63,14 +201,14 @@ const sanitizeProduct = (rawProduct) => {
 
   return {
     id,
-    name: asText(product.name) || 'Producto',
-    description: asText(product.description),
-    categoryName: asText(product.categoryName),
-    price: Math.max(0, Number(product.price) || 0),
-    currency: (asText(product.currency) || 'MXN').toUpperCase(),
-    imageUrl: asText(product.imageUrl),
+    name: trimText(product.name, 160) || 'Producto',
+    description: trimText(product.description, 1_000),
+    categoryName: trimText(product.categoryName, 120),
+    price: Math.max(0, asNumber(product.price, 0)),
+    currency: (trimText(product.currency, 8) || 'MXN').toUpperCase(),
+    imageUrl: trimText(product.imageUrl, 2_000),
     isAvailable: product.isAvailable === true,
-    displayOrder: Number(product.displayOrder) || 0,
+    displayOrder: asInteger(product.displayOrder, 0),
     stock: {
       mode: stockMode,
       status: stock.status === 'available' || stock.status === 'out_of_stock'
@@ -78,21 +216,19 @@ const sanitizeProduct = (rawProduct) => {
         : null,
       quantity
     },
-    options: sanitizePublicObject(product.options || {}) || {}
+    options: sanitizePublicOptions(product.options)
   };
 };
 
 const sanitizeCatalogPage = (page, expectedRevision) => {
-  const source = page && typeof page === 'object' ? page : {};
+  const source = isRecord(page) ? page : {};
   const revision = asRevision(source.catalogRevision ?? expectedRevision);
   const rawItems = Array.isArray(source.items) ? source.items : null;
-  const pagination = source.pagination && typeof source.pagination === 'object'
-    ? source.pagination
-    : null;
+  const pagination = isRecord(source.pagination) ? source.pagination : null;
 
   if (!revision || !rawItems || !pagination) return null;
 
-  const items = rawItems.map(sanitizeProduct).filter(Boolean);
+  const items = rawItems.map(sanitizePublicProduct).filter(Boolean);
   if (items.length !== rawItems.length) return null;
 
   return {
@@ -107,15 +243,15 @@ const sanitizeCatalogPage = (page, expectedRevision) => {
 };
 
 const sanitizePortalResult = (result) => {
-  const source = result && typeof result === 'object' ? result : {};
-  const portal = source.portal && typeof source.portal === 'object' ? source.portal : null;
+  const source = isRecord(result) ? result : {};
+  const portal = sanitizePublicPortal(source.portal);
   const revision = asRevision(source.catalogRevision);
-  if (!portal || !asText(portal.slug) || !revision) return null;
+  if (!portal || !revision) return null;
 
   return {
-    portal: sanitizePublicObject(portal) || {},
-    hours: sanitizePublicObject(source.hours || {}) || {},
-    features: sanitizePublicObject(source.features || {}) || {},
+    portal,
+    hours: sanitizePublicHours(source.hours),
+    features: sanitizePublicFeatures(source.features),
     catalogRevision: revision,
     cachePolicy: normalizeCachePolicy(source.cachePolicy)
   };
@@ -368,8 +504,14 @@ export const ecommercePublicCatalogCache = createEcommercePublicCatalogCache();
 export const ecommercePublicCatalogCacheInternals = Object.freeze({
   sanitizeCatalogPage,
   sanitizePortalResult,
-  sanitizeProduct,
-  sanitizePublicObject,
+  sanitizePublicPortal,
+  sanitizePublicHours,
+  sanitizePublicFeatures,
+  sanitizePublicProduct,
+  sanitizePublicOptions,
+  sanitizePublicSettings,
   cloneJson,
-  FORBIDDEN_KEY_PATTERN
+  PUBLIC_OPTION_COLLECTION_KEYS,
+  PUBLIC_OPTION_SCALAR_KEYS,
+  PUBLIC_SETTING_KEYS
 });
