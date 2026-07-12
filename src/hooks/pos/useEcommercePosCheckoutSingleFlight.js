@@ -33,6 +33,37 @@ const updateInitiationStatus = (orderId, status) => {
   });
 };
 
+const settleCheckoutInitiation = (orderId) => {
+  updateInitiationStatus(orderId, null);
+
+  const state = useActiveOrders.getState();
+  const order = state.activeOrders.get(orderId);
+  if (
+    !order
+    || order.origin !== 'ecommerce'
+    || state.currentOrderId === orderId
+    || order.ecommerceConversionStatus !== ECOMMERCE_CONVERSION_STATUS.VALIDATING
+    || order.isLockedForCheckout === true
+    || !['idle', null, undefined].includes(order.ecommerceRemoteConversionStatus)
+  ) {
+    return;
+  }
+
+  state.updateOrder(orderId, {
+    ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.IDLE,
+    ecommerceCheckoutGateStatus: 'blocked',
+    ecommerceCheckoutGateCode: 'ECOMMERCE_CHECKOUT_TARGET_CHANGED',
+    ecommerceCheckoutGateMessage: null,
+    ecommerceCheckoutSnapshot: null,
+    ecommerceConversionAttemptId: null,
+    ecommerceConversionActorIdentity: null,
+    ecommerceCheckoutLockAttemptId: null,
+    ecommerceCheckoutLockActorIdentity: null,
+    ecommerceCanonicalCheckoutAttemptId: null,
+    ecommerceConversionError: null
+  });
+};
+
 export function useEcommercePosCheckoutSingleFlight({ checkout }) {
   const handleInitiateCheckout = useCallback(() => {
     const order = getCurrentOrder();
@@ -63,7 +94,7 @@ export function useEcommercePosCheckoutSingleFlight({ checkout }) {
         expectedOrderId,
         expectedOrigin
       }),
-      onSettled: ({ orderId }) => updateInitiationStatus(orderId, null)
+      onSettled: ({ orderId }) => settleCheckoutInitiation(orderId)
     });
   }, [checkout]);
 
@@ -77,5 +108,6 @@ export const ecommercePosCheckoutSingleFlightInternals = Object.freeze({
   ACTIVE_CHECKOUT_STATUSES,
   getCurrentOrder,
   isEcommerceCheckoutAlreadyActive,
-  updateInitiationStatus
+  updateInitiationStatus,
+  settleCheckoutInitiation
 });
