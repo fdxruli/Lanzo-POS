@@ -28,7 +28,7 @@ export const buildCheckoutAlreadyActiveResult = (snapshot = null) => ({
 
 export const buildStaleCheckoutAttemptResult = (result = {}) => ({
   ...result,
-  success: result?.success === true,
+  success: true,
   ignored: true,
   staleAttempt: true,
   code: ECOMMERCE_STALE_CHECKOUT_ATTEMPT
