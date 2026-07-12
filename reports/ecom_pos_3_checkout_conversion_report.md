@@ -2,15 +2,13 @@
 
 ## Estado actual
 
-**ECOM.POS.3.1.1 CORREGIDA EN CÓDIGO**
+**CONTRATO REMOTO APLICADO EN PRODUCCIÓN**
 
-**VALIDACIÓN SQL PENDIENTE**
+**HISTORIAL LOCAL Y REMOTO ALINEADO**
 
-**CONTRATO REMOTO NO APLICADO**
+**PR DRAFT — PRUEBAS FUNCIONALES PENDIENTES**
 
-**PR #90 DRAFT**
-
-La corrección puntual está versionada en la rama `fase-ecom-pos-3`. La migración no fue aplicada en Supabase producción, no se ejecutó SQL manual contra producción y no se utilizó Vercel como evidencia.
+La implementación de ECOM.POS.3, ECOM.POS.3.1 y ECOM.POS.3.1.1 permanece en la rama `fase-ecom-pos-3`. Durante ECOM.POS.3.2 no se aplicaron migraciones, no se ejecutó SQL de escritura, no se modificó el historial remoto y no se utilizó Vercel como evidencia.
 
 ## Rama y PR
 
@@ -20,38 +18,20 @@ La corrección puntual está versionada en la rama `fase-ecom-pos-3`. La migraci
 - Base: `main`
 - Estado requerido: draft
 - Merge automático: no realizado
-- HEAD: consultar el PR; este reporte no incorpora el SHA del commit que lo contiene para evitar autorreferencia
-
-## Precondiciones verificadas
-
-Antes de reescribir la migración se confirmó:
-
-- el PR #90 continuaba abierto y en draft;
-- `contractVersion` continuaba en `2`;
-- las cuatro RPC de conversión continuaban definidas;
-- Supabase producción no registraba la migración `20260711235900_ecom_pos_3_complete_conversion`;
-- no existía obligación de crear una migración correctiva posterior porque la migración aún no había sido aplicada en el entorno compartido relevante.
-
-Por esa razón la corrección se realizó directamente sobre:
-
-```text
-supabase/migrations/20260711235900_ecom_pos_3_complete_conversion.sql
-```
-
-La migración permanece sin aplicar.
+- HEAD: consultar la descripción actualizada del PR; el reporte evita incluir de forma autorreferencial el SHA del commit que lo contiene
 
 ---
 
-# ECOM.POS.3 — Contrato de conversión
+## Contrato de conversión ECOM.POS.3
 
 La fase mantiene el flujo canónico:
 
-1. preparar un pedido ecommerce como borrador POS;
+1. preparar el pedido ecommerce como borrador POS;
 2. resolver inventario y lotes;
 3. reservar remotamente la conversión;
 4. ejecutar el checkout POS canónico;
 5. confirmar la venta local o cloud;
-6. confirmar remotamente la conversión ecommerce;
+6. completar remotamente la conversión ecommerce;
 7. archivar el pedido como `converted_to_sale`.
 
 La clave de negocio continúa siendo:
@@ -73,24 +53,25 @@ ecommerce_get_pos_conversion_state(...)
 ecommerce_begin_pos_conversion(...)
 ecommerce_cancel_pos_conversion(...)
 ecommerce_complete_pos_conversion(...)
+ecommerce_admin_release_pos_draft(...)
 ```
 
-La firma administrativa compatible continúa disponible:
+Helper privado preservado:
 
 ```text
-ecommerce_admin_release_pos_draft(...)
+private.ecommerce_pos_sale_lookup_v2(...)
 ```
 
 ---
 
-# ECOM.POS.3.1 — Recuperación e idempotencia fail-closed
+## ECOM.POS.3.1 — Recuperación e idempotencia fail-closed
 
-ECOM.POS.3.1 conserva las correcciones previas:
+Se conservan las correcciones previas:
 
 - `processing_sale` no interpreta una lectura vacía de Dexie como prueba de que la venta no ocurrió;
-- la recuperación consulta estado remoto y, cuando corresponde, venta cloud;
-- una lectura local o cloud incierta conserva el intento y bloquea otro cobro;
-- la lectura idempotente de Dexie distingue ausencia confirmada de error de lectura;
+- la recuperación consulta el estado remoto y, cuando corresponde, la venta cloud;
+- una lectura local o cloud incierta conserva intento, snapshot, borrador y reserva;
+- la lectura idempotente distingue ausencia confirmada de error de lectura;
 - la clave cloud ecommerce permanece estable entre dispositivos;
 - las ventas POS normales conservan su comportamiento histórico.
 
@@ -100,106 +81,30 @@ La cancelación controlada:
 ecommerce_cancel_pos_conversion(...)
 ```
 
-no fue debilitada. Continúa validando:
-
-- actor;
-- `attemptId`;
-- `saleId`;
-- `conversionKey`;
-- claim token;
-- bloqueo `FOR UPDATE`;
-- verificación remota existente.
+continúa validando actor, `attemptId`, `saleId`, `conversionKey`, claim token, bloqueo `FOR UPDATE` y verificación remota mediante `private.ecommerce_pos_sale_lookup_v2(...)`.
 
 ---
 
-# ECOM.POS.3.1.1 — Liberación administrativa fail-closed
+## ECOM.POS.3.1.1 — Liberación administrativa fail-closed
 
-## Problema de seguridad
-
-La versión anterior de:
+La política final de:
 
 ```text
 ecommerce_admin_release_pos_draft(...)
 ```
 
-permitía liberar una reserva activa cuando no encontraba una venta en:
+permanece intacta:
 
-```text
-public.pos_sales
-```
+| Estado | Resultado administrativo |
+|---|---|
+| `idle` | puede liberar draft y claim |
+| `reserved` | `ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED` |
+| `completed` o pedido convertido | `ECOMMERCE_POS_CONVERSION_ALREADY_COMPLETED` |
+| desconocido | `ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED` |
 
-Esa ausencia remota no demuestra ausencia local.
+La ruta administrativa no consulta `private.ecommerce_pos_sale_lookup_v2(...)` ni usa la ausencia en `public.pos_sales` para autorizar la liberación de una reserva.
 
-El flujo POS puede completar primero la transacción local:
-
-```text
-executeSaleTransactionSafe(...)
-→ commit de venta en Dexie
-→ inventario descontado
-→ caja afectada
-→ respuesta success
-→ syncSaleShadowAfterLocalCommit(...) asíncrono
-```
-
-Existe por tanto una ventana válida en la que:
-
-1. la venta ecommerce ya existe localmente;
-2. caja e inventario ya fueron afectados;
-3. el shadow remoto todavía no se ejecutó o falló;
-4. `public.pos_sales` no conoce aún la venta;
-5. una liberación administrativa basada en esa ausencia permitiría volver a cobrar el pedido.
-
-La ausencia en `public.pos_sales` no puede utilizarse como prueba de que la venta no existe en Dexie.
-
-## Política final
-
-### Conversión completada
-
-Cuando se cumple cualquiera de estas condiciones:
-
-```text
-converted_sale_id is not null
-pos_conversion_status = 'completed'
-status = 'converted_to_sale'
-```
-
-la RPC devuelve:
-
-```text
-ECOMMERCE_POS_CONVERSION_ALREADY_COMPLETED
-```
-
-No modifica ninguna columna.
-
-### Reserva activa
-
-Cuando:
-
-```text
-pos_conversion_status = 'reserved'
-```
-
-la RPC devuelve siempre:
-
-```text
-ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED
-```
-
-La rama se evalúa antes del `UPDATE` de liberación y no llama:
-
-```text
-private.ecommerce_pos_sale_lookup_v2(...)
-```
-
-No se libera por:
-
-- antigüedad;
-- claim vencido;
-- dispositivo desconectado;
-- ausencia en `public.pos_sales`;
-- ausencia de `converted_sale_id`.
-
-Se conservan sin cambios:
+Cuando la conversión está `reserved`, permanecen sin cambios:
 
 ```text
 pos_draft_status
@@ -219,225 +124,242 @@ pos_conversion_actor_ref
 pos_conversion_started_at
 ```
 
-Esto mantiene bloqueado un segundo cobro hasta que exista una recuperación separada y controlada.
-
-### Conversión idle
-
-Solo cuando:
-
-```text
-coalesce(pos_conversion_status, 'idle') = 'idle'
-```
-
-se permite el comportamiento histórico:
-
-- liberar el draft;
-- limpiar el claim;
-- dejar la conversión en `idle`;
-- registrar `order_pos_draft_released`;
-- emitir el broadcast histórico.
-
-### Estado desconocido
-
-Cualquier estado distinto de:
-
-```text
-idle
-reserved
-completed
-```
-
-retorna:
-
-```text
-ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED
-```
-
-No se corrige automáticamente.
-
-## Auditoría
-
-Una liberación `idle` crea:
+La liberación `idle` conserva el evento histórico:
 
 ```text
 order_pos_draft_released
 ```
 
-Una reserva `reserved` bloqueada no crea:
+Una reserva bloqueada no crea:
 
 ```text
 order_pos_draft_released
 pos_conversion_admin_released
 ```
 
-La auditoría falsa de liberación fue retirada de la ruta administrativa.
-
-## Mensaje frontend
-
-`src/services/ecommerce/ecommerceOrderService.js` incorpora el mensaje seguro:
+El frontend conserva el mensaje seguro:
 
 ```text
 Este pedido tiene un cobro en revisión y no puede liberarse todavía. Verifica la venta antes de continuar.
 ```
 
-La normalización ignora el mensaje crudo de la RPC y no expone:
-
-- claim token;
-- `attemptId`;
-- `conversionKey`;
-- detalles internos de Supabase.
+No expone claim token, `attemptId`, `conversionKey` ni detalles internos de Supabase.
 
 ---
 
-# Pruebas
+## ECOM.POS.3.2 — Alineación del historial de migraciones
 
-## Prueba SQL estructural y transaccional
+### Motivo
 
-Archivo:
-
-```text
-supabase/tests/ecom_pos_3_1_recovery_release_test.sql
-```
-
-La prueba se ejecuta dentro de una transacción y termina con `ROLLBACK`.
-
-Cobertura versionada:
-
-1. draft `prepared` + conversión `idle`:
-   - libera correctamente;
-   - limpia draft y claim;
-   - mantiene conversión `idle`;
-   - crea únicamente `order_pos_draft_released`;
-2. draft ya `released` + conversión `idle`:
-   - `success = true`;
-   - `changed = false`;
-   - `idempotent = true`;
-   - no duplica auditoría;
-3. conversión `reserved` sin venta remota:
-   - confirma primero la ausencia en el read model;
-   - devuelve `ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED`;
-   - conserva draft, claim y todos los campos de reserva;
-4. conversión `reserved` con venta remota:
-   - devuelve exactamente el mismo código;
-   - no modifica el pedido;
-   - no registra liberación;
-5. conversión completada:
-   - devuelve `ECOMMERCE_POS_CONVERSION_ALREADY_COMPLETED`;
-   - no modifica el pedido;
-6. estado inesperado:
-   - habilitado temporalmente dentro de la transacción de prueba;
-   - devuelve revisión requerida;
-   - no modifica el pedido;
-7. contrato estructural:
-   - `reserved` se bloquea antes del `UPDATE`;
-   - la función administrativa no contiene la llamada al lookup remoto;
-   - la cancelación normal conserva dicha verificación;
-   - `contractVersion` permanece en `2`;
-   - las cuatro RPC continúan presentes;
-   - los grants compatibles continúan presentes.
-
-La prueba SQL está versionada pero no fue ejecutada contra producción. Su ejecución permanece pendiente en una base de prueba autorizada con las migraciones aplicadas temporalmente.
-
-## Prueba frontend
-
-Archivo:
+El contrato fue preparado inicialmente como una migración monolítica del repositorio:
 
 ```text
-src/services/ecommerce/__tests__/ecommerceOrderService.test.js
+20260711235900_ecom_pos_3_complete_conversion
 ```
 
-Se agregó cobertura para confirmar que:
+La primera llamada monolítica fue bloqueada por la limitación de la herramienta antes de realizar cambios. Para aplicar el contrato, el SQL se dividió operativamente en siete migraciones ordenadas. Las siete devolvieron éxito y quedaron registradas en Supabase producción.
 
-- `ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED` se mapea al mensaje seguro;
-- el mensaje crudo del servidor se descarta;
-- no se exponen `attemptId`, `conversionKey` ni claim token.
+La versión monolítica `20260711235900` nunca fue registrada como aplicada.
 
----
+Mantener el monolito en el repositorio habría producido drift: un futuro comando de migraciones podría considerarlo una migración local adicional aunque su contrato ya estuviera materializado mediante las siete versiones remotas.
 
-# Archivos modificados por ECOM.POS.3.1.1
+### Historial remoto confirmado
+
+Proyecto Supabase:
+
+```text
+odlrhijtfyavryeqivaa
+```
+
+Producción contiene exactamente:
+
+```text
+20260712032309  ecom_pos_3_conversion_schema
+20260712032334  ecom_pos_3_conversion_state_rpc
+20260712032400  ecom_pos_3_begin_conversion_rpc
+20260712032421  ecom_pos_3_cancel_conversion_rpc
+20260712032444  ecom_pos_3_complete_conversion_rpc
+20260712032510  ecom_pos_3_admin_release_fail_closed
+20260712032526  ecom_pos_3_conversion_grants
+```
+
+Producción no registra:
+
+```text
+20260711235900  ecom_pos_3_complete_conversion
+```
+
+### Alineación del repositorio
+
+Se eliminó:
 
 ```text
 supabase/migrations/20260711235900_ecom_pos_3_complete_conversion.sql
-supabase/tests/ecom_pos_3_1_recovery_release_test.sql
-src/services/ecommerce/ecommerceOrderService.js
-src/services/ecommerce/__tests__/ecommerceOrderService.test.js
-reports/ecom_pos_3_checkout_conversion_report.md
 ```
 
-No se modificaron:
-
-- checkout;
-- `processSale`;
-- inventario;
-- caja;
-- lotes;
-- servicios cloud;
-- contratos de venta POS normal.
-
----
-
-# Regresión esperada
-
-La corrección no cambia:
-
-- claim de pedidos;
-- preparación de borradores;
-- liberación de drafts `idle`;
-- checkout ecommerce;
-- recuperación `processing_sale`;
-- confirmación remota;
-- idempotencia cloud;
-- ventas POS normales;
-- caja;
-- inventario;
-- lotes.
-
----
-
-# Validación
-
-## Confirmado estáticamente
-
-- PR #90 permanece draft;
-- migración de ECOM.POS.3 no aparece aplicada en producción;
-- `contractVersion` continúa en `2`;
-- las cuatro RPC permanecen definidas y con grants compatibles;
-- `reserved` retorna antes del `UPDATE`;
-- la función administrativa ya no consulta `private.ecommerce_pos_sale_lookup_v2`;
-- `idle` conserva liberación e idempotencia;
-- `completed` permanece protegido;
-- auditoría falsa retirada;
-- mensaje frontend seguro agregado.
-
-## Pendiente de ejecución
-
-El entorno disponible no pudo obtener un checkout íntegro por fallo de resolución DNS hacia GitHub y no dispone del binario `gh`. Por ello no se simulan resultados para:
+Se crearon exactamente:
 
 ```text
-npm ci
-ESLint específico
-Vitest específico
-npm run build
-npm run lint
-npm run test:ci
-git diff --check origin/main...HEAD
-git status --short
+supabase/migrations/20260712032309_ecom_pos_3_conversion_schema.sql
+supabase/migrations/20260712032334_ecom_pos_3_conversion_state_rpc.sql
+supabase/migrations/20260712032400_ecom_pos_3_begin_conversion_rpc.sql
+supabase/migrations/20260712032421_ecom_pos_3_cancel_conversion_rpc.sql
+supabase/migrations/20260712032444_ecom_pos_3_complete_conversion_rpc.sql
+supabase/migrations/20260712032510_ecom_pos_3_admin_release_fail_closed.sql
+supabase/migrations/20260712032526_ecom_pos_3_conversion_grants.sql
 ```
 
-También permanece pendiente la prueba SQL en un entorno autorizado con las migraciones aplicadas dentro de una transacción o base de prueba.
+No se creó una octava migración.
 
-No se creó ningún workflow temporal para sustituir esta validación.
+### Distribución del contrato
+
+#### `20260712032309_ecom_pos_3_conversion_schema.sql`
+
+Contiene exclusivamente:
+
+- columnas de conversión;
+- backfill de `pos_conversion_status`;
+- constraint `ecommerce_orders_pos_conversion_status_valid`;
+- índice `ux_ecommerce_orders_license_pos_conversion_key`.
+
+#### `20260712032334_ecom_pos_3_conversion_state_rpc.sql`
+
+Contiene exclusivamente:
+
+```text
+private.ecommerce_pos_sale_lookup_v2(...)
+public.ecommerce_get_pos_conversion_state(...)
+```
+
+Conserva `SECURITY DEFINER`, `SET search_path TO ''` y `contractVersion = 2`.
+
+#### `20260712032400_ecom_pos_3_begin_conversion_rpc.sql`
+
+Contiene exclusivamente:
+
+```text
+public.ecommerce_begin_pos_conversion(...)
+```
+
+Conserva autorización, `FOR UPDATE`, claim, clave `ecommerce:<orderId>`, idempotencia, reserva, evento `pos_conversion_reserved` y versión 2.
+
+#### `20260712032421_ecom_pos_3_cancel_conversion_rpc.sql`
+
+Contiene exclusivamente:
+
+```text
+public.ecommerce_cancel_pos_conversion(...)
+```
+
+Conserva validación de actor/intento, lookup remoto fail-closed, evento `pos_conversion_cancelled` y limpieza exclusiva de los campos de reserva.
+
+#### `20260712032444_ecom_pos_3_complete_conversion_rpc.sql`
+
+Contiene exclusivamente:
+
+```text
+public.ecommerce_complete_pos_conversion(...)
+```
+
+Conserva `converted_to_sale`, `completed`, `converted_sale_id`, `converted_at`, archivo de visibilidad, evento y broadcast.
+
+#### `20260712032510_ecom_pos_3_admin_release_fail_closed.sql`
+
+Contiene exclusivamente la redefinición de:
+
+```text
+public.ecommerce_admin_release_pos_draft(...)
+```
+
+Conserva la política fail-closed de ECOM.POS.3.1.1 y no consulta el lookup remoto para autorizar una liberación administrativa.
+
+#### `20260712032526_ecom_pos_3_conversion_grants.sql`
+
+Contiene exclusivamente:
+
+- revocación del helper privado;
+- revocación inicial de las cinco RPC públicas;
+- `GRANT EXECUTE` a `anon, authenticated` para las cinco RPC;
+- revocación de acceso directo a `public.ecommerce_orders` y `public.ecommerce_order_events`.
+
+### Verificación estructural
+
+La revisión de los siete archivos confirmó:
+
+- cada función se define una sola vez dentro del conjunto dividido;
+- `contractVersion` permanece en `2`;
+- admin release devuelve `REVIEW_REQUIRED` para `reserved`;
+- admin release no llama `ecommerce_pos_sale_lookup_v2`;
+- cancel conversion sí llama `ecommerce_pos_sale_lookup_v2`;
+- el helper privado queda revocado para `public`, `anon` y `authenticated`;
+- las cinco RPC públicas reciben `EXECUTE` para `anon` y `authenticated`;
+- columnas, constraint e índice aparecen únicamente en la migración de esquema;
+- el orden de dependencias local coincide con el orden remoto.
+
+### Comparación local/remota
+
+| Local | Remote | Estado |
+|---|---|---|
+| `20260712032309` | `20260712032309` | alineado |
+| `20260712032334` | `20260712032334` | alineado |
+| `20260712032400` | `20260712032400` | alineado |
+| `20260712032421` | `20260712032421` | alineado |
+| `20260712032444` | `20260712032444` | alineado |
+| `20260712032510` | `20260712032510` | alineado |
+| `20260712032526` | `20260712032526` | alineado |
+
+No queda ninguna de estas siete versiones como `remote only` o `local only`.
+
+### Herramientas y operaciones
+
+El binario `supabase` no está instalado en el entorno de revisión, por lo que `supabase --version` y `supabase migration list --help` no pudieron devolver una versión. El historial remoto se verificó mediante la API oficial de solo lectura `list_migrations`; el historial local se verificó directamente sobre los archivos de la rama y el diff de GitHub.
+
+Durante la alineación no se ejecutó:
+
+```text
+supabase db push
+supabase migration repair
+supabase db reset
+supabase db pull
+```
+
+Tampoco se ejecutaron migraciones, DDL, `UPDATE`, `INSERT`, `DELETE` ni SQL manual contra producción.
 
 ---
 
-# Restricciones respetadas
+## Pruebas SQL del repositorio
 
-- Supabase producción: **sin cambios**
-- SQL manual contra producción: **no ejecutado**
-- Migración aplicada: **no**
+Se conserva sin cambios funcionales:
+
+```text
+supabase/tests/ecom_pos_3_1_recovery_release_test.sql
+```
+
+La prueba continúa validando el contrato final mediante firmas y comportamiento, no el nombre del archivo monolítico eliminado.
+
+No se ejecutó la prueba contra producción durante ECOM.POS.3.2.
+
+---
+
+## Validación funcional
+
+Las pruebas funcionales y smoke tests quedan pendientes y serán ejecutados por el usuario.
+
+No se declara validación funcional `PASS`.
+
+---
+
+## Restricciones respetadas
+
+- Supabase producción: **sin cambios adicionales**
+- Migraciones ejecutadas durante ECOM.POS.3.2: **ninguna**
+- SQL de escritura durante ECOM.POS.3.2: **ninguno**
+- Historial remoto reparado o modificado: **no**
+- `supabase db push`: **no utilizado**
+- `supabase migration repair`: **no utilizado**
+- Workflow temporal: **no creado**
 - Vercel manual: **no utilizado**
 - Preview Vercel: **no creado, forzado, promovido ni validado**
-- Workflow temporal: **no creado**
 - `main`: **sin modificación directa**
 - Nuevo PR: **no creado**
 - Merge automático: **no realizado**
@@ -445,23 +367,11 @@ No se creó ningún workflow temporal para sustituir esta validación.
 
 ---
 
-# Resultado
+## Resultado
 
 ```text
-ECOM.POS.3.1.1 CORREGIDA EN CÓDIGO
-VALIDACIÓN SQL PENDIENTE
-CONTRATO REMOTO NO APLICADO
-PR DRAFT
+ECOM.POS.3.2 ALINEACIÓN DE MIGRACIONES PASS
+CONTRATO REMOTO APLICADO EN PRODUCCIÓN
+HISTORIAL LOCAL Y REMOTO ALINEADO
+PR DRAFT — PRUEBAS FUNCIONALES PENDIENTES
 ```
-
-La política administrativa final es:
-
-| Estado de conversión | Liberación administrativa |
-|---|---|
-| `idle` | permitida |
-| `reserved` sin venta remota | bloqueada |
-| `reserved` con venta remota | bloqueada |
-| `completed` | bloqueada |
-| desconocido | bloqueada |
-
-`public.pos_sales` no autoriza liberar una reserva activa.
