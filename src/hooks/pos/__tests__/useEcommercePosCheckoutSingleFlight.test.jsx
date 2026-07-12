@@ -129,8 +129,11 @@ describe('useEcommercePosCheckoutSingleFlight', () => {
     expect(checkout.handleInitiateCheckout).toHaveBeenCalledTimes(1);
   });
 
-  it('clears a stale visual marker and allows a real retry', async () => {
-    setOrder({ ecommerceCheckoutInitiationStatus: 'starting' });
+  it('clears stale starting and validating state and allows a real retry', async () => {
+    setOrder({
+      ecommerceCheckoutInitiationStatus: 'starting',
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.VALIDATING
+    });
     const checkout = {
       handleInitiateCheckout: vi.fn(() => Promise.resolve({ success: true }))
     };
