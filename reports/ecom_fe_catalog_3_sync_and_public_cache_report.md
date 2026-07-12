@@ -123,7 +123,7 @@ git diff --check sobre checkout íntegro
 pruebas manuales de sincronización PRO y caché público
 ```
 
-El check de Vercel continúa afectado por el límite de builds/deployments y no se considera una validación del código.
+El check automático de Vercel para el HEAD del reporte terminó en **success**. No se realizó validación manual, promoción ni manipulación de previews.
 
 ## Estado para merge
 
@@ -132,6 +132,7 @@ Corrección mínima frontend: PASS enfocado
 source_missing: PASS transaccional
 Migraciones Supabase: 7/7 aplicadas
 Historial remoto: alineado con los timestamps del repositorio
+Vercel check automático: success
 PR: draft
 Merge: no realizado
 Validación global/manual: pendiente
