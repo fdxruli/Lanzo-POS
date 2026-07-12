@@ -245,6 +245,8 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       updateEcommerceConversionState(order.id, ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING, {
         ecommerceCheckoutGateStatus: 'authorized',
         ecommerceRemoteConversionStatus: 'reserved',
+        ecommerceCheckoutLockAttemptId: order.ecommerceConversionAttemptId,
+        ecommerceCheckoutLockActorIdentity: order.ecommerceConversionActorIdentity,
         ecommerceConversionError: null
       });
       return result;
@@ -313,14 +315,16 @@ export function useEcommercePosCheckoutGate({ checkout }) {
       || (remote.draftId && remote.draftId !== order.id)
       || !isSameRemoteReservation(order, remote)
     ) {
+      const sameOwnedReservation = isSameRemoteReservation(order, remote);
       return failBeforeSale({
         orderId,
         code: remote.code || 'ECOMMERCE_CLAIM_LOST',
         message: remote.message || 'La reserva del pedido o de la conversión ya no pertenece a este intento.',
         closeCanonicalCheckout: checkout.handlePaymentModalClose,
-        releaseRemoteReservation: isSameRemoteReservation(order, remote),
+        releaseRemoteReservation: sameOwnedReservation,
         releaseReason: 'remote_claim_or_reservation_lost',
-        preserveReservation: remote.success === false || remote.conversionStatus === 'reserved'
+        preserveReservation: remote.success === false
+          || (remote.conversionStatus === 'reserved' && !sameOwnedReservation)
       });
     }
 
