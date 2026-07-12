@@ -29,7 +29,10 @@ begin
     new.manual_available := coalesce(new.is_available, new.manual_available, true);
     new.source_available := coalesce(new.source_available, true);
   elsif new.manual_available is not distinct from old.manual_available
+        and new.source_available is not distinct from old.source_available
         and new.is_available is distinct from old.is_available then
+    -- Compatibilidad exclusiva con escritores legacy que solo cambian is_available.
+    -- Una sincronizacion de source_available nunca se convierte en cambio manual.
     new.manual_available := coalesce(new.is_available, old.manual_available, true);
   end if;
 
