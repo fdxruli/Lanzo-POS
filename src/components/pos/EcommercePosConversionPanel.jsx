@@ -43,6 +43,20 @@ const getInventoryCopy = (order = {}) => {
   return 'Inventario: Pendiente';
 };
 
+const OPERATIONAL_STATUS_COPY = Object.freeze({
+  accepted: 'Pedido aceptado',
+  preparing: 'En preparación',
+  ready: 'Listo',
+  out_for_delivery: 'En camino',
+  completed: 'Completado',
+  cancelled: 'Cancelado',
+  attention: 'Requiere atención'
+});
+
+const getOperationalStatusCopy = (order = {}) => (
+  OPERATIONAL_STATUS_COPY[order.ecommerceOperationalStatus] || 'Pedido aceptado'
+);
+
 const getBlockedMessage = (order = {}, isCheckingRemote = false) => {
   if (isCheckingRemote) return 'Comprobando contrato remoto y propiedad del pedido…';
   if (order.ecommerceInventoryStatus !== 'ready') {
@@ -216,6 +230,10 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
         <div>
           <span className="ecommerce-conversion-panel__label">Estado de conversión</span>
           <strong>{isStarting ? 'Iniciando cobro…' : STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
+        </div>
+        <div>
+          <span className="ecommerce-conversion-panel__label">Estado operativo</span>
+          <strong>{getOperationalStatusCopy(order)}</strong>
         </div>
       </div>
 
