@@ -36,6 +36,7 @@
 .public-tracking-items li + li { border-top: 1px solid #e5e7eb; }
 .public-tracking-footer { display: flex; flex-direction: column; gap: 14px; align-items: stretch; margin-top: 24px; }
 .public-tracking-footer small { color: #68717e; text-align: center; }
+.public-tracking-storefront-unavailable { color: #59616d; font-size: 0.9rem; line-height: 1.45; }
 .public-tracking-empty { text-align: center; }
 .public-tracking-loading { display: grid; gap: 14px; }
 .public-tracking-skeleton { height: 70px; border-radius: 14px; background: linear-gradient(90deg, #eceff2 25%, #f7f8fa 50%, #eceff2 75%); background-size: 200% 100%; animation: public-tracking-pulse 1.3s infinite; }
