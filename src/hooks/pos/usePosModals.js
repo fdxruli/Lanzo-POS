@@ -5,7 +5,7 @@ import { useDismissibleHistoryLayer } from '../useDismissibleHistoryLayer';
 /**
  * Máquina de estados para los modales del POS.
  * Reemplaza múltiples useState booleanos por un estado unificado.
- * 
+ *
  * @returns {{
  *   activeModal: 'scanner' | 'payment' | 'quickCaja' | 'prescription' | 'layaway' | 'tables' | 'split' | 'mobileCart' | null,
  *   openModal: (modal: string) => void,
@@ -45,7 +45,7 @@ export function usePosModals() {
 /**
  * Hook especializado para el modal móvil con navegación por historial.
  * El modal móvil necesita manejar window.history.pushState para el botón "Atrás".
- * 
+ *
  * @returns {{
  *   isOpen: boolean,
  *   openCart: () => void,
