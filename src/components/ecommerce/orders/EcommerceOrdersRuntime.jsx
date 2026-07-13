@@ -9,7 +9,6 @@ import {
 } from '../../../services/ecommerce/ecommercePosDraftService';
 import { installEcommercePosActiveOrderGuards } from '../../../services/ecommerce/installEcommercePosActiveOrderGuards';
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
-import EcommerceFulfillmentPanel from './EcommerceFulfillmentPanel';
 
 installEcommercePosActiveOrderGuards();
 
@@ -99,5 +98,5 @@ export default function EcommerceOrdersRuntime() {
     };
   }, [canAccess, invalidateOrders, loadSummary, pageIsOpen, refreshOrders]);
 
-  return pageIsOpen && canAccess ? <EcommerceFulfillmentPanel /> : null;
+  return null;
 }

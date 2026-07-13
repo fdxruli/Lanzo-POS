@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,6 +59,12 @@ beforeEach(() => {
   mocks.getFulfillment.mockResolvedValue({ success: true, order: operationalOrder() });
   mocks.getActions.mockImplementation((order) => {
     const status = order?.fulfillment?.internalStatus;
+    if (status === 'preparing') {
+      return [
+        { transition: 'ready', label: 'Marcar como listo' },
+        { transition: 'cancelled', label: 'Cancelar pedido', destructive: true }
+      ];
+    }
     if (status === 'ready') {
       return [
         { transition: 'completed', label: 'Completar pedido' },
@@ -70,6 +77,23 @@ beforeEach(() => {
 });
 
 describe('EcommerceFulfillmentPanel', () => {
+  it('offers ready as the next action while the order is preparing', async () => {
+    mocks.getFulfillment.mockResolvedValue({
+      success: true,
+      order: operationalOrder({
+        fulfillment: {
+          ...operationalOrder().fulfillment,
+          status: 'preparing',
+          internalStatus: 'preparing'
+        }
+      })
+    });
+
+    render(<EcommerceFulfillmentPanel />);
+
+    expect(await screen.findByRole('button', { name: 'Marcar como listo' })).toBeInTheDocument();
+  });
+
   it('refreshes counts and closes the detail after a terminal transition', async () => {
     mocks.updateFulfillment.mockResolvedValue({
       success: true,
