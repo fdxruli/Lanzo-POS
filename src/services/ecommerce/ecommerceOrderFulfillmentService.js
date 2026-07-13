@@ -12,6 +12,10 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDER_STATUS_INVALID_TRANSITION: 'Esta acción ya no corresponde al estado actual del pedido.',
   ECOMMERCE_ORDER_STATUS_IDEMPOTENCY_REQUIRED: 'No se pudo preparar una transición segura.',
   ECOMMERCE_ORDER_PUBLIC_MESSAGE_INVALID: 'El mensaje público debe ser texto plano de hasta 280 caracteres.',
+  ECOMMERCE_ORDER_FULFILLMENT_TERMINAL: 'Este pedido ya fue completado o cancelado. No admite nuevas acciones operativas ni de Punto de Venta.',
+  ECOMMERCE_ORDER_POS_DRAFT_PREPARED: 'Existe un borrador preparado en Punto de Venta. Resuélvelo antes de completar o cancelar el pedido.',
+  ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS: 'Existe un cobro reservado o en progreso. Verifica la venta antes de completar o cancelar el pedido.',
+  ECOMMERCE_POS_DRAFT_IN_PROGRESS: 'El pedido está siendo preparado en otro dispositivo.',
   ECOMMERCE_ORDER_ACTION_FAILED: 'No se pudo actualizar el estado operativo del pedido.'
 });
 
@@ -176,6 +180,7 @@ export function getEcommerceFulfillmentActions(order = {}) {
 }
 
 export const ecommerceOrderFulfillmentInternals = Object.freeze({
+  SAFE_MESSAGES,
   normalizeFulfillment,
   normalizeResult,
   getLicenseKey,
