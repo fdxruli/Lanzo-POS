@@ -103,18 +103,15 @@ function normalizeRpcFailure(data, error, operation = 'store') {
   if (operation === 'checkout') {
     return new EcommercePublicError(responseCode, getCheckoutMessage(responseCode));
   }
-
   if (responseCode === 'ECOMMERCE_PORTAL_NOT_FOUND') {
     return new EcommercePublicError(responseCode, 'Esta tienda no está disponible.');
   }
-
   if (responseCode === 'ECOMMERCE_CATALOG_REVISION_CHANGED') {
     return new EcommercePublicError(
       responseCode,
       'El catálogo cambió mientras se cargaba. Se actualizará automáticamente.'
     );
   }
-
   return new EcommercePublicError(responseCode, STORE_REQUEST_MESSAGE);
 }
 
@@ -136,7 +133,6 @@ function normalizeFeatures(rawFeatures) {
 function normalizePortalResult(data) {
   const portal = asObject(data.portal);
   const hours = asObject(data.hours);
-
   return {
     portal: {
       slug: asText(portal.slug),
@@ -177,10 +173,7 @@ function normalizeCatalogResult(data, expectedRevision = null) {
     const item = asObject(rawItem);
     const stock = asObject(item.stock);
     const stockMode = ['hidden', 'status', 'exact'].includes(stock.mode) ? stock.mode : 'hidden';
-    const stockStatus = stock.status === 'available' || stock.status === 'out_of_stock'
-      ? stock.status
-      : null;
-
+    const stockStatus = ['available', 'out_of_stock'].includes(stock.status) ? stock.status : null;
     return {
       id: asText(item.id),
       name: asText(item.name, 'Producto'),
@@ -216,7 +209,6 @@ function normalizeCatalogResult(data, expectedRevision = null) {
 function normalizeWhatsappUrl(value) {
   const rawUrl = asText(value);
   if (!rawUrl) return '';
-
   try {
     const parsed = new URL(rawUrl);
     if (
@@ -225,20 +217,22 @@ function normalizeWhatsappUrl(value) {
       || parsed.port
       || parsed.username
       || parsed.password
-    ) {
-      return '';
-    }
+    ) return '';
     return parsed.toString();
   } catch {
     return '';
   }
 }
 
+function normalizeTrackingPath(value) {
+  const path = asText(value);
+  return /^\/tienda\/[^/?#]+\/pedido\/trk1_[A-Za-z0-9_-]{43}$/.test(path) ? path : '';
+}
+
 function normalizeOrderResult(data) {
   const order = asObject(data.order);
   const whatsapp = asObject(data.whatsapp);
   const total = Number(order.total);
-
   if (asText(order.id) === '' || asText(order.code) === '' || !Number.isFinite(total)) {
     throw new EcommercePublicError('ECOMMERCE_ORDER_CREATE_FAILED', CHECKOUT_REQUEST_MESSAGE);
   }
@@ -255,7 +249,12 @@ function normalizeOrderResult(data) {
       fulfillmentMethod: ['pickup', 'delivery'].includes(order.fulfillmentMethod)
         ? order.fulfillmentMethod
         : 'pickup',
-      createdAt: asText(order.createdAt)
+      createdAt: asText(order.createdAt),
+      trackingToken: /^trk1_[A-Za-z0-9_-]{43}$/.test(asText(order.trackingToken))
+        ? asText(order.trackingToken)
+        : '',
+      trackingPath: normalizeTrackingPath(order.trackingPath),
+      trackingVersion: Math.max(0, Math.floor(asNumber(order.trackingVersion, 0)))
     },
     whatsapp: {
       phone: asText(whatsapp.phone),
@@ -268,7 +267,6 @@ function normalizeOrderResult(data) {
 function normalizeCustomer(customer) {
   const source = asObject(customer);
   const fulfillmentMethod = asText(source.fulfillmentMethod).toLowerCase();
-
   return {
     name: asText(source.name).slice(0, 120),
     phone: asText(source.phone).slice(0, 40),
@@ -306,10 +304,7 @@ async function executeRpc(client, rpcName, params, operation = 'store') {
   }
 
   const { data, error } = response || {};
-  if (error || data?.success !== true) {
-    throw normalizeRpcFailure(data, error, operation);
-  }
-
+  if (error || data?.success !== true) throw normalizeRpcFailure(data, error, operation);
   return data;
 }
 
@@ -322,11 +317,7 @@ const isLegacyCatalogSignatureError = (error) => {
 };
 
 const safely = async (operation, fallback = null) => {
-  try {
-    return await operation();
-  } catch {
-    return fallback;
-  }
+  try { return await operation(); } catch { return fallback; }
 };
 
 export function createEcommercePublicService(
@@ -339,34 +330,20 @@ export function createEcommercePublicService(
       if (!normalizedSlug) {
         throw new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.');
       }
-
       try {
-        const data = await executeRpc(client, 'ecommerce_get_portal_by_slug', {
-          p_slug: normalizedSlug
-        });
+        const data = await executeRpc(client, 'ecommerce_get_portal_by_slug', { p_slug: normalizedSlug });
         const result = normalizePortalResult(data);
         if (cache && options.cache !== false && result.catalogRevision) {
           void safely(() => cache.putPortal({ slug: normalizedSlug, result }));
-          void safely(() => cache.deleteObsoleteRevisions({
-            slug: normalizedSlug,
-            keepRevision: result.catalogRevision
-          }));
+          void safely(() => cache.deleteObsoleteRevisions({ slug: normalizedSlug, keepRevision: result.catalogRevision }));
           void safely(() => cache.cleanup());
         }
         return { ...result, source: 'network', offline: false };
       } catch (error) {
-        if (
-          !cache
-          || options.cache === false
-          || error?.code === 'ECOMMERCE_PORTAL_NOT_FOUND'
-        ) {
-          throw error;
-        }
-
+        if (!cache || options.cache === false || error?.code === 'ECOMMERCE_PORTAL_NOT_FOUND') throw error;
         const cached = await safely(() => cache.getPortal({
           slug: normalizedSlug,
-          maxStaleSeconds: options.maxStaleSeconds
-            || ECOMMERCE_PUBLIC_CACHE_POLICY.maxStaleSeconds
+          maxStaleSeconds: options.maxStaleSeconds || ECOMMERCE_PUBLIC_CACHE_POLICY.maxStaleSeconds
         }));
         if (!cached) throw error;
         return { ...cached, source: 'cache', offline: true };
@@ -378,7 +355,6 @@ export function createEcommercePublicService(
       if (!normalizedSlug) {
         throw new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.');
       }
-
       const limit = Math.min(100, Math.max(1, Math.floor(asNumber(options.limit, 100))));
       const offset = Math.max(0, Math.floor(asNumber(options.offset, 0)));
       const catalogRevision = asRevision(options.catalogRevision);
@@ -404,13 +380,8 @@ export function createEcommercePublicService(
         }
       }
 
-      const params = {
-        p_slug: normalizedSlug,
-        p_limit: limit,
-        p_offset: offset
-      };
+      const params = { p_slug: normalizedSlug, p_limit: limit, p_offset: offset };
       if (catalogRevision) params.p_catalog_revision = catalogRevision;
-
       try {
         let data;
         try {
@@ -423,7 +394,6 @@ export function createEcommercePublicService(
             p_offset: offset
           });
         }
-
         const result = normalizeCatalogResult(data, catalogRevision);
         if (catalogRevision && result.catalogRevision !== catalogRevision) {
           throw new EcommercePublicError(
@@ -431,7 +401,6 @@ export function createEcommercePublicService(
             'El catálogo cambió mientras se cargaba. Se actualizará automáticamente.'
           );
         }
-
         if (cache && options.cache !== false && result.catalogRevision) {
           void safely(() => cache.putPage({
             slug: normalizedSlug,
@@ -443,7 +412,6 @@ export function createEcommercePublicService(
           }));
           void safely(() => cache.cleanup());
         }
-
         return { ...result, source: 'network', offline: false };
       } catch (error) {
         if (!cache || options.cache === false || !catalogRevision) throw error;
@@ -472,21 +440,18 @@ export function createEcommercePublicService(
       if (!normalizedSlug) {
         throw new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.');
       }
-
       const data = await executeRpc(client, 'ecommerce_create_order', {
         p_slug: normalizedSlug,
         p_customer: normalizeCustomer(customer),
         p_items: normalizeOrderItems(items),
         p_idempotency_key: normalizedIdempotencyKey
       }, 'checkout');
-
       return normalizeOrderResult(data);
     }
   };
 }
 
 const defaultService = createEcommercePublicService();
-
 export const getPublicPortalBySlug = (slug, options) => defaultService.getPublicPortalBySlug(slug, options);
 export const getPublicCatalog = (slug, options) => defaultService.getPublicCatalog(slug, options);
 export const createPublicOrder = (slug, payload) => defaultService.createPublicOrder(slug, payload);
@@ -494,6 +459,7 @@ export const createPublicOrder = (slug, payload) => defaultService.createPublicO
 export const ecommercePublicServiceInternals = Object.freeze({
   normalizePortalResult,
   normalizeCatalogResult,
+  normalizeOrderResult,
   normalizeRpcFailure,
   isLegacyCatalogSignatureError
 });

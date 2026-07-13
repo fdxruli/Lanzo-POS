@@ -1,0 +1,58 @@
+.public-tracking-shell {
+  min-height: 100dvh;
+  padding: max(16px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  background: #f6f7f9;
+  color: #17191d;
+}
+
+.public-tracking-shell--centered { display: grid; place-items: center; }
+.public-tracking-card { width: min(100%, 760px); margin: 0 auto; padding: 20px; background: #fff; border: 1px solid #e1e4e8; border-radius: 20px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); overflow-wrap: anywhere; }
+.public-tracking-header { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+.public-tracking-header h1 { margin: 4px 0 0; font-size: clamp(1.65rem, 8vw, 2.35rem); line-height: 1.05; }
+.public-tracking-kicker { margin: 0; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6472; }
+.public-tracking-refresh { min-height: 44px; width: 100%; }
+.public-tracking-network { margin: 18px 0; padding: 11px 13px; border-radius: 12px; background: #eef6ff; font-size: 0.9rem; }
+.public-tracking-network--offline, .public-tracking-network--error { background: #fff4d6; }
+.public-tracking-status { padding: 18px; border: 1px solid #d7e9dc; border-radius: 16px; background: #f2fbf5; }
+.public-tracking-status--attention { border-color: #f0d7b7; background: #fff8ed; }
+.public-tracking-status > p:first-child { margin: 0 0 5px; color: #59616d; font-size: 0.85rem; }
+.public-tracking-status h2 { margin: 0; font-size: 1.45rem; }
+.public-tracking-public-message { margin: 10px 0 0; white-space: pre-wrap; }
+.public-tracking-payment { display: inline-flex; margin-top: 12px; padding: 5px 9px; border-radius: 999px; background: #e1f5e7; font-size: 0.82rem; font-weight: 700; }
+.public-tracking-timeline { list-style: none; padding: 0; margin: 24px 0; display: grid; gap: 0; }
+.public-tracking-timeline li { position: relative; display: grid; grid-template-columns: 34px 1fr; gap: 10px; min-height: 54px; align-items: start; color: #7a828e; }
+.public-tracking-timeline li:not(:last-child)::after { content: ''; position: absolute; left: 16px; top: 31px; bottom: -3px; width: 2px; background: #dfe3e8; }
+.public-tracking-timeline li.is-complete { color: #1d6a37; font-weight: 700; }
+.public-tracking-timeline li.is-complete:not(:last-child)::after { background: #70b886; }
+.public-tracking-step-icon { display: grid; place-items: center; width: 34px; height: 34px; border: 2px solid currentColor; border-radius: 50%; background: #fff; }
+.public-tracking-details { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 0; }
+.public-tracking-details div { padding: 12px; border-radius: 12px; background: #f7f8fa; }
+.public-tracking-details dt { color: #626b77; font-size: 0.8rem; }
+.public-tracking-details dd { margin: 4px 0 0; font-weight: 700; }
+.public-tracking-items { margin-top: 24px; }
+.public-tracking-items h2 { font-size: 1.1rem; }
+.public-tracking-items ul { list-style: none; padding: 0; margin: 0; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; }
+.public-tracking-items li { display: flex; justify-content: space-between; gap: 14px; padding: 12px 14px; }
+.public-tracking-items li + li { border-top: 1px solid #e5e7eb; }
+.public-tracking-footer { display: flex; flex-direction: column; gap: 14px; align-items: stretch; margin-top: 24px; }
+.public-tracking-footer small { color: #68717e; text-align: center; }
+.public-tracking-storefront-unavailable { color: #59616d; font-size: 0.9rem; line-height: 1.45; }
+.public-tracking-empty { text-align: center; }
+.public-tracking-loading { display: grid; gap: 14px; }
+.public-tracking-skeleton { height: 70px; border-radius: 14px; background: linear-gradient(90deg, #eceff2 25%, #f7f8fa 50%, #eceff2 75%); background-size: 200% 100%; animation: public-tracking-pulse 1.3s infinite; }
+.public-tracking-skeleton--title { height: 34px; width: 62%; }
+@keyframes public-tracking-pulse { to { background-position: -200% 0; } }
+
+@media (min-width: 600px) {
+  .public-tracking-shell { padding-top: max(32px, env(safe-area-inset-top)); }
+  .public-tracking-card { padding: 30px; }
+  .public-tracking-header { flex-direction: row; justify-content: space-between; align-items: center; }
+  .public-tracking-refresh { width: auto; }
+  .public-tracking-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-tracking-footer { flex-direction: row; justify-content: space-between; align-items: center; }
+  .public-tracking-footer small { text-align: right; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-tracking-skeleton { animation: none; }
+}
