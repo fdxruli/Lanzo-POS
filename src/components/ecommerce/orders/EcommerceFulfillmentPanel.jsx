@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LoaderCircle, X } from 'lucide-react';
 import { useAppStore } from '../../../store/useAppStore';
 import {
@@ -44,7 +44,7 @@ export default function EcommerceFulfillmentPanel() {
     [operationalOrder]
   );
 
-  const loadFulfillment = async (orderId, { quiet = false } = {}) => {
+  const loadFulfillment = useCallback(async (orderId, { quiet = false } = {}) => {
     if (!orderId) return null;
     const epoch = ++loadEpochRef.current;
     if (!quiet) setLoading(true);
@@ -59,7 +59,7 @@ export default function EcommerceFulfillmentPanel() {
     setOperationalOrder(result.order);
     setPublicMessage(result.order.fulfillment?.publicMessage || '');
     return result.order;
-  };
+  }, [licenseDetails]);
 
   useEffect(() => {
     pendingRef.current = null;
@@ -73,7 +73,7 @@ export default function EcommerceFulfillmentPanel() {
       pendingRef.current = null;
       loadEpochRef.current += 1;
     };
-  }, [visibleOrderId]);
+  }, [loadFulfillment, visibleOrderId]);
 
   if (!visibleOrderId || selectedOrder?.status !== 'accepted') return null;
 
