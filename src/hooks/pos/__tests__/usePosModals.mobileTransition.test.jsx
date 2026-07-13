@@ -286,6 +286,8 @@ describe('mobile POS history layer transitions', () => {
     act(() => vi.advanceTimersByTime(1000));
 
     expect(historyModel.pushState).toHaveBeenCalledTimes(1);
+    expect(historyModel.back).toHaveBeenCalledTimes(1);
+    expect(historyModel.index).toBe(0);
     expect(window.history.state).not.toHaveProperty(HISTORY_LAYER_KEY);
   });
 });
