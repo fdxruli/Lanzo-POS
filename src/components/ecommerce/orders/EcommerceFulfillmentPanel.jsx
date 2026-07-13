@@ -10,6 +10,12 @@ import {
 import './EcommerceFulfillmentPanel.css';
 
 const TERMINAL_STATES = new Set(['completed', 'cancelled']);
+const PANEL_ORDER_STATUSES = new Set([
+  'accepted',
+  'converted_to_sale',
+  'completed',
+  'cancelled'
+]);
 const REFRESH_ON_CONFLICT_CODES = new Set([
   'ECOMMERCE_ORDER_STATUS_STALE',
   'ECOMMERCE_ORDER_FULFILLMENT_TERMINAL',
@@ -32,12 +38,50 @@ const createIdempotencyKey = () => (
   || `fulfillment-${Date.now()}-${Math.random().toString(36).slice(2)}`
 );
 
+const getLicenseIdentity = (licenseDetails = {}) => (
+  licenseDetails?.license_key
+  || licenseDetails?.licenseKey
+  || licenseDetails?.details?.license_key
+  || licenseDetails?.details?.licenseKey
+  || 'none'
+);
+
+const getPanelContextIdentity = (state = {}) => {
+  const staffUser = state.currentStaffUser || {};
+  const staffIdentity = (
+    staffUser.id
+    || staffUser.staff_user_id
+    || staffUser.user_id
+    || staffUser.username
+    || 'none'
+  );
+  const ecommercePermission = staffUser.permissions?.ecommerce === true ? 'allow' : 'deny';
+  return [
+    getLicenseIdentity(state.licenseDetails),
+    state.currentDeviceRole || 'unresolved',
+    staffIdentity,
+    ecommercePermission
+  ].join(':');
+};
+
 export default function EcommerceFulfillmentPanel() {
   const pendingRef = useRef(null);
   const loadEpochRef = useRef(0);
+  const mountedRef = useRef(true);
+  const fulfillmentRequestRef = useRef(null);
+  const fulfillmentDirtyRef = useRef(false);
+  const publicMessageDirtyRef = useRef(false);
   const selectedOrder = useAppStore((state) => state.selectedEcommerceOrder);
   const selectedRequestId = useAppStore((state) => state.selectedEcommerceOrderRequestId);
+  const selectedRefreshRevision = useAppStore(
+    (state) => state.ecommerceSelectedOrderRefreshRevision
+  );
+  const selectedRefreshOrderId = useAppStore(
+    (state) => state.ecommerceSelectedOrderRefreshOrderId
+  );
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const refreshOrders = useAppStore((state) => state.refreshEcommerceOrders);
   const clearSelectedOrder = useAppStore((state) => state.clearSelectedEcommerceOrder);
   const [operationalOrder, setOperationalOrder] = useState(null);
@@ -49,31 +93,111 @@ export default function EcommerceFulfillmentPanel() {
   const visibleOrderId = selectedOrder?.id && selectedOrder.id === selectedRequestId
     ? selectedOrder.id
     : null;
+  const panelContextIdentity = getPanelContextIdentity({
+    licenseDetails,
+    currentDeviceRole,
+    currentStaffUser
+  });
   const actions = useMemo(
     () => getEcommerceFulfillmentActions(operationalOrder || {}),
     [operationalOrder]
   );
 
-  const loadFulfillment = useCallback(async (orderId, { quiet = false } = {}) => {
-    if (!orderId) return null;
-    const epoch = ++loadEpochRef.current;
-    if (!quiet) setLoading(true);
-    const result = await getEcommerceOrderFulfillment({ licenseDetails, orderId });
-    const currentSelection = useAppStore.getState().selectedEcommerceOrderRequestId;
-    if (epoch !== loadEpochRef.current || currentSelection !== orderId) return null;
-    setLoading(false);
-    if (result.success !== true) {
-      setFeedback({ type: 'error', text: result.message });
-      return null;
+  const loadFulfillment = useCallback(function requestFulfillment(orderId, {
+    quiet = false,
+    preservePublicMessage = true,
+    markDirtyIfBusy = true
+  } = {}) {
+    if (!orderId) return Promise.resolve(null);
+    const activeRequest = fulfillmentRequestRef.current;
+    if (
+      activeRequest?.orderId === orderId
+      && activeRequest.contextIdentity === panelContextIdentity
+    ) {
+      if (markDirtyIfBusy) fulfillmentDirtyRef.current = true;
+      return activeRequest.promise;
     }
-    setOperationalOrder(result.order);
-    setPublicMessage(result.order.fulfillment?.publicMessage || '');
-    return result.order;
-  }, [licenseDetails]);
+
+    const epoch = ++loadEpochRef.current;
+    const contextIdentity = panelContextIdentity;
+    if (!quiet && mountedRef.current) setLoading(true);
+
+    const request = {
+      orderId,
+      contextIdentity,
+      epoch,
+      promise: null
+    };
+    const promise = (async () => {
+      const result = await getEcommerceOrderFulfillment({ licenseDetails, orderId });
+      const current = useAppStore.getState();
+      const requestIsCurrent = (
+        mountedRef.current
+        && fulfillmentRequestRef.current === request
+        && epoch === loadEpochRef.current
+        && current.selectedEcommerceOrderRequestId === orderId
+        && current.selectedEcommerceOrder?.id === orderId
+        && getPanelContextIdentity(current) === contextIdentity
+      );
+      if (!requestIsCurrent) return null;
+
+      setLoading(false);
+      if (result.success !== true) {
+        setFeedback({ type: 'error', text: result.message });
+        return null;
+      }
+
+      setOperationalOrder(result.order);
+      if (!preservePublicMessage || !publicMessageDirtyRef.current) {
+        publicMessageDirtyRef.current = false;
+        setPublicMessage(result.order.fulfillment?.publicMessage || '');
+      }
+      return result.order;
+    })();
+    request.promise = promise;
+    fulfillmentRequestRef.current = request;
+
+    void promise.finally(() => {
+      if (fulfillmentRequestRef.current !== request) return;
+      fulfillmentRequestRef.current = null;
+      const shouldReplay = fulfillmentDirtyRef.current;
+      fulfillmentDirtyRef.current = false;
+      if (!shouldReplay || !mountedRef.current) return;
+
+      const current = useAppStore.getState();
+      if (
+        current.selectedEcommerceOrderRequestId !== orderId
+        || current.selectedEcommerceOrder?.id !== orderId
+        || getPanelContextIdentity(current) !== contextIdentity
+      ) {
+        return;
+      }
+      void requestFulfillment(orderId, {
+        quiet: true,
+        preservePublicMessage: true,
+        markDirtyIfBusy: false
+      });
+    });
+
+    return promise;
+  }, [licenseDetails, panelContextIdentity]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadEpochRef.current += 1;
+      fulfillmentRequestRef.current = null;
+      fulfillmentDirtyRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     pendingRef.current = null;
     loadEpochRef.current += 1;
+    fulfillmentRequestRef.current = null;
+    fulfillmentDirtyRef.current = false;
+    publicMessageDirtyRef.current = false;
     setOperationalOrder(null);
     setPendingTransition(null);
     setFeedback(null);
@@ -82,10 +206,31 @@ export default function EcommerceFulfillmentPanel() {
     return () => {
       pendingRef.current = null;
       loadEpochRef.current += 1;
+      fulfillmentRequestRef.current = null;
+      fulfillmentDirtyRef.current = false;
     };
   }, [loadFulfillment, visibleOrderId]);
 
-  if (!visibleOrderId || !['accepted', 'converted_to_sale'].includes(selectedOrder?.status)) {
+  useEffect(() => {
+    if (
+      !visibleOrderId
+      || selectedRefreshOrderId !== visibleOrderId
+      || Number(selectedRefreshRevision || 0) <= 0
+    ) {
+      return;
+    }
+    void loadFulfillment(visibleOrderId, {
+      quiet: true,
+      preservePublicMessage: true
+    });
+  }, [
+    loadFulfillment,
+    selectedRefreshOrderId,
+    selectedRefreshRevision,
+    visibleOrderId
+  ]);
+
+  if (!visibleOrderId || !PANEL_ORDER_STATUSES.has(selectedOrder?.status)) {
     return null;
   }
 
@@ -129,6 +274,19 @@ export default function EcommerceFulfillmentPanel() {
       return;
     }
 
+    loadEpochRef.current += 1;
+    fulfillmentRequestRef.current = null;
+    fulfillmentDirtyRef.current = false;
+
+    const confirmedOrder = {
+      ...operationalOrder,
+      ...result.order,
+      fulfillmentMethod: operationalOrder.fulfillmentMethod
+    };
+    setOperationalOrder(confirmedOrder);
+    publicMessageDirtyRef.current = false;
+    setPublicMessage(confirmedOrder.fulfillment?.publicMessage || '');
+
     const nextState = result.order?.fulfillment?.internalStatus
       || result.order?.fulfillment?.status
       || operation.transition;
@@ -145,7 +303,11 @@ export default function EcommerceFulfillmentPanel() {
       type: 'success',
       text: result.idempotent ? 'El estado ya estaba actualizado.' : 'Estado operativo actualizado.'
     });
-    await loadFulfillment(operation.orderId, { quiet: true });
+    await loadFulfillment(operation.orderId, {
+      quiet: true,
+      preservePublicMessage: false,
+      markDirtyIfBusy: false
+    });
   };
 
   if (loading || !operationalOrder || !fulfillment) {
@@ -181,7 +343,10 @@ export default function EcommerceFulfillmentPanel() {
         <span>Mensaje público</span>
         <textarea
           value={publicMessage}
-          onChange={(event) => setPublicMessage(event.target.value.slice(0, 280))}
+          onChange={(event) => {
+            publicMessageDirtyRef.current = true;
+            setPublicMessage(event.target.value.slice(0, 280));
+          }}
           maxLength={280}
           rows={3}
           disabled={Boolean(pendingTransition) || actions.length === 0}
