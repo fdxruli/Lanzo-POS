@@ -287,7 +287,11 @@ export default function PublicOrderTrackingPage() {
         </section>
 
         <footer className="public-tracking-footer">
-          <Link className="ui-button ui-button--secondary" to={`/tienda/${slug}`}>Volver a la tienda</Link>
+          {tracking.storefrontAvailable ? (
+            <Link className="ui-button ui-button--secondary" to={`/tienda/${slug}`}>Volver a la tienda</Link>
+          ) : (
+            <span className="public-tracking-storefront-unavailable">La tienda no está recibiendo pedidos en este momento.</span>
+          )}
           <small>Versión del estado: {tracking.version}</small>
         </footer>
       </section>
