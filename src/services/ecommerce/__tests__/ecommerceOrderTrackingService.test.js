@@ -24,6 +24,7 @@ const publicPayload = (overrides = {}) => ({
     publicMessage: 'Pedido recibido',
     version: 0,
     paymentRegistered: false,
+    storefrontAvailable: true,
     realtime: { enabled: false, topic: null },
     license_id: 'must-not-survive',
     ...overrides
@@ -58,10 +59,25 @@ describe('ecommerceOrderTrackingService', () => {
       publicMessage: 'Pedido recibido',
       version: 0,
       paymentRegistered: false,
+      storefrontAvailable: true,
       realtime: { enabled: false, topic: '' }
     });
     expect(JSON.stringify(result)).not.toContain('license_id');
     expect(JSON.stringify(result)).not.toContain(token);
+  });
+
+  it('keeps valid tracking available while marking an unpublished storefront unavailable', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: publicPayload({ storefrontAvailable: false, status: 'preparing' }),
+      error: null
+    });
+    const service = createEcommerceOrderTrackingService({ rpc });
+
+    await expect(service.getTracking('mi-tienda', token)).resolves.toMatchObject({
+      status: 'preparing',
+      storefrontAvailable: false
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
   it('uses the same public not-found message for an invalid token response', async () => {
@@ -106,6 +122,7 @@ describe('ecommerceOrderTrackingService', () => {
       config: { private: true, broadcast: { self: false } }
     });
     expect(onSignal).toHaveBeenCalledTimes(1);
+    expect(onSignal).toHaveBeenCalledWith();
     expect(removeChannel).toHaveBeenCalledTimes(1);
   });
 
@@ -118,7 +135,11 @@ describe('ecommerceOrderTrackingService', () => {
     expect(sessionStorage.getItem(keys[0])).not.toContain(token);
 
     const cached = await readTrackingCache('mi-tienda', token);
-    expect(cached.tracking).toMatchObject({ orderCode: 'EC-00000123', status: 'received' });
+    expect(cached.tracking).toMatchObject({
+      orderCode: 'EC-00000123',
+      status: 'received',
+      storefrontAvailable: true
+    });
 
     await clearTrackingCache('mi-tienda', token);
     expect(sessionStorage.length).toBe(0);
