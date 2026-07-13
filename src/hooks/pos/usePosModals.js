@@ -71,7 +71,7 @@ export function useMobileCartModal() {
     }, []);
 
     const closeCartForModalTransition = useCallback(() => {
-        closeCart({ replaceHistory: true });
+        closeCart({ handoffHistory: true });
     }, [closeCart]);
 
     return {
