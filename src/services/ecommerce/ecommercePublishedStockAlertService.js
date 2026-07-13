@@ -207,7 +207,9 @@ const classifyProduct = ({
   if (!localProduct) {
     return makeResult({
       publishedProduct,
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.SOURCE_MISSING
+      // IndexedDB is a per-device cache, not the authoritative product source.
+      // A cache miss must preserve the last cloud-confirmed availability.
+      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
     });
   }
 

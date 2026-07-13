@@ -57,7 +57,7 @@ const createHarness = ({
 };
 
 describe('ecommercePublishedStockAlertService', () => {
-  it('distingue stock cero, negativo, positivo, no controlado, faltante e inactivo', async () => {
+  it('distingue stock cero, negativo, positivo, no controlado, no verificado e inactivo', async () => {
     const publishedProducts = [
       published('zero'),
       published('negative'),
@@ -90,7 +90,8 @@ describe('ecommercePublishedStockAlertService', () => {
     expect(statuses.get('local-negative')).toBe('out_of_stock');
     expect(statuses.get('local-positive')).toBe('in_stock');
     expect(statuses.get('local-not-tracked')).toBe('not_tracked');
-    expect(statuses.get('local-missing')).toBe('source_missing');
+    expect(statuses.get('local-missing')).toBe('unverified');
+    expect(result.unverifiedCount).toBe(1);
     expect(statuses.get('local-inactive')).toBe('inactive_source');
     expect(statuses.has('local-hidden')).toBe(false);
     expect(statuses.has('local-no-ref')).toBe(false);

@@ -221,7 +221,7 @@ describe('ecommerceCatalogSyncService', () => {
     }));
   });
 
-  it('uses source_missing only after a successful read that does not contain the product', async () => {
+  it('keeps availability unchanged when a local cache read does not contain the product', async () => {
     const syncBatch = vi.fn().mockResolvedValue({ ...successResult(4), reviewCount: 1 });
     const service = createEcommerceCatalogSyncService({
       getState: adminState,
@@ -236,8 +236,8 @@ describe('ecommerceCatalogSyncService', () => {
     expect(syncBatch.mock.calls[0][0].projections[0]).toMatchObject({
       publishedProductId: 'published-product-1',
       sourceRevision: null,
-      sourceState: 'source_missing',
-      sourceAvailable: false,
+      sourceState: 'unverified',
+      sourceAvailable: null,
       stockSnapshot: null,
       fields: {}
     });

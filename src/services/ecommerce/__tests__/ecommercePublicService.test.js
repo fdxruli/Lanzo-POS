@@ -2,8 +2,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createEcommercePublicService,
+  ecommercePublicClient,
   EcommercePublicError,
 } from '../ecommercePublicService';
+import { supabaseClient } from '../../supabase';
 
 const orderResponse = (overrides = {}) => ({
   success: true,
@@ -30,6 +32,10 @@ afterEach(() => {
 });
 
 describe('ecommercePublicService', () => {
+  it('reuses the app Supabase singleton for the public store', () => {
+    expect(ecommercePublicClient).toBe(supabaseClient);
+  });
+
   it('uses the public portal and catalog RPC contracts and normalizes features', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({

@@ -139,6 +139,7 @@ export const mapEcommerceOrderToPosDraft = ({ order, products, licenseIdentity, 
       ecommerceLicenseIdentity: licenseIdentity,
       ecommerceDraftStatus: order.posDraft?.status === 'prepared' ? 'prepared' : 'claimed',
       ecommerceClaimToken: claimToken,
+      ecommerceOperationalStatus: order.fulfillment?.internalStatus || order.fulfillment?.status || 'accepted',
       fulfillmentMethod: order.fulfillmentMethod,
       expectedSubtotal: order.totals?.subtotal,
       expectedDeliveryFee: order.totals?.deliveryFee,
@@ -307,6 +308,12 @@ async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
   const remoteToken = remoteOrder?.posDraft?.claimToken || null;
 
   if (localMatchesPreparedRemote({ existing, remoteOrder, draftId, licenseIdentity })) {
+    activeOrders.updateOrder(draftId, {
+      ecommerceOperationalStatus: remoteOrder.fulfillment?.internalStatus
+        || remoteOrder.fulfillment?.status
+        || existing.ecommerceOperationalStatus
+        || 'accepted'
+    });
     activeOrders.switchOrder(draftId);
     return { success: true, created: false, draftId, order: existing };
   }
@@ -432,6 +439,11 @@ async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
       });
       return { ...confirmResult, releaseRecoveryRequired: !cleanup.released };
     }
+    useActiveOrders.getState().updateOrder(draftId, {
+      ecommerceOperationalStatus: confirmResult.order?.fulfillment?.internalStatus
+        || confirmResult.order?.fulfillment?.status
+        || 'preparing'
+    });
   }
 
   if (!isContextCurrent()) {

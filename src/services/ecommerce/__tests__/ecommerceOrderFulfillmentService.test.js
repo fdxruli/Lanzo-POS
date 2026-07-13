@@ -41,6 +41,16 @@ describe('ecommerce fulfillment controls', () => {
     expect(actions.map((action) => action.transition)).toEqual(['out_for_delivery', 'cancelled']);
   });
 
+  it('switches the next action to Marcar como listo once POS preparation is reflected', () => {
+    const actions = getEcommerceFulfillmentActions({
+      status: 'accepted',
+      fulfillmentMethod: 'pickup',
+      fulfillment: { internalStatus: 'preparing' }
+    });
+    expect(actions.map((action) => action.label)).toEqual(['Marcar como listo', 'Cancelar pedido']);
+    expect(actions.some((action) => action.transition === 'preparing')).toBe(false);
+  });
+
   it('keeps delivery actions available after the POS conversion', () => {
     const actions = getEcommerceFulfillmentActions({
       status: 'converted_to_sale',
