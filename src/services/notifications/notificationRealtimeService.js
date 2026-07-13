@@ -1,6 +1,7 @@
 import Logger from '../Logger';
 import { supabaseClient } from '../supabase';
 import { canUseEcommerceOrderRealtime } from '../ecommerce/ecommerceOrderCapabilities';
+import { ECOMMERCE_ORDERS_CHANGED_EVENT } from '../ecommerce/ecommerceOrderRealtimeEvent';
 import {
   canStaffAccessNotifications,
   isCloudNotificationsEnabled,
@@ -42,7 +43,7 @@ export const canUseNotificationRealtime = (licenseDetails = {}, staffSession = {
 
 const dispatchEcommerceOrderEvent = (event) => {
   if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent('lanzo:ecommerce-orders-changed', {
+  window.dispatchEvent(new CustomEvent(ECOMMERCE_ORDERS_CHANGED_EVENT, {
     detail: event
   }));
 };
