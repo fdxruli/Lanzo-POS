@@ -152,7 +152,7 @@ export const FULFILLMENT_LABELS = Object.freeze({
 });
 
 export function getEcommerceFulfillmentActions(order = {}) {
-  if (order.status !== 'accepted') return [];
+  if (!['accepted', 'converted_to_sale'].includes(order.status)) return [];
   const state = order.fulfillment?.internalStatus || order.fulfillment?.status;
   const method = order.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
   const cancel = { transition: 'cancelled', label: 'Cancelar pedido', destructive: true };
