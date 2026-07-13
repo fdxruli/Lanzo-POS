@@ -109,7 +109,7 @@ export function useDismissibleHistoryLayer({
     };
   }, [enabled, isOpen, layerId, runDismiss]);
 
-  const dismiss = useCallback(() => {
+  const dismiss = useCallback(({ replaceHistory = false } = {}) => {
     if (!canUseWindowHistory()) {
       runDismiss();
       return;
@@ -119,6 +119,24 @@ export function useDismissibleHistoryLayer({
     const ownsCurrentEntry = hasHistoryEntryRef.current && currentLayerToken === layerTokenRef.current;
 
     if (!ownsCurrentEntry) {
+      runDismiss();
+      return;
+    }
+
+    // Cuando otra capa se abrirá inmediatamente (por ejemplo, carrito → pago),
+    // elimina esta entrada sin emitir un popstate tardío que cierre la nueva capa.
+    if (replaceHistory && typeof window.history.replaceState === 'function') {
+      if (fallbackTimerRef.current) {
+        window.clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
+      window.history.replaceState(
+        stripLayerState(window.history.state),
+        document.title,
+        window.location.href
+      );
+      hasHistoryEntryRef.current = false;
+      pendingProgrammaticDismissRef.current = false;
       runDismiss();
       return;
     }

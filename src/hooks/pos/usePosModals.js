@@ -49,7 +49,8 @@ export function usePosModals() {
  * @returns {{
  *   isOpen: boolean,
  *   openCart: () => void,
- *   closeCart: () => void
+ *   closeCart: () => void,
+ *   closeCartForModalTransition: () => void
  * }}
  */
 export function useMobileCartModal() {
@@ -69,9 +70,14 @@ export function useMobileCartModal() {
         setIsOpen(true);
     }, []);
 
+    const closeCartForModalTransition = useCallback(() => {
+        closeCart({ replaceHistory: true });
+    }, [closeCart]);
+
     return {
         isOpen,
         openCart,
-        closeCart
+        closeCart,
+        closeCartForModalTransition
     };
 }

@@ -306,6 +306,20 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(deps.modal.openModal).not.toHaveBeenCalled();
   });
 
+  it('replaces the mobile cart history layer before opening the payment modal', async () => {
+    setOrders([makeOrder()]);
+    const deps = makeDeps();
+    deps.mobileCart.closeCartForModalTransition = vi.fn();
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    const response = await initiateCheckout(result);
+
+    expect(response).toMatchObject({ success: true, orderId: 'order-a' });
+    expect(deps.mobileCart.closeCartForModalTransition).toHaveBeenCalledTimes(1);
+    expect(deps.mobileCart.closeCart).not.toHaveBeenCalled();
+    expect(deps.modal.openModal).toHaveBeenCalledWith('payment');
+  });
+
   it('releases A exactly once when the live order changes from normal A to ecommerce B', async () => {
     const orderA = makeOrder({ id: 'order-a' });
     const orderB = makeOrder({ id: 'order-b', origin: 'ecommerce', ecommerceDraftStatus: 'prepared' });
@@ -382,6 +396,7 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     const { result } = renderHook(() => usePosCheckout(deps.args));
 
     await initiateCheckout(result);
+    deps.modal.openModal.mockClear();
     switchToOrder(orderB);
 
     let response;

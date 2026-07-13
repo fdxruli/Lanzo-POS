@@ -1025,7 +1025,11 @@ export function usePosCheckout({
             : [];
 
         prescription.setTempPrescriptionData(null);
-        mobileCart.closeCart();
+        if (typeof mobileCart.closeCartForModalTransition === 'function') {
+            mobileCart.closeCartForModalTransition();
+        } else {
+            mobileCart.closeCart();
+        }
 
         if (itemsRequiring.length > 0) {
             prescription.setPrescriptionItems(itemsRequiring);
