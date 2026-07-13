@@ -86,6 +86,21 @@ BEGIN
     raise exception 'one or more invalid transitions are allowed';
   end if;
 
+  if private.ecommerce_order_public_status_v1('converted_to_sale', 'ready') <> 'ready' then
+    raise exception 'converted order did not preserve fulfillment priority';
+  end if;
+  if private.ecommerce_order_public_status_v1('converted_to_sale', null) <> 'accepted' then
+    raise exception 'converted order did not use the conservative accepted fallback';
+  end if;
+  if exists (
+    select 1
+    from public.ecommerce_orders
+    where status = 'converted_to_sale'
+      and fulfillment_status is null
+  ) then
+    raise exception 'converted order fulfillment backfill is incomplete';
+  end if;
+
   v_admin_failure := public.ecommerce_admin_update_order_fulfillment(
     null,
     null,
