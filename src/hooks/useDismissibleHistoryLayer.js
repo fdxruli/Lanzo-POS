@@ -137,10 +137,13 @@ const beginHistoryLayerHandoff = (sourceToken) => {
   const recoveryTimerId = window.setTimeout(() => {
     if (pendingHistoryLayerHandoff?.handoffId !== handoffId) return;
 
-    if (!activeLayerTokens.has(sourceToken)) {
-      stripCurrentLayerToken(sourceToken);
-    }
     pendingHistoryLayerHandoff = null;
+    if (
+      !activeLayerTokens.has(sourceToken)
+      && window.history.state?.[HISTORY_LAYER_KEY] === sourceToken
+    ) {
+      window.history.back();
+    }
   }, HISTORY_HANDOFF_RECOVERY_MS);
 
   pendingHistoryLayerHandoff = {
