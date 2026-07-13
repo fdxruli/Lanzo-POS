@@ -69,11 +69,23 @@ function normalizeTracking(data) {
   };
 }
 
+const fallbackHash = (value) => {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193) >>> 0;
+    second = Math.imul(second ^ (code + index), 0x85ebca6b) >>> 0;
+  }
+  return `${first.toString(16).padStart(8, '0')}${second.toString(16).padStart(8, '0')}`;
+};
+
 async function hashCacheIdentity(slug, token) {
-  if (!globalThis.crypto?.subtle || typeof TextEncoder === 'undefined') return null;
+  const identity = `${slug}:${token}`;
+  if (!globalThis.crypto?.subtle || typeof TextEncoder === 'undefined') return fallbackHash(identity);
   const digest = await globalThis.crypto.subtle.digest(
     'SHA-256',
-    new TextEncoder().encode(`${slug}:${token}`)
+    new TextEncoder().encode(identity)
   );
   return Array.from(new Uint8Array(digest))
     .slice(0, 16)
@@ -191,5 +203,6 @@ export const ecommerceOrderTrackingInternals = Object.freeze({
   normalizeSlug,
   normalizeToken,
   normalizeTracking,
-  hashCacheIdentity
+  hashCacheIdentity,
+  fallbackHash
 });
