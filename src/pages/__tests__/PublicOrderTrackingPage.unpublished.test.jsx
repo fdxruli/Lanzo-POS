@@ -78,4 +78,22 @@ describe('PublicOrderTrackingPage unpublished portal', () => {
 
     expect(await screen.findByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/tienda/mi-negocio');
   });
+
+  it('shows the same not-found message for the uniform public tracking failure contract', async () => {
+    const error = new Error('No se pudo encontrar este seguimiento.');
+    error.code = 'ECOMMERCE_TRACKING_NOT_FOUND';
+    mocks.getTracking.mockRejectedValue(error);
+
+    render(
+      <MemoryRouter initialEntries={[`/tienda/mi-negocio/pedido/trk1_${'C'.repeat(43)}`]}>
+        <Routes>
+          <Route path="/tienda/:slug/pedido/:trackingToken" element={<PublicOrderTrackingPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole('heading', { name: 'No se encontró el seguimiento' })).toBeInTheDocument();
+    expect(screen.getByText('No se pudo encontrar este seguimiento.')).toBeInTheDocument();
+    expect(screen.queryByText(/demasiadas|límite|espera/i)).not.toBeInTheDocument();
+  });
 });
