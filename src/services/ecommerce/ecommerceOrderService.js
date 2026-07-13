@@ -114,6 +114,15 @@ const normalizeEvent = (event = {}) => ({
   createdAt: event.createdAt || null
 });
 
+const normalizeFulfillment = (fulfillment = {}) => ({
+  status: safeText(fulfillment?.status),
+  internalStatus: safeText(fulfillment?.internalStatus),
+  version: Math.max(0, Math.floor(safeNumber(fulfillment?.version))),
+  updatedAt: fulfillment?.updatedAt || null,
+  publicMessage: safeText(fulfillment?.publicMessage),
+  paymentRegistered: Boolean(fulfillment?.paymentRegistered)
+});
+
 const normalizeDetail = (order = {}) => ({
   id: safeText(order.id),
   code: safeText(order.code),
@@ -161,7 +170,8 @@ const normalizeDetail = (order = {}) => ({
     preparedAt: order.posDraft?.preparedAt || null,
     isClaimedByCurrentActor: Boolean(order.posDraft?.isClaimedByCurrentActor),
     claimToken: safeText(order.posDraft?.claimToken) || null
-  }
+  },
+  fulfillment: normalizeFulfillment(order.fulfillment)
 });
 
 const getLicenseKey = (licenseDetails = {}) => (
@@ -348,6 +358,7 @@ export const ecommerceOrderServiceInternals = Object.freeze({
   buildAuthArgs,
   normalizeOrderSummary,
   normalizeDetail,
+  normalizeFulfillment,
   normalizeCounts,
   normalizePagination
 });

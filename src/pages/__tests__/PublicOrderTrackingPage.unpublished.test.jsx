@@ -48,6 +48,22 @@ beforeEach(() => {
 });
 
 describe('PublicOrderTrackingPage unpublished portal', () => {
+  it('shows preparing and payment registered without inventing a completed fulfillment state', async () => {
+    mocks.getTracking.mockResolvedValue(tracking({ paymentRegistered: true }));
+
+    render(
+      <MemoryRouter initialEntries={[`/tienda/mi-negocio/pedido/trk1_${'D'.repeat(43)}`]}>
+        <Routes>
+          <Route path="/tienda/:slug/pedido/:trackingToken" element={<PublicOrderTrackingPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findAllByText(/En preparaci/)).not.toHaveLength(0);
+    expect(screen.getByText('Pago registrado')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Completado' })).not.toBeInTheDocument();
+  });
+
   it('keeps the tracking visible without exposing catalog or new-order controls', async () => {
     mocks.getTracking.mockResolvedValue(tracking());
 

@@ -62,6 +62,7 @@ const createOrder = (overrides = {}) => ({
   ecommerceRemoteClaimValid: true,
   ecommerceRemoteConversionStatus: 'idle',
   ecommerceRemoteConversionOwned: false,
+  ecommerceOperationalStatus: 'preparing',
   ...overrides
 });
 
@@ -98,6 +99,7 @@ describe('EcommercePosConversionPanel', () => {
     render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
 
     expect(screen.getByText('Inventario: Requiere atención')).toBeInTheDocument();
+    expect(screen.getByText(/En preparaci/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cobrar pedido' })).toBeDisabled();
     expect(screen.getByText('Resuelve el inventario antes de cobrar.')).toBeInTheDocument();
   });

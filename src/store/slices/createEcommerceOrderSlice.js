@@ -103,11 +103,15 @@ const createInitialState = () => ({
   ecommerceOrdersActiveRequestKey: null,
   selectedEcommerceOrder: null,
   selectedEcommerceOrderLoading: false,
+  selectedEcommerceOrderRefreshing: false,
   selectedEcommerceOrderError: null,
   selectedEcommerceOrderLoadedAt: null,
   selectedEcommerceOrderLicenseIdentity: null,
   selectedEcommerceOrderActorIdentity: null,
   selectedEcommerceOrderRequestId: null,
+  ecommerceSelectedOrderStale: false,
+  ecommerceSelectedOrderRefreshRevision: 0,
+  ecommerceSelectedOrderRefreshOrderId: null,
   ecommerceOrderActionLoading: null,
   ecommerceOrderActionOrderId: null,
   ecommerceOrdersStale: true,
@@ -450,7 +454,11 @@ export const createEcommerceOrderSlice = (set, get) => ({
     }
   },
 
-  openEcommerceOrder: async (orderId, { force = false, markSeen = true } = {}) => {
+  openEcommerceOrder: async (orderId, {
+    force = false,
+    markSeen = true,
+    background = false
+  } = {}) => {
     if (!orderId) return { success: false, code: 'ECOMMERCE_ORDER_NOT_FOUND' };
 
     const state = get();
@@ -464,6 +472,11 @@ export const createEcommerceOrderSlice = (set, get) => ({
     const actorIdentity = requestContext.actorIdentity;
     const requestLicenseDetails = state.licenseDetails;
     const sameActiveIntent = state.selectedEcommerceOrderRequestId === orderId;
+    const isBackgroundRefresh = Boolean(
+      background &&
+      sameActiveIntent &&
+      state.selectedEcommerceOrder?.id === orderId
+    );
 
     if (
       !force &&
@@ -486,12 +499,21 @@ export const createEcommerceOrderSlice = (set, get) => ({
 
     set({
       selectedEcommerceOrder: sameActiveIntent ? state.selectedEcommerceOrder : null,
-      selectedEcommerceOrderLoading: true,
+      selectedEcommerceOrderLoading: isBackgroundRefresh
+        ? state.selectedEcommerceOrderLoading
+        : true,
+      selectedEcommerceOrderRefreshing: isBackgroundRefresh,
       selectedEcommerceOrderError: null,
       selectedEcommerceOrderLoadedAt: sameActiveIntent ? state.selectedEcommerceOrderLoadedAt : null,
       selectedEcommerceOrderLicenseIdentity: licenseIdentity,
       selectedEcommerceOrderActorIdentity: actorIdentity,
-      selectedEcommerceOrderRequestId: orderId
+      selectedEcommerceOrderRequestId: orderId,
+      ecommerceSelectedOrderStale: sameActiveIntent
+        ? state.ecommerceSelectedOrderStale
+        : false,
+      ecommerceSelectedOrderRefreshOrderId: sameActiveIntent
+        ? state.ecommerceSelectedOrderRefreshOrderId
+        : null
     });
 
     const request = (async () => {
@@ -507,6 +529,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
       if (result.success === false) {
         set({
           selectedEcommerceOrderLoading: false,
+          selectedEcommerceOrderRefreshing: false,
           selectedEcommerceOrderError: result.message || getEcommerceOrderErrorMessage(result),
           selectedEcommerceOrderLoadedAt: null
         });
@@ -556,6 +579,7 @@ export const createEcommerceOrderSlice = (set, get) => ({
       set({
         selectedEcommerceOrder: result.order,
         selectedEcommerceOrderLoading: false,
+        selectedEcommerceOrderRefreshing: false,
         selectedEcommerceOrderError: null,
         selectedEcommerceOrderLoadedAt: now(),
         selectedEcommerceOrderLicenseIdentity: licenseIdentity,
@@ -633,16 +657,70 @@ export const createEcommerceOrderSlice = (set, get) => ({
     set({ ecommerceOrdersStale: true, ecommerceOrderSummaryStale: true });
   },
 
+  markSelectedEcommerceOrderStale: (orderId = null) => {
+    const state = get();
+    const selectedOrderId = state.selectedEcommerceOrderRequestId;
+    const requestedOrderId = orderId === null || orderId === undefined
+      ? null
+      : String(orderId).trim();
+    if (
+      !selectedOrderId ||
+      state.selectedEcommerceOrder?.id !== selectedOrderId ||
+      (requestedOrderId && requestedOrderId !== selectedOrderId)
+    ) {
+      return { success: false, changed: false, orderId: selectedOrderId || null };
+    }
+
+    if (!state.ecommerceSelectedOrderStale) {
+      set({ ecommerceSelectedOrderStale: true });
+    }
+    return { success: true, changed: !state.ecommerceSelectedOrderStale, orderId: selectedOrderId };
+  },
+
+  requestSelectedEcommerceOrderRefresh: (orderId = null) => {
+    const state = get();
+    const selectedOrderId = state.selectedEcommerceOrderRequestId;
+    const requestedOrderId = orderId === null || orderId === undefined
+      ? null
+      : String(orderId).trim();
+    if (
+      !selectedOrderId ||
+      state.selectedEcommerceOrder?.id !== selectedOrderId ||
+      (requestedOrderId && requestedOrderId !== selectedOrderId)
+    ) {
+      return { success: false, changed: false, orderId: selectedOrderId || null };
+    }
+
+    set((current) => ({
+      ecommerceSelectedOrderStale: true,
+      ecommerceSelectedOrderRefreshRevision:
+        Number(current.ecommerceSelectedOrderRefreshRevision || 0) + 1,
+      ecommerceSelectedOrderRefreshOrderId: selectedOrderId
+    }));
+    return { success: true, changed: true, orderId: selectedOrderId };
+  },
+
+  markSelectedEcommerceOrderFresh: (orderId) => {
+    const state = get();
+    const selectedOrderId = state.selectedEcommerceOrderRequestId;
+    if (!orderId || selectedOrderId !== String(orderId).trim()) return false;
+    set({ ecommerceSelectedOrderStale: false });
+    return true;
+  },
+
   clearSelectedEcommerceOrder: () => {
     detailIntentEpoch += 1;
     set({
       selectedEcommerceOrder: null,
       selectedEcommerceOrderLoading: false,
+      selectedEcommerceOrderRefreshing: false,
       selectedEcommerceOrderError: null,
       selectedEcommerceOrderLoadedAt: null,
       selectedEcommerceOrderLicenseIdentity: null,
       selectedEcommerceOrderActorIdentity: null,
-      selectedEcommerceOrderRequestId: null
+      selectedEcommerceOrderRequestId: null,
+      ecommerceSelectedOrderStale: false,
+      ecommerceSelectedOrderRefreshOrderId: null
     });
   },
 

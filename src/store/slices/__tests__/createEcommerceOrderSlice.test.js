@@ -402,6 +402,62 @@ describe('createEcommerceOrderSlice', () => {
     expect(get().selectedEcommerceOrder?.id).toBe('order-a');
   });
 
+  it('versions refresh requests only for the currently selected order', async () => {
+    mocks.getEcommerceOrder.mockResolvedValueOnce(detailResult('order-a'));
+    const { get } = createHarness();
+    await get().openEcommerceOrder('order-a', { markSeen: false });
+
+    const initialRevision = get().ecommerceSelectedOrderRefreshRevision;
+    expect(get().markSelectedEcommerceOrderStale('order-b')).toMatchObject({
+      success: false,
+      changed: false
+    });
+    expect(get().requestSelectedEcommerceOrderRefresh('order-b')).toMatchObject({
+      success: false,
+      changed: false
+    });
+    expect(get().ecommerceSelectedOrderRefreshRevision).toBe(initialRevision);
+
+    expect(get().markSelectedEcommerceOrderStale('order-a')).toMatchObject({ success: true });
+    expect(get().ecommerceSelectedOrderStale).toBe(true);
+    expect(get().requestSelectedEcommerceOrderRefresh('order-a')).toMatchObject({
+      success: true,
+      changed: true
+    });
+    expect(get().ecommerceSelectedOrderRefreshRevision).toBe(initialRevision + 1);
+    expect(get().ecommerceSelectedOrderRefreshOrderId).toBe('order-a');
+
+    expect(get().markSelectedEcommerceOrderFresh('order-a')).toBe(true);
+    expect(get().ecommerceSelectedOrderStale).toBe(false);
+  });
+
+  it('keeps the selected detail visible during a silent forced refresh', async () => {
+    const pendingRefresh = createDeferred();
+    mocks.getEcommerceOrder
+      .mockResolvedValueOnce(detailResult('order-a'))
+      .mockReturnValueOnce(pendingRefresh.promise);
+    const { get } = createHarness();
+    await get().openEcommerceOrder('order-a', { markSeen: false });
+
+    const refresh = get().openEcommerceOrder('order-a', {
+      force: true,
+      markSeen: false,
+      background: true
+    });
+
+    expect(get().selectedEcommerceOrder?.id).toBe('order-a');
+    expect(get().selectedEcommerceOrderLoading).toBe(false);
+    expect(get().selectedEcommerceOrderRefreshing).toBe(true);
+
+    pendingRefresh.resolve(detailResult('order-a', {}, 'accepted'));
+    await refresh;
+
+    expect(get().selectedEcommerceOrder?.status).toBe('accepted');
+    expect(get().selectedEcommerceOrderLoading).toBe(false);
+    expect(get().selectedEcommerceOrderRefreshing).toBe(false);
+    expect(mocks.markEcommerceOrderSeen).not.toHaveBeenCalled();
+  });
+
   it('clears order data, PII and both active intents when the state resets', async () => {
     const { get } = createHarness();
     await get().loadEcommerceOrders();

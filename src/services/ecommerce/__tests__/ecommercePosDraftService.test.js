@@ -130,7 +130,11 @@ beforeEach(() => {
     changed: true,
     order: baseOrder({ status: 'claimed', claimToken: 'opaque-claim', isClaimedByCurrentActor: true })
   }));
-  mocks.confirm.mockResolvedValue({ success: true, changed: true });
+  mocks.confirm.mockResolvedValue({
+    success: true,
+    changed: true,
+    order: { fulfillment: { internalStatus: 'preparing', status: 'preparing', version: 2 } }
+  });
   mocks.release.mockResolvedValue({ success: true, changed: true });
 });
 
@@ -196,6 +200,10 @@ describe('ecommercePosDraftService', () => {
       claimToken: 'opaque-claim',
       draftId
     }));
+    expect(mocks.activeState.activeOrders.get(draftId)).toMatchObject({
+      ecommerceDraftStatus: 'prepared',
+      ecommerceOperationalStatus: 'preparing'
+    });
   });
 
   it('opens an existing local draft only when remote prepared identity matches completely', async () => {
