@@ -25,6 +25,8 @@
 .ecommerce-fulfillment-panel label small { justify-self: end; color: var(--text-light, #667085); }
 .ecommerce-fulfillment-actions { display: grid; gap: 9px; margin-top: 14px; }
 .ecommerce-fulfillment-actions button { min-height: 44px; }
+.ecommerce-fulfillment-action--destructive { border-color: #b42318; color: #b42318; }
+.ecommerce-fulfillment-action--destructive:hover:not(:disabled) { background: #fff1f0; }
 .ecommerce-fulfillment-feedback { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 10px; border-radius: 10px; }
 .ecommerce-fulfillment-feedback.is-error { background: #fff1f0; color: #9f1c14; }
 .ecommerce-fulfillment-feedback.is-success { background: #edf9f0; color: #216e39; }
