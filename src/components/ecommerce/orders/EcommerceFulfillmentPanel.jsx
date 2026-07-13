@@ -75,7 +75,9 @@ export default function EcommerceFulfillmentPanel() {
     };
   }, [loadFulfillment, visibleOrderId]);
 
-  if (!visibleOrderId || selectedOrder?.status !== 'accepted') return null;
+  if (!visibleOrderId || !['accepted', 'converted_to_sale'].includes(selectedOrder?.status)) {
+    return null;
+  }
 
   const fulfillment = operationalOrder?.fulfillment;
   const runTransition = async (action) => {
@@ -182,7 +184,9 @@ export default function EcommerceFulfillmentPanel() {
             <button
               key={action.transition}
               type="button"
-              className={action.destructive ? 'ui-button ui-button--danger' : 'ui-button ui-button--primary'}
+              className={action.destructive
+                ? 'ui-button ui-button--secondary ecommerce-fulfillment-action--destructive'
+                : 'ui-button ui-button--primary'}
               disabled={Boolean(pendingTransition)}
               onClick={() => runTransition(action)}
             >
