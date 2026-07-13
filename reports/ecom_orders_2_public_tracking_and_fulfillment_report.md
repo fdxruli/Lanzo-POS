@@ -2,590 +2,393 @@
 
 ## Estado
 
-**Implementación funcional y migraciones terminadas. Validación local y manual pendiente. El PR debe permanecer draft. No mergear.**
+**ECOM.ORDERS.2.1 implementado en código y Supabase. Validación frontend local, build y pruebas manuales pendientes. El PR debe permanecer draft. No mergear.**
 
 - Repositorio: `fdxruli/Lanzo-POS`
-- HEAD inicial verificado de `main`: `c5d38b43f92b936c195f677fbd30a062091bbcb9`
-- Precondición: PR `#93` confirmado como mergeado en ese HEAD
-- Rama creada: `fase-ecom-orders-2`
-- Base exacta de la rama: `c5d38b43f92b936c195f677fbd30a062091bbcb9`
+- Rama: `fase-ecom-orders-2`
 - PR: `#94 — FASE ECOM.ORDERS.2 — Seguimiento público y ciclo operativo del pedido`
-- URL: `https://github.com/fdxruli/Lanzo-POS/pull/94`
-- Estado del PR: **draft**
-- Vercel manual: **no utilizado**
-- Preview/deployment manual: **no creado, promovido, redeployado ni abierto para validación**
-- Integración automática de GitHub/Vercel: emitió un check remoto; no fue disparado ni utilizado como sustituto del build local
-- Merge: **no realizado**
-- `supabase migration repair`: **no utilizado**
+- HEAD remoto verificado antes de iniciar ECOM.ORDERS.2.1: `64cb06e6e5cbb4e5f9164074d4b313e00d127dc9`
+- HEAD funcional antes de este commit documental: `c9add7393cb3edec8634cb8e9a1ee6fa3ab5481a`
+- Estado del PR: `DRAFT`
+- Merge: `NO REALIZADO`
+- `supabase db push`: no utilizado
+- `supabase migration repair`: no utilizado
+- Vercel manual: no utilizado
+- Preview manual: no creado, promovido, redeployado ni validado
 
-## Arquitectura de tracking
+## Alcance de ECOM.ORDERS.2.1
 
-Se implementó un token opaco determinístico firmado con HMAC-SHA-256:
+Se corrigieron dos bloqueantes y dos defectos funcionales:
 
-1. secreto aleatorio de 32 bytes, versionado por portal, en `private.ecommerce_order_tracking_keys`;
-2. material firmado compuesto por `order_id`, `portal_id` y versión de clave, utilizado exclusivamente server-side;
-3. token `trk1_<base64url-hmac>` de alta entropía;
-4. almacenamiento exclusivo de `SHA-256(token)` y `token_last4` en `private.ecommerce_order_tracking_tokens`;
-5. recomputación con la versión de clave registrada para devolver exactamente el mismo token en reintentos idempotentes;
-6. revocación con `revoked_at` y expiración opcional con `expires_at`;
-7. el token plano no se guarda en tablas, metadata, eventos, notificaciones ni logs.
+1. pedidos con fulfillment terminal todavía podían iniciar o continuar trabajo POS;
+2. el rate limit público podía evadirse rotando tokens inválidos;
+3. el tracking dejaba de resolver al pausar o despublicar el portal;
+4. pedidos terminales no convertidos permanecían en la bandeja y contadores operativos.
 
-El checkout conserva la RPC canónica `ecommerce_create_order(...)`. Solo se amplió el helper privado que forma su respuesta para devolver:
+La solución conserva separados:
 
-- `trackingToken`
-- `trackingPath`
-- `trackingVersion`
+- estado base del pedido;
+- estado operativo de fulfillment;
+- estado de conversión POS;
+- estado de pago.
 
-La misma orden recuperada por `idempotency_key` vuelve a calcular el mismo token y la misma URL.
+`converted_to_sale` no se interpreta como entregado.
 
-## Modelo de estados
-
-Campos aditivos en `public.ecommerce_orders`:
-
-- `fulfillment_status`
-- `fulfillment_version`
-- `fulfillment_updated_at`
-- `public_status_message`
-
-Estados operativos:
-
-- `accepted`
-- `preparing`
-- `ready`
-- `out_for_delivery`
-- `completed`
-- `cancelled`
-- `attention`
-
-Transiciones permitidas server-side:
-
-- `accepted → preparing`
-- `preparing → ready`
-- `ready → completed` para pickup
-- `ready → out_for_delivery` para delivery
-- `out_for_delivery → completed` para delivery
-- `accepted|preparing|ready|out_for_delivery → cancelled`
-
-La versión esperada y la llave idempotente se validan dentro de la RPC administrativa. Una repetición de la misma transición con la misma llave devuelve el resultado existente sin crear otro evento. Una versión anterior devuelve `ECOMMERCE_ORDER_STATUS_STALE`.
-
-## Independencia respecto al POS
+## Restricciones respetadas
 
 No se modificaron:
 
-- `processSale`
-- reservas
-- FEFO
-- locks de checkout
-- `checkoutAttemptId`
-- `conversionKey`
-- movimientos de inventario
-- movimientos de caja
-- confirmación remota
+- `processSale`;
+- FEFO;
+- reservas ni movimientos de inventario;
+- movimientos de caja;
+- `checkoutAttemptId`;
+- `conversionKey`;
+- confirmación remota;
+- las seis migraciones originales ya aplicadas.
 
-Durante la revisión se detectó que el cobro canónico cambia el estado base a `converted_to_sale` y archiva la orden. Se corrigió de forma aditiva para que:
+Las rutas POS existentes se conservaron como implementaciones privadas y se envolvieron con guards server-side estrictos.
 
-- el fulfillment siga siendo independiente después del pago;
-- `converted_to_sale` no equivalga a entregado;
-- pedidos convertidos no terminales permanezcan visibles en la bandeja operativa;
-- las RPC POS continúen exigiendo sus guards originales (`accepted`, visibilidad activa y ausencia de conversión);
-- al llegar a `completed` o `cancelled`, el pedido convertido deje de mostrarse como operativo.
+## Migraciones originales conservadas
 
-Los tres pedidos convertidos existentes se inicializaron conservadoramente en `accepted`; ninguno fue marcado automáticamente como completado.
+Estas seis migraciones no fueron editadas:
 
-## Contratos RPC
+1. `20260712235439_ecom_orders_2_tracking_schema.sql`
+2. `20260712235807_ecom_orders_2_tracking_rpc.sql`
+3. `20260713000133_ecom_orders_2_fulfillment_state_machine.sql`
+4. `20260713000326_ecom_orders_2_grants_realtime_hardening.sql`
+5. `20260713002329_ecom_orders_2_conversion_independence_hardening.sql`
+6. `20260713003008_ecom_orders_2_converted_fulfillment_visibility.sql`
 
-### Pública
+## Migraciones compensatorias aplicadas
 
-`public.ecommerce_get_order_tracking(p_slug text, p_tracking_token text)`
+### 1. Política terminal atómica
 
-- `SECURITY DEFINER`
-- `SET search_path = ''`
-- owner `postgres`
-- validación estricta de formato
-- lookup por hash
-- aislamiento por portal/licencia
-- payload público allowlisted
-- error uniforme para token inválido, slug incorrecto, token revocado o pedido inexistente
-- no devuelve PII, IDs internos, token, claims ni datos de inventario/costos
-- `anon` y `authenticated` solo reciben `EXECUTE` sobre la función, no acceso a tablas
+**Archivo e historial remoto**
 
-### Administrativa
-
-`public.ecommerce_admin_update_order_fulfillment(...)`
-
-- reutiliza `private.ecommerce_orders_authorize_v1(...)`;
-- valida licencia, dispositivo, security token, staff session y permiso ecommerce;
-- bloquea otro `license_id` y otro portal;
-- usa lock de fila, versión esperada y llave idempotente;
-- valida modalidad pickup/delivery server-side;
-- mensaje público de texto plano, máximo 280 caracteres, sin `<` ni `>`;
-- registra un evento privado versionado y un evento administrativo sin secretos.
-
-`public.ecommerce_admin_get_order(...)` continúa siendo la lectura administrativa canónica y ahora adjunta el objeto `fulfillment`.
-
-## Realtime y actualización pública
-
-- FREE: botón Actualizar, revalidación al recuperar foco/conexión y polling visible cada 45 segundos.
-- PRO: canal privado derivado de una huella SHA-256 del token, nunca del `order_id`.
-- El payload realtime solo contiene una señal de cambio, motivo general y versión.
-- Todo evento realtime dispara una nueva lectura de `ecommerce_get_order_tracking`; nunca se confía en el payload como estado verdadero.
-- La política de `realtime.messages` valida que el topic corresponda a un hash activo/no revocado y que la licencia tenga `ecommerce_realtime_orders`.
-
-## Rate limits
-
-La RPC pública reutiliza `enforce_pos_rpc_rate_limit_v2`:
-
-- scope: `ECOMMERCE_ORDER_TRACKING`
-- máximo: `120` consultas
-- ventana: `600` segundos
-- bloqueo: `300` segundos
-- la identidad del bucket usa licencia y huella parcial del token, no el token plano.
-
-Las RPC administrativas conservan el rate limit y contexto de autorización centralizados en `private.ecommerce_orders_authorize_v1`.
-
-## Grants y revocaciones
-
-- tablas `private.ecommerce_order_tracking_keys`, `private.ecommerce_order_tracking_tokens` y `private.ecommerce_order_fulfillment_events`: RLS habilitado y cero grants directos a `anon`/`authenticated`;
-- helpers privados: revocados para `PUBLIC`, `anon` y `authenticated`;
-- `ecommerce_get_order_tracking`: `EXECUTE` para `anon` y `authenticated`;
-- `ecommerce_admin_update_order_fulfillment`: `EXECUTE` para `anon` y `authenticated`, con autenticación propia obligatoria dentro de la RPC;
-- función de autorización realtime: `EXECUTE` para `anon` y `authenticated`;
-- owners verificados como `postgres`;
-- funciones críticas verificadas con `SECURITY DEFINER` y `search_path=''`.
-
-## Archivos modificados
-
-- `reports/ecom_orders_2_public_tracking_and_fulfillment_report.md`
-- `src/components/ecommerce/orders/EcommerceFulfillmentPanel.css`
-- `src/components/ecommerce/orders/EcommerceFulfillmentPanel.jsx`
-- `src/components/ecommerce/orders/EcommerceOrdersRuntime.jsx`
-- `src/components/ecommerce/public/PublicOrderConfirmation.jsx`
-- `src/pages/PublicOrderTrackingPage.css`
-- `src/pages/PublicOrderTrackingPage.jsx`
-- `src/router/__tests__/publicOrderTrackingRouting.test.js`
-- `src/router/isPublicStorePath.js`
-- `src/router/publicStoreRoutes.jsx`
-- `src/services/ecommerce/__tests__/ecommerceOrderFulfillmentService.test.js`
-- `src/services/ecommerce/__tests__/ecommerceOrderTrackingService.test.js`
-- `src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js`
-- `src/services/ecommerce/ecommerceOrderFulfillmentService.js`
-- `src/services/ecommerce/ecommerceOrderTrackingService.js`
-- `src/services/ecommerce/ecommercePublicService.js`
-- `supabase/migrations/20260712235439_ecom_orders_2_tracking_schema.sql`
-- `supabase/migrations/20260712235807_ecom_orders_2_tracking_rpc.sql`
-- `supabase/migrations/20260713000133_ecom_orders_2_fulfillment_state_machine.sql`
-- `supabase/migrations/20260713000326_ecom_orders_2_grants_realtime_hardening.sql`
-- `supabase/migrations/20260713002329_ecom_orders_2_conversion_independence_hardening.sql`
-- `supabase/migrations/20260713003008_ecom_orders_2_converted_fulfillment_visibility.sql`
-- `supabase/tests/ecom_orders_2_public_tracking_and_fulfillment_test.sql`
-
-## Migraciones
-
-### Migración 1
-
-**Migración**
-
-`20260712235439_ecom_orders_2_tracking_schema.sql`
+`20260713011641_ecom_orders_2_1_terminal_fulfillment_policy.sql`
 
 **Objetivo**
 
-Crear columnas operativas, tablas privadas de claves/tokens/eventos, constraints, índices, RLS, trigger inicial y backfill conservador de aceptados.
+- definir `completed` y `cancelled` como fulfillment terminal;
+- aplicar la política segura de cancelación bajo el mismo lock de fila;
+- impedir por defensa en profundidad que se inicie trabajo POS después de terminalizar;
+- archivar pedidos terminales;
+- devolver errores estables y controlados.
 
-**Precondiciones**
+**Precondiciones y preflight**
 
-- HEAD y PR #93 verificados.
-- `pgcrypto` disponible en `extensions`.
-- timestamp inexistente local y remotamente.
-- SQL completo revisado.
-- preflight `BEGIN/ROLLBACK`: PASS.
+- timestamp inexistente local/remotamente antes de aplicar;
+- SQL revisado por bloques;
+- helpers, trigger y RPC compilados dentro de `BEGIN/ROLLBACK`;
+- el primer preflight monolítico fue rechazado por el límite de tamaño del conector antes de ejecutar SQL; no hubo cambios.
 
-**SQL aplicado**
+**Política aplicada**
 
-Aplicado mediante migración versionada; no se ejecutó SQL DDL improvisado fuera del archivo.
+- sin claim, borrador ni conversión: permite terminalizar y archiva;
+- claim activo sin draft preparado: libera el claim atómicamente y limpia sus campos;
+- draft preparado: bloquea con `ECOMMERCE_ORDER_POS_DRAFT_PREPARED`;
+- conversión reservada/en progreso: bloquea con `ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS`;
+- fulfillment ya terminal: bloquea con `ECOMMERCE_ORDER_FULFILLMENT_TERMINAL`;
+- pedido ya convertido: permite continuar/cancelar fulfillment sin revertir venta, pago, caja o inventario.
 
-**Resultado**
+**Verificación**
 
-PASS.
+- trigger `ecommerce_orders_block_terminal_pos_mutation` presente;
+- owner `postgres`;
+- `SECURITY DEFINER` y `search_path=''`;
+- cero grants directos a helpers privados;
+- pedidos terminales visibles después del backfill: `0`.
 
-**Historial remoto**
+**Rollback compensatorio disponible**
 
-`20260712235439 — ecom_orders_2_tracking_schema` confirmado.
+Una migración nueva podría restaurar la versión anterior de la RPC y retirar el trigger. No se ejecutó rollback destructivo.
 
-**Verificaciones**
+### 2. Visibilidad operativa e historial explícito
 
-- columnas/defaults;
-- constraints validados;
-- índices;
-- tablas privadas y RLS;
-- owner/search path del trigger;
-- cero grants directos;
-- aceptados sin fulfillment: `0`;
-- pedidos no aceptados backfilled en ese momento: `0`.
+**Archivo e historial remoto**
 
-**Riesgos**
-
-Backfill conservador; ningún pedido fue marcado completado.
-
-**Rollback disponible**
-
-DDL aditivo reversible con migración compensatoria. No se ejecutó rollback destructivo.
-
-### Migración 2
-
-**Migración**
-
-`20260712235807_ecom_orders_2_tracking_rpc.sql`
+`20260713011837_ecom_orders_2_1_terminal_operational_visibility.sql`
 
 **Objetivo**
 
-Generación HMAC determinística, hash/lookup/revocación, contrato idempotente del checkout y RPC pública.
+- excluir terminales del listado, filtros y contadores operativos;
+- conservar convertidos no terminales en la bandeja;
+- permitir recuperar un pedido terminal mediante detalle explícito por ID y licencia.
 
-**Precondiciones**
+**Preflight**
 
-- migración 1 verificada;
-- timestamp inexistente;
-- SQL completo revisado.
+La redefinición de snapshot, detalle y listado compiló dentro de `BEGIN/ROLLBACK`.
 
-**SQL aplicado**
+**Verificación**
 
-Aplicado mediante migración versionada.
+- `all`, `pending`, `accepted` y conteos excluyen `completed/cancelled`;
+- `accepted` incluye `accepted` y `converted_to_sale` no terminales;
+- detalle explícito no depende de `pos_visibility_status`;
+- owner, grants y `search_path` conservados.
 
-**Resultado**
+**Rollback compensatorio disponible**
 
-PASS después de corregir un preflight fallido.
+Una migración nueva podría restaurar los filtros anteriores sin eliminar pedidos ni eventos.
 
-**Incidente documentado**
+### 3. Guards terminales en rutas POS
 
-El primer preflight falló porque PostgreSQL no admite combinar una variable `%rowtype` con otra variable en el mismo `INTO`. La transacción hizo `ROLLBACK`; no hubo cambios persistentes ni entrada de historial. La secuencia se detuvo, se corrigieron las dos lecturas y el preflight posterior pasó antes de aplicar.
+**Archivo e historial remoto**
 
-**Historial remoto**
-
-`20260712235807 — ecom_orders_2_tracking_rpc` confirmado.
-
-**Verificaciones**
-
-- token y URL estables en repetición;
-- token plano no almacenado;
-- payload sin campos prohibidos ni token reflejado;
-- token inválido, slug incorrecto y token revocado devuelven el mismo not found;
-- grants y owners correctos.
-
-**Riesgos**
-
-Rotación futura de claves debe conservar versiones antiguas mientras existan tokens activos.
-
-**Rollback disponible**
-
-Migración compensatoria para revocar RPC/helpers, preservando pedidos.
-
-### Migración 3
-
-**Migración**
-
-`20260713000133_ecom_orders_2_fulfillment_state_machine.sql`
+`20260713012025_ecom_orders_2_1_pos_terminal_guards.sql`
 
 **Objetivo**
 
-Implementar la máquina de estados server-side, versión esperada, idempotencia y payload operativo administrativo.
+Aplicar lock y guard terminal antes de iniciar o continuar las rutas POS relevantes.
 
-**Precondiciones**
+**Funciones envueltas**
 
-- migraciones 1 y 2 verificadas;
-- timestamp inexistente;
-- preflight transaccional PASS.
+- `ecommerce_admin_claim_pos_draft`;
+- `ecommerce_admin_confirm_pos_draft`;
+- `ecommerce_begin_pos_conversion`;
+- `ecommerce_complete_pos_conversion`;
+- `ecommerce_get_pos_conversion_state`.
 
-**SQL aplicado**
+Las implementaciones canónicas anteriores fueron movidas al esquema privado y continúan ejecutándose detrás de los wrappers. La liberación de borrador y cancelación de reserva permanecen disponibles como limpieza segura; el trigger defensivo impide que creen nuevo trabajo terminal.
 
-Aplicado mediante migración versionada.
+**Preflight**
 
-**Resultado**
+Renombrado, cambio de esquema, wrappers y firmas compilaron dentro de `BEGIN/ROLLBACK`.
 
-PASS.
+**Verificación**
 
-**Historial remoto**
+- wrappers con owner `postgres`, `SECURITY DEFINER`, `search_path=''`;
+- implementaciones privadas sin `EXECUTE` para `PUBLIC`, `anon` o `authenticated`;
+- firmas públicas mantienen grants esperados;
+- recuperación idempotente de una conversión ya completada conserva su contrato.
 
-`20260713000133 — ecom_orders_2_fulfillment_state_machine` confirmado.
+**Rollback compensatorio disponible**
 
-**Verificaciones**
+Una migración nueva podría retirar wrappers y devolver las implementaciones privadas al esquema público.
 
-- transiciones permitidas y bloqueadas;
-- lock de fila;
-- `expected_version` stale;
-- `idempotency_key` única por pedido;
-- mensaje público limitado;
-- autorización administrativa centralizada.
+### 4. Resolver de tracking y rate limit estable
 
-**Riesgos**
+**Archivo e historial remoto**
 
-La ruta happy-path completa con una sesión staff real no se ejecutó desde SQL para evitar reutilizar o fabricar credenciales productivas.
-
-**Rollback disponible**
-
-Reemplazo de RPC y eliminación compensatoria de estructuras sin tocar ventas/inventario.
-
-### Migración 4
-
-**Migración**
-
-`20260713000326_ecom_orders_2_grants_realtime_hardening.sql`
+`20260713012117_ecom_orders_2_1_tracking_resolver_rate_limit.sql`
 
 **Objetivo**
 
-Configurar topic privado, autorización realtime, broadcast como señal y hardening final de grants/owners.
+- resolver pedidos existentes aunque el portal esté pausado/despublicado;
+- mantener bloqueados catálogo y pedidos nuevos;
+- impedir evasión del rate limit rotando tokens;
+- conservar respuesta pública allowlisted y uniforme.
 
-**Precondiciones**
+**Resolver**
 
-- migración 3 verificada;
-- timestamp inexistente;
-- preflight transaccional PASS.
+`private.ecommerce_get_tracking_portal_by_slug_v1(...)` exige:
 
-**SQL aplicado**
+- slug normalizado;
+- portal no eliminado lógicamente;
+- licencia no revocada, eliminada, deshabilitada ni bloqueada.
 
-Aplicado mediante migración versionada.
+No exige `status = published`, por lo que solo el tracking existente usa esta excepción.
 
-**Resultado**
+**Rate limit por capas**
 
-PASS.
+Bucket obligatorio, antes de validar el token:
 
-**Historial remoto**
+- scope: `ECOMMERCE_ORDER_TRACKING_PORTAL`;
+- identidad: licencia + portal;
+- límite: 600 solicitudes / 600 segundos;
+- bloqueo: 300 segundos.
 
-`20260713000326 — ecom_orders_2_grants_realtime_hardening` confirmado.
+Bucket secundario, únicamente después de resolver un token válido:
 
-**Verificaciones**
+- scope: `ECOMMERCE_ORDER_TRACKING_TOKEN`;
+- identidad: hash parcial del token;
+- límite: 120 solicitudes / 600 segundos;
+- bloqueo: 300 segundos.
 
-- policy de broadcast privado;
-- topic no reversible derivado del hash;
-- feature PRO obligatoria;
-- broadcast sin PII ni IDs internos;
-- RPC pública sigue siendo fuente de verdad;
-- grants/revocaciones y owners.
+El token plano no se persiste en metadata ni logs. Las filas del scope antiguo dependiente del token fueron eliminadas mediante la migración versionada.
 
-**Riesgos**
+**Payload**
 
-Realtime requiere validación manual con un navegador PRO; el fallback por polling permanece disponible.
+Se agregó `storefrontAvailable`, booleano allowlisted. La UI puede mantener el tracking y ocultar enlaces de catálogo/nuevo pedido cuando la tienda está pausada.
 
-**Rollback disponible**
+**Preflight y verificación**
 
-Eliminar policy/trigger y mantener polling/RPC pública.
+- resolver y RPC compilaron dentro de `BEGIN/ROLLBACK`;
+- owner `postgres`, `SECURITY DEFINER`, `search_path=''`;
+- helper privado sin grants directos;
+- scope anterior persistente: `0` filas.
 
-### Migración 5
+**Rollback compensatorio disponible**
 
-**Migración**
-
-`20260713002329_ecom_orders_2_conversion_independence_hardening.sql`
-
-**Objetivo**
-
-Permitir que fulfillment continúe después de `converted_to_sale`, manteniendo pago y entrega como conceptos separados.
-
-**Precondiciones**
-
-- revisión del contrato POS y constraints actuales;
-- timestamp inexistente;
-- preflight transaccional con assertions PASS.
-
-**SQL aplicado**
-
-Aplicado mediante migración versionada.
-
-**Resultado**
-
-PASS.
-
-**Historial remoto**
-
-`20260713002329 — ecom_orders_2_conversion_independence_hardening` confirmado.
-
-**Verificaciones**
-
-- fulfillment tiene prioridad en la proyección pública;
-- fallback conservador de `converted_to_sale` es `accepted`;
-- la RPC administrativa permite base `accepted` o `converted_to_sale`;
-- no se modificó la conversión POS.
-
-**Riesgos**
-
-Se necesitaba además conservar visibilidad operativa de órdenes archivadas; se resolvió en migración 6.
-
-**Rollback disponible**
-
-Reemplazar las dos funciones con la versión anterior; no requiere modificar ventas.
-
-### Migración 6
-
-**Migración**
-
-`20260713003008_ecom_orders_2_converted_fulfillment_visibility.sql`
-
-**Objetivo**
-
-Backfill conservador de convertidos históricos y visibilidad administrativa solo mientras fulfillment sea no terminal.
-
-**Precondiciones**
-
-- guards POS revisados: claim/confirm/release mantienen validaciones propias y bloquean convertidos;
-- timestamp inexistente;
-- SQL completo revisado;
-- preflight transaccional PASS.
-
-**SQL aplicado**
-
-Aplicado mediante migración versionada.
-
-**Resultado**
-
-PASS.
-
-**Historial remoto**
-
-`20260713003008 — ecom_orders_2_converted_fulfillment_visibility` confirmado.
-
-**Verificaciones**
-
-- convertidos sin fulfillment: `0`;
-- convertidos inicializados en otro estado distinto de accepted: `0`;
-- tres convertidos históricos inicializados en `accepted`;
-- snapshot/listado amplían únicamente lectura operativa de convertidos archivados no terminales;
-- claim/confirm/release POS siguen bloqueados por sus guards canónicos;
-- owner, `SECURITY DEFINER`, `search_path` y grants verificados.
-
-**Riesgos**
-
-Los pedidos históricos convertidos aparecen como aceptados para resolución manual, porque no existe evidencia segura para marcarlos completados automáticamente.
-
-**Rollback disponible**
-
-Migración compensatoria para restaurar filtros de lectura; el backfill puede conservarse sin afectar venta/inventario.
-
-## Historial local y remoto
-
-Los seis archivos locales usan exactamente los timestamps confirmados en el historial remoto:
-
-1. `20260712235439`
-2. `20260712235807`
-3. `20260713000133`
-4. `20260713000326`
-5. `20260713002329`
-6. `20260713003008`
-
-No se alteró ningún timestamp después de aplicar. No se utilizó `migration repair` ni se editó manualmente el historial remoto.
+Una migración nueva podría restaurar el resolver anterior y retirar los scopes nuevos. No se ejecutó rollback destructivo.
 
 ## Pruebas SQL ejecutadas
 
-Ejecutadas dentro de `BEGIN`/`ROLLBACK`:
+### Suite transaccional original
 
-- token válido + slug correcto;
-- token inválido;
-- slug incorrecto;
-- token revocado;
-- token y URL idempotentes;
-- payload allowlisted sin PII/IDs/token;
-- transiciones pickup válidas;
-- transiciones delivery válidas;
-- bloqueo de new/rejected/completed/cancelled y pickup→out_for_delivery;
-- proyección de `converted_to_sale` independiente del fulfillment;
-- backfill de convertidos;
-- llamada administrativa sin contexto autenticado bloqueada.
+`supabase/tests/ecom_orders_2_public_tracking_and_fulfillment_test.sql`
 
-Resultado consolidado: **PASS**.
+Se conserva sin debilitar.
 
-No se crearon pedidos persistentes mediante SQL directo. Las pruebas no dejaron tokens, eventos ni cambios de estado persistentes.
+### Suite correctiva
 
-Pendiente por falta de un fixture seguro con sesión productiva real:
+`supabase/tests/ecom_orders_2_1_terminal_tracking_hardening_test.sql`
 
-- happy-path completo de la RPC administrativa con staff válido;
-- repetición idempotente de una transición real;
-- carrera real de dos sesiones autenticadas.
+La suite crea dentro de una transacción:
 
-## Pruebas frontend agregadas
+- licencia temporal;
+- dispositivo admin temporal;
+- portal temporal;
+- ocho pedidos con estados y conflictos distintos.
 
-Archivos:
+Todas las operaciones finalizan con `ROLLBACK`.
 
-- `ecommerceOrderTrackingService.test.js`
-- `ecommerceOrderFulfillmentService.test.js`
-- `ecommercePublicTrackingContract.test.js`
-- `publicOrderTrackingRouting.test.js`
+**Casos ejecutados**
 
-Cobertura escrita:
+- accepted sin claim → cancelled → claim POS bloqueado;
+- claim activo → cancelación libera claim atómicamente;
+- draft preparado → cancelación bloqueada;
+- conversión reservada → cancelación bloqueada;
+- completed → claim bloqueado;
+- cancelled → begin conversion bloqueado;
+- expected version obsoleta;
+- replay idempotente sin evento duplicado;
+- misma llave con otra transición bloqueada;
+- tres tokens inválidos distintos consumen un único bucket de portal;
+- token válido crea bucket secundario;
+- token plano no queda en metadata;
+- payload sin PII, secretos, IDs internos ni token;
+- tracking funciona con portal `paused`;
+- creación de pedido nuevo continúa bloqueada con portal pausado;
+- token revocado deja de resolver;
+- portal eliminado lógicamente deja de resolver;
+- terminales no aparecen en lista/conteos;
+- convertido no terminal permanece visible.
 
-- contrato del enlace tras checkout idempotente;
-- normalización allowlisted;
-- token no reflejado ni registrado en consola;
-- cache en sessionStorage bajo clave opaca derivada;
+**Incidentes de prueba documentados**
+
+1. primer fixture falló porque `order_number` es `GENERATED ALWAYS`; transacción revertida;
+2. segundo fixture falló porque `public_order_code` es generado; transacción revertida;
+3. se creó un helper temporal que inserta únicamente columnas no generadas/no identity;
+4. ejecución final terminó sin excepciones y con `ROLLBACK`.
+
+**Resultado**
+
+PASS para la suite SQL correctiva. No quedaron licencias fixture persistentes (`0`).
+
+## Cambios frontend
+
+### Servicio de fulfillment
+
+- mensajes controlados para terminal, draft preparado y conversión POS en progreso;
+- no aplica cambios optimistas;
+- conserva versión esperada e idempotency key en el contrato.
+
+### Panel de fulfillment
+
+- conflictos server-side provocan refetch del estado autoritativo;
+- al completar/cancelar, actualiza lista y contadores;
+- cierra el detalle terminal si sigue seleccionado;
+- terminales no muestran acciones.
+
+### Tracking público
+
+- normaliza `storefrontAvailable`;
+- el cache mantiene solo payload allowlisted bajo clave derivada por hash;
+- realtime continúa siendo solamente una señal de refetch;
+- si el portal está pausado, mantiene el tracking y oculta acceso al catálogo/nuevo pedido.
+
+## Pruebas frontend agregadas o actualizadas
+
+- `src/services/ecommerce/__tests__/ecommerceOrderFulfillmentService.test.js`
+- `src/services/ecommerce/__tests__/ecommerceOrderTrackingService.test.js`
+- `src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx`
+- `src/pages/__tests__/PublicOrderTrackingPage.unpublished.test.jsx`
+
+Cubren:
+
+- errores `ECOMMERCE_ORDER_FULFILLMENT_TERMINAL`;
+- draft preparado y conversión POS en progreso;
+- terminales sin acciones;
+- retiro del pedido terminal y actualización de contadores;
+- tracking con portal despublicado;
 - error uniforme;
-- realtime solo como señal;
-- pickup no ofrece En camino;
-- delivery sí ofrece En camino;
-- acciones continúan tras `converted_to_sale`;
-- terminales no ofrecen acciones;
-- expected version e idempotency key enviados a la RPC;
-- fail-closed sin contexto staff/dispositivo;
-- clasificación de la ruta pública.
+- realtime usado solo como señal;
+- ausencia de controles de catálogo cuando `storefrontAvailable=false`.
 
-Estado de ejecución: **pendiente**. El entorno disponible no expone un checkout ejecutable del repositorio ni binarios instalados de Vitest/ESLint/Vite.
+**Estado de ejecución**
+
+Las pruebas fueron escritas y revisadas estáticamente, pero no pudieron ejecutarse en este entorno. No se declaran PASS.
 
 ## Validación local
 
-No fue posible ejecutar de forma honesta:
+No se dispone de checkout autenticado ni dependencias instaladas en el entorno conectado. `gh` tampoco está disponible. Por ello no se ejecutaron:
 
-- `npm ci`
-- ESLint enfocado
-- Vitest enfocado
-- suites de checkout/bandeja/servicio
-- `npm run build`
-- `git diff --check`
-- `git status --short`
+```bash
+npm ci
+npx eslint <archivos modificados>
+npx vitest run <suites enfocadas>
+npm run build
+git diff --check
+git status --short
+```
 
-Motivo: el entorno de ejecución no pudo clonar/descargar un checkout completo del repositorio y no contiene sus dependencias. Los intentos de obtener el repositorio por red/archive no produjeron un checkout utilizable.
+**Resultado parcial**
 
-No se utilizó Vercel para sustituir estas validaciones. El check automático de la integración remota no se declara como build local ni como PASS global.
+- migraciones y SQL: ejecutados y verificados;
+- frontend: implementación y pruebas añadidas, no ejecutadas;
+- build/lint/diff local: pendientes;
+- validación manual: pendiente.
 
-## Revisión del diff
+No se utiliza el check automático de Vercel como sustituto del build local.
 
-- lista completa de 23 archivos revisada;
-- no se modificaron archivos del flujo canónico de cobro;
-- no se añadieron `.skip`, `.todo`, `eslint-disable` ni mocks para ocultar defectos;
-- no se añadieron workflows temporales;
-- no se hicieron commits vacíos;
-- el token no se registra en consola ni en almacenamiento global persistente;
-- el cache público contiene solo payload allowlisted.
+## Verificación final de Supabase
 
-## Fallos y correcciones durante la implementación
+- cuatro migraciones correctivas presentes en historial remoto;
+- trigger terminal presente;
+- terminales con visibilidad operativa distinta de `archived`: `0`;
+- licencias fixture persistentes: `0`;
+- filas legacy de rate limit de tracking: `0`;
+- funciones críticas con owner `postgres`;
+- funciones críticas con `SECURITY DEFINER` y `search_path=''`;
+- grants directos de helpers privados para `PUBLIC/anon/authenticated`: `0`;
+- grants públicos de RPC conservados para los roles esperados.
 
-1. Preflight de migración 2: error SQL de `INTO` con `%rowtype`; rollback completo, corregido antes de aplicar.
-2. Revisión de integración POS: fulfillment inicialmente quedaba bloqueado tras `converted_to_sale`; corregido con migración 5.
-3. Revisión de bandeja: convertidos archivados no podían completar entrega; corregido con migración 6, sin ampliar operaciones POS.
-4. Frontend: panel inicialmente oculto para `converted_to_sale`; corregido.
-5. Frontend: clase destructiva no definida; sustituida por una clase local explícita.
+## Archivos añadidos o modificados por ECOM.ORDERS.2.1
 
-No se ocultaron reintentos ni diferencias de historial.
+- `reports/ecom_orders_2_public_tracking_and_fulfillment_report.md`
+- `src/components/ecommerce/orders/EcommerceFulfillmentPanel.jsx`
+- `src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx`
+- `src/pages/PublicOrderTrackingPage.jsx`
+- `src/pages/PublicOrderTrackingPage.css`
+- `src/pages/__tests__/PublicOrderTrackingPage.unpublished.test.jsx`
+- `src/services/ecommerce/ecommerceOrderFulfillmentService.js`
+- `src/services/ecommerce/ecommerceOrderTrackingService.js`
+- `src/services/ecommerce/__tests__/ecommerceOrderFulfillmentService.test.js`
+- `src/services/ecommerce/__tests__/ecommerceOrderTrackingService.test.js`
+- `supabase/migrations/20260713011641_ecom_orders_2_1_terminal_fulfillment_policy.sql`
+- `supabase/migrations/20260713011837_ecom_orders_2_1_terminal_operational_visibility.sql`
+- `supabase/migrations/20260713012025_ecom_orders_2_1_pos_terminal_guards.sql`
+- `supabase/migrations/20260713012117_ecom_orders_2_1_tracking_resolver_rate_limit.sql`
+- `supabase/tests/ecom_orders_2_1_terminal_tracking_hardening_test.sql`
 
-## Pruebas manuales
+## Riesgos residuales y validaciones pendientes
 
-Pendientes en desarrollo local:
+- ejecutar Vitest enfocado y regresiones POS/ecommerce;
+- ejecutar ESLint enfocado;
+- ejecutar build local real;
+- verificar `git diff --check` y árbol limpio;
+- probar manualmente pickup y delivery;
+- probar conflicto entre dos sesiones autorizadas;
+- probar responsive, focus visible, offline y realtime en navegador;
+- confirmar recuperación histórica de terminales desde la navegación disponible;
+- revisión técnica y de seguridad independiente.
 
-- pickup completo;
-- delivery completo;
-- token alterado/slug incorrecto/revocado en navegador;
-- sesión privada;
-- dos dispositivos y carrera stale;
-- FREE polling/offline;
-- PRO realtime como señal;
-- responsive en 320×568, 360×800, 390×844, 768×1024, 1024×768 y 1440×900;
-- regresión checkout/WhatsApp/bandeja/POS/cobro/inventario/venta.
+## Estado final requerido
 
-## Riesgos pendientes
-
-- ejecución real de Vitest y ESLint;
-- build local Vite;
-- pruebas manuales de los dos flujos;
-- validación visual/accessibility en tamaños requeridos;
-- concurrencia con dos sesiones reales;
-- revisión funcional, técnica y de seguridad por una segunda persona.
-
-## Estado del PR
-
-- PR `#94` creado como draft.
-- No está ready for review.
-- No fue mergeado.
-- No se declarará PASS global mientras las validaciones locales y manuales sigan pendientes.
+```text
+PR #94: DRAFT
+Merge: NO REALIZADO
+Ready for review: NO
+PASS global: NO DECLARADO
+```
