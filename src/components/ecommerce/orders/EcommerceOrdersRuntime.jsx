@@ -9,15 +9,16 @@ import {
 } from '../../../services/ecommerce/ecommercePosDraftService';
 import { installEcommercePosActiveOrderGuards } from '../../../services/ecommerce/installEcommercePosActiveOrderGuards';
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
+import EcommerceFulfillmentPanel from './EcommerceFulfillmentPanel';
 
 installEcommercePosActiveOrderGuards();
 
 const getLicenseIdentity = (licenseDetails = {}) => (
-  licenseDetails?.license_key ||
-  licenseDetails?.licenseKey ||
-  licenseDetails?.details?.license_key ||
-  licenseDetails?.details?.licenseKey ||
-  null
+  licenseDetails?.license_key
+  || licenseDetails?.licenseKey
+  || licenseDetails?.details?.license_key
+  || licenseDetails?.details?.licenseKey
+  || null
 );
 
 export default function EcommerceOrdersRuntime() {
@@ -48,41 +49,31 @@ export default function EcommerceOrdersRuntime() {
   }, [canPrepareInPos, posContextIdentity]);
 
   useEffect(() => {
-    if (previousLicenseRef.current && previousLicenseRef.current !== licenseIdentity) {
-      resetOrders?.();
-    }
+    if (previousLicenseRef.current && previousLicenseRef.current !== licenseIdentity) resetOrders?.();
     previousLicenseRef.current = licenseIdentity;
-
     if (!canAccess || !licenseIdentity) {
       resetOrders?.();
       return undefined;
     }
-
     loadSummary?.({ background: true });
     return undefined;
   }, [canAccess, licenseIdentity, loadSummary, resetOrders]);
 
-  useEffect(() => () => {
-    resetOrders?.();
-  }, [resetOrders]);
+  useEffect(() => () => { resetOrders?.(); }, [resetOrders]);
 
   useEffect(() => {
     if (!canAccess) return undefined;
-
     const refreshOnResume = () => {
       if (document.visibilityState === 'hidden') return;
       loadSummary?.({ background: true });
       if (pageIsOpen) refreshOrders?.({ background: true });
     };
-
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') refreshOnResume();
     };
-
     window.addEventListener('focus', refreshOnResume);
     window.addEventListener('pageshow', refreshOnResume);
     document.addEventListener('visibilitychange', handleVisibility);
-
     return () => {
       window.removeEventListener('focus', refreshOnResume);
       window.removeEventListener('pageshow', refreshOnResume);
@@ -92,7 +83,6 @@ export default function EcommerceOrdersRuntime() {
 
   useEffect(() => {
     if (!canAccess) return undefined;
-
     const handleRealtime = () => {
       invalidateOrders?.();
       if (timerRef.current) window.clearTimeout(timerRef.current);
@@ -102,7 +92,6 @@ export default function EcommerceOrdersRuntime() {
         if (pageIsOpen) await refreshOrders?.({ background: true });
       }, 600);
     };
-
     window.addEventListener('lanzo:ecommerce-orders-changed', handleRealtime);
     return () => {
       window.removeEventListener('lanzo:ecommerce-orders-changed', handleRealtime);
@@ -110,5 +99,5 @@ export default function EcommerceOrdersRuntime() {
     };
   }, [canAccess, invalidateOrders, loadSummary, pageIsOpen, refreshOrders]);
 
-  return null;
+  return pageIsOpen && canAccess ? <EcommerceFulfillmentPanel /> : null;
 }
