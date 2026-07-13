@@ -9,6 +9,15 @@ import {
 } from '../../../services/ecommerce/ecommerceOrderFulfillmentService';
 import './EcommerceFulfillmentPanel.css';
 
+const TERMINAL_STATES = new Set(['completed', 'cancelled']);
+const REFRESH_ON_CONFLICT_CODES = new Set([
+  'ECOMMERCE_ORDER_STATUS_STALE',
+  'ECOMMERCE_ORDER_FULFILLMENT_TERMINAL',
+  'ECOMMERCE_ORDER_POS_DRAFT_PREPARED',
+  'ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS',
+  'ECOMMERCE_POS_DRAFT_IN_PROGRESS'
+]);
+
 const formatDateTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'No disponible';
@@ -30,6 +39,7 @@ export default function EcommerceFulfillmentPanel() {
   const selectedRequestId = useAppStore((state) => state.selectedEcommerceOrderRequestId);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const refreshOrders = useAppStore((state) => state.refreshEcommerceOrders);
+  const clearSelectedOrder = useAppStore((state) => state.clearSelectedEcommerceOrder);
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [publicMessage, setPublicMessage] = useState('');
   const [pendingTransition, setPendingTransition] = useState(null);
@@ -113,9 +123,21 @@ export default function EcommerceFulfillmentPanel() {
     if (currentSelection !== operation.orderId) return;
     if (result.success !== true) {
       setFeedback({ type: 'error', text: result.message });
-      if (result.code === 'ECOMMERCE_ORDER_STATUS_STALE') {
+      if (REFRESH_ON_CONFLICT_CODES.has(result.code)) {
         await loadFulfillment(operation.orderId, { quiet: true });
       }
+      return;
+    }
+
+    const nextState = result.order?.fulfillment?.internalStatus
+      || result.order?.fulfillment?.status
+      || operation.transition;
+
+    await refreshOrders?.({ background: true });
+
+    if (TERMINAL_STATES.has(nextState)) {
+      const latestSelection = useAppStore.getState().selectedEcommerceOrderRequestId;
+      if (latestSelection === operation.orderId) clearSelectedOrder?.();
       return;
     }
 
@@ -124,7 +146,6 @@ export default function EcommerceFulfillmentPanel() {
       text: result.idempotent ? 'El estado ya estaba actualizado.' : 'Estado operativo actualizado.'
     });
     await loadFulfillment(operation.orderId, { quiet: true });
-    await refreshOrders?.({ background: true });
   };
 
   if (loading || !operationalOrder || !fulfillment) {
