@@ -62,6 +62,7 @@ function normalizeTracking(data) {
     publicMessage: asText(source.publicMessage).slice(0, 280),
     version: Math.max(0, Math.floor(asNumber(source.version, 0))),
     paymentRegistered: asBoolean(source.paymentRegistered, false),
+    storefrontAvailable: asBoolean(source.storefrontAvailable, false),
     realtime: {
       enabled: asBoolean(realtime.enabled, false) && /^ecom-track:[a-f0-9]{48}$/.test(topic),
       topic: /^ecom-track:[a-f0-9]{48}$/.test(topic) ? topic : ''
