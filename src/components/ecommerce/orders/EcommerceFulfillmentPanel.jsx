@@ -4,6 +4,7 @@ import { useAppStore } from '../../../store/useAppStore';
 import {
   FULFILLMENT_LABELS,
   getEcommerceFulfillmentActions,
+  getEcommerceOrderFulfillment,
   updateEcommerceOrderFulfillment
 } from '../../../services/ecommerce/ecommerceOrderFulfillmentService';
 import './EcommerceFulfillmentPanel.css';
@@ -24,42 +25,69 @@ const createIdempotencyKey = () => (
 
 export default function EcommerceFulfillmentPanel() {
   const pendingRef = useRef(null);
+  const loadEpochRef = useRef(0);
   const selectedOrder = useAppStore((state) => state.selectedEcommerceOrder);
   const selectedRequestId = useAppStore((state) => state.selectedEcommerceOrderRequestId);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const openOrder = useAppStore((state) => state.openEcommerceOrder);
   const refreshOrders = useAppStore((state) => state.refreshEcommerceOrders);
+  const [operationalOrder, setOperationalOrder] = useState(null);
   const [publicMessage, setPublicMessage] = useState('');
   const [pendingTransition, setPendingTransition] = useState(null);
   const [feedback, setFeedback] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const visibleOrder = selectedOrder?.id && selectedOrder.id === selectedRequestId
-    ? selectedOrder
+  const visibleOrderId = selectedOrder?.id && selectedOrder.id === selectedRequestId
+    ? selectedOrder.id
     : null;
-  const fulfillment = visibleOrder?.fulfillment;
-  const actions = useMemo(() => getEcommerceFulfillmentActions(visibleOrder || {}), [visibleOrder]);
+  const actions = useMemo(
+    () => getEcommerceFulfillmentActions(operationalOrder || {}),
+    [operationalOrder]
+  );
+
+  const loadFulfillment = async (orderId, { quiet = false } = {}) => {
+    if (!orderId) return null;
+    const epoch = ++loadEpochRef.current;
+    if (!quiet) setLoading(true);
+    const result = await getEcommerceOrderFulfillment({ licenseDetails, orderId });
+    const currentSelection = useAppStore.getState().selectedEcommerceOrderRequestId;
+    if (epoch !== loadEpochRef.current || currentSelection !== orderId) return null;
+    setLoading(false);
+    if (result.success !== true) {
+      setFeedback({ type: 'error', text: result.message });
+      return null;
+    }
+    setOperationalOrder(result.order);
+    setPublicMessage(result.order.fulfillment?.publicMessage || '');
+    return result.order;
+  };
 
   useEffect(() => {
     pendingRef.current = null;
+    loadEpochRef.current += 1;
+    setOperationalOrder(null);
     setPendingTransition(null);
     setFeedback(null);
-    setPublicMessage(fulfillment?.publicMessage || '');
-  }, [fulfillment?.publicMessage, visibleOrder?.id]);
+    setPublicMessage('');
+    if (visibleOrderId) void loadFulfillment(visibleOrderId);
+    return () => {
+      pendingRef.current = null;
+      loadEpochRef.current += 1;
+    };
+  }, [visibleOrderId]);
 
-  if (!visibleOrder || visibleOrder.status !== 'accepted' || !fulfillment) return null;
+  if (!visibleOrderId || selectedOrder?.status !== 'accepted') return null;
 
+  const fulfillment = operationalOrder?.fulfillment;
   const runTransition = async (action) => {
-    if (pendingRef.current) return;
+    if (pendingRef.current || !operationalOrder || !fulfillment) return;
     if (action.destructive && !globalThis.confirm?.('¿Cancelar este pedido? Esta acción no se puede deshacer desde la bandeja.')) {
       return;
     }
 
-    const orderId = visibleOrder.id;
-    const expectedVersion = Number(fulfillment.version || 0);
     const operation = {
-      orderId,
+      orderId: operationalOrder.id,
       transition: action.transition,
-      expectedVersion,
+      expectedVersion: Number(fulfillment.version || 0),
       idempotencyKey: createIdempotencyKey()
     };
     pendingRef.current = operation;
@@ -68,9 +96,9 @@ export default function EcommerceFulfillmentPanel() {
 
     const result = await updateEcommerceOrderFulfillment({
       licenseDetails,
-      orderId,
-      transition: action.transition,
-      expectedVersion,
+      orderId: operation.orderId,
+      transition: operation.transition,
+      expectedVersion: operation.expectedVersion,
       idempotencyKey: operation.idempotencyKey,
       publicMessage
     });
@@ -80,10 +108,11 @@ export default function EcommerceFulfillmentPanel() {
     pendingRef.current = null;
     setPendingTransition(null);
 
+    if (currentSelection !== operation.orderId) return;
     if (result.success !== true) {
       setFeedback({ type: 'error', text: result.message });
-      if (result.code === 'ECOMMERCE_ORDER_STATUS_STALE' && currentSelection === orderId) {
-        await openOrder?.(orderId, { force: true, markSeen: false });
+      if (result.code === 'ECOMMERCE_ORDER_STATUS_STALE') {
+        await loadFulfillment(operation.orderId, { quiet: true });
       }
       return;
     }
@@ -92,11 +121,20 @@ export default function EcommerceFulfillmentPanel() {
       type: 'success',
       text: result.idempotent ? 'El estado ya estaba actualizado.' : 'Estado operativo actualizado.'
     });
-    if (currentSelection === orderId) {
-      await openOrder?.(orderId, { force: true, markSeen: false });
-    }
+    await loadFulfillment(operation.orderId, { quiet: true });
     await refreshOrders?.({ background: true });
   };
+
+  if (loading || !operationalOrder || !fulfillment) {
+    return (
+      <aside className="ecommerce-fulfillment-panel" aria-live="polite" aria-busy="true">
+        <div className="ecommerce-fulfillment-loading">
+          <LoaderCircle className="ecommerce-fulfillment-spinner" aria-hidden="true" size={20} />
+          Cargando estado operativo…
+        </div>
+      </aside>
+    );
+  }
 
   const state = fulfillment.internalStatus || fulfillment.status || 'accepted';
 
