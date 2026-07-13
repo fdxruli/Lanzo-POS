@@ -50,11 +50,16 @@ describe('ecommerce fulfillment controls', () => {
     expect(actions.map((action) => action.transition)).toEqual(['completed', 'cancelled']);
   });
 
-  it('does not expose controls for terminal or unaccepted orders', () => {
+  it('does not expose controls for completed, cancelled or unaccepted orders', () => {
     expect(getEcommerceFulfillmentActions({
       status: 'accepted',
       fulfillmentMethod: 'delivery',
       fulfillment: { internalStatus: 'completed' }
+    })).toEqual([]);
+    expect(getEcommerceFulfillmentActions({
+      status: 'accepted',
+      fulfillmentMethod: 'pickup',
+      fulfillment: { internalStatus: 'cancelled' }
     })).toEqual([]);
     expect(getEcommerceFulfillmentActions({
       status: 'new',
@@ -143,6 +148,44 @@ describe('ecommerce fulfillment controls', () => {
       p_public_message: 'En preparación'
     });
     expect(result).toMatchObject({ success: true, changed: true });
+  });
+
+  it.each([
+    [
+      'ECOMMERCE_ORDER_FULFILLMENT_TERMINAL',
+      'Este pedido ya fue completado o cancelado. No admite nuevas acciones operativas ni de Punto de Venta.'
+    ],
+    [
+      'ECOMMERCE_ORDER_POS_DRAFT_PREPARED',
+      'Existe un borrador preparado en Punto de Venta. Resuélvelo antes de completar o cancelar el pedido.'
+    ],
+    [
+      'ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS',
+      'Existe un cobro reservado o en progreso. Verifica la venta antes de completar o cancelar el pedido.'
+    ]
+  ])('maps %s to a controlled visible message', async (code, message) => {
+    const client = {
+      rpc: vi.fn().mockResolvedValue({
+        data: { success: false, code, details: { currentVersion: 4 } },
+        error: null
+      })
+    };
+
+    const result = await updateEcommerceOrderFulfillment({
+      licenseDetails: { license_key: 'license-key' },
+      orderId: 'order-1',
+      transition: 'cancelled',
+      expectedVersion: 3,
+      idempotencyKey: 'transition-key',
+      client
+    });
+
+    expect(result).toEqual({
+      success: false,
+      code,
+      message,
+      details: { currentVersion: 4 }
+    });
   });
 
   it('fails closed when the staff/device context cannot be built', async () => {
