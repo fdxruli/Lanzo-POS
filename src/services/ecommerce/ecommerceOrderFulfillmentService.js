@@ -29,6 +29,19 @@ const getLicenseKey = (licenseDetails = {}) => (
   || null
 );
 
+const buildAuthArgs = async (licenseDetails = {}) => {
+  const licenseKey = getLicenseKey(licenseDetails);
+  if (!licenseKey) return null;
+  const auth = await buildPosSyncAuthContext({ licenseKey });
+  if (!auth.deviceFingerprint || !auth.securityToken) return null;
+  return {
+    p_license_key: auth.licenseKey,
+    p_device_fingerprint: auth.deviceFingerprint,
+    p_security_token: auth.securityToken,
+    p_staff_session_token: auth.staffSessionToken || null
+  };
+};
+
 const normalizeFulfillment = (value = {}) => ({
   status: asText(value.status, 'received'),
   internalStatus: asText(value.internalStatus) || null,
@@ -61,6 +74,39 @@ const normalizeResult = (payload = {}) => {
   };
 };
 
+export async function getEcommerceOrderFulfillment({
+  licenseDetails,
+  orderId,
+  client = supabaseClient
+} = {}) {
+  if (!orderId || !client) {
+    return normalizeResult({ success: false, code: 'ECOMMERCE_ORDER_NOT_FOUND' });
+  }
+  try {
+    const authArgs = await buildAuthArgs(licenseDetails);
+    if (!authArgs) return normalizeResult({ success: false, code: 'ECOMMERCE_ORDERS_ACCESS_DENIED' });
+    const { data, error } = await client.rpc('ecommerce_admin_get_order', {
+      ...authArgs,
+      p_order_id: orderId
+    });
+    if (error || data?.success !== true) {
+      return normalizeResult(data?.success === false ? data : { success: false, code: 'ECOMMERCE_ORDER_ACTION_FAILED' });
+    }
+    return {
+      success: true,
+      order: {
+        id: asText(data.order?.id),
+        code: asText(data.order?.code),
+        status: asText(data.order?.status),
+        fulfillmentMethod: data.order?.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup',
+        fulfillment: normalizeFulfillment(data.order?.fulfillment)
+      }
+    };
+  } catch {
+    return normalizeResult({ success: false, code: 'ECOMMERCE_ORDER_ACTION_FAILED' });
+  }
+}
+
 export async function updateEcommerceOrderFulfillment({
   licenseDetails,
   orderId,
@@ -73,21 +119,15 @@ export async function updateEcommerceOrderFulfillment({
   if (!orderId || !transition || !idempotencyKey) {
     return normalizeResult({ success: false, code: 'ECOMMERCE_ORDER_ACTION_FAILED' });
   }
-  const licenseKey = getLicenseKey(licenseDetails);
-  if (!licenseKey || !client) {
+  if (!client) {
     return normalizeResult({ success: false, code: 'ECOMMERCE_ORDERS_ACCESS_DENIED' });
   }
 
   try {
-    const auth = await buildPosSyncAuthContext({ licenseKey });
-    if (!auth.deviceFingerprint || !auth.securityToken) {
-      return normalizeResult({ success: false, code: 'ECOMMERCE_ORDERS_ACCESS_DENIED' });
-    }
+    const authArgs = await buildAuthArgs(licenseDetails);
+    if (!authArgs) return normalizeResult({ success: false, code: 'ECOMMERCE_ORDERS_ACCESS_DENIED' });
     const { data, error } = await client.rpc('ecommerce_admin_update_order_fulfillment', {
-      p_license_key: auth.licenseKey,
-      p_device_fingerprint: auth.deviceFingerprint,
-      p_security_token: auth.securityToken,
-      p_staff_session_token: auth.staffSessionToken || null,
+      ...authArgs,
       p_order_id: orderId,
       p_transition: transition,
       p_expected_version: Math.max(0, Math.floor(asNumber(expectedVersion, 0))),
@@ -138,5 +178,6 @@ export function getEcommerceFulfillmentActions(order = {}) {
 export const ecommerceOrderFulfillmentInternals = Object.freeze({
   normalizeFulfillment,
   normalizeResult,
-  getLicenseKey
+  getLicenseKey,
+  buildAuthArgs
 });
