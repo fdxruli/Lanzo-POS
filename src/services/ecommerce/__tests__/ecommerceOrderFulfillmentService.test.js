@@ -41,6 +41,15 @@ describe('ecommerce fulfillment controls', () => {
     expect(actions.map((action) => action.transition)).toEqual(['out_for_delivery', 'cancelled']);
   });
 
+  it('keeps delivery actions available after the POS conversion', () => {
+    const actions = getEcommerceFulfillmentActions({
+      status: 'converted_to_sale',
+      fulfillmentMethod: 'delivery',
+      fulfillment: { internalStatus: 'out_for_delivery' }
+    });
+    expect(actions.map((action) => action.transition)).toEqual(['completed', 'cancelled']);
+  });
+
   it('does not expose controls for terminal or unaccepted orders', () => {
     expect(getEcommerceFulfillmentActions({
       status: 'accepted',
