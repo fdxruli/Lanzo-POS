@@ -13,6 +13,7 @@ import {
 } from '../services/ecommerce/ecommercePosDraftService';
 import { useActiveOrders } from '../hooks/pos/useActiveOrders';
 import { showConfirmModal, showMessageModal } from '../services/utils';
+import EcommerceFulfillmentPanel from '../components/ecommerce/orders/EcommerceFulfillmentPanel';
 import EcommerceOrderStatusBadge from '../components/ecommerce/orders/EcommerceOrderStatusBadge';
 import './EcommerceOrdersPage.css';
 
@@ -219,6 +220,8 @@ function OrderDetail({
                 <div><dt>Pago</dt><dd>{order.payment?.status === 'paid' ? 'Pagado' : 'Pendiente al entregar'}</dd></div>
               </dl>
             </DetailSection>
+
+            <EcommerceFulfillmentPanel />
 
             <DetailSection title="Historial">
               <ol className="ecommerce-order-detail__timeline">

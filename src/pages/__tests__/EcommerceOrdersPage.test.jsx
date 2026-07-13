@@ -45,6 +45,14 @@ vi.mock('../../services/utils', () => ({
   showConfirmModal: store.showConfirmModal
 }));
 
+vi.mock('../../components/ecommerce/orders/EcommerceFulfillmentPanel', () => ({
+  default: () => (
+    <section data-testid="embedded-fulfillment-panel">
+      <button type="button">Marcar como listo</button>
+    </section>
+  )
+}));
+
 import EcommerceOrdersPage from '../EcommerceOrdersPage';
 
 const orderId = '11111111-1111-4111-8111-111111111111';
@@ -146,6 +154,16 @@ beforeEach(() => {
 });
 
 describe('EcommerceOrdersPage', () => {
+  it('renders fulfillment actions inside the opened order detail', () => {
+    store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
+
+    renderPage();
+
+    const detail = screen.getByRole('dialog', { name: 'Detalle del pedido online' });
+    expect(detail).toContainElement(screen.getByTestId('embedded-fulfillment-panel'));
+    expect(screen.getByRole('button', { name: 'Marcar como listo' })).toBeInTheDocument();
+  });
+
   it('shows prepare only to admin or staff with ecommerce and POS permissions', () => {
     store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
     const { unmount } = renderPage();
