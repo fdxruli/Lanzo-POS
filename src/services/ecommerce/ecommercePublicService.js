@@ -1,4 +1,4 @@
-import { supabaseClient } from '../supabase';
+import { supabasePublicClient } from '../supabasePublic';
 import {
   ECOMMERCE_PUBLIC_CACHE_POLICY,
   ecommercePublicCatalogCache,
@@ -34,9 +34,8 @@ const CHECKOUT_ERROR_MESSAGES = {
   ECOMMERCE_PUBLIC_NETWORK_ERROR: CHECKOUT_REQUEST_MESSAGE
 };
 
-// Public RPCs are authorized for anon and authenticated callers. Reusing the
-// app singleton avoids creating a second GoTrueClient in the same page.
-export const ecommercePublicClient = supabaseClient;
+// Public RPCs use an isolated anon/publishable client without an administrative session.
+export const ecommercePublicClient = supabasePublicClient;
 
 export class EcommercePublicError extends Error {
   constructor(code, message, cause = null) {

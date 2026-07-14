@@ -5,7 +5,7 @@ import {
   ecommercePublicClient,
   EcommercePublicError,
 } from '../ecommercePublicService';
-import { supabaseClient } from '../../supabase';
+import { supabasePublicClient } from '../../supabasePublic';
 
 const orderResponse = (overrides = {}) => ({
   success: true,
@@ -32,8 +32,8 @@ afterEach(() => {
 });
 
 describe('ecommercePublicService', () => {
-  it('reuses the app Supabase singleton for the public store', () => {
-    expect(ecommercePublicClient).toBe(supabaseClient);
+  it('uses the isolated public Supabase client for the public store', () => {
+    expect(ecommercePublicClient).toBe(supabasePublicClient);
   });
 
   it('uses the public portal and catalog RPC contracts and normalizes features', async () => {
@@ -174,6 +174,37 @@ describe('ecommercePublicService', () => {
     })).rejects.toMatchObject({
       code: 'ECOMMERCE_DUPLICATE_PRODUCT',
       message: 'El carrito contiene productos repetidos. Actualízalo e intenta nuevamente.',
+    });
+  });
+
+  it.each([
+    ['ECOMMERCE_MIN_ORDER_NOT_REACHED', 'El pedido no alcanza el'],
+    ['ECOMMERCE_CATALOG_REVISION_CHANGED', 'No se pudo confirmar el pedido.'],
+    ['ECOMMERCE_PRODUCT_NOT_AVAILABLE', 'Uno de los productos ya no est'],
+    ['ECOMMERCE_RATE_LIMITED', 'Se realizaron demasiados intentos.'],
+    ['ECOMMERCE_ORDER_CREATE_FAILED', 'No se pudo confirmar el pedido.'],
+  ])('maps %s to a controlled checkout message', async (code, safeMessage) => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        success: false,
+        error: { code, message: 'private database detail' },
+      },
+      error: null,
+    });
+    const service = createEcommercePublicService({ rpc });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {},
+      items: [],
+      idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({ code, message: expect.stringContaining(safeMessage) });
+
+    await service.createPublicOrder('mi-negocio', {
+      customer: {},
+      items: [],
+      idempotencyKey: 'web-key',
+    }).catch((error) => {
+      expect(error.message).not.toContain('private database detail');
     });
   });
 

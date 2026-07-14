@@ -9,6 +9,41 @@ import {
 
 const databases = [];
 
+const FORBIDDEN_PRIVATE_KEYS = new Set([
+  'checkout',
+  'customer',
+  'customerPhone',
+  'email',
+  'idempotencyKey',
+  'license',
+  'staff',
+  'token'
+]);
+const FORBIDDEN_PRIVATE_VALUES = new Set([
+  'Private customer',
+  '9610000000',
+  'Private address',
+  'private@example.test',
+  'private-key',
+  'discard-me'
+]);
+
+const findPrivateDataLeaks = (value, path = []) => {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => findPrivateDataLeaks(entry, [...path, String(index)]));
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, entry]) => {
+      const entryPath = [...path, key];
+      const keyLeak = FORBIDDEN_PRIVATE_KEYS.has(key) ? [entryPath.join('.')] : [];
+      return [...keyLeak, ...findPrivateDataLeaks(entry, entryPath)];
+    });
+  }
+  return typeof value === 'string' && FORBIDDEN_PRIVATE_VALUES.has(value)
+    ? [path.join('.')]
+    : [];
+};
+
 const createCache = (name, options = {}) => {
   const database = createEcommercePublicCatalogDatabase(name);
   databases.push(database);
@@ -265,11 +300,35 @@ describe('ecommercePublicCatalogCache', () => {
       reason: 'Navidad'
     });
 
-    const serialized = JSON.stringify(cached);
-    expect(serialized).not.toMatch(
-      /Private customer|9610000000|Private address|private-key|discard-me|customerPhone|token|license|staff/
-    );
+    expect(findPrivateDataLeaks(cached)).toEqual([]);
     expect(cached).not.toHaveProperty('checkout');
+  });
+
+  it('detects complete private fields without treating allowed numeric substrings as leaks', () => {
+    expect(findPrivateDataLeaks({
+      portal: {
+        whatsappPhone: '529610000000',
+        address: 'Calle pÃºblica 1'
+      }
+    })).toEqual([]);
+
+    expect(findPrivateDataLeaks({
+      checkout: {
+        phone: '9610000000',
+        address: 'Private address',
+        email: 'private@example.test'
+      }
+    })).toEqual(expect.arrayContaining([
+      'checkout',
+      'checkout.phone',
+      'checkout.address',
+      'checkout.email'
+    ]));
+
+    expect(findPrivateDataLeaks({ customerPhone: '9610000000' })).toEqual([
+      'customerPhone',
+      'customerPhone'
+    ]);
   });
 
   it('rejects malformed portals and does not cross slugs', async () => {
