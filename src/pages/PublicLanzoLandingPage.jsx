@@ -19,7 +19,8 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { LogoMark } from '../components/common/Logo';
+import LogoMark from '../components/common/LogoMark';
+import { buildAdminWelcomeUrl } from '../config/publicOrigins';
 import './PublicLanzoLandingPage.css';
 
 const CAPABILITIES = [
@@ -109,7 +110,7 @@ function PlanCard({ type, title, description, features, featured = false }) {
       </ul>
       <a
         className={`ui-button ${featured ? 'ui-button--secondary' : 'ui-button--primary'} public-lanzo-plan__cta`}
-        href="/?welcome=1"
+        href={buildAdminWelcomeUrl()}
       >
         {featured ? 'Comenzar y conocer PRO' : 'Crear mi licencia FREE'}
         <ArrowRight aria-hidden="true" size={17} />
@@ -144,7 +145,7 @@ function PublicLanzoLandingPage() {
             Lanzo Nube cuando tu negocio pida más.
           </p>
           <div className="public-lanzo-hero__actions">
-            <a className="ui-button ui-button--secondary public-lanzo-primary-cta" href="/?welcome=1">
+            <a className="ui-button ui-button--secondary public-lanzo-primary-cta" href={buildAdminWelcomeUrl()}>
               Crear mi licencia FREE <ArrowRight aria-hidden="true" size={18} />
             </a>
             <a className="ui-button ui-button--neutral" href="#planes">Comparar FREE y PRO</a>
@@ -242,7 +243,7 @@ function PublicLanzoLandingPage() {
           <h2 id="final-cta-title">Dale a tu operación el orden que necesita para crecer.</h2>
           <p>Crea tu licencia FREE, configura tu negocio y descubre Lanzo desde dentro.</p>
         </div>
-        <a className="ui-button ui-button--secondary public-lanzo-primary-cta" href="/?welcome=1">
+        <a className="ui-button ui-button--secondary public-lanzo-primary-cta" href={buildAdminWelcomeUrl()}>
           Comenzar con Lanzo <ArrowRight aria-hidden="true" size={18} />
         </a>
       </section>

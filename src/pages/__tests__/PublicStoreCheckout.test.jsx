@@ -95,6 +95,13 @@ const renderPage = () => render(
   </MemoryRouter>
 );
 
+const setNavigatorOnline = (online) => {
+  Object.defineProperty(window.navigator, 'onLine', {
+    configurable: true,
+    value: online,
+  });
+};
+
 async function addAndOpenCart(user) {
   await user.click(await screen.findByRole('button', { name: 'Agregar Alitas BBQ' }));
   await user.click(screen.getByRole('button', { name: 'Ver carrito, 1 unidades' }));
@@ -110,13 +117,17 @@ async function openAndFillCheckout(user) {
 describe('PublicStorePage checkout integration', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
+    setNavigatorOnline(true);
     window.sessionStorage.clear();
     serviceMocks.getPublicPortalBySlug.mockReset().mockResolvedValue(portalResult());
     serviceMocks.getPublicCatalog.mockReset().mockResolvedValue(catalogResult);
     serviceMocks.createPublicOrder.mockReset().mockResolvedValue(successfulOrder());
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    setNavigatorOnline(true);
+    cleanup();
+  });
 
   it('blocks checkout when ordering is disabled', async () => {
     serviceMocks.getPublicPortalBySlug.mockResolvedValue(portalResult({
@@ -151,6 +162,17 @@ describe('PublicStorePage checkout integration', () => {
 
     expect(screen.getByRole('button', { name: 'Continuar pedido' })).toBeDisabled();
     expect(screen.getByText(/Faltan.*20\.00.*realizar el pedido/)).toBeInTheDocument();
+  });
+
+  it('blocks checkout while offline even when a compatible catalog is readable', async () => {
+    setNavigatorOnline(false);
+    const user = userEvent.setup();
+    renderPage();
+    await addAndOpenCart(user);
+
+    expect(screen.getByRole('button', { name: 'Continuar pedido' })).toBeDisabled();
+    expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
+    expect(serviceMocks.createPublicOrder).not.toHaveBeenCalled();
   });
 
   it('opens checkout for a reconciled valid cart', async () => {

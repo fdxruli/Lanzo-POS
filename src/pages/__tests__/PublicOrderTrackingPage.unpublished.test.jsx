@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getTracking: vi.fn(),
@@ -45,6 +45,10 @@ beforeEach(() => {
   mocks.writeCache.mockResolvedValue(true);
   mocks.clearCache.mockResolvedValue(true);
   mocks.subscribe.mockReturnValue(() => {});
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('PublicOrderTrackingPage unpublished portal', () => {

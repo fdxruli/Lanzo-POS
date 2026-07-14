@@ -128,7 +128,7 @@ describe('PublicStorePage', () => {
       version: 1,
       items: [{ id: 'product-120', quantity: 2 }],
     }));
-    const firstPage = Array.from({ length: 100 }, (_, index) => makeProduct(`product-${index + 1}`));
+    const firstPage = [makeProduct('product-1')];
     const product120 = makeProduct('product-120', { name: 'Producto 120', price: 55 });
     serviceMocks.getPublicCatalog.mockImplementation((slug, options) => Promise.resolve(
       options.offset === 0

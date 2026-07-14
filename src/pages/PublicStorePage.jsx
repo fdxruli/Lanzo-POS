@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, ShoppingCart } from 'lucide-react';
 import { useParams } from 'react-router-dom';
-import { LogoMark } from '../components/common/Logo';
+import LogoMark from '../components/common/LogoMark';
 import PublicStoreHeader from '../components/ecommerce/public/PublicStoreHeader';
 import PublicCatalog from '../components/ecommerce/public/PublicCatalog';
 import PublicCartDrawer, { PublicMobileCartBar } from '../components/ecommerce/public/PublicCartDrawer';
