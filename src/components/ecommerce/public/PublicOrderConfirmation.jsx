@@ -1,5 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CheckCircle2, Copy, ExternalLink, MessageCircle, ShoppingBag } from 'lucide-react';
+import {
+  appendPublicTrackingToWhatsappUrl,
+  buildPublicTrackingUrl
+} from '../../../config/publicOrigins';
 
 const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
   style: 'currency',
@@ -17,22 +21,28 @@ const formatDateTime = (value) => {
   }).format(date);
 };
 
+const getTrackingUrl = (slug, trackingToken) => {
+  if (!slug || !trackingToken) return '';
+  try {
+    return buildPublicTrackingUrl(slug, trackingToken);
+  } catch {
+    return '';
+  }
+};
+
 function PublicOrderConfirmation({
   order,
+  slug,
   whatsapp,
   whatsappEnabled,
   onContinue
 }) {
   const [copied, setCopied] = useState('');
-  const canOpenWhatsapp = whatsappEnabled === true && Boolean(whatsapp?.url);
-  const trackingUrl = useMemo(() => {
-    if (!order?.trackingPath) return '';
-    try {
-      return new URL(order.trackingPath, globalThis.location?.origin || 'https://lanzo.local').toString();
-    } catch {
-      return '';
-    }
-  }, [order?.trackingPath]);
+  const trackingUrl = getTrackingUrl(slug, order?.trackingToken);
+  const whatsappUrl = trackingUrl
+    ? appendPublicTrackingToWhatsappUrl(whatsapp?.url, trackingUrl)
+    : whatsapp?.url || '';
+  const canOpenWhatsapp = whatsappEnabled === true && Boolean(whatsappUrl);
 
   const copyText = async (value, kind) => {
     if (!value || !globalThis.navigator?.clipboard?.writeText) return;
@@ -63,7 +73,7 @@ function PublicOrderConfirmation({
 
       {trackingUrl ? (
         <div className="public-order-confirmation__actions">
-          <a className="ui-button ui-button--primary" href={order.trackingPath}>
+          <a className="ui-button ui-button--primary" href={trackingUrl}>
             <ExternalLink aria-hidden="true" size={18} />
             Ver seguimiento del pedido
           </a>
@@ -81,7 +91,7 @@ function PublicOrderConfirmation({
       {canOpenWhatsapp ? (
         <a
           className="ui-button ui-button--primary public-checkout-action"
-          href={whatsapp.url}
+          href={whatsappUrl}
           target="_blank"
           rel="noopener noreferrer"
         >

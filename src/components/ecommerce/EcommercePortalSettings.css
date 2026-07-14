@@ -84,6 +84,25 @@
 .ecom-admin-link-box strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ecom-admin-status-actions { align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
 .ecom-admin-status-actions > span { display: inline-flex; align-items: center; gap: 7px; color: var(--text-light); }
+.ecom-admin-public-link-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: stretch; }
+.ecom-admin-link-actions { display: flex !important; flex-wrap: wrap; gap: 8px !important; }
+.ecom-admin-link-actions .btn { white-space: nowrap; }
+.ecom-admin-qr-box {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  min-width: 150px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: #fff;
+  color: #222;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.ecom-admin-qr-box > span { display: inline-flex; align-items: center; gap: 5px; }
+.ecom-admin-store-qr { width: 128px; height: 128px; }
 
 .ecom-admin-empty-card { align-items: center; gap: 18px; padding: clamp(18px, 4vw, 28px); }
 .ecom-admin-empty-card > div { flex: 1; }
@@ -220,5 +239,7 @@
   .ecom-admin-badges { justify-content: flex-start; }
   .ecom-admin-product { align-items: flex-start; }
   .ecom-admin-product-actions { flex-direction: column; }
+  .ecom-admin-public-link-panel { grid-template-columns: 1fr; }
+  .ecom-admin-link-actions { align-items: stretch; flex-direction: column; }
   .ecom-admin-stock-alert { padding: 12px; }
 }

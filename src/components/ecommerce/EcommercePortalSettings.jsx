@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Copy,
   Crown,
+  ExternalLink,
   Eye,
   EyeOff,
   Globe2,
@@ -11,13 +12,16 @@ import {
   Link2,
   LoaderCircle,
   Lock,
+  MessageCircle,
   PackagePlus,
   Palette,
   PauseCircle,
   Pencil,
   PlayCircle,
+  QrCode,
   RefreshCw,
   Save,
+  Share2,
   Store
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -34,10 +38,13 @@ import {
 import {
   ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT
 } from '../../services/ecommerce/ecommerceCatalogSyncService';
+import { buildPublicStoreUrl } from '../../config/publicOrigins';
+import { copyTextWithFallback } from '../../utils/copyTextWithFallback';
 import EcommerceProductPublishModal from './EcommerceProductPublishModal';
 import EcommerceCatalogSyncPanel, {
   EcommerceCatalogSyncBadge
 } from './EcommerceCatalogSyncPanel';
+import PublicStoreQrCode from './PublicStoreQrCode';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -189,6 +196,7 @@ export default function EcommercePortalSettings() {
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
   const [categoriesById, setCategoriesById] = useState(new Map());
+  const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
 
   const authorizationPending = isLicenseInitializing
     || currentDeviceRole === null
@@ -373,14 +381,36 @@ export default function EcommercePortalSettings() {
   };
 
   const copyLink = async () => {
-    const link = `${window.location.origin}/tienda/${portal.slug}`;
-    try {
-      await navigator.clipboard.writeText(link);
+    const copied = await copyTextWithFallback(reservedLink);
+    if (copied) {
       toast.success('Link reservado copiado.');
-    } catch {
+    } else {
       toast.error('No se pudo copiar el link en este dispositivo.');
     }
   };
+
+  const shareLink = async () => {
+    if (!reservedLink) return;
+    if (typeof navigator.share !== 'function') {
+      await copyLink();
+      return;
+    }
+    try {
+      await navigator.share({
+        title: portal?.name || 'Tienda online',
+        text: 'Conoce nuestra tienda en linea.',
+        url: reservedLink
+      });
+    } catch (shareError) {
+      if (shareError?.name !== 'AbortError') {
+        toast.error('No se pudo compartir el link en este dispositivo.');
+      }
+    }
+  };
+
+  const whatsappShareUrl = reservedLink
+    ? `https://wa.me/?text=${encodeURIComponent(`Conoce nuestra tienda: ${reservedLink}`)}`
+    : '';
 
   const loadLocalCatalog = async () => {
     if (localProducts.length > 0) return true;
@@ -530,10 +560,6 @@ export default function EcommercePortalSettings() {
   if (loading) return <StateMessage />;
   if (error) return <StateMessage error={error} onRetry={load} />;
 
-  const reservedLink = portal
-    ? `${window.location.origin}/tienda/${portal.slug}`
-    : '';
-
   return (
     <div className="ecom-admin-page">
       <header className="ecom-admin-hero">
@@ -591,18 +617,45 @@ export default function EcommercePortalSettings() {
               </span>
             </div>
           </div>
-          <div className="ecom-admin-link-box">
-            <Globe2 size={22} />
-            <div>
-              <span>Link reservado</span>
-              <strong>{reservedLink}</strong>
-              <small>
-                Revisión actual del catálogo: {portal.catalogRevision || 1}.
-              </small>
+          <div className="ecom-admin-public-link-panel">
+            <div className="ecom-admin-link-box">
+              <Globe2 size={22} />
+              <div>
+                <span>Link reservado</span>
+                <strong>{reservedLink}</strong>
+                <small>
+                  Revisión actual del catálogo: {portal.catalogRevision || 1}.
+                </small>
+              </div>
+              <div className="ecom-admin-link-actions">
+                <a
+                  className="btn btn-secondary"
+                  href={reservedLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink size={16} /> Abrir tienda
+                </a>
+                <button type="button" className="btn btn-secondary" onClick={copyLink}>
+                  <Copy size={16} /> Copiar link
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={shareLink}>
+                  <Share2 size={16} /> Compartir
+                </button>
+                <a
+                  className="btn btn-secondary"
+                  href={whatsappShareUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <MessageCircle size={16} /> WhatsApp
+                </a>
+              </div>
             </div>
-            <button type="button" className="btn btn-secondary" onClick={copyLink}>
-              <Copy size={16} /> Copiar link
-            </button>
+            <div className="ecom-admin-qr-box">
+              <PublicStoreQrCode value={reservedLink} />
+              <span><QrCode size={14} /> QR de la tienda</span>
+            </div>
           </div>
           <div className="ecom-admin-status-actions">
             <span><Globe2 size={18} /> Slug: <strong>{portal.slug}</strong></span>

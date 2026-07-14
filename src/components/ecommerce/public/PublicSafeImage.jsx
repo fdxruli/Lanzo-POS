@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogoMark } from '../../common/Logo';
+import LogoMark from '../../common/LogoMark';
 
 export function isSafePublicImageUrl(value) {
   if (typeof value !== 'string' || !value.trim()) return false;

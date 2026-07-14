@@ -1,10 +1,46 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it } from 'vitest';
-import PublicSafeImage from '../PublicSafeImage';
+import { afterEach, describe, expect, it } from 'vitest';
+import PublicSafeImage, { isSafePublicImageUrl } from '../PublicSafeImage';
+
+afterEach(cleanup);
 
 describe('PublicSafeImage', () => {
+  it('renders a valid public image URL without exposing it as visible text', () => {
+    const publicUrl = 'https://fixtures.lanzo.invalid/product.png';
+    render(
+      <PublicSafeImage
+        src={publicUrl}
+        alt="Foto fixture válida"
+        fallbackLabel="Producto sin imagen"
+      />
+    );
+
+    const image = screen.getByRole('img', { name: 'Foto fixture válida' });
+    expect(image).toHaveAttribute('src', publicUrl);
+    expect(screen.queryByText(publicUrl)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    'file:///private/customer.png',
+    'data:text/html,private',
+    'javascript:alert(1)',
+    'not-a-url',
+  ])('rejects an unsafe image URL: %s', (unsafeUrl) => {
+    expect(isSafePublicImageUrl(unsafeUrl)).toBe(false);
+    render(
+      <PublicSafeImage
+        src={unsafeUrl}
+        alt="No debe renderizarse"
+        fallbackLabel="Producto sin imagen"
+      />
+    );
+
+    expect(screen.queryByRole('img', { name: 'No debe renderizarse' })).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Producto sin imagen' })).toBeInTheDocument();
+  });
+
   it('uses the Lanzo mark when the primary image is missing', () => {
     render(
       <PublicSafeImage

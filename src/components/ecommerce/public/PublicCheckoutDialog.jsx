@@ -220,6 +220,7 @@ function PublicCheckoutDialog({
           {isConfirmed ? (
             <PublicOrderConfirmation
               order={confirmedOrder?.order}
+              slug={portal?.slug}
               whatsapp={confirmedOrder?.whatsapp}
               whatsappEnabled={features?.whatsappCheckout === true}
               onContinue={handleContinue}
