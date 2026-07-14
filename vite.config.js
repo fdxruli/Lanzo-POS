@@ -3,6 +3,45 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import packageJson from './package.json';
+import { serializeAdminManifest } from './src/pwa/adminManifest';
+
+const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
+  'index.html',
+  'manifest.webmanifest',
+  'pwa-192x192.png',
+  'pwa-512x512.png',
+  'logIcon.svg',
+  'assets/index-*.{js,css}',
+  'assets/App-*.{js,css}',
+  'assets/vendor_react-*.js',
+  'assets/vendor_icons-*.js',
+  'assets/vendor_supabase-*.js',
+  'assets/vendor_utils-*.js',
+  'assets/useAppStore-*.js',
+  'assets/Logger-*.js',
+  'assets/ErrorBoundary-*.{js,css}',
+  'assets/storageManager-*.js',
+  'assets/salesCloudShadowService-*.js',
+  'assets/index.esm-*.js',
+  'assets/posSyncBootstrapAutoCoordinator-*.js',
+  'assets/customerCreditSyncHandler-*.js',
+  'assets/cashSyncHandler-*.js',
+  'assets/devServiceWorkerCleanup-*.js',
+  'assets/devConsoleCapture-*.js',
+  'assets/mobileZoomGuard-*.js',
+]);
+
+const adminManifestPlugin = () => ({
+  name: 'lanzo-admin-manifest',
+  apply: 'build',
+  generateBundle() {
+    this.emitFile({
+      type: 'asset',
+      fileName: 'manifest.webmanifest',
+      source: serializeAdminManifest(),
+    });
+  },
+});
 
 const getGitCommit = () => {
   try {
@@ -20,41 +59,23 @@ const buildCommit = getGitCommit();
 export default defineConfig(() => ({
   plugins: [
     react(),
+    adminManifestPlugin(),
     VitePWA({
-      registerType: 'prompt', // CRÍTICO: Cambiado de autoUpdate a prompt
-      injectRegister: 'auto',
-      includeAssets: ['log.svg', 'logIcon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
+      strategies: 'injectManifest',
+      srcDir: 'src/pwa',
+      filename: 'sw.js',
+      scope: '/',
+      registerType: 'prompt',
+      injectRegister: false,
       devOptions: {
         enabled: false,
         type: 'module',
         navigateFallback: 'index.html',
       },
-      manifest: {
-        name: 'Lanzo POS',
-        short_name: 'Lanzo',
-        description: 'Sistema de Punto de Venta e Inventario',
-        theme_color: '#FFFFFF',
-        background_color: '#F7F8FA',
-        display: 'standalone',
-        orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
-        icons: [
-          { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
-        ]
+      manifest: false,
+      injectManifest: {
+        globPatterns: ADMIN_SHELL_GLOB_PATTERNS,
       },
-      workbox: {
-        // Obliga a limpiar assets viejos SOLO cuando el SW nuevo toma el control de forma segura
-        cleanupOutdatedCaches: true,
-        // Pre-cachea todo el código necesario para modo offline
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Asegura que las rutas de React Router siempre devuelvan el index.html
-        navigateFallback: '/index.html',
-        // IMPORTANTE: Evita que el Service Worker intercepte llamadas a tu API (Supabase/Backend)
-        navigateFallbackDenylist: [/^\/api/, /^\/auth/]
-      }
     })
   ],
 
