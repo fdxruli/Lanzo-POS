@@ -54,5 +54,10 @@ export const publicStoreRoutes = [
     path: '/tienda',
     element: withPublicBoundary(<PublicStoreNotFoundPage />),
     errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />)
+  },
+  {
+    path: '*',
+    element: withPublicBoundary(<PublicStoreNotFoundPage />),
+    errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />)
   }
 ];

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isPublicStorePath } from '../isPublicStorePath';
 import { publicStoreRoutes } from '../publicStoreRoutes';
 import { preparePublicStoreDocument } from '../preparePublicStoreDocument';
@@ -30,6 +30,10 @@ vi.mock('../../services/ecommerce/ecommercePublicService', async (importOriginal
       pagination: { limit: 100, offset: 0, hasMore: false },
     }),
   };
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('public store routing', () => {
@@ -78,7 +82,9 @@ describe('public store routing', () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/conoce-lanzo?tienda=mi-negocio'] });
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole('heading', { name: 'Vende mejor, sin complicarte.' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', {
+      name: 'Todo lo que necesitas para vender, controlar y crecer.'
+    })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/tienda/mi-negocio');
     expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
   });

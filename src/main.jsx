@@ -4,6 +4,10 @@ import { createBrowserRouter, RouterProvider, useRouteError } from 'react-router
 import { publicStoreRoutes } from './router/publicStoreRoutes';
 import { isPublicStorePath } from './router/isPublicStorePath';
 import { preparePublicStoreDocument } from './router/preparePublicStoreDocument';
+import { installAdminPwaDocument } from './pwa/adminPwaDocument';
+import { startAdminInstallPromptCapture } from './pwa/adminInstallPrompt';
+import { startAdminServiceWorker } from './pwa/adminServiceWorker';
+import { updateExistingAdminWorkerOnPublicRoute } from './pwa/publicRouteWorkerUpdate';
 import './index.css';
 import './styles/design-tokens.css';
 import './styles/ui-button.css';
@@ -125,8 +129,12 @@ async function renderPosApplication() {
 
 if (isPublicStorePath(window.location.pathname)) {
   preparePublicStoreDocument();
+  updateExistingAdminWorkerOnPublicRoute();
   renderPublicStore();
 } else {
+  installAdminPwaDocument();
+  startAdminInstallPromptCapture();
+  startAdminServiceWorker();
   renderPosApplication().catch((error) => {
     console.error('No se pudo iniciar Lanzo POS.', error);
     ReactDOM.createRoot(rootElement).render(

@@ -22,6 +22,7 @@ import BackupRuntime from './components/common/BackupRuntime';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
+import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
 
 const MAX_RETRIES = 3;
 const GLOBAL_COOLDOWN_MS = 5000;
@@ -29,35 +30,10 @@ const GLOBAL_COOLDOWN_MS = 5000;
 const resetAppShellCache = async () => {
   try {
     if ('caches' in window) {
-      const cacheNames = await window.caches.keys();
-      await Promise.all(
-        cacheNames
-          .filter((cacheName) => (
-            cacheName.includes('workbox') ||
-            cacheName.includes('precache') ||
-            cacheName.includes('runtime') ||
-            cacheName.includes('vite') ||
-            cacheName.includes('lanzo')
-          ))
-          .map((cacheName) => window.caches.delete(cacheName))
-      );
-    }
-
-    if ('serviceWorker' in navigator) {
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(
-        registrations.map(async (registration) => {
-          try {
-            registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
-            await registration.unregister();
-          } catch (swError) {
-            Logger.warn('No se pudo reiniciar el Service Worker:', swError);
-          }
-        })
-      );
+      await clearCurrentAdminRuntimeCaches(window.caches);
     }
   } catch (cacheError) {
-    Logger.warn('No se pudo limpiar la caché de la aplicación:', cacheError);
+    Logger.warn('No se pudo limpiar la caché runtime administrativa:', cacheError);
   }
 };
 
