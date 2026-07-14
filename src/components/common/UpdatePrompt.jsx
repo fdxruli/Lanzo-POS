@@ -1,14 +1,14 @@
-import { useEffect, useRef } from 'react';
-import { useRegisterSW } from 'virtual:pwa-register/react';
+import { useEffect } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import {
+  activateAdminServiceWorkerUpdate,
+  getAdminServiceWorkerState,
+  subscribeAdminServiceWorker,
+} from '../../pwa/adminServiceWorker';
 import './UpdatePrompt.css';
 
-const CHECK_INTERVAL_MS = 60 * 60 * 1000;
-
 const UpdatePrompt = () => {
-  const intervalRef = useRef(null);
-
   const showUpdateModal = useAppStore((state) => state.showUpdateModal);
   const isUpdating = useAppStore((state) => state.isUpdating);
   const setUpdateAvailable = useAppStore((state) => state.setUpdateAvailable);
@@ -16,53 +16,23 @@ const UpdatePrompt = () => {
   const closeUpdateModal = useAppStore((state) => state.closeUpdateModal);
   const runUpdate = useAppStore((state) => state.runUpdate);
 
-  const {
-    needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker
-  } = useRegisterSW({
-    onRegistered(registration) {
-      if (!registration) return;
-
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-
-      intervalRef.current = window.setInterval(() => {
-        if (!navigator.onLine) return;
-
-        registration.update().catch((error) => {
-          console.error('Fallo al buscar actualizacion PWA:', error);
-        });
-      }, CHECK_INTERVAL_MS);
-    },
-    onRegisterError(error) {
-      console.error('Fallo critico en registro de SW:', error);
-    }
-  });
-
   useEffect(() => {
-    setTriggerUpdate(updateServiceWorker);
+    setTriggerUpdate(activateAdminServiceWorkerUpdate);
 
     return () => {
       setTriggerUpdate(null);
     };
-  }, [setTriggerUpdate, updateServiceWorker]);
+  }, [setTriggerUpdate]);
 
   useEffect(() => {
-    if (!needRefresh) return;
-
-    setUpdateAvailable(true);
-    setNeedRefresh(false);
-  }, [needRefresh, setNeedRefresh, setUpdateAvailable]);
-
-  useEffect(() => {
-    return () => {
-      if (!intervalRef.current) return;
-
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+    const applyWorkerState = (workerState) => {
+      if (workerState.waiting) setUpdateAvailable(true);
+      if (workerState.error) console.error('No se pudo inicializar la actualización PWA.');
     };
-  }, []);
+
+    applyWorkerState(getAdminServiceWorkerState());
+    return subscribeAdminServiceWorker(applyWorkerState);
+  }, [setUpdateAvailable]);
 
   // Verificamos si el usuario ya descartó el banner en esta sesión
   const isDismissed = sessionStorage.getItem('lanzo_update_dismissed') === 'true';
