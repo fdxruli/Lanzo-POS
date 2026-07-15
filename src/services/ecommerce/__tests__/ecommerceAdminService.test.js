@@ -10,30 +10,22 @@ import {
 
 const createService = ({
   staffSessionToken = null,
-  rpc = vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
-  productsById = new Map()
-} = {}) => {
-  const configurationSource = {
-    getProductsByIds: vi.fn(async () => productsById)
-  };
-  return {
+  rpc = vi.fn().mockResolvedValue({ data: { success: true }, error: null })
+} = {}) => ({
+  rpc,
+  service: createEcommerceAdminService({
     rpc,
-    configurationSource,
-    service: createEcommerceAdminService({
-      rpc,
-      configurationSource,
-      isConfigured: () => true,
-      getLicenseDetails: () => ({ license_key: 'license-fixture' }),
-      buildAuthContext: vi.fn().mockResolvedValue({
-        licenseKey: 'license-fixture',
-        deviceFingerprint: 'device-fixture',
-        securityToken: 'security-fixture',
-        staffSessionToken
-      }),
-      isOnline: () => true
-    })
-  };
-};
+    isConfigured: () => true,
+    getLicenseDetails: () => ({ license_key: 'license-fixture' }),
+    buildAuthContext: vi.fn().mockResolvedValue({
+      licenseKey: 'license-fixture',
+      deviceFingerprint: 'device-fixture',
+      securityToken: 'security-fixture',
+      staffSessionToken
+    }),
+    isOnline: () => true
+  })
+});
 
 const sortedKeys = (value) => Object.keys(value).sort();
 
@@ -79,6 +71,52 @@ const configurableProduct = {
       tracksInventory: false
     }]
   }]
+};
+
+const completeProjection = {
+  publishedProductId: 'published-fixture',
+  localProductRef: configurableProduct.id,
+  sourceRevision: 'version:12',
+  sourceState: 'in_stock',
+  sourceAvailable: true,
+  stockSnapshot: 3,
+  fields: {
+    name: 'Tenis Urban',
+    description: null,
+    category: 'Calzado',
+    price: 900,
+    image: null
+  },
+  configuration: {
+    type: 'variant_parent',
+    version: 1,
+    hasRecipe: false,
+    variants: [{
+      sourceVariantRef: 'urban-black-26',
+      sourceProductId: 'sku-urban-black-26',
+      localProductRef: 'sku-urban-black-26',
+      sku: 'URBAN-BLACK-26',
+      publicName: 'Negro / 26',
+      optionValues: { color: 'Negro', talla: '26' },
+      priceMode: 'delta',
+      priceValue: 50,
+      imageUrl: null,
+      imageRef: null,
+      trackStock: true,
+      stockMode: 'exact',
+      stockSnapshot: 3,
+      sourceAvailable: true,
+      manualAvailable: true,
+      displayOrder: 0,
+      sourceRevision: null,
+      metadata: {}
+    }],
+    optionGroups: [],
+    availabilitySource: 'inventory',
+    availabilityReasonCode: 'SOURCE_STOCK_AVAILABLE',
+    limitingSource: { productId: null, name: null }
+  },
+  configurationSourceRevision: 'version:12'
 };
 
 describe('ecommerceAdminService', () => {
@@ -170,24 +208,9 @@ describe('ecommerceAdminService', () => {
     );
   });
 
-  it('enriches automatic PRO projections and calls the same v2 contract', async () => {
-    const productsById = new Map([[configurableProduct.id, configurableProduct]]);
-    const { rpc, service, configurationSource } = createService({ productsById });
-    const projections = [{
-      publishedProductId: 'published-fixture',
-      localProductRef: configurableProduct.id,
-      sourceRevision: 'version:12',
-      sourceState: 'in_stock',
-      sourceAvailable: true,
-      stockSnapshot: 3,
-      fields: {
-        name: 'Tenis Urban',
-        description: null,
-        category: 'Calzado',
-        price: 900,
-        image: null
-      }
-    }];
+  it('transports complete automatic PRO projections without reading or enriching them again', async () => {
+    const { rpc, service } = createService();
+    const projections = [structuredClone(completeProjection)];
 
     await service.syncPublishedCatalog({
       projections,
@@ -195,42 +218,55 @@ describe('ecommerceAdminService', () => {
       expectedCatalogRevision: 8
     });
 
-    expect(configurationSource.getProductsByIds).toHaveBeenCalledWith([
-      configurableProduct.id
-    ]);
     const [rpcName, params] = rpc.mock.calls[0];
     expect(rpcName).toBe('ecommerce_admin_sync_published_catalog_v2');
     expect(params.p_idempotency_key).toBe('catalog-fixture');
     expect(params.p_expected_catalog_revision).toBe(8);
-    expect(params.p_projections[0].configurationSourceRevision).toBe('version:12');
-    expect(params.p_projections[0].configuration.type).toBe('variant_parent');
-    expect(params.p_projections[0].configuration.variants).toHaveLength(1);
-    expect(params.p_projections[0].configuration.optionGroups).toHaveLength(1);
-    expect(projections[0].configuration).toBeUndefined();
+    expect(params.p_projections).toBe(projections);
+    expect(params.p_projections[0]).toEqual(completeProjection);
   });
 
-  it('keeps a missing local configuration explicit and fail-closed for the server', async () => {
-    const { rpc, service } = createService({ productsById: new Map() });
+  it('forwards a missing-local snapshot explicitly without inventing configuration', async () => {
+    const { rpc, service } = createService();
+    const projection = {
+      publishedProductId: 'published-missing',
+      localProductRef: 'missing-local',
+      sourceRevision: null,
+      sourceState: 'unverified',
+      sourceAvailable: null,
+      stockSnapshot: null,
+      fields: {},
+      configuration: null,
+      configurationSourceRevision: null
+    };
 
     await service.syncPublishedCatalog({
-      projections: [{
-        publishedProductId: 'published-missing',
-        localProductRef: 'missing-local',
-        sourceRevision: null,
-        sourceState: 'source_missing',
-        sourceAvailable: false,
-        stockSnapshot: null,
-        fields: { name: null, description: null, category: null, price: null, image: null }
-      }],
+      projections: [projection],
       idempotencyKey: 'missing-fixture'
     });
 
     const params = rpc.mock.calls[0][1];
+    expect(params.p_projections[0]).toBe(projection);
     expect(params.p_projections[0]).toMatchObject({
       configuration: null,
       configurationSourceRevision: null,
-      sourceAvailable: false
+      sourceAvailable: null
     });
+  });
+
+  it('rejects invalid automatic projection containers before calling the RPC', async () => {
+    const { rpc, service } = createService();
+
+    const result = await service.syncPublishedCatalog({
+      projections: [null],
+      idempotencyKey: 'invalid-fixture'
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'ECOMMERCE_CATALOG_SYNC_INVALID_PAYLOAD'
+    });
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it('serializes direct configuration calls instead of forwarding internal IDs', async () => {
