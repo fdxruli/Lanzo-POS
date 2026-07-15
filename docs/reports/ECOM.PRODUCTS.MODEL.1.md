@@ -202,7 +202,7 @@ La rama fue creada desde `main` en `68e3b6ee7764b98c96cbfdccf928122c8ed573eb`. N
 
 ## 35. PR
 
-Único PR draft: pendiente de creación al cierre del reporte. No se hará merge automático.
+Único PR **#98**, abierto como draft: `FASE ECOM.PRODUCTS.MODEL.1 — Productos configurables y stock por receta`. Base `main`, head `fase-ecom-products-model-1`; no se hará merge automático.
 
 ## 36. Vercel
 
