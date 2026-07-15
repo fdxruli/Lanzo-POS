@@ -11,7 +11,11 @@ import { getAvailableStock, normalizeStock } from '../db/utils';
 import { getBatchExpiryStatus } from '../../utils/dateUtils';
 import { getInventoryQuantityForSale } from '../sales/stockValidation';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
-import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
+import {
+  ecommercePublishedStockLocalSource,
+  ecommercePublishedStockLocalSourceInternals
+} from './ecommercePublishedStockLocalSource';
+import { evaluateEcommerceRecipeAvailability } from './ecommerceRecipeAvailability';
 import {
   ECOMMERCE_PUBLISHED_STOCK_ALERT_TTL_MS,
   ECOMMERCE_PUBLISHED_STOCK_STATUS
@@ -19,15 +23,11 @@ import {
 
 const REMOVED_PRODUCT_STATUSES = new Set(['inactive', 'deleted', 'archived']);
 const BLOCKED_BATCH_STATUSES = new Set([
-  'inactive',
-  'blocked',
-  'quarantined',
-  'deleted',
-  'removed',
-  'archived'
+  'inactive', 'blocked', 'quarantined', 'deleted', 'removed', 'archived'
 ]);
 const EXPIRY_REQUIRED_MODES = new Set(['STRICT', 'SHELF_LIFE', 'BATCH']);
 const EPSILON = 0.0001;
+const INGREDIENTS_KEY = ecommercePublishedStockLocalSourceInternals.ENRICHED_INGREDIENTS_KEY;
 
 const toText = (value) => String(value || '').trim();
 const toStatus = (value) => toText(value).toLowerCase();
@@ -51,7 +51,6 @@ const getStaffIdentity = (state = {}) => {
 export const getEcommercePublishedStockAlertContextKey = (state = {}) => {
   const licenseKey = getLicenseKeyFromDetails(state.licenseDetails || {});
   if (!licenseKey) return null;
-
   const role = toText(state.currentDeviceRole || 'unknown');
   const device = toText(
     state.deviceFingerprint
@@ -59,7 +58,6 @@ export const getEcommercePublishedStockAlertContextKey = (state = {}) => {
     || state.licenseDetails?.device_fingerprint
     || 'device'
   );
-
   return [licenseKey, role, getStaffIdentity(state), device].join(':');
 };
 
@@ -88,7 +86,6 @@ const getRawAvailableStock = (product = {}) => {
   const stock = Number(product.stock);
   const committedValue = product.committedStock ?? product.committed_stock ?? 0;
   const committedStock = Number(committedValue);
-
   if (
     product.stock === null
     || product.stock === undefined
@@ -99,7 +96,6 @@ const getRawAvailableStock = (product = {}) => {
   ) {
     return { verified: false, available: null };
   }
-
   return { verified: true, available: getAvailableStock(product) };
 };
 
@@ -108,7 +104,6 @@ const getVerifiedBatchAvailableStock = (batch = {}) => {
   const committedValue = batch.committedStock ?? batch.committed_stock ?? 0;
   const stock = Number(stockValue);
   const committedStock = Number(committedValue);
-
   if (
     stockValue === null
     || stockValue === undefined
@@ -119,11 +114,7 @@ const getVerifiedBatchAvailableStock = (batch = {}) => {
   ) {
     return { verified: false, available: null };
   }
-
-  return {
-    verified: true,
-    available: getAvailableBatchStock(batch)
-  };
+  return { verified: true, available: getAvailableBatchStock(batch) };
 };
 
 const getSellableBatchState = (batch, product, now) => {
@@ -149,18 +140,13 @@ const getSellableBatchState = (batch, product, now) => {
 
   const expiryMode = getExpirationMode(product);
   if (!EXPIRY_REQUIRED_MODES.has(expiryMode)) {
-    return {
-      verified: true,
-      sellable: true,
-      available: stockState.available
-    };
+    return { verified: true, sellable: true, available: stockState.available };
   }
 
   const expiryStatus = getBatchExpiryStatus({
     expiryDate: getBatchExpiryValue(batch)
   }, now);
   const sellable = expiryStatus === 'valid' || expiryStatus === 'expires_today';
-
   return {
     verified: true,
     sellable,
@@ -177,25 +163,68 @@ const getSellableUnitStock = (inventoryStock, product) => {
     { quantity: 1 },
     product
   ));
-
   if (!Number.isFinite(inventoryPerSaleUnit) || inventoryPerSaleUnit <= 0) {
     return null;
   }
-
   return normalizeStock(Number(inventoryStock) / inventoryPerSaleUnit);
 };
 
 const makeResult = ({
   publishedProduct,
   status,
-  availableStock = null
+  availableStock = null,
+  reasonCode = null,
+  limitingIngredientId = null,
+  limitingIngredientName = null,
+  components = []
 }) => ({
   publishedProductId: publishedProduct.id || null,
   localProductRef: publishedProduct.localProductRef || null,
   publicName: publishedProduct.publicName || 'Producto publicado',
   status,
-  availableStock
+  availableStock,
+  reasonCode,
+  limitingIngredientId,
+  limitingIngredientName,
+  components
 });
+
+const getIngredientsById = (localProduct = {}) => new Map(
+  (Array.isArray(localProduct[INGREDIENTS_KEY]) ? localProduct[INGREDIENTS_KEY] : [])
+    .filter((ingredient) => ingredient?.id)
+    .map((ingredient) => [String(ingredient.id), ingredient])
+);
+
+const classifyRecipe = ({
+  publishedProduct,
+  localProduct,
+  batches,
+  batchReadFailed,
+  now
+}) => {
+  const evaluation = evaluateEcommerceRecipeAvailability({
+    product: localProduct,
+    ingredientsById: getIngredientsById(localProduct),
+    batches,
+    batchReadFailed,
+    now
+  });
+
+  const status = Object.values(ECOMMERCE_PUBLISHED_STOCK_STATUS)
+    .includes(evaluation.status)
+    ? evaluation.status
+    : ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED;
+
+  return makeResult({
+    publishedProduct,
+    status,
+    availableStock: evaluation.availableStock,
+    reasonCode: evaluation.reasonCode,
+    limitingIngredientId: evaluation.limitingIngredientId,
+    limitingIngredientName: evaluation.limitingIngredientName,
+    components: evaluation.components
+  });
+};
 
 const classifyProduct = ({
   publishedProduct,
@@ -207,30 +236,31 @@ const classifyProduct = ({
   if (!localProduct) {
     return makeResult({
       publishedProduct,
-      // IndexedDB is a per-device cache, not the authoritative product source.
-      // A cache miss must preserve the last cloud-confirmed availability.
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
+      reasonCode: 'SOURCE_CACHE_MISS'
     });
   }
-
   if (isProductInactive(localProduct)) {
     return makeResult({
       publishedProduct,
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.INACTIVE_SOURCE
+      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.INACTIVE_SOURCE,
+      reasonCode: 'SOURCE_INACTIVE'
     });
   }
-
-  if (localProduct.trackStock === false && !hasRecipe(localProduct)) {
-    return makeResult({
-      publishedProduct,
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.NOT_TRACKED
-    });
-  }
-
   if (hasRecipe(localProduct)) {
+    return classifyRecipe({
+      publishedProduct,
+      localProduct,
+      batches,
+      batchReadFailed,
+      now
+    });
+  }
+  if (localProduct.trackStock === false) {
     return makeResult({
       publishedProduct,
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.NOT_TRACKED,
+      reasonCode: 'SOURCE_NOT_TRACKED'
     });
   }
 
@@ -239,24 +269,24 @@ const classifyProduct = ({
     if (batchReadFailed) {
       return makeResult({
         publishedProduct,
-        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
+        reasonCode: 'SOURCE_BATCH_READ_FAILED'
       });
     }
-
     const batchStates = (batches || []).map((batch) => (
       getSellableBatchState(batch, localProduct, now)
     ));
     inventoryStock = batchStates
       .filter((state) => state.sellable)
       .reduce((sum, state) => sum + state.available, 0);
-
     if (
       inventoryStock <= EPSILON
       && batchStates.some((state) => state.verified === false)
     ) {
       return makeResult({
         publishedProduct,
-        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
+        reasonCode: 'SOURCE_STOCK_INVALID'
       });
     }
   } else {
@@ -264,7 +294,8 @@ const classifyProduct = ({
     if (!stockState.verified) {
       return makeResult({
         publishedProduct,
-        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+        status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
+        reasonCode: 'SOURCE_STOCK_INVALID'
       });
     }
     inventoryStock = stockState.available;
@@ -274,16 +305,17 @@ const classifyProduct = ({
   if (availableStock === null) {
     return makeResult({
       publishedProduct,
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
+      reasonCode: 'SOURCE_CONVERSION_INVALID'
     });
   }
-
   return makeResult({
     publishedProduct,
     status: availableStock <= 0
       ? ECOMMERCE_PUBLISHED_STOCK_STATUS.OUT_OF_STOCK
       : ECOMMERCE_PUBLISHED_STOCK_STATUS.IN_STOCK,
-    availableStock
+    availableStock,
+    reasonCode: availableStock <= 0 ? 'SOURCE_STOCK_ZERO' : 'SOURCE_STOCK_AVAILABLE'
   });
 };
 
@@ -341,18 +373,15 @@ export const createEcommercePublishedStockAlertService = ({
   let globalEpoch = 0;
 
   const currentEpoch = (contextKey) => Number(epochByContext.get(contextKey) || 0);
-
   const invalidateEcommercePublishedStockAlerts = ({ contextKey } = {}) => {
     if (!contextKey) {
       globalEpoch += 1;
       cacheByContext.clear();
       return;
     }
-
     cacheByContext.delete(contextKey);
     epochByContext.set(contextKey, currentEpoch(contextKey) + 1);
   };
-
   const clearEcommercePublishedStockAlerts = ({ contextKey } = {}) => {
     invalidateEcommercePublishedStockAlerts({ contextKey });
     if (!contextKey) inFlightByContext.clear();
@@ -361,7 +390,6 @@ export const createEcommercePublishedStockAlertService = ({
   const loadAdministrativeSnapshot = async (options) => {
     const hasPortal = Object.prototype.hasOwnProperty.call(options, 'portal');
     const hasProducts = Object.prototype.hasOwnProperty.call(options, 'publishedProducts');
-
     let portal = hasPortal ? options.portal : undefined;
     let publishedProducts = hasProducts ? options.publishedProducts : undefined;
 
@@ -375,7 +403,6 @@ export const createEcommercePublishedStockAlertService = ({
       }
       portal = portalResult.portal || null;
     }
-
     if (!hasProducts && portal) {
       const productsResult = await getPublishedProducts();
       if (productsResult?.success !== true) {
@@ -386,7 +413,6 @@ export const createEcommercePublishedStockAlertService = ({
       }
       publishedProducts = productsResult.products || [];
     }
-
     return {
       success: true,
       portal: portal || null,
@@ -402,7 +428,6 @@ export const createEcommercePublishedStockAlertService = ({
       product?.isPublished === true && toText(product.localProductRef)
     ));
     const evaluatedAt = getNow().toISOString();
-
     if (publishedProducts.length === 0) {
       return buildSnapshot({
         portal: administrative.portal,
@@ -415,7 +440,6 @@ export const createEcommercePublishedStockAlertService = ({
     const localProductRefs = publishedProducts.map((product) => (
       toText(product.localProductRef)
     ));
-
     let localProductsById;
     try {
       localProductsById = await localSource.getProductsByIds(localProductRefs);
@@ -424,25 +448,29 @@ export const createEcommercePublishedStockAlertService = ({
         portal: administrative.portal,
         products: publishedProducts.map((publishedProduct) => makeResult({
           publishedProduct,
-          status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED
+          status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
+          reasonCode: 'SOURCE_READ_FAILED'
         })),
         evaluatedAt,
         reason: options.reason
       });
     }
 
-    const batchManagedIds = Array.from(new Set(
+    const stockDependencyIds = Array.from(new Set(
       localProductRefs.filter((productId) => {
         const product = localProductsById.get(productId);
-        return product && !isProductInactive(product) && isBatchManaged(product);
+        if (!product || isProductInactive(product)) return false;
+        if (hasRecipe(product)) {
+          return (product[INGREDIENTS_KEY] || []).some(isBatchManaged);
+        }
+        return isBatchManaged(product);
       })
     ));
-
     let batchesByProductId = new Map();
     let batchReadFailed = false;
-    if (batchManagedIds.length > 0) {
+    if (stockDependencyIds.length > 0) {
       try {
-        batchesByProductId = await localSource.getBatchesByProductIds(batchManagedIds);
+        batchesByProductId = await localSource.getBatchesByProductIds(stockDependencyIds);
       } catch {
         batchReadFailed = true;
       }
@@ -459,7 +487,6 @@ export const createEcommercePublishedStockAlertService = ({
         now: evaluationNow
       });
     });
-
     return buildSnapshot({
       portal: administrative.portal,
       products,
@@ -483,11 +510,7 @@ export const createEcommercePublishedStockAlertService = ({
     const force = options.force === true;
     const reason = options.reason || 'manual';
     const cached = cacheByContext.get(contextKey);
-    if (
-      !force
-      && cached
-      && Date.now() - cached.storedAt < ttlMs
-    ) {
+    if (!force && cached && Date.now() - cached.storedAt < ttlMs) {
       return { ...cached.snapshot, cached: true, reason };
     }
 
@@ -503,7 +526,7 @@ export const createEcommercePublishedStockAlertService = ({
     }
 
     const requestPromise = (async () => {
-      const result = await evaluateCore({ ...options, reason });
+      const response = await evaluateCore({ ...options, reason });
       const currentContextKey = getEcommercePublishedStockAlertContextKey(
         getState() || {}
       );
@@ -512,25 +535,21 @@ export const createEcommercePublishedStockAlertService = ({
         || globalEpoch !== requestGlobalEpoch
         || currentContextKey !== contextKey
       );
-
-      if (stale) return { ...result, stale: true };
-
-      if (result?.success === true) {
+      if (stale) return { ...response, stale: true };
+      if (response?.success === true) {
         cacheByContext.set(contextKey, {
           storedAt: Date.now(),
-          snapshot: result
+          snapshot: response
         });
       }
-
-      return result;
+      return response;
     })();
 
-    const flight = {
+    inFlightByContext.set(contextKey, {
       promise: requestPromise,
       contextEpoch,
       globalEpoch: requestGlobalEpoch
-    };
-    inFlightByContext.set(contextKey, flight);
+    });
     try {
       return await requestPromise;
     } finally {
@@ -549,6 +568,7 @@ export const createEcommercePublishedStockAlertService = ({
 
 export const ecommercePublishedStockAlertServiceInternals = Object.freeze({
   classifyProduct,
+  classifyRecipe,
   getRawAvailableStock,
   getVerifiedBatchAvailableStock,
   getSellableBatchState,
