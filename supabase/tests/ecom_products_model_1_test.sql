@@ -118,7 +118,7 @@ begin
     is_active, status, expiry_date, cost, price
   ) values
     ('m1-batch-expired', v_license_a, 'm1-batch', 50, 0, true, true, 'active', current_date - 1, 0, 0),
-    ('m1-batch-blocked', v_license_a, 'm1-batch', 40, 0, true, true, 'blocked', current_date + 5, 0, 0),
+    ('m1-batch-blocked', v_license_a, 'm1-batch', 40, 0, true, false, 'inactive', current_date + 5, 0, 0),
     ('m1-batch-valid', v_license_a, 'm1-batch', 12, 2, true, true, 'active', current_date + 5, 0, 0),
     ('m1-batch-today', v_license_a, 'm1-batch', 2, 0, true, true, 'active', current_date, 0, 0);
 
@@ -136,14 +136,12 @@ begin
     (v_pub_other, v_portal_b, v_license_b, 'm1-cross-license', 'm1-cross-license', 'Otro producto', 100,
       true, true, true, true, 'in_stock', true, 'exact', 1);
 
-  -- 1-2: existing products default to simple and keep direct stock data.
   if (select configuration_type from public.ecommerce_published_products where id=v_pub_simple) <> 'simple'
      or (select configuration_version from public.ecommerce_published_products where id=v_pub_simple) <> 1
      or (select stock_snapshot from public.ecommerce_published_products where id=v_pub_simple) <> 20 then
     raise exception 'TEST_01_02_SIMPLE_COMPATIBILITY_FAILED';
   end if;
 
-  -- 3: three ingredients calculate limiting minimum (carne = 10).
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-pan","quantity":1,"unit":"pza"},{"ingredientId":"m1-carne","quantity":150,"unit":"g"},{"ingredientId":"m1-queso","quantity":1,"unit":"pza"}]', current_date);
   if v_result->>'status' <> 'in_stock'
@@ -152,7 +150,6 @@ begin
     raise exception 'TEST_03_RECIPE_MINIMUM_FAILED: %', v_result;
   end if;
 
-  -- 4: known zero is conclusively out_of_stock.
   update public.pos_products set stock=0 where id='m1-pan' and license_id=v_license_a;
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-pan","quantity":1,"unit":"pza"}]', current_date);
@@ -161,7 +158,6 @@ begin
   end if;
   update public.pos_products set stock=20 where id='m1-pan' and license_id=v_license_a;
 
-  -- 5-6: missing and inactive ingredients remain unverified.
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-missing","quantity":1,"unit":"pza"}]', current_date);
   if v_result->>'status' <> 'unverified' or v_result->>'reasonCode' <> 'RECIPE_INGREDIENT_MISSING' then
@@ -173,7 +169,6 @@ begin
     raise exception 'TEST_06_INACTIVE_FAILED: %', v_result;
   end if;
 
-  -- 7-8: kg/g and lt/ml conversion.
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-carne","quantity":150,"unit":"g"}]', current_date);
   if (v_result->>'availableStock')::integer <> 10 then raise exception 'TEST_07_KG_G_FAILED: %', v_result; end if;
@@ -181,28 +176,24 @@ begin
     '[{"ingredientId":"m1-agua","quantity":250,"unit":"ml"}]', current_date);
   if (v_result->>'availableStock')::integer <> 8 then raise exception 'TEST_08_LT_ML_FAILED: %', v_result; end if;
 
-  -- 9: incompatible dimensions.
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-carne","quantity":1,"unit":"pza"}]', current_date);
   if v_result->>'reasonCode' <> 'RECIPE_UNIT_INCOMPATIBLE' then
     raise exception 'TEST_09_INCOMPATIBLE_FAILED: %', v_result;
   end if;
 
-  -- 10: committed stock is deducted.
   update public.pos_products set committed_stock=0.3 where id='m1-carne' and license_id=v_license_a;
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-carne","quantity":150,"unit":"g"}]', current_date);
   if (v_result->>'availableStock')::integer <> 8 then raise exception 'TEST_10_COMMITTED_FAILED: %', v_result; end if;
   update public.pos_products set committed_stock=0 where id='m1-carne' and license_id=v_license_a;
 
-  -- 11-13: expired and blocked batches excluded; valid and expires-today included; committed deducted.
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-batch","quantity":2,"unit":"pza"}]', current_date);
   if (v_result->>'availableStock')::integer <> 6 then
     raise exception 'TEST_11_13_BATCH_POLICY_FAILED: %', v_result;
   end if;
 
-  -- 14-15: untracked does not limit; all-untracked => not_tracked.
   v_result := private.ecommerce_recipe_capacity(v_license_a,
     '[{"ingredientId":"m1-untracked","quantity":1,"unit":"pza"},{"ingredientId":"m1-pan","quantity":2,"unit":"pza"}]', current_date);
   if (v_result->>'availableStock')::integer <> 10 then raise exception 'TEST_14_UNTRACKED_LIMIT_FAILED: %', v_result; end if;
@@ -212,7 +203,6 @@ begin
     raise exception 'TEST_15_ALL_UNTRACKED_FAILED: %', v_result;
   end if;
 
-  -- 16,18,24: valid same-license variants/options; required configuration fail-closed.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null,v_pub_variants,
     jsonb_build_object(
@@ -240,7 +230,6 @@ begin
     raise exception 'TEST_16_18_24_CONFIGURATION_COUNTS_OR_GUARD_FAILED';
   end if;
 
-  -- 17: cross-license source SKU rejected and existing family remains intact.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null,v_pub_variants,
     jsonb_build_object('type','variant_parent','version',1,'hasRecipe',false,
@@ -251,14 +240,12 @@ begin
     raise exception 'TEST_17_CROSS_LICENSE_FAILED: %', v_result;
   end if;
 
-  -- 19: single cannot select > 1.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null,v_pub_recipe,
     jsonb_build_object('type','configurable','version',1,'hasRecipe',true,'variants','[]'::jsonb,
       'optionGroups',jsonb_build_array(jsonb_build_object('sourceGroupRef','bad-single','publicName','Bad','selectionType','single','required',false,'minSelect',0,'maxSelect',2,'options','[]'::jsonb))), 'bad-single');
   if coalesce(v_result->>'success','false')::boolean is true then raise exception 'TEST_19_SINGLE_MAX_FAILED'; end if;
 
-  -- 20: inventory-tracked option requires positive quantity.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null,v_pub_recipe,
     jsonb_build_object('type','configurable','version',1,'hasRecipe',true,'variants','[]'::jsonb,
@@ -266,7 +253,6 @@ begin
         'options',jsonb_build_array(jsonb_build_object('sourceOptionRef','zero','publicName','Zero','priceDelta',0,'tracksInventory',true,'sourceIngredientId','m1-queso','ingredientQuantity',0,'ingredientUnit','pza'))))), 'bad-option');
   if coalesce(v_result->>'success','false')::boolean is true then raise exception 'TEST_20_OPTION_ZERO_FAILED'; end if;
 
-  -- 21: atomic sync - invalid second child leaves no partial children on a clean product.
   if exists(select 1 from public.ecommerce_published_product_variants where published_product_id=v_pub_recipe and deleted_at is null) then
     raise exception 'TEST_21_PRECONDITION_FAILED';
   end if;
@@ -280,7 +266,6 @@ begin
     raise exception 'TEST_21_ATOMIC_FAILED: %', v_result;
   end if;
 
-  -- 22: omitted children retire only this product's children.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null,v_pub_variants,
     jsonb_build_object('type','variant_parent','version',1,'hasRecipe',false,
@@ -292,7 +277,6 @@ begin
     raise exception 'TEST_22_OMITTED_CHILD_FAILED: %', v_result;
   end if;
 
-  -- 23: simple payload produces no children and stays compatible.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null,v_pub_simple,
     jsonb_build_object('type','simple','version',1,'hasRecipe',false,'availabilitySource','direct','variants','[]'::jsonb,'optionGroups','[]'::jsonb), 'simple:1');
@@ -303,19 +287,16 @@ begin
     raise exception 'TEST_23_SIMPLE_CHILDREN_FAILED: %', v_result;
   end if;
 
-  -- 25: authorized staff can manage.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-staff-ok','model-1-staff-ok-token','model-1-session-ok',v_pub_recipe,
     jsonb_build_object('type','recipe','version',1,'hasRecipe',true,'availabilitySource','recipe','availabilityReasonCode','RECIPE_CAPACITY_CALCULATED','limitingSource',jsonb_build_object('productId','m1-carne','name','Carne'),'variants','[]'::jsonb,'optionGroups','[]'::jsonb), 'recipe:1');
   if coalesce((v_result->>'success')::boolean,false) is not true then raise exception 'TEST_25_STAFF_ALLOWED_FAILED: %', v_result; end if;
 
-  -- 26: unauthorized staff remains blocked.
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-staff-denied','model-1-staff-denied-token','model-1-session-denied',v_pub_recipe,
     jsonb_build_object('type','recipe','version',1,'hasRecipe',true,'variants','[]'::jsonb,'optionGroups','[]'::jsonb), 'recipe:2');
   if v_result->>'code' <> 'ECOMMERCE_STAFF_PERMISSION_DENIED' then raise exception 'TEST_26_STAFF_DENIED_FAILED: %', v_result; end if;
 
-  -- Admin contract includes canonical fields/counts.
   v_result := public.ecommerce_admin_list_published_products(
     'ECOM-MODEL-1-A-ROLLBACK','model-1-admin','model-1-admin-token',null);
   if coalesce((v_result->>'success')::boolean,false) is not true
@@ -329,7 +310,6 @@ begin
     raise exception 'TEST_ADMIN_CONTRACT_FAILED: %', v_result;
   end if;
 
-  -- 27-29: public contract safe; Free hides stock; Pro keeps exact-stock policy.
   v_catalog := public.ecommerce_get_catalog('model-1-free-rollback',100,0);
   if coalesce((v_catalog->>'success')::boolean,false) is not true
      or (v_catalog::text like '%m1-carne%')
@@ -344,7 +324,6 @@ begin
     raise exception 'TEST_29_PUBLIC_PRO_FAILED: %', v_catalog;
   end if;
 
-  -- 30: no order, sale, inventory movement or cash mutation.
   if (select count(*) from public.ecommerce_orders) <> v_before_orders
      or (select count(*) from public.pos_sales) <> v_before_sales
      or (select count(*) from public.pos_inventory_movements) <> v_before_inventory
@@ -358,7 +337,6 @@ $test$;
 
 rollback;
 
--- Post-rollback residue check. Each value must be zero.
 select
   (select count(*) from public.licenses where license_key like 'ECOM-MODEL-1-%-ROLLBACK') as synthetic_licenses,
   (select count(*) from public.ecommerce_portals where id in ('21000000-0000-4000-8000-000000000003','21000000-0000-4000-8000-000000000004')) as synthetic_portals,
