@@ -13,7 +13,14 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_CATALOG_SYNC_DUPLICATE_REF: 'La sincronizacion contiene productos duplicados.',
   ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catalogo cambio durante la sincronizacion. Se reintentara con la revision vigente.',
   ECOMMERCE_CATALOG_SOURCE_STALE: 'Un dispositivo tiene una version anterior del producto.',
-  ECOMMERCE_CATALOG_SOURCE_CONFLICT: 'La revision del producto requiere reconciliacion.'
+  ECOMMERCE_CATALOG_SOURCE_CONFLICT: 'La revision del producto requiere reconciliacion.',
+  ECOMMERCE_TIMEZONE_INVALID: 'Selecciona una zona horaria valida.',
+  ECOMMERCE_SCHEDULE_INVALID: 'Revisa el horario y corrige los intervalos invalidos.',
+  ECOMMERCE_SCHEDULE_REQUIRED: 'Configura al menos un dia abierto antes de aplicar el horario.',
+  ECOMMERCE_SCHEDULE_DUPLICATE_DAY: 'Cada dia debe aparecer una sola vez.',
+  ECOMMERCE_EXCEPTION_INVALID: 'Revisa las excepciones del horario.',
+  ECOMMERCE_PAUSE_UNTIL_INVALID: 'La reanudacion debe programarse para una fecha futura.',
+  ECOMMERCE_PAUSE_REASON_INVALID: 'La razon de la pausa no puede superar 300 caracteres.'
 };
 
 const SAFE_CONTEXT_MESSAGES = new Set([
@@ -38,10 +45,7 @@ const normalizeFailure = (data, fallback) => {
     name: data?.name || data?.error?.name || null,
     status: Number.isFinite(status) ? status : null,
     retryable: data?.retryable === true || data?.error?.retryable === true,
-    message: SAFE_ERROR_MESSAGES[code]
-      || data?.message
-      || data?.error?.message
-      || fallback
+    message: SAFE_ERROR_MESSAGES[code] || fallback
   };
 };
 
@@ -133,6 +137,27 @@ export const createEcommerceAdminService = ({
       'No se pudo guardar el portal online.'
     ),
 
+    saveOperatingSchedule: ({ timezone, businessHoursEnabled, weekly, exceptions }) => callRpc(
+      'ecommerce_admin_save_operating_schedule',
+      {
+        p_timezone: timezone,
+        p_business_hours_enabled: businessHoursEnabled === true,
+        p_weekly: Array.isArray(weekly) ? weekly : [],
+        p_exceptions: Array.isArray(exceptions) ? exceptions : []
+      },
+      'No se pudo guardar el horario de atencion.'
+    ),
+
+    setOrderPause: ({ paused, reason = null, resumeAt = null }) => callRpc(
+      'ecommerce_admin_set_order_pause',
+      {
+        p_paused: paused === true,
+        p_reason: reason || null,
+        p_resume_at: resumeAt || null
+      },
+      paused ? 'No se pudieron pausar los pedidos.' : 'No se pudieron reanudar los pedidos.'
+    ),
+
     listPublishedProducts: () => callRpc(
       'ecommerce_admin_list_published_products',
       {},
@@ -172,6 +197,8 @@ const ecommerceAdminService = createEcommerceAdminService();
 
 export const getEcommercePortal = ecommerceAdminService.getEcommercePortal;
 export const saveEcommercePortal = ecommerceAdminService.saveEcommercePortal;
+export const saveOperatingSchedule = ecommerceAdminService.saveOperatingSchedule;
+export const setOrderPause = ecommerceAdminService.setOrderPause;
 export const listPublishedProducts = ecommerceAdminService.listPublishedProducts;
 export const savePublishedProduct = ecommerceAdminService.savePublishedProduct;
 export const setProductPublished = ecommerceAdminService.setProductPublished;

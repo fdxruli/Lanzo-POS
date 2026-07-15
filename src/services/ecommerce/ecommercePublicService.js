@@ -12,6 +12,9 @@ const CHECKOUT_REQUEST_MESSAGE = 'No se pudo confirmar el pedido. Revisa tu cone
 
 const CHECKOUT_ERROR_MESSAGES = {
   ECOMMERCE_ORDERING_DISABLED: 'Este negocio no está recibiendo pedidos por ahora.',
+  ECOMMERCE_ORDERS_PAUSED: 'Este negocio pausó temporalmente la recepción de pedidos.',
+  ECOMMERCE_STORE_CLOSED: 'Este negocio está cerrado en este momento.',
+  ECOMMERCE_SCHEDULE_NOT_CONFIGURED: 'Este negocio no puede recibir pedidos por ahora.',
   ECOMMERCE_CUSTOMER_NAME_REQUIRED: 'Escribe tu nombre para continuar.',
   ECOMMERCE_CUSTOMER_PHONE_REQUIRED: 'Escribe un teléfono válido para continuar.',
   ECOMMERCE_INVALID_FULFILLMENT_METHOD: 'Selecciona una modalidad válida para recibir tu pedido.',
@@ -120,38 +123,103 @@ function normalizeFeatures(rawFeatures) {
   };
 }
 
+const AVAILABILITY_CODES = new Set([
+  'OPEN',
+  'ORDERING_DISABLED',
+  'ORDERS_PAUSED',
+  'OUTSIDE_BUSINESS_HOURS',
+  'SCHEDULE_NOT_CONFIGURED',
+  'PORTAL_NOT_PUBLISHED'
+]);
+const SCHEDULE_SOURCES = new Set(['exception', 'weekly', 'disabled', 'missing']);
+
+function normalizeAvailability(rawAvailability, portal, isPresent) {
+  if (!isPresent) {
+    const acceptingOrders = asBoolean(portal.orderingEnabled, true);
+    return {
+      acceptingOrders,
+      code: acceptingOrders ? 'OPEN' : 'ORDERING_DISABLED',
+      timezone: 'America/Mexico_City',
+      evaluatedAt: '',
+      localDate: '',
+      opensAt: '',
+      closesAt: '',
+      nextOpenAt: '',
+      nextCloseAt: '',
+      nextChangeAt: '',
+      pauseReason: '',
+      pauseUntil: '',
+      scheduleSource: 'disabled',
+      legacy: true
+    };
+  }
+
+  const availability = asObject(rawAvailability);
+  const code = asText(availability.code);
+  const timezone = asText(availability.timezone);
+  const valid = typeof availability.acceptingOrders === 'boolean'
+    && AVAILABILITY_CODES.has(code)
+    && Boolean(timezone);
+  return {
+    acceptingOrders: valid ? availability.acceptingOrders === true : false,
+    code: AVAILABILITY_CODES.has(code) ? code : 'SCHEDULE_NOT_CONFIGURED',
+    timezone: timezone || 'America/Mexico_City',
+    evaluatedAt: asText(availability.evaluatedAt),
+    localDate: /^\d{4}-\d{2}-\d{2}$/.test(asText(availability.localDate))
+      ? asText(availability.localDate)
+      : '',
+    opensAt: asText(availability.opensAt),
+    closesAt: asText(availability.closesAt),
+    nextOpenAt: asText(availability.nextOpenAt),
+    nextCloseAt: asText(availability.nextCloseAt),
+    nextChangeAt: asText(availability.nextChangeAt),
+    pauseReason: asText(availability.pauseReason),
+    pauseUntil: asText(availability.pauseUntil),
+    scheduleSource: SCHEDULE_SOURCES.has(availability.scheduleSource)
+      ? availability.scheduleSource
+      : 'missing',
+    legacy: false
+  };
+}
+
 function normalizePortalResult(data) {
   const portal = asObject(data.portal);
   const hours = asObject(data.hours);
+  const normalizedPortal = {
+    slug: asText(portal.slug),
+    name: asText(portal.name, 'Tienda online'),
+    headline: asText(portal.headline),
+    description: asText(portal.description),
+    templateCode: asText(portal.templateCode, 'classic'),
+    customizationLevel: asText(portal.customizationLevel, 'basic'),
+    theme: asObject(portal.theme),
+    logoUrl: asText(portal.logoUrl),
+    coverImageUrl: asText(portal.coverImageUrl),
+    whatsappPhone: asText(portal.whatsappPhone),
+    address: asText(portal.address),
+    businessType: asArray(portal.businessType).filter((item) => typeof item === 'string'),
+    orderingEnabled: asBoolean(portal.orderingEnabled, true),
+    pickupEnabled: asBoolean(portal.pickupEnabled, false),
+    deliveryEnabled: asBoolean(portal.deliveryEnabled, false),
+    scheduledOrdersEnabled: asBoolean(portal.scheduledOrdersEnabled, false),
+    minOrderTotal: Math.max(0, asNumber(portal.minOrderTotal, 0)),
+    maxOrderItems: Math.max(1, Math.floor(asNumber(portal.maxOrderItems, 30))),
+    maxItemQuantity: Math.max(1, Math.floor(asNumber(portal.maxItemQuantity, 99))),
+    stockMode: asText(portal.stockMode, 'hidden'),
+    settings: asObject(portal.settings)
+  };
   return {
-    portal: {
-      slug: asText(portal.slug),
-      name: asText(portal.name, 'Tienda online'),
-      headline: asText(portal.headline),
-      description: asText(portal.description),
-      templateCode: asText(portal.templateCode, 'classic'),
-      customizationLevel: asText(portal.customizationLevel, 'basic'),
-      theme: asObject(portal.theme),
-      logoUrl: asText(portal.logoUrl),
-      coverImageUrl: asText(portal.coverImageUrl),
-      whatsappPhone: asText(portal.whatsappPhone),
-      address: asText(portal.address),
-      businessType: asArray(portal.businessType).filter((item) => typeof item === 'string'),
-      orderingEnabled: asBoolean(portal.orderingEnabled, true),
-      pickupEnabled: asBoolean(portal.pickupEnabled, false),
-      deliveryEnabled: asBoolean(portal.deliveryEnabled, false),
-      scheduledOrdersEnabled: asBoolean(portal.scheduledOrdersEnabled, false),
-      minOrderTotal: Math.max(0, asNumber(portal.minOrderTotal, 0)),
-      maxOrderItems: Math.max(1, Math.floor(asNumber(portal.maxOrderItems, 30))),
-      maxItemQuantity: Math.max(1, Math.floor(asNumber(portal.maxItemQuantity, 99))),
-      stockMode: asText(portal.stockMode, 'hidden'),
-      settings: asObject(portal.settings)
-    },
+    portal: normalizedPortal,
     hours: {
       weekly: asArray(hours.weekly),
       exceptions: asArray(hours.exceptions)
     },
     features: normalizeFeatures(data.features),
+    availability: normalizeAvailability(
+      data.availability,
+      normalizedPortal,
+      Object.prototype.hasOwnProperty.call(data, 'availability')
+    ),
     catalogRevision: asRevision(data.catalogRevision),
     cachePolicy: normalizeCachePolicy(data.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY)
   };
@@ -448,6 +516,7 @@ export const createPublicOrder = (slug, payload) => defaultService.createPublicO
 
 export const ecommercePublicServiceInternals = Object.freeze({
   normalizePortalResult,
+  normalizeAvailability,
   normalizeCatalogResult,
   normalizeOrderResult,
   normalizeRpcFailure,

@@ -167,6 +167,26 @@ const sanitizePublicHours = (rawHours) => {
   };
 };
 
+const sanitizePublicAvailability = (rawAvailability) => {
+  const value = isRecord(rawAvailability) ? rawAvailability : {};
+  return {
+    acceptingOrders: value.acceptingOrders === true,
+    code: trimText(value.code, 80),
+    timezone: trimText(value.timezone, 120),
+    evaluatedAt: trimText(value.evaluatedAt, 80),
+    localDate: trimText(value.localDate, 16),
+    opensAt: trimText(value.opensAt, 16),
+    closesAt: trimText(value.closesAt, 16),
+    nextOpenAt: trimText(value.nextOpenAt, 80),
+    nextCloseAt: trimText(value.nextCloseAt, 80),
+    nextChangeAt: trimText(value.nextChangeAt, 80),
+    pauseReason: trimText(value.pauseReason, 300),
+    pauseUntil: trimText(value.pauseUntil, 80),
+    scheduleSource: trimText(value.scheduleSource, 24),
+    legacy: value.legacy === true
+  };
+};
+
 const sanitizePublicFeatures = (rawFeatures) => {
   const features = isRecord(rawFeatures) ? rawFeatures : {};
   return {
@@ -251,6 +271,7 @@ const sanitizePortalResult = (result) => {
   return {
     portal,
     hours: sanitizePublicHours(source.hours),
+    availability: sanitizePublicAvailability(source.availability),
     features: sanitizePublicFeatures(source.features),
     catalogRevision: revision,
     cachePolicy: normalizeCachePolicy(source.cachePolicy)
@@ -506,6 +527,7 @@ export const ecommercePublicCatalogCacheInternals = Object.freeze({
   sanitizePortalResult,
   sanitizePublicPortal,
   sanitizePublicHours,
+  sanitizePublicAvailability,
   sanitizePublicFeatures,
   sanitizePublicProduct,
   sanitizePublicOptions,
