@@ -45,6 +45,11 @@ describe('ecommerceAdminService', () => {
     await service.listPublishedProducts();
     await service.savePublishedProduct({ publicName: 'Producto' });
     await service.setProductPublished('product-fixture', true);
+    await service.syncProductConfiguration({
+      publishedProductId: 'published-fixture',
+      configuration: { type: 'recipe', version: 1 },
+      sourceRevision: 'recipe:1'
+    });
 
     expect(rpc).toHaveBeenNthCalledWith(1, 'ecommerce_admin_get_portal', expect.objectContaining({
       p_staff_session_token: 'staff-token-fixture'
@@ -65,6 +70,35 @@ describe('ecommerceAdminService', () => {
       p_product_id: 'product-fixture',
       p_is_published: true
     }));
+    expect(rpc).toHaveBeenNthCalledWith(6, 'ecommerce_admin_sync_product_configuration', expect.objectContaining({
+      p_staff_session_token: 'staff-token-fixture',
+      p_published_product_id: 'published-fixture',
+      p_configuration: { type: 'recipe', version: 1 },
+      p_source_revision: 'recipe:1'
+    }));
+  });
+
+  it('normalizes configuration sync errors to safe messages', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        success: false,
+        code: 'ECOMMERCE_CONFIGURATION_CROSS_LICENSE_REFERENCE',
+        message: 'detalle interno'
+      },
+      error: null
+    });
+    const { service } = createService({ rpc });
+
+    const result = await service.syncProductConfiguration({
+      publishedProductId: 'published-fixture',
+      configuration: { type: 'variant_parent', version: 1 }
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'ECOMMERCE_CONFIGURATION_CROSS_LICENSE_REFERENCE',
+      message: 'La configuracion contiene una referencia que no pertenece a esta licencia.'
+    });
   });
 
   it('does not retry without a staff token after a permission denial', async () => {
