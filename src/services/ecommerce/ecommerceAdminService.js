@@ -14,6 +14,10 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catalogo cambio durante la sincronizacion. Se reintentara con la revision vigente.',
   ECOMMERCE_CATALOG_SOURCE_STALE: 'Un dispositivo tiene una version anterior del producto.',
   ECOMMERCE_CATALOG_SOURCE_CONFLICT: 'La revision del producto requiere reconciliacion.',
+  ECOMMERCE_CONFIGURATION_INVALID: 'Revisa las variantes, grupos y opciones del producto.',
+  ECOMMERCE_CONFIGURATION_OPTION_LIMIT_EXCEEDED: 'El producto supera el limite de opciones permitido.',
+  ECOMMERCE_CONFIGURATION_CROSS_LICENSE_REFERENCE: 'La configuracion contiene una referencia que no pertenece a esta licencia.',
+  ECOMMERCE_CONFIGURATION_SYNC_FAILED: 'No se pudo sincronizar la configuracion del producto.',
   ECOMMERCE_TIMEZONE_INVALID: 'Selecciona una zona horaria valida.',
   ECOMMERCE_SCHEDULE_INVALID: 'Revisa el horario y corrige los intervalos invalidos.',
   ECOMMERCE_SCHEDULE_REQUIRED: 'Configura al menos un dia abierto antes de aplicar el horario.',
@@ -179,6 +183,20 @@ export const createEcommerceAdminService = ({
       'No se pudo cambiar la publicacion del producto.'
     ),
 
+    syncProductConfiguration: ({
+      publishedProductId,
+      configuration,
+      sourceRevision = null
+    }) => callRpc(
+      'ecommerce_admin_sync_product_configuration',
+      {
+        p_published_product_id: publishedProductId,
+        p_configuration: configuration || {},
+        p_source_revision: sourceRevision || null
+      },
+      'No se pudo sincronizar la configuracion del producto.'
+    ),
+
     syncPublishedCatalog: ({ projections, idempotencyKey, expectedCatalogRevision }) => {
       return callRpc(
         'ecommerce_admin_sync_published_catalog',
@@ -202,4 +220,5 @@ export const setOrderPause = ecommerceAdminService.setOrderPause;
 export const listPublishedProducts = ecommerceAdminService.listPublishedProducts;
 export const savePublishedProduct = ecommerceAdminService.savePublishedProduct;
 export const setProductPublished = ecommerceAdminService.setProductPublished;
+export const syncProductConfiguration = ecommerceAdminService.syncProductConfiguration;
 export const syncPublishedCatalog = ecommerceAdminService.syncPublishedCatalog;
