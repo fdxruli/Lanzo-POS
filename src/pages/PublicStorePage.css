@@ -897,3 +897,19 @@ body:has(.public-store-shell) {
     transition: none;
   }
 }
+.public-store-availability-notice {
+  display: grid;
+  gap: .25rem;
+  margin-bottom: 1rem;
+  padding: .9rem 1rem;
+  border: 1px solid #d7a72f;
+  border-radius: .85rem;
+  background: #fff8e6;
+  color: #5f4300;
+}
+
+.public-store-availability-notice span,
+.public-store-availability-notice small { color: inherit; }
+
+.public-store-availability { align-items: flex-start !important; }
+.public-store-availability > span { display: inline; }

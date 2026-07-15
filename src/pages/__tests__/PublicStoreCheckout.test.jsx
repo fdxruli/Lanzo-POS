@@ -49,6 +49,9 @@ const portalResult = (overrides = {}) => ({
     whatsappCheckout: true,
     ...overrides.features,
   },
+  ...(Object.prototype.hasOwnProperty.call(overrides, 'availability')
+    ? { availability: overrides.availability }
+    : {}),
 });
 
 const catalogResult = {
@@ -110,7 +113,7 @@ async function addAndOpenCart(user) {
 async function openAndFillCheckout(user) {
   await addAndOpenCart(user);
   await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
-  await user.type(screen.getByLabelText('Nombre *'), 'Cliente QA');
+  await user.type(await screen.findByLabelText('Nombre *'), 'Cliente QA');
   await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
 }
 
@@ -138,7 +141,47 @@ describe('PublicStorePage checkout integration', () => {
     await addAndOpenCart(user);
 
     expect(screen.getByRole('button', { name: 'Continuar pedido' })).toBeDisabled();
-    expect(screen.getByText('Este negocio no está recibiendo pedidos por ahora.')).toBeInTheDocument();
+    expect(screen.getAllByText('Este negocio no está recibiendo pedidos por ahora.').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the catalog and cart readable while business hours are closed', async () => {
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue(portalResult({
+      availability: {
+        acceptingOrders: false,
+        code: 'OUTSIDE_BUSINESS_HOURS',
+        timezone: 'America/Mexico_City',
+        localDate: '2026-07-14',
+        nextOpenAt: '2026-07-15T15:00:00.000Z',
+        nextChangeAt: '2026-07-15T15:00:00.000Z',
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await addAndOpenCart(user);
+
+    expect(screen.getAllByRole('heading', { name: 'Alitas BBQ' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Continuar pedido' })).toBeDisabled();
+    expect(screen.getAllByText('Cerrado').length).toBeGreaterThan(0);
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+  });
+
+  it('keeps the cart while orders are manually paused', async () => {
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue(portalResult({
+      availability: {
+        acceptingOrders: false,
+        code: 'ORDERS_PAUSED',
+        timezone: 'America/Mexico_City',
+        pauseUntil: null,
+        nextChangeAt: null,
+      },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await addAndOpenCart(user);
+
+    expect(screen.getByRole('button', { name: 'Continuar pedido' })).toBeDisabled();
+    expect(screen.getAllByText('Pedidos pausados').length).toBeGreaterThan(0);
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
   });
 
   it('blocks checkout when orderInbox is disabled', async () => {
@@ -181,7 +224,8 @@ describe('PublicStorePage checkout integration', () => {
     await addAndOpenCart(user);
     await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
 
-    expect(screen.getByRole('dialog', { name: 'Finalizar pedido' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Finalizar pedido' })).toBeInTheDocument();
+    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
   });
 
   it('submits once, confirms with server total and clears the cart on success', async () => {
@@ -238,6 +282,52 @@ describe('PublicStorePage checkout integration', () => {
     expect(serviceMocks.createPublicOrder.mock.calls[1][1].idempotencyKey).toBe(firstKey);
   });
 
+  it('preserves customer data and cart after a server-side availability rejection', async () => {
+    const closedPortal = portalResult({
+      availability: {
+        acceptingOrders: false,
+        code: 'OUTSIDE_BUSINESS_HOURS',
+        timezone: 'America/Mexico_City',
+        localDate: '2026-07-15',
+        nextOpenAt: '2026-07-16T15:00:00.000Z',
+        nextChangeAt: '2026-07-16T15:00:00.000Z',
+      },
+    });
+    serviceMocks.getPublicPortalBySlug
+      .mockReset()
+      .mockResolvedValueOnce(portalResult())
+      .mockResolvedValueOnce(portalResult())
+      .mockResolvedValue(closedPortal);
+    serviceMocks.createPublicOrder.mockRejectedValue(new EcommercePublicError(
+      'ECOMMERCE_STORE_CLOSED',
+      'Este negocio está cerrado en este momento.'
+    ));
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    await user.type(screen.getByLabelText('Notas'), 'Conservar después del cierre');
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Este negocio está cerrado');
+    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(3));
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Cliente QA');
+    expect(screen.getByLabelText('Notas')).toHaveValue('Conservar después del cierre');
+    expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeDisabled();
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).not.toBeInTheDocument();
+  });
+
+  it('revalidates availability on focus and when the document becomes visible', async () => {
+    renderPage();
+    await screen.findByRole('button', { name: 'Agregar Alitas BBQ' });
+    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new Event('focus'));
+    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(3));
+  });
+
   it('opens a second checkout without personal data after success', async () => {
     serviceMocks.createPublicOrder.mockResolvedValue(successfulOrder(false, {
       order: { fulfillmentMethod: 'delivery' },
@@ -259,7 +349,7 @@ describe('PublicStorePage checkout integration', () => {
     await addAndOpenCart(user);
     await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
 
-    expect(screen.getByLabelText('Nombre *')).toHaveValue('');
+    expect(await screen.findByLabelText('Nombre *')).toHaveValue('');
     expect(screen.getByLabelText('Teléfono *')).toHaveValue('');
     expect(screen.getByLabelText('Notas')).toHaveValue('');
     expect(screen.getByRole('radio', { name: /Recoger/ })).toBeChecked();

@@ -18,18 +18,40 @@ import {
   clearCheckoutAttempt,
   getOrCreateCheckoutAttempt
 } from '../services/ecommerce/ecommerceCheckoutIdempotency';
+import {
+  getAvailabilityDetail,
+  getAvailabilityLabel,
+  getAvailabilityRefreshDelay
+} from '../utils/ecommerceAvailability';
 import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
 const DEFAULT_META_DESCRIPTION = 'Consulta el catálogo de esta tienda online.';
 const INITIAL_PAGINATION = { offset: 0, limit: 100, hasMore: false };
-const REVISION_REVALIDATION_INTERVAL_MS = 120_000;
+const REVISION_REVALIDATION_INTERVAL_MS = 60_000;
+const AVAILABILITY_ERROR_CODES = new Set([
+  'ECOMMERCE_ORDERS_PAUSED',
+  'ECOMMERCE_STORE_CLOSED',
+  'ECOMMERCE_SCHEDULE_NOT_CONFIGURED'
+]);
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('es-MX');
 const isOnlineNow = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const normalizeRevision = (value) => {
   const revision = Number(value);
   return Number.isSafeInteger(revision) && revision > 0 ? revision : null;
+};
+const resolveAvailability = (result) => {
+  if (result?.availability) return result.availability;
+  const resultPortal = result?.portal;
+  if (!resultPortal) return null;
+  return {
+    acceptingOrders: resultPortal.orderingEnabled === true,
+    code: resultPortal.orderingEnabled === true ? 'OPEN' : 'ORDERING_DISABLED',
+    timezone: 'America/Mexico_City',
+    scheduleSource: 'disabled',
+    legacy: true
+  };
 };
 
 function PublicStorePage() {
@@ -42,6 +64,8 @@ function PublicStorePage() {
   const activeCatalogRevisionRef = useRef(null);
   const cachePolicyRef = useRef(null);
   const activeCheckoutPromiseRef = useRef(null);
+  const checkoutOpeningPromiseRef = useRef(null);
+  const availabilityRef = useRef(null);
   const revisionRevalidationPromiseRef = useRef(null);
   const revisionRestartCountRef = useRef(0);
   const [portalResult, setPortalResult] = useState(null);
@@ -66,9 +90,12 @@ function PublicStorePage() {
   const [checkoutStatus, setCheckoutStatus] = useState('idle');
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const [checkoutError, setCheckoutError] = useState(null);
+  const [checkoutOpening, setCheckoutOpening] = useState(false);
 
   const portal = portalResult?.portal || null;
   const features = portalResult?.features || {};
+  const availability = resolveAvailability(portalResult);
+  availabilityRef.current = availability;
   const catalogExhausted = catalogReady && pagination.hasMore === false;
   const checkoutCatalogReady = (
     catalogValidated
@@ -84,6 +111,7 @@ function PublicStorePage() {
       mountedRef.current = false;
       requestGenerationRef.current += 1;
       activeCheckoutPromiseRef.current = null;
+      checkoutOpeningPromiseRef.current = null;
       revisionRevalidationPromiseRef.current = null;
     };
   }, []);
@@ -205,6 +233,7 @@ function PublicStorePage() {
     activeCatalogRevisionRef.current = null;
     cachePolicyRef.current = null;
     activeCheckoutPromiseRef.current = null;
+    checkoutOpeningPromiseRef.current = null;
     revisionRevalidationPromiseRef.current = null;
 
     setStoreStatus('loading');
@@ -228,6 +257,7 @@ function PublicStorePage() {
     setCheckoutStatus('idle');
     setConfirmedOrder(null);
     setCheckoutError(null);
+    setCheckoutOpening(false);
 
     const isCurrentRequest = () => (
       mountedRef.current
@@ -244,6 +274,7 @@ function PublicStorePage() {
         cachePolicyRef.current = result.cachePolicy || null;
         setCatalogRevision(revision);
         setPortalResult(result);
+        availabilityRef.current = resolveAvailability(result);
         setCatalogSource(result.source === 'cache' ? 'cache' : 'network');
         setOfflineCatalog(result.offline === true);
         setStoreStatus('ready');
@@ -304,6 +335,7 @@ function PublicStorePage() {
         if (!isCurrentRequest()) return false;
         setConnectionOnline(true);
         setPortalResult(result);
+        availabilityRef.current = resolveAvailability(result);
         cachePolicyRef.current = result.cachePolicy || null;
 
         const nextRevision = normalizeRevision(result.catalogRevision);
@@ -392,6 +424,14 @@ function PublicStorePage() {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [portal, revalidateCatalogRevision]);
+
+  useEffect(() => {
+    if (!portal || !availability?.nextChangeAt) return undefined;
+    const timeoutId = window.setTimeout(() => {
+      void revalidateCatalogRevision('availability-next-change');
+    }, getAvailabilityRefreshDelay(availability));
+    return () => window.clearTimeout(timeoutId);
+  }, [availability, portal, revalidateCatalogRevision]);
 
   useEffect(() => {
     if (!portal) return undefined;
@@ -509,32 +549,48 @@ function PublicStorePage() {
   }, [catalogError, loadCatalog, offlineCatalog]);
 
   const openCheckout = useCallback(() => {
-    const canCheckout = (
+    if (checkoutOpeningPromiseRef.current) return checkoutOpeningPromiseRef.current;
+    const canStart = (
       portal?.orderingEnabled === true
       && features.orderInbox === true
       && checkoutCatalogReady
+      && availability?.acceptingOrders === true
       && cart.isReconciled
       && cart.items.length > 0
       && cart.minimumReached
       && (portal.pickupEnabled === true || portal.deliveryEnabled === true)
       && checkoutStatus !== 'submitting'
     );
-    if (!canCheckout) return false;
+    if (!canStart) return Promise.resolve(false);
 
-    setCheckoutError(null);
-    setConfirmedOrder(null);
-    setCheckoutStatus('editing');
-    setCheckoutOpen(true);
-    setIsCartOpen(false);
-    return true;
+    const request = (async () => {
+      setCheckoutOpening(true);
+      const revalidated = await revalidateCatalogRevision('checkout-open');
+      if (!revalidated || availabilityRef.current?.acceptingOrders !== true) return false;
+      setCheckoutError(null);
+      setConfirmedOrder(null);
+      setCheckoutStatus('editing');
+      setCheckoutOpen(true);
+      setIsCartOpen(false);
+      return true;
+    })();
+    checkoutOpeningPromiseRef.current = request;
+    const release = () => {
+      if (checkoutOpeningPromiseRef.current === request) checkoutOpeningPromiseRef.current = null;
+      if (mountedRef.current) setCheckoutOpening(false);
+    };
+    request.then(release, release);
+    return request;
   }, [
+    availability,
     cart.isReconciled,
     cart.items.length,
     cart.minimumReached,
     checkoutCatalogReady,
     checkoutStatus,
     features.orderInbox,
-    portal
+    portal,
+    revalidateCatalogRevision
   ]);
 
   const submitCheckout = useCallback((customer) => {
@@ -593,6 +649,9 @@ function PublicStorePage() {
               );
           setCheckoutError(safeError);
           setCheckoutStatus('recoverable_error');
+          if (AVAILABILITY_ERROR_CODES.has(safeError.code)) {
+            void revalidateCatalogRevision('checkout-availability-rejected');
+          }
         }
         throw error;
       }
@@ -606,7 +665,7 @@ function PublicStorePage() {
     };
     requestPromise.then(releaseActiveRequest, releaseActiveRequest);
     return requestPromise;
-  }, [cart, catalogValidated, checkoutCatalogReady]);
+  }, [cart, catalogValidated, checkoutCatalogReady, revalidateCatalogRevision]);
 
   const closeCheckout = useCallback(() => {
     if (checkoutStatus === 'submitting') return;
@@ -673,7 +732,11 @@ function PublicStorePage() {
       data-catalog-source={catalogSource}
       data-catalog-revision={catalogRevision || undefined}
     >
-      <PublicStoreHeader portal={portal} hours={portalResult.hours} />
+      <PublicStoreHeader
+        portal={portal}
+        hours={portalResult.hours}
+        availability={availability}
+      />
 
       <div className="public-store-content">
         <div className="public-store-content__topbar">
@@ -699,6 +762,14 @@ function PublicStorePage() {
         {offlineCatalog ? (
           <div className="public-store-notice" role="status" aria-live="polite">
             Sin conexión. Puedes consultar el catálogo guardado, pero no confirmar pedidos hasta volver a conectarte.
+          </div>
+        ) : null}
+
+        {availability?.acceptingOrders !== true ? (
+          <div className="public-store-availability-notice" role="status" aria-live="polite">
+            <strong>{getAvailabilityLabel(availability)}</strong>
+            <span>{getAvailabilityDetail(availability)}</span>
+            <small>El catálogo y tu carrito siguen disponibles.</small>
           </div>
         ) : null}
 
@@ -767,11 +838,15 @@ function PublicStorePage() {
         minimumRemaining={cart.minimumRemaining}
         minimumReached={cart.minimumReached}
         isReconciled={cart.isReconciled && checkoutCatalogReady}
-        orderingEnabled={portal.orderingEnabled && checkoutCatalogReady}
+        orderingEnabled={portal.orderingEnabled && checkoutCatalogReady && availability?.acceptingOrders === true}
+        availability={{
+          label: getAvailabilityLabel(availability),
+          detail: getAvailabilityDetail(availability)
+        }}
         orderInboxEnabled={features.orderInbox}
         pickupEnabled={portal.pickupEnabled}
         deliveryEnabled={portal.deliveryEnabled}
-        isCheckoutLoading={checkoutStatus === 'submitting'}
+        isCheckoutLoading={checkoutStatus === 'submitting' || checkoutOpening}
         onIncrement={cart.increment}
         onDecrement={cart.decrement}
         onSetQuantity={cart.setQuantity}
@@ -792,6 +867,7 @@ function PublicStorePage() {
         onSubmit={submitCheckout}
         onRefreshCart={refreshStaleCart}
         onContinue={continueShopping}
+        acceptingOrders={availability?.acceptingOrders === true}
       />
     </main>
   );
