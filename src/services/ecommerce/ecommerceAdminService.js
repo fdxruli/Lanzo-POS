@@ -2,6 +2,11 @@ import { useAppStore } from '../../store/useAppStore';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { supabaseClient } from '../supabase';
+import {
+  buildEcommerceProductConfigurationSyncPayload,
+  getEcommerceConfigurationSourceRevision,
+  serializeEcommerceProductConfigurationForSync
+} from '../../utils/ecommerceProductConfigurationSync';
 
 const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_ADMIN_ACCESS_DENIED: 'No tienes permiso para administrar el portal online.',
@@ -17,6 +22,11 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_CONFIGURATION_INVALID: 'Revisa las variantes, grupos y opciones del producto.',
   ECOMMERCE_CONFIGURATION_OPTION_LIMIT_EXCEEDED: 'El producto supera el limite de opciones permitido.',
   ECOMMERCE_CONFIGURATION_CROSS_LICENSE_REFERENCE: 'La configuracion contiene una referencia que no pertenece a esta licencia.',
+  ECOMMERCE_VARIANT_SOURCE_NOT_FOUND: 'Una variante ya no existe en el catalogo local.',
+  ECOMMERCE_OPTION_INGREDIENT_NOT_FOUND: 'Un ingrediente de una opcion ya no existe en el catalogo local.',
+  ECOMMERCE_OPTION_GROUP_SELECTION_INVALID: 'Revisa los limites de seleccion de los grupos de opciones.',
+  ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED: 'Cada variante debe indicar su combinacion de atributos.',
+  ECOMMERCE_VARIANT_OPTION_VALUE_INVALID: 'Una variante contiene un atributo invalido.',
   ECOMMERCE_CONFIGURATION_SYNC_FAILED: 'No se pudo sincronizar la configuracion del producto.',
   ECOMMERCE_TIMEZONE_INVALID: 'Selecciona una zona horaria valida.',
   ECOMMERCE_SCHEDULE_INVALID: 'Revisa el horario y corrige los intervalos invalidos.',
@@ -50,6 +60,40 @@ const normalizeFailure = (data, fallback) => {
     status: Number.isFinite(status) ? status : null,
     retryable: data?.retryable === true || data?.error?.retryable === true,
     message: SAFE_ERROR_MESSAGES[code] || fallback
+  };
+};
+
+const buildConfigurationFailure = (error, fallback) => normalizeFailure({
+  code: error?.code || error?.message || 'ECOMMERCE_CONFIGURATION_INVALID',
+  message: fallback
+}, fallback);
+
+const preparePublishedProductPayload = (payload = {}) => {
+  const {
+    localProduct,
+    configuration: suppliedConfiguration,
+    configurationSourceRevision: suppliedSourceRevision,
+    ...publishedPayload
+  } = payload || {};
+
+  if (!localProduct && !suppliedConfiguration) {
+    return { payload: publishedPayload, useV2: false };
+  }
+
+  const configuration = suppliedConfiguration
+    ? serializeEcommerceProductConfigurationForSync(suppliedConfiguration)
+    : buildEcommerceProductConfigurationSyncPayload(localProduct);
+  const configurationSourceRevision = suppliedSourceRevision
+    || getEcommerceConfigurationSourceRevision(localProduct)
+    || null;
+
+  return {
+    useV2: true,
+    payload: {
+      ...publishedPayload,
+      configuration,
+      configurationSourceRevision
+    }
   };
 };
 
@@ -168,11 +212,21 @@ export const createEcommerceAdminService = ({
       'No se pudieron cargar los productos del portal.'
     ),
 
-    savePublishedProduct: (payload) => callRpc(
-      'ecommerce_admin_upsert_published_product',
-      { p_payload: payload || {} },
-      'No se pudo guardar el producto publicado.'
-    ),
+    savePublishedProduct: async (payload) => {
+      const fallback = 'No se pudo guardar el producto publicado.';
+      try {
+        const prepared = preparePublishedProductPayload(payload);
+        return callRpc(
+          prepared.useV2
+            ? 'ecommerce_admin_upsert_published_product_v2'
+            : 'ecommerce_admin_upsert_published_product',
+          { p_payload: prepared.payload },
+          fallback
+        );
+      } catch (error) {
+        return buildConfigurationFailure(error, fallback);
+      }
+    },
 
     setProductPublished: (productId, isPublished) => callRpc(
       'ecommerce_admin_set_product_published',
@@ -183,23 +237,30 @@ export const createEcommerceAdminService = ({
       'No se pudo cambiar la publicacion del producto.'
     ),
 
-    syncProductConfiguration: ({
+    syncProductConfiguration: async ({
       publishedProductId,
       configuration,
       sourceRevision = null
-    }) => callRpc(
-      'ecommerce_admin_sync_product_configuration',
-      {
-        p_published_product_id: publishedProductId,
-        p_configuration: configuration || {},
-        p_source_revision: sourceRevision || null
-      },
-      'No se pudo sincronizar la configuracion del producto.'
-    ),
+    }) => {
+      const fallback = 'No se pudo sincronizar la configuracion del producto.';
+      try {
+        return callRpc(
+          'ecommerce_admin_sync_product_configuration',
+          {
+            p_published_product_id: publishedProductId,
+            p_configuration: serializeEcommerceProductConfigurationForSync(configuration || {}),
+            p_source_revision: sourceRevision || null
+          },
+          fallback
+        );
+      } catch (error) {
+        return buildConfigurationFailure(error, fallback);
+      }
+    },
 
     syncPublishedCatalog: ({ projections, idempotencyKey, expectedCatalogRevision }) => {
       return callRpc(
-        'ecommerce_admin_sync_published_catalog',
+        'ecommerce_admin_sync_published_catalog_v2',
         {
           p_projections: Array.isArray(projections) ? projections : [],
           p_idempotency_key: idempotencyKey || 'catalog-sync',
@@ -222,3 +283,7 @@ export const savePublishedProduct = ecommerceAdminService.savePublishedProduct;
 export const setProductPublished = ecommerceAdminService.setProductPublished;
 export const syncProductConfiguration = ecommerceAdminService.syncProductConfiguration;
 export const syncPublishedCatalog = ecommerceAdminService.syncPublishedCatalog;
+
+export const ecommerceAdminServiceInternals = Object.freeze({
+  preparePublishedProductPayload
+});
