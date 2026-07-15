@@ -3,6 +3,8 @@ import { db, STORES } from '../db/dexie';
 const PRODUCT_CHUNK_SIZE = 500;
 const CATEGORY_CHUNK_SIZE = 500;
 const BATCH_CHUNK_SIZE = 200;
+const MAX_RECIPE_DEPTH = 3;
+const ENRICHED_INGREDIENTS_KEY = '__ecommerceIngredients';
 
 const uniqueIds = (values = []) => Array.from(new Set(
   values
@@ -37,16 +39,85 @@ const bulkGetByIds = async ({ database, store, ids, chunkSize }) => {
   return valuesById;
 };
 
+const getRecipeIngredientIds = (product = {}) => uniqueIds(
+  (Array.isArray(product.recipe) ? product.recipe : [])
+    .map((component) => (
+      component?.ingredientId
+      ?? component?.ingredient_id
+      ?? component?.productId
+    ))
+);
+
+const loadProductsWithRecipeDependencies = async ({
+  database,
+  store,
+  ids,
+  depth = MAX_RECIPE_DEPTH
+}) => {
+  const requestedIds = uniqueIds(ids);
+  const productsById = await bulkGetByIds({
+    database,
+    store,
+    ids: requestedIds,
+    chunkSize: PRODUCT_CHUNK_SIZE
+  });
+
+  let frontier = requestedIds;
+  for (let level = 0; level < depth; level += 1) {
+    const dependencyIds = uniqueIds(
+      frontier.flatMap((id) => getRecipeIngredientIds(productsById.get(id)))
+    ).filter((id) => !productsById.has(id));
+    if (dependencyIds.length === 0) break;
+
+    const dependencies = await bulkGetByIds({
+      database,
+      store,
+      ids: dependencyIds,
+      chunkSize: PRODUCT_CHUNK_SIZE
+    });
+    dependencies.forEach((value, id) => productsById.set(id, value));
+    frontier = dependencyIds;
+  }
+
+  requestedIds.forEach((id) => {
+    const product = productsById.get(id);
+    if (!product) return;
+    const ingredients = getRecipeIngredientIds(product)
+      .map((ingredientId) => productsById.get(ingredientId))
+      .filter(Boolean);
+    productsById.set(id, {
+      ...product,
+      [ENRICHED_INGREDIENTS_KEY]: ingredients
+    });
+  });
+
+  return productsById;
+};
+
+const expandRecipeProductIds = async ({ database, store, ids }) => {
+  const products = await loadProductsWithRecipeDependencies({
+    database,
+    store,
+    ids
+  });
+  const expanded = new Set(uniqueIds(ids));
+  uniqueIds(ids).forEach((id) => {
+    getRecipeIngredientIds(products.get(id)).forEach((ingredientId) => {
+      expanded.add(ingredientId);
+    });
+  });
+  return { products, ids: Array.from(expanded) };
+};
+
 export const createEcommercePublishedStockLocalSource = ({
   database = db,
   stores = STORES
 } = {}) => ({
   async getProductsByIds(productIds = []) {
-    return bulkGetByIds({
+    return loadProductsWithRecipeDependencies({
       database,
       store: stores.MENU,
-      ids: uniqueIds(productIds),
-      chunkSize: PRODUCT_CHUNK_SIZE
+      ids: uniqueIds(productIds)
     });
   },
 
@@ -60,13 +131,19 @@ export const createEcommercePublishedStockLocalSource = ({
   },
 
   async getBatchesByProductIds(productIds = []) {
-    const ids = uniqueIds(productIds);
-    const batchesByProductId = new Map(ids.map((id) => [id, []]));
-    if (ids.length === 0) return batchesByProductId;
+    const requestedIds = uniqueIds(productIds);
+    const batchesByProductId = new Map(requestedIds.map((id) => [id, []]));
+    if (requestedIds.length === 0) return batchesByProductId;
 
     await ensureOpen(database);
+    const expanded = await expandRecipeProductIds({
+      database,
+      store: stores.MENU,
+      ids: requestedIds
+    });
+    const directBatchesByProduct = new Map(expanded.ids.map((id) => [id, []]));
 
-    for (const idsChunk of chunk(ids, BATCH_CHUNK_SIZE)) {
+    for (const idsChunk of chunk(expanded.ids, BATCH_CHUNK_SIZE)) {
       const batches = await database
         .table(stores.PRODUCT_BATCHES)
         .where('productId')
@@ -76,11 +153,24 @@ export const createEcommercePublishedStockLocalSource = ({
       batches.forEach((batch) => {
         const productId = String(batch?.productId || batch?.product_id || '');
         if (!productId) return;
-        const current = batchesByProductId.get(productId) || [];
+        const current = directBatchesByProduct.get(productId) || [];
         current.push(batch);
-        batchesByProductId.set(productId, current);
+        directBatchesByProduct.set(productId, current);
       });
     }
+
+    requestedIds.forEach((id) => {
+      const product = expanded.products.get(id);
+      const ingredientIds = getRecipeIngredientIds(product);
+      if (ingredientIds.length === 0) {
+        batchesByProductId.set(id, directBatchesByProduct.get(id) || []);
+        return;
+      }
+      const recipeBatches = ingredientIds.flatMap((ingredientId) => (
+        directBatchesByProduct.get(ingredientId) || []
+      ));
+      batchesByProductId.set(id, recipeBatches);
+    });
 
     return batchesByProductId;
   }
@@ -91,5 +181,9 @@ export const ecommercePublishedStockLocalSource = createEcommercePublishedStockL
 export const ecommercePublishedStockLocalSourceInternals = Object.freeze({
   uniqueIds,
   chunk,
-  bulkGetByIds
+  bulkGetByIds,
+  getRecipeIngredientIds,
+  loadProductsWithRecipeDependencies,
+  expandRecipeProductIds,
+  ENRICHED_INGREDIENTS_KEY
 });
