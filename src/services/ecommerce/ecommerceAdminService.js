@@ -2,6 +2,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { supabaseClient } from '../supabase';
+import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
 import {
   buildEcommerceProductConfigurationSyncPayload,
   getEcommerceConfigurationSourceRevision,
@@ -102,6 +103,7 @@ export const createEcommerceAdminService = ({
   isConfigured = () => Boolean(supabaseClient),
   getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
   buildAuthContext = buildPosSyncAuthContext,
+  configurationSource = ecommercePublishedStockLocalSource,
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
 } = {}) => {
   const getContext = async () => {
@@ -258,16 +260,59 @@ export const createEcommerceAdminService = ({
       }
     },
 
-    syncPublishedCatalog: ({ projections, idempotencyKey, expectedCatalogRevision }) => {
-      return callRpc(
-        'ecommerce_admin_sync_published_catalog_v2',
-        {
-          p_projections: Array.isArray(projections) ? projections : [],
-          p_idempotency_key: idempotencyKey || 'catalog-sync',
-          p_expected_catalog_revision: expectedCatalogRevision || null
-        },
-        'No se pudo sincronizar el catalogo publicado.'
-      );
+    syncPublishedCatalog: async ({ projections, idempotencyKey, expectedCatalogRevision }) => {
+      const fallback = 'No se pudo sincronizar el catalogo publicado.';
+      const safeProjections = Array.isArray(projections) ? projections : [];
+      try {
+        const productRefs = Array.from(new Set(
+          safeProjections
+            .map((projection) => String(projection?.localProductRef || '').trim())
+            .filter(Boolean)
+        ));
+        const productsById = productRefs.length > 0
+          ? await configurationSource.getProductsByIds(productRefs)
+          : new Map();
+        const enrichedProjections = safeProjections.map((projection) => {
+          const localProductRef = String(projection?.localProductRef || '').trim();
+          const localProduct = productsById.get(localProductRef);
+          if (!localProduct) {
+            return {
+              ...projection,
+              configuration: null,
+              configurationSourceRevision: null
+            };
+          }
+          return {
+            ...projection,
+            configuration: buildEcommerceProductConfigurationSyncPayload(localProduct, {
+              availabilityReasonCode: projection.sourceState
+                ? `SOURCE_${String(projection.sourceState).toUpperCase()}`
+                : null
+            }),
+            configurationSourceRevision: projection.sourceRevision
+              || getEcommerceConfigurationSourceRevision(localProduct)
+              || null
+          };
+        });
+
+        return callRpc(
+          'ecommerce_admin_sync_published_catalog_v2',
+          {
+            p_projections: enrichedProjections,
+            p_idempotency_key: idempotencyKey || 'catalog-sync',
+            p_expected_catalog_revision: expectedCatalogRevision || null
+          },
+          fallback
+        );
+      } catch (error) {
+        if (error?.code || String(error?.message || '').startsWith('ECOMMERCE_')) {
+          return buildConfigurationFailure(error, fallback);
+        }
+        return normalizeFailure({
+          code: 'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED',
+          retryable: true
+        }, fallback);
+      }
     }
   };
 };
