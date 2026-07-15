@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-store/
+store/dist/
+.vercel/
+.env
+.env.*
+!.env.example
+*.tgz
+*.tmp
+*.temp
+
