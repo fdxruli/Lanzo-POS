@@ -15,6 +15,10 @@ import {
   ecommerceCatalogSyncOutbox,
   hashEcommerceCatalogSyncScope
 } from './ecommerceCatalogSyncOutbox';
+import {
+  buildEcommerceProductConfigurationSyncPayload,
+  getEcommerceConfigurationSourceRevision
+} from '../../utils/ecommerceProductConfigurationSync';
 
 export const ECOMMERCE_CATALOG_SYNC_STATUS_EVENT = 'lanzo:ecommerce-catalog-sync-status';
 export const ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT = 'lanzo:ecommerce-catalog-sync-request';
@@ -160,6 +164,21 @@ const statusToSourceAvailability = (status) => {
   return null;
 };
 
+const hasRecipe = (product = {}) => Array.isArray(product.recipe) && product.recipe.length > 0;
+
+const buildConfigurationAvailability = ({ localProduct, evaluation }) => ({
+  availabilitySource: hasRecipe(localProduct)
+    ? 'recipe'
+    : localProduct?.trackStock === false
+      ? 'not_tracked'
+      : 'inventory',
+  availabilityReasonCode: asText(evaluation?.reasonCode) || null,
+  limitingSource: {
+    productId: asText(evaluation?.limitingIngredientId) || null,
+    name: asText(evaluation?.limitingIngredientName) || null
+  }
+});
+
 const buildProjection = ({
   publishedProduct,
   localProduct,
@@ -187,6 +206,15 @@ const buildProjection = ({
     && stockValue !== ''
     && Number.isFinite(Number(stockValue))
   );
+  const configuration = localProduct
+    ? buildEcommerceProductConfigurationSyncPayload(
+        localProduct,
+        buildConfigurationAvailability({ localProduct, evaluation })
+      )
+    : null;
+  const configurationSourceRevision = localProduct
+    ? sourceRevision || getEcommerceConfigurationSourceRevision(localProduct) || null
+    : null;
 
   return {
     publishedProductId: asText(publishedProduct.id),
@@ -195,7 +223,9 @@ const buildProjection = ({
     sourceState: evaluation.status,
     sourceAvailable: statusToSourceAvailability(evaluation.status),
     stockSnapshot: hasConfirmedStock ? Math.max(0, Number(stockValue)) : null,
-    fields
+    fields,
+    configuration,
+    configurationSourceRevision
   };
 };
 
@@ -243,7 +273,11 @@ const normalizeProjectionForSignature = (projection = {}) => {
     stockSnapshot: projection.stockSnapshot === null
       ? null
       : Number(projection.stockSnapshot),
-    fields: normalizedFields
+    fields: normalizedFields,
+    configuration: normalizeSignatureValue(projection.configuration),
+    configurationSourceRevision: projection.configurationSourceRevision === null
+      ? null
+      : asText(projection.configurationSourceRevision)
   });
 };
 
@@ -529,14 +563,15 @@ export const createEcommerceCatalogSyncService = ({
         batchReadFailed,
         now
       });
+      const sourceRevision = localProduct
+        ? normalizeSourceRevision(localProduct, batchManaged ? productBatches : [])
+        : null;
       return buildProjection({
         publishedProduct,
         localProduct,
         category: localProduct ? categoriesById.get(getCategoryId(localProduct)) : null,
         categoryEvaluated: !categoryReadFailed,
-        sourceRevision: localProduct
-          ? normalizeSourceRevision(localProduct, batchManaged ? productBatches : [])
-          : null,
+        sourceRevision,
         evaluation
       });
     }));
@@ -918,6 +953,7 @@ export const ecommerceCatalogSyncService = createEcommerceCatalogSyncService();
 export const ecommerceCatalogSyncServiceInternals = Object.freeze({
   uniqueRefs,
   chunk,
+  buildConfigurationAvailability,
   buildProjection,
   normalizeSourceRevision,
   normalizeVersionNumber,
