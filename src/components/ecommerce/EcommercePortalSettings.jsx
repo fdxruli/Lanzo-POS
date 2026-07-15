@@ -45,6 +45,8 @@ import EcommerceCatalogSyncPanel, {
   EcommerceCatalogSyncBadge
 } from './EcommerceCatalogSyncPanel';
 import PublicStoreQrCode from './PublicStoreQrCode';
+import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
+import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -196,6 +198,7 @@ export default function EcommercePortalSettings() {
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
   const [categoriesById, setCategoriesById] = useState(new Map());
+  const [operations, setOperations] = useState(null);
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
 
   const authorizationPending = isLicenseInitializing
@@ -270,6 +273,7 @@ export default function EcommercePortalSettings() {
       cloudCatalogSource: false
     });
     setForm(portalForm(nextPortal, companyProfile));
+    setOperations(result);
 
     try {
       const nextProducts = nextPortal ? await loadProducts() : [];
@@ -411,6 +415,14 @@ export default function EcommercePortalSettings() {
   const whatsappShareUrl = reservedLink
     ? `https://wa.me/?text=${encodeURIComponent(`Conoce nuestra tienda: ${reservedLink}`)}`
     : '';
+
+  const updateOperations = (result) => {
+    setOperations((current) => ({ ...current, ...result }));
+    if (result?.portal) {
+      setPortal(result.portal);
+      setForm(portalForm(result.portal, companyProfile));
+    }
+  };
 
   const loadLocalCatalog = async () => {
     if (localProducts.length > 0) return true;
@@ -673,8 +685,18 @@ export default function EcommercePortalSettings() {
               {portal.status === 'published' ? 'Pausar portal' : 'Publicar portal'}
             </button>
           </div>
+          <p className="ecom-admin-help">
+            “Pausar portal” oculta la tienda completa. Usa “Pausar pedidos” para mantener visible el catálogo.
+          </p>
         </section>
       )}
+
+      {portal ? (
+        <div className="ecom-operations-grid">
+          <EcommerceOperatingHoursSettings data={operations} onSaved={updateOperations} />
+          <EcommerceOrderPauseControl data={operations} onSaved={updateOperations} />
+        </div>
+      ) : null}
 
       <form className="ui-card ecom-admin-form-card" onSubmit={submitPortal}>
         <div className="ecom-admin-card-heading">

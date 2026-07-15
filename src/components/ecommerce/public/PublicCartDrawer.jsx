@@ -37,6 +37,7 @@ function PublicCartDrawer({
   minimumReached,
   isReconciled,
   orderingEnabled,
+  availability,
   orderInboxEnabled,
   pickupEnabled,
   deliveryEnabled,
@@ -89,7 +90,7 @@ function PublicCartDrawer({
   if (!isReconciled || isCheckoutLoading) {
     checkoutNotice = 'Actualizando carrito...';
   } else if (orderingEnabled !== true || orderInboxEnabled !== true) {
-    checkoutNotice = 'Este negocio no está recibiendo pedidos por ahora.';
+    checkoutNotice = availability?.detail || 'Este negocio no está recibiendo pedidos por ahora.';
   } else if (!hasFulfillmentMethod) {
     checkoutNotice = 'Este negocio no tiene una modalidad de entrega disponible.';
   } else if (!minimumReached) {

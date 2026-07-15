@@ -12,7 +12,9 @@ vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
   saveEcommercePortal: vi.fn(),
   savePublishedProduct: vi.fn(),
   setProductPublished: vi.fn(),
-  syncPublishedCatalog: vi.fn()
+  syncPublishedCatalog: vi.fn(),
+  saveOperatingSchedule: vi.fn(),
+  setOrderPause: vi.fn()
 }));
 
 vi.mock('../../../services/products/productRepository', () => ({

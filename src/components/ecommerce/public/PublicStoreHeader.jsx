@@ -1,5 +1,6 @@
 import { Clock3, MapPin, PackageCheck, ShoppingBag, Truck } from 'lucide-react';
 import PublicSafeImage from './PublicSafeImage';
+import { getAvailabilityDetail, getAvailabilityLabel } from '../../../utils/ecommerceAvailability';
 import './PublicResponsive.css';
 
 const formatTime = (value) => {
@@ -35,8 +36,11 @@ const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX
   currency,
 }).format(Number(value) || 0);
 
-function PublicStoreHeader({ portal, hours }) {
-  const hoursLabel = getTodayHoursLabel(hours);
+function PublicStoreHeader({ portal, hours, availability }) {
+  const availabilityLabel = getAvailabilityLabel(availability);
+  const availabilityDetail = availability?.legacy
+    ? getTodayHoursLabel(hours)
+    : getAvailabilityDetail(availability);
   const hasFulfillment = portal.pickupEnabled || portal.deliveryEnabled;
 
   return (
@@ -72,13 +76,16 @@ function PublicStoreHeader({ portal, hours }) {
           {portal.address ? (
             <span><MapPin aria-hidden="true" size={18} />{portal.address}</span>
           ) : null}
-          <span><Clock3 aria-hidden="true" size={18} />{hoursLabel}</span>
+          <span className="public-store-availability" aria-live="polite">
+            <Clock3 aria-hidden="true" size={18} />
+            <span><strong>{availabilityLabel}</strong>{availabilityDetail ? ` · ${availabilityDetail}` : ''}</span>
+          </span>
           {portal.minOrderTotal > 0 ? (
             <span><ShoppingBag aria-hidden="true" size={18} />Pedido mínimo {formatCurrency(portal.minOrderTotal)}</span>
           ) : null}
           <span>
             <PackageCheck aria-hidden="true" size={18} />
-            {portal.orderingEnabled ? 'Catálogo disponible' : 'Pedidos temporalmente pausados'}
+            Catálogo disponible
           </span>
         </div>
 

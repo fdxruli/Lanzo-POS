@@ -82,6 +82,7 @@ function PublicCheckoutDialog({
   onSubmit,
   onRefreshCart,
   onContinue,
+  acceptingOrders = true,
 }) {
   const closeButtonRef = useRef(null);
   const submitPromiseRef = useRef(null);
@@ -358,7 +359,7 @@ function PublicCheckoutDialog({
               <button
                 type="submit"
                 className="ui-button ui-button--primary public-checkout-submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || acceptingOrders !== true}
               >
                 {isSubmitting ? (
                   <>
