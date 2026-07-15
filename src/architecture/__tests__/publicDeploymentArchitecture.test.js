@@ -79,7 +79,7 @@ describe('standalone public Vercel deployment architecture', () => {
   let localIndexSha256;
 
   beforeAll(async () => {
-    config = JSON.parse(await readProjectFile('vercel.store.json'));
+    config = JSON.parse(await readProjectFile('store/vercel.json'));
     adminConfigBefore = await readProjectFile('vercel.json');
     distBefore = await fileManifest(path.join(projectRoot, 'dist-store'));
     rootVercelBefore = await pathExists(path.join(projectRoot, '.vercel'));
@@ -107,7 +107,9 @@ describe('standalone public Vercel deployment architecture', () => {
     expect(config.$schema).toBe('https://openapi.vercel.sh/vercel.json');
     expect(config.trailingSlash).toBe(false);
     expect(config).not.toHaveProperty('builds');
-    expect(config).not.toHaveProperty('buildCommand');
+    expect(config.installCommand).toBe('cd .. && npm ci');
+    expect(config.buildCommand).toBe('cd .. && npm run build:store:vercel');
+    expect(config.outputDirectory).toBe('dist');
     expect(config).not.toHaveProperty('functions');
     expect(config).not.toHaveProperty('crons');
     expect(config).not.toHaveProperty('redirects');
@@ -127,7 +129,7 @@ describe('standalone public Vercel deployment architecture', () => {
   });
 
   it('does not reuse or modify the administrative vercel.json', async () => {
-    const publicConfig = await readProjectFile('vercel.store.json');
+    const publicConfig = await readProjectFile('store/vercel.json');
     expect(publicConfig).not.toBe(adminConfigBefore);
     expect(await readProjectFile('vercel.json')).toBe(adminConfigBefore);
   });
@@ -264,7 +266,7 @@ describe('standalone public Vercel deployment architecture', () => {
     const packageFiles = await walk(packageRoot);
     expect(packageFiles).toEqual([...distFiles, 'robots.txt', 'vercel.json'].sort());
     expect(await readFile(path.join(packageRoot, 'robots.txt'), 'utf8')).toBe('User-agent: *\nDisallow: /\n');
-    expect(await readFile(path.join(packageRoot, 'vercel.json'), 'utf8')).toBe(await readProjectFile('vercel.store.json'));
+    expect(await readFile(path.join(packageRoot, 'vercel.json'), 'utf8')).toBe(await readProjectFile('store/vercel.json'));
     expect(packageFiles).not.toContain('sha256-manifest.json');
   });
 

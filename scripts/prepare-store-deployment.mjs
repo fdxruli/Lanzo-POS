@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const distRoot = path.join(projectRoot, 'dist-store');
-const storeConfigPath = path.join(projectRoot, 'vercel.store.json');
+const storeConfigPath = path.join(projectRoot, 'store', 'vercel.json');
 const administrativeConfigPath = path.join(projectRoot, 'vercel.json');
 const rootVercelDirectory = path.join(projectRoot, '.vercel');
 const robotsText = 'User-agent: *\nDisallow: /\n';
@@ -254,7 +254,7 @@ async function finalizePrebuilt(packageDirectoryArgument) {
     if (!await pathExists(requiredPath)) throw new Error(`Missing prebuilt input: ${requiredPath}`);
   }
   if (await fileSha256(packageConfigPath) !== await fileSha256(storeConfigPath)) {
-    throw new Error('The package vercel.json does not match vercel.store.json.');
+    throw new Error('The package vercel.json does not match store/vercel.json.');
   }
 
   const projectLink = JSON.parse(await readFile(projectLinkPath, 'utf8'));
@@ -320,16 +320,16 @@ async function main() {
     throw new Error('Usage: prepare-store-deployment.mjs [--finalize-prebuilt <temporary-package-root>].');
   }
   if (!await pathExists(distRoot)) throw new Error('dist-store does not exist. Run npm run build:store first.');
-  if (!await pathExists(storeConfigPath)) throw new Error('vercel.store.json does not exist.');
+  if (!await pathExists(storeConfigPath)) throw new Error('store/vercel.json does not exist.');
 
   let storeConfig;
   try {
     storeConfig = JSON.parse(await readFile(storeConfigPath, 'utf8'));
   } catch {
-    throw new Error('vercel.store.json must contain valid JSON.');
+    throw new Error('store/vercel.json must contain valid JSON.');
   }
   if (storeConfig.trailingSlash !== false) {
-    throw new Error('vercel.store.json must define trailingSlash === false before packaging.');
+    throw new Error('store/vercel.json must define trailingSlash === false before packaging.');
   }
 
   const baseline = {

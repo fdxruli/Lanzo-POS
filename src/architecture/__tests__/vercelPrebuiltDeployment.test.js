@@ -10,7 +10,7 @@ const files = await Promise.all([
   readProjectFile('scripts/prepare-store-deployment.mjs'),
   readProjectFile('scripts/prepare-admin-deployment.mjs'),
   readProjectFile('scripts/audit-vercel-build-output.mjs'),
-  readProjectFile('vercel.store.json'),
+  readProjectFile('store/vercel.json'),
   readProjectFile('vercel.json'),
   readProjectFile('package.json')
 ]);

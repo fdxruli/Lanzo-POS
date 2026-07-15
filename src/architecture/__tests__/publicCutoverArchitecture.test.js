@@ -58,7 +58,7 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
   });
 
   it('keeps the public deployment rewrites and canonical trailing slash policy', async () => {
-    const config = JSON.parse(await readProjectFile('vercel.store.json'));
+    const config = JSON.parse(await readProjectFile('store/vercel.json'));
     expect(config.trailingSlash).toBe(false);
     expect(config.rewrites).toEqual(expect.arrayContaining([
       { source: '/tienda', destination: '/index.html' },

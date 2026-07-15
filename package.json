@@ -8,6 +8,7 @@
     "dev:store": "vite --config vite.store.config.js",
     "build": "vite build",
     "build:store": "vite build --config vite.store.config.js",
+    "build:store:vercel": "node scripts/build-store-vercel.mjs",
     "deploy:store:prepare": "node scripts/prepare-store-deployment.mjs",
     "deploy:admin:prepare": "node scripts/prepare-admin-deployment.mjs",
     "audit:vercel-output": "node scripts/audit-vercel-build-output.mjs",
