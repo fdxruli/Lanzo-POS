@@ -20,7 +20,7 @@ const targets = Object.freeze({
   store: {
     projectId: 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4',
     prefix: 'lanzo-store-cutover-1-1-',
-    sourceConfig: path.join(projectRoot, 'vercel.store.json'),
+    sourceConfig: path.join(projectRoot, 'store', 'vercel.json'),
     sourceDist: path.join(projectRoot, 'dist-store')
   },
   admin: {

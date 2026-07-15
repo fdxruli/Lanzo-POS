@@ -68,7 +68,7 @@ async function main() {
   ]);
   const [adminConfig, storeConfig, adminBuild, publicBuild] = await Promise.all([
     readProjectFile('vercel.json').then(JSON.parse),
-    readProjectFile('vercel.store.json').then(JSON.parse),
+    readProjectFile('store/vercel.json').then(JSON.parse),
     readBuild('dist'),
     readBuild('dist-store')
   ]);
@@ -139,4 +139,3 @@ main().catch((error) => {
   }));
   process.exitCode = 1;
 });
-

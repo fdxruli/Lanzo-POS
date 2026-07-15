@@ -11,7 +11,9 @@ import path from 'node:path';
 const projectRoot = process.cwd();
 const requestedTarget = process.argv[2] || 'dist';
 const distRoot = path.resolve(projectRoot, requestedTarget);
-const publicTarget = path.basename(distRoot).toLowerCase() === 'dist-store';
+const normalizedTarget = distRoot.replaceAll('\\', '/').toLowerCase();
+const publicTarget = path.basename(distRoot).toLowerCase() === 'dist-store'
+  || normalizedTarget.endsWith('/store/dist');
 
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
