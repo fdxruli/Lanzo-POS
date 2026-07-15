@@ -2,7 +2,6 @@ import { useAppStore } from '../../store/useAppStore';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { supabaseClient } from '../supabase';
-import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
 import {
   buildEcommerceProductConfigurationSyncPayload,
   getEcommerceConfigurationSourceRevision,
@@ -17,6 +16,7 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_CLOUD_CATALOG_REQUIRES_PRO: 'La sincronizacion automatica requiere Lanzo Nube.',
   ECOMMERCE_CATALOG_SYNC_BATCH_TOO_LARGE: 'La sincronizacion incluye demasiados productos en un solo lote.',
   ECOMMERCE_CATALOG_SYNC_DUPLICATE_REF: 'La sincronizacion contiene productos duplicados.',
+  ECOMMERCE_CATALOG_SYNC_INVALID_PAYLOAD: 'La sincronizacion contiene una proyeccion invalida.',
   ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catalogo cambio durante la sincronizacion. Se reintentara con la revision vigente.',
   ECOMMERCE_CATALOG_SOURCE_STALE: 'Un dispositivo tiene una version anterior del producto.',
   ECOMMERCE_CATALOG_SOURCE_CONFLICT: 'La revision del producto requiere reconciliacion.',
@@ -69,6 +69,12 @@ const buildConfigurationFailure = (error, fallback) => normalizeFailure({
   message: fallback
 }, fallback);
 
+const isProjectionObject = (value) => (
+  value !== null
+  && typeof value === 'object'
+  && !Array.isArray(value)
+);
+
 const preparePublishedProductPayload = (payload = {}) => {
   const {
     localProduct,
@@ -103,7 +109,6 @@ export const createEcommerceAdminService = ({
   isConfigured = () => Boolean(supabaseClient),
   getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
   buildAuthContext = buildPosSyncAuthContext,
-  configurationSource = ecommercePublishedStockLocalSource,
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
 } = {}) => {
   const getContext = async () => {
@@ -260,59 +265,26 @@ export const createEcommerceAdminService = ({
       }
     },
 
-    syncPublishedCatalog: async ({ projections, idempotencyKey, expectedCatalogRevision }) => {
+    syncPublishedCatalog: ({ projections, idempotencyKey, expectedCatalogRevision }) => {
       const fallback = 'No se pudo sincronizar el catalogo publicado.';
-      const safeProjections = Array.isArray(projections) ? projections : [];
-      try {
-        const productRefs = Array.from(new Set(
-          safeProjections
-            .map((projection) => String(projection?.localProductRef || '').trim())
-            .filter(Boolean)
-        ));
-        const productsById = productRefs.length > 0
-          ? await configurationSource.getProductsByIds(productRefs)
-          : new Map();
-        const enrichedProjections = safeProjections.map((projection) => {
-          const localProductRef = String(projection?.localProductRef || '').trim();
-          const localProduct = productsById.get(localProductRef);
-          if (!localProduct) {
-            return {
-              ...projection,
-              configuration: null,
-              configurationSourceRevision: null
-            };
-          }
-          return {
-            ...projection,
-            configuration: buildEcommerceProductConfigurationSyncPayload(localProduct, {
-              availabilityReasonCode: projection.sourceState
-                ? `SOURCE_${String(projection.sourceState).toUpperCase()}`
-                : null
-            }),
-            configurationSourceRevision: projection.sourceRevision
-              || getEcommerceConfigurationSourceRevision(localProduct)
-              || null
-          };
-        });
-
-        return callRpc(
-          'ecommerce_admin_sync_published_catalog_v2',
-          {
-            p_projections: enrichedProjections,
-            p_idempotency_key: idempotencyKey || 'catalog-sync',
-            p_expected_catalog_revision: expectedCatalogRevision || null
-          },
-          fallback
-        );
-      } catch (error) {
-        if (error?.code || String(error?.message || '').startsWith('ECOMMERCE_')) {
-          return buildConfigurationFailure(error, fallback);
-        }
-        return normalizeFailure({
-          code: 'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED',
-          retryable: true
-        }, fallback);
+      if (
+        !Array.isArray(projections)
+        || projections.some((projection) => !isProjectionObject(projection))
+      ) {
+        return Promise.resolve(normalizeFailure({
+          code: 'ECOMMERCE_CATALOG_SYNC_INVALID_PAYLOAD'
+        }, fallback));
       }
+
+      return callRpc(
+        'ecommerce_admin_sync_published_catalog_v2',
+        {
+          p_projections: projections,
+          p_idempotency_key: idempotencyKey || 'catalog-sync',
+          p_expected_catalog_revision: expectedCatalogRevision || null
+        },
+        fallback
+      );
     }
   };
 };
@@ -330,5 +302,6 @@ export const syncProductConfiguration = ecommerceAdminService.syncProductConfigu
 export const syncPublishedCatalog = ecommerceAdminService.syncPublishedCatalog;
 
 export const ecommerceAdminServiceInternals = Object.freeze({
+  isProjectionObject,
   preparePublishedProductPayload
 });
