@@ -236,8 +236,8 @@ const classifyProduct = ({
   if (!localProduct) {
     return makeResult({
       publishedProduct,
-      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.UNVERIFIED,
-      reasonCode: 'SOURCE_CACHE_MISS'
+      status: ECOMMERCE_PUBLISHED_STOCK_STATUS.SOURCE_MISSING,
+      reasonCode: 'SOURCE_MISSING'
     });
   }
   if (isProductInactive(localProduct)) {
