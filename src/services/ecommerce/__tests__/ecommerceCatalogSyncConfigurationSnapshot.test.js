@@ -7,6 +7,19 @@ import {
 import { createEcommerceAdminService } from '../ecommerceAdminService';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const SQL_AVAILABILITY_SOURCES = Object.freeze([
+  'direct',
+  'recipe',
+  'variant_aggregate',
+  'not_tracked',
+  'manual',
+  'unverified'
+]);
+
+const expectSqlCompatibleConfiguration = (configuration) => {
+  expect(SQL_AVAILABILITY_SOURCES).toContain(configuration.availabilitySource);
+  expect(configuration.availabilitySource).not.toBe('inventory');
+};
 
 const adminState = () => ({
   licenseDetails: { license_key: 'PRO-LICENSE' },
@@ -170,7 +183,7 @@ const canonicalConfiguration = () => ({
     }],
     metadata: {}
   }],
-  availabilitySource: 'inventory',
+  availabilitySource: 'direct',
   availabilityReasonCode: 'SOURCE_STOCK_AVAILABLE',
   limitingSource: { productId: null, name: null }
 });
@@ -220,7 +233,7 @@ describe('catalog configuration snapshot and idempotency', () => {
         type: 'variant_parent',
         version: 1,
         hasRecipe: false,
-        availabilitySource: 'inventory',
+        availabilitySource: 'variant_aggregate',
         availabilityReasonCode: 'SOURCE_STOCK_AVAILABLE'
       }
     });
@@ -236,6 +249,7 @@ describe('catalog configuration snapshot and idempotency', () => {
       sourceIngredientId: 'ingredient-cheese',
       ingredientQuantity: 1
     });
+    expectSqlCompatibleConfiguration(sent.configuration);
 
     const recomputedKey = await ecommerceCatalogSyncServiceInternals.buildBatchIdempotencyKey({
       portalId: 'portal-1',
@@ -318,7 +332,7 @@ describe('catalog configuration snapshot and idempotency', () => {
     const reorderedConfiguration = {
       limitingSource: { name: null, productId: null },
       availabilityReasonCode: 'SOURCE_STOCK_AVAILABLE',
-      availabilitySource: 'inventory',
+      availabilitySource: 'direct',
       optionGroups: clone(firstConfiguration.optionGroups),
       variants: [],
       hasRecipe: false,
@@ -378,7 +392,7 @@ describe('catalog configuration snapshot and idempotency', () => {
       hasRecipe: false,
       variants: [],
       optionGroups: [],
-      availabilitySource: 'inventory',
+      availabilitySource: 'direct',
       availabilityReasonCode: 'SOURCE_STOCK_AVAILABLE',
       limitingSource: { productId: null, name: null }
     });
