@@ -9,6 +9,11 @@ const asNumber = (value, fallback = null) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+const asOptionalNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const normalizeKey = (value) => asText(value)
   .normalize('NFD')
@@ -146,16 +151,39 @@ const getSnapshotPricing = (item = {}) => {
   };
 };
 
+const getDraftSnapshotBasePrice = (item = {}, pricing = {}) => {
+  const explicitBase = asOptionalNumber(item.ecommerceCurrentBasePosPrice);
+  if (explicitBase !== null) return explicitBase;
+
+  const previousConfiguredPrice = asOptionalNumber(item.ecommerceCurrentConfiguredPrice);
+  const legacyCurrentPrice = asOptionalNumber(item.currentPosPrice);
+  if (previousConfiguredPrice === null && legacyCurrentPrice !== null) {
+    return legacyCurrentPrice;
+  }
+
+  return asNumber(pricing.acceptedBase, 0);
+};
+
+const buildDraftSnapshotProductFallback = (item = {}, pricing = {}) => ({
+  ...item,
+  price: getDraftSnapshotBasePrice(item, pricing)
+});
+
 export const hasEcommerceConfigurationSnapshot = (item = {}) => {
   const options = asObject(item.ecommerceOptions);
   return asArray(options.groups).length > 0 || Object.keys(asObject(options.variant)).length > 0;
 };
 
-export const reconcileEcommerceConfiguredItem = ({ item = {}, product = {} } = {}) => {
+export const reconcileEcommerceConfiguredItem = ({ item = {}, product = null } = {}) => {
   if (!hasEcommerceConfigurationSnapshot(item)) return item;
 
+  const pricing = getSnapshotPricing(item);
+  const hasCatalogProduct = Boolean(product && asText(product.id));
+  const effectiveProduct = hasCatalogProduct
+    ? product
+    : buildDraftSnapshotProductFallback(item, pricing);
   const options = asObject(item.ecommerceOptions);
-  const localGroups = getLocalModifierGroups(product);
+  const localGroups = getLocalModifierGroups(effectiveProduct);
   const selectedModifiers = [];
   const mappingErrors = [];
 
@@ -177,8 +205,7 @@ export const reconcileEcommerceConfiguredItem = ({ item = {}, product = {} } = {
     });
   });
 
-  const pricing = getSnapshotPricing(item);
-  const currentBase = asNumber(product.price, 0);
+  const currentBase = asNumber(effectiveProduct.price, pricing.acceptedBase);
   const currentModifierAdjustment = selectedModifiers.reduce((sum, modifier) => (
     sum + getOptionPrice(modifier)
   ), 0);
@@ -202,7 +229,8 @@ export const reconcileEcommerceConfiguredItem = ({ item = {}, product = {} } = {
     currentPosPrice: currentConfiguredPrice,
     ecommerceConfiguredModifierMappingStatus: status,
     ecommerceConfiguredModifierMappingErrors: mappingErrors,
-    ecommerceConfiguredPriceCompositionValid: acceptedCompositionMatches
+    ecommerceConfiguredPriceCompositionValid: acceptedCompositionMatches,
+    ecommerceConfiguredProductSource: hasCatalogProduct ? 'catalog' : 'draft_snapshot'
   };
 };
 
@@ -211,7 +239,7 @@ export const reconcileEcommerceConfiguredItems = ({ items = [], products = [] } 
   let changed = false;
   const nextItems = asArray(items).map((item) => {
     const productId = asText(item?.parentId ?? item?.id);
-    const product = productMap.get(productId) || item;
+    const product = productMap.get(productId) || null;
     const next = reconcileEcommerceConfiguredItem({ item, product });
     if (JSON.stringify(next) !== JSON.stringify(item)) changed = true;
     return next;
@@ -225,5 +253,7 @@ export const ecommercePosConfiguredItemInternals = Object.freeze({
   findLocalGroup,
   findLocalOption,
   getSnapshotPricing,
+  getDraftSnapshotBasePrice,
+  buildDraftSnapshotProductFallback,
   buildCanonicalModifier
 });

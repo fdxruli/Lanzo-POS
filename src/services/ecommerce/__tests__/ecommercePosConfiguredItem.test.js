@@ -123,4 +123,36 @@ describe('ecommerce POS configured item reconciliation', () => {
     expect(result.items[0].currentPosPrice).toBe(57);
     expect(result.items[1]).toEqual({ ...simple, quantity: 1 });
   });
+
+  it('keeps the base price and extras after a recovered draft loses the visible catalog page', () => {
+    const recoveredDraftLine = {
+      ...papas,
+      ...configuredLine,
+      currentPosPrice: 45
+    };
+
+    const first = reconcileEcommerceConfiguredItems({
+      items: [recoveredDraftLine],
+      products: []
+    }).items[0];
+    const second = reconcileEcommerceConfiguredItems({
+      items: [first],
+      products: []
+    }).items[0];
+
+    expect(first.ecommerceConfiguredProductSource).toBe('draft_snapshot');
+    expect(first.ecommerceCurrentBasePosPrice).toBe(45);
+    expect(first.currentPosPrice).toBe(57);
+    expect(first.selectedModifiers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'modopt_papas_queso',
+        price: 12,
+        ingredientId: 'ing_rest_queso_oaxaca',
+        ingredientQuantity: 0.05
+      })
+    ]));
+    expect(second.ecommerceCurrentBasePosPrice).toBe(45);
+    expect(second.currentPosPrice).toBe(57);
+    expect(second.selectedModifiers).toHaveLength(2);
+  });
 });
