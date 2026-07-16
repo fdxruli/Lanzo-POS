@@ -6,20 +6,24 @@ import {
 import {
   ecommercePublishedStockAlertServiceInternals
 } from './ecommercePublishedStockAlertService';
+import { syncPublishedCatalog } from './ecommerceAdminService';
 import {
   ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT,
   ECOMMERCE_CATALOG_SYNC_STATUS_EVENT,
   createEcommerceCatalogSyncService as createBaseEcommerceCatalogSyncService,
   ecommerceCatalogSyncServiceInternals
 } from './ecommerceCatalogSyncServiceBase';
+import { getEcommerceConfigurationSourceRevision } from '../../utils/ecommerceProductConfigurationSync';
 
 const OUTBOX_RETRY_SENTINEL = '__lanzo_catalog_outbox_retry__';
 const MIN_RETRY_TIMER_MS = Math.min(...ecommerceCatalogSyncServiceInternals.RETRY_BACKOFF_MS) * 0.8;
 const INGREDIENTS_KEY = ecommercePublishedStockLocalSourceInternals.ENRICHED_INGREDIENTS_KEY;
+const MISSING_BATCH_SNAPSHOT_KEY = '__ecommerceBatchSnapshotMissing';
 
 const defaultSetTimeoutFn = (callback, delay) => globalThis.setTimeout(callback, delay);
 const defaultClearTimeoutFn = (handle) => globalThis.clearTimeout(handle);
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const asText = (value) => String(value ?? '').trim();
 
 const getRecordRevisionNumber = (record = {}) => {
   const timestamp = Date.parse(String(
@@ -45,6 +49,61 @@ const getDependencyAwareRevisionNumber = (records = []) => {
     .map(getRecordRevisionNumber)
     .filter((value) => value !== null);
   return revisions.length > 0 ? Math.max(...revisions) : null;
+};
+
+const getRawAvailableStock = (record = {}) => {
+  const stockValue = record.stock ?? record.quantity;
+  const committedValue = record.committedStock ?? record.committed_stock ?? 0;
+  const stock = Number(stockValue);
+  const committed = Number(committedValue);
+  if (
+    stockValue === null
+    || stockValue === undefined
+    || stockValue === ''
+    || !Number.isFinite(stock)
+    || !Number.isFinite(committed)
+    || stock < 0
+    || committed < 0
+  ) {
+    return null;
+  }
+  return Math.max(0, stock - committed);
+};
+
+const getBatchProductId = (batch = {}) => asText(batch.productId ?? batch.product_id);
+
+const markMissingBatchSnapshots = (product = {}, batches = []) => {
+  const ingredients = asArray(product[INGREDIENTS_KEY]);
+  if (ingredients.length === 0) return product;
+
+  const batchProductIds = new Set(asArray(batches).map(getBatchProductId).filter(Boolean));
+  let changed = false;
+  const nextIngredients = ingredients.map((ingredient) => {
+    if (!ecommercePublishedStockAlertServiceInternals.isBatchManaged(ingredient)) {
+      return ingredient;
+    }
+
+    const ingredientId = asText(ingredient.id);
+    const rawAvailable = getRawAvailableStock(ingredient);
+    if (!ingredientId || batchProductIds.has(ingredientId) || !(rawAvailable > 0)) {
+      return ingredient;
+    }
+
+    changed = true;
+    return {
+      ...ingredient,
+      stock: null,
+      batchManagement: {
+        ...(ingredient.batchManagement || ingredient.batch_management || {}),
+        enabled: false
+      },
+      [MISSING_BATCH_SNAPSHOT_KEY]: true
+    };
+  });
+
+  return changed
+    ? { ...product, [INGREDIENTS_KEY]: nextIngredients }
+    : product;
 };
 
 const decorateProductForDependencySync = (product = {}) => {
@@ -76,23 +135,90 @@ const decorateBatchForDependencySync = (batch = {}) => {
   return { ...batch, serverVersion: dependencyRevision };
 };
 
-const createDependencyAwareLocalSource = (sourceLocal = ecommercePublishedStockLocalSource) => ({
-  ...sourceLocal,
-  async getProductsByIds(productIds = []) {
-    const products = await sourceLocal.getProductsByIds(productIds);
-    return new Map(Array.from(products.entries()).map(([id, product]) => [
-      id,
-      decorateProductForDependencySync(product)
-    ]));
-  },
-  async getBatchesByProductIds(productIds = []) {
-    const batchesByProduct = await sourceLocal.getBatchesByProductIds(productIds);
-    return new Map(Array.from(batchesByProduct.entries()).map(([id, batches]) => [
-      id,
-      asArray(batches).map(decorateBatchForDependencySync)
-    ]));
-  }
-});
+const createDependencyAwareLocalSource = (
+  sourceLocal = ecommercePublishedStockLocalSource,
+  { onConfigurationRevision = () => {} } = {}
+) => {
+  const prefetchedBatches = new Map();
+
+  return {
+    ...sourceLocal,
+    async getProductsByIds(productIds = []) {
+      const products = await sourceLocal.getProductsByIds(productIds);
+      const batchParentIds = [];
+
+      products.forEach((product, id) => {
+        onConfigurationRevision(
+          asText(id),
+          getEcommerceConfigurationSourceRevision(product) || null
+        );
+        if (asArray(product?.[INGREDIENTS_KEY]).some(
+          ecommercePublishedStockAlertServiceInternals.isBatchManaged
+        )) {
+          batchParentIds.push(asText(id));
+        }
+      });
+
+      if (batchParentIds.length > 0) {
+        try {
+          const batchesByProduct = await sourceLocal.getBatchesByProductIds(batchParentIds);
+          batchParentIds.forEach((id) => {
+            prefetchedBatches.set(id, {
+              batches: asArray(batchesByProduct.get(id)),
+              error: null
+            });
+          });
+        } catch (error) {
+          batchParentIds.forEach((id) => {
+            prefetchedBatches.set(id, { batches: [], error });
+          });
+        }
+      }
+
+      return new Map(Array.from(products.entries()).map(([id, product]) => {
+        const prefetched = prefetchedBatches.get(asText(id));
+        const snapshotSafeProduct = prefetched?.error
+          ? product
+          : markMissingBatchSnapshots(product, prefetched?.batches || []);
+        return [id, decorateProductForDependencySync(snapshotSafeProduct)];
+      }));
+    },
+    async getBatchesByProductIds(productIds = []) {
+      const ids = productIds.map(asText).filter(Boolean);
+      const missingIds = ids.filter((id) => !prefetchedBatches.has(id));
+
+      if (missingIds.length > 0) {
+        const batchesByProduct = await sourceLocal.getBatchesByProductIds(missingIds);
+        missingIds.forEach((id) => {
+          prefetchedBatches.set(id, {
+            batches: asArray(batchesByProduct.get(id)),
+            error: null
+          });
+        });
+      }
+
+      const result = new Map();
+      ids.forEach((id) => {
+        const prefetched = prefetchedBatches.get(id);
+        prefetchedBatches.delete(id);
+        if (prefetched?.error) throw prefetched.error;
+        result.set(id, asArray(prefetched?.batches).map(decorateBatchForDependencySync));
+      });
+      return result;
+    }
+  };
+};
+
+const patchConfigurationRevisions = (projections = [], revisionsByProduct = new Map()) => (
+  asArray(projections).map((projection) => {
+    const localProductRef = asText(projection?.localProductRef);
+    if (!localProductRef || !revisionsByProduct.has(localProductRef)) return projection;
+    return {
+      ...projection,
+      configurationSourceRevision: revisionsByProduct.get(localProductRef)
+    };
+  })
+);
 
 const createRetryAwareOutbox = ({ sourceOutbox, onRetryPersistence }) => {
   const wrappedOutbox = { ...sourceOutbox };
@@ -119,8 +245,10 @@ const createRetryAwareOutbox = ({ sourceOutbox, onRetryPersistence }) => {
 export const createEcommerceCatalogSyncService = (options = {}) => {
   const sourceOutbox = options.outbox || ecommerceCatalogSyncOutbox;
   const sourceLocal = options.localSource || ecommercePublishedStockLocalSource;
+  const sourceSyncBatch = options.syncBatch || syncPublishedCatalog;
   const setTimeoutFn = options.setTimeoutFn || defaultSetTimeoutFn;
   const clearTimeoutFn = options.clearTimeoutFn || defaultClearTimeoutFn;
+  const configurationRevisionsByProduct = new Map();
   let retryPersistenceMode = null;
   let service = null;
 
@@ -130,7 +258,18 @@ export const createEcommerceCatalogSyncService = (options = {}) => {
       retryPersistenceMode = mode;
     }
   });
-  const localSource = createDependencyAwareLocalSource(sourceLocal);
+  const localSource = createDependencyAwareLocalSource(sourceLocal, {
+    onConfigurationRevision: (productId, revision) => {
+      configurationRevisionsByProduct.set(productId, revision);
+    }
+  });
+  const syncBatch = (request = {}) => sourceSyncBatch({
+    ...request,
+    projections: patchConfigurationRevisions(
+      request.projections,
+      configurationRevisionsByProduct
+    )
+  });
 
   const retrySafeSetTimeout = (callback, delay) => {
     const numericDelay = Number(delay);
@@ -176,6 +315,7 @@ export const createEcommerceCatalogSyncService = (options = {}) => {
   service = createBaseEcommerceCatalogSyncService({
     ...options,
     localSource,
+    syncBatch,
     outbox,
     setTimeoutFn: retrySafeSetTimeout,
     clearTimeoutFn: retrySafeClearTimeout
@@ -199,9 +339,13 @@ export const ecommerceCatalogSyncRetryInternals = Object.freeze({
 
 export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   INGREDIENTS_KEY,
+  MISSING_BATCH_SNAPSHOT_KEY,
   getRecordRevisionNumber,
   getDependencyAwareRevisionNumber,
+  getRawAvailableStock,
+  markMissingBatchSnapshots,
   decorateProductForDependencySync,
   decorateBatchForDependencySync,
-  createDependencyAwareLocalSource
+  createDependencyAwareLocalSource,
+  patchConfigurationRevisions
 });
