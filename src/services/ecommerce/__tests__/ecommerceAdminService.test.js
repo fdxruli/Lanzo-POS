@@ -112,7 +112,7 @@ const completeProjection = {
       metadata: {}
     }],
     optionGroups: [],
-    availabilitySource: 'inventory',
+    availabilitySource: 'variant_aggregate',
     availabilityReasonCode: 'SOURCE_STOCK_AVAILABLE',
     limitingSource: { productId: null, name: null }
   },
