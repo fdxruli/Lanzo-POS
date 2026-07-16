@@ -1,5 +1,6 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const state = {
@@ -30,6 +31,10 @@ const mocks = vi.hoisted(() => {
     lockOrderForCheckout: vi.fn(),
     beginRemoteConversion: vi.fn()
   };
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 vi.mock('../useActiveOrders', () => ({

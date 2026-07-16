@@ -58,6 +58,15 @@ import { ecommercePosCheckoutGateInternals } from '../useEcommercePosCheckoutGat
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.state.currentOrderId = 'ecom-order-1';
+  mocks.state.activeOrders = new Map([[
+    'ecom-order-1',
+    {
+      id: 'ecom-order-1',
+      origin: 'ecommerce',
+      ecommerceConversionAttemptId: 'attempt-1'
+    }
+  ]]);
 });
 
 describe('useEcommercePosCheckoutGate internals', () => {
@@ -66,6 +75,7 @@ describe('useEcommercePosCheckoutGate internals', () => {
       isLockedForCheckout: true,
       ecommerceConversionAttemptId: 'attempt-1',
       ecommerceCheckoutLockAttemptId: 'attempt-1',
+      ecommerceCanonicalCheckoutAttemptId: 'checkout-attempt-1',
       ecommerceConversionActorIdentity: 'admin:device',
       ecommerceCheckoutLockActorIdentity: 'admin:device'
     };
@@ -82,7 +92,8 @@ describe('useEcommercePosCheckoutGate internals', () => {
     const result = ecommercePosCheckoutGateInternals.markUncertainSaleResult({
       orderId: 'ecom-order-1',
       code: 'ECOMMERCE_SALE_VERIFICATION_PENDING',
-      message: 'No se pudo confirmar todavía si la venta fue registrada.'
+      message: 'No se pudo confirmar todavía si la venta fue registrada.',
+      ownedAttemptId: 'attempt-1'
     });
 
     expect(result).toMatchObject({
