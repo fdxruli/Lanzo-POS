@@ -566,6 +566,7 @@ function PublicStorePage() {
       && checkoutCatalogReady
       && availability?.acceptingOrders === true
       && cart.isReconciled
+      && !cart.hasStaleConfigurations
       && cart.items.length > 0
       && cart.minimumReached
       && (portal.pickupEnabled === true || portal.deliveryEnabled === true)
@@ -595,6 +596,7 @@ function PublicStorePage() {
     return request;
   }, [
     availability,
+    cart.hasStaleConfigurations,
     cart.isReconciled,
     cart.items.length,
     cart.minimumReached,
@@ -606,10 +608,10 @@ function PublicStorePage() {
   ]);
 
   const submitCheckout = useCallback((customer) => {
-    if (!checkoutCatalogReady || !cart.isReconciled) {
+    if (!checkoutCatalogReady || !cart.isReconciled || cart.hasStaleConfigurations) {
       return Promise.reject(new EcommercePublicError(
         'ECOMMERCE_CATALOG_NOT_VALIDATED',
-        'Actualiza el catálogo antes de confirmar el pedido.'
+        'Actualiza las opciones del carrito antes de confirmar el pedido.'
       ));
     }
     if (activeCheckoutPromiseRef.current) return activeCheckoutPromiseRef.current;
@@ -656,6 +658,10 @@ function PublicStorePage() {
                 'ECOMMERCE_ORDER_CREATE_FAILED',
                 'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.'
               );
+          if (safeError.code === 'ECOMMERCE_CONFIGURATION_CHANGED') {
+            clearCheckoutAttempt(requestSlug);
+            cart.markConfiguredLinesStale();
+          }
           setCheckoutError(safeError);
           setCheckoutStatus('recoverable_error');
           if (AVAILABILITY_ERROR_CODES.has(safeError.code)) {
@@ -850,6 +856,7 @@ function PublicStorePage() {
         minimumRemaining={cart.minimumRemaining}
         minimumReached={cart.minimumReached}
         isReconciled={cart.isReconciled && checkoutCatalogReady}
+        hasStaleConfigurations={cart.hasStaleConfigurations}
         orderingEnabled={portal.orderingEnabled && checkoutCatalogReady && availability?.acceptingOrders === true}
         availability={{
           label: getAvailabilityLabel(availability),
