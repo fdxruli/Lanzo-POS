@@ -1,20 +1,32 @@
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Plus, Search, SlidersHorizontal } from 'lucide-react';
+import { useParams } from 'react-router-dom';
 import {
   getPublicProductStockLabel,
-  isPublicProductAvailable,
+  isPublicProductAvailable
 } from '../../../services/ecommerce/ecommercePublicProductRules';
 import PublicSafeImage from './PublicSafeImage';
 import PublicStoreState from './PublicStoreState';
 
+const PublicProductConfigurationModal = lazy(() => import('./PublicProductConfigurationModal'));
+
 const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
   style: 'currency',
-  currency,
+  currency
 }).format(Number(value) || 0);
 
-function PublicProductCard({ product, onAdd }) {
+const requiresPublicConfiguration = (product) => (
+  product?.configuration?.requiresConfiguration === true
+  || product?.configuration?.hasVariants === true
+  || product?.configuration?.hasOptionGroups === true
+);
+
+function PublicProductCard({ product, onAdd, onConfigure }) {
   const isAvailable = isPublicProductAvailable(product);
   const stockLabel = getPublicProductStockLabel(product);
   const isUnavailableStockLabel = stockLabel === 'Agotado' || stockLabel === 'No disponible';
+  const configurable = requiresPublicConfiguration(product);
+  const buttonLabel = configurable ? 'Seleccionar opciones' : 'Agregar';
 
   return (
     <article className="public-product-card ui-card">
@@ -32,7 +44,10 @@ function PublicProductCard({ product, onAdd }) {
         </div>
         <div className="public-product-card__footer">
           <div>
-            <strong>{formatCurrency(product.price, product.currency)}</strong>
+            <strong>
+              {configurable ? 'Desde ' : ''}
+              {formatCurrency(product.price, product.currency)}
+            </strong>
             {stockLabel ? (
               <span className={`public-product-card__stock${isUnavailableStockLabel ? ' is-unavailable' : ''}`}>
                 {stockLabel}
@@ -43,11 +58,11 @@ function PublicProductCard({ product, onAdd }) {
             type="button"
             className="ui-button ui-button--primary public-product-card__add"
             disabled={!isAvailable}
-            onClick={() => onAdd(product)}
-            aria-label={isAvailable ? `Agregar ${product.name}` : `${product.name} no disponible`}
+            onClick={() => (configurable ? onConfigure(product) : onAdd(product))}
+            aria-label={isAvailable ? `${buttonLabel}: ${product.name}` : `${product.name} no disponible`}
           >
             <Plus aria-hidden="true" size={18} />
-            {isAvailable ? 'Agregar' : 'No disponible'}
+            {isAvailable ? buttonLabel : 'No disponible'}
           </button>
         </div>
       </div>
@@ -70,7 +85,47 @@ function PublicCatalog({
   hasMore,
   onLoadMore,
   isLoadingMore,
+  catalogRevision,
+  offline,
+  maxItemQuantity
 }) {
+  const { slug = '' } = useParams();
+  const resolvedCatalogRevision = catalogRevision
+    || Number(document.querySelector('.public-store-shell')?.dataset.catalogRevision)
+    || null;
+  const resolvedOffline = typeof offline === 'boolean'
+    ? offline
+    : globalThis.navigator?.onLine === false;
+  const [configurationProduct, setConfigurationProduct] = useState(null);
+  const [initialLine, setInitialLine] = useState(null);
+
+  const productMap = useMemo(
+    () => new Map(products.map((product) => [product.id, product])),
+    [products]
+  );
+
+  useEffect(() => {
+    const handleEdit = (event) => {
+      const line = event.detail;
+      const product = productMap.get(line?.productId);
+      if (!line?.lineKey || !product || !requiresPublicConfiguration(product)) return;
+      setInitialLine(line);
+      setConfigurationProduct(product);
+    };
+    window.addEventListener('lanzo:ecommerce:edit-configured-line', handleEdit);
+    return () => window.removeEventListener('lanzo:ecommerce:edit-configured-line', handleEdit);
+  }, [productMap]);
+
+  const openConfiguration = (product) => {
+    setInitialLine(null);
+    setConfigurationProduct(product);
+  };
+
+  const closeConfiguration = () => {
+    setConfigurationProduct(null);
+    setInitialLine(null);
+  };
+
   if (isLoading) {
     return (
       <PublicStoreState
@@ -107,67 +162,90 @@ function PublicCatalog({
   }
 
   return (
-    <section className="public-catalog" aria-labelledby="public-catalog-title">
-      <div className="public-catalog__heading">
-        <div>
-          <p className="public-store-section-kicker">Catálogo</p>
-          <h2 id="public-catalog-title">Elige tus productos</h2>
+    <>
+      <section className="public-catalog" aria-labelledby="public-catalog-title">
+        <div className="public-catalog__heading">
+          <div>
+            <p className="public-store-section-kicker">Catálogo</p>
+            <h2 id="public-catalog-title">Elige tus productos</h2>
+          </div>
+          <span>{products.length} producto{products.length === 1 ? '' : 's'}</span>
         </div>
-        <span>{products.length} producto{products.length === 1 ? '' : 's'}</span>
-      </div>
 
-      <div className="public-catalog__tools">
-        <label className="public-catalog__search">
-          <Search aria-hidden="true" size={19} />
-          <span className="sr-only">Buscar productos</span>
-          <input
-            type="search"
-            value={searchTerm}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Buscar productos"
+        <div className="public-catalog__tools">
+          <label className="public-catalog__search">
+            <Search aria-hidden="true" size={19} />
+            <span className="sr-only">Buscar productos</span>
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Buscar productos"
+            />
+          </label>
+
+          <label className="public-catalog__category">
+            <SlidersHorizontal aria-hidden="true" size={18} />
+            <span className="sr-only">Filtrar por categoría</span>
+            <select value={selectedCategory} onChange={(event) => onCategoryChange(event.target.value)}>
+              <option value="all">Todos</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {filteredProducts.length === 0 ? (
+          <PublicStoreState
+            type="noResults"
+            title="No encontramos productos con esa búsqueda"
+            description="Prueba con otro nombre o categoría."
+            compact
           />
-        </label>
-
-        <label className="public-catalog__category">
-          <SlidersHorizontal aria-hidden="true" size={18} />
-          <span className="sr-only">Filtrar por categoría</span>
-          <select value={selectedCategory} onChange={(event) => onCategoryChange(event.target.value)}>
-            <option value="all">Todos</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>{category}</option>
+        ) : (
+          <div className="public-catalog__grid">
+            {filteredProducts.map((product) => (
+              <PublicProductCard
+                key={product.id}
+                product={product}
+                onAdd={onAdd}
+                onConfigure={openConfiguration}
+              />
             ))}
-          </select>
-        </label>
-      </div>
+          </div>
+        )}
 
-      {filteredProducts.length === 0 ? (
-        <PublicStoreState
-          type="noResults"
-          title="No encontramos productos con esa búsqueda"
-          description="Prueba con otro nombre o categoría."
-          compact
-        />
-      ) : (
-        <div className="public-catalog__grid">
-          {filteredProducts.map((product) => (
-            <PublicProductCard key={product.id} product={product} onAdd={onAdd} />
-          ))}
-        </div>
-      )}
+        {hasMore ? (
+          <div className="public-catalog__load-more">
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={onLoadMore}
+              disabled={isLoadingMore}
+            >
+              {isLoadingMore ? 'Cargando...' : 'Cargar más'}
+            </button>
+          </div>
+        ) : null}
+      </section>
 
-      {hasMore ? (
-        <div className="public-catalog__load-more">
-          <button
-            type="button"
-            className="ui-button ui-button--secondary"
-            onClick={onLoadMore}
-            disabled={isLoadingMore}
-          >
-            {isLoadingMore ? 'Cargando...' : 'Cargar más'}
-          </button>
-        </div>
+      {configurationProduct ? (
+        <Suspense fallback={null}>
+          <PublicProductConfigurationModal
+            isOpen
+            slug={slug}
+            product={configurationProduct}
+            catalogRevision={resolvedCatalogRevision}
+            offline={resolvedOffline}
+            initialLine={initialLine}
+            maxItemQuantity={maxItemQuantity}
+            onClose={closeConfiguration}
+            onAdd={onAdd}
+          />
+        </Suspense>
       ) : null}
-    </section>
+    </>
   );
 }
 
