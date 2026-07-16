@@ -34,6 +34,7 @@ const RETRYABLE_CODES = new Set([
   'ETIMEDOUT',
   'NETWORK_ERROR',
   'FETCH_ERROR',
+  'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED',
   'PGRST000',
   'PGRST001',
   'PGRST002',
@@ -319,18 +320,44 @@ const getFailureStatus = (failure = {}) => Number(
   ?? failure.error?.statusCode
 );
 
-const getFailureCode = (failure = {}, fallbackCode) => {
-  const message = asText(failure.message || failure.error?.message);
-  const messageCode = /^[A-Z][A-Z0-9_]{2,}$/.test(message) ? message : null;
-  const name = asText(failure.name || failure.error?.name);
-  return asText(
-    failure.code
-    || failure.error?.code
-    || messageCode
-    || (name && name !== 'Error' ? name : null)
-    || fallbackCode
-  ).toUpperCase();
+const NATIVE_ERROR_CODES = new Set([
+  'ERROR',
+  'AGGREGATEERROR',
+  'EVALERROR',
+  'RANGEERROR',
+  'REFERENCEERROR',
+  'SYNTAXERROR',
+  'TYPEERROR',
+  'URIERROR',
+  'ABORTERROR',
+  'TIMEOUTERROR'
+]);
+
+const normalizeFailureCodeCandidate = (value) => {
+  const code = asText(value).toUpperCase();
+  if (!code || NATIVE_ERROR_CODES.has(code)) return null;
+  return code;
 };
+
+const isRetryableFailureCode = (code) => (
+  RETRYABLE_CODES.has(code)
+  || /^08[A-Z0-9]{3}$/.test(code)
+  || /^53[A-Z0-9]{3}$/.test(code)
+);
+
+const getFailureMessageCode = (failure = {}) => {
+  const message = asText(failure.message || failure.error?.message).toUpperCase();
+  if (/^ECOMMERCE_[A-Z0-9_]+$/.test(message)) return message;
+  return isRetryableFailureCode(message) ? message : null;
+};
+
+const getFailureCode = (failure = {}, fallbackCode) => (
+  normalizeFailureCodeCandidate(failure.code)
+  || normalizeFailureCodeCandidate(failure.error?.code)
+  || getFailureMessageCode(failure)
+  || normalizeFailureCodeCandidate(fallbackCode)
+  || null
+);
 
 const getFailureMessage = (failure = {}) => asText(
   failure.message
@@ -338,28 +365,41 @@ const getFailureMessage = (failure = {}) => asText(
   || failure.details
 );
 
+const hasExplicitTransientEvidence = (failure = {}) => {
+  const status = getFailureStatus(failure);
+  if (RETRYABLE_HTTP_STATUSES.has(status)) return true;
+
+  const code = getFailureCode(failure);
+  if (isRetryableFailureCode(code)) return true;
+
+  return RETRYABLE_MESSAGE_PATTERN.test(getFailureMessage(failure));
+};
+
 const isRetryableCatalogSyncError = (failure, online = isOnline) => {
   const code = getFailureCode(failure);
   if (PERMANENT_CONFIGURATION_CODES.has(code)) return false;
   if (!online()) return true;
-  if (failure?.retryable === true) return true;
-  const status = getFailureStatus(failure);
-  if (RETRYABLE_HTTP_STATUSES.has(status)) return true;
-
-  if (RETRYABLE_CODES.has(code)) return true;
-  if (/^08[A-Z0-9]{3}$/.test(code)) return true;
-  if (/^53[A-Z0-9]{3}$/.test(code)) return true;
-
-  const name = asText(failure?.name);
-  if (name === 'TypeError' || name === 'AbortError' || name === 'TimeoutError') return true;
-  return RETRYABLE_MESSAGE_PATTERN.test(getFailureMessage(failure));
+  if (hasExplicitTransientEvidence(failure)) return true;
+  return failure?.retryable === true;
 };
 
-const toFailure = (failure, fallbackCode, online = isOnline) => ({
+const isRetryableProjectionError = (failure, online = isOnline) => {
+  const code = getFailureCode(failure);
+  if (PERMANENT_CONFIGURATION_CODES.has(code)) return false;
+  if (!online()) return true;
+  return hasExplicitTransientEvidence(failure);
+};
+
+const toFailure = (
+  failure,
+  fallbackCode,
+  online = isOnline,
+  retryPolicy = isRetryableCatalogSyncError
+) => ({
   success: false,
   code: getFailureCode(failure, fallbackCode),
   message: getFailureMessage(failure),
-  retryable: isRetryableCatalogSyncError(failure, online)
+  retryable: retryPolicy(failure, online)
 });
 
 const getScopeIdentity = (state = {}) => {
@@ -731,7 +771,12 @@ export const createEcommerceCatalogSyncService = ({
         fullReconcile
       });
     } catch (error) {
-      const failure = toFailure(error, 'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED', online);
+      const failure = toFailure(
+        error,
+        'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED',
+        online,
+        isRetryableProjectionError
+      );
       if (failure.retryable) {
         return persistRetryable({
           scopeIdentity,
@@ -997,6 +1042,7 @@ export const ecommerceCatalogSyncServiceInternals = Object.freeze({
   sortProjections,
   buildBatchIdempotencyKey,
   isRetryableCatalogSyncError,
+  isRetryableProjectionError,
   getScopeIdentity,
   RPC_BATCH_SIZE,
   RETRY_BACKOFF_MS
