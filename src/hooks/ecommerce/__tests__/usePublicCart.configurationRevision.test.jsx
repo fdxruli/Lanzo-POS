@@ -77,7 +77,8 @@ describe('usePublicCart configurationRevision', () => {
     expect(stored.items[0]).toMatchObject({
       lineKey,
       configurationVersion: 1,
-      configurationRevision: REVISION
+      configurationRevision: REVISION,
+      configurationStale: false
     });
     expect(stored.items[0].configurationSnapshot.configurationRevision).toBe(REVISION);
 
@@ -86,7 +87,8 @@ describe('usePublicCart configurationRevision', () => {
     await waitFor(() => expect(restored.result.current.items).toHaveLength(1));
     expect(restored.result.current.items[0].product.configurationLine).toMatchObject({
       lineKey,
-      configurationRevision: REVISION
+      configurationRevision: REVISION,
+      configurationStale: false
     });
   });
 
@@ -109,10 +111,26 @@ describe('usePublicCart configurationRevision', () => {
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-tienda'))).toBeNull();
   });
 
-  it('replaces the revision on edit while retaining the deterministic key', async () => {
+  it('marks a server-rejected configuration stale and persists the block', async () => {
     const { result } = renderCart();
     await waitFor(() => expect(result.current.isReconciled).toBe(true));
     act(() => result.current.addProduct(configuredLine));
+
+    act(() => result.current.markConfiguredLinesStale());
+
+    expect(result.current.hasStaleConfigurations).toBe(true);
+    expect(result.current.items[0].product.configurationLine.configurationStale).toBe(true);
+    const stored = JSON.parse(
+      window.sessionStorage.getItem(getPublicCartStorageKey('mi-tienda'))
+    );
+    expect(stored.items[0].configurationStale).toBe(true);
+  });
+
+  it('replaces the revision on edit, clears stale state and retains the deterministic key', async () => {
+    const { result } = renderCart();
+    await waitFor(() => expect(result.current.isReconciled).toBe(true));
+    act(() => result.current.addProduct(configuredLine));
+    act(() => result.current.markConfiguredLinesStale());
 
     const refreshedRevision = 'd'.repeat(64);
     act(() => result.current.addProduct({
@@ -126,9 +144,11 @@ describe('usePublicCart configurationRevision', () => {
     }, { replaceLineKey: lineKey }));
 
     expect(result.current.items).toHaveLength(1);
+    expect(result.current.hasStaleConfigurations).toBe(false);
     expect(result.current.items[0].product.configurationLine).toMatchObject({
       lineKey,
-      configurationRevision: refreshedRevision
+      configurationRevision: refreshedRevision,
+      configurationStale: false
     });
   });
 });
