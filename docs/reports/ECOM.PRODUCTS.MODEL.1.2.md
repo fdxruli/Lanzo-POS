@@ -324,3 +324,147 @@ Creado:
 - Previews manuales: 0.
 
 **ESTADO MODEL.1.3: IMPLEMENTACIÓN COMPLETA — VALIDACIÓN LOCAL PENDIENTE.**
+
+---
+
+# ECOM.PRODUCTS.MODEL.1.4 — TypeError contextual y política de retry de proyección
+
+Fecha de corrección: 2026-07-15 (America/Mexico_City)
+
+## 1. Defecto residual
+
+MODEL.1.3 todavía permitía que los nombres nativos `TypeError`, `AbortError` y `TimeoutError` fueran usados como evidencia suficiente de retry. Dentro de `buildProjections`, un defecto local como `new TypeError('malformed configuration')` podía terminar en outbox y backoff indefinido.
+
+## 2. Causa raíz
+
+La clasificación general de transporte y la clasificación de construcción local compartían `isRetryableCatalogSyncError(...)`. Además, `getFailureCode(...)` podía convertir `failure.name` en un código público como `TYPEERROR`, sustituyendo el código de dominio del flujo.
+
+## 3. Diferencia entre red y proyección
+
+Un `TypeError` puede representar un fallo de `fetch`, pero también un acceso inválido, datos locales malformados o un defecto de normalización. La clase nativa no demuestra transitoriedad. La proyección sólo reintenta cuando existe evidencia explícita: código transitorio, HTTP 502/503/504, PostgreSQL transitorio, offline o mensaje inequívoco de red.
+
+## 4. Política anterior
+
+La política anterior devolvía retryable para cualquier error cuyo nombre fuera `TypeError`, `AbortError` o `TimeoutError`. Un error sin `code` podía publicar el nombre nativo como código remoto de estado.
+
+## 5. Política nueva
+
+Se separaron dos contextos:
+
+- transporte general: conserva `retryable=true` de capas confiables y evidencia explícita de red;
+- construcción de proyecciones: usa `isRetryableProjectionError(...)` y exige evidencia transitoria explícita.
+
+Los errores permanentes de configuración continúan teniendo precedencia sobre flags y mensajes de timeout.
+
+## 6. `getFailureCode`
+
+`getFailureCode(...)` ahora aplica esta precedencia:
+
+1. `failure.code` no nativo;
+2. `failure.error.code` no nativo;
+3. mensaje que sea un código de dominio `ECOMMERCE_*` o un código transitorio conocido;
+4. `fallbackCode`.
+
+Los nombres estándar `Error`, `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `AbortError`, `TimeoutError` y equivalentes no se exponen como código público.
+
+## 7. `isRetryableProjectionError`
+
+La utilidad pura devuelve retryable únicamente ante:
+
+- offline;
+- HTTP 502, 503 o 504;
+- códigos de red y timeout conocidos;
+- PostgreSQL `40001`, `40P01`, conexiones `08xxx` y recursos `53xxx`;
+- `ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED`;
+- mensajes explícitos como `Failed to fetch`, `Network request failed`, conexión cerrada o rechazada y timeout de red.
+
+La utilidad se exporta sólo mediante `ecommerceCatalogSyncServiceInternals` para pruebas.
+
+## 8. TypeError local
+
+`new TypeError('malformed configuration')` y `new TypeError('Cannot read properties of undefined')` producen:
+
+- `state=error`;
+- `code=ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED`;
+- `pendingCount=0`;
+- sin RPC;
+- sin outbox;
+- sin retry timer.
+
+## 9. TypeError de red
+
+`new TypeError('Failed to fetch')` conserva retry porque el mensaje aporta evidencia explícita de transporte. El código público sigue siendo un código de dominio del catálogo, no `TYPEERROR`.
+
+Un error con `code=NETWORK_ERROR` también conserva retry aunque su nombre nativo sea `TypeError`.
+
+## 10. IndexedDB
+
+La lectura fallida de `localSource.getProductsByIds(...)` continúa envolviéndose como `ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED` y permanece retryable. No se convirtió en error permanente.
+
+## 11. Outbox
+
+Los TypeError locales y errores de programación no llaman:
+
+- `outbox.enqueue`;
+- `outbox.replacePending`.
+
+Los errores de red y lectura local transitoria conservan la persistencia de intención existente.
+
+## 12. Retry timer
+
+Los errores permanentes de proyección no llaman `scheduleRetry` y limpian el backoff heredado. Los fallos explícitamente transitorios conservan el timer y la estrategia de reconstrucción de payload/key.
+
+## 13. Tests
+
+Se amplió `ecommerceCatalogSyncAvailabilityRetry.test.js` con:
+
+- matriz pura para TypeError local, TypeError de fetch, `NETWORK_ERROR`, `ETIMEDOUT`, HTTP 503, `40001`, `40P01`, `08006`, `53300`, errores permanentes, error desconocido y offline;
+- catch real de `buildProjections` para TypeError local;
+- TypeError típico de programación;
+- TypeError con evidencia de fetch;
+- código transitorio explícito;
+- conservación de IndexedDB retryable;
+- prioridad de errores permanentes frente a `retryable=true` y mensajes de timeout;
+- recuperación en una ejecución posterior tras corregir el fixture.
+
+## 14. ESLint
+
+Pendiente de ejecución en el checkout real con dependencias. La revisión estática no añadió `eslint-disable`, `.skip`, `.todo`, timeouts artificiales ni nombres nativos como códigos de dominio.
+
+## 15. Builds
+
+Pendientes por falta de checkout y dependencias:
+
+- admin: `npm run build`;
+- store: `npm run build:store`;
+- staging: `npm run build:store:vercel`.
+
+No se declaran como PASS y no se utilizó Vercel como sustituto.
+
+## 16. Archivos modificados
+
+- `src/services/ecommerce/ecommerceCatalogSyncServiceBase.js`;
+- `src/services/ecommerce/__tests__/ecommerceCatalogSyncAvailabilityRetry.test.js`;
+- `docs/reports/ECOM.PRODUCTS.MODEL.1.2.md`.
+
+No se crearon archivos nuevos en MODEL.1.4.
+
+## 17. Riesgos
+
+- Vitest enfocado, ESLint y los tres builds deben ejecutarse en el checkout real.
+- El PR debe permanecer draft hasta completar esa validación y una nueva revisión independiente.
+- No se modificaron availabilitySource, snapshot, firma, Supabase, migraciones, SQL, React, CSS, checkout, pedidos, caja, ventas ni inventario real.
+
+## 18. Estado del PR
+
+- PR #98 abierto: sí.
+- Rama: `fase-ecom-products-model-1`.
+- Base: `main`.
+- Draft: sí.
+- Merge: no.
+- Auto-merge: no.
+- Escrituras en `main`: no.
+- Deployments manuales: 0.
+- Previews manuales: 0.
+
+**ESTADO MODEL.1.4: IMPLEMENTACIÓN COMPLETA — VALIDACIÓN LOCAL PENDIENTE.**
