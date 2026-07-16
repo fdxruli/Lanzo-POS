@@ -257,15 +257,17 @@ export const serializeEcommerceProductConfigurationForSync = (configuration = {}
     hasVariants: asArray(configuration.variants).length > 0,
     trackStock: configuration.trackStock
   });
-  if (
-    !validation.valid
-    || (providedAvailabilitySource && !isEcommerceAvailabilitySource(providedAvailabilitySource))
-  ) {
+  if (!validation.valid) {
+    const code = validation.errors[0] || 'ECOMMERCE_CONFIGURATION_INVALID';
+    const error = new Error(code);
+    error.code = code;
+    error.details = validation.errors;
+    throw error;
+  }
+  if (providedAvailabilitySource && !isEcommerceAvailabilitySource(providedAvailabilitySource)) {
     const error = new Error('ECOMMERCE_CONFIGURATION_INVALID');
     error.code = 'ECOMMERCE_CONFIGURATION_INVALID';
-    error.details = validation.valid
-      ? ['ECOMMERCE_CONFIGURATION_AVAILABILITY_SOURCE_INVALID']
-      : validation.errors;
+    error.details = ['ECOMMERCE_CONFIGURATION_AVAILABILITY_SOURCE_INVALID'];
     throw error;
   }
 
