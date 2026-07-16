@@ -43,10 +43,6 @@ const optionGroup = (overrides = {}) => ({
   ...overrides
 });
 
-const availabilityOf = (product) => (
-  buildEcommerceProductConfigurationSyncPayload(product).availabilitySource
-);
-
 const adminState = () => ({
   licenseDetails: { license_key: 'PRO-LICENSE' },
   currentDeviceRole: 'admin',
