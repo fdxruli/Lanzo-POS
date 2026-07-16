@@ -1,6 +1,7 @@
 const CACHE_PREFIX = 'lanzo:ecommerce:configuration:v1:';
 const MEMORY_TTL_MS = 5 * 60 * 1000;
 const MAX_STALE_MS = 24 * 60 * 60 * 1000;
+const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
 
 const memoryEntries = new Map();
 const inFlightRequests = new Map();
@@ -9,6 +10,10 @@ const asText = (value) => (typeof value === 'string' ? value.trim() : '');
 const asPositiveInteger = (value) => {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+};
+const asConfigurationRevision = (value) => {
+  const revision = asText(value).toLowerCase();
+  return CONFIGURATION_REVISION_PATTERN.test(revision) ? revision : '';
 };
 
 export function buildPublicProductConfigurationCacheKey({
@@ -98,11 +103,19 @@ export function deleteCachedPublicProductConfiguration(key) {
   deleteSessionEntry(key);
 }
 
+const entryHasDifferentConfigurationRevision = (entry, keepConfigurationRevision) => {
+  const expected = asConfigurationRevision(keepConfigurationRevision);
+  if (!expected) return false;
+  const current = asConfigurationRevision(entry?.value?.product?.configurationRevision);
+  return current !== expected;
+};
+
 export function deleteObsoletePublicProductConfigurations({
   slug,
   productId,
   keepCatalogRevision,
-  keepConfigurationVersion
+  keepConfigurationVersion,
+  keepConfigurationRevision
 } = {}) {
   const normalizedSlug = encodeURIComponent(asText(slug).toLowerCase());
   const normalizedProductId = encodeURIComponent(asText(productId));
@@ -110,22 +123,24 @@ export function deleteObsoletePublicProductConfigurations({
   const keepVersion = asPositiveInteger(keepConfigurationVersion) || 0;
   const prefix = `${CACHE_PREFIX}:${normalizedSlug}:${normalizedProductId}:`;
 
-  Array.from(memoryEntries.keys()).forEach((key) => {
-    if (!key.startsWith(prefix)) return;
+  const shouldDelete = (key, entry) => {
     const suffix = key.slice(prefix.length).split(':');
-    if (Number(suffix[0]) !== keepRevision || Number(suffix[1]) !== keepVersion) {
-      deleteCachedPublicProductConfiguration(key);
-    }
+    return Number(suffix[0]) !== keepRevision
+      || Number(suffix[1]) !== keepVersion
+      || entryHasDifferentConfigurationRevision(entry, keepConfigurationRevision);
+  };
+
+  Array.from(memoryEntries.entries()).forEach(([key, entry]) => {
+    if (!key.startsWith(prefix)) return;
+    if (shouldDelete(key, entry)) deleteCachedPublicProductConfiguration(key);
   });
 
   try {
     for (let index = globalThis.sessionStorage?.length - 1; index >= 0; index -= 1) {
       const key = globalThis.sessionStorage.key(index);
       if (!key?.startsWith(prefix)) continue;
-      const suffix = key.slice(prefix.length).split(':');
-      if (Number(suffix[0]) !== keepRevision || Number(suffix[1]) !== keepVersion) {
-        deleteCachedPublicProductConfiguration(key);
-      }
+      const entry = readSessionEntry(key);
+      if (shouldDelete(key, entry)) deleteCachedPublicProductConfiguration(key);
     }
   } catch {
     // No-op.
