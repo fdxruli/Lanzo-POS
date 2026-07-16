@@ -1,12 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Check, AlertCircle, Info, ShoppingCart, StickyNote } from 'lucide-react';
 import { createCartLineId } from '../../utils/cartLineIdentity';
-import { getModifierOptionLabel, normalizeModifierGroups, normalizeModifierOption } from '../../utils/restaurantModifiers';
+import {
+    getModifierOptionLabel,
+    normalizeModifierGroups,
+    normalizeModifierOption,
+    RESTAURANT_MODIFIER_SELECTION_TYPES
+} from '../../utils/restaurantModifiers';
 import './ProductModifiersModal.css';
 
+const getGroupKey = (group = {}, index = 0) => String(group.id || group.name || index);
+
+const getGroupInstruction = (group = {}) => {
+    if (group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE) {
+        return group.minSelect > 0 ? 'Selecciona 1 opción' : 'Selecciona hasta 1 opción';
+    }
+    if (group.minSelect === group.maxSelect && group.minSelect > 0) {
+        return `Selecciona ${group.minSelect} opciones`;
+    }
+    if (group.minSelect > 0) {
+        return `Selecciona entre ${group.minSelect} y ${group.maxSelect} opciones`;
+    }
+    return `Elige hasta ${group.maxSelect} opciones`;
+};
+
 export default function ProductModifiersModal({ show, onClose, product, onConfirm }) {
-    // 1. TODOS los Hooks deben ir al principio
-    const [selectedOptions, setSelectedOptions] = useState({}); 
+    const [selectedOptions, setSelectedOptions] = useState({});
     const [note, setNote] = useState('');
 
     const normalizedModifierGroups = useMemo(() => (
@@ -20,28 +39,34 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
         }
     }, [show, product]);
 
-    // ✅ CORRECCIÓN: El useMemo debe estar ANTES de cualquier return condicional
-    const allSelectedModifiers = useMemo(() => 
-        Object.values(selectedOptions).flat(), 
+    const allSelectedModifiers = useMemo(() =>
+        Object.values(selectedOptions).flat(),
     [selectedOptions]);
 
-    // 2. AHORA sí podemos hacer el return condicional
     if (!show || !product) return null;
 
-    // --- LÓGICA Y CÁLCULOS (Seguro ejecutarlos aquí) ---
-    const handleOptionChange = (groupName, option, isMultiSelect) => {
+    const handleOptionChange = (group, groupIndex, option) => {
+        const key = getGroupKey(group, groupIndex);
         setSelectedOptions(prev => {
-            const currentSelections = prev[groupName] || [];
-            if (isMultiSelect) {
-                const exists = currentSelections.find(opt => (opt.id || opt.name) === (option.id || option.name));
+            const currentSelections = prev[key] || [];
+            const optionKey = option.id || option.name;
+            const exists = currentSelections.some(opt => (opt.id || opt.name) === optionKey);
+
+            if (group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE) {
                 if (exists) {
-                    return { ...prev, [groupName]: currentSelections.filter(opt => (opt.id || opt.name) !== (option.id || option.name)) };
-                } else {
-                    return { ...prev, [groupName]: [...currentSelections, option] };
+                    return {
+                        ...prev,
+                        [key]: currentSelections.filter(opt => (opt.id || opt.name) !== optionKey)
+                    };
                 }
-            } else {
-                return { ...prev, [groupName]: [option] };
+                if (currentSelections.length >= group.maxSelect) return prev;
+                return { ...prev, [key]: [...currentSelections, option] };
             }
+
+            if (exists && group.minSelect === 0) {
+                return { ...prev, [key]: [] };
+            }
+            return { ...prev, [key]: [option] };
         });
     };
 
@@ -49,18 +74,18 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
     const modifiersTotal = allSelectedModifiers.reduce((sum, opt) => sum + (Number(opt.price) || 0), 0);
     const finalPrice = basePrice + modifiersTotal;
 
-    // Validación de grupos requeridos
-    const missingRequiredGroups = normalizedModifierGroups.filter(group => {
-        return group.required && (!selectedOptions[group.name] || selectedOptions[group.name].length === 0);
-    }).map(g => g.name);
-
-    const isValid = !missingRequiredGroups || missingRequiredGroups.length === 0;
-    const completedGroupsCount = normalizedModifierGroups.filter((group) => {
-        const currentGroupSelection = selectedOptions[group.name] || [];
-        return !group.required || currentGroupSelection.length > 0;
+    const invalidGroups = normalizedModifierGroups.filter((group, index) => {
+        const currentSelections = selectedOptions[getGroupKey(group, index)] || [];
+        return currentSelections.length < group.minSelect || currentSelections.length > group.maxSelect;
+    });
+    const isValid = invalidGroups.length === 0;
+    const completedGroupsCount = normalizedModifierGroups.filter((group, index) => {
+        const currentSelections = selectedOptions[getGroupKey(group, index)] || [];
+        return currentSelections.length >= group.minSelect && currentSelections.length <= group.maxSelect;
     }).length;
 
     const handleConfirm = () => {
+        if (!isValid) return;
         const cleanedModifiers = allSelectedModifiers.map((mod, index) => {
             const normalized = normalizeModifierOption(mod, { optionIndex: index });
             const inventoryQuantity = normalized.tracksInventory ? normalized.ingredientQuantity : null;
@@ -125,7 +150,7 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                         </span>
                         {!isValid && (
                             <span className="missing-badge">
-                                <AlertCircle size={14} /> Faltan {missingRequiredGroups.length}
+                                <AlertCircle size={14} /> Faltan {invalidGroups.length}
                             </span>
                         )}
                     </div>
@@ -134,19 +159,23 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                 <div className="modifiers-layout">
                     <div className="modifiers-body">
                         {normalizedModifierGroups.map((group, idx) => {
-                            const currentGroupSelection = selectedOptions[group.name] || [];
-                            const isSatisfied = !group.required || currentGroupSelection.length > 0;
+                            const groupKey = getGroupKey(group, idx);
+                            const currentGroupSelection = selectedOptions[groupKey] || [];
+                            const isSatisfied = currentGroupSelection.length >= group.minSelect
+                                && currentGroupSelection.length <= group.maxSelect;
+                            const isMultiple = group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE;
+                            const atMaximum = currentGroupSelection.length >= group.maxSelect;
 
                             return (
-                                <section key={group.id || idx} className={`modifier-group ${!isSatisfied ? 'group-pending' : 'group-completed'}`}>
+                                <section key={groupKey} className={`modifier-group ${!isSatisfied ? 'group-pending' : 'group-completed'}`}>
                                     <div className="modifier-group-header">
                                         <div>
                                             <h4 className="group-title">{group.name}</h4>
                                             <span className="group-instruction">
-                                                {group.required ? 'Selecciona 1 opción' : 'Elige los extras que desees'}
+                                                {getGroupInstruction(group)}
                                             </span>
                                         </div>
-                                        {group.required ? (
+                                        {group.minSelect > 0 ? (
                                             !isSatisfied ?
                                                 <span className="badge-required"><AlertCircle size={12} /> Obligatorio</span> :
                                                 <span className="badge-completed"><Check size={12} /> Completado</span>
@@ -158,17 +187,19 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                                     <div className="modifier-options-grid">
                                         {group.options.map((opt, optIdx) => {
                                             const isSelected = currentGroupSelection.some(s => (s.id || s.name) === (opt.id || opt.name));
-                                            const inputType = group.required ? 'radio' : 'checkbox';
+                                            const inputType = !isMultiple && group.minSelect > 0 ? 'radio' : 'checkbox';
                                             const optionLabel = getModifierOptionLabel(opt);
                                             const optionPrice = Number(opt.price) || 0;
+                                            const disabled = isMultiple && atMaximum && !isSelected;
 
                                             return (
-                                                <label key={opt.id || optIdx} className={`modifier-option-card ${isSelected ? 'selected' : ''}`}>
+                                                <label key={opt.id || optIdx} className={`modifier-option-card ${isSelected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}>
                                                     <input
                                                         type={inputType}
-                                                        name={`group-${idx}`}
+                                                        name={`group-${groupKey}`}
                                                         checked={!!isSelected}
-                                                        onChange={() => handleOptionChange(group.name, opt, !group.required)}
+                                                        disabled={disabled}
+                                                        onChange={() => handleOptionChange(group, idx, opt)}
                                                         className="hidden-input"
                                                     />
 
@@ -251,7 +282,7 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
                             {isValid ? (
                                 <>Agregar <span className="btn-price-tag">${finalPrice.toFixed(2)}</span></>
                             ) : (
-                                `Faltan ${missingRequiredGroups.length} opciones`
+                                `Faltan ${invalidGroups.length} grupos`
                             )}
                         </button>
                     </div>

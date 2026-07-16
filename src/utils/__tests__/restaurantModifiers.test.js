@@ -4,7 +4,8 @@ import {
   findInvalidModifierOptionForSave,
   getModifierOptionKind,
   normalizeModifierGroup,
-  normalizeModifierOption
+  normalizeModifierOption,
+  RESTAURANT_MODIFIER_SELECTION_TYPES
 } from '../restaurantModifiers';
 import {
   formatSelectedModifierLabel,
@@ -98,6 +99,66 @@ describe('restaurantModifiers', () => {
     expect(option.ingredientUnit).toBe('g');
     expect(option.tracksInventory).toBe(true);
     expect(option.legacyQuantityMapped).toBe(true);
+  });
+
+  it('mantiene grupos legacy obligatorios como selección única', () => {
+    const group = normalizeModifierGroup({
+      name: 'Tamaño',
+      required: true,
+      options: [{ name: 'Regular' }, { name: 'Grande' }]
+    });
+
+    expect(group.selectionType).toBe(RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE);
+    expect(group.multiple).toBe(false);
+    expect(group.required).toBe(true);
+    expect(group.minSelect).toBe(1);
+    expect(group.maxSelect).toBe(1);
+  });
+
+  it('convierte grupos legacy opcionales al comportamiento múltiple que ya usaba el POS', () => {
+    const group = normalizeModifierGroup({
+      name: 'Extras',
+      required: false,
+      options: [{ name: 'Queso' }, { name: 'Tocino' }, { name: 'Papas' }]
+    });
+
+    expect(group.selectionType).toBe(RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE);
+    expect(group.multiple).toBe(true);
+    expect(group.required).toBe(false);
+    expect(group.minSelect).toBe(0);
+    expect(group.maxSelect).toBe(3);
+  });
+
+  it('respeta un grupo opcional configurado explícitamente como selección única', () => {
+    const group = normalizeModifierGroup({
+      name: 'Salsa',
+      selectionType: 'single',
+      required: false,
+      minSelect: 0,
+      maxSelect: 4,
+      options: [{ name: 'Roja' }, { name: 'Verde' }]
+    });
+
+    expect(group.selectionType).toBe(RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE);
+    expect(group.required).toBe(false);
+    expect(group.minSelect).toBe(0);
+    expect(group.maxSelect).toBe(1);
+  });
+
+  it('conserva mínimos y máximos de una selección múltiple obligatoria', () => {
+    const group = normalizeModifierGroup({
+      name: 'Acompañamientos',
+      selectionType: 'multiple',
+      required: true,
+      minSelect: 2,
+      maxSelect: 3,
+      options: [{ name: 'Papas' }, { name: 'Ensalada' }, { name: 'Arroz' }]
+    });
+
+    expect(group.selectionType).toBe(RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE);
+    expect(group.required).toBe(true);
+    expect(group.minSelect).toBe(2);
+    expect(group.maxSelect).toBe(3);
   });
 });
 

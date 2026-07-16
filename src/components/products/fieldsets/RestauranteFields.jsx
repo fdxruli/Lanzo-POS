@@ -6,6 +6,7 @@ import {
   normalizeModifierGroup,
   normalizeModifierGroups,
   normalizeModifierOption,
+  RESTAURANT_MODIFIER_SELECTION_TYPES,
   RESTAURANT_MODIFIER_UNITS
 } from '../../../utils/restaurantModifiers';
 
@@ -26,6 +27,11 @@ const getIngredientDefaultUnit = (ingredient) => {
     || ingredient.measurementUnit
     || ingredient.saleUnit
     || 'pza';
+};
+
+const asInteger = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
 };
 
 export default function RestauranteFields({
@@ -98,26 +104,93 @@ export default function RestauranteFields({
     });
   };
 
+  const updateModifierGroup = (groupIndex, patch) => {
+    const updated = normalizedModifiers.map((group, index) => (
+      index === groupIndex
+        ? normalizeModifierGroup({ ...group, ...patch }, { groupIndex: index })
+        : group
+    ));
+    setModifiers(updated);
+  };
+
+  const handleSelectionTypeChange = (groupIndex, selectionType) => {
+    const group = normalizedModifiers[groupIndex];
+    if (!group) return;
+
+    if (selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE) {
+      updateModifierGroup(groupIndex, {
+        selectionType: RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE,
+        multiple: false,
+        minSelect: group.required ? 1 : 0,
+        maxSelect: 1
+      });
+      return;
+    }
+
+    const optionCount = Math.max(1, group.options.length);
+    updateModifierGroup(groupIndex, {
+      selectionType: RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE,
+      multiple: true,
+      minSelect: group.required ? Math.max(1, group.minSelect) : 0,
+      maxSelect: Math.max(group.required ? 1 : 0, group.maxSelect, optionCount)
+    });
+  };
+
+  const handleRequiredChange = (groupIndex, required) => {
+    const group = normalizedModifiers[groupIndex];
+    if (!group) return;
+    updateModifierGroup(groupIndex, {
+      required,
+      minSelect: required ? Math.max(1, group.minSelect) : 0
+    });
+  };
+
+  const handleMinimumChange = (groupIndex, value) => {
+    const group = normalizedModifiers[groupIndex];
+    if (!group) return;
+    const maximum = group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE
+      ? 1
+      : Math.max(1, Math.min(group.maxSelect, group.options.length || 1));
+    const minimum = Math.max(group.required ? 1 : 0, Math.min(maximum, asInteger(value, group.minSelect)));
+    updateModifierGroup(groupIndex, {
+      required: minimum > 0,
+      minSelect: minimum,
+      maxSelect: Math.max(minimum, group.maxSelect)
+    });
+  };
+
+  const handleMaximumChange = (groupIndex, value) => {
+    const group = normalizedModifiers[groupIndex];
+    if (!group || group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE) return;
+    const optionCount = Math.max(1, group.options.length);
+    const maximum = Math.max(group.minSelect, Math.min(optionCount, asInteger(value, group.maxSelect)));
+    updateModifierGroup(groupIndex, { maxSelect: maximum });
+  };
+
   const handleAddModifierGroup = () => {
     if (!newModGroup.trim()) return;
     const newGroup = normalizeModifierGroup({
       id: Date.now(),
       name: newModGroup,
+      selectionType: RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE,
+      multiple: false,
       required: false,
+      minSelect: 0,
+      maxSelect: 1,
       options: []
     }, { groupIndex: normalizedModifiers.length });
-    setModifiers([...(modifiers || []), newGroup]);
+    setModifiers([...normalizedModifiers, newGroup]);
     setNewModGroup('');
   };
 
   const removeModifierGroup = (index) => {
-    const updated = [...(modifiers || [])];
-    updated.splice(index, 1);
+    const updated = normalizedModifiers.filter((_, groupIndex) => groupIndex !== index);
     setModifiers(updated);
   };
 
   const addOptionToGroup = (groupIndex) => {
     const draft = getOptionDraft(groupIndex);
+    const currentGroup = normalizedModifiers[groupIndex];
     const normalizedOption = normalizeModifierOption({
       id: `modopt_${Date.now()}`,
       name: draft.name,
@@ -125,7 +198,7 @@ export default function RestauranteFields({
       ingredientId: draft.ingredientId || null,
       ingredientQuantity: draft.ingredientId ? draft.ingredientQuantity : null,
       ingredientUnit: draft.ingredientId ? draft.ingredientUnit : null
-    }, { optionIndex: (normalizedModifiers[groupIndex]?.options || []).length });
+    }, { optionIndex: (currentGroup?.options || []).length });
 
     if (!normalizedOption.name) {
       setOptionDraftErrors((prev) => ({ ...prev, [groupIndex]: 'Escribe el nombre de la opción.' }));
@@ -140,30 +213,45 @@ export default function RestauranteFields({
       return;
     }
 
-    const updated = [...(modifiers || [])];
-    const currentGroup = updated[groupIndex] || normalizedModifiers[groupIndex];
-    updated[groupIndex] = {
-      ...currentGroup,
-      options: [...(currentGroup?.options || []), normalizedOption]
-    };
-    setModifiers(updated);
+    if (!currentGroup) return;
+    const nextOptions = [...currentGroup.options, normalizedOption];
+    const shouldExpandMaximum = currentGroup.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE
+      && currentGroup.maxSelect >= Math.max(1, currentGroup.options.length);
+    const nextMaxSelect = currentGroup.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE
+      ? 1
+      : Math.max(
+        currentGroup.minSelect,
+        shouldExpandMaximum ? nextOptions.length : Math.min(currentGroup.maxSelect, nextOptions.length)
+      );
+
+    updateModifierGroup(groupIndex, {
+      options: nextOptions,
+      maxSelect: nextMaxSelect
+    });
     resetOptionDraft(groupIndex);
   };
 
   const removeOptionFromGroup = (groupIndex, optionIndex) => {
-    const updated = [...(modifiers || [])];
-    const currentGroup = updated[groupIndex] || {};
-    updated[groupIndex] = {
-      ...currentGroup,
-      options: [...(currentGroup.options || [])]
-    };
-    updated[groupIndex].options.splice(optionIndex, 1);
-    setModifiers(updated);
+    const currentGroup = normalizedModifiers[groupIndex];
+    if (!currentGroup) return;
+    const nextOptions = currentGroup.options.filter((_, index) => index !== optionIndex);
+    const optionCount = Math.max(1, nextOptions.length);
+    const nextMaxSelect = currentGroup.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE
+      ? 1
+      : Math.max(currentGroup.required ? 1 : 0, Math.min(currentGroup.maxSelect, optionCount));
+    const nextMinSelect = currentGroup.required
+      ? Math.max(1, Math.min(currentGroup.minSelect, nextMaxSelect))
+      : 0;
+
+    updateModifierGroup(groupIndex, {
+      options: nextOptions,
+      minSelect: nextMinSelect,
+      maxSelect: nextMaxSelect
+    });
   };
 
   return (
     <div className="restaurant-fields-container">
-
       {!hideTypeSelector && (
         <div className="form-group product-form-option-panel">
           <label className="form-label">Tipo de ítem</label>
@@ -250,7 +338,7 @@ export default function RestauranteFields({
           <div className="product-form-modifier-panel">
             <label className="product-form-fieldset-title">Modificadores / extras</label>
             <p className="product-form-help">
-              Define si cada opción solo agrega texto, cobra extra, descuenta inventario o hace ambas cosas.
+              Define qué opciones puede combinar el cliente, cuánto cobran y qué inventario descuentan.
             </p>
 
             <div className="product-form-field-row" style={{ marginBottom: '15px' }}>
@@ -270,12 +358,81 @@ export default function RestauranteFields({
                 const selectedIngredient = ingredientList.find((item) => item.id === draft.ingredientId);
                 const canAddOption = Boolean(draft.name.trim())
                   && (!draft.ingredientId || Number(draft.ingredientQuantity) > 0);
+                const optionCount = Math.max(1, group.options.length);
+                const groupModeLabel = group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE
+                  ? `Varias opciones · máximo ${group.maxSelect}`
+                  : 'Una sola opción';
 
                 return (
                   <div key={group.id || idx} className="product-form-modifier-card">
                     <div className="product-form-modifier-card__header">
-                      <strong>{group.name}</strong>
+                      <div>
+                        <strong>{group.name}</strong>
+                        <small className="product-form-help">{groupModeLabel}</small>
+                      </div>
                       <button type="button" className="product-form-link-danger" onClick={() => removeModifierGroup(idx)}>Eliminar grupo</button>
+                    </div>
+
+                    <div className="product-form-option-panel" style={{ marginBottom: '14px' }}>
+                      <div className="product-form-grid product-form-grid--2">
+                        <label className="form-group product-form-no-margin">
+                          <span className="form-label">Tipo de selección</span>
+                          <select
+                            className="form-input"
+                            value={group.selectionType}
+                            onChange={(event) => handleSelectionTypeChange(idx, event.target.value)}
+                          >
+                            <option value={RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE}>Una sola opción</option>
+                            <option value={RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE}>Varias opciones</option>
+                          </select>
+                        </label>
+
+                        <label className="product-form-choice">
+                          <input
+                            type="checkbox"
+                            checked={group.required}
+                            onChange={(event) => handleRequiredChange(idx, event.target.checked)}
+                          />
+                          <span>
+                            <strong>Selección obligatoria</strong>
+                            <small>El cliente no podrá continuar sin cumplir el mínimo.</small>
+                          </span>
+                        </label>
+                      </div>
+
+                      <div className="product-form-grid product-form-grid--2" style={{ marginTop: '10px' }}>
+                        <label className="form-group product-form-no-margin">
+                          <span className="form-label">Selección mínima</span>
+                          <input
+                            type="number"
+                            className="form-input"
+                            min={group.required ? 1 : 0}
+                            max={group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE ? 1 : Math.min(group.maxSelect, optionCount)}
+                            value={group.minSelect}
+                            disabled={!group.required}
+                            onChange={(event) => handleMinimumChange(idx, event.target.value)}
+                          />
+                        </label>
+
+                        <label className="form-group product-form-no-margin">
+                          <span className="form-label">Selección máxima</span>
+                          <input
+                            type="number"
+                            className="form-input"
+                            min={Math.max(1, group.minSelect)}
+                            max={optionCount}
+                            value={group.maxSelect}
+                            disabled={group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE}
+                            onChange={(event) => handleMaximumChange(idx, event.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      <small className="product-form-help">
+                        {group.selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE
+                          ? `La tienda permitirá combinar hasta ${group.maxSelect} opción${group.maxSelect === 1 ? '' : 'es'} de este grupo.`
+                          : 'La tienda reemplazará la opción anterior cuando el cliente elija otra.'}
+                      </small>
                     </div>
 
                     <div className="product-form-modifier-option-editor">

@@ -23,13 +23,23 @@ const publicDetail = {
     { id: 'v-black-m', publicName: 'Negro / M', optionValues: { color: 'Negro', talla: 'M' }, priceMode: 'base', priceValue: 0, imageUrl: '', stock: { mode: 'hidden', status: 'available', quantity: null }, isAvailable: true },
     { id: 'v-white-l', publicName: 'Blanco / L', optionValues: { color: 'Blanco', talla: 'L' }, priceMode: 'delta', priceValue: 20, imageUrl: '', stock: { mode: 'hidden', status: 'available', quantity: null }, isAvailable: true }
   ],
-  groups: [{
-    id: 'g-print', publicName: 'Estampado', selectionType: 'single', required: true,
-    minSelect: 1, maxSelect: 1, options: [
-      { id: 'o-none', publicName: 'Sin estampado', priceDelta: 0, isAvailable: true },
-      { id: 'o-logo', publicName: 'Logo', priceDelta: 15, isAvailable: true }
-    ]
-  }]
+  groups: [
+    {
+      id: 'g-print', publicName: 'Estampado', selectionType: 'single', required: true,
+      minSelect: 1, maxSelect: 1, options: [
+        { id: 'o-none', publicName: 'Sin estampado', priceDelta: 0, isAvailable: true },
+        { id: 'o-logo', publicName: 'Logo', priceDelta: 15, isAvailable: true }
+      ]
+    },
+    {
+      id: 'g-extras', publicName: 'Extras', selectionType: 'multiple', required: false,
+      minSelect: 0, maxSelect: 2, options: [
+        { id: 'o-wrap', publicName: 'Envoltura', priceDelta: 5, isAvailable: true },
+        { id: 'o-sticker', publicName: 'Sticker', priceDelta: 3, isAvailable: true },
+        { id: 'o-bag', publicName: 'Bolsa', priceDelta: 2, isAvailable: true }
+      ]
+    }
+  ]
 };
 
 const props = {
@@ -69,6 +79,35 @@ describe('PublicProductConfigurationModal', () => {
       selections: [{ groupId: 'g-print', optionIds: ['o-logo'] }]
     });
     expect(props.onClose).toHaveBeenCalled();
+  });
+
+  it('permite seleccionar varios extras hasta el máximo y suma todos los precios', async () => {
+    const user = userEvent.setup();
+    render(<PublicProductConfigurationModal {...props} />);
+    await screen.findByRole('heading', { name: 'Playera Urban' });
+
+    await user.click(screen.getByRole('button', { name: 'Negro' }));
+    await user.click(screen.getByRole('button', { name: 'M' }));
+    await user.click(screen.getByRole('radio', { name: /Logo/ }));
+
+    const wrap = screen.getByRole('checkbox', { name: /Envoltura/ });
+    const sticker = screen.getByRole('checkbox', { name: /Sticker/ });
+    const bag = screen.getByRole('checkbox', { name: /Bolsa/ });
+    await user.click(wrap);
+    await user.click(sticker);
+
+    expect(wrap).toBeChecked();
+    expect(sticker).toBeChecked();
+    expect(bag).toBeDisabled();
+    expect(screen.getAllByText('$123.00', { selector: 'strong' }).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Añadir al carrito' }));
+    const configuredLine = props.onAdd.mock.calls[0][0];
+    expect(configuredLine.estimatedUnitPrice).toBe(123);
+    expect(configuredLine.selections).toEqual(expect.arrayContaining([
+      { groupId: 'g-print', optionIds: ['o-logo'] },
+      { groupId: 'g-extras', optionIds: ['o-sticker', 'o-wrap'] }
+    ]));
   });
 
   it('restores a prior configuration for editing and replaces the original line', async () => {

@@ -1,4 +1,5 @@
 import { db, STORES } from '../db/dexie';
+import { normalizeModifierGroups } from '../../utils/restaurantModifiers';
 
 const PRODUCT_CHUNK_SIZE = 500;
 const CATEGORY_CHUNK_SIZE = 500;
@@ -48,6 +49,15 @@ const getRecipeIngredientIds = (product = {}) => uniqueIds(
     ))
 );
 
+const normalizeProductForEcommerce = (product) => {
+  if (!product || typeof product !== 'object') return product;
+  if (!Array.isArray(product.modifiers)) return product;
+  return {
+    ...product,
+    modifiers: normalizeModifierGroups(product.modifiers)
+  };
+};
+
 const loadProductsWithRecipeDependencies = async ({
   database,
   store,
@@ -78,6 +88,10 @@ const loadProductsWithRecipeDependencies = async ({
     dependencies.forEach((value, id) => productsById.set(id, value));
     frontier = dependencyIds;
   }
+
+  productsById.forEach((product, id) => {
+    productsById.set(id, normalizeProductForEcommerce(product));
+  });
 
   requestedIds.forEach((id) => {
     const product = productsById.get(id);
@@ -183,6 +197,7 @@ export const ecommercePublishedStockLocalSourceInternals = Object.freeze({
   chunk,
   bulkGetByIds,
   getRecipeIngredientIds,
+  normalizeProductForEcommerce,
   loadProductsWithRecipeDependencies,
   expandRecipeProductIds,
   ENRICHED_INGREDIENTS_KEY
