@@ -62,6 +62,18 @@ export const ECOMMERCE_OPTION_SYNC_KEYS = Object.freeze([
   'metadata'
 ]);
 
+export const ECOMMERCE_AVAILABILITY_SOURCES = Object.freeze({
+  DIRECT: 'direct',
+  RECIPE: 'recipe',
+  VARIANT_AGGREGATE: 'variant_aggregate',
+  NOT_TRACKED: 'not_tracked',
+  MANUAL: 'manual',
+  UNVERIFIED: 'unverified'
+});
+
+const OFFICIAL_AVAILABILITY_SOURCES = new Set(
+  Object.values(ECOMMERCE_AVAILABILITY_SOURCES)
+);
 const PRIVATE_METADATA_KEY = /(cost|license|device|staff|token|session|secret|password|security|fingerprint|supplier|provider)/i;
 const MAX_METADATA_DEPTH = 4;
 const MAX_METADATA_KEYS = 40;
@@ -87,6 +99,28 @@ const stableObject = (value) => Object.keys(asRecord(value))
     result[key] = value[key];
     return result;
   }, {});
+
+export const isEcommerceAvailabilitySource = (value) => (
+  OFFICIAL_AVAILABILITY_SOURCES.has(asText(value, 40))
+);
+
+export const resolveEcommerceAvailabilitySource = ({
+  configurationType,
+  hasRecipe = false,
+  hasVariants = false,
+  trackStock = true
+} = {}) => {
+  if (hasVariants === true || configurationType === 'variant_parent') {
+    return ECOMMERCE_AVAILABILITY_SOURCES.VARIANT_AGGREGATE;
+  }
+  if (hasRecipe === true || configurationType === 'recipe') {
+    return ECOMMERCE_AVAILABILITY_SOURCES.RECIPE;
+  }
+  if (trackStock === false) {
+    return ECOMMERCE_AVAILABILITY_SOURCES.NOT_TRACKED;
+  }
+  return ECOMMERCE_AVAILABILITY_SOURCES.DIRECT;
+};
 
 const sanitizeJsonValue = (value, depth = 0) => {
   if (depth > MAX_METADATA_DEPTH || value === undefined || typeof value === 'function') {
@@ -216,10 +250,22 @@ const serializeGroup = (group = {}) => ({
 
 export const serializeEcommerceProductConfigurationForSync = (configuration = {}) => {
   const validation = validateEcommerceProductConfiguration(configuration);
-  if (!validation.valid) {
-    const error = new Error(validation.errors[0] || 'ECOMMERCE_CONFIGURATION_INVALID');
-    error.code = validation.errors[0] || 'ECOMMERCE_CONFIGURATION_INVALID';
-    error.details = validation.errors;
+  const providedAvailabilitySource = asText(configuration.availabilitySource, 40);
+  const availabilitySource = providedAvailabilitySource || resolveEcommerceAvailabilitySource({
+    configurationType: configuration.type,
+    hasRecipe: configuration.hasRecipe === true,
+    hasVariants: asArray(configuration.variants).length > 0,
+    trackStock: configuration.trackStock
+  });
+  if (
+    !validation.valid
+    || (providedAvailabilitySource && !isEcommerceAvailabilitySource(providedAvailabilitySource))
+  ) {
+    const error = new Error('ECOMMERCE_CONFIGURATION_INVALID');
+    error.code = 'ECOMMERCE_CONFIGURATION_INVALID';
+    error.details = validation.valid
+      ? ['ECOMMERCE_CONFIGURATION_AVAILABILITY_SOURCE_INVALID']
+      : validation.errors;
     throw error;
   }
 
@@ -230,7 +276,7 @@ export const serializeEcommerceProductConfigurationForSync = (configuration = {}
     hasRecipe: configuration.hasRecipe === true,
     variants: asArray(configuration.variants).map(serializeVariant),
     optionGroups: asArray(configuration.optionGroups).map(serializeGroup),
-    availabilitySource: asText(configuration.availabilitySource, 40) || null,
+    availabilitySource,
     availabilityReasonCode: asText(configuration.availabilityReasonCode, 120) || null,
     limitingSource: {
       productId: asText(limitingSource.productId, 160) || null,
@@ -286,9 +332,18 @@ export const buildEcommerceProductConfigurationSyncPayload = (
     product,
     overrides
   );
+  const availabilitySource = overrides.availabilitySource === undefined
+    ? resolveEcommerceAvailabilitySource({
+        configurationType: normalized.type,
+        hasRecipe: normalized.hasRecipe,
+        hasVariants: normalized.hasVariants,
+        trackStock: product.trackStock ?? product.track_stock
+      })
+    : overrides.availabilitySource;
+
   return serializeEcommerceProductConfigurationForSync({
     ...normalized,
-    availabilitySource: overrides.availabilitySource,
+    availabilitySource,
     availabilityReasonCode: overrides.availabilityReasonCode,
     limitingSource: overrides.limitingSource
   });
