@@ -8,76 +8,75 @@ Base: `main` en `5c9945c31b0c80e8b266e3bec22bf561ac4c1386`
 
 ## Resumen ejecutivo
 
-PUBLIC.1 implementó variantes, grupos, opciones, extras, precio estimado, carrito configurable, edición, payload mínimo y checkout autoritativo. PUBLIC.1.1 corrigió disponibilidad manual, separó `configurationVersion` de `configurationRevision`, añadió revisión SHA-256 de contenido, propagó la revisión por cliente/checkout/snapshot e incorporó rate limit individual HMAC y global.
+PUBLIC.1 implementó variantes, grupos, opciones, extras, precio estimado, carrito configurable, edición, payload mínimo y checkout server-side autoritativo. PUBLIC.1.1 corrigió `manual_available`, separó la versión del esquema de la revisión del contenido, propagó `configurationRevision` por cliente/checkout/snapshot e incorporó rate limit individual HMAC y global.
 
-PUBLIC.1.2 corrige dos defectos residuales:
+PUBLIC.1.2 corrige los bloqueantes residuales:
 
-1. revisión, contenido y precio podían observar estados distintos bajo concurrencia;
-2. cuando no existía una cabecera de red confiable, todos los visitantes compartían un bucket individual `anonymous`.
+1. revisión, contenido y precio podían observar estados diferentes bajo concurrencia;
+2. checkout podía validar revisión A y valorar configuración B;
+3. la RPC de detalle podía combinar revisión A con hijos B;
+4. visitantes sin cabecera confiable compartían un bucket individual `anonymous`;
+5. el límite global de 1200 no había sido probado efectivamente;
+6. no existía un harness reproducible de dos sesiones.
 
-La RPC de detalle ahora mantiene un lock compartido del padre mientras calcula revisión y lee hijos. El checkout conserva el replay idempotente antes de locks, después bloquea portal y productos en orden determinista, y mantiene los locks hasta insertar pedido y partidas. El escritor canónico mantiene lock exclusivo del padre antes de modificar hijos. Se revocó DML directo de tablas hijas a roles de aplicación.
+La RPC mantiene un lock compartido del padre mientras calcula la revisión y lee hijos. Checkout conserva el replay idempotente antes de locks, después bloquea portal y productos en orden determinista y mantiene los locks hasta insertar pedido y partidas. Todos los escritores de aplicación auditados usan el orden:
 
-El fallback del rate limit devuelve `NULL` sin identidad confiable y usa sólo el límite global. El límite global de 1200 se probó efectivamente con y sin identidad.
+`portal → padre → hijos`
 
-Las matrices SQL transaccionales pasaron y dejaron cero fixtures. La prueba real de dos sesiones no pudo ejecutarse desde este entorno porque no existe una segunda conexión PostgreSQL autenticada. El script reproducible quedó incluido.
+Se revocó DML directo del padre y de las tablas hijas a roles de aplicación.
+
+Sin una cabecera de infraestructura verificada, el fingerprint devuelve `NULL` y se aplica únicamente el límite global. El umbral global se probó con y sin identidad.
+
+Las matrices SQL transaccionales pasaron y dejaron cero fixtures. La concurrencia real de dos conexiones no pudo ejecutarse en este entorno; el script quedó incluido.
 
 **ESTADO: IMPLEMENTACIÓN COMPLETA — VALIDACIÓN DE CONCURRENCIA PENDIENTE.**
 
 ---
 
-# Historial de implementación
+# Historial conservado
 
 ## PUBLIC.1 — Implementación inicial
 
 Incluyó:
 
-- RPC pública de detalle `ecommerce_get_product_configuration`;
+- RPC pública `ecommerce_get_product_configuration`;
 - selector mobile-first;
-- variantes concretas y combinaciones válidas;
+- variantes concretas;
 - grupos `single` y `multiple`;
 - `required`, `minSelect`, `maxSelect`;
-- precio estimado con `base`, `delta` y `absolute`;
-- líneas configurables con `lineKey` determinista;
+- precios `base`, `delta` y `absolute`;
+- `lineKey` determinista;
 - edición y fusión de líneas equivalentes;
-- checkout server-side autoritativo;
+- checkout autoritativo;
 - snapshot en `ecommerce_order_items.options`;
-- WhatsApp con variante, grupos y opciones;
-- compatibilidad con productos simples;
-- caché de detalle y catálogo;
-- ausencia de ventas, caja, inventario o reservas POS durante creación del pedido.
+- WhatsApp con configuración;
+- compatibilidad simple;
+- caché y soporte offline de lectura;
+- cero ventas, caja, inventario o reservas POS durante creación del pedido.
 
-Migraciones iniciales:
+Migraciones:
 
 - `20260716012251_ecom_products_public_1.sql`;
 - `20260716012935_ecom_products_public_1_parent_gate_fix.sql`.
 
 ## PUBLIC.1.1 — Disponibilidad, revisión y rate limit
 
-Defectos corregidos:
-
-- `manual_available=false` del padre configurable no era siempre autoritativo;
-- `configurationVersion` se utilizaba como si representara contenido;
-- checkout podía aceptar configuración modificada sin revisión real;
-- rate limit de detalle era un bucket compartido de 120 solicitudes;
-- faltaba propagación explícita de contexto React.
-
-Resultado heredado que PUBLIC.1.2 conserva:
+Correcciones conservadas:
 
 - `manual_available=false` bloquea siempre;
-- `requires_configuration` sólo omite el `is_available` técnico del padre;
+- `requires_configuration` omite únicamente el `is_available` técnico del padre;
 - `configurationVersion` representa el esquema;
-- `configurationRevision` representa contenido público;
-- la RPC devuelve la revisión;
-- carrito, `sessionStorage`, payload mínimo, firma idempotente y snapshot conservan revisión;
+- `configurationRevision` representa el contenido público;
+- RPC, carrito, `sessionStorage`, payload, firma idempotente y snapshot conservan revisión;
 - checkout exige revisión para líneas configurables;
 - replay idempotente ocurre antes de validaciones mutables;
 - `lineKey` no incluye revisión;
-- líneas obsoletas bloquean checkout hasta actualizar opciones;
+- líneas obsoletas bloquean checkout;
 - `catalogRevision`, `offlineCatalog` y `maxItemQuantity` se propagan por React;
-- los productos simples no requieren revisión;
-- no se almacena IP literal ni el secreto HMAC.
+- productos simples no requieren revisión;
+- IP y secreto HMAC no se exponen.
 
-Migraciones PUBLIC.1.1:
+Migraciones:
 
 - `20260716045221_ecom_products_public_1_availability_revision_fix.sql`;
 - `20260716045242_ecom_products_public_1_checkout_revision_fix.sql`;
@@ -85,11 +84,11 @@ Migraciones PUBLIC.1.1:
 
 ---
 
-# ECOM.PRODUCTS.PUBLIC.1.2 — Snapshot atómico y fallback seguro de rate limit
+# ECOM.PRODUCTS.PUBLIC.1.2 — Snapshot atómico y fallback seguro
 
 ## 1. Estado heredado
 
-HEAD inicial revisado de la rama:
+HEAD inicial de la rama:
 
 `7a6ae7503f569bd10943a380ba675cbdd4768755`
 
@@ -99,215 +98,203 @@ HEAD de `main`:
 
 PR #99 estaba abierto, draft, sin merge, base `main`, head `fase-ecom-products-public-1` y mergeable.
 
-No se inició ECOM.PRODUCTS.POS.1 ni personalización Pro.
-
 ## 2. Condición de carrera anterior
 
-PostgreSQL opera en `READ COMMITTED` por defecto. Sentencias distintas dentro de una función PL/pgSQL pueden observar snapshots distintos.
+En `READ COMMITTED`, sentencias PL/pgSQL distintas pueden observar snapshots distintos.
 
-La RPC de detalle hacía, en sentencias separadas:
+La RPC hacía por separado:
 
 1. leer producto;
-2. calcular `configurationRevision`;
+2. calcular revisión;
 3. leer variantes;
 4. leer grupos;
 5. leer opciones;
-6. devolver disponibilidad y `catalogRevision`.
+6. devolver disponibilidad y catálogo.
 
-Una sincronización concurrente podía producir revisión A con contenido B.
-
-El checkout podía:
-
-1. calcular y aceptar revisión A;
-2. permitir que un escritor cambiara hijos;
-3. valorar variante/opciones B;
-4. crear un snapshot B bajo una revisión validada A.
+Checkout podía aceptar revisión A y consultar/preciar hijos B antes de insertar la partida.
 
 ## 3. Snapshot RPC anterior
 
-La revisión era canónica y estable, pero el producto padre no permanecía bloqueado entre el hash y las consultas de hijos. La función no tenía una barrera que impidiera a `ecommerce_apply_product_configuration` modificar variantes, grupos u opciones durante la lectura.
+El hash era canónico, pero no existía una barrera que impidiera una sincronización entre el cálculo del hash y las consultas de hijos.
 
 ## 4. Snapshot checkout anterior
 
-El replay idempotente estaba correctamente antes de validaciones, pero cada línea calculaba revisión y después consultaba configuración sin un lock compartido adquirido previamente sobre todos los padres del carrito.
+El replay estaba correctamente primero, pero las líneas configurables no se valoraban bajo locks compartidos adquiridos previamente sobre todos los padres del carrito.
 
-## 5. Protocolo de lectores
-
-### RPC de detalle
+## 5. Protocolo del lector de detalle
 
 Orden efectivo:
 
 1. resolver portal;
-2. validar producto solicitado;
-3. adquirir `FOR SHARE` sobre `ecommerce_published_products`;
-4. releer `catalog_revision` después del lock;
+2. localizar producto;
+3. bloquear padre `FOR SHARE`;
+4. releer `catalog_revision`;
 5. aplicar rate limit;
 6. calcular `configurationRevision`;
 7. leer variantes;
 8. leer grupos y opciones;
 9. calcular disponibilidad;
-10. devolver el resultado;
-11. liberar lock al finalizar la transacción de la RPC.
+10. devolver resultado;
+11. liberar lock al terminar la transacción.
 
-La revisión, precio, disponibilidad, variantes, grupos, opciones y revisión de catálogo pertenecen al mismo estado protegido.
+`catalogRevision`, `configurationRevision`, producto, variantes, grupos, opciones, precio y disponibilidad pertenecen al mismo estado protegido.
 
-### Checkout
+## 6. Protocolo del checkout
 
 Orden efectivo:
 
 1. resolver portal;
 2. normalizar idempotency key;
-3. buscar `portal_id + idempotency_key`;
-4. devolver pedido existente inmediatamente;
+3. buscar pedido existente;
+4. devolver replay inmediatamente;
 5. validar estructura básica del carrito nuevo;
-6. bloquear el portal `FOR UPDATE`;
-7. extraer UUID de productos válidos y distintos;
+6. bloquear portal `FOR UPDATE`;
+7. extraer UUID distintos;
 8. ordenar por UUID;
-9. adquirir `FOR SHARE` sobre todos los padres;
-10. cargar productos y comparar revisión;
+9. bloquear padres `FOR SHARE`;
+10. comparar revisión;
 11. leer variante, grupos y opciones;
 12. validar disponibilidad y stock;
 13. calcular precio autoritativo;
 14. construir snapshot;
-15. insertar `ecommerce_orders` y `ecommerce_order_items`;
-16. confirmar transacción y liberar locks.
+15. insertar pedido y partidas;
+16. confirmar y liberar locks.
 
-Los productos simples pueden participar en el lock conjunto, pero no empiezan a exigir `configurationRevision`.
+Productos simples pueden participar en el lock conjunto, pero no requieren revisión.
 
-## 6. Protocolo de escritores
+## 7. Protocolo de escritores
 
-El escritor canónico es:
+Se añadió:
 
-`private.ecommerce_apply_product_configuration(uuid, uuid, jsonb, text)`
+`private.ecommerce_lock_configuration_writer(uuid, uuid)`
 
-Su orden efectivo es:
+Su orden es:
 
-1. validar payload;
-2. bloquear padre `FOR UPDATE`;
-3. insertar/actualizar variantes;
-4. hacer soft delete de variantes ausentes;
-5. insertar/actualizar grupos;
-6. insertar/actualizar opciones;
-7. hacer soft delete de opciones y grupos ausentes;
-8. actualizar flags y metadata del padre;
-9. finalizar transacción.
+1. localizar `portal_id` sin bloquear el padre;
+2. bloquear portal `FOR UPDATE`;
+3. bloquear padre `FOR UPDATE`;
+4. devolver el portal bloqueado.
 
-`private.ecommerce_apply_product_configuration_checked` también bloquea el padre antes de llamar al escritor canónico.
+El escritor canónico y sus rutas verificadas usan después:
 
-## 7. Modo de bloqueo
+5. modificar variantes;
+6. modificar grupos;
+7. modificar opciones;
+8. realizar soft deletes;
+9. actualizar flags/metadata del padre;
+10. finalizar.
 
-- lector de detalle: `FOR SHARE` del padre;
-- checkout: portal `FOR UPDATE`, después padres `FOR SHARE`;
-- sincronización legacy: portal `FOR UPDATE`, después padres `FOR UPDATE`;
-- escritor de configuración: padre `FOR UPDATE`.
+Orden global:
 
-`FOR SHARE` impide actualizaciones o deletes concurrentes del padre. Los escritores de hijos están obligados a obtener primero el lock exclusivo del padre, por lo que no pueden modificar hijos mientras existe un lector protegido.
+`portal → padres → hijos`
 
-## 8. Orden determinista
+## 8. Inversión detectada y corregida
 
-El checkout bloquea padres con:
+Durante la revisión final se confirmó que los triggers de variantes, grupos y opciones actualizan `ecommerce_portals.catalog_revision`.
+
+Antes de la tercera compensatoria podía existir:
+
+- checkout: `portal → padre`;
+- escritor directo del helper: `padre → hijo → portal`.
+
+Eso permitía un deadlock.
+
+La tercera migración corrige:
+
+- `private.ecommerce_apply_product_configuration`;
+- `private.ecommerce_apply_product_configuration_checked`;
+- ambas firmas de `ecommerce_admin_upsert_published_product`;
+- ambas firmas de `ecommerce_admin_set_product_published`.
+
+Todos adquieren portal antes del padre.
+
+## 9. Orden determinista
+
+Checkout usa:
 
 `ORDER BY pp.id FOR SHARE OF pp`
 
 Esto reduce deadlocks entre carritos con varios productos.
 
-El orden global compatible es:
+## 10. Triggers y prevención de deadlocks
 
-`portal → productos ordenados → hijos`
+No se añadió un lock del padre dentro del trigger de fila hija. Hacerlo después de que la fila hija ya esté bloqueada crearía `hijo → padre`, contrario al protocolo.
 
-## 9. Prevención de deadlocks
+La prevención se realiza mediante:
 
-No se añadió un `FOR UPDATE` del padre dentro del trigger de fila hija. Un trigger `BEFORE UPDATE` puede ejecutarse cuando la fila hija ya está bloqueada y crear el orden inverso:
+- funciones canónicas con `portal → padre → hijos`;
+- checkout con `portal → padres ordenados`;
+- revocación de DML directo.
 
-`hijo → padre`
+## 11. Escritores auditados
 
-mientras el escritor canónico usa:
-
-`padre → hijo`
-
-En su lugar:
-
-- las funciones canónicas conservan `padre → hijo`;
-- el checkout conserva `portal → padre`;
-- se eliminó DML directo de roles de aplicación sobre hijos.
-
-## 10. Escritores auditados
-
-Funciones efectivas auditadas:
+Se leyeron definiciones efectivas de:
 
 - `private.ecommerce_apply_product_configuration`;
 - `private.ecommerce_apply_product_configuration_checked`;
+- `private.ecommerce_configuration_child_guard`;
 - `public.ecommerce_admin_sync_product_configuration`;
 - `public.ecommerce_admin_sync_published_catalog_v2`;
 - `public.ecommerce_admin_sync_published_catalog`;
 - `public.ecommerce_admin_upsert_published_product_v2`;
-- `public.ecommerce_admin_upsert_published_product`;
-- `public.ecommerce_admin_set_product_published`;
-- `private.ecommerce_configuration_child_guard`;
-- triggers de revisión de catálogo y soft delete.
+- ambas firmas de `public.ecommerce_admin_upsert_published_product`;
+- ambas firmas de `public.ecommerce_admin_set_product_published`;
+- triggers de revisión de catálogo y guardas.
 
-La búsqueda de cuerpos PL/pgSQL encontró un solo escritor de las tablas hijas:
+La búsqueda de cuerpos PL/pgSQL encontró un solo escritor directo de tablas hijas:
 
 `private.ecommerce_apply_product_configuration`.
 
-Las rutas V2 terminan en el helper checked/canónico. Las rutas legacy que actualizan el producto bloquean el padre antes de escribirlo.
+Las rutas V2 terminan en el helper checked/canónico.
 
-## 11. DML directo
+## 12. DML directo
 
-Antes de PUBLIC.1.2, `service_role` tenía:
+Se revocó `INSERT`, `UPDATE`, `DELETE` y `TRUNCATE` de:
 
-- `INSERT`;
-- `UPDATE`;
-- `DELETE`;
-- `TRUNCATE`;
+- `ecommerce_published_products`;
+- `ecommerce_published_product_variants`;
+- `ecommerce_published_option_groups`;
+- `ecommerce_published_options`.
 
-sobre variantes, grupos y opciones.
-
-PUBLIC.1.2 revocó esos privilegios a:
+Roles afectados:
 
 - `PUBLIC`;
 - `anon`;
 - `authenticated`;
 - `service_role`.
 
-`service_role` conserva únicamente privilegios no DML necesarios, como lectura. Las funciones `SECURITY DEFINER`, owner `postgres`, continúan escribiendo mediante el protocolo canónico.
+`service_role` conserva lectura y privilegios no DML. Las funciones `SECURITY DEFINER`, owner `postgres`, continúan escribiendo.
 
-DELETE físico y soft delete de aplicación ya no tienen una vía directa por roles de aplicación. El escritor canónico realiza soft delete después de bloquear el padre.
+Soft delete y delete de aplicación ya no pueden evadir el protocolo mediante DML directo.
 
-## 12. Catalog revision
+## 13. Catalog revision
 
-La RPC relee `ecommerce_portals.catalog_revision` después de adquirir el lock del padre.
+La RPC relee la revisión del catálogo después del lock del padre.
 
-Los triggers de cambios de variantes, grupos y opciones incrementan la revisión del catálogo. Bajo el protocolo:
+Los triggers de hijos incrementan `catalog_revision` bajo el lock del portal ya adquirido por el escritor. Un lector anterior devuelve A; el escritor espera; después de B, el lector posterior devuelve B.
 
-- lector anterior devuelve snapshot A con revisión de catálogo A;
-- escritor espera;
-- escritor aplica B e incrementa revisión;
-- lector posterior devuelve snapshot B con revisión de catálogo B.
+## 14. Configuration revision
 
-## 13. Configuration revision
+Continúa siendo SHA-256 hexadecimal canónico de 64 caracteres.
 
-La revisión continúa siendo SHA-256 hexadecimal canónico de 64 caracteres.
+Incluye contenido público relevante. Excluye cantidad exacta volátil de stock, referencias privadas, ingredientes, costos, staff y tokens.
 
-Incluye campos públicos relevantes de producto, variantes, grupos y opciones. Excluye cantidad exacta volátil de stock, identificadores privados, ingredientes, costos, staff y tokens.
+PUBLIC.1.2 garantiza que la revisión y el contenido se usan bajo los mismos locks.
 
-PUBLIC.1.2 no cambia su semántica; garantiza que el contenido utilizado junto con la revisión está protegido por el mismo protocolo de lock.
+## 15. Precio y snapshot
 
-## 14. Precio y snapshot
-
-El checkout compara la revisión después de adquirir locks y usa los mismos registros protegidos para:
+Después de los locks, checkout usa los mismos registros para:
 
 - validar variante;
-- validar grupos y opciones;
-- calcular ajuste de variante;
-- calcular extras;
+- validar grupos/opciones;
+- calcular precio;
 - validar stock;
 - construir `configurationSnapshot`;
-- insertar `ecommerce_order_items`.
+- insertar la partida.
 
-Por tanto, ya no puede aceptar revisión A y cobrar B dentro de una ejecución que respete el protocolo.
+No puede validar A y cobrar B si los escritores respetan el protocolo instalado.
 
-## 15. Pruebas de dos sesiones
+## 16. Pruebas de dos sesiones
 
 Se añadió:
 
@@ -316,87 +303,69 @@ Se añadió:
 Requiere:
 
 - `psql`;
-- `DATABASE_URL` con conexión PostgreSQL owner-capable;
-- dos sesiones concurrentes.
+- `DATABASE_URL` owner-capable;
+- dos conexiones PostgreSQL.
 
-Usa únicamente fixtures sintéticos y limpia pedidos, hijos, productos, portal, licencia y rate limits en `finally`.
+Usa fixtures sintéticos y limpieza en `finally`. No crea helpers permanentes.
 
-No crea funciones o helpers permanentes.
+Casos:
 
-## 16. Resultado lector primero
+- lector primero;
+- escritor primero;
+- checkout primero;
+- revisión obsoleta.
 
-Caso implementado en el script:
+## 17. Resultado lector primero
 
-1. sesión A ejecuta detalle y mantiene la transacción abierta;
-2. sesión B ejecuta el escritor canónico;
-3. B debe esperar;
-4. A confirma revisión/precio/opción A;
-5. B aplica B;
-6. nueva lectura confirma íntegramente B.
+El script mantiene la transacción lectora abierta, intenta una escritura canónica concurrente y verifica que el escritor espere. Después confirma detalle A y lectura posterior B.
 
-**Resultado en este entorno: pendiente de ejecución real.**
+**Pendiente de ejecución real en este entorno.**
 
-## 17. Resultado escritor primero
+## 18. Resultado escritor primero
 
-Caso implementado:
+El escritor mantiene portal/padre bloqueados, el lector debe esperar y después recibir íntegramente B.
 
-1. escritor canónico modifica a B y mantiene `FOR UPDATE`;
-2. lector intenta detalle;
-3. lector debe esperar;
-4. después del commit devuelve íntegramente B.
+**Pendiente de ejecución real en este entorno.**
 
-**Resultado en este entorno: pendiente de ejecución real.**
+## 19. Resultado checkout primero
 
-## 18. Resultado checkout primero
+Checkout crea pedido y partida bajo revisión A, mantiene la transacción abierta y el escritor debe esperar. Después se valida precio/snapshot A y el cambio B.
 
-Caso implementado:
+**Pendiente de ejecución real en este entorno.**
 
-1. checkout con revisión A crea pedido y partida dentro de transacción abierta;
-2. escritor intenta modificar configuración;
-3. escritor debe esperar;
-4. checkout confirma precio, snapshot y revisión A;
-5. escritor aplica B;
-6. checkout posterior con revisión A falla.
+## 20. Limitación del entorno
 
-**Resultado en este entorno: pendiente de ejecución real.**
-
-## 19. Limitación de concurrencia del entorno
-
-Se intentó crear una segunda conexión mediante `dblink` dentro de una transacción de prueba. PostgreSQL devolvió:
+Intento con `dblink`:
 
 `ERROR: 2F003: password or GSSAPI delegated credentials required`
 
-También se intentó obtener un checkout local para ejecutar clientes paralelos. La red del entorno devolvió:
+Intento de checkout local:
 
 `fatal: unable to access 'https://github.com/fdxruli/Lanzo-POS.git/': Could not resolve host: github.com`
 
 No se declara concurrencia PASS.
 
-## 20. Rate limit anterior
+## 21. Rate limit anterior
 
-PUBLIC.1.1 generaba un HMAC incluso cuando no existía IP, usando el material lógico `anonymous`. Todos los visitantes sin header confiable terminaban en el mismo bucket individual de 60 solicitudes.
+Sin IP, PUBLIC.1.1 construía material lógico `anonymous`. Todos los visitantes sin cabecera terminaban en el mismo bucket individual de 60 solicitudes.
 
-Una persona podía bloquear a todos los visitantes sin identidad durante 15 minutos.
+## 22. Fingerprint NULL
 
-## 21. Fingerprint NULL
+La función devuelve `NULL` cuando:
 
-`private.ecommerce_public_configuration_client_fingerprint` devuelve `NULL` cuando:
-
-- no existe una cabecera habilitada explícitamente;
-- `request.headers` está ausente;
+- no hay cabecera habilitada explícitamente;
+- faltan headers;
 - el JSON es inválido;
-- la cabecera está vacía;
-- el valor no es una IP válida.
+- el valor está vacío;
+- el valor no es IP.
 
-No genera identidades `anonymous`, `unknown`, `fallback`, `0.0.0.0` ni equivalentes.
+No genera `anonymous`, `unknown`, `fallback` ni equivalentes.
 
-## 22. Cabecera confiable
+## 23. Cabeceras confiables
 
-No fue posible verificar en una petición pública real cuál cabecera sobrescribe la infraestructura Supabase/PostgREST.
+No pudo verificarse una cabecera real del proxy Supabase/PostgREST.
 
-Por seguridad, ninguna cabecera se considera confiable por defecto.
-
-Una cabecera individual sólo se activa si la infraestructura se verifica y se configura explícitamente mediante:
+Ninguna se confía por defecto. La identidad individual sólo se activa mediante:
 
 `app.settings.ecommerce_public_trusted_ip_header`
 
@@ -406,74 +375,66 @@ Valores soportados:
 - `x-real-ip`;
 - `x-forwarded-for`.
 
-Mientras la configuración está ausente, producción utiliza exclusivamente el límite global.
+Sin configuración se utiliza sólo el límite global.
 
-## 23. Límite individual
+## 24. Límite individual
 
-Cuando existe una cabecera habilitada y una IP válida:
+Con cabecera habilitada e IP válida:
 
-- HMAC-SHA256 por cliente, portal y producto;
+- HMAC-SHA256 por cliente/portal/producto;
 - 60 solicitudes por 10 minutos;
 - bloqueo de 15 minutos.
 
-Las pruebas transaccionales confirmaron:
+Probado:
 
-- HMAC de 64 caracteres;
-- clientes A y B producen hashes distintos;
-- cliente A bloqueado no bloquea B;
-- el hash no contiene IP literal.
+- hashes válidos y distintos para A/B;
+- A bloqueado no bloquea B;
+- hash sin IP literal.
 
-## 24. Límite global
+## 25. Límite global
 
-Se aplica siempre:
+Siempre se aplica:
 
-- con identidad individual;
-- sin identidad individual.
-
-Contrato:
-
-- 1200 solicitudes por portal y producto;
-- ventana de 10 minutos;
+- 1200 solicitudes por portal/producto;
+- 10 minutos;
 - bloqueo de 15 minutos.
 
-La función base incrementa primero y bloquea cuando el contador resultante supera el máximo. La prueba inicial detectó esta semántica y se corrigió para establecer `request_count=1200` sobre el bucket vigente y ejecutar la llamada siguiente.
+La función base bloquea cuando el contador resultante supera el máximo. La prueba estableció `request_count=1200` en el bucket vigente y ejecutó la llamada siguiente.
 
-Resultado confirmado con y sin identidad:
+Resultado con y sin identidad:
 
 ```json
 {"allowed":false,"code":"ECOMMERCE_RATE_LIMITED"}
 ```
 
-También se confirmó separación entre:
+También pasó separación por producto y portal.
 
-- productos distintos;
-- portales distintos.
-
-## 25. Privacidad
+## 26. Privacidad
 
 Confirmado:
 
 - no existe bucket `anonymous`;
-- no se persiste IP literal;
-- no se persiste el contenido de headers;
-- metadata no contiene `cf-connecting-ip`, `x-real-ip` ni `x-forwarded-for`;
-- la respuesta pública no expone tier, fingerprint o cabecera;
-- el secreto permanece en `private.ecommerce_public_rate_limit_secret`;
-- `PUBLIC`, `anon`, `authenticated` y `service_role` no tienen `SELECT` sobre el secreto;
-- helpers privados no son ejecutables por `anon` o `authenticated`.
+- no se persiste IP;
+- no se persisten headers;
+- metadata no contiene nombres de headers;
+- la respuesta no expone tier o fingerprint;
+- el secreto no está en el repositorio;
+- `service_role` no tiene `SELECT` sobre el secreto;
+- helpers privados no son ejecutables por browser roles.
 
-## 26. Migraciones PUBLIC.1.2
+## 27. Migraciones PUBLIC.1.2
 
 Creadas y aplicadas:
 
 - `20260716055921_ecom_products_public_1_atomic_snapshot_fix.sql`;
-- `20260716055941_ecom_products_public_1_rate_limit_fallback_fix.sql`.
+- `20260716055941_ecom_products_public_1_rate_limit_fallback_fix.sql`;
+- `20260716062053_ecom_products_public_1_writer_lock_order_fix.sql`.
 
-No se editaron las cinco migraciones previamente aplicadas.
+No se editaron migraciones aplicadas previamente.
 
-## 27. Historial remoto
+## 28. Historial remoto
 
-Supabase registra:
+Supabase registra las ocho migraciones PUBLIC.1/PUBLIC.1.1/PUBLIC.1.2:
 
 - `20260716012251_ecom_products_public_1`;
 - `20260716012935_ecom_products_public_1_parent_gate_fix`;
@@ -481,65 +442,69 @@ Supabase registra:
 - `20260716045242_ecom_products_public_1_checkout_revision_fix`;
 - `20260716045301_ecom_products_public_1_rate_limit_isolation`;
 - `20260716055921_ecom_products_public_1_atomic_snapshot_fix`;
-- `20260716055941_ecom_products_public_1_rate_limit_fallback_fix`.
+- `20260716055941_ecom_products_public_1_rate_limit_fallback_fix`;
+- `20260716062053_ecom_products_public_1_writer_lock_order_fix`.
 
-Los filenames locales coinciden con los timestamps remotos.
+Filenames locales y versiones remotas coinciden.
 
-## 28. Seguridad efectiva
+## 29. Seguridad efectiva
 
-Verificado después de aplicar:
+Verificado:
 
 - owner `postgres`;
 - `SECURITY DEFINER`;
 - `search_path=''`;
-- RPC públicas ejecutables por `anon`, `authenticated`, `service_role`;
-- helpers privados ejecutables únicamente por `postgres` y `service_role`;
-- secreto sin lectura por roles públicos o `service_role`;
-- DML directo de hijos revocado a roles de aplicación;
-- checkout contiene lock determinista;
-- replay idempotente aparece antes del lock.
+- RPC públicas: `anon`, `authenticated`, `service_role`;
+- helpers privados: `postgres`, `service_role`;
+- tabla de secreto sin lectura pública/service role;
+- DML directo revocado en padre e hijos;
+- replay antes del lock;
+- lock de productos determinista;
+- escritores con lock helper antes de mutaciones.
 
-## 29. Pruebas SQL
+## 30. Pruebas SQL
 
-Se añadió:
+Archivos:
 
-`supabase/tests/ecom_products_public_1_2_atomic_snapshot_test.sql`
+- `supabase/tests/ecom_products_public_1_2_atomic_snapshot_test.sql`;
+- `supabase/tests/ecom_products_public_1_2_writer_lock_order_test.sql`.
 
-La matriz usa `BEGIN/ROLLBACK` y cubre:
+Casos ejecutados remotamente en transacciones revertidas:
 
-- `manual_available`;
+- detalle A coherente;
 - revisión estable;
-- cambio de precio de opción;
-- stock exacto 20→19 sin cambio de revisión;
-- coherencia de detalle A y B;
-- checkout vigente;
-- checkout obsoleto;
-- snapshot y precio;
-- replay antes de locks;
-- producto simple legacy;
-- revocación DML;
-- ACL de helpers;
-- fingerprint `NULL` sin identidad;
+- stock 20→19 sin cambio de revisión;
+- checkout A y snapshot A;
+- cambio coordinado a B;
+- detalle B;
+- revisión A obsoleta rechazada;
+- checkout B;
+- replay original;
+- simple legacy;
+- `manual_available`;
+- escritor canónico funcional;
+- helper devuelve portal correcto;
+- DML revocado;
+- ACL privadas;
+- fingerprint NULL;
 - ausencia de bucket individual sin identidad;
 - ausencia de bucket `anonymous`;
 - HMAC A/B;
 - A bloqueado no bloquea B;
-- global real a 1200 con y sin identidad;
-- separación por portal y producto;
+- global real a 1200 con/sin identidad;
+- separación portal/producto;
 - ausencia de PII;
-- ausencia de ventas, caja e inventario.
+- cero ventas, caja e inventario.
 
-Los bloques efectivos de la matriz fueron ejecutados remotamente dentro de transacciones revertidas y pasaron.
+Después de rollback:
 
-Después de los rollbacks se confirmó:
+- licencias: 0;
+- portales: 0;
+- productos: 0;
+- pedidos: 0;
+- filas de rate limit: 0.
 
-- licencias sintéticas: 0;
-- portales sintéticos: 0;
-- productos sintéticos: 0;
-- pedidos sintéticos: 0;
-- filas sintéticas de rate limit: 0.
-
-## 30. Pruebas JavaScript
+## 31. Pruebas JavaScript
 
 Suites relacionadas presentes:
 
@@ -554,26 +519,24 @@ Suites relacionadas presentes:
 
 PUBLIC.1.2 no modifica JavaScript productivo.
 
-Vitest no se ejecutó porque no fue posible clonar/instalar el workspace. No se declara PASS.
+Vitest no se ejecutó por falta de checkout instalable. No se declara PASS.
 
-## 31. ESLint y validación Git
+## 32. ESLint y Git
 
 Pendientes:
 
-- `git diff --check` en checkout local;
-- `git status --short` en checkout local;
+- `git diff --check` local;
+- `git status --short` local;
 - ESLint enfocado;
 - `npm run lint`.
 
-Error exacto del checkout:
+Error:
 
 `fatal: unable to access 'https://github.com/fdxruli/Lanzo-POS.git/': Could not resolve host: github.com`
 
-No se usó `node --check` como sustituto de ESLint.
+## 33. Builds
 
-## 32. Builds
-
-Pendientes por falta de workspace instalable:
+Pendientes:
 
 - `npm ci`;
 - `npm run build`;
@@ -583,43 +546,37 @@ Pendientes por falta de workspace instalable:
 
 No se declaran PASS.
 
-## 33. Vercel
+## 34. Vercel
 
 - deployments manuales: 0;
 - previews deliberados: 0;
 - redeploys: 0;
-- promociones de alias: 0;
-- cambios de proyecto: 0;
-- cambios de Root Directory: 0;
-- cambios de build command/output: 0;
-- cambios de dominios o variables: 0.
+- promociones: 0;
+- cambios de configuración: 0.
 
-El check automático no se usa como sustituto de SQL, concurrencia, Vitest, ESLint o builds.
+El check automático no sustituye validación local o concurrencia.
 
-## 34. Archivos PUBLIC.1.2
+## 35. Archivos PUBLIC.1.2
 
-### Creados
+Creados:
 
-- `supabase/migrations/20260716055921_ecom_products_public_1_atomic_snapshot_fix.sql`;
-- `supabase/migrations/20260716055941_ecom_products_public_1_rate_limit_fallback_fix.sql`;
-- `supabase/tests/ecom_products_public_1_2_atomic_snapshot_test.sql`;
-- `scripts/test-ecom-products-public-1-2-concurrency.ps1`.
+- tres migraciones compensatorias;
+- dos matrices SQL;
+- un script PowerShell de concurrencia.
 
-### Modificados
+Modificado:
 
 - `docs/reports/ECOM.PRODUCTS.PUBLIC.1.md`.
 
-No hubo cambios JavaScript productivos en PUBLIC.1.2.
+## 36. Riesgos residuales
 
-## 35. Riesgos residuales
+1. Ejecutar el script con dos conexiones PostgreSQL owner-capable.
+2. Verificar qué header sobrescribe el proxy real antes de activar el límite individual.
+3. Ejecutar Vitest, ESLint y builds en un checkout con dependencias.
+4. Futuras integraciones deben usar los RPC/helpers canónicos porque DML directo fue revocado.
+5. POS.1, ingredientes, lotes, comandas e impresión siguen fuera de alcance.
 
-1. Falta ejecutar el script real de dos sesiones con una conexión PostgreSQL owner-capable.
-2. Falta verificar en una petición pública real qué header sobrescribe la infraestructura; hasta entonces el límite individual permanece deshabilitado y se usa el global.
-3. Faltan Vitest, ESLint y los tres builds en un checkout con dependencias.
-4. La revocación de DML directo exige que futuras integraciones escriban configuración mediante los RPC/helpers canónicos.
-5. ECOM.PRODUCTS.POS.1, consumo de ingredientes, lotes, comandas e impresión siguen fuera de alcance.
-
-## 36. Estado del PR
+## 37. Estado del PR
 
 PR #99 debe permanecer:
 
@@ -628,31 +585,30 @@ PR #99 debe permanecer:
 - sin merge;
 - base `main`;
 - head `fase-ecom-products-public-1`;
-- sin marcar ready automáticamente.
+- sin marcar ready.
 
-## 37. Conclusión
+## 38. Conclusión
 
-- la RPC adquiere lock antes de calcular revisión: sí;
-- la RPC mantiene el lock mientras lee hijos: sí;
-- `catalogRevision` se lee después del lock: sí;
-- revisión y contenido usan el mismo protocolo: sí;
-- replay idempotente precede locks: sí;
-- checkout bloquea productos en orden UUID: sí;
-- checkout compara revisión después del lock: sí;
-- precio y snapshot se construyen bajo esos locks: sí;
-- escritor canónico bloquea padre antes de hijos: sí;
-- DML directo de hijos por roles de aplicación: revocado;
-- inversión de lock en trigger: no introducida;
-- bucket individual `anonymous`: eliminado;
-- sin identidad: fingerprint `NULL` y sólo límite global;
-- límite global de 1200 probado realmente: sí;
-- IP y headers persistidos: no;
-- concurrencia real de dos sesiones ejecutada: no, pendiente por falta de conexión;
+- detalle bloquea antes de calcular revisión: sí;
+- detalle mantiene lock durante lectura completa: sí;
+- catálogo se lee después del lock: sí;
+- checkout recupera idempotencia antes de locks: sí;
+- checkout bloquea productos ordenados: sí;
+- revisión se compara después del lock: sí;
+- precio y snapshot usan registros protegidos: sí;
+- escritores usan `portal → padre → hijos`: sí;
+- DML directo de aplicación: revocado;
+- inversión trigger padre/portal: corregida;
+- bucket `anonymous`: eliminado;
+- sin identidad: sólo global;
+- global 1200 probado: sí;
+- PII persistida: no;
+- concurrencia real ejecutada: no, pendiente;
 - fixtures residuales: 0;
-- cambios directos en `main`: 0;
-- merge automático: no;
+- cambios en `main`: 0;
+- merge: no;
 - deployment manual: no.
 
 **ESTADO FINAL: IMPLEMENTACIÓN COMPLETA — VALIDACIÓN DE CONCURRENCIA PENDIENTE.**
 
-No se inició ECOM.PRODUCTS.POS.1. No se inició personalización Pro. El PR permanece draft para otra revisión técnica.
+No se inició ECOM.PRODUCTS.POS.1. No se inició personalización Pro. El PR permanece draft para revisión.
