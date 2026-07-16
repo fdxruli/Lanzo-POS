@@ -1,4 +1,5 @@
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { useProductStore } from '../../store/useProductStore';
 import {
   mapEcommerceOrderToPosDraft as mapBaseEcommerceOrderToPosDraft,
   prepareEcommerceOrderPosDraft as prepareBaseEcommerceOrderPosDraft
@@ -7,6 +8,7 @@ import {
   buildEcommerceOrderDisplayName,
   formatEcommerceOrderConfigurationSummary
 } from '../../utils/ecommerceOrderConfigurationDisplay';
+import { reconcileEcommerceConfiguredItems } from './ecommercePosConfiguredItem';
 
 export * from './ecommercePosDraftServiceBase';
 
@@ -30,11 +32,12 @@ const decorateEcommerceDraftItem = (item = {}, currency = 'MXN') => {
   };
 };
 
-export const decorateEcommercePosDraft = (draft = {}) => {
+export const decorateEcommercePosDraft = (draft = {}, products = useProductStore.getState().menu) => {
   const currency = draft.currency || 'MXN';
   const sourceItems = Array.isArray(draft.items) ? draft.items : [];
-  let changed = false;
-  const items = sourceItems.map((item) => {
+  const reconciled = reconcileEcommerceConfiguredItems({ items: sourceItems, products });
+  let changed = reconciled.changed;
+  const items = reconciled.items.map((item) => {
     const decorated = decorateEcommerceDraftItem(item, currency);
     if (decorated !== item) changed = true;
     return decorated;
@@ -47,7 +50,7 @@ export function mapEcommerceOrderToPosDraft(args = {}) {
   if (result?.success === false || !result?.draft) return result;
   return {
     ...result,
-    draft: decorateEcommercePosDraft(result.draft)
+    draft: decorateEcommercePosDraft(result.draft, args.products)
   };
 }
 
@@ -57,7 +60,7 @@ const decoratePreparedDraftInStore = (draftId) => {
   const current = state.activeOrders?.get?.(draftId) || null;
   if (!current) return null;
 
-  const decorated = decorateEcommercePosDraft(current);
+  const decorated = decorateEcommercePosDraft(current, useProductStore.getState().menu);
   if (decorated !== current) {
     if (typeof state.updateOrder === 'function') {
       state.updateOrder(draftId, { items: decorated.items });
