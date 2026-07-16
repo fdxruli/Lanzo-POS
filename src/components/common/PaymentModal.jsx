@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { loadData, STORES, db } from '../../services/database';
 import QuickAddCustomerModal from './QuickAddCustomerModal';
 import './PaymentModal.css';
@@ -116,6 +116,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       });
     } catch (error) {
       Logger.error('Error al procesar pago:', error);
+    } finally {
       setIsSubmitting(false);
     }
   };
