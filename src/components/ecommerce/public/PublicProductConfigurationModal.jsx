@@ -236,7 +236,7 @@ function PublicProductConfigurationModal({
             <div className="public-product-config__state" role="alert">
               <AlertCircle aria-hidden="true" size={34} />
               <h3>No se pudo cargar la configuración</h3>
-              <p>{loadError?.message || 'Revisa tu conexión e intenta nuevamente.'}</p>
+              <p>{loadError?.code ? loadError.message : 'Revisa tu conexión e intenta nuevamente.'}</p>
               <button type="button" className="ui-button ui-button--secondary" onClick={loadConfiguration}>
                 <RefreshCw aria-hidden="true" size={17} />
                 Reintentar
