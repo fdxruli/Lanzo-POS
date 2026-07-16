@@ -10,6 +10,8 @@ import {
 
 export * from './ecommercePosConversionServiceBase';
 
+const REMOTE_RECOVERY_STATUSES = new Set(['reserving', 'reserved', 'unknown']);
+
 const isOwnedRemoteReservation = (order = {}, remote = {}) => Boolean(
   remote.success === true
   && remote.conversionStatus === 'reserved'
@@ -20,6 +22,27 @@ const isOwnedRemoteReservation = (order = {}, remote = {}) => Boolean(
   && String(remote.reservedSaleId) === String(order.id)
   && !remote.convertedSaleId
   && !order.ecommerceConvertedSaleId
+);
+
+const shouldInspectRemoteReservation = ({ order, baseResult } = {}) => {
+  if (!order || order.origin !== 'ecommerce') return false;
+  if (
+    order.ecommerceConvertedSaleId
+    || order.ecommerceConversionStatus === ECOMMERCE_CONVERSION_STATUS.COMPLETED
+  ) return false;
+
+  if (baseResult?.saleVerificationPending === true) return true;
+  if (REMOTE_RECOVERY_STATUSES.has(order.ecommerceRemoteConversionStatus)) return true;
+
+  return [
+    ECOMMERCE_CONVERSION_STATUS.IDLE,
+    ECOMMERCE_CONVERSION_STATUS.ERROR
+  ].includes(order.ecommerceConversionStatus || ECOMMERCE_CONVERSION_STATUS.IDLE);
+};
+
+const shouldReleaseOwnedReservation = ({ baseResult, remote } = {}) => (
+  baseResult?.saleVerificationPending === true
+  || remote?.claimValid === false
 );
 
 const clearVerifiedReservationLocally = async ({ orderId, cancellation }) => {
@@ -93,15 +116,13 @@ const tryAuthoritativeReservationRelease = async ({ orderId, order, remote }) =>
 
 export async function recoverEcommercePosConversion({ orderId } = {}) {
   const baseResult = await recoverBaseEcommercePosConversion({ orderId });
-  if (baseResult?.success === true || baseResult?.saleVerificationPending !== true) {
-    return baseResult;
-  }
-
   const order = useActiveOrders.getState().activeOrders?.get?.(orderId) || null;
-  if (!order || order.origin !== 'ecommerce') return baseResult;
+
+  if (!shouldInspectRemoteReservation({ order, baseResult })) return baseResult;
 
   const remote = await getEcommercePosConversionRemoteState({ order });
   if (!isOwnedRemoteReservation(order, remote)) return baseResult;
+  if (!shouldReleaseOwnedReservation({ baseResult, remote })) return baseResult;
 
   const release = await tryAuthoritativeReservationRelease({ orderId, order, remote });
   if (release?.success === true) return release;
@@ -111,7 +132,10 @@ export async function recoverEcommercePosConversion({ orderId } = {}) {
 }
 
 export const ecommercePosConversionRecoveryReleaseInternals = Object.freeze({
+  REMOTE_RECOVERY_STATUSES,
   isOwnedRemoteReservation,
+  shouldInspectRemoteReservation,
+  shouldReleaseOwnedReservation,
   clearVerifiedReservationLocally,
   tryAuthoritativeReservationRelease
 });
