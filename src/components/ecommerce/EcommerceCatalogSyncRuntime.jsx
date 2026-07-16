@@ -7,6 +7,7 @@ import {
   ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT,
   ecommerceCatalogSyncService
 } from '../../services/ecommerce/ecommerceCatalogSyncService';
+import { syncEcommerceCatalogAfterHydration } from '../../services/ecommerce/ecommerceCatalogHydration';
 
 const getStaffIdentity = (staff = {}) => String(
   staff.sessionToken
@@ -17,6 +18,10 @@ const getStaffIdentity = (staff = {}) => String(
   || staff.staffId
   || staff.staff_id
   || ''
+);
+
+const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(
+  useAppStore.getState()?.licenseDetails || {}
 );
 
 export default function EcommerceCatalogSyncRuntime() {
@@ -31,19 +36,35 @@ export default function EcommerceCatalogSyncRuntime() {
 
   useEffect(() => {
     ecommerceCatalogSyncService.invalidateContext();
-    if (!getLicenseKeyFromDetails(licenseDetails || {})) return undefined;
+    const licenseKey = getLicenseKeyFromDetails(licenseDetails || {});
+    if (!licenseKey) return undefined;
 
-    ecommerceCatalogSyncService.scheduleSync({
-      fullReconcile: true,
-      reason: 'runtime-context-ready'
+    let active = true;
+    void syncEcommerceCatalogAfterHydration({
+      licenseKey,
+      forceHydration: true,
+      request: { reason: 'runtime-context-ready' },
+      shouldContinue: () => active && getRuntimeLicenseKey() === licenseKey
     });
 
     return () => {
+      active = false;
       ecommerceCatalogSyncService.invalidateContext();
     };
   }, [contextIdentity, licenseDetails]);
 
   useEffect(() => {
+    const runHydratedReconcile = ({ reason, forceHydration = false } = {}) => {
+      const licenseKey = getRuntimeLicenseKey();
+      if (!licenseKey) return Promise.resolve({ skipped: true, reason: 'missing_license' });
+      return syncEcommerceCatalogAfterHydration({
+        licenseKey,
+        forceHydration,
+        request: { reason },
+        shouldContinue: () => getRuntimeLicenseKey() === licenseKey
+      });
+    };
+
     const scheduleFromEvent = (event, fallbackReason) => {
       const productIds = Array.isArray(event?.detail?.productIds)
         ? event.detail.productIds
@@ -58,21 +79,29 @@ export default function EcommerceCatalogSyncRuntime() {
     const handleProductChange = (event) => scheduleFromEvent(event, 'product-change');
     const handleInventoryChange = (event) => scheduleFromEvent(event, 'inventory-change');
     const handleOnline = () => {
-      void ecommerceCatalogSyncService.syncNow({ reason: 'online', fullReconcile: true });
+      void runHydratedReconcile({ reason: 'online', forceHydration: true });
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        ecommerceCatalogSyncService.scheduleSync({
-          fullReconcile: true,
-          reason: 'visibility'
-        });
+        void runHydratedReconcile({ reason: 'visibility', forceHydration: false });
       }
     };
     const handleManualRequest = (event) => {
+      const productIds = Array.isArray(event?.detail?.productIds)
+        ? event.detail.productIds
+        : [];
+      const fullReconcile = event?.detail?.fullReconcile !== false;
+      const reason = event?.detail?.reason || 'manual';
+
+      if (fullReconcile) {
+        void runHydratedReconcile({ reason, forceHydration: true });
+        return;
+      }
+
       void ecommerceCatalogSyncService.syncNow({
-        productIds: event?.detail?.productIds || [],
-        fullReconcile: event?.detail?.fullReconcile !== false,
-        reason: event?.detail?.reason || 'manual'
+        productIds,
+        fullReconcile: false,
+        reason
       });
     };
 
