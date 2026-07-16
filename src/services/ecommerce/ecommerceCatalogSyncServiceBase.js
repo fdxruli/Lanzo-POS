@@ -15,6 +15,10 @@ import {
   ecommerceCatalogSyncOutbox,
   hashEcommerceCatalogSyncScope
 } from './ecommerceCatalogSyncOutbox';
+import {
+  buildEcommerceProductConfigurationSyncPayload,
+  getEcommerceConfigurationSourceRevision
+} from '../../utils/ecommerceProductConfigurationSync';
 
 export const ECOMMERCE_CATALOG_SYNC_STATUS_EVENT = 'lanzo:ecommerce-catalog-sync-status';
 export const ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT = 'lanzo:ecommerce-catalog-sync-request';
@@ -30,6 +34,7 @@ const RETRYABLE_CODES = new Set([
   'ETIMEDOUT',
   'NETWORK_ERROR',
   'FETCH_ERROR',
+  'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED',
   'PGRST000',
   'PGRST001',
   'PGRST002',
@@ -51,6 +56,29 @@ const RETRYABLE_CODES = new Set([
   '08006',
   '08007',
   '08P01'
+]);
+const PERMANENT_CONFIGURATION_CODES = new Set([
+  'ECOMMERCE_CONFIGURATION_INVALID',
+  'ECOMMERCE_CONFIGURATION_OPTION_LIMIT_EXCEEDED',
+  'ECOMMERCE_CONFIGURATION_CROSS_LICENSE_REFERENCE',
+  'ECOMMERCE_CONFIGURATION_TYPE_INVALID',
+  'ECOMMERCE_CONFIGURATION_VERSION_INVALID',
+  'ECOMMERCE_CONFIGURATION_VARIANT_LIMIT_EXCEEDED',
+  'ECOMMERCE_CONFIGURATION_GROUP_LIMIT_EXCEEDED',
+  'ECOMMERCE_VARIANT_SOURCE_NOT_FOUND',
+  'ECOMMERCE_VARIANT_SOURCE_REQUIRED',
+  'ECOMMERCE_VARIANT_SOURCE_REF_REQUIRED',
+  'ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED',
+  'ECOMMERCE_VARIANT_OPTION_VALUE_INVALID',
+  'ECOMMERCE_OPTION_INGREDIENT_NOT_FOUND',
+  'ECOMMERCE_OPTION_GROUP_SELECTION_INVALID',
+  'ECOMMERCE_OPTION_GROUP_SINGLE_MAX_INVALID',
+  'ECOMMERCE_OPTION_GROUP_REQUIRED_MIN_INVALID',
+  'ECOMMERCE_OPTION_GROUP_SOURCE_REF_REQUIRED',
+  'ECOMMERCE_OPTION_SOURCE_REF_REQUIRED',
+  'ECOMMERCE_OPTION_PRICE_INVALID',
+  'ECOMMERCE_OPTION_INVENTORY_INVALID',
+  'ECOMMERCE_CATALOG_SYNC_INVALID_PAYLOAD'
 ]);
 const RETRYABLE_MESSAGE_PATTERN = /(failed to fetch|network request failed|networkerror|load failed|connection (?:reset|closed|refused)|timeout|timed out|temporar(?:y|ily)|service unavailable|gateway timeout|bad gateway|statement timeout)/i;
 
@@ -160,6 +188,14 @@ const statusToSourceAvailability = (status) => {
   return null;
 };
 
+const buildConfigurationAvailability = ({ evaluation }) => ({
+  availabilityReasonCode: asText(evaluation?.reasonCode) || null,
+  limitingSource: {
+    productId: asText(evaluation?.limitingIngredientId) || null,
+    name: asText(evaluation?.limitingIngredientName) || null
+  }
+});
+
 const buildProjection = ({
   publishedProduct,
   localProduct,
@@ -187,6 +223,15 @@ const buildProjection = ({
     && stockValue !== ''
     && Number.isFinite(Number(stockValue))
   );
+  const configuration = localProduct
+    ? buildEcommerceProductConfigurationSyncPayload(
+        localProduct,
+        buildConfigurationAvailability({ evaluation })
+      )
+    : null;
+  const configurationSourceRevision = localProduct
+    ? sourceRevision || getEcommerceConfigurationSourceRevision(localProduct) || null
+    : null;
 
   return {
     publishedProductId: asText(publishedProduct.id),
@@ -195,7 +240,9 @@ const buildProjection = ({
     sourceState: evaluation.status,
     sourceAvailable: statusToSourceAvailability(evaluation.status),
     stockSnapshot: hasConfirmedStock ? Math.max(0, Number(stockValue)) : null,
-    fields
+    fields,
+    configuration,
+    configurationSourceRevision
   };
 };
 
@@ -243,7 +290,11 @@ const normalizeProjectionForSignature = (projection = {}) => {
     stockSnapshot: projection.stockSnapshot === null
       ? null
       : Number(projection.stockSnapshot),
-    fields: normalizedFields
+    fields: normalizedFields,
+    configuration: normalizeSignatureValue(projection.configuration),
+    configurationSourceRevision: projection.configurationSourceRevision === null
+      ? null
+      : asText(projection.configurationSourceRevision)
   });
 };
 
@@ -269,12 +320,44 @@ const getFailureStatus = (failure = {}) => Number(
   ?? failure.error?.statusCode
 );
 
-const getFailureCode = (failure = {}, fallbackCode) => asText(
-  failure.code
-  || failure.error?.code
-  || failure.name
-  || fallbackCode
-).toUpperCase();
+const NATIVE_ERROR_CODES = new Set([
+  'ERROR',
+  'AGGREGATEERROR',
+  'EVALERROR',
+  'RANGEERROR',
+  'REFERENCEERROR',
+  'SYNTAXERROR',
+  'TYPEERROR',
+  'URIERROR',
+  'ABORTERROR',
+  'TIMEOUTERROR'
+]);
+
+const normalizeFailureCodeCandidate = (value) => {
+  const code = asText(value).toUpperCase();
+  if (!code || NATIVE_ERROR_CODES.has(code)) return null;
+  return code;
+};
+
+const isRetryableFailureCode = (code) => (
+  RETRYABLE_CODES.has(code)
+  || /^08[A-Z0-9]{3}$/.test(code)
+  || /^53[A-Z0-9]{3}$/.test(code)
+);
+
+const getFailureMessageCode = (failure = {}) => {
+  const message = asText(failure.message || failure.error?.message).toUpperCase();
+  if (/^ECOMMERCE_[A-Z0-9_]+$/.test(message)) return message;
+  return isRetryableFailureCode(message) ? message : null;
+};
+
+const getFailureCode = (failure = {}, fallbackCode) => (
+  normalizeFailureCodeCandidate(failure.code)
+  || normalizeFailureCodeCandidate(failure.error?.code)
+  || getFailureMessageCode(failure)
+  || normalizeFailureCodeCandidate(fallbackCode)
+  || null
+);
 
 const getFailureMessage = (failure = {}) => asText(
   failure.message
@@ -282,27 +365,41 @@ const getFailureMessage = (failure = {}) => asText(
   || failure.details
 );
 
-const isRetryableCatalogSyncError = (failure, online = isOnline) => {
-  if (!online()) return true;
-  if (failure?.retryable === true) return true;
+const hasExplicitTransientEvidence = (failure = {}) => {
   const status = getFailureStatus(failure);
   if (RETRYABLE_HTTP_STATUSES.has(status)) return true;
 
   const code = getFailureCode(failure);
-  if (RETRYABLE_CODES.has(code)) return true;
-  if (/^08[A-Z0-9]{3}$/.test(code)) return true;
-  if (/^53[A-Z0-9]{3}$/.test(code)) return true;
+  if (isRetryableFailureCode(code)) return true;
 
-  const name = asText(failure?.name);
-  if (name === 'TypeError' || name === 'AbortError' || name === 'TimeoutError') return true;
   return RETRYABLE_MESSAGE_PATTERN.test(getFailureMessage(failure));
 };
 
-const toFailure = (failure, fallbackCode, online = isOnline) => ({
+const isRetryableCatalogSyncError = (failure, online = isOnline) => {
+  const code = getFailureCode(failure);
+  if (PERMANENT_CONFIGURATION_CODES.has(code)) return false;
+  if (!online()) return true;
+  if (hasExplicitTransientEvidence(failure)) return true;
+  return failure?.retryable === true;
+};
+
+const isRetryableProjectionError = (failure, online = isOnline) => {
+  const code = getFailureCode(failure);
+  if (PERMANENT_CONFIGURATION_CODES.has(code)) return false;
+  if (!online()) return true;
+  return hasExplicitTransientEvidence(failure);
+};
+
+const toFailure = (
+  failure,
+  fallbackCode,
+  online = isOnline,
+  retryPolicy = isRetryableCatalogSyncError
+) => ({
   success: false,
   code: getFailureCode(failure, fallbackCode),
   message: getFailureMessage(failure),
-  retryable: isRetryableCatalogSyncError(failure, online)
+  retryable: retryPolicy(failure, online)
 });
 
 const getScopeIdentity = (state = {}) => {
@@ -529,14 +626,15 @@ export const createEcommerceCatalogSyncService = ({
         batchReadFailed,
         now
       });
+      const sourceRevision = localProduct
+        ? normalizeSourceRevision(localProduct, batchManaged ? productBatches : [])
+        : null;
       return buildProjection({
         publishedProduct,
         localProduct,
         category: localProduct ? categoriesById.get(getCategoryId(localProduct)) : null,
         categoryEvaluated: !categoryReadFailed,
-        sourceRevision: localProduct
-          ? normalizeSourceRevision(localProduct, batchManaged ? productBatches : [])
-          : null,
+        sourceRevision,
         evaluation
       });
     }));
@@ -673,14 +771,29 @@ export const createEcommerceCatalogSyncService = ({
         fullReconcile
       });
     } catch (error) {
-      const failure = toFailure(error, 'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED', online);
-      return persistRetryable({
-        scopeIdentity,
-        contextKey,
-        portalId: portal.id,
-        request,
-        queued,
-        failure
+      const failure = toFailure(
+        error,
+        'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED',
+        online,
+        isRetryableProjectionError
+      );
+      if (failure.retryable) {
+        return persistRetryable({
+          scopeIdentity,
+          contextKey,
+          portalId: portal.id,
+          request,
+          queued,
+          failure
+        });
+      }
+      clearRetryTimer({ resetAttempt: true });
+      return publishStatus({
+        state: 'error',
+        pendingCount: 0,
+        errorCount: 1,
+        code: failure.code,
+        lastAttemptAt: nowIso()
       });
     }
 
@@ -918,6 +1031,7 @@ export const ecommerceCatalogSyncService = createEcommerceCatalogSyncService();
 export const ecommerceCatalogSyncServiceInternals = Object.freeze({
   uniqueRefs,
   chunk,
+  buildConfigurationAvailability,
   buildProjection,
   normalizeSourceRevision,
   normalizeVersionNumber,
@@ -928,6 +1042,7 @@ export const ecommerceCatalogSyncServiceInternals = Object.freeze({
   sortProjections,
   buildBatchIdempotencyKey,
   isRetryableCatalogSyncError,
+  isRetryableProjectionError,
   getScopeIdentity,
   RPC_BATCH_SIZE,
   RETRY_BACKOFF_MS

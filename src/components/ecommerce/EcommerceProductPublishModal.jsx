@@ -221,7 +221,11 @@ export default function EcommerceProductPublishModal({
   const submit = async (event) => {
     event.preventDefault();
     const price = Number(form.price);
+    const localProduct = localProducts.find(
+      (product) => String(product.id) === form.localProductRef.trim()
+    );
     if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catálogo local.');
+    if (!localProduct) return toast.error('No se pudo leer el producto local seleccionado.');
     if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
     if (!Number.isFinite(price) || price < 0) return toast.error('El precio público debe ser mayor o igual a cero.');
     if (!editingProduct && limitReached && form.isPublished) return toast.error('Plan Free ya alcanzó el límite de 10 productos.');
@@ -234,6 +238,7 @@ export default function EcommerceProductPublishModal({
       id: form.id,
       sourceType: 'local_snapshot',
       localProductRef: form.localProductRef.trim(),
+      localProduct,
       publicName: form.publicName.trim(),
       publicDescription: form.publicDescription.trim() || null,
       price,
