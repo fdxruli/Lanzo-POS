@@ -56,6 +56,29 @@ const RETRYABLE_CODES = new Set([
   '08007',
   '08P01'
 ]);
+const PERMANENT_CONFIGURATION_CODES = new Set([
+  'ECOMMERCE_CONFIGURATION_INVALID',
+  'ECOMMERCE_CONFIGURATION_OPTION_LIMIT_EXCEEDED',
+  'ECOMMERCE_CONFIGURATION_CROSS_LICENSE_REFERENCE',
+  'ECOMMERCE_CONFIGURATION_TYPE_INVALID',
+  'ECOMMERCE_CONFIGURATION_VERSION_INVALID',
+  'ECOMMERCE_CONFIGURATION_VARIANT_LIMIT_EXCEEDED',
+  'ECOMMERCE_CONFIGURATION_GROUP_LIMIT_EXCEEDED',
+  'ECOMMERCE_VARIANT_SOURCE_NOT_FOUND',
+  'ECOMMERCE_VARIANT_SOURCE_REQUIRED',
+  'ECOMMERCE_VARIANT_SOURCE_REF_REQUIRED',
+  'ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED',
+  'ECOMMERCE_VARIANT_OPTION_VALUE_INVALID',
+  'ECOMMERCE_OPTION_INGREDIENT_NOT_FOUND',
+  'ECOMMERCE_OPTION_GROUP_SELECTION_INVALID',
+  'ECOMMERCE_OPTION_GROUP_SINGLE_MAX_INVALID',
+  'ECOMMERCE_OPTION_GROUP_REQUIRED_MIN_INVALID',
+  'ECOMMERCE_OPTION_GROUP_SOURCE_REF_REQUIRED',
+  'ECOMMERCE_OPTION_SOURCE_REF_REQUIRED',
+  'ECOMMERCE_OPTION_PRICE_INVALID',
+  'ECOMMERCE_OPTION_INVENTORY_INVALID',
+  'ECOMMERCE_CATALOG_SYNC_INVALID_PAYLOAD'
+]);
 const RETRYABLE_MESSAGE_PATTERN = /(failed to fetch|network request failed|networkerror|load failed|connection (?:reset|closed|refused)|timeout|timed out|temporar(?:y|ily)|service unavailable|gateway timeout|bad gateway|statement timeout)/i;
 
 const asText = (value) => String(value ?? '').trim();
@@ -164,14 +187,7 @@ const statusToSourceAvailability = (status) => {
   return null;
 };
 
-const hasRecipe = (product = {}) => Array.isArray(product.recipe) && product.recipe.length > 0;
-
-const buildConfigurationAvailability = ({ localProduct, evaluation }) => ({
-  availabilitySource: hasRecipe(localProduct)
-    ? 'recipe'
-    : localProduct?.trackStock === false
-      ? 'not_tracked'
-      : 'inventory',
+const buildConfigurationAvailability = ({ evaluation }) => ({
   availabilityReasonCode: asText(evaluation?.reasonCode) || null,
   limitingSource: {
     productId: asText(evaluation?.limitingIngredientId) || null,
@@ -209,7 +225,7 @@ const buildProjection = ({
   const configuration = localProduct
     ? buildEcommerceProductConfigurationSyncPayload(
         localProduct,
-        buildConfigurationAvailability({ localProduct, evaluation })
+        buildConfigurationAvailability({ evaluation })
       )
     : null;
   const configurationSourceRevision = localProduct
@@ -303,12 +319,18 @@ const getFailureStatus = (failure = {}) => Number(
   ?? failure.error?.statusCode
 );
 
-const getFailureCode = (failure = {}, fallbackCode) => asText(
-  failure.code
-  || failure.error?.code
-  || failure.name
-  || fallbackCode
-).toUpperCase();
+const getFailureCode = (failure = {}, fallbackCode) => {
+  const message = asText(failure.message || failure.error?.message);
+  const messageCode = /^[A-Z][A-Z0-9_]{2,}$/.test(message) ? message : null;
+  const name = asText(failure.name || failure.error?.name);
+  return asText(
+    failure.code
+    || failure.error?.code
+    || messageCode
+    || (name && name !== 'Error' ? name : null)
+    || fallbackCode
+  ).toUpperCase();
+};
 
 const getFailureMessage = (failure = {}) => asText(
   failure.message
@@ -317,12 +339,13 @@ const getFailureMessage = (failure = {}) => asText(
 );
 
 const isRetryableCatalogSyncError = (failure, online = isOnline) => {
+  const code = getFailureCode(failure);
+  if (PERMANENT_CONFIGURATION_CODES.has(code)) return false;
   if (!online()) return true;
   if (failure?.retryable === true) return true;
   const status = getFailureStatus(failure);
   if (RETRYABLE_HTTP_STATUSES.has(status)) return true;
 
-  const code = getFailureCode(failure);
   if (RETRYABLE_CODES.has(code)) return true;
   if (/^08[A-Z0-9]{3}$/.test(code)) return true;
   if (/^53[A-Z0-9]{3}$/.test(code)) return true;
@@ -708,14 +731,24 @@ export const createEcommerceCatalogSyncService = ({
         fullReconcile
       });
     } catch (error) {
-      const failure = toFailure(error, 'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED', online);
-      return persistRetryable({
-        scopeIdentity,
-        contextKey,
-        portalId: portal.id,
-        request,
-        queued,
-        failure
+      const failure = toFailure(error, 'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED', online);
+      if (failure.retryable) {
+        return persistRetryable({
+          scopeIdentity,
+          contextKey,
+          portalId: portal.id,
+          request,
+          queued,
+          failure
+        });
+      }
+      clearRetryTimer({ resetAttempt: true });
+      return publishStatus({
+        state: 'error',
+        pendingCount: 0,
+        errorCount: 1,
+        code: failure.code,
+        lastAttemptAt: nowIso()
       });
     }
 
