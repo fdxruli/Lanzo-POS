@@ -15,6 +15,11 @@ const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX
   currency
 }).format(Number(value) || 0);
 
+const normalizeCatalogRevision = (value) => {
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision > 0 ? revision : null;
+};
+
 const requiresPublicConfiguration = (product) => (
   product?.configuration?.requiresConfiguration === true
   || product?.configuration?.hasVariants === true
@@ -86,16 +91,13 @@ function PublicCatalog({
   onLoadMore,
   isLoadingMore,
   catalogRevision,
-  offline,
-  maxItemQuantity
+  offline = false,
+  maxItemQuantity = 99
 }) {
   const { slug = '' } = useParams();
-  const resolvedCatalogRevision = catalogRevision
-    || Number(document.querySelector('.public-store-shell')?.dataset.catalogRevision)
-    || null;
-  const resolvedOffline = typeof offline === 'boolean'
-    ? offline
-    : globalThis.navigator?.onLine === false;
+  const resolvedCatalogRevision = normalizeCatalogRevision(catalogRevision);
+  const resolvedOffline = offline === true;
+  const resolvedMaxItemQuantity = Math.max(1, Math.floor(Number(maxItemQuantity) || 99));
   const [configurationProduct, setConfigurationProduct] = useState(null);
   const [initialLine, setInitialLine] = useState(null);
 
@@ -239,7 +241,7 @@ function PublicCatalog({
             catalogRevision={resolvedCatalogRevision}
             offline={resolvedOffline}
             initialLine={initialLine}
-            maxItemQuantity={maxItemQuantity}
+            maxItemQuantity={resolvedMaxItemQuantity}
             onClose={closeConfiguration}
             onAdd={onAdd}
           />
