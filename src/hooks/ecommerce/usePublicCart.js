@@ -54,26 +54,24 @@ const normalizeStoredEntry = (item) => {
   );
   if (!configurationRevision) return null;
 
+  const configurationVersion = Math.max(
+    1,
+    Math.floor(Number(
+      source.configurationVersion || configurationSnapshot?.configurationVersion
+    ) || 1)
+  );
+
   return {
     lineKey,
     productId: decoded.productId,
     variantId: decoded.variantId,
     selections: decoded.selections,
-    configurationVersion: Math.max(
-      1,
-      Math.floor(Number(
-        source.configurationVersion || configurationSnapshot?.configurationVersion
-      ) || 1)
-    ),
+    configurationVersion,
     configurationRevision,
+    configurationStale: source.configurationStale === true,
     configurationSnapshot: {
       ...configurationSnapshot,
-      configurationVersion: Math.max(
-        1,
-        Math.floor(Number(
-          source.configurationVersion || configurationSnapshot?.configurationVersion
-        ) || 1)
-      ),
+      configurationVersion,
       configurationRevision
     },
     display: cloneJson(source.display, {}),
@@ -95,7 +93,12 @@ const readStoredEntries = (storageKey) => {
       if (!entry) return;
       const current = entriesByKey.get(entry.lineKey);
       entriesByKey.set(entry.lineKey, current
-        ? { ...current, ...entry, quantity: current.quantity + entry.quantity }
+        ? {
+            ...current,
+            ...entry,
+            configurationStale: current.configurationStale || entry.configurationStale,
+            quantity: current.quantity + entry.quantity
+          }
         : entry);
     });
     return Array.from(entriesByKey.values());
@@ -131,6 +134,7 @@ const entriesChanged = (before, after) => (
     entry.lineKey !== after[index]?.lineKey
     || entry.quantity !== after[index]?.quantity
     || entry.configurationRevision !== after[index]?.configurationRevision
+    || entry.configurationStale !== after[index]?.configurationStale
   ))
 );
 
@@ -196,6 +200,9 @@ export default function usePublicCart({
 
   const storageLoaded = loadedStorageKey === storageKey;
   const isReconciled = reconciledCatalogKey === reconciliationKey;
+  const hasStaleConfigurations = entries.some((entry) => (
+    isConfiguredEntry(entry) && entry.configurationStale === true
+  ));
   const pendingProductIds = useMemo(() => {
     if (!storageLoaded || isReconciled) return [];
     return Array.from(new Set(entries
@@ -282,6 +289,7 @@ export default function usePublicCart({
                 selections: asArray(entry.selections),
                 configurationVersion: entry.configurationVersion || null,
                 configurationRevision: entry.configurationRevision || null,
+                configurationStale: entry.configurationStale === true,
                 configurationSnapshot: entry.configurationSnapshot || null,
                 display: entry.display || null,
                 estimatedUnitPrice: entry.estimatedUnitPrice,
@@ -361,6 +369,7 @@ export default function usePublicCart({
       selections: cloneJson(input.selections, []),
       configurationVersion,
       configurationRevision,
+      configurationStale: false,
       configurationSnapshot: {
         ...cloneJson(input.configurationSnapshot, {}),
         configurationVersion,
@@ -458,6 +467,17 @@ export default function usePublicCart({
   const removeProduct = useCallback((lineKey) => {
     commitEntries(entriesRef.current.filter((entry) => entry.lineKey !== lineKey));
   }, [commitEntries]);
+
+  const markConfiguredLinesStale = useCallback(() => {
+    const nextEntries = entriesRef.current.map((entry) => (
+      isConfiguredEntry(entry) ? { ...entry, configurationStale: true } : entry
+    ));
+    if (!entriesChanged(entriesRef.current, nextEntries)) return false;
+    commitEntries(nextEntries);
+    setNotice('La configuración cambió. Actualiza las opciones marcadas antes de continuar.');
+    return true;
+  }, [commitEntries]);
+
   const clearCart = useCallback(() => commitEntries([]), [commitEntries]);
   const clearNotice = useCallback(() => setNotice(''), []);
 
@@ -472,11 +492,13 @@ export default function usePublicCart({
     hasStoredEntries: storageLoaded && !isReconciled && entries.length > 0,
     pendingProductIds,
     isReconciled,
+    hasStaleConfigurations,
     addProduct,
     setQuantity,
     increment,
     decrement,
     removeProduct,
+    markConfiguredLinesStale,
     clearCart,
     clearNotice
   };
