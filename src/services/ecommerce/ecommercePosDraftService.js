@@ -32,7 +32,7 @@ const decorateEcommerceDraftItem = (item = {}, currency = 'MXN') => {
   };
 };
 
-export const decorateEcommercePosDraft = (draft = {}, products = useProductStore.getState().menu) => {
+export const decorateEcommercePosDraft = (draft = {}, products = []) => {
   const currency = draft.currency || 'MXN';
   const sourceItems = Array.isArray(draft.items) ? draft.items : [];
   const reconciled = reconcileEcommerceConfiguredItems({ items: sourceItems, products });
@@ -50,7 +50,7 @@ export function mapEcommerceOrderToPosDraft(args = {}) {
   if (result?.success === false || !result?.draft) return result;
   return {
     ...result,
-    draft: decorateEcommercePosDraft(result.draft, args.products)
+    draft: decorateEcommercePosDraft(result.draft, args.products || [])
   };
 }
 
