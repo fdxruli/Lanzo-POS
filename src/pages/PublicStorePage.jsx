@@ -23,6 +23,7 @@ import {
   getAvailabilityLabel,
   getAvailabilityRefreshDelay
 } from '../utils/ecommerceAvailability';
+import { buildMinimalConfiguredOrderItem } from '../utils/ecommerceConfiguredProduct';
 import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
@@ -32,7 +33,9 @@ const REVISION_REVALIDATION_INTERVAL_MS = 60_000;
 const AVAILABILITY_ERROR_CODES = new Set([
   'ECOMMERCE_ORDERS_PAUSED',
   'ECOMMERCE_STORE_CLOSED',
-  'ECOMMERCE_SCHEDULE_NOT_CONFIGURED'
+  'ECOMMERCE_SCHEDULE_NOT_CONFIGURED',
+  'ECOMMERCE_CONFIGURATION_CHANGED',
+  'ECOMMERCE_PRODUCT_UNAVAILABLE'
 ]);
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('es-MX');
@@ -68,6 +71,7 @@ function PublicStorePage() {
   const availabilityRef = useRef(null);
   const revisionRevalidationPromiseRef = useRef(null);
   const revisionRestartCountRef = useRef(0);
+
   const [portalResult, setPortalResult] = useState(null);
   const [storeStatus, setStoreStatus] = useState('loading');
   const [storeReloadKey, setStoreReloadKey] = useState(0);
@@ -515,7 +519,13 @@ function PublicStorePage() {
   useEffect(() => {
     if (!cart.hasStoredEntries || cart.isReconciled) return;
     if (cart.pendingProductIds.length === 0) return;
-    if (!catalogReady || catalogExhausted || catalogLoading || catalogLoadingMore || catalogError) return;
+    if (
+      !catalogReady
+      || catalogExhausted
+      || catalogLoading
+      || catalogLoadingMore
+      || catalogError
+    ) return;
 
     void loadNextCatalogPage();
   }, [
@@ -576,7 +586,9 @@ function PublicStorePage() {
     })();
     checkoutOpeningPromiseRef.current = request;
     const release = () => {
-      if (checkoutOpeningPromiseRef.current === request) checkoutOpeningPromiseRef.current = null;
+      if (checkoutOpeningPromiseRef.current === request) {
+        checkoutOpeningPromiseRef.current = null;
+      }
       if (mountedRef.current) setCheckoutOpening(false);
     };
     request.then(release, release);
@@ -604,10 +616,7 @@ function PublicStorePage() {
 
     const requestSlug = activeSlugRef.current;
     const requestRevision = activeCatalogRevisionRef.current;
-    const items = cart.items.map(({ product, quantity }) => ({
-      productId: product.id,
-      quantity
-    }));
+    const items = cart.items.map(buildMinimalConfiguredOrderItem);
 
     const requestPromise = (async () => {
       setCheckoutError(null);
@@ -650,7 +659,7 @@ function PublicStorePage() {
           setCheckoutError(safeError);
           setCheckoutStatus('recoverable_error');
           if (AVAILABILITY_ERROR_CODES.has(safeError.code)) {
-            void revalidateCatalogRevision('checkout-availability-rejected');
+            void revalidateCatalogRevision('checkout-configuration-rejected');
           }
         }
         throw error;
@@ -794,6 +803,9 @@ function PublicStorePage() {
           hasMore={pagination.hasMore}
           onLoadMore={loadNextCatalogPage}
           isLoadingMore={catalogLoadingMore}
+          catalogRevision={catalogRevision}
+          offline={offlineCatalog}
+          maxItemQuantity={portal.maxItemQuantity}
         />
       </div>
 
