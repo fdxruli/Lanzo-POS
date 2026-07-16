@@ -208,6 +208,19 @@ describe('catalog projection retry policy', () => {
     });
   });
 
+  it('preserves and does not retry ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED', async () => {
+    const product = baseProduct({
+      variants: [{
+        sourceProductId: 'sku-without-option-values',
+        optionValues: {}
+      }]
+    });
+    await expectPermanentFailure({
+      product,
+      expectedCode: 'ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED'
+    });
+  });
+
   it('does not retry ECOMMERCE_CONFIGURATION_OPTION_LIMIT_EXCEEDED', async () => {
     const options = Array.from({ length: 60 }, (_, index) => ({
       sourceOptionRef: `option-${index}`,
