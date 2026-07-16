@@ -37,6 +37,7 @@ const order = {
 
 const remote = {
   success: true,
+  claimValid: false,
   conversionStatus: 'reserved',
   conversionOwned: true,
   conversionAttemptId: 'attempt-68',
@@ -66,28 +67,25 @@ beforeEach(() => {
 });
 
 describe('ecommerce POS authoritative recovery release', () => {
-  it('releases a reserved attempt only after the server confirms that no sale exists', async () => {
+  it('preserves a reserved attempt when the base verification is uncertain', async () => {
     const result = await recoverEcommercePosConversion({ orderId: order.id });
-    const stored = mocks.state.activeOrders.get(order.id);
 
-    expect(mocks.findSale).toHaveBeenCalledWith({
-      orderId: 'order-68',
-      conversionKey: 'ecommerce:order-68'
+    expect(result).toMatchObject({
+      success: false,
+      code: 'ECOMMERCE_SALE_VERIFICATION_PENDING',
+      saleVerificationPending: true
     });
-    expect(mocks.cancelRemote).toHaveBeenCalledWith(expect.objectContaining({
-      attemptId: 'attempt-68',
-      saleId: 'ecom-order-68',
-      conversionKey: 'ecommerce:order-68',
-      reason: 'recovery_authoritative_sale_check'
-    }));
-    expect(result).toMatchObject({ success: true, authoritativeRelease: true });
-    expect(stored.ecommerceRemoteConversionStatus).toBe('idle');
-    expect(stored.ecommerceConversionAttemptId).toBeNull();
-    expect(stored.ecommerceCheckoutSnapshot).toBeNull();
-    expect(mocks.state.unlockOrder).toHaveBeenCalledWith(order.id);
+    expect(mocks.findSale).not.toHaveBeenCalled();
+    expect(mocks.cancelRemote).not.toHaveBeenCalled();
+    expect(mocks.state.unlockOrder).not.toHaveBeenCalled();
   });
 
   it('preserves the reservation when the authoritative RPC refuses cancellation', async () => {
+    mocks.recoverBase.mockResolvedValue({
+      success: true,
+      changed: false,
+      recoveredStatus: 'idle'
+    });
     mocks.cancelRemote.mockResolvedValue({
       success: false,
       code: 'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED',
@@ -97,7 +95,7 @@ describe('ecommerce POS authoritative recovery release', () => {
     const result = await recoverEcommercePosConversion({ orderId: order.id });
 
     expect(result.success).toBe(false);
-    expect(result.saleVerificationPending).toBe(true);
+    expect(result.code).toBe('ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED');
     expect(result.authoritativeCancellation).toMatchObject({
       success: false,
       code: 'ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED'

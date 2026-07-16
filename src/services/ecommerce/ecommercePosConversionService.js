@@ -41,8 +41,9 @@ const shouldInspectRemoteReservation = ({ order, baseResult } = {}) => {
 };
 
 const shouldReleaseOwnedReservation = ({ baseResult, remote } = {}) => (
-  baseResult?.saleVerificationPending === true
-  || remote?.claimValid === false
+  baseResult?.success !== false
+  && baseResult?.saleVerificationPending !== true
+  && remote?.claimValid === false
 );
 
 const clearVerifiedReservationLocally = async ({ orderId, cancellation }) => {
@@ -127,7 +128,13 @@ export async function recoverEcommercePosConversion({ orderId } = {}) {
   const release = await tryAuthoritativeReservationRelease({ orderId, order, remote });
   if (release?.success === true) return release;
   return release
-    ? { ...baseResult, authoritativeCancellation: release }
+    ? {
+        ...baseResult,
+        success: false,
+        code: release.code || baseResult?.code || 'ECOMMERCE_POS_CONVERSION_CANCEL_FAILED',
+        message: release.message || baseResult?.message,
+        authoritativeCancellation: release
+      }
     : baseResult;
 }
 
