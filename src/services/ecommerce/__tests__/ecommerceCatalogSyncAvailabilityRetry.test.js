@@ -135,6 +135,17 @@ const expectPermanentFailure = async ({ product, expectedCode }) => {
   expect(context.setTimeoutFn).not.toHaveBeenCalled();
 };
 
+const productThrowingFromVariants = (createError) => {
+  const product = baseProduct();
+  Object.defineProperty(product, 'variants', {
+    configurable: true,
+    get() {
+      throw createError();
+    }
+  });
+  return product;
+};
+
 describe('official ecommerce availability sources', () => {
   it.each([
     ['simple tracked', baseProduct(), 'simple', 'direct'],
@@ -178,6 +189,46 @@ describe('official ecommerce availability sources', () => {
   });
 });
 
+describe('projection retry classifier', () => {
+  it.each([
+    ['local TypeError', new TypeError('malformed configuration'), true, false],
+    ['fetch TypeError', new TypeError('Failed to fetch'), true, true],
+    ['network code', { code: 'NETWORK_ERROR', name: 'TypeError' }, true, true],
+    ['timeout code', { code: 'ETIMEDOUT' }, true, true],
+    ['HTTP 503', { status: 503 }, true, true],
+    ['serialization failure', { code: '40001' }, true, true],
+    ['deadlock', { code: '40P01' }, true, true],
+    ['connection failure', { code: '08006' }, true, true],
+    ['resource exhaustion', { code: '53300' }, true, true],
+    ['configuration error', {
+      code: 'ECOMMERCE_CONFIGURATION_INVALID',
+      retryable: true,
+      message: 'request timed out'
+    }, true, false],
+    ['variant validation error', {
+      code: 'ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED'
+    }, true, false],
+    ['unknown error', new Error('unexpected projection defect'), true, false],
+    ['offline', new Error('unexpected projection defect'), false, true]
+  ])('%s is classified contextually', (_label, error, online, expected) => {
+    expect(ecommerceCatalogSyncServiceInternals.isRetryableProjectionError(
+      error,
+      () => online
+    )).toBe(expected);
+  });
+
+  it('does not expose native JavaScript error names as retry evidence', () => {
+    expect(ecommerceCatalogSyncServiceInternals.isRetryableCatalogSyncError(
+      new TypeError('Cannot read properties of undefined'),
+      () => true
+    )).toBe(false);
+    expect(ecommerceCatalogSyncServiceInternals.isRetryableCatalogSyncError(
+      new TypeError('Failed to fetch'),
+      () => true
+    )).toBe(true);
+  });
+});
+
 describe('catalog projection retry policy', () => {
   it('persists and schedules a retry for a temporary local read failure', async () => {
     const product = baseProduct();
@@ -191,6 +242,52 @@ describe('catalog projection retry policy', () => {
       state: 'pending',
       code: 'ECOMMERCE_CATALOG_LOCAL_PRODUCTS_READ_FAILED'
     });
+    expect(context.outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(context.setTimeoutFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a local TypeError and exposes a domain code', async () => {
+    await expectPermanentFailure({
+      product: productThrowingFromVariants(() => new TypeError('malformed configuration')),
+      expectedCode: 'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED'
+    });
+  });
+
+  it('does not retry a typical programming TypeError', async () => {
+    await expectPermanentFailure({
+      product: productThrowingFromVariants(
+        () => new TypeError('Cannot read properties of undefined')
+      ),
+      expectedCode: 'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED'
+    });
+  });
+
+  it('retries a TypeError only when its message carries explicit network evidence', async () => {
+    const product = productThrowingFromVariants(() => new TypeError('Failed to fetch'));
+    const context = createService({ product });
+
+    const result = await context.service.syncNow({ fullReconcile: true });
+
+    expect(result).toMatchObject({
+      state: 'pending',
+      code: 'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED'
+    });
+    expect(context.syncBatch).not.toHaveBeenCalled();
+    expect(context.outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(context.outbox.replacePending).not.toHaveBeenCalled();
+    expect(context.setTimeoutFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries an explicit transient projection code', async () => {
+    const product = productThrowingFromVariants(() => Object.assign(
+      new TypeError('transport failed'),
+      { code: 'NETWORK_ERROR' }
+    ));
+    const context = createService({ product });
+
+    const result = await context.service.syncNow({ fullReconcile: true });
+
+    expect(result).toMatchObject({ state: 'pending', code: 'NETWORK_ERROR' });
     expect(context.outbox.enqueue).toHaveBeenCalledTimes(1);
     expect(context.setTimeoutFn).toHaveBeenCalledTimes(1);
   });
@@ -271,20 +368,25 @@ describe('catalog projection retry policy', () => {
     }, () => true)).toBe(false);
   });
 
-  it('allows a later event to synchronize after the product is corrected', async () => {
+  it('allows a later event to synchronize after a local TypeError is corrected', async () => {
     let invalid = true;
     const product = baseProduct();
     Object.defineProperty(product, 'variants', {
       get() {
-        if (invalid) throw new Error('ECOMMERCE_CONFIGURATION_INVALID');
+        if (invalid) throw new TypeError('malformed configuration');
         return [];
       }
     });
     const context = createService({ product });
 
     const first = await context.service.syncNow({ fullReconcile: true });
-    expect(first.state).toBe('error');
+    expect(first).toMatchObject({
+      state: 'error',
+      code: 'ECOMMERCE_CATALOG_SYNC_PROJECTION_FAILED'
+    });
     expect(context.syncBatch).not.toHaveBeenCalled();
+    expect(context.outbox.enqueue).not.toHaveBeenCalled();
+    expect(context.setTimeoutFn).not.toHaveBeenCalled();
 
     invalid = false;
     const second = await context.service.syncNow({ fullReconcile: true });
