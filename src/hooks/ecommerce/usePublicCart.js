@@ -9,7 +9,8 @@ import {
   decodeEcommerceConfiguredLineKey
 } from '../../utils/ecommerceConfiguredProduct';
 
-const CART_VERSION = 2;
+const CART_VERSION = 3;
+const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
 
 const clampInteger = (value, minimum, maximum) => {
   const parsed = Math.floor(Number(value));
@@ -17,10 +18,20 @@ const clampInteger = (value, minimum, maximum) => {
   return Math.min(maximum, Math.max(minimum, parsed));
 };
 const asArray = (value) => (Array.isArray(value) ? value : []);
-const asObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+const asObject = (value) => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+);
 const asText = (value) => (typeof value === 'string' ? value.trim() : '');
+const asConfigurationRevision = (value) => {
+  const revision = asText(value).toLowerCase();
+  return CONFIGURATION_REVISION_PATTERN.test(revision) ? revision : '';
+};
 const cloneJson = (value, fallback = null) => {
-  try { return JSON.parse(JSON.stringify(value)); } catch { return fallback; }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return fallback;
+  }
 };
 
 const normalizeStoredEntry = (item) => {
@@ -37,13 +48,34 @@ const normalizeStoredEntry = (item) => {
 
   const lineKey = buildEcommerceConfiguredLineKey(decoded);
   if (!lineKey) return null;
+  const configurationSnapshot = cloneJson(source.configurationSnapshot, {});
+  const configurationRevision = asConfigurationRevision(
+    source.configurationRevision || configurationSnapshot?.configurationRevision
+  );
+  if (!configurationRevision) return null;
+
   return {
     lineKey,
     productId: decoded.productId,
     variantId: decoded.variantId,
     selections: decoded.selections,
-    configurationVersion: Math.max(1, Math.floor(Number(source.configurationVersion) || 1)),
-    configurationSnapshot: cloneJson(source.configurationSnapshot, {}),
+    configurationVersion: Math.max(
+      1,
+      Math.floor(Number(
+        source.configurationVersion || configurationSnapshot?.configurationVersion
+      ) || 1)
+    ),
+    configurationRevision,
+    configurationSnapshot: {
+      ...configurationSnapshot,
+      configurationVersion: Math.max(
+        1,
+        Math.floor(Number(
+          source.configurationVersion || configurationSnapshot?.configurationVersion
+        ) || 1)
+      ),
+      configurationRevision
+    },
     display: cloneJson(source.display, {}),
     estimatedUnitPrice: Math.max(0, Number(source.estimatedUnitPrice) || 0),
     maxQuantity: Math.max(1, Math.floor(Number(source.maxQuantity) || 99)),
@@ -63,7 +95,7 @@ const readStoredEntries = (storageKey) => {
       if (!entry) return;
       const current = entriesByKey.get(entry.lineKey);
       entriesByKey.set(entry.lineKey, current
-        ? { ...current, quantity: current.quantity + entry.quantity }
+        ? { ...current, ...entry, quantity: current.quantity + entry.quantity }
         : entry);
     });
     return Array.from(entriesByKey.values());
@@ -96,7 +128,9 @@ function getMaximumNotice(product, effectiveMaximum, portalMaximum) {
 const entriesChanged = (before, after) => (
   before.length !== after.length
   || before.some((entry, index) => (
-    entry.lineKey !== after[index]?.lineKey || entry.quantity !== after[index]?.quantity
+    entry.lineKey !== after[index]?.lineKey
+    || entry.quantity !== after[index]?.quantity
+    || entry.configurationRevision !== after[index]?.configurationRevision
   ))
 );
 
@@ -154,7 +188,9 @@ export default function usePublicCart({
   }, []);
 
   const productMap = useMemo(
-    () => new Map(products.filter((product) => product?.id).map((product) => [product.id, product])),
+    () => new Map(
+      products.filter((product) => product?.id).map((product) => [product.id, product])
+    ),
     [products]
   );
 
@@ -177,7 +213,9 @@ export default function usePublicCart({
 
   useEffect(() => {
     if (!storageLoaded) return;
-    setReconciledCatalogKey((current) => (current === reconciliationKey ? current : null));
+    setReconciledCatalogKey((current) => (
+      current === reconciliationKey ? current : null
+    ));
   }, [reconciliationKey, storageLoaded]);
 
   useEffect(() => {
@@ -191,7 +229,10 @@ export default function usePublicCart({
       if (!product || !isPublicProductAvailable(product)) return result;
       if (
         isConfiguredEntry(entry)
-        && Number(entry.configurationVersion) !== Number(product.configuration?.version || 1)
+        && (
+          Number(entry.configurationVersion) !== Number(product.configuration?.version || 1)
+          || !asConfigurationRevision(entry.configurationRevision)
+        )
       ) return result;
 
       const effectiveMaximum = getEntryMaximum(entry, product, safeMaxItemQuantity);
@@ -240,6 +281,7 @@ export default function usePublicCart({
                 variantId: entry.variantId || null,
                 selections: asArray(entry.selections),
                 configurationVersion: entry.configurationVersion || null,
+                configurationRevision: entry.configurationRevision || null,
                 configurationSnapshot: entry.configurationSnapshot || null,
                 display: entry.display || null,
                 estimatedUnitPrice: entry.estimatedUnitPrice,
@@ -264,7 +306,11 @@ export default function usePublicCart({
       ? buildConfiguredProduct(entry, catalogProduct)
       : catalogProduct;
     let lineTotal = '0';
-    try { lineTotal = new Big(product.price || 0).times(quantity).toFixed(2); } catch { lineTotal = '0'; }
+    try {
+      lineTotal = new Big(product.price || 0).times(quantity).toFixed(2);
+    } catch {
+      lineTotal = '0';
+    }
     lines.push({ product, quantity, maxQuantity: effectiveMaximum, lineTotal });
     return lines;
   }, []), [entries, productMap, safeMaxItemQuantity]);
@@ -273,26 +319,59 @@ export default function usePublicCart({
   const subtotal = subtotalBig.toFixed(2);
   const totalUnits = cartItems.reduce((total, line) => total + line.quantity, 0);
   const minimumBig = useMemo(() => {
-    try { return new Big(Math.max(0, Number(minOrderTotal) || 0)); } catch { return new Big(0); }
+    try {
+      return new Big(Math.max(0, Number(minOrderTotal) || 0));
+    } catch {
+      return new Big(0);
+    }
   }, [minOrderTotal]);
-  const remaining = subtotalBig.gte(minimumBig) ? new Big(0) : minimumBig.minus(subtotalBig);
+  const remaining = subtotalBig.gte(minimumBig)
+    ? new Big(0)
+    : minimumBig.minus(subtotalBig);
 
   const addProduct = useCallback((input, options = {}) => {
-    const configured = input?.success === true && asText(input?.lineKey) && asText(input?.productId);
+    const configured = input?.success === true
+      && asText(input?.lineKey)
+      && asText(input?.productId);
     const product = configured ? productMap.get(input.productId) : input;
     const lineKey = configured ? input.lineKey : product?.id;
     const replaceLineKey = asText(options.replaceLineKey);
-    const requestedQuantity = configured ? Math.max(1, Math.floor(Number(input.quantity) || 1)) : 1;
+    const requestedQuantity = configured
+      ? Math.max(1, Math.floor(Number(input.quantity) || 1))
+      : 1;
+    const configurationRevision = configured
+      ? asConfigurationRevision(
+          input.configurationRevision || input.configurationSnapshot?.configurationRevision
+        )
+      : '';
+    if (configured && !configurationRevision) {
+      setNotice('La configuración cambió. Vuelve a seleccionar las opciones.');
+      return false;
+    }
+
+    const configurationVersion = configured
+      ? Math.max(1, Math.floor(Number(
+          input.configurationVersion || input.configurationSnapshot?.configurationVersion
+        ) || 1))
+      : null;
     const entry = configured ? {
       lineKey,
       productId: input.productId,
       variantId: input.variantId || null,
       selections: cloneJson(input.selections, []),
-      configurationVersion: input.configurationVersion,
-      configurationSnapshot: cloneJson(input.configurationSnapshot, {}),
+      configurationVersion,
+      configurationRevision,
+      configurationSnapshot: {
+        ...cloneJson(input.configurationSnapshot, {}),
+        configurationVersion,
+        configurationRevision
+      },
       display: cloneJson(input.display, {}),
       estimatedUnitPrice: Math.max(0, Number(input.estimatedUnitPrice) || 0),
-      maxQuantity: Math.max(1, Math.floor(Number(input.maxQuantity) || safeMaxItemQuantity)),
+      maxQuantity: Math.max(
+        1,
+        Math.floor(Number(input.maxQuantity) || safeMaxItemQuantity)
+      ),
       quantity: requestedQuantity
     } : { lineKey, productId: product?.id, quantity: requestedQuantity };
 
@@ -323,7 +402,10 @@ export default function usePublicCart({
       return false;
     }
 
-    commitEntries([...nextEntries, { ...entry, quantity: Math.min(requestedQuantity, effectiveMaximum) }]);
+    commitEntries([
+      ...nextEntries,
+      { ...entry, quantity: Math.min(requestedQuantity, effectiveMaximum) }
+    ]);
     setNotice(replaceLineKey ? 'Configuración actualizada.' : 'Producto agregado al carrito.');
     return true;
   }, [commitEntries, productMap, safeMaxItemQuantity, safeMaxOrderItems]);
@@ -340,7 +422,10 @@ export default function usePublicCart({
     const nextEntries = entriesRef.current.reduce((result, entry) => {
       if (entry.lineKey !== lineKey) result.push(entry);
       else if (Number.isFinite(parsedQuantity) && parsedQuantity > 0) {
-        result.push({ ...entry, quantity: clampInteger(parsedQuantity, 1, effectiveMaximum) });
+        result.push({
+          ...entry,
+          quantity: clampInteger(parsedQuantity, 1, effectiveMaximum)
+        });
       }
       return result;
     }, []);
