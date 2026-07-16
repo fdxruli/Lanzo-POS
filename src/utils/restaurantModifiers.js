@@ -1,5 +1,11 @@
 export const RESTAURANT_MODIFIER_UNITS = ['pza', 'kg', 'g', 'lt', 'ml'];
 
+export const RESTAURANT_MODIFIER_SELECTION_TYPES = Object.freeze({
+  SINGLE: 'single',
+  MULTIPLE: 'multiple'
+});
+
+const MAX_MODIFIER_SELECTIONS = 50;
 const text = (value) => String(value ?? '').trim();
 
 const toNumber = (value, fallback = 0) => {
@@ -9,6 +15,7 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const toNonNegativeNumber = (value, fallback = 0) => Math.max(0, toNumber(value, fallback));
+const toNonNegativeInteger = (value, fallback = 0) => Math.max(0, Math.trunc(toNumber(value, fallback)));
 
 const toPositiveNumberOrNull = (value) => {
   const parsed = toNumber(value, NaN);
@@ -69,15 +76,58 @@ export const normalizeModifierOption = (option = {}, { optionIndex = 0 } = {}) =
   };
 };
 
-export const normalizeModifierGroup = (group = {}, { groupIndex = 0 } = {}) => ({
-  ...group,
-  id: text(group.id) || `modgrp_${groupIndex}_${slugify(group.name)}`,
-  name: text(group.name),
-  required: group.required === true,
-  options: Array.isArray(group.options)
+const resolveModifierSelectionType = (group = {}) => {
+  const explicitType = text(group.selectionType ?? group.selection_type).toLowerCase();
+  if (explicitType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE) {
+    return RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE;
+  }
+  if (explicitType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE) {
+    return RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE;
+  }
+  if (group.multiple === true) return RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE;
+  if (group.multiple === false) return RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE;
+
+  // Compatibilidad: históricamente el POS trataba los grupos obligatorios como
+  // selección única y los opcionales como extras de selección múltiple.
+  return group.required === true
+    ? RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE
+    : RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE;
+};
+
+export const normalizeModifierGroup = (group = {}, { groupIndex = 0 } = {}) => {
+  const options = Array.isArray(group.options)
     ? group.options.map((option, optionIndex) => normalizeModifierOption(option, { optionIndex }))
-    : []
-});
+    : [];
+  const selectionType = resolveModifierSelectionType(group);
+  const requestedMin = toNonNegativeInteger(
+    group.minSelect ?? group.min_select ?? group.minSelections,
+    group.required === true ? 1 : 0
+  );
+  const required = group.required === true || requestedMin > 0;
+  const minSelect = required ? Math.max(1, requestedMin) : 0;
+  const fallbackMax = selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE
+    ? 1
+    : Math.max(minSelect, options.length, 1);
+  const requestedMax = toNonNegativeInteger(
+    group.maxSelect ?? group.max_select ?? group.maxSelections,
+    fallbackMax
+  );
+  const maxSelect = selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.SINGLE
+    ? 1
+    : Math.min(MAX_MODIFIER_SELECTIONS, Math.max(minSelect, requestedMax || fallbackMax));
+
+  return {
+    ...group,
+    id: text(group.id) || `modgrp_${groupIndex}_${slugify(group.name)}`,
+    name: text(group.name),
+    selectionType,
+    multiple: selectionType === RESTAURANT_MODIFIER_SELECTION_TYPES.MULTIPLE,
+    required,
+    minSelect,
+    maxSelect,
+    options
+  };
+};
 
 export const normalizeModifierGroups = (groups = []) => (
   Array.isArray(groups)
