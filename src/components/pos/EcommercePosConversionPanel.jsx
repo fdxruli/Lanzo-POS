@@ -26,6 +26,14 @@ const CONFIRMATION_STATUSES = new Set([
   ECOMMERCE_CONVERSION_STATUS.CONFIRMATION_PENDING
 ]);
 
+const hasLiveCheckoutOwnership = (order = {}, orderId = null) => Boolean(
+  getEcommerceCheckoutInitiation(orderId)
+  || (
+    order.isLockedForCheckout === true
+    && Boolean(order.ecommerceCanonicalCheckoutAttemptId)
+  )
+);
+
 const STATUS_COPY = Object.freeze({
   [ECOMMERCE_CONVERSION_STATUS.IDLE]: 'Sin iniciar',
   [ECOMMERCE_CONVERSION_STATUS.VALIDATING]: 'Comprobando inventario y pedido…',
@@ -166,6 +174,13 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     let active = true;
 
     const recoverAndVerify = async () => {
+      const liveOrder = useActiveOrders.getState().activeOrders.get(orderId);
+      if (!liveOrder || liveOrder.origin !== 'ecommerce') return;
+
+      // Recovery is for interrupted attempts. Running it while the payment modal
+      // still owns the checkout can cancel the reservation that checkout needs.
+      if (hasLiveCheckoutOwnership(liveOrder, orderId)) return;
+
       await recoverEcommercePosConversion({ orderId });
       if (!active) return;
 

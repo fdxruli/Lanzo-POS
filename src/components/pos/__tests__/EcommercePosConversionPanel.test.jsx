@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ECOMMERCE_CONVERSION_STATUS,
   ECOMMERCE_POS_CONVERSION_CONTRACT_VERSION
@@ -89,6 +89,10 @@ beforeEach(() => {
     conversionOwned: false,
     convertedSaleId: null
   });
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('EcommercePosConversionPanel', () => {
@@ -196,8 +200,28 @@ describe('EcommercePosConversionPanel', () => {
 
     render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
 
-    expect(screen.getByText('Registrando venta…')).toBeInTheDocument();
+    expect(screen.getAllByText('Registrando venta…')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Registrando venta…' })).toBeDisabled();
+  });
+
+  it('does not run automatic recovery while the payment modal owns checkout', async () => {
+    const order = createOrder({
+      ecommerceConversionStatus: ECOMMERCE_CONVERSION_STATUS.PAYMENT_PENDING,
+      ecommerceRemoteConversionStatus: 'reserved',
+      ecommerceRemoteConversionOwned: true,
+      isLockedForCheckout: true,
+      ecommerceCanonicalCheckoutAttemptId: 'checkout-attempt-1'
+    });
+    mocks.state.activeOrders = new Map([[order.id, order]]);
+
+    render(<EcommercePosConversionPanel order={order} onCheckout={mocks.onCheckout} />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mocks.recover).not.toHaveBeenCalled();
+    expect(mocks.remote).not.toHaveBeenCalled();
   });
 
   it('shows only confirmation recovery after a sale exists', async () => {
