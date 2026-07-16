@@ -10,7 +10,7 @@ Base: `main` en `5c9945c31b0c80e8b266e3bec22bf561ac4c1386`
 
 Se implementó la selección pública de variantes, grupos, opciones y extras, con precio estimado en cliente y autoridad completa en Supabase. El checkout conserva compatibilidad con productos simples, valida configuraciones por portal/licencia, agrega demanda de stock por producto o variante, guarda un snapshot inmutable en `ecommerce_order_items.options` y mantiene la recuperación idempotente antes de cualquier validación mutable.
 
-La implementación funcional y la matriz SQL transaccional fueron validadas. La validación npm global queda pendiente porque el entorno de ejecución no pudo resolver GitHub para instalar dependencias; no se declara PASS de builds ni de ESLint global.
+La implementación funcional y las matrices SQL transaccionales fueron validadas. La validación npm global continúa pendiente porque el entorno de ejecución no pudo resolver GitHub para obtener un checkout instalable; no se declara PASS de Vitest, ESLint ni builds.
 
 ## 2. Estado heredado
 
@@ -38,7 +38,7 @@ Expone identificadores públicos, nombres, valores de atributos, semántica de p
 
 ## 8. Producto simple
 
-El payload legacy `{ productId, quantity }` continúa aceptado. No requiere variante ni selecciones y el precio sigue leyéndose del producto publicado.
+El payload legacy `{ productId, quantity }` continúa aceptado. No requiere variante, selecciones ni `configurationRevision`; el precio sigue leyéndose del producto publicado.
 
 ## 9. Recipe
 
@@ -70,15 +70,15 @@ El servidor ignora precios, subtotales y totales enviados. Soporta `base`, `delt
 
 ## 15. Carrito
 
-Cada línea configurable conserva `lineKey`, `productId`, cantidad, variante, selecciones, versión, snapshot visible, precio estimado y máximo aplicable. El formato legacy del carrito sigue admitido.
+Cada línea configurable conserva `lineKey`, `productId`, cantidad, variante, selecciones, versión de esquema, revisión de contenido, snapshot visible, precio estimado y máximo aplicable. El formato legacy del carrito sigue admitido.
 
 ## 16. Line key
 
-`buildEcommerceConfiguredLineKey` usa `productId + variantId + optionIds` ordenados canónicamente. No depende de nombres, precios, tiempo ni posición del array.
+`buildEcommerceConfiguredLineKey` usa únicamente `productId + variantId + optionIds` ordenados canónicamente. No depende de nombres, precios, tiempo, posición del array ni `configurationRevision`.
 
 ## 17. Edición
 
-El carrito reabre el selector con la configuración previa. Al guardar reemplaza la línea original y fusiona cantidades cuando la configuración resultante coincide con otra línea existente.
+El carrito reabre el selector con la configuración previa. Al guardar reemplaza la línea original y fusiona cantidades cuando la configuración resultante coincide con otra línea existente. Una revisión nueva conserva la identidad de línea, pero reemplaza la revisión obsoleta antes de confirmar.
 
 ## 18. Checkout
 
@@ -94,11 +94,11 @@ Orden efectivo preservado:
 4. Devolver pedido existente.
 5. Validar únicamente pedidos nuevos.
 
-La matriz confirmó replay después de desactivar variante/opción, cambiar precio y cerrar pedidos.
+La matriz confirmó replay después de cambiar precio y revisión: una orden ya creada vuelve con su mismo ID, total y snapshot.
 
 ## 20. Disponibilidad
 
-Se mantiene `availability_source` como contrato. `unverified` falla cerrado; `not_tracked` se permite de forma explícita. Los productos configurables evitan el bloqueo temporal heredado del padre, pero sus variantes y opciones concretas siguen siendo autoridad.
+Se mantiene `availability_source` como contrato. `unverified` falla cerrado; `not_tracked` se permite de forma explícita. Para todo producto, `manual_available=true` es obligatorio. En padres configurables se omite únicamente el `is_available` técnico del padre; la configuración concreta sigue validando variante, opción, fuente y stock.
 
 ## 21. Stock agregado
 
@@ -106,7 +106,7 @@ La demanda se acumula por producto y por variante. Dos líneas con extras difere
 
 ## 22. Snapshot
 
-`ecommerce_order_items.options` guarda versión, tipo de configuración, variante, `optionValues`, grupos, opciones y desglose de precio. No contiene referencias de ingredientes, costos ni source refs.
+`ecommerce_order_items.options` guarda versión, `configurationVersion`, `configurationRevision`, tipo de configuración, variante, `optionValues`, grupos, opciones y desglose de precio. No contiene referencias de ingredientes, costos ni source refs.
 
 ## 23. WhatsApp
 
@@ -122,11 +122,11 @@ Pro conserva sincronización cloud y visibilidad de stock conforme a la feature 
 
 ## 26. Caché
 
-El detalle se cachea por slug, producto, `catalogRevision` y `configurationVersion`. Se deduplican solicitudes concurrentes y se eliminan revisiones/versiones obsoletas. El esquema del caché de catálogo subió a versión 2 para no interpretar páginas antiguas sin resumen como productos simples.
+El detalle se cachea por slug, producto, `catalogRevision` y `configurationVersion`; la entrada también conserva `configurationRevision` y se invalida cuando la revisión de contenido cambia. Se deduplican solicitudes concurrentes y se eliminan revisiones/versiones obsoletas. El esquema del caché de catálogo permanece en versión 2 para no interpretar páginas antiguas sin resumen como productos simples.
 
 ## 27. Offline
 
-Puede mostrarse catálogo y detalle guardado. No se permite confirmar pedidos sin conexión y se conserva el mensaje offline actual.
+Puede mostrarse catálogo y detalle guardado. No se permite confirmar pedidos sin conexión. `offlineCatalog` se propaga desde el estado React, incluso cuando `navigator.onLine` todavía indique `true`.
 
 ## 28. Accesibilidad
 
@@ -136,40 +136,41 @@ El selector usa diálogo modal, `fieldset`/`legend`, radio/checkbox, `aria-inval
 
 Las funciones son `SECURITY DEFINER` con `SET search_path = ''`. Los esquemas se califican. Las tablas no se conceden directamente. Los helpers privados se revocan a `PUBLIC`, `anon` y `authenticated`; la RPC pública y el checkout conservan grants intencionales.
 
-## 30. Migración
+## 30. Migraciones iniciales de PUBLIC.1
 
-Se crearon dos migraciones compensatorias nuevas sin editar MODEL.1:
+Se crearon y aplicaron:
 
 - `20260716012251_ecom_products_public_1.sql`
 - `20260716012935_ecom_products_public_1_parent_gate_fix.sql`
 
-La segunda corrige el único bloqueo detectado después de la primera: MODEL.1 forzaba `manual_available=false` en el padre temporalmente bloqueado. PUBLIC.1 omite ese gate únicamente para el padre que exige configuración; no omite disponibilidad de variante/opción.
+### Rectificación documental
 
-## 31. Historial remoto
+La afirmación anterior de que MODEL.1 “forzaba `manual_available=false`” era incorrecta. El defecto real estaba en la función de disponibilidad creada por PUBLIC.1: al tratar un padre configurable, omitía indebidamente `manual_available` junto con el gate técnico de `is_available`. La corrección PUBLIC.1.1 separa ambas dimensiones: `manual_available` vuelve a ser siempre autoritativo y solamente se omite el `is_available` técnico del padre cuando `requires_configuration=true`.
 
-Ambas versiones aparecen en el historial remoto de Supabase. Se verificaron definiciones efectivas, owner `postgres`, `SECURITY DEFINER`, `search_path=''` y ACL.
+## 31. Historial remoto inicial
 
-## 32. Pruebas SQL
+Las dos versiones iniciales aparecen en el historial remoto de Supabase. Se verificaron definiciones efectivas, owner `postgres`, `SECURITY DEFINER`, `search_path=''` y ACL.
 
-`supabase/tests/ecom_products_public_1_test.sql` contiene `BEGIN/ROLLBACK` y una matriz de 50 controles: privacidad, Free/Pro, grupos, variantes cruzadas, opciones cruzadas, precio manipulado, delta/absolute, snapshot, WhatsApp, stock agregado, replay idempotente, delivery, compatibilidad simple y ausencia de efectos POS.
+## 32. Pruebas SQL iniciales
 
-Una matriz funcional equivalente fue ejecutada directamente contra Supabase y terminó correctamente con `ROLLBACK`.
+`supabase/tests/ecom_products_public_1_test.sql` contiene `BEGIN/ROLLBACK` y una matriz de controles de privacidad, Free/Pro, grupos, variantes cruzadas, opciones cruzadas, precio manipulado, delta/absolute, snapshot, WhatsApp, stock agregado, replay idempotente, delivery, compatibilidad simple y ausencia de efectos POS.
 
-## 33. Pruebas JavaScript
+## 33. Pruebas JavaScript iniciales
 
-Se añadieron cinco suites para utilidades, caché, servicio, modal y carrito. Cubren normalización, combinaciones, required/min/max, precios, lineKey, payload mínimo, deduplicación, retry seguro, restauración de edición, fusión y eliminación por cambio de versión.
+Se añadieron suites para utilidades, caché, servicio, modal y carrito. Cubren normalización, combinaciones, required/min/max, precios, lineKey, payload mínimo, deduplicación, retry seguro, restauración de edición y fusión.
 
 ## 34. Builds
 
-- `npm ci`: no ejecutado; el entorno no pudo resolver GitHub para obtener el repositorio/dependencias.
+- `npm ci`: no ejecutado; el entorno no pudo resolver `github.com` para obtener un checkout instalable.
 - `npm run build`: no ejecutado.
 - `npm run build:store`: no ejecutado.
 - `npm run build:store:vercel`: no ejecutado.
-- Validación de sintaxis JS/JSX: PASS mediante `node --check` y parser TypeScript local.
+
+No se usa Vercel como sustituto de estas validaciones.
 
 ## 35. ESLint
 
-ESLint enfocado y global no se ejecutaron por falta de instalación del workspace. No se añadieron `eslint-disable`, `.skip`, `.todo` ni timeouts artificiales.
+ESLint enfocado y global no se ejecutaron por falta de instalación del workspace. No se añadieron `eslint-disable`, `.skip`, `.todo`, snapshots gigantes ni timeouts artificiales.
 
 ## 36. Git
 
@@ -177,23 +178,19 @@ La rama nació del HEAD exacto de `main`: `5c9945c31b0c80e8b266e3bec22bf561ac4c1
 
 ## 37. PR
 
-PR draft nuevo con base `main` y head `fase-ecom-products-public-1`. No se reutilizó #98, no se marcó ready y no se mergeó. El número se registra al crear el PR.
+PR #99 con base `main` y head `fase-ecom-products-public-1`. Continúa abierto, draft, sin merge y no se marcó ready.
 
 ## 38. Vercel
 
 No hubo deployment manual, redeploy, promoción de alias, cambios de proyecto, dominios, variables, Root Directory, build command u output. No se creó preview deliberado.
 
-## 39. Archivos
+## 39. Riesgos generales
 
-Creados: utilidades, caché de configuración, modal y estilos, cinco suites JavaScript, dos migraciones, prueba SQL y este reporte. Modificados: catálogo público, carrito, drawer, servicio público y caché de catálogo.
-
-## 40. Riesgos
-
-1. Queda pendiente ejecutar instalación, tests, ESLint y los tres builds dentro de un checkout con dependencias.
+1. Queda pendiente ejecutar instalación, Vitest, ESLint y los tres builds dentro de un checkout con dependencias.
 2. ECOM.PRODUCTS.POS.1 deberá interpretar el snapshot para conversión, lotes, comandas e inventario; no debe asumir todavía descuento de extras.
-3. La prueba manual debe incluir productos reales de QA creados específicamente para esta fase, nunca pedidos de clientes.
+3. La prueba manual debe incluir productos de QA creados específicamente para esta fase, nunca pedidos de clientes.
 
-## 41. Pruebas manuales
+## 40. Pruebas manuales base
 
 | # | Caso | Resultado esperado |
 |---:|---|---|
@@ -207,7 +204,7 @@ Creados: utilidades, caché de configuración, modal y estilos, cinco suites Jav
 | 8 | Opción agotada | No seleccionable; checkout rechaza cambio tardío |
 | 9 | Dos configuraciones | Permanecen como líneas distintas |
 | 10 | Editar línea | Restaura y reemplaza sin fantasma |
-| 11 | Reintentar checkout | Mantiene clave del intento |
+| 11 | Reintentar checkout | Mantiene clave si el payload no cambió |
 | 12 | Pedido idempotente | Devuelve el pedido original |
 | 13 | Free | Configura sin cantidad exacta visible |
 | 14 | Pro | Respeta visibilidad vigente |
@@ -216,44 +213,333 @@ Creados: utilidades, caché de configuración, modal y estilos, cinco suites Jav
 | 17 | Offline | Solo lectura; no confirma pedido |
 | 18 | WhatsApp | Incluye variante, opciones e indicaciones |
 
-## 42. Conclusión
+# ECOM.PRODUCTS.PUBLIC.1.1 — Bloqueantes de disponibilidad, revisión y rate limit
 
-Las variantes y extras pueden seleccionarse y editarse. El servidor conserva autoridad de precio, pertenencia, disponibilidad y stock. La idempotencia mantiene el orden crítico. Los productos simples conservan compatibilidad. La implementación queda en PR draft para revisión independiente y validación npm completa. No se inició ECOM.PRODUCTS.POS.1 ni personalización Pro.
+## 41. Estado heredado de la corrección
 
-## Matriz de producto
+HEAD inicial revisado de la rama: `56e1d30001493af29c1451802db12f35438bd4c8`.  
+HEAD de `main`: `5c9945c31b0c80e8b266e3bec22bf561ac4c1386`.
 
-| Producto | Selección requerida | Fuente de precio | Fuente de disponibilidad |
-|---|---|---|---|
-| Simple | No | Producto | Directa |
-| Recipe | No, salvo grupos | Producto + extras | Receta |
-| Variant parent | Variante | Variante | Variante agregada |
-| Configurable | Según grupos | Producto + extras | Producto o receta |
-| Variante + extras | Variante y grupos | Variante + extras | Variante |
+Se conservaron selector, grupos, opciones, precio server-side, lineKey, edición, snapshot, WhatsApp, compatibilidad simple, caché e idempotencia. No se inició ECOM.PRODUCTS.POS.1 ni personalización Pro.
 
-## Autoridad cliente/servidor
+## 42. Bloqueante `manual_available`
 
-| Acción | Cliente | Servidor |
-|---|---|---|
-| Mostrar precio | Estimación | — |
-| Confirmar precio | — | Autoridad |
-| Validar grupos | UX | Autoridad |
-| Validar variante | UX | Autoridad |
-| Validar stock | Estado | Autoridad |
-| Guardar snapshot | — | Autoridad |
-| Descontar inventario | No | Fuera de alcance |
+### Comportamiento anterior
 
-## Conteo
+`private.ecommerce_product_publicly_available` permitía que un padre configurable con variante disponible apareciera disponible aunque el negocio hubiera establecido `manual_available=false`.
 
-| Recurso | Cantidad |
-|---|---:|
-| Migraciones creadas | 2 |
-| Migraciones aplicadas | 2 |
-| RPC creadas/modificadas | 2 públicas; 5 helpers privados |
-| Componentes creados | 1 modal + estilos |
-| Tests SQL | 1 archivo / 50 controles |
-| Tests JavaScript | 5 archivos |
-| Pedidos residuales | 0 |
-| Ventas residuales | 0 |
-| Movimientos residuales | 0 |
-| Deployments manuales | 0 |
-| Previews deliberados | 0 |
+### Regla final
+
+1. Producto eliminado o no publicado: bloqueado.
+2. `manual_available=false`: bloqueado siempre.
+3. Producto no configurable: exige `is_available=true`.
+4. Producto configurable: puede omitir únicamente el `is_available` técnico del padre.
+5. Padre con variantes: exige al menos una variante pública válida.
+6. Producto sin variantes: aplica `availability_source`, `source_available` y stock.
+
+El checkout repite el gate autoritativo de `manual_available` antes de validar una configuración nueva.
+
+## 43. `configurationVersion` y `configurationRevision`
+
+`configurationVersion` conserva su significado original: versión del esquema de datos.  
+`configurationRevision` representa el contenido público concreto revisado por el cliente.
+
+La revisión se calcula mediante `SHA-256` hexadecimal canónico en:
+
+`private.ecommerce_product_configuration_revision(uuid)`.
+
+### Campos incluidos
+
+Producto:
+
+- id público;
+- nombre y descripción públicos;
+- imagen pública;
+- tipo y versión de configuración;
+- precio y moneda;
+- flags de variantes, grupos y configuración requerida;
+- fuente de disponibilidad;
+- disponibilidad manual, de fuente, técnica y pública;
+- modo de stock.
+
+Variantes activas, con `ORDER BY` explícito:
+
+- id;
+- nombre público;
+- `optionValues`;
+- `priceMode`;
+- `priceValue`;
+- imagen;
+- estados de disponibilidad;
+- modo de stock;
+- orden visual.
+
+Grupos y opciones activos, con `ORDER BY` explícito:
+
+- ids;
+- nombres públicos;
+- tipo de selección;
+- required/min/max;
+- `priceDelta`;
+- estados de disponibilidad;
+- orden visual.
+
+### Campos excluidos
+
+- `source_product_id`;
+- `local_product_ref`;
+- `source_ingredient_id`;
+- cantidades de receta;
+- costos;
+- license keys;
+- datos de staff;
+- tokens;
+- cantidad exacta volátil de stock.
+
+Cambiar stock exacto de 20 a 19 sin cambio de estado público no modifica la revisión.
+
+## 44. RPC, carrito y payload
+
+La RPC de detalle devuelve:
+
+- `product.configurationVersion`;
+- `product.configurationRevision`.
+
+La línea configurable conserva ambos valores en memoria, `sessionStorage` y `configurationSnapshot`.
+
+El payload mínimo configurado contiene:
+
+```json
+{
+  "productId": "...",
+  "quantity": 1,
+  "variantId": "...",
+  "selections": [],
+  "configurationVersion": 1,
+  "configurationRevision": "<sha256>"
+}
+```
+
+No envía precios, nombres, total, snapshot, costos, stock ni source IDs.
+
+`configurationRevision` no forma parte de `lineKey`. Una revisión nueva mantiene la identidad de selección, pero reemplaza el estado obsoleto antes de confirmar.
+
+## 45. Checkout e idempotencia
+
+Para productos con variantes, grupos o configuración requerida, el checkout exige una revisión válida de 64 caracteres y la compara con el hash vigente antes de validar variante, opciones, precio y stock.
+
+Falta o diferencia devuelve:
+
+`ECOMMERCE_CONFIGURATION_CHANGED`.
+
+El snapshot server-side guarda la revisión vigente. La firma del intento de checkout incorpora variante, selecciones, versión de esquema y revisión de contenido:
+
+- mismo payload: reutiliza idempotency key;
+- revisión nueva: genera una key nueva;
+- pedido ya creado con key anterior: replay devuelve el pedido original antes de toda validación mutable.
+
+## 46. Rate limit anterior
+
+El bucket anterior era:
+
+`public-store-product:<portal_id>:<product_id>`
+
+con 120 solicitudes compartidas por todos los visitantes del producto.
+
+## 47. Señal confiable e identidad privada
+
+Se inspeccionó el mecanismo existente del proyecto que lee `current_setting('request.headers', true)` y normaliza, en orden:
+
+1. `cf-connecting-ip`;
+2. `x-real-ip`;
+3. primer valor de `x-forwarded-for`.
+
+La sesión administrativa del conector no incluye cabeceras de una petición pública real; el contrato se validó de forma transaccional mediante `set_config('request.headers', ..., true)`. La implementación reutiliza la convención ya instalada para cabeceras de proxy y no acepta UUID, localStorage, user-agent, query params ni fingerprints enviados por el navegador como autoridad.
+
+La IP se normaliza como `inet` y se convierte en identidad mediante HMAC-SHA256 con:
+
+- dirección normalizada;
+- portal;
+- producto;
+- secreto privado generado en la base.
+
+El secreto se almacena en `private.ecommerce_public_rate_limit_secret`, tiene 32 bytes, no está en el repositorio ni en JavaScript y no concede `SELECT` ni siquiera a `service_role`.
+
+## 48. Límites finales
+
+### Individual
+
+- bucket HMAC por cliente, portal y producto;
+- 60 solicitudes por 10 minutos;
+- bloqueo de 15 minutos.
+
+### Global
+
+- bucket por portal y producto;
+- 1200 solicitudes por 10 minutos;
+- bloqueo de 15 minutos.
+
+La respuesta pública no identifica qué nivel bloqueó ni devuelve hashes.
+
+## 49. Privacidad del rate limit
+
+Las pruebas confirmaron:
+
+- misma señal produce hash estable;
+- clientes distintos producen hashes distintos;
+- producto o portal distinto produce hash distinto;
+- no se persiste IP literal;
+- no se persiste el header completo;
+- metadata contiene únicamente fase, fuente y nivel;
+- helpers privados no son ejecutables por `anon` ni `authenticated`.
+
+## 50. Contexto React
+
+`PublicStorePage` pasa explícitamente a `PublicCatalog`:
+
+```jsx
+catalogRevision={catalogRevision}
+offline={offlineCatalog}
+maxItemQuantity={portal.maxItemQuantity}
+```
+
+`PublicCatalog` dejó de consultar `.public-store-shell` y dejó de usar `navigator.onLine` como vía principal. El estado React es la fuente autoritativa. El selector recibe la revisión actual, respeta el máximo real del portal y trata un catálogo de caché como offline aunque el navegador reporte conexión.
+
+## 51. Migraciones correctivas
+
+Se crearon y aplicaron, sin editar las dos migraciones previas:
+
+- `20260716045221_ecom_products_public_1_availability_revision_fix.sql`;
+- `20260716045242_ecom_products_public_1_checkout_revision_fix.sql`;
+- `20260716045301_ecom_products_public_1_rate_limit_isolation.sql`.
+
+Los filenames locales coinciden con las versiones remotas.
+
+## 52. Seguridad efectiva
+
+Verificado después de aplicar:
+
+- owner `postgres`;
+- `SECURITY DEFINER`;
+- `search_path=''`;
+- helpers privados: ACL `postgres` y `service_role`;
+- RPC públicas: `anon`, `authenticated`, `service_role`;
+- tabla de secreto: ACL exclusiva de `postgres`;
+- una fila singleton de secreto de 32 bytes;
+- cero acceso directo a variantes, grupos, opciones, hashes o rate limits.
+
+## 53. Pruebas SQL PUBLIC.1.1
+
+Se añadió `supabase/tests/ecom_products_public_1_1_blockers_test.sql`, íntegramente dentro de `BEGIN/ROLLBACK`.
+
+La matriz remota ejecutada cubrió:
+
+- manual false en padre configurable;
+- detalle público no disponible;
+- checkout bloqueado;
+- manual true con gate técnico y variante válida;
+- revisión estable;
+- cambios de precio de variante, `priceDelta` y grupo;
+- stock 20→19 sin invalidación;
+- revisión ausente y obsoleta;
+- revisión vigente;
+- snapshot con revisión;
+- precio manipulado ignorado;
+- simple legacy;
+- replay idempotente antiguo;
+- clientes A/B separados;
+- A bloqueado no bloquea B;
+- límite global;
+- separación por producto/portal;
+- privacidad de IP;
+- ausencia de ventas, caja e inventario.
+
+Resultado: PASS.  
+Después del rollback: 0 licencias, 0 portales, 0 productos, 0 pedidos, 0 partidas y 0 filas de rate limit sintéticas.
+
+## 54. Pruebas JavaScript PUBLIC.1.1
+
+Se añadieron:
+
+- `src/services/ecommerce/__tests__/ecommercePublicRevision.test.js`;
+- `src/hooks/ecommerce/__tests__/usePublicCart.configurationRevision.test.jsx`;
+- `src/pages/__tests__/PublicStorePage.configurationContext.test.jsx`.
+
+Cubren normalización, lineKey independiente de revisión, snapshot, payload mínimo, productos simples, servicio público, persistencia, restauración, edición, firma idempotente y propagación explícita de contexto.
+
+No se declaran PASS porque Vitest no pudo ejecutarse sin workspace instalado.
+
+## 55. ESLint y builds de PUBLIC.1.1
+
+Pendientes por la misma limitación de entorno:
+
+- ESLint enfocado;
+- `npm run lint`;
+- Vitest dirigido;
+- `npm run test:ci`;
+- `npm run build`;
+- `npm run build:store`;
+- `npm run build:store:vercel`.
+
+Error de conectividad observado:
+
+`fatal: unable to access 'https://github.com/fdxruli/Lanzo-POS.git/': Could not resolve host: github.com`
+
+## 56. Vercel PUBLIC.1.1
+
+- deployments manuales: 0;
+- previews deliberados: 0;
+- promociones: 0;
+- cambios de configuración: 0.
+
+## 57. Archivos de la corrección
+
+### Modificados
+
+- `src/pages/PublicStorePage.jsx`;
+- `src/components/ecommerce/public/PublicCatalog.jsx`;
+- `src/hooks/ecommerce/usePublicCart.js`;
+- `src/services/ecommerce/ecommercePublicService.js`;
+- `src/services/ecommerce/ecommercePublicConfigurationCache.js`;
+- `src/services/ecommerce/ecommerceCheckoutIdempotency.js`;
+- `src/utils/ecommerceConfiguredProduct.js`;
+- `docs/reports/ECOM.PRODUCTS.PUBLIC.1.md`.
+
+### Creados
+
+- tres migraciones correctivas;
+- una matriz SQL PUBLIC.1.1;
+- tres suites JavaScript PUBLIC.1.1.
+
+## 58. Riesgos residuales
+
+1. Falta ejecutar Vitest, ESLint y los tres builds en un checkout con dependencias.
+2. La presencia exacta de cada header de proxy en una petición pública real debe observarse durante QA de infraestructura; la sesión administrativa no los expone.
+3. La conversión POS, consumo de ingredientes, lotes, comandas e impresión siguen fuera de alcance.
+4. El PR debe permanecer draft hasta una revisión independiente y validación local completa.
+
+## 59. Estado del PR
+
+PR #99 continúa abierto, draft, base `main`, head `fase-ecom-products-public-1`, sin merge y sin marcar ready automáticamente.
+
+## 60. Conclusión
+
+- `manual_available` vuelve a ser autoritativo para todo producto;
+- el gate técnico del padre configurable omite únicamente `is_available`;
+- `configurationVersion` mantiene significado de esquema;
+- existe `configurationRevision` real de contenido;
+- el cliente conserva y envía la revisión;
+- el checkout exige y guarda la revisión;
+- el replay idempotente conserva el orden crítico;
+- un visitante ya no consume el límite individual de otro;
+- existe un límite global mayor contra abuso distribuido;
+- no se almacena IP ni secreto en el repositorio;
+- `PublicStorePage` propaga el contexto correcto;
+- el código está implementado y el backend está validado con rollback;
+- la validación local npm, ESLint y builds continúa pendiente.
+
+Estado de la fase correctiva:
+
+**IMPLEMENTACIÓN COMPLETA — VALIDACIÓN LOCAL PENDIENTE**
+
+No se inició ECOM.PRODUCTS.POS.1. No se inició personalización Pro. El PR permanece draft para revisión.
