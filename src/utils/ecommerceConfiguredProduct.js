@@ -1,4 +1,5 @@
 const CONFIGURED_LINE_PREFIX = 'cfg:v1:';
+const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
 
 const asObject = (value) => (
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -8,6 +9,10 @@ const asText = (value) => (typeof value === 'string' ? value.trim() : '');
 const asMoney = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, Number(number.toFixed(2))) : 0;
+};
+const normalizeConfigurationRevision = (value) => {
+  const revision = asText(value).toLowerCase();
+  return CONFIGURATION_REVISION_PATTERN.test(revision) ? revision : '';
 };
 const uniqueSorted = (values) => Array.from(new Set(values.filter(Boolean)))
   .sort((left, right) => left.localeCompare(right, 'es-MX'));
@@ -64,6 +69,7 @@ export function normalizePublicProductConfiguration(rawDetail) {
     currency: (asText(rawProduct.currency) || 'MXN').toUpperCase(),
     configurationType: asText(rawProduct.configurationType) || 'simple',
     configurationVersion: Math.max(1, Math.floor(Number(rawProduct.configurationVersion) || 1)),
+    configurationRevision: normalizeConfigurationRevision(rawProduct.configurationRevision),
     requiresConfiguration: rawProduct.requiresConfiguration === true,
     hasVariants: rawProduct.hasVariants === true,
     hasOptionGroups: rawProduct.hasOptionGroups === true,
@@ -112,7 +118,10 @@ export function normalizePublicProductConfiguration(rawDetail) {
     const group = asObject(rawGroup);
     const selectionType = group.selectionType === 'multiple' ? 'multiple' : 'single';
     const minSelect = Math.max(0, Math.floor(Number(group.minSelect) || 0));
-    const maxSelect = Math.max(minSelect, Math.floor(Number(group.maxSelect) || (selectionType === 'single' ? 1 : minSelect)));
+    const maxSelect = Math.max(
+      minSelect,
+      Math.floor(Number(group.maxSelect) || (selectionType === 'single' ? 1 : minSelect))
+    );
     return {
       id: asText(group.id),
       publicName: asText(group.publicName) || 'Opciones',
@@ -139,8 +148,12 @@ export function normalizePublicProductConfiguration(rawDetail) {
       ? Number(source.catalogRevision)
       : null,
     product,
-    variants: variants.sort((a, b) => a.displayOrder - b.displayOrder || a.publicName.localeCompare(b.publicName, 'es-MX')),
-    groups: groups.sort((a, b) => a.displayOrder - b.displayOrder || a.publicName.localeCompare(b.publicName, 'es-MX'))
+    variants: variants.sort((a, b) => (
+      a.displayOrder - b.displayOrder || a.publicName.localeCompare(b.publicName, 'es-MX')
+    )),
+    groups: groups.sort((a, b) => (
+      a.displayOrder - b.displayOrder || a.publicName.localeCompare(b.publicName, 'es-MX')
+    ))
   };
 }
 
@@ -222,7 +235,7 @@ export function validateEcommerceConfiguration(detail, {
     selection.optionIds
   ]));
 
-  if ((product.hasVariants || product.configurationType === 'variant_parent')) {
+  if (product.hasVariants || product.configurationType === 'variant_parent') {
     const variant = variants.find((candidate) => candidate.id === variantId);
     if (!variant) errors.variant = 'Selecciona una variante.';
     else if (!variant.isAvailable) errors.variant = 'Esta variante ya no está disponible.';
@@ -230,7 +243,9 @@ export function validateEcommerceConfiguration(detail, {
 
   groups.forEach((group) => {
     const optionIds = selectionMap.get(group.id) || [];
-    const availableIds = new Set(group.options.filter((option) => option.isAvailable).map((option) => option.id));
+    const availableIds = new Set(
+      group.options.filter((option) => option.isAvailable).map((option) => option.id)
+    );
     if (optionIds.some((optionId) => !availableIds.has(optionId))) {
       errors[group.id] = 'Esta opción ya no está disponible.';
       return;
@@ -256,6 +271,13 @@ export function validateEcommerceConfiguration(detail, {
     && canonicalSelections.every((selection) => selection.optionIds.length === 0)
   ) {
     errors.configuration = 'Selecciona las opciones requeridas.';
+  }
+
+  if (
+    (product.hasVariants || product.hasOptionGroups || product.requiresConfiguration)
+    && !product.configurationRevision
+  ) {
+    errors.configuration = 'La configuración cambió. Vuelve a cargar las opciones.';
   }
 
   return {
@@ -306,7 +328,10 @@ export function getConfiguredLineMaximum(detail, variantId, portalMaximum = 99) 
   const safePortalMaximum = Math.max(1, Math.floor(Number(portalMaximum) || 99));
   const variant = asArray(detail?.variants).find((candidate) => candidate.id === variantId);
   if (variant?.stock?.mode === 'exact' && Number.isFinite(Number(variant.stock.quantity))) {
-    return Math.max(0, Math.min(safePortalMaximum, Math.floor(Number(variant.stock.quantity))));
+    return Math.max(0, Math.min(
+      safePortalMaximum,
+      Math.floor(Number(variant.stock.quantity))
+    ));
   }
   return safePortalMaximum;
 }
@@ -350,7 +375,10 @@ export function buildEcommerceConfiguredCartLine(detail, {
     selections: validation.selections
   });
   const maxQuantity = getConfiguredLineMaximum(detail, variantId, maxItemQuantity);
-  const safeQuantity = Math.max(1, Math.min(maxQuantity || 1, Math.floor(Number(quantity) || 1)));
+  const safeQuantity = Math.max(
+    1,
+    Math.min(maxQuantity || 1, Math.floor(Number(quantity) || 1))
+  );
 
   return {
     success: true,
@@ -361,9 +389,12 @@ export function buildEcommerceConfiguredCartLine(detail, {
     variantId,
     selections: validation.selections,
     configurationVersion: product.configurationVersion,
+    configurationRevision: product.configurationRevision,
     estimatedUnitPrice: pricing.finalUnitPrice,
     configurationSnapshot: {
       version: 1,
+      configurationVersion: product.configurationVersion,
+      configurationRevision: product.configurationRevision,
       configurationType: product.configurationType,
       variant: variant ? {
         id: variant.id,
@@ -385,23 +416,37 @@ export function buildEcommerceConfiguredCartLine(detail, {
 }
 
 export function buildMinimalConfiguredOrderItem(item) {
-  const decoded = decodeEcommerceConfiguredLineKey(item?.productId || item?.lineKey);
+  const configurationLine = asObject(item?.configurationLine || item?.product?.configurationLine);
+  const source = Object.keys(configurationLine).length > 0 ? configurationLine : asObject(item);
+  const decoded = decodeEcommerceConfiguredLineKey(
+    source.lineKey || item?.lineKey || item?.productId || item?.product?.id
+  );
   if (!decoded) {
     return {
       productId: asText(item?.productId || item?.product?.id),
       quantity: Number(item?.quantity)
     };
   }
+
+  const configurationRevision = normalizeConfigurationRevision(
+    source.configurationRevision || source.configurationSnapshot?.configurationRevision
+  );
   return {
     productId: decoded.productId,
-    quantity: Number(item?.quantity),
+    quantity: Number(item?.quantity ?? source.quantity),
     variantId: decoded.variantId,
-    selections: decoded.selections
+    selections: decoded.selections,
+    configurationVersion: Math.max(1, Math.floor(Number(
+      source.configurationVersion || source.configurationSnapshot?.configurationVersion
+    ) || 1)),
+    configurationRevision
   };
 }
 
 export const ecommerceConfiguredProductInternals = Object.freeze({
   CONFIGURED_LINE_PREFIX,
+  CONFIGURATION_REVISION_PATTERN,
   asMoney,
+  normalizeConfigurationRevision,
   variantMatches
 });
