@@ -1,6 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
+import {
+  getLicenseKeyFromDetails,
+  isCloudProductsSyncEnabled
+} from '../../services/sync/syncConstants';
 import { PRODUCT_SYNC_EVENT } from '../../services/products/productConstants';
 import { TICKER_INVENTORY_ALERT_EVENT } from '../../services/tickerAlertEvents';
 import {
@@ -20,8 +23,10 @@ const getStaffIdentity = (staff = {}) => String(
   || ''
 );
 
-const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(
-  useAppStore.getState()?.licenseDetails || {}
+const getRuntimeLicenseDetails = () => useAppStore.getState()?.licenseDetails || {};
+const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(getRuntimeLicenseDetails());
+const canHydrateRuntimeCloudCatalog = () => isCloudProductsSyncEnabled(
+  getRuntimeLicenseDetails()
 );
 
 export default function EcommerceCatalogSyncRuntime() {
@@ -30,6 +35,7 @@ export default function EcommerceCatalogSyncRuntime() {
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const contextIdentity = useMemo(() => [
     getLicenseKeyFromDetails(licenseDetails || {}),
+    isCloudProductsSyncEnabled(licenseDetails || {}) ? 'cloud-products' : 'local-products',
     currentDeviceRole || 'unknown',
     getStaffIdentity(currentStaffUser || {})
   ].join(':'), [currentDeviceRole, currentStaffUser, licenseDetails]);
@@ -44,6 +50,7 @@ export default function EcommerceCatalogSyncRuntime() {
       const request = {
         licenseKey,
         forceHydration: true,
+        hydrateCloudCatalog: isCloudProductsSyncEnabled(licenseDetails || {}),
         request: { reason: 'runtime-context-ready' },
         shouldContinue: () => active && getRuntimeLicenseKey() === licenseKey
       };
@@ -81,6 +88,7 @@ export default function EcommerceCatalogSyncRuntime() {
       const result = await syncEcommerceCatalogAfterHydration({
         licenseKey,
         forceHydration,
+        hydrateCloudCatalog: canHydrateRuntimeCloudCatalog(),
         request: { reason },
         shouldContinue: () => getRuntimeLicenseKey() === licenseKey
       });
