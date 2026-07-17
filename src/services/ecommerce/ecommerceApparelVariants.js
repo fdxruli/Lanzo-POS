@@ -3,9 +3,9 @@ import {
   getBatchExpiryValue,
   getBatchId,
   isBatchActiveForFefo,
-  isBatchExpiredForSale,
   sortBatchesByFefo
 } from '../products/fefoUtils';
+import { getBatchExpiryStatus } from '../../utils/dateUtils';
 
 export const ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_KEYS = Object.freeze([
   'color',
@@ -15,6 +15,10 @@ export const ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_KEYS = Object.freeze([
 ]);
 
 const PRICE_EPSILON = 0.009;
+const BLOCKED_BATCH_STATUSES = new Set([
+  'inactive', 'blocked', 'quarantined', 'deleted', 'removed', 'archived'
+]);
+const EXPIRY_REQUIRED_MODES = new Set(['STRICT', 'SHELF_LIFE', 'BATCH']);
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const asObject = (value) => (
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -85,14 +89,33 @@ export const hasEcommerceApparelVariantAttributes = (batch = {}) => (
   Boolean(getEcommerceApparelVariantAttributeKey(batch.attributes))
 );
 
+const isBatchLifecycleEligible = ({ batch = {}, product = {}, now = new Date() } = {}) => {
+  if (!isBatchActiveForFefo(batch)) return false;
+  const status = normalizeComparableText(batch.status);
+  if (
+    batch.isBlocked === true
+    || batch.is_blocked === true
+    || batch.blocked === true
+    || BLOCKED_BATCH_STATUSES.has(status)
+  ) {
+    return false;
+  }
+
+  const expirationMode = asText(product.expirationMode ?? product.expiration_mode ?? 'NONE').toUpperCase();
+  if (!EXPIRY_REQUIRED_MODES.has(expirationMode)) return true;
+  const expiryStatus = getBatchExpiryStatus({
+    expiryDate: getBatchExpiryValue(batch)
+  }, now);
+  return expiryStatus === 'valid' || expiryStatus === 'expires_today';
+};
+
 const isBatchEligibleForProjection = ({ batch, product, now }) => {
   const productId = getProductId(product);
   return Boolean(
     productId
     && getBatchProductId(batch) === productId
-    && isBatchActiveForFefo(batch)
+    && isBatchLifecycleEligible({ batch, product, now })
     && hasEcommerceApparelVariantAttributes(batch)
-    && !isBatchExpiredForSale(batch, product, now)
   );
 };
 
@@ -392,10 +415,13 @@ export const selectEcommerceVariantBatch = ({
 
 export const ecommerceApparelVariantInternals = Object.freeze({
   PRICE_EPSILON,
+  BLOCKED_BATCH_STATUSES,
+  EXPIRY_REQUIRED_MODES,
   normalizeComparableText,
   normalizeSku,
   stableHash,
   getCommercialIdentity,
+  isBatchLifecycleEligible,
   isBatchEligibleForProjection,
   getVariantPublicName,
   sortProjectionRecords
