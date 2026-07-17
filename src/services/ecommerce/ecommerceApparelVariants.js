@@ -18,6 +18,7 @@ export const ECOMMERCE_APPAREL_UNAVAILABLE_REASON = 'APPAREL_VARIANTS_UNAVAILABL
 export const ECOMMERCE_APPAREL_PROJECTION_STATE_KEY = '__ecommerceApparelProjection';
 
 const PRICE_EPSILON = 0.009;
+const STOCK_EPSILON = 0.0001;
 const BLOCKED_BATCH_STATUSES = new Set([
   'inactive', 'blocked', 'quarantined', 'deleted', 'removed', 'archived'
 ]);
@@ -475,6 +476,48 @@ export const resolveEcommerceVariantBatchCandidates = ({
   };
 };
 
+export const classifyEcommerceVariantBatchStock = ({
+  candidates = [],
+  requiredQuantity,
+  getAvailableStock = getAvailableBatchStock
+} = {}) => {
+  const required = Number(requiredQuantity);
+  if (!Number.isFinite(required) || required <= 0) {
+    return {
+      selectedBatch: null,
+      availableStock: 0,
+      code: 'ECOMMERCE_VARIANT_SELECTION_STALE'
+    };
+  }
+
+  const snapshots = asArray(candidates).map((batch) => ({
+    batch,
+    available: Math.max(0, Number(getAvailableStock(batch)) || 0)
+  }));
+  const selected = snapshots.find(({ available }) => (
+    available + STOCK_EPSILON >= required
+  ));
+  if (selected) {
+    return {
+      selectedBatch: selected.batch,
+      availableStock: selected.available,
+      code: null
+    };
+  }
+
+  const availableStock = Number(snapshots.reduce(
+    (sum, entry) => sum + entry.available,
+    0
+  ).toFixed(3));
+  return {
+    selectedBatch: null,
+    availableStock,
+    code: availableStock + STOCK_EPSILON >= required
+      ? 'MULTI_BATCH_REQUIRED'
+      : 'ECOMMERCE_VARIANT_STOCK_INSUFFICIENT'
+  };
+};
+
 export const selectEcommerceVariantBatch = ({
   item = {},
   product = {},
@@ -488,30 +531,18 @@ export const selectEcommerceVariantBatch = ({
   if (!Number.isFinite(required) || required <= 0) {
     return { ...resolved, candidates: [], code: 'ECOMMERCE_VARIANT_SELECTION_STALE' };
   }
-  const selectedBatch = resolved.candidates.find((batch) => (
-    getAvailableBatchStock(batch) + 0.0001 >= required
-  ));
-  if (!selectedBatch) {
-    return {
-      ...resolved,
-      selectedBatch: null,
-      availableStock: resolved.candidates.reduce(
-        (sum, batch) => sum + getAvailableBatchStock(batch),
-        0
-      ),
-      code: 'ECOMMERCE_VARIANT_STOCK_INSUFFICIENT'
-    };
-  }
   return {
     ...resolved,
-    selectedBatch,
-    availableStock: getAvailableBatchStock(selectedBatch),
-    code: null
+    ...classifyEcommerceVariantBatchStock({
+      candidates: resolved.candidates,
+      requiredQuantity: required
+    })
   };
 };
 
 export const ecommerceApparelVariantInternals = Object.freeze({
   PRICE_EPSILON,
+  STOCK_EPSILON,
   BLOCKED_BATCH_STATUSES,
   EXPIRY_REQUIRED_MODES,
   normalizeComparableText,
