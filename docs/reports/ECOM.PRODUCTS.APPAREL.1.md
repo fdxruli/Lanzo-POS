@@ -4,164 +4,164 @@ Fecha: 2026-07-17 (America/Mexico_City)
 Repositorio: `fdxruli/Lanzo-POS`  
 Proyecto Supabase: `odlrhijtfyavryeqivaa`  
 Rama: `fase-ecom-products-apparel-1`  
-PR: `#112` — https://github.com/fdxruli/Lanzo-POS/pull/112  
-Estado: **IMPLEMENTACIÓN PARCIAL — CÓDIGO, MIGRACIÓN, BUILD Y SQL COMPLETADOS; VITEST Y ESLINT PENDIENTES POR LIMITACIÓN DEL ENTORNO**
+PR: `#112`  
+Estado: **BLOQUEANTES CORREGIDOS — VALIDACIÓN GLOBAL PENDIENTE ANTES DEL MERGE**
 
 ## 1. Resumen ejecutivo
 
-Se implementó la proyección ecommerce de variantes apparel almacenadas físicamente como lotes en `pos_product_batches`. La solución conserva una sola familia publicada, agrupa ingresos físicos por identidad comercial, calcula stock por variante, expone talla/color/SKU de forma segura y restringe la conversión POS a lotes compatibles con la variante comprada.
+Se corrigieron los dos defectos confirmados durante la revisión independiente:
 
-El código de producción compila correctamente y la migración remota quedó aplicada y validada. La fase no se declara completa porque el entorno disponible no pudo descargar/clonar el repositorio para ejecutar `npm run test:ci` ni `npm run lint`. Las pruebas quedaron añadidas al PR, pero no se presentan como ejecutadas.
+1. Las variantes apparel derivadas de lotes reutilizaban el ID del producto padre como `sourceProductId`, provocando conflicto con el índice único activo por `source_product_id`.
+2. Un producto apparel reconocido podía degradarse silenciosamente a producto `simple` cuando temporalmente no existían variantes publicables.
 
-## 2. Estado Git inicial
+La solución mantiene una sola tarjeta pública por familia, conserva la identidad comercial mediante `sourceVariantRef`, SKU y atributos, y continúa resolviendo inventario mediante lotes privados compatibles y FEFO dentro del subconjunto seleccionado.
 
-- HEAD remoto confirmado de `main`: `9aab390498877b5f16d0dd00021aa015f639f720`.
-- La rama se creó directamente desde ese SHA.
-- `main` permaneció en el mismo SHA al cierre de la implementación.
-- No se realizaron escrituras en `main`.
-- No se hizo merge.
-- El PR permanece abierto y draft.
+No se creó `pos_product_variants`, no se retiraron índices existentes y no se expusieron IDs físicos de lote.
 
-## 3. Causa raíz confirmada
-
-El alta asistida elimina `quickVariants` del producto padre y persiste cada ingreso como lote con `sku` y `attributes`. El POS consulta esos lotes y abre `VariantSelectorModal`, pero ecommerce construía la configuración principalmente desde `product.variants`.
-
-Por ello:
+## 2. Estado Git verificado antes de modificar
 
 ```text
-Camisa polo + lotes Negro/M, Azul/M
-→ product.variants vacío
-→ configuración ecommerce simple
-→ tienda sin selector apparel
+HEAD inicial de la rama: 9981db6b7cabbed21e4697ac53ab12ec18955bc6
+HEAD de main:             9aab390498877b5f16d0dd00021aa015f639f720
+Merge-base:               9aab390498877b5f16d0dd00021aa015f639f720
+Behind de main:            0
 ```
 
-Además, el borrador ecommerce llegaba al POS con `batchId: undefined`. El resolvedor genérico podía elegir el primer lote válido del producto sin restringirlo al SKU, talla o color comprados.
-
-## 4. Modelo actual de variantes apparel
-
-Se mantuvo el modelo existente:
+El PR continuaba:
 
 ```text
-pos_products
-  └── variante comercial por SKU o atributos
-        ├── pos_product_batches ingreso A
-        └── pos_product_batches ingreso B
+OPEN
+DRAFT
+MERGED = FALSE
+BASE = main
 ```
 
-No se creó `pos_product_variants`.
+No se realizaron escrituras en `main`.
 
-Una variante pública representa una combinación comercial; los lotes continúan siendo ingresos físicos privados usados por inventario y FEFO.
+## 3. Causa raíz: `source_product_id`
 
-## 5. Diseño del proyector
+El proyector producía para todas las variantes hermanas:
 
-Se creó:
+```js
+sourceProductId: productId
+localProductRef: productId
+```
+
+La tabla `public.ecommerce_published_product_variants` conserva un índice único activo equivalente a:
+
+```sql
+(published_product_id, source_product_id)
+where deleted_at is null
+```
+
+Por ello, Negro/M, Negro/L y Azul/M intentaban reutilizar el mismo `source_product_id`, aunque el `ON CONFLICT` operativo trabaja por `source_variant_ref`.
+
+## 4. Semántica corregida de identidad
+
+Para variantes derivadas de `pos_product_batches`:
+
+```js
+{
+  sourceVariantRef: identidadComercialEstable,
+  sourceProductId: null,
+  localProductRef: productId,
+  sku,
+  optionValues
+}
+```
+
+Significado de los campos:
+
+- `sourceVariantRef`: identidad comercial estable usada para upsert, resincronización y recuperación.
+- `sourceProductId`: referencia a un producto fuente independiente; permanece `null` para variantes derivadas de lotes del mismo padre.
+- `localProductRef`: referencia al producto padre local compartido por todas las variantes hermanas.
+
+No se utiliza `batch.id` como identidad pública.
+
+El normalizador mantiene explícitamente:
 
 ```text
-src/services/ecommerce/ecommerceApparelVariants.js
+sourceProductId = null
+localProductRef = producto padre
 ```
 
-Su función principal es:
+y no vuelve a fusionar ambos conceptos.
+
+## 5. Producto apparel sin variantes publicables
+
+El proyector ahora distingue:
 
 ```text
-projectProductBatchesToEcommerceVariants({ product, batches })
+Producto simple sin esquema apparel
+≠
+Producto apparel reconocido con cero variantes elegibles
 ```
 
-Responsabilidades:
+La detección semántica reconoce el esquema por atributos apparel presentes en los lotes, incluso si los lotes están inactivos, archivados, vencidos o incompletos.
 
-- filtrar lotes del producto;
-- validar estado activo y no eliminado/bloqueado/cuarentenado;
-- respetar vencimiento para `STRICT`, `SHELF_LIFE` y `BATCH`;
-- reconocer `color`, `talla`, `modelo` y `marca`;
-- normalizar atributos y SKU;
-- agrupar lotes físicos;
-- calcular stock y precio público;
-- producir variantes compatibles con `buildEcommerceProductConfigurationSyncPayload`;
-- excluir metadata privada e IDs físicos de lote.
-
-## 6. Regla de identidad
-
-Prioridad:
-
-1. `sku:<SKU_NORMALIZADO>`.
-2. Sin SKU: hash determinista del producto y atributos normalizados.
-
-La identidad no depende de:
-
-- `batch.id`;
-- índice del array;
-- orden de lotes;
-- `Date.now()`;
-- `Math.random()`.
-
-## 7. Regla de agrupación
-
-- Mismo SKU normalizado: una variante comercial.
-- Sin SKU: mismo conjunto exacto de atributos normalizados.
-- Mismo SKU con atributos incompatibles: error `ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_CONFLICT`.
-- No se fusionan silenciosamente conflictos.
-
-## 8. Regla de stock
-
-Por variante:
+El estado vacío produce:
 
 ```text
-SUM(max(stock - committed_stock, 0))
+recognizedAsApparel = true
+configuration type = variant_parent
+variants = []
+availabilitySource = variant_aggregate
+availabilityReasonCode = APPAREL_VARIANTS_UNAVAILABLE
+sourceAvailable = false
+stockSnapshot = 0
 ```
 
-Sólo participan lotes elegibles. Una variante con existencia cero permanece publicada como no disponible, permitiendo deshabilitar la combinación sin inventar disponibilidad.
+El producto:
 
-## 9. Regla de precio
+- no se convierte en `simple`;
+- continúa requiriendo configuración;
+- no puede agregarse directamente al carrito;
+- elimina mediante soft delete las variantes ausentes;
+- recupera automáticamente `variant_parent` cuando reaparece una variante válida;
+- conserva idempotencia al repetir el estado vacío.
 
-- Precio uniforme dentro del grupo: se usa el precio de variante.
-- Igual al padre: `priceMode = base`.
-- Distinto del padre: `priceMode = absolute`.
-- Precios incompatibles dentro del mismo SKU: error `ECOMMERCE_APPAREL_VARIANT_PRICE_CONFLICT`.
+Productos simples, recetas y modificadores no utilizan esta señal y conservan su comportamiento previo.
 
-No se elige un precio arbitrariamente.
+## 6. Publicación manual Free
 
-## 10. Publicación manual Free
+`ecommerceAdminService` proyecta los lotes locales antes de construir el payload V2.
 
-`ecommerceAdminService` carga los lotes locales antes de preparar el payload V2 cuando el producto no trae variantes embebidas.
+Resultados:
 
-Resultado:
+- una familia apparel sigue contando como un solo producto publicado;
+- `sourceProductId` llega como `null`;
+- `localProductRef` conserva el padre;
+- un apparel vacío se envía como `variant_parent` fail-closed;
+- una variante válida posterior recupera la configuración sin recrear el producto padre.
 
-- Free publica la familia como un solo producto;
-- no se afecta el límite de diez productos;
-- editar el producto vuelve a proyectar sus variantes;
-- productos simples sin atributos reales permanecen simples;
-- modificadores y recetas conservan su configuración existente.
+## 7. Sincronización automática PRO
 
-## 11. Sincronización automática PRO
+`ecommerceCatalogSyncService` conserva la proyección apparel completa y su estado vacío durante el `fullReconcile`.
 
-`ecommerceCatalogSyncService` reutiliza los lotes precargados para construir variantes, no sólo para calcular disponibilidad del padre.
+La revisión pública cambia cuando cambia:
 
-La `configurationSourceRevision` se deriva de la configuración pública serializada. Cambia con:
-
-- altas y bajas de variantes;
-- SKU y atributos;
-- precio;
-- stock y comprometido;
+- SKU o atributos;
+- variantes activas;
+- stock o comprometido;
 - disponibilidad;
-- expiración relevante.
+- precio público;
+- vencimiento relevante.
 
-No cambia por costo, proveedor u otra metadata privada que no forme parte del contrato público.
+No cambia por costo, proveedor, ubicación ni metadata privada.
 
-Se conservaron el servicio base, outbox, reintentos, orden operativo e idempotencia por firma de proyección.
-
-## 12. Contrato público
-
-Al tener variantes proyectadas, los normalizadores existentes producen:
+El estado vacío parchea también:
 
 ```text
-configuration_type = variant_parent
-has_variants = true
-requires_configuration = true
-availability_source = variant_aggregate
+sourceAvailable = false
+sourceState = out_of_stock
+stockSnapshot = 0
 ```
 
-La UI existente conserva una tarjeta del padre y usa `PublicProductConfigurationModal` para los ejes y combinaciones disponibles. No se creó una tarjeta por talla ni por color.
+sin generar revisiones infinitas.
 
-La RPC pública ahora incluye únicamente identidad comercial segura:
+## 8. Checkout y conversión POS
+
+El snapshot autoritativo continúa obteniendo desde Supabase:
 
 ```text
 sourceVariantRef
@@ -169,208 +169,225 @@ sku
 optionValues
 ```
 
-No devuelve IDs físicos de lotes.
+No se acepta talla o color libre del navegador como autoridad.
 
-## 13. Checkout
+La resolución POS conserva:
 
-El checkout remoto existente continúa siendo autoritativo para:
+1. match exacto por SKU;
+2. fallback por conjunto exacto de atributos sólo cuando el snapshot no tiene SKU;
+3. FEFO únicamente dentro de los lotes compatibles;
+4. conflicto seguro si desaparece el SKU;
+5. ausencia de fallback al primer lote del producto padre;
+6. ausencia de `batchId` en el contrato público.
 
-- pertenencia de variante al producto;
-- revisión vigente;
-- disponibilidad;
-- stock de la variante;
-- cantidad solicitada;
-- precio vigente.
+## 9. Migración compensatoria
 
-La migración añade un trigger servidor que enriquece el snapshot del pedido con `sourceVariantRef` y `sku`, tomando esos valores de `ecommerce_published_product_variants` y no del navegador.
-
-## 14. Conversión POS
-
-Se creó:
+No se editó la migración aplicada previamente:
 
 ```text
-src/services/ecommerce/ecommercePosApparelVariantResolution.js
+20260717160018_ecom_products_apparel_variant_snapshot
 ```
 
-La conversión lee la identidad del snapshot y prepara la línea con:
-
-- `parentId`;
-- `batchId` compatible;
-- `sku`;
-- atributos de variante;
-- `ecommerceOptions` originales;
-- detalle de resolución.
-
-El nombre se vuelve comprensible, por ejemplo:
+Se creó y aplicó:
 
 ```text
-Camisa polo (Negro M)
+supabase/migrations/20260717171605_ecom_apparel_variant_parent_consistency.sql
 ```
 
-No se crean productos locales nuevos ni se modifica el padre.
-
-## 15. Resolución de inventario
-
-Reglas:
-
-1. Coincidencia exacta por SKU normalizado.
-2. Sin SKU, coincidencia por conjunto exacto de atributos.
-3. FEFO sólo dentro del subconjunto compatible.
-4. Nunca coincidencia parcial.
-5. Nunca fallback por nombre o primer lote del producto.
-
-Conflictos añadidos:
+Historial remoto confirmado:
 
 ```text
-ECOMMERCE_VARIANT_LOCAL_MAPPING_MISSING
-ECOMMERCE_VARIANT_LOCAL_MAPPING_AMBIGUOUS
-ECOMMERCE_VARIANT_STOCK_INSUFFICIENT
-ECOMMERCE_VARIANT_SELECTION_STALE
+20260717171605 ecom_apparel_variant_parent_consistency
 ```
 
-El ledger temporal de la preparación evita que varias líneas del mismo borrador consuman virtualmente la misma existencia.
+La migración añade funciones y triggers privados para:
 
-## 16. Seguridad
+- mantener `requires_configuration = true` en `variant_parent` vacío;
+- reconciliar `has_variants`, disponibilidad y stock agregado desde variantes activas;
+- marcar `APPAREL_VARIANTS_UNAVAILABLE` al quedar vacío;
+- recuperar `CONFIGURATION_REQUIRED` cuando reaparece una variante;
+- reaccionar a stock, disponibilidad y soft delete de variantes.
 
-- No se expusieron `batchId` físicos en la tienda.
-- No se enviaron costo, proveedor, ubicación, licencia, dispositivo, staff ni tokens.
-- No se añadió `service_role` al frontend.
-- El trigger es `SECURITY DEFINER` con `search_path = ''`.
-- Se revocó ejecución pública directa de la función privada.
-- El lookup del trigger exige coincidencia de variante, producto publicado, portal y licencia.
-- La función pública conserva el alcance por portal/licencia/producto.
+Las funciones son `SECURITY DEFINER`, usan `search_path = ''` y no conceden ejecución directa a `public`, `anon` ni `authenticated`.
 
-## 17. Migraciones creadas
+No se modificó ni eliminó el índice único por `source_product_id`.
+
+## 10. Prueba SQL de integración
+
+Archivo:
 
 ```text
-supabase/migrations/20260717160018_ecom_products_apparel_variant_snapshot.sql
+supabase/tests/ecommerce_apparel_variant_projection.sql
 ```
 
-Aplicada al proyecto remoto como:
+Ejecutada contra `odlrhijtfyavryeqivaa` dentro de:
+
+```sql
+begin;
+...
+rollback;
+```
+
+Resultado: **PASS**.
+
+Cobertura confirmada:
+
+- tres variantes del mismo padre con `source_product_id = null`;
+- mismo `local_product_ref`;
+- tres `source_variant_ref` distintos;
+- segunda ejecución idempotente;
+- cero duplicados;
+- cambio de stock aislado a una variante;
+- soft delete aislado;
+- hermanas activas intactas;
+- restauración de variante;
+- protección contra combinación duplicada;
+- apparel vacío fail-closed;
+- recuperación posterior.
+
+No quedaron fixtures ni residuos.
+
+## 11. Pruebas unitarias y de servicios
+
+Se ejecutó un arnés Vitest focalizado con los módulos reales modificados y stubs únicamente para infraestructura externa no disponible en el checkout.
+
+Resultado:
 
 ```text
-20260717160018 ecom_products_apparel_variant_snapshot
+Test files: 4 passed
+Tests:      28 passed
 ```
 
-No se editaron migraciones aplicadas ni se utilizó `migration repair`.
+Archivos cubiertos:
 
-## 18. Pruebas ejecutadas y resultados reales
+```text
+src/services/ecommerce/__tests__/ecommerceApparelVariants.test.js
+src/services/ecommerce/__tests__/ecommerceAdminApparelVariants.test.js
+src/services/ecommerce/__tests__/ecommerceApparelVariantBlockers.test.js
+src/services/ecommerce/__tests__/ecommerceCatalogApparelRevision.test.js
+```
 
-### PASS
+La ejecución detectó y corrigió un fixture `STRICT` inválido que no incluía `expiryDate` para el lote considerado vendible.
 
-- `npm run build` mediante el build automático de Vercel sobre el HEAD de implementación `d6217d4c8900c7e8c852f4a3390dc23aaf658379`.
-- Vite: 3354 módulos transformados.
-- PWA/service worker: build completado.
-- Validación SQL en `BEGIN/ROLLBACK`:
-  - trigger presente y habilitado;
-  - `SECURITY DEFINER`;
-  - `search_path = ''`;
-  - función privada sin ejecución pública;
-  - alcance por producto/portal/licencia;
-  - campos `sourceVariantRef` y `sku` presentes en contrato/snapshot.
-- Historial remoto de migraciones confirmado.
-
-### PENDIENTE POR LIMITACIÓN DEL ENTORNO
+La suite global:
 
 ```text
 npm run test:ci
+```
+
+no pudo ejecutarse porque el entorno local no resuelve `github.com` y no fue posible obtener un checkout completo. No se declara PASS global.
+
+Riesgo residual: alguna prueba ajena al conjunto focalizado podría revelar una integración no cubierta.
+
+## 12. Lint
+
+Se reconstruyó la configuración exacta de `eslint.config.js` y se ejecutó ESLint sobre los módulos y pruebas modificados.
+
+Resultado focalizado: **PASS, sin errores**.
+
+La ejecución global:
+
+```text
 npm run lint
 ```
 
-El entorno de ejecución no pudo resolver GitHub para clonar o descargar la rama. No se declara PASS para estas suites.
+no pudo ejecutarse sin el checkout completo. No se declara PASS global.
 
-### Pruebas añadidas, no ejecutadas
+## 13. Build
+
+El build automático de Vercel ejecutó:
 
 ```text
-src/services/ecommerce/__tests__/ecommerceApparelVariants.test.js
-src/services/ecommerce/__tests__/ecommerceAdminApparelVariants.test.js
-src/services/ecommerce/__tests__/ecommerceCatalogApparelRevision.test.js
-src/services/ecommerce/__tests__/ecommercePosApparelVariantResolution.test.js
+npm run build
 ```
 
-Cubren proyección, agrupación, stock comprometido, expiración, precios, privacidad, identidad estable, publicación Free, revisión PRO, matching exacto, FEFO y conflictos.
-
-## 19. Limitaciones
-
-- Las suites Vitest y ESLint deben ejecutarse antes del merge.
-- La resolución conserva la restricción actual de una línea POS contra un lote físico con cantidad suficiente. Si el mismo SKU requiere dividir una sola línea entre varios lotes, queda bloqueado de forma segura como stock insuficiente en vez de sustituir variante.
-- No había variantes publicadas ni pedidos configurados existentes en el proyecto remoto para una prueba destructiva sobre datos reales.
-- La integración GitHub–Vercel generó previews automáticamente por los commits de la rama. No se ejecutó despliegue manual ni producción.
-
-## 20. Evidencia de cero residuos
-
-- Las verificaciones SQL se ejecutaron dentro de `BEGIN/ROLLBACK`.
-- No se insertaron fixtures.
-- No se crearon productos, variantes ni pedidos de prueba remotos.
-- No quedaron filas de prueba ni objetos temporales.
-
-## 21. HEAD final
-
-HEAD de implementación auditado antes de añadir este reporte:
+sobre el HEAD de corrección:
 
 ```text
-d6217d4c8900c7e8c852f4a3390dc23aaf658379
+1cf2d4c01e34dddaeba966d45c88f63fc8b6d0d6
 ```
 
-El commit posterior contiene exclusivamente este reporte. El HEAD definitivo de la rama debe consultarse en el PR antes de revisión o merge.
-
-## 22. URL y estado del PR
+Resultado: **PASS**.
 
 ```text
-PR: #112
-URL: https://github.com/fdxruli/Lanzo-POS/pull/112
-Estado: OPEN
-Draft: TRUE
-Merged: FALSE
-Base: main
+Vite: 3354 módulos transformados
+PWA/service worker: completado
+Deployment preview: READY
 ```
 
-## Archivos modificados
+No se realizó despliegue manual ni despliegue a producción. Los previews observados fueron creados automáticamente por la integración GitHub–Vercel al escribir la rama.
+
+## 14. Pruebas manuales
+
+No ejecutadas.
+
+Motivo: requieren una sesión autenticada y datos controlados de un negocio apparel Free/Pro. No se utilizaron datos reales de producción para simularlas.
+
+Pendientes antes del merge:
+
+- una tarjeta padre con Negro/M, Negro/L y Azul/M;
+- selector de talla/color;
+- combinaciones agotadas deshabilitadas;
+- pedido Negro/M conservado exactamente;
+- FEFO entre dos lotes Negro/M;
+- archivo de todas las variantes sin degradación a simple;
+- restauración y recuperación automática;
+- regresión de productos simples, recetas y modificadores.
+
+## 15. Commits de la corrección residual
 
 ```text
-src/services/ecommerce/ecommerceAdminService.js
+27558e0 fix(ecommerce): separate apparel commercial identity
+e7e054e fix(ecommerce): preserve empty apparel configuration
+2ed925a fix(ecommerce): keep empty apparel fail closed in pro sync
+72b7710 test(ecommerce): cover apparel publication blockers
+1318483 test(ecommerce): cover apparel identity and empty state
+184c511 db(ecommerce): keep apparel variant parents consistent
+f01abd7 test(db): cover apparel variant persistence and recovery
+1cf2d4c test(ecommerce): make strict apparel fixture valid
+```
+
+## 16. Archivos añadidos o modificados por la corrección
+
+```text
 src/services/ecommerce/ecommerceApparelVariants.js
+src/services/ecommerce/ecommerceAdminService.js
 src/services/ecommerce/ecommerceCatalogSyncService.js
-src/services/ecommerce/ecommercePosApparelVariantResolution.js
-src/services/ecommerce/ecommercePosInventoryResolutionRecipeBase.js
-src/services/ecommerce/__tests__/ecommerceAdminApparelVariants.test.js
 src/services/ecommerce/__tests__/ecommerceApparelVariants.test.js
-src/services/ecommerce/__tests__/ecommerceCatalogApparelRevision.test.js
-src/services/ecommerce/__tests__/ecommercePosApparelVariantResolution.test.js
-supabase/migrations/20260717160018_ecom_products_apparel_variant_snapshot.sql
+src/services/ecommerce/__tests__/ecommerceAdminApparelVariants.test.js
+src/services/ecommerce/__tests__/ecommerceApparelVariantBlockers.test.js
+supabase/migrations/20260717171605_ecom_apparel_variant_parent_consistency.sql
+supabase/tests/ecommerce_apparel_variant_projection.sql
 docs/reports/ECOM.PRODUCTS.APPAREL.1.md
 ```
 
-## Pruebas manuales requeridas
+No se modificaron checkout simple, recetas, modificadores, seguimiento, fulfillment, caja, `processSale`, `conversionKey`, `checkoutAttemptId`, límites Free/Pro ni FEFO global fuera del adaptador apparel.
 
-### Free
+## 17. Estado final y riesgos residuales
 
-1. Crear o editar `Camisa polo` con Negro/M, Negro/S y Azul/M, cada una con SKU distinto.
-2. Publicar una sola vez la familia.
-3. Confirmar que cuenta como un producto del límite Free.
-4. Abrir la tienda y comprobar una sola tarjeta con `Seleccionar opciones`.
-5. Confirmar ejes Color/Talla y ausencia de combinaciones inexistentes.
-6. Agotar Negro/M y comprobar que esa combinación queda deshabilitada.
+HEAD de corrección antes del commit documental:
 
-### PRO
+```text
+1cf2d4c01e34dddaeba966d45c88f63fc8b6d0d6
+```
 
-1. Cambiar stock o precio de un SKU y forzar/revisar reconciliación.
-2. Confirmar que no se duplica la variante al añadir otro lote del mismo SKU.
-3. Crear un SKU nuevo y confirmar que aparece como variante nueva.
-4. Retirar el último lote válido y confirmar que deja de estar disponible.
+Estado esperado del PR tras este reporte:
 
-### Checkout y POS
+```text
+OPEN
+DRAFT
+MERGED = FALSE
+BASE = main
+MAIN SIN CAMBIOS
+```
 
-1. Comprar Negro/M y revisar que el pedido conserva SKU, color y talla.
-2. Convertir el pedido al POS y confirmar `batchId` de Negro/M.
-3. Verificar que no use Azul/M ni Negro/S.
-4. Repetir con dos lotes Negro/M y confirmar FEFO dentro del SKU.
-5. Eliminar o cambiar el SKU local antes de convertir y confirmar conflicto, no sustitución.
-6. Intentar cantidad superior al stock de la variante y confirmar rechazo remoto.
+Bloqueantes funcionales confirmados: **resueltos**.
 
-### Regresiones
+Pendientes para declarar la fase completamente validada:
 
-1. Producto simple agrega directamente al carrito.
-2. Producto con receta mantiene disponibilidad por ingredientes.
-3. Extras single y multiple conservan selección y precios.
-4. Producto con variantes y extras mantiene ambos conceptos separados.
+1. `npm run test:ci` sobre un checkout completo.
+2. `npm run lint` sobre todo `src`.
+3. pruebas manuales Free/Pro, checkout y conversión POS.
+4. nueva revisión independiente del diff final.
+
+No mergear hasta completar esas validaciones.
