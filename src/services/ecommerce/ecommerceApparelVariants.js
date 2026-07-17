@@ -14,6 +14,9 @@ export const ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_KEYS = Object.freeze([
   'marca'
 ]);
 
+export const ECOMMERCE_APPAREL_UNAVAILABLE_REASON = 'APPAREL_VARIANTS_UNAVAILABLE';
+export const ECOMMERCE_APPAREL_PROJECTION_STATE_KEY = '__ecommerceApparelProjection';
+
 const PRICE_EPSILON = 0.009;
 const BLOCKED_BATCH_STATUSES = new Set([
   'inactive', 'blocked', 'quarantined', 'deleted', 'removed', 'archived'
@@ -23,6 +26,7 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 const asObject = (value) => (
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 );
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(asObject(value), key);
 const asText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
 const normalizeComparableText = (value) => asText(value)
   .normalize('NFD')
@@ -89,6 +93,38 @@ export const hasEcommerceApparelVariantAttributes = (batch = {}) => (
   Boolean(getEcommerceApparelVariantAttributeKey(batch.attributes))
 );
 
+export const hasEcommerceApparelVariantSchema = (batch = {}) => {
+  const attributes = asObject(batch.attributes);
+  return ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_KEYS.some((key) => hasOwn(attributes, key));
+};
+
+const productDeclaresApparel = (product = {}) => {
+  const metadata = asObject(product.metadata);
+  return product.ecommerceApparel === true
+    || product.ecommerce_apparel === true
+    || product.apparelVariantModel === true
+    || product.apparel_variant_model === true
+    || metadata.ecommerceApparel === true
+    || metadata.ecommerce_apparel === true
+    || asArray(product.variants).some((variant) => (
+      ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_KEYS.some((key) => (
+        hasOwn(variant?.optionValues, key)
+        || hasOwn(variant?.option_values, key)
+        || hasOwn(variant?.attributes, key)
+      ))
+    ));
+};
+
+export const isEcommerceApparelProduct = ({ product = {}, batches = [] } = {}) => {
+  const productId = getProductId(product);
+  if (!productId) return false;
+  if (productDeclaresApparel(product)) return true;
+  return asArray(batches).some((batch) => (
+    getBatchProductId(batch) === productId
+    && hasEcommerceApparelVariantSchema(batch)
+  ));
+};
+
 const isBatchLifecycleEligible = ({ batch = {}, product = {}, now = new Date() } = {}) => {
   if (!isBatchActiveForFefo(batch)) return false;
   const status = normalizeComparableText(batch.status);
@@ -101,7 +137,9 @@ const isBatchLifecycleEligible = ({ batch = {}, product = {}, now = new Date() }
     return false;
   }
 
-  const expirationMode = asText(product.expirationMode ?? product.expiration_mode ?? 'NONE').toUpperCase();
+  const expirationMode = asText(
+    product.expirationMode ?? product.expiration_mode ?? 'NONE'
+  ).toUpperCase();
   if (!EXPIRY_REQUIRED_MODES.has(expirationMode)) return true;
   const expiryStatus = getBatchExpiryStatus({
     expiryDate: getBatchExpiryValue(batch)
@@ -180,7 +218,17 @@ export const projectProductBatchesToEcommerceVariants = ({
   stockMode = 'exact'
 } = {}) => {
   const productId = getProductId(product);
-  if (!productId) return { variants: [], conflicts: [] };
+  const recognizedAsApparel = isEcommerceApparelProduct({ product, batches });
+  if (!productId) {
+    return {
+      recognizedAsApparel: false,
+      variants: [],
+      conflicts: [],
+      availabilityReasonCode: null,
+      sourceAvailable: null,
+      stockSnapshot: null
+    };
+  }
 
   const records = sortProjectionRecords(asArray(batches)
     .filter((batch) => isBatchEligibleForProjection({ batch, product, now }))
@@ -243,7 +291,7 @@ export const projectProductBatchesToEcommerceVariants = ({
 
     variants.push({
       sourceVariantRef: identity,
-      sourceProductId: productId,
+      sourceProductId: null,
       localProductRef: productId,
       sku: groupRecords[0]?.sku || null,
       publicName,
@@ -273,9 +321,58 @@ export const projectProductBatchesToEcommerceVariants = ({
     || left.sourceVariantRef.localeCompare(right.sourceVariantRef)
   ));
 
+  const orderedVariants = variants.map((variant, displayOrder) => ({
+    ...variant,
+    displayOrder
+  }));
+  const stockSnapshot = recognizedAsApparel
+    ? Number(orderedVariants.reduce(
+        (sum, variant) => sum + Math.max(0, Number(variant.stockSnapshot) || 0),
+        0
+      ).toFixed(3))
+    : null;
+  const sourceAvailable = recognizedAsApparel
+    ? orderedVariants.some((variant) => variant.sourceAvailable === true)
+    : null;
+
   return {
-    variants: variants.map((variant, displayOrder) => ({ ...variant, displayOrder })),
-    conflicts: []
+    recognizedAsApparel,
+    variants: orderedVariants,
+    conflicts: [],
+    availabilityReasonCode: recognizedAsApparel && orderedVariants.length === 0
+      ? ECOMMERCE_APPAREL_UNAVAILABLE_REASON
+      : null,
+    sourceAvailable,
+    stockSnapshot
+  };
+};
+
+export const decorateProductWithEcommerceApparelProjection = ({
+  product = {},
+  projection
+} = {}) => {
+  const resolvedProjection = projection || projectProductBatchesToEcommerceVariants({ product });
+  if (resolvedProjection.recognizedAsApparel !== true) return product;
+  return {
+    ...product,
+    variants: resolvedProjection.variants,
+    [ECOMMERCE_APPAREL_PROJECTION_STATE_KEY]: {
+      recognizedAsApparel: true,
+      availabilityReasonCode: resolvedProjection.availabilityReasonCode,
+      sourceAvailable: resolvedProjection.sourceAvailable === true,
+      stockSnapshot: Math.max(0, Number(resolvedProjection.stockSnapshot) || 0)
+    }
+  };
+};
+
+export const getEcommerceApparelProjectionState = (product = {}) => {
+  const state = asObject(product[ECOMMERCE_APPAREL_PROJECTION_STATE_KEY]);
+  if (state.recognizedAsApparel !== true) return null;
+  return {
+    recognizedAsApparel: true,
+    availabilityReasonCode: asText(state.availabilityReasonCode) || null,
+    sourceAvailable: state.sourceAvailable === true,
+    stockSnapshot: Math.max(0, Number(state.stockSnapshot) || 0)
   };
 };
 
@@ -424,5 +521,6 @@ export const ecommerceApparelVariantInternals = Object.freeze({
   isBatchLifecycleEligible,
   isBatchEligibleForProjection,
   getVariantPublicName,
-  sortProjectionRecords
+  sortProjectionRecords,
+  productDeclaresApparel
 });
