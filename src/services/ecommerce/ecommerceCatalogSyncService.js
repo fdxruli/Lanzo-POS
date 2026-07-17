@@ -14,6 +14,7 @@ import {
   ecommerceCatalogSyncServiceInternals
 } from './ecommerceCatalogSyncServiceBase';
 import { getEcommerceConfigurationSourceRevision } from '../../utils/ecommerceProductConfigurationSync';
+import { projectProductBatchesToEcommerceVariants } from './ecommerceApparelVariants';
 
 const OUTBOX_RETRY_SENTINEL = '__lanzo_catalog_outbox_retry__';
 const MIN_RETRY_TIMER_MS = Math.min(...ecommerceCatalogSyncServiceInternals.RETRY_BACKOFF_MS) * 0.8;
@@ -129,6 +130,14 @@ const decorateProductForDependencySync = (product = {}) => {
   };
 };
 
+const decorateProductWithApparelVariants = ({ product = {}, batches = [] } = {}) => {
+  if (asArray(product.variants).length > 0) return product;
+  const projection = projectProductBatchesToEcommerceVariants({ product, batches });
+  return projection.variants.length > 0
+    ? { ...product, variants: projection.variants }
+    : product;
+};
+
 const decorateBatchForDependencySync = (batch = {}) => {
   const dependencyRevision = getRecordRevisionNumber(batch);
   if (dependencyRevision === null) return batch;
@@ -148,13 +157,11 @@ const createDependencyAwareLocalSource = (
       const batchParentIds = [];
 
       products.forEach((product, id) => {
-        onConfigurationRevision(
-          asText(id),
-          getEcommerceConfigurationSourceRevision(product) || null
-        );
-        if (asArray(product?.[INGREDIENTS_KEY]).some(
+        const selfBatchManaged = ecommercePublishedStockAlertServiceInternals.isBatchManaged(product);
+        const dependencyBatchManaged = asArray(product?.[INGREDIENTS_KEY]).some(
           ecommercePublishedStockAlertServiceInternals.isBatchManaged
-        )) {
+        );
+        if (selfBatchManaged || dependencyBatchManaged) {
           batchParentIds.push(asText(id));
         }
       });
@@ -176,11 +183,23 @@ const createDependencyAwareLocalSource = (
       }
 
       return new Map(Array.from(products.entries()).map(([id, product]) => {
-        const prefetched = prefetchedBatches.get(asText(id));
+        const productId = asText(id);
+        const prefetched = prefetchedBatches.get(productId);
         const snapshotSafeProduct = prefetched?.error
           ? product
           : markMissingBatchSnapshots(product, prefetched?.batches || []);
-        return [id, decorateProductForDependencySync(snapshotSafeProduct)];
+        const dependencyAwareProduct = decorateProductForDependencySync(snapshotSafeProduct);
+        const configuredProduct = prefetched?.error
+          ? dependencyAwareProduct
+          : decorateProductWithApparelVariants({
+              product: dependencyAwareProduct,
+              batches: prefetched?.batches || []
+            });
+        onConfigurationRevision(
+          productId,
+          getEcommerceConfigurationSourceRevision(configuredProduct) || null
+        );
+        return [id, configuredProduct];
       }));
     },
     async getBatchesByProductIds(productIds = []) {
@@ -345,6 +364,7 @@ export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   getRawAvailableStock,
   markMissingBatchSnapshots,
   decorateProductForDependencySync,
+  decorateProductWithApparelVariants,
   decorateBatchForDependencySync,
   createDependencyAwareLocalSource,
   patchConfigurationRevisions
