@@ -13,7 +13,10 @@ import {
   createEcommerceCatalogSyncService as createBaseEcommerceCatalogSyncService,
   ecommerceCatalogSyncServiceInternals
 } from './ecommerceCatalogSyncServiceBase';
-import { getEcommerceConfigurationSourceRevision } from '../../utils/ecommerceProductConfigurationSync';
+import {
+  buildEcommerceProductConfigurationSyncPayload,
+  getEcommerceConfigurationSourceRevision
+} from '../../utils/ecommerceProductConfigurationSync';
 import { projectProductBatchesToEcommerceVariants } from './ecommerceApparelVariants';
 
 const OUTBOX_RETRY_SENTINEL = '__lanzo_catalog_outbox_retry__';
@@ -25,6 +28,25 @@ const defaultSetTimeoutFn = (callback, delay) => globalThis.setTimeout(callback,
 const defaultClearTimeoutFn = (handle) => globalThis.clearTimeout(handle);
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const asText = (value) => String(value ?? '').trim();
+
+const hashStableText = (value) => {
+  const text = String(value ?? '');
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).padStart(7, '0');
+};
+
+const getPublicConfigurationRevision = (product = {}) => {
+  try {
+    const configuration = buildEcommerceProductConfigurationSyncPayload(product);
+    return `configuration:${hashStableText(JSON.stringify(configuration))}`;
+  } catch {
+    return getEcommerceConfigurationSourceRevision(product) || null;
+  }
+};
 
 const getRecordRevisionNumber = (record = {}) => {
   const timestamp = Date.parse(String(
@@ -197,7 +219,7 @@ const createDependencyAwareLocalSource = (
             });
         onConfigurationRevision(
           productId,
-          getEcommerceConfigurationSourceRevision(configuredProduct) || null
+          getPublicConfigurationRevision(configuredProduct)
         );
         return [id, configuredProduct];
       }));
@@ -359,6 +381,8 @@ export const ecommerceCatalogSyncRetryInternals = Object.freeze({
 export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   INGREDIENTS_KEY,
   MISSING_BATCH_SNAPSHOT_KEY,
+  hashStableText,
+  getPublicConfigurationRevision,
   getRecordRevisionNumber,
   getDependencyAwareRevisionNumber,
   getRawAvailableStock,
