@@ -15,7 +15,7 @@ const product = {
 };
 
 const batch = (overrides = {}) => ({
-  id: overrides.id || `batch-${Math.random()}`,
+  id: overrides.id || 'batch-default',
   productId: product.id,
   isActive: true,
   stock: 1,
@@ -89,11 +89,11 @@ describe('apparel ecommerce variant projection', () => {
       batch({
         id: 'expired',
         stock: 20,
-        expirationDate: '2026-07-01',
+        expiryDate: '2026-07-01',
         sku: 'POLO-EXP-M',
         attributes: { color: 'Rojo', talla: 'M' }
       })
-    ], { ...product, expirationMode: 'BATCH' });
+    ], { ...product, expirationMode: 'STRICT' });
     expect(variants).toHaveLength(1);
     expect(variants[0].stockSnapshot).toBe(4);
   });
