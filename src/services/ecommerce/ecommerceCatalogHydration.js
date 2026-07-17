@@ -20,12 +20,20 @@ const createHydrationError = (result) => {
 export const hydrateEcommerceCatalogSnapshot = async ({
   licenseKey,
   force = false,
+  hydrateCloudCatalog = true,
   migrationService = productMigrationService,
   getNow = () => Date.now(),
   ttlMs = HYDRATION_TTL_MS
 } = {}) => {
   const key = asText(licenseKey);
   if (!key) return { skipped: true, reason: 'missing_license' };
+  if (hydrateCloudCatalog !== true) {
+    return {
+      success: true,
+      skipped: true,
+      reason: 'cloud_products_sync_disabled'
+    };
+  }
 
   const current = hydrationByLicense.get(key);
   if (current?.promise) return current.promise;
@@ -71,6 +79,7 @@ export const syncEcommerceCatalogAfterHydration = async ({
   licenseKey,
   request = {},
   forceHydration = false,
+  hydrateCloudCatalog = true,
   shouldContinue = () => true,
   migrationService = productMigrationService,
   syncService = ecommerceCatalogSyncService,
@@ -81,6 +90,7 @@ export const syncEcommerceCatalogAfterHydration = async ({
     const hydration = await hydrateEcommerceCatalogSnapshot({
       licenseKey,
       force: forceHydration,
+      hydrateCloudCatalog,
       migrationService,
       getNow,
       ttlMs
