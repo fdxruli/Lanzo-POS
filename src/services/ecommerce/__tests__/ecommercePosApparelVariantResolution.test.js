@@ -35,7 +35,7 @@ const batch = (overrides = {}) => ({
   stock: 2,
   committedStock: 0,
   sku: 'POLO-NEG-M',
-  expirationDate: '2026-09-01',
+  expiryDate: '2026-09-01',
   attributes: { color: 'Negro', talla: 'M' },
   ...overrides
 });
@@ -72,12 +72,12 @@ describe('ecommerce POS apparel variant resolution', () => {
       order: { items: [variantItem()] },
       products: [product],
       queryBatchesByProduct: vi.fn().mockResolvedValue([
-        batch({ id: 'later', expirationDate: '2026-10-01' }),
-        batch({ id: 'earlier', expirationDate: '2026-08-01' }),
+        batch({ id: 'later', expiryDate: '2026-10-01' }),
+        batch({ id: 'earlier', expiryDate: '2026-08-01' }),
         batch({
           id: 'wrong-earliest',
           sku: 'POLO-AZU-M',
-          expirationDate: '2026-07-20',
+          expiryDate: '2026-07-20',
           attributes: { color: 'Azul', talla: 'M' }
         })
       ]),
