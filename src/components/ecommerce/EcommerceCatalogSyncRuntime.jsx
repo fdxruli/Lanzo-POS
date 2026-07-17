@@ -40,12 +40,29 @@ export default function EcommerceCatalogSyncRuntime() {
     if (!licenseKey) return undefined;
 
     let active = true;
-    void syncEcommerceCatalogAfterHydration({
-      licenseKey,
-      forceHydration: true,
-      request: { reason: 'runtime-context-ready' },
-      shouldContinue: () => active && getRuntimeLicenseKey() === licenseKey
-    });
+    void (async () => {
+      const request = {
+        licenseKey,
+        forceHydration: true,
+        request: { reason: 'runtime-context-ready' },
+        shouldContinue: () => active && getRuntimeLicenseKey() === licenseKey
+      };
+      const result = await syncEcommerceCatalogAfterHydration(request);
+
+      // La ruta inicial también puede arrancar con un IndexedDB anterior al
+      // snapshot actual. Rehidratar y reintentar una vez evita dejar el portal
+      // permanentemente bloqueado por una firma heredada.
+      if (
+        active
+        && result?.code === 'ECOMMERCE_CATALOG_SOURCE_CONFLICT'
+        && getRuntimeLicenseKey() === licenseKey
+      ) {
+        await syncEcommerceCatalogAfterHydration({
+          ...request,
+          request: { reason: 'runtime-context-conflict-recovery' }
+        });
+      }
+    })();
 
     return () => {
       active = false;
@@ -54,15 +71,36 @@ export default function EcommerceCatalogSyncRuntime() {
   }, [contextIdentity, licenseDetails]);
 
   useEffect(() => {
-    const runHydratedReconcile = ({ reason, forceHydration = false } = {}) => {
+    const runHydratedReconcile = async ({
+      reason,
+      forceHydration = false,
+      recoveryAttempt = false
+    } = {}) => {
       const licenseKey = getRuntimeLicenseKey();
       if (!licenseKey) return Promise.resolve({ skipped: true, reason: 'missing_license' });
-      return syncEcommerceCatalogAfterHydration({
+      const result = await syncEcommerceCatalogAfterHydration({
         licenseKey,
         forceHydration,
         request: { reason },
         shouldContinue: () => getRuntimeLicenseKey() === licenseKey
       });
+
+      // Una copia IndexedDB puede conservar una proyección de la misma revisión
+      // pero con una firma anterior. Descargamos una vez el snapshot cloud y
+      // reintentamos, sin entrar en un ciclo si el conflicto es genuino.
+      if (
+        recoveryAttempt !== true
+        && result?.code === 'ECOMMERCE_CATALOG_SOURCE_CONFLICT'
+        && getRuntimeLicenseKey() === licenseKey
+      ) {
+        return runHydratedReconcile({
+          reason: `${reason || 'catalog-sync'}-conflict-recovery`,
+          forceHydration: true,
+          recoveryAttempt: true
+        });
+      }
+
+      return result;
     };
 
     const scheduleFromEvent = (event, fallbackReason) => {
