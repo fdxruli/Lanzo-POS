@@ -83,7 +83,7 @@ describe('apparel ecommerce variant projection', () => {
 
   it('subtracts committed stock and excludes inactive, deleted and expired batches', () => {
     const variants = project([
-      batch({ id: 'available', stock: 6, committedStock: 2 }),
+      batch({ id: 'available', stock: 6, committedStock: 2, expiryDate: '2026-09-01' }),
       batch({ id: 'inactive', stock: 20, isActive: false }),
       batch({ id: 'deleted', stock: 20, deletedAt: '2026-07-01T00:00:00Z' }),
       batch({
