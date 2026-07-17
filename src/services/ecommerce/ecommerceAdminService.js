@@ -8,7 +8,11 @@ import {
   serializeEcommerceProductConfigurationForSync
 } from '../../utils/ecommerceProductConfigurationSync';
 import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
-import { projectProductBatchesToEcommerceVariants } from './ecommerceApparelVariants';
+import {
+  decorateProductWithEcommerceApparelProjection,
+  getEcommerceApparelProjectionState,
+  projectProductBatchesToEcommerceVariants
+} from './ecommerceApparelVariants';
 
 const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_ADMIN_ACCESS_DENIED: 'No tienes permiso para administrar el portal online.',
@@ -79,6 +83,21 @@ const isProjectionObject = (value) => (
   && !Array.isArray(value)
 );
 
+const buildPublishedProductConfiguration = (localProduct = {}) => {
+  const baseConfiguration = buildEcommerceProductConfigurationSyncPayload(localProduct);
+  const apparelState = getEcommerceApparelProjectionState(localProduct);
+  if (!apparelState) return baseConfiguration;
+
+  return serializeEcommerceProductConfigurationForSync({
+    ...baseConfiguration,
+    type: 'variant_parent',
+    variants: Array.isArray(localProduct.variants) ? localProduct.variants : [],
+    availabilitySource: 'variant_aggregate',
+    availabilityReasonCode: apparelState.availabilityReasonCode,
+    limitingSource: baseConfiguration.limitingSource
+  });
+};
+
 const preparePublishedProductPayload = (payload = {}) => {
   const {
     localProduct,
@@ -93,7 +112,7 @@ const preparePublishedProductPayload = (payload = {}) => {
 
   const configuration = suppliedConfiguration
     ? serializeEcommerceProductConfigurationForSync(suppliedConfiguration)
-    : buildEcommerceProductConfigurationSyncPayload(localProduct);
+    : buildPublishedProductConfiguration(localProduct);
   const configurationSourceRevision = suppliedSourceRevision
     || getEcommerceConfigurationSourceRevision(localProduct)
     || null;
@@ -126,8 +145,10 @@ const hydrateLocalProductApparelVariants = async ({
     batches,
     now
   });
-  if (projection.variants.length === 0) return localProduct;
-  return { ...localProduct, variants: projection.variants };
+  return decorateProductWithEcommerceApparelProjection({
+    product: localProduct,
+    projection
+  });
 };
 
 const preparePublishedProductPayloadAsync = async (
@@ -345,6 +366,7 @@ export const syncPublishedCatalog = ecommerceAdminService.syncPublishedCatalog;
 
 export const ecommerceAdminServiceInternals = Object.freeze({
   isProjectionObject,
+  buildPublishedProductConfiguration,
   preparePublishedProductPayload,
   preparePublishedProductPayloadAsync,
   hydrateLocalProductApparelVariants
