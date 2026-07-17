@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ecommerceAdminServiceInternals } from '../ecommerceAdminService';
+import { ECOMMERCE_APPAREL_UNAVAILABLE_REASON } from '../ecommerceApparelVariants';
 
 const product = {
   id: 'product-polo',
@@ -37,20 +38,21 @@ describe('manual ecommerce apparel publication', () => {
     expect(source.getBatchesByProductIds).toHaveBeenCalledWith([product.id]);
     expect(prepared.useV2).toBe(true);
     expect(prepared.payload.configuration).toMatchObject({
-      configurationType: 'variant_parent',
-      hasVariants: true,
-      requiresConfiguration: true
+      type: 'variant_parent',
+      availabilitySource: 'variant_aggregate'
     });
     expect(prepared.payload.configuration.variants).toHaveLength(1);
     expect(prepared.payload.configuration.variants[0]).toMatchObject({
       sourceVariantRef: 'sku:POLO-NEG-M',
+      sourceProductId: null,
+      localProductRef: product.id,
       sku: 'POLO-NEG-M',
       optionValues: { color: 'Negro', talla: 'M' },
       stockSnapshot: 2
     });
   });
 
-  it('keeps a simple product simple when its batches have no variant attributes', async () => {
+  it('keeps a simple product simple when its batches have no apparel schema', async () => {
     const source = localSource([
       {
         id: 'ordinary-batch',
@@ -69,8 +71,35 @@ describe('manual ecommerce apparel publication', () => {
     }, { localSource: source });
 
     expect(prepared.payload.configuration).toMatchObject({
-      configurationType: 'simple',
-      hasVariants: false
+      type: 'simple',
+      variants: []
+    });
+  });
+
+  it('keeps recognized apparel with zero variants fail-closed', async () => {
+    const source = localSource([
+      {
+        id: 'archived-black-m',
+        productId: product.id,
+        isActive: false,
+        stock: 2,
+        price: 299,
+        sku: 'POLO-NEG-M',
+        attributes: { color: 'Negro', talla: 'M' }
+      }
+    ]);
+
+    const prepared = await ecommerceAdminServiceInternals.preparePublishedProductPayloadAsync({
+      localProduct: product,
+      publicName: product.name,
+      price: product.price
+    }, { localSource: source });
+
+    expect(prepared.payload.configuration).toMatchObject({
+      type: 'variant_parent',
+      variants: [],
+      availabilitySource: 'variant_aggregate',
+      availabilityReasonCode: ECOMMERCE_APPAREL_UNAVAILABLE_REASON
     });
   });
 
