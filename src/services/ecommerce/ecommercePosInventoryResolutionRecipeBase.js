@@ -8,6 +8,11 @@ import {
   revalidateEcommerceDraftInventory as revalidateBaseEcommerceDraftInventory
 } from './ecommercePosInventoryResolutionBase';
 import { reconcileEcommerceConfiguredItems } from './ecommercePosConfiguredItem';
+import {
+  applyEcommerceApparelVariantConflicts,
+  getEcommerceApparelVariantInventoryMessage,
+  prepareEcommerceApparelVariantInventory
+} from './ecommercePosApparelVariantResolution';
 
 export * from './ecommercePosInventoryResolutionBase';
 
@@ -194,10 +199,47 @@ const buildResultFromStoredOrder = (baseResult, order) => ({
   } : baseResult?.resolution
 });
 
+const finalizeApparelVariantResolution = ({ baseResult, orderId, now, deps }) => {
+  if (baseResult?.stale || baseResult?.success === false) return baseResult;
+  const state = getActiveOrdersState(deps);
+  const current = baseResult?.order || state.activeOrders?.get?.(orderId) || null;
+  if (!current) return baseResult;
+  const patched = applyEcommerceApparelVariantConflicts({ order: current, now });
+  if (patched === current) return baseResult;
+  const stored = updateOrder({
+    orderId,
+    patch: {
+      items: patched.items,
+      ecommerceInventoryStatus: patched.ecommerceInventoryStatus,
+      ecommerceInventoryConflictCount: patched.ecommerceInventoryConflictCount,
+      ecommerceInventoryResolvedAt: patched.ecommerceInventoryResolvedAt,
+      ecommerceInventoryError: patched.ecommerceInventoryError,
+      ecommerceInventoryVariantCheckedAt: patched.ecommerceInventoryVariantCheckedAt
+    },
+    deps
+  }) || patched;
+  return buildResultFromStoredOrder(baseResult, stored);
+};
+
 export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Date(), deps = {} } = {}) => {
   const products = getProducts(deps);
   let order = reconcileStoredConfiguredItems({ orderId, products, deps });
   if (!order) return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_DRAFT_INVALID' };
+
+  const stockDeps = buildStockDeps(deps);
+  const variantPreparation = await prepareEcommerceApparelVariantInventory({
+    order,
+    products,
+    queryBatchesByProduct: stockDeps.queryBatchesByProductIdAndActive,
+    now
+  });
+  if (variantPreparation.changed) {
+    order = updateOrder({
+      orderId,
+      patch: { items: variantPreparation.order.items },
+      deps
+    }) || variantPreparation.order;
+  }
 
   const mappingConflictIds = new Set(asArray(order.items)
     .filter((item) => item.ecommerceConfiguredModifierMappingStatus === 'conflict')
@@ -214,12 +256,22 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
       now,
       deps
     });
-    return buildResultFromStoredOrder(baseResult, patched);
+    return finalizeApparelVariantResolution({
+      baseResult: buildResultFromStoredOrder(baseResult, patched),
+      orderId,
+      now,
+      deps
+    });
   }
 
   const recipeProductIds = getRecipeProductIds({ order, products });
   if (recipeProductIds.size === 0) {
-    return revalidateBaseEcommerceDraftInventory({ orderId, now, deps: { ...deps, products } });
+    const baseResult = await revalidateBaseEcommerceDraftInventory({
+      orderId,
+      now,
+      deps: { ...deps, products }
+    });
+    return finalizeApparelVariantResolution({ baseResult, orderId, now, deps });
   }
 
   const stockValidation = await validateRecipeAndConfiguredInventory({ order, products, deps });
@@ -238,7 +290,12 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
       details: stockValidation?.response?.missingData || null,
       deps
     });
-    return buildResultFromStoredOrder(baseResult, patched);
+    return finalizeApparelVariantResolution({
+      baseResult: buildResultFromStoredOrder(baseResult, patched),
+      orderId,
+      now,
+      deps
+    });
   }
 
   const safeProducts = products.map((product) => (
@@ -265,10 +322,17 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
     now,
     deps
   });
-  return buildResultFromStoredOrder(baseResult, patched);
+  return finalizeApparelVariantResolution({
+    baseResult: buildResultFromStoredOrder(baseResult, patched),
+    orderId,
+    now,
+    deps
+  });
 };
 
 export const getEcommerceInventoryLineMessage = (item = {}) => {
+  const apparelMessage = getEcommerceApparelVariantInventoryMessage(item);
+  if (apparelMessage) return apparelMessage;
   const resolution = item.inventoryResolution || {};
   if (resolution.status === 'resolved' && resolution.mode === 'recipe') {
     return 'Ingredientes y extras verificados para la receta.';
@@ -291,5 +355,6 @@ export const ecommercePosInventoryRecipeBridgeInternals = Object.freeze({
   buildRecipeSafeItem,
   buildStockDeps,
   validateRecipeAndConfiguredInventory,
-  patchInventoryLines
+  patchInventoryLines,
+  finalizeApparelVariantResolution
 });
