@@ -15,9 +15,14 @@ import {
 } from './ecommerceCatalogSyncServiceBase';
 import {
   buildEcommerceProductConfigurationSyncPayload,
-  getEcommerceConfigurationSourceRevision
+  getEcommerceConfigurationSourceRevision,
+  serializeEcommerceProductConfigurationForSync
 } from '../../utils/ecommerceProductConfigurationSync';
-import { projectProductBatchesToEcommerceVariants } from './ecommerceApparelVariants';
+import {
+  decorateProductWithEcommerceApparelProjection,
+  getEcommerceApparelProjectionState,
+  projectProductBatchesToEcommerceVariants
+} from './ecommerceApparelVariants';
 
 const OUTBOX_RETRY_SENTINEL = '__lanzo_catalog_outbox_retry__';
 const MIN_RETRY_TIMER_MS = Math.min(...ecommerceCatalogSyncServiceInternals.RETRY_BACKOFF_MS) * 0.8;
@@ -39,9 +44,24 @@ const hashStableText = (value) => {
   return (hash >>> 0).toString(36).padStart(7, '0');
 };
 
+const buildProjectedProductConfiguration = (product = {}) => {
+  const baseConfiguration = buildEcommerceProductConfigurationSyncPayload(product);
+  const apparelState = getEcommerceApparelProjectionState(product);
+  if (!apparelState) return baseConfiguration;
+
+  return serializeEcommerceProductConfigurationForSync({
+    ...baseConfiguration,
+    type: 'variant_parent',
+    variants: asArray(product.variants),
+    availabilitySource: 'variant_aggregate',
+    availabilityReasonCode: apparelState.availabilityReasonCode,
+    limitingSource: baseConfiguration.limitingSource
+  });
+};
+
 const getPublicConfigurationRevision = (product = {}) => {
   try {
-    const configuration = buildEcommerceProductConfigurationSyncPayload(product);
+    const configuration = buildProjectedProductConfiguration(product);
     return `configuration:${hashStableText(JSON.stringify(configuration))}`;
   } catch {
     return getEcommerceConfigurationSourceRevision(product) || null;
@@ -155,9 +175,7 @@ const decorateProductForDependencySync = (product = {}) => {
 const decorateProductWithApparelVariants = ({ product = {}, batches = [] } = {}) => {
   if (asArray(product.variants).length > 0) return product;
   const projection = projectProductBatchesToEcommerceVariants({ product, batches });
-  return projection.variants.length > 0
-    ? { ...product, variants: projection.variants }
-    : product;
+  return decorateProductWithEcommerceApparelProjection({ product, projection });
 };
 
 const decorateBatchForDependencySync = (batch = {}) => {
@@ -168,7 +186,7 @@ const decorateBatchForDependencySync = (batch = {}) => {
 
 const createDependencyAwareLocalSource = (
   sourceLocal = ecommercePublishedStockLocalSource,
-  { onConfigurationRevision = () => {} } = {}
+  { onConfigurationProjection = () => {} } = {}
 ) => {
   const prefetchedBatches = new Map();
 
@@ -217,10 +235,13 @@ const createDependencyAwareLocalSource = (
               product: dependencyAwareProduct,
               batches: prefetched?.batches || []
             });
-        onConfigurationRevision(
-          productId,
-          getPublicConfigurationRevision(configuredProduct)
-        );
+        const configuration = buildProjectedProductConfiguration(configuredProduct);
+        const apparelState = getEcommerceApparelProjectionState(configuredProduct);
+        onConfigurationProjection(productId, {
+          configuration,
+          revision: `configuration:${hashStableText(JSON.stringify(configuration))}`,
+          apparelState
+        });
         return [id, configuredProduct];
       }));
     },
@@ -249,6 +270,31 @@ const createDependencyAwareLocalSource = (
     }
   };
 };
+
+const patchConfigurationProjections = (
+  projections = [],
+  configurationsByProduct = new Map()
+) => (
+  asArray(projections).map((projection) => {
+    const localProductRef = asText(projection?.localProductRef);
+    const projected = configurationsByProduct.get(localProductRef);
+    if (!localProductRef || !projected) return projection;
+
+    const apparelState = projected.apparelState;
+    return {
+      ...projection,
+      configuration: projected.configuration,
+      configurationSourceRevision: projected.revision,
+      ...(apparelState
+        ? {
+            sourceAvailable: apparelState.sourceAvailable === true,
+            sourceState: apparelState.sourceAvailable === true ? 'in_stock' : 'out_of_stock',
+            stockSnapshot: Math.max(0, Number(apparelState.stockSnapshot) || 0)
+          }
+        : {})
+    };
+  })
+);
 
 const patchConfigurationRevisions = (projections = [], revisionsByProduct = new Map()) => (
   asArray(projections).map((projection) => {
@@ -289,7 +335,7 @@ export const createEcommerceCatalogSyncService = (options = {}) => {
   const sourceSyncBatch = options.syncBatch || syncPublishedCatalog;
   const setTimeoutFn = options.setTimeoutFn || defaultSetTimeoutFn;
   const clearTimeoutFn = options.clearTimeoutFn || defaultClearTimeoutFn;
-  const configurationRevisionsByProduct = new Map();
+  const configurationProjectionsByProduct = new Map();
   let retryPersistenceMode = null;
   let service = null;
 
@@ -300,15 +346,15 @@ export const createEcommerceCatalogSyncService = (options = {}) => {
     }
   });
   const localSource = createDependencyAwareLocalSource(sourceLocal, {
-    onConfigurationRevision: (productId, revision) => {
-      configurationRevisionsByProduct.set(productId, revision);
+    onConfigurationProjection: (productId, projection) => {
+      configurationProjectionsByProduct.set(productId, projection);
     }
   });
   const syncBatch = (request = {}) => sourceSyncBatch({
     ...request,
-    projections: patchConfigurationRevisions(
+    projections: patchConfigurationProjections(
       request.projections,
-      configurationRevisionsByProduct
+      configurationProjectionsByProduct
     )
   });
 
@@ -382,6 +428,7 @@ export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   INGREDIENTS_KEY,
   MISSING_BATCH_SNAPSHOT_KEY,
   hashStableText,
+  buildProjectedProductConfiguration,
   getPublicConfigurationRevision,
   getRecordRevisionNumber,
   getDependencyAwareRevisionNumber,
@@ -391,5 +438,6 @@ export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   decorateProductWithApparelVariants,
   decorateBatchForDependencySync,
   createDependencyAwareLocalSource,
-  patchConfigurationRevisions
+  patchConfigurationRevisions,
+  patchConfigurationProjections
 });
