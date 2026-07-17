@@ -1,12 +1,12 @@
 import { getAvailableBatchStock, getBatchId } from '../products/fefoUtils';
 import { getInventoryQuantityForSale } from '../sales/stockValidation';
 import {
+  classifyEcommerceVariantBatchStock,
   getEcommerceVariantSelection,
   resolveEcommerceVariantBatchCandidates
 } from './ecommerceApparelVariants';
 
 const VARIANT_CONFLICT_BATCH_SENTINEL = '__ecommerce_variant_conflict__';
-const EPSILON = 0.0001;
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const asText = (value) => String(value ?? '').trim();
 const getProductId = (item = {}) => asText(item.parentId ?? item.id);
@@ -158,25 +158,27 @@ export const prepareEcommerceApparelVariantInventory = async ({
       continue;
     }
 
-    const selectedBatch = candidateResult.candidates.find((batch) => (
-      (remainingByBatch.get(getLedgerKey(productId, getBatchId(batch))) || 0) + EPSILON >= required
-    ));
-    if (!selectedBatch) {
-      const available = candidateResult.candidates.reduce((sum, batch) => (
-        sum + (remainingByBatch.get(getLedgerKey(productId, getBatchId(batch))) || 0)
-      ), 0);
+    const stockResolution = classifyEcommerceVariantBatchStock({
+      candidates: candidateResult.candidates,
+      requiredQuantity: required,
+      getAvailableStock: (batch) => (
+        remainingByBatch.get(getLedgerKey(productId, getBatchId(batch))) || 0
+      )
+    });
+    if (stockResolution.code) {
       preparedItems.push(createBlockedVariantLine({
         item,
         product,
         selection,
-        code: 'ECOMMERCE_VARIANT_STOCK_INSUFFICIENT',
-        available
+        code: stockResolution.code,
+        available: stockResolution.availableStock
       }));
       continue;
     }
 
+    const selectedBatch = stockResolution.selectedBatch;
     const ledgerKey = getLedgerKey(productId, getBatchId(selectedBatch));
-    const available = remainingByBatch.get(ledgerKey) || 0;
+    const available = stockResolution.availableStock;
     remainingByBatch.set(ledgerKey, Math.max(0, available - required));
     preparedItems.push(createPendingVariantLine({
       item,
@@ -247,6 +249,9 @@ export const getEcommerceApparelVariantInventoryMessage = (item = {}) => {
   }
   if (code === 'ECOMMERCE_VARIANT_LOCAL_MAPPING_AMBIGUOUS') {
     return 'El SKU de la variante esta asociado a combinaciones incompatibles.';
+  }
+  if (code === 'MULTI_BATCH_REQUIRED') {
+    return 'La variante tiene stock suficiente, pero esta repartido entre varios lotes y requiere resolucion manual.';
   }
   if (code === 'ECOMMERCE_VARIANT_STOCK_INSUFFICIENT') {
     return 'No hay stock suficiente de la talla y color comprados.';
