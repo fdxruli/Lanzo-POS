@@ -41,6 +41,51 @@ describe('ecommerce catalog hydration', () => {
     });
   });
 
+  it('skips the cloud product snapshot when cloud products sync is disabled', async () => {
+    const migrationService = {
+      pullFullSnapshot: vi.fn()
+    };
+
+    const result = await hydrateEcommerceCatalogSnapshot({
+      licenseKey: 'FREE-LICENSE',
+      force: true,
+      hydrateCloudCatalog: false,
+      migrationService
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      skipped: true,
+      reason: 'cloud_products_sync_disabled'
+    });
+    expect(migrationService.pullFullSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('reconciles ecommerce from the local catalog when cloud hydration is disabled', async () => {
+    const migrationService = {
+      pullFullSnapshot: vi.fn()
+    };
+    const syncService = {
+      syncNow: vi.fn().mockResolvedValue({ success: true, source: 'indexeddb' })
+    };
+
+    const result = await syncEcommerceCatalogAfterHydration({
+      licenseKey: 'FREE-LICENSE',
+      request: { reason: 'runtime-context-ready' },
+      forceHydration: true,
+      hydrateCloudCatalog: false,
+      migrationService,
+      syncService
+    });
+
+    expect(migrationService.pullFullSnapshot).not.toHaveBeenCalled();
+    expect(syncService.syncNow).toHaveBeenCalledWith({
+      reason: 'runtime-context-ready',
+      fullReconcile: true
+    });
+    expect(result).toMatchObject({ success: true, source: 'indexeddb' });
+  });
+
   it('deduplicates concurrent hydration for the same license', async () => {
     const migrationService = {
       pullFullSnapshot: vi.fn().mockResolvedValue({ success: true, applied: 4 })
