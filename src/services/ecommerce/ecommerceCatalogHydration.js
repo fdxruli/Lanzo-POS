@@ -80,6 +80,7 @@ export const syncEcommerceCatalogAfterHydration = async ({
   request = {},
   forceHydration = false,
   hydrateCloudCatalog = true,
+  suppressRecoverableConflictLog = false,
   shouldContinue = () => true,
   migrationService = productMigrationService,
   syncService = ecommerceCatalogSyncService,
@@ -100,10 +101,15 @@ export const syncEcommerceCatalogAfterHydration = async ({
       return { skipped: true, reason: 'context_changed', hydration };
     }
 
-    return await syncService.syncNow({
+    const syncRequest = {
       ...request,
       fullReconcile: true
-    });
+    };
+    if (suppressRecoverableConflictLog === true) {
+      syncRequest.suppressRecoverableConflictLog = true;
+    }
+
+    return await syncService.syncNow(syncRequest);
   } catch (error) {
     Logger.warn('[Ecommerce/CatalogSync] Full snapshot hydration failed', {
       operation: 'ecommerce_catalog_hydration',
