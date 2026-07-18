@@ -296,6 +296,44 @@ const patchConfigurationProjections = (
   })
 );
 
+const getPortalIdFromBatchIdempotencyKey = (idempotencyKey) => {
+  const prefix = 'ecom-catalog-sync:';
+  const normalizedKey = asText(idempotencyKey);
+  if (!normalizedKey.startsWith(prefix)) return null;
+
+  const keyBody = normalizedKey.slice(prefix.length);
+  const hashSeparator = keyBody.lastIndexOf(':');
+  if (hashSeparator <= 0) return null;
+  return asText(keyBody.slice(0, hashSeparator)) || null;
+};
+
+const prepareSyncBatchRequest = async (
+  request = {},
+  configurationsByProduct = new Map()
+) => {
+  const projections = patchConfigurationProjections(
+    request.projections,
+    configurationsByProduct
+  );
+  const portalId = getPortalIdFromBatchIdempotencyKey(request.idempotencyKey);
+  if (!portalId) {
+    return {
+      ...request,
+      projections
+    };
+  }
+
+  const idempotencyKey = await ecommerceCatalogSyncServiceInternals.buildBatchIdempotencyKey({
+    portalId,
+    projections
+  });
+  return {
+    ...request,
+    projections,
+    idempotencyKey
+  };
+};
+
 const patchConfigurationRevisions = (projections = [], revisionsByProduct = new Map()) => (
   asArray(projections).map((projection) => {
     const localProductRef = asText(projection?.localProductRef);
@@ -350,13 +388,9 @@ export const createEcommerceCatalogSyncService = (options = {}) => {
       configurationProjectionsByProduct.set(productId, projection);
     }
   });
-  const syncBatch = (request = {}) => sourceSyncBatch({
-    ...request,
-    projections: patchConfigurationProjections(
-      request.projections,
-      configurationProjectionsByProduct
-    )
-  });
+  const syncBatch = async (request = {}) => sourceSyncBatch(
+    await prepareSyncBatchRequest(request, configurationProjectionsByProduct)
+  );
 
   const retrySafeSetTimeout = (callback, delay) => {
     const numericDelay = Number(delay);
@@ -439,5 +473,7 @@ export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   decorateBatchForDependencySync,
   createDependencyAwareLocalSource,
   patchConfigurationRevisions,
-  patchConfigurationProjections
+  patchConfigurationProjections,
+  getPortalIdFromBatchIdempotencyKey,
+  prepareSyncBatchRequest
 });
