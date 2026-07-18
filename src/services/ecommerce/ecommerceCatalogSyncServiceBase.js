@@ -453,6 +453,7 @@ export const createEcommerceCatalogSyncService = ({
   let dirty = false;
   let pendingFullReconcile = false;
   let pendingReason = 'catalog-change';
+  let pendingSuppressRecoverableConflictLog = false;
   let pendingProductRefs = new Set();
   let contextEpoch = 0;
   let status = createInitialStatus();
@@ -471,10 +472,19 @@ export const createEcommerceCatalogSyncService = ({
     && getEcommercePublishedStockAlertContextKey(getState() || {}) === contextKey
   );
 
-  const rememberPending = ({ productRefs, fullReconcile, reason }) => {
+  const rememberPending = ({
+    productRefs,
+    fullReconcile,
+    reason,
+    suppressRecoverableConflictLog = false
+  }) => {
     uniqueRefs(productRefs).forEach((productRef) => pendingProductRefs.add(productRef));
     pendingFullReconcile = pendingFullReconcile || fullReconcile === true || productRefs?.length === 0;
     pendingReason = asText(reason) || pendingReason;
+    pendingSuppressRecoverableConflictLog = (
+      pendingSuppressRecoverableConflictLog
+      || suppressRecoverableConflictLog === true
+    );
   };
 
   const clearRetryTimer = ({ resetAttempt = false } = {}) => {
@@ -856,12 +866,18 @@ export const createEcommerceCatalogSyncService = ({
         const failure = toFailure(result, 'ECOMMERCE_CATALOG_SYNC_FAILED', online);
         if (result?.code === 'ECOMMERCE_CATALOG_REVISION_CHANGED') dirty = true;
 
-        Logger.warn('[Ecommerce/CatalogSync] Batch failed', {
-          operation: 'sync_published_catalog',
-          code: failure.code,
-          count: projectionsBatch.length,
-          revision: expectedCatalogRevision
-        });
+        const recoverableSourceConflict = (
+          failure.code === 'ECOMMERCE_CATALOG_SOURCE_CONFLICT'
+          && request?.suppressRecoverableConflictLog === true
+        );
+        if (!recoverableSourceConflict) {
+          Logger.warn('[Ecommerce/CatalogSync] Batch failed', {
+            operation: 'sync_published_catalog',
+            code: failure.code,
+            count: projectionsBatch.length,
+            revision: expectedCatalogRevision
+          });
+        }
 
         if (failure.retryable) {
           const firstPendingIndex = batchIndex * RPC_BATCH_SIZE;
@@ -935,10 +951,12 @@ export const createEcommerceCatalogSyncService = ({
     const request = {
       productRefs: Array.from(pendingProductRefs),
       fullReconcile: pendingFullReconcile,
-      reason: pendingReason
+      reason: pendingReason,
+      suppressRecoverableConflictLog: pendingSuppressRecoverableConflictLog
     };
     pendingProductRefs = new Set();
     pendingFullReconcile = false;
+    pendingSuppressRecoverableConflictLog = false;
     return request;
   };
 
@@ -976,9 +994,15 @@ export const createEcommerceCatalogSyncService = ({
     productIds = [],
     fullReconcile = false,
     reason = 'catalog-change',
+    suppressRecoverableConflictLog = false,
     immediate = false
   } = {}) => {
-    rememberPending({ productRefs: productIds, fullReconcile, reason });
+    rememberPending({
+      productRefs: productIds,
+      fullReconcile,
+      reason,
+      suppressRecoverableConflictLog
+    });
     if (activeDrain) {
       dirty = true;
       return activeDrain;
@@ -1012,6 +1036,7 @@ export const createEcommerceCatalogSyncService = ({
     clearRetryTimer({ resetAttempt: true });
     pendingProductRefs = new Set();
     pendingFullReconcile = false;
+    pendingSuppressRecoverableConflictLog = false;
     dirty = false;
     lastEligibleContext = null;
     publishStatus(createInitialStatus());

@@ -51,6 +51,7 @@ export default function EcommerceCatalogSyncRuntime() {
         licenseKey,
         forceHydration: true,
         hydrateCloudCatalog: isCloudProductsSyncEnabled(licenseDetails || {}),
+        suppressRecoverableConflictLog: true,
         request: { reason: 'runtime-context-ready' },
         shouldContinue: () => active && getRuntimeLicenseKey() === licenseKey
       };
@@ -66,6 +67,7 @@ export default function EcommerceCatalogSyncRuntime() {
       ) {
         await syncEcommerceCatalogAfterHydration({
           ...request,
+          suppressRecoverableConflictLog: false,
           request: { reason: 'runtime-context-conflict-recovery' }
         });
       }
@@ -81,7 +83,8 @@ export default function EcommerceCatalogSyncRuntime() {
     const runHydratedReconcile = async ({
       reason,
       forceHydration = false,
-      recoveryAttempt = false
+      recoveryAttempt = false,
+      suppressRecoverableConflictLog = true
     } = {}) => {
       const licenseKey = getRuntimeLicenseKey();
       if (!licenseKey) return Promise.resolve({ skipped: true, reason: 'missing_license' });
@@ -89,6 +92,7 @@ export default function EcommerceCatalogSyncRuntime() {
         licenseKey,
         forceHydration,
         hydrateCloudCatalog: canHydrateRuntimeCloudCatalog(),
+        suppressRecoverableConflictLog,
         request: { reason },
         shouldContinue: () => getRuntimeLicenseKey() === licenseKey
       });
@@ -104,7 +108,8 @@ export default function EcommerceCatalogSyncRuntime() {
         return runHydratedReconcile({
           reason: `${reason || 'catalog-sync'}-conflict-recovery`,
           forceHydration: true,
-          recoveryAttempt: true
+          recoveryAttempt: true,
+          suppressRecoverableConflictLog: false
         });
       }
 
