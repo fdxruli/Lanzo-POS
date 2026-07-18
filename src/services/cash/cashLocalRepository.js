@@ -99,12 +99,25 @@ export const cashLocalRepository = {
     });
   },
 
-  async registerMovement({ cashSessionId, type, amount, concept }) {
-    const { cajaActualizada, movimiento } = await registrarMovimientoCaja(cashSessionId, type, amount, concept);
+  async registerMovement({ cashSessionId, type, amount, concept, idempotencyKey = null, referenceId = null, metadata = {} }) {
+    const { cajaActualizada, movimiento, alreadyRegistered = false } = await registrarMovimientoCaja(
+      cashSessionId,
+      type,
+      amount,
+      concept,
+      {
+        idempotencyKey,
+        metadata: {
+          ...metadata,
+          ...(referenceId ? { referenceId } : {})
+        }
+      }
+    );
     return {
       success: true,
       cashSession: cajaActualizada,
-      movement: movimiento
+      movement: movimiento,
+      alreadyRegistered
     };
   },
 

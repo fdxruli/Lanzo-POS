@@ -96,7 +96,7 @@ const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEM
  * @param {string} concepto - Concepto descriptivo (obligatorio)
  * @returns {Promise<{cajaActualizada: Object, movimiento: Object}>}
  */
-export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, monto, concepto) {
+export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, monto, concepto, options = {}) {
   if (!tx || typeof tx.table !== 'function') {
     throw new Error('CRITICAL: Se requiere inyectar explícitamente el objeto de transacción (tx) para garantizar atomicidad.');
   }
@@ -118,13 +118,30 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
     throw new Error('El concepto del movimiento es obligatorio.');
   }
 
+  const idempotencyKey = options.idempotencyKey || null;
+
   // --- Lectura y validación de estado ---
   const cajaDb = await tx.table(STORES.CAJAS).get(cajaId);
   if (!cajaDb) {
     throw new Error(`CRITICAL: La caja ${cajaId} no existe en la base de datos.`);
   }
+  const existingMovement = idempotencyKey
+    ? await tx.table(STORES.MOVIMIENTOS_CAJA)
+      .toCollection()
+      .filter((movement) => movement.idempotencyKey === idempotencyKey)
+      .first()
+    : null;
+
   if (cajaDb.estado !== 'abierta') {
     throw new Error('Transacción abortada: La caja no está abierta.');
+  }
+
+  if (existingMovement) {
+    return {
+      cajaActualizada: cajaDb,
+      movimiento: existingMovement,
+      alreadyRegistered: true
+    };
   }
 
   // --- Mutación atómica ---
@@ -142,13 +159,15 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
   await tx.table(STORES.CAJAS).put(cajaDb);
 
   const movimiento = {
-    id: generateID('mov'),
+    id: options.cashMovementId || generateID('mov'),
     caja_id: cajaId,
     cash_session_id: cajaId,
     tipo,
     monto: Money.toExactString(montoSafe),
     concepto: conceptoLimpio,
-    fecha: new Date().toISOString()
+    fecha: options.createdAt || new Date().toISOString(),
+    ...(options.metadata || {}),
+    ...(idempotencyKey ? { idempotencyKey } : {})
   };
   await tx.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
 
@@ -168,13 +187,13 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
  * @param {string} concepto - Concepto descriptivo (obligatorio)
  * @returns {Promise<{cajaActualizada: Object, movimiento: Object}>}
  */
-export async function registrarMovimientoCaja(cajaId, tipo, monto, concepto) {
+export async function registrarMovimientoCaja(cajaId, tipo, monto, concepto, options = {}) {
   return await retryWithBackoff(async () => {
     return await db.transaction(
       'rw',
       [db.table(STORES.CAJAS), db.table(STORES.MOVIMIENTOS_CAJA)],
       async (tx) => {
-        return await registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, monto, concepto);
+        return await registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, monto, concepto, options);
       }
     );
   }, CAJA_CONFIG.RETRY_ATTEMPTS, `registrarMovimiento ${tipo} $${Money.toNumber(Money.init(monto)).toFixed(2)}`);
