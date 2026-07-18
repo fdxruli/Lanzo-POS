@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
@@ -8,6 +8,7 @@ import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
 import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrderCapabilities';
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
+import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import Logo from '../common/Logo';
 import NotificationBell from '../notifications/NotificationBell';
 import {
@@ -26,7 +27,8 @@ import {
   ShieldAlert,
   AlertCircle,
   FolderKey,
-  ShoppingBag
+  ShoppingBag,
+  Globe2
 } from 'lucide-react';
 import './Navbar.css';
 import './NavbarEcommerce.css';
@@ -68,6 +70,11 @@ function Navbar() {
     currentDeviceRole,
     currentStaffUser
   });
+  const canManageEcommercePortal = evaluateEcommercePortalAccess({
+    canAccess,
+    currentDeviceRole
+  });
+  const isPortalOnlineActive = location.pathname === '/portal-online';
   const normalizedEcommerceNewCount = Math.max(Number(ecommerceNewCount) || 0, 0);
   const ecommerceBadge = normalizedEcommerceNewCount > 99
     ? '99+'
@@ -150,7 +157,17 @@ function Navbar() {
       label: 'Pedidos online',
       description: 'Pedidos recibidos desde la tienda',
       icon: <ShoppingBag size={21} />,
-      badge: normalizedEcommerceNewCount > 0 ? ecommerceBadge : null
+      badge: normalizedEcommerceNewCount > 0 ? ecommerceBadge : null,
+      section: 'online'
+    }] : []),
+    ...(canManageEcommercePortal ? [{
+      to: '/portal-online',
+      route: '/portal-online',
+      label: 'Portal online',
+      description: 'Configura tu tienda, catálogo y horarios',
+      icon: <Globe2 size={21} />,
+      section: 'online',
+      portalOnline: true
     }] : []),
     {
       to: '/clientes',
@@ -189,10 +206,17 @@ function Navbar() {
     // license/devices/sync/inventory solo habilitan tabs internos tras entrar.
     '/configuracion': 'settings'
   };
-  const isRouteAllowed = (to) => !routePermissions[to] || canAccess(routePermissions[to]);
-  const visibleDrawerLinks = drawerLinks.filter((link) => isRouteAllowed(link.to));
+  const isRouteAllowed = (linkOrPath) => {
+    const path = typeof linkOrPath === 'string'
+      ? linkOrPath
+      : linkOrPath.route || linkOrPath.to.split('?')[0];
+    return !routePermissions[path] || canAccess(routePermissions[path]);
+  };
+  const visibleDrawerLinks = drawerLinks.filter((link) => isRouteAllowed(link));
 
-  const isSectionFromMenu = visibleDrawerLinks.some((link) => location.pathname.startsWith(link.to));
+  const isSectionFromMenu = visibleDrawerLinks.some((link) => (
+    location.pathname.startsWith(link.route || link.to.split('?')[0])
+  ));
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const showLocalBackupIndicators = !isCloudLicense;
   const effectiveBackupRiskLevel = showLocalBackupIndicators ? backupRiskLevel : 0;
@@ -212,9 +236,13 @@ function Navbar() {
   const getBottomClass = ({ isActive }) => (
     `bottom-nav-item ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`
   );
-  const getDrawerClass = ({ isActive }) => (
-    `drawer-link ${isActive ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`
-  );
+  const getDrawerClass = ({ isActive }, link) => {
+    const active = link.portalOnline
+      ? isPortalOnlineActive
+      : isActive;
+
+    return `drawer-link ${active ? 'active' : ''} ${isBackupLoading ? 'disabled' : ''}`;
+  };
 
   const pwaActionBaseStyle = {
     width: '100%',
@@ -388,11 +416,29 @@ function Navbar() {
         </div>
 
         <div className="drawer-links">
-          {visibleDrawerLinks.map((link) => (
-            <div className="drawer-link-row" key={link.to}>
+          {visibleDrawerLinks.map((link, index) => {
+            const showOnlineHeading = link.section === 'online' && (
+              index === 0 || visibleDrawerLinks[index - 1]?.section !== 'online'
+            );
+            const showOnlineDivider = link.section !== 'online'
+              && visibleDrawerLinks[index - 1]?.section === 'online';
+
+            return (
+              <Fragment key={link.to}>
+                {showOnlineHeading && (
+                  <h3 className="drawer-context-heading">
+                    <Globe2 size={15} />
+                    <span>Portal online</span>
+                    <span className="drawer-context-heading-line" aria-hidden="true" />
+                  </h3>
+                )}
+                {showOnlineDivider && (
+                  <div className="drawer-context-divider" aria-hidden="true" />
+                )}
+                <div className={`drawer-link-row ${link.section === 'online' ? 'drawer-link-row--online' : ''}`}>
               <NavLink
                 to={link.to}
-                className={getDrawerClass}
+                className={(navState) => getDrawerClass(navState, link)}
                 onClick={handleProtectedNavClick}
                 aria-disabled={isBackupLoading}
                 tabIndex={isBackupLoading ? -1 : 0}
@@ -435,8 +481,10 @@ function Navbar() {
                     <ShieldAlert size={20} />
                   </button>
                 )}
-            </div>
-          ))}
+                </div>
+              </Fragment>
+            );
+          })}
 
           {hasMenuAction && (
             <section className="drawer-system-actions" aria-labelledby="drawer-system-title">
@@ -525,29 +573,6 @@ function Navbar() {
             <Store size={20} /> Punto de Venta
           </NavLink>
 
-          {canAccessOnlineOrders && (
-            <NavLink
-              to="/pedidos-online"
-              className={({ isActive }) => (
-                `${getDesktopClass({ isActive })} ecommerce-nav-link`
-              )}
-              onClick={handleProtectedNavClick}
-              aria-disabled={isBackupLoading}
-              tabIndex={isBackupLoading ? -1 : 0}
-            >
-              <ShoppingBag size={20} />
-              <span className="ecommerce-nav-link-label">Pedidos online</span>
-              {normalizedEcommerceNewCount > 0 && (
-                <span
-                  className="ecommerce-nav-badge"
-                  aria-label={`${ecommerceBadge} pedidos nuevos`}
-                >
-                  {ecommerceBadge}
-                </span>
-              )}
-            </NavLink>
-          )}
-
           <NavLink
             to="/caja"
             className={getDesktopClass}
@@ -603,6 +628,54 @@ function Navbar() {
           >
             <TrendingUp size={20} /> Ventas y Reportes
           </NavLink>
+
+          {(canAccessOnlineOrders || canManageEcommercePortal) && (
+            <>
+              <div className="sidebar-divider sidebar-divider--online" />
+              <h2 className="sidebar-context-heading">
+                <Globe2 size={15} />
+                <span>Portal online</span>
+              </h2>
+
+              {canAccessOnlineOrders && (
+                <NavLink
+                  to="/pedidos-online"
+                  className={({ isActive }) => (
+                    `${getDesktopClass({ isActive })} ecommerce-nav-link ecommerce-nav-link--online`
+                  )}
+                  onClick={handleProtectedNavClick}
+                  aria-disabled={isBackupLoading}
+                  tabIndex={isBackupLoading ? -1 : 0}
+                >
+                  <ShoppingBag size={20} />
+                  <span className="ecommerce-nav-link-label">Pedidos online</span>
+                  {normalizedEcommerceNewCount > 0 && (
+                    <span
+                      className="ecommerce-nav-badge"
+                      aria-label={`${ecommerceBadge} pedidos nuevos`}
+                    >
+                      {ecommerceBadge}
+                    </span>
+                  )}
+                </NavLink>
+              )}
+
+              {canManageEcommercePortal && (
+                <NavLink
+                  to="/portal-online"
+                  className={() => (
+                    `${getDesktopClass({ isActive: isPortalOnlineActive })} ecommerce-nav-link ecommerce-nav-link--online`
+                  )}
+                  onClick={handleProtectedNavClick}
+                  aria-disabled={isBackupLoading}
+                  tabIndex={isBackupLoading ? -1 : 0}
+                >
+                  <Globe2 size={20} />
+                  <span className="ecommerce-nav-link-label">Configurar portal</span>
+                </NavLink>
+              )}
+            </>
+          )}
 
           <div className="sidebar-divider" />
 

@@ -116,6 +116,7 @@ const ProductsPage = lazyRetry(() => import('./pages/ProductsPage'), 'ProductsPa
 const CustomersPage = lazyRetry(() => import('./pages/CustomersPage'), 'CustomersPage');
 const DashboardPage = lazyRetry(() => import('./pages/DashboardPage'), 'DashboardPage');
 const SettingsPage = lazyRetry(() => import('./pages/SettingsPage'), 'SettingsPage');
+const EcommercePortalPage = lazyRetry(() => import('./pages/EcommercePortalPage'), 'EcommercePortalPage');
 const AboutPage = lazyRetry(() => import('./pages/AboutPage'), 'AboutPage');
 
 const PageLoader = () => (
@@ -342,6 +343,7 @@ function App() {
                   <Route path="productos" element={<PermissionRoute permission="products"><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path="ventas" element={<PermissionRoute permission="reports"><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></PermissionRoute>} />
+                  <Route path="portal-online" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
                   <Route path="configuracion" element={<PermissionRoute permission={['settings', 'products']}><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></PermissionRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                 </Route>

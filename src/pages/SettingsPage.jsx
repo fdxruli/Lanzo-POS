@@ -5,14 +5,12 @@ import OperationalSettings from '../components/settings/OperationalSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
-import EcommercePortalSettings from '../components/ecommerce/EcommercePortalSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
 import {
-  evaluateEcommercePortalAccess,
   resolveAllowedSettingsTab
 } from './settingsPageAccess';
 
@@ -21,34 +19,24 @@ export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
-  useAppStore((state) => state.currentStaffUser);
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
-  const canManageEcommercePortal = evaluateEcommercePortalAccess({
-    canAccess,
-    currentDeviceRole
-  });
 
   const visibleTabs = useMemo(() => [
     { key: 'general', allowed: canAccess('settings') },
     { key: 'controls', allowed: canAccess('settings') },
-    { key: 'portal-online', allowed: canManageEcommercePortal },
     { key: 'license', allowed: canAccess('license') },
     { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
     { key: 'backup', allowed: canAccess('sync') },
     { key: 'debug', allowed: import.meta.env.DEV },
     { key: 'test-ventas', allowed: import.meta.env.DEV }
-  ].filter((tab) => tab.allowed), [canAccess, canManageEcommercePortal]);
-
-  const requestedFocus = searchParams.get('focus');
+  ].filter((tab) => tab.allowed), [canAccess]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     const tabMap = {
       general: 'general',
       controls: 'controls',
-      'portal-online': 'portal-online',
       license: 'license',
       maintenance: 'maintenance',
       backup: 'backup',
@@ -64,36 +52,6 @@ export default function SettingsPage() {
     }));
   }, [searchParams, visibleTabs]);
 
-  useEffect(() => {
-    if (activeTab !== 'portal-online' || requestedFocus !== 'products') return undefined;
-
-    let completed = false;
-    const focusProducts = () => {
-      if (completed) return;
-      const target = document.getElementById('ecommerce-published-products');
-      if (!target) return;
-
-      completed = true;
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      target.focus({ preventScroll: true });
-
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.delete('focus');
-      setSearchParams(nextParams, { replace: true });
-    };
-
-    focusProducts();
-    if (completed || typeof MutationObserver === 'undefined') return undefined;
-
-    const observer = new MutationObserver(focusProducts);
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    return () => {
-      completed = true;
-      observer.disconnect();
-    };
-  }, [activeTab, requestedFocus, searchParams, setSearchParams]);
-
   const handleTabChange = (tabKey) => {
     const param = tabKey === 'general' ? {} : { tab: tabKey };
     setSearchParams(param);
@@ -107,7 +65,6 @@ export default function SettingsPage() {
         <div className="tabs-container settings-tabs">
           <button type="button" className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`} onClick={() => handleTabChange('general')} hidden={!tabIsVisible('general')}>Datos y Apariencia</button>
           <button type="button" className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => handleTabChange('controls')} hidden={!tabIsVisible('controls')}>Controles</button>
-          <button type="button" className={`tab-btn ${activeTab === 'portal-online' ? 'active' : ''}`} onClick={() => handleTabChange('portal-online')} hidden={!tabIsVisible('portal-online')}>Portal online</button>
           <button type="button" className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`} onClick={() => handleTabChange('license')} hidden={!tabIsVisible('license')}>Licencia y Rubros</button>
           <button type="button" className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
           <button type="button" className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`} onClick={() => handleTabChange('backup')} hidden={!tabIsVisible('backup')}>Respaldos</button>
@@ -119,7 +76,6 @@ export default function SettingsPage() {
       <section className="ui-section settings-content">
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'controls' && <OperationalSettings />}
-        {activeTab === 'portal-online' && canManageEcommercePortal && <EcommercePortalSettings />}
         {activeTab === 'license' && <LicenseSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && (
