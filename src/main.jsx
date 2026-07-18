@@ -108,10 +108,7 @@ async function renderPosApplication() {
 
   startPosSyncAutoBootstrap();
 
-  let DevConsole = null;
-  if (import.meta.env.DEV) {
-    DevConsole = (await import('./components/debug/DevConsole')).default;
-  }
+  const DevConsole = (await import('./components/debug/DevConsole')).default;
 
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>

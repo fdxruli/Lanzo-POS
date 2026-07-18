@@ -282,7 +282,7 @@ function DevConsole() {
     setIsOpen(true);
   };
 
-  if (!import.meta.env.DEV || !isMobile) return null;
+  if (!isMobile) return null;
 
   if (!isOpen) {
     const fabStyle = fabPosition
