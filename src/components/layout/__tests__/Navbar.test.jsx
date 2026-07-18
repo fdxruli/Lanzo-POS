@@ -154,6 +154,17 @@ describe('Navbar mobile menu', () => {
     expect(menuButton).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('shows Portal online beside its orders in the drawer', () => {
+    renderNavbar();
+    const { drawer } = openMobileDrawer();
+    const portalLink = drawer.querySelector('a[href="/portal-online"]');
+
+    expect(portalLink).toHaveAttribute('href', '/portal-online');
+    expect(portalLink).toHaveTextContent('Configura tu tienda, catálogo y horarios');
+    expect(within(drawer).getByRole('heading', { name: 'Portal online' })).toBeInTheDocument();
+    expect(drawer.querySelector('.drawer-context-divider')).toBeInTheDocument();
+  });
+
   it('does not add Pedidos online to the mobile bottom navigation', () => {
     renderNavbar();
     const bottomNav = document.querySelector('.mobile-bottom-nav');
@@ -163,16 +174,17 @@ describe('Navbar mobile menu', () => {
 });
 
 describe('Navbar ecommerce orders access', () => {
-  it('places Pedidos online immediately below Punto de Venta on desktop', () => {
+  it('groups online orders and portal settings in a desktop section', () => {
     renderNavbar();
     const labels = [...document.querySelectorAll('.desktop-sidebar .sidebar-links > a')]
       .map((link) => link.textContent.replace(/\s+/g, ' ').trim());
 
-    expect(labels.slice(0, 3)).toEqual([
-      'Punto de Venta',
-      'Pedidos online',
-      'Caja'
-    ]);
+    expect(labels.slice(0, 3)).toEqual(['Punto de Venta', 'Caja', 'Productos']);
+    expect(screen.getByRole('heading', { name: 'Portal online' })).toBeInTheDocument();
+    expect(document.querySelector('.desktop-sidebar a[href="/pedidos-online"]'))
+      .toHaveTextContent('Pedidos online');
+    expect(document.querySelector('.desktop-sidebar a[href="/portal-online"]'))
+      .toHaveTextContent('Configurar portal');
   });
 
   it('does not render a badge when the new count is zero', () => {
@@ -227,11 +239,13 @@ describe('Navbar ecommerce orders access', () => {
   it('hides the link from staff without ecommerce permission', () => {
     state.app = createAppState({
       currentDeviceRole: 'staff',
-      currentStaffUser: { permissions: { ecommerce: false } }
+      currentStaffUser: { permissions: { ecommerce: false } },
+      canAccess: vi.fn((permission) => permission !== 'ecommerce')
     });
     renderNavbar();
 
     expect(getOnlineOrderLinks()).toHaveLength(0);
+    expect(document.querySelectorAll('a[href="/portal-online"]')).toHaveLength(0);
   });
 
   it('hides the link while the device role is unresolved', () => {

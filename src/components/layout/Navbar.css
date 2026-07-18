@@ -279,6 +279,39 @@
   gap: 8px;
 }
 
+.drawer-context-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 4px 2px 0;
+  color: var(--brand-accent-text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.drawer-context-heading,
+.sidebar-context-heading {
+  margin-block-start: 0;
+  margin-block-end: 0;
+}
+
+.drawer-context-heading-line {
+  height: 1px;
+  flex: 1;
+  margin-left: 2px;
+  background: var(--brand-accent-border);
+}
+
+.drawer-context-divider {
+  height: 1px;
+  margin: 8px 2px 2px;
+  background-color: var(--border-color);
+  opacity: 0.75;
+}
+
 .drawer-link-row {
   display: flex;
   align-items: stretch;
@@ -353,6 +386,16 @@
 .drawer-link.active .drawer-link-description {
   color: inherit;
   opacity: 0.8;
+}
+
+.drawer-link-row--online .drawer-link {
+  border-color: color-mix(in srgb, var(--brand-accent-border) 72%, transparent);
+  background: color-mix(in srgb, var(--brand-accent-soft) 36%, var(--light-background));
+}
+
+.drawer-link-row--online .drawer-link-icon {
+  color: var(--brand-accent-text);
+  background: var(--card-background-color);
 }
 
 .drawer-warning-action {
@@ -630,5 +673,36 @@
     background-color: var(--border-color);
     margin: 10px 0;
     opacity: 0.5;
+  }
+
+  .sidebar-divider--online {
+    margin-top: 14px;
+    margin-bottom: 3px;
+  }
+
+  .sidebar-context-heading {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 4px;
+    color: var(--brand-accent-text);
+    font-size: 0.68rem;
+    font-weight: 850;
+    letter-spacing: 0.1em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .sidebar-context-heading svg {
+    flex: 0 0 auto;
+  }
+
+  .ecommerce-nav-link--online {
+    border-color: color-mix(in srgb, var(--brand-accent-border) 58%, transparent);
+    background: color-mix(in srgb, var(--brand-accent-soft) 22%, transparent);
+  }
+
+  .ecommerce-nav-link--online:hover {
+    background: color-mix(in srgb, var(--brand-accent-soft) 54%, var(--light-background));
   }
 }

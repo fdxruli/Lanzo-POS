@@ -1,7 +1,7 @@
 export const ECOMMERCE_PUBLISHED_STOCK_ALERT_TTL_MS = 2 * 60 * 1000;
 
 export const ECOMMERCE_PUBLISHED_STOCK_ALERT_ROUTE = (
-  '/configuracion?tab=portal-online&focus=products'
+  '/portal-online?focus=products'
 );
 
 export const ECOMMERCE_PUBLISHED_STOCK_STATUS = Object.freeze({
