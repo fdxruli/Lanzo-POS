@@ -93,7 +93,7 @@ const callOriginal = (method, args) => {
 };
 
 export const installDevConsoleCapture = () => {
-  if (!import.meta.env.DEV || typeof window === 'undefined' || state.installed) return;
+  if (typeof window === 'undefined' || state.installed) return;
 
   METHODS.forEach((method) => {
     const original = console[method]?.bind(console);
