@@ -12,12 +12,12 @@ vi.mock('../../useFeatureConfig', () => ({
   useFeatureConfig: () => ({ hasLayaway: true })
 }));
 
-vi.mock('../../../services/db', () => ({
-  layawayRepo: { create: mocks.createLayaway }
+vi.mock('../../../services/layawayFinancialService', () => ({
+  layawayFinancialService: { create: mocks.createLayaway }
 }));
 
 vi.mock('../../../services/Logger', () => ({
-  default: { error: vi.fn() }
+  default: { error: vi.fn(), log: vi.fn(), warn: vi.fn() }
 }));
 
 vi.mock('../../../services/utils', () => ({

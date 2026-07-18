@@ -1,8 +1,8 @@
 // src/hooks/useLayawayFlow.js
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 
 import { useFeatureConfig } from '../useFeatureConfig';
-import { layawayRepo } from '../../services/db';
+import { layawayFinancialService } from '../../services/layawayFinancialService';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
@@ -34,6 +34,7 @@ export function useLayawayFlow({
     total,
     clearOrder
 }) {
+    const submittingRef = useRef(false);
     // Obtener flags de features derivados del rubro/empresa
     const features = useFeatureConfig();
 
@@ -64,6 +65,8 @@ export function useLayawayFlow({
         if (blocked) return blocked;
 
         try {
+            if (submittingRef.current) return { success: false, duplicate: true };
+            submittingRef.current = true;
             const targetCustomer = customerFromModal || customer;
             if (!targetCustomer) {
                 throw new Error('No se ha identificado al cliente para el apartado.');
@@ -78,7 +81,13 @@ export function useLayawayFlow({
                 deadline: deadline,
             };
 
-            const result = await layawayRepo.create(layawayData, initialPayment, cajaId || null);
+            const result = await layawayFinancialService.create({
+                layawayData,
+                initialPayment,
+                paymentId: crypto.randomUUID(),
+                paymentType: 'initial_deposit',
+                cajaId
+            });
 
             if (result.success) {
                 clearOrder();
@@ -92,6 +101,8 @@ export function useLayawayFlow({
             Logger.error('Layaway Error', error);
             showMessageModal('Error inesperado al crear apartado.');
             return { success: false, message: error?.message || 'No se pudo crear el apartado.' };
+        } finally {
+            submittingRef.current = false;
         }
     }, [blockEcommerceLayaway, order, customer, total, clearOrder, closeModal]);
 

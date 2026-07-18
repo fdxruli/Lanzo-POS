@@ -4,6 +4,7 @@ import {
     AlertTriangle, Clock, ShoppingBag, ChevronRight
 } from 'lucide-react';
 import { layawayRepository } from '../../services/db/layaways';
+import { layawayFinancialService } from '../../services/layawayFinancialService';
 import { useCaja } from '../../hooks/useCaja';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
@@ -18,7 +19,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
     const [paymentAmount, setPaymentAmount] = useState('');
     const [activePaymentId, setActivePaymentId] = useState(null); // ID del apartado que se está abonando
 
-    const { registrarMovimiento, cajaActual } = useCaja();
+    const { cajaActual } = useCaja();
 
     useEffect(() => {
         if (show && customer) {
@@ -46,6 +47,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
     };
 
     const handleAddPayment = async (layaway) => {
+        if (processingId) return;
         if (!cajaActual || cajaActual.estado !== 'abierta') {
             showMessageModal('⚠️ Necesitas una caja abierta para recibir dinero.');
             return;
@@ -60,17 +62,11 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 
         setProcessingId(layaway.id);
         try {
-            const movExito = await registrarMovimiento(
-                'entrada',
+            await layawayFinancialService.addPayment({
+                layawayId: layaway.id,
                 amount,
-                `Abono Apartado #${layaway.id.slice(-4)} - ${customer.name}`
-            );
-
-            if (!movExito) throw new Error("No se pudo registrar en caja.");
-
-            // ✅ FIX: pasar cajaId para que el historial del apartado registre
-            // qué caja procesó este abono (antes quedaba null).
-            await layawayRepository.addPayment(layaway.id, amount, cajaActual.id);
+                customerId: customer.id
+            });
 
             showMessageModal('✅ Abono registrado correctamente.');
             setPaymentAmount('');
@@ -163,7 +159,11 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 
     setProcessingId(layaway.id);
     try {
-        await layawayRepository.cancel(layaway.id, "Cancelado por usuario/vencimiento", retenerDinero, cajaActual?.id);
+        await layawayFinancialService.cancel({
+            layawayId: layaway.id,
+            reason: 'Cancelado por usuario/vencimiento',
+            retainMoney: retenerDinero
+        });
         
         let msg = 'Apartado cancelado y stock restaurado.';
         if (layaway.paidAmount > 0 && !retenerDinero) {

@@ -10,6 +10,7 @@ import { handleDexieError } from './utils';
 import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDebtIndex';
 import { evaluator } from '../BackupRiskEvaluator';
 import { updateProduct, updateProductSafe, bulkUpdateProducts } from './productUpdates';
+import { layawayFinancialService } from '../layawayFinancialService';
 import {
     isExpiredForPosMenu,
     isOutOfStockForPosMenu,
@@ -130,10 +131,11 @@ export const executeSplitOpenTableOrderTransactionSafe = (payload) =>
     safeExecute(() => salesRepository.executeSplitOpenTableOrderTransaction(payload));
 
 export const layawayRepo = {
-    create: (data, initial, cajaId) => safeExecute(() => layawayRepository.create(data, initial, cajaId)),
+    create: (data, initial) => safeExecute(() => layawayFinancialService.create({ layawayData: data, initialPayment: initial })),
     getByCustomer: (custId, active) => safeExecute(() => layawayRepository.getByCustomer(custId, active)),
-    addPayment: (id, amount, cajaId) => safeExecute(() => layawayRepository.addPayment(id, amount, cajaId)),
-    getById: (id) => safeExecute(() => layawayRepository.getById(id))
+    addPayment: (id, amount) => safeExecute(() => layawayFinancialService.addPayment({ layawayId: id, amount })),
+    getById: (id) => safeExecute(() => layawayRepository.getById(id)),
+    getLegacyPaymentsForReconciliation: () => safeExecute(() => layawayRepository.getLegacyPaymentsForReconciliation())
 };
 
 export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expectedVersion = null) => {

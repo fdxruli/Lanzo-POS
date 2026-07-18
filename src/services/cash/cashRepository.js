@@ -206,7 +206,15 @@ export const cashRepository = {
       : { success: true, response };
   },
 
-  async registerMovement({ cashSessionId, type, amount, concept, metadata = {} }) {
+  async registerMovement({
+    cashSessionId,
+    type,
+    amount,
+    concept,
+    idempotencyKey = null,
+    referenceId = null,
+    metadata = {}
+  }) {
     const mode = getCashMode();
     assertCanUseCashRegister();
 
@@ -216,8 +224,21 @@ export const cashRepository = {
     if (!conceptClean) return fail('El concepto es obligatorio.', 'CONCEPT_REQUIRED');
     if (Money.init(amountSafe).lte(0)) return fail('El monto debe ser mayor a 0.', 'AMOUNT_INVALID');
 
+    const movementMetadata = {
+      ...metadata,
+      ...(referenceId ? { referenceId } : {})
+    };
+
     if (!mode.cloudEnabled) {
-      return cashLocalRepository.registerMovement({ cashSessionId, type, amount: amountSafe, concept: conceptClean });
+      return cashLocalRepository.registerMovement({
+        cashSessionId,
+        type,
+        amount: amountSafe,
+        concept: conceptClean,
+        idempotencyKey,
+        referenceId,
+        metadata: movementMetadata
+      });
     }
 
     if (!mode.online) {
@@ -225,7 +246,7 @@ export const cashRepository = {
       return fail(CASH_CLOUD_OFFLINE_MESSAGE, 'CLOUD_CASH_OFFLINE');
     }
 
-    const idempotencyKey = generateIdempotencyKey({
+    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({
       entityType: SYNC_ENTITY_TYPES.CASH_MOVEMENT,
       operation: SYNC_OPERATIONS.MOVEMENT,
       entityId: `${cashSessionId}:${type}:${Date.now()}`,
@@ -238,8 +259,8 @@ export const cashRepository = {
       type,
       amount: amountSafe,
       concept: conceptClean,
-      idempotencyKey,
-      metadata
+      idempotencyKey: resolvedIdempotencyKey,
+      metadata: movementMetadata
     });
 
     if (response?.success === false) {
@@ -254,6 +275,7 @@ export const cashRepository = {
       success: true,
       cashSession: applied.cashSession,
       movement: applied.movement,
+      idempotencyKey: resolvedIdempotencyKey,
       response
     };
   },
