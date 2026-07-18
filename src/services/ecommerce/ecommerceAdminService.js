@@ -7,6 +7,12 @@ import {
   getEcommerceConfigurationSourceRevision,
   serializeEcommerceProductConfigurationForSync
 } from '../../utils/ecommerceProductConfigurationSync';
+import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
+import {
+  decorateProductWithEcommerceApparelProjection,
+  getEcommerceApparelProjectionState,
+  projectProductBatchesToEcommerceVariants
+} from './ecommerceApparelVariants';
 
 const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_ADMIN_ACCESS_DENIED: 'No tienes permiso para administrar el portal online.',
@@ -28,6 +34,8 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_OPTION_GROUP_SELECTION_INVALID: 'Revisa los limites de seleccion de los grupos de opciones.',
   ECOMMERCE_VARIANT_OPTION_VALUES_REQUIRED: 'Cada variante debe indicar su combinacion de atributos.',
   ECOMMERCE_VARIANT_OPTION_VALUE_INVALID: 'Una variante contiene un atributo invalido.',
+  ECOMMERCE_APPAREL_VARIANT_ATTRIBUTE_CONFLICT: 'Un SKU esta asociado a combinaciones de talla o color incompatibles.',
+  ECOMMERCE_APPAREL_VARIANT_PRICE_CONFLICT: 'Un SKU tiene precios incompatibles entre sus lotes.',
   ECOMMERCE_CONFIGURATION_SYNC_FAILED: 'No se pudo sincronizar la configuracion del producto.',
   ECOMMERCE_TIMEZONE_INVALID: 'Selecciona una zona horaria valida.',
   ECOMMERCE_SCHEDULE_INVALID: 'Revisa el horario y corrige los intervalos invalidos.',
@@ -75,6 +83,21 @@ const isProjectionObject = (value) => (
   && !Array.isArray(value)
 );
 
+const buildPublishedProductConfiguration = (localProduct = {}) => {
+  const baseConfiguration = buildEcommerceProductConfigurationSyncPayload(localProduct);
+  const apparelState = getEcommerceApparelProjectionState(localProduct);
+  if (!apparelState) return baseConfiguration;
+
+  return serializeEcommerceProductConfigurationForSync({
+    ...baseConfiguration,
+    type: 'variant_parent',
+    variants: Array.isArray(localProduct.variants) ? localProduct.variants : [],
+    availabilitySource: 'variant_aggregate',
+    availabilityReasonCode: apparelState.availabilityReasonCode,
+    limitingSource: baseConfiguration.limitingSource
+  });
+};
+
 const preparePublishedProductPayload = (payload = {}) => {
   const {
     localProduct,
@@ -89,7 +112,7 @@ const preparePublishedProductPayload = (payload = {}) => {
 
   const configuration = suppliedConfiguration
     ? serializeEcommerceProductConfigurationForSync(suppliedConfiguration)
-    : buildEcommerceProductConfigurationSyncPayload(localProduct);
+    : buildPublishedProductConfiguration(localProduct);
   const configurationSourceRevision = suppliedSourceRevision
     || getEcommerceConfigurationSourceRevision(localProduct)
     || null;
@@ -104,12 +127,52 @@ const preparePublishedProductPayload = (payload = {}) => {
   };
 };
 
+const hydrateLocalProductApparelVariants = async ({
+  localProduct,
+  localSource = ecommercePublishedStockLocalSource,
+  now = new Date()
+} = {}) => {
+  if (!localProduct?.id || (Array.isArray(localProduct.variants) && localProduct.variants.length > 0)) {
+    return localProduct;
+  }
+
+  const batchesByProduct = await localSource.getBatchesByProductIds([localProduct.id]);
+  const batches = batchesByProduct.get(localProduct.id)
+    || batchesByProduct.get(String(localProduct.id))
+    || [];
+  const projection = projectProductBatchesToEcommerceVariants({
+    product: localProduct,
+    batches,
+    now
+  });
+  return decorateProductWithEcommerceApparelProjection({
+    product: localProduct,
+    projection
+  });
+};
+
+const preparePublishedProductPayloadAsync = async (
+  payload = {},
+  { localSource = ecommercePublishedStockLocalSource, now = new Date() } = {}
+) => {
+  if (!payload?.localProduct || payload?.configuration) {
+    return preparePublishedProductPayload(payload);
+  }
+  const localProduct = await hydrateLocalProductApparelVariants({
+    localProduct: payload.localProduct,
+    localSource,
+    now
+  });
+  return preparePublishedProductPayload({ ...payload, localProduct });
+};
+
 export const createEcommerceAdminService = ({
   rpc = (name, payload) => supabaseClient?.rpc(name, payload),
   isConfigured = () => Boolean(supabaseClient),
   getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
   buildAuthContext = buildPosSyncAuthContext,
-  isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false
+  isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
+  localSource = ecommercePublishedStockLocalSource
 } = {}) => {
   const getContext = async () => {
     if (!isConfigured()) {
@@ -222,7 +285,7 @@ export const createEcommerceAdminService = ({
     savePublishedProduct: async (payload) => {
       const fallback = 'No se pudo guardar el producto publicado.';
       try {
-        const prepared = preparePublishedProductPayload(payload);
+        const prepared = await preparePublishedProductPayloadAsync(payload, { localSource });
         return callRpc(
           prepared.useV2
             ? 'ecommerce_admin_upsert_published_product_v2'
@@ -303,5 +366,8 @@ export const syncPublishedCatalog = ecommerceAdminService.syncPublishedCatalog;
 
 export const ecommerceAdminServiceInternals = Object.freeze({
   isProjectionObject,
-  preparePublishedProductPayload
+  buildPublishedProductConfiguration,
+  preparePublishedProductPayload,
+  preparePublishedProductPayloadAsync,
+  hydrateLocalProductApparelVariants
 });
