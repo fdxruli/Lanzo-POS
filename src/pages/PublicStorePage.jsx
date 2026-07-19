@@ -24,6 +24,11 @@ import {
   getAvailabilityRefreshDelay
 } from '../utils/ecommerceAvailability';
 import { buildMinimalConfiguredOrderItem } from '../utils/ecommerceConfiguredProduct';
+import {
+  buildEcommercePortalThemeStyle,
+  normalizeEcommercePortalTemplate,
+  normalizeEcommercePortalTheme
+} from '../utils/ecommercePortalTheme';
 import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
@@ -97,6 +102,9 @@ function PublicStorePage() {
   const [checkoutOpening, setCheckoutOpening] = useState(false);
 
   const portal = portalResult?.portal || null;
+  const portalTheme = useMemo(() => normalizeEcommercePortalTheme(portal?.theme), [portal?.theme]);
+  const portalTemplate = useMemo(() => normalizeEcommercePortalTemplate(portal?.templateCode), [portal?.templateCode]);
+  const portalThemeStyle = useMemo(() => buildEcommercePortalThemeStyle(portalTheme), [portalTheme]);
   const features = portalResult?.features || {};
   const availability = resolveAvailability(portalResult);
   availabilityRef.current = availability;
@@ -746,6 +754,8 @@ function PublicStorePage() {
       className="public-store-shell"
       data-catalog-source={catalogSource}
       data-catalog-revision={catalogRevision || undefined}
+      data-template-code={portalTemplate}
+      style={portalThemeStyle}
     >
       <PublicStoreHeader
         portal={portal}
