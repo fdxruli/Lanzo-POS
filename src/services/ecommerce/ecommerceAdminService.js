@@ -51,7 +51,7 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_PORTAL_SAVE_FAILED: 'No se pudo guardar el portal online. Intenta nuevamente.'
 };
 
-const buildDefaultAuthContext = async ({ licenseKey }) => {
+export const buildDefaultEcommerceAdminAuthContext = async ({ licenseKey }) => {
   const { buildPosSyncAuthContext } = await import('../sync/posSyncClient');
   return buildPosSyncAuthContext({ licenseKey });
 };
@@ -62,7 +62,7 @@ const SAFE_CONTEXT_MESSAGES = new Set([
   'No se pudo confirmar el acceso para administrar el portal. Revalida la licencia o inicia sesion nuevamente.'
 ]);
 
-const normalizeFailure = (data, fallback) => {
+export const normalizeEcommerceAdminFailure = (data, fallback) => {
   const code = data?.code || data?.error?.code || 'ECOMMERCE_ADMIN_ERROR';
   const status = Number(
     data?.status
@@ -79,6 +79,34 @@ const normalizeFailure = (data, fallback) => {
     status: Number.isFinite(status) ? status : null,
     retryable: data?.retryable === true || data?.error?.retryable === true,
     message: SAFE_ERROR_MESSAGES[code] || fallback
+  };
+};
+
+const normalizeFailure = normalizeEcommerceAdminFailure;
+
+export const getEcommerceAdminAuthorizationContext = async ({
+  isConfigured = () => Boolean(supabaseClient),
+  isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
+  getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
+  buildAuthContext = buildDefaultEcommerceAdminAuthContext
+} = {}) => {
+  if (!isConfigured()) throw new Error('La conexion con Supabase no esta configurada.');
+  if (!isOnline()) {
+    const error = new Error('Necesitas conexion a internet para configurar el portal online.');
+    error.code = 'ECOMMERCE_ADMIN_OFFLINE';
+    error.retryable = true;
+    throw error;
+  }
+  const licenseKey = getLicenseKeyFromDetails(getLicenseDetails());
+  const authContext = await buildAuthContext({ licenseKey });
+  if (!authContext?.licenseKey || !authContext?.deviceFingerprint || !authContext?.securityToken) {
+    throw new Error('No se pudo confirmar el acceso para administrar el portal. Revalida la licencia o inicia sesion nuevamente.');
+  }
+  return {
+    p_license_key: authContext.licenseKey,
+    p_device_fingerprint: authContext.deviceFingerprint,
+    p_security_token: authContext.securityToken,
+    p_staff_session_token: authContext.staffSessionToken || null
   };
 };
 
@@ -180,43 +208,13 @@ export const createEcommerceAdminService = ({
   rpc = (name, payload) => supabaseClient?.rpc(name, payload),
   isConfigured = () => Boolean(supabaseClient),
   getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
-  buildAuthContext = buildDefaultAuthContext,
+  buildAuthContext = buildDefaultEcommerceAdminAuthContext,
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
   localSource = ecommercePublishedStockLocalSource
 } = {}) => {
-  const getContext = async () => {
-    if (!isConfigured()) {
-      throw new Error('La conexion con Supabase no esta configurada.');
-    }
-
-    if (!isOnline()) {
-      const error = new Error('Necesitas conexion a internet para configurar el portal online.');
-      error.code = 'ECOMMERCE_ADMIN_OFFLINE';
-      error.retryable = true;
-      throw error;
-    }
-
-    const licenseKey = getLicenseKeyFromDetails(getLicenseDetails());
-    const authContext = await buildAuthContext({ licenseKey });
-
-    if (
-      !authContext?.licenseKey
-      || !authContext?.deviceFingerprint
-      || !authContext?.securityToken
-    ) {
-      throw new Error(
-        'No se pudo confirmar el acceso para administrar el portal. '
-        + 'Revalida la licencia o inicia sesion nuevamente.'
-      );
-    }
-
-    return {
-      p_license_key: authContext.licenseKey,
-      p_device_fingerprint: authContext.deviceFingerprint,
-      p_security_token: authContext.securityToken,
-      p_staff_session_token: authContext.staffSessionToken || null
-    };
-  };
+  const getContext = () => getEcommerceAdminAuthorizationContext({
+    isConfigured, isOnline, getLicenseDetails, buildAuthContext
+  });
 
   const callRpc = async (
     name,

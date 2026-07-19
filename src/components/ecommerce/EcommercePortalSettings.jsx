@@ -48,6 +48,7 @@ import PublicStoreQrCode from './PublicStoreQrCode';
 import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
 import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
 import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
+import EcommerceSiteBuilderFoundation from './EcommerceSiteBuilderFoundation';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -741,6 +742,8 @@ export default function EcommercePortalSettings() {
           </p>
         </section>
       )}
+
+      {portal ? <EcommerceSiteBuilderFoundation isPro={isPro} /> : null}
 
       {portal ? (
         <div className="ecom-operations-grid">

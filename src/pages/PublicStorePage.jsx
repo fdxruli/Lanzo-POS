@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, ShoppingCart } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import LogoMark from '../components/common/LogoMark';
-import PublicStoreHeader from '../components/ecommerce/public/PublicStoreHeader';
-import PublicCatalog from '../components/ecommerce/public/PublicCatalog';
+import EcommerceSiteRenderer from '../components/ecommerce/site/EcommerceSiteRenderer';
 import PublicCartDrawer, { PublicMobileCartBar } from '../components/ecommerce/public/PublicCartDrawer';
 import PublicCheckoutDialog from '../components/ecommerce/public/PublicCheckoutDialog';
 import PublicStoreState from '../components/ecommerce/public/PublicStoreState';
@@ -754,16 +753,28 @@ function PublicStorePage() {
       className="public-store-shell"
       data-catalog-source={catalogSource}
       data-catalog-revision={catalogRevision || undefined}
+      data-site-version={portalResult?.site?.versionNumber || undefined}
       data-template-code={portalTemplate}
       style={portalThemeStyle}
     >
-      <PublicStoreHeader
+      <EcommerceSiteRenderer
+        siteDocument={portalResult?.site?.document}
         portal={portal}
+        products={products}
+        categories={categories}
         hours={portalResult.hours}
         availability={availability}
-      />
-
-      <div className="public-store-content">
+        features={features}
+        slug={slug}
+        catalogProps={{
+          products, filteredProducts, categories, searchTerm, selectedCategory,
+          onSearchChange: setSearchTerm, onCategoryChange: setSelectedCategory,
+          onAdd: cart.addProduct, isLoading: catalogLoading, error: catalogError?.error || null,
+          onRetry: retryCatalog, hasMore: pagination.hasMore, onLoadMore: loadNextCatalogPage,
+          isLoadingMore: catalogLoadingMore, catalogRevision, offline: offlineCatalog,
+          maxItemQuantity: portal.maxItemQuantity
+        }}
+        catalogChrome={<>
         <div className="public-store-content__topbar">
           <p>Compra de forma sencilla desde el catálogo del negocio.</p>
           <button
@@ -804,28 +815,10 @@ function PublicStorePage() {
           </div>
         ) : null}
 
-        <PublicCatalog
-          products={products}
-          filteredProducts={filteredProducts}
-          categories={categories}
-          searchTerm={searchTerm}
-          selectedCategory={selectedCategory}
-          onSearchChange={setSearchTerm}
-          onCategoryChange={setSelectedCategory}
-          onAdd={cart.addProduct}
-          isLoading={catalogLoading}
-          error={catalogError?.error || null}
-          onRetry={retryCatalog}
-          hasMore={pagination.hasMore}
-          onLoadMore={loadNextCatalogPage}
-          isLoadingMore={catalogLoadingMore}
-          catalogRevision={catalogRevision}
-          offline={offlineCatalog}
-          maxItemQuantity={portal.maxItemQuantity}
-        />
-      </div>
+        </>}
+      />
 
-      <footer className="public-store-footer">
+      {portalResult?.legacyFooter === true ? (
         <div className="public-store-footer__inner">
           <div className="public-store-footer__mark" aria-hidden="true">
             <LogoMark />
@@ -846,7 +839,7 @@ function PublicStorePage() {
             <ArrowUpRight aria-hidden="true" size={18} />
           </a>
         </div>
-      </footer>
+      ) : null}
 
       <PublicMobileCartBar
         totalUnits={cart.totalUnits}
