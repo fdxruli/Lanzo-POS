@@ -13,7 +13,8 @@ Corrige la persistencia de logo y portada mediante intenciones explícitas (`pre
 - HEAD inicial remoto `main`: `ddf1cd24990928e14486c594f1f38d8232f54024`.
 - Rama: `hotfix-ecom-portal-customization-1-1`, creada exclusivamente desde `origin/main`.
 - Merge-base: `ddf1cd24990928e14486c594f1f38d8232f54024`.
-- HEAD final y PR: se actualizan al crear el commit y el PR draft.
+- HEAD de implementación: `0e11cc1cf89563fa8d00f18d512fb09bf13bd2b3`.
+- PR draft: [#122 — HOTFIX ECOM.PORTAL.CUSTOMIZATION.1.1](https://github.com/fdxruli/Lanzo-POS/pull/122).
 - PR #121: confirmado `MERGED`, con merge commit igual al HEAD inicial.
 
 ## Modelo de intención
