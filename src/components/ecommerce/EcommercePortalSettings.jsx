@@ -74,6 +74,18 @@ const publicUrl = (value) => {
   return /^https?:\/\//i.test(text) ? text : '';
 };
 
+const IMAGE_INTENT_PRESERVE = 'preserve';
+const IMAGE_INTENT_SET = 'set';
+const IMAGE_INTENT_CLEAR = 'clear';
+
+const portalCustomization = (portal) => ({
+  templateCode: portal?.templateCode || 'classic',
+  theme: portal?.theme || {},
+  logo: { value: publicUrl(portal?.logoUrl) || null, intent: IMAGE_INTENT_PRESERVE },
+  cover: { value: publicUrl(portal?.coverImageUrl) || null, intent: IMAGE_INTENT_PRESERVE },
+  valid: true
+});
+
 const portalForm = (portal, profile) => ({
   name: portal?.name || profile?.name || '',
   headline: portal?.headline || '',
@@ -200,9 +212,7 @@ export default function EcommercePortalSettings() {
   const [localProducts, setLocalProducts] = useState([]);
   const [categoriesById, setCategoriesById] = useState(new Map());
   const [operations, setOperations] = useState(null);
-  const [customization, setCustomization] = useState({
-    templateCode: 'classic', theme: {}, logoUrl: null, coverImageUrl: null, valid: true
-  });
+  const [customization, setCustomization] = useState(() => portalCustomization(null));
   const [customizationBusy, setCustomizationBusy] = useState(false);
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
 
@@ -333,8 +343,7 @@ export default function EcommercePortalSettings() {
     const validationError = validatePortal(candidate);
     if (validationError) return toast.error(validationError);
 
-    setSavingPortal(true);
-    const result = await saveEcommercePortal({
+    const payload = {
       name: candidate.name.trim(),
       headline: candidate.headline.trim() || null,
       description: candidate.description.trim() || null,
@@ -345,13 +354,42 @@ export default function EcommercePortalSettings() {
       minOrderTotal: numberOr(candidate.minOrderTotal, 0),
       status: candidate.status,
       slug: candidate.slug.trim() || null,
-      logoUrl: customization.logoUrl ?? publicUrl(candidate.logoUrl) ?? null,
-      coverImageUrl: isPro ? customization.coverImageUrl : undefined,
       templateCode: isPro ? customization.templateCode : 'classic',
       theme: isPro ? customization.theme : {},
       metadata: { source: 'admin_ui' }
-    });
-    setSavingPortal(false);
+    };
+    const logo = customization.logo || { value: customization.logoUrl, intent: IMAGE_INTENT_PRESERVE };
+    const cover = customization.cover || { value: customization.coverImageUrl, intent: IMAGE_INTENT_PRESERVE };
+
+    if (logo.intent === IMAGE_INTENT_SET) {
+      const logoUrl = publicUrl(logo.value);
+      if (!logoUrl) return toast.error('El logo seleccionado no tiene una URL pública válida. Intenta subirlo nuevamente.');
+      payload.logoUrl = logoUrl;
+    } else if (logo.intent === IMAGE_INTENT_CLEAR) {
+      payload.logoUrl = null;
+    } else if (!portal) {
+      const initialLogo = publicUrl(candidate.logoUrl);
+      if (initialLogo) payload.logoUrl = initialLogo;
+    }
+
+    if (isPro && cover.intent === IMAGE_INTENT_SET) {
+      const coverImageUrl = publicUrl(cover.value);
+      if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
+      payload.coverImageUrl = coverImageUrl;
+    } else if (isPro && cover.intent === IMAGE_INTENT_CLEAR) {
+      payload.coverImageUrl = null;
+    }
+
+    setSavingPortal(true);
+    let result;
+    try {
+      result = await saveEcommercePortal(payload);
+    } catch (saveError) {
+      toast.error(saveError?.message || 'No se pudo guardar el portal online. Intenta nuevamente.');
+      return false;
+    } finally {
+      setSavingPortal(false);
+    }
 
     if (!result.success) return toast.error(result.message);
     const nextPortal = result.portal;
@@ -359,6 +397,7 @@ export default function EcommercePortalSettings() {
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
     setForm(portalForm(nextPortal, companyProfile));
+    setCustomization(portalCustomization(nextPortal));
     reconcileStockProducts?.({ portal: nextPortal, publishedProducts: products });
     await evaluateStock({
       nextPortal,
@@ -844,13 +883,14 @@ export default function EcommercePortalSettings() {
                     />
                   )
                 : <ImageIcon size={28} />}
-              <span>Se usa el logo ya configurado. Esta fase no agrega nuevas subidas.</span>
+              <span>El logo del perfil se usa solo como valor inicial al crear el portal. Puedes reemplazarlo o desvincularlo sin modificar el perfil.</span>
             </div>
           </div>
         </div>
         <EcommercePortalCustomizationPanel
           isPro={isPro}
           portal={portal}
+          initialLogoUrl={portal ? null : publicUrl(companyProfile?.logo)}
           licenseKey={licenseKey}
           disabled={savingPortal}
           onChange={handleCustomizationChange}
