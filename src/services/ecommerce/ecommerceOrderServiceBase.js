@@ -24,10 +24,20 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_POS_CONVERSION_REVIEW_REQUIRED: 'Este pedido tiene un cobro en revisión y no puede liberarse todavía. Verifica la venta antes de continuar.',
   ECOMMERCE_ORDER_ACTION_FAILED: 'No se pudo completar la acción sobre el pedido.',
   INVALID_RPC_RESPONSE: 'El servidor devolvió una respuesta inválida.',
+  ECOMMERCE_ORDERS_NETWORK_UNAVAILABLE: 'No se pudo actualizar los pedidos por un problema temporal de conexión. Conservamos la información disponible e intentaremos nuevamente.',
   SUPABASE_NOT_CONFIGURED: 'No se pudo conectar con el servicio de pedidos.',
   LICENSE_KEY_REQUIRED: 'No hay una licencia activa para cargar pedidos.',
   ECOMMERCE_ORDERS_AUTH_CONTEXT_INCOMPLETE: 'No se pudo confirmar este dispositivo. Vuelve a validar la licencia.'
 });
+
+const READ_RPC_NAMES = new Set([
+  'ecommerce_admin_list_orders',
+  'ecommerce_admin_get_order'
+]);
+const NETWORK_UNAVAILABLE_CODE = 'ECOMMERCE_ORDERS_NETWORK_UNAVAILABLE';
+const READ_RPC_RETRY_DELAY_MS = 150;
+const NETWORK_ERROR_PATTERN = /failed to fetch|networkerror|network request failed|err_connection_closed|err_network_changed|err_internet_disconnected|load failed/i;
+let waitForReadRpcRetry = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
 
 const parsePayload = (data) => {
   if (typeof data === 'string') {
@@ -208,23 +218,84 @@ const logRpcFailure = (rpcName, error = {}) => {
   });
 };
 
-const callRpc = async (name, args) => {
+const isTransientNetworkError = (error = {}) => {
+  const errorCode = safeText(error?.code).trim();
+  if (errorCode && !NETWORK_ERROR_PATTERN.test(errorCode)) return false;
+
+  return [
+    errorCode,
+    safeText(error?.name),
+    safeText(error?.message),
+    safeText(error?.details),
+    safeText(error?.cause?.message)
+  ].some((value) => NETWORK_ERROR_PATTERN.test(value));
+};
+
+const createSafeRpcError = (code) => {
+  const safeError = new Error(code);
+  safeError.code = code;
+  return safeError;
+};
+
+const logNetworkFailure = (level, rpcName, attempt) => {
+  Logger[level]('[ecommerceOrderService] Read RPC network failure', {
+    rpcName,
+    code: NETWORK_UNAVAILABLE_CODE,
+    attempt
+  });
+};
+
+const callRpcAttempt = async (name, args) => {
   if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED');
 
   const { data, error } = await supabaseClient.rpc(name, args);
   if (error) {
+    if (isTransientNetworkError(error)) throw error;
     logRpcFailure(name, error);
     const code = String(error.code || '') === '42501'
       ? 'ECOMMERCE_ORDERS_RPC_ACCESS_DENIED'
       : 'ECOMMERCE_ORDER_ACTION_FAILED';
-    const safeError = new Error(code);
-    safeError.code = code;
-    throw safeError;
+    throw createSafeRpcError(code);
   }
 
   const payload = parsePayload(data);
   if (payload.success === false) return normalizeFailure(payload);
   return payload;
+};
+
+const callRpc = async (name, args) => {
+  try {
+    return await callRpcAttempt(name, args);
+  } catch (error) {
+    if (!isTransientNetworkError(error)) throw error;
+    Logger.error('[ecommerceOrderService] RPC network failure', {
+      rpcName: name,
+      code: NETWORK_UNAVAILABLE_CODE,
+      attempt: 1
+    });
+    throw createSafeRpcError(NETWORK_UNAVAILABLE_CODE);
+  }
+};
+
+const callReadRpcWithRetry = async (name, args) => {
+  if (!READ_RPC_NAMES.has(name)) return callRpc(name, args);
+
+  try {
+    return await callRpcAttempt(name, args);
+  } catch (firstError) {
+    if (!isTransientNetworkError(firstError)) throw firstError;
+
+    logNetworkFailure('warn', name, 1);
+    await waitForReadRpcRetry(READ_RPC_RETRY_DELAY_MS);
+
+    try {
+      return await callRpcAttempt(name, args);
+    } catch (retryError) {
+      if (!isTransientNetworkError(retryError)) throw retryError;
+      logNetworkFailure('error', name, 2);
+      throw createSafeRpcError(NETWORK_UNAVAILABLE_CODE);
+    }
+  }
 };
 
 export const getEcommerceOrderErrorMessage = (error) => {
@@ -240,7 +311,7 @@ export async function listEcommerceOrders({
 } = {}) {
   try {
     const authArgs = await buildAuthArgs(licenseDetails);
-    const payload = await callRpc('ecommerce_admin_list_orders', {
+    const payload = await callReadRpcWithRetry('ecommerce_admin_list_orders', {
       ...authArgs,
       p_status: safeText(status, 'all'),
       p_limit: Math.min(Math.max(safeNumber(limit, 50), 1), 100),
@@ -267,7 +338,7 @@ export async function getEcommerceOrder({ licenseDetails, orderId } = {}) {
   if (!orderId) return normalizeFailure({ code: 'ECOMMERCE_ORDER_NOT_FOUND' });
   try {
     const authArgs = await buildAuthArgs(licenseDetails);
-    const payload = await callRpc('ecommerce_admin_get_order', {
+    const payload = await callReadRpcWithRetry('ecommerce_admin_get_order', {
       ...authArgs,
       p_order_id: orderId
     });
@@ -356,6 +427,13 @@ export const releaseEcommerceOrderPosDraft = (args) => (
 
 export const ecommerceOrderServiceInternals = Object.freeze({
   buildAuthArgs,
+  callReadRpcWithRetry,
+  isTransientNetworkError,
+  setReadRpcRetryWaitForTests: (wait) => {
+    waitForReadRpcRetry = typeof wait === 'function'
+      ? wait
+      : (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs));
+  },
   normalizeOrderSummary,
   normalizeDetail,
   normalizeFulfillment,

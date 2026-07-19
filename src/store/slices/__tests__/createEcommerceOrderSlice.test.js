@@ -252,17 +252,81 @@ describe('createEcommerceOrderSlice', () => {
   it('keeps the previous list when a current background refresh fails', async () => {
     const { get } = createHarness();
     await get().loadEcommerceOrders();
+    const loadedAt = get().lastEcommerceOrdersLoadedAt;
+    const previousCounts = get().ecommerceOrderCounts;
 
     mocks.listEcommerceOrders.mockResolvedValueOnce({
       success: false,
-      code: 'ECOMMERCE_ORDER_ACTION_FAILED',
-      message: 'No se pudo actualizar'
+      code: 'ECOMMERCE_ORDERS_NETWORK_UNAVAILABLE',
+      message: 'No se pudo actualizar por red'
     });
-    await get().refreshEcommerceOrders({ background: true });
+    const result = await get().refreshEcommerceOrders({ background: true });
 
+    expect(result).toMatchObject({ success: false, code: 'ECOMMERCE_ORDERS_NETWORK_UNAVAILABLE', preservedCache: true });
     expect(get().ecommerceOrders).toEqual(listResult('license-a', 'order-1').orders);
-    expect(get().ecommerceOrdersError).toBe('No se pudo actualizar');
+    expect(get().ecommerceOrderCounts).toEqual(previousCounts);
+    expect(get().ecommerceOrdersError).toBe('No se pudo actualizar por red');
+    expect(get().ecommerceOrdersLoading).toBe(false);
+    expect(get().ecommerceOrdersRefreshing).toBe(false);
+    expect(get().lastEcommerceOrdersLoadedAt).toBe(loadedAt);
     expect(get().ecommerceOrdersStale).toBe(true);
+  });
+
+  it('shows a safe initial loading error when no cached orders exist', async () => {
+    mocks.listEcommerceOrders.mockResolvedValueOnce({
+      success: false,
+      code: 'ECOMMERCE_ORDERS_NETWORK_UNAVAILABLE',
+      message: 'No se pudo actualizar por red'
+    });
+    const { get } = createHarness();
+
+    const result = await get().loadEcommerceOrders();
+
+    expect(result).toMatchObject({ success: false, code: 'ECOMMERCE_ORDERS_NETWORK_UNAVAILABLE' });
+    expect(get().ecommerceOrders).toEqual([]);
+    expect(get().ecommerceOrdersError).toBe('No se pudo actualizar por red');
+    expect(get().ecommerceOrdersLoading).toBe(false);
+    expect(get().ecommerceOrdersRefreshing).toBe(false);
+    expect(get().lastEcommerceOrdersLoadedAt).toBeNull();
+    expect(get().ecommerceOrdersStale).toBe(true);
+  });
+
+  it('reuses an in-flight compatible full list request for the summary', async () => {
+    const pending = createDeferred();
+    mocks.listEcommerceOrders.mockReturnValueOnce(pending.promise);
+    const { get } = createHarness();
+
+    const listRequest = get().loadEcommerceOrders({ filter: 'all', limit: 50, offset: 0, force: true });
+    const summaryRequest = get().loadEcommerceOrderSummary({ force: true });
+
+    expect(mocks.listEcommerceOrders).toHaveBeenCalledTimes(1);
+    pending.resolve(listResult('license-a', 'order-1'));
+    await expect(summaryRequest).resolves.toMatchObject({ success: true, sharedListRequest: true });
+    await listRequest;
+    expect(get().ecommerceOrderSummaryStale).toBe(false);
+    expect(get().lastEcommerceOrderSummaryLoadedAt).not.toBeNull();
+  });
+
+  it('does not share a compatible list request across different staff actors', async () => {
+    const adminRequest = createDeferred();
+    const staffSummaryRequest = createDeferred();
+    mocks.listEcommerceOrders
+      .mockReturnValueOnce(adminRequest.promise)
+      .mockReturnValueOnce(staffSummaryRequest.promise);
+    const { get, set } = createHarness();
+
+    const listRequest = get().loadEcommerceOrders({ filter: 'all', limit: 50, offset: 0, force: true });
+    set({
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-2', permissions: { ecommerce: true } }
+    });
+    const summaryRequest = get().loadEcommerceOrderSummary({ force: true });
+
+    expect(mocks.listEcommerceOrders).toHaveBeenCalledTimes(2);
+    staffSummaryRequest.resolve(listResult('license-a', 'staff-order'));
+    await expect(summaryRequest).resolves.toMatchObject({ success: true });
+    adminRequest.resolve(listResult('license-a', 'admin-order'));
+    await expect(listRequest).resolves.toMatchObject({ stale: true });
   });
 
   it('keeps B selected when B responds before A', async () => {

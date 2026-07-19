@@ -360,13 +360,14 @@ export const createEcommerceOrderSlice = (set, get) => ({
       }
 
       if (result.success === false) {
-        set({
-          ecommerceOrdersLoading: false,
-          ecommerceOrdersRefreshing: false,
-          ecommerceOrdersError: result.message || getEcommerceOrderErrorMessage(result),
-          ecommerceOrdersStale: true
-        });
-        return result;
+          const preservedCache = hasCachedList;
+          set({
+            ecommerceOrdersLoading: false,
+            ecommerceOrdersRefreshing: false,
+            ecommerceOrdersError: result.message || getEcommerceOrderErrorMessage(result),
+            ecommerceOrdersStale: true
+          });
+          return preservedCache ? { ...result, preservedCache: true } : result;
       }
 
       set({
@@ -422,6 +423,32 @@ export const createEcommerceOrderSlice = (set, get) => ({
     const requestKey = `${licenseIdentity}:${actorIdentity}`;
     if (summaryRequestPromises.has(requestKey)) {
       return summaryRequestPromises.get(requestKey);
+    }
+
+    const compatibleListRequestKey = [
+      licenseIdentity,
+      actorIdentity,
+      'all',
+      50,
+      0
+    ].join(':');
+    if (listRequestPromises.has(compatibleListRequestKey)) {
+      const compatibleListRequest = listRequestPromises.get(compatibleListRequestKey);
+      const request = (async () => {
+        const result = await compatibleListRequest;
+        if (!isRequestContextCurrent(requestContext, get())) return staleResponse();
+        if (result.success === false) return result;
+        return { success: true, counts: result.counts, sharedListRequest: true };
+      })();
+
+      summaryRequestPromises.set(requestKey, request);
+      try {
+        return await request;
+      } finally {
+        if (summaryRequestPromises.get(requestKey) === request) {
+          summaryRequestPromises.delete(requestKey);
+        }
+      }
     }
 
     const request = (async () => {
