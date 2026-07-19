@@ -10,7 +10,7 @@ Se implementó personalización visual acotada para Portal PRO: tres plantillas,
 - Merge-base de la rama: `5bf6dc8f5d7c5c8d0ddc904dbbe1676efb27ad1d`.
 - Rama: `fase-ecom-portal-pro-customization-1`.
 - PR #120: cerrado y mergeado antes de iniciar.
-- HEAD final: se completa al crear el commit de esta fase.
+- HEAD final: el HEAD publicado de `fase-ecom-portal-pro-customization-1`; el valor exacto se entrega junto con el PR para no falsear el hash auto-referencial de este mismo informe.
 
 ## Arquitectura
 
