@@ -19,6 +19,7 @@ import {
   PRODUCT_CATALOG_LAST_SEQ_KEY
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
+import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 
 let registered = false;
 
@@ -69,6 +70,17 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
 
     const counts = await productLocalRepository.applyCloudCatalog(response);
     applied += counts.categories + counts.products + counts.batches;
+
+    if (counts.rejected?.length > 0) {
+      const rejected = counts.rejected[0];
+      const error = new Error('Cambios de catalogo aplicados parcialmente; se conserva el cursor para reintentar.');
+      error.code = 'PRODUCT_CATALOG_CHANGES_PARTIAL';
+      error.catalogSyncContext = {
+        phase: 'snapshot_normalization', licenseKey, entityType: rejected.entityType,
+        entityId: rejected.entityId, index: rejected.index, retryable: true
+      };
+      throw error;
+    }
 
     const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
     if (latestChangeSeq > sinceChangeSeq) {
@@ -123,8 +135,11 @@ export const productSyncHandler = {
 
       return { ...migrationResult, recovery };
     } catch (error) {
-      Logger.warn('[Products/Sync] Migracion/rescate de catalogo fallo sin bloquear app:', error);
-      return { success: false, error };
+      const diagnostic = serializeProductCatalogSyncError(error, {
+        operation: 'product_sync_on_start', licenseKey
+      });
+      Logger.warn('[Products/Sync] Migracion/rescate de catalogo fallo sin bloquear app:', diagnostic);
+      return { success: false, error, diagnostic };
     }
   },
 

@@ -10,6 +10,7 @@ import {
 } from './utils';
 import { generateID } from '../utils';
 import { productSchema } from '../../schemas/productSchema';
+import { normalizeProductComplexFields } from '../products/productMapper';
 import Logger from '../Logger';
 import { collectBatchRestorations, restoreBatchStock } from '../sales/batchRestoration';
 import { searchProductsInTable } from './productSearch';
@@ -608,8 +609,9 @@ export const productsRepository = {
                         newPrice = normalizedBatchData.updateGlobalPrice === true ? Number(normalizedBatchData.price) : product.price;
                     }
 
+                    const normalizedProduct = normalizeProductComplexFields(product);
                     const updatedProduct = {
-                        ...product,
+                        ...normalizedProduct,
                         stock: totalStock,
                         committedStock: totalCommittedStock,
                         cost: newCost,
@@ -629,6 +631,7 @@ export const productsRepository = {
             });
 
         } catch (error) {
+            if (error instanceof DatabaseError) throw error;
             throw handleDexieError(error, 'Save Batch & Sync');
         }
     },

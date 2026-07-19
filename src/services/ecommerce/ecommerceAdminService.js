@@ -1,5 +1,4 @@
 import { useAppStore } from '../../store/useAppStore';
-import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { supabaseClient } from '../supabase';
 import {
@@ -44,6 +43,11 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_EXCEPTION_INVALID: 'Revisa las excepciones del horario.',
   ECOMMERCE_PAUSE_UNTIL_INVALID: 'La reanudacion debe programarse para una fecha futura.',
   ECOMMERCE_PAUSE_REASON_INVALID: 'La razon de la pausa no puede superar 300 caracteres.'
+};
+
+const buildDefaultAuthContext = async ({ licenseKey }) => {
+  const { buildPosSyncAuthContext } = await import('../sync/posSyncClient');
+  return buildPosSyncAuthContext({ licenseKey });
 };
 
 const SAFE_CONTEXT_MESSAGES = new Set([
@@ -170,7 +174,7 @@ export const createEcommerceAdminService = ({
   rpc = (name, payload) => supabaseClient?.rpc(name, payload),
   isConfigured = () => Boolean(supabaseClient),
   getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
-  buildAuthContext = buildPosSyncAuthContext,
+  buildAuthContext = buildDefaultAuthContext,
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
   localSource = ecommercePublishedStockLocalSource
 } = {}) => {

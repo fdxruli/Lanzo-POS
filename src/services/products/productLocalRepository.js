@@ -19,6 +19,7 @@ import {
   normalizeNameKey
 } from './productMapper';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
+import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 
 const nowIso = () => new Date().toISOString();
 
@@ -353,21 +354,54 @@ export const productLocalRepository = {
   },
 
   async applyCloudCatalog(response = {}) {
-    const applied = { categories: 0, products: 0, batches: 0 };
+    const applied = { categories: 0, products: 0, batches: 0, rejected: [] };
+    const collections = [
+      ['category', STORES.CATEGORIES, [...(response.categories || []), ...(response.category ? [response.category] : [])], cloudCategoryToLocal],
+      ['product', STORES.MENU, [...(response.products || []), ...(response.product ? [response.product] : [])], cloudProductToLocal],
+      ['product_batch', STORES.PRODUCT_BATCHES, [...(response.batches || []), ...(response.batch ? [response.batch] : [])], cloudBatchToLocal]
+    ];
 
-    for (const category of response.categories || []) {
-      if (await this.applyCloudCategory(category)) applied.categories += 1;
+    if (collections.some(([, , records]) => !Array.isArray(records))) {
+      throw createProductCatalogSyncError('La respuesta del catalogo no contiene colecciones validas.', {
+        code: 'PRODUCT_CATALOG_RESPONSE_INVALID', phase: 'snapshot_response_validation'
+      });
     }
-    for (const product of response.products || []) {
-      if (await this.applyCloudProduct(product)) applied.products += 1;
-    }
-    for (const batch of response.batches || []) {
-      if (await this.applyCloudBatch(batch)) applied.batches += 1;
-    }
-    if (response.category && await this.applyCloudCategory(response.category)) applied.categories += 1;
-    if (response.product && await this.applyCloudProduct(response.product)) applied.products += 1;
-    if (response.batch && await this.applyCloudBatch(response.batch)) applied.batches += 1;
 
+    await ensureOpen();
+    try {
+      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), async () => {
+        for (const [entityType, store, records, mapper] of collections) {
+          for (let index = 0; index < records.length; index += 1) {
+            const record = records[index];
+            const entityId = record?.id ?? null;
+            const parentId = record?.product_id ?? record?.productId ?? null;
+            if (!record || typeof record !== 'object' || entityId === null || entityId === '') {
+              applied.rejected.push({ entityType, entityId, index, code: 'PRODUCT_CATALOG_RECORD_ID_REQUIRED' });
+              continue;
+            }
+            if (entityType === 'product_batch' && (parentId === null || parentId === '')) {
+              applied.rejected.push({ entityType, entityId, index, code: 'PRODUCT_CATALOG_BATCH_PRODUCT_REQUIRED' });
+              continue;
+            }
+            try {
+              const existing = await db.table(store).get(entityId);
+              const local = mapper(record, existing);
+              await db.table(store).put(local);
+              if (entityType === 'category') applied.categories += 1;
+              if (entityType === 'product') applied.products += 1;
+              if (entityType === 'product_batch') applied.batches += 1;
+            } catch (cause) {
+              applied.rejected.push({ entityType, entityId, index, code: cause?.code || 'PRODUCT_CATALOG_RECORD_APPLY_FAILED' });
+            }
+          }
+        }
+      });
+    } catch (cause) {
+      throw createProductCatalogSyncError(cause?.message, {
+        code: typeof cause?.code === 'string' ? cause.code : 'PRODUCT_CATALOG_INDEXEDDB_APPLY_FAILED',
+        phase: 'indexeddb_transaction_commit'
+      }, cause);
+    }
     return applied;
   },
 
