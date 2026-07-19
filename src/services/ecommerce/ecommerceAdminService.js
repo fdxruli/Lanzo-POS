@@ -42,7 +42,13 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_SCHEDULE_DUPLICATE_DAY: 'Cada dia debe aparecer una sola vez.',
   ECOMMERCE_EXCEPTION_INVALID: 'Revisa las excepciones del horario.',
   ECOMMERCE_PAUSE_UNTIL_INVALID: 'La reanudacion debe programarse para una fecha futura.',
-  ECOMMERCE_PAUSE_REASON_INVALID: 'La razon de la pausa no puede superar 300 caracteres.'
+  ECOMMERCE_PAUSE_REASON_INVALID: 'La razon de la pausa no puede superar 300 caracteres.',
+  ECOMMERCE_TEMPLATE_INVALID: 'La plantilla seleccionada no es válida.',
+  ECOMMERCE_THEME_INVALID: 'La configuración visual no es válida.',
+  ECOMMERCE_THEME_COLOR_INVALID: 'Los colores deben usar formato hexadecimal #RRGGBB.',
+  ECOMMERCE_IMAGE_URL_INVALID: 'La dirección de imagen no es válida.',
+  ECOMMERCE_BRANDING_REQUIRES_PRO: 'La personalización avanzada requiere Lanzo Nube.',
+  ECOMMERCE_PORTAL_SAVE_FAILED: 'No se pudo guardar el portal online. Intenta nuevamente.'
 };
 
 const buildDefaultAuthContext = async ({ licenseKey }) => {

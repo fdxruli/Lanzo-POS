@@ -19,6 +19,10 @@ body:has(.public-store-shell) {
 }
 
 .public-store-shell {
+  --ui-color-primary: var(--store-primary, #0284c7);
+  --ui-color-primary-hover: var(--store-primary-hover, #0369a1);
+  --ui-color-secondary: var(--store-secondary, #0369a1);
+  font-family: var(--store-font-family, system-ui, sans-serif);
   width: 100%;
   min-width: 0;
   min-height: 100vh;
@@ -28,6 +32,44 @@ body:has(.public-store-shell) {
     var(--ui-bg-page);
   color: var(--ui-text);
   padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+}
+
+.public-store-shell .ui-button--primary,
+.public-store-shell .public-cart-bar__button,
+.public-store-shell .public-product-card__add {
+  border-radius: var(--store-radius-button, 0.75rem);
+  background-color: var(--store-primary, #0284c7);
+  color: var(--store-on-primary, #fff);
+}
+
+.public-store-shell .public-product-card,
+.public-store-shell .public-cart-drawer,
+.public-store-shell .public-checkout-dialog {
+  border-radius: var(--store-radius-card, 1rem);
+}
+
+.public-store-shell[data-template-code="showcase"] .public-store-header__cover-wrap {
+  height: clamp(17rem, 48vw, 31rem);
+}
+
+.public-store-shell[data-template-code="showcase"] .public-store-header__content {
+  width: min(78rem, calc(100% - 2rem));
+}
+
+.public-store-shell[data-template-code="showcase"] .public-catalog__grid {
+  gap: 1.25rem;
+}
+
+.public-store-shell[data-template-code="compact"] .public-store-header__cover-wrap {
+  height: clamp(8rem, 24vw, 14rem);
+}
+
+.public-store-shell[data-template-code="compact"] .public-store-header__content {
+  padding-bottom: 1rem;
+}
+
+.public-store-shell[data-template-code="compact"] .public-catalog__grid {
+  gap: 0.7rem;
 }
 
 .public-store-shell--centered {

@@ -14,7 +14,6 @@ import {
   Lock,
   MessageCircle,
   PackagePlus,
-  Palette,
   PauseCircle,
   Pencil,
   PlayCircle,
@@ -40,6 +39,7 @@ import {
 } from '../../services/ecommerce/ecommerceCatalogSyncService';
 import { buildPublicStoreUrl } from '../../config/publicOrigins';
 import { copyTextWithFallback } from '../../utils/copyTextWithFallback';
+import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 import EcommerceProductPublishModal from './EcommerceProductPublishModal';
 import EcommerceCatalogSyncPanel, {
   EcommerceCatalogSyncBadge
@@ -47,6 +47,7 @@ import EcommerceCatalogSyncPanel, {
 import PublicStoreQrCode from './PublicStoreQrCode';
 import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
 import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
+import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -199,6 +200,10 @@ export default function EcommercePortalSettings() {
   const [localProducts, setLocalProducts] = useState([]);
   const [categoriesById, setCategoriesById] = useState(new Map());
   const [operations, setOperations] = useState(null);
+  const [customization, setCustomization] = useState({
+    templateCode: 'classic', theme: {}, logoUrl: null, coverImageUrl: null, valid: true
+  });
+  const [customizationBusy, setCustomizationBusy] = useState(false);
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
 
   const authorizationPending = isLicenseInitializing
@@ -215,6 +220,7 @@ export default function EcommercePortalSettings() {
   const isPro = features.cloudCatalogSource === true
     || features.customSlug === true
     || plan.code === 'pro_monthly';
+  const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const publishedCount = products.filter((product) => product.isPublished).length;
   const maxProducts = features.maxPublishedProducts < 0
     ? Number.MAX_SAFE_INTEGER
@@ -294,6 +300,10 @@ export default function EcommercePortalSettings() {
     void load();
   }, [authorizationPending, canManageEcommercePortal, load]);
 
+  const handleCustomizationChange = useCallback((nextCustomization) => {
+    setCustomization(nextCustomization);
+  }, []);
+
   const updateForm = (field) => (event) => {
     const value = event.target.type === 'checkbox'
       ? event.target.checked
@@ -335,8 +345,10 @@ export default function EcommercePortalSettings() {
       minOrderTotal: numberOr(candidate.minOrderTotal, 0),
       status: candidate.status,
       slug: candidate.slug.trim() || null,
-      logoUrl: publicUrl(candidate.logoUrl) || null,
-      templateCode: 'classic',
+      logoUrl: customization.logoUrl ?? publicUrl(candidate.logoUrl) ?? null,
+      coverImageUrl: isPro ? customization.coverImageUrl : undefined,
+      templateCode: isPro ? customization.templateCode : 'classic',
+      theme: isPro ? customization.theme : {},
       metadata: { source: 'admin_ui' }
     });
     setSavingPortal(false);
@@ -836,25 +848,17 @@ export default function EcommercePortalSettings() {
             </div>
           </div>
         </div>
-        <div className="ecom-admin-customization">
-          <div>
-            <Palette size={20} />
-            <span>
-              <strong>{isPro ? 'Personalizacion Portal PRO' : 'Plantilla fija de Plan Free'}</strong>
-              <small>
-                {isPro
-                  ? 'Logo, portada, color principal y plantilla.'
-                  : 'Configuracion basica con plantilla fija.'}
-              </small>
-            </span>
-          </div>
-          <span className="ecom-admin-locked">
-            <Lock size={14} /> Disponible en una fase posterior de Portal PRO.
-          </span>
-        </div>
+        <EcommercePortalCustomizationPanel
+          isPro={isPro}
+          portal={portal}
+          licenseKey={licenseKey}
+          disabled={savingPortal}
+          onChange={handleCustomizationChange}
+          onBusyChange={setCustomizationBusy}
+        />
         <div className="ecom-admin-form-actions">
           <span><CheckCircle2 size={16} /> Los datos quedan separados del flujo POS.</span>
-          <button type="submit" className="btn btn-primary" disabled={savingPortal}>
+          <button type="submit" className="btn btn-primary" disabled={savingPortal || customizationBusy || customization.valid === false}>
             {savingPortal
               ? <LoaderCircle className="ecom-admin-spin" size={17} />
               : <Save size={17} />}
