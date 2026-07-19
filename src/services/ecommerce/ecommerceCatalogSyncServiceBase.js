@@ -86,6 +86,23 @@ const asText = (value) => String(value ?? '').trim();
 const uniqueRefs = (values = []) => Array.from(new Set(
   values.map(asText).filter(Boolean)
 ));
+const summarizeBatchFailure = (result = {}, expectedCatalogRevision = null) => ({
+  code: asText(result?.code) || 'ECOMMERCE_CATALOG_SYNC_FAILED',
+  message: asText(result?.message).slice(0, 500) || null,
+  details: result?.details ?? null,
+  retryable: result?.retryable === true,
+  catalogRevision: result?.catalogRevision ?? null,
+  expectedCatalogRevision,
+  results: Array.isArray(result?.results)
+    ? result.results.map((item) => ({
+      publishedProductId: item?.publishedProductId || null,
+      localProductRef: item?.localProductRef || null,
+      status: item?.status || null,
+      code: item?.code || null,
+      message: asText(item?.message).slice(0, 300) || null
+    }))
+    : []
+});
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const getNowIso = () => new Date().toISOString();
 const chunk = (values, size) => {
@@ -873,9 +890,9 @@ export const createEcommerceCatalogSyncService = ({
         if (!recoverableSourceConflict) {
           Logger.warn('[Ecommerce/CatalogSync] Batch failed', {
             operation: 'sync_published_catalog',
-            code: failure.code,
             count: projectionsBatch.length,
-            revision: expectedCatalogRevision
+            batchIndex,
+            ...summarizeBatchFailure(result, expectedCatalogRevision)
           });
         }
 
@@ -896,6 +913,17 @@ export const createEcommerceCatalogSyncService = ({
           });
         }
 
+        // Permanent server-side validation/configuration failures cannot become
+        // successful through backoff. Remove the stale queued intent; a later
+        // local edit will enqueue a fresh, new-revision projection.
+        try {
+          await outbox.acknowledge({ scopeIdentity, portalId: portal.id, entries: queued.entries });
+        } catch (outboxError) {
+          Logger.warn('[Ecommerce/CatalogSync] Permanent failure could not clear outbox', {
+            operation: 'catalog_sync_outbox',
+            code: getFailureCode(outboxError, 'ECOMMERCE_CATALOG_SYNC_OUTBOX_FAILED')
+          });
+        }
         return publishStatus({
           state: 'error',
           pendingCount: Math.max(queued.entries.length, projections.length - (batchIndex * RPC_BATCH_SIZE)),

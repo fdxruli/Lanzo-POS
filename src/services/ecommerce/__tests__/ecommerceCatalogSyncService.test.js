@@ -393,6 +393,9 @@ describe('ecommerceCatalogSyncService', () => {
     expect(queue.enqueue).not.toHaveBeenCalled();
     expect(queue.replacePending).not.toHaveBeenCalled();
     expect(timers.setTimeoutFn).not.toHaveBeenCalled();
+    expect(queue.acknowledge).toHaveBeenCalledWith(expect.objectContaining({
+      portalId: 'portal-1'
+    }));
   });
 
   it('acknowledges queued entries only after every chunk succeeds', async () => {
