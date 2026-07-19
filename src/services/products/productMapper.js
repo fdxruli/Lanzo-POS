@@ -12,6 +12,11 @@ const toNumber = (value, fallback = 0) => {
 
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source || {}, key);
 
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const normalizeOptionalObject = (value) => (isRecord(value) ? value : undefined);
+const normalizeOptionalArray = (value) => (Array.isArray(value) ? value : []);
+
 const pick = (source, snakeKey, camelKey, fallback = null) => {
   if (!source) return fallback;
   if (source[camelKey] !== undefined) return source[camelKey];
@@ -20,16 +25,32 @@ const pick = (source, snakeKey, camelKey, fallback = null) => {
 };
 
 const normalizeProductModifiersForStorage = (modifiers) => {
+  if (!Array.isArray(modifiers)) return [];
   const normalized = normalizeModifierGroups(modifiers);
-  return normalized.length > 0 ? normalized : null;
+  return normalized.length > 0 ? normalized : [];
 };
 
-const resolveCloudModifiersForLocal = (product = {}, existing = null) => {
-  if (hasOwn(product, 'modifiers')) {
-    return normalizeProductModifiersForStorage(product.modifiers) || [];
-  }
+/**
+ * Canonical representation for complex product fields in IndexedDB.
+ *
+ * This intentionally keeps every other product property untouched so callers can
+ * repair legacy cloud records without losing domain- or sync-specific metadata.
+ */
+export const normalizeProductComplexFields = (product = {}) => ({
+  ...product,
+  bulkData: normalizeOptionalObject(product.bulkData),
+  conversionFactor: normalizeOptionalObject(product.conversionFactor),
+  batchManagement: normalizeOptionalObject(product.batchManagement),
+  recipe: normalizeOptionalArray(product.recipe),
+  modifiers: normalizeProductModifiersForStorage(product.modifiers),
+  wholesaleTiers: normalizeOptionalArray(product.wholesaleTiers)
+});
 
-  return normalizeProductModifiersForStorage(existing?.modifiers ?? []) || [];
+const resolveComplexField = (product, existing, snakeKey, camelKey) => {
+  // An omitted key belongs to a partial cloud response and must not erase local configuration.
+  if (hasOwn(product, camelKey)) return product[camelKey];
+  if (hasOwn(product, snakeKey)) return product[snakeKey];
+  return existing?.[camelKey] ?? existing?.[snakeKey];
 };
 
 export const normalizeNameKey = (value) => text(value).toLowerCase().replace(/\s+/g, ' ');
@@ -122,6 +143,16 @@ export const productToCloudPayload = (product = {}) => ({
 export const cloudProductToLocal = (product = {}, existing = null, overrides = {}) => {
   const deletedAt = pick(product, 'deleted_at', 'deletedAt', existing?.deletedAt || null);
   const name = product.name || existing?.name || '';
+  const complexFields = normalizeProductComplexFields({
+    bulkData: resolveComplexField(product, existing, 'bulk_data', 'bulkData'),
+    conversionFactor: resolveComplexField(product, existing, 'conversion_factor', 'conversionFactor'),
+    batchManagement: resolveComplexField(product, existing, 'batch_management', 'batchManagement'),
+    recipe: resolveComplexField(product, existing, 'recipe', 'recipe'),
+    modifiers: hasOwn(product, 'modifiers')
+      ? product.modifiers
+      : (existing?.modifiers ?? []),
+    wholesaleTiers: resolveComplexField(product, existing, 'wholesale_tiers', 'wholesaleTiers')
+  });
 
   return {
     ...existing,
@@ -149,12 +180,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     isActive: deletedAt ? false : (product.is_active ?? product.isActive ?? true),
     productType: product.product_type || product.productType || 'sellable',
     saleType: product.sale_type || product.saleType || 'unit',
-    bulkData: product.bulk_data ?? product.bulkData ?? null,
-    conversionFactor: product.conversion_factor ?? product.conversionFactor ?? null,
-    batchManagement: product.batch_management ?? product.batchManagement ?? null,
-    recipe: product.recipe ?? null,
-    modifiers: resolveCloudModifiersForLocal(product, existing),
-    wholesaleTiers: product.wholesale_tiers ?? product.wholesaleTiers ?? null,
+    ...complexFields,
     prescriptionType: product.prescription_type ?? product.prescriptionType ?? undefined,
     activeSubstance: product.active_substance ?? product.activeSubstance ?? undefined,
     laboratory: product.laboratory ?? undefined,

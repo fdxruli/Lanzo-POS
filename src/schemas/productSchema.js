@@ -1,5 +1,15 @@
 import { z } from 'zod';
 
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const legacyOptionalObject = (schema) => z.preprocess(
+  (value) => (isRecord(value) ? value : undefined),
+  schema.optional()
+);
+const legacyArray = (schema) => z.preprocess(
+  (value) => (Array.isArray(value) ? value : []),
+  schema
+);
+
 export const productSchema = z.object({
   // Identificadores y Texto
   id: z.string().min(1, "El ID es obligatorio"),
@@ -31,24 +41,24 @@ export const productSchema = z.object({
   saleType: z.enum(['unit', 'bulk']).default('unit'),
 
   // Objetos Complejos
-  bulkData: z.object({
+  bulkData: legacyOptionalObject(z.object({
     purchase: z.object({ unit: z.string().optional() }).optional()
-  }).optional(),
+  })),
 
-  conversionFactor: z.object({
+  conversionFactor: legacyOptionalObject(z.object({
     enabled: z.boolean().optional(),
     factor: z.coerce.number().optional(),
     purchaseUnit: z.string().optional()
-  }).optional(),
+  })),
 
-  batchManagement: z.object({
+  batchManagement: legacyOptionalObject(z.object({
     enabled: z.boolean(),
     selectionStrategy: z.string().optional()
-  }).optional(),
+  })),
 
-  recipe: z.array(z.any()).optional(),
-  modifiers: z.array(z.any()).optional(),
-  wholesaleTiers: z.array(z.any()).optional(),
+  recipe: legacyArray(z.array(z.any())),
+  modifiers: legacyArray(z.array(z.any())),
+  wholesaleTiers: legacyArray(z.array(z.any())),
 
   // --- CORRECCIÓN FARMACIA ---
   // Agregamos los campos exactos que envía PharmacyProductForm.jsx
@@ -76,4 +86,4 @@ export const productSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   deletedTimestamp: z.string().optional()
-});
+}).passthrough();
