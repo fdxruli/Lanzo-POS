@@ -4,7 +4,7 @@
 
 - Rama: `fase-ecom-portal-builder-1`; base: `main`; PR: [#123](https://github.com/fdxruli/Lanzo-POS/pull/123).
 - HEAD inicial remoto: `cbed64b830f01ed54dabe89ec3017c6d714175f8`.
-- HEAD final remoto: `a24dd1c5ee876645ef5e0a72b7d136d01904f738`.
+- HEAD final remoto: `c77ec079e1b820aaa6d6e993a55b31c4a77c5d1d`.
 - `origin/main` y merge-base confirmado: `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
 - Antes de editar, el worktree estaba limpio, `main` no tenía commits locales accidentales, y el PR estaba `OPEN`, draft y sin merge.
 - No se hizo merge, despliegue manual de Vercel, ni se aplicó la migración de hardening a producción.
