@@ -64,7 +64,7 @@ function PublicProductCard({ product, onAdd, onConfigure }) {
             className="ui-button ui-button--primary public-product-card__add"
             disabled={!isAvailable}
             onClick={() => (configurable ? onConfigure(product) : onAdd(product))}
-            aria-label={isAvailable ? `${buttonLabel}: ${product.name}` : `${product.name} no disponible`}
+            aria-label={isAvailable ? `${buttonLabel} ${product.name}` : `${product.name} no disponible`}
           >
             <Plus aria-hidden="true" size={18} />
             {isAvailable ? buttonLabel : 'No disponible'}

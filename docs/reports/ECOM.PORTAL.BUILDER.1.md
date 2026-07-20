@@ -44,11 +44,12 @@ No se conservan ambos timestamps ni se crearon duplicados. La consulta remota so
   - Servicio: contexto de autorización, argumentos RPC, conflicto, validación local y sanitización/paginación del historial.
   - Foundation: Free no llama RPC, carga Pro, publicar, restaurar como borrador y cargar la siguiente página.
 - PASS: ESLint de todos los módulos de aplicación modificados.
+- PASS: regresión pública focalizada: `PublicStorePage.test.jsx` **13/13**, `PublicStorePage.configurationContext.test.jsx` **2/2** y checkout focalizado **8/8**. Se corrigió el nombre accesible del botón de catálogo (`Agregar Producto`) sin tocar carrito, checkout ni revisiones operativas.
 - PASS: `git diff --check`.
 - PASS: `npm run build` (1m 37s de bundle más service worker).
 - PASS: `npm run build:store` (36.46s, 1,822 módulos).
 - PENDIENTE/no calificado: la suite SQL real completa requiere una rama de base de datos aislada para aplicar y revertir esta migración sin tocar producción. No se creó porque Supabase exige confirmación de coste para ello. Por tanto, no se declara como una prueba SQL completa.
-- PENDIENTE/no calificado: `npm run lint` completo agotó el límite de la terminal y `npm run test:ci` volvió a agotar 122s sin completar; la prueba pública integral debe ejecutarse en una ventana de ejecución larga. Ninguno se cuenta como PASS.
+- PENDIENTE/no calificado: `npm run lint` completo agotó el límite de la terminal y `npm run test:ci` volvió a agotar 122s sin completar. Ninguno se cuenta como PASS.
 
 ## Estado de servicios y riesgos residuales
 
