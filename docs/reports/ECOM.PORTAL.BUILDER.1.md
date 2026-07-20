@@ -4,6 +4,7 @@
 
 - Rama: `fase-ecom-portal-builder-1`; base: `main`; PR: [#123](https://github.com/fdxruli/Lanzo-POS/pull/123).
 - HEAD inicial remoto: `cbed64b830f01ed54dabe89ec3017c6d714175f8`.
+- HEAD final remoto: `a24dd1c5ee876645ef5e0a72b7d136d01904f738`.
 - `origin/main` y merge-base confirmado: `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
 - Antes de editar, el worktree estaba limpio, `main` no tenía commits locales accidentales, y el PR estaba `OPEN`, draft y sin merge.
 - No se hizo merge, despliegue manual de Vercel, ni se aplicó la migración de hardening a producción.
@@ -47,7 +48,7 @@ No se conservan ambos timestamps ni se crearon duplicados. La consulta remota so
 - PASS: regresión pública focalizada: `PublicStorePage.test.jsx` **13/13**, `PublicStorePage.configurationContext.test.jsx` **2/2** y checkout focalizado **8/8**. Se corrigió el nombre accesible del botón de catálogo (`Agregar Producto`) sin tocar carrito, checkout ni revisiones operativas.
 - PASS: `git diff --check`.
 - PASS: `npm run build` (1m 37s de bundle más service worker).
-- PASS: `npm run build:store` (36.46s, 1,822 módulos).
+- PASS: `npm run build:store` (46.79s, 1,822 módulos, revalidado tras el ajuste de accesibilidad).
 - PENDIENTE/no calificado: la suite SQL real completa requiere una rama de base de datos aislada para aplicar y revertir esta migración sin tocar producción. No se creó porque Supabase exige confirmación de coste para ello. Por tanto, no se declara como una prueba SQL completa.
 - PENDIENTE/no calificado: `npm run lint` completo agotó el límite de la terminal y `npm run test:ci` volvió a agotar 122s sin completar. Ninguno se cuenta como PASS.
 
