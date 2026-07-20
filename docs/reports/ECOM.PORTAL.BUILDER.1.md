@@ -361,3 +361,38 @@ Los tres defectos residuales identificados quedaron corregidos en código:
 - las suites SQL/frontend fueron ampliadas para detectar la implementación defectuosa anterior.
 
 La entrega no debe mergearse hasta ejecutar la migración y la suite SQL en una base aislada, además de completar lint, `test:ci`, pruebas focalizadas y `build:store` en un checkout completo. El PR debe permanecer draft.
+
+## 13. Intento de validacion y ejecucion de la migracion pendiente (2026-07-20)
+
+Este addendum refleja el intento de ejecucion realizado con el checkout materializado en `C:\\dev\\Lanzo-POS-builder1`; prevalece sobre las notas de entorno de la seccion 9 cuando describen esta misma sesion.
+
+- HEAD remoto de `fase-ecom-portal-builder-1` confirmado antes de modificar: `0c7af19a2808a75a2a4d7f149eb01e22272cace0`.
+- Durante la validacion el remoto avanzo por cambios ya publicados por el PR a `6aaef183dcfeaf371aaf0b5bb3a84ee6430df0e5`; se hizo `fetch` y rebase normal, sin force-push ni perdida de cambios remotos. El HEAD final local y remoto coincide en `6aaef183dcfeaf371aaf0b5bb3a84ee6430df0e5`.
+- HEAD de `main` y merge-base: `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
+- PR #123: `OPEN`, `draft=true`, `mergedAt=null`, base `main`.
+- Workspace de la rama: limpio. No se modifico `main`, no se creo otro PR, no se hizo merge, no se hizo deploy manual y no se aplico `supabase migration repair`.
+- El proyecto `odlrhijtfyavryeqivaa` esta `ACTIVE_HEALTHY`. El historial remoto sigue terminando en `20260719174618_ecom_portal_builder_versions_immutable`; la migracion `20260720010757_ecom_portal_builder_foundation_hardening` sigue pendiente.
+- La migracion local pendiente quedo alineada en la rama y contiene FK compuesta, grants minimos, defensa de `TRUNCATE`, insercion autorizada, `document_mode` y listado paginado sin `document`.
+- `supabase status` no pudo inspeccionar el contenedor porque Docker Desktop no expone `dockerDesktopLinuxEngine` en este entorno.
+- `supabase migration list --linked` y `supabase db push --dry-run` no pudieron ejecutarse porque el checkout no esta enlazado y la CLI no tiene autorizacion para enlazar el proyecto. No se ejecuto `supabase db push`.
+- La suite SQL transaccional esta presente en `supabase/tests/ecom_portal_builder_foundation_test.sql`, pero no se declara ejecutada: no existe una base local o desechable disponible. La rama desechable de Supabase tiene un coste consultado de `0.01344 USD/h` y no se creo porque requiere confirmacion explicita.
+- La integracion de Vercel reporta el preview del PR como `pass` y deployment completado; no se hizo despliegue manual.
+- Los advisors de Supabase fueron consultados en modo lectura. Permanecen avisos INFO preexistentes de RLS sin politicas y de indices no usados; no se atribuyen a esta migracion sin ejecucion.
+
+Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue aplicada ni que la suite SQL fue aprobada hasta disponer de Docker/Supabase local, una rama desechable con confirmacion del coste, o credenciales validas para enlazar un entorno de prueba. No se realizaron escrituras sobre produccion.
+
+## 14. Resultados locales de esta sesion
+
+- Pruebas focalizadas de documento, renderer, servicio, foundation, cache y
+  `PublicStorePage`: `8 archivos, 47/47 PASS`.
+- Un intento que incluyo ademas `useActiveOrders.checkoutLock.test.js` termino
+  `9 archivos PASS, 53 tests PASS, 1 archivo FAIL`; el fallo fue el fixture
+  Dexie (`db.tables` indefinido en `syncDexieBootstrap.js`), fuera del alcance
+  de esta migracion. No se cuenta como PASS de la suite completa.
+- `npm run build`: PASS (3369 modulos; bundle admin y service worker generados).
+- `npm run build:store`: PASS (1822 modulos; `dist-store` generado).
+- `npm run lint`: FAIL, con 159 errores y 224 warnings preexistentes en otras
+  areas del repositorio; no se alteraron para mantener el alcance.
+- `npm run test:ci`: timeout a los 900 s; proceso incompleto, no PASS.
+- `git diff --check`: PASS antes de registrar este addendum; se repite despues
+  del commit documental.
