@@ -396,3 +396,47 @@ Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue apli
 - `npm run test:ci`: timeout a los 900 s; proceso incompleto, no PASS.
 - `git diff --check`: PASS antes de registrar este addendum; se repite despues
   del commit documental.
+
+## 15. Reintento por Supabase CLI remoto (2026-07-20)
+
+- Se verifico `fase-ecom-portal-builder-1` en el worktree dedicado, con HEAD
+  `7e918422c940583b117f7c2f8b1b15498f2e7328`; `origin/main` y merge-base siguen
+  en `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
+- `supabase link --project-ref odlrhijtfyavryeqivaa` termino correctamente.
+  `supabase projects list` marco `odlrhijtfyavryeqivaa` como `LINKED` (Lanzo,
+  us-east-2).
+- Antes del push, `supabase migration list` mostro la migracion pendiente
+  `20260720010757_ecom_portal_builder_foundation_hardening` y las cuatro
+  migraciones ECOM historicas alineadas (`20260719173158`, `20260719173300`,
+  `20260719173452`, `20260719174618`). Tambien mostro drift historico global:
+  muchas versiones remotas no tienen archivo local y varias versiones locales
+  no estan en remoto.
+- `git diff --check`: PASS.
+- `supabase db push --dry-run`: **FAIL/BLOCKED antes de planificar cambios**.
+  La CLI devolvio `Remote migration versions not found in local migrations
+  directory` y sugirio `supabase migration repair` o `supabase db pull`.
+  Ninguna de esas acciones se ejecuto; tampoco se uso `--include-all`.
+- `supabase db push` no se ejecuto porque el dry-run no produjo exclusivamente
+  la migracion esperada.
+
+Verificacion remota posterior, solo lectura, sin aplicar cambios:
+
+- La version `20260720010757` no existe en `supabase_migrations.schema_migrations`.
+- `ecommerce_site_documents` no tiene `document_mode`; `published_version_id`
+  aun usa la FK simple `ecommerce_site_documents_published_version_id_fkey`.
+- `ecommerce_site_versions` no tiene la unique compuesta `(portal_id, id)` ni
+  `document_mode`.
+- Solo existe el trigger de inmutabilidad para `UPDATE`/`DELETE`; no existe el
+  trigger de `TRUNCATE`.
+- Las RPC publicas existen con sus firmas anteriores; el listado de versiones
+  aun usa cuatro argumentos.
+- `anon` y `authenticated` no tienen grants directos sobre las tablas. El
+  estado remoto actual de `service_role` conserva privilegios amplios hasta que
+  se aplique el hardening.
+- Conteo remoto actual: `documents=0`, `broken_pointers=0`,
+  `cross_portal_pointers=0`.
+
+Estado de este reintento: **BLOCKED** por drift historico global del checkout,
+no por un error sintactico evidente de la migracion. No hubo `db push`,
+`migration repair`, `db pull`, `db reset`, inserciones de prueba, escrituras
+manuales ni cambios en `main`.
