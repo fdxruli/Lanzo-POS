@@ -1,4 +1,4 @@
-import { createDefaultEcommerceSiteDocument, normalizeEcommerceSiteDocument } from '../../../utils/ecommerceSiteDocument';
+import { normalizeEcommerceSiteDocument } from '../../../utils/ecommerceSiteDocument';
 import EcommerceSiteHeaderSection from './EcommerceSiteHeaderSection';
 import EcommerceSiteCatalogSection from './EcommerceSiteCatalogSection';
 import EcommerceSiteFooterSection from './EcommerceSiteFooterSection';
@@ -23,11 +23,18 @@ export default function EcommerceSiteRenderer({
   catalogProps = {},
   catalogChrome = null
 }) {
-  const document = siteDocumentMode === 'custom'
-    ? normalizeEcommerceSiteDocument(siteDocument, { templateCode: portal?.templateCode })
-    : createDefaultEcommerceSiteDocument({ templateCode: portal?.templateCode });
+  const document = normalizeEcommerceSiteDocument(siteDocument, {
+    templateCode: portal?.templateCode
+  });
+  const renderMode = ['public', 'preview', 'editor'].includes(mode) ? mode : 'public';
+  const documentMode = siteDocumentMode === 'custom' ? 'custom' : 'default';
+
   return (
-    <div data-site-mode={['public', 'preview', 'editor'].includes(mode) ? mode : 'public'} data-site-density={document.global.density}>
+    <div
+      data-site-mode={renderMode}
+      data-site-document-mode={documentMode}
+      data-site-density={document.global.density}
+    >
       {document.sections.filter((section) => section.enabled).map((section) => {
         const Section = SECTION_RENDERERS[section.type];
         if (!Section) return null;
@@ -52,6 +59,6 @@ export default function EcommerceSiteRenderer({
 }
 
 export const getRenderableEcommerceSiteDocument = (document, portal) => normalizeEcommerceSiteDocument(
-  document || createDefaultEcommerceSiteDocument({ templateCode: portal?.templateCode }),
+  document,
   { templateCode: portal?.templateCode }
 );
