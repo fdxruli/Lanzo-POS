@@ -93,6 +93,39 @@ describe('public site version identity and cache', () => {
     expect(cached.site).toEqual(network.site);
   });
 
+  it('preserves null version identity for default fallback in network and cache results', async () => {
+    const fallbackDocument = createDefaultEcommerceSiteDocument({ templateCode: 'classic' });
+    let online = true;
+    const rpc = vi.fn(async () => {
+      if (!online) return { data: null, error: { code: 'NETWORK' } };
+      return {
+        data: siteResponse({
+          versionId: null,
+          versionNumber: null,
+          documentMode: 'default',
+          document: fallbackDocument
+        }),
+        error: null
+      };
+    });
+    const { database, service } = createService(rpc, 'public-site-version-fallback');
+
+    const network = await service.getPublicPortalBySlug('mi-tienda');
+    expect(network.site).toEqual({
+      schemaVersion: 1,
+      versionId: null,
+      versionNumber: null,
+      documentMode: 'default',
+      document: fallbackDocument
+    });
+
+    await waitForCachedPortal(database);
+    online = false;
+    const cached = await service.getPublicPortalBySlug('mi-tienda');
+    expect(cached.offline).toBe(true);
+    expect(cached.site).toEqual(network.site);
+  });
+
   it('updates the site version without coupling it to catalogRevision', async () => {
     const v1Document = createDefaultEcommerceSiteDocument({ templateCode: 'classic' });
     v1Document.sections[1].props.showCategories = false;
