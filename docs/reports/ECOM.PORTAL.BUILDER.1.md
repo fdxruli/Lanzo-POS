@@ -48,7 +48,7 @@ No se conservan ambos timestamps ni se crearon duplicados. La consulta remota so
 - PASS: `npm run build` (1m 37s de bundle más service worker).
 - PASS: `npm run build:store` (36.46s, 1,822 módulos).
 - PENDIENTE/no calificado: la suite SQL real completa requiere una rama de base de datos aislada para aplicar y revertir esta migración sin tocar producción. No se creó porque Supabase exige confirmación de coste para ello. Por tanto, no se declara como una prueba SQL completa.
-- PENDIENTE/no calificado: `npm run lint` completo agotó el límite de la terminal; `npm run test:ci` y la prueba pública integral deben completarse en una ventana de ejecución larga. Ninguno se cuenta como PASS.
+- PENDIENTE/no calificado: `npm run lint` completo agotó el límite de la terminal y `npm run test:ci` volvió a agotar 122s sin completar; la prueba pública integral debe ejecutarse en una ventana de ejecución larga. Ninguno se cuenta como PASS.
 
 ## Estado de servicios y riesgos residuales
 
