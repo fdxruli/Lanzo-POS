@@ -4,7 +4,11 @@ export default function EcommerceSiteCatalogSection({ section, catalogProps, chr
   return (
     <div className="public-store-content" data-site-section="catalog" data-site-layout={section.layout}>
       {chrome}
-      <PublicCatalog {...catalogProps} />
+      <PublicCatalog
+        {...catalogProps}
+        showSearch={section.props.showSearch}
+        showCategories={section.props.showCategories}
+      />
     </div>
   );
 }

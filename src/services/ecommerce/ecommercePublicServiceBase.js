@@ -260,6 +260,7 @@ function normalizePortalResult(data) {
       schemaVersion: 1,
       versionId: asText(rawSite.versionId),
       versionNumber: siteVersionNumber,
+      documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
       document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: normalizedPortal.templateCode })
     }
   };

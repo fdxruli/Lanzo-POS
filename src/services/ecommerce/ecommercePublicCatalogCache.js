@@ -200,6 +200,7 @@ const sanitizePortalResult = (result) => {
       schemaVersion: 1,
       versionId: trimText(rawSite.versionId, 80),
       versionNumber: siteVersionNumber,
+      documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
       document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: portal.templateCode })
     }
   };

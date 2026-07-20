@@ -759,6 +759,7 @@ function PublicStorePage() {
     >
       <EcommerceSiteRenderer
         siteDocument={portalResult?.site?.document}
+        siteDocumentMode={portalResult?.site?.documentMode}
         portal={portal}
         products={products}
         categories={categories}

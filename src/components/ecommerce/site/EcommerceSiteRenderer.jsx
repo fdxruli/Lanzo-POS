@@ -11,6 +11,7 @@ export const SECTION_RENDERERS = Object.freeze({
 
 export default function EcommerceSiteRenderer({
   siteDocument,
+  siteDocumentMode = 'default',
   portal,
   products,
   categories,
@@ -22,7 +23,9 @@ export default function EcommerceSiteRenderer({
   catalogProps = {},
   catalogChrome = null
 }) {
-  const document = normalizeEcommerceSiteDocument(siteDocument, { templateCode: portal?.templateCode });
+  const document = siteDocumentMode === 'custom'
+    ? normalizeEcommerceSiteDocument(siteDocument, { templateCode: portal?.templateCode })
+    : createDefaultEcommerceSiteDocument({ templateCode: portal?.templateCode });
   return (
     <div data-site-mode={['public', 'preview', 'editor'].includes(mode) ? mode : 'public'} data-site-density={document.global.density}>
       {document.sections.filter((section) => section.enabled).map((section) => {

@@ -21,6 +21,16 @@ const failure = (data, fallback) => {
   return { ...result, message: SAFE_MESSAGES[result.code] || result.message || fallback };
 };
 
+const normalizeVersionHistory = (result) => {
+  if (!result?.success) return result;
+  return {
+    ...result,
+    limit: Math.min(50, Math.max(1, Math.floor(Number(result.limit) || 20))),
+    offset: Math.max(0, Math.floor(Number(result.offset) || 0)),
+    versions: Array.isArray(result.versions) ? result.versions.map(({ document: _document, ...version }) => version) : []
+  };
+};
+
 export const createEcommerceSiteBuilderService = ({
   rpc = (name, payload) => supabaseClient?.rpc(name, payload),
   getContext = getEcommerceAdminAuthorizationContext
@@ -42,7 +52,11 @@ export const createEcommerceSiteBuilderService = ({
       return call('ecommerce_admin_save_site_draft', { p_expected_revision: expectedRevision, p_document: validation.document }, 'No se pudo guardar el borrador del sitio.');
     },
     publishSiteDraft: () => call('ecommerce_admin_publish_site', {}, 'No se pudo publicar el sitio.'),
-    listSiteVersions: () => call('ecommerce_admin_list_site_versions', {}, 'No se pudo cargar el historial del sitio.'),
+    listSiteVersions: ({ limit = 20, offset = 0 } = {}) => call(
+      'ecommerce_admin_list_site_versions',
+      { p_limit: Math.min(50, Math.max(1, Math.floor(Number(limit) || 20))), p_offset: Math.max(0, Math.floor(Number(offset) || 0)) },
+      'No se pudo cargar el historial del sitio.'
+    ).then(normalizeVersionHistory),
     restoreSiteVersion: (versionId) => call('ecommerce_admin_restore_site_version', { p_version_id: versionId }, 'No se pudo restaurar la versión del sitio.')
   };
 };

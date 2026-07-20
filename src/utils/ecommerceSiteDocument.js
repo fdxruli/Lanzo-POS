@@ -38,6 +38,11 @@ export const createDefaultEcommerceSiteDocument = ({ templateCode = 'classic' } 
 };
 
 export function validateEcommerceSiteDocument(value, { requirePublishable = true } = {}) {
+  try {
+    if (byteLength(value) > MAX_DOCUMENT_BYTES) return { valid: false, code: 'ECOMMERCE_SITE_DOCUMENT_TOO_LARGE' };
+  } catch {
+    return { valid: false, code: 'ECOMMERCE_SITE_DOCUMENT_INVALID' };
+  }
   if (!isRecord(value) || !hasOnly(value, new Set(['schemaVersion', 'global', 'sections']))) {
     return { valid: false, code: 'ECOMMERCE_SITE_DOCUMENT_INVALID' };
   }
@@ -82,11 +87,6 @@ export function validateEcommerceSiteDocument(value, { requirePublishable = true
   }
   if (requirePublishable && ['header', 'catalog', 'footer'].some((type) => activeTypes.get(type) !== 1)) {
     return { valid: false, code: 'ECOMMERCE_SITE_REQUIRED_SECTION_MISSING' };
-  }
-  try {
-    if (byteLength(value) > MAX_DOCUMENT_BYTES) return { valid: false, code: 'ECOMMERCE_SITE_DOCUMENT_TOO_LARGE' };
-  } catch {
-    return { valid: false, code: 'ECOMMERCE_SITE_DOCUMENT_INVALID' };
   }
   return { valid: true, document: clone(value) };
 }

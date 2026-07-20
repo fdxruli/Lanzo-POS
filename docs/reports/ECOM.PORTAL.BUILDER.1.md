@@ -1,62 +1,59 @@
-# ECOM.PORTAL.BUILDER.1
+# ECOM.PORTAL.BUILDER.1 — correcciones de revisión PR #123
 
-## Resumen
+## Alcance y control de rama
 
-Implementa el documento estructurado de sitio, un borrador con revisión optimista, versiones publicadas inmutables, publicación atómica y renderer canónico. No cambia catálogo, inventario, pedidos, caja ni ventas.
+- Rama: `fase-ecom-portal-builder-1`; base: `main`; PR: [#123](https://github.com/fdxruli/Lanzo-POS/pull/123).
+- HEAD inicial remoto: `cbed64b830f01ed54dabe89ec3017c6d714175f8`.
+- `origin/main` y merge-base confirmado: `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
+- Antes de editar, el worktree estaba limpio, `main` no tenía commits locales accidentales, y el PR estaba `OPEN`, draft y sin merge.
+- No se hizo merge, despliegue manual de Vercel, ni se aplicó la migración de hardening a producción.
 
-## Base y rama
+## Drift de migraciones y alineación
 
-- HEAD inicial y merge-base: `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
-- Rama: `fase-ecom-portal-builder-1`.
-- PR #122 estaba mergeado y la migración `20260719150457` estaba aplicada antes de iniciar.
-- Se utilizó un worktree limpio para preservar dos archivos locales sin seguimiento del checkout original.
+La causa fue que la primera publicación registró las migraciones en Supabase con timestamps de servidor distintos a los nombres locales. La tabla remota `supabase_migrations.schema_migrations` contiene las declaraciones efectivamente ejecutadas y confirmó que su contenido corresponde al de los cuatro archivos originales; no hubo reparación del historial ni reaplicación.
 
-## Arquitectura
+| Local anterior | Remoto y local final |
+| --- | --- |
+| `20260719172400_ecom_portal_builder_foundation.sql` | `20260719173158_ecom_portal_builder_foundation.sql` |
+| `20260719173231_ecom_portal_builder_document_validation_fix.sql` | `20260719173300_ecom_portal_builder_document_validation_fix.sql` |
+| `20260719173418_ecom_portal_builder_document_validation_operator_fix.sql` | `20260719173452_ecom_portal_builder_document_validation_operator_fix.sql` |
+| `20260719174601_ecom_portal_builder_versions_immutable.sql` | `20260719174618_ecom_portal_builder_versions_immutable.sql` |
 
-- `ecommerce_site_documents`: una fila por `ecommerce_portals.id`, borrador mutable, `draft_revision` y puntero a versión pública.
-- `ecommerce_site_versions`: historial por portal, número único y checksum SHA-256 del JSONB normalizado por PostgreSQL.
-- Las tablas tienen RLS, no conceden acceso a `anon`/`authenticated`, y las RPC son `SECURITY DEFINER` con `search_path` vacío.
-- El builder está protegido por `ecommerce_layout_customization = advanced`; el plan Free no puede invocar sus RPC.
+No se conservan ambos timestamps ni se crearon duplicados. La consulta remota solicitada y el listado de migraciones del conector de Supabase confirman las cuatro versiones remotas. `supabase migration list --linked` no pudo ejecutarse desde este worktree: la CLI local no dispone de credenciales de Management API (`Unauthorized` al enlazar); no se usa ese error como PASS.
 
-## Contrato de documento v1
+## Migración compensatoria pendiente de revisión
 
-El documento admite únicamente `header`, `catalog` y `footer`; tiene máximo 30 secciones, IDs controlados, layouts allowlisted, props tipadas y ningún CSS, HTML o JavaScript arbitrario. Todo documento publicable contiene exactamente una sección activa de cada tipo. El límite es 64 KiB.
+`20260720010757_ecom_portal_builder_foundation_hardening.sql` es una migración nueva y no modifica semánticamente las ya desplegadas. Aún no está aplicada a producción.
 
-`classic`, `showcase` y `compact` se sintetizan como presets del mismo documento y siguen obteniendo tema, logotipo, portada y datos de negocio directamente del portal.
+- Añade `unique (portal_id, id)` en versiones y sustituye la FK simple por `foreign key (portal_id, published_version_id)`, por lo que un portal no puede publicar una versión de otro.
+- Revoca los privilegios heredados, deja a `service_role` solo `SELECT/INSERT/UPDATE` en documentos y `SELECT/INSERT` en versiones, y revoca acceso directo a `anon` y `authenticated`.
+- Mantiene el trigger de inmutabilidad de `UPDATE`/`DELETE`, deniega `TRUNCATE` por privilegios y añade un trigger de sentencia que rechaza ese evento. Un trigger adicional exige el flujo de publicación autorizado para insertar versiones.
+- Añade `document_mode` (`default` o `custom`). Los documentos base se regeneran al cambiar `classic`, `showcase` o `compact`; un documento estructuralmente distinto se conserva como `custom`. Tema, logo y portada siempre se toman del portal en render.
+- `showSearch` y `showCategories` ya se transmiten al catálogo; no quedan props publicables ignoradas.
+- El historial devuelve metadatos sin `document`, con `limit` por defecto 20, máximo 50, `offset` no negativo y `hasMore`. La restauración continúa usando solo `versionId` y no publica automáticamente.
 
-## RPC y publicación
+## Contrato público y regresiones
 
-- `ecommerce_admin_get_site_builder`
-- `ecommerce_admin_save_site_draft`
-- `ecommerce_admin_publish_site`
-- `ecommerce_admin_list_site_versions`
-- `ecommerce_admin_restore_site_version`
+`EcommerceSiteRenderer` vuelve a sintetizar el preset cuando el modo es `default`; así el documento inicial no congela plantilla. `PublicStorePage` recibe `documentMode`, mientras que `siteVersion` sigue separado de `catalogRevision`. Carrito y checkout se mantienen fuera del documento; no se modificaron stock, precios, FEFO, pedidos, tracking, fulfillment, ni los contadores operativos indicados.
 
-Todas reutilizan `ecommerce_admin_authorize_v2`, sesión de staff, token de dispositivo y rate limiting. Guardar exige `expectedRevision`; una revisión obsoleta devuelve `ECOMMERCE_SITE_DRAFT_CONFLICT`. Publicar bloquea el documento, valida, crea una versión y actualiza el puntero en la misma transacción. Restaurar solo copia la versión a borrador.
+## Pruebas ejecutadas
 
-## Público, cache y fallback
+- PASS: pruebas focalizadas de documento, renderer, servicio y foundation: **26/26**.
+  - Validador: estructura, allowlists, secciones obligatorias, IDs, layouts, props, CSS/HTML/JS arbitrario, claves peligrosas, tamaño, checksum y normalización determinista.
+  - Renderer: orden, preset `compact`, preview, y aplicación efectiva de controles de catálogo.
+  - Servicio: contexto de autorización, argumentos RPC, conflicto, validación local y sanitización/paginación del historial.
+  - Foundation: Free no llama RPC, carga Pro, publicar, restaurar como borrador y cargar la siguiente página.
+- PASS: ESLint de todos los módulos de aplicación modificados.
+- PASS: `git diff --check`.
+- PASS: `npm run build` (1m 37s de bundle más service worker).
+- PASS: `npm run build:store` (36.46s, 1,822 módulos).
+- PENDIENTE/no calificado: la suite SQL real completa requiere una rama de base de datos aislada para aplicar y revertir esta migración sin tocar producción. No se creó porque Supabase exige confirmación de coste para ello. Por tanto, no se declara como una prueba SQL completa.
+- PENDIENTE/no calificado: `npm run lint` completo agotó el límite de la terminal; `npm run test:ci` y la prueba pública integral deben completarse en una ventana de ejecución larga. Ninguno se cuenta como PASS.
 
-La RPC pública entrega solo la versión publicada bajo `site`; si no existe, o si es inválida, sintetiza el preset seguro sin ocultar catálogo, carrito o checkout. El cliente conserva `siteVersionId`/`siteVersionNumber` separado de `catalogRevision` en el cache del portal.
+## Estado de servicios y riesgos residuales
 
-`EcommerceSiteRenderer` compone secciones mediante un registro explícito y reutiliza `PublicStoreHeader` y `PublicCatalog`; carrito, barra móvil y checkout permanecen fuera del renderer.
+- Supabase `odlrhijtfyavryeqivaa`: las cuatro migraciones fundacionales están registradas; la compensatoria sigue local y pendiente de revisión. Los advisors de seguridad/rendimiento consultados antes de esta migración no representan el esquema aún no desplegado.
+- Vercel, en modo solo lectura: `lanzo-pos` tiene producción Ready de hace 10h y un preview Ready de hace 8h; existe la integración separada `lanzo-store`, cuya producción más reciente está Ready (10h). No se creó ningún despliegue ni preview manual.
+- Riesgo residual principal: hasta probar y revisar la migración compensatoria en una rama Supabase aislada, sus garantías SQL nuevas (FK, grants, triggers y RPC) no deben considerarse verificadas en una base real.
 
-## Migraciones Supabase
-
-- `20260719172400_ecom_portal_builder_foundation.sql` aplicada.
-- `20260719173418_ecom_portal_builder_document_validation_operator_fix.sql` aplicada para corregir de forma compensatoria la precedencia de operadores JSON del validador.
-- `20260719174601_ecom_portal_builder_versions_immutable.sql` aplicada; un trigger rechaza `UPDATE` y `DELETE` de las versiones históricas.
-- La validación remota confirmó que el documento por defecto es válido y que un documento sin secciones requeridas devuelve `ECOMMERCE_SITE_REQUIRED_SECTION_MISSING`.
-
-## Validación
-
-- PASS: lint focalizado de los archivos modificados.
-- PASS: `ecommerceSiteDocument.test.js` (7/7).
-- PASS: contrato público y configuración de productos (18 casos focalizados).
-- BLOQUEO PREEXISTENTE: dos casos de `PublicStorePage.test.jsx` (uno espera el aria-label heredado sin `:` y otro agotó timeout); 29/31 pasaron.
-- NO CONCLUYENTE: `npm run lint` completo y `npm run build` excedieron el límite; el build terminó con EPIPE, por lo que no se marca como PASS.
-
-## Riesgos y siguiente fase
-
-La interfaz actual solo expone estado, publicación e historial; no implementa edición visual. BUILDER.2 puede añadir controles de sección, reordenamiento y preview responsivo utilizando este contrato, sin tocar el flujo de ecommerce.
-
-No hubo merge automático ni deployment manual. El PR debe permanecer draft.
+El PR debe permanecer draft y no debe hacerse merge automático.

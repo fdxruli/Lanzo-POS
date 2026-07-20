@@ -92,7 +92,9 @@ function PublicCatalog({
   isLoadingMore,
   catalogRevision,
   offline = false,
-  maxItemQuantity = 99
+  maxItemQuantity = 99,
+  showSearch = true,
+  showCategories = true
 }) {
   const { slug = '' } = useParams();
   const resolvedCatalogRevision = normalizeCatalogRevision(catalogRevision);
@@ -174,7 +176,9 @@ function PublicCatalog({
           <span>{products.length} producto{products.length === 1 ? '' : 's'}</span>
         </div>
 
-        <div className="public-catalog__tools">
+        {(showSearch || showCategories) ? (
+          <div className="public-catalog__tools">
+          {showSearch ? (
           <label className="public-catalog__search">
             <Search aria-hidden="true" size={19} />
             <span className="sr-only">Buscar productos</span>
@@ -185,7 +189,9 @@ function PublicCatalog({
               placeholder="Buscar productos"
             />
           </label>
+          ) : null}
 
+          {showCategories ? (
           <label className="public-catalog__category">
             <SlidersHorizontal aria-hidden="true" size={18} />
             <span className="sr-only">Filtrar por categoría</span>
@@ -196,7 +202,9 @@ function PublicCatalog({
               ))}
             </select>
           </label>
+          ) : null}
         </div>
+        ) : null}
 
         {filteredProducts.length === 0 ? (
           <PublicStoreState
