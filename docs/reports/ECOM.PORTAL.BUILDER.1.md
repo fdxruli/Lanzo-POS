@@ -402,6 +402,9 @@ Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue apli
 - Se verifico `fase-ecom-portal-builder-1` en el worktree dedicado, con HEAD
   `7e918422c940583b117f7c2f8b1b15498f2e7328`; `origin/main` y merge-base siguen
   en `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
+- El path solicitado `C:\\dev\\lanzo-pos-git` estaba en el branch local `main`,
+  con `main` local adelantado 17 commits y dos archivos de configuracion sin
+  seguimiento. No se uso ni modifico ese worktree; `origin/main` no cambio.
 - `supabase link --project-ref odlrhijtfyavryeqivaa` termino correctamente.
   `supabase projects list` marco `odlrhijtfyavryeqivaa` como `LINKED` (Lanzo,
   us-east-2).
