@@ -478,5 +478,8 @@ ejecucion concreta. El drift historico global permanece como trabajo separado.
 - No se insertaron datos de prueba, no se aplico ninguna otra migracion, no se
   modifico `main`, no se hizo merge y el PR #123 permanece abierto y draft.
 
-Estado de esta ejecucion: **PASS**, pendiente unicamente de registrar el SHA
-del commit final y confirmar el push a `origin/fase-ecom-portal-builder-1`.
+- HEAD final y remoto confirmado: `77c6ba9dfb464e8567d12d4f5dc9a3a2cf054ad3`.
+- Commit creado: `chore(db): align builder hardening migration with remote history`.
+- Push confirmado exclusivamente a `origin/fase-ecom-portal-builder-1`.
+
+Estado de esta ejecucion: **PASS**.
