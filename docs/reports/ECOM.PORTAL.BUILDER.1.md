@@ -41,7 +41,7 @@ No se ejecutó `supabase migration repair`, `db reset --linked`, `apply_migratio
 ## 3. Archivos modificados en esta corrección residual
 
 ```text
-supabase/migrations/20260720010757_ecom_portal_builder_foundation_hardening.sql
+supabase/migrations/20260721113522_ecom_portal_builder_foundation_hardening.sql
 supabase/tests/ecom_portal_builder_foundation_test.sql
 src/components/ecommerce/site/EcommerceSiteRenderer.jsx
 src/components/ecommerce/site/__tests__/EcommerceSiteRenderer.test.jsx
@@ -443,3 +443,40 @@ Estado de este reintento: **BLOCKED** por drift historico global del checkout,
 no por un error sintactico evidente de la migracion. No hubo `db push`,
 `migration repair`, `db pull`, `db reset`, inserciones de prueba, escrituras
 manuales ni cambios en `main`.
+
+## 16. Aplicacion MCP de la migracion pendiente (2026-07-21)
+
+Esta seccion sustituye el estado BLOCKED de los intentos anteriores para esta
+ejecucion concreta. El drift historico global permanece como trabajo separado.
+
+- Metodo: Supabase MCP `apply_migration`, proyecto `odlrhijtfyavryeqivaa`, una
+  sola operacion atomica con el SQL completo de la migracion.
+- HEAD inicial utilizado: `b561d45e8d00cd5b15e39388552957f90e06c230`.
+- Timestamp local anterior: `20260720010757`.
+- Timestamp remoto generado por Supabase: `20260721113522`.
+- Nombre final del archivo:
+  `supabase/migrations/20260721113522_ecom_portal_builder_foundation_hardening.sql`.
+- SHA-256 antes y despues del renombrado:
+  `b5dec5bc6f3b6682142eebe47b265f11e67349be8bf81a4b4cf082113b6f10ed`;
+  ambos hashes son identicos y el SQL no cambio.
+- Resultado exacto de `apply_migration`: `{"success":true}`.
+- `list_migrations` devolvio una sola fila con nombre
+  `ecom_portal_builder_foundation_hardening` y version `20260721113522`.
+- Verificaciones remotas de solo lectura: `document_mode` existe y es `NOT
+  NULL` en documentos y versiones; existe la unique `(portal_id, id)`; existe
+  la FK compuesta `ecommerce_site_documents_portal_published_version_fkey`;
+  existen las defensas `UPDATE`/`DELETE`, `TRUNCATE` y de insercion no
+  autorizada; el RPC de historial tiene `p_limit integer, p_offset integer`;
+  `service_role` conserva solo `SELECT, INSERT, UPDATE` en documentos y
+  `SELECT, INSERT` en versiones; `DELETE`/`TRUNCATE`/`UPDATE` de versiones son
+  falsos; `anon` y `authenticated` no tienen acceso directo; la funcion publica
+  no menciona `draft_document`; y los conteos siguen
+  `documents=0`, `versions=0`, `cross_portal_pointers=0`.
+- No se uso `supabase db push`, `--include-all`, `migration repair`, `db pull`,
+  `db reset`, `migration up`, Docker ni `execute_sql` para DDL. Las consultas
+  `execute_sql` de esta sesion fueron exclusivamente `SELECT` de verificacion.
+- No se insertaron datos de prueba, no se aplico ninguna otra migracion, no se
+  modifico `main`, no se hizo merge y el PR #123 permanece abierto y draft.
+
+Estado de esta ejecucion: **PASS**, pendiente unicamente de registrar el SHA
+del commit final y confirmar el push a `origin/fase-ecom-portal-builder-1`.
