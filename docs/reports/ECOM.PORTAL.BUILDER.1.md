@@ -478,8 +478,10 @@ ejecucion concreta. El drift historico global permanece como trabajo separado.
 - No se insertaron datos de prueba, no se aplico ninguna otra migracion, no se
   modifico `main`, no se hizo merge y el PR #123 permanece abierto y draft.
 
-- HEAD final y remoto confirmado: `77c6ba9dfb464e8567d12d4f5dc9a3a2cf054ad3`.
-- Commit creado: `chore(db): align builder hardening migration with remote history`.
+- HEAD funcional que aplico la migracion y fue subido inicialmente:
+  `77c6ba9dfb464e8567d12d4f5dc9a3a2cf054ad3`.
+- Commit de alineacion: `chore(db): align builder hardening migration with remote history`.
+- Commit documental que cerro este reporte y quedo en remoto: `8393ddc`.
 - Push confirmado exclusivamente a `origin/fase-ecom-portal-builder-1`.
 
 Estado de esta ejecucion: **PASS**.
