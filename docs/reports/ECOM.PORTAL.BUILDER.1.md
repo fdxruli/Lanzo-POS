@@ -34,9 +34,13 @@ La migración pendiente:
 20260720010757_ecom_portal_builder_foundation_hardening
 ```
 
-no estaba registrada en producción al iniciar la corrección. Por ello se corrigió directamente el archivo pendiente en la rama, en lugar de crear una migración compensatoria nueva.
+No estaba registrada en producción al iniciar aquella corrección. Ese era el
+estado inicial histórico; posteriormente se aplicó mediante MCP y se alineó al
+timestamp remoto `20260721113522`.
 
-No se ejecutó `supabase migration repair`, `db reset --linked`, `apply_migration`, `db push` ni ninguna escritura de prueba sobre datos reales. La migración no fue aplicada a producción.
+En aquella sesión no se ejecutaron `supabase migration repair`, `db reset --linked`,
+`apply_migration` ni `db push`. La aplicación posterior mediante MCP se documenta
+en las secciones 16 y 17; no hubo escrituras de prueba sobre datos reales.
 
 ## 3. Archivos modificados en esta corrección residual
 
@@ -345,9 +349,13 @@ No existen workflow runs de GitHub Actions asociados al HEAD funcional revisado.
 
 ## 11. Riesgos residuales
 
-1. La migración y la suite SQL aún deben ejecutarse juntas en Supabase local, una rama de desarrollo desechable o PostgreSQL/Supabase local con Docker antes de considerar verificadas en runtime las garantías de FK, grants, triggers y RPC.
-2. Los tests frontend añadidos deben ejecutarse en un checkout completo; su presencia y lógica fueron revisadas estáticamente, pero no se declara un resultado Vitest.
-3. `npm run lint`, `npm run test:ci`, `npm run build:store` y `git diff --check` siguen pendientes en un entorno con el repositorio materializado.
+1. La suite SQL transaccional aún no se ejecutó en una base aislada; las
+   garantías de FK, grants, triggers y RPC sí fueron verificadas remotamente
+   después de aplicar la migración.
+2. Los tests frontend añadidos fueron ejecutados en aislamiento en la revisión
+   final; una ejecución combinada mostró contención de IndexedDB.
+3. `npm run lint` global continúa fallando por deuda histórica; `test:ci` no se
+   reejecutó; `build:store` y `git diff --check` pasan.
 4. Las advertencias de chunking y del glob PWA observadas en Vercel no bloquearon el build, pero permanecen fuera del alcance de esta corrección.
 
 ## 12. Conclusión
@@ -360,18 +368,22 @@ Los tres defectos residuales identificados quedaron corregidos en código:
 - la RPC y el renderer mantienen la correspondencia `versionId → documento`;
 - las suites SQL/frontend fueron ampliadas para detectar la implementación defectuosa anterior.
 
-La entrega no debe mergearse hasta ejecutar la migración y la suite SQL en una base aislada, además de completar lint, `test:ci`, pruebas focalizadas y `build:store` en un checkout completo. El PR debe permanecer draft.
+La entrega debe permanecer draft mientras no concluyan lint, `test:ci` y la
+suite SQL aislada; la migración ya está aplicada y verificada remotamente.
 
 ## 13. Intento de validacion y ejecucion de la migracion pendiente (2026-07-20)
 
 Este addendum refleja el intento de ejecucion realizado con el checkout materializado en `C:\\dev\\Lanzo-POS-builder1`; prevalece sobre las notas de entorno de la seccion 9 cuando describen esta misma sesion.
+Los resultados siguientes son históricos y fueron superados por la aplicación
+MCP documentada en las secciones 16 y 17.
 
 - HEAD remoto de `fase-ecom-portal-builder-1` confirmado antes de modificar: `0c7af19a2808a75a2a4d7f149eb01e22272cace0`.
 - Durante la validacion el remoto avanzo por cambios ya publicados por el PR a `6aaef183dcfeaf371aaf0b5bb3a84ee6430df0e5`; se hizo `fetch` y rebase normal, sin force-push ni perdida de cambios remotos. El HEAD final local y remoto coincide en `6aaef183dcfeaf371aaf0b5bb3a84ee6430df0e5`.
 - HEAD de `main` y merge-base: `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
 - PR #123: `OPEN`, `draft=true`, `mergedAt=null`, base `main`.
 - Workspace de la rama: limpio. No se modifico `main`, no se creo otro PR, no se hizo merge, no se hizo deploy manual y no se aplico `supabase migration repair`.
-- El proyecto `odlrhijtfyavryeqivaa` esta `ACTIVE_HEALTHY`. El historial remoto sigue terminando en `20260719174618_ecom_portal_builder_versions_immutable`; la migracion `20260720010757_ecom_portal_builder_foundation_hardening` sigue pendiente.
+- El snapshot remoto de aquella sesión terminaba en `20260719174618`; en el
+  estado actual la migración fue aplicada como `20260721113522`.
 - La migracion local pendiente quedo alineada en la rama y contiene FK compuesta, grants minimos, defensa de `TRUNCATE`, insercion autorizada, `document_mode` y listado paginado sin `document`.
 - `supabase status` no pudo inspeccionar el contenedor porque Docker Desktop no expone `dockerDesktopLinuxEngine` en este entorno.
 - `supabase migration list --linked` y `supabase db push --dry-run` no pudieron ejecutarse porque el checkout no esta enlazado y la CLI no tiene autorizacion para enlazar el proyecto. No se ejecuto `supabase db push`.
@@ -379,7 +391,9 @@ Este addendum refleja el intento de ejecucion realizado con el checkout material
 - La integracion de Vercel reporta el preview del PR como `pass` y deployment completado; no se hizo despliegue manual.
 - Los advisors de Supabase fueron consultados en modo lectura. Permanecen avisos INFO preexistentes de RLS sin politicas y de indices no usados; no se atribuyen a esta migracion sin ejecucion.
 
-Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue aplicada ni que la suite SQL fue aprobada hasta disponer de Docker/Supabase local, una rama desechable con confirmacion del coste, o credenciales validas para enlazar un entorno de prueba. No se realizaron escrituras sobre produccion.
+Estado histórico de aquella sesión: **BLOQUEADO** por falta de entorno de
+prueba. Fue superado por la aplicación MCP y las verificaciones remotas del
+2026-07-21; la suite SQL aislada sigue sin ejecutarse.
 
 ## 14. Resultados locales de esta sesion
 
@@ -399,6 +413,9 @@ Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue apli
 
 ## 15. Reintento por Supabase CLI remoto (2026-07-20)
 
+Este resultado es histórico y no representa el estado remoto actual; la
+migración fue aplicada posteriormente mediante Supabase MCP.
+
 - Se verifico `fase-ecom-portal-builder-1` en el worktree dedicado, con HEAD
   `7e918422c940583b117f7c2f8b1b15498f2e7328`; `origin/main` y merge-base siguen
   en `405a371ad99d304bf81a6e94a4b91eedef0a0db8`.
@@ -408,8 +425,9 @@ Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue apli
 - `supabase link --project-ref odlrhijtfyavryeqivaa` termino correctamente.
   `supabase projects list` marco `odlrhijtfyavryeqivaa` como `LINKED` (Lanzo,
   us-east-2).
-- Antes del push, `supabase migration list` mostro la migracion pendiente
-  `20260720010757_ecom_portal_builder_foundation_hardening` y las cuatro
+- En el snapshot previo al push, `supabase migration list` mostró la migración
+  local pendiente `20260720010757_ecom_portal_builder_foundation_hardening`
+  (timestamp anterior) y las cuatro
   migraciones ECOM historicas alineadas (`20260719173158`, `20260719173300`,
   `20260719173452`, `20260719174618`). Tambien mostro drift historico global:
   muchas versiones remotas no tienen archivo local y varias versiones locales
@@ -424,7 +442,8 @@ Estado de entrega: **BLOQUEADO**. No es valido afirmar que la migracion fue apli
 
 Verificacion remota posterior, solo lectura, sin aplicar cambios:
 
-- La version `20260720010757` no existe en `supabase_migrations.schema_migrations`.
+- En el snapshot de aquella sesión la versión `20260720010757` no existía en
+  `supabase_migrations.schema_migrations`; la versión actual es `20260721113522`.
 - `ecommerce_site_documents` no tiene `document_mode`; `published_version_id`
   aun usa la FK simple `ecommerce_site_documents_published_version_id_fkey`.
 - `ecommerce_site_versions` no tiene la unique compuesta `(portal_id, id)` ni
@@ -433,14 +452,14 @@ Verificacion remota posterior, solo lectura, sin aplicar cambios:
   trigger de `TRUNCATE`.
 - Las RPC publicas existen con sus firmas anteriores; el listado de versiones
   aun usa cuatro argumentos.
-- `anon` y `authenticated` no tienen grants directos sobre las tablas. El
-  estado remoto actual de `service_role` conserva privilegios amplios hasta que
-  se aplique el hardening.
+- `anon` y `authenticated` no tenían grants directos en aquel snapshot. El
+  `service_role` amplio de entonces fue reemplazado por los grants mínimos
+  verificados después de aplicar el hardening.
 - Conteo remoto actual: `documents=0`, `broken_pointers=0`,
   `cross_portal_pointers=0`.
 
-Estado de este reintento: **BLOCKED** por drift historico global del checkout,
-no por un error sintactico evidente de la migracion. No hubo `db push`,
+Estado histórico de este reintento: **BLOCKED** por drift histórico global del
+checkout, no por un error sintáctico evidente de la migración. No hubo `db push`,
 `migration repair`, `db pull`, `db reset`, inserciones de prueba, escrituras
 manuales ni cambios en `main`.
 
@@ -484,4 +503,48 @@ ejecucion concreta. El drift historico global permanece como trabajo separado.
 - Commit documental que cerro este reporte y quedo en remoto: `8393ddc`.
 - Push confirmado exclusivamente a `origin/fase-ecom-portal-builder-1`.
 
-Estado de esta ejecucion: **PASS**.
+Estado de la aplicacion MCP documentada en esta seccion: **PASS**. La revision
+final vigente se encuentra en la seccion 17.
+
+## 17. Revision final posterior a la aplicacion (2026-07-21)
+
+Esta es la fuente vigente para el estado del PR. Las secciones 9, 13 y 15
+conservan resultados historicos de sesiones anteriores y no describen el estado
+actual de la migracion.
+
+- HEAD revisado: `ba7d2ca71105cf07f9a5c6425c6083eed7a6024f`; rama limpia y alineada
+  con `origin/fase-ecom-portal-builder-1`.
+- Migracion remota: una sola fila `20260721113522 |
+  ecom_portal_builder_foundation_hardening`; no se volvio a ejecutar.
+- El archivo local final conserva SHA-256
+  `b5dec5bc6f3b6682142eebe47b265f11e67349be8bf81a4b4cf082113b6f10ed`.
+- Verificaciones remotas de esquema, FK, unique, triggers, RPC, grants,
+  ausencia de borrador publico y conteos: PASS; `documents=0`, `versions=0`,
+  `cross_portal_pointers=0`.
+- Pruebas focalizadas aisladas con `--pool=forks --maxWorkers=1`: Renderer
+  `5/5 PASS`, servicio publico `3/3 PASS`, `PublicStorePage` `1/1 PASS`.
+  Las pruebas adicionales de documento, Foundation y servicio Builder fueron
+  `23/23 PASS`.
+- Una ejecucion combinada de las suites publicas produjo un timeout de
+  `PublicStorePage` por contencion de IndexedDB (mensaje de Dexie sobre otra
+  conexion); la ejecucion aislada reproducible paso. No se cuenta el timeout
+  combinado como PASS.
+- `npm run build`: PASS, 3,369 modulos. `npm run build:store`: PASS, 1,822
+  modulos. Ambos conservaron advertencias no bloqueantes de chunking/PWA y
+  `baseline-browser-mapping`.
+- `npm run lint`: FAIL global, `159 errores / 224 warnings`, en deuda historica
+  fuera del diff. ESLint directo sobre los archivos de implementacion y tests
+  modificados: PASS; solo quedo la advertencia informativa de Baseline.
+- `npm run test:ci` no se volvio a ejecutar: el resultado historico conocido es
+  timeout/proceso incompleto y no se declara PASS. La suite SQL transaccional
+  no se ejecuto contra produccion ni contra una base aislada en esta tarea.
+- `git diff --check origin/main...HEAD`: PASS. El diff contiene 27 archivos,
+  sin migraciones duplicadas ni cambios fuera del alcance ECOM.PORTAL.BUILDER.1.
+- El PR #123 permanece `OPEN`, `draft=true`, `mergedAt=null`, `autoMergeRequest=null`,
+  con base `main`. No se marca ready.
+
+Estado vigente: **PARTIAL** para la revision completa del PR: la migracion,
+verificaciones remotas, pruebas focalizadas aisladas y builds estan en PASS;
+lint/test:ci globales y la suite SQL aislada permanecen como validaciones no
+concluyentes o deuda tecnica separada. No hay un bloqueante funcional remoto
+confirmado en la migracion aplicada.
