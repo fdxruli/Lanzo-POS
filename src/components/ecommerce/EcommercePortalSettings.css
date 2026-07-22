@@ -281,15 +281,6 @@
 .ecom-builder-preview-frame { width: 100%; margin-inline: auto; overflow: hidden; border: 1px solid var(--border-color); border-radius: 14px; background: var(--card-background-color); transition: max-width .2s ease; }
 .ecom-builder-preview-frame.is-mobile { max-width: 390px; }
 .ecom-builder-preview-inert { min-height: 0; color: var(--ui-text, #0f172a); background: var(--ui-bg-page, #f8fafc); pointer-events: none; user-select: none; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="grid"] .public-catalog__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="grid"] .public-product-card { grid-template-columns: 1fr; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="grid"] .public-product-card__image { height: 10rem; min-height: 10rem; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="compact"] .public-catalog__grid { grid-template-columns: 1fr; gap: .55rem; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="compact"] .public-product-card { grid-template-columns: 6rem minmax(0, 1fr); min-height: 7rem; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="compact"] .public-product-card__image { height: 100%; min-height: 7rem; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="compact"] .public-product-card__body { gap: .4rem; padding: .65rem; }
-.ecom-builder-preview-inert [data-site-section="catalog"][data-site-layout="compact"] .public-product-card__description { display: none; }
-.ecom-builder-preview-frame.is-mobile .ecom-builder-preview-inert [data-site-section="catalog"] .public-catalog__grid { grid-template-columns: 1fr; }
 .ecom-builder-actions { justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color); }
 .ecom-builder-actions > span { margin-right: auto; }
 .ecom-builder-version-list { display: grid; gap: .65rem; }
