@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { normalizeEcommerceSiteDocument } from '../../utils/ecommerceSiteDocument';
 
 export const ECOMMERCE_PUBLIC_CACHE_DB_NAME = 'lanzo-public-store-cache';
 export const ECOMMERCE_PUBLIC_CACHE_SCHEMA_VERSION = 2;
@@ -189,10 +190,19 @@ const sanitizePortalResult = (result) => {
   const portal = sanitizePublicPortal(source.portal);
   const catalogRevision = asRevision(source.catalogRevision);
   if (!portal || !catalogRevision) return null;
+  const rawSite = isRecord(source.site) ? source.site : {};
+  const siteVersionNumber = asRevision(rawSite.versionNumber);
   return {
     portal, hours: sanitizePublicHours(source.hours), availability: sanitizePublicAvailability(source.availability),
     features: sanitizePublicFeatures(source.features), catalogRevision,
-    cachePolicy: normalizeCachePolicy(source.cachePolicy)
+    cachePolicy: normalizeCachePolicy(source.cachePolicy),
+    site: {
+      schemaVersion: 1,
+      versionId: trimText(rawSite.versionId, 80),
+      versionNumber: siteVersionNumber,
+      documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
+      document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: portal.templateCode })
+    }
   };
 };
 
@@ -254,7 +264,7 @@ export const createEcommercePublicCatalogCache = ({ database = defaultDatabase, 
     const normalizedSlug = asText(slug).toLowerCase(); const safeResult = sanitizePortalResult(result);
     if (!normalizedSlug || !safeResult || safeResult.portal.slug !== normalizedSlug) return false;
     await ensureOpen(); const createdAt = now();
-    await database.table('portals').put({ slug: normalizedSlug, catalogRevision: safeResult.catalogRevision, schemaVersion: ECOMMERCE_PUBLIC_CACHE_SCHEMA_VERSION, result: safeResult, createdAt, lastAccess: createdAt }); return true;
+    await database.table('portals').put({ slug: normalizedSlug, catalogRevision: safeResult.catalogRevision, siteVersionId: safeResult.site.versionId || null, siteVersionNumber: safeResult.site.versionNumber || null, schemaVersion: ECOMMERCE_PUBLIC_CACHE_SCHEMA_VERSION, result: safeResult, createdAt, lastAccess: createdAt }); return true;
   };
   const deleteObsoleteRevisions = async ({ slug, keepRevision }) => {
     const normalizedSlug = asText(slug).toLowerCase(); const revision = asRevision(keepRevision); if (!normalizedSlug || !revision) return 0; await ensureOpen();

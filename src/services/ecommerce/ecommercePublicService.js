@@ -14,6 +14,22 @@ const asObject = (value) => (
 );
 const asText = (value) => (typeof value === 'string' ? value.trim() : '');
 
+function normalizePublicSiteVersionIdentity(result) {
+  const source = asObject(result);
+  const site = asObject(source.site);
+  if (!Object.prototype.hasOwnProperty.call(source, 'site')) return result;
+  return {
+    ...source,
+    site: {
+      ...site,
+      versionId: asText(site.versionId) || null,
+      versionNumber: Number.isSafeInteger(Number(site.versionNumber)) && Number(site.versionNumber) > 0
+        ? Number(site.versionNumber)
+        : null
+    }
+  };
+}
+
 function restoreConfiguredLineKey(item) {
   const line = asObject(item);
   const nestedLine = asObject(line.configurationLine || line.product?.configurationLine);
@@ -44,6 +60,9 @@ export function createEcommercePublicService(client, options) {
   const service = createBaseEcommercePublicService(client, options);
   return {
     ...service,
+    getPublicPortalBySlug: async (...args) => normalizePublicSiteVersionIdentity(
+      await service.getPublicPortalBySlug(...args)
+    ),
     createPublicOrder: (slug, payload) => (
       service.createPublicOrder(slug, restoreConfiguredOrderPayload(payload))
     )
@@ -52,11 +71,15 @@ export function createEcommercePublicService(client, options) {
 
 const defaultService = createEcommercePublicService();
 
+export const getPublicPortalBySlug = (slug, options) => (
+  defaultService.getPublicPortalBySlug(slug, options)
+);
 export const createPublicOrder = (slug, payload) => (
   defaultService.createPublicOrder(slug, payload)
 );
 
 export const ecommerceCheckoutNormalizationInternals = Object.freeze({
+  normalizePublicSiteVersionIdentity,
   restoreConfiguredLineKey,
   restoreConfiguredOrderPayload
 });

@@ -10,6 +10,7 @@ import {
   canonicalizeEcommerceSelections,
   normalizePublicProductConfiguration
 } from '../../utils/ecommerceConfiguredProduct';
+import { normalizeEcommerceSiteDocument } from '../../utils/ecommerceSiteDocument';
 
 const PUBLIC_RPC_TIMEOUT_MS = 12_000;
 const DEFAULT_CURRENCY = 'MXN';
@@ -239,6 +240,8 @@ function normalizePortalResult(data) {
     stockMode: asText(portal.stockMode, 'hidden'),
     settings: asObject(portal.settings)
   };
+  const rawSite = asObject(data.site);
+  const siteVersionNumber = asRevision(rawSite.versionNumber);
   return {
     portal: normalizedPortal,
     hours: {
@@ -252,7 +255,14 @@ function normalizePortalResult(data) {
       Object.prototype.hasOwnProperty.call(data, 'availability')
     ),
     catalogRevision: asRevision(data.catalogRevision),
-    cachePolicy: normalizeCachePolicy(data.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY)
+    cachePolicy: normalizeCachePolicy(data.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY),
+    site: {
+      schemaVersion: 1,
+      versionId: asText(rawSite.versionId),
+      versionNumber: siteVersionNumber,
+      documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
+      document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: normalizedPortal.templateCode })
+    }
   };
 }
 
