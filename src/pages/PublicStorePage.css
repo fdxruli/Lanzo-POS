@@ -18,31 +18,34 @@ body:has(.public-store-shell) {
   min-height: 100%;
 }
 
-.public-store-shell {
+.ecommerce-site-surface {
   --ui-color-primary: var(--store-primary, #0284c7);
   --ui-color-primary-hover: var(--store-primary-hover, #0369a1);
   --ui-color-secondary: var(--store-secondary, #0369a1);
   font-family: var(--store-font-family, system-ui, sans-serif);
   width: 100%;
   min-width: 0;
-  min-height: 100vh;
-  min-height: 100dvh;
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--ui-color-primary) 10%, transparent), transparent 34rem),
     var(--ui-bg-page);
   color: var(--ui-text);
+}
+
+.public-store-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
   padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
 }
 
-.public-store-shell .ui-button--primary,
-.public-store-shell .public-cart-bar__button,
-.public-store-shell .public-product-card__add {
+.ecommerce-site-surface .ui-button--primary,
+.ecommerce-site-surface .public-product-card__add,
+.public-store-shell .public-cart-bar__button {
   border-radius: var(--store-radius-button, 0.75rem);
   background-color: var(--store-primary, #0284c7);
   color: var(--store-on-primary, #fff);
 }
 
-.public-store-shell .public-product-card,
+.ecommerce-site-surface .public-product-card,
 .public-store-shell .public-cart-drawer,
 .public-store-shell .public-checkout-dialog {
   border-radius: var(--store-radius-card, 1rem);
@@ -54,15 +57,15 @@ body:has(.public-store-shell) {
   padding: 1.25rem;
 }
 
-.public-store-shell *,
-.public-store-shell *::before,
-.public-store-shell *::after {
+.ecommerce-site-surface *,
+.ecommerce-site-surface *::before,
+.ecommerce-site-surface *::after {
   box-sizing: border-box;
 }
 
-.public-store-shell button,
-.public-store-shell input,
-.public-store-shell select {
+.ecommerce-site-surface button,
+.ecommerce-site-surface input,
+.ecommerce-site-surface select {
   font: inherit;
 }
 
@@ -73,7 +76,7 @@ body:has(.public-store-shell) {
   outline-offset: 2px;
 }
 
-.public-store-shell .sr-only {
+.ecommerce-site-surface .sr-only {
   position: absolute;
   width: 1px;
   height: 1px;

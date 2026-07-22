@@ -712,7 +712,7 @@ function PublicStorePage() {
 
   if (storeStatus === 'loading') {
     return (
-      <main className="public-store-shell public-store-shell--centered">
+      <main className="public-store-shell ecommerce-site-surface public-store-shell--centered">
         <PublicStoreState
           type="loading"
           title="Cargando tienda..."
@@ -724,7 +724,7 @@ function PublicStorePage() {
 
   if (storeStatus === 'unavailable') {
     return (
-      <main className="public-store-shell public-store-shell--centered">
+      <main className="public-store-shell ecommerce-site-surface public-store-shell--centered">
         <PublicStoreState
           type="unavailable"
           title="Esta tienda no está disponible"
@@ -736,7 +736,7 @@ function PublicStorePage() {
 
   if (storeStatus === 'error' || !portal) {
     return (
-      <main className="public-store-shell public-store-shell--centered">
+      <main className="public-store-shell ecommerce-site-surface public-store-shell--centered">
         <PublicStoreState
           type="error"
           title="No se pudo cargar la tienda"
