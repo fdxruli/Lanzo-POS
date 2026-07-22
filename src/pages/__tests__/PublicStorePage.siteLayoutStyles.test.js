@@ -93,4 +93,52 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPreviewStyles).not.toContain('min-height: 100vh');
     expect(normalizedPreviewStyles).not.toContain('min-height: 100dvh');
   });
+
+  it('bridges portal theme variables through the neutral visual surface', () => {
+    const surfaceRule = normalizedPublicStyles.match(/\.ecommerce-site-surface \{(.*?)\}/)?.[1] || '';
+    expect(surfaceRule).toContain('--ui-color-primary: var(--store-primary, #0284c7)');
+    expect(surfaceRule).toContain('--ui-color-primary-hover: var(--store-primary-hover, #0369a1)');
+    expect(surfaceRule).toContain('--ui-color-secondary: var(--store-secondary, #0369a1)');
+    expect(surfaceRule).toContain('font-family: var(--store-font-family, system-ui, sans-serif)');
+    expect(surfaceRule).toContain('background: radial-gradient');
+    expect(surfaceRule).toContain('color: var(--ui-text)');
+    expect(surfaceRule).not.toContain('min-height: 100vh');
+    expect(surfaceRule).not.toContain('min-height: 100dvh');
+    expect(surfaceRule).not.toContain('padding-bottom: calc(6.5rem');
+  });
+
+  it('shares themed product and control visuals without exposing checkout chrome', () => {
+    expect(normalizedPublicStyles).toContain(
+      '.ecommerce-site-surface .ui-button--primary, .ecommerce-site-surface .public-product-card__add'
+    );
+    expect(normalizedPublicStyles).toContain(
+      'border-radius: var(--store-radius-button, 0.75rem)'
+    );
+    expect(normalizedPublicStyles).toContain(
+      'background-color: var(--store-primary, #0284c7)'
+    );
+    expect(normalizedPublicStyles).toContain(
+      'color: var(--store-on-primary, #fff)'
+    );
+    expect(normalizedPublicStyles).toContain(
+      '.ecommerce-site-surface .public-product-card, .public-store-shell .public-cart-drawer'
+    );
+    expect(normalizedPublicStyles).not.toContain(
+      '.ecommerce-site-surface .public-cart-drawer'
+    );
+    expect(normalizedPublicStyles).not.toContain(
+      '.ecommerce-site-surface .public-checkout-dialog'
+    );
+  });
+
+  it('shares box sizing and inherited control fonts without preview-only theme rules', () => {
+    expect(normalizedPublicStyles).toContain(
+      '.ecommerce-site-surface *, .ecommerce-site-surface *::before, .ecommerce-site-surface *::after'
+    );
+    expect(normalizedPublicStyles).toContain(
+      '.ecommerce-site-surface button, .ecommerce-site-surface input, .ecommerce-site-surface select'
+    );
+    expect(normalizedPreviewStyles).not.toMatch(/ecom-builder-preview-inert.*--store-/);
+    expect(normalizedPreviewStyles).not.toMatch(/ecom-builder-preview-inert.*--ui-color-/);
+  });
 });
