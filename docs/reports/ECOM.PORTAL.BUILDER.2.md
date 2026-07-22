@@ -147,7 +147,7 @@ No se creó ni modificó archivo Supabase, migración o RPC. No se modificó `ma
 
 El documento v1 ya entregaba `data-site-density` y `data-site-layout`, pero los únicos estilos funcionales de `grid` y `compact` estaban restringidos a `.ecom-builder-preview-inert`. La tienda pública ignoraba esos valores y los selectores de `data-template-code` podían modificar portada, contenido y gaps aunque una versión publicada congelara otros layouts.
 
-Los estilos funcionales se centralizaron en `PublicStorePage.css`. La preview ahora adopta la misma envoltura `public-store-shell`, importa esa hoja pública y usa el mismo `EcommerceSiteRenderer` y `PublicCatalog`. `EcommercePortalSettings.css` conserva únicamente el marco, tamaño del viewport e inercia administrativa; se eliminaron todas sus reglas exclusivas de layout.
+Los estilos funcionales se centralizaron en `PublicStorePage.css`. La preview importa esa hoja pública y usa el mismo `EcommerceSiteRenderer` y `PublicCatalog`. `EcommercePortalSettings.css` conserva únicamente el marco, tamaño del viewport e inercia administrativa; se eliminaron todas sus reglas exclusivas de layout.
 
 ### Efectos del documento v1
 
@@ -173,3 +173,35 @@ Se retiraron los selectores de layout basados en `data-template-code`. El templa
 - `npm run test:ci`: FAIL/incompleto por deuda ajena. Reprodujo fallos en carreras de inventario ecommerce, fixtures Dexie, fulfillment, navegación móvil, store de órdenes y single-flight de checkout. Se detuvo después de confirmar los fallos; las suites de Builder.1/2 ejecutadas dentro de la corrida continuaron en PASS.
 
 No se modificó Supabase, migración o RPC. Esta corrección no modifica `main`, no publica, no hace merge ni cambia el estado draft del PR #124.
+
+## 15. Aislamiento entre superficie visual y shell público
+
+### Causa del escape global
+
+La reutilización inicial añadió `public-store-shell` al contenedor de la preview. Esa clase también es la condición de los selectores globales `html:has(...)`, `body:has(...)` y `#root:has(...)`, y aplica altura de viewport y separación inferior para el carrito. Por tanto, abrir Builder podía desbloquear el scroll y alterar el app shell administrativo aunque los estilos funcionales del documento fueran correctos.
+
+### Separación implementada
+
+Se añadió la clase neutral `ecommerce-site-surface`. La tienda pública cargada contiene `public-store-shell ecommerce-site-surface`; mantiene así scroll, altura, padding de carrito y el resto del comportamiento de página completa. Los estados públicos existentes conservan sus variantes de `public-store-shell` sin cambios.
+
+La preview contiene únicamente `ecommerce-site-surface ecom-builder-preview-inert`: no existe `public-store-shell` en ninguno de sus descendientes y, por ello, no puede activar semánticamente los selectores globales del documento público.
+
+Todos los selectores compartidos de tokens de densidad, espacios, header default/showcase, catálogo grid/compact y container query móvil dependen ahora de `.ecommerce-site-surface .ecommerce-site-renderer`. Las reglas globales, altura mínima, padding de carrito y comportamiento del documento permanecen exclusivamente bajo `.public-store-shell`. No se duplicó CSS funcional en `EcommercePortalSettings.css`.
+
+### Pruebas y resultados
+
+- La preview no contiene `.public-store-shell` y sí contiene `.ecommerce-site-surface`.
+- La tienda pública cargada contiene ambas clases.
+- Una prueba de contrato inspecciona todos los selectores del renderer compartido y exige el scope neutral.
+- Los selectores `html/body/#root :has()` sólo aceptan `.public-store-shell`.
+- Se preservan `100vh`, `100dvh` y el padding inferior del carrito exclusivamente en el shell público.
+- Densidad, layouts y container query móvil conservan sus pruebas visuales/estructurales.
+- Regresión focal Builder.1/2: 10 archivos, 62/62 PASS.
+- ESLint focalizado y `git diff --check`: PASS.
+- React Doctor: 84/100, sin errores; un único aviso preexistente sobre los múltiples estados de `PublicStorePage`, fuera del alcance.
+- `npm run build`: PASS, 3,375 módulos y service worker; sólo advertencias heredadas.
+- `npm run build:store`: PASS, 1,822 módulos; sólo el chunk vacío heredado.
+- `npm run lint`: inconcluso tras dos minutos sin diagnósticos adicionales.
+- Suite global con `--bail=1`: FAIL fuera del alcance; 53 pruebas pasaron antes de dos fallos de prueba y dos suites de entorno en inventario POS, IndexedDB, ErrorBoundary y bootstrap Dexie.
+
+No se modificó Supabase, migración o RPC. No se modificó `main`, no se hizo merge, no se activó auto-merge y el PR #124 debe permanecer abierto y draft.
