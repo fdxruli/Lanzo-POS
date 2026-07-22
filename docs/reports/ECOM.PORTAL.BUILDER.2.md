@@ -107,3 +107,36 @@ No se usaron datos reales ni credenciales de una cuenta Pro/Free. Quedan pendien
 No se agregó ni modificó migración, RPC o archivo Supabase. No se ejecutó Docker, `db push`, `db pull`, `migration repair`, `db reset`, `migration up` ni `apply_migration`. La solución usa exclusivamente los contratos de Builder.1.
 
 No se modificó `main`, no se hizo merge, no se activó auto-merge y no se realizó despliegue manual. El PR debe permanecer draft.
+
+## 13. Corrección de bloqueantes residuales del PR #124
+
+### Catálogo visible e inerte
+
+La causa era que la preview entregaba arreglos vacíos a `PublicCatalog`, que retornaba antes de renderizar herramientas y tarjetas. `EcommercePortalSettings` ahora pasa sus productos ya cargados, sin otra RPC. El helper puro `ecommerceSiteBuilderPreview` selecciona como máximo seis productos publicados y conserva únicamente campos visuales; excluye referencias locales, metadata y demás datos internos.
+
+Si no existen productos publicados, se crean en memoria tres ejemplos determinísticos, identificados mediante nombres y categorías de “contenido de ejemplo”. Nunca se guardan en store, IndexedDB, Supabase ni el documento del sitio. La preview usa el catálogo/renderer reales, deriva categorías y reutiliza el tema público. Los callbacks son no-op, las configuraciones se neutralizan para no abrir el modal real y todo el contenido permanece bajo `inert`. Se añadieron estilos administrativos específicos para diferenciar grid y compact, incluyendo el contenedor móvil.
+
+### Carga estable ante cambios del portal
+
+La pérdida local ocurría porque `applyRemoteState` dependía de `portal.templateCode`, cambiaba la identidad de `load` y reejecutaba el efecto inicial. La plantilla más reciente y el indicador de cambios locales ahora se actualizan mediante refs en efectos; `applyRemoteState` y `load` permanecen estables. Cambios de plantilla, tema, logo, portada o nombre actualizan la preview sin consultar ni reemplazar el borrador. “Restablecer diseño base” sí consume la plantilla más reciente. Solo un cambio real de `portal.id` puede iniciar otra carga y, si hay cambios locales, exige confirmación.
+
+### Ventana de concurrencia
+
+Publicación y restauración conservan `operationRef`, `publishing` o `restoringVersionId` hasta finalizar la recarga posterior, y limpian las guardas en `finally`. Una mutación exitosa seguida de fallo de refresco no se repite ni se presenta como fallo de la mutación: informa que el sitio fue publicado/restaurado y solicita pulsar Actualizar.
+
+### Pruebas y validación posteriores
+
+- Builder Foundation: 13/13 PASS.
+- Preview real con `PublicCatalog`: 4/4 PASS.
+- Adaptador de productos: 2/2 PASS.
+- Regresiones Builder.1/2 restantes: 8 archivos, 40/40 PASS.
+- Total focalizado: 9 archivos, 53/53 PASS.
+- ESLint focalizado JS/JSX: PASS; solo aviso informativo de `baseline-browser-mapping`.
+- `git diff --check`: PASS.
+- React Doctor: 91/100, sin errores; queda una sugerencia previa de convertir el estado amplio de `EcommercePortalSettings` a reducer, fuera del alcance.
+- `npm run build`: PASS, 3,375 módulos y service worker; advertencias heredadas de imports mixtos, chunk vacío y glob PWA.
+- `npm run build:store`: PASS, 1,822 módulos.
+- `npm run lint`: inconcluso; se interrumpió tras dos minutos sin diagnóstico. No se declara PASS.
+- `npm run test:ci`: FAIL/incompleto fuera del alcance. Reprodujo los dos fallos de carrera conocidos de `ecommercePosInventoryResolution.test.js` y doce fallos de fixture Dexie en `motorInvariante.test.js`; se interrumpió con 14 fallos y 92 pruebas aprobadas de 235 archivos pendientes.
+
+No se creó ni modificó archivo Supabase, migración o RPC. No se modificó `main`, no se hizo merge, no se activó auto-merge y el PR #124 debe continuar abierto y draft.
