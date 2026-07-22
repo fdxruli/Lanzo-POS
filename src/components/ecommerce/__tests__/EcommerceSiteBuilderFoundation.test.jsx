@@ -21,7 +21,12 @@ const builder = (overrides = {}) => ({
   hasUnpublishedChanges: false,
   ...overrides
 });
-const portal = { name: 'Tienda', slug: 'tienda', templateCode: 'classic', pickupEnabled: true, deliveryEnabled: false };
+const portal = { id: 'portal-1', name: 'Tienda', slug: 'tienda', templateCode: 'classic', pickupEnabled: true, deliveryEnabled: false };
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((next) => { resolve = next; });
+  return { promise, resolve };
+};
 
 describe('EcommerceSiteBuilderFoundation', () => {
   afterEach(cleanup);
@@ -135,5 +140,63 @@ describe('EcommerceSiteBuilderFoundation', () => {
     await waitFor(() => expect(mocks.listSiteVersions).toHaveBeenCalledWith({ limit: 20, offset: 1 }));
     cleanup();
     expect(remove).toHaveBeenCalledWith('beforeunload', expect.any(Function));
+  });
+
+  it('preserves local changes across template and branding updates, then resets with the latest template', async () => {
+    const { rerender } = render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    await screen.findByText('Guardar borrador');
+    fireEvent.click(screen.getByText('Compacta'));
+    rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase' }} />);
+    rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase', logoUrl: 'logo-new.png', theme: { primaryColor: '#112233' } }} />);
+    expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
+    expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
+    fireEvent.click(screen.getByText('Restablecer diseño base'));
+    expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"showcase"');
+    expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps publication blocked through reconciliation and does not duplicate the mutation', async () => {
+    const reconciliation = deferred();
+    mocks.getSiteBuilderState.mockResolvedValueOnce(builder()).mockReturnValueOnce(reconciliation.promise);
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    const publishButton = await screen.findByText('Publicar');
+    fireEvent.click(publishButton);
+    await waitFor(() => expect(mocks.publishSiteDraft).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Publicando…')).toBeTruthy();
+    fireEvent.click(publishButton);
+    expect(mocks.publishSiteDraft).toHaveBeenCalledTimes(1);
+    reconciliation.resolve(builder({ hasUnpublishedChanges: false }));
+    await screen.findByText('Publicar');
+  });
+
+  it('keeps restoration blocked through reconciliation and does not duplicate the mutation', async () => {
+    const reconciliation = deferred();
+    mocks.getSiteBuilderState.mockResolvedValueOnce(builder()).mockReturnValueOnce(reconciliation.promise);
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    const restoreButton = await screen.findByText('Restaurar v1');
+    fireEvent.click(restoreButton);
+    await waitFor(() => expect(mocks.restoreSiteVersion).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Restaurando…')).toBeTruthy();
+    fireEvent.click(restoreButton);
+    expect(mocks.restoreSiteVersion).toHaveBeenCalledTimes(1);
+    reconciliation.resolve(builder());
+    await screen.findByText('Restaurar v1');
+  });
+
+  it('reports successful publication separately when its refresh fails', async () => {
+    mocks.getSiteBuilderState.mockResolvedValueOnce(builder()).mockResolvedValueOnce({ success: false, message: 'refresh failed' });
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    fireEvent.click(await screen.findByText('Publicar'));
+    await waitFor(() => expect(mocks.error).toHaveBeenCalledWith('El sitio se publicó, pero no se pudo actualizar el panel. Pulsa Actualizar.'));
+    expect(mocks.publishSiteDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports successful restoration separately when its refresh fails', async () => {
+    mocks.getSiteBuilderState.mockResolvedValueOnce(builder()).mockResolvedValueOnce({ success: false, message: 'refresh failed' });
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    fireEvent.click(await screen.findByText('Restaurar v1'));
+    await waitFor(() => expect(mocks.error).toHaveBeenCalledWith('La versión se restauró como borrador, pero no se pudo actualizar el panel. Pulsa Actualizar.'));
+    expect(mocks.restoreSiteVersion).toHaveBeenCalledTimes(1);
   });
 });
