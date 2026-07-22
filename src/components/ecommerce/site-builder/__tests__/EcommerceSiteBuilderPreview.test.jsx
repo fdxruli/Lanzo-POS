@@ -33,7 +33,9 @@ describe('EcommerceSiteBuilderPreview', () => {
     expect(screen.getByRole('searchbox', { name: 'Buscar productos' })).toBeTruthy();
     expect(screen.getByRole('combobox', { name: 'Filtrar por categoría' })).toBeTruthy();
     expect(container.querySelector('[data-site-section="catalog"][data-site-layout="grid"]')).toBeTruthy();
+    expect(container.querySelector('.ecom-builder-preview-inert')).toHaveClass('public-store-shell');
     expect(container.querySelector('.ecom-builder-preview-inert')).toHaveAttribute('inert');
+    expect(container.querySelector('.ecommerce-site-renderer')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Agregar Café publicado' }));
     expect(dispatch).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
