@@ -10,6 +10,7 @@ const previewStyles = readFileSync(
 const compactWhitespace = (value) => value.replace(/\s+/g, ' ');
 const normalizedPublicStyles = compactWhitespace(publicStyles);
 const normalizedPreviewStyles = compactWhitespace(previewStyles);
+const sharedRendererSelectors = publicStyles.match(/^[^\n{]*\.ecommerce-site-renderer[^\n{]*\{/gm) || [];
 
 describe('public ecommerce site layout styles', () => {
   it('defines visibly different comfortable and compact density tokens', () => {
@@ -62,5 +63,34 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPreviewStyles).not.toMatch(/is-mobile.*public-catalog__grid/);
     expect(normalizedPublicStyles).not.toMatch(/data-template-code=.*public-catalog__grid/);
     expect(normalizedPublicStyles).not.toMatch(/data-template-code=.*public-store-header/);
+  });
+
+  it('scopes every shared renderer rule to the neutral site surface', () => {
+    expect(sharedRendererSelectors.length).toBeGreaterThan(20);
+    sharedRendererSelectors.forEach((selector) => {
+      expect(selector.trim()).toMatch(/^\.ecommerce-site-surface \.ecommerce-site-renderer/);
+      expect(selector).not.toContain('.public-store-shell');
+    });
+  });
+
+  it('keeps document-level escape rules exclusive to the public shell', () => {
+    expect(normalizedPublicStyles).toContain(
+      'html:has(.public-store-shell), body:has(.public-store-shell) {'
+    );
+    expect(normalizedPublicStyles).toContain('#root:has(.public-store-shell) {');
+    expect(normalizedPublicStyles).not.toMatch(
+      /(?:html|body|#root):has\(\.ecommerce-site-surface\)/
+    );
+  });
+
+  it('preserves viewport height and cart clearance on the public page shell only', () => {
+    const publicShellRule = normalizedPublicStyles.match(/\.public-store-shell \{(.*?)\}/)?.[1] || '';
+    expect(publicShellRule).toContain('min-height: 100vh');
+    expect(publicShellRule).toContain('min-height: 100dvh');
+    expect(publicShellRule).toContain(
+      'padding-bottom: calc(6.5rem + env(safe-area-inset-bottom))'
+    );
+    expect(normalizedPreviewStyles).not.toContain('min-height: 100vh');
+    expect(normalizedPreviewStyles).not.toContain('min-height: 100dvh');
   });
 });
