@@ -205,3 +205,33 @@ Todos los selectores compartidos de tokens de densidad, espacios, header default
 - Suite global con `--bail=1`: FAIL fuera del alcance; 53 pruebas pasaron antes de dos fallos de prueba y dos suites de entorno en inventario POS, IndexedDB, ErrorBoundary y bootstrap Dexie.
 
 No se modificó Supabase, migración o RPC. No se modificó `main`, no se hizo merge, no se activó auto-merge y el PR #124 debe permanecer abierto y draft.
+
+## 16. Fidelidad temática de la superficie neutral
+
+### Causa de la pérdida de branding
+
+El aislamiento de la preview retiró correctamente `public-store-shell`, pero el puente entre los tokens inline `--store-*` y las variables consumidas por los componentes `--ui-*` seguía definido únicamente en esa clase pública. La preview conservaba los valores del tema sin aplicarlos a colores, tipografía, radios y botones del renderer real.
+
+### Puente visual compartido
+
+La clase `ecommerce-site-surface` contiene ahora exclusivamente la presentación compartida: mapeo de color primario/hover/secundario, tipografía, ancho, fondo, color de texto, box sizing, herencia tipográfica de controles, accesibilidad visual `sr-only`, branding de botones/productos y radio de tarjetas.
+
+Los componentes que no aparecen en la preview permanecen aislados: cart bar, drawer y checkout siguen dependiendo de `public-store-shell`. Esa clase también conserva en exclusiva `100vh`, `100dvh`, padding inferior del carrito, scroll global y selectores `html/body/#root :has()`.
+
+La tienda pública, incluidos sus estados de carga, error y no disponible, combina `public-store-shell ecommerce-site-surface`. La preview continúa usando únicamente `ecommerce-site-surface ecom-builder-preview-inert`, por lo que sus tokens inline no escapan al app shell administrativo.
+
+### Pruebas y resultados
+
+- Tema de referencia verificado: `#14532d`, `#166534`, tipografía editorial y radios cuadrados llegan como tokens inline a la superficie de preview.
+- Contrato CSS verifica el puente `--store-*` → `--ui-*`, fondo, texto, tipografía, botones, tarjetas, box sizing y controles.
+- Checkout/drawer no forman parte de la superficie compartida y no existen reglas temáticas exclusivas bajo `.ecom-builder-preview-inert`.
+- Aislamiento global, densidad, layouts, container query, catálogo, Builder Foundation y precedencia del documento permanecen cubiertos.
+- Regresión focal Builder.1/2: 10 archivos, 65/65 PASS.
+- ESLint focalizado y `git diff --check`: PASS.
+- React Doctor: 84/100, sin errores; conserva un aviso preexistente sobre los múltiples estados de `PublicStorePage`.
+- `npm run build`: PASS, 3,375 módulos y service worker; sólo advertencias heredadas.
+- `npm run build:store`: PASS, 1,822 módulos; sólo el chunk vacío heredado.
+- `npm run lint`: inconcluso tras dos minutos sin diagnósticos adicionales.
+- Suite global con `--bail=1`: FAIL fuera del alcance; 53 pruebas pasaron antes de una carrera de inventario y dos fallos de entorno en ErrorBoundary/bootstrap Dexie.
+
+No se modificó Supabase, migración o RPC. No se modificó `main`, no se hizo merge, no se activó auto-merge y el PR #124 debe permanecer abierto y draft.
