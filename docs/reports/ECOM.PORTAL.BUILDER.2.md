@@ -114,7 +114,7 @@ No se modificó `main`, no se hizo merge, no se activó auto-merge y no se reali
 
 La causa era que la preview entregaba arreglos vacíos a `PublicCatalog`, que retornaba antes de renderizar herramientas y tarjetas. `EcommercePortalSettings` ahora pasa sus productos ya cargados, sin otra RPC. El helper puro `ecommerceSiteBuilderPreview` selecciona como máximo seis productos publicados y conserva únicamente campos visuales; excluye referencias locales, metadata y demás datos internos.
 
-Si no existen productos publicados, se crean en memoria tres ejemplos determinísticos, identificados mediante nombres y categorías de “contenido de ejemplo”. Nunca se guardan en store, IndexedDB, Supabase ni el documento del sitio. La preview usa el catálogo/renderer reales, deriva categorías y reutiliza el tema público. Los callbacks son no-op, las configuraciones se neutralizan para no abrir el modal real y todo el contenido permanece bajo `inert`. Se añadieron estilos administrativos específicos para diferenciar grid y compact, incluyendo el contenedor móvil.
+Si no existen productos publicados, se crean en memoria tres ejemplos determinísticos, identificados mediante nombres y categorías de “contenido de ejemplo”. Nunca se guardan en store, IndexedDB, Supabase ni el documento del sitio. La preview usa el catálogo/renderer reales, deriva categorías y reutiliza el tema público. Los callbacks son no-op, las configuraciones se neutralizan para no abrir el modal real y todo el contenido permanece bajo `inert`.
 
 ### Carga estable ante cambios del portal
 
@@ -140,3 +140,36 @@ Publicación y restauración conservan `operationRef`, `publishing` o `restoring
 - `npm run test:ci`: FAIL/incompleto fuera del alcance. Reprodujo los dos fallos de carrera conocidos de `ecommercePosInventoryResolution.test.js` y doce fallos de fixture Dexie en `motorInvariante.test.js`; se interrumpió con 14 fallos y 92 pruebas aprobadas de 235 archivos pendientes.
 
 No se creó ni modificó archivo Supabase, migración o RPC. No se modificó `main`, no se hizo merge, no se activó auto-merge y el PR #124 debe continuar abierto y draft.
+
+## 14. Corrección del bloqueante visual público residual
+
+### Causa y superficie compartida
+
+El documento v1 ya entregaba `data-site-density` y `data-site-layout`, pero los únicos estilos funcionales de `grid` y `compact` estaban restringidos a `.ecom-builder-preview-inert`. La tienda pública ignoraba esos valores y los selectores de `data-template-code` podían modificar portada, contenido y gaps aunque una versión publicada congelara otros layouts.
+
+Los estilos funcionales se centralizaron en `PublicStorePage.css`. La preview ahora adopta la misma envoltura `public-store-shell`, importa esa hoja pública y usa el mismo `EcommerceSiteRenderer` y `PublicCatalog`. `EcommercePortalSettings.css` conserva únicamente el marco, tamaño del viewport e inercia administrativa; se eliminaron todas sus reglas exclusivas de layout.
+
+### Efectos del documento v1
+
+- `comfortable` y `compact` definen tokens distintos para separación de secciones, catálogo, tarjetas, herramientas y encabezado sin reducir controles ni texto.
+- Header `default` conserva aproximadamente la portada actual; `showcase` amplía portada, ancho de contenido y escala del título.
+- Catálogo `grid` usa tarjetas verticales y columnas automáticas; `compact` usa una columna de tarjetas horizontales, menor altura y descripción oculta.
+- El renderer es un contenedor CSS compartido. La regla móvil del propio sitio fuerza `grid` a una columna según el ancho real de la tienda o del frame de preview, sin selector `.is-mobile` administrativo.
+
+Se retiraron los selectores de layout basados en `data-template-code`. El template sigue creando el preset cuando no existe un documento válido, pero una versión entregada manda mediante `document.global.density` y `section.layout`. Por ello `templateCode=compact` no sustituye `catalog.layout=grid`, `templateCode=showcase` no sustituye `header.layout=default` y cambiar la plantilla después de publicar no altera el documento versionado.
+
+### Pruebas y validación
+
+- Contrato estructural y CSS público: densidades, headers, catálogos, contenedor móvil, ausencia de simulación de preview y ausencia de overrides por template.
+- Renderer: clases estructurales derivadas del documento y precedencia de versión sobre `templateCode`.
+- Preview: misma envoltura, renderer y catálogo públicos, permaneciendo inerte.
+- Regresión focal completa Builder.1/2: 10 archivos, 59/59 PASS.
+- ESLint focalizado: PASS; solo aviso informativo de `baseline-browser-mapping`.
+- `git diff --check`: PASS.
+- React Doctor: 89/100, sin errores. Reporta cuatro avisos no bloqueantes ya existentes en utilidades, estado amplio de configuración y exports auxiliares del renderer.
+- `npm run build`: PASS, 3,375 módulos y service worker; conserva advertencias heredadas de imports mixtos, chunk vacío y glob PWA.
+- `npm run build:store`: PASS, 1,822 módulos; conserva el chunk público vacío heredado de Supabase.
+- `npm run lint`: inconcluso; se detuvo tras dos minutos sin diagnósticos adicionales. ESLint focalizado sí está en PASS.
+- `npm run test:ci`: FAIL/incompleto por deuda ajena. Reprodujo fallos en carreras de inventario ecommerce, fixtures Dexie, fulfillment, navegación móvil, store de órdenes y single-flight de checkout. Se detuvo después de confirmar los fallos; las suites de Builder.1/2 ejecutadas dentro de la corrida continuaron en PASS.
+
+No se modificó Supabase, migración o RPC. Esta corrección no modifica `main`, no publica, no hace merge ni cambia el estado draft del PR #124.
