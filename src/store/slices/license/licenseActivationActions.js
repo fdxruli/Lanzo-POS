@@ -18,6 +18,20 @@ import {
     getStaffLoginMessage
 } from './licenseGuards';
 
+const completeValidLicenseSession = async (set, get, licenseData, profileOptions) => {
+    await saveLicenseToStorage(licenseData);
+
+    set({
+        licenseDetails: licenseData,
+        currentDeviceRole: licenseData.device_role || 'admin',
+        currentStaffUser: licenseData.device_role === 'staff'
+            ? licenseData.staff_user || null
+            : null
+    });
+
+    await get()._loadProfile(licenseData.license_key, profileOptions);
+};
+
 export const createLicenseActivationActions = ({
     set,
     get,
@@ -28,7 +42,11 @@ export const createLicenseActivationActions = ({
             const result = await activateLicense(licenseKey);
 
             if (result.valid) {
-                const licenseDataToSave = { ...result.details, valid: true };
+                const licenseDataToSave = {
+                    ...result.details,
+                    license_key: result.details?.license_key || licenseKey,
+                    valid: true
+                };
 
                 const activatedAsStaffWithoutStaffPlan =
                     licenseDataToSave.device_role === 'staff' &&
@@ -62,7 +80,12 @@ export const createLicenseActivationActions = ({
                     };
                 }
 
-                await saveLicenseToStorage(licenseDataToSave);
+                await completeValidLicenseSession(set, get, licenseDataToSave, {
+                    forceRemote: true,
+                    reason: 'activation'
+                });
+
+                return { success: true };
             }
 
             if (isLicensePlanBlockFailure(result)) {
@@ -143,17 +166,7 @@ export const createLicenseActivationActions = ({
                         valid: true
                     };
 
-                    await saveLicenseToStorage(recoveredData);
-
-                    set({
-                        licenseDetails: recoveredData,
-                        currentDeviceRole: recoveredData.device_role || 'admin',
-                        currentStaffUser: recoveredData.device_role === 'staff'
-                            ? recoveredData.staff_user || null
-                            : null
-                    });
-
-                    await get()._loadProfile(licenseKey);
+                    await completeValidLicenseSession(set, get, recoveredData);
 
                     return { success: true };
                 }
