@@ -743,7 +743,7 @@ export default function EcommercePortalSettings() {
         </section>
       )}
 
-      {portal ? <EcommerceSiteBuilderFoundation isPro={isPro} portal={portal} /> : null}
+      {portal ? <EcommerceSiteBuilderFoundation isPro={isPro} portal={portal} previewProducts={products} /> : null}
 
       {portal ? (
         <div className="ecom-operations-grid">
