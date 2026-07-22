@@ -1,6 +1,7 @@
 import { History } from 'lucide-react';
 
-const formatDate = (value) => value ? new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : null;
+const DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+const formatDate = (value) => value ? DATE_FORMATTER.format(new Date(value)) : null;
 
 export default function EcommerceSiteBuilderHistory({ versions, publishedVersionId, hasMore, loadingMore, restoringVersionId, disabled, onRestore, onLoadMore }) {
   return (
