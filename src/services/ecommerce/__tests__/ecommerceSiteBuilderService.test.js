@@ -19,4 +19,18 @@ describe('ecommerceSiteBuilderService', () => {
     expect(await service.saveSiteDraft({ expectedRevision: 1, document: {} })).toMatchObject({ success: false, code: 'ECOMMERCE_SITE_SCHEMA_UNSUPPORTED' });
     expect(rpc).toHaveBeenCalledTimes(1);
   });
+  it('sends the exact revision and document and exposes only requested RPC flows', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+    const service = createEcommerceSiteBuilderService({ rpc, getContext: vi.fn().mockResolvedValue(context) });
+    const document = createDefaultEcommerceSiteDocument();
+    await service.saveSiteDraft({ expectedRevision: 7, document });
+    expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_save_site_draft', { ...context, p_expected_revision: 7, p_document: document });
+    await service.publishSiteDraft();
+    expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_publish_site', context);
+    await service.restoreSiteVersion('version-id');
+    expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_restore_site_version', { ...context, p_version_id: 'version-id' });
+    await service.getSiteBuilderState();
+    expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_get_site_builder', context);
+    expect(rpc).toHaveBeenCalledTimes(4);
+  });
 });

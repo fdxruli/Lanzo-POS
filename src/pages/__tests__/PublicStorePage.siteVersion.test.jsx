@@ -102,6 +102,7 @@ describe('PublicStorePage published site versions', () => {
 
     await waitFor(() => expect(document.querySelector('.public-store-shell[data-site-version="1"]')).toBeTruthy());
     const shell = document.querySelector('.public-store-shell');
+    expect(shell).toHaveClass('ecommerce-site-surface');
     expect(shell).toHaveAttribute('data-catalog-revision', '7');
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();

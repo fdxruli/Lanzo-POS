@@ -265,13 +265,39 @@
 .ecom-exception-row { display: grid; grid-template-columns: 145px 90px 105px 105px minmax(130px, 1fr) 40px; gap: .5rem; align-items: center; }
 .ecom-pause-form { display: grid; gap: .8rem; }
 
+.ecom-builder-shell { display: grid; gap: 1.25rem; }
+.ecom-builder-main { display: grid; grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr); gap: 1.25rem; align-items: start; }
+.ecom-builder-controls, .ecom-builder-preview, .ecom-builder-history { display: grid; gap: 1rem; min-width: 0; }
+.ecom-builder-controls fieldset { display: grid; gap: .75rem; margin: 0; padding: 1rem; border: 1px solid var(--border-color); border-radius: 12px; }
+.ecom-builder-controls legend { padding: 0 .35rem; font-weight: 800; }
+.ecom-builder-choice-row, .ecom-builder-order-actions, .ecom-builder-actions, .ecom-builder-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.ecom-builder-choice-row [aria-pressed="true"] { color: var(--card-background-color); border-color: var(--primary-color); background: var(--primary-color); }
+.ecom-builder-order-actions { justify-content: flex-end; }
+.ecom-builder-check { display: flex; align-items: center; gap: .55rem; font-weight: 700; }
+.ecom-builder-check input { width: 18px; height: 18px; accent-color: var(--primary-color); }
+.ecom-builder-status { display: flex; flex-wrap: wrap; gap: .65rem; }
+.ecom-builder-status span, .ecom-builder-status strong { display: inline-flex; align-items: center; gap: .35rem; padding: .45rem .7rem; border-radius: 999px; background: var(--light-background); }
+.ecom-builder-status .is-warning, .ecom-builder-status strong { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
+.ecom-builder-preview-frame { width: 100%; margin-inline: auto; overflow: hidden; border: 1px solid var(--border-color); border-radius: 14px; background: var(--card-background-color); transition: max-width .2s ease; }
+.ecom-builder-preview-frame.is-mobile { max-width: 390px; }
+.ecom-builder-preview-inert { min-height: 0; color: var(--ui-text, #0f172a); background: var(--ui-bg-page, #f8fafc); pointer-events: none; user-select: none; }
+.ecom-builder-actions { justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+.ecom-builder-actions > span { margin-right: auto; }
+.ecom-builder-version-list { display: grid; gap: .65rem; }
+.ecom-builder-version-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border: 1px solid var(--border-color); border-radius: 10px; }
+.ecom-builder-version-list article > div { display: grid; gap: .2rem; }
+.ecom-builder-version-list small, .ecom-builder-version-list span { color: var(--text-light); }
+
 @media (max-width: 900px) {
   .ecom-operations-grid { grid-template-columns: 1fr; }
   .ecom-exception-row { grid-template-columns: 1fr 1fr; }
+  .ecom-builder-main { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 620px) {
   .ecom-week-row { grid-template-columns: 1fr 70px; }
   .ecom-week-row input[type="time"] { width: 100%; }
   .ecom-exception-row { grid-template-columns: 1fr; }
+  .ecom-builder-actions, .ecom-builder-version-list article { align-items: stretch; flex-direction: column; }
+  .ecom-builder-actions > span { margin-right: 0; }
 }

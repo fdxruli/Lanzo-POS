@@ -50,7 +50,10 @@ describe('EcommerceSiteRenderer', () => {
 
     const sections = document.querySelectorAll('[data-site-section]');
     expect([...sections].map((node) => node.dataset.siteSection)).toEqual(['header', 'catalog', 'footer']);
-    expect(document.querySelector('[data-site-mode="public"]')).toBeTruthy();
+    expect(document.querySelector('[data-site-mode="public"]')).toHaveClass(
+      'ecommerce-site-renderer',
+      'ecommerce-site-renderer--density-compact'
+    );
     expect(document.querySelector('[data-site-density="compact"]')).toBeTruthy();
   });
 
@@ -66,7 +69,12 @@ describe('EcommerceSiteRenderer', () => {
 
     expect(document.querySelector('[data-site-document-mode="default"]')).toBeTruthy();
     expect(document.querySelector('[data-site-density="comfortable"]')).toBeTruthy();
-    expect(document.querySelector('[data-site-section="catalog"][data-site-layout="grid"]')).toBeTruthy();
+    expect(document.querySelector('[data-site-section="header"][data-site-layout="default"]')).toHaveClass(
+      'ecommerce-site-section--layout-default'
+    );
+    expect(document.querySelector('[data-site-section="catalog"][data-site-layout="grid"]')).toHaveClass(
+      'ecommerce-site-section--layout-grid'
+    );
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByRole('combobox')).toBeNull();
   });
@@ -89,7 +97,26 @@ describe('EcommerceSiteRenderer', () => {
     );
 
     expect(document.querySelector('[data-site-density="comfortable"]')).toBeTruthy();
+    expect(document.querySelector('[data-site-section="header"][data-site-layout="default"]')).toBeTruthy();
     expect(document.querySelector('[data-site-section="catalog"][data-site-layout="grid"]')).toBeTruthy();
+  });
+
+  it('exposes distinct structural classes for showcase and compact document layouts', () => {
+    const siteDocument = createDefaultEcommerceSiteDocument();
+    siteDocument.sections[0].layout = 'showcase';
+    siteDocument.sections[1].layout = 'compact';
+
+    renderSite({
+      siteDocument,
+      portal: { ...portal, templateCode: 'classic' }
+    });
+
+    expect(document.querySelector('[data-site-section="header"]')).toHaveClass(
+      'ecommerce-site-section--layout-showcase'
+    );
+    expect(document.querySelector('[data-site-section="catalog"]')).toHaveClass(
+      'ecommerce-site-section--layout-compact'
+    );
   });
 
   it('uses the current portal preset only when the document is absent or invalid', () => {

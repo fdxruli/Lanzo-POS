@@ -31,6 +31,7 @@ export default function EcommerceSiteRenderer({
 
   return (
     <div
+      className={`ecommerce-site-renderer ecommerce-site-renderer--density-${document.global.density}`}
       data-site-mode={renderMode}
       data-site-document-mode={documentMode}
       data-site-density={document.global.density}
