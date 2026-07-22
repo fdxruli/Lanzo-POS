@@ -750,7 +750,7 @@ function PublicStorePage() {
 
   return (
     <main
-      className="public-store-shell"
+      className="public-store-shell ecommerce-site-surface"
       data-catalog-source={catalogSource}
       data-catalog-revision={catalogRevision || undefined}
       data-site-version={portalResult?.site?.versionNumber || undefined}
