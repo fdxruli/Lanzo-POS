@@ -1,5 +1,21 @@
 # LICENSE.ADMIN.AUTH.1 — Identidad administrativa multidispositivo
 
+## Validación comparativa de Vitest (2026-07-23)
+
+GitHub Actions ejecutó la comparación en runners limpios para `origin/main`
+`a8e6fa86d3e4f4af62df5d71d013b5d59fda9717` y el HEAD del PR
+`621545c05d10a4f1b6d8b1437a21a7e5ba82712b`.
+
+- Run: `30050358968` (clasificación `INHERITED_GLOBAL_FAILURES_IDENTICAL`).
+- Node `22.23.1`, npm `10.9.8` y Vitest `4.0.14`; `npm ci` y la colección pasaron en ambas referencias.
+- Base: 237 archivos; PR: 240 archivos. Los tres archivos adicionales del PR pasan.
+- Ambas suites finalizaron (no quedaron bloqueadas): 67 archivos y 124 tests fallidos, con 5 errores no controlados en cada referencia.
+- Los reportes JSON y manifiestos normalizados produjeron 124 fallos compartidos, cero fallos nuevos del PR y cero fallos resueltos.
+- El proyecto conserva deuda global de pruebas; esta evidencia solo concluye que PR #126 no introduce fallos globales nuevos.
+
+El workflow comparativo se retiró después de conservar el run y sus artifacts de retención corta. El comparador genérico
+`scripts/ci/compare-vitest-baseline.mjs` permanece versionado para una futura CI permanente.
+
 ## Estado de despliegue (2026-07-23)
 
 - `aaaa7f4` reconcilió el historial versionado con `supabase_migrations` remoto; no quedan migraciones históricas pendientes.
