@@ -12,6 +12,14 @@ La matriz foundation se ejecutó remotamente dentro de `BEGIN/ROLLBACK`; las fix
 
 El lint remoto mantiene un error heredado de agrupación en `public.admin_get_license_details`. No se atribuyeron avisos a las tablas, sesiones ni helpers nuevos de esta fase.
 
+## Simulación del cutover
+
+El cutover `20260723180000_license_admin_auth_1_cutover` se ejecutó contra el proyecto remoto dentro de una única transacción con la matriz completa y `ROLLBACK`. La simulación pasó para activación FREE/Pro, grants de contratos antiguos, selector según `staff_roles`, ecommerce admin/staff, sesiones revocadas, tokens cruzados y overloads ecommerce de tres y cuatro argumentos.
+
+La verificación posterior confirmó: versión del cutover ausente de `schema_migrations`, activador legado no creado, definición productiva anterior intacta, y cero fixtures/rate limits. Por ello el cutover continúa pendiente y `supabase db push --dry-run` debe mostrar únicamente esa versión.
+
+El build de Vercel para el HEAD `c371d743ac29a89ab32976984468381e5736bd4d` pasó (3,380 módulos, PWA y deployment READY). Las advertencias de imports dinámicos/estáticos y del glob de `cashSyncHandler` no bloquearon el build y permanecen como deuda previa.
+
 ## Diagnóstico
 
 La base previa separaba usuarios y sesiones staff, pero trataba al administrador como una propiedad del dispositivo. `activate_license_on_device_unlimited` promovía un dispositivo a `admin` cuando no encontraba otro admin activo. `release_device_anon_unlimited`, las RPC de usuarios staff y varios helpers administrativos autorizaban únicamente con rol, fingerprint y token del dispositivo.

@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { createEcommerceAdminService } from '../ecommerceAdminService';
+import {
+  buildDefaultEcommerceAdminAuthContext,
+  createEcommerceAdminService,
+  getEcommerceAdminAuthorizationContext,
+  normalizeEcommerceAdminFailure
+} from '../ecommerceAdminService';
 import {
   ECOMMERCE_CONFIGURATION_SYNC_KEYS,
   ECOMMERCE_OPTION_GROUP_SYNC_KEYS,
@@ -8,15 +13,25 @@ import {
   ECOMMERCE_VARIANT_SYNC_KEYS
 } from '../../../utils/ecommerceProductConfigurationSync';
 
+const syncMocks = vi.hoisted(() => ({ buildPosSyncAuthContext: vi.fn() }));
+vi.mock('../../sync/posSyncClient', () => ({ buildPosSyncAuthContext: syncMocks.buildPosSyncAuthContext }));
+
 const createService = ({
   staffSessionToken = null,
+  deviceRole = 'admin',
   rpc = vi.fn().mockResolvedValue({ data: { success: true }, error: null })
 } = {}) => ({
   rpc,
+  buildAuthContext: vi.fn().mockResolvedValue({
+    licenseKey: 'license-fixture',
+    deviceFingerprint: 'device-fixture',
+    securityToken: 'security-fixture',
+    staffSessionToken
+  }),
   service: createEcommerceAdminService({
     rpc,
     isConfigured: () => true,
-    getLicenseDetails: () => ({ license_key: 'license-fixture' }),
+    getLicenseDetails: () => ({ license_key: 'license-fixture', device_role: deviceRole }),
     buildAuthContext: vi.fn().mockResolvedValue({
       licenseKey: 'license-fixture',
       deviceFingerprint: 'device-fixture',
@@ -120,6 +135,32 @@ const completeProjection = {
 };
 
 describe('ecommerceAdminService', () => {
+  it('builds direct authorization context with the canonical admin role and historical actor field', async () => {
+    const buildAuthContext = vi.fn().mockResolvedValue({
+      licenseKey: 'license-fixture', deviceFingerprint: 'device-fixture', securityToken: 'security-fixture', staffSessionToken: 'admin-token'
+    });
+    await expect(getEcommerceAdminAuthorizationContext({
+      isConfigured: () => true,
+      isOnline: () => true,
+      getLicenseDetails: () => ({ license_key: 'license-fixture', device_role: 'admin' }),
+      buildAuthContext
+    })).resolves.toMatchObject({ p_staff_session_token: 'admin-token' });
+    expect(buildAuthContext).toHaveBeenCalledWith({ licenseKey: 'license-fixture', deviceRole: 'admin' });
+  });
+
+  it('normalizes the distinct actor-session errors without exposing RPC details', () => {
+    expect(normalizeEcommerceAdminFailure({ code: 'ECOMMERCE_STAFF_SESSION_INVALID', message: 'internal' })).toMatchObject({
+      code: 'ECOMMERCE_STAFF_SESSION_INVALID',
+      message: 'Tu sesion de personal no es valida. Inicia sesion nuevamente.'
+    });
+  });
+
+  it('delegates default auth construction with the canonical actor role', async () => {
+    syncMocks.buildPosSyncAuthContext.mockResolvedValue({ deviceFingerprint: 'device-fixture', securityToken: 'security-fixture', staffSessionToken: 'actor-token' });
+    await buildDefaultEcommerceAdminAuthContext({ licenseKey: 'license-fixture', deviceRole: 'admin' });
+    expect(syncMocks.buildPosSyncAuthContext).toHaveBeenCalledWith({ licenseKey: 'license-fixture', deviceRole: 'admin' });
+  });
+
   it('sends a null staff token for an admin context', async () => {
     const { rpc, service } = createService();
 
@@ -131,6 +172,25 @@ describe('ecommerceAdminService', () => {
       p_security_token: 'security-fixture',
       p_staff_session_token: null
     });
+  });
+
+  it('keeps the canonical role when building the actor authorization context', async () => {
+    const buildAuthContext = vi.fn().mockResolvedValue({
+      licenseKey: 'license-fixture', deviceFingerprint: 'device-fixture', securityToken: 'security-fixture', staffSessionToken: 'actor-token'
+    });
+    const rpc = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+    const service = createEcommerceAdminService({
+      rpc,
+      isConfigured: () => true,
+      getLicenseDetails: () => ({ license_key: 'license-fixture', device_role: 'staff' }),
+      buildAuthContext,
+      isOnline: () => true
+    });
+    await service.getEcommercePortal();
+    expect(buildAuthContext).toHaveBeenCalledWith({ licenseKey: 'license-fixture', deviceRole: 'staff' });
+    expect(rpc).toHaveBeenCalledWith('ecommerce_admin_get_portal', expect.objectContaining({
+      p_staff_session_token: 'actor-token'
+    }));
   });
 
   it('preserves the staff token in legacy and configuration RPCs', async () => {
@@ -342,5 +402,15 @@ describe('ecommerceAdminService', () => {
     });
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc.mock.calls[0][1].p_staff_session_token).toBe('staff-token-fixture');
+  });
+
+  it('maps an admin session requirement without falling back to a staff message', async () => {
+    const { service } = createService({
+      rpc: vi.fn().mockResolvedValue({ data: { success: false, code: 'ECOMMERCE_ADMIN_SESSION_REQUIRED' }, error: null })
+    });
+    await expect(service.getEcommercePortal()).resolves.toMatchObject({
+      code: 'ECOMMERCE_ADMIN_SESSION_REQUIRED',
+      message: 'Inicia sesion como administrador para continuar.'
+    });
   });
 });

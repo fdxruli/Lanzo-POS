@@ -15,16 +15,24 @@ describe('admin access UI', () => {
       logout: vi.fn(),
       handleAdminLogin: vi.fn(),
       handleAdminEnrollment: vi.fn(),
-      adminLoginMessage: null
+      adminLoginMessage: null,
+      licenseDetails: { features: { staff_roles: true } }
     });
   });
 
-  it('offers separate Administrator and Staff entry paths', () => {
+  it('offers separate Administrator and Staff entry paths when the plan includes staff roles', () => {
     render(<LicenseAccessChooser />);
     fireEvent.click(screen.getByRole('button', { name: /^AdministradorUsa/i }));
     expect(useAppStore.getState().chooseLicenseAccess).toHaveBeenCalledWith('admin');
     fireEvent.click(screen.getByRole('button', { name: /^Personal \/ StaffUsa/i }));
     expect(useAppStore.getState().chooseLicenseAccess).toHaveBeenCalledWith('staff');
+  });
+
+  it('does not offer Staff when the current plan has no staff_roles feature', () => {
+    useAppStore.setState({ licenseDetails: { features: { staff_roles: false } } });
+    render(<LicenseAccessChooser />);
+    expect(screen.getByRole('button', { name: /^AdministradorUsa/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Personal \/ StaffUsa/i })).not.toBeInTheDocument();
   });
 
   it('submits admin credentials without persisting the password in store', async () => {

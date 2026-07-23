@@ -5,6 +5,9 @@ import './AdminAuthModal.css';
 export default function LicenseAccessChooser() {
   const chooseLicenseAccess = useAppStore((state) => state.chooseLicenseAccess);
   const logout = useAppStore((state) => state.logout);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const staffAccessAvailable = licenseDetails?.staff_access_available === true
+    || licenseDetails?.features?.staff_roles === true;
 
   return (
     <div className="admin-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="access-title">
@@ -17,11 +20,13 @@ export default function LicenseAccessChooser() {
             <strong>Administrador</strong>
             <span>Usa las credenciales del propietario.</span>
           </button>
-          <button type="button" className="access-choice-card" onClick={() => chooseLicenseAccess('staff')}>
-            <Users size={30} />
-            <strong>Personal / Staff</strong>
-            <span>Usa el usuario asignado por el administrador.</span>
-          </button>
+          {staffAccessAvailable && (
+            <button type="button" className="access-choice-card" onClick={() => chooseLicenseAccess('staff')}>
+              <Users size={30} />
+              <strong>Personal / Staff</strong>
+              <span>Usa el usuario asignado por el administrador.</span>
+            </button>
+          )}
         </div>
         <button type="button" className="ui-button ui-button--ghost" onClick={logout}>Cambiar licencia</button>
       </section>
