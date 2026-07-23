@@ -18,6 +18,7 @@ import { createLicenseProcessingActions } from './license/licenseProcessingActio
 import { createLicenseIntegrityActions } from './license/licenseIntegrityActions';
 import { createLicenseBackgroundValidationActions } from './license/licenseBackgroundValidationActions';
 import { createLicenseBootstrapActions } from './license/licenseBootstrapActions';
+import { createLicenseAdminActions } from './license/licenseAdminActions';
 
 const clearLocalLicenseSession = clearLocalLicenseSessionForLicenseSlice;
 
@@ -50,6 +51,8 @@ export const createLicenseSlice = (set, get) => ({
     set,
     get
   }),
+
+  ...createLicenseAdminActions({ set, get }),
 
   ...createLicenseSessionActions({
     set,

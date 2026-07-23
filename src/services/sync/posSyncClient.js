@@ -1,24 +1,17 @@
-import { supabaseClient, getStableDeviceId, getDeviceSecurityToken } from '../supabase';
-import { loadData, STORES } from '../database';
-import Logger from '../Logger';
+import {
+  supabaseClient,
+  getStableDeviceId,
+  getDeviceSecurityToken,
+  getActorSessionToken
+} from '../supabase';
 import { SYNC_LIMITS } from './syncConstants';
-
-const STAFF_SESSION_TOKEN_KEY = 'staff_session_token';
-
-const getStaffSessionTokenFromCache = async () => {
-  try {
-    const record = await loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY);
-    return record?.value || null;
-  } catch (error) {
-    Logger.warn('[PosSync/Client] No se pudo leer token staff local:', error);
-    return null;
-  }
-};
 
 export const buildPosSyncAuthContext = async ({ licenseKey }) => {
   const deviceFingerprint = await getStableDeviceId();
   const securityToken = await getDeviceSecurityToken();
-  const staffSessionToken = await getStaffSessionTokenFromCache();
+  // El argumento historico p_staff_session_token transporta la sesion del actor:
+  // admin para un dispositivo admin, staff para un dispositivo staff.
+  const staffSessionToken = await getActorSessionToken();
 
   return {
     licenseKey,

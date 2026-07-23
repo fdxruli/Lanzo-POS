@@ -1,5 +1,10 @@
 // src/services/licenseService.js
-import { getDeviceSecurityToken, supabaseClient } from './supabase';
+import {
+    clearAdminSessionCache,
+    getAdminSessionToken,
+    getDeviceSecurityToken,
+    supabaseClient
+} from './supabase';
 import { loadData, saveData, STORES } from './database';
 import Logger from './Logger';
 import { checkInternetConnection, getStableDeviceId } from './utils';
@@ -12,11 +17,17 @@ export const getLicenseDevicesSmart = async (licenseKey) => {
         const isOnline = await checkInternetConnection();
         if (!isOnline) throw new Error('OFFLINE_MODE');
 
-        const deviceFingerprint = await getStableDeviceId();
+        const [deviceFingerprint, securityToken, adminSessionToken] = await Promise.all([
+            getStableDeviceId(),
+            getDeviceSecurityToken(),
+            getAdminSessionToken()
+        ]);
 
-        const { data, error } = await supabaseClient.rpc('get_license_devices_anon', {
-            license_key_param: licenseKey,
-            current_fingerprint_param: deviceFingerprint
+        const { data, error } = await supabaseClient.rpc('admin_get_license_devices', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_security_token: securityToken,
+            p_admin_session_token: adminSessionToken
         });
 
         if (error) throw error;
@@ -88,12 +99,18 @@ export const deactivateDeviceSmart = async (deviceId, licenseKey) => {
     }
 
     try {
-        const deviceFingerprint = await getStableDeviceId();
+        const [deviceFingerprint, securityToken, adminSessionToken] = await Promise.all([
+            getStableDeviceId(),
+            getDeviceSecurityToken(),
+            getAdminSessionToken()
+        ]);
 
-        const { data, error } = await supabaseClient.rpc('release_device_anon', {
-            device_id_param: deviceId,
-            license_key_param: licenseKey,
-            requester_fingerprint_param: deviceFingerprint
+        const { data, error } = await supabaseClient.rpc('admin_release_device', {
+            p_license_key: licenseKey,
+            p_requester_fingerprint: deviceFingerprint,
+            p_device_security_token: securityToken,
+            p_admin_session_token: adminSessionToken,
+            p_target_device_id: deviceId
         });
 
         if (error) throw error;
@@ -101,6 +118,7 @@ export const deactivateDeviceSmart = async (deviceId, licenseKey) => {
         if (data?.success && data?.released_current_device) {
             await saveData(STORES.SYNC_CACHE, { key: 'device_security_token', value: null });
             await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+            await clearAdminSessionCache();
         }
 
         return data;
@@ -161,19 +179,21 @@ export const renewLicenseService = async (licenseKey) => {
 };
 
 const getAdminStaffRpcContext = async (licenseKey) => {
-    const [deviceFingerprint, securityToken] = await Promise.all([
+    const [deviceFingerprint, securityToken, adminSessionToken] = await Promise.all([
         getStableDeviceId(),
-        getDeviceSecurityToken()
+        getDeviceSecurityToken(),
+        getAdminSessionToken()
     ]);
 
-    if (!licenseKey || !deviceFingerprint || !securityToken) {
+    if (!licenseKey || !deviceFingerprint || !securityToken || !adminSessionToken) {
         throw new Error('No se pudo confirmar el dispositivo administrador.');
     }
 
     return {
         p_license_key: licenseKey,
         p_admin_device_fingerprint: deviceFingerprint,
-        p_admin_security_token: securityToken
+        p_admin_security_token: securityToken,
+        p_admin_session_token: adminSessionToken
     };
 };
 

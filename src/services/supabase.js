@@ -40,6 +40,9 @@ async function setSecureCredentials(newToken) {
 
 const STAFF_SESSION_TOKEN_KEY = 'staff_session_token';
 const STAFF_SESSION_ID_KEY = 'staff_session_id';
+const ADMIN_SESSION_TOKEN_KEY = 'admin_session_token';
+const ADMIN_SESSION_ID_KEY = 'admin_session_id';
+const ADMIN_SESSION_CACHE_KEY = 'last_valid_admin_session';
 
 async function getStaffSessionToken() {
     try {
@@ -74,6 +77,50 @@ export async function hasStaffSessionToken() {
 
 export async function clearStaffSessionCache() {
     await setStaffSessionCredentials(null, null);
+}
+
+export async function getAdminSessionToken() {
+    try {
+        const record = await loadData(STORES.SYNC_CACHE, ADMIN_SESSION_TOKEN_KEY);
+        return record?.value || null;
+    } catch {
+        return null;
+    }
+}
+
+async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
+    await Promise.all([
+        saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_TOKEN_KEY, value: sessionToken || null }),
+        saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_ID_KEY, value: sessionId || null }),
+        saveData(STORES.SYNC_CACHE, {
+            key: ADMIN_SESSION_CACHE_KEY,
+            value: sessionToken ? { validatedAt: Date.now(), expiresAt: expiresAt || null } : null
+        })
+    ]);
+}
+
+export async function hasAdminSessionToken() {
+    return Boolean(await getAdminSessionToken());
+}
+
+export async function hasValidOfflineAdminSession() {
+    try {
+        const record = await loadData(STORES.SYNC_CACHE, ADMIN_SESSION_CACHE_KEY);
+        const cache = record?.value;
+        if (!cache?.validatedAt) return false;
+        if (cache.expiresAt && Date.parse(cache.expiresAt) <= Date.now()) return false;
+        return Date.now() - cache.validatedAt <= 24 * 60 * 60 * 1000;
+    } catch {
+        return false;
+    }
+}
+
+export async function clearAdminSessionCache() {
+    await setAdminSessionCredentials(null, null, null);
+}
+
+export async function getActorSessionToken() {
+    return (await getAdminSessionToken()) || (await getStaffSessionToken()) || null;
 }
 
 function pickSecurityTokenFromLicense(license = {}) {
@@ -116,6 +163,9 @@ export async function clearLicenseSecurityCache() {
         await saveData(STORES.SYNC_CACHE, { key: 'device_security_token', value: null });
         await saveData(STORES.SYNC_CACHE, { key: STAFF_SESSION_TOKEN_KEY, value: null });
         await saveData(STORES.SYNC_CACHE, { key: STAFF_SESSION_ID_KEY, value: null });
+        await saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_TOKEN_KEY, value: null });
+        await saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_ID_KEY, value: null });
+        await saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_CACHE_KEY, value: null });
         await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
         await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: null });
     } catch (error) {
@@ -385,6 +435,26 @@ export const activateLicense = async function (licenseKey) {
                 staff_login_required: true,
                 code: 'STAFF_LOGIN_REQUIRED',
                 message: data.message || 'Este dispositivo requiere login staff.',
+                details: data.details || null
+            };
+        }
+
+        if (data?.code === 'ADMIN_OR_STAFF_LOGIN_REQUIRED') {
+            return {
+                valid: false,
+                access_choice_required: true,
+                code: data.code,
+                message: data.message || 'Elige como deseas ingresar.',
+                details: data.details || null
+            };
+        }
+
+        if (data?.admin_enrollment_required || data?.code === 'ADMIN_ENROLLMENT_REQUIRED') {
+            return {
+                valid: false,
+                admin_enrollment_required: true,
+                code: data.code,
+                message: data.message || 'Crea las credenciales del propietario para continuar.',
                 details: data.details || null
             };
         }
@@ -1163,4 +1233,134 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
         Logger.error('Error registrando aceptación de términos:', error);
         return { success: false, message: error.message, error: error.message };
     }
+};
+
+const buildAdminSessionResult = async (data, licenseKey) => {
+    if (!data?.success) {
+        return {
+            success: false,
+            valid: false,
+            code: data?.code || 'ADMIN_AUTH_FAILED',
+            message: data?.message || 'No se pudo validar la sesion administrativa.'
+        };
+    }
+
+    const deviceToken = data.device_security_token || data.details?.security_token || null;
+    if (deviceToken) await setSecureCredentials(deviceToken);
+    if (data.admin_session_token) {
+        await setAdminSessionCredentials(
+            data.admin_session_token,
+            data.admin_session_id,
+            data.admin_session_expires_at
+        );
+    } else {
+        const existingToken = await getAdminSessionToken();
+        if (existingToken) {
+            await setAdminSessionCredentials(existingToken, data.admin_session_id, data.expires_at);
+        }
+    }
+
+    const fingerprint = await getStableDeviceId();
+    safeLocalStorageSet('fp', fingerprint);
+
+    return {
+        success: true,
+        valid: data.valid !== false,
+        admin_user: data.admin_user || null,
+        details: {
+            ...(data.details || {}),
+            license_key: data.details?.license_key || licenseKey,
+            device_role: 'admin',
+            staff_user: null,
+            admin_user: data.admin_user || null
+        }
+    };
+};
+
+export const enrollAdminOwnerOnDevice = async ({ licenseKey, username, password, displayName }) => {
+    try {
+        if (!navigator.onLine) return { success: false, code: 'ONLINE_REQUIRED', message: 'Necesitas internet para crear la cuenta propietaria.' };
+        const [deviceFingerprint, deviceSecurityToken] = await Promise.all([
+            getStableDeviceId(),
+            getDeviceSecurityToken()
+        ]);
+        if (!deviceSecurityToken) return { success: false, code: 'DEVICE_TOKEN_REQUIRED', message: 'No se pudo confirmar este dispositivo.' };
+        const { data, error } = await supabaseClient.rpc('admin_enroll_owner_on_device', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_security_token: deviceSecurityToken,
+            p_username: username.trim(),
+            p_password: password,
+            p_display_name: displayName.trim()
+        });
+        if (error) throw error;
+        return buildAdminSessionResult(data, licenseKey);
+    } catch (error) {
+        Logger.error('Error registrando propietario admin:', error);
+        return { success: false, code: error?.code || 'ADMIN_ENROLLMENT_ERROR', message: error?.message || 'No se pudo crear la cuenta propietaria.' };
+    }
+};
+
+export const adminLoginOnDevice = async ({ licenseKey, username, password }) => {
+    try {
+        if (!navigator.onLine) return { success: false, code: 'ONLINE_REQUIRED', message: 'Necesitas internet para iniciar sesion administrativa.' };
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('admin_login_on_device', {
+            p_license_key: licenseKey,
+            p_username: username.trim(),
+            p_password: password,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_name: getFriendlyDeviceName(navigator.userAgent),
+            p_device_info: { userAgent: navigator.userAgent, platform: navigator.platform }
+        });
+        if (error) throw error;
+        return buildAdminSessionResult(data, licenseKey);
+    } catch (error) {
+        Logger.error('Error iniciando sesion admin:', error);
+        return { success: false, code: error?.code || 'ADMIN_LOGIN_ERROR', message: error?.message || 'No se pudo iniciar sesion administrativa.' };
+    }
+};
+
+export const verifyAdminSession = async (licenseKey) => {
+    try {
+        const [deviceFingerprint, deviceSecurityToken, adminSessionToken] = await Promise.all([
+            getStableDeviceId(), getDeviceSecurityToken(), getAdminSessionToken()
+        ]);
+        if (!deviceSecurityToken || !adminSessionToken) {
+            return { success: false, valid: false, code: 'ADMIN_SESSION_REQUIRED', message: 'Inicia sesion como administrador.' };
+        }
+        const { data, error } = await supabaseClient.rpc('verify_admin_session', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_security_token: deviceSecurityToken,
+            p_admin_session_token: adminSessionToken
+        });
+        if (error) throw error;
+        if (!data?.success || data?.valid === false) {
+            await clearAdminSessionCache();
+            return { success: false, valid: false, code: data?.code || 'ADMIN_SESSION_INVALID', message: data?.message || 'La sesion administrativa ya no es valida.' };
+        }
+        return buildAdminSessionResult(data, licenseKey);
+    } catch (error) {
+        return { success: false, valid: false, code: error?.code || 'ADMIN_SESSION_ERROR', message: error?.message || 'No se pudo verificar la sesion administrativa.' };
+    }
+};
+
+export const adminLogoutSession = async (licenseKey) => {
+    try {
+        const [deviceFingerprint, deviceSecurityToken, adminSessionToken] = await Promise.all([
+            getStableDeviceId(), getDeviceSecurityToken(), getAdminSessionToken()
+        ]);
+        if (navigator.onLine && deviceSecurityToken && adminSessionToken && licenseKey) {
+            await supabaseClient.rpc('admin_logout_session', {
+                p_license_key: licenseKey,
+                p_device_fingerprint: deviceFingerprint,
+                p_device_security_token: deviceSecurityToken,
+                p_admin_session_token: adminSessionToken
+            });
+        }
+    } finally {
+        await clearAdminSessionCache();
+    }
+    return { success: true };
 };

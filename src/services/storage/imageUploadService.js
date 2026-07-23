@@ -1,6 +1,6 @@
 import Logger from '../Logger';
-import { loadData, STORES } from '../database';
 import {
+  getActorSessionToken,
   getDeviceSecurityToken,
   getStableDeviceId,
   supabaseClient
@@ -9,7 +9,6 @@ import { checkInternetConnection } from '../utils';
 
 const IMAGE_BUCKET = 'images';
 const AUTHORIZE_FUNCTION = 'authorize-image-upload';
-const STAFF_SESSION_TOKEN_KEY = 'staff_session_token';
 
 export const IMAGE_UPLOAD_PURPOSES = Object.freeze({
   BUSINESS_LOGO: 'business-logo',
@@ -106,16 +105,6 @@ function validateClientSideImage(file, purpose) {
   return { valid: true, maxSize };
 }
 
-async function getStaffSessionToken() {
-  try {
-    const record = await loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY);
-    return record?.value || null;
-  } catch (error) {
-    Logger.warn('[Storage] No se pudo leer la sesión staff para upload seguro:', error);
-    return null;
-  }
-}
-
 function buildUploadError(code, fallback) {
   const error = new Error(getFriendlyErrorMessage(code, fallback));
   error.code = code || 'STORAGE_UPLOAD_FAILED';
@@ -142,7 +131,7 @@ export async function uploadImageFile({ file, licenseKey, purpose = IMAGE_UPLOAD
   const [deviceFingerprint, securityToken, staffSessionToken] = await Promise.all([
     getStableDeviceId(),
     getDeviceSecurityToken(),
-    getStaffSessionToken()
+    getActorSessionToken()
   ]);
 
   if (!deviceFingerprint || !securityToken) {

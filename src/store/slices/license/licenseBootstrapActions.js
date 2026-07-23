@@ -6,7 +6,10 @@ import {
     revalidateLicense,
     clearStaffSessionCache,
     hasStaffSessionToken,
-    verifyStaffSession
+    verifyStaffSession,
+    hasAdminSessionToken,
+    hasValidOfflineAdminSession,
+    verifyAdminSession
 } from '../../../services/supabase';
 
 import {
@@ -117,6 +120,68 @@ export const createLicenseBootstrapActions = ({
 
                 get()._validateInBackground(restoredLicense.license_key);
 
+                return;
+            }
+
+            const planCode = String(localLicense.plan_code || '').toLowerCase();
+            const requiresAdminIdentity = localDeviceRole === 'admin'
+                && planCode !== 'free_trial'
+                && (Number(localLicense.max_devices || 1) > 1 || localLicense.features?.staff_roles === true);
+
+            if (requiresAdminIdentity) {
+                set({
+                    licenseDetails: { ...localLicense, device_role: 'admin' },
+                    currentDeviceRole: 'admin',
+                    currentAdminUser: null,
+                    adminLoginLicenseKey: localLicense.license_key
+                });
+
+                if (!navigator.onLine) {
+                    if (await hasValidOfflineAdminSession()) {
+                        set({ currentAdminUser: localLicense.admin_user || null });
+                        await get()._processOfflineMode(localLicense);
+                    } else {
+                        set({
+                            appStatus: 'admin_login_required',
+                            adminLoginMessage: 'Conectate a internet para validar la sesion administrativa.',
+                            _isInitializing: false
+                        });
+                    }
+                    set({ _isInitializing: false });
+                    return;
+                }
+
+                if (!await hasAdminSessionToken()) {
+                    await get().discoverAdminAccess(localLicense.license_key);
+                    set({ _isInitializing: false });
+                    return;
+                }
+
+                const adminSession = await verifyAdminSession(localLicense.license_key);
+                if (!adminSession.valid) {
+                    await get()._requireAdminLogin(localLicense, adminSession);
+                    set({ _isInitializing: false });
+                    return;
+                }
+
+                const restoredLicense = {
+                    ...localLicense,
+                    ...adminSession.details,
+                    device_role: 'admin',
+                    staff_user: null,
+                    admin_user: adminSession.admin_user || localLicense.admin_user || null
+                };
+                await saveLicenseToStorage(restoredLicense);
+                set({
+                    licenseDetails: restoredLicense,
+                    currentDeviceRole: 'admin',
+                    currentAdminUser: restoredLicense.admin_user,
+                    adminLoginMessage: null,
+                    adminLoginError: null
+                });
+                await get()._loadProfile(restoredLicense.license_key);
+                set({ _isInitializing: false });
+                get()._validateInBackground(restoredLicense.license_key);
                 return;
             }
 
