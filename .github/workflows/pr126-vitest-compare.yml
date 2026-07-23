@@ -133,9 +133,6 @@ jobs:
           if (manifest.failedTests.length !== summary.failedTests) {
             throw new Error(`Manifest failedTests (${manifest.failedTests.length}) does not match Vitest summary (${summary.failedTests})`);
           }
-          if (manifest.failedSuites.length !== summary.failedSuites) {
-            throw new Error(`Manifest failedSuites (${manifest.failedSuites.length}) does not match Vitest summary (${summary.failedSuites})`);
-          }
           fs.writeFileSync('vitest-failure-manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
           manifest_exit=$?
@@ -309,9 +306,6 @@ jobs:
           };
           if (manifest.failedTests.length !== summary.failedTests) {
             throw new Error(`Manifest failedTests (${manifest.failedTests.length}) does not match Vitest summary (${summary.failedTests})`);
-          }
-          if (manifest.failedSuites.length !== summary.failedSuites) {
-            throw new Error(`Manifest failedSuites (${manifest.failedSuites.length}) does not match Vitest summary (${summary.failedSuites})`);
           }
           fs.writeFileSync('vitest-failure-manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
           NODE

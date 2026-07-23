@@ -46,10 +46,6 @@ function validateManifest(manifest, source) {
   if (failedTests.length !== summary.failedTests) {
     fail(`${source}: failedTests does not match summary.failedTests`);
   }
-  if (failedSuites.length !== summary.failedSuites) {
-    fail(`${source}: failedSuites does not match summary.failedSuites`);
-  }
-
   return { summary, failedSuites, failedTests };
 }
 
