@@ -54,6 +54,23 @@ export const createLicenseBootstrapActions = ({
             const localDeviceRole = localLicense.device_role || null;
 
             if (localDeviceRole !== 'admin' && localDeviceRole !== 'staff') {
+                // A token alone is not proof of the actor role. Ask the
+                // server-side discovery flow when online; it is the only
+                // authority allowed to select an admin/staff path for an
+                // ambiguous cache.
+                if (navigator.onLine && typeof get().discoverAdminAccess === 'function') {
+                    set({
+                        appStatus: 'loading',
+                        licenseDetails: localLicense,
+                        currentDeviceRole: null,
+                        currentAdminUser: null,
+                        currentStaffUser: null
+                    });
+                    await get().discoverAdminAccess(localLicense.license_key);
+                    set({ _isInitializing: false });
+                    return;
+                }
+
                 set({
                     appStatus: 'license_access_required',
                     licenseDetails: localLicense,

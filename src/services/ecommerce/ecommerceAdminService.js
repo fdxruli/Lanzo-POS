@@ -15,6 +15,7 @@ import {
 
 const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_ADMIN_ACCESS_DENIED: 'No tienes permiso para administrar el portal online.',
+  ECOMMERCE_ADMIN_SESSION_REQUIRED: 'Inicia sesion como administrador para continuar.',
   ECOMMERCE_STAFF_SESSION_REQUIRED: 'Inicia sesion como personal para administrar el portal online.',
   ECOMMERCE_STAFF_SESSION_INVALID: 'Tu sesion de personal no es valida. Inicia sesion nuevamente.',
   ECOMMERCE_STAFF_PERMISSION_DENIED: 'No tienes permiso para administrar el portal online.',
@@ -51,9 +52,9 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_PORTAL_SAVE_FAILED: 'No se pudo guardar el portal online. Intenta nuevamente.'
 };
 
-export const buildDefaultEcommerceAdminAuthContext = async ({ licenseKey }) => {
+export const buildDefaultEcommerceAdminAuthContext = async ({ licenseKey, deviceRole = null }) => {
   const { buildPosSyncAuthContext } = await import('../sync/posSyncClient');
-  return buildPosSyncAuthContext({ licenseKey });
+  return buildPosSyncAuthContext({ licenseKey, deviceRole });
 };
 
 const SAFE_CONTEXT_MESSAGES = new Set([
@@ -98,7 +99,10 @@ export const getEcommerceAdminAuthorizationContext = async ({
     throw error;
   }
   const licenseKey = getLicenseKeyFromDetails(getLicenseDetails());
-  const authContext = await buildAuthContext({ licenseKey });
+  const authContext = await buildAuthContext({
+    licenseKey,
+    deviceRole: getLicenseDetails()?.device_role || null
+  });
   if (!authContext?.licenseKey || !authContext?.deviceFingerprint || !authContext?.securityToken) {
     throw new Error('No se pudo confirmar el acceso para administrar el portal. Revalida la licencia o inicia sesion nuevamente.');
   }

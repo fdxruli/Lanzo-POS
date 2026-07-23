@@ -10,6 +10,11 @@ import { saveLicenseToStorage } from '../../../services/licenseStorage';
 import Logger from '../../../services/Logger';
 
 const completeAdminSession = async (set, get, licenseKey, result, reason) => {
+  // The transport layer also clears this cache before persisting credentials,
+  // but doing it here keeps the store transition safe for alternate RPC
+  // adapters and prevents a stale staff token from surviving a role switch.
+  await clearStaffSessionCache();
+
   const licenseData = {
     ...get().licenseDetails,
     ...result.details,

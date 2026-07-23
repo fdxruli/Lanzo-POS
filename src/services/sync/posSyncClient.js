@@ -6,12 +6,12 @@ import {
 } from '../supabase';
 import { SYNC_LIMITS } from './syncConstants';
 
-export const buildPosSyncAuthContext = async ({ licenseKey }) => {
+export const buildPosSyncAuthContext = async ({ licenseKey, deviceRole = null }) => {
   const deviceFingerprint = await getStableDeviceId();
   const securityToken = await getDeviceSecurityToken();
   // El argumento historico p_staff_session_token transporta la sesion del actor:
   // admin para un dispositivo admin, staff para un dispositivo staff.
-  const staffSessionToken = await getActorSessionToken();
+  const staffSessionToken = await getActorSessionToken(deviceRole);
 
   return {
     licenseKey,

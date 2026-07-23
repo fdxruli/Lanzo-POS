@@ -1,5 +1,17 @@
 # LICENSE.ADMIN.AUTH.1 — Identidad administrativa multidispositivo
 
+## Estado de despliegue (2026-07-23)
+
+- `aaaa7f4` reconcilió el historial versionado con `supabase_migrations` remoto; no quedan migraciones históricas pendientes.
+- `32103c5` incorporó límites anti-rotación de fingerprint y el aislamiento de cachés admin/staff en el cliente.
+- `20260722222305_license_admin_auth_1_foundation` está aplicada en `odlrhijtfyavryeqivaa`.
+- `20260723173112_license_admin_auth_1_foundation_multidevice_fix` está aplicada como compensación: elimina el índice legado que impedía más de un admin activo por licencia.
+- `20260723180000_license_admin_auth_1_cutover` queda versionada y pendiente. No debe aplicarse hasta que el frontend compatible esté desplegado en producción.
+
+La matriz foundation se ejecutó remotamente dentro de `BEGIN/ROLLBACK`; las fixtures sintéticas, sesiones y rate limits terminaron en cero. Dos solicitudes concurrentes de login para el último cupo produjeron exactamente un éxito y un `DEVICE_LIMIT_REACHED`, con el contador final igual al límite. El enrollment concurrente produjo un único propietario y un único `ADMIN_OWNER_ALREADY_ENROLLED`.
+
+El lint remoto mantiene un error heredado de agrupación en `public.admin_get_license_details`. No se atribuyeron avisos a las tablas, sesiones ni helpers nuevos de esta fase.
+
 ## Diagnóstico
 
 La base previa separaba usuarios y sesiones staff, pero trataba al administrador como una propiedad del dispositivo. `activate_license_on_device_unlimited` promovía un dispositivo a `admin` cuando no encontraba otro admin activo. `release_device_anon_unlimited`, las RPC de usuarios staff y varios helpers administrativos autorizaban únicamente con rol, fingerprint y token del dispositivo.
