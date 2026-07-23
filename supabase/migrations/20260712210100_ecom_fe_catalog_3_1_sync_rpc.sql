@@ -468,3 +468,4 @@ revoke all on function public.ecommerce_admin_sync_published_catalog(
 grant execute on function public.ecommerce_admin_sync_published_catalog(
   text, text, text, text, jsonb, text, bigint
 ) to anon, authenticated, service_role;
+;

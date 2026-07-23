@@ -1,7 +1,3 @@
--- ECOM.PRODUCTS.MODEL.1.1 compensatory configuration revision isolation.
--- The canonical writer must never overwrite the confirmed catalog/inventory
--- source_revision fields with a configuration-only revision.
-
 create or replace function private.ecommerce_apply_product_configuration_checked(
   p_license_id uuid,
   p_published_product_id uuid,
@@ -87,4 +83,4 @@ end;
 $function$;
 
 comment on function private.ecommerce_apply_product_configuration_checked(uuid,uuid,jsonb,text,boolean) is
-  'Revision-aware guard around the canonical writer. Configuration sourceRevision is stored as private metadata and never overwrites the independent catalog/inventory source_revision fields.';
+  'Revision-aware guard around the canonical writer. Configuration sourceRevision is stored as private metadata and never overwrites the independent catalog/inventory source_revision fields.';;

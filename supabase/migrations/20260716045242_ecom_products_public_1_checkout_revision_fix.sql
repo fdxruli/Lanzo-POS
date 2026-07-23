@@ -1,62 +1,25 @@
--- ECOM.PRODUCTS.PUBLIC.1.1
--- Patch the effective installed checkout definition with drift guards.
--- Applied remotely as 20260716045242.
-
 do $migration$
-declare
-  v_definition text;
-  v_before text;
-  v_after text;
+declare v_definition text;v_before text;v_after text;
 begin
-  select pg_get_functiondef(
-    'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure
-  ) into v_definition;
-
-  v_before := 'v_expected_configuration_version integer;' || chr(10) || 'begin';
-  v_after := 'v_expected_configuration_version integer;v_expected_configuration_revision text;v_current_configuration_revision text;' || chr(10) || 'begin';
-  if strpos(v_definition, v_before) = 0 then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_DECLARATION_DRIFT';
-  end if;
-  v_definition := replace(v_definition, v_before, v_after);
-
-  v_before := '''productId'',''quantity'',''variantId'',''selections'',''configurationVersion'',''price''';
-  v_after := '''productId'',''quantity'',''variantId'',''selections'',''configurationVersion'',''configurationRevision'',''price''';
-  if strpos(v_definition, v_before) = 0 then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_ALLOWLIST_DRIFT';
-  end if;
-  v_definition := replace(v_definition, v_before, v_after);
-
-  v_before := 'select pp.* into v_product from public.ecommerce_published_products pp where pp.id=v_product_id and pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id and pp.deleted_at is null and pp.is_published is true limit 1;if v_product.id is null then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_FOUND'');end if;' || chr(10)
-    || '  if v_item?''configurationVersion'' then begin v_expected_configuration_version:=(v_item->>''configurationVersion'')::integer;exception when others then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end;if v_expected_configuration_version<>v_product.configuration_version then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;end if;';
-  v_after := 'v_expected_configuration_revision:=null;v_current_configuration_revision:=null;select pp.* into v_product from public.ecommerce_published_products pp where pp.id=v_product_id and pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id and pp.deleted_at is null and pp.is_published is true limit 1;if v_product.id is null then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_FOUND'');end if;if v_product.manual_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;' || chr(10)
-    || '  if v_item?''configurationVersion'' then begin v_expected_configuration_version:=(v_item->>''configurationVersion'')::integer;exception when others then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end;if v_expected_configuration_version<>v_product.configuration_version then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;end if;if v_product.has_variants is true or v_product.has_option_groups is true or v_product.requires_configuration is true then v_expected_configuration_revision:=lower(btrim(coalesce(v_item->>''configurationRevision'','''')));if v_expected_configuration_revision!~''^[0-9a-f]{64}$'' then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;v_current_configuration_revision:=private.ecommerce_product_configuration_revision(v_product.id);if v_current_configuration_revision is null or v_expected_configuration_revision<>v_current_configuration_revision then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;end if;';
-  if strpos(v_definition, v_before) = 0 then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_PRODUCT_GATE_DRIFT';
-  end if;
-  v_definition := replace(v_definition, v_before, v_after);
-
-  v_before := 'if v_product.requires_configuration is true and v_variant_id is null and jsonb_array_length(v_selections)=0 then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_REQUIRED'');end if;if v_product.requires_configuration is not true then if v_product.is_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_AVAILABLE'');end if;elsif private.ecommerce_product_publicly_available(v_product)is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;if v_product.requires_configuration is not true and v_product.manual_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;';
-  v_after := 'if v_product.requires_configuration is true and v_variant_id is null and jsonb_array_length(v_selections)=0 then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_REQUIRED'');end if;if v_product.requires_configuration is not true then if v_product.is_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_AVAILABLE'');end if;elsif private.ecommerce_product_publicly_available(v_product)is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;';
-  if strpos(v_definition, v_before) = 0 then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_AVAILABILITY_DRIFT';
-  end if;
-  v_definition := replace(v_definition, v_before, v_after);
-
-  v_before := '''version'',1,''configurationVersion'',v_product.configuration_version,''configurationType''';
-  v_after := '''version'',1,''configurationVersion'',v_product.configuration_version,''configurationRevision'',v_current_configuration_revision,''configurationType''';
-  if strpos(v_definition, v_before) = 0 then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_SNAPSHOT_DRIFT';
-  end if;
-  v_definition := replace(v_definition, v_before, v_after);
-
-  execute v_definition;
-end;
-$migration$;
-
-alter function public.ecommerce_create_order(text, jsonb, jsonb, text) owner to postgres;
-revoke all on function public.ecommerce_create_order(text, jsonb, jsonb, text) from public;
-grant execute on function public.ecommerce_create_order(text, jsonb, jsonb, text)
-  to anon, authenticated, service_role;
-
-comment on function public.ecommerce_create_order(text, jsonb, jsonb, text) is
-  'ECOM.PRODUCTS.PUBLIC.1.1 authoritative configurable checkout. Idempotent replay precedes mutable revision validation.';
+select pg_get_functiondef('public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure) into v_definition;
+v_before:='v_expected_configuration_version integer;'||chr(10)||'begin';
+v_after:='v_expected_configuration_version integer;v_expected_configuration_revision text;v_current_configuration_revision text;'||chr(10)||'begin';
+if strpos(v_definition,v_before)=0 then raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_DECLARATION_DRIFT';end if;v_definition:=replace(v_definition,v_before,v_after);
+v_before:='''productId'',''quantity'',''variantId'',''selections'',''configurationVersion'',''price''';
+v_after:='''productId'',''quantity'',''variantId'',''selections'',''configurationVersion'',''configurationRevision'',''price''';
+if strpos(v_definition,v_before)=0 then raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_ALLOWLIST_DRIFT';end if;v_definition:=replace(v_definition,v_before,v_after);
+v_before:='select pp.* into v_product from public.ecommerce_published_products pp where pp.id=v_product_id and pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id and pp.deleted_at is null and pp.is_published is true limit 1;if v_product.id is null then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_FOUND'');end if;'||chr(10)||'  if v_item?''configurationVersion'' then begin v_expected_configuration_version:=(v_item->>''configurationVersion'')::integer;exception when others then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end;if v_expected_configuration_version<>v_product.configuration_version then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;end if;';
+v_after:='v_expected_configuration_revision:=null;v_current_configuration_revision:=null;select pp.* into v_product from public.ecommerce_published_products pp where pp.id=v_product_id and pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id and pp.deleted_at is null and pp.is_published is true limit 1;if v_product.id is null then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_FOUND'');end if;if v_product.manual_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;'||chr(10)||'  if v_item?''configurationVersion'' then begin v_expected_configuration_version:=(v_item->>''configurationVersion'')::integer;exception when others then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end;if v_expected_configuration_version<>v_product.configuration_version then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;end if;if v_product.has_variants is true or v_product.has_option_groups is true or v_product.requires_configuration is true then v_expected_configuration_revision:=lower(btrim(coalesce(v_item->>''configurationRevision'','''')));if v_expected_configuration_revision!~''^[0-9a-f]{64}$'' then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;v_current_configuration_revision:=private.ecommerce_product_configuration_revision(v_product.id);if v_current_configuration_revision is null or v_expected_configuration_revision<>v_current_configuration_revision then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_CHANGED'');end if;end if;';
+if strpos(v_definition,v_before)=0 then raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_PRODUCT_GATE_DRIFT';end if;v_definition:=replace(v_definition,v_before,v_after);
+v_before:='if v_product.requires_configuration is true and v_variant_id is null and jsonb_array_length(v_selections)=0 then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_REQUIRED'');end if;if v_product.requires_configuration is not true then if v_product.is_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_AVAILABLE'');end if;elsif private.ecommerce_product_publicly_available(v_product)is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;if v_product.requires_configuration is not true and v_product.manual_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;';
+v_after:='if v_product.requires_configuration is true and v_variant_id is null and jsonb_array_length(v_selections)=0 then return private.ecommerce_public_error(''ECOMMERCE_CONFIGURATION_REQUIRED'');end if;if v_product.requires_configuration is not true then if v_product.is_available is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_NOT_AVAILABLE'');end if;elsif private.ecommerce_product_publicly_available(v_product)is not true then return private.ecommerce_public_error(''ECOMMERCE_PRODUCT_UNAVAILABLE'');end if;';
+if strpos(v_definition,v_before)=0 then raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_AVAILABILITY_DRIFT';end if;v_definition:=replace(v_definition,v_before,v_after);
+v_before:='''version'',1,''configurationVersion'',v_product.configuration_version,''configurationType''';
+v_after:='''version'',1,''configurationVersion'',v_product.configuration_version,''configurationRevision'',v_current_configuration_revision,''configurationType''';
+if strpos(v_definition,v_before)=0 then raise exception 'ECOM_PRODUCTS_PUBLIC_1_CHECKOUT_SNAPSHOT_DRIFT';end if;v_definition:=replace(v_definition,v_before,v_after);
+execute v_definition;
+end;$migration$;
+alter function public.ecommerce_create_order(text,jsonb,jsonb,text) owner to postgres;
+revoke all on function public.ecommerce_create_order(text,jsonb,jsonb,text) from public;
+grant execute on function public.ecommerce_create_order(text,jsonb,jsonb,text) to anon,authenticated,service_role;
+comment on function public.ecommerce_create_order(text,jsonb,jsonb,text) is 'ECOM.PRODUCTS.PUBLIC.1.1 authoritative configurable checkout. Idempotent replay precedes mutable revision validation.';;

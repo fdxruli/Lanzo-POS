@@ -508,4 +508,4 @@ alter function public.ecommerce_admin_list_orders(text, text, text, text, text, 
 alter function public.ecommerce_admin_update_order_fulfillment(text, text, text, text, uuid, text, bigint, text, text) owner to postgres;
 
 comment on function public.ecommerce_admin_list_orders(text, text, text, text, text, integer, integer) is
-  'Lists active ecommerce orders plus converted orders whose independent fulfillment lifecycle is not terminal.';
+  'Lists active ecommerce orders plus converted orders whose independent fulfillment lifecycle is not terminal.';;

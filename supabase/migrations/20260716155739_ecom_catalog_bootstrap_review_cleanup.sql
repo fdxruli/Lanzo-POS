@@ -1,7 +1,3 @@
--- HOTFIX ECOM.CATALOG.BOOTSTRAP.REVIEW.CLEANUP
--- Retira el estado técnico de revisión generado durante la autocorrección
--- inicial, sin desactivar la protección permanente del trigger.
-
 alter table public.ecommerce_published_products
   disable trigger zz_ecommerce_recipe_projection_guard;
 
@@ -24,3 +20,4 @@ where pp.deleted_at is null
 
 alter table public.ecommerce_published_products
   enable trigger zz_ecommerce_recipe_projection_guard;
+;

@@ -169,3 +169,4 @@ alter function public.ecommerce_admin_confirm_pos_draft(text,text,text,text,uuid
 alter function public.ecommerce_begin_pos_conversion(text,text,text,text,uuid,uuid,text,text,text,text) owner to postgres;
 alter function public.ecommerce_complete_pos_conversion(text,text,text,text,uuid,uuid,text,text,text,text) owner to postgres;
 alter function public.ecommerce_get_pos_conversion_state(text,text,text,text,uuid,uuid) owner to postgres;
+;

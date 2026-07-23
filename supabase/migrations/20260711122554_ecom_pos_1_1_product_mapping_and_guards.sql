@@ -163,3 +163,4 @@ revoke all on function private.ecommerce_resolve_order_item_source_product_v1()
   from public, anon, authenticated;
 revoke all on function private.ecommerce_order_pos_snapshot_v1(uuid, uuid, jsonb)
   from public, anon, authenticated;
+;

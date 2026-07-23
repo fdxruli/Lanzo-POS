@@ -803,4 +803,4 @@ is 'ECOM.ORDERS.2.2: confirms a POS draft with a pre-authorized context and a ro
 comment on function private.ecommerce_begin_pos_conversion_authorized_v1(jsonb, uuid, uuid, text, text, text, text)
 is 'ECOM.ORDERS.2.2: reserves POS conversion with one authorization and a terminal guard under the mutation lock.';
 comment on function private.ecommerce_complete_pos_conversion_authorized_v1(jsonb, uuid, uuid, text, text, text, text)
-is 'ECOM.ORDERS.2.2: completes POS conversion with one authorization and a terminal guard under the mutation lock.';
+is 'ECOM.ORDERS.2.2: completes POS conversion with one authorization and a terminal guard under the mutation lock.';;

@@ -50,4 +50,4 @@ create trigger trg_pos_product_batches_shelf_life_guard
 before insert or update of stock, committed_stock, expiry_date, alert_target_date, product_id, license_id, created_at
 on public.pos_product_batches
 for each row
-execute function private.pos_product_batch_shelf_life_guard();
+execute function private.pos_product_batch_shelf_life_guard();;

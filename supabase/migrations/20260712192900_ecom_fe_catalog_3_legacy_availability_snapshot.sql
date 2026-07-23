@@ -18,3 +18,4 @@ revoke all on table private.ecommerce_catalog_3_legacy_availability
 grant select, insert, update, delete
   on table private.ecommerce_catalog_3_legacy_availability
   to service_role;
+;

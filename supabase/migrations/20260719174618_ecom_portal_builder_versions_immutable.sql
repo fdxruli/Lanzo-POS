@@ -9,3 +9,5 @@ create trigger ecommerce_site_versions_immutable
 before update or delete on public.ecommerce_site_versions
 for each row execute function private.ecommerce_site_prevent_version_mutation();
 revoke all on function private.ecommerce_site_prevent_version_mutation() from public, anon, authenticated;
+
+;

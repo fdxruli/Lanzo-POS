@@ -258,4 +258,4 @@ alter function public.ecommerce_admin_update_order_fulfillment(
 
 comment on function public.ecommerce_admin_update_order_fulfillment(
   text, text, text, text, uuid, text, bigint, text, text
-) is 'Versioned fulfillment transition that remains independent from the canonical POS conversion state.';
+) is 'Versioned fulfillment transition that remains independent from the canonical POS conversion state.';;

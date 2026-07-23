@@ -71,7 +71,9 @@ begin
   if private.ecommerce_license_feature_bool(
     v_order.license_id, 'ecommerce_realtime_orders', false
   ) is not true then
-    return jsonb_build_object('success', true, 'broadcasted', false, 'code', 'REALTIME_DISABLED');
+    return jsonb_build_object(
+      'success', true, 'broadcasted', false, 'code', 'REALTIME_DISABLED'
+    );
   end if;
 
   select t.* into v_tracking
@@ -84,14 +86,17 @@ begin
   limit 1;
 
   if v_tracking.order_id is null then
-    return jsonb_build_object('success', true, 'broadcasted', false, 'code', 'TRACKING_NOT_ISSUED');
+    return jsonb_build_object(
+      'success', true, 'broadcasted', false, 'code', 'TRACKING_NOT_ISSUED'
+    );
   end if;
 
   v_topic := private.ecommerce_tracking_topic_v1(v_tracking.token_hash);
   v_payload := jsonb_build_object(
     'event', 'tracking_changed',
     'reason', case
-      when p_reason in ('order_status_changed','fulfillment_changed','payment_changed') then p_reason
+      when p_reason in ('order_status_changed','fulfillment_changed','payment_changed')
+        then p_reason
       else 'order_changed'
     end,
     'version', greatest(v_order.fulfillment_version, 0),
@@ -182,4 +187,4 @@ alter function public.ecommerce_admin_update_order_fulfillment(
 
 comment on policy "Lanzo private ecommerce tracking broadcast receive"
   on realtime.messages is
-  'Possession-based private broadcast authorization using a non-reversible tracking token hash topic. Payload is only a revalidation signal.';
+  'Possession-based private broadcast authorization using a non-reversible tracking token hash topic. Payload is only a revalidation signal.';;

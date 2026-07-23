@@ -1,5 +1,3 @@
--- ECOM.PRODUCTS.MODEL.1.1 compensatory revision and idempotency hardening.
-
 create or replace function private.ecommerce_configuration_error_from_message(
   p_message text
 )
@@ -367,4 +365,4 @@ $function$;
 comment on function private.ecommerce_apply_product_configuration_checked(uuid,uuid,jsonb,text,boolean) is
   'Revision-aware guard around the canonical normalized configuration writer. Reuses sourceRevision and stores only a private payload hash for equal-revision conflict detection.';
 comment on function public.ecommerce_admin_sync_published_catalog_v2(text,text,text,text,jsonb,text,bigint) is
-  'Atomic PRO catalog/configuration sync with strict full-payload idempotency and stale revision protection.';
+  'Atomic PRO catalog/configuration sync with strict full-payload idempotency and stale revision protection.';;

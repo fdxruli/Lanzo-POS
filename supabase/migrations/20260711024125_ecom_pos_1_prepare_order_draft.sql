@@ -505,3 +505,4 @@ revoke all on table public.ecommerce_order_events from public, anon, authenticat
 revoke all on table public.license_devices from public, anon, authenticated;
 revoke all on table public.license_staff_users from public, anon, authenticated;
 revoke all on table public.license_staff_sessions from public, anon, authenticated;
+;

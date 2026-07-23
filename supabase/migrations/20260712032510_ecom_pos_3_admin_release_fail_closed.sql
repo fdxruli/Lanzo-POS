@@ -1,8 +1,3 @@
--- ECOM.POS.3.1.1 — Liberación administrativa fail-closed
--- Alineado con la migración aplicada en producción: 20260712032510.
-
--- Una reserva activa puede corresponder a una venta confirmada solo en Dexie
--- cuyo shadow remoto aun no existe; public.pos_sales nunca autoriza liberarla.
 create or replace function public.ecommerce_admin_release_pos_draft(
   p_license_key text,
   p_device_fingerprint text,
@@ -164,4 +159,4 @@ exception
       'No se pudo liberar el borrador.'
     );
 end;
-$function$;
+$function$;;

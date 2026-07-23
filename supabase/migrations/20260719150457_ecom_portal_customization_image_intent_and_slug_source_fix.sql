@@ -65,7 +65,6 @@ begin
   return jsonb_build_object('success',true,'message',case when v_existing.id is null then 'Portal online creado correctamente.' else 'Portal online actualizado correctamente.' end,'portal',private.ecommerce_admin_portal_jsonb(v_saved),'plan',jsonb_build_object('code',v_auth->>'plan_code','name',v_auth->>'plan_name','isPro',(v_auth->>'plan_code')='pro_monthly'),'features',jsonb_build_object('maxPublishedProducts',coalesce((v_features->>'ecommerce_max_published_products')::integer,0),'customSlug',v_custom_slug_allowed,'brandingCustomization',coalesce(v_features->>'ecommerce_branding_customization','basic'),'layoutCustomization',coalesce(v_features->>'ecommerce_layout_customization','template_only'),'stockVisibility',coalesce((v_features->>'ecommerce_stock_visibility')::boolean,false),'cloudCatalogSource',coalesce((v_features->>'ecommerce_cloud_catalog_source')::boolean,false)));
 exception when unique_violation then return private.ecommerce_admin_error('ECOMMERCE_SLUG_TAKEN'); when others then return private.ecommerce_admin_error('ECOMMERCE_PORTAL_SAVE_FAILED'); end;
 $$;
-
 -- Preserve the legacy public signature while routing it through the same authorization and save logic.
 create or replace function public.ecommerce_admin_upsert_portal(
   p_license_key text, p_device_fingerprint text, p_security_token text, p_payload jsonb
@@ -78,7 +77,6 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb) from public, anon, authenticated;
 revoke all on function public.ecommerce_admin_upsert_portal(text,text,text,jsonb) from public, anon, authenticated;
 grant execute on function public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb) to anon, authenticated, service_role;

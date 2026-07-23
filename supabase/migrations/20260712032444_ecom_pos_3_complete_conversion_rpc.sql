@@ -1,6 +1,3 @@
--- ECOM.POS.3 — Confirmación de conversión
--- Alineado con la migración aplicada en producción: 20260712032444.
-
 create or replace function public.ecommerce_complete_pos_conversion(
   p_license_key text,
   p_device_fingerprint text,
@@ -171,4 +168,4 @@ exception
       'La venta fue registrada, pero no se pudo confirmar el pedido online.'
     );
 end;
-$function$;
+$function$;;

@@ -1,9 +1,3 @@
--- ECOM.POS.3 — Consulta de venta y estado remoto
--- Alineado con la migración aplicada en producción: 20260712032334.
-
--- Verificacion remota reutilizable. No interpreta una consulta fallida como
--- ausencia de venta. Usa JSONB para tolerar nombres de columnas historicos del
--- read model de ventas cloud sin conceder acceso directo a clientes.
 create or replace function private.ecommerce_pos_sale_lookup_v2(
   p_license_id uuid,
   p_sale_id text,
@@ -149,4 +143,4 @@ exception
       'No se pudo verificar el estado remoto de conversion del pedido.'
     );
 end;
-$function$;
+$function$;;

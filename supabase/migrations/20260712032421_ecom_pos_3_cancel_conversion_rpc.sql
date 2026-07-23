@@ -1,6 +1,3 @@
--- ECOM.POS.3 — Cancelación controlada de conversión
--- Alineado con la migración aplicada en producción: 20260712032421.
-
 create or replace function public.ecommerce_cancel_pos_conversion(
   p_license_key text,
   p_device_fingerprint text,
@@ -154,4 +151,4 @@ exception
       'No se pudo liberar la reserva remota de conversion.'
     );
 end;
-$function$;
+$function$;;

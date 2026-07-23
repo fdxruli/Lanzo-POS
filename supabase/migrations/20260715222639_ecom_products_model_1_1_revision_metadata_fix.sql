@@ -1,7 +1,3 @@
--- ECOM.PRODUCTS.MODEL.1.1 compensatory configuration revision metadata fix.
--- Preserve the independent confirmed inventory revision while reusing the
--- transported sourceRevision for configuration concurrency control.
-
 create or replace function private.ecommerce_apply_product_configuration_checked(
   p_license_id uuid,
   p_published_product_id uuid,
@@ -87,4 +83,4 @@ end;
 $function$;
 
 comment on function private.ecommerce_apply_product_configuration_checked(uuid,uuid,jsonb,text,boolean) is
-  'Revision-aware guard around the canonical writer. It reuses the transported sourceRevision as private configuration metadata, preserving the independent confirmed inventory revision used by catalog synchronization.';
+  'Revision-aware guard around the canonical writer. It reuses the transported sourceRevision as private configuration metadata, preserving the independent confirmed inventory revision used by catalog synchronization.';;

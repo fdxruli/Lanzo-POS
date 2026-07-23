@@ -19,15 +19,19 @@ declare
   v_is_owner boolean := false;
   v_can_pos boolean := false;
 begin
-  select o.* into v_order
+  select o.*
+  into v_order
   from public.ecommerce_orders o
-  where o.id = p_order_id and o.license_id = p_license_id
+  where o.id = p_order_id
+    and o.license_id = p_license_id
   limit 1;
+
   if v_order.id is null then return null; end if;
 
   v_can_pos := p_auth->>'actor_type' = 'admin'
     or coalesce((p_auth->'staff_permissions'->>'pos')::boolean, false) is true;
-  v_is_owner := v_can_pos and v_order.pos_claim_token is not null
+  v_is_owner := v_can_pos
+    and v_order.pos_claim_token is not null
     and v_order.pos_claim_actor_ref = nullif(p_auth->>'device_id', '');
 
   select coalesce(jsonb_agg(jsonb_build_object(
@@ -75,7 +79,8 @@ begin
   ) order by e.created_at, e.id), '[]'::jsonb)
   into v_events
   from public.ecommerce_order_events e
-  where e.order_id = v_order.id and e.license_id = p_license_id;
+  where e.order_id = v_order.id
+    and e.license_id = p_license_id;
 
   v_whatsapp_url := private.ecommerce_build_whatsapp_url(
     v_order.customer_phone,
@@ -274,3 +279,4 @@ $function$;
 alter function private.ecommerce_order_pos_snapshot_v1(uuid, uuid, jsonb) owner to postgres;
 alter function public.ecommerce_admin_get_order(text, text, text, uuid, text) owner to postgres;
 alter function public.ecommerce_admin_list_orders(text, text, text, text, text, integer, integer) owner to postgres;
+;

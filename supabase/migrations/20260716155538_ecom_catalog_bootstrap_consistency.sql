@@ -1,7 +1,3 @@
--- HOTFIX ECOM.CATALOG.BOOTSTRAP.CONSISTENCY
--- Protege la configuración pública contra revisiones locales obsoletas y
--- recalcula la disponibilidad de recetas desde el inventario cloud autoritativo.
-
 create or replace function private.ecommerce_apply_product_configuration_checked(
   p_license_id uuid,
   p_published_product_id uuid,
@@ -101,8 +97,6 @@ begin
     raise exception 'ECOMMERCE_CATALOG_SOURCE_STALE';
   end if;
 
-  -- Las revisiones infladas por dependencias de inventario son estado técnico,
-  -- no una versión válida de la configuración del producto padre.
   if v_canonical_normalized is not null
      and v_current_normalized is distinct from v_canonical_normalized then
     v_current_normalized := null;
@@ -288,3 +282,4 @@ on public.ecommerce_published_products;
 create trigger zz_ecommerce_recipe_projection_guard
 before insert or update on public.ecommerce_published_products
 for each row execute function private.ecommerce_reconcile_recipe_projection();
+;

@@ -309,4 +309,4 @@ comment on function private.ecommerce_tracking_client_identity_v1()
 is 'ECOM.ORDERS.2.2: derives a stable pseudonymous client bucket from trusted proxy IP headers without retaining plaintext headers or addresses.';
 
 comment on function public.ecommerce_get_order_tracking(text, text)
-is 'ECOM.ORDERS.2.2: public tracking with client, portal-capacity and valid-token rate limits plus a uniform not-found response.';
+is 'ECOM.ORDERS.2.2: public tracking with client, portal-capacity and valid-token rate limits plus a uniform not-found response.';;
