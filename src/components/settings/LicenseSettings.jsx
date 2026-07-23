@@ -384,7 +384,7 @@ function LicenseInfoPanel({
 
             <button type="button" className="btn btn-cancel license-logout-button" onClick={onLogout}>
                 <LogOut size={16} />
-                {isStaffDevice ? 'Cerrar sesion staff' : 'Cerrar sesion local'}
+                {isStaffDevice ? 'Cerrar sesion staff' : 'Cerrar sesion admin'}
             </button>
         </section>
     );
@@ -397,8 +397,8 @@ export default function LicenseSettings() {
     const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
     const currentStaffUser = useAppStore((state) => state.currentStaffUser);
     const canAccess = useAppStore((state) => state.canAccess);
-    const logout = useAppStore((state) => state.logout);
     const logoutStaff = useAppStore((state) => state.logoutStaff);
+    const logoutAdmin = useAppStore((state) => state.logoutAdmin);
     const renewLicense = useAppStore((state) => state.renewLicense);
 
     const [isUpdatingFree, setIsUpdatingFree] = useState(false);
@@ -481,11 +481,11 @@ export default function LicenseSettings() {
 
     const handleLogout = async () => {
         const confirmMessage =
-            'Cerrar sesion solo saldra de la app en este equipo.\n\n' +
+            'Cerrar sesion revocara la sesion administrativa de este equipo.\n\n' +
             'La licencia seguira vinculada a este dispositivo. Si quieres liberar el cupo remoto, usa el boton Liberar en la lista de dispositivos.\n\n' +
-            'Deseas cerrar sesion localmente?';
+            'Deseas cerrar la sesion administrativa?';
 
-        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesion local', confirmButtonText: 'Si, cerrar sesion' })) logout();
+        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesion admin', confirmButtonText: 'Si, cerrar sesion' })) logoutAdmin();
     };
 
     const handleStaffLogout = async () => {

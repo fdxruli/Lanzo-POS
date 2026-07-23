@@ -1,0 +1,14 @@
+.admin-auth-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 42, .72); }
+.admin-auth-panel { width: min(100%, 460px); max-height: calc(100vh - 2rem); overflow: auto; padding: 1.5rem; border-radius: 18px; background: var(--surface-color, #fff); box-shadow: 0 24px 70px rgba(15, 23, 42, .3); }
+.admin-auth-heading { display: flex; align-items: flex-start; gap: .85rem; margin-bottom: 1rem; }
+.admin-auth-heading h1, .access-choice-panel h1 { margin: 0 0 .3rem; font-size: 1.45rem; }
+.admin-auth-heading p, .access-choice-panel > p { margin: 0; color: var(--text-light, #64748b); line-height: 1.45; }
+.admin-auth-form { display: grid; gap: .9rem; margin: 1rem 0; }
+.admin-auth-form label { display: grid; gap: .35rem; font-weight: 600; }
+.admin-auth-form small { color: var(--text-light, #64748b); font-weight: 400; }
+.admin-auth-form .ui-button, .admin-auth-panel > .ui-button { width: 100%; justify-content: center; }
+.access-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin: 1.25rem 0; }
+.access-choice-card { display: flex; min-height: 150px; flex-direction: column; align-items: flex-start; gap: .5rem; padding: 1rem; border: 1px solid #cbd5e1; border-radius: 14px; background: #fff; color: #0f172a; text-align: left; cursor: pointer; }
+.access-choice-card:hover, .access-choice-card:focus-visible { border-color: var(--primary-color, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.access-choice-card span { color: #64748b; line-height: 1.35; }
+@media (max-width: 520px) { .access-choice-grid { grid-template-columns: 1fr; } .access-choice-card { min-height: 110px; } }

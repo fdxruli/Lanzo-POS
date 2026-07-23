@@ -8,6 +8,9 @@ import Logger from './services/Logger';
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
+import AdminLoginModal from './components/common/AdminLoginModal';
+import AdminEnrollmentModal from './components/common/AdminEnrollmentModal';
+import LicenseAccessChooser from './components/common/LicenseAccessChooser';
 import LicenseChangeRequiredModal from './components/common/LicenseChangeRequiredModal';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
@@ -296,6 +299,15 @@ function App() {
           <StaffLoginModal />
         </ErrorBoundary>
       );
+
+    case 'license_access_required':
+      return <ErrorBoundary><LicenseAccessChooser /></ErrorBoundary>;
+
+    case 'admin_login_required':
+      return <ErrorBoundary><AdminLoginModal /></ErrorBoundary>;
+
+    case 'admin_enrollment_required':
+      return <ErrorBoundary><AdminEnrollmentModal /></ErrorBoundary>;
 
     case 'locked_renewal':
       return (

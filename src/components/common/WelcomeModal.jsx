@@ -77,7 +77,7 @@ export default function WelcomeModal() {
     try {
       const result = await handleLogin(licenseKey.trim());
 
-      if (!result.success) {
+      if (!result.success && !result.accessChoiceRequired && !result.adminEnrollmentRequired && !result.staffLoginRequired) {
         setErrorMessage(result.message || 'Licencia inválida o expirada');
       }
     } catch (error) {
