@@ -26,6 +26,7 @@ const setup = () => {
     adminLoginLicenseKey: 'LANZO-ADMIN-TEST',
     licenseDetails: { license_key: 'LANZO-ADMIN-TEST', product_name: 'Pro' },
     stopLicenseSync: vi.fn(),
+    _processOfflineMode: vi.fn(async () => { state.appStatus = 'ready'; }),
     _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; })
   };
   const set = vi.fn((partial) => Object.assign(state, partial));
@@ -58,6 +59,24 @@ describe('license admin actions', () => {
     expect(result.success).toBe(false);
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.adminLoginError.code).toBe('INVALID_ADMIN_CREDENTIALS');
+  });
+
+  it('does not remain loading when the legacy backend validates an admin device', async () => {
+    const state = setup();
+    mocks.activateLicense.mockResolvedValue({
+      valid: true,
+      details: { license_key: 'LANZO-ADMIN-TEST', plan_code: 'pro' }
+    });
+
+    await expect(state.discoverAdminAccess('LANZO-ADMIN-TEST')).resolves.toEqual({
+      success: true,
+      legacyBackendFallback: true
+    });
+    expect(state._processOfflineMode).toHaveBeenCalledWith(
+      expect.objectContaining({ license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }),
+      { reason: 'legacy_admin_auth_compatibility' }
+    );
+    expect(state.appStatus).toBe('ready');
   });
 
   it('completes owner enrollment and records currentAdminUser', async () => {

@@ -211,11 +211,51 @@ export const executeProductionBatchSafe = (batchData, recipe) =>
 // ALIAS DIRECTOS (Lecturas y Búsquedas)
 // ============================================================
 
+const DB_OPEN_TIMEOUT_MS = 3_000;
+let databaseOpenPromise = null;
+let databaseUnavailableUntil = 0;
+
+const ensureDatabaseOpen = async () => {
+    if (db.isOpen()) return;
+
+    if (Date.now() < databaseUnavailableUntil) {
+        const error = new Error('IndexedDB no está disponible temporalmente.');
+        error.name = 'DatabaseOpenTimeoutError';
+        throw error;
+    }
+
+    if (!databaseOpenPromise) {
+        databaseOpenPromise = db.open().finally(() => {
+            databaseOpenPromise = null;
+        });
+    }
+
+    let timeoutId = null;
+    try {
+        await Promise.race([
+            databaseOpenPromise,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    const error = new Error(`IndexedDB no terminó de abrirse en ${DB_OPEN_TIMEOUT_MS / 1000} segundos.`);
+                    error.name = 'DatabaseOpenTimeoutError';
+                    reject(error);
+                }, DB_OPEN_TIMEOUT_MS);
+            })
+        ]);
+        databaseUnavailableUntil = 0;
+    } catch (error) {
+        if (error.name === 'DatabaseOpenTimeoutError') {
+            databaseUnavailableUntil = Date.now() + 30_000;
+        }
+        throw error;
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
+};
+
 export const loadData = async (storeName, key = null) => {
     try {
-        if (!db.isOpen()) {
-            await db.open();
-        }
+        await ensureDatabaseOpen();
 
         return key
             ? await generalRepository.getById(storeName, key)
@@ -226,6 +266,10 @@ export const loadData = async (storeName, key = null) => {
             console.warn(`[DB] Lectura omitida en ${storeName}: La base de datos está cerrada.`);
             return null;
         }
+        if (error.name === 'DatabaseOpenTimeoutError') {
+            console.warn(`[DB] Lectura omitida en ${storeName}: ${error.message}`);
+            return null;
+        }
         throw error;
     }
 };
@@ -233,7 +277,7 @@ export const loadData = async (storeName, key = null) => {
 export const deleteData = (storeName, key) => generalRepository.delete(storeName, key);
 export const saveData = async (storeName, data) => {
     try {
-        if (!db.isOpen()) await db.open();
+        await ensureDatabaseOpen();
         const result = await generalRepository.save(storeName, data);
         if ([STORES.MENU, STORES.SALES, STORES.CUSTOMERS].includes(storeName)) {
             evaluator.ping();
@@ -242,6 +286,10 @@ export const saveData = async (storeName, data) => {
     } catch (error) {
         if (error.name === 'DatabaseClosedError') {
             console.warn(`[DB] Escritura omitida en ${storeName}: La base de datos está cerrada.`);
+            return null;
+        }
+        if (error.name === 'DatabaseOpenTimeoutError') {
+            console.warn(`[DB] Escritura omitida en ${storeName}: ${error.message}`);
             return null;
         }
         throw error;

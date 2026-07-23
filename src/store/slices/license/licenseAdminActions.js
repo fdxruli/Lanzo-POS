@@ -6,6 +6,7 @@ import {
   enrollAdminOwnerOnDevice
 } from '../../../services/supabase';
 import { saveLicenseToStorage } from '../../../services/licenseStorage';
+import Logger from '../../../services/Logger';
 
 const completeAdminSession = async (set, get, licenseKey, result, reason) => {
   const licenseData = {
@@ -87,7 +88,41 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       await get()._requireAdminLogin({ ...(result.details || {}), license_key: licenseKey, device_role: 'admin' }, result);
       return { success: false, adminLoginRequired: true };
     }
-    return result;
+
+    if (result.valid) {
+      // Backward compatibility while LICENSE.ADMIN.AUTH.1 is not yet applied
+      // remotely: the legacy RPC can still validate the cached admin device,
+      // but it does not return an admin session or an access-choice response.
+      // Do not leave bootstrap in `loading` in that case.
+      const legacyLicense = {
+        ...get().licenseDetails,
+        ...(result.details || {}),
+        license_key: licenseKey,
+        device_role: 'admin',
+        staff_user: null
+      };
+
+      Logger.warn('[AdminAuth] Backend legacy detectado; continuando con sesión local hasta aplicar la migración.');
+      await saveLicenseToStorage(legacyLicense);
+      set({
+        licenseDetails: legacyLicense,
+        currentDeviceRole: 'admin',
+        currentAdminUser: legacyLicense.admin_user || null,
+        currentStaffUser: null,
+        adminLoginMessage: null,
+        adminLoginError: null
+      });
+      await get()._processOfflineMode(legacyLicense, { reason: 'legacy_admin_auth_compatibility' });
+      return { success: true, legacyBackendFallback: true };
+    }
+
+    // Every discovery result must leave the loading state. This also covers
+    // network/RPC failures and lets the UI present a recoverable admin prompt.
+    await get()._requireAdminLogin(
+      { ...(result.details || {}), ...get().licenseDetails, license_key: licenseKey, device_role: 'admin' },
+      result
+    );
+    return { success: false, adminLoginRequired: true };
   },
 
   handleAdminLogin: async ({ username, password }) => {

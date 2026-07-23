@@ -48,6 +48,7 @@ export const createLicenseBootstrapActions = ({
             Logger.log('[AppStore] Carga rápida activada - Usando caché local');
 
             const hasStoredStaffSession = await hasStaffSessionToken();
+            Logger.log(`[AppStore] Sesión staff local: ${hasStoredStaffSession ? 'encontrada' : 'no encontrada'}`);
             const localDeviceRole =
                 localLicense.device_role || (localLicense.staff_user ? 'staff' : 'admin');
 

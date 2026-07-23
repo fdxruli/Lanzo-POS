@@ -1022,12 +1022,26 @@ export const saveBusinessProfile = async function (licenseKey, profileData) {
     }
 };
 
+const BUSINESS_PROFILE_TIMEOUT_MS = 8_000;
+
 export const getBusinessProfile = async function (licenseKey) {
     try {
-        const { data, error } = await supabaseClient.rpc(
+        const profileRequest = supabaseClient.rpc(
             'get_business_profile_anon', {
             license_key_param: licenseKey
         });
+
+        const timeout = new Promise((_, reject) => {
+            setTimeout(() => {
+                const timeoutError = new Error(
+                    `La consulta del perfil superó ${BUSINESS_PROFILE_TIMEOUT_MS / 1000} segundos.`
+                );
+                timeoutError.name = 'BusinessProfileTimeoutError';
+                reject(timeoutError);
+            }, BUSINESS_PROFILE_TIMEOUT_MS);
+        });
+
+        const { data, error } = await Promise.race([profileRequest, timeout]);
 
         if (error) throw error;
         return data;
