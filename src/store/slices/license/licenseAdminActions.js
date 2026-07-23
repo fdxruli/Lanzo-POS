@@ -3,6 +3,7 @@ import {
   adminLoginOnDevice,
   adminLogoutSession,
   clearAdminSessionCache,
+  clearStaffSessionCache,
   enrollAdminOwnerOnDevice
 } from '../../../services/supabase';
 import { saveLicenseToStorage } from '../../../services/licenseStorage';
@@ -57,6 +58,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     const licenseKey = source.license_key || get().adminLoginLicenseKey;
     await get().stopLicenseSync();
     await clearAdminSessionCache();
+    await clearStaffSessionCache();
     if (source.license_key) await saveLicenseToStorage({ ...source, device_role: 'admin', admin_user: null });
     set({
       appStatus: 'admin_login_required',

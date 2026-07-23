@@ -5,6 +5,7 @@ import Logger from '../../../services/Logger';
 import {
     revalidateLicense,
     clearStaffSessionCache,
+    clearAdminSessionCache,
     hasStaffSessionToken,
     verifyStaffSession,
     hasAdminSessionToken,
@@ -18,7 +19,8 @@ import {
 } from '../../../services/licenseStorage';
 
 import {
-    isLicensePlanBlockFailure
+    isLicensePlanBlockFailure,
+    requiresAdminIdentity
 } from './licenseGuards';
 
 export const createLicenseBootstrapActions = ({
@@ -49,10 +51,23 @@ export const createLicenseBootstrapActions = ({
 
             const hasStoredStaffSession = await hasStaffSessionToken();
             Logger.log(`[AppStore] Sesión staff local: ${hasStoredStaffSession ? 'encontrada' : 'no encontrada'}`);
-            const localDeviceRole =
-                localLicense.device_role || (localLicense.staff_user ? 'staff' : 'admin');
+            const localDeviceRole = localLicense.device_role || null;
 
-            if (localDeviceRole === 'staff' || hasStoredStaffSession) {
+            if (localDeviceRole !== 'admin' && localDeviceRole !== 'staff') {
+                set({
+                    appStatus: 'license_access_required',
+                    licenseDetails: localLicense,
+                    currentDeviceRole: null,
+                    currentAdminUser: null,
+                    currentStaffUser: null,
+                    adminLoginLicenseKey: localLicense.license_key,
+                    _isInitializing: false
+                });
+                return;
+            }
+
+            if (localDeviceRole === 'staff') {
+                await clearAdminSessionCache();
                 set({
                     licenseDetails: {
                         ...localLicense,
@@ -124,12 +139,10 @@ export const createLicenseBootstrapActions = ({
                 return;
             }
 
-            const planCode = String(localLicense.plan_code || '').toLowerCase();
-            const requiresAdminIdentity = localDeviceRole === 'admin'
-                && planCode !== 'free_trial'
-                && (Number(localLicense.max_devices || 1) > 1 || localLicense.features?.staff_roles === true);
+            const needsAdminIdentity = localDeviceRole === 'admin' && requiresAdminIdentity(localLicense);
 
-            if (requiresAdminIdentity) {
+            if (needsAdminIdentity) {
+                await clearStaffSessionCache();
                 set({
                     licenseDetails: { ...localLicense, device_role: 'admin' },
                     currentDeviceRole: 'admin',

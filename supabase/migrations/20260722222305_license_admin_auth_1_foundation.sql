@@ -1,4 +1,4 @@
--- LICENSE.ADMIN.AUTH.1 - Identidad propietaria y sesiones administrativas.
+-- LICENSE.ADMIN.AUTH.1 foundation - identidad propietaria y sesiones administrativas.
 -- La licencia identifica la suscripcion; nunca se usa como credencial admin.
 
 create table if not exists public.license_admin_users (
@@ -357,10 +357,30 @@ begin
     return jsonb_build_object('success', false, 'code', 'ADMIN_LOGIN_INVALID_REQUEST');
   end if;
 
+  -- Each window is checked before credential verification. The first two
+  -- partitions are client-independent, so rotating a fingerprint cannot buy
+  -- more guesses. No plaintext username or credential is written to metadata.
   v_rate := public.enforce_pos_rpc_rate_limit_v2(
     p_license_key,
-    coalesce(nullif(btrim(p_device_fingerprint), ''), '__missing_device__') || ':admin:' || encode(extensions.digest(lower(btrim(coalesce(p_username, ''))), 'sha256'), 'hex'),
+    'admin-user:' || encode(extensions.digest(lower(btrim(coalesce(p_username, ''))), 'sha256'), 'hex'),
     null, 'admin_login_on_device', 'ADMIN_AUTH', 10, 600, 900,
+    'ADMIN_LOGIN_RATE_LIMITED', '{}'::jsonb
+  );
+  if coalesce((v_rate->>'allowed')::boolean, false) is false then
+    return public.build_pos_rpc_rate_limited_response(v_rate);
+  end if;
+
+  v_rate := public.enforce_pos_rpc_rate_limit_v2(
+    p_license_key, 'admin-license-global', null, 'admin_login_on_device',
+    'ADMIN_AUTH', 50, 900, 1800, 'ADMIN_LOGIN_RATE_LIMITED', '{}'::jsonb
+  );
+  if coalesce((v_rate->>'allowed')::boolean, false) is false then
+    return public.build_pos_rpc_rate_limited_response(v_rate);
+  end if;
+
+  v_rate := public.enforce_pos_rpc_rate_limit_v2(
+    p_license_key, 'admin-device:' || coalesce(nullif(btrim(p_device_fingerprint), ''), '__missing_device__'), null,
+    'admin_login_on_device', 'ADMIN_AUTH', 10, 600, 900,
     'ADMIN_LOGIN_RATE_LIMITED', '{}'::jsonb
   );
   if coalesce((v_rate->>'allowed')::boolean, false) is false then
@@ -619,69 +639,6 @@ begin
 end;
 $$;
 
--- La activacion con solo clave queda limitada a FREE o a descubrir el siguiente paso.
-do $$
-begin
-  if to_regprocedure('public.activate_license_on_device_legacy_free(text,text,text,jsonb)') is null
-     and to_regprocedure('public.activate_license_on_device_unlimited(text,text,text,jsonb)') is not null then
-    alter function public.activate_license_on_device_unlimited(text,text,text,jsonb)
-      rename to activate_license_on_device_legacy_free;
-  end if;
-end;
-$$;
-
-create or replace function public.activate_license_on_device_unlimited(
-  license_key_param text,
-  device_fingerprint_param text,
-  device_name_param text,
-  device_info_param jsonb
-)
-returns json
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare v_license record; v_device record; v_has_owner boolean;
-begin
-  select l.id, l.status, l.expires_at, l.product_name, p.code as plan_code,
-         coalesce(p.features, '{}'::jsonb) || coalesce(l.features, '{}'::jsonb) as features
-  into v_license
-  from public.licenses l left join public.plans p on p.id = l.plan_id
-  where l.license_key = license_key_param for update of l;
-  if v_license.id is null then return json_build_object('success', false, 'code', 'LICENSE_NOT_FOUND', 'message', 'Licencia no encontrada.'); end if;
-  if v_license.status <> 'active' then return json_build_object('success', false, 'code', 'LICENSE_NOT_ACTIVE'); end if;
-  if v_license.expires_at is not null and v_license.expires_at < now() then return json_build_object('success', false, 'code', 'LICENSE_EXPIRED'); end if;
-
-  if lower(coalesce(v_license.plan_code, '')) = 'free_trial' then
-    -- FREE conserva el flujo historico. La copia se renombra antes de esta migracion en remoto.
-    return public.activate_license_on_device_legacy_free(license_key_param, device_fingerprint_param, device_name_param, device_info_param);
-  end if;
-
-  select exists(select 1 from public.license_admin_users u where u.license_id = v_license.id and u.is_owner and u.is_active)
-  into v_has_owner;
-  if v_has_owner then
-    return json_build_object('success', false, 'code', 'ADMIN_OR_STAFF_LOGIN_REQUIRED',
-      'message', 'Elige acceso Administrador o Personal.',
-      'details', json_build_object('license_key', license_key_param, 'product_name', v_license.product_name, 'features', v_license.features));
-  end if;
-
-  select * into v_device from public.license_devices d
-  where d.license_id = v_license.id and d.device_fingerprint = device_fingerprint_param limit 1;
-  if v_device.id is not null and v_device.is_active is true and v_device.device_role = 'admin' then
-    return json_build_object('success', false, 'code', 'ADMIN_ENROLLMENT_REQUIRED', 'admin_enrollment_required', true,
-      'message', 'Crea las credenciales del propietario para continuar.',
-      'details', json_build_object('license_key', license_key_param, 'product_name', v_license.product_name, 'features', v_license.features, 'device_role', 'admin'));
-  end if;
-  if v_device.id is not null and v_device.device_role = 'staff' then
-    return json_build_object('success', false, 'code', 'STAFF_LOGIN_REQUIRED', 'staff_login_required', true,
-      'message', 'Este dispositivo requiere inicio de sesion staff.',
-      'details', json_build_object('license_key', license_key_param, 'product_name', v_license.product_name, 'features', v_license.features, 'device_role', 'staff'));
-  end if;
-  return json_build_object('success', false, 'code', 'ADMIN_ENROLLMENT_NOT_ALLOWED',
-    'message', 'Esta licencia debe completar el registro desde su dispositivo administrador actual.');
-end;
-$$;
-
 -- Overloads protegidos para las operaciones criticas de usuarios staff.
 create or replace function public.admin_list_staff_users(
   p_license_key text, p_admin_device_fingerprint text, p_admin_security_token text, p_admin_session_token text
@@ -720,110 +677,12 @@ begin
   return public.admin_update_staff_user(p_license_key,p_admin_device_fingerprint,p_admin_security_token,p_staff_user_id,p_display_name,p_permissions,p_is_active,p_new_password,p_role_name);
 end; $$;
 
--- Endurecer el helper compartido por las RPC ecommerce: el cuarto argumento
--- conserva su nombre historico, pero transporta la sesion del actor actual.
-create or replace function private.ecommerce_admin_authorize_v2(
-  p_license_key text,
-  p_device_fingerprint text,
-  p_security_token text,
-  p_staff_session_token text,
-  p_rpc_name text
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_rate_limit jsonb; v_license record; v_device record;
-  v_admin_auth jsonb; v_staff_verification jsonb; v_permissions jsonb;
-begin
-  if nullif(btrim(coalesce(p_license_key,'')),'') is null
-     or nullif(btrim(coalesce(p_device_fingerprint,'')),'') is null
-     or nullif(btrim(coalesce(p_security_token,'')),'') is null then
-    return private.ecommerce_admin_error('ECOMMERCE_ADMIN_ACCESS_DENIED');
-  end if;
-  v_rate_limit := public.enforce_pos_rpc_rate_limit_v2(
-    p_license_key,p_device_fingerprint,null,coalesce(nullif(btrim(p_rpc_name),''),'ecommerce_admin'),
-    'ECOM_ADMIN',180,600,300,'ECOMMERCE_RATE_LIMITED',jsonb_build_object('actor_partition','device')
-  );
-  if coalesce((v_rate_limit->>'allowed')::boolean,false) is false then
-    return private.ecommerce_admin_error('ECOMMERCE_RATE_LIMITED');
-  end if;
-  select l.id as license_id,p.code as plan_code,p.name as plan_name,
-         coalesce(p.features,'{}'::jsonb)||coalesce(l.features,'{}'::jsonb) as effective_features
-  into v_license from public.licenses l left join public.plans p on p.id=l.plan_id
-  where l.license_key=p_license_key and l.status='active'
-    and (l.expires_at is null or l.expires_at>=now()) limit 1;
-  if v_license.license_id is null then return private.ecommerce_admin_error('LICENSE_NOT_ACTIVE'); end if;
-  if private.ecommerce_license_feature_bool(v_license.license_id,'ecommerce_portal_enabled',false) is not true then
-    return private.ecommerce_admin_error('ECOMMERCE_PORTAL_DISABLED');
-  end if;
-  select d.id as device_id,d.device_role,d.staff_user_id into v_device
-  from public.license_devices d where d.license_id=v_license.license_id
-    and d.device_fingerprint=p_device_fingerprint and d.is_active is true
-    and (d.security_token=p_security_token or d.previous_security_token=p_security_token) limit 1;
-  if v_device.device_id is null then return private.ecommerce_admin_error('ECOMMERCE_ADMIN_ACCESS_DENIED'); end if;
-
-  if v_device.device_role='admin' then
-    if exists(select 1 from public.license_admin_users u where u.license_id=v_license.license_id and u.is_owner and u.is_active) then
-      v_admin_auth:=private.require_active_admin_session(p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
-      if coalesce((v_admin_auth->>'success')::boolean,false) is false then
-        return private.ecommerce_admin_error('ECOMMERCE_ADMIN_SESSION_REQUIRED','Inicia sesion como administrador para continuar.');
-      end if;
-    end if;
-    return jsonb_build_object('success',true,'license_id',v_license.license_id,'device_id',v_device.device_id,
-      'device_role','admin','actor_type','admin_owner','admin_user_id',v_admin_auth->>'admin_user_id',
-      'staff_user_id',null,'plan_code',v_license.plan_code,'plan_name',v_license.plan_name,'features',v_license.effective_features);
-  end if;
-  if v_device.device_role<>'staff' or nullif(btrim(coalesce(p_staff_session_token,'')),'') is null then
-    return private.ecommerce_admin_error('ECOMMERCE_STAFF_SESSION_REQUIRED');
-  end if;
-  v_staff_verification:=public.verify_staff_session_unlimited(p_license_key,p_device_fingerprint,p_staff_session_token);
-  if coalesce((v_staff_verification->>'valid')::boolean,false) is false
-     or v_device.staff_user_id is null
-     or coalesce(v_staff_verification#>>'{staff_user,id}','')<>v_device.staff_user_id::text then
-    return private.ecommerce_admin_error('ECOMMERCE_STAFF_SESSION_INVALID');
-  end if;
-  select s.permissions into v_permissions from public.license_staff_users s
-  where s.id=v_device.staff_user_id and s.license_id=v_license.license_id and s.is_active limit 1;
-  if v_permissions is null then return private.ecommerce_admin_error('ECOMMERCE_STAFF_SESSION_INVALID'); end if;
-  if coalesce((v_permissions->>'settings')::boolean,false) is not true
-     or coalesce((v_permissions->>'ecommerce')::boolean,false) is not true then
-    return private.ecommerce_admin_error('ECOMMERCE_STAFF_PERMISSION_DENIED');
-  end if;
-  return jsonb_build_object('success',true,'license_id',v_license.license_id,'device_id',v_device.device_id,
-    'device_role','staff','actor_type','staff','staff_user_id',v_device.staff_user_id,
-    'plan_code',v_license.plan_code,'plan_name',v_license.plan_name,'features',v_license.effective_features);
-exception when others then return private.ecommerce_admin_error('ECOMMERCE_ADMIN_ACCESS_DENIED');
-end;
-$$;
-
-create or replace function private.ecommerce_admin_authorize(
-  p_license_key text,p_device_fingerprint text,p_security_token text,p_rpc_name text
-)
-returns jsonb language sql security definer set search_path = '' as $$
-  select private.ecommerce_admin_authorize_v2($1,$2,$3,null,$4);
-$$;
-
-revoke all on function private.ecommerce_admin_authorize_v2(text,text,text,text,text) from public,anon,authenticated,service_role;
-revoke all on function private.ecommerce_admin_authorize(text,text,text,text) from public,anon,authenticated,service_role;
-
 revoke all on function public.admin_enroll_owner_on_device(text,text,text,text,text,text) from public;
 revoke all on function public.admin_login_on_device(text,text,text,text,text,jsonb) from public;
 revoke all on function public.verify_admin_session(text,text,text,text) from public;
 revoke all on function public.admin_logout_session(text,text,text,text) from public;
 revoke all on function public.admin_get_license_devices(text,text,text,text) from public;
 revoke all on function public.admin_release_device(text,text,text,text,uuid) from public;
-revoke all on function public.admin_list_staff_users(text,text,text) from public, anon, authenticated;
-revoke all on function public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text) from public, anon, authenticated;
-revoke all on function public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text) from public, anon, authenticated;
-revoke all on function public.get_license_devices_anon(text,text) from public, anon, authenticated;
-revoke all on function public.get_license_devices_anon_unlimited(text,text) from public, anon, authenticated;
-revoke all on function public.release_device_anon(uuid,text,text) from public, anon, authenticated;
-revoke all on function public.release_device_anon_unlimited(uuid,text,text) from public, anon, authenticated;
-revoke all on function public.activate_license_on_device_legacy_free(text,text,text,jsonb) from public, anon, authenticated;
-revoke all on function public.activate_license_on_device_unlimited(text,text,text,jsonb) from public, anon, authenticated;
 
 grant execute on function public.admin_enroll_owner_on_device(text,text,text,text,text,text) to anon, authenticated;
 grant execute on function public.admin_login_on_device(text,text,text,text,text,jsonb) to anon, authenticated;
@@ -834,5 +693,3 @@ grant execute on function public.admin_release_device(text,text,text,text,uuid) 
 grant execute on function public.admin_list_staff_users(text,text,text,text) to anon, authenticated;
 grant execute on function public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text) to anon, authenticated;
 grant execute on function public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text) to anon, authenticated;
-
-notify pgrst, 'reload schema';

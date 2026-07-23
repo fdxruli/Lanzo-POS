@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   adminLoginOnDevice: vi.fn(),
   adminLogoutSession: vi.fn(),
   clearAdminSessionCache: vi.fn(),
+  clearStaffSessionCache: vi.fn(),
   enrollAdminOwnerOnDevice: vi.fn(),
   saveLicenseToStorage: vi.fn()
 }));
@@ -14,6 +15,7 @@ vi.mock('../../../services/supabase', () => ({
   adminLoginOnDevice: mocks.adminLoginOnDevice,
   adminLogoutSession: mocks.adminLogoutSession,
   clearAdminSessionCache: mocks.clearAdminSessionCache,
+  clearStaffSessionCache: mocks.clearStaffSessionCache,
   enrollAdminOwnerOnDevice: mocks.enrollAdminOwnerOnDevice
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));

@@ -152,6 +152,17 @@ export const isLicensePlanBlockFailure = (validation = {}) => (
   hasLicensePlanBlockReason(validation) && validation.valid !== true
 );
 
+export const requiresAdminIdentity = (license = {}) => {
+  const planCode = String(license.plan_code || license.plan?.code || '').toLowerCase();
+  const features = license.features || license.effective_features || {};
+  return Boolean(
+    license.admin_identity_required === true ||
+    (planCode && planCode !== 'free_trial') ||
+    features.staff_roles === true ||
+    Number(license.max_devices || 1) > 1
+  );
+};
+
 export const buildLicensePlanBlockInfo = (validation = {}, fallbackLicense = {}) => {
   const reason = getLicensePlanBlockReason(validation) || 'LICENSE_PLAN_CHANGED';
   const planName = validation.plan_name || validation.details?.plan_name || fallbackLicense.plan_name || 'Plan actual';

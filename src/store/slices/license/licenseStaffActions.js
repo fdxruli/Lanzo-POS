@@ -2,6 +2,7 @@
 
 import {
   clearStaffSessionCache,
+  clearAdminSessionCache,
   hasStaffSessionToken,
   staffLoginOnDevice,
   staffLogoutSession
@@ -46,6 +47,7 @@ export const createLicenseStaffActions = ({
     await get().stopLicenseSync();
 
     await clearStaffSessionCache();
+    await clearAdminSessionCache();
 
     if (nextLicenseDetails?.license_key) {
       await saveLicenseToStorage(nextLicenseDetails);

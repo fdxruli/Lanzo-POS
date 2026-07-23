@@ -44,7 +44,7 @@ const ADMIN_SESSION_TOKEN_KEY = 'admin_session_token';
 const ADMIN_SESSION_ID_KEY = 'admin_session_id';
 const ADMIN_SESSION_CACHE_KEY = 'last_valid_admin_session';
 
-async function getStaffSessionToken() {
+export async function getStaffSessionToken() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY);
         return record ? record.value : null;
@@ -53,7 +53,7 @@ async function getStaffSessionToken() {
     }
 }
 
-async function setStaffSessionCredentials(sessionToken, sessionId = null) {
+export async function setStaffSessionCredentials(sessionToken, sessionId = null) {
     try {
         await Promise.all([
             saveData(STORES.SYNC_CACHE, {
@@ -88,7 +88,7 @@ export async function getAdminSessionToken() {
     }
 }
 
-async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
+export async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
     await Promise.all([
         saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_TOKEN_KEY, value: sessionToken || null }),
         saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_ID_KEY, value: sessionId || null }),
@@ -119,8 +119,17 @@ export async function clearAdminSessionCache() {
     await setAdminSessionCredentials(null, null, null);
 }
 
-export async function getActorSessionToken() {
-    return (await getAdminSessionToken()) || (await getStaffSessionToken()) || null;
+export async function getActorSessionToken(deviceRole = null) {
+    if (deviceRole === 'admin') return getAdminSessionToken();
+    if (deviceRole === 'staff') return getStaffSessionToken();
+
+    const [adminToken, staffToken] = await Promise.all([
+        getAdminSessionToken(),
+        getStaffSessionToken()
+    ]);
+    // Ambiguous callers must not silently select an elevated residual token.
+    if (adminToken && staffToken) return null;
+    return adminToken || staffToken || null;
 }
 
 function pickSecurityTokenFromLicense(license = {}) {
@@ -625,6 +634,7 @@ export const staffLoginOnDevice = async function ({
             await setSecureCredentials(deviceToken);
         }
 
+        await clearAdminSessionCache();
         await setStaffSessionCredentials(data.staff_session_token, data.staff_session_id);
         safeLocalStorageSet('fp', deviceFingerprint);
 
@@ -1261,6 +1271,7 @@ const buildAdminSessionResult = async (data, licenseKey) => {
 
     const deviceToken = data.device_security_token || data.details?.security_token || null;
     if (deviceToken) await setSecureCredentials(deviceToken);
+    await clearStaffSessionCache();
     if (data.admin_session_token) {
         await setAdminSessionCredentials(
             data.admin_session_token,
