@@ -1,0 +1,264 @@
+name: PR #126 Vitest base/PR comparison
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+
+jobs:
+  test-main:
+    name: Test base SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      npm_ci_exit: ${{ steps.install.outputs.npm_ci_exit || 'not_run' }}
+      list_exit: ${{ steps.collect.outputs.list_exit || 'not_run' }}
+      suite_exit: ${{ steps.suite.outputs.suite_exit || 'not_run' }}
+      sequential_exit: ${{ steps.sequential.outputs.sequential_exit || 'not_run' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - id: install
+        name: Install reproducibly
+        shell: bash
+        run: |
+          set +e
+          node --version | tee versions.log
+          npm --version | tee -a versions.log
+          start=$(date +%s)
+          npm ci --no-audit --no-fund 2>&1 | tee npm-ci.log
+          npm_ci_exit=${PIPESTATUS[0]}
+          echo "NPM_CI_SECONDS=$(( $(date +%s) - start ))" | tee -a versions.log
+          echo "NPM_CI_EXIT_CODE=${npm_ci_exit}" | tee -a versions.log
+          if [ "${npm_ci_exit}" = 0 ]; then npx vitest --version | tee -a versions.log; fi
+          echo "npm_ci_exit=${npm_ci_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - id: collect
+        name: Collect Vitest files
+        if: steps.install.outputs.npm_ci_exit == '0'
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          npx vitest list --filesOnly 2>&1 | tee vitest-files.log
+          list_exit=${PIPESTATUS[0]}
+          echo "VITEST_FILES_COUNT=$(grep -Ec '^src/.+\.(test|spec)\.(js|jsx)$' vitest-files.log || true)" | tee -a vitest-files.log
+          tail -n 20 vitest-files.log
+          echo "list_exit=${list_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - id: suite
+        name: Run global suite with timeout
+        if: steps.install.outputs.npm_ci_exit == '0' && steps.collect.outputs.list_exit == '0'
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          timeout --signal=TERM --kill-after=30s 25m npm run test:ci 2>&1 | tee vitest-suite.log
+          suite_exit=${PIPESTATUS[0]}
+          echo "SUITE_EXIT_CODE=${suite_exit}" | tee -a vitest-suite.log
+          echo "suite_exit=${suite_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - id: sequential
+        name: Diagnose sequentially when suite fails
+        if: steps.suite.outputs.suite_exit != '' && steps.suite.outputs.suite_exit != '0'
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          timeout --signal=TERM --kill-after=30s 15m npx vitest run \
+            --no-file-parallelism --maxWorkers=1 --reporter=verbose \
+            --reporter=hanging-process --logHeapUsage 2>&1 | tee vitest-sequential.log
+          sequential_exit=${PIPESTATUS[0]}
+          echo "SEQUENTIAL_EXIT_CODE=${sequential_exit}" | tee -a vitest-sequential.log
+          echo "sequential_exit=${sequential_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Base-suite diagnostic"
+            echo "- Reference: \`${{ github.event.pull_request.base.sha }}\`"
+            echo "- Node/npm/Vitest:"; cat versions.log 2>/dev/null || true
+            echo "- npm ci exit: \`${{ steps.install.outputs.npm_ci_exit || 'not_run' }}\`"
+            echo "- File collection exit: \`${{ steps.collect.outputs.list_exit || 'not_run' }}\`"
+            echo "- Suite exit: \`${{ steps.suite.outputs.suite_exit || 'not_run' }}\`"
+            echo "- Sequential exit: \`${{ steps.sequential.outputs.sequential_exit || 'not_run' }}\`"
+            echo "- Last recorded lines:"; tail -n 10 vitest-suite.log vitest-sequential.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-base-${{ github.event.pull_request.base.sha }}
+          path: |
+            versions.log
+            npm-ci.log
+            vitest-files.log
+            vitest-suite.log
+            vitest-sequential.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  test-pr:
+    name: Test PR SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      npm_ci_exit: ${{ steps.install.outputs.npm_ci_exit || 'not_run' }}
+      list_exit: ${{ steps.collect.outputs.list_exit || 'not_run' }}
+      suite_exit: ${{ steps.suite.outputs.suite_exit || 'not_run' }}
+      sequential_exit: ${{ steps.sequential.outputs.sequential_exit || 'not_run' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - id: install
+        name: Install reproducibly
+        shell: bash
+        run: |
+          set +e
+          node --version | tee versions.log
+          npm --version | tee -a versions.log
+          start=$(date +%s)
+          npm ci --no-audit --no-fund 2>&1 | tee npm-ci.log
+          npm_ci_exit=${PIPESTATUS[0]}
+          echo "NPM_CI_SECONDS=$(( $(date +%s) - start ))" | tee -a versions.log
+          echo "NPM_CI_EXIT_CODE=${npm_ci_exit}" | tee -a versions.log
+          if [ "${npm_ci_exit}" = 0 ]; then npx vitest --version | tee -a versions.log; fi
+          echo "npm_ci_exit=${npm_ci_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - id: collect
+        name: Collect Vitest files
+        if: steps.install.outputs.npm_ci_exit == '0'
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          npx vitest list --filesOnly 2>&1 | tee vitest-files.log
+          list_exit=${PIPESTATUS[0]}
+          echo "VITEST_FILES_COUNT=$(grep -Ec '^src/.+\.(test|spec)\.(js|jsx)$' vitest-files.log || true)" | tee -a vitest-files.log
+          tail -n 20 vitest-files.log
+          echo "list_exit=${list_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - id: suite
+        name: Run global suite with timeout
+        if: steps.install.outputs.npm_ci_exit == '0' && steps.collect.outputs.list_exit == '0'
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          timeout --signal=TERM --kill-after=30s 25m npm run test:ci 2>&1 | tee vitest-suite.log
+          suite_exit=${PIPESTATUS[0]}
+          echo "SUITE_EXIT_CODE=${suite_exit}" | tee -a vitest-suite.log
+          echo "suite_exit=${suite_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - id: sequential
+        name: Diagnose sequentially when suite fails
+        if: steps.suite.outputs.suite_exit != '' && steps.suite.outputs.suite_exit != '0'
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          timeout --signal=TERM --kill-after=30s 15m npx vitest run \
+            --no-file-parallelism --maxWorkers=1 --reporter=verbose \
+            --reporter=hanging-process --logHeapUsage 2>&1 | tee vitest-sequential.log
+          sequential_exit=${PIPESTATUS[0]}
+          echo "SEQUENTIAL_EXIT_CODE=${sequential_exit}" | tee -a vitest-sequential.log
+          echo "sequential_exit=${sequential_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## PR-suite diagnostic"
+            echo "- Reference: \`${{ github.event.pull_request.head.sha }}\`"
+            echo "- Node/npm/Vitest:"; cat versions.log 2>/dev/null || true
+            echo "- npm ci exit: \`${{ steps.install.outputs.npm_ci_exit || 'not_run' }}\`"
+            echo "- File collection exit: \`${{ steps.collect.outputs.list_exit || 'not_run' }}\`"
+            echo "- Suite exit: \`${{ steps.suite.outputs.suite_exit || 'not_run' }}\`"
+            echo "- Sequential exit: \`${{ steps.sequential.outputs.sequential_exit || 'not_run' }}\`"
+            echo "- Last recorded lines:"; tail -n 10 vitest-suite.log vitest-sequential.log 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-pr-${{ github.event.pull_request.head.sha }}
+          path: |
+            versions.log
+            npm-ci.log
+            vitest-files.log
+            vitest-suite.log
+            vitest-sequential.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  classify:
+    name: Classify base/PR comparison
+    needs: [test-main, test-pr]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Classify evidence
+        shell: bash
+        env:
+          MAIN_NPM_CI: ${{ needs.test-main.outputs.npm_ci_exit }}
+          PR_NPM_CI: ${{ needs.test-pr.outputs.npm_ci_exit }}
+          MAIN_LIST: ${{ needs.test-main.outputs.list_exit }}
+          PR_LIST: ${{ needs.test-pr.outputs.list_exit }}
+          MAIN_SUITE: ${{ needs.test-main.outputs.suite_exit }}
+          PR_SUITE: ${{ needs.test-pr.outputs.suite_exit }}
+          MAIN_SEQUENTIAL: ${{ needs.test-main.outputs.sequential_exit }}
+          PR_SEQUENTIAL: ${{ needs.test-pr.outputs.sequential_exit }}
+        run: |
+          classification=COMPARISON_INCONCLUSIVE
+          status=1
+          if [ "$PR_SUITE" = 0 ] && [ "$MAIN_SUITE" = 0 ]; then
+            classification=GLOBAL_SUITE_PASS; status=0
+          elif [ "$PR_SUITE" = 0 ]; then
+            classification=PR_SUITE_PASS; status=0
+          elif [ "$MAIN_SUITE" = 0 ]; then
+            classification=PR_REGRESSION_CONFIRMED; status=1
+          elif [ "$MAIN_NPM_CI" = 0 ] && [ "$PR_NPM_CI" = 0 ] && [ "$MAIN_LIST" = 0 ] && [ "$PR_LIST" = 0 ] && [ "$MAIN_SUITE" = 124 ] && [ "$PR_SUITE" = 124 ]; then
+            classification=INHERITED_TEST_RUNNER_LIMITATION; status=0
+          fi
+          {
+            echo "## ${classification}"
+            echo "- Base SHA: \`${{ github.event.pull_request.base.sha }}\`"
+            echo "- PR SHA: \`${{ github.event.pull_request.head.sha }}\`"
+            echo "- npm ci: base=${MAIN_NPM_CI}, pr=${PR_NPM_CI}"
+            echo "- collection: base=${MAIN_LIST}, pr=${PR_LIST}"
+            echo "- suite: base=${MAIN_SUITE}, pr=${PR_SUITE}"
+            echo "- sequential: base=${MAIN_SEQUENTIAL}, pr=${PR_SEQUENTIAL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "CLASSIFICATION=${classification}"
+          exit "$status"
