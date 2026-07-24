@@ -38,11 +38,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Dexie recovery tests
-        run: npm run test:ci -- src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+      - name: Dexie recovery and schema tests
+        run: >-
+          npm run test:ci --
+          src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+          src/services/db/__tests__/databaseSchemaRegistration.test.js
 
-      - name: Admin login tests
-        run: npm run test:ci -- src/components/common/__tests__/AdminLoginModal.recovery.test.jsx src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+      - name: Admin login and bootstrap tests
+        run: >-
+          npm run test:ci --
+          src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
+          src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+          src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+
+      - name: ProductStore and POS Meta tests
+        run: >-
+          npm run test:ci --
+          src/store/__tests__/productStoreRecoveryGuard.test.js
+          src/services/sync/__tests__/syncMetaService.recovery.test.js
 
       - name: StorageManager tests
         run: npm run test:ci -- src/services/__tests__/storageManager.bestEffort.test.js
