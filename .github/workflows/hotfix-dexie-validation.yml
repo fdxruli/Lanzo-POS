@@ -22,9 +22,30 @@ permissions:
   contents: read
 
 jobs:
-  focal-validation:
+  focal-tests:
+    name: focal-tests (${{ matrix.suite }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: dexie-recovery-schema
+            files: >-
+              src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+              src/services/db/__tests__/databaseSchemaRegistration.test.js
+          - suite: admin-login-modal
+            files: src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
+          - suite: admin-session-bootstrap
+            files: >-
+              src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+              src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+          - suite: product-pos-sync
+            files: >-
+              src/store/__tests__/productStoreRecoveryGuard.test.js
+              src/services/sync/__tests__/syncMetaService.recovery.test.js
+          - suite: storage-manager
+            files: src/services/__tests__/storageManager.bestEffort.test.js
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,27 +59,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Dexie recovery and schema tests
-        run: >-
-          npm run test:ci --
-          src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
-          src/services/db/__tests__/databaseSchemaRegistration.test.js
+      - name: Run ${{ matrix.suite }}
+        run: npm run test:ci -- ${{ matrix.files }}
 
-      - name: Admin login and bootstrap tests
-        run: >-
-          npm run test:ci --
-          src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
-          src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
-          src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+  focal-quality:
+    name: focal-quality
+    needs: focal-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: ProductStore and POS Meta tests
-        run: >-
-          npm run test:ci --
-          src/store/__tests__/productStoreRecoveryGuard.test.js
-          src/services/sync/__tests__/syncMetaService.recovery.test.js
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-      - name: StorageManager tests
-        run: npm run test:ci -- src/services/__tests__/storageManager.bestEffort.test.js
+      - name: Install dependencies
+        run: npm ci
 
       - name: Focal ESLint
         run: >-
