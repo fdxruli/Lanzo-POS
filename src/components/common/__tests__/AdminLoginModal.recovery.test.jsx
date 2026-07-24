@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const storeState = vi.hoisted(() => ({
   handleAdminLogin: vi.fn(),
@@ -14,18 +13,21 @@ vi.mock('../../../store/useAppStore', () => ({
 
 import AdminLoginModal from '../AdminLoginModal';
 
-const submitCredentials = async () => {
-  const user = userEvent.setup();
-  await user.type(screen.getByLabelText('Usuario'), 'owner');
-  await user.type(screen.getByLabelText('Contraseña'), 'secret');
-  await user.click(screen.getByRole('button', { name: 'Entrar' }));
-  return user;
+const submitCredentials = () => {
+  fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'owner' } });
+  fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'secret' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  storeState.handleAdminLogin.mockReset();
+  storeState.logout.mockReset();
   storeState.adminLoginMessage = null;
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('AdminLoginModal local database recovery', () => {
@@ -35,7 +37,7 @@ describe('AdminLoginModal local database recovery', () => {
     storeState.handleAdminLogin.mockRejectedValueOnce(error);
 
     render(<AdminLoginModal />);
-    await submitCredentials();
+    submitCredentials();
 
     expect(await screen.findByText(/esquema local antiguo/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
@@ -50,7 +52,7 @@ describe('AdminLoginModal local database recovery', () => {
     storeState.handleAdminLogin.mockRejectedValueOnce(error);
 
     render(<AdminLoginModal />);
-    await submitCredentials();
+    submitCredentials();
 
     expect(await screen.findByText(/esquema local antiguo/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
@@ -62,7 +64,7 @@ describe('AdminLoginModal local database recovery', () => {
     storeState.handleAdminLogin.mockRejectedValueOnce(error);
 
     render(<AdminLoginModal />);
-    await submitCredentials();
+    submitCredentials();
 
     expect(await screen.findByText(/tardó demasiado/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
@@ -76,7 +78,7 @@ describe('AdminLoginModal local database recovery', () => {
     });
 
     render(<AdminLoginModal />);
-    await submitCredentials();
+    submitCredentials();
 
     expect(await screen.findByText(/usuario o contraseña incorrectos/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
@@ -86,7 +88,7 @@ describe('AdminLoginModal local database recovery', () => {
     storeState.handleAdminLogin.mockResolvedValueOnce({ success: true });
 
     render(<AdminLoginModal />);
-    await submitCredentials();
+    submitCredentials();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
   });
