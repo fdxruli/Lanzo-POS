@@ -1,13 +1,27 @@
-/**
+/*
  * ------------------------------------------------------------------
  * DATABASE ADAPTER (BRIDGE)
  * ------------------------------------------------------------------
- * Este archivo actúa como un puente de compatibilidad.
- * Redirige todas las llamadas del sistema antiguo hacia la nueva
- * arquitectura modular basada en Dexie.js ubicada en './db'.
- * * NO AGREGAR LÓGICA AQUÍ. Agregarla en src/services/db/
+ * Este archivo mantiene compatibilidad con los imports históricos y garantiza
+ * que el registro canónico, el preflight y la recuperación se instalen antes
+ * de que cualquier consumidor intente abrir Dexie.
  */
 
-// Re-exportar todo desde el índice de la carpeta db
-export * from './db'; 
+import './db/databaseRuntime';
 
+export * from './db';
+export {
+  ensureLocalDatabaseReady,
+  getLocalDatabaseRuntimeState,
+  prepareLocalDatabase,
+  retryLocalDatabaseRecovery
+} from './db/databaseRuntime';
+export {
+  DATABASE_RECOVERY_CODES,
+  DATABASE_RECOVERY_STATUS,
+  classifyDatabaseError,
+  getDatabaseRecoveryState,
+  isDatabaseRecoveryPending,
+  isStructuralDatabaseError,
+  subscribeDatabaseRecoveryState
+} from './db/databaseRecoveryState';
