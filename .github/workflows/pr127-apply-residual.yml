@@ -21,6 +21,7 @@ jobs:
           fetch-depth: 0
       - name: Apply audited residual patch
         run: |
+          # Concatenate the audited payload staged by this session.
           cat .github/pr127-residual/part* | base64 --decode > /tmp/pr127-residual.tar.gz
           tar -xzf /tmp/pr127-residual.tar.gz -C .
           git config user.name "github-actions[bot]"
