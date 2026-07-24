@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - hotfix/dexie-primary-key-recovery-admin-bootstrap
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
