@@ -62,7 +62,18 @@ export const prepareLocalDatabase = ({ force = false } = {}) => {
 
   preparationPromise = (async () => {
     try {
-      const initial = await preflightAndRepairIndexedDb({ databaseName: DB_NAME });
+      const initial = await preflightAndRepairIndexedDb({
+        databaseName: DB_NAME,
+        onBlocked: (blockedError) => {
+          const diagnostic = toRecoveryDiagnostic(blockedError);
+          setDatabaseRecoveryState({
+            ...diagnostic,
+            status: DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+            errorCode: DATABASE_RECOVERY_CODES.BLOCKED,
+            message: 'La base local está bloqueada por otra pestaña. La operación continuará cuando esa conexión se cierre.'
+          });
+        }
+      });
 
       if (initial?.migrated) {
         setDatabaseRecoveryState({
@@ -126,7 +137,10 @@ export const prepareLocalDatabase = ({ force = false } = {}) => {
   return preparationPromise;
 };
 
+export const isLocalDatabasePreparationActive = () => Boolean(preparationPromise);
+
 export const retryLocalDatabaseRecovery = async () => {
+  if (preparationPromise) return preparationPromise;
   lastPreparationResult = null;
   if (db.isOpen()) db.close();
   const result = await prepareLocalDatabase({ force: true });
