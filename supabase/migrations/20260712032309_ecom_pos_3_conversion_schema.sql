@@ -1,6 +1,3 @@
--- ECOM.POS.3 — Esquema de conversión POS
--- Alineado con la migración aplicada en producción: 20260712032309.
-
 alter table public.ecommerce_orders
   add column if not exists converted_at timestamptz,
   add column if not exists pos_conversion_key text,
@@ -35,4 +32,4 @@ $block$;
 
 create unique index if not exists ux_ecommerce_orders_license_pos_conversion_key
   on public.ecommerce_orders (license_id, pos_conversion_key)
-  where pos_conversion_key is not null;
+  where pos_conversion_key is not null;;

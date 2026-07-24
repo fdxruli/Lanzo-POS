@@ -105,3 +105,4 @@ from public;
 
 grant execute on function public.ecommerce_create_order(text, jsonb, jsonb, text)
 to anon, authenticated;
+;

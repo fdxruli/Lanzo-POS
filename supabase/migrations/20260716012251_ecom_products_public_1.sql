@@ -1322,4 +1322,4 @@ grant execute on function public.ecommerce_create_order(text, jsonb, jsonb, text
 comment on function public.ecommerce_get_product_configuration(text, uuid) is
   'ECOM.PRODUCTS.PUBLIC.1 safe public configuration detail. Exposes no source, license, cost, ingredient or staff identifiers.';
 comment on function public.ecommerce_create_order(text, jsonb, jsonb, text) is
-  'ECOM.PRODUCTS.PUBLIC.1 authoritative configurable checkout. Idempotent replay precedes mutable validation; no inventory, sale, cash or POS reservation is created.';
+  'ECOM.PRODUCTS.PUBLIC.1 authoritative configurable checkout. Idempotent replay precedes mutable validation; no inventory, sale, cash or POS reservation is created.';;

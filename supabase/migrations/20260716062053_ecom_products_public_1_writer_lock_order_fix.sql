@@ -115,4 +115,4 @@ revoke insert, update, delete, truncate
   from public, anon, authenticated, service_role;
 
 comment on function private.ecommerce_lock_configuration_writer(uuid, uuid) is
-  'ECOM.PRODUCTS.PUBLIC.1.2 writer lock protocol: portal FOR UPDATE, then product parent FOR UPDATE, before child or parent mutations.';
+  'ECOM.PRODUCTS.PUBLIC.1.2 writer lock protocol: portal FOR UPDATE, then product parent FOR UPDATE, before child or parent mutations.';;

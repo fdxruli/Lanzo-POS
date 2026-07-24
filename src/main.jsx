@@ -129,9 +129,13 @@ if (isPublicStorePath(window.location.pathname)) {
   updateExistingAdminWorkerOnPublicRoute();
   renderPublicStore();
 } else {
-  installAdminPwaDocument();
+  if (!import.meta.env.DEV) {
+    installAdminPwaDocument();
+  }
   startAdminInstallPromptCapture();
-  startAdminServiceWorker();
+  if (!import.meta.env.DEV) {
+    startAdminServiceWorker();
+  }
   renderPosApplication().catch((error) => {
     console.error('No se pudo iniciar Lanzo POS.', error);
     ReactDOM.createRoot(rootElement).render(

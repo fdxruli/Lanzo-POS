@@ -1,7 +1,3 @@
--- ECOM.PRODUCTS.MODEL.1.1
--- Correct reversible configuration availability and connect the canonical
--- normalized configuration sync to manual publication and PRO catalog sync.
-
 create or replace function private.ecommerce_published_product_sync_guard()
 returns trigger
 language plpgsql
@@ -875,4 +871,4 @@ comment on function private.ecommerce_apply_product_configuration(uuid,uuid,json
 comment on function public.ecommerce_admin_upsert_published_product_v2(text,text,text,text,jsonb) is
   'Atomic manual published-product upsert plus normalized configuration sync.';
 comment on function public.ecommerce_admin_sync_published_catalog_v2(text,text,text,text,jsonb,text,bigint) is
-  'Atomic PRO catalog sync plus normalized configuration sync using the canonical private writer.';
+  'Atomic PRO catalog sync plus normalized configuration sync using the canonical private writer.';;

@@ -282,3 +282,4 @@ grant execute on function private.ecommerce_source_revision_decision(
 grant execute on function private.ecommerce_product_public_jsonb(
   public.ecommerce_published_products, boolean
 ) to service_role;
+;

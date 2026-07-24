@@ -296,4 +296,4 @@ COMMENT ON FUNCTION public.pos_get_current_cash_session(text, text, text, text)
   IS 'FASE 6H.7.4: evita recalcular totales en cada lectura; usa ventana de 30s y advisory lock anti-dogpile.';
 
 COMMENT ON FUNCTION public.pos_pull_sync_events(text, text, text, text, bigint, integer)
-  IS 'FASE 6H.7.4: usa lectura descendente indexada para server_latest_change_seq en lugar de MAX agregado repetido.';
+  IS 'FASE 6H.7.4: usa lectura descendente indexada para server_latest_change_seq en lugar de MAX agregado repetido.';;

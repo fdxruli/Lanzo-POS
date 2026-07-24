@@ -1,7 +1,9 @@
 -- ECOM.ORDERS.2 / 3
 -- Server-side fulfillment state machine and administrative RPC.
 
-create or replace function private.ecommerce_fulfillment_public_json_v1(p_order public.ecommerce_orders)
+create or replace function private.ecommerce_fulfillment_public_json_v1(
+  p_order public.ecommerce_orders
+)
 returns jsonb
 language sql
 stable
@@ -115,10 +117,16 @@ begin
 
   if p_order_id is null then return private.ecommerce_orders_error_v1('ECOMMERCE_ORDER_NOT_FOUND'); end if;
   if v_transition not in ('preparing','ready','out_for_delivery','completed','cancelled') then
-    return private.ecommerce_orders_error_v1('ECOMMERCE_ORDER_STATUS_INVALID_TRANSITION','La transición solicitada no está permitida.');
+    return private.ecommerce_orders_error_v1(
+      'ECOMMERCE_ORDER_STATUS_INVALID_TRANSITION',
+      'La transición solicitada no está permitida.'
+    );
   end if;
   if v_event_key = '' then
-    return private.ecommerce_orders_error_v1('ECOMMERCE_ORDER_STATUS_IDEMPOTENCY_REQUIRED','No se pudo preparar una transición idempotente.');
+    return private.ecommerce_orders_error_v1(
+      'ECOMMERCE_ORDER_STATUS_IDEMPOTENCY_REQUIRED',
+      'No se pudo preparar una transición idempotente.'
+    );
   end if;
 
   if v_message is not null then
@@ -155,7 +163,9 @@ begin
       );
     end if;
     return jsonb_build_object(
-      'success', true, 'changed', false, 'idempotent', true,
+      'success', true,
+      'changed', false,
+      'idempotent', true,
       'order', jsonb_build_object(
         'id', v_order.id,
         'code', v_order.public_order_code,
@@ -242,7 +252,9 @@ begin
   );
 
   return jsonb_build_object(
-    'success', true, 'changed', true, 'idempotent', false,
+    'success', true,
+    'changed', true,
+    'idempotent', false,
     'order', jsonb_build_object(
       'id', v_order.id,
       'code', v_order.public_order_code,
@@ -287,6 +299,7 @@ begin
     p_staff_session_token, 'ecommerce_admin_get_order'
   );
   if coalesce((v_auth ->> 'success')::boolean, false) is false then return v_auth; end if;
+
   v_license_id := (v_auth ->> 'license_id')::uuid;
   v_snapshot := private.ecommerce_order_pos_snapshot_v1(p_order_id, v_license_id, v_auth);
   if v_snapshot is null then return private.ecommerce_orders_error_v1('ECOMMERCE_ORDER_NOT_FOUND'); end if;
@@ -318,4 +331,4 @@ revoke all on function public.ecommerce_admin_update_order_fulfillment(
 
 comment on function public.ecommerce_admin_update_order_fulfillment(
   text, text, text, text, uuid, text, bigint, text, text
-) is 'Versioned and idempotent server-side fulfillment state transition for an authorized ecommerce actor.';
+) is 'Versioned and idempotent server-side fulfillment state transition for an authorized ecommerce actor.';;

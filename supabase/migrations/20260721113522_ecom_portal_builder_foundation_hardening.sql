@@ -738,3 +738,5 @@ end;
 $$;
 revoke all on function public.ecommerce_admin_list_site_versions(text, text, text, text, integer, integer) from public, anon, authenticated;
 grant execute on function public.ecommerce_admin_list_site_versions(text, text, text, text, integer, integer) to anon, authenticated, service_role;
+
+;

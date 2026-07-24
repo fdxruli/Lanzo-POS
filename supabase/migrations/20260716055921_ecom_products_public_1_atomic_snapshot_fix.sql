@@ -1,262 +1,37 @@
--- ECOM.PRODUCTS.PUBLIC.1.2
--- Atomic configuration snapshot for detail and checkout readers.
-
-create or replace function public.ecommerce_get_product_configuration(
-  p_slug text,
-  p_product_id uuid
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
-as $function$
+-- ECOM.PRODUCTS.PUBLIC.1.2 atomic configuration snapshot
+create or replace function public.ecommerce_get_product_configuration(p_slug text,p_product_id uuid)
+returns jsonb language plpgsql security definer set search_path='' as $function$
 declare
-  v_portal public.ecommerce_portals%rowtype;
-  v_product public.ecommerce_published_products%rowtype;
-  v_allow_stock_visibility boolean;
-  v_rate_limit jsonb;
-  v_variants jsonb;
-  v_groups jsonb;
-  v_configuration_revision text;
-  v_catalog_revision bigint;
+ v_portal public.ecommerce_portals%rowtype;v_product public.ecommerce_published_products%rowtype;v_allow_stock_visibility boolean;v_rate_limit jsonb;v_variants jsonb;v_groups jsonb;v_configuration_revision text;v_catalog_revision bigint;
 begin
-  v_portal := private.ecommerce_get_public_portal_by_slug(p_slug);
-  if v_portal.id is null then return private.ecommerce_public_error('ECOMMERCE_PORTAL_NOT_FOUND'); end if;
-  if p_product_id is null then return private.ecommerce_public_error('ECOMMERCE_PRODUCT_NOT_FOUND'); end if;
-
-  select pp.*
-  into v_product
-  from public.ecommerce_published_products pp
-  where pp.id = p_product_id
-    and pp.portal_id = v_portal.id
-    and pp.license_id = v_portal.license_id
-    and pp.deleted_at is null
-    and pp.is_published is true
-  for share;
-
-  if v_product.id is null then return private.ecommerce_public_error('ECOMMERCE_PRODUCT_NOT_FOUND'); end if;
-
-  select p.catalog_revision
-  into v_catalog_revision
-  from public.ecommerce_portals p
-  where p.id = v_portal.id
-    and p.license_id = v_portal.license_id
-    and p.deleted_at is null;
-
-  if v_catalog_revision is null then return private.ecommerce_public_error('ECOMMERCE_PORTAL_NOT_FOUND'); end if;
-
-  v_rate_limit := private.ecommerce_enforce_product_configuration_rate_limit(
-    v_portal.id,
-    v_portal.license_id,
-    v_product.id
-  );
-  if coalesce((v_rate_limit ->> 'allowed')::boolean, true) is not true then
-    return private.ecommerce_public_error('ECOMMERCE_RATE_LIMITED');
-  end if;
-
-  v_allow_stock_visibility := private.ecommerce_license_feature_bool(
-    v_portal.license_id,
-    'ecommerce_stock_visibility',
-    false
-  );
-  v_configuration_revision := private.ecommerce_product_configuration_revision(v_product.id);
-
-  select coalesce(
-    jsonb_agg(
-      jsonb_build_object(
-        'id', v.id,
-        'publicName', coalesce(nullif(btrim(v.public_name), ''), (
-          select string_agg(e.value, ' / ' order by e.key)
-          from jsonb_each_text(v.option_values) e
-        )),
-        'optionValues', v.option_values,
-        'priceMode', v.price_mode,
-        'priceValue', v.price_value,
-        'imageUrl', v.image_url,
-        'stock', case
-          when v_allow_stock_visibility is not true then jsonb_build_object(
-            'mode', 'hidden',
-            'status', case when v.is_available then 'available' else 'out_of_stock' end,
-            'quantity', null
-          )
-          when v.stock_mode = 'status' then jsonb_build_object(
-            'mode', 'status',
-            'status', case when v.is_available then 'available' else 'out_of_stock' end,
-            'quantity', null
-          )
-          when v.stock_mode = 'exact' then jsonb_build_object(
-            'mode', 'exact',
-            'status', case when v.is_available then 'available' else 'out_of_stock' end,
-            'quantity', case when v.stock_snapshot is null then null else greatest(floor(v.stock_snapshot), 0) end
-          )
-          else jsonb_build_object(
-            'mode', 'hidden',
-            'status', case when v.is_available then 'available' else 'out_of_stock' end,
-            'quantity', null
-          )
-        end,
-        'isAvailable', (
-          v.manual_available is true
-          and v.source_available is true
-          and v.is_available is true
-        ),
-        'displayOrder', v.display_order
-      )
-      order by v.display_order, v.public_name, v.id
-    ),
-    '[]'::jsonb
-  )
-  into v_variants
-  from public.ecommerce_published_product_variants v
-  where v.published_product_id = v_product.id
-    and v.portal_id = v_portal.id
-    and v.license_id = v_portal.license_id
-    and v.deleted_at is null;
-
-  select coalesce(
-    jsonb_agg(
-      jsonb_build_object(
-        'id', g.id,
-        'publicName', g.public_name,
-        'selectionType', g.selection_type,
-        'required', g.required,
-        'minSelect', g.min_select,
-        'maxSelect', g.max_select,
-        'displayOrder', g.display_order,
-        'options', coalesce((
-          select jsonb_agg(
-            jsonb_build_object(
-              'id', o.id,
-              'publicName', o.public_name,
-              'priceDelta', o.price_delta,
-              'isAvailable', (
-                o.manual_available is true
-                and o.source_available is true
-                and o.is_available is true
-              ),
-              'displayOrder', o.display_order
-            )
-            order by o.display_order, o.public_name, o.id
-          )
-          from public.ecommerce_published_options o
-          where o.group_id = g.id
-            and o.published_product_id = v_product.id
-            and o.portal_id = v_portal.id
-            and o.license_id = v_portal.license_id
-            and o.deleted_at is null
-        ), '[]'::jsonb)
-      )
-      order by g.display_order, g.public_name, g.id
-    ),
-    '[]'::jsonb
-  )
-  into v_groups
-  from public.ecommerce_published_option_groups g
-  where g.published_product_id = v_product.id
-    and g.portal_id = v_portal.id
-    and g.license_id = v_portal.license_id
-    and g.deleted_at is null;
-
-  return jsonb_build_object(
-    'success', true,
-    'catalogRevision', v_catalog_revision,
-    'product', jsonb_build_object(
-      'id', v_product.id,
-      'name', v_product.public_name,
-      'description', v_product.public_description,
-      'imageUrl', v_product.image_url,
-      'currency', v_product.currency,
-      'configurationType', v_product.configuration_type,
-      'configurationVersion', v_product.configuration_version,
-      'configurationRevision', v_configuration_revision,
-      'requiresConfiguration', v_product.requires_configuration,
-      'hasVariants', v_product.has_variants,
-      'hasOptionGroups', v_product.has_option_groups,
-      'basePrice', v_product.price,
-      'isAvailable', private.ecommerce_product_publicly_available(v_product),
-      'availability', jsonb_build_object(
-        'source', v_product.availability_source,
-        'status', case when private.ecommerce_product_publicly_available(v_product) then 'available' else 'unavailable' end,
-        'message', case when private.ecommerce_product_publicly_available(v_product) then 'Disponible' else 'No disponible' end
-      )
-    ),
-    'variants', v_variants,
-    'groups', v_groups
-  );
-exception
-  when others then
-    return private.ecommerce_public_error('ECOMMERCE_CONFIGURATION_INVALID');
-end;
-$function$;
+ v_portal:=private.ecommerce_get_public_portal_by_slug(p_slug);if v_portal.id is null then return private.ecommerce_public_error('ECOMMERCE_PORTAL_NOT_FOUND');end if;if p_product_id is null then return private.ecommerce_public_error('ECOMMERCE_PRODUCT_NOT_FOUND');end if;
+ select pp.* into v_product from public.ecommerce_published_products pp where pp.id=p_product_id and pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id and pp.deleted_at is null and pp.is_published is true for share;
+ if v_product.id is null then return private.ecommerce_public_error('ECOMMERCE_PRODUCT_NOT_FOUND');end if;
+ select p.catalog_revision into v_catalog_revision from public.ecommerce_portals p where p.id=v_portal.id and p.license_id=v_portal.license_id and p.deleted_at is null;
+ if v_catalog_revision is null then return private.ecommerce_public_error('ECOMMERCE_PORTAL_NOT_FOUND');end if;
+ v_rate_limit:=private.ecommerce_enforce_product_configuration_rate_limit(v_portal.id,v_portal.license_id,v_product.id);if coalesce((v_rate_limit->>'allowed')::boolean,true)is not true then return private.ecommerce_public_error('ECOMMERCE_RATE_LIMITED');end if;
+ v_allow_stock_visibility:=private.ecommerce_license_feature_bool(v_portal.license_id,'ecommerce_stock_visibility',false);v_configuration_revision:=private.ecommerce_product_configuration_revision(v_product.id);
+ select coalesce(jsonb_agg(jsonb_build_object('id',v.id,'publicName',coalesce(nullif(btrim(v.public_name),''),(select string_agg(e.value,' / 'order by e.key)from jsonb_each_text(v.option_values)e)),'optionValues',v.option_values,'priceMode',v.price_mode,'priceValue',v.price_value,'imageUrl',v.image_url,'stock',case when v_allow_stock_visibility is not true then jsonb_build_object('mode','hidden','status',case when v.is_available then 'available' else 'out_of_stock'end,'quantity',null)when v.stock_mode='status' then jsonb_build_object('mode','status','status',case when v.is_available then 'available' else 'out_of_stock'end,'quantity',null)when v.stock_mode='exact' then jsonb_build_object('mode','exact','status',case when v.is_available then 'available' else 'out_of_stock'end,'quantity',case when v.stock_snapshot is null then null else greatest(floor(v.stock_snapshot),0)end)else jsonb_build_object('mode','hidden','status',case when v.is_available then 'available' else 'out_of_stock'end,'quantity',null)end,'isAvailable',(v.manual_available is true and v.source_available is true and v.is_available is true),'displayOrder',v.display_order)order by v.display_order,v.public_name,v.id),'[]'::jsonb)into v_variants from public.ecommerce_published_product_variants v where v.published_product_id=v_product.id and v.portal_id=v_portal.id and v.license_id=v_portal.license_id and v.deleted_at is null;
+ select coalesce(jsonb_agg(jsonb_build_object('id',g.id,'publicName',g.public_name,'selectionType',g.selection_type,'required',g.required,'minSelect',g.min_select,'maxSelect',g.max_select,'displayOrder',g.display_order,'options',coalesce((select jsonb_agg(jsonb_build_object('id',o.id,'publicName',o.public_name,'priceDelta',o.price_delta,'isAvailable',(o.manual_available is true and o.source_available is true and o.is_available is true),'displayOrder',o.display_order)order by o.display_order,o.public_name,o.id)from public.ecommerce_published_options o where o.group_id=g.id and o.published_product_id=v_product.id and o.portal_id=v_portal.id and o.license_id=v_portal.license_id and o.deleted_at is null),'[]'::jsonb))order by g.display_order,g.public_name,g.id),'[]'::jsonb)into v_groups from public.ecommerce_published_option_groups g where g.published_product_id=v_product.id and g.portal_id=v_portal.id and g.license_id=v_portal.license_id and g.deleted_at is null;
+ return jsonb_build_object('success',true,'catalogRevision',v_catalog_revision,'product',jsonb_build_object('id',v_product.id,'name',v_product.public_name,'description',v_product.public_description,'imageUrl',v_product.image_url,'currency',v_product.currency,'configurationType',v_product.configuration_type,'configurationVersion',v_product.configuration_version,'configurationRevision',v_configuration_revision,'requiresConfiguration',v_product.requires_configuration,'hasVariants',v_product.has_variants,'hasOptionGroups',v_product.has_option_groups,'basePrice',v_product.price,'isAvailable',private.ecommerce_product_publicly_available(v_product),'availability',jsonb_build_object('source',v_product.availability_source,'status',case when private.ecommerce_product_publicly_available(v_product)then'available'else'unavailable'end,'message',case when private.ecommerce_product_publicly_available(v_product)then'Disponible'else'No disponible'end)),'variants',v_variants,'groups',v_groups);
+exception when others then return private.ecommerce_public_error('ECOMMERCE_CONFIGURATION_INVALID');end;$function$;
 
 do $migration$
-declare
-  v_definition text;
-  v_before text;
-  v_after text;
+declare v_definition text;v_before text;v_after text;
 begin
-  select pg_get_functiondef(
-    'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure
-  ) into v_definition;
+ select pg_get_functiondef('public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure)into v_definition;
+ v_before:='if p_items is null or jsonb_typeof(p_items)<>''array'' or octet_length(p_items::text)>65536 then return private.ecommerce_public_error(''ECOMMERCE_EMPTY_CART'');end if;v_items_count:=jsonb_array_length(p_items);if coalesce(v_items_count,0)<=0 then return private.ecommerce_public_error(''ECOMMERCE_EMPTY_CART'');end if;if v_items_count>v_portal.max_order_items then return private.ecommerce_public_error(''ECOMMERCE_TOO_MANY_ITEMS'');end if;';
+ v_after:=v_before||'select p.* into v_portal from public.ecommerce_portals p where p.id=v_portal.id and p.license_id=v_portal.license_id and p.deleted_at is null for update;if v_portal.id is null then return private.ecommerce_public_error(''ECOMMERCE_PORTAL_NOT_FOUND'');end if;perform 1 from public.ecommerce_published_products pp join (select distinct (item->>''productId'')::uuid as id from jsonb_array_elements(p_items) item where jsonb_typeof(item)=''object'' and coalesce(item->>''productId'','''')~*''^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'')ids on ids.id=pp.id where pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id and pp.deleted_at is null and pp.is_published is true order by pp.id for share of pp;';
+ if strpos(v_definition,v_before)=0 then raise exception 'ECOM_PRODUCTS_PUBLIC_1_2_CHECKOUT_LOCK_DRIFT';end if;v_definition:=replace(v_definition,v_before,v_after);
+ if strpos(v_definition,'if v_existing_order.id is not null then')=0 or strpos(v_definition,'if v_existing_order.id is not null then')>strpos(v_definition,'for share of pp;')then raise exception 'ECOM_PRODUCTS_PUBLIC_1_2_REPLAY_ORDER_DRIFT';end if;
+ execute v_definition;
+end;$migration$;
 
-  v_before :=
-    'if p_items is null or jsonb_typeof(p_items)<>''array'' or octet_length(p_items::text)>65536 then return private.ecommerce_public_error(''ECOMMERCE_EMPTY_CART'');end if;'
-    || 'v_items_count:=jsonb_array_length(p_items);'
-    || 'if coalesce(v_items_count,0)<=0 then return private.ecommerce_public_error(''ECOMMERCE_EMPTY_CART'');end if;'
-    || 'if v_items_count>v_portal.max_order_items then return private.ecommerce_public_error(''ECOMMERCE_TOO_MANY_ITEMS'');end if;';
-
-  v_after := v_before
-    || 'select p.* into v_portal from public.ecommerce_portals p '
-    || 'where p.id=v_portal.id and p.license_id=v_portal.license_id and p.deleted_at is null '
-    || 'for update;'
-    || 'if v_portal.id is null then return private.ecommerce_public_error(''ECOMMERCE_PORTAL_NOT_FOUND'');end if;'
-    || 'perform 1 from public.ecommerce_published_products pp '
-    || 'join (select distinct (item->>''productId'')::uuid as id '
-    || 'from jsonb_array_elements(p_items) item '
-    || 'where jsonb_typeof(item)=''object'' '
-    || 'and coalesce(item->>''productId'','''')~*''^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'') ids '
-    || 'on ids.id=pp.id '
-    || 'where pp.portal_id=v_portal.id and pp.license_id=v_portal.license_id '
-    || 'and pp.deleted_at is null and pp.is_published is true '
-    || 'order by pp.id for share of pp;';
-
-  if strpos(v_definition, v_before) = 0 then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_2_CHECKOUT_LOCK_DRIFT';
-  end if;
-  v_definition := replace(v_definition, v_before, v_after);
-
-  if strpos(v_definition, 'if v_existing_order.id is not null then') = 0
-     or strpos(v_definition, 'if v_existing_order.id is not null then')
-        > strpos(v_definition, 'for share of pp;') then
-    raise exception 'ECOM_PRODUCTS_PUBLIC_1_2_REPLAY_ORDER_DRIFT';
-  end if;
-
-  execute v_definition;
-end;
-$migration$;
-
-alter function public.ecommerce_get_product_configuration(text, uuid) owner to postgres;
-alter function public.ecommerce_create_order(text, jsonb, jsonb, text) owner to postgres;
-
-revoke all on function public.ecommerce_get_product_configuration(text, uuid) from public;
-grant execute on function public.ecommerce_get_product_configuration(text, uuid)
-  to anon, authenticated, service_role;
-revoke all on function public.ecommerce_create_order(text, jsonb, jsonb, text) from public;
-grant execute on function public.ecommerce_create_order(text, jsonb, jsonb, text)
-  to anon, authenticated, service_role;
-
--- The application must use the postgres-owned SECURITY DEFINER writer.
-revoke insert, update, delete, truncate
-  on table public.ecommerce_published_product_variants
-  from public, anon, authenticated, service_role;
-revoke insert, update, delete, truncate
-  on table public.ecommerce_published_option_groups
-  from public, anon, authenticated, service_role;
-revoke insert, update, delete, truncate
-  on table public.ecommerce_published_options
-  from public, anon, authenticated, service_role;
-
-comment on function public.ecommerce_get_product_configuration(text, uuid) is
-  'ECOM.PRODUCTS.PUBLIC.1.2 atomic detail: parent SHARE lock covers catalog revision, content revision, children and availability.';
-comment on function public.ecommerce_create_order(text, jsonb, jsonb, text) is
-  'ECOM.PRODUCTS.PUBLIC.1.2 checkout: idempotent replay precedes portal/product locks; product parents lock deterministically through order-item insertion.';
+alter function public.ecommerce_get_product_configuration(text,uuid)owner to postgres;alter function public.ecommerce_create_order(text,jsonb,jsonb,text)owner to postgres;
+revoke all on function public.ecommerce_get_product_configuration(text,uuid)from public;grant execute on function public.ecommerce_get_product_configuration(text,uuid)to anon,authenticated,service_role;
+revoke all on function public.ecommerce_create_order(text,jsonb,jsonb,text)from public;grant execute on function public.ecommerce_create_order(text,jsonb,jsonb,text)to anon,authenticated,service_role;
+revoke insert,update,delete,truncate on table public.ecommerce_published_product_variants from public,anon,authenticated,service_role;
+revoke insert,update,delete,truncate on table public.ecommerce_published_option_groups from public,anon,authenticated,service_role;
+revoke insert,update,delete,truncate on table public.ecommerce_published_options from public,anon,authenticated,service_role;
+comment on function public.ecommerce_get_product_configuration(text,uuid)is 'ECOM.PRODUCTS.PUBLIC.1.2 atomic detail: parent SHARE lock covers catalog revision, content revision, children and availability.';
+comment on function public.ecommerce_create_order(text,jsonb,jsonb,text)is 'ECOM.PRODUCTS.PUBLIC.1.2 checkout: idempotent replay precedes portal/product locks; product parents lock deterministically through order-item insertion.';;

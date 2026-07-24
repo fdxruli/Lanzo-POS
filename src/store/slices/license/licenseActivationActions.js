@@ -127,6 +127,35 @@ export const createLicenseActivationActions = ({
                 };
             }
 
+            if (result.access_choice_required) {
+                set({
+                    appStatus: 'license_access_required',
+                    licenseDetails: { ...(result.details || {}), license_key: licenseKey, valid: false },
+                    currentDeviceRole: null,
+                    currentAdminUser: null,
+                    currentStaffUser: null,
+                    adminLoginLicenseKey: licenseKey,
+                    staffLoginLicenseKey: licenseKey,
+                    adminLoginMessage: result.message || 'Elige como deseas ingresar.',
+                    adminLoginError: null
+                });
+                return { success: false, accessChoiceRequired: true };
+            }
+
+            if (result.admin_enrollment_required) {
+                set({
+                    appStatus: 'admin_enrollment_required',
+                    licenseDetails: { ...(result.details || {}), license_key: licenseKey, valid: false, device_role: 'admin' },
+                    currentDeviceRole: 'admin',
+                    currentAdminUser: null,
+                    adminLoginLicenseKey: licenseKey,
+                    adminLoginMessage: result.message,
+                    adminLoginError: null,
+                    adminEnrollmentRequired: true
+                });
+                return { success: false, adminEnrollmentRequired: true };
+            }
+
             if (
                 isStaffDeviceAuthorizationFailure(result) &&
                 await hasStaffValidationContext(get(), {

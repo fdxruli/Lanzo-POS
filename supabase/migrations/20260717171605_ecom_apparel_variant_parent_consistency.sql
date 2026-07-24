@@ -206,4 +206,4 @@ comment on function private.ecommerce_refresh_variant_parent_state(uuid) is
   'Reconciles variant_parent availability from active commercial variants.';
 
 comment on function private.ecommerce_variant_parent_guard() is
-  'Keeps empty apparel parents fail-closed and requiring a commercial variant.';
+  'Keeps empty apparel parents fail-closed and requiring a commercial variant.';;

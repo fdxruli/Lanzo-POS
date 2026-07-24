@@ -1,6 +1,3 @@
--- ECOM.POS.3 — Reserva de conversión
--- Alineado con la migración aplicada en producción: 20260712032400.
-
 create or replace function public.ecommerce_begin_pos_conversion(
   p_license_key text,
   p_device_fingerprint text,
@@ -201,4 +198,4 @@ exception
       'No se pudo reservar el pedido para conversion.'
     );
 end;
-$function$;
+$function$;;

@@ -152,3 +152,4 @@ end;
 $$;
 
 drop table if exists private.ecommerce_catalog_3_legacy_availability;
+;

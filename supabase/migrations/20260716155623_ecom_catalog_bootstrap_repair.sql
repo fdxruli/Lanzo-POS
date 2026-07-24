@@ -1,7 +1,3 @@
--- HOTFIX ECOM.CATALOG.BOOTSTRAP.REPAIR
--- Recupera eventos incrementales faltantes, reconstruye configuraciones de
--- recetas desde el catálogo cloud y recalcula la disponibilidad publicada.
-
 with published_parents as (
   select distinct pp.license_id, p.id as product_id
   from public.ecommerce_published_products pp
@@ -332,10 +328,10 @@ begin
 end;
 $$;
 
--- Fuerza la evaluación canónica inmediata de las recetas publicadas.
 update public.ecommerce_published_products pp
 set updated_at = pp.updated_at
 where pp.deleted_at is null
   and pp.is_published is true
   and pp.has_recipe is true
   and pp.availability_source = 'recipe';
+;

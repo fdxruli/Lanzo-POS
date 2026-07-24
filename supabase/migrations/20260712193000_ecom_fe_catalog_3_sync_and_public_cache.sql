@@ -1062,3 +1062,4 @@ grant execute on function public.ecommerce_get_catalog(text, integer, integer) t
 
 revoke all on table public.ecommerce_portals from public, anon, authenticated;
 revoke all on table public.ecommerce_published_products from public, anon, authenticated;
+;

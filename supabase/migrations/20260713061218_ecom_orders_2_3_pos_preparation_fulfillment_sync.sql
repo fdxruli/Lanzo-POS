@@ -730,3 +730,5 @@ revoke all on function public.ecommerce_complete_pos_conversion(text, text, text
 grant execute on function public.ecommerce_admin_confirm_pos_draft(text, text, text, text, uuid, uuid, text) to anon, authenticated;
 grant execute on function public.ecommerce_begin_pos_conversion(text, text, text, text, uuid, uuid, text, text, text, text) to anon, authenticated;
 grant execute on function public.ecommerce_complete_pos_conversion(text, text, text, text, uuid, uuid, text, text, text, text) to anon, authenticated;
+
+;

@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense, useState } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
@@ -8,6 +8,9 @@ import Logger from './services/Logger';
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
+import AdminLoginModal from './components/common/AdminLoginModal';
+import AdminEnrollmentModal from './components/common/AdminEnrollmentModal';
+import LicenseAccessChooser from './components/common/LicenseAccessChooser';
 import LicenseChangeRequiredModal from './components/common/LicenseChangeRequiredModal';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
@@ -26,6 +29,7 @@ import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
 
 const MAX_RETRIES = 3;
 const GLOBAL_COOLDOWN_MS = 5000;
+const APP_BOOT_TIMEOUT_MS = 15_000;
 
 const resetAppShellCache = async () => {
   try {
@@ -134,6 +138,21 @@ const PageLoader = () => (
   </div>
 );
 
+const AppBootRecovery = () => (
+  <main className="app-boot-recovery" role="alert">
+    <section className="app-boot-recovery__card">
+      <AlertTriangle size={42} aria-hidden="true" />
+      <h1>Lanzo POS está tardando en iniciar</h1>
+      <p>
+        La aplicación no pudo completar su inicialización. Tus datos locales no se han eliminado.
+      </p>
+      <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
+        Recargar aplicación
+      </button>
+    </section>
+  </main>
+);
+
 function App() {
   if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
     throw new Error('Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.');
@@ -150,13 +169,30 @@ function App() {
   const stopNotificationRealtime = useAppStore((state) => state.stopNotificationRealtime);
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const shouldMountLocalBackupRuntime = !isCloudLicense;
+  const [bootTimedOut, setBootTimedOut] = useState(false);
 
   const clearTermsNotification = () => {
     useAppStore.setState({ pendingTermsUpdate: null });
   };
 
   useEffect(() => {
-    initializeApp();
+    let isActive = true;
+    const timeoutId = window.setTimeout(() => {
+      if (isActive && useAppStore.getState().appStatus === 'loading') {
+        Logger.error(`La inicialización de Lanzo POS superó ${APP_BOOT_TIMEOUT_MS / 1000} segundos.`);
+        setBootTimedOut(true);
+      }
+    }, APP_BOOT_TIMEOUT_MS);
+
+    Promise.resolve(initializeApp()).catch((error) => {
+      Logger.error('Error no controlado durante la inicialización de Lanzo POS:', error);
+      if (isActive) setBootTimedOut(true);
+    });
+
+    return () => {
+      isActive = false;
+      window.clearTimeout(timeoutId);
+    };
   }, [initializeApp]);
 
   useEffect(() => {
@@ -261,11 +297,16 @@ function App() {
     );
   }
 
+  if (bootTimedOut && appStatus === 'loading') {
+    return <AppBootRecovery />;
+  }
+
   switch (appStatus) {
     case 'loading':
       return (
-        <div id="app-loader" style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="loader-spinner" />
+        <div id="app-loader" role="status" aria-live="polite">
+          <div className="loader-spinner" aria-hidden="true" />
+          <p>Iniciando Lanzo POS...</p>
         </div>
       );
 
@@ -296,6 +337,15 @@ function App() {
           <StaffLoginModal />
         </ErrorBoundary>
       );
+
+    case 'license_access_required':
+      return <ErrorBoundary><LicenseAccessChooser /></ErrorBoundary>;
+
+    case 'admin_login_required':
+      return <ErrorBoundary><AdminLoginModal /></ErrorBoundary>;
+
+    case 'admin_enrollment_required':
+      return <ErrorBoundary><AdminEnrollmentModal /></ErrorBoundary>;
 
     case 'locked_renewal':
       return (

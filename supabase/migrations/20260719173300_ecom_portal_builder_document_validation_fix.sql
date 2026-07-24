@@ -23,3 +23,5 @@ begin
 end;
 $$;
 revoke all on function private.ecommerce_site_document_error(jsonb) from public, anon, authenticated;
+
+;

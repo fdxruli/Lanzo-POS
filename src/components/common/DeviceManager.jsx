@@ -63,7 +63,12 @@ export default function DeviceManager({ licenseKey }) {
     }
 
     const isCurrentDevice = Boolean(device.is_current_device);
-    const confirmMessage = isCurrentDevice
+    const isLastActiveAdmin = device.device_role === 'admin'
+      && device.is_active
+      && devices.filter((entry) => entry.is_active && entry.device_role === 'admin').length === 1;
+    const confirmMessage = isLastActiveAdmin
+      ? `Este es el ultimo dispositivo administrador activo.\n\nPodras recuperar la administracion desde otro dispositivo utilizando las credenciales del propietario.\n\nLa licencia y los datos del negocio no se eliminaran.\n\nDeseas continuar?`
+      : isCurrentDevice
       ? 'Vas a liberar este dispositivo. Se cerrara la sesion local y esta licencia podra activarse de nuevo despues. Deseas continuar?'
       : 'Vas a liberar este dispositivo de la licencia. Deseas continuar?';
 
@@ -159,6 +164,15 @@ export default function DeviceManager({ licenseKey }) {
                 {(device.staff_display_name || device.staff_username || device.staff_user_id) && (
                   <small>
                     Staff: {device.staff_display_name || device.staff_username || device.staff_user_id}
+                  </small>
+                )}
+
+                {device.device_role === 'admin' && (
+                  <small>
+                    Propietario: {device.admin_display_name || 'Administrador'}
+                    {Number(device.active_admin_sessions || 0) > 0
+                      ? ` · ${device.active_admin_sessions} sesion(es) activa(s)`
+                      : ''}
                   </small>
                 )}
 

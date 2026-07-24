@@ -1,0 +1,276 @@
+create or replace function public.activate_license_on_device(license_key_param text, device_fingerprint_param text, device_name_param text, device_info_param jsonb)
+returns json
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_license_record public.licenses%rowtype;
+  v_device_record record;
+  v_current_count int;
+  v_security_token text;
+  v_profile_required boolean;
+  v_effective_features jsonb;
+  v_realtime_topic text;
+begin
+  select * into v_license_record
+  from public.licenses
+  where license_key = license_key_param
+  for update;
+
+  if v_license_record.id is null then
+    return json_build_object('success', false, 'error', 'Licencia no encontrada.');
+  end if;
+
+  select coalesce(p.features, '{}'::jsonb) || coalesce(l.features, '{}'::jsonb)
+  into v_effective_features
+  from public.licenses l
+  left join public.plans p on p.id = l.plan_id
+  where l.id = v_license_record.id;
+
+  if v_license_record.status <> 'active' then
+    return json_build_object('success', false, 'error', 'La licencia no esta activa o ha sido suspendida.');
+  end if;
+
+  if v_license_record.expires_at is not null and v_license_record.expires_at < now() then
+    return json_build_object('success', false, 'error', 'La licencia ha caducado.');
+  end if;
+
+  if v_license_record.expires_at is null
+     and coalesce(v_license_record.is_lifetime, false) = false
+     and v_license_record.duration_months is not null then
+    update public.licenses
+    set expires_at = now() + (v_license_record.duration_months || ' months')::interval
+    where id = v_license_record.id;
+
+    v_license_record.expires_at := now() + (v_license_record.duration_months || ' months')::interval;
+  end if;
+
+  select not exists (
+    select 1
+    from public.business_profiles bp
+    where bp.license_id = v_license_record.id
+      and nullif(trim(coalesce(bp.business_name, '')), '') is not null
+      and coalesce(array_length(bp.business_type, 1), 0) > 0
+  ) into v_profile_required;
+
+  select * into v_device_record
+  from public.license_devices
+  where license_id = v_license_record.id
+    and device_fingerprint = device_fingerprint_param;
+
+  v_security_token := encode(extensions.gen_random_bytes(32), 'hex');
+
+  if v_device_record.id is not null then
+    update public.license_devices
+    set device_name = device_name_param,
+        device_info = coalesce(device_info_param, '{}'::jsonb),
+        is_active = true,
+        security_token = v_security_token,
+        previous_security_token = null,
+        realtime_topic = coalesce(realtime_topic, private.generate_license_realtime_topic()),
+        last_used_at = now(),
+        last_check_at = now()
+    where id = v_device_record.id
+    returning realtime_topic into v_realtime_topic;
+  else
+    select count(*) into v_current_count
+    from public.license_devices
+    where license_id = v_license_record.id
+      and is_active = true;
+
+    if (v_current_count + 1) > v_license_record.max_devices then
+      return json_build_object('success', false, 'error', 'Limite de dispositivos alcanzado para esta licencia.');
+    end if;
+
+    v_realtime_topic := private.generate_license_realtime_topic();
+
+    insert into public.license_devices (
+      license_id,
+      device_fingerprint,
+      device_name,
+      device_info,
+      is_active,
+      security_token,
+      realtime_topic,
+      last_check_at
+    ) values (
+      v_license_record.id,
+      device_fingerprint_param,
+      device_name_param,
+      coalesce(device_info_param, '{}'::jsonb),
+      true,
+      v_security_token,
+      v_realtime_topic,
+      now()
+    );
+  end if;
+
+  insert into public.license_usage_logs (license_id, device_fingerprint, action, metadata)
+  values (v_license_record.id, device_fingerprint_param, 'ACTIVATE', coalesce(device_info_param, '{}'::jsonb));
+
+  return json_build_object(
+    'success', true,
+    'message', 'Licencia activada correctamente',
+    'device_security_token', v_security_token,
+    'profile_required', v_profile_required,
+    'details', json_build_object(
+      'license_key', license_key_param,
+      'product_name', v_license_record.product_name,
+      'expires_at', v_license_record.expires_at,
+      'max_devices', v_license_record.max_devices,
+      'features', coalesce(v_effective_features, '{}'::jsonb),
+      'profile_required', v_profile_required,
+      'security_token', v_security_token,
+      'token', v_security_token,
+      'realtime_topic', case
+        when coalesce((v_effective_features->>'realtime_license_sync') = 'true', false) then v_realtime_topic
+        else null
+      end
+    )
+  );
+exception when unique_violation then
+  return json_build_object(
+    'success', false,
+    'error', 'Error: este dispositivo ya esta registrado.'
+  );
+end;
+$function$;
+
+create or replace function public.verify_device_license_unified(p_license_key text, p_device_fingerprint text, p_security_token text default null::text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+    v_license record;
+    v_device record;
+    v_new_token text;
+    v_grace_days integer := 7;
+    v_is_in_grace boolean := false;
+    v_latest_term_id uuid;
+    v_latest_term_version text;
+    v_terms_accepted boolean := true;
+    v_realtime_topic text;
+begin
+    select
+      l.id,
+      l.status,
+      l.product_name,
+      coalesce(p.features, '{}'::jsonb) || coalesce(l.features, '{}'::jsonb) as effective_features,
+      l.expires_at,
+      l.license_key
+    into v_license
+    from public.licenses l
+    left join public.plans p on p.id = l.plan_id
+    where l.license_key = p_license_key;
+
+    if v_license.id is null then
+        return jsonb_build_object('valid', false, 'status', 'not_found', 'reason', 'LICENSE_NOT_FOUND');
+    end if;
+
+    if v_license.status != 'active' then
+        return jsonb_build_object('valid', false, 'status', 'suspended', 'reason', 'LICENSE_SUSPENDED');
+    end if;
+
+    if v_license.expires_at is not null and v_license.expires_at < now() then
+        if v_license.expires_at > (now() - (v_grace_days || ' days')::interval) then
+            v_is_in_grace := true;
+        else
+            return jsonb_build_object('valid', false, 'status', 'expired', 'reason', 'LICENSE_EXPIRED', 'expires_at', v_license.expires_at);
+        end if;
+    end if;
+
+    select id, device_name, security_token, previous_security_token, is_active, realtime_topic
+    into v_device
+    from public.license_devices
+    where license_id = v_license.id
+      and device_fingerprint = p_device_fingerprint
+    limit 1;
+
+    if v_device.id is null or v_device.is_active = false then
+        return jsonb_build_object('valid', false, 'status', 'device_banned', 'reason', 'DEVICE_NOT_ALLOWED');
+    end if;
+
+    if v_device.realtime_topic is null then
+        update public.license_devices
+        set realtime_topic = private.generate_license_realtime_topic()
+        where id = v_device.id
+        returning realtime_topic into v_realtime_topic;
+    else
+        v_realtime_topic := v_device.realtime_topic;
+    end if;
+
+    if v_device.security_token is not null then
+        if p_security_token is null or p_security_token = '' then
+            return jsonb_build_object('valid', false, 'status', 'token_required', 'reason', 'DEVICE_TOKEN_REQUIRED');
+        elsif p_security_token = v_device.security_token then
+            null;
+        elsif p_security_token = v_device.previous_security_token then
+            return jsonb_build_object(
+                'valid', true,
+                'status', case when v_is_in_grace then 'grace_period' else 'active' end,
+                'license_key', v_license.license_key,
+                'product_name', v_license.product_name,
+                'features', coalesce(v_license.effective_features, '{}'::jsonb),
+                'device_name', v_device.device_name,
+                'expires_at', v_license.expires_at,
+                'grace_period_ends', case when v_is_in_grace then v_license.expires_at + (v_grace_days || ' days')::interval else null end,
+                'new_security_token', v_device.security_token,
+                'realtime_topic', case
+                  when coalesce((v_license.effective_features->>'realtime_license_sync') = 'true', false) then v_realtime_topic
+                  else null
+                end
+            );
+        else
+            return jsonb_build_object('valid', false, 'status', 'cloned', 'reason', 'CLONING_DETECTED');
+        end if;
+    end if;
+
+    v_new_token := extensions.gen_random_uuid()::text;
+    update public.license_devices
+    set previous_security_token = security_token,
+        security_token = v_new_token,
+        last_used_at = now(),
+        last_check_at = now()
+    where id = v_device.id;
+
+    select id, version into v_latest_term_id, v_latest_term_version
+    from public.legal_terms
+    where type = 'terms_of_use' and is_active = true
+    order by published_at desc
+    limit 1;
+
+    if v_latest_term_id is not null then
+        select exists (
+            select 1
+            from public.legal_acceptances
+            where license_id = v_license.id
+              and term_id = v_latest_term_id
+        ) into v_terms_accepted;
+    end if;
+
+    return jsonb_build_object(
+        'valid', true,
+        'status', case when v_is_in_grace then 'grace_period' else 'active' end,
+        'license_status', v_license.status,
+        'license_key', v_license.license_key,
+        'product_name', v_license.product_name,
+        'features', coalesce(v_license.effective_features, '{}'::jsonb),
+        'device_name', v_device.device_name,
+        'expires_at', v_license.expires_at,
+        'grace_period_ends', case when v_is_in_grace then v_license.expires_at + (v_grace_days || ' days')::interval else null end,
+        'new_security_token', v_new_token,
+        'realtime_topic', case
+          when coalesce((v_license.effective_features->>'realtime_license_sync') = 'true', false) then v_realtime_topic
+          else null
+        end,
+        'legal_status', jsonb_build_object(
+            'has_updated_terms', not v_terms_accepted,
+            'latest_version', v_latest_term_version,
+            'term_id', v_latest_term_id
+        )
+    );
+end;
+$function$;;

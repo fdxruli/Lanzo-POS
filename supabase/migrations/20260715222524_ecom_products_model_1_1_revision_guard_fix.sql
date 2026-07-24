@@ -1,5 +1,3 @@
--- ECOM.PRODUCTS.MODEL.1.1 compensatory first-revision guard fix.
-
 create or replace function private.ecommerce_apply_product_configuration_checked(
   p_license_id uuid,
   p_published_product_id uuid,
@@ -114,4 +112,4 @@ end;
 $function$;
 
 comment on function private.ecommerce_apply_product_configuration_checked(uuid,uuid,jsonb,text,boolean) is
-  'Revision-aware guard around the canonical normalized configuration writer. Allows a first configuration, rejects stale/equal-revision conflicts, and fails closed when an unversioned payload would overwrite versioned configuration.';
+  'Revision-aware guard around the canonical normalized configuration writer. Allows a first configuration, rejects stale/equal-revision conflicts, and fails closed when an unversioned payload would overwrite versioned configuration.';;

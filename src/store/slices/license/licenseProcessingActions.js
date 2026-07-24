@@ -17,8 +17,16 @@ import {
     isStaffLoginRequiredFailure,
     isStaffDeviceAuthorizationFailure,
     isLicensePlanBlockFailure,
-    deriveGracePeriodEnd
+    deriveGracePeriodEnd,
+    requiresAdminIdentity
 } from './licenseGuards';
+
+import {
+    clearAdminSessionCache,
+    clearStaffSessionCache,
+    hasAdminSessionToken,
+    verifyAdminSession
+} from '../../../services/supabase';
 
 const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
     refreshProfile ||
@@ -138,6 +146,55 @@ export const createLicenseProcessingActions = ({
         };
 
         await saveLicenseToStorage(finalLicenseData);
+
+        const becameAdminIdentityRequired =
+            localLicense.device_role === 'admin' &&
+            !requiresAdminIdentity(localLicense) &&
+            requiresAdminIdentity(finalLicenseData);
+        const becameFree =
+            localLicense.device_role === 'admin' &&
+            requiresAdminIdentity(localLicense) &&
+            !requiresAdminIdentity(finalLicenseData);
+
+        if (becameFree) {
+            await clearAdminSessionCache();
+        }
+
+        if (becameAdminIdentityRequired) {
+            await get().stopLicenseSync();
+            await clearStaffSessionCache();
+            set({
+                licenseDetails: { ...finalLicenseData, device_role: 'admin' },
+                currentDeviceRole: 'admin',
+                currentStaffUser: null,
+                currentAdminUser: null,
+                appStatus: 'loading'
+            });
+
+            if (await hasAdminSessionToken()) {
+                const adminSession = await verifyAdminSession(finalLicenseData.license_key);
+                if (adminSession?.valid) {
+                    const restored = {
+                        ...finalLicenseData,
+                        ...adminSession.details,
+                        device_role: 'admin',
+                        staff_user: null,
+                        admin_user: adminSession.admin_user || null
+                    };
+                    await saveLicenseToStorage(restored);
+                    set({
+                        licenseDetails: restored,
+                        currentAdminUser: restored.admin_user,
+                        appStatus: 'ready'
+                    });
+                    await get()._loadProfile(restored.license_key, { refreshProfile, reason: 'hot_pro_upgrade_admin_session' });
+                    return;
+                }
+            }
+
+            await get().discoverAdminAccess(finalLicenseData.license_key);
+            return;
+        }
 
         set({
             licenseDetails: finalLicenseData,

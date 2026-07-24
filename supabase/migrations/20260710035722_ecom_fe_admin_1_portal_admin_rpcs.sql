@@ -682,4 +682,4 @@ grant execute on function public.ecommerce_admin_get_portal(text, text, text) to
 grant execute on function public.ecommerce_admin_upsert_portal(text, text, text, jsonb) to anon, authenticated, service_role;
 grant execute on function public.ecommerce_admin_list_published_products(text, text, text) to anon, authenticated, service_role;
 grant execute on function public.ecommerce_admin_upsert_published_product(text, text, text, jsonb) to anon, authenticated, service_role;
-grant execute on function public.ecommerce_admin_set_product_published(text, text, text, uuid, boolean) to anon, authenticated, service_role;
+grant execute on function public.ecommerce_admin_set_product_published(text, text, text, uuid, boolean) to anon, authenticated, service_role;;

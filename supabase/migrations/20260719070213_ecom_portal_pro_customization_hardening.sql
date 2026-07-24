@@ -141,3 +141,5 @@ grant execute on function private.ecommerce_portal_normalize_theme(jsonb) to ser
 grant execute on function private.ecommerce_portal_normalize_image_url(jsonb) to service_role;
 revoke all on function public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb) from public, anon, authenticated;
 grant execute on function public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb) to anon, authenticated, service_role;
+
+;

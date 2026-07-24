@@ -279,4 +279,4 @@ exception
 end;
 $function$;
 
-commit;
+commit;;

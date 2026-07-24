@@ -1,8 +1,0 @@
--- FASE CAD.1 — Bloqueo y auditoria de caducidad por lote
---
--- Esta migracion queda como separador historico de la fase original.
--- La definicion reproducible completa de CAD.1/CAD.1.1 vive en:
---
---   20260629213500_fase_cad_1_1_reproducible_expiry_block.sql
---
--- Mantener este archivo para preservar el orden cronologico de migraciones.

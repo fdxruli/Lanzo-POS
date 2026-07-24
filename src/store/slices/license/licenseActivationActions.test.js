@@ -133,6 +133,43 @@ describe('createLicenseActivationActions.handleLogin', () => {
         expect(state.currentStaffUser).toBeNull();
     });
 
+    it('opens the Admin/Staff chooser without treating it as an activation error', async () => {
+        const { state } = createActionState();
+        mocks.activateLicense.mockResolvedValue({
+            valid: false,
+            code: 'ADMIN_OR_STAFF_LOGIN_REQUIRED',
+            access_choice_required: true,
+            message: 'Elige como deseas ingresar.',
+            details: { product_name: 'Lanzo Pro' }
+        });
+
+        await expect(state.handleLogin('LANZO-TEST-CHOOSER')).resolves.toEqual({
+            success: false,
+            accessChoiceRequired: true
+        });
+        expect(state.appStatus).toBe('license_access_required');
+        expect(state.adminLoginLicenseKey).toBe('LANZO-TEST-CHOOSER');
+        expect(state.staffLoginLicenseKey).toBe('LANZO-TEST-CHOOSER');
+    });
+
+    it('requires owner enrollment on the trusted legacy admin device', async () => {
+        const { state } = createActionState();
+        mocks.activateLicense.mockResolvedValue({
+            valid: false,
+            code: 'ADMIN_ENROLLMENT_REQUIRED',
+            admin_enrollment_required: true,
+            message: 'Crea las credenciales del propietario.',
+            details: { device_role: 'admin' }
+        });
+
+        await expect(state.handleLogin('LANZO-TEST-ENROLL')).resolves.toEqual({
+            success: false,
+            adminEnrollmentRequired: true
+        });
+        expect(state.appStatus).toBe('admin_enrollment_required');
+        expect(state.adminEnrollmentRequired).toBe(true);
+    });
+
     it('keeps a valid staff activation scoped to the staff role', async () => {
         const { state } = createActionState();
         mocks.activateLicense.mockResolvedValue({

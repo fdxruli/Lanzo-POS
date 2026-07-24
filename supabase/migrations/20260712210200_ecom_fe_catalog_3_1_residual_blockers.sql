@@ -170,3 +170,4 @@ grant execute on function private.ecommerce_source_revision_decision(
 ) to service_role;
 grant execute on function private.ecommerce_published_product_sync_guard()
   to service_role;
+;
