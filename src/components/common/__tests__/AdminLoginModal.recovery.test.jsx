@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-const storeState = {
+const storeState = vi.hoisted(() => ({
   handleAdminLogin: vi.fn(),
   logout: vi.fn(),
   adminLoginMessage: null
-};
+}));
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector(storeState)
