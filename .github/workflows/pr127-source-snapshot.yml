@@ -1,0 +1,32 @@
+name: PR127 Source Snapshot
+
+on:
+  push:
+    branches:
+      - hotfix/dexie-primary-key-recovery-admin-bootstrap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr127-source-${{ github.sha }}
+          path: |
+            .
+            !.git/**
+            !node_modules/**
+            !dist/**
+          include-hidden-files: true
+          retention-days: 1
