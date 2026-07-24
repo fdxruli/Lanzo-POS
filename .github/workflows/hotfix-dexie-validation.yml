@@ -1,0 +1,107 @@
+name: HOTFIX Dexie Recovery Validation
+
+on:
+  push:
+    branches:
+      - hotfix/dexie-primary-key-recovery-admin-bootstrap
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/services/db/**'
+      - 'src/services/sync/**'
+      - 'src/services/storageManager.js'
+      - 'src/components/common/AdminLoginModal.jsx'
+      - 'src/components/common/DatabaseRecoveryGate.jsx'
+      - 'src/store/**'
+      - 'src/workers/migration.worker.js'
+      - 'src/main.jsx'
+      - '.github/workflows/hotfix-dexie-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focal-tests:
+    name: focal-tests (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: dexie-recovery-schema
+            files: >-
+              src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+              src/services/db/__tests__/databaseSchemaRegistration.test.js
+          - suite: admin-login-modal
+            files: src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
+          - suite: admin-session-bootstrap
+            files: >-
+              src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+              src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+          - suite: product-pos-sync
+            files: >-
+              src/store/__tests__/productStoreRecoveryGuard.test.js
+              src/services/sync/__tests__/syncMetaService.recovery.test.js
+          - suite: storage-manager
+            files: src/services/__tests__/storageManager.bestEffort.test.js
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.suite }}
+        run: npm run test:ci -- ${{ matrix.files }}
+
+  focal-quality:
+    name: focal-quality
+    needs: focal-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Focal ESLint
+        run: >-
+          npx eslint
+          src/services/db/databaseRecoveryState.js
+          src/services/db/databaseRuntime.js
+          src/services/db/databaseSchema.js
+          src/services/db/indexedDbPreflight.js
+          src/services/storageManager.js
+          src/services/sync/syncDexieBootstrap.js
+          src/services/sync/syncMetaService.js
+          src/components/common/AdminLoginModal.jsx
+          src/components/common/DatabaseRecoveryGate.jsx
+          src/store/productStoreRecoveryGuard.js
+          src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseBootstrapActions.js
+          src/workers/migration.worker.js
+          src/main.jsx
+
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
+
+      - name: Production build
+        run: npm run build

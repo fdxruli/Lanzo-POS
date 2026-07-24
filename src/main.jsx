@@ -34,14 +34,20 @@ function renderPublicStore() {
 }
 
 async function renderPosApplication() {
+  // Debe resolverse antes de importar App/POS: registra v24/v30 y parchea
+  // db.open() de forma determinista, sin depender del orden del grafo de imports.
+  const databaseRuntime = await import('./services/db/databaseRuntime');
+
   const [
     { default: App },
     { GoogleOAuthProvider },
     { storageManager },
     { default: Logger },
     { default: ErrorBoundary },
+    { default: DatabaseRecoveryGate },
     { cleanupDevelopmentServiceWorkers },
     { startPosSyncAutoBootstrap },
+    { installProductStoreRecoveryGuard },
     { installMobileZoomGuard },
     { installDevConsoleCapture },
   ] = await Promise.all([
@@ -50,14 +56,17 @@ async function renderPosApplication() {
     import('./services/storageManager'),
     import('./services/Logger'),
     import('./components/common/ErrorBoundary'),
+    import('./components/common/DatabaseRecoveryGate'),
     import('./services/devServiceWorkerCleanup'),
     import('./services/sync/posSyncBootstrapAutoCoordinator'),
+    import('./store/productStoreRecoveryGuard'),
     import('./services/mobileZoomGuard'),
     import('./services/devConsoleCapture'),
   ]);
 
   installDevConsoleCapture();
   installMobileZoomGuard();
+  installProductStoreRecoveryGuard();
 
   function RouteErrorFallback() {
     const error = useRouteError();
@@ -79,19 +88,29 @@ async function renderPosApplication() {
   const canContinueBoot = await cleanupDevelopmentServiceWorkers();
   if (!canContinueBoot) return;
 
+  let localDatabaseReady = false;
+  try {
+    await databaseRuntime.prepareLocalDatabase();
+    localDatabaseReady = true;
+  } catch (error) {
+    Logger.warn('[Boot] La aplicación entra en recuperación local.', {
+      code: error?.code || 'DB_RECOVERY_REQUIRED'
+    });
+  }
+
   try {
     Logger.info('🚀 Boot: Inicializando StorageManager...');
     const conditions = await storageManager.initialize();
 
-    if (conditions.isVolatile) {
+    if (conditions?.isVolatile) {
       Logger.warn(
         '⚠️ BOOT WARNING: Almacenamiento en modo volátil (Best-Effort)\n'
         + 'Tus datos de venta pueden perderse si el SO o navegador libera memoria.\n'
-        + `Recomendación: ${conditions.recommendation.join(' | ')}`
+        + `Recomendación: ${(conditions.recommendation || []).join(' | ')}`
       );
     }
 
-    if (conditions.isCritical) {
+    if (conditions?.isCritical) {
       Logger.error(
         '🔴 BOOT CRITICAL: Almacenamiento crítico (>90% lleno)\n'
         + 'Sincroniza inmediatamente o libera espacio.'
@@ -99,27 +118,36 @@ async function renderPosApplication() {
     }
 
     Logger.info('✅ Boot: StorageManager listo', {
-      persistenceState: conditions.persistenceState,
-      quotaPercent: conditions.quota?.percentUsed,
+      persistenceState: conditions?.persistenceState,
+      quotaPercent: conditions?.quota?.percentUsed,
     });
   } catch (error) {
-    Logger.error('❌ Boot: Error crítico en StorageManager', error);
+    // StorageManager es best-effort: nunca bloquea IndexedDB, login o bootstrap.
+    Logger.warn('Boot: StorageManager no pudo completar la comprobación best-effort.', {
+      message: error?.message || 'unknown'
+    });
   }
 
-  startPosSyncAutoBootstrap();
+  if (localDatabaseReady) {
+    startPosSyncAutoBootstrap();
+  } else {
+    Logger.warn('[PosSync] Inicio diferido hasta recuperar la base local.');
+  }
 
   const DevConsole = (await import('./components/debug/DevConsole')).default;
 
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
-      <>
-        <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
-          <ErrorBoundary>
-            <RouterProvider router={router} />
-          </ErrorBoundary>
-        </GoogleOAuthProvider>
-        {DevConsole ? <DevConsole /> : null}
-      </>
+      <DatabaseRecoveryGate>
+        <>
+          <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
+            <ErrorBoundary>
+              <RouterProvider router={router} />
+            </ErrorBoundary>
+          </GoogleOAuthProvider>
+          {DevConsole ? <DevConsole /> : null}
+        </>
+      </DatabaseRecoveryGate>
     </React.StrictMode>
   );
 }
