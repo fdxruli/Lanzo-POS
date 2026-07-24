@@ -17,6 +17,12 @@ import {
   setDatabaseRecoveryState
 } from '../../../services/db/databaseRecoveryState';
 import Logger from '../../../services/Logger';
+import {
+  clearPendingAdminSession,
+  clearPendingAdminSessionIfLicenseChanged,
+  createPendingAdminSession,
+  validatePendingAdminSession
+} from './pendingAdminSession';
 
 const completeAdminSession = async (set, get, licenseKey, result, reason) => {
   const licenseData = {
@@ -29,8 +35,6 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     admin_user: result.admin_user || null
   };
 
-  // La autenticación remota ya fue exitosa. Persistimos primero la sesión y la
-  // licencia fuera de IndexedDB para no perderlas si la base local necesita reparación.
   await saveLicenseToStorage(licenseData);
   set({
     licenseDetails: licenseData,
@@ -41,7 +45,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     adminLoginMessage: null,
     adminLoginError: null,
     adminEnrollmentRequired: false,
-    pendingAdminSessionResult: result
+    pendingAdminSessionResult: createPendingAdminSession({ licenseKey, result })
   });
 
   try {
@@ -110,6 +114,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
   chooseLicenseAccess: (accessType) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
     if (accessType === 'staff') {
+      clearPendingAdminSession(set, 'choose_staff_access');
       set({
         appStatus: 'staff_login_required',
         currentDeviceRole: 'staff',
@@ -145,6 +150,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
   },
 
   discoverAdminAccess: async (licenseKey) => {
+    clearPendingAdminSessionIfLicenseChanged(set, get, licenseKey, 'discover_other_license');
     const result = await activateLicense(licenseKey);
     if (result.admin_enrollment_required) {
       set({
@@ -154,7 +160,8 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         currentAdminUser: null,
         adminLoginLicenseKey: licenseKey,
         adminLoginMessage: result.message,
-        adminEnrollmentRequired: true
+        adminEnrollmentRequired: true,
+        pendingAdminSessionResult: null
       });
       return { success: false, enrollmentRequired: true };
     }
@@ -180,7 +187,8 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         currentAdminUser: legacyLicense.admin_user || null,
         currentStaffUser: null,
         adminLoginMessage: null,
-        adminLoginError: null
+        adminLoginError: null,
+        pendingAdminSessionResult: null
       });
       await get()._processOfflineMode(legacyLicense, { reason: 'legacy_admin_auth_compatibility' });
       return { success: true, legacyBackendFallback: true };
@@ -197,13 +205,20 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
 
     try {
-      const pendingResult = get().pendingAdminSessionResult;
-      if (pendingResult?.success) {
-        return completeAdminSession(set, get, licenseKey, pendingResult, 'admin_login_resume');
+      const pending = get().pendingAdminSessionResult;
+      const pendingValidation = validatePendingAdminSession({
+        pending,
+        licenseKey,
+        currentAdminUser: get().currentAdminUser
+      });
+      if (pendingValidation.valid) {
+        return completeAdminSession(set, get, licenseKey, pending.result, 'admin_login_resume');
       }
+      if (pending) clearPendingAdminSession(set, pendingValidation.reason || 'pending_session_invalid');
 
       const result = await adminLoginOnDevice({ licenseKey, username, password });
       if (!result.success) {
+        clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
         return result;
       }
@@ -217,7 +232,11 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         }, error);
         return {
           success: false,
-          remoteAuthenticated: Boolean(get().pendingAdminSessionResult),
+          remoteAuthenticated: validatePendingAdminSession({
+            pending: get().pendingAdminSessionResult,
+            licenseKey,
+            currentAdminUser: get().currentAdminUser
+          }).valid,
           localRecoveryRequired: true,
           code: classification.code,
           message: recoveryError.message
@@ -237,6 +256,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     try {
       const result = await enrollAdminOwnerOnDevice({ licenseKey, username, password, displayName });
       if (!result.success) {
+        clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
         return result;
       }
