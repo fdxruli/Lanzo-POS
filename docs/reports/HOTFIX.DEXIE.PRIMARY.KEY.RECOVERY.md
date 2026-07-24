@@ -1,9 +1,13 @@
 # HOTFIX.DEXIE.PRIMARY.KEY.RECOVERY
 
-Fecha: 2026-07-23  
-Repositorio: `fdxruli/Lanzo-POS`  
-Rama: `hotfix/dexie-primary-key-recovery-admin-bootstrap`  
-PR: `#127`  
+Fecha: 2026-07-23
+
+Repositorio: `fdxruli/Lanzo-POS`
+
+Rama: `hotfix/dexie-primary-key-recovery-admin-bootstrap`
+
+PR: `#127`
+
 Base inicial y merge-base: `4ab2abb719319728426ca0936233a04f8614687e`
 
 ## 1. Resumen ejecutivo
