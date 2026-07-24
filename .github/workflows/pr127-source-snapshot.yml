@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - hotfix/dexie-primary-key-recovery-admin-bootstrap
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
+      - name: Checkout branch
         uses: actions/checkout@v4
         with:
           ref: hotfix/dexie-primary-key-recovery-admin-bootstrap
