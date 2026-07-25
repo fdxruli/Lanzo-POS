@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   clearAdminSessionCache: vi.fn(),
   clearStaffSessionCache: vi.fn(),
   enrollAdminOwnerOnDevice: vi.fn(),
+  ensureLocalDatabaseReady: vi.fn(),
   saveLicenseToStorage: vi.fn()
 }));
 
@@ -19,6 +20,9 @@ vi.mock('../../../services/supabase', () => ({
   enrollAdminOwnerOnDevice: mocks.enrollAdminOwnerOnDevice
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));
+vi.mock('../../../services/db/databaseRuntime', () => ({
+  ensureLocalDatabaseReady: mocks.ensureLocalDatabaseReady
+}));
 
 import { createLicenseAdminActions } from './licenseAdminActions';
 
@@ -38,7 +42,12 @@ const setup = () => {
 };
 
 describe('license admin actions', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+    mocks.clearStaffSessionCache.mockResolvedValue(undefined);
+    mocks.saveLicenseToStorage.mockResolvedValue(undefined);
+  });
 
   it('completes admin login immediately without reloading', async () => {
     const state = setup();
@@ -47,20 +56,36 @@ describe('license admin actions', () => {
       admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
       details: { license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }
     });
-    await expect(state.handleAdminLogin({ username: 'owner', password: 'fixture-password' })).resolves.toEqual({ success: true });
+
+    await expect(state.handleAdminLogin({
+      username: 'owner',
+      password: 'fixture-password'
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(mocks.ensureLocalDatabaseReady).toHaveBeenCalledTimes(1);
     expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
     expect(state.currentStaffUser).toBeNull();
     expect(state.appStatus).toBe('ready');
-    expect(state._loadProfile).toHaveBeenCalledWith('LANZO-ADMIN-TEST', { forceRemote: true, reason: 'admin_login' });
+    expect(state._loadProfile).toHaveBeenCalledWith(
+      'LANZO-ADMIN-TEST',
+      { forceRemote: true, reason: 'admin_login' }
+    );
+    expect(state.pendingAdminSessionResult).toBeNull();
   });
 
   it('keeps incorrect credentials in the admin login flow', async () => {
     const state = setup();
-    mocks.adminLoginOnDevice.mockResolvedValue({ success: false, code: 'INVALID_ADMIN_CREDENTIALS', message: 'Usuario o contrasena incorrectos.' });
+    mocks.adminLoginOnDevice.mockResolvedValue({
+      success: false,
+      code: 'INVALID_ADMIN_CREDENTIALS',
+      message: 'Usuario o contrasena incorrectos.'
+    });
     const result = await state.handleAdminLogin({ username: 'owner', password: 'wrong-fixture' });
     expect(result.success).toBe(false);
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.adminLoginError.code).toBe('INVALID_ADMIN_CREDENTIALS');
+    expect(state.pendingAdminSessionResult).toBeNull();
+    expect(mocks.ensureLocalDatabaseReady).not.toHaveBeenCalled();
   });
 
   it('does not remain loading when the legacy backend validates an admin device', async () => {
@@ -89,10 +114,18 @@ describe('license admin actions', () => {
       admin_user: { id: 'owner-1', username: 'owner_test', display_name: 'Test Owner' },
       details: { license_key: 'LANZO-ADMIN-TEST' }
     });
-    await state.handleAdminEnrollment({ username: 'owner_test', password: 'fixture-password', displayName: 'Test Owner' });
+
+    await expect(state.handleAdminEnrollment({
+      username: 'owner_test',
+      password: 'fixture-password',
+      displayName: 'Test Owner'
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(mocks.ensureLocalDatabaseReady).toHaveBeenCalledTimes(1);
     expect(state.currentAdminUser.id).toBe('owner-1');
     expect(state.adminEnrollmentRequired).toBe(false);
     expect(state.appStatus).toBe('ready');
+    expect(state.pendingAdminSessionResult).toBeNull();
   });
 
   it('distinguishes admin logout from releasing the device', async () => {
@@ -102,5 +135,6 @@ describe('license admin actions', () => {
     expect(mocks.adminLogoutSession).toHaveBeenCalledWith('LANZO-ADMIN-TEST');
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.licenseDetails.license_key).toBe('LANZO-ADMIN-TEST');
+    expect(state.pendingAdminSessionResult).toBeNull();
   });
 });
