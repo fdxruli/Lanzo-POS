@@ -170,8 +170,8 @@ describe('IndexedDB primary-key preserving recovery', () => {
     expect(result.targetCounts).toEqual({ sales: 4, deleted_sales: 3 });
     expect(sales).toHaveLength(4);
     expect(deletedSales).toHaveLength(3);
-    expect(new Set(sales.map(({ id }) => `${typeof id}:${id}`))).toHaveLength(4);
-    expect(new Set(deletedSales.map(({ id }) => `${typeof id}:${id}`))).toHaveLength(3);
+    expect(new Set(sales.map(({ id }) => `${typeof id}:${id}`)).size).toBe(4);
+    expect(new Set(deletedSales.map(({ id }) => `${typeof id}:${id}`)).size).toBe(3);
     expect(sales.find(({ timestamp }) => timestamp.includes('10-16')).id).toMatch(/^duplicate:legacy:/);
     expect(sales.find(({ timestamp }) => timestamp.includes('10-17')).id)
       .toBe('legacy-sale:2022-10-17T20:00:00.000Z');
@@ -214,7 +214,7 @@ describe('IndexedDB primary-key preserving recovery', () => {
     const migrated = await readAll('sales');
     expect(result.migrated).toBe(true);
     expect(migrated).toHaveLength(500);
-    expect(new Set(migrated.map(({ id }) => id))).toHaveLength(500);
+    expect(new Set(migrated.map(({ id }) => id)).size).toBe(500);
   });
 
   it('continues one blocked native request after the other connection closes', async () => {
