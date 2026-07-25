@@ -243,6 +243,7 @@ describe('ecommerceAdminService', () => {
       localProductRef: configurableProduct.id,
       publicName: 'Tenis Urban',
       price: 900,
+      publicConfigurationMode: 'simple_override',
       localProduct: configurableProduct
     });
 
@@ -251,6 +252,7 @@ describe('ecommerceAdminService', () => {
     expect(rpcName).toBe('ecommerce_admin_upsert_published_product_v3');
     expect(params.p_payload.localProduct).toBeUndefined();
     expect(params.p_payload.configurationSourceRevision).toBe('version:12');
+    expect(params.p_payload.publicConfigurationMode).toBe('simple_override');
     expect(sortedKeys(params.p_payload.configuration)).toEqual(
       [...ECOMMERCE_CONFIGURATION_SYNC_KEYS].sort()
     );

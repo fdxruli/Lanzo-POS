@@ -298,7 +298,117 @@ begin
   end if;
   v_test_count := v_test_count + 2;
 
-  -- 20. No operational side effects.
+  -- 20-21. An explicit simple override can reconcile a new public
+  -- configuration at the same canonical parent revision, while normal
+  -- configuration writers remain fail-closed.
+  update public.pos_products set server_version=20
+  where license_id=v_license_free and id='m11-recipe';
+  v_config := jsonb_build_object(
+    'type','configurable',
+    'version',1,
+    'hasRecipe',false,
+    'variants','[]'::jsonb,
+    'optionGroups',jsonb_build_array(jsonb_build_object(
+      'sourceGroupRef','override-extra',
+      'publicName','Extra de prueba',
+      'selectionType','single',
+      'required',false,
+      'minSelect',0,
+      'maxSelect',1,
+      'displayOrder',0,
+      'options',jsonb_build_array(jsonb_build_object(
+        'sourceOptionRef','override-extra-option',
+        'publicName','Extra',
+        'priceDelta',0,
+        'sourceIngredientId',null,
+        'ingredientQuantity',null,
+        'ingredientUnit',null,
+        'tracksInventory',false,
+        'manualAvailable',true,
+        'sourceAvailable',true,
+        'displayOrder',0,
+        'metadata','{}'::jsonb
+      )),
+      'metadata','{}'::jsonb
+    )),
+    'availabilitySource','direct',
+    'availabilityReasonCode',null,
+    'limitingSource',jsonb_build_object('productId',null,'name',null)
+  );
+  v_result := public.ecommerce_admin_upsert_published_product_v2(
+    'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-free-device','model-1-1-free-token',null,
+    jsonb_build_object(
+      'sourceType','local_snapshot',
+      'localProductRef','m11-recipe',
+      'publicName','Receta publica',
+      'price',30,
+      'manualAvailable',true,
+      'isAvailable',true,
+      'isPublished',true,
+      'stockMode','exact',
+      'syncConfig',jsonb_build_object(
+        'name','manual','description','manual','category','manual',
+        'price','manual','image','manual'
+      ),
+      'metadata',jsonb_build_object('source','test'),
+      'configuration',v_config,
+      'configurationSourceRevision','version:20'
+    )
+  );
+  if coalesce((v_result->>'success')::boolean,false) is not true
+     or (select count(*) from public.ecommerce_published_option_groups
+         where published_product_id=v_manual_id and deleted_at is null) <> 1 then
+    raise exception 'TEST_20_OVERRIDE_SEED_FAILED: %',v_result;
+  end if;
+  v_result := public.ecommerce_admin_upsert_published_product_v3(
+    'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-free-device','model-1-1-free-token',null,
+    jsonb_build_object(
+      'sourceType','local_snapshot',
+      'localProductRef','m11-recipe',
+      'publicName','Receta publica',
+      'price',30,
+      'manualAvailable',true,
+      'isAvailable',true,
+      'isPublished',true,
+      'stockMode','exact',
+      'syncConfig',jsonb_build_object(
+        'name','manual','description','manual','category','manual',
+        'price','manual','image','manual'
+      ),
+      'metadata',jsonb_build_object('source','test'),
+      'publicConfigurationMode','simple_override',
+      'configuration',jsonb_build_object(
+        'type','simple',
+        'version',1,
+        'hasRecipe',false,
+        'variants','[]'::jsonb,
+        'optionGroups','[]'::jsonb,
+        'availabilitySource','direct',
+        'availabilityReasonCode',null,
+        'limitingSource',jsonb_build_object('productId',null,'name',null)
+      ),
+      'configurationSourceRevision','version:20'
+    )
+  );
+  if coalesce((v_result->>'success')::boolean,false) is not true
+     or (select public_configuration_mode from public.ecommerce_published_products
+         where id=v_manual_id) <> 'simple_override'
+     or exists (
+       select 1 from public.ecommerce_published_option_groups
+       where published_product_id=v_manual_id and deleted_at is null
+     ) then
+    raise exception 'TEST_20_SIMPLE_OVERRIDE_RECONCILIATION_FAILED: %',v_result;
+  end if;
+  v_result := public.ecommerce_admin_sync_product_configuration(
+    'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-free-device','model-1-1-free-token',
+    null,v_manual_id,v_config,'version:20'
+  );
+  if v_result->>'code' <> 'ECOMMERCE_CATALOG_SOURCE_CONFLICT' then
+    raise exception 'TEST_21_NORMAL_WRITER_GUARD_FAILED: %',v_result;
+  end if;
+  v_test_count := v_test_count + 2;
+
+  -- 22. No operational side effects.
   if (select count(*) from public.ecommerce_orders)<>v_before_orders
      or (select count(*) from public.pos_sales)<>v_before_sales
      or (select count(*) from public.pos_cash_movements)<>v_before_cash
@@ -307,7 +417,7 @@ begin
   end if;
   v_test_count := v_test_count + 1;
 
-  raise notice 'ECOM.PRODUCTS.MODEL.1.1 matrix passed: %/20',v_test_count;
+  raise notice 'ECOM.PRODUCTS.MODEL.1.1 matrix passed: %/22',v_test_count;
 end;
 $test$;
 
