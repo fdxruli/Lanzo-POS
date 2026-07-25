@@ -58,6 +58,25 @@ const dbState = vi.hoisted(() => {
   return { STORES, salesMap, salesTable, db };
 });
 
+const activeOrdersMocks = vi.hoisted(() => {
+  const state = {
+    currentOrderId: null,
+    currentOrder: null,
+    updateCurrentOrderItems: vi.fn(),
+    updateCurrentOrder: vi.fn()
+  };
+  return {
+    state,
+    getState: vi.fn(() => state),
+    reset: () => {
+      state.currentOrderId = null;
+      state.currentOrder = null;
+      state.updateCurrentOrderItems.mockReset();
+      state.updateCurrentOrder.mockReset();
+    }
+  };
+});
+
 const inventoryFlowMocks = vi.hoisted(() => ({
   commitStock: vi.fn(async (items) => (
     items.map((item) => ({
@@ -80,6 +99,10 @@ const utilsMocks = vi.hoisted(() => ({
 vi.mock('../../services/db/dexie', () => ({
   db: dbState.db,
   STORES: dbState.STORES,
+}));
+
+vi.mock('../../hooks/pos/useActiveOrders', () => ({
+  useActiveOrders: { getState: activeOrdersMocks.getState }
 }));
 
 vi.mock('../../services/sales/inventoryFlow', () => ({
@@ -112,6 +135,7 @@ describe('useOrderStore - mesas abiertas', () => {
   beforeEach(() => {
     dbState.salesMap.clear();
     testState.localStorageMock.clear();
+    activeOrdersMocks.reset();
     vi.clearAllMocks();
     resetStore();
   });

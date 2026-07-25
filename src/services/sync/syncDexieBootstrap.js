@@ -1,27 +1,8 @@
+import '../db/databaseRuntime';
 import { db, STORES } from '../db/dexie';
 import Logger from '../Logger';
 import { POS_SYNC_STORES } from './syncConstants';
-
-const POS_SYNC_DEXIE_VERSION = 24;
-let posSyncSchemaRegistered = false;
-
-const SALES_CLOUD_SCHEMA = [
-  'id',
-  'timestamp',
-  'cash_session_id',
-  'customerId',
-  'fulfillmentStatus',
-  'status',
-  'orderType',
-  'cloudSaleId',
-  'cloudSalesSyncStatus',
-  'cloudSalesLastSyncAt',
-  'sourceMode',
-  '[customerId+timestamp]',
-  '[cash_session_id+timestamp]',
-  '[sourceMode+timestamp]',
-  '[cloudSalesSyncStatus+timestamp]'
-].join(', ');
+import { POS_SYNC_DEXIE_VERSION } from '../db/databaseSchema';
 
 const hasTable = (tableName) => db.tables.some((table) => table.name === tableName);
 
@@ -34,33 +15,31 @@ const hasAllSyncStores = () => (
 const hasSalesCloudIndexes = () => {
   try {
     const schema = db.table(STORES.SALES)?.schema;
-    return Boolean(schema?.idxByName?.cloudSalesSyncStatus && schema?.idxByName?.cloudSaleId);
+    return Boolean(
+      schema?.idxByName?.cloudSalesSyncStatus
+      && schema?.idxByName?.cloudSaleId
+      && schema?.idxByName?.sourceMode
+    );
   } catch {
     return false;
   }
 };
 
+/**
+ * Compatibilidad para consumidores históricos.
+ *
+ * El esquema ya no se registra aquí. databaseRuntime registra de forma
+ * canónica v24 y v30 antes de cualquier db.open(), independientemente del
+ * orden de imports. Esta función solo verifica el resultado declarado.
+ */
 export const ensurePosSyncDexieSchema = () => {
-  if (posSyncSchemaRegistered || (hasAllSyncStores() && hasSalesCloudIndexes())) {
-    posSyncSchemaRegistered = true;
-    return true;
+  const ready = hasAllSyncStores() && hasSalesCloudIndexes();
+  if (!ready) {
+    Logger.warn(
+      `[PosSync/Dexie] El registro canónico v${POS_SYNC_DEXIE_VERSION} no está disponible todavía.`
+    );
   }
-
-  if (db.isOpen()) {
-    Logger.warn('[PosSync/Dexie] Base abierta; recarga la app para activar indices cloud de ventas si faltan.');
-    return false;
-  }
-
-  db.version(POS_SYNC_DEXIE_VERSION).stores({
-    [STORES.SALES]: SALES_CLOUD_SCHEMA,
-    [POS_SYNC_STORES.OUTBOX]: 'id, status, entityType, createdAt, [status+createdAt], idempotencyKey',
-    [POS_SYNC_STORES.META]: 'key',
-    [POS_SYNC_STORES.CONFLICTS]: 'id, entityType, entityId, status, createdAt'
-  });
-
-  posSyncSchemaRegistered = true;
-  Logger.log('[PosSync/Dexie] Schema POS Sync v24 registrado con indices shadow de ventas.');
-  return true;
+  return ready;
 };
 
-ensurePosSyncDexieSchema();
+export default ensurePosSyncDexieSchema;

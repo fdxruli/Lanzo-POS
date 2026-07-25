@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { createBrowserRouter, RouterProvider, useRouteError } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { publicStoreRoutes } from './router/publicStoreRoutes';
 import { isPublicStorePath } from './router/isPublicStorePath';
 import { preparePublicStoreDocument } from './router/preparePublicStoreDocument';
@@ -20,10 +20,6 @@ import './styles/ui-tabs.css';
 
 const rootElement = document.getElementById('root');
 
-function Thrower({ error }) {
-  throw error;
-}
-
 function renderPublicStore() {
   const router = createBrowserRouter(publicStoreRoutes);
   ReactDOM.createRoot(rootElement).render(
@@ -34,92 +30,19 @@ function renderPublicStore() {
 }
 
 async function renderPosApplication() {
+  // databaseRuntime debe cargarse primero para registrar v24/v30 y parchear
+  // db.open() antes de cualquier import del App o de stores de negocio.
   const [
-    { default: App },
-    { GoogleOAuthProvider },
-    { storageManager },
-    { default: Logger },
-    { default: ErrorBoundary },
-    { cleanupDevelopmentServiceWorkers },
-    { startPosSyncAutoBootstrap },
-    { installMobileZoomGuard },
-    { installDevConsoleCapture },
+    databaseRuntime,
+    { default: PosApplicationBootstrap }
   ] = await Promise.all([
-    import('./App.jsx'),
-    import('@react-oauth/google'),
-    import('./services/storageManager'),
-    import('./services/Logger'),
-    import('./components/common/ErrorBoundary'),
-    import('./services/devServiceWorkerCleanup'),
-    import('./services/sync/posSyncBootstrapAutoCoordinator'),
-    import('./services/mobileZoomGuard'),
-    import('./services/devConsoleCapture'),
+    import('./services/db/databaseRuntime'),
+    import('./components/common/PosApplicationBootstrap')
   ]);
-
-  installDevConsoleCapture();
-  installMobileZoomGuard();
-
-  function RouteErrorFallback() {
-    const error = useRouteError();
-    return (
-      <ErrorBoundary>
-        <Thrower error={error} />
-      </ErrorBoundary>
-    );
-  }
-
-  const router = createBrowserRouter([
-    {
-      path: '*',
-      element: <App />,
-      errorElement: <RouteErrorFallback />,
-    },
-  ]);
-
-  const canContinueBoot = await cleanupDevelopmentServiceWorkers();
-  if (!canContinueBoot) return;
-
-  try {
-    Logger.info('🚀 Boot: Inicializando StorageManager...');
-    const conditions = await storageManager.initialize();
-
-    if (conditions.isVolatile) {
-      Logger.warn(
-        '⚠️ BOOT WARNING: Almacenamiento en modo volátil (Best-Effort)\n'
-        + 'Tus datos de venta pueden perderse si el SO o navegador libera memoria.\n'
-        + `Recomendación: ${conditions.recommendation.join(' | ')}`
-      );
-    }
-
-    if (conditions.isCritical) {
-      Logger.error(
-        '🔴 BOOT CRITICAL: Almacenamiento crítico (>90% lleno)\n'
-        + 'Sincroniza inmediatamente o libera espacio.'
-      );
-    }
-
-    Logger.info('✅ Boot: StorageManager listo', {
-      persistenceState: conditions.persistenceState,
-      quotaPercent: conditions.quota?.percentUsed,
-    });
-  } catch (error) {
-    Logger.error('❌ Boot: Error crítico en StorageManager', error);
-  }
-
-  startPosSyncAutoBootstrap();
-
-  const DevConsole = (await import('./components/debug/DevConsole')).default;
 
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
-      <>
-        <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
-          <ErrorBoundary>
-            <RouterProvider router={router} />
-          </ErrorBoundary>
-        </GoogleOAuthProvider>
-        {DevConsole ? <DevConsole /> : null}
-      </>
+      <PosApplicationBootstrap databaseRuntime={databaseRuntime} />
     </React.StrictMode>
   );
 }

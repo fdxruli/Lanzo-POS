@@ -7,14 +7,24 @@ import {
   enrollAdminOwnerOnDevice
 } from '../../../services/supabase';
 import { saveLicenseToStorage } from '../../../services/licenseStorage';
+import { ensureLocalDatabaseReady } from '../../../services/db/databaseRuntime';
+import {
+  DATABASE_RECOVERY_STATUS,
+  classifyDatabaseError,
+  createDatabaseRecoveryError,
+  getDatabaseRecoveryState,
+  isStructuralDatabaseError,
+  setDatabaseRecoveryState
+} from '../../../services/db/databaseRecoveryState';
 import Logger from '../../../services/Logger';
+import {
+  clearPendingAdminSession,
+  clearPendingAdminSessionIfLicenseChanged,
+  createPendingAdminSession,
+  validatePendingAdminSession
+} from './pendingAdminSession';
 
 const completeAdminSession = async (set, get, licenseKey, result, reason) => {
-  // The transport layer also clears this cache before persisting credentials,
-  // but doing it here keeps the store transition safe for alternate RPC
-  // adapters and prevents a stale staff token from surviving a role switch.
-  await clearStaffSessionCache();
-
   const licenseData = {
     ...get().licenseDetails,
     ...result.details,
@@ -34,16 +44,77 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     adminLoginLicenseKey: licenseKey,
     adminLoginMessage: null,
     adminLoginError: null,
-    adminEnrollmentRequired: false
+    adminEnrollmentRequired: false,
+    pendingAdminSessionResult: createPendingAdminSession({ licenseKey, result })
   });
-  await get()._loadProfile(licenseKey, { forceRemote: true, reason });
-  return { success: true };
+
+  try {
+    try {
+      await clearStaffSessionCache();
+    } catch (cacheError) {
+      if (!isStructuralDatabaseError(cacheError)) throw cacheError;
+      Logger.warn('[AdminAuth] Limpieza staff diferida por recuperación local.');
+    }
+
+    await ensureLocalDatabaseReady();
+    await get()._loadProfile(licenseKey, { forceRemote: true, reason });
+    set({ pendingAdminSessionResult: null });
+    return { success: true, remoteAuthenticated: true };
+  } catch (error) {
+    const classification = classifyDatabaseError(error);
+
+    if (classification.structural) {
+      const currentDiagnostic = error?.diagnostic || getDatabaseRecoveryState();
+      setDatabaseRecoveryState({
+        ...currentDiagnostic,
+        status: currentDiagnostic?.isRetryable === false
+          ? DATABASE_RECOVERY_STATUS.FAILED
+          : DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+        errorCode: currentDiagnostic?.errorCode || classification.code,
+        databaseName: currentDiagnostic?.databaseName || 'LanzoDB1',
+        isRetryable: classification.retryable !== false,
+        requiresMigration: classification.requiresMigration === true || currentDiagnostic?.requiresMigration === true,
+        message: currentDiagnostic?.message || 'La sesión administrativa es válida, pero la base local necesita recuperarse.'
+      });
+      set({
+        appStatus: 'local_database_recovery_required',
+        adminLoginError: {
+          code: classification.code,
+          message: 'La sesión se inició correctamente. Falta recuperar la base local antes de entrar.'
+        }
+      });
+      return {
+        success: false,
+        remoteAuthenticated: true,
+        localRecoveryRequired: true,
+        code: classification.code,
+        message: 'La sesión se inició correctamente. Lanzo conservará tus datos mientras repara la base local.'
+      };
+    }
+
+    Logger.error('[AdminAuth] Sesión remota válida; falló el bootstrap local:', error);
+    set({
+      adminLoginError: {
+        code: 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
+        message: 'La sesión ya fue validada, pero no se pudo completar la carga local. Reintenta sin volver a registrar el dispositivo.'
+      }
+    });
+    return {
+      success: false,
+      remoteAuthenticated: true,
+      code: 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
+      message: 'La sesión ya fue validada. Reintenta para completar la carga local.'
+    };
+  }
 };
 
 export const createLicenseAdminActions = ({ set, get }) => ({
+  pendingAdminSessionResult: null,
+
   chooseLicenseAccess: (accessType) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
     if (accessType === 'staff') {
+      clearPendingAdminSession(set, 'choose_staff_access');
       set({
         appStatus: 'staff_login_required',
         currentDeviceRole: 'staff',
@@ -73,11 +144,13 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       adminLoginLicenseKey: licenseKey || null,
       adminLoginMessage: validation.message || 'Inicia sesion como administrador para continuar.',
       adminLoginError: validation.code ? { code: validation.code, message: validation.message || null } : null,
-      adminEnrollmentRequired: false
+      adminEnrollmentRequired: false,
+      pendingAdminSessionResult: null
     });
   },
 
   discoverAdminAccess: async (licenseKey) => {
+    clearPendingAdminSessionIfLicenseChanged(set, get, licenseKey, 'discover_other_license');
     const result = await activateLicense(licenseKey);
     if (result.admin_enrollment_required) {
       set({
@@ -87,7 +160,8 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         currentAdminUser: null,
         adminLoginLicenseKey: licenseKey,
         adminLoginMessage: result.message,
-        adminEnrollmentRequired: true
+        adminEnrollmentRequired: true,
+        pendingAdminSessionResult: null
       });
       return { success: false, enrollmentRequired: true };
     }
@@ -97,10 +171,6 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     }
 
     if (result.valid) {
-      // Backward compatibility while LICENSE.ADMIN.AUTH.1 is not yet applied
-      // remotely: the legacy RPC can still validate the cached admin device,
-      // but it does not return an admin session or an access-choice response.
-      // Do not leave bootstrap in `loading` in that case.
       const legacyLicense = {
         ...get().licenseDetails,
         ...(result.details || {}),
@@ -117,14 +187,13 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         currentAdminUser: legacyLicense.admin_user || null,
         currentStaffUser: null,
         adminLoginMessage: null,
-        adminLoginError: null
+        adminLoginError: null,
+        pendingAdminSessionResult: null
       });
       await get()._processOfflineMode(legacyLicense, { reason: 'legacy_admin_auth_compatibility' });
       return { success: true, legacyBackendFallback: true };
     }
 
-    // Every discovery result must leave the loading state. This also covers
-    // network/RPC failures and lets the UI present a recoverable admin prompt.
     await get()._requireAdminLogin(
       { ...(result.details || {}), ...get().licenseDetails, license_key: licenseKey, device_role: 'admin' },
       result
@@ -134,22 +203,71 @@ export const createLicenseAdminActions = ({ set, get }) => ({
 
   handleAdminLogin: async ({ username, password }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
-    const result = await adminLoginOnDevice({ licenseKey, username, password });
-    if (!result.success) {
-      set({ adminLoginError: { code: result.code, message: result.message } });
-      return result;
+
+    try {
+      const pending = get().pendingAdminSessionResult;
+      const pendingValidation = validatePendingAdminSession({
+        pending,
+        licenseKey,
+        currentAdminUser: get().currentAdminUser
+      });
+      if (pendingValidation.valid) {
+        return completeAdminSession(set, get, licenseKey, pending.result, 'admin_login_resume');
+      }
+      if (pending) clearPendingAdminSession(set, pendingValidation.reason || 'pending_session_invalid');
+
+      const result = await adminLoginOnDevice({ licenseKey, username, password });
+      if (!result.success) {
+        clearPendingAdminSession(set, 'admin_credentials_rejected');
+        set({ adminLoginError: { code: result.code, message: result.message } });
+        return result;
+      }
+      return completeAdminSession(set, get, licenseKey, result, 'admin_login');
+    } catch (error) {
+      const classification = classifyDatabaseError(error);
+      if (classification.structural) {
+        const recoveryError = createDatabaseRecoveryError({
+          ...getDatabaseRecoveryState(),
+          errorCode: classification.code
+        }, error);
+        return {
+          success: false,
+          remoteAuthenticated: validatePendingAdminSession({
+            pending: get().pendingAdminSessionResult,
+            licenseKey,
+            currentAdminUser: get().currentAdminUser
+          }).valid,
+          localRecoveryRequired: true,
+          code: classification.code,
+          message: recoveryError.message
+        };
+      }
+      Logger.error('[AdminAuth] Error durante login:', error);
+      return {
+        success: false,
+        code: error?.code || 'ADMIN_LOGIN_FAILED',
+        message: error?.message || 'No se pudo iniciar sesión.'
+      };
     }
-    return completeAdminSession(set, get, licenseKey, result, 'admin_login');
   },
 
   handleAdminEnrollment: async ({ username, password, displayName }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
-    const result = await enrollAdminOwnerOnDevice({ licenseKey, username, password, displayName });
-    if (!result.success) {
-      set({ adminLoginError: { code: result.code, message: result.message } });
-      return result;
+    try {
+      const result = await enrollAdminOwnerOnDevice({ licenseKey, username, password, displayName });
+      if (!result.success) {
+        clearPendingAdminSession(set, 'admin_credentials_rejected');
+        set({ adminLoginError: { code: result.code, message: result.message } });
+        return result;
+      }
+      return completeAdminSession(set, get, licenseKey, result, 'admin_enrollment');
+    } catch (error) {
+      return {
+        success: false,
+        code: error?.code || 'ADMIN_ENROLLMENT_FAILED',
+        message: error?.message || 'No se pudo completar la inscripción.'
+      };
     }
-    return completeAdminSession(set, get, licenseKey, result, 'admin_enrollment');
   },
 
   logoutAdmin: async () => {
@@ -161,7 +279,8 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       currentAdminUser: null,
       adminLoginLicenseKey: licenseKey || null,
       adminLoginMessage: 'Sesion administrativa cerrada.',
-      adminLoginError: null
+      adminLoginError: null,
+      pendingAdminSessionResult: null
     });
   }
 });

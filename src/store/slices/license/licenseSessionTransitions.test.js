@@ -15,7 +15,9 @@ const mocks = vi.hoisted(() => ({
   staffLogoutSession: vi.fn(),
   adminLogoutSession: vi.fn(),
   saveLicenseToStorage: vi.fn(),
-  getLicenseFromStorage: vi.fn()
+  getLicenseFromStorage: vi.fn(),
+  ensureLocalDatabaseReady: vi.fn(),
+  prepareLocalDatabase: vi.fn()
 }));
 
 vi.mock('../../../services/supabase', () => ({
@@ -37,7 +39,13 @@ vi.mock('../../../services/licenseStorage', () => ({
   saveLicenseToStorage: mocks.saveLicenseToStorage,
   getLicenseFromStorage: mocks.getLicenseFromStorage
 }));
-vi.mock('../../../services/Logger', () => ({ default: { log: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../services/db/databaseRuntime', () => ({
+  ensureLocalDatabaseReady: mocks.ensureLocalDatabaseReady,
+  prepareLocalDatabase: mocks.prepareLocalDatabase
+}));
+vi.mock('../../../services/Logger', () => ({
+  default: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
+}));
 
 import { createLicenseAdminActions } from './licenseAdminActions';
 import { createLicenseBootstrapActions } from './licenseBootstrapActions';
@@ -88,6 +96,11 @@ describe('canonical actor session transitions', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     mocks.hasAdminSessionToken.mockResolvedValue(true);
     mocks.hasStaffSessionToken.mockResolvedValue(true);
+    mocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+    mocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
+    mocks.clearAdminSessionCache.mockResolvedValue(undefined);
+    mocks.clearStaffSessionCache.mockResolvedValue(undefined);
+    mocks.saveLicenseToStorage.mockResolvedValue(undefined);
   });
 
   it('restores admin after staff → admin → reload, clearing the residual staff cache', async () => {
@@ -102,8 +115,13 @@ describe('canonical actor session transitions', () => {
     expect(state.licenseDetails.device_role).toBe('admin');
 
     mocks.getLicenseFromStorage.mockResolvedValue(state.licenseDetails);
-    mocks.verifyAdminSession.mockResolvedValue({ valid: true, admin_user: { id: 'admin-1' }, details: proLicense('admin') });
+    mocks.verifyAdminSession.mockResolvedValue({
+      valid: true,
+      admin_user: { id: 'admin-1' },
+      details: proLicense('admin')
+    });
     await state.initializeApp();
+    expect(mocks.prepareLocalDatabase).toHaveBeenCalled();
     expect(mocks.verifyAdminSession).toHaveBeenCalledWith(state.licenseDetails.license_key);
     expect(mocks.verifyStaffSession).not.toHaveBeenCalled();
     expect(state.appStatus).toBe('ready');
@@ -127,6 +145,7 @@ describe('canonical actor session transitions', () => {
     mocks.getLicenseFromStorage.mockResolvedValue(state.licenseDetails);
     mocks.verifyStaffSession.mockResolvedValue({ valid: true, staff_user: { id: 'staff-1' } });
     await state.initializeApp();
+    expect(mocks.prepareLocalDatabase).toHaveBeenCalled();
     expect(mocks.verifyStaffSession).toHaveBeenCalledWith(state.licenseDetails.license_key);
     expect(mocks.verifyAdminSession).not.toHaveBeenCalled();
     expect(state.appStatus).toBe('ready');
@@ -140,13 +159,17 @@ describe('canonical actor session transitions', () => {
       state.appStatus = 'admin_login_required';
     });
     await state.initializeApp();
+    expect(mocks.prepareLocalDatabase).toHaveBeenCalled();
     expect(state.discoverAdminAccess).toHaveBeenCalledWith(ambiguous.license_key);
     expect(mocks.verifyAdminSession).not.toHaveBeenCalled();
     expect(mocks.verifyStaffSession).not.toHaveBeenCalled();
   });
 
   it('moves a trusted admin from FREE to enrollment immediately without a reload', async () => {
-    const state = createStore({ appStatus: 'ready', licenseDetails: { ...proLicense('admin'), plan_code: 'free_trial', max_devices: 1 } });
+    const state = createStore({
+      appStatus: 'ready',
+      licenseDetails: { ...proLicense('admin'), plan_code: 'free_trial', max_devices: 1 }
+    });
     mocks.hasAdminSessionToken.mockResolvedValue(false);
     state.discoverAdminAccess = vi.fn(async () => {
       state.appStatus = 'admin_enrollment_required';

@@ -1,411 +1,308 @@
-/**
- * StorageManager - Gestor de Persistencia para PWA Offline-First
- * Implementa StorageManager API (navigator.storage) para intentar que IndexedDB
- * no sea purgado por el SO.
- *
- * CRÍTICO: La persistencia local NO es inmutable. Apple/Safari (iOS/iPadOS)
- * no respeta estrictamente navigator.storage.persist() y purgará los datos
- * si el dispositivo entra en estado crítico de almacenamiento, incluso en
- * PWAs instaladas en la pantalla de inicio.
- *
- * SIEMPRE se requiere un mecanismo de respaldo o sincronización externa para
- * garantizar la seguridad total de los datos.
- */
-
 import Logger from './Logger';
 
-// Umbrales de alerta
-const QUOTA_CRITICAL_THRESHOLD = 0.9; // 90%
-const QUOTA_WARNING_THRESHOLD = 0.75;  // 75%
+const QUOTA_CRITICAL_THRESHOLD = 0.9;
+const QUOTA_WARNING_THRESHOLD = 0.75;
+const ESTIMATE_CACHE_TTL_MS = 30_000;
 
-/**
- * Estados globales del storage
- */
-export const StorageState = {
+export const StorageState = Object.freeze({
   UNKNOWN: 'unknown',
   REQUESTING: 'requesting',
   GRANTED: 'granted',
   DENIED: 'denied',
   UNSUPPORTED: 'unsupported',
-  VOLATILE: 'volatile', // "Best-Effort" - Safari, navegadores privados
-};
+  VOLATILE: 'volatile',
+  PROMPT: 'prompt'
+});
 
-/**
- * Gestión centralizada del StorageManager API
- */
+const emptyQuota = () => ({
+  usage: 0,
+  quota: 0,
+  percentUsed: 0,
+  isCritical: false,
+  isWarning: false,
+  error: false
+});
+
 class StorageManagerService {
   constructor() {
     this.persistenceState = StorageState.UNKNOWN;
-    this.quotaUsage = {
-      usage: 0,
-      quota: 0,
-      percentUsed: 0,
-    };
+    this.quotaUsage = emptyQuota();
     this.lastCheckTime = 0;
     this.estimateCache = null;
-    this.CACHE_TTL = 30000; // 30 segundos
-    this.listeners = new Set(); // Para notificaciones en tiempo real
+    this.listeners = new Set();
     this._initialized = false;
+    this._initializePromise = null;
+    this._requestPromise = null;
+    this._requestAttempted = false;
+    this.lastPersistenceError = null;
   }
 
-  /**
-   * Determina si el navegador soporta StorageManager API
-   */
+  get storageApi() {
+    return typeof navigator !== 'undefined' ? navigator.storage : null;
+  }
+
   isSupported() {
-    return !!(
-      navigator?.storage &&
-      typeof navigator.storage.persist === 'function' &&
-      typeof navigator.storage.estimate === 'function'
+    return Boolean(
+      this.storageApi
+      && typeof this.storageApi.persisted === 'function'
+      && typeof this.storageApi.persist === 'function'
     );
   }
 
-  /**
-   * Registra listener para cambios de estado del storage
-   */
+  canEstimate() {
+    return Boolean(this.storageApi && typeof this.storageApi.estimate === 'function');
+  }
+
   subscribe(callback) {
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
   }
 
-  /**
-   * Notifica a todos los listeners
-   */
   _notify() {
-    this.listeners.forEach(callback => {
+    const snapshot = this.getState();
+    this.listeners.forEach((callback) => {
       try {
-        callback({
-          state: this.persistenceState,
-          quota: this.quotaUsage,
-        });
-      } catch (err) {
-        Logger.error('Error en listener de StorageManager:', err);
+        callback(snapshot);
+      } catch (error) {
+        Logger.warn('[StorageManager] Listener falló:', error?.message || error);
       }
     });
   }
 
-  /**
-   * FASE 0: Comprueba si la persistencia YA fue concedida previamente
-   * usando navigator.storage.persisted() — sin volver a solicitarla.
-   * Es la forma más fiable y no-destructiva de saber el estado real al arrancar.
-   * No consume el "prompt" del navegador ni muestra diálogos.
-   * Retorna: true (ya concedida) | false (no concedida o no soportada)
-   */
+  _setPersistenceState(nextState) {
+    this.persistenceState = nextState;
+    this._notify();
+    return nextState;
+  }
+
   async isPersisted() {
-    if (!this.isSupported()) return false;
+    if (!this.isSupported()) {
+      this._setPersistenceState(StorageState.UNSUPPORTED);
+      return false;
+    }
+
     try {
-      const persisted = await navigator.storage.persisted();
-      if (persisted) {
-        this.persistenceState = StorageState.GRANTED;
-        this._notify();
-        Logger.info('✓ Persistencia verificada: ya concedida previamente');
-      }
-      return persisted;
-    } catch (err) {
-      Logger.error('Error verificando persistencia actual:', err);
+      const persisted = await this.storageApi.persisted();
+      if (persisted) this._setPersistenceState(StorageState.GRANTED);
+      return persisted === true;
+    } catch (error) {
+      this.lastPersistenceError = error?.message || String(error);
+      this._setPersistenceState(StorageState.VOLATILE);
+      Logger.warn('[StorageManager] No se pudo consultar persisted(); se continúa en modo best-effort.');
       return false;
     }
   }
 
-  /**
-   * FASE 1: Verifica el estado actual de persistencia sin hacer cambios
-   * Retorna: 'granted' | 'denied' | 'prompt' | 'unsupported'
-   */
   async checkPersistenceStatus() {
     if (!this.isSupported()) {
-      this.persistenceState = StorageState.UNSUPPORTED;
-      Logger.warn('StorageManager API no soportada en este navegador');
+      this._setPersistenceState(StorageState.UNSUPPORTED);
       return StorageState.UNSUPPORTED;
     }
 
-    try {
-      // Detectar si ya fue otorgado (sin solicitar)
-      const permission = await navigator.permissions.query?.({ name: 'persistent-storage' });
+    if (await this.isPersisted()) return StorageState.GRANTED;
 
-      if (permission?.state === 'granted') {
-        this.persistenceState = StorageState.GRANTED;
-        Logger.info('✓ Persistencia ya otorgada');
-        return StorageState.GRANTED;
-      }
+    try {
+      const permissionsApi = typeof navigator !== 'undefined' ? navigator.permissions : null;
+      const permission = typeof permissionsApi?.query === 'function'
+        ? await permissionsApi.query({ name: 'persistent-storage' })
+        : null;
 
       if (permission?.state === 'denied') {
-        this.persistenceState = StorageState.DENIED;
-        Logger.warn('⚠️ Persistencia denegada - Modo volátil activado');
-        return StorageState.DENIED;
+        return this._setPersistenceState(StorageState.DENIED);
       }
-
-      // 'prompt' - requiere interacción del usuario
-      // CRITICO: asignar a this.persistenceState para que initialize() lo detecte
-      this.persistenceState = 'prompt';
-      return 'prompt';
-    } catch (err) {
-      Logger.error('Error verificando persistencia:', err);
-      return StorageState.UNKNOWN;
+      if (permission?.state === 'granted') {
+        // persisted() es la autoridad efectiva. Si aún devuelve false, se trata
+        // como best-effort y no como corrupción o cierre de IndexedDB.
+        return this._setPersistenceState(StorageState.VOLATILE);
+      }
+      return this._setPersistenceState(StorageState.PROMPT);
+    } catch {
+      return this._setPersistenceState(StorageState.PROMPT);
     }
   }
 
-  /**
-   * FASE 2: Solicita persistencia explícitamente
-   * Maneja la lógica de navegadores agresivos (Safari en iPhone sin instalación)
-   * Retorna: true (éxito) | false (negado o error)
-   */
   async requestPersistence() {
-    if (this.persistenceState === StorageState.GRANTED) {
-      return true;
-    }
-
-    if (this.persistenceState === StorageState.UNSUPPORTED) {
-      Logger.warn('No se puede solicitar persistencia: API no disponible');
+    if (this.persistenceState === StorageState.GRANTED) return true;
+    if (!this.isSupported()) {
+      this._setPersistenceState(StorageState.UNSUPPORTED);
       return false;
     }
-
-    if (this.persistenceState === StorageState.REQUESTING) {
-      Logger.warn('Solicitud de persistencia ya en progreso');
-      return new Promise(resolve => {
-        const unsubscribe = this.subscribe(({ state }) => {
-          if (state !== StorageState.REQUESTING) {
-            unsubscribe();
-            resolve(state === StorageState.GRANTED);
-          }
-        });
-      });
+    if (this.persistenceState === StorageState.DENIED || this._requestAttempted) {
+      return false;
     }
+    if (this._requestPromise) return this._requestPromise;
 
-    this.persistenceState = StorageState.REQUESTING;
-    this._notify();
+    this._requestAttempted = true;
+    this._setPersistenceState(StorageState.REQUESTING);
 
-    try {
-      const persisted = await navigator.storage.persist();
+    this._requestPromise = (async () => {
+      try {
+        const persisted = await this.storageApi.persist();
+        if (persisted) {
+          this._setPersistenceState(StorageState.GRANTED);
+          Logger.info('[StorageManager] Persistencia concedida.');
+          return true;
+        }
 
-      if (persisted) {
-        this.persistenceState = StorageState.GRANTED;
-        Logger.info('✅ PERSISTENCIA OTORGADA - (Nota: iOS/Safari aún puede purgar datos si el espacio es crítico)');
-      } else {
-        // El navegador mostró el prompt y el usuario rechazó,
-        // o Safari sin instalación PWA (siempre retorna false)
-        this.persistenceState = StorageState.DENIED;
+        this._setPersistenceState(StorageState.DENIED);
         Logger.warn(
-          '❌ PERSISTENCIA RECHAZADA\n' +
-          'Safari/iOS: La persistencia absoluta no está soportada. Mantén espacio libre en tu dispositivo.\n' +
-          'Chrome/Firefox: verifica permisos del sitio'
+          '[StorageManager] Persistencia no concedida. IndexedDB puede seguir funcionando en modo best-effort; esto no bloquea login ni bootstrap.'
         );
+        return false;
+      } catch (error) {
+        this.lastPersistenceError = error?.message || String(error);
+        this._setPersistenceState(StorageState.VOLATILE);
+        Logger.warn(
+          '[StorageManager] La solicitud de persistencia falló. Se continúa en modo best-effort sin bloquear IndexedDB.'
+        );
+        return false;
+      } finally {
+        this._requestPromise = null;
       }
+    })();
 
-      this._notify();
-      return persisted;
-    } catch (err) {
-      Logger.error('Error solicitando persistencia:', err);
-      this.persistenceState = StorageState.DENIED;
-      this._notify();
-      return false;
-    }
+    return this._requestPromise;
   }
 
-  /**
-   * FASE 3: Estima cuota y uso actual
-   * Implementa caching para reducir llamadas costosas
-   * Retorna: { usage, quota, percentUsed, isCritical, isWarning }
-   */
   async estimateQuota(forceRefresh = false) {
-    // Evita llamadas excesivas (max 1 cada 30 segundos)
-    if (!forceRefresh && this.estimateCache && Date.now() - this.lastCheckTime < this.CACHE_TTL) {
+    if (
+      !forceRefresh
+      && this.estimateCache
+      && Date.now() - this.lastCheckTime < ESTIMATE_CACHE_TTL_MS
+    ) {
       return this.estimateCache;
     }
 
+    if (!this.canEstimate()) {
+      const unavailable = { ...emptyQuota(), error: true };
+      this.quotaUsage = unavailable;
+      return unavailable;
+    }
+
     try {
-      const estimate = await navigator.storage.estimate();
-      const usage = estimate.usage || 0;
-      const quota = estimate.quota || 0;
-      const percentUsed = quota > 0 ? (usage / quota) * 100 : 0;
+      const estimate = await this.storageApi.estimate();
+      const usage = Number(estimate?.usage || 0);
+      const quota = Number(estimate?.quota || 0);
+      const fractionUsed = quota > 0 ? usage / quota : 0;
+      const percentUsed = Math.round(fractionUsed * 10_000) / 100;
 
       this.quotaUsage = {
         usage,
         quota,
-        percentUsed: Math.round(percentUsed * 100) / 100,
-        isCritical: percentUsed >= QUOTA_CRITICAL_THRESHOLD,
-        isWarning: percentUsed >= QUOTA_WARNING_THRESHOLD && percentUsed < QUOTA_CRITICAL_THRESHOLD,
+        percentUsed,
+        isCritical: fractionUsed >= QUOTA_CRITICAL_THRESHOLD,
+        isWarning: fractionUsed >= QUOTA_WARNING_THRESHOLD && fractionUsed < QUOTA_CRITICAL_THRESHOLD,
+        error: false
       };
-
       this.lastCheckTime = Date.now();
       this.estimateCache = this.quotaUsage;
       this._notify();
-
-      Logger.debug(
-        `Storage: ${Math.round(usage / 1024 / 1024)}MB / ${Math.round(quota / 1024 / 1024)}MB ` +
-        `(${this.quotaUsage.percentUsed}%)`
-      );
-
       return this.quotaUsage;
-    } catch (err) {
-      Logger.error('Error estimando cuota:', err);
-      return {
-        usage: 0,
-        quota: 0,
-        percentUsed: 0,
-        isCritical: false,
-        isWarning: false,
-        error: true,
-      };
+    } catch (error) {
+      Logger.warn('[StorageManager] No se pudo estimar la cuota:', error?.message || error);
+      const unavailable = { ...emptyQuota(), error: true };
+      this.quotaUsage = unavailable;
+      return unavailable;
     }
   }
 
-  /**
-   * VALIDACION DE BOOT: Comprueba si la app puede iniciar seguramente
-   * Retorna objeto con estado crítico para bloquear operaciones peligrosas
-   */
+  _generateRecommendation(status, quota) {
+    const messages = [];
+    if (status !== StorageState.GRANTED) {
+      messages.push('Almacenamiento best-effort: conserva espacio libre y realiza respaldos periódicos.');
+    }
+    if (quota.isCritical) {
+      messages.push(`Almacenamiento ${quota.percentUsed}% lleno: libera espacio de inmediato.`);
+    } else if (quota.isWarning) {
+      messages.push(`Almacenamiento ${quota.percentUsed}% lleno: considera liberar espacio.`);
+    }
+    return messages;
+  }
+
   async validateBootConditions() {
     const quota = await this.estimateQuota();
-
-    // CORRECCIÓN: isVolatile = true si el estado NO es 'granted'.
-    // 'prompt', 'unknown', 'denied' y 'unsupported' son todos volátiles.
     const isVolatile = this.persistenceState !== StorageState.GRANTED;
-
     return {
-      canStart: true, // La app siempre inicia, pero con advertencias
+      canStart: true,
       isSafe: !isVolatile && !quota.isCritical,
       isVolatile,
       isCritical: quota.isCritical,
       isWarning: quota.isWarning,
       persistenceState: this.persistenceState,
       quota,
-      recommendation: this._generateRecommendation(this.persistenceState, quota),
+      recommendation: this._generateRecommendation(this.persistenceState, quota)
     };
   }
 
-  /**
-   * BLOQUEO DE OPERACIONES: Verifica si es seguro cobrar una venta
-   * Retorna: { allowed: boolean, reason?: string }
-   */
   async canProcessSale() {
     const quota = await this.estimateQuota(true);
-
-    if (quota.error) {
-      Logger.warn('No se pudo verificar cuota - permitiendo venta por seguridad de UX');
-      return { allowed: true };
-    }
-
+    if (quota.error) return { allowed: true };
     if (quota.isCritical) {
       return {
         allowed: false,
-        reason: `Almacenamiento CRITICO: ${Math.round(quota.usage / 1024 / 1024)}MB de ${Math.round(quota.quota / 1024 / 1024)}MB. Libera espacio o haz un respaldo INMEDIATO. Riesgo alto de purga del SO.`,
-        severity: 'critical',
+        reason: `Almacenamiento crítico: ${quota.percentUsed}% utilizado. Libera espacio o realiza un respaldo antes de continuar.`,
+        severity: 'critical'
       };
     }
-
     if (quota.isWarning) {
       return {
         allowed: true,
-        reason: `Advertencia: ${quota.percentUsed}% de almacenamiento usado. Considera hacer un respaldo.`,
-        severity: 'warning',
+        reason: `Advertencia: ${quota.percentUsed}% de almacenamiento utilizado. Considera realizar un respaldo.`,
+        severity: 'warning'
       };
     }
-
     return { allowed: true };
   }
 
-  /**
-   * Genera mensajes legibles para el usuario
-   */
-  _generateRecommendation(status, quota) {
-    const messages = [];
+  initialize() {
+    if (this._initializePromise) return this._initializePromise;
+    if (this._initialized) return Promise.resolve(this.validateBootConditions());
 
-    if (status === StorageState.DENIED) {
-      messages.push('⚠️ MODO VOLÁTIL: Permiso de persistencia denegado');
-      messages.push('🔧 Solución: Verifica permisos. En iOS, asegúrate de mantener siempre espacio libre y haz respaldos.');
-    } else if (status === StorageState.UNSUPPORTED) {
-      messages.push('⚠️ MODO VOLÁTIL: Navegador no soporta persistencia');
-      messages.push('🔧 Solución: Usa un navegador moderno. En iOS mantén espacio libre en disco.');
-    } else if (status === 'prompt') {
-      messages.push('⏳ Solicitud de persistencia pendiente');
-      messages.push('🔧 Solución: Otorga el permiso de almacenamiento. (Nota: en iOS haz respaldos periódicos).');
-    } else if (status === StorageState.UNKNOWN) {
-      messages.push('⚠️ Estado de persistencia desconocido');
-      messages.push('🔧 Solución: Recarga la app y haz respaldos frecuentes.');
-    }
-
-    if (quota.isCritical) {
-      messages.push(`🔴 CRITICO: Almacenamiento ${quota.percentUsed}% lleno`);
-    } else if (quota.isWarning) {
-      messages.push(`🟡 Advertencia: Almacenamiento ${quota.percentUsed}% lleno`);
-    }
-
-    return messages;
-  }
-
-  /**
-   * Hook de inicialización (llamar en main.jsx antes de montar React)
-   */
-  async initialize() {
-    if (this._initialized) return;
-    this._initialized = true;
-
-    Logger.info('🔒 Iniciando StorageManager...');
-
-    try {
-      // Fase 0: Verificar si la persistencia YA fue concedida en sesiones previas.
-      // navigator.storage.persisted() es no-destructiva: no muestra diálogos,
-      // no consume el "prompt" del navegador, y refleja el estado real del SO.
-      const alreadyPersisted = await this.isPersisted();
-
-      if (!alreadyPersisted) {
-        // Fase 1: Verificar el estado formal del permiso
-        await this.checkPersistenceStatus();
-
-        // Fase 2: Solo solicitar si hay posibilidad real de obtenerlo.
-        // NO intentar si ya fue denegado: el navegador recuerda el rechazo.
-        // Nota: En iOS, incluso con PWA, el SO puede purgar datos bajo presión de espacio.
-        const shouldRequest = (
-          this.persistenceState === 'prompt' ||
-          this.persistenceState === StorageState.UNKNOWN
-        );
-        if (shouldRequest) {
-          Logger.info('Solicitando permiso de persistencia...');
+    this._initializePromise = (async () => {
+      Logger.info('[StorageManager] Inicialización best-effort.');
+      try {
+        const status = await this.checkPersistenceStatus();
+        if (status === StorageState.PROMPT || status === StorageState.UNKNOWN) {
           await this.requestPersistence();
         }
-      }
-
-      // Fase 3: Estimar cuota disponible
-      await this.estimateQuota();
-
-      // Retornar estado para que la UI pueda reaccionar
-      const conditions = await this.validateBootConditions();
-
-      if (conditions.isVolatile) {
-        Logger.warn('⚠️ ADVERTENCIA DE DATOS: Almacenamiento en modo volátil', {
+        await this.estimateQuota();
+        const conditions = await this.validateBootConditions();
+        this._initialized = true;
+        return conditions;
+      } catch (error) {
+        this.lastPersistenceError = error?.message || String(error);
+        this._setPersistenceState(StorageState.VOLATILE);
+        this._initialized = true;
+        return {
+          canStart: true,
+          isSafe: false,
+          isVolatile: true,
+          isCritical: false,
+          isWarning: true,
           persistenceState: this.persistenceState,
-          details: conditions.recommendation,
-        });
-      } else {
-        Logger.info('✅ Almacenamiento con persistencia (Nota: iOS no garantiza inmutabilidad absoluta)');
+          quota: this.quotaUsage,
+          recommendation: this._generateRecommendation(this.persistenceState, this.quotaUsage),
+          error: this.lastPersistenceError
+        };
+      } finally {
+        this._initializePromise = null;
       }
+    })();
 
-      return conditions;
-    } catch (err) {
-      Logger.error('Error fatal en StorageManager.initialize():', err);
-      return {
-        canStart: true,
-        isSafe: false,
-        isVolatile: true,
-        isCritical: false,
-        isWarning: true,
-        error: err.message,
-      };
-    }
+    return this._initializePromise;
   }
 
-  /**
-   * Para debugging: estado completo del servicio
-   */
   getState() {
     return {
       persistenceState: this.persistenceState,
       quotaUsage: this.quotaUsage,
       isSupported: this.isSupported(),
       initialized: this._initialized,
+      requestAttempted: this._requestAttempted,
+      lastPersistenceError: this.lastPersistenceError
     };
   }
 }
 
-// Singleton export
 export const storageManager = new StorageManagerService();
-
 export default storageManager;

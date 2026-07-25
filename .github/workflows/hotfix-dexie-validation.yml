@@ -1,0 +1,249 @@
+name: HOTFIX Dexie Recovery Validation
+
+on:
+  push:
+    branches:
+      - hotfix/dexie-primary-key-recovery-admin-bootstrap
+    paths:
+      - 'src/services/db/**'
+      - 'src/services/sync/**'
+      - 'src/services/storageManager.js'
+      - 'src/components/common/AdminLoginModal.jsx'
+      - 'src/components/common/DatabaseRecoveryGate.jsx'
+      - 'src/components/common/PosApplicationBootstrap.jsx'
+      - 'src/components/common/__tests__/DatabaseRecoveryGate.test.jsx'
+      - 'src/components/common/__tests__/PosApplicationBootstrap.test.jsx'
+      - 'src/__tests__/main.initialRecoveryBootstrap.test.jsx'
+      - 'src/store/**'
+      - 'src/architecture/__tests__/adminPwaArchitecture.test.js'
+      - 'src/workers/migration.worker.js'
+      - 'src/main.jsx'
+      - '.github/workflows/hotfix-dexie-validation.yml'
+      - '.github/workflows/pr127-global-comparison.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/services/db/**'
+      - 'src/services/sync/**'
+      - 'src/services/storageManager.js'
+      - 'src/components/common/AdminLoginModal.jsx'
+      - 'src/components/common/DatabaseRecoveryGate.jsx'
+      - 'src/components/common/PosApplicationBootstrap.jsx'
+      - 'src/components/common/__tests__/DatabaseRecoveryGate.test.jsx'
+      - 'src/components/common/__tests__/PosApplicationBootstrap.test.jsx'
+      - 'src/__tests__/main.initialRecoveryBootstrap.test.jsx'
+      - 'src/store/**'
+      - 'src/architecture/__tests__/adminPwaArchitecture.test.js'
+      - 'src/workers/migration.worker.js'
+      - 'src/main.jsx'
+      - '.github/workflows/hotfix-dexie-validation.yml'
+      - '.github/workflows/pr127-global-comparison.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  focal-tests:
+    name: focal-tests (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: dexie-recovery-schema
+            files: >-
+              src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+              src/services/db/__tests__/databaseSchemaRegistration.test.js
+          - suite: native-open-reactivity
+            files: >-
+              src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+              src/services/db/__tests__/databaseRuntime.activity.test.js
+              src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
+          - suite: initial-pos-bootstrap
+            files: >-
+              src/__tests__/main.initialRecoveryBootstrap.test.jsx
+              src/components/common/__tests__/PosApplicationBootstrap.test.jsx
+          - suite: database-recovery-gate
+            files: src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
+          - suite: admin-login-modal
+            files: src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
+          - suite: admin-session-bootstrap
+            files: >-
+              src/store/slices/license/licenseAdminActions.test.js
+              src/store/slices/license/licenseSessionTransitions.test.js
+              src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+              src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+          - suite: product-pos-sync
+            files: >-
+              src/store/__tests__/productStoreRecoveryGuard.test.js
+              src/store/__tests__/useProductStore.structuralRecovery.test.js
+              src/services/sync/__tests__/syncMetaService.recovery.test.js
+          - suite: storage-manager
+            files: src/services/__tests__/storageManager.bestEffort.test.js
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.suite }}
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:ci -- ${{ matrix.files }} 2>&1 | tee "${{ matrix.suite }}.log"
+
+      - name: Upload ${{ matrix.suite }} log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focal-${{ matrix.suite }}-${{ github.sha }}
+          path: ${{ matrix.suite }}.log
+          if-no-files-found: error
+          retention-days: 7
+
+  focal-quality:
+    name: focal-quality
+    if: always()
+    needs: focal-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Focal ESLint
+        run: >-
+          npx eslint
+          src/services/db/databaseRecoveryState.js
+          src/services/db/databaseRuntime.js
+          src/services/db/databaseSchema.js
+          src/services/db/indexedDbPreflight.js
+          src/services/db/indexedDbPreflightCoordinator.js
+          src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+          src/services/db/__tests__/databaseRuntime.activity.test.js
+          src/services/storageManager.js
+          src/services/sync/syncDexieBootstrap.js
+          src/services/sync/syncMetaService.js
+          src/components/common/AdminLoginModal.jsx
+          src/components/common/DatabaseRecoveryGate.jsx
+          src/components/common/PosApplicationBootstrap.jsx
+          src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
+          src/components/common/__tests__/PosApplicationBootstrap.test.jsx
+          src/__tests__/main.initialRecoveryBootstrap.test.jsx
+          src/store/productStoreRecoveryGuard.js
+          src/store/useProductStore.js
+          src/store/__tests__/useProductStore.structuralRecovery.test.js
+          src/store/slices/license/pendingAdminSession.js
+          src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseAdminActions.test.js
+          src/store/slices/license/licenseActivationActions.js
+          src/store/slices/license/licenseSessionActions.js
+          src/store/slices/license/licenseSessionTransitions.test.js
+          src/store/slices/license/licenseBootstrapActions.js
+          src/architecture/__tests__/adminPwaArchitecture.test.js
+          src/workers/migration.worker.js
+          src/main.jsx
+
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
+
+      - name: Reject temporary self-writing mechanisms
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/hotfix-dexie-validation.yml
+            .github/workflows/pr127-global-comparison.yml
+          )
+          if grep -nE '^[[:space:]]*contents:[[:space:]]*write[[:space:]]*$' "${files[@]}"; then
+            echo 'A workflow requests contents write.' >&2
+            exit 1
+          fi
+          if grep -nE 'base64[[:space:]]+--decode|pr127[-]residual|Apply[[:space:]]+Residual' "${files[@]}"; then
+            echo 'Residual self-writing mechanism detected.' >&2
+            exit 1
+          fi
+
+      - name: Reject destructive recovery in production files
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            'src/main.jsx',
+            'src/components/common/DatabaseRecoveryGate.jsx',
+            'src/components/common/PosApplicationBootstrap.jsx',
+            'src/services/db/databaseRuntime.js',
+            'src/services/db/indexedDbPreflight.js'
+          ];
+          const forbidden = [
+            ['indexedDB', 'deleteDatabase'].join('.'),
+            ['localStorage', 'clear'].join('.'),
+            ['caches', 'delete'].join('.')
+          ];
+          for (const file of files) {
+            const source = fs.readFileSync(file, 'utf8');
+            for (const token of forbidden) {
+              if (source.includes(token)) {
+                throw new Error(`${file} contiene recuperación destructiva: ${token}`);
+              }
+            }
+          }
+          NODE
+
+      - name: Production builds
+        run: |
+          npm run build
+          npm run build:store
+
+      - name: Validate admin PWA branch architecture
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:ci -- src/architecture/__tests__/adminPwaArchitecture.test.js 2>&1 | tee pwa-architecture.log
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focal-quality-${{ github.sha }}
+          path: pwa-architecture.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  validation-result:
+    name: validation-result
+    if: always()
+    needs:
+      - focal-tests
+      - focal-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate result
+        env:
+          TEST_RESULT: ${{ needs.focal-tests.result }}
+          QUALITY_RESULT: ${{ needs.focal-quality.result }}
+        run: |
+          echo "focal-tests=${TEST_RESULT}"
+          echo "focal-quality=${QUALITY_RESULT}"
+          test "${TEST_RESULT}" = success
+          test "${QUALITY_RESULT}" = success

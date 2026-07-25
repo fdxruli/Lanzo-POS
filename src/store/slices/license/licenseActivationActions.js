@@ -17,11 +17,13 @@ import {
     isStaffDeviceAuthorizationFailure,
     getStaffLoginMessage
 } from './licenseGuards';
+import { clearPendingAdminSessionIfLicenseChanged } from './pendingAdminSession';
 
 const completeValidLicenseSession = async (set, get, licenseData, profileOptions) => {
     await saveLicenseToStorage(licenseData);
 
     set({
+        pendingAdminSessionResult: null,
         licenseDetails: licenseData,
         currentDeviceRole: licenseData.device_role || 'admin',
         currentStaffUser: licenseData.device_role === 'staff'
@@ -38,6 +40,7 @@ export const createLicenseActivationActions = ({
     hasStaffValidationContext
 }) => ({
     handleLogin: async (licenseKey) => {
+        clearPendingAdminSessionIfLicenseChanged(set, get, licenseKey, 'activate_different_license');
         try {
             const result = await activateLicense(licenseKey);
 
@@ -106,6 +109,7 @@ export const createLicenseActivationActions = ({
 
             if (result.staff_login_required) {
                 set({
+                    pendingAdminSessionResult: null,
                     appStatus: 'staff_login_required',
                     licenseDetails: {
                         ...(result.details || {}),
@@ -129,6 +133,7 @@ export const createLicenseActivationActions = ({
 
             if (result.access_choice_required) {
                 set({
+                    pendingAdminSessionResult: null,
                     appStatus: 'license_access_required',
                     licenseDetails: { ...(result.details || {}), license_key: licenseKey, valid: false },
                     currentDeviceRole: null,
@@ -144,6 +149,7 @@ export const createLicenseActivationActions = ({
 
             if (result.admin_enrollment_required) {
                 set({
+                    pendingAdminSessionResult: null,
                     appStatus: 'admin_enrollment_required',
                     licenseDetails: { ...(result.details || {}), license_key: licenseKey, valid: false, device_role: 'admin' },
                     currentDeviceRole: 'admin',
@@ -232,6 +238,7 @@ export const createLicenseActivationActions = ({
                 await saveLicenseToStorage(licenseDataToSave);
 
                 set({
+                    pendingAdminSessionResult: null,
                     licenseDetails: licenseDataToSave,
                     appStatus: 'setup_required'
                 });
