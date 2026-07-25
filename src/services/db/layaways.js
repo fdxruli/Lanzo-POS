@@ -2,10 +2,11 @@ import { db, STORES } from './dexie';
 import { handleDexieError } from './utils';
 import { generateID } from '../utils';
 import { productsRepository } from './products';
-import { useStatsStore } from '../../store/useStatsStore';
-import Logger from '../Logger';
-import { SALE_STATUS } from '../sales/financialStats';
+import { SALE_STATUS, buildDailyStatsFromSales } from '../sales/financialStats';
+import { getFinancialQuality } from '../sales/financialPolicy';
+import { Money } from '../../utils/moneyMath';
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
+import { auditLayawayFinancialLinks } from '../layawayFinancialProjection';
 
 const nowIso = () => new Date().toISOString();
 
@@ -124,7 +125,7 @@ export const layawayRepository = {
                         cajaId,
                         'entrada',
                         initialPayment,
-                        `Abono inicial Apartado - ${layawayData.customerName}`,
+                        `Anticipo Apartado #${layawayData.id.slice(-4)} - ${layawayData.customerName}`,
                         cashMovement
                     );
                     newLayaway.payments.push({
@@ -301,6 +302,8 @@ export const layawayRepository = {
                     status: 'cancelled',
                     updatedAt: nowIso(),
                     notes: `${reason} - ${retainMoney ? 'Fondos retenidos por penalizacion' : 'Fondos reembolsados'}`,
+                    retainedMoney: Boolean(retainMoney),
+                    retainedPenaltyAmount: retainMoney ? Number(layaway.paidAmount || 0) : 0,
                     ...(cashMovementId ? { refundCashMovementId: cashMovementId } : {})
                 });
                 return { success: true, cashMovementId };
@@ -314,29 +317,62 @@ export const layawayRepository = {
         return db.transaction('rw', [db.table(STORES.LAYAWAYS), db.table(STORES.SALES), db.table(STORES.DAILY_STATS)], async () => {
             const layaway = await db.table(STORES.LAYAWAYS).get(layawayId);
             if (!layaway) throw new Error('Apartado no encontrado');
+            const existingSale = await db.table(STORES.SALES)
+                .toCollection()
+                .filter((sale) => sale.isLayawayConversion === true && sale.originalLayawayId === layawayId)
+                .first();
+            if (existingSale) {
+                if (layaway.status !== 'completed') {
+                    await db.table(STORES.LAYAWAYS).update(layawayId, {
+                        status: 'completed',
+                        updatedAt: nowIso(),
+                        deliveredAt: layaway.deliveredAt || existingSale.timestamp,
+                        conversionSaleId: existingSale.id,
+                        notes: 'Entregado y convertido a venta'
+                    });
+                }
+                return { success: true, duplicate: true, saleId: existingSale.id };
+            }
             if (!['active', 'ready'].includes(layaway.status)) throw new Error('Solo se puede entregar un apartado activo o listo.');
             if (Number(layaway.totalAmount) - Number(layaway.paidAmount || 0) > 0.05) throw new Error('El apartado debe estar liquidado para entregar.');
 
-            await db.table(STORES.LAYAWAYS).update(layawayId, { status: 'completed', updatedAt: nowIso(), notes: 'Entregado y convertido a venta' });
+            const deliveredAt = nowIso();
             const saleRecord = {
-                id: generateID('sal'), timestamp: nowIso(), customerId: layaway.customerId, customerName: layaway.customerName,
+                id: generateID('sal'), timestamp: deliveredAt, customerId: layaway.customerId, customerName: layaway.customerName,
                 items: layaway.items.map((item) => ({ ...item, stockManaged: true })), total: layaway.totalAmount,
                 subtotal: layaway.totalAmount, discount: 0, paymentMethod: 'layaway_completed', status: SALE_STATUS.CLOSED,
                 fulfillmentStatus: 'fulfilled', cashierId, isLayawayConversion: true, originalLayawayId: layaway.id
             };
             await db.table(STORES.SALES).add(saleRecord);
-            try {
-                const costOfGoodsSold = layaway.items.reduce((sum, item) => sum + ((item.cost || 0) * item.quantity), 0);
-                await useStatsStore.getState().updateStatsForNewSale(saleRecord, costOfGoodsSold);
-            } catch (statsError) {
-                Logger.warn('La venta del apartado se registro pero fallo la actualizacion de estadisticas:', statsError);
+            const [saleDayStat] = buildDailyStatsFromSales([saleRecord]);
+            if (saleDayStat) {
+                const existingDay = await db.table(STORES.DAILY_STATS).get(saleDayStat.id);
+                const mergedDay = existingDay ? {
+                    ...existingDay,
+                    ...saleDayStat,
+                    revenue: Money.toNumber(Money.add(existingDay.revenue || 0, saleDayStat.revenue || 0)),
+                    validRevenue: Money.toNumber(Money.add(existingDay.validRevenue || 0, saleDayStat.validRevenue || 0)),
+                    unconfirmedRevenue: Money.toNumber(Money.add(existingDay.unconfirmedRevenue || 0, saleDayStat.unconfirmedRevenue || 0)),
+                    unreliableProfitDueToMissingCosts: Money.toNumber(Money.add(existingDay.unreliableProfitDueToMissingCosts || 0, saleDayStat.unreliableProfitDueToMissingCosts || 0)),
+                    profit: Money.toNumber(Money.add(existingDay.profit || 0, saleDayStat.profit || 0)),
+                    orders: Number(existingDay.orders || 0) + Number(saleDayStat.orders || 0),
+                    itemsSold: Money.toNumber(Money.add(existingDay.itemsSold || 0, saleDayStat.itemsSold || 0)),
+                    hasMissingCosts: Boolean(existingDay.hasMissingCosts || saleDayStat.hasMissingCosts)
+                } : saleDayStat;
+                Object.assign(mergedDay, getFinancialQuality(mergedDay.validRevenue || 0, mergedDay.unconfirmedRevenue || 0));
+                await db.table(STORES.DAILY_STATS).put(mergedDay);
             }
-            return { success: true, saleId: saleRecord.id };
+            await db.table(STORES.LAYAWAYS).update(layawayId, {
+                status: 'completed', updatedAt: deliveredAt, deliveredAt,
+                conversionSaleId: saleRecord.id, notes: 'Entregado y convertido a venta'
+            });
+            return { success: true, saleId: saleRecord.id, duplicate: false };
         });
     },
 
     async getByCustomer(customerId, onlyActive = true) {
-        if (onlyActive) return db.table(STORES.LAYAWAYS).where('[customerId+status]').equals([customerId, 'active']).toArray();
+        if (onlyActive) return db.table(STORES.LAYAWAYS).where('customerId').equals(customerId)
+            .filter((layaway) => ['active', 'ready'].includes(layaway.status)).toArray();
         return db.table(STORES.LAYAWAYS).where('customerId').equals(customerId).toArray();
     },
 
@@ -358,5 +394,15 @@ export const layawayRepository = {
                 customerId: layaway.customerId || null,
                 status: 'needs_reconciliation'
             })));
+    },
+
+    // Auditoria de solo lectura para datos historicos. No crea ventas ni movimientos.
+    async auditFinancialLinks() {
+        const [layaways, sales, cashMovements] = await Promise.all([
+            db.table(STORES.LAYAWAYS).toArray(),
+            db.table(STORES.SALES).toArray(),
+            db.table(STORES.MOVIMIENTOS_CAJA).toArray()
+        ]);
+        return auditLayawayFinancialLinks({ layaways, sales, cashMovements });
     }
 };

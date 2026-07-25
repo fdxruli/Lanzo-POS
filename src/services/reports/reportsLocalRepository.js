@@ -6,7 +6,7 @@ const sum = (rows = [], selector = (row) => row) => rows.reduce((total, row) => 
 
 const inventoryValue = (menu = []) => sum(menu, (product) => Math.max(Number(product.stock || 0) - Number(product.committedStock || 0), 0) * Number(product.cost || 0));
 
-const buildLocalOverview = ({ sales = [], wasteLogs = [], menu = [], customers = [] } = {}) => ({
+const buildLocalOverview = ({ sales = [], wasteLogs = [], menu = [], customers = [], layawayFinancial = {} } = {}) => ({
   sales_total: sum(sales, (sale) => sale.total),
   sales_count: sales.length,
   waste_total: sum(wasteLogs, (log) => log.lossAmount || log.amount || log.cost),
@@ -16,7 +16,14 @@ const buildLocalOverview = ({ sales = [], wasteLogs = [], menu = [], customers =
   debt_total: sum(customers, (customer) => customer.debt),
   products_active: menu.filter((product) => product.isActive !== false).length,
   products_without_stock: menu.filter((product) => product.isActive !== false && product.trackStock !== false && Number(product.stock || 0) <= 0).length,
-  inventory_value_approx: inventoryValue(menu)
+  inventory_value_approx: inventoryValue(menu),
+  layaway_payments_collected: Number(layawayFinancial.layawayPaymentsCollected || 0),
+  layaway_pending_advances: Number(layawayFinancial.layawayPendingAdvances || 0),
+  layaway_completed_revenue: Number(layawayFinancial.layawayCompletedRevenue || 0),
+  layaway_completed_cost: Number(layawayFinancial.layawayCompletedCost || 0),
+  layaway_completed_gross_profit: Number(layawayFinancial.layawayCompletedGrossProfit || 0),
+  layaway_refunds: Number(layawayFinancial.layawayRefunds || 0),
+  layaway_retained_penalties: Number(layawayFinancial.layawayRetainedPenalties || 0)
 });
 
 export const reportsLocalRepository = {

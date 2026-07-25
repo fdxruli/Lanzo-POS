@@ -235,6 +235,7 @@ export const reportsMapper = {
       wasteLogs: payload.wasteLogs || [],
       menu: payload.menu || [],
       customers: payload.customers || [],
+      layawayFinancial: payload.layawayFinancial || {},
       warnings: [],
       source: buildReportSource({
         mode: REPORT_SOURCE_MODES.LOCAL,
