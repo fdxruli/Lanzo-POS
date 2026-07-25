@@ -105,6 +105,7 @@ jobs:
           src/services/db/databaseRuntime.js
           src/services/db/databaseSchema.js
           src/services/db/indexedDbPreflight.js
+          src/services/db/indexedDbPreflightCoordinator.js
           src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
           src/services/storageManager.js
           src/services/sync/syncDexieBootstrap.js
@@ -128,7 +129,9 @@ jobs:
 
       - name: Reject temporary self-writing mechanisms
         run: |
-          if git grep -n -E 'pr127-residual|Apply Residual|base64 --decode' -- . ':!docs/reports/HOTFIX.DEXIE.PRIMARY.KEY.RECOVERY.md'; then
+          if git grep -n -E 'pr127-residual|Apply Residual|base64 --decode' -- . \
+            ':!docs/reports/HOTFIX.DEXIE.PRIMARY.KEY.RECOVERY.md' \
+            ':!.github/workflows/hotfix-dexie-validation.yml'; then
             echo 'Residual self-writing mechanism detected.' >&2
             exit 1
           fi
