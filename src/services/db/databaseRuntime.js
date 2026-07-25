@@ -4,9 +4,12 @@ import { db, STORES } from './dexie';
 import { registerCanonicalDexieExtensions } from './databaseSchema';
 import {
   buildPrimaryKeyMismatchDiagnostic,
-  getActiveNativeOpenOperations,
-  preflightAndRepairIndexedDb
+  getActiveNativeOpenOperations
 } from './indexedDbPreflight';
+import {
+  getActiveIndexedDbPreflightOperations,
+  preflightAndRepairIndexedDb
+} from './indexedDbPreflightCoordinator';
 import {
   DATABASE_RECOVERY_CODES,
   DATABASE_RECOVERY_STATUS,
@@ -148,7 +151,9 @@ export const prepareLocalDatabase = ({ force = false } = {}) => {
 };
 
 export const isLocalDatabasePreparationActive = () => (
-  Boolean(preparationPromise) || getActiveNativeOpenOperations().length > 0
+  Boolean(preparationPromise)
+  || getActiveIndexedDbPreflightOperations().length > 0
+  || getActiveNativeOpenOperations().length > 0
 );
 
 export const retryLocalDatabaseRecovery = async () => {
@@ -226,6 +231,7 @@ if (!db[OPEN_PATCH]) {
 export const getLocalDatabaseRuntimeState = () => ({
   recovery: getDatabaseRecoveryState(),
   preparation: lastPreparationResult,
+  activePreflightOperations: getActiveIndexedDbPreflightOperations(),
   activeNativeOperations: getActiveNativeOpenOperations(),
   isOpen: db.isOpen()
 });
