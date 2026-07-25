@@ -4,9 +4,21 @@ on:
   push:
     branches:
       - hotfix/dexie-primary-key-recovery-admin-bootstrap
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/hotfix-dexie-validation.yml'
+      - '.github/workflows/pr127-global-comparison.yml'
   pull_request:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/hotfix-dexie-validation.yml'
+      - '.github/workflows/pr127-global-comparison.yml'
   workflow_dispatch:
 
 permissions:
