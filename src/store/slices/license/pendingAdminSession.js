@@ -5,8 +5,8 @@ const normalizeLicenseKey = (value) => (
 );
 
 const normalizeIdentity = (value) => (
-  (typeof value === 'string' && value.trim()) ||
-  (typeof value === 'number' && Number.isFinite(value))
+  (typeof value === 'string' && value.trim())
+  || (typeof value === 'number' && Number.isFinite(value))
     ? String(value).trim()
     : null
 );
@@ -37,6 +37,8 @@ const extractSessionIdentity = (result) => normalizeIdentity(
   ?? null
 );
 
+const identitiesMatch = (stored, actual) => stored === actual;
+
 export const createPendingAdminSession = ({ licenseKey, result }) => ({
   licenseKey: normalizeLicenseKey(licenseKey),
   adminUserId: extractAdminUserId(result),
@@ -64,26 +66,22 @@ export const validatePendingAdminSession = ({ pending, licenseKey, currentAdminU
   }
 
   const resultAdminUserId = extractAdminUserId(pending.result);
-  if (pending.adminUserId && resultAdminUserId && pending.adminUserId !== resultAdminUserId) {
+  if (!identitiesMatch(pending.adminUserId, resultAdminUserId)) {
     return { valid: false, reason: 'admin_identity_mismatch' };
   }
 
   const currentAdminUserId = normalizeIdentity(currentAdminUser?.id);
-  if (currentAdminUserId && pending.adminUserId && currentAdminUserId !== pending.adminUserId) {
+  if (currentAdminUserId && currentAdminUserId !== pending.adminUserId) {
     return { valid: false, reason: 'current_admin_mismatch' };
   }
 
   const resultDeviceId = extractDeviceId(pending.result);
-  if (pending.deviceId && resultDeviceId && pending.deviceId !== resultDeviceId) {
+  if (!identitiesMatch(pending.deviceId, resultDeviceId)) {
     return { valid: false, reason: 'device_identity_mismatch' };
   }
 
   const resultSessionIdentity = extractSessionIdentity(pending.result);
-  if (
-    pending.sessionIdentity
-    && resultSessionIdentity
-    && pending.sessionIdentity !== resultSessionIdentity
-  ) {
+  if (!identitiesMatch(pending.sessionIdentity, resultSessionIdentity)) {
     return { valid: false, reason: 'session_identity_mismatch' };
   }
 
