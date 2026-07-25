@@ -264,6 +264,7 @@ export default function EcommercePortalSettings() {
     ? Number.MAX_SAFE_INTEGER
     : (features.maxPublishedProducts || 10);
   const limitReached = !isPro && publishedCount >= maxProducts;
+  const showBasicPortalEditor = !isPro || !portal;
   const linkedRefs = useMemo(
     () => new Set(products.map((item) => item.localProductRef).filter(Boolean)),
     [products]
@@ -770,7 +771,7 @@ export default function EcommercePortalSettings() {
         </section>
       )}
 
-      {portal ? <EcommerceSiteBuilderFoundation isPro={isPro} portal={portal} previewProducts={products} /> : null}
+      {portal ? <EcommerceSiteBuilderFoundation isPro={isPro} portal={portal} /> : null}
 
       {portal ? (
         <div className="ecom-operations-grid">
@@ -779,8 +780,9 @@ export default function EcommercePortalSettings() {
         </div>
       ) : null}
 
-      <form className="ui-card ecom-admin-form-card" onSubmit={submitPortal}>
-        <div className="ecom-admin-card-heading">
+      {showBasicPortalEditor && (
+        <form className="ui-card ecom-admin-form-card" onSubmit={submitPortal}>
+          <div className="ecom-admin-card-heading">
           <div>
             <span className="ecom-admin-eyebrow">Datos publicos basicos</span>
             <h3>Informacion de tu tienda</h3>
@@ -934,8 +936,9 @@ export default function EcommercePortalSettings() {
               : <Save size={17} />}
             {' '}Guardar portal
           </button>
-        </div>
-      </form>
+          </div>
+        </form>
+      )}
 
       <section
         id="ecommerce-published-products"

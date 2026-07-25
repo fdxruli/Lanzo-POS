@@ -6,12 +6,11 @@ import EcommerceSiteRenderer from '../site/EcommerceSiteRenderer';
 import '../../../pages/PublicStorePage.css';
 
 const noop = () => {};
-const EMPTY_PREVIEW_PRODUCTS = Object.freeze([]);
 
-export default function EcommerceSiteBuilderPreview({ document, viewport, onViewport, portal, previewProducts = EMPTY_PREVIEW_PRODUCTS }) {
+export default function EcommerceSiteBuilderPreview({ document, viewport, onViewport, portal }) {
   const previewCatalog = useMemo(
-    () => buildEcommerceSiteBuilderPreviewCatalog(previewProducts),
-    [previewProducts]
+    () => buildEcommerceSiteBuilderPreviewCatalog(),
+    []
   );
   const themeStyle = useMemo(() => buildEcommercePortalThemeStyle(portal?.theme), [portal?.theme]);
   const catalogProps = useMemo(() => ({

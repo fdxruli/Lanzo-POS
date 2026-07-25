@@ -26,10 +26,9 @@ import EcommerceSiteBuilderPreview from './site-builder/EcommerceSiteBuilderPrev
 import EcommerceSiteBuilderStatus from './site-builder/EcommerceSiteBuilderStatus';
 
 const PAGE_SIZE = 20;
-const EMPTY_PREVIEW_PRODUCTS = Object.freeze([]);
 const clone = (value) => structuredClone(value);
 
-export default function EcommerceSiteBuilderFoundation({ isPro, portal, previewProducts = EMPTY_PREVIEW_PRODUCTS }) {
+export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
   const [remoteState, setRemoteState] = useState(null);
   const [savedDocument, setSavedDocument] = useState(null);
   const [workingDocument, setWorkingDocument] = useState(null);
@@ -252,7 +251,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, previewP
       <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Constructor del sitio</span><h2 id="site-builder-title">Editor visual del borrador</h2></div><button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button></div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
       {conflict ? <div className="ecom-builder-conflict"><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div> : null}
-      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /><EcommerceSiteBuilderPreview document={workingDocument} viewport={previewViewport} onViewport={setPreviewViewport} portal={portal} previewProducts={previewProducts} /></div>
+      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /><EcommerceSiteBuilderPreview document={workingDocument} viewport={previewViewport} onViewport={setPreviewViewport} portal={portal} /></div>
       <div className="ecom-builder-actions"><span>Revisión del borrador: <strong>{remoteState?.draft?.revision ?? '—'}</strong></span><button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button><button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar'}</button></div>
       <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} disabled={saving || publishing} onRestore={restore} onLoadMore={loadMoreVersions} />
     </section>
