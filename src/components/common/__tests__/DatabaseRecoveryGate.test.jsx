@@ -63,6 +63,7 @@ afterEach(() => cleanup());
 
 describe('DatabaseRecoveryGate', () => {
   it.each([
+    ['idle', /comprobando la base local/i],
     ['checking', /comprobando la base local/i],
     ['migrating', /actualizando la base local/i],
     ['failed', /recuperación automática no pudo completarse/i]
