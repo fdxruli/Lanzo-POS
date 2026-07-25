@@ -10,6 +10,10 @@ on:
       - 'src/services/storageManager.js'
       - 'src/components/common/AdminLoginModal.jsx'
       - 'src/components/common/DatabaseRecoveryGate.jsx'
+      - 'src/components/common/PosApplicationBootstrap.jsx'
+      - 'src/components/common/__tests__/DatabaseRecoveryGate.test.jsx'
+      - 'src/components/common/__tests__/PosApplicationBootstrap.test.jsx'
+      - 'src/__tests__/main.initialRecoveryBootstrap.test.jsx'
       - 'src/store/**'
       - 'src/architecture/__tests__/adminPwaArchitecture.test.js'
       - 'src/workers/migration.worker.js'
@@ -25,6 +29,10 @@ on:
       - 'src/services/storageManager.js'
       - 'src/components/common/AdminLoginModal.jsx'
       - 'src/components/common/DatabaseRecoveryGate.jsx'
+      - 'src/components/common/PosApplicationBootstrap.jsx'
+      - 'src/components/common/__tests__/DatabaseRecoveryGate.test.jsx'
+      - 'src/components/common/__tests__/PosApplicationBootstrap.test.jsx'
+      - 'src/__tests__/main.initialRecoveryBootstrap.test.jsx'
       - 'src/store/**'
       - 'src/architecture/__tests__/adminPwaArchitecture.test.js'
       - 'src/workers/migration.worker.js'
@@ -48,6 +56,10 @@ jobs:
             files: >-
               src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
               src/services/db/__tests__/databaseSchemaRegistration.test.js
+          - suite: initial-pos-bootstrap
+            files: >-
+              src/__tests__/main.initialRecoveryBootstrap.test.jsx
+              src/components/common/__tests__/PosApplicationBootstrap.test.jsx
           - suite: database-recovery-gate
             files: src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
           - suite: admin-login-modal
@@ -128,7 +140,10 @@ jobs:
           src/services/sync/syncMetaService.js
           src/components/common/AdminLoginModal.jsx
           src/components/common/DatabaseRecoveryGate.jsx
+          src/components/common/PosApplicationBootstrap.jsx
           src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
+          src/components/common/__tests__/PosApplicationBootstrap.test.jsx
+          src/__tests__/main.initialRecoveryBootstrap.test.jsx
           src/store/productStoreRecoveryGuard.js
           src/store/useProductStore.js
           src/store/__tests__/useProductStore.structuralRecovery.test.js
@@ -154,6 +169,52 @@ jobs:
             echo 'Residual self-writing mechanism detected.' >&2
             exit 1
           fi
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            '.github/workflows/hotfix-dexie-validation.yml',
+            '.github/workflows/pr127-global-comparison.yml'
+          ];
+          const forbidden = [
+            ['contents', 'write'].join(': '),
+            ['base64', '--decode'].join(' '),
+            'pr127-' + 'residual'
+          ];
+          for (const file of files) {
+            const source = fs.readFileSync(file, 'utf8');
+            for (const token of forbidden) {
+              if (source.includes(token)) {
+                throw new Error(`${file} contiene mecanismo prohibido: ${token}`);
+              }
+            }
+          }
+          NODE
+
+      - name: Reject destructive recovery in production files
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            'src/main.jsx',
+            'src/components/common/DatabaseRecoveryGate.jsx',
+            'src/components/common/PosApplicationBootstrap.jsx',
+            'src/services/db/databaseRuntime.js',
+            'src/services/db/indexedDbPreflight.js'
+          ];
+          const forbidden = [
+            ['indexedDB', 'deleteDatabase'].join('.'),
+            ['localStorage', 'clear'].join('.'),
+            ['caches', 'delete'].join('.')
+          ];
+          for (const file of files) {
+            const source = fs.readFileSync(file, 'utf8');
+            for (const token of forbidden) {
+              if (source.includes(token)) {
+                throw new Error(`${file} contiene recuperación destructiva: ${token}`);
+              }
+            }
+          }
+          NODE
 
       - name: Production builds
         run: |
