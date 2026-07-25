@@ -7,7 +7,8 @@ import {
   inspectIndexedDbStructure,
   openNativeDatabase,
   readPrimaryKeyRecoveryMarker,
-  resetIndexedDbPreflightForTests
+  resetIndexedDbPreflightForTests,
+  subscribeNativeOpenOperations
 } from '../indexedDbPreflight';
 import {
   getActiveIndexedDbPreflightOperations,
@@ -279,12 +280,54 @@ describe('IndexedDB primary-key preserving recovery', () => {
   it('times out a truly hung opening request without starting another', async () => {
     const request = {};
     const factory = { open: vi.fn(() => request) };
+    const snapshots = [];
+    const unsubscribe = subscribeNativeOpenOperations(() => {
+      snapshots.push(getActiveNativeOpenOperations());
+    });
     const first = openNativeDatabase({ factory, name: 'HungDB', openTimeoutMs: 5 });
     await expect(first).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });
+    expect(getActiveNativeOpenOperations()).toEqual([{
+      key: 'HungDB:current',
+      state: 'timed_out_waiting_native_settlement'
+    }]);
     const second = openNativeDatabase({ factory, name: 'HungDB', openTimeoutMs: 5 });
     expect(second).toBe(first);
     await expect(second).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });
     expect(factory.open).toHaveBeenCalledTimes(1);
+    expect(snapshots.map((snapshot) => snapshot.map(({ state }) => state))).toEqual([
+      ['opening'],
+      ['timed_out_waiting_native_settlement']
+    ]);
+    unsubscribe();
+  });
+
+  it('publishes a stable snapshot and removes a timed-out request after late settlement', async () => {
+    const database = { close: vi.fn() };
+    const request = { result: database };
+    const factory = { open: vi.fn(() => request) };
+    const snapshots = [];
+    const listener = vi.fn(() => snapshots.push(getActiveNativeOpenOperations()));
+    const unsubscribe = subscribeNativeOpenOperations(listener);
+
+    const opening = openNativeDatabase({ factory, name: 'LateDB', openTimeoutMs: 5 });
+    const openingSnapshot = getActiveNativeOpenOperations();
+    expect(getActiveNativeOpenOperations()).toBe(openingSnapshot);
+    await expect(opening).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });
+    const timeoutSnapshot = getActiveNativeOpenOperations();
+    expect(getActiveNativeOpenOperations()).toBe(timeoutSnapshot);
+
+    request.onsuccess();
+
+    expect(database.close).toHaveBeenCalledTimes(1);
+    expect(getActiveNativeOpenOperations()).toEqual([]);
+    expect(factory.open).toHaveBeenCalledTimes(1);
+    expect(snapshots.map((snapshot) => snapshot.map(({ state }) => state))).toEqual([
+      ['opening'],
+      ['timed_out_waiting_native_settlement'],
+      ['succeeded'],
+      []
+    ]);
+    unsubscribe();
   });
 
   it('rejects a newer native version without downgrade or deletion', async () => {

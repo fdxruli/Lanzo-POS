@@ -529,3 +529,65 @@ Las llamadas destructivas presentes únicamente dentro de pruebas crean o limpia
 - Sin borrado automático.
 - Sin workflows escritores.
 - Listo para una nueva auditoría externa y validación manual, no para aprobación automática.
+
+## 26. DB_OPEN_TIMEOUT y liquidación tardía de la solicitud nativa
+
+`openNativeDatabase()` separa ahora de forma explícita dos ciclos de vida:
+
+- la promesa pública puede quedar rechazada con `DB_OPEN_TIMEOUT`;
+- la solicitud nativa `indexedDB.open()` puede seguir viva y todavía disparar
+  `onsuccess`, `onerror`, `onblocked` u `onupgradeneeded`.
+
+Una solicitud `indexedDB.open()` que todavía no dispone de transacción no se
+puede cancelar. Por esa razón no se elimina del registro al vencer el timeout:
+se conserva el single-flight y se representa como
+`timed_out_waiting_native_settlement` hasta su liquidación real.
+
+El registro `activeNativeOpenOperations` publica un snapshot congelado que solo
+cambia de referencia ante una mutación real. La suscripción notifica el alta,
+las transiciones `opening`, `blocked`, `upgrading`, timeout, éxito, fallo o
+aborto, y la eliminación final. El snapshot solo contiene `key` y `state`; no
+expone ventas ni datos de negocio.
+
+`DatabaseRecoveryGate` consume ese snapshot mediante `useSyncExternalStore`.
+Mientras una solicitud posterior al timeout siga viva:
+
+- `Reintentar recuperación` permanece deshabilitado;
+- se explica que el navegador conserva la solicitud;
+- `Recargar Lanzo` permanece disponible y solo ejecuta
+  `window.location.reload()` por acción explícita del usuario.
+
+Cuando la solicitud termina tarde, la eliminación del registro emite una
+notificación, React renderiza de nuevo y el reintento queda habilitado sin
+necesitar un cambio de pestaña. Si la solicitud nunca termina, la recarga sigue
+siendo una salida visible que no borra IndexedDB ni otros almacenamientos y no
+inicia una segunda apertura dentro de la página actual.
+
+`DB_BLOCKED` mantiene su semántica independiente: se pide cerrar las demás
+pestañas y la solicitud original continúa, sin ofrecer un reintento paralelo.
+Además, `retryLocalDatabaseRecovery()` rechaza defensivamente con un error
+estructurado si una solicitud nativa sigue activa.
+
+La estabilidad contra React error #185 se cubre montando el gate bajo
+`React.StrictMode`, publicando varias transiciones y verificando snapshots con
+referencia persistente, renders finitos y cleanup completo de listeners.
+
+La prueba de cleanup de service workers de desarrollo confirma que un retorno
+`false` detiene `prepareLocalDatabase`, no monta App y deja el estado de prueba
+resuelto explícitamente después de solicitar la recarga.
+
+Validación local de la corrección:
+
+```text
+Pruebas focales seleccionadas   83/83 PASS
+Prueba focal timeout/store      35/35 PASS
+ESLint focal                    PASS
+git diff --check                PASS
+npm run build (Node 22)         PASS
+npm run build:store (Node 22)   PASS
+adminPwaArchitecture            13/13 PASS
+```
+
+El resultado final de CI y la comparación global corresponden a los runs
+nuevos enlazados en el cuerpo del PR. La validación manual controlada continúa
+pendiente.

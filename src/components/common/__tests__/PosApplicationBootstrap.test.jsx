@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import React, { StrictMode } from 'react';
+import { StrictMode } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -74,9 +74,9 @@ const createReadyRuntime = ({ storageResult = { isVolatile: false } } = {}) => {
 
 const renderBootstrap = ({
   prepareLocalDatabase,
-  loadReadyRuntime = vi.fn()
+  loadReadyRuntime = vi.fn(),
+  cleanupDevelopmentServiceWorkers = vi.fn().mockResolvedValue(true)
 }) => {
-  const cleanupDevelopmentServiceWorkers = vi.fn().mockResolvedValue(true);
   const databaseRuntime = { prepareLocalDatabase };
 
   const result = render(
@@ -291,5 +291,25 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     await waitFor(() => expect(readyRuntime.initializeStorage).toHaveBeenCalledTimes(1));
     expect(getDatabaseRecoveryState().status).toBe(DATABASE_RECOVERY_STATUS.READY);
     expect(screen.queryByText(/recuperación automática no pudo completarse/i)).not.toBeInTheDocument();
+  });
+
+  it('stops boot explicitly when development cleanup requests a reload', async () => {
+    const cleanupDevelopmentServiceWorkers = vi.fn().mockResolvedValue(false);
+    const prepareLocalDatabase = vi.fn();
+    const loadReadyRuntime = vi.fn();
+
+    renderBootstrap({
+      prepareLocalDatabase,
+      loadReadyRuntime,
+      cleanupDevelopmentServiceWorkers
+    });
+
+    expect(await screen.findByRole('heading', {
+      name: /comprobando la base local/i
+    })).toBeInTheDocument();
+    expect(cleanupDevelopmentServiceWorkers).toHaveBeenCalledTimes(1);
+    expect(prepareLocalDatabase).not.toHaveBeenCalled();
+    expect(loadReadyRuntime).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
   });
 });

@@ -1,10 +1,14 @@
 import { useRef, useState, useSyncExternalStore } from 'react';
-import { AlertTriangle, Database, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Database, RefreshCw, RotateCw } from 'lucide-react';
 import {
   DATABASE_RECOVERY_STATUS,
   getDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
 } from '../../services/db/databaseRecoveryState';
+import {
+  getActiveNativeOpenOperations,
+  subscribeNativeOpenOperations
+} from '../../services/db/indexedDbPreflight';
 import {
   isLocalDatabasePreparationActive,
   retryLocalDatabaseRecovery
@@ -16,6 +20,12 @@ const useDatabaseRecoveryState = () => useSyncExternalStore(
   getDatabaseRecoveryState
 );
 
+export const useNativeDatabaseOperationState = () => useSyncExternalStore(
+  subscribeNativeOpenOperations,
+  getActiveNativeOpenOperations,
+  getActiveNativeOpenOperations
+);
+
 const BLOCKING_STATUSES = new Set([
   DATABASE_RECOVERY_STATUS.IDLE,
   DATABASE_RECOVERY_STATUS.CHECKING,
@@ -24,7 +34,7 @@ const BLOCKING_STATUSES = new Set([
   DATABASE_RECOVERY_STATUS.FAILED
 ]);
 
-const describeRecovery = (state) => {
+const describeRecovery = (state, hasActiveNativeRequest) => {
   if (
     state.status === DATABASE_RECOVERY_STATUS.IDLE
     || state.status === DATABASE_RECOVERY_STATUS.CHECKING
@@ -48,6 +58,16 @@ const describeRecovery = (state) => {
     return {
       title: 'Cierra las demás pestañas de Lanzo',
       body: 'La base local está siendo usada por otra pestaña o ventana. Tus datos no se eliminarán. La operación continuará cuando se cierre la conexión bloqueante.',
+      icon: 'warning'
+    };
+  }
+
+  if (state.errorCode === 'DB_OPEN_TIMEOUT') {
+    return {
+      title: 'La apertura de la base local tardó demasiado',
+      body: hasActiveNativeRequest
+        ? 'El navegador todavía mantiene una solicitud activa. Espera a que termine o recarga Lanzo para volver a intentarlo de forma segura.'
+        : 'La solicitud anterior ya terminó. Puedes reintentar la recuperación de forma segura o recargar Lanzo.',
       icon: 'warning'
     };
   }
@@ -100,18 +120,27 @@ const MigrationDetails = ({ migration }) => {
   );
 };
 
-export default function DatabaseRecoveryGate({ children }) {
+export default function DatabaseRecoveryGate({
+  children,
+  reloadPage = () => window.location.reload()
+}) {
   const recovery = useDatabaseRecoveryState();
+  const nativeOperations = useNativeDatabaseOperationState();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState('');
   const retryPromiseRef = useRef(null);
 
   if (!BLOCKING_STATUSES.has(recovery.status)) return children;
 
-  const copy = describeRecovery(recovery);
-  const operationActive = retrying || isLocalDatabasePreparationActive();
+  const hasActiveNativeRequest = nativeOperations.length > 0;
+  const copy = describeRecovery(recovery, hasActiveNativeRequest);
+  const operationActive = retrying
+    || hasActiveNativeRequest
+    || isLocalDatabasePreparationActive();
   const canRetry = recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
-    && recovery.isRetryable !== false;
+    && recovery.isRetryable !== false
+    && recovery.errorCode !== 'DB_BLOCKED';
+  const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT';
 
   const retry = () => {
     if (retryPromiseRef.current) return retryPromiseRef.current;
@@ -124,7 +153,7 @@ export default function DatabaseRecoveryGate({ children }) {
         if (finalState.status !== DATABASE_RECOVERY_STATUS.READY) {
           throw new Error('La base local no alcanzó un estado seguro después del reintento.');
         }
-        window.location.reload();
+        reloadPage();
       })
       .catch((error) => {
         setRetryError(
@@ -170,7 +199,17 @@ export default function DatabaseRecoveryGate({ children }) {
             disabled={operationActive}
           >
             <RefreshCw size={18} aria-hidden="true" />
-            {operationActive ? 'Reintentando...' : 'Reintentar recuperación'}
+            {retrying ? 'Reintentando...' : 'Reintentar recuperación'}
+          </button>
+        )}
+        {canReload && (
+          <button
+            type="button"
+            className="ui-button ui-button--secondary"
+            onClick={reloadPage}
+          >
+            <RotateCw size={18} aria-hidden="true" />
+            Recargar Lanzo
           </button>
         )}
         {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (

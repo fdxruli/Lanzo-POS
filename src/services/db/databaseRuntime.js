@@ -156,8 +156,33 @@ export const isLocalDatabasePreparationActive = () => (
   || getActiveNativeOpenOperations().length > 0
 );
 
+export const getLocalDatabaseActivitySnapshot = () => {
+  const nativeOperations = getActiveNativeOpenOperations();
+  const preflightOperations = getActiveIndexedDbPreflightOperations();
+  return {
+    preparationActive: Boolean(preparationPromise),
+    preflightActive: preflightOperations.length > 0,
+    nativeOperations,
+    hasActiveNativeRequest: nativeOperations.length > 0,
+    hasTimedOutNativeRequest: nativeOperations.some(
+      ({ state }) => state === 'timed_out_waiting_native_settlement'
+    )
+  };
+};
+
 export const retryLocalDatabaseRecovery = async () => {
   if (preparationPromise) return preparationPromise;
+  const activity = getLocalDatabaseActivitySnapshot();
+  if (activity.hasActiveNativeRequest) {
+    throw createDatabaseRecoveryError({
+      status: DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+      errorCode: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT,
+      databaseName: DB_NAME,
+      isRetryable: true,
+      requiresMigration: false,
+      message: 'El navegador todavía mantiene una solicitud activa de la base local. Espera a que termine o recarga Lanzo.'
+    });
+  }
   lastPreparationResult = null;
   if (db.isOpen()) db.close();
   const result = await prepareLocalDatabase({ force: true });

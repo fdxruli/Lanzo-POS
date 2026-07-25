@@ -14,6 +14,28 @@ export const OPEN_TIMEOUT_MS = 8_000;
 const RECOVERY_MARKER_KEY = 'primary-key-recovery-v1';
 const REPAIRABLE_STORES = ['sales', 'deleted_sales'];
 const activeNativeOpenOperations = new Map();
+const nativeOperationListeners = new Set();
+let activeNativeOpenOperationsSnapshot = Object.freeze([]);
+
+const refreshNativeOpenOperationsSnapshot = () => {
+  activeNativeOpenOperationsSnapshot = Object.freeze(Array.from(
+    activeNativeOpenOperations.entries(),
+    ([key, operation]) => Object.freeze({ key, state: operation.state })
+  ));
+  nativeOperationListeners.forEach((listener) => listener());
+};
+
+const setNativeOpenOperationState = (operation, state) => {
+  if (operation.state === state) return;
+  operation.state = state;
+  refreshNativeOpenOperationsSnapshot();
+};
+
+const removeNativeOpenOperation = (operationKey, operation) => {
+  if (activeNativeOpenOperations.get(operationKey) !== operation) return;
+  activeNativeOpenOperations.delete(operationKey);
+  refreshNativeOpenOperationsSnapshot();
+};
 
 const asArray = (value) => Array.from(value || []);
 
@@ -159,9 +181,9 @@ export const openNativeDatabase = ({
     };
 
     const finishOperation = (state) => {
-      operation.state = state;
+      setNativeOpenOperationState(operation, state);
       clearOpenTimeout();
-      activeNativeOpenOperations.delete(operationKey);
+      removeNativeOpenOperation(operationKey, operation);
     };
 
     const rejectPublic = (error, finalState = 'failed') => {
@@ -174,7 +196,7 @@ export const openNativeDatabase = ({
 
     operation.timeoutId = setTimeout(() => {
       if (operation.state !== 'opening' || operation.publicSettled) return;
-      operation.state = 'failed';
+      setNativeOpenOperationState(operation, 'timed_out_waiting_native_settlement');
       operation.publicSettled = true;
       reject(createDatabaseRecoveryError(makeDiagnostic({
         code: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT,
@@ -188,7 +210,7 @@ export const openNativeDatabase = ({
 
     request.onblocked = () => {
       if (operation.state === 'succeeded' || operation.state === 'failed' || operation.state === 'aborted') return;
-      operation.state = 'blocked';
+      setNativeOpenOperationState(operation, 'blocked');
       clearOpenTimeout();
       if (!operation.blockedNotified) {
         operation.blockedNotified = true;
@@ -210,7 +232,7 @@ export const openNativeDatabase = ({
     };
 
     request.onupgradeneeded = (event) => {
-      operation.state = 'upgrading';
+      setNativeOpenOperationState(operation, 'upgrading');
       clearOpenTimeout();
       operation.transaction = request.transaction;
       try {
@@ -239,13 +261,16 @@ export const openNativeDatabase = ({
   });
 
   activeNativeOpenOperations.set(operationKey, operation);
+  refreshNativeOpenOperationsSnapshot();
   return operation.promise;
 };
 
-export const getActiveNativeOpenOperations = () => Array.from(
-  activeNativeOpenOperations.entries(),
-  ([key, operation]) => ({ key, state: operation.state })
-);
+export const getActiveNativeOpenOperations = () => activeNativeOpenOperationsSnapshot;
+
+export const subscribeNativeOpenOperations = (listener) => {
+  nativeOperationListeners.add(listener);
+  return () => nativeOperationListeners.delete(listener);
+};
 
 export const resetIndexedDbPreflightForTests = () => {
   activeNativeOpenOperations.forEach((operation) => {
@@ -256,7 +281,10 @@ export const resetIndexedDbPreflightForTests = () => {
       // Best effort exclusivo para aislamiento de pruebas.
     }
   });
-  activeNativeOpenOperations.clear();
+  if (activeNativeOpenOperations.size > 0) {
+    activeNativeOpenOperations.clear();
+    refreshNativeOpenOperationsSnapshot();
+  }
 };
 
 const inspectOpenDatabase = (database, { createdByInspection = false } = {}) => {

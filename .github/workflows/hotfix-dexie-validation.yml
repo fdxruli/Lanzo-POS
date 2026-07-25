@@ -56,6 +56,11 @@ jobs:
             files: >-
               src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
               src/services/db/__tests__/databaseSchemaRegistration.test.js
+          - suite: native-open-reactivity
+            files: >-
+              src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+              src/services/db/__tests__/databaseRuntime.activity.test.js
+              src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
           - suite: initial-pos-bootstrap
             files: >-
               src/__tests__/main.initialRecoveryBootstrap.test.jsx
@@ -135,6 +140,7 @@ jobs:
           src/services/db/indexedDbPreflight.js
           src/services/db/indexedDbPreflightCoordinator.js
           src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
+          src/services/db/__tests__/databaseRuntime.activity.test.js
           src/services/storageManager.js
           src/services/sync/syncDexieBootstrap.js
           src/services/sync/syncMetaService.js
