@@ -55,6 +55,10 @@ vi.mock('../EcommercePortalCustomizationPanel', () => ({
   )
 }));
 
+vi.mock('../EcommerceSiteBuilderFoundation', () => ({
+  default: () => <div>Editor visual del borrador</div>
+}));
+
 const successfulPortalResponse = {
   success: true,
   portal: null,
@@ -213,7 +217,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
 
   afterEach(() => cleanup());
 
-  const renderExistingPortal = () => {
+  const renderExistingProPortal = () => {
     getEcommercePortal.mockResolvedValue({
       success: true,
       portal: existingPortal,
@@ -229,11 +233,43 @@ describe('EcommercePortalSettings image intent payloads', () => {
     return render(<EcommercePortalSettings />);
   };
 
-  it('omits untouched image fields for an existing portal', async () => {
-    renderExistingPortal();
+  const renderNewProPortal = () => {
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: null,
+      plan: { code: 'pro_monthly', name: 'Lanzo Nube' },
+      features: proFeatures
+    });
+    saveEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: existingPortal,
+      plan: { code: 'pro_monthly', name: 'Lanzo Nube' },
+      features: proFeatures
+    });
+    return render(<EcommercePortalSettings />);
+  };
+
+  const saveNewProPortal = () => {
+    fireEvent.change(screen.getByPlaceholderText('mi-negocio'), {
+      target: { value: 'negocio-prueba' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+  };
+
+  it('keeps the basic Free editor out of an existing Pro portal', async () => {
+    renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+    expect(screen.getByText('Editor visual del borrador')).not.toBeNull();
+    expect(screen.queryByText('Informacion de tu tienda')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear test logo' })).toBeNull();
+  });
+
+  it('omits untouched image fields for an existing portal', async () => {
+    renderNewProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    saveNewProPortal();
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     const payload = saveEcommercePortal.mock.calls[0][0];
@@ -242,10 +278,10 @@ describe('EcommercePortalSettings image intent payloads', () => {
   });
 
   it('sends explicit null only when the logo is unlinked', async () => {
-    renderExistingPortal();
+    renderNewProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Clear test logo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+    saveNewProPortal();
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({ logoUrl: null });
@@ -253,10 +289,10 @@ describe('EcommercePortalSettings image intent payloads', () => {
   });
 
   it('sends HTTPS replacement images', async () => {
-    renderExistingPortal();
+    renderNewProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Set test images' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+    saveNewProPortal();
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
@@ -266,10 +302,10 @@ describe('EcommercePortalSettings image intent payloads', () => {
   });
 
   it('never transports a blob URL', async () => {
-    renderExistingPortal();
+    renderNewProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Set invalid test image' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+    saveNewProPortal();
     expect(saveEcommercePortal).not.toHaveBeenCalled();
   });
 
