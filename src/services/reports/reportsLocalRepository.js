@@ -17,8 +17,14 @@ const buildLocalOverview = ({ sales = [], wasteLogs = [], menu = [], customers =
   products_active: menu.filter((product) => product.isActive !== false).length,
   products_without_stock: menu.filter((product) => product.isActive !== false && product.trackStock !== false && Number(product.stock || 0) <= 0).length,
   inventory_value_approx: inventoryValue(menu),
-  layaway_payments_collected: Number(layawayFinancial.layawayPaymentsCollected || 0),
+  // Kept for older report consumers; the explicit fields below distinguish the
+  // payment record from cash that has a verifiable Caja movement.
+  layaway_payments_collected: Number(layawayFinancial.layawayCashCollected ?? layawayFinancial.layawayPaymentsCollected ?? 0),
+  layaway_payments_recorded: Number(layawayFinancial.layawayPaymentsRecorded || 0),
+  layaway_cash_collected: Number(layawayFinancial.layawayCashCollected ?? layawayFinancial.layawayPaymentsCollected ?? 0),
   layaway_pending_advances: Number(layawayFinancial.layawayPendingAdvances || 0),
+  unverified_historical_payments: Number(layawayFinancial.unverifiedHistoricalPayments?.length || 0),
+  unverified_historical_payments_amount: Number(layawayFinancial.unverifiedHistoricalPaymentsAmount || 0),
   layaway_completed_revenue: Number(layawayFinancial.layawayCompletedRevenue || 0),
   layaway_completed_cost: Number(layawayFinancial.layawayCompletedCost || 0),
   layaway_completed_gross_profit: Number(layawayFinancial.layawayCompletedGrossProfit || 0),
