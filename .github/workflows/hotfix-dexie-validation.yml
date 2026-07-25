@@ -11,6 +11,7 @@ on:
       - 'src/components/common/AdminLoginModal.jsx'
       - 'src/components/common/DatabaseRecoveryGate.jsx'
       - 'src/store/**'
+      - 'src/architecture/__tests__/adminPwaArchitecture.test.js'
       - 'src/workers/migration.worker.js'
       - 'src/main.jsx'
       - '.github/workflows/hotfix-dexie-validation.yml'
@@ -25,6 +26,7 @@ on:
       - 'src/components/common/AdminLoginModal.jsx'
       - 'src/components/common/DatabaseRecoveryGate.jsx'
       - 'src/store/**'
+      - 'src/architecture/__tests__/adminPwaArchitecture.test.js'
       - 'src/workers/migration.worker.js'
       - 'src/main.jsx'
       - '.github/workflows/hotfix-dexie-validation.yml'
@@ -52,6 +54,8 @@ jobs:
             files: src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
           - suite: admin-session-bootstrap
             files: >-
+              src/store/slices/license/licenseAdminActions.test.js
+              src/store/slices/license/licenseSessionTransitions.test.js
               src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
               src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
           - suite: product-pos-sync
@@ -130,9 +134,12 @@ jobs:
           src/store/__tests__/useProductStore.structuralRecovery.test.js
           src/store/slices/license/pendingAdminSession.js
           src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseAdminActions.test.js
           src/store/slices/license/licenseActivationActions.js
           src/store/slices/license/licenseSessionActions.js
+          src/store/slices/license/licenseSessionTransitions.test.js
           src/store/slices/license/licenseBootstrapActions.js
+          src/architecture/__tests__/adminPwaArchitecture.test.js
           src/workers/migration.worker.js
           src/main.jsx
 
@@ -150,6 +157,9 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Validate admin PWA branch architecture
+        run: npm run test:ci -- src/architecture/__tests__/adminPwaArchitecture.test.js
 
   validation-result:
     name: validation-result
