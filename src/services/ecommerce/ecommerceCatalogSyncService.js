@@ -59,10 +59,13 @@ const buildProjectedProductConfiguration = (product = {}) => {
   });
 };
 
+const getConfigurationContentRevision = (configuration) => (
+  `configuration:${hashStableText(JSON.stringify(configuration))}`
+);
+
 const getPublicConfigurationRevision = (product = {}) => {
   try {
-    const configuration = buildProjectedProductConfiguration(product);
-    return `configuration:${hashStableText(JSON.stringify(configuration))}`;
+    return getConfigurationContentRevision(buildProjectedProductConfiguration(product));
   } catch {
     return getEcommerceConfigurationSourceRevision(product) || null;
   }
@@ -271,20 +274,54 @@ const createDependencyAwareLocalSource = (
   };
 };
 
+const hasHiddenPublicConfiguration = (projection = {}) => {
+  const mode = asText(projection.publicConfigurationMode);
+  const status = asText(projection.businessCapabilityStatus);
+  return (
+    mode === 'requires_review'
+    || mode === 'hidden_incompatible'
+    || status === 'requires_review'
+    || status === 'hidden_incompatible'
+  );
+};
+
+const withoutPublicOptionGroups = (configuration = {}) => {
+  const variants = asArray(configuration.variants);
+  return {
+    ...configuration,
+    type: variants.length > 0 ? 'variant_parent' : 'simple',
+    variants,
+    optionGroups: []
+  };
+};
+
 const patchConfigurationProjections = (
   projections = [],
   configurationsByProduct = new Map()
 ) => (
   asArray(projections).map((projection) => {
+    if (hasHiddenPublicConfiguration(projection)) {
+      // Review-only publications must not keep sending hidden restaurant
+      // modifiers through the automatic configuration writer.
+      return {
+        ...projection,
+        configuration: null,
+        configurationSourceRevision: null
+      };
+    }
+
     const localProductRef = asText(projection?.localProductRef);
     const projected = configurationsByProduct.get(localProductRef);
     if (!localProductRef || !projected) return projection;
 
+    const configuration = asText(projection.publicConfigurationMode) === 'simple_override'
+      ? withoutPublicOptionGroups(projected.configuration)
+      : projected.configuration;
     const apparelState = projected.apparelState;
     return {
       ...projection,
-      configuration: projected.configuration,
-      configurationSourceRevision: projected.revision,
+      configuration,
+      configurationSourceRevision: getConfigurationContentRevision(configuration),
       ...(apparelState
         ? {
             sourceAvailable: apparelState.sourceAvailable === true,
@@ -462,8 +499,11 @@ export const ecommerceCatalogSyncDependencyInternals = Object.freeze({
   INGREDIENTS_KEY,
   MISSING_BATCH_SNAPSHOT_KEY,
   hashStableText,
+  getConfigurationContentRevision,
   buildProjectedProductConfiguration,
   getPublicConfigurationRevision,
+  hasHiddenPublicConfiguration,
+  withoutPublicOptionGroups,
   getRecordRevisionNumber,
   getDependencyAwareRevisionNumber,
   getRawAvailableStock,
