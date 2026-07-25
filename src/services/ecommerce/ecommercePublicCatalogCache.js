@@ -87,6 +87,15 @@ const sanitizeConfiguration = (value) => {
   };
 };
 
+const sanitizeWholesaleTiers = (value) => (Array.isArray(value) ? value : [])
+  .slice(0, 50)
+  .map((tier) => ({
+    sourceTierRef: trimText(tier?.sourceTierRef, 160),
+    minQuantity: Math.max(1, asInteger(tier?.minQuantity, 1)),
+    unitPrice: Math.max(0, asNumber(tier?.unitPrice, 0))
+  }))
+  .sort((left, right) => left.minQuantity - right.minQuantity);
+
 const sanitizePublicPortal = (rawPortal) => {
   const portal = isRecord(rawPortal) ? rawPortal : {};
   const slug = trimText(portal.slug, 80).toLowerCase();
@@ -161,6 +170,8 @@ const sanitizePublicProduct = (raw) => {
     currency: (trimText(product.currency, 8) || 'MXN').toUpperCase(), imageUrl: trimText(product.imageUrl, 2000),
     isAvailable: product.isAvailable === true, displayOrder: asInteger(product.displayOrder, 0),
     configuration: sanitizeConfiguration(product.configuration),
+    wholesaleEnabled: product.wholesaleEnabled === true,
+    wholesaleTiers: sanitizeWholesaleTiers(product.wholesaleTiers),
     stock: {
       mode, status: ['available','out_of_stock'].includes(stock.status) ? stock.status : null,
       quantity: mode === 'exact' && Number.isFinite(Number(stock.quantity)) ? Math.max(0, Math.floor(Number(stock.quantity))) : null

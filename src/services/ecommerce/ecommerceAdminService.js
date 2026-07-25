@@ -6,6 +6,13 @@ import {
   getEcommerceConfigurationSourceRevision,
   serializeEcommerceProductConfigurationForSync
 } from '../../utils/ecommerceProductConfigurationSync';
+import {
+  BUSINESS_CAPABILITY_STATUS,
+  resolveEcommerceBusinessPolicy
+} from '../../utils/businessCapabilities';
+import {
+  normalizeEcommerceWholesaleTiers
+} from '../../utils/ecommerceWholesalePricing';
 import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
 import {
   decorateProductWithEcommerceApparelProjection,
@@ -125,26 +132,67 @@ const isProjectionObject = (value) => (
   && !Array.isArray(value)
 );
 
-const buildPublishedProductConfiguration = (localProduct = {}) => {
-  const baseConfiguration = buildEcommerceProductConfigurationSyncPayload(localProduct);
-  const apparelState = getEcommerceApparelProjectionState(localProduct);
-  if (!apparelState) return baseConfiguration;
-
-  return serializeEcommerceProductConfigurationForSync({
-    ...baseConfiguration,
-    type: 'variant_parent',
-    variants: Array.isArray(localProduct.variants) ? localProduct.variants : [],
-    availabilitySource: 'variant_aggregate',
-    availabilityReasonCode: apparelState.availabilityReasonCode,
-    limitingSource: baseConfiguration.limitingSource
+const buildPublishedProductProjection = (
+  localProduct = {},
+  { publicConfigurationMode, wholesaleEnabled = false } = {}
+) => {
+  const profile = useAppStore.getState()?.companyProfile;
+  const policy = resolveEcommerceBusinessPolicy({
+    profile,
+    product: localProduct,
+    publicConfigurationMode
   });
+  const projectedProduct = (
+    policy.exposeConfiguration || policy.capabilities.unknownBusinessType
+  )
+    ? localProduct
+    : { ...localProduct, modifiers: [] };
+  const baseConfiguration = buildEcommerceProductConfigurationSyncPayload(projectedProduct);
+  const apparelState = getEcommerceApparelProjectionState(localProduct);
+  const configuration = !apparelState || !policy.exposeConfiguration
+    ? baseConfiguration
+    : serializeEcommerceProductConfigurationForSync({
+        ...baseConfiguration,
+        type: 'variant_parent',
+        variants: Array.isArray(localProduct.variants) ? localProduct.variants : [],
+        availabilitySource: 'variant_aggregate',
+        availabilityReasonCode: apparelState.availabilityReasonCode,
+        limitingSource: baseConfiguration.limitingSource
+      });
+  const wholesale = normalizeEcommerceWholesaleTiers(
+    localProduct.wholesaleTiers ?? localProduct.wholesale_tiers,
+    {
+      productRef: localProduct.id,
+      replacementCost: localProduct.cost
+    }
+  );
+
+  return {
+    configuration,
+    businessCapabilityStatus: policy.status,
+    businessCapabilityReason: policy.reason,
+    publicConfigurationMode: policy.status === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE
+      ? BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE
+      : policy.status,
+    wholesaleEnabled: wholesaleEnabled === true
+      && policy.capabilities.supportsWholesalePricing
+      && wholesale.valid,
+    wholesaleTiers: wholesale.tiers,
+    wholesaleWarnings: wholesale.warnings
+  };
 };
+
+const buildPublishedProductConfiguration = (localProduct = {}) => (
+  buildPublishedProductProjection(localProduct).configuration
+);
 
 const preparePublishedProductPayload = (payload = {}) => {
   const {
     localProduct,
     configuration: suppliedConfiguration,
     configurationSourceRevision: suppliedSourceRevision,
+    publicConfigurationMode,
+    wholesaleEnabled,
     ...publishedPayload
   } = payload || {};
 
@@ -152,9 +200,20 @@ const preparePublishedProductPayload = (payload = {}) => {
     return { payload: publishedPayload, useV2: false };
   }
 
-  const configuration = suppliedConfiguration
-    ? serializeEcommerceProductConfigurationForSync(suppliedConfiguration)
-    : buildPublishedProductConfiguration(localProduct);
+  const projection = suppliedConfiguration
+    ? {
+        configuration: serializeEcommerceProductConfigurationForSync(suppliedConfiguration),
+        businessCapabilityStatus: publishedPayload.businessCapabilityStatus,
+        businessCapabilityReason: publishedPayload.businessCapabilityReason,
+        publicConfigurationMode,
+        wholesaleEnabled: wholesaleEnabled === true,
+        wholesaleTiers: publishedPayload.wholesaleTiers || [],
+        wholesaleWarnings: []
+      }
+    : buildPublishedProductProjection(localProduct, {
+        publicConfigurationMode,
+        wholesaleEnabled
+      });
   const configurationSourceRevision = suppliedSourceRevision
     || getEcommerceConfigurationSourceRevision(localProduct)
     || null;
@@ -163,7 +222,7 @@ const preparePublishedProductPayload = (payload = {}) => {
     useV2: true,
     payload: {
       ...publishedPayload,
-      configuration,
+      ...projection,
       configurationSourceRevision
     }
   };
@@ -300,7 +359,7 @@ export const createEcommerceAdminService = ({
         const prepared = await preparePublishedProductPayloadAsync(payload, { localSource });
         return callRpc(
           prepared.useV2
-            ? 'ecommerce_admin_upsert_published_product_v2'
+            ? 'ecommerce_admin_upsert_published_product_v3'
             : 'ecommerce_admin_upsert_published_product',
           { p_payload: prepared.payload },
           fallback
@@ -352,7 +411,7 @@ export const createEcommerceAdminService = ({
       }
 
       return callRpc(
-        'ecommerce_admin_sync_published_catalog_v2',
+        'ecommerce_admin_sync_published_catalog_v3',
         {
           p_projections: projections,
           p_idempotency_key: idempotencyKey || 'catalog-sync',

@@ -19,6 +19,8 @@ import {
   buildEcommerceProductConfigurationSyncPayload,
   getEcommerceConfigurationSourceRevision
 } from '../../utils/ecommerceProductConfigurationSync';
+import { resolveEcommerceBusinessPolicy } from '../../utils/businessCapabilities';
+import { normalizeEcommerceWholesaleTiers } from '../../utils/ecommerceWholesalePricing';
 
 export const ECOMMERCE_CATALOG_SYNC_STATUS_EVENT = 'lanzo:ecommerce-catalog-sync-status';
 export const ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT = 'lanzo:ecommerce-catalog-sync-request';
@@ -240,12 +242,34 @@ const buildProjection = ({
     && stockValue !== ''
     && Number.isFinite(Number(stockValue))
   );
-  const configuration = localProduct
+  const businessPolicy = localProduct
+    ? resolveEcommerceBusinessPolicy({
+        profile: useAppStore.getState()?.companyProfile,
+        product: localProduct,
+        publicConfigurationMode: publishedProduct.publicConfigurationMode
+          ?? publishedProduct.public_configuration_mode
+      })
+    : null;
+  const projectedProduct = localProduct && (
+    businessPolicy?.exposeConfiguration
+    || businessPolicy?.capabilities?.unknownBusinessType
+  )
+    ? localProduct
+    : localProduct
+      ? { ...localProduct, modifiers: [] }
+      : null;
+  const configuration = projectedProduct
     ? buildEcommerceProductConfigurationSyncPayload(
-        localProduct,
+        projectedProduct,
         buildConfigurationAvailability({ evaluation })
       )
     : null;
+  const wholesale = localProduct
+    ? normalizeEcommerceWholesaleTiers(
+        localProduct.wholesaleTiers ?? localProduct.wholesale_tiers,
+        { productRef: localProduct.id, replacementCost: localProduct.cost }
+      )
+    : { tiers: [], warnings: [], valid: false };
   const configurationSourceRevision = localProduct
     ? sourceRevision || getEcommerceConfigurationSourceRevision(localProduct) || null
     : null;
@@ -259,7 +283,19 @@ const buildProjection = ({
     stockSnapshot: hasConfirmedStock ? Math.max(0, Number(stockValue)) : null,
     fields,
     configuration,
-    configurationSourceRevision
+    configurationSourceRevision,
+    businessCapabilityStatus: businessPolicy?.status ?? null,
+    businessCapabilityReason: businessPolicy?.reason ?? null,
+    publicConfigurationMode: publishedProduct.publicConfigurationMode
+      ?? publishedProduct.public_configuration_mode
+      ?? null,
+    wholesaleEnabled: (
+      (publishedProduct.wholesaleEnabled ?? publishedProduct.wholesale_enabled) === true
+      && businessPolicy?.capabilities.supportsWholesalePricing === true
+      && wholesale.valid
+    ),
+    wholesaleTiers: wholesale.tiers,
+    wholesaleWarnings: wholesale.warnings
   };
 };
 
@@ -311,7 +347,12 @@ const normalizeProjectionForSignature = (projection = {}) => {
     configuration: normalizeSignatureValue(projection.configuration),
     configurationSourceRevision: projection.configurationSourceRevision === null
       ? null
-      : asText(projection.configurationSourceRevision)
+      : asText(projection.configurationSourceRevision),
+    businessCapabilityStatus: asText(projection.businessCapabilityStatus) || null,
+    businessCapabilityReason: asText(projection.businessCapabilityReason) || null,
+    publicConfigurationMode: asText(projection.publicConfigurationMode) || null,
+    wholesaleEnabled: projection.wholesaleEnabled === true,
+    wholesaleTiers: normalizeSignatureValue(projection.wholesaleTiers)
   });
 };
 

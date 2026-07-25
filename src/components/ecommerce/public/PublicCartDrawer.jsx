@@ -167,7 +167,15 @@ function PublicCartDrawer({
             </div>
           ) : (
             <ul className="public-cart-items" aria-label="Productos en el carrito">
-              {items.map(({ product, quantity, maxQuantity, lineTotal }) => {
+              {items.map(({
+                product,
+                quantity,
+                maxQuantity,
+                lineTotal,
+                appliedUnitPrice,
+                pricingMode,
+                wholesaleMinQuantity
+              }) => {
                 const configuredLine = product.configurationLine || null;
                 return (
                   <li key={product.id} className="public-cart-item">
@@ -175,7 +183,12 @@ function PublicCartDrawer({
                       <div>
                         <h3>{product.name}</h3>
                         <ConfigurationSummary line={configuredLine} />
-                        <p>{formatCurrency(product.price, product.currency)} cada uno</p>
+                        <p>
+                          {formatCurrency(appliedUnitPrice ?? product.price, product.currency)} cada uno
+                          {pricingMode === 'wholesale'
+                            ? ` · Mayoreo desde ${wholesaleMinQuantity} piezas`
+                            : ''}
+                        </p>
                         {configuredLine ? (
                           <button
                             type="button"

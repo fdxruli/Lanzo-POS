@@ -298,6 +298,12 @@ function normalizeCatalogResult(data, expectedRevision = null) {
       isAvailable: asBoolean(item.isAvailable, true),
       displayOrder: asNumber(item.displayOrder, 0),
       configuration: normalizeCatalogConfiguration(item.configuration),
+      wholesaleEnabled: item.wholesaleEnabled === true,
+      wholesaleTiers: asArray(item.wholesaleTiers).map((tier) => ({
+        sourceTierRef: asText(tier?.sourceTierRef),
+        minQuantity: Math.max(1, Math.floor(asNumber(tier?.minQuantity, 1))),
+        unitPrice: Math.max(0, asNumber(tier?.unitPrice, 0))
+      })).sort((left, right) => left.minQuantity - right.minQuantity),
       stock: {
         mode: stockMode,
         status: ['available', 'out_of_stock'].includes(stock.status) ? stock.status : null,
