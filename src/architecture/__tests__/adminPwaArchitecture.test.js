@@ -49,9 +49,13 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
 
   it('starts install and worker infrastructure only in the administrative branch', async () => {
     const main = await readProjectFile('src/main.jsx');
-    const publicBranch = main.slice(main.indexOf('if (isPublicStorePath'), main.indexOf('} else {'));
-    const adminBranch = main.slice(main.indexOf('} else {'));
+    const publicStart = main.indexOf('if (isPublicStorePath');
+    const adminStart = main.indexOf('} else {', publicStart);
+    const publicBranch = main.slice(publicStart, adminStart);
+    const adminBranch = main.slice(adminStart);
 
+    expect(publicStart).toBeGreaterThanOrEqual(0);
+    expect(adminStart).toBeGreaterThan(publicStart);
     expect(publicBranch).not.toMatch(/installAdminPwaDocument\(|startAdminInstallPromptCapture\(|startAdminServiceWorker\(/);
     expect(publicBranch).toContain('updateExistingAdminWorkerOnPublicRoute()');
     expect(adminBranch).toMatch(/installAdminPwaDocument\(\)[\s\S]*startAdminInstallPromptCapture\(\)[\s\S]*startAdminServiceWorker\(\)/);
