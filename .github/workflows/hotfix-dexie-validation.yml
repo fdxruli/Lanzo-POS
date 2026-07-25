@@ -25,7 +25,7 @@ jobs:
   focal-tests:
     name: focal-tests (${{ matrix.suite }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -34,6 +34,8 @@ jobs:
             files: >-
               src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
               src/services/db/__tests__/databaseSchemaRegistration.test.js
+          - suite: database-recovery-gate
+            files: src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
           - suite: admin-login-modal
             files: src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
           - suite: admin-session-bootstrap
@@ -43,6 +45,7 @@ jobs:
           - suite: product-pos-sync
             files: >-
               src/store/__tests__/productStoreRecoveryGuard.test.js
+              src/store/__tests__/useProductStore.structuralRecovery.test.js
               src/services/sync/__tests__/syncMetaService.recovery.test.js
           - suite: storage-manager
             files: src/services/__tests__/storageManager.bestEffort.test.js
@@ -64,6 +67,7 @@ jobs:
 
   focal-quality:
     name: focal-quality
+    if: always()
     needs: focal-tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -89,13 +93,20 @@ jobs:
           src/services/db/databaseRuntime.js
           src/services/db/databaseSchema.js
           src/services/db/indexedDbPreflight.js
+          src/services/db/__tests__/indexedDbPrimaryKeyRecovery.test.js
           src/services/storageManager.js
           src/services/sync/syncDexieBootstrap.js
           src/services/sync/syncMetaService.js
           src/components/common/AdminLoginModal.jsx
           src/components/common/DatabaseRecoveryGate.jsx
+          src/components/common/__tests__/DatabaseRecoveryGate.test.jsx
           src/store/productStoreRecoveryGuard.js
+          src/store/useProductStore.js
+          src/store/__tests__/useProductStore.structuralRecovery.test.js
+          src/store/slices/license/pendingAdminSession.js
           src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseActivationActions.js
+          src/store/slices/license/licenseSessionActions.js
           src/store/slices/license/licenseBootstrapActions.js
           src/workers/migration.worker.js
           src/main.jsx
@@ -103,5 +114,30 @@ jobs:
       - name: Diff check
         run: git diff --check origin/main...HEAD
 
+      - name: Reject temporary self-writing mechanisms
+        run: |
+          if git grep -n -E 'pr127-residual|Apply Residual|base64 --decode' -- . ':!docs/reports/HOTFIX.DEXIE.PRIMARY.KEY.RECOVERY.md'; then
+            echo 'Residual self-writing mechanism detected.' >&2
+            exit 1
+          fi
+
       - name: Production build
         run: npm run build
+
+  validation-result:
+    name: validation-result
+    if: always()
+    needs:
+      - focal-tests
+      - focal-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate result
+        env:
+          TEST_RESULT: ${{ needs.focal-tests.result }}
+          QUALITY_RESULT: ${{ needs.focal-quality.result }}
+        run: |
+          echo "focal-tests=${TEST_RESULT}"
+          echo "focal-quality=${QUALITY_RESULT}"
+          test "${TEST_RESULT}" = success
+          test "${QUALITY_RESULT}" = success
