@@ -274,10 +274,13 @@ const CajaStatusCard = ({
           <div className="cash-metric"><span className="cash-metric-label">Anticipos pendientes</span><strong className="amount warning">${Money.toNumber(reconciliation.layawayPendingAdvances).toFixed(2)}</strong></div>
           <div className="cash-metric"><span className="cash-metric-label">Ganancia bruta reconocida (apartados)</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedGrossProfit).toFixed(2)}</strong></div>
           <div className="cash-metric"><span className="cash-metric-label">Diferencia sin clasificar</span><strong className="amount neutral">${Money.toNumber(reconciliation.unclassifiedDifference).toFixed(2)}</strong></div>
-          {Number(reconciliation.unverifiedHistoricalPayments?.length || 0) > 0 && (
+          {Number(reconciliation.unlinkedTechnicalPayments?.length || 0) > 0 && (
             <div className="cash-metric" style={{ gridColumn: '1 / -1' }} role="status">
-              <span className="cash-metric-label">Advertencia de integridad histórica: {reconciliation.unverifiedHistoricalPayments.length} pago(s) de apartado sin movimiento de Caja verificable. No se incluyeron en el efectivo teórico.</span>
-              <strong className="amount warning">Monto registrado sin respaldo de Caja: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>
+              <span className="cash-metric-label">Advertencia de integridad histórica</span>
+              <span className="cash-metric-label">Pagos sin vínculo técnico: {reconciliation.unlinkedTechnicalPayments?.length || 0} por ${Money.toNumber(reconciliation.unlinkedTechnicalPaymentsAmount).toFixed(2)}</span>
+              <span className="cash-metric-label">Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>
+              <strong className="amount warning">Monto sin respaldo verificable: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>
+              <span className="cash-metric-label">Los movimientos históricos no fueron modificados ni vinculados automáticamente.</span>
             </div>
           )}
         </div>

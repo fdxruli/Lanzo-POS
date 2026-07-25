@@ -19,6 +19,7 @@ const paymentDate = (payment, layaway) => payment?.date || payment?.createdAt ||
 const isConfirmedPayment = (payment) => payment?.status !== 'pending' && payment?.status !== 'failed';
 const movementType = (movement = {}) => String(movement.tipo || movement.type || '').toLowerCase();
 const movementSource = (movement = {}) => String(movement.source || movement.origen || '').toLowerCase();
+const LEGACY_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const isLayawayPaymentMovement = (movement = {}) => (
   movementSource(movement) === 'layaway_payment'
   || (String(movement.referenceType || '').toLowerCase() === 'layaway' && Boolean(movement.paymentId))
@@ -54,6 +55,92 @@ const paymentAuditItem = (layaway, payment, reason, cashMovementId = payment?.ca
   status: payment?.status || null,
   reason
 });
+
+const hasCanonicalMovementMetadata = (movement = {}) => Boolean(
+  movement.source
+  || movement.origen
+  || movement.referenceType
+  || movement.reference_type
+  || movement.referenceId
+  || movement.reference_id
+  || movement.layawayId
+  || movement.layaway_id
+  || movement.paymentId
+  || movement.payment_id
+);
+
+const isLegacyCashDateCompatible = (payment, layaway, movement, range = {}) => {
+  const movementTimestamp = Date.parse(movementDate(movement) || 0);
+  if (!Number.isFinite(movementTimestamp) || !dateInRange(movementDate(movement), range)) return false;
+
+  const recordedPaymentDate = paymentDate(payment, layaway);
+  const paymentTimestamp = Date.parse(recordedPaymentDate || 0);
+  if (range.start || range.end) {
+    return !recordedPaymentDate || dateInRange(recordedPaymentDate, range);
+  }
+  return Number.isFinite(paymentTimestamp)
+    && Math.abs(movementTimestamp - paymentTimestamp) <= LEGACY_MATCH_WINDOW_MS;
+};
+
+const reconcileLegacyCashBacking = ({
+  unresolvedPayments = [],
+  cashMovements = [],
+  claimedMovementIds = new Set(),
+  range = {}
+} = {}) => {
+  const eligibleMovements = cashMovements.filter((movement) => (
+    Boolean(movement?.id)
+    && movementType(movement) === 'entrada'
+    && !hasCanonicalMovementMetadata(movement)
+    && !claimedMovementIds.has(movement.id)
+  ));
+  const candidateMovementsByPayment = new Map();
+  const candidatePaymentCountByMovement = new Map();
+
+  for (const entry of unresolvedPayments) {
+    const sessionId = paymentSessionId(entry.payment);
+    const candidates = eligibleMovements.filter((movement) => (
+      Boolean(sessionId)
+      && movementSessionId(movement) === sessionId
+      && amount(movementAmount(movement)).eq(amount(entry.payment.amount))
+      && isLegacyCashDateCompatible(entry.payment, entry.layaway, movement, range)
+    ));
+    candidateMovementsByPayment.set(entry, candidates);
+    for (const movement of candidates) {
+      candidatePaymentCountByMovement.set(
+        movement.id,
+        (candidatePaymentCountByMovement.get(movement.id) || 0) + 1
+      );
+    }
+  }
+
+  const probableLegacyCashMatches = [];
+  const unverifiedHistoricalPayments = [];
+  for (const entry of unresolvedPayments) {
+    const candidates = candidateMovementsByPayment.get(entry) || [];
+    const isUniqueOneToOne = candidates.length === 1
+      && candidatePaymentCountByMovement.get(candidates[0].id) === 1;
+    if (isUniqueOneToOne) {
+      const movement = candidates[0];
+      claimedMovementIds.add(movement.id);
+      probableLegacyCashMatches.push({
+        ...entry.item,
+        cashMovementId: movement.id,
+        reason: 'probable_legacy_cash_match',
+        legacyHint: movement.concepto || movement.concept || null
+      });
+      continue;
+    }
+
+    const isAmbiguous = candidates.length > 1
+      || candidates.some((movement) => candidatePaymentCountByMovement.get(movement.id) > 1);
+    unverifiedHistoricalPayments.push(isAmbiguous
+      ? { ...entry.item, reason: 'ambiguous_legacy_cash_match' }
+      : entry.item);
+  }
+
+  return { probableLegacyCashMatches, unverifiedHistoricalPayments };
+};
 
 const hasCanonicalCashLink = (movement, layawayId, paymentId) => (
   isLayawayPaymentMovement(movement)
@@ -139,6 +226,8 @@ export const buildLayawayFinancialProjection = ({
   const confirmedPaymentsWithoutCashMovement = [];
   const paymentsWithMissingCashMovementRecord = [];
   const duplicatePaymentMovementLinks = [];
+  const unlinkedPaymentEntries = [];
+  const unresolvedPaymentsWithTechnicalLink = [];
 
   for (const layaway of layaways) {
     const isPending = ['active', 'ready'].includes(String(layaway.status || '').toLowerCase())
@@ -165,7 +254,12 @@ export const buildLayawayFinancialProjection = ({
       if (!linkMovement) {
         const item = paymentAuditItem(layaway, payment, resolved.reason);
         confirmedPaymentsWithoutCashMovement.push(item);
-        if (payment.cashMovementId) paymentsWithMissingCashMovementRecord.push(item);
+        if (payment.cashMovementId) {
+          paymentsWithMissingCashMovementRecord.push(item);
+          unresolvedPaymentsWithTechnicalLink.push({ layaway, payment, item });
+        } else {
+          unlinkedPaymentEntries.push({ layaway, payment, item });
+        }
         continue;
       }
       if (!scopedMovementIds.has(linkMovement.id)) continue;
@@ -196,14 +290,33 @@ export const buildLayawayFinancialProjection = ({
     if (isLayawayRefundMovement(movement)) refunds = refunds.plus(movementAmount(movement));
   }
 
+  const {
+    probableLegacyCashMatches,
+    unverifiedHistoricalPayments: unverifiedUnlinkedPayments
+  } = reconcileLegacyCashBacking({
+    unresolvedPayments: unlinkedPaymentEntries,
+    cashMovements,
+    claimedMovementIds,
+    range
+  });
+  const unlinkedTechnicalPayments = unlinkedPaymentEntries.map((entry) => entry.item);
+  const unverifiedHistoricalPayments = [
+    ...unverifiedUnlinkedPayments,
+    ...unresolvedPaymentsWithTechnicalLink.map((entry) => entry.item)
+  ];
+
   return {
     // `layawayPaymentsCollected` is kept as a compatibility alias for cash-backed payments.
     layawayPaymentsCollected: number(cashCollected),
     layawayPaymentsRecorded: number(paymentsRecorded),
     layawayCashCollected: number(cashCollected),
     layawayPendingAdvances: number(pendingAdvances),
-    unverifiedHistoricalPayments: confirmedPaymentsWithoutCashMovement,
-    unverifiedHistoricalPaymentsAmount: number(confirmedPaymentsWithoutCashMovement.reduce((total, item) => total.plus(item.amount), amount(0))),
+    unlinkedTechnicalPayments,
+    unlinkedTechnicalPaymentsAmount: number(unlinkedTechnicalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
+    probableLegacyCashMatches,
+    probableLegacyCashBackingAmount: number(probableLegacyCashMatches.reduce((total, item) => total.plus(item.amount), amount(0))),
+    unverifiedHistoricalPayments,
+    unverifiedHistoricalPaymentsAmount: number(unverifiedHistoricalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
     confirmedPaymentsWithoutCashMovement,
     paymentsWithMissingCashMovementRecord,
     duplicatePaymentMovementLinks,
@@ -295,6 +408,8 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
   const movementClaims = new Map();
   const confirmedPaymentsWithoutCashMovement = [];
   const paymentsWithMissingCashMovementRecord = [];
+  const unlinkedPaymentEntries = [];
+  const unresolvedPaymentsWithTechnicalLink = [];
 
   for (const layaway of layaways) for (const payment of layaway.payments || []) {
     if (!isConfirmedPayment(payment)) continue;
@@ -302,7 +417,12 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
     if (!resolved.movement) {
       const item = paymentAuditItem(layaway, payment, resolved.reason);
       confirmedPaymentsWithoutCashMovement.push(item);
-      if (payment.cashMovementId) paymentsWithMissingCashMovementRecord.push(item);
+      if (payment.cashMovementId) {
+        paymentsWithMissingCashMovementRecord.push(item);
+        unresolvedPaymentsWithTechnicalLink.push({ layaway, payment, item });
+      } else {
+        unlinkedPaymentEntries.push({ layaway, payment, item });
+      }
       continue;
     }
     const claims = movementClaims.get(resolved.movement.id) || [];
@@ -311,6 +431,19 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
   }
 
   const linkedMovementIds = new Set(movementClaims.keys());
+  const {
+    probableLegacyCashMatches,
+    unverifiedHistoricalPayments: unverifiedUnlinkedPayments
+  } = reconcileLegacyCashBacking({
+    unresolvedPayments: unlinkedPaymentEntries,
+    cashMovements,
+    claimedMovementIds: linkedMovementIds
+  });
+  const unlinkedTechnicalPayments = unlinkedPaymentEntries.map((entry) => entry.item);
+  const unverifiedHistoricalPayments = [
+    ...unverifiedUnlinkedPayments,
+    ...unresolvedPaymentsWithTechnicalLink.map((entry) => entry.item)
+  ];
   return {
     completedWithoutSale: layaways.filter((layaway) => layaway.status === 'completed' && !saleGroups.has(layaway.id))
       .map((layaway) => ({ layawayId: layaway.id, status: layaway.status, reason: 'completed_without_conversion_sale' })),
@@ -318,6 +451,12 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
       .map(([layawayId, group]) => ({ layawayId, saleIds: group.map((sale) => sale.id), reason: 'multiple_conversion_sales' })),
     confirmedPaymentsWithoutCashMovement,
     paymentsWithMissingCashMovementRecord,
+    unlinkedTechnicalPayments,
+    unlinkedTechnicalPaymentsAmount: number(unlinkedTechnicalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
+    probableLegacyCashMatches,
+    probableLegacyCashBackingAmount: number(probableLegacyCashMatches.reduce((total, item) => total.plus(item.amount), amount(0))),
+    unverifiedHistoricalPayments,
+    unverifiedHistoricalPaymentsAmount: number(unverifiedHistoricalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
     cashMovementsWithoutPayment: cashMovements.filter((movement) => isLayawayPaymentMovement(movement) && !linkedMovementIds.has(movement.id))
       .map((movement) => ({ layawayId: movementLayawayId(movement), paymentId: movement.paymentId || null, cashMovementId: movement.id || null, amount: number(amount(movementAmount(movement))), status: null, reason: 'cash_movement_without_payment' })),
     duplicatePaymentMovementLinks: Array.from(movementClaims.entries()).filter(([, claims]) => claims.length > 1)
