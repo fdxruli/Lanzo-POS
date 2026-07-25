@@ -73,7 +73,9 @@ jobs:
           MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
           PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
-          mkdir -p comparison
+          mkdir -p comparison/raw
+          cp pr/global-pr.json comparison/raw/global-pr.json 2>/dev/null || true
+          cp main/global-main.json comparison/raw/global-main.json 2>/dev/null || true
           node <<'NODE'
           const fs = require('node:fs');
           const path = require('node:path');
@@ -83,19 +85,29 @@ jobs:
             return JSON.parse(fs.readFileSync(file, 'utf8'));
           };
 
+          const normalizeFileName = (fileName) => {
+            const normalized = String(fileName || 'unknown file').replaceAll('\\', '/');
+            const checkoutMatch = normalized.match(/\/(?:pr|main)\/(.*)$/);
+            if (checkoutMatch) return checkoutMatch[1];
+            const sourceIndex = normalized.indexOf('/src/');
+            if (sourceIndex >= 0) return normalized.slice(sourceIndex + 1);
+            return normalized;
+          };
+
           const normalizeFailures = (report, source) => {
             if (!report) return [`__${source}_RUNNER__:missing_json_report`];
             const failures = new Set();
             for (const file of report.testResults || []) {
+              const fileName = normalizeFileName(file.name);
               const assertions = file.assertionResults || [];
               for (const assertion of assertions) {
                 if (assertion.status === 'failed') {
                   const name = assertion.fullName || assertion.title || 'unknown test';
-                  failures.add(`${file.name || 'unknown file'}::${name}`);
+                  failures.add(`${fileName}::${name}`);
                 }
               }
               if (file.status === 'failed' && assertions.length === 0) {
-                failures.add(`${file.name || 'unknown file'}::__FILE_FAILURE__`);
+                failures.add(`${fileName}::__FILE_FAILURE__`);
               }
             }
             return [...failures].sort();
