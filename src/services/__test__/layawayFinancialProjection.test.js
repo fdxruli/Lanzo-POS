@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCashReconciliation, buildLayawayFinancialProjection } from '../layawayFinancialProjection';
+import { auditLayawayFinancialLinks, buildCashReconciliation, buildLayawayFinancialProjection } from '../layawayFinancialProjection';
 
 const session = {
   id: 'cash-1',
@@ -91,5 +91,56 @@ describe('layaway financial projection', () => {
       layawayRefunds: 275,
       layawayRetainedPenalties: 275
     });
+  });
+
+  it('does not turn an unlinked historical payment into Caja cash', () => {
+    const historicalSession = {
+      id: 'cash-historical', monto_inicial: 0, entradas_efectivo: 450, salidas_efectivo: 0,
+      fecha_apertura: '2026-07-25T08:00:00.000Z', fecha_cierre: '2026-07-25T18:00:00.000Z'
+    };
+    const historicalLayaway = {
+      id: 'layaway-historical', status: 'completed', totalAmount: 175, paidAmount: 175,
+      payments: [
+        { id: 'payment-unverified', amount: 75, status: 'confirmed', cajaId: 'cash-historical' },
+        { id: 'payment-verified', amount: 100, status: 'confirmed', cashMovementId: 'move-layaway-100', cajaId: 'cash-historical' }
+      ]
+    };
+    const historicalMovements = [
+      { id: 'move-layaway-100', cash_session_id: 'cash-historical', tipo: 'entrada', monto: 100, fecha: '2026-07-25T09:00:00.000Z', source: 'layaway_payment', referenceType: 'layaway', referenceId: 'layaway-historical', layawayId: 'layaway-historical', paymentId: 'payment-verified' },
+      { id: 'move-legacy-100', cash_session_id: 'cash-historical', tipo: 'entrada', monto: 100, fecha: '2026-07-25T10:00:00.000Z', concepto: 'Apartado anterior' },
+      { id: 'move-entry-75a', cash_session_id: 'cash-historical', tipo: 'entrada', monto: 75, fecha: '2026-07-25T11:00:00.000Z' },
+      { id: 'move-entry-100', cash_session_id: 'cash-historical', tipo: 'entrada', monto: 100, fecha: '2026-07-25T12:00:00.000Z' },
+      { id: 'move-entry-75b', cash_session_id: 'cash-historical', tipo: 'entrada', monto: 75, fecha: '2026-07-25T13:00:00.000Z' }
+    ];
+    const historicalSales = [
+      { id: 'sale-cash-210', timestamp: '2026-07-25T09:30:00.000Z', cash_session_id: 'cash-historical', status: 'closed', paymentMethod: 'efectivo', total: 210 },
+      { id: 'sale-cash-20', timestamp: '2026-07-25T10:30:00.000Z', cash_session_id: 'cash-historical', status: 'closed', paymentMethod: 'efectivo', total: 20 },
+      { id: 'sale-card-350', timestamp: '2026-07-25T11:30:00.000Z', cash_session_id: 'cash-historical', status: 'closed', paymentMethod: 'tarjeta', total: 350 },
+      { id: 'sale-layaway-175', timestamp: '2026-07-25T14:00:00.000Z', cash_session_id: 'cash-historical', status: 'closed', paymentMethod: 'layaway_completed', total: 175, isLayawayConversion: true, originalLayawayId: 'layaway-historical', items: [{ quantity: 1, cost: 100 }] }
+    ];
+
+    const reconciliation = buildCashReconciliation({
+      cashSession: historicalSession, sales: historicalSales, layaways: [historicalLayaway], cashMovements: historicalMovements
+    });
+    const audit = auditLayawayFinancialLinks({ layaways: [historicalLayaway], sales: historicalSales, cashMovements: historicalMovements });
+
+    expect(reconciliation).toMatchObject({
+      directCashSales: 230,
+      layawayPaymentsRecorded: 175,
+      layawayCashCollected: 100,
+      theoreticalCash: 680,
+      recognizedSales: 755,
+      layawayPendingAdvances: 0,
+      unclassifiedDifference: 0,
+      unverifiedHistoricalPaymentsAmount: 75
+    });
+    expect(reconciliation.theoreticalCash).toBe(680);
+    expect(reconciliation.unclassifiedDifference).toBe(0);
+    expect(reconciliation.confirmedPaymentsWithoutCashMovement).toEqual([
+      expect.objectContaining({ layawayId: 'layaway-historical', paymentId: 'payment-unverified', amount: 75, reason: 'missing_cash_movement' })
+    ]);
+    expect(audit.legacyUnclassifiedCashEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ cashMovementId: 'move-legacy-100', amount: 100 })
+    ]));
   });
 });
