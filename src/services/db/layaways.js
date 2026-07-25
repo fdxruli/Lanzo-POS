@@ -383,7 +383,7 @@ export const layawayRepository = {
     async getLegacyPaymentsForReconciliation() {
         const layaways = await db.table(STORES.LAYAWAYS).toArray();
         return layaways.flatMap((layaway) => (layaway.payments || [])
-            .filter((payment) => payment.status !== 'pending' && !payment.cashMovementId)
+            .filter((payment) => payment.status !== 'pending' && payment.status !== 'failed' && !payment.cashMovementId)
             .map((payment) => ({
                 layawayId: layaway.id,
                 paymentId: payment.id || null,
