@@ -61,6 +61,31 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(adminBranch).toMatch(/installAdminPwaDocument\(\)[\s\S]*startAdminInstallPromptCapture\(\)[\s\S]*startAdminServiceWorker\(\)/);
   });
 
+  it('mounts the recovery bootstrap before business runtime and keeps the public route isolated', async () => {
+    const [main, bootstrap] = await Promise.all([
+      readProjectFile('src/main.jsx'),
+      readProjectFile('src/components/common/PosApplicationBootstrap.jsx')
+    ]);
+    const renderStart = main.indexOf('async function renderPosApplication');
+    const routeStart = main.indexOf('if (isPublicStorePath');
+    const renderPosSource = main.slice(renderStart, routeStart);
+    const publicStart = routeStart;
+    const adminStart = main.indexOf('} else {', publicStart);
+    const publicBranch = main.slice(publicStart, adminStart);
+    const staticBootstrapImports = bootstrap.slice(0, bootstrap.indexOf('export const loadPosReadyRuntime'));
+
+    expect(renderStart).toBeGreaterThanOrEqual(0);
+    expect(renderPosSource).toContain("import('./services/db/databaseRuntime')");
+    expect(renderPosSource).toContain("import('./components/common/PosApplicationBootstrap')");
+    expect(renderPosSource).toMatch(/ReactDOM\.createRoot\(rootElement\)\.render\([\s\S]*PosApplicationBootstrap/);
+    expect(renderPosSource).not.toMatch(/prepareLocalDatabase\(|import\('\.\/App|posSyncBootstrapAutoCoordinator|productStoreRecoveryGuard/);
+    expect(publicBranch).not.toMatch(/databaseRuntime|PosApplicationBootstrap|DatabaseRecoveryGate|App\.jsx/);
+    expect(staticBootstrapImports).not.toMatch(/App\.jsx|useAppStore|useProductStore|posSyncBootstrapAutoCoordinator|productStoreRecoveryGuard/);
+    expect(bootstrap).toContain("import('../../App.jsx')");
+    expect(bootstrap).toContain("import('../../services/sync/posSyncBootstrapAutoCoordinator')");
+    expect(bootstrap).toMatch(/recovery\.status !== DATABASE_RECOVERY_STATUS\.READY/);
+  });
+
   it('generates a valid Lanzo POS manifest without injecting it into dist HTML', async () => {
     const [html, manifestSource] = await Promise.all([
       readProjectFile('dist/index.html'),
