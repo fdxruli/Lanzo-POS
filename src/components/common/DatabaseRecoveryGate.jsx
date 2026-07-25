@@ -17,6 +17,7 @@ const useDatabaseRecoveryState = () => useSyncExternalStore(
 );
 
 const BLOCKING_STATUSES = new Set([
+  DATABASE_RECOVERY_STATUS.IDLE,
   DATABASE_RECOVERY_STATUS.CHECKING,
   DATABASE_RECOVERY_STATUS.MIGRATING,
   DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
@@ -24,7 +25,10 @@ const BLOCKING_STATUSES = new Set([
 ]);
 
 const describeRecovery = (state) => {
-  if (state.status === DATABASE_RECOVERY_STATUS.CHECKING) {
+  if (
+    state.status === DATABASE_RECOVERY_STATUS.IDLE
+    || state.status === DATABASE_RECOVERY_STATUS.CHECKING
+  ) {
     return {
       title: 'Comprobando la base local...',
       body: 'Lanzo está verificando que la base local pueda abrirse de forma segura.',
