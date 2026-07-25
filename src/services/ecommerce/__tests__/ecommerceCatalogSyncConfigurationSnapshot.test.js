@@ -5,6 +5,7 @@ import {
   ecommerceCatalogSyncServiceInternals
 } from '../ecommerceCatalogSyncServiceBase';
 import { createEcommerceAdminService } from '../ecommerceAdminService';
+import { ecommerceCatalogSyncDependencyInternals } from '../ecommerceCatalogSyncService';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const SQL_AVAILABILITY_SOURCES = Object.freeze([
@@ -469,4 +470,59 @@ describe('catalog configuration snapshot and idempotency', () => {
     expect(calls[2].projections[0].configuration.optionGroups[0].options[0].priceDelta).toBe(25);
     expect(calls[2].projections[0].configurationSourceRevision).toBe('version:13');
   });
+
+  it('keeps variants but removes restaurant option groups for a persisted simple override', () => {
+    const rawConfiguration = {
+      ...canonicalConfiguration(),
+      type: 'variant_parent',
+      variants: [{
+        sourceVariantRef: 'size-large',
+        sourceProductId: 'sku-size-large',
+        localProductRef: 'sku-size-large',
+        sku: 'SIZE-LARGE',
+        publicName: 'Grande',
+        optionValues: { size: 'Grande' },
+        priceMode: 'delta',
+        priceValue: 20,
+        imageUrl: null,
+        imageRef: null,
+        trackStock: true,
+        stockMode: 'exact',
+        stockSnapshot: 4,
+        sourceAvailable: true,
+        manualAvailable: true,
+        displayOrder: 0,
+        sourceRevision: 'version:12',
+        metadata: {}
+      }],
+      availabilitySource: 'variant_aggregate'
+    };
+    const [patched] = ecommerceCatalogSyncDependencyInternals.patchConfigurationProjections(
+      [projection(rawConfiguration, { publicConfigurationMode: 'simple_override' })],
+      new Map([['product-1', { configuration: rawConfiguration }]])
+    );
+
+    expect(patched.configuration).toMatchObject({
+      type: 'variant_parent',
+      variants: rawConfiguration.variants,
+      optionGroups: []
+    });
+    expect(patched.configurationSourceRevision).toBe(
+      ecommerceCatalogSyncDependencyInternals.getConfigurationContentRevision(
+        patched.configuration
+      )
+    );
+  });
+
+  it('does not send hidden configuration while a publication requires review', () => {
+    const rawConfiguration = canonicalConfiguration();
+    const [patched] = ecommerceCatalogSyncDependencyInternals.patchConfigurationProjections(
+      [projection(rawConfiguration, { businessCapabilityStatus: 'requires_review' })],
+      new Map([['product-1', { configuration: rawConfiguration }]])
+    );
+
+    expect(patched.configuration).toBeNull();
+    expect(patched.configurationSourceRevision).toBeNull();
+  });
+
 });
