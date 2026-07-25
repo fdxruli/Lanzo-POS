@@ -4,6 +4,17 @@ on:
   push:
     branches:
       - hotfix/dexie-primary-key-recovery-admin-bootstrap
+    paths:
+      - 'src/services/db/**'
+      - 'src/services/sync/**'
+      - 'src/services/storageManager.js'
+      - 'src/components/common/AdminLoginModal.jsx'
+      - 'src/components/common/DatabaseRecoveryGate.jsx'
+      - 'src/store/**'
+      - 'src/workers/migration.worker.js'
+      - 'src/main.jsx'
+      - '.github/workflows/hotfix-dexie-validation.yml'
+      - '.github/workflows/pr127-global-comparison.yml'
   pull_request:
     branches:
       - main
@@ -17,6 +28,7 @@ on:
       - 'src/workers/migration.worker.js'
       - 'src/main.jsx'
       - '.github/workflows/hotfix-dexie-validation.yml'
+      - '.github/workflows/pr127-global-comparison.yml'
 
 permissions:
   contents: read
