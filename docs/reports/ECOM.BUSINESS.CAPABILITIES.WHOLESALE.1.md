@@ -362,9 +362,12 @@ PR #128 abierto, draft, no fusionado y sin auto-merge.
   fallidas; 191 archivos y 1298 pruebas pasaron, 59 omitidas.
 - `npm run test:ci` de `main`: **FAIL heredado/global**, 67 archivos y 124 pruebas
   fallidas; 186 archivos y 1276 pruebas pasaron, 59 omitidas.
-- La comparación remota normalizada del nuevo HEAD se registra después de
-  publicar estos commits; no se declara `PR-only failures = 0` hasta inspeccionar
-  su artefacto.
+- Comparación remota normalizada del HEAD de implementación
+  `e07b8b3afb1863e801290e4758dac931f067a612`: workflow
+  `PR127 Global Comparison` #51, run `30159562706`, **PASS**.
+  El artefacto `pr127-global-comparison-e07b8b3...` registró 148 fallos
+  compartidos, **0 fallos exclusivos del PR** y 1 fallo heredado resuelto.
+  Por tanto, `PR-only failures = 0`.
 
 La suite histórica `ecom_products_model_1_1_test.sql` falla bajo la política
 fail-closed vigente porque su fixture no crea `business_profiles`; espera que un
@@ -385,6 +388,11 @@ confirmado de esta corrección y no se relajó.
 
 ### Estado operativo
 
+- Commit de implementación remoto:
+  `e07b8b3afb1863e801290e4758dac931f067a612` —
+  `fix(ecommerce): resolve wholesale capability blockers`.
+- El HEAD final incluye este cierre documental; su SHA autoritativo es el
+  `head_sha` del PR #128 y se informa en la entrega final.
 - No se creó otro PR.
 - No se modificó `main`.
 - No se hizo merge ni se activó auto-merge.
