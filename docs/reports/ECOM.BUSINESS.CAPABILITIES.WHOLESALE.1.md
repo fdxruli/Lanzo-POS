@@ -19,7 +19,8 @@
 
 ## 4. PR creado
 
-Pendiente de completar después de publicar la rama. Debe permanecer draft.
+PR [#128](https://github.com/fdxruli/Lanzo-POS/pull/128), creado abierto y
+**draft** contra `main`.
 
 ## 5. Auditoría inicial de Supabase
 
@@ -259,15 +260,25 @@ fase para corregir deuda ajena.
 
 ## 26. Commits
 
-Pendiente de completar después de crear los commits finales.
+- `8edf5b788c7c7a51375def38ca6f37a5e88cb283` —
+  `feat(ecommerce): add rubro capabilities and public wholesale`
+- `24cb777d2a747abbaf40888a9ae650729b399749` —
+  `feat(supabase): enforce capabilities and wholesale checkout`
+- `68ce7dd7f971368b3269908bca685f2722ec2729` —
+  `test(ecommerce): cover rubro and wholesale contracts`
+- `717fcef2573c35d7f8553470df53d22eeecea6c2` —
+  `docs(ecommerce): report capabilities wholesale phase`
 
 ## 27. HEAD final
 
-Pendiente de completar después del último commit del reporte.
+HEAD de implementación con el que se creó el PR:
+`717fcef2573c35d7f8553470df53d22eeecea6c2`. Este informe recibe un último
+commit documental para registrar el número y estado del PR; el HEAD efectivo de
+la rama se confirma en el resumen de cierre.
 
 ## 28. Estado final del PR
 
-Pendiente. Debe quedar abierto, draft, sin auto-merge.
+PR #128 abierto, draft, no fusionado y sin auto-merge.
 
 ## 29. Pendientes de validación manual
 
