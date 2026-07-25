@@ -49,7 +49,7 @@ describe('usePublicCart catalog revision reconciliation', () => {
       product: { id: 'product-1', price: 60 }
     });
     expect(result.current.subtotal).toBe('120.00');
-    expect(result.current.notice).toMatch(/precios y la disponibilidad vigentes/i);
+    expect(result.current.notice).toMatch(/precios, opciones y disponibilidad vigentes/i);
   });
 
   it('does not remove unresolved persisted ids while the new revision still has pages', async () => {
