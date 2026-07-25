@@ -1,11 +1,14 @@
-import { useSyncExternalStore, useState } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, Database, RefreshCw } from 'lucide-react';
 import {
   DATABASE_RECOVERY_STATUS,
   getDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
 } from '../../services/db/databaseRecoveryState';
-import { retryLocalDatabaseRecovery } from '../../services/db/databaseRuntime';
+import {
+  isLocalDatabasePreparationActive,
+  retryLocalDatabaseRecovery
+} from '../../services/db/databaseRuntime';
 
 const useDatabaseRecoveryState = () => useSyncExternalStore(
   subscribeDatabaseRecoveryState,
@@ -13,11 +16,35 @@ const useDatabaseRecoveryState = () => useSyncExternalStore(
   getDatabaseRecoveryState
 );
 
+const BLOCKING_STATUSES = new Set([
+  DATABASE_RECOVERY_STATUS.CHECKING,
+  DATABASE_RECOVERY_STATUS.MIGRATING,
+  DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+  DATABASE_RECOVERY_STATUS.FAILED
+]);
+
 const describeRecovery = (state) => {
+  if (state.status === DATABASE_RECOVERY_STATUS.CHECKING) {
+    return {
+      title: 'Comprobando la base local...',
+      body: 'Lanzo está verificando que la base local pueda abrirse de forma segura.',
+      icon: 'database'
+    };
+  }
+
+  if (state.status === DATABASE_RECOVERY_STATUS.MIGRATING) {
+    return {
+      title: 'Actualizando la base local de forma segura...',
+      body: 'La migración está preservando tus ventas y movimientos. No cierres esta pestaña durante el proceso.',
+      icon: 'database'
+    };
+  }
+
   if (state.errorCode === 'DB_BLOCKED') {
     return {
       title: 'Cierra las demás pestañas de Lanzo',
-      body: 'La base local está siendo usada por otra pestaña o ventana. Tus datos no se eliminarán. Cierra las demás pestañas y vuelve a intentarlo.'
+      body: 'La base local está siendo usada por otra pestaña o ventana. Tus datos no se eliminarán. La operación continuará cuando se cierre la conexión bloqueante.',
+      icon: 'warning'
     };
   }
 
@@ -28,49 +55,102 @@ const describeRecovery = (state) => {
   ) {
     return {
       title: 'Actualización segura de la base local',
-      body: 'Detectamos un esquema local antiguo. Lanzo preparará una migración segura conservando ventas, productos y movimientos. Los respaldos técnicos se mantendrán en este hotfix.'
+      body: 'Detectamos un esquema local antiguo. Lanzo preparará una migración segura conservando ventas, productos y movimientos. Los respaldos técnicos se mantendrán en este hotfix.',
+      icon: 'database'
+    };
+  }
+
+  if (state.status === DATABASE_RECOVERY_STATUS.FAILED) {
+    return {
+      title: 'La recuperación automática no pudo completarse',
+      body: 'La base local se conservó sin borrarse. Mantén esta instalación y solicita una revisión técnica con el código de diagnóstico mostrado.',
+      icon: 'warning'
     };
   }
 
   return {
     title: 'La base local necesita recuperación',
-    body: 'Tus datos no serán eliminados automáticamente. Reintenta después de cerrar otras pestañas de Lanzo.'
+    body: 'Tus datos no serán eliminados automáticamente. Reintenta después de cerrar otras pestañas de Lanzo.',
+    icon: 'warning'
   };
+};
+
+const MigrationDetails = ({ migration }) => {
+  if (!migration) return null;
+  const stores = [...new Set([
+    ...Object.keys(migration.sourceCounts || {}),
+    ...Object.keys(migration.targetCounts || {})
+  ])];
+
+  return (
+    <div className="app-boot-recovery__details" aria-label="Progreso de migración">
+      {migration.phase && <p><strong>Fase:</strong> {migration.phase}</p>}
+      {stores.length > 0 && <p><strong>Stores:</strong> {stores.join(', ')}</p>}
+      {Object.keys(migration.sourceCounts || {}).length > 0 && (
+        <p><strong>Origen:</strong> {JSON.stringify(migration.sourceCounts)}</p>
+      )}
+      {Object.keys(migration.targetCounts || {}).length > 0 && (
+        <p><strong>Destino:</strong> {JSON.stringify(migration.targetCounts)}</p>
+      )}
+    </div>
+  );
 };
 
 export default function DatabaseRecoveryGate({ children }) {
   const recovery = useDatabaseRecoveryState();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState('');
+  const retryPromiseRef = useRef(null);
 
-  const shouldBlock = recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
-    || recovery.status === DATABASE_RECOVERY_STATUS.FAILED;
-
-  if (!shouldBlock) return children;
+  if (!BLOCKING_STATUSES.has(recovery.status)) return children;
 
   const copy = describeRecovery(recovery);
-  const canRetry = recovery.isRetryable !== false;
+  const operationActive = retrying || isLocalDatabasePreparationActive();
+  const canRetry = recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
+    && recovery.isRetryable !== false;
 
-  const retry = async () => {
+  const retry = () => {
+    if (retryPromiseRef.current) return retryPromiseRef.current;
+
     setRetrying(true);
     setRetryError('');
-    try {
-      await retryLocalDatabaseRecovery();
-      window.location.reload();
-    } catch (error) {
-      setRetryError(error?.message || 'No se pudo completar la recuperación. Cierra otras pestañas y vuelve a intentarlo.');
-      setRetrying(false);
-    }
+    const operation = retryLocalDatabaseRecovery()
+      .then(() => {
+        const finalState = getDatabaseRecoveryState();
+        if (finalState.status !== DATABASE_RECOVERY_STATUS.READY) {
+          throw new Error('La base local no alcanzó un estado seguro después del reintento.');
+        }
+        window.location.reload();
+      })
+      .catch((error) => {
+        setRetryError(
+          error?.message
+          || 'No se pudo completar la recuperación. Cierra otras pestañas y vuelve a intentarlo.'
+        );
+      })
+      .finally(() => {
+        retryPromiseRef.current = null;
+        setRetrying(false);
+      });
+
+    retryPromiseRef.current = operation;
+    return operation;
   };
 
   return (
     <main className="app-boot-recovery" role="alert" aria-live="assertive">
       <section className="app-boot-recovery__card">
-        <Database size={44} aria-hidden="true" />
+        {copy.icon === 'warning'
+          ? <AlertTriangle size={44} aria-hidden="true" />
+          : <Database size={44} aria-hidden="true" />}
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         {recovery.affectedStores?.length > 0 && (
           <p><strong>Stores afectados:</strong> {recovery.affectedStores.join(', ')}</p>
+        )}
+        <MigrationDetails migration={recovery.migration} />
+        {recovery.errorCode && recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
+          <p><strong>Código:</strong> {recovery.errorCode}</p>
         )}
         {retryError && (
           <div className="ui-alert ui-alert--danger" role="alert">
@@ -78,12 +158,18 @@ export default function DatabaseRecoveryGate({ children }) {
             {retryError}
           </div>
         )}
-        {canRetry ? (
-          <button type="button" className="ui-button ui-button--primary" onClick={retry} disabled={retrying}>
+        {canRetry && (
+          <button
+            type="button"
+            className="ui-button ui-button--primary"
+            onClick={retry}
+            disabled={operationActive}
+          >
             <RefreshCw size={18} aria-hidden="true" />
-            {retrying ? 'Reintentando...' : 'Reintentar recuperación'}
+            {operationActive ? 'Reintentando...' : 'Reintentar recuperación'}
           </button>
-        ) : (
+        )}
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
           <p className="ui-alert ui-alert--warning">
             La versión local no puede repararse automáticamente con seguridad. Conserva esta base y solicita una revisión técnica.
           </p>
