@@ -159,7 +159,19 @@ jobs:
         run: npm run build
 
       - name: Validate admin PWA branch architecture
-        run: npm run test:ci -- src/architecture/__tests__/adminPwaArchitecture.test.js
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:ci -- src/architecture/__tests__/adminPwaArchitecture.test.js 2>&1 | tee pwa-architecture.log
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focal-quality-${{ github.sha }}
+          path: pwa-architecture.log
+          if-no-files-found: warn
+          retention-days: 7
 
   validation-result:
     name: validation-result
