@@ -10,9 +10,10 @@ import {
   createDatabaseRecoveryError
 } from './databaseRecoveryState';
 
-const OPEN_TIMEOUT_MS = 8_000;
+export const OPEN_TIMEOUT_MS = 8_000;
 const RECOVERY_MARKER_KEY = 'primary-key-recovery-v1';
 const REPAIRABLE_STORES = ['sales', 'deleted_sales'];
+const activeNativeOpenOperations = new Map();
 
 const asArray = (value) => Array.from(value || []);
 
@@ -40,24 +41,27 @@ const nextHash = (current, value) => {
 };
 
 const hashToString = (hash) => (hash >>> 0).toString(16).padStart(8, '0');
+const stableHash = (value) => hashToString(nextHash(2166136261, value));
 
 const hasValidId = (value) => (
-  (typeof value === 'string' && value.trim().length > 0) ||
-  (typeof value === 'number' && Number.isFinite(value))
+  (typeof value === 'string' && value.trim().length > 0)
+  || (typeof value === 'number' && Number.isFinite(value))
 );
 
-export const resolveLegacyRecordId = (storeName, record, sourceKey) => {
-  if (hasValidId(record?.id)) return record.id;
-  const prefix = storeName === 'deleted_sales' ? 'legacy-deleted-sale' : 'legacy-sale';
-  return `${prefix}:${stableKey(sourceKey)}`;
-};
+const canonicalId = (value) => `${typeof value}:${stableKey(value)}`;
 
 const recoveryMessage = (code) => {
   if (code === DATABASE_RECOVERY_CODES.BLOCKED) {
-    return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo y vuelve a intentarlo.';
+    return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo; la operación continuará cuando esa conexión se cierre.';
   }
   if (code === DATABASE_RECOVERY_CODES.PRIMARY_KEY_MISMATCH) {
     return 'Detectamos un esquema local antiguo. Lanzo preparará una migración segura conservando ventas y movimientos.';
+  }
+  if (code === DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION) {
+    return 'La base local fue creada por una versión más reciente de Lanzo y no puede degradarse automáticamente.';
+  }
+  if (code === DATABASE_RECOVERY_CODES.MIGRATION_COLLISION) {
+    return 'La migración detectó una colisión de identificadores y se abortó sin sobrescribir registros.';
   }
   return 'La base local necesita actualizarse antes de continuar. Tus datos no serán eliminados automáticamente.';
 };
@@ -88,6 +92,30 @@ const makeDiagnostic = ({
   migration
 });
 
+const createMigrationError = ({
+  code = DATABASE_RECOVERY_CODES.MIGRATION_FAILED,
+  databaseName = DB_NAME,
+  mismatches = [],
+  migration = null,
+  cause = null
+}) => createDatabaseRecoveryError(makeDiagnostic({
+  code,
+  databaseName,
+  mismatches,
+  retryable: code !== DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
+  requiresMigration: true,
+  migration
+}), cause);
+
+const abortWithStructuredError = (transaction, error) => {
+  if (transaction) transaction.__lanzoRecoveryError = error;
+  try {
+    transaction?.abort();
+  } catch {
+    // La transacción pudo haberse abortado antes por la solicitud que falló.
+  }
+};
+
 const listExistingDatabases = async (factory) => {
   if (typeof factory?.databases !== 'function') return null;
   try {
@@ -97,39 +125,94 @@ const listExistingDatabases = async (factory) => {
   }
 };
 
-const openNativeDatabase = ({ factory, name, version = undefined, onUpgrade = null }) => (
-  new Promise((resolve, reject) => {
-    let settled = false;
-    let blocked = false;
+const nativeOperationKey = (name, version) => `${name}:${version ?? 'current'}`;
+
+export const openNativeDatabase = ({
+  factory,
+  name,
+  version = undefined,
+  onUpgrade = null,
+  onBlocked = null,
+  openTimeoutMs = OPEN_TIMEOUT_MS
+}) => {
+  const operationKey = nativeOperationKey(name, version);
+  const existingOperation = activeNativeOpenOperations.get(operationKey);
+  if (existingOperation) return existingOperation.promise;
+
+  const operation = {
+    state: 'opening',
+    request: null,
+    transaction: null,
+    timeoutId: null,
+    publicSettled: false,
+    blockedNotified: false,
+    promise: null
+  };
+
+  operation.promise = new Promise((resolve, reject) => {
     const request = version === undefined ? factory.open(name) : factory.open(name, version);
-    const timeoutId = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+    operation.request = request;
+
+    const clearOpenTimeout = () => {
+      if (operation.timeoutId !== null) clearTimeout(operation.timeoutId);
+      operation.timeoutId = null;
+    };
+
+    const finishOperation = (state) => {
+      operation.state = state;
+      clearOpenTimeout();
+      activeNativeOpenOperations.delete(operationKey);
+    };
+
+    const rejectPublic = (error, finalState = 'failed') => {
+      if (!operation.publicSettled) {
+        operation.publicSettled = true;
+        reject(error);
+      }
+      finishOperation(finalState);
+    };
+
+    operation.timeoutId = setTimeout(() => {
+      if (operation.state !== 'opening' || operation.publicSettled) return;
+      operation.state = 'failed';
+      operation.publicSettled = true;
       reject(createDatabaseRecoveryError(makeDiagnostic({
         code: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT,
+        databaseName: name,
         retryable: true
       })));
-    }, OPEN_TIMEOUT_MS);
+      // IndexedDB no permite cancelar una solicitud open que aún no tiene
+      // transacción. Conservamos la operación en el mapa hasta que termine de
+      // verdad para impedir aperturas paralelas durante los reintentos.
+    }, openTimeoutMs);
 
     request.onblocked = () => {
-      blocked = true;
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      reject(createDatabaseRecoveryError(makeDiagnostic({
-        code: DATABASE_RECOVERY_CODES.BLOCKED,
-        retryable: true
-      })));
+      if (operation.state === 'succeeded' || operation.state === 'failed' || operation.state === 'aborted') return;
+      operation.state = 'blocked';
+      clearOpenTimeout();
+      if (!operation.blockedNotified) {
+        operation.blockedNotified = true;
+        const blockedError = createDatabaseRecoveryError(makeDiagnostic({
+          code: DATABASE_RECOVERY_CODES.BLOCKED,
+          databaseName: name,
+          retryable: true
+        }));
+        onBlocked?.(blockedError);
+      }
+      // No se rechaza: la misma solicitud continúa cuando la conexión
+      // bloqueante se cierre. Así no se duplica backup/rebuild.
     };
 
     request.onerror = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      reject(request.error || new Error(`No se pudo abrir ${name}.`));
+      const structuredError = operation.transaction?.__lanzoRecoveryError;
+      const error = structuredError || request.error || new Error(`No se pudo abrir ${name}.`);
+      rejectPublic(error, operation.transaction?.error?.name === 'AbortError' ? 'aborted' : 'failed');
     };
 
     request.onupgradeneeded = (event) => {
+      operation.state = 'upgrading';
+      clearOpenTimeout();
+      operation.transaction = request.transaction;
       try {
         onUpgrade?.({
           database: request.result,
@@ -138,30 +221,43 @@ const openNativeDatabase = ({ factory, name, version = undefined, onUpgrade = nu
           newVersion: event.newVersion
         });
       } catch (error) {
-        try {
-          request.transaction?.abort();
-        } catch {
-          // La transacción ya pudo abortarse por la excepción original.
-        }
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeoutId);
-          reject(error);
-        }
+        abortWithStructuredError(request.transaction, error);
       }
     };
 
     request.onsuccess = () => {
-      if (settled || blocked) {
-        request.result.close();
+      const database = request.result;
+      if (operation.publicSettled) {
+        database.close();
+        finishOperation('succeeded');
         return;
       }
-      settled = true;
-      clearTimeout(timeoutId);
-      resolve(request.result);
+      operation.publicSettled = true;
+      finishOperation('succeeded');
+      resolve(database);
     };
-  })
+  });
+
+  activeNativeOpenOperations.set(operationKey, operation);
+  return operation.promise;
+};
+
+export const getActiveNativeOpenOperations = () => Array.from(
+  activeNativeOpenOperations.entries(),
+  ([key, operation]) => ({ key, state: operation.state })
 );
+
+export const resetIndexedDbPreflightForTests = () => {
+  activeNativeOpenOperations.forEach((operation) => {
+    if (operation.timeoutId !== null) clearTimeout(operation.timeoutId);
+    try {
+      operation.transaction?.abort();
+    } catch {
+      // Best effort exclusivo para aislamiento de pruebas.
+    }
+  });
+  activeNativeOpenOperations.clear();
+};
 
 const inspectOpenDatabase = (database, { createdByInspection = false } = {}) => {
   const stores = {};
@@ -190,7 +286,8 @@ const inspectOpenDatabase = (database, { createdByInspection = false } = {}) => 
     }));
 
   let classification = 'compatible';
-  if (createdByInspection || storeNames.length === 0) classification = 'new';
+  if (database.version > CURRENT_NATIVE_DATABASE_VERSION) classification = 'unsupported_newer';
+  else if (createdByInspection || storeNames.length === 0) classification = 'new';
   else if (mismatches.length > 0) classification = 'primary_key_incompatible';
   else if (database.version < CURRENT_NATIVE_DATABASE_VERSION) classification = 'compatible_outdated';
 
@@ -206,11 +303,14 @@ const inspectOpenDatabase = (database, { createdByInspection = false } = {}) => 
 
 export const inspectIndexedDbStructure = async ({
   factory = globalThis.indexedDB,
-  databaseName = DB_NAME
+  databaseName = DB_NAME,
+  onBlocked = null,
+  openTimeoutMs = OPEN_TIMEOUT_MS
 } = {}) => {
   if (!factory) {
     throw createDatabaseRecoveryError(makeDiagnostic({
       code: DATABASE_RECOVERY_CODES.NOT_INSPECTABLE,
+      databaseName,
       retryable: false
     }));
   }
@@ -223,6 +323,8 @@ export const inspectIndexedDbStructure = async ({
   const database = await openNativeDatabase({
     factory,
     name: databaseName,
+    onBlocked,
+    openTimeoutMs,
     onUpgrade: ({ oldVersion }) => {
       createdByInspection = oldVersion === 0 && definitelyMissing !== false;
     }
@@ -252,8 +354,66 @@ const createRecoveryStores = (database) => {
   }
 };
 
-const startBackupCopy = ({ transaction, sourceStoreName, backupStoreName, result, onDone }) => {
+const allocateMigratedId = ({ storeName, record, sourceKey, usedIds }) => {
+  const originalId = hasValidId(record?.id) ? record.id : null;
+  const originalCanonical = originalId === null ? null : canonicalId(originalId);
+
+  if (originalId !== null && !usedIds.has(originalCanonical)) {
+    usedIds.add(originalCanonical);
+    return {
+      originalId,
+      migratedId: originalId,
+      idRemapped: false,
+      remapReason: null
+    };
+  }
+
+  const missingPrefix = storeName === 'deleted_sales'
+    ? 'legacy-deleted-sale'
+    : 'legacy-sale';
+  const reason = originalId === null ? 'missing_id' : 'duplicate_id';
+  const baseCandidate = originalId === null
+    ? `${missingPrefix}:${stableKey(sourceKey)}`
+    : `${String(originalId)}:legacy:${stableHash([storeName, sourceKey])}`;
+
+  let migratedId = baseCandidate;
+  let remapReason = reason;
+  let attempt = 0;
+  while (usedIds.has(canonicalId(migratedId))) {
+    attempt += 1;
+    remapReason = 'secondary_collision';
+    migratedId = `${baseCandidate}:secondary:${attempt}:${stableHash([
+      storeName,
+      sourceKey,
+      originalId,
+      attempt
+    ])}`;
+  }
+
+  usedIds.add(canonicalId(migratedId));
+  return {
+    originalId,
+    migratedId,
+    idRemapped: true,
+    remapReason
+  };
+};
+
+export const resolveLegacyRecordId = (storeName, record, sourceKey, usedIds = new Set()) => (
+  allocateMigratedId({ storeName, record, sourceKey, usedIds }).migratedId
+);
+
+const startBackupCopy = ({
+  transaction,
+  sourceStoreName,
+  backupStoreName,
+  result,
+  onDone,
+  databaseName
+}) => {
   const backupStore = transaction.objectStore(backupStoreName);
+  const usedIds = new Set();
+
   const startCursor = () => {
     if (!transaction.db.objectStoreNames.contains(sourceStoreName)) {
       onDone();
@@ -262,8 +422,10 @@ const startBackupCopy = ({ transaction, sourceStoreName, backupStoreName, result
 
     const sourceStore = transaction.objectStore(sourceStoreName);
     const cursorRequest = sourceStore.openCursor();
-
-    cursorRequest.onerror = () => transaction.abort();
+    cursorRequest.onerror = () => abortWithStructuredError(
+      transaction,
+      createMigrationError({ databaseName, cause: cursorRequest.error })
+    );
     cursorRequest.onsuccess = () => {
       const cursor = cursorRequest.result;
       if (!cursor) {
@@ -271,42 +433,70 @@ const startBackupCopy = ({ transaction, sourceStoreName, backupStoreName, result
         return;
       }
 
-      const migratedId = resolveLegacyRecordId(sourceStoreName, cursor.value, cursor.primaryKey);
+      const idResolution = allocateMigratedId({
+        storeName: sourceStoreName,
+        record: cursor.value,
+        sourceKey: cursor.primaryKey,
+        usedIds
+      });
       const legacyKey = `${sourceStoreName}:${stableKey(cursor.primaryKey)}`;
-      const addRequest = backupStore.add({
+      const backupEntry = {
         legacyKey,
         sourceKey: cursor.primaryKey,
-        migratedId,
+        originalId: idResolution.originalId,
+        migratedId: idResolution.migratedId,
+        idRemapped: idResolution.idRemapped,
+        remapReason: idResolution.remapReason,
         record: cursor.value
-      });
+      };
+      const addRequest = backupStore.add(backupEntry);
 
-      addRequest.onerror = () => transaction.abort();
+      addRequest.onerror = () => abortWithStructuredError(
+        transaction,
+        createMigrationError({
+          code: DATABASE_RECOVERY_CODES.MIGRATION_COLLISION,
+          databaseName,
+          cause: addRequest.error
+        })
+      );
       addRequest.onsuccess = () => {
         result.count += 1;
         result.sourceHash = nextHash(result.sourceHash, cursor.primaryKey);
-        result.idHash = nextHash(result.idHash, migratedId);
+        result.idHash = nextHash(result.idHash, idResolution.migratedId);
         cursor.continue();
       };
     };
   };
 
   const clearRequest = backupStore.clear();
-  clearRequest.onerror = () => transaction.abort();
+  clearRequest.onerror = () => abortWithStructuredError(
+    transaction,
+    createMigrationError({ databaseName, cause: clearRequest.error })
+  );
   clearRequest.onsuccess = startCursor;
 };
 
-const runBackupPhase = async ({ factory, databaseName, targetVersion }) => {
+const runBackupPhase = async ({
+  factory,
+  databaseName,
+  targetVersion,
+  onBlocked,
+  onProgress,
+  openTimeoutMs
+}) => {
   const sourceCounts = { sales: 0, deleted_sales: 0 };
   const sourceHashes = { sales: '', deleted_sales: '' };
   const idHashes = { sales: '', deleted_sales: '' };
+  onProgress?.({ phase: 'backup_starting', sourceCounts, targetCounts: {} });
 
   const database = await openNativeDatabase({
     factory,
     name: databaseName,
     version: targetVersion,
+    onBlocked,
+    openTimeoutMs,
     onUpgrade: ({ database: upgradingDatabase, transaction }) => {
       createRecoveryStores(upgradingDatabase);
-
       const results = {
         sales: { count: 0, sourceHash: 2166136261, idHash: 2166136261 },
         deleted_sales: { count: 0, sourceHash: 2166136261, idHash: 2166136261 }
@@ -323,7 +513,7 @@ const runBackupPhase = async ({ factory, databaseName, targetVersion }) => {
           idHashes[storeName] = hashToString(results[storeName].idHash);
         });
 
-        transaction.objectStore(RECOVERY_STORES.META).put({
+        const markerRequest = transaction.objectStore(RECOVERY_STORES.META).put({
           key: RECOVERY_MARKER_KEY,
           phase: 'backup_complete',
           sourceCounts,
@@ -332,26 +522,29 @@ const runBackupPhase = async ({ factory, databaseName, targetVersion }) => {
           backupNativeVersion: targetVersion,
           updatedAt: new Date().toISOString()
         });
+        markerRequest.onerror = () => abortWithStructuredError(
+          transaction,
+          createMigrationError({ databaseName, cause: markerRequest.error })
+        );
       };
 
-      startBackupCopy({
-        transaction,
-        sourceStoreName: 'sales',
-        backupStoreName: RECOVERY_STORES.SALES_BACKUP,
-        result: results.sales,
-        onDone: completeOne
-      });
-      startBackupCopy({
-        transaction,
-        sourceStoreName: 'deleted_sales',
-        backupStoreName: RECOVERY_STORES.DELETED_SALES_BACKUP,
-        result: results.deleted_sales,
-        onDone: completeOne
+      REPAIRABLE_STORES.forEach((storeName) => {
+        startBackupCopy({
+          transaction,
+          sourceStoreName: storeName,
+          backupStoreName: storeName === 'sales'
+            ? RECOVERY_STORES.SALES_BACKUP
+            : RECOVERY_STORES.DELETED_SALES_BACKUP,
+          result: results[storeName],
+          onDone: completeOne,
+          databaseName
+        });
       });
     }
   });
 
   database.close();
+  onProgress?.({ phase: 'backup_complete', sourceCounts, targetCounts: {} });
   return { sourceCounts, sourceHashes, idHashes };
 };
 
@@ -370,12 +563,22 @@ const createCurrentStore = (database, storeName) => {
   return store;
 };
 
-const startRestoreCopy = ({ transaction, backupStoreName, targetStoreName, result, onDone }) => {
+const startRestoreCopy = ({
+  transaction,
+  backupStoreName,
+  targetStoreName,
+  result,
+  onDone,
+  databaseName
+}) => {
   const backupStore = transaction.objectStore(backupStoreName);
   const targetStore = transaction.objectStore(targetStoreName);
   const cursorRequest = backupStore.openCursor();
 
-  cursorRequest.onerror = () => transaction.abort();
+  cursorRequest.onerror = () => abortWithStructuredError(
+    transaction,
+    createMigrationError({ databaseName, cause: cursorRequest.error })
+  );
   cursorRequest.onsuccess = () => {
     const cursor = cursorRequest.result;
     if (!cursor) {
@@ -384,46 +587,55 @@ const startRestoreCopy = ({ transaction, backupStoreName, targetStoreName, resul
     }
 
     const backupEntry = cursor.value;
-    if (!backupEntry?.record || typeof backupEntry.record !== 'object') {
-      transaction.abort();
+    if (!backupEntry?.record || typeof backupEntry.record !== 'object' || !hasValidId(backupEntry.migratedId)) {
+      abortWithStructuredError(transaction, createMigrationError({
+        databaseName,
+        migration: { phase: 'restore_invalid_backup_entry' }
+      }));
       return;
     }
 
-    const id = hasValidId(backupEntry.record.id)
-      ? backupEntry.record.id
-      : backupEntry.migratedId;
-    const restoredRecord = { ...backupEntry.record, id };
+    const restoredRecord = { ...backupEntry.record, id: backupEntry.migratedId };
     const addRequest = targetStore.add(restoredRecord);
-
-    addRequest.onerror = () => {
-      const collision = new Error(`Colisión de ID al reconstruir ${targetStoreName}.`);
-      collision.name = 'ConstraintError';
-      collision.code = DATABASE_RECOVERY_CODES.MIGRATION_COLLISION;
-      try {
-        transaction.abort();
-      } catch {
-        // La solicitud ya abortó la transacción.
-      }
-    };
+    addRequest.onerror = () => abortWithStructuredError(
+      transaction,
+      createMigrationError({
+        code: DATABASE_RECOVERY_CODES.MIGRATION_COLLISION,
+        databaseName,
+        cause: addRequest.error,
+        migration: { phase: 'restore_collision' }
+      })
+    );
     addRequest.onsuccess = () => {
       result.count += 1;
-      result.idHash = nextHash(result.idHash, id);
+      result.sourceHash = nextHash(result.sourceHash, backupEntry.sourceKey);
+      result.idHash = nextHash(result.idHash, backupEntry.migratedId);
       cursor.continue();
     };
   };
 };
 
-const runRebuildPhase = async ({ factory, databaseName, targetVersion }) => {
+const runRebuildPhase = async ({
+  factory,
+  databaseName,
+  targetVersion,
+  onBlocked,
+  onProgress,
+  openTimeoutMs
+}) => {
   const targetCounts = { sales: 0, deleted_sales: 0 };
+  const targetSourceHashes = { sales: '', deleted_sales: '' };
   const targetIdHashes = { sales: '', deleted_sales: '' };
+  onProgress?.({ phase: 'rebuild_starting', sourceCounts: {}, targetCounts });
 
   const database = await openNativeDatabase({
     factory,
     name: databaseName,
     version: targetVersion,
+    onBlocked,
+    openTimeoutMs,
     onUpgrade: ({ database: upgradingDatabase, transaction }) => {
       createRecoveryStores(upgradingDatabase);
-
       REPAIRABLE_STORES.forEach((storeName) => {
         if (upgradingDatabase.objectStoreNames.contains(storeName)) {
           upgradingDatabase.deleteObjectStore(storeName);
@@ -432,8 +644,8 @@ const runRebuildPhase = async ({ factory, databaseName, targetVersion }) => {
       });
 
       const results = {
-        sales: { count: 0, idHash: 2166136261 },
-        deleted_sales: { count: 0, idHash: 2166136261 }
+        sales: { count: 0, sourceHash: 2166136261, idHash: 2166136261 },
+        deleted_sales: { count: 0, sourceHash: 2166136261, idHash: 2166136261 }
       };
       let remaining = REPAIRABLE_STORES.length;
 
@@ -443,60 +655,84 @@ const runRebuildPhase = async ({ factory, databaseName, targetVersion }) => {
 
         REPAIRABLE_STORES.forEach((storeName) => {
           targetCounts[storeName] = results[storeName].count;
+          targetSourceHashes[storeName] = hashToString(results[storeName].sourceHash);
           targetIdHashes[storeName] = hashToString(results[storeName].idHash);
         });
 
         const markerStore = transaction.objectStore(RECOVERY_STORES.META);
         const markerRequest = markerStore.get(RECOVERY_MARKER_KEY);
-        markerRequest.onerror = () => transaction.abort();
+        markerRequest.onerror = () => abortWithStructuredError(
+          transaction,
+          createMigrationError({ databaseName, cause: markerRequest.error })
+        );
         markerRequest.onsuccess = () => {
-          const marker = markerRequest.result || { key: RECOVERY_MARKER_KEY };
-          const sourceCounts = marker.sourceCounts || {};
-          const countMismatch = REPAIRABLE_STORES.some(
-            (storeName) => Number(sourceCounts[storeName] || 0) !== targetCounts[storeName]
-          );
-          if (countMismatch) {
-            transaction.abort();
+          const marker = markerRequest.result;
+          const mismatch = !marker || REPAIRABLE_STORES.some((storeName) => (
+            Number(marker.sourceCounts?.[storeName] || 0) !== targetCounts[storeName]
+            || marker.sourceHashes?.[storeName] !== targetSourceHashes[storeName]
+            || marker.idHashes?.[storeName] !== targetIdHashes[storeName]
+          ));
+
+          if (mismatch) {
+            abortWithStructuredError(transaction, createMigrationError({
+              databaseName,
+              migration: {
+                phase: 'validation_failed',
+                sourceCounts: marker?.sourceCounts || {},
+                targetCounts
+              }
+            }));
             return;
           }
 
-          markerStore.put({
+          const finalMarkerRequest = markerStore.put({
             ...marker,
             phase: 'rebuild_complete',
             targetCounts,
+            targetSourceHashes,
             targetIdHashes,
             rebuildNativeVersion: targetVersion,
             updatedAt: new Date().toISOString()
           });
+          finalMarkerRequest.onerror = () => abortWithStructuredError(
+            transaction,
+            createMigrationError({ databaseName, cause: finalMarkerRequest.error })
+          );
         };
       };
 
-      startRestoreCopy({
-        transaction,
-        backupStoreName: RECOVERY_STORES.SALES_BACKUP,
-        targetStoreName: 'sales',
-        result: results.sales,
-        onDone: completeOne
-      });
-      startRestoreCopy({
-        transaction,
-        backupStoreName: RECOVERY_STORES.DELETED_SALES_BACKUP,
-        targetStoreName: 'deleted_sales',
-        result: results.deleted_sales,
-        onDone: completeOne
+      REPAIRABLE_STORES.forEach((storeName) => {
+        startRestoreCopy({
+          transaction,
+          backupStoreName: storeName === 'sales'
+            ? RECOVERY_STORES.SALES_BACKUP
+            : RECOVERY_STORES.DELETED_SALES_BACKUP,
+          targetStoreName: storeName,
+          result: results[storeName],
+          onDone: completeOne,
+          databaseName
+        });
       });
     }
   });
 
   database.close();
-  return { targetCounts, targetIdHashes };
+  onProgress?.({ phase: 'rebuild_complete', sourceCounts: {}, targetCounts });
+  return { targetCounts, targetSourceHashes, targetIdHashes };
 };
 
 export const readPrimaryKeyRecoveryMarker = async ({
   factory = globalThis.indexedDB,
-  databaseName = DB_NAME
+  databaseName = DB_NAME,
+  onBlocked = null,
+  openTimeoutMs = OPEN_TIMEOUT_MS
 } = {}) => {
-  const database = await openNativeDatabase({ factory, name: databaseName });
+  const database = await openNativeDatabase({
+    factory,
+    name: databaseName,
+    onBlocked,
+    openTimeoutMs
+  });
   try {
     if (!database.objectStoreNames.contains(RECOVERY_STORES.META)) return null;
     return await new Promise((resolve, reject) => {
@@ -513,57 +749,80 @@ export const readPrimaryKeyRecoveryMarker = async ({
 export const migratePrimaryKeysPreservingData = async ({
   factory = globalThis.indexedDB,
   databaseName = DB_NAME,
-  inspection = null
+  inspection = null,
+  onBlocked = null,
+  onProgress = null,
+  openTimeoutMs = OPEN_TIMEOUT_MS
 } = {}) => {
-  let currentInspection = inspection || await inspectIndexedDbStructure({ factory, databaseName });
+  let currentInspection = inspection || await inspectIndexedDbStructure({
+    factory,
+    databaseName,
+    onBlocked,
+    openTimeoutMs
+  });
+
+  if (currentInspection.classification === 'unsupported_newer') {
+    throw createMigrationError({
+      code: DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
+      databaseName,
+      mismatches: currentInspection.mismatches
+    });
+  }
   if (currentInspection.mismatches.length === 0) {
     return { migrated: false, inspection: currentInspection, marker: null };
   }
-
   if (currentInspection.nativeVersion >= CURRENT_NATIVE_DATABASE_VERSION - 1) {
-    throw createDatabaseRecoveryError(makeDiagnostic({
+    throw createMigrationError({
       code: DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
-      mismatches: currentInspection.mismatches,
-      retryable: false,
-      requiresMigration: true
-    }));
+      databaseName,
+      mismatches: currentInspection.mismatches
+    });
   }
 
-  let marker = await readPrimaryKeyRecoveryMarker({ factory, databaseName });
+  let marker = await readPrimaryKeyRecoveryMarker({
+    factory,
+    databaseName,
+    onBlocked,
+    openTimeoutMs
+  });
   let sourceCounts = marker?.sourceCounts || null;
 
   if (marker?.phase !== 'backup_complete' && marker?.phase !== 'rebuild_complete') {
     const backupResult = await runBackupPhase({
       factory,
       databaseName,
-      targetVersion: currentInspection.nativeVersion + 1
+      targetVersion: currentInspection.nativeVersion + 1,
+      onBlocked,
+      onProgress,
+      openTimeoutMs
     });
     sourceCounts = backupResult.sourceCounts;
-    marker = await readPrimaryKeyRecoveryMarker({ factory, databaseName });
-    currentInspection = await inspectIndexedDbStructure({ factory, databaseName });
+    marker = await readPrimaryKeyRecoveryMarker({ factory, databaseName, onBlocked, openTimeoutMs });
+    currentInspection = await inspectIndexedDbStructure({ factory, databaseName, onBlocked, openTimeoutMs });
   }
 
   if (marker?.phase !== 'rebuild_complete') {
     const rebuildResult = await runRebuildPhase({
       factory,
       databaseName,
-      targetVersion: currentInspection.nativeVersion + 1
+      targetVersion: currentInspection.nativeVersion + 1,
+      onBlocked,
+      onProgress,
+      openTimeoutMs
     });
-    marker = await readPrimaryKeyRecoveryMarker({ factory, databaseName });
-    currentInspection = await inspectIndexedDbStructure({ factory, databaseName });
+    marker = await readPrimaryKeyRecoveryMarker({ factory, databaseName, onBlocked, openTimeoutMs });
+    currentInspection = await inspectIndexedDbStructure({ factory, databaseName, onBlocked, openTimeoutMs });
 
-    if (currentInspection.mismatches.length > 0) {
-      throw createDatabaseRecoveryError(makeDiagnostic({
-        code: DATABASE_RECOVERY_CODES.MIGRATION_FAILED,
+    if (currentInspection.mismatches.length > 0 || marker?.phase !== 'rebuild_complete') {
+      throw createMigrationError({
+        databaseName,
         mismatches: currentInspection.mismatches,
-        retryable: true,
-        requiresMigration: true,
         migration: {
           phase: marker?.phase || 'rebuild_incomplete',
           sourceCounts: sourceCounts || {},
           targetCounts: rebuildResult.targetCounts
         }
-      }));
+      });
     }
   }
 
@@ -578,21 +837,38 @@ export const migratePrimaryKeysPreservingData = async ({
 
 export const preflightAndRepairIndexedDb = async ({
   factory = globalThis.indexedDB,
-  databaseName = DB_NAME
+  databaseName = DB_NAME,
+  onBlocked = null,
+  onProgress = null,
+  openTimeoutMs = OPEN_TIMEOUT_MS
 } = {}) => {
-  const inspection = await inspectIndexedDbStructure({ factory, databaseName });
+  const inspection = await inspectIndexedDbStructure({
+    factory,
+    databaseName,
+    onBlocked,
+    openTimeoutMs
+  });
 
+  if (inspection.classification === 'unsupported_newer') {
+    throw createDatabaseRecoveryError(makeDiagnostic({
+      code: DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
+      databaseName,
+      retryable: false,
+      requiresMigration: false
+    }));
+  }
   if (inspection.classification !== 'primary_key_incompatible') {
     return { inspection, migrated: false, marker: null };
   }
 
-  const migration = await migratePrimaryKeysPreservingData({
+  return migratePrimaryKeysPreservingData({
     factory,
     databaseName,
-    inspection
+    inspection,
+    onBlocked,
+    onProgress,
+    openTimeoutMs
   });
-
-  return migration;
 };
 
 export const buildPrimaryKeyMismatchDiagnostic = (inspection) => makeDiagnostic({
