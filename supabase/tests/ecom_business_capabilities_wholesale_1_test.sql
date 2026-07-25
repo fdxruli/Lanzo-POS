@@ -8,6 +8,11 @@ declare
   v_profile public.business_profiles%rowtype;
   v_before_groups bigint;
   v_after_groups bigint;
+  v_tier_total bigint;
+  v_tier_active bigint;
+  v_tier_deleted bigint;
+  v_wholesale_revision bigint;
+  v_catalog_revision bigint;
   v_result jsonb;
   v_definition text;
 begin
@@ -161,6 +166,49 @@ begin
       and source_available and is_available)
     then raise exception '18 below cost'; end if;
 
+  -- 18b disabled payloads do not materialize tombstones or bump revisions.
+  perform private.ecommerce_apply_wholesale_tiers(v_simple.id,false,
+    '[{"minQuantity":6,"unitPrice":21}]');
+  select count(*), count(*) filter(where deleted_at is null),
+    count(*) filter(where deleted_at is not null)
+  into v_tier_total,v_tier_active,v_tier_deleted
+  from public.ecommerce_published_wholesale_tiers where published_product_id=v_simple.id;
+  select wholesale_revision into v_wholesale_revision
+  from public.ecommerce_published_products where id=v_simple.id;
+  select catalog_revision into v_catalog_revision
+  from public.ecommerce_portals where id=v_simple.portal_id;
+  perform private.ecommerce_apply_wholesale_tiers(v_simple.id,false,
+    '[{"minQuantity":6,"unitPrice":21}]');
+  if (select count(*) from public.ecommerce_published_wholesale_tiers
+      where published_product_id=v_simple.id)<>v_tier_total
+     or (select count(*) from public.ecommerce_published_wholesale_tiers
+      where published_product_id=v_simple.id and deleted_at is null)<>v_tier_active
+     or (select count(*) from public.ecommerce_published_wholesale_tiers
+      where published_product_id=v_simple.id and deleted_at is not null)<>v_tier_deleted
+     or (select wholesale_revision from public.ecommerce_published_products
+      where id=v_simple.id)<>v_wholesale_revision
+     or (select catalog_revision from public.ecommerce_portals
+      where id=v_simple.portal_id)<>v_catalog_revision
+    then raise exception '18b disabled idempotency'; end if;
+
+  -- 18c reactivation reuses a stable logical identity.
+  update public.pos_products set cost=0
+  where license_id=v_simple.license_id and id=v_simple.local_product_ref;
+  perform private.ecommerce_apply_wholesale_tiers(v_simple.id,true,
+    '[{"minQuantity":6,"unitPrice":21}]');
+  perform private.ecommerce_apply_wholesale_tiers(v_simple.id,false,
+    '[{"minQuantity":6,"unitPrice":21}]');
+  select count(*) into v_tier_total from public.ecommerce_published_wholesale_tiers
+    where published_product_id=v_simple.id;
+  perform private.ecommerce_apply_wholesale_tiers(v_simple.id,true,
+    '[{"minQuantity":6,"unitPrice":21}]');
+  if (select count(*) from public.ecommerce_published_wholesale_tiers
+      where published_product_id=v_simple.id)<>v_tier_total
+     or (select count(*) from public.ecommerce_published_wholesale_tiers
+      where published_product_id=v_simple.id and source_tier_ref='min:6'
+        and deleted_at is null)<>1
+    then raise exception '18c reactivation identity'; end if;
+
   -- 19 checkout builds an authoritative validated item before persistence.
   if position('v_validated_item:=jsonb_build_object' in v_definition)=0
     then raise exception '19 authoritative item'; end if;
@@ -184,6 +232,10 @@ begin
      or has_table_privilege('authenticated','public.ecommerce_published_wholesale_tiers','UPDATE')
      or has_table_privilege('service_role','public.ecommerce_published_wholesale_tiers','DELETE')
     then raise exception '23 direct dml'; end if;
+  if has_function_privilege('anon','private.ecommerce_business_capability_parent_guard()','EXECUTE')
+     or has_function_privilege('authenticated','private.ecommerce_configuration_child_guard()','EXECUTE')
+     or has_function_privilege('service_role','private.ecommerce_wholesale_tier_parent_guard()','EXECUTE')
+    then raise exception '23 private execute'; end if;
 
   -- 24 original modifiers remain in POS.
   if not exists(select 1 from public.pos_products p

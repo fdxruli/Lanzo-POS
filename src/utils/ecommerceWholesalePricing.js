@@ -1,4 +1,4 @@
-import { createStableConfigurationId } from './ecommerceProductConfiguration';
+import Big from 'big.js';
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const asFinite = (value) => {
@@ -8,7 +8,7 @@ const asFinite = (value) => {
 
 export const normalizeEcommerceWholesaleTiers = (
   tiers,
-  { productRef = '', replacementCost = 0 } = {}
+  { replacementCost = 0 } = {}
 ) => {
   const cost = Math.max(0, asFinite(replacementCost) ?? 0);
   const seen = new Set();
@@ -42,11 +42,7 @@ export const normalizeEcommerceWholesaleTiers = (
       sourceTierRef: String(
         tier.sourceTierRef
         ?? tier.source_tier_ref
-        ?? createStableConfigurationId(
-          'wholesale-tier',
-          productRef,
-          `min:${minQuantity}`
-        )
+        ?? `min:${minQuantity}`
       ).slice(0, 160),
       minQuantity,
       unitPrice: Number(unitPrice.toFixed(2)),
@@ -67,18 +63,43 @@ export const resolveEcommerceUnitPrice = ({
   baseUnitPrice,
   quantity,
   wholesaleEnabled = false,
-  tiers = []
+  tiers = [],
+  variantAdjustment = 0,
+  optionsAdjustment = 0
 } = {}) => {
   const basePrice = Math.max(0, asFinite(baseUnitPrice) ?? 0);
+  const variantDelta = asFinite(variantAdjustment) ?? 0;
+  const optionsDelta = asFinite(optionsAdjustment) ?? 0;
   const integerQuantity = Math.max(1, Math.floor(asFinite(quantity) ?? 1));
-  if (!wholesaleEnabled) {
+  const finish = ({
+    pricingMode,
+    pricingBase,
+    wholesaleMinQuantity = null,
+    wholesaleTierRef = null
+  }) => {
+    const finalUnitPrice = Math.max(0, Number(
+      new Big(pricingBase)
+        .plus(variantDelta)
+        .plus(optionsDelta)
+        .round(2)
+        .toFixed(2)
+    ));
     return {
-      pricingMode: 'standard',
+      pricingMode,
       baseUnitPrice: basePrice,
-      appliedUnitPrice: basePrice,
-      wholesaleMinQuantity: null,
-      wholesaleTierRef: null
+      wholesaleBaseUnitPrice: pricingMode === 'wholesale' ? pricingBase : null,
+      variantAdjustment: Number(new Big(variantDelta).round(2).toFixed(2)),
+      optionsAdjustment: Number(new Big(optionsDelta).round(2).toFixed(2)),
+      appliedUnitPrice: finalUnitPrice,
+      wholesaleMinQuantity,
+      wholesaleTierRef
     };
+  };
+  if (!wholesaleEnabled) {
+    return finish({
+      pricingMode: 'standard',
+      pricingBase: basePrice
+    });
   }
   const applicable = asArray(tiers)
     .filter((tier) => (
@@ -91,26 +112,21 @@ export const resolveEcommerceUnitPrice = ({
       - Number(left?.minQuantity ?? left?.min_quantity)
     ))[0];
   if (!applicable) {
-    return {
+    return finish({
       pricingMode: 'standard',
-      baseUnitPrice: basePrice,
-      appliedUnitPrice: basePrice,
-      wholesaleMinQuantity: null,
-      wholesaleTierRef: null
-    };
+      pricingBase: basePrice
+    });
   }
-  return {
+  return finish({
     pricingMode: 'wholesale',
-    baseUnitPrice: basePrice,
-    appliedUnitPrice: Math.max(
-      0,
-      Number(applicable.unitPrice ?? applicable.unit_price) || 0
-    ),
+    pricingBase: Math.max(0, Number(
+      applicable.unitPrice ?? applicable.unit_price
+    ) || 0),
     wholesaleMinQuantity: Number(
       applicable.minQuantity ?? applicable.min_quantity
     ),
     wholesaleTierRef: applicable.sourceTierRef
       ?? applicable.source_tier_ref
       ?? null
-  };
+  });
 };

@@ -121,29 +121,57 @@ export const resolveEcommerceBusinessPolicy = ({
   const modifierIncompatible = capabilities.incompatibilities.includes(
     BUSINESS_CAPABILITY_REASON.RESTAURANT_MODIFIERS_NOT_SUPPORTED
   );
+  const wholesaleIncompatible = capabilities.incompatibilities.includes(
+    BUSINESS_CAPABILITY_REASON.WHOLESALE_NOT_SUPPORTED
+  );
+  const unknownBusinessType = capabilities.unknownBusinessType;
+  const reviewReasons = [
+    ...(unknownBusinessType
+      ? [BUSINESS_CAPABILITY_REASON.BUSINESS_TYPE_UNKNOWN]
+      : []),
+    ...(modifierIncompatible
+      ? [BUSINESS_CAPABILITY_REASON.RESTAURANT_MODIFIERS_NOT_SUPPORTED]
+      : [])
+  ];
+  const warnings = wholesaleIncompatible
+    ? [BUSINESS_CAPABILITY_REASON.WHOLESALE_NOT_SUPPORTED]
+    : [];
+  const basePolicy = {
+    capabilities,
+    preserveConfiguration: true,
+    configurationCompatibility: modifierIncompatible ? 'incompatible' : 'compatible',
+    wholesaleCompatibility: wholesaleIncompatible ? 'incompatible' : 'compatible',
+    variantCompatibility: 'compatible',
+    wholesaleAllowed: (
+      !unknownBusinessType
+      && capabilities.supportsWholesalePricing
+    ),
+    reviewReasons,
+    warnings
+  };
 
   if (requestedMode === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE) {
     return {
-      capabilities,
+      ...basePolicy,
       status: BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE,
       reason: modifierIncompatible
         ? BUSINESS_CAPABILITY_REASON.RESTAURANT_MODIFIERS_NOT_SUPPORTED
         : null,
       exposeConfiguration: false,
-      publiclyAvailable: true
+      publiclyAvailable: !unknownBusinessType
     };
   }
-  if (!capabilities.compatible) {
+  if (reviewReasons.length > 0) {
     return {
-      capabilities,
+      ...basePolicy,
       status: BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW,
-      reason: capabilities.incompatibilities[0],
+      reason: reviewReasons[0],
       exposeConfiguration: false,
       publiclyAvailable: false
     };
   }
   return {
-    capabilities,
+    ...basePolicy,
     status: BUSINESS_CAPABILITY_STATUS.COMPATIBLE,
     reason: null,
     exposeConfiguration: true,

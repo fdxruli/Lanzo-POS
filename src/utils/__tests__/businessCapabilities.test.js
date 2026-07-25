@@ -56,6 +56,39 @@ describe('business capability policy', () => {
     expect(policy.exposeConfiguration).toBe(true);
   });
 
+  it('keeps restaurant extras when wholesale is unsupported', () => {
+    const policy = resolveEcommerceBusinessPolicy({
+      businessTypes: ['restaurante'],
+      product: {
+        modifiers: [{ id: 'extras' }],
+        wholesaleTiers: [{ min: 6, price: 80 }]
+      },
+      wholesaleEnabled: true
+    });
+    expect(policy).toMatchObject({
+      status: BUSINESS_CAPABILITY_STATUS.COMPATIBLE,
+      exposeConfiguration: true,
+      preserveConfiguration: true,
+      wholesaleAllowed: false
+    });
+    expect(policy.warnings).toContain(
+      BUSINESS_CAPABILITY_REASON.WHOLESALE_NOT_SUPPORTED
+    );
+  });
+
+  it('preserves source configuration while an unknown profile stays fail-closed', () => {
+    const policy = resolveEcommerceBusinessPolicy({
+      profile: null,
+      product: { modifiers: [{ id: 'extras' }], variants: [{ id: 'size-m' }] }
+    });
+    expect(policy).toMatchObject({
+      status: BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW,
+      publiclyAvailable: false,
+      exposeConfiguration: false,
+      preserveConfiguration: true
+    });
+  });
+
   it('allows an explicit simple override', () => {
     const policy = resolveEcommerceBusinessPolicy({
       businessTypes: ['abarrotes'],

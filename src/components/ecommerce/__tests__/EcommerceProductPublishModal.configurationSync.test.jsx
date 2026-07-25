@@ -3,8 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EcommerceProductPublishModal from '../EcommerceProductPublishModal';
 import { getEcommercePortal } from '../../../services/ecommerce/ecommerceAdminService';
+import { useAppStore } from '../../../store/useAppStore';
 
-vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
+vi.mock('../../../services/ecommerce/ecommerceAdminService', async (importOriginal) => ({
+  ...(await importOriginal()),
   getEcommercePortal: vi.fn()
 }));
 
@@ -37,13 +39,17 @@ const localProduct = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAppStore.setState({ companyProfile: { business_type: 'restaurante' } });
   getEcommercePortal.mockResolvedValue({
     success: true,
     features: { stockVisibility: true }
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({ companyProfile: null });
+});
 
 describe('EcommerceProductPublishModal configuration sync handoff', () => {
   it.each([false, true])(
@@ -67,7 +73,9 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
       fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
         target: { value: localProduct.id }
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Guardar producto' }));
+      const saveButton = screen.getByRole('button', { name: 'Guardar producto' });
+      if (isPro) await waitFor(() => expect(saveButton.disabled).toBe(false));
+      fireEvent.click(saveButton);
 
       await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({

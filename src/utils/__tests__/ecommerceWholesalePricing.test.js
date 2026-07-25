@@ -11,7 +11,7 @@ describe('public wholesale pricing', () => {
       { min: 6, price: 21 }
     ], { productRef: 'p1', replacementCost: 10 });
     expect(result.tiers.map((tier) => tier.minQuantity)).toEqual([6, 12]);
-    expect(result.tiers[0].sourceTierRef).toContain('wholesale-tier_');
+    expect(result.tiers[0].sourceTierRef).toBe('min:6');
   });
 
   it('rejects duplicates, invalid values and prices below cost', () => {
@@ -59,5 +59,38 @@ describe('public wholesale pricing', () => {
       wholesaleMinQuantity: 12,
       wholesaleTierRef: 'twelve'
     });
+  });
+
+  it('applies wholesale to the product base before signed variant and option adjustments', () => {
+    expect(resolveEcommerceUnitPrice({
+      baseUnitPrice: 100,
+      quantity: 6,
+      wholesaleEnabled: true,
+      variantAdjustment: 20,
+      optionsAdjustment: 5,
+      tiers: [{ sourceTierRef: 'min:6', minQuantity: 6, unitPrice: 80 }]
+    })).toMatchObject({
+      pricingMode: 'wholesale',
+      wholesaleBaseUnitPrice: 80,
+      variantAdjustment: 20,
+      optionsAdjustment: 5,
+      appliedUnitPrice: 105
+    });
+  });
+
+  it('allows a negative variant adjustment and clamps only the final price', () => {
+    expect(resolveEcommerceUnitPrice({
+      baseUnitPrice: 100,
+      quantity: 6,
+      wholesaleEnabled: true,
+      variantAdjustment: -20,
+      optionsAdjustment: 5,
+      tiers: [{ minQuantity: 6, unitPrice: 80 }]
+    }).appliedUnitPrice).toBe(65);
+    expect(resolveEcommerceUnitPrice({
+      baseUnitPrice: 10,
+      quantity: 1,
+      variantAdjustment: -20
+    }).appliedUnitPrice).toBe(0);
   });
 });

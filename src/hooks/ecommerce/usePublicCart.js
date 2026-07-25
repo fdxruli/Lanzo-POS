@@ -165,20 +165,15 @@ const buildConfiguredProduct = (entry, product) => ({
 });
 
 const resolveCartLinePricing = ({ product, catalogProduct, quantity }) => {
-  const pricing = resolveEcommerceUnitPrice({
+  const configuredPricing = product.configurationLine?.configurationSnapshot?.pricing || {};
+  return resolveEcommerceUnitPrice({
     baseUnitPrice: catalogProduct.price,
     quantity,
     wholesaleEnabled: catalogProduct.wholesaleEnabled === true,
-    tiers: catalogProduct.wholesaleTiers
+    tiers: catalogProduct.wholesaleTiers,
+    variantAdjustment: configuredPricing.variantAdjustment || 0,
+    optionsAdjustment: configuredPricing.optionsAdjustment || 0
   });
-  const configuredDelta = Math.max(
-    0,
-    Number(product.price || 0) - Number(catalogProduct.price || 0)
-  );
-  return {
-    ...pricing,
-    appliedUnitPrice: pricing.appliedUnitPrice + configuredDelta
-  };
 };
 
 export default function usePublicCart({

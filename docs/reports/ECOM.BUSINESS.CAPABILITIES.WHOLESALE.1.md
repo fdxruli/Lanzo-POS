@@ -1,5 +1,9 @@
 # ECOM.BUSINESS.CAPABILITIES.WHOLESALE.1
 
+> Actualización PR #128 (2026-07-25): la sección “Corrección de bloqueantes
+> confirmados” al final de este documento sustituye los resultados de validación
+> y el estado de HEAD descritos por el informe inicial.
+
 ## 1. Estado inicial de Git
 
 - Repositorio: `fdxruli/Lanzo-POS`.
@@ -294,3 +298,95 @@ PR #128 abierto, draft, no fusionado y sin auto-merge.
 - No se activó auto-merge.
 - No se ejecutó despliegue manual de Vercel.
 - No se creó preview manual, ni se cambiaron dominios, aliases o secretos.
+
+## Corrección de bloqueantes confirmados del PR #128
+
+### Estado auditado
+
+- HEAD de `main`: `fe15eb64ef5d7fddc6675b1c5a116082a4fbe41a`.
+- HEAD inicial auditado del PR: `e203e01f47983e92067b8c5f092978703ce1e7b5`.
+- Rama: `fase/ecom-business-capabilities-wholesale-1`.
+- PR #128: abierto, draft, base `main`, sin auto-merge.
+- No existían commits posteriores al HEAD auditado al iniciar esta corrección.
+- El workflow comparativo remoto `PR127 Global Comparison` fallaba con cuatro
+  regresiones exclusivas: dos mocks del modal y dos degradaciones apparel.
+
+### Correcciones
+
+- La proyección recibe el perfil/capacidades explícitamente. Un perfil ausente o
+  desconocido preserva configuración fuente y variantes, conserva
+  `variant_parent` y queda fail-closed para disponibilidad pública.
+- La política separa compatibilidad de configuración, mayoreo y variantes.
+  Mayoreo no soportado se deshabilita con advertencia, sin retirar extras válidos
+  ni marcar por sí solo el producto completo para revisión.
+- La fórmula común es `base mayoreo o estándar + ajuste de variante con signo +
+  opciones`, redondeada a dos decimales y limitada sólo al precio final no
+  negativo. El snapshot autoritativo incluye base mayoreo, tier, mínimo y ambos
+  ajustes.
+- Los niveles sin referencia usan `min:<cantidad>`. Desactivar sólo retira niveles
+  activos; sincronizaciones desactivadas repetidas no insertan tombstones, no
+  cambian timestamps ni revisiones. Reactivar reutiliza la identidad lógica bajo
+  el lock del padre.
+- Las RPC v3 releen `catalog_revision` después de todos los escritores y devuelven
+  esa revisión final.
+- Los guards privados y escritores auxiliares quedaron sin `EXECUTE` para
+  `PUBLIC`, `anon`, `authenticated` y `service_role`, con propietario `postgres`
+  y `search_path=''`.
+
+### Migración compensatoria
+
+- Archivo:
+  `20260725190000_ecom_business_capabilities_wholesale_1_blockers_fix.sql`.
+- Registro remoto Supabase:
+  `20260725131157_ecom_business_capabilities_wholesale_1_blockers_fix`.
+- Aplicada al proyecto `odlrhijtfyavryeqivaa`.
+- No se editaron las migraciones aplicadas `20260725030000` ni `20260725040000`.
+- La tabla de tiers permanece con RLS y deny-all por ausencia de políticas y DML
+  revocado. El advisor mantiene el aviso informativo
+  `rls_enabled_no_policy`; es intencional.
+
+### Validación ejecutada
+
+- Suites focales obligatorias y regresiones apparel/modal: **9 archivos,
+  62/62 pruebas PASS**.
+- ESLint focal de todos los archivos JavaScript modificados: **PASS**.
+- `git diff --check`: **PASS**.
+- Build administrativo: **PASS**.
+- Build tienda: **PASS**.
+- Build Vercel de tienda: **PASS**, sin despliegue.
+- SQL transaccional de la fase: **PASS** con `BEGIN/ROLLBACK`, incluyendo
+  activado/desactivado/reactivado, conteos estables, revisiones sin cambio,
+  preservación de modificadores y permisos.
+- Verificación remota posterior: 0 tiers reales, 0 fixtures/residuos.
+- `npm run test:ci` del PR: **FAIL heredado/global**, 64 archivos y 117 pruebas
+  fallidas; 191 archivos y 1298 pruebas pasaron, 59 omitidas.
+- `npm run test:ci` de `main`: **FAIL heredado/global**, 67 archivos y 124 pruebas
+  fallidas; 186 archivos y 1276 pruebas pasaron, 59 omitidas.
+- La comparación remota normalizada del nuevo HEAD se registra después de
+  publicar estos commits; no se declara `PR-only failures = 0` hasta inspeccionar
+  su artefacto.
+
+La suite histórica `ecom_products_model_1_1_test.sql` falla bajo la política
+fail-closed vigente porque su fixture no crea `business_profiles`; espera que un
+perfil ausente sea públicamente compatible. Esa expectativa contradice el contrato
+confirmado de esta corrección y no se relajó.
+
+### Archivos de esta corrección
+
+- `src/utils/businessCapabilities.js`
+- `src/utils/ecommerceWholesalePricing.js`
+- `src/services/ecommerce/ecommerceAdminService.js`
+- `src/services/ecommerce/ecommerceCatalogSyncServiceBase.js`
+- `src/hooks/ecommerce/usePublicCart.js`
+- pruebas focales de capacidades, pricing, apparel y modal
+- `supabase/tests/ecom_business_capabilities_wholesale_1_test.sql`
+- migración compensatoria indicada arriba
+- este reporte
+
+### Estado operativo
+
+- No se creó otro PR.
+- No se modificó `main`.
+- No se hizo merge ni se activó auto-merge.
+- No se marcó el PR como ready.
+- No se desplegó ni se creó preview manual de Vercel.

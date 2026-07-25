@@ -221,7 +221,9 @@ const buildProjection = ({
   category,
   categoryEvaluated = true,
   sourceRevision = null,
-  evaluation
+  evaluation,
+  profile,
+  businessTypes
 }) => {
   const fields = {};
 
@@ -244,23 +246,16 @@ const buildProjection = ({
   );
   const businessPolicy = localProduct
     ? resolveEcommerceBusinessPolicy({
-        profile: useAppStore.getState()?.companyProfile,
+        profile,
+        businessTypes,
         product: localProduct,
         publicConfigurationMode: publishedProduct.publicConfigurationMode
           ?? publishedProduct.public_configuration_mode
       })
     : null;
-  const projectedProduct = localProduct && (
-    businessPolicy?.exposeConfiguration
-    || businessPolicy?.capabilities?.unknownBusinessType
-  )
-    ? localProduct
-    : localProduct
-      ? { ...localProduct, modifiers: [] }
-      : null;
-  const configuration = projectedProduct
+  const configuration = localProduct
     ? buildEcommerceProductConfigurationSyncPayload(
-        projectedProduct,
+        localProduct,
         buildConfigurationAvailability({ evaluation })
       )
     : null;
@@ -681,6 +676,7 @@ export const createEcommerceCatalogSyncService = ({
     }
 
     const now = new Date();
+    const profile = getState()?.companyProfile || null;
     return sortProjections(selectedProducts.map((publishedProduct) => {
       const localProductRef = asText(publishedProduct.localProductRef);
       const localProduct = localProductsById.get(localProductRef);
@@ -703,7 +699,8 @@ export const createEcommerceCatalogSyncService = ({
         category: localProduct ? categoriesById.get(getCategoryId(localProduct)) : null,
         categoryEvaluated: !categoryReadFailed,
         sourceRevision,
-        evaluation
+        evaluation,
+        profile
       });
     }));
   };
