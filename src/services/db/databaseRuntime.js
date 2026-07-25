@@ -4,6 +4,7 @@ import { db, STORES } from './dexie';
 import { registerCanonicalDexieExtensions } from './databaseSchema';
 import {
   buildPrimaryKeyMismatchDiagnostic,
+  getActiveNativeOpenOperations,
   preflightAndRepairIndexedDb
 } from './indexedDbPreflight';
 import {
@@ -38,9 +39,27 @@ const toRecoveryDiagnostic = (error, fallback = {}) => {
     isRetryable: classification.retryable !== false,
     requiresMigration: classification.requiresMigration === true,
     message: classification.code === DATABASE_RECOVERY_CODES.BLOCKED
-      ? 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo y vuelve a intentarlo.'
+      ? 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo; la operación continuará cuando esa conexión se cierre.'
       : 'La base local necesita actualizarse antes de continuar. Tus datos no serán eliminados automáticamente.'
   };
+};
+
+const setMigrationProgress = (progress = {}) => {
+  setDatabaseRecoveryState({
+    status: DATABASE_RECOVERY_STATUS.MIGRATING,
+    databaseName: DB_NAME,
+    affectedStores: ['sales', 'deleted_sales'],
+    existingKeyPaths: { sales: 'timestamp', deleted_sales: 'timestamp' },
+    expectedKeyPaths: { sales: 'id', deleted_sales: 'id' },
+    isRetryable: true,
+    requiresMigration: true,
+    message: 'Actualizando la base local de forma segura...',
+    migration: {
+      phase: progress.phase || 'preparing',
+      sourceCounts: progress.sourceCounts || {},
+      targetCounts: progress.targetCounts || {}
+    }
+  });
 };
 
 export const prepareLocalDatabase = ({ force = false } = {}) => {
@@ -64,32 +83,23 @@ export const prepareLocalDatabase = ({ force = false } = {}) => {
     try {
       const initial = await preflightAndRepairIndexedDb({
         databaseName: DB_NAME,
+        onProgress: setMigrationProgress,
         onBlocked: (blockedError) => {
           const diagnostic = toRecoveryDiagnostic(blockedError);
           setDatabaseRecoveryState({
             ...diagnostic,
             status: DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
             errorCode: DATABASE_RECOVERY_CODES.BLOCKED,
-            message: 'La base local está bloqueada por otra pestaña. La operación continuará cuando esa conexión se cierre.'
+            message: 'La base local está bloqueada por otra pestaña. La misma operación continuará cuando esa conexión se cierre.'
           });
         }
       });
 
       if (initial?.migrated) {
-        setDatabaseRecoveryState({
-          status: DATABASE_RECOVERY_STATUS.MIGRATING,
-          databaseName: DB_NAME,
-          affectedStores: ['sales', 'deleted_sales'],
-          existingKeyPaths: { sales: 'timestamp', deleted_sales: 'timestamp' },
-          expectedKeyPaths: { sales: 'id', deleted_sales: 'id' },
-          isRetryable: true,
-          requiresMigration: true,
-          message: 'Migración local preservadora completada. Validando el esquema final.',
-          migration: {
-            phase: initial.marker?.phase || 'rebuild_complete',
-            sourceCounts: initial.sourceCounts || {},
-            targetCounts: initial.targetCounts || {}
-          }
+        setMigrationProgress({
+          phase: initial.marker?.phase || 'rebuild_complete',
+          sourceCounts: initial.sourceCounts || {},
+          targetCounts: initial.targetCounts || {}
         });
       }
 
@@ -137,7 +147,9 @@ export const prepareLocalDatabase = ({ force = false } = {}) => {
   return preparationPromise;
 };
 
-export const isLocalDatabasePreparationActive = () => Boolean(preparationPromise);
+export const isLocalDatabasePreparationActive = () => (
+  Boolean(preparationPromise) || getActiveNativeOpenOperations().length > 0
+);
 
 export const retryLocalDatabaseRecovery = async () => {
   if (preparationPromise) return preparationPromise;
@@ -145,6 +157,16 @@ export const retryLocalDatabaseRecovery = async () => {
   if (db.isOpen()) db.close();
   const result = await prepareLocalDatabase({ force: true });
   await db.open();
+  if (!db.isOpen() || getDatabaseRecoveryState().status !== DATABASE_RECOVERY_STATUS.READY) {
+    throw createDatabaseRecoveryError({
+      status: DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+      errorCode: DATABASE_RECOVERY_CODES.NOT_INSPECTABLE,
+      databaseName: DB_NAME,
+      isRetryable: true,
+      requiresMigration: false,
+      message: 'La base local no alcanzó un estado listo después del reintento.'
+    });
+  }
   return result;
 };
 
@@ -194,7 +216,7 @@ if (!db[OPEN_PATCH]) {
       expectedKeyPaths: {},
       isRetryable: true,
       requiresMigration: false,
-      message: 'La base local está bloqueada por otra pestaña. Cierra las demás pestañas y vuelve a intentarlo.'
+      message: 'La base local está bloqueada por otra pestaña. Cierra las demás pestañas; la operación continuará cuando se libere.'
     };
     setDatabaseRecoveryState(diagnostic);
     Logger.warn('[LocalDB/Recovery] Upgrade bloqueado por otra conexión.');
@@ -204,6 +226,7 @@ if (!db[OPEN_PATCH]) {
 export const getLocalDatabaseRuntimeState = () => ({
   recovery: getDatabaseRecoveryState(),
   preparation: lastPreparationResult,
+  activeNativeOperations: getActiveNativeOpenOperations(),
   isOpen: db.isOpen()
 });
 
