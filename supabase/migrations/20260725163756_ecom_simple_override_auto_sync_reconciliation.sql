@@ -113,7 +113,8 @@ begin
        and (
          v_current_hash is null
          or v_current_hash <> v_incoming_hash
-       ) then
+       )
+       and not v_allow_persisted_simple_override_reconciliation then
       raise exception 'ECOMMERCE_CATALOG_SOURCE_CONFLICT';
     end if;
   else
