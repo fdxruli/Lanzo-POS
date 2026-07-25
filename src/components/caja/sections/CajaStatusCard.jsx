@@ -43,6 +43,7 @@ const CajaStatusCard = ({
   const ventasTurnoSafe = Money.init(cashAmounts?.ventasContado || 0);
   const abonosTurnoSafe = Money.init(cashAmounts?.abonosFiado || 0);
   const salidasTotalesSafe = Money.init(cashAmounts?.salidasEfectivo || 0);
+  const reconciliation = cashAmounts?.reconciliation || null;
 
   const liquidityLevel = porcentajeLiquidez >= 100
     ? 'danger'
@@ -235,12 +236,27 @@ const CajaStatusCard = ({
           </div>
         )}
 
-        <div className="cash-metric">
-          <span className="cash-metric-label">Entradas</span>
-          <strong className="amount positive">
-            + ${Money.toNumber(entradasTotalesSafe).toFixed(2)}
-          </strong>
-        </div>
+        {reconciliation ? (
+          <>
+            <div className="cash-metric">
+              <span className="cash-metric-label">Anticipos y abonos de apartados</span>
+              <strong className="amount warning">+ ${Money.toNumber(reconciliation.layawayPaymentsCollected).toFixed(2)}</strong>
+            </div>
+            <div className="cash-metric">
+              <span className="cash-metric-label">Cobros de clientes / fiado</span>
+              <strong className="amount positive">+ ${Money.toNumber(reconciliation.customerCreditCollections).toFixed(2)}</strong>
+            </div>
+            <div className="cash-metric">
+              <span className="cash-metric-label">Entradas manuales y ajustes</span>
+              <strong className="amount positive">+ ${Money.toNumber(Money.add(reconciliation.manualEntries, reconciliation.positiveAdjustments)).toFixed(2)}</strong>
+            </div>
+          </>
+        ) : (
+          <div className="cash-metric">
+            <span className="cash-metric-label">Entradas</span>
+            <strong className="amount positive">+ ${Money.toNumber(entradasTotalesSafe).toFixed(2)}</strong>
+          </div>
+        )}
 
         <div className="cash-metric">
           <span className="cash-metric-label">Salidas</span>
@@ -249,6 +265,17 @@ const CajaStatusCard = ({
           </strong>
         </div>
       </div>
+
+      {reconciliation && (
+        <div className="cash-breakdown" aria-label="Conciliación de ingresos">
+          <p className="cash-hero-eyebrow" style={{ gridColumn: '1 / -1', margin: 0 }}>Conciliación de ingresos</p>
+          <div className="cash-metric"><span className="cash-metric-label">Ventas reconocidas</span><strong className="amount positive">${Money.toNumber(reconciliation.recognizedSales).toFixed(2)}</strong></div>
+          <div className="cash-metric"><span className="cash-metric-label">Apartados entregados</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedRevenue).toFixed(2)}</strong></div>
+          <div className="cash-metric"><span className="cash-metric-label">Anticipos pendientes</span><strong className="amount warning">${Money.toNumber(reconciliation.layawayPendingAdvances).toFixed(2)}</strong></div>
+          <div className="cash-metric"><span className="cash-metric-label">Ganancia bruta reconocida (apartados)</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedGrossProfit).toFixed(2)}</strong></div>
+          <div className="cash-metric"><span className="cash-metric-label">Diferencia sin clasificar</span><strong className="amount neutral">${Money.toNumber(reconciliation.unclassifiedDifference).toFixed(2)}</strong></div>
+        </div>
+      )}
     </section>
   );
 };

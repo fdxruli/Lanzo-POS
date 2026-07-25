@@ -494,6 +494,7 @@ export function useCaja() {
     if (!cajaActual) return null;
 
     const amounts = resolveCashSessionAmounts(cajaActual, totalesTurno, { isCloudCash });
+    const reconciliation = amounts.reconciliation || null;
     const totalTeorico = Money.init(amounts.totalTeorico);
     const elapsedMs = Date.now() - new Date(cajaActual.fecha_apertura).getTime();
     const elapsedHours = Math.max(elapsedMs / (1000 * 60 * 60), 0.01);
@@ -521,6 +522,7 @@ export function useCaja() {
       ventasContado: amounts.ventasContado,
       abonosFiado: amounts.abonosFiado,
       entradasExtras: amounts.entradasEfectivo,
+      reconciliation,
       ventasPorHora: Money.toExactString(Money.divide(Money.init(amounts.ventasContado), elapsedHours)),
       ticketPromedioEstimado: Money.toExactString(Money.divide(Money.init(amounts.ventasContado), Math.max(movimientosCaja.length, 1))),
       totalMovimientos: movimientosCaja.length,
@@ -539,22 +541,36 @@ export function useCaja() {
     try {
       const resumen = await obtenerResumenEstadistico();
       const fechaCorte = new Date().toISOString().split('T')[0];
-      const headers = ['Concepto', 'Valor', 'Tipo', 'Notas'];
+      const headers = ['Concepto', 'Valor', 'Tipo', 'Notas', 'Origen', 'Tipo de referencia', 'ID de referencia', 'ID de apartado', 'ID de pago', 'Estado financiero'];
+      const reconciliation = resumen.reconciliation || {};
       const rows = [
         ['Fecha Apertura', new Date(cajaActual.fecha_apertura).toLocaleString(), 'info', ''],
         ['Responsable', cajaActual.responsable_apertura || cajaActual.responsibleName || '', 'info', ''],
         ['Estado', cajaActual.estado, 'info', ''],
         ['Total Teórico Caja', `$${Money.toNumber(resumen.totalTeorico).toFixed(2)}`, 'total', ''],
         ['Fondo Inicial', `$${Money.toNumber(resumen.fondoInicial).toFixed(2)}`, 'ingreso', ''],
-        ['Ventas (Contado)', `$${Money.toNumber(resumen.ventasContado).toFixed(2)}`, 'ingreso', ''],
-        ['Abonos (Fiado)', `$${Money.toNumber(resumen.abonosFiado).toFixed(2)}`, 'ingreso', ''],
-        ['Entradas Extras', `$${Money.toNumber(resumen.entradasExtras).toFixed(2)}`, 'ingreso', ''],
-        ['Salidas', `$${Money.toNumber(resumen.totalSalidas).toFixed(2)}`, 'egreso', ''],
+        ['Ventas directas en efectivo', `$${Money.toNumber(reconciliation.directCashSales ?? resumen.ventasContado).toFixed(2)}`, 'ingreso', '', '', '', '', '', '', 'reconocida'],
+        ['Apartados entregados', `$${Money.toNumber(reconciliation.layawayCompletedRevenue).toFixed(2)}`, 'venta reconocida', '', 'layaway_conversion', 'layaway', '', '', '', 'reconocida'],
+        ['Anticipos pendientes', `$${Money.toNumber(reconciliation.layawayPendingAdvances).toFixed(2)}`, 'anticipo', '', 'layaway_payment', 'layaway', '', '', '', 'pendiente de reconocer'],
+        ['Cobros de fiado', `$${Money.toNumber(reconciliation.customerCreditCollections ?? resumen.abonosFiado).toFixed(2)}`, 'ingreso', '', 'customer_payment', 'customer', '', '', '', 'cobrado'],
+        ['Entradas manuales', `$${Money.toNumber(reconciliation.manualEntries ?? resumen.entradasExtras).toFixed(2)}`, 'ingreso', '', 'manual', '', '', '', '', 'manual'],
+        ['Ajustes positivos', `$${Money.toNumber(reconciliation.positiveAdjustments).toFixed(2)}`, 'ingreso', '', 'cash_adjustment', '', '', '', '', 'ajuste'],
+        ['Salidas', `$${Money.toNumber(resumen.totalSalidas).toFixed(2)}`, 'egreso', '', '', '', '', '', '', 'salida'],
+        ['Ventas reconocidas totales', `$${Money.toNumber(reconciliation.recognizedSales).toFixed(2)}`, 'resumen', '', '', '', '', '', '', 'reconocida'],
+        ['Costo reconocido (apartados)', `$${Money.toNumber(reconciliation.layawayCompletedCost).toFixed(2)}`, 'resumen', '', 'layaway_conversion', 'layaway', '', '', '', 'reconocido'],
+        ['Ganancia bruta reconocida (apartados)', `$${Money.toNumber(reconciliation.layawayCompletedGrossProfit).toFixed(2)}`, 'resumen', '', 'layaway_conversion', 'layaway', '', '', '', 'reconocida'],
+        ['Diferencia sin clasificar', `$${Money.toNumber(reconciliation.unclassifiedDifference).toFixed(2)}`, 'resumen', '', '', '', '', '', '', 'conciliación'],
         ...movimientosCaja.map((mov) => [
           `Movimiento: ${mov.concepto}`,
           `$${Money.toNumber(mov.monto).toFixed(2)}`,
           mov.tipo,
-          new Date(mov.fecha).toLocaleString()
+          new Date(mov.fecha).toLocaleString(),
+          mov.source || mov.origen || '',
+          mov.referenceType || '',
+          mov.referenceId || '',
+          mov.layawayId || '',
+          mov.paymentId || '',
+          mov.source === 'layaway_payment' ? 'anticipo / abono' : (mov.source === 'layaway_refund' ? 'reembolso' : '')
         ])
       ];
       const csvContent = [headers.join(','), ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))].join('\n');

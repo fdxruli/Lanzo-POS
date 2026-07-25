@@ -1,5 +1,6 @@
 import { db, STORES } from './dexie';
 import { handleDexieError } from './utils';
+import { buildLayawayFinancialProjection } from '../layawayFinancialProjection';
 
 const toIsoOrNull = (value) => {
   if (!value) return null;
@@ -114,11 +115,13 @@ export const reportingService = {
       const range = normalizeDateRange(rangoFechas);
       const normalizedRubros = normalizeRubros(rubros);
 
-      const [rawSales, rawWasteLogs, menu, customers] = await Promise.all([
+      const [rawSales, rawWasteLogs, menu, customers, layaways, rawCashMovements] = await Promise.all([
         queryByTimestampRange(STORES.SALES, range),
         incluirMermas ? queryByTimestampRange(STORES.WASTE, range) : Promise.resolve([]),
         incluirProductos ? db.table(STORES.MENU).toArray() : Promise.resolve([]),
-        incluirClientes ? db.table(STORES.CUSTOMERS).toArray() : Promise.resolve([])
+        incluirClientes ? db.table(STORES.CUSTOMERS).toArray() : Promise.resolve([]),
+        db.table(STORES.LAYAWAYS).toArray().catch(() => []),
+        db.table(STORES.MOVIMIENTOS_CAJA).toArray().catch(() => [])
       ]);
 
       const sales = rawSales.filter((sale) => (
@@ -129,12 +132,25 @@ export const reportingService = {
 
       const wasteLogs = rawWasteLogs
         .filter((log) => matchesRubros(log, normalizedRubros));
+      const cashMovements = rawCashMovements.filter((movement) => {
+        const timestamp = movement.fecha || movement.createdAt;
+        if (range.startIso && (!timestamp || Date.parse(timestamp) < Date.parse(range.startIso))) return false;
+        if (range.endIso && (!timestamp || Date.parse(timestamp) > Date.parse(range.endIso))) return false;
+        return true;
+      });
+      const layawayFinancial = buildLayawayFinancialProjection({
+        layaways,
+        sales,
+        cashMovements,
+        range: { start: range.startIso, end: range.endIso }
+      });
 
       return {
         sales: sortNewestFirst(sales),
         wasteLogs: sortNewestFirst(wasteLogs),
         menu,
         customers,
+        layawayFinancial,
         meta: {
           rangoFechas: {
             start: range.startIso,

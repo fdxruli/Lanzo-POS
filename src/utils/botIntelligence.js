@@ -370,7 +370,7 @@ export const generateResponse = async (intent, entities, context = {}) => {
         title: `Reporte de Ventas - ${periodText}`,
         message: `Has vendido $${report.total.toFixed(2)} en ${report.count} venta${report.count !== 1 ? 's' : ''}.`,
         tips: [
-          `Ganancia neta: $${report.profit.toFixed(2)} (${report.margin.toFixed(1)}% de margen)`,
+          `Ganancia bruta: $${report.profit.toFixed(2)} (${report.margin.toFixed(1)}% de margen)`,
           `Ticket promedio: $${report.avgTicket.toFixed(2)}`,
           `Costo de mercancía vendida: $${report.totalCost.toFixed(2)}`
         ],
@@ -391,7 +391,7 @@ export const generateResponse = async (intent, entities, context = {}) => {
       
       return {
         title: `Reporte de Ganancias - ${periodText}`,
-        message: `Tu utilidad neta ${periodText} es de **$${report.profit.toFixed(2)}**.`,
+        message: `Tu utilidad bruta ${periodText} es de **$${report.profit.toFixed(2)}**.`,
         tips: [
           `Margen de ganancia: ${report.margin.toFixed(1)}%`,
           `Ventas totales: $${report.total.toFixed(2)}`,

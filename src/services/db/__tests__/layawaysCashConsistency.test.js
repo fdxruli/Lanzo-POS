@@ -15,6 +15,8 @@ const baseLayaway = (id = 'layaway-1') => ({
 beforeEach(async () => {
   await db.open();
   await db.table(STORES.LAYAWAYS).clear();
+  await db.table(STORES.SALES).clear();
+  await db.table(STORES.DAILY_STATS).clear();
   await db.table(STORES.CAJAS).clear();
   await db.table(STORES.MOVIMIENTOS_CAJA).clear();
 });
@@ -107,5 +109,35 @@ describe('layaway cash consistency in Free', () => {
       layawayId: 'legacy-layaway', paymentId: 'legacy-payment', amount: 75, cajaId: 'old-cash', status: 'needs_reconciliation'
     })]);
     expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+  });
+
+  it('converts a delivered layaway exactly once without adding money to Caja or daily stats twice', async () => {
+    await db.table(STORES.CAJAS).put({
+      id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0'
+    });
+    await layawayRepository.create({
+      ...baseLayaway(),
+      items: [{ id: 'product-1', quantity: 1, price: 175, cost: 60 }]
+    }, 75, 'cash-1', {
+      payment: { id: 'payment-1' },
+      cashMovement: { idempotencyKey: 'layaway:layaway-1:payment:payment-1' }
+    });
+    await layawayRepository.addPaymentWithCash('layaway-1', { id: 'payment-2', amount: 100 }, 'cash-1', {
+      idempotencyKey: 'layaway:layaway-1:payment:payment-2'
+    });
+
+    const first = await layawayRepository.convertToSale('layaway-1');
+    const second = await layawayRepository.convertToSale('layaway-1');
+    const sales = await db.table(STORES.SALES).toArray();
+    const dailyStats = await db.table(STORES.DAILY_STATS).toArray();
+    const cash = await db.table(STORES.CAJAS).get('cash-1');
+
+    expect(first.duplicate).toBe(false);
+    expect(second).toMatchObject({ success: true, duplicate: true, saleId: first.saleId });
+    expect(sales).toHaveLength(1);
+    expect(sales[0]).toMatchObject({ status: 'closed', paymentMethod: 'layaway_completed', isLayawayConversion: true, originalLayawayId: 'layaway-1' });
+    expect(dailyStats).toHaveLength(1);
+    expect(dailyStats[0].orders).toBe(1);
+    expect(cash.entradas_efectivo).toBe('175');
   });
 });

@@ -62,13 +62,15 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
 
         setProcessingId(layaway.id);
         try {
-            await layawayFinancialService.addPayment({
+            const result = await layawayFinancialService.addPayment({
                 layawayId: layaway.id,
                 amount,
                 customerId: customer.id
             });
 
-            showMessageModal('✅ Abono registrado correctamente.');
+            showMessageModal(result?.isFullyPaid
+                ? '✅ Apartado liquidado. El dinero ya fue registrado en Caja. Confirma la entrega para reconocer la venta y calcular su ganancia bruta.'
+                : '✅ Abono registrado correctamente.');
             setPaymentAmount('');
             setActivePaymentId(null);
             loadLayaways();
@@ -386,7 +388,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                                     {isReady ? (
                                                         <div style={{flex:1, display:'flex', gap:'10px', flexDirection: 'column'}}>
                                                             <div style={{textAlign:'center', color:'var(--success-color)', fontWeight:'bold', marginBottom:'5px'}}>
-                                                                ¡Listo para entregar!
+                                                                Apartado liquidado. Falta confirmar entrega para reconocer la venta.
                                                             </div>
                                                             <button
                                                                 className="btn btn-success"
@@ -394,7 +396,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                                                 onClick={() => handleDeliver(layaway)}
                                                                 disabled={processingId === layaway.id}
                                                             >
-                                                                <ShoppingBag size={18} style={{marginRight:5}} /> Entregar Mercancía
+                                                                <ShoppingBag size={18} style={{marginRight:5}} /> Confirmar entrega y reconocer venta
                                                             </button>
                                                         </div>
                                                     ) : (

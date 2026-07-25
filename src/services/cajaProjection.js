@@ -1,6 +1,7 @@
 import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
 import { STORES } from './db/dexie';
+import { buildCashReconciliation } from './layawayFinancialProjection';
 
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
 
@@ -9,6 +10,14 @@ const hasAmountValue = (value) => value !== null && value !== undefined && value
 const sessionEnd = (cashSession, endOverride) => (
   endOverride || cashSession.fecha_cierre || new Date().toISOString()
 );
+
+const loadOptionalTable = async (database, tableName) => {
+  try {
+    return await database.table(tableName).toArray();
+  } catch {
+    return [];
+  }
+};
 
 const loadSessionSales = async (database, cashSession, endOverride) => {
   const end = sessionEnd(cashSession, endOverride);
@@ -89,6 +98,21 @@ export const resolveCashSessionAmounts = (cashSession = {}, totals = zeroTotals,
       salidasEfectivo,
       totalTeorico: String(cashSession.total_teorico_cloud),
       source: 'cloud_aggregate'
+    };
+  }
+
+  // Local: la conciliacion usa IDs de pagos de apartado y no vuelve a sumar
+  // efectivo al momento de entregar la mercancia.
+  if (!isCloud && totals?.reconciliation) {
+    return {
+      fondoInicial,
+      ventasContado,
+      abonosFiado,
+      entradasEfectivo,
+      salidasEfectivo,
+      totalTeorico: String(totals.reconciliation.theoreticalCash),
+      source: 'local_reconciliation',
+      reconciliation: totals.reconciliation
     };
   }
 
@@ -192,7 +216,7 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
   }
 
   const end = sessionEnd(cashSession, endOverride);
-  const [cashMovements, sales, deletedSales, wasteLogs] = await Promise.all([
+  const [cashMovements, sales, deletedSales, wasteLogs, layaways] = await Promise.all([
     database.table(STORES.MOVIMIENTOS_CAJA)
       .where('cash_session_id')
       .equals(cashSession.id)
@@ -205,11 +229,21 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
     database.table(STORES.WASTE)
       .where('timestamp')
       .between(cashSession.fecha_apertura, end, true, true)
-      .toArray()
+      .toArray(),
+    loadOptionalTable(database, STORES.LAYAWAYS)
   ]);
 
   const salesTotals = calculateSessionTotals(sales);
+  const reconciliation = buildCashReconciliation({
+    cashSession: { ...cashSession, fecha_cierre: end },
+    sales,
+    layaways,
+    cashMovements
+  });
   const totals = buildCashSessionTotals(cashSession, salesTotals, cashMovements);
+  // Compatibilidad: los consumidores antiguos comparan exactamente este objeto.
+  // La proyeccion completa viaja como campo propio del resultado.
+  Object.defineProperty(totals, 'reconciliation', { value: reconciliation, enumerable: false });
 
   const movements = [
     ...cashMovements,
@@ -233,6 +267,7 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
   return {
     sales,
     movements,
-    totals
+    totals,
+    reconciliation
   };
 }

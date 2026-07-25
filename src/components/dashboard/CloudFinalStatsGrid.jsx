@@ -117,7 +117,7 @@ export default function CloudFinalStatsGrid({ reportData = null }) {
             <TrendingUp size={24} />
           </div>
           <div className="card-content">
-            <span className="card-label">Utilidad</span>
+            <span className="card-label">Ganancia bruta</span>
             <h2 className="card-value-main">{formatCurrency(grossProfitTotal)}</h2>
             <div className="card-mini-stats">
               <span className="mini-stat-pill">Margen: <strong>{formatPercent(grossMarginPercent)}</strong></span>

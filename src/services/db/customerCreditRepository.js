@@ -150,7 +150,17 @@ export const customerCreditRepository = {
                     cajaId,
                     'entrada',
                     amountSafe,
-                    `Abono de cliente: ${customer.name}`
+                    `Abono de cliente: ${customer.name}`,
+                    {
+                        metadata: {
+                            source: 'customer_payment',
+                            referenceType: 'customer_ledger',
+                            referenceId: ledgerId,
+                            customerId,
+                            paymentId: ledgerId
+                        },
+                        createdAt: timestamp
+                    }
                 );
             }
 
