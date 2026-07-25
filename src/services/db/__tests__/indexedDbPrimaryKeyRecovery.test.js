@@ -203,14 +203,38 @@ describe('IndexedDB primary-key preserving recovery', () => {
     ]);
   });
 
-  it('does not produce a false timeout during a slow migration', async () => {
+  it('cancels the opening timeout after upgrade starts even when success is slow', async () => {
+    const request = {
+      result: { name: 'SlowUpgradeDB' },
+      transaction: { abort: vi.fn() }
+    };
+    const factory = { open: vi.fn(() => request) };
+    const onUpgrade = vi.fn();
+    const opening = openNativeDatabase({
+      factory,
+      name: 'SlowUpgradeDB',
+      version: 2,
+      openTimeoutMs: 5,
+      onUpgrade
+    });
+
+    request.onupgradeneeded({ oldVersion: 1, newVersion: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    request.onsuccess();
+
+    await expect(opening).resolves.toBe(request.result);
+    expect(onUpgrade).toHaveBeenCalledTimes(1);
+    expect(request.transaction.abort).not.toHaveBeenCalled();
+  });
+
+  it('migrates a reasonable volume without loss or duplicate ids', async () => {
     const sales = Array.from({ length: 500 }, (_, index) => ({
       id: index % 2 ? undefined : 'shared',
       timestamp: `sale-${String(index).padStart(4, '0')}`,
       total: index + 1
     }));
     await createLegacyDatabase({ sales });
-    const result = await preflightAndRepairIndexedDb({ openTimeoutMs: 1 });
+    const result = await preflightAndRepairIndexedDb();
     const migrated = await readAll('sales');
     expect(result.migrated).toBe(true);
     expect(migrated).toHaveLength(500);
