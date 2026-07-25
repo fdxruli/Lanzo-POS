@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - hotfix/dexie-primary-key-recovery-admin-bootstrap
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -18,6 +21,7 @@ jobs:
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           path: pr
 
       - name: Checkout main base
@@ -55,7 +59,7 @@ jobs:
         env:
           PR_OUTCOME: ${{ steps.pr-suite.outcome }}
           MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
-          PR_SHA: ${{ github.sha }}
+          PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           mkdir -p comparison
           node <<'NODE'
@@ -67,8 +71,8 @@ jobs:
             return JSON.parse(fs.readFileSync(file, 'utf8'));
           };
 
-          const normalizeFailures = (report) => {
-            if (!report) return ['__RUNNER__:missing_json_report'];
+          const normalizeFailures = (report, source) => {
+            if (!report) return [`__${source}_RUNNER__:missing_json_report`];
             const failures = new Set();
             for (const file of report.testResults || []) {
               const assertions = file.assertionResults || [];
@@ -87,8 +91,8 @@ jobs:
 
           const prReport = readReport(path.join('pr', 'global-pr.json'));
           const mainReport = readReport(path.join('main', 'global-main.json'));
-          const prFailures = normalizeFailures(prReport);
-          const mainFailures = normalizeFailures(mainReport);
+          const prFailures = normalizeFailures(prReport, 'PR');
+          const mainFailures = normalizeFailures(mainReport, 'MAIN');
           const prSet = new Set(prFailures);
           const mainSet = new Set(mainFailures);
           const sharedFailures = prFailures.filter((failure) => mainSet.has(failure));
@@ -130,14 +134,14 @@ jobs:
           fs.writeFileSync('comparison/global-comparison.md', `${lines.join('\n')}\n`);
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
 
-          if (newFailures.length > 0) process.exit(1);
+          if (!prReport || !mainReport || newFailures.length > 0) process.exit(1);
           NODE
 
       - name: Upload normalized comparison
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr127-global-comparison-${{ github.sha }}
+          name: pr127-global-comparison-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           path: comparison/
           if-no-files-found: error
           retention-days: 14
