@@ -155,8 +155,10 @@ jobs:
             exit 1
           fi
 
-      - name: Production build
-        run: npm run build
+      - name: Production builds
+        run: |
+          npm run build
+          npm run build:store
 
       - name: Validate admin PWA branch architecture
         shell: bash
