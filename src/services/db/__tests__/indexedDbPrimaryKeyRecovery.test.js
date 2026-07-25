@@ -301,6 +301,109 @@ describe('IndexedDB primary-key preserving recovery', () => {
     unsubscribe();
   });
 
+  it('keeps normal onblocked behavior before the public timeout', async () => {
+    const request = { result: { close: vi.fn() } };
+    const factory = { open: vi.fn(() => request) };
+    const onBlocked = vi.fn();
+    const opening = openNativeDatabase({
+      factory,
+      name: 'BlockedBeforeTimeoutDB',
+      onBlocked,
+      openTimeoutMs: 5
+    });
+
+    request.onblocked();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(onBlocked).toHaveBeenCalledTimes(1);
+    expect(getActiveNativeOpenOperations()).toEqual([{
+      key: 'BlockedBeforeTimeoutDB:current',
+      state: 'blocked'
+    }]);
+    expect(factory.open).toHaveBeenCalledTimes(1);
+
+    request.onsuccess();
+    await expect(opening).resolves.toBe(request.result);
+    expect(request.result.close).not.toHaveBeenCalled();
+    expect(getActiveNativeOpenOperations()).toEqual([]);
+  });
+
+  it('ignores late onblocked after timeout and preserves single-flight until late success', async () => {
+    const database = { close: vi.fn() };
+    const request = { result: database };
+    const factory = { open: vi.fn(() => request) };
+    const onBlocked = vi.fn();
+    const snapshots = [];
+    const unsubscribe = subscribeNativeOpenOperations(() => {
+      snapshots.push(getActiveNativeOpenOperations());
+    });
+    const opening = openNativeDatabase({
+      factory,
+      name: 'LateBlockedSuccessDB',
+      onBlocked,
+      openTimeoutMs: 5
+    });
+
+    await expect(opening).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });
+    const timeoutSnapshot = getActiveNativeOpenOperations();
+    request.onblocked();
+
+    expect(onBlocked).not.toHaveBeenCalled();
+    expect(getActiveNativeOpenOperations()).toBe(timeoutSnapshot);
+    expect(getActiveNativeOpenOperations()).toEqual([{
+      key: 'LateBlockedSuccessDB:current',
+      state: 'timed_out_waiting_native_settlement'
+    }]);
+
+    const duplicate = openNativeDatabase({
+      factory,
+      name: 'LateBlockedSuccessDB',
+      openTimeoutMs: 5
+    });
+    expect(duplicate).toBe(opening);
+    await expect(duplicate).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });
+    expect(factory.open).toHaveBeenCalledTimes(1);
+
+    request.onsuccess();
+
+    expect(database.close).toHaveBeenCalledTimes(1);
+    expect(getActiveNativeOpenOperations()).toEqual([]);
+    expect(snapshots.map((snapshot) => snapshot.map(({ state }) => state))).toEqual([
+      ['opening'],
+      ['timed_out_waiting_native_settlement'],
+      ['succeeded'],
+      []
+    ]);
+    unsubscribe();
+  });
+
+  it('ignores late onblocked after timeout and removes the request on late error', async () => {
+    const nativeError = new Error('late native failure');
+    const request = { error: nativeError };
+    const factory = { open: vi.fn(() => request) };
+    const onBlocked = vi.fn();
+    const opening = openNativeDatabase({
+      factory,
+      name: 'LateBlockedErrorDB',
+      onBlocked,
+      openTimeoutMs: 5
+    });
+
+    await expect(opening).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });
+    request.onblocked();
+
+    expect(onBlocked).not.toHaveBeenCalled();
+    expect(getActiveNativeOpenOperations()).toEqual([{
+      key: 'LateBlockedErrorDB:current',
+      state: 'timed_out_waiting_native_settlement'
+    }]);
+
+    request.onerror();
+
+    expect(getActiveNativeOpenOperations()).toEqual([]);
+    expect(factory.open).toHaveBeenCalledTimes(1);
+  });
+
   it('publishes a stable snapshot and removes a timed-out request after late settlement', async () => {
     const database = { close: vi.fn() };
     const request = { result: database };

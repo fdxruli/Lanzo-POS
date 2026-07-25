@@ -576,11 +576,32 @@ La prueba de cleanup de service workers de desarrollo confirma que un retorno
 `false` detiene `prepareLocalDatabase`, no monta App y deja el estado de prueba
 resuelto explícitamente después de solicitar la recarga.
 
+### onblocked tardío después de timeout
+
+Después de que la promesa pública se liquida con `DB_OPEN_TIMEOUT`, la solicitud
+nativa puede emitir `onblocked` mientras continúa registrada. Ese evento tardío
+ahora se ignora cuando `publicSettled` ya es `true`: no cambia
+`timed_out_waiting_native_settlement` a `blocked`, no ejecuta `onBlocked` y no
+reemplaza el diagnóstico de recuperación por `DB_BLOCKED`.
+
+La solicitud original permanece en el registro hasta `onsuccess` o `onerror`.
+Por tanto, single-flight sigue impidiendo una segunda apertura. Si termina con
+éxito tardío, la conexión se cierra y se elimina la operación; si termina con
+error tardío, también se elimina sin intentar rechazar por segunda vez la
+promesa pública. En ambos casos el snapshot observable notifica la liquidación,
+el gate conserva el diagnóstico de timeout y habilita el reintento. Si nunca
+termina, `Recargar Lanzo` continúa visible y habilitado sin borrar datos.
+
+Las pruebas cubren `onblocked` normal antes del timeout, `onblocked` tardío
+seguido de éxito o error, deduplicación durante toda la vida nativa, estabilidad
+del snapshot, reactividad del gate y ejecución bajo `React.StrictMode` sin
+React error #185.
+
 Validación local de la corrección:
 
 ```text
-Pruebas focales seleccionadas   83/83 PASS
-Prueba focal timeout/store      35/35 PASS
+Pruebas focales seleccionadas   87/87 PASS
+Prueba focal timeout/store/gate 31/31 PASS
 ESLint focal                    PASS
 git diff --check                PASS
 npm run build (Node 22)         PASS

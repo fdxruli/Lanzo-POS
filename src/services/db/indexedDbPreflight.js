@@ -210,6 +210,10 @@ export const openNativeDatabase = ({
 
     request.onblocked = () => {
       if (operation.state === 'succeeded' || operation.state === 'failed' || operation.state === 'aborted') return;
+      // El timeout solo liquida la promesa pública. La solicitud nativa sigue
+      // viva y puede emitir onblocked después; ese evento tardío no debe
+      // reemplazar el diagnóstico DB_OPEN_TIMEOUT ni volver a notificar la UI.
+      if (operation.publicSettled) return;
       setNativeOpenOperationState(operation, 'blocked');
       clearOpenTimeout();
       if (!operation.blockedNotified) {

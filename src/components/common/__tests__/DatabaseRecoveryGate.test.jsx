@@ -177,6 +177,37 @@ describe('DatabaseRecoveryGate', () => {
     expect(runtimeMocks.retryLocalDatabaseRecovery).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps timeout recovery actions through ignored late onblocked until native settlement', () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'recovery_required',
+      errorCode: 'DB_OPEN_TIMEOUT'
+    };
+    publishNativeOperations([{
+      key: 'LanzoDB1:current',
+      state: 'timed_out_waiting_native_settlement'
+    }]);
+
+    const reloadPage = vi.fn();
+    renderGate({ reloadPage });
+    const timeoutSnapshot = nativeOperationMocks.snapshot;
+
+    // Un onblocked tardío se ignora en el store nativo: no cambia el snapshot
+    // ni sustituye DB_OPEN_TIMEOUT por DB_BLOCKED.
+    expect(nativeOperationMocks.snapshot).toBe(timeoutSnapshot);
+    expect(screen.getByText(/todavía mantiene una solicitud activa/i)).toBeInTheDocument();
+    expect(screen.queryByText(/cierra las demás pestañas de lanzo/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+
+    act(() => publishNativeOperations([]));
+
+    expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(reloadPage).not.toHaveBeenCalled();
+    expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
+  });
+
   it('keeps a safe reload action visible when the native request never settles', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,
