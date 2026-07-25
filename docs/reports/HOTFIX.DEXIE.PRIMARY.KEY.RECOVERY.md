@@ -1,29 +1,35 @@
 # HOTFIX.DEXIE.PRIMARY.KEY.RECOVERY
 
-Fecha: 2026-07-23
+Fecha de cierre técnico: 2026-07-24
 
 Repositorio: `fdxruli/Lanzo-POS`
 
-Rama: `hotfix/dexie-primary-key-recovery-admin-bootstrap`
-
 PR: `#127`
 
-Base inicial y merge-base: `4ab2abb719319728426ca0936233a04f8614687e`
+Rama: `hotfix/dexie-primary-key-recovery-admin-bootstrap`
+
+Base y merge-base verificados: `4ab2abb719319728426ca0936233a04f8614687e`
+
+HEAD anterior auditado: `5faf5220cd540f878a612b5f608b2b907d663396`
+
+HEAD parcial dejado por la sesión interrumpida: `c54e4e275fa7716a10572ced7e66d067429827a9`
+
+HEAD de implementación validado: `5cabe66548e4fcb4b157bcafeae9c27ea636e9a5`
+
+Los cambios posteriores a ese HEAD dentro de este informe son exclusivamente documentales.
 
 ## 1. Resumen ejecutivo
 
-Se implementó un hotfix preservador para la incompatibilidad estructural de `LanzoDB1` donde instalaciones históricas conservan:
+El hotfix resuelve de forma preservadora una incompatibilidad estructural de `LanzoDB1`:
 
 ```text
-sales          keyPath=timestamp
-deleted_sales  keyPath=timestamp
-```
+legacy:
+  sales          keyPath=timestamp
+  deleted_sales  keyPath=timestamp
 
-mientras el esquema Dexie actual espera:
-
-```text
-sales          keyPath=id
-deleted_sales  keyPath=id
+actual:
+  sales          keyPath=id
+  deleted_sales  keyPath=id
 ```
 
 El error raíz era:
@@ -32,412 +38,494 @@ El error raíz era:
 UpgradeError: Not yet support for changing primary key
 ```
 
-La solución no elimina la base, no cambia su nombre y no limpia almacenamiento auxiliar. Antes de abrir Dexie se inspecciona la estructura mediante IndexedDB nativo. Si existe la divergencia, se ejecuta una migración de dos `versionchange` atómicos: primero respaldo y después reconstrucción. Los stores de respaldo permanecen en esta versión.
+La solución:
 
-El bootstrap, login administrativo, ProductStore, POS Sync Meta, StorageManager y el worker de mantenimiento fueron adaptados para distinguir un fallo estructural de los errores en cascada y para abandonar estados de carga de forma recuperable.
+- no elimina IndexedDB;
+- no cambia el nombre `LanzoDB1`;
+- no limpia `localStorage`, Cache Storage ni credenciales;
+- no modifica Supabase;
+- no crea migraciones SQL;
+- conserva respaldos técnicos dentro de IndexedDB;
+- coordina una sola preparación activa;
+- permite reanudar la sesión administrativa sin repetir el login remoto ni consumir otro cupo.
 
-## 2. Cronología del incidente
+## 2. Cronología de la sesión interrumpida
 
-1. Un segundo dispositivo intentó iniciar sesión administrativa.
-2. Dexie intentó abrir y actualizar `LanzoDB1`.
-3. IndexedDB existente tenía primary keys `timestamp` en `sales` y `deleted_sales`.
-4. El esquema declarado esperaba primary keys `id`.
-5. Dexie rechazó el upgrade con `UpgradeError`.
-6. La conexión quedó cerrada y los consumidores posteriores produjeron `DatabaseClosedError`.
-7. El modal no liberó `loading`, por lo que quedó permanentemente en `Verificando...`.
-8. Eventos `focus`, `visibilitychange`, `pageshow` y mecanismos de invalidación volvieron a ejecutar accesos contra una base cerrada.
-9. POS Sync Meta y la identidad local intentaron leer o escribir sobre la misma conexión no disponible.
-10. El rechazo de `navigator.storage.persist()` apareció en la misma cronología, pero era un aviso independiente.
+1. El PR estaba abierto, draft, sin merge, con base `main`.
+2. El HEAD previamente revisado era `5faf522…`.
+3. La sesión interrumpida agregó quince commits y avanzó hasta `c54e4e2…`.
+4. Esa sesión alcanzó a crear `pendingAdminSession.js` y modificaciones parciales en acciones de licencia y runtime de base local.
+5. También dejó un mecanismo temporal formado por cuatro fragmentos Base64 y dos workflows con escritura del repositorio.
+6. El workflow intentó concatenar, decodificar y extraer un tarball para generar código y hacer commit automáticamente.
+7. Ese mecanismo falló y no completó los bloqueantes.
+8. La continuación auditó primero los archivos fuente y los payloads, trasladó cualquier corrección útil a archivos normales y eliminó todos los residuos autoescritores.
+9. Desde ese punto, cada cambio se realizó mediante commits normales sobre la rama existente.
+10. El PR permaneció draft y nunca se activó auto-merge.
 
-## 3. Error raíz
+## 3. Workflows temporales fallidos y limpieza
 
-El error raíz es exclusivamente la incompatibilidad de primary key durante el upgrade:
-
-```text
-UpgradeError: Not yet support for changing primary key
-```
-
-Dexie puede agregar o retirar índices mediante `version().stores(...)`, pero no puede transformar en sitio la primary key de un object store ya creado. La reparación exige crear un respaldo, eliminar y recrear el object store dentro de una transacción de upgrade, y restaurar los registros.
-
-## 4. Errores en cascada
-
-Los siguientes mensajes no son causas independientes en este incidente:
-
-- `DatabaseClosedError` con `UpgradeError` interno.
-- Error de re-fetch e invalidación de ProductStore.
-- Fallos al guardar `pos_realtime_status` y `pos_sync_enabled`.
-- Fallo al leer identidad desde IndexedDB.
-- Fallo al persistir un ID de dispositivo nuevo en IndexedDB.
-- Fallo al cargar perfil local después de una autenticación remota válida.
-
-El hotfix clasifica estos casos como derivados de un estado estructural y evita reintentos repetitivos.
-
-## 5. Advertencias independientes
-
-`navigator.storage.persist()` es best-effort. Puede devolver `false`, rechazar la promesa o no estar disponible mientras IndexedDB continúa funcionando correctamente.
-
-El estado `persistenceState=denied` o `volatile`:
-
-- no marca la base como corrupta;
-- no bloquea login;
-- no bloquea bootstrap;
-- no se convierte en `DatabaseClosedError`;
-- no dispara recuperación estructural;
-- conserva una advertencia útil para usuarios FREE con datos exclusivamente locales.
-
-Se retiraron mensajes genéricos que atribuían el rechazo a Safari sin detectar realmente ese navegador.
-
-## 6. Tabla exacta de keyPaths relevantes
-
-| Store | Esquema histórico observado | Esquema canónico | autoIncrement | Acción del hotfix |
-|---|---|---|---:|---|
-| `sales` | `timestamp` | `id` | `false` | Respaldo, reconstrucción y restauración |
-| `deleted_sales` | `timestamp` | `id` | `false` | Respaldo, reconstrucción y restauración |
-| `menu` | `id` | `id` | `false` | Sin reconstrucción |
-| `customers` | `id` | `id` | `false` | Sin reconstrucción |
-| `cajas` | `id` | `id` | `false` | Sin reconstrucción |
-| `movimientos_caja` | `id` | `id` | `false` | Sin reconstrucción |
-
-El preflight también obtiene, sin leer registros, `nativeVersion`, `storeName`, `keyPath`, `autoIncrement` e `indexNames` para todos los stores presentes.
-
-## 7. Historia de versiones
-
-### Historia legacy nativa
-
-El commit histórico `520cbbd8ef792c3c6a67632596d483274aaad796` eliminó un adaptador IndexedDB nativo anterior. El diff conserva evidencia de que ese adaptador creaba:
+Se eliminaron:
 
 ```text
-sales          keyPath=timestamp
-deleted_sales  keyPath=timestamp
+.github/pr127-residual/part00
+.github/pr127-residual/part01
+.github/pr127-residual/part02
+.github/pr127-residual/part03
+.github/workflows/pr127-apply-residual.yml
+.github/workflows/pr127-source-snapshot.yml
 ```
 
-En ese snapshot el adaptador declaraba versión nativa `10`. Dispositivos reales posteriores fueron observados en versión nativa `110` conservando las mismas primary keys.
-
-### Historia Dexie
-
-`src/services/db/dexie.js` registra la historia principal de Dexie v1-v23. Las declaraciones actuales esperan `id` para ambos stores.
-
-El commit `c4dea2af7c901939006cf455a774ff3ca1343d61` consolidó el esquema cloud de `sales` en Dexie v24. Antes del hotfix, `syncDexieBootstrap.js` registraba v24 como efecto lateral de import y ejecutaba el registro al cargarse.
-
-### Relación Dexie / IndexedDB nativo
-
-Dexie escala su número lógico por diez al abrir IndexedDB:
-
-| Dexie | IndexedDB nativo esperado |
-|---:|---:|
-| `11` | `110` |
-| `23` | `230` |
-| `24` | `240` |
-| `30` | `300` |
-
-Por ello, `DB_VERSION = 110` no era una versión Dexie válida para un worker ni una descripción de la versión lógica actual. Era una constante legacy de versión nativa. El hotfix la renombra conceptualmente como `LEGACY_DB_VERSION` y documenta que no debe usarse para abrir workers ni registrar upgrades.
-
-### Versiones reservadas por el hotfix
-
-- Dexie v24: POS Sync y sus índices cloud, ahora registrados por el módulo canónico.
-- Dexie v30: esquema final del hotfix, stores de respaldo y metadata de recuperación.
-- Durante reparación de una base nativa existente se usan dos versiones nativas consecutivas libres: `N+1` para respaldo y `N+2` para reconstrucción. En el caso observado de versión `110`, son `111` y `112`. Después, Dexie continúa su historia normal hasta la versión nativa `300`.
-
-## 8. Causa de la divergencia
-
-No se encontró evidencia de que una misma versión Dexie publicada hubiera sido redefinida intencionalmente con otro esquema. La divergencia provino de dos historias distintas sobre el mismo nombre `LanzoDB1`:
-
-1. una historia IndexedDB nativa legacy, con primary keys `timestamp`;
-2. una historia Dexie posterior, que esperaba primary keys `id`.
-
-La constante nativa `110`, la equivalencia Dexie `11 -> 110` y el registro tardío de v24 hicieron que una base histórica pudiera entrar a una ruta de upgrade Dexie incompatible.
-
-El orden de imports también era un riesgo adicional: v24 se registraba desde `syncDexieBootstrap.js`, no como parte obligatoria del runtime previo a `db.open()`.
-
-## 9. Estrategia de respaldo
-
-El preflight detecta únicamente la estructura. Si confirma la divergencia reparable:
-
-1. abre una versión nativa superior;
-2. crea:
-   - `__lanzo_sales_backup_v30`;
-   - `__lanzo_deleted_sales_backup_v30`;
-   - `__lanzo_db_recovery`;
-3. limpia únicamente los stores de respaldo incompletos de un intento previo;
-4. recorre `sales` y `deleted_sales` mediante cursor;
-5. copia cada registro completo junto con:
-   - `legacyKey` técnico;
-   - primary key de origen;
-   - ID de destino calculado;
-6. registra conteos y hashes FNV de claves/IDs, sin imprimir contenido de ventas, clientes o productos;
-7. guarda el marcador `backup_complete`;
-8. conserva intactos los stores de origen.
-
-La operación completa ocurre dentro de un único `versionchange`. Si el navegador se cierra, IndexedDB aborta esa transacción y la base conserva el estado anterior.
-
-## 10. Estrategia de reconstrucción
-
-Solo después de existir un respaldo completo:
-
-1. se abre otra versión nativa superior;
-2. dentro del mismo `versionchange` se eliminan `sales` y `deleted_sales`;
-3. se recrean con primary key `id` e índices actuales;
-4. se restauran los registros desde los backups mediante `add`, no `put`;
-5. se conservan IDs existentes válidos;
-6. se generan IDs deterministas cuando no existen;
-7. cualquier colisión aborta la transacción, sin sobrescribir registros;
-8. se comparan conteos de origen y destino;
-9. se marca `rebuild_complete`.
-
-Los stores de respaldo no se eliminan en este PR.
-
-## 11. Idempotencia
-
-La migración cumple las siguientes propiedades:
-
-- una base compatible no se migra;
-- una base nueva no recorre la reparación legacy;
-- `backup_complete` permite continuar directamente con reconstrucción;
-- `rebuild_complete` impide repetir la migración;
-- el respaldo se recrea desde cero únicamente mientras el origen sigue siendo la copia autoritativa;
-- la restauración usa `add`, por lo que no sobrescribe IDs en colisión;
-- los IDs generados dependen de la primary key histórica única;
-- una segunda apertura no duplica registros.
-
-IDs deterministas:
+La validación legítima quedó en:
 
 ```text
-sales          legacy-sale:<timestamp>
-deleted_sales  legacy-deleted-sale:<timestamp>
+.github/workflows/hotfix-dexie-validation.yml
 ```
 
-Si `record.id` ya existe y es válido, se conserva.
+Y la comparación global read-only en:
 
-## 12. Recuperación tras interrupción
+```text
+.github/workflows/pr127-global-comparison.yml
+```
 
-### Cierre durante respaldo
+Ambos workflows tienen exclusivamente:
 
-El `versionchange` se aborta. El store original no se elimina y el siguiente intento repite el respaldo.
+```yaml
+permissions:
+  contents: read
+```
 
-### Cierre después de respaldo
+No generan código, no escriben commits y no usan payloads Base64 o tarballs.
 
-El marcador `backup_complete` y ambos backups permanecen. El siguiente intento continúa con reconstrucción.
+## 4. Sesión administrativa pendiente ligada a licencia
 
-### Cierre durante reconstrucción
-
-El segundo `versionchange` se aborta atómicamente. La versión previa, los stores originales y los backups siguen disponibles. El siguiente intento repite la reconstrucción.
-
-### Cierre después de reconstrucción
-
-El marcador `rebuild_complete` impide una segunda migración.
-
-## 13. Cambios en login administrador
-
-`AdminLoginModal.jsx` ahora usa obligatoriamente:
+La estructura pendiente final es:
 
 ```javascript
-try {
-  // login
-} catch (error) {
-  // mensaje recuperable
-} finally {
-  setLoading(false);
+{
+  licenseKey,
+  adminUserId,
+  deviceId,
+  sessionIdentity,
+  authenticatedAt,
+  result
 }
 ```
 
-Se distinguen:
+Propiedades verificadas:
 
-- credenciales inválidas;
-- error de red;
-- base bloqueada;
-- primary key incompatible;
-- timeout de apertura;
-- base cerrada por error estructural.
+- se liga a una sola licencia;
+- normaliza y valida `licenseKey`;
+- valida `adminUserId`, `deviceId` y `sessionIdentity` contra el resultado remoto cuando existen;
+- no inventa identificadores ausentes;
+- no almacena contraseña;
+- no reutiliza una sesión de otra licencia;
+- no repite `adminLoginOnDevice` al reanudar la misma sesión válida;
+- se limpia después de completar `_loadProfile` y el bootstrap local.
 
-La prueba focal confirma que `UpgradeError`, `DatabaseClosedError`, `DatabaseOpenTimeoutError`, credenciales inválidas y éxito liberan el estado `Verificando...`.
+## 5. Transiciones y limpieza de sesión
 
-## 14. Cambios en ProductStore
+El pending administrativo se limpia en los flujos de:
 
-Se instala una guarda antes de iniciar la aplicación POS. Mientras exista recuperación pendiente:
+- logout administrativo;
+- logout general;
+- cambio de licencia;
+- confirmación de cambio de licencia requerido;
+- `_requireLicenseChange`;
+- selección de acceso staff;
+- credenciales rechazadas;
+- identidad pendiente alterada o incompatible.
 
-- `invalidateAndReset` se convierte en no-op;
-- `isInvalidating` se libera;
-- `isLoading` se libera;
-- los eventos de foco, visibilidad, pageshow y BroadcastChannel no alcanzan el invalidator original;
-- el comportamiento normal se reactiva al limpiar el estado de recuperación.
-
-La prueba dispara cuatro invalidaciones equivalentes y verifica cero llamadas al invalidator original durante recuperación y una llamada normal después de recuperarse.
-
-## 15. Cambios en POS Sync
-
-`syncMetaService` consulta el estado estructural antes de abrir o escribir IndexedDB:
-
-- no escribe metadata durante recuperación;
-- no inicia una apertura indirecta;
-- emite un único aviso agregado;
-- devuelve fallbacks seguros de lectura;
-- se reactiva después de recuperar la base.
-
-El arranque POS Sync también se difiere desde `main.jsx` si el preflight no termina correctamente.
-
-La lógica de identidad estable no fue reemplazada ni se limpió `localStorage`. Al impedir aperturas/escrituras durante recuperación se evita generar y persistir repetidamente IDs derivados del mismo fallo estructural.
-
-## 16. Cambios en StorageManager
-
-StorageManager quedó como servicio best-effort e idempotente:
-
-- comparte una promesa de inicialización concurrente;
-- solicita persistencia como máximo una vez por sesión de página;
-- `persist() => true` marca `granted`;
-- `persist() => false` marca `denied`, sin bloquear;
-- una promesa rechazada marca modo volátil, sin bloquear;
-- API ausente marca `unsupported`, sin bloquear;
-- no confunde persistencia denegada con IndexedDB cerrada;
-- no presenta mensajes Safari cuando no se detectó Safari.
-
-## 17. Cambios en initializeApp
-
-El coordinador mantiene estados conceptuales:
+La transición obligatoria fue cubierta:
 
 ```text
-idle
-running
-ready
-failed
-recovery_required
+LIC-A
+→ login remoto correcto
+→ error estructural local
+→ recuperación
+→ LIC-A se reanuda sin segundo RPC
 ```
 
-Las llamadas concurrentes comparten exactamente la misma promesa. La guarda se libera en `finally`. Un error Dexie estructural no deja `running`, conserva el diagnóstico y cambia a `local_database_recovery_required`. Un reintento explícito puede volver a ejecutar el preflight.
+También:
 
-La búsqueda del repositorio encontró una llamada productiva desde `App.jsx`; React StrictMode puede montar/ejecutar efectos dos veces en desarrollo. La prueba reproduce dos llamadas concurrentes y confirma una sola preparación de base.
+```text
+LIC-A
+→ pending admin
+→ logout/cambio
+→ LIC-B
+→ login remoto nuevo para LIC-B
+```
 
-## 18. Riesgo para FREE / Lanzo Local
+No se reutilizan `result`, admin, dispositivo ni identidad de sesión de LIC-A.
 
-Riesgo principal: pérdida de la única copia local si se aplicara una estrategia destructiva. Este hotfix evita ese riesgo:
+## 6. Recuperación administrativa después de recarga
 
-- no usa `indexedDB.deleteDatabase()` en producción;
-- no elimina productos, ventas, clientes, caja ni movimientos;
-- mantiene backups de los dos stores reconstruidos;
-- no depende de Supabase para restaurar datos;
-- valida conteos antes de completar.
+Después de recuperar la base:
 
-La validación manual con una copia real de una base FREE con actividad sigue siendo obligatoria antes del merge.
+1. el sistema verifica la sesión persistida mediante el flujo normal;
+2. no solicita otra vez usuario y contraseña cuando la sesión administrativa sigue siendo válida;
+3. no consume otro cupo de dispositivo;
+4. no repite enrolamiento;
+5. completa `_loadProfile`;
+6. limpia `pendingAdminSessionResult`;
+7. establece `appStatus` correctamente;
+8. inicia POS Sync únicamente cuando la base está lista.
 
-## 19. Riesgo para PRO / Lanzo Nube
+La contraseña nunca se persiste como mecanismo de recuperación.
 
-Riesgos principales:
+## 7. Timeout de apertura separado de migración
 
-- repetir autenticación y consumir cupos de dispositivo;
-- iniciar Realtime/Pull antes de disponer de la base;
-- cerrar una sesión remota válida por un fallo local.
+`openNativeDatabase()` ahora distingue:
 
-Mitigaciones:
+```text
+opening
+blocked
+upgrading
+succeeded
+failed
+aborted
+```
 
-- la autenticación remota se separa del bootstrap local;
-- el resultado remoto válido se conserva como sesión pendiente;
-- el reintento reutiliza ese resultado sin una segunda llamada de login;
-- no se ejecuta logout automático;
-- POS Sync se difiere;
-- la aplicación no se marca `ready` hasta que la base esté utilizable.
+El timeout genérico opera únicamente durante `opening`.
 
-## 20. Pruebas automatizadas
+Cuando comienza `onupgradeneeded`:
 
-Fixtures y suites agregadas:
+- se cancela el timeout de apertura;
+- el estado cambia a `upgrading`;
+- la duración del backup, cursor copy, rebuild, restore y validación no puede producir un falso `DB_OPEN_TIMEOUT`;
+- la promesa permanece activa hasta éxito, error o aborto confirmado.
 
-1. Base nueva.
-2. Legacy vacía.
-3. Legacy con ventas/eliminadas con y sin `id`.
-4. Segunda ejecución idempotente.
-5. Registro de esquema en órdenes diferentes.
-6. `UpgradeError` en modal.
-7. `DatabaseClosedError` con `UpgradeError` interno.
-8. `DatabaseOpenTimeoutError`.
-9. Credenciales inválidas.
-10. Login exitoso.
-11. Sesión remota válida con fallo local posterior.
-12. Reintento sin repetir autenticación remota.
-13. Promesa singleton de `initializeApp`.
-14. Tormenta de invalidaciones ProductStore.
-15. Pausa y reactivación de POS Sync Meta.
-16. StorageManager: true, false, rechazo y API ausente.
+Existe una prueba determinista que inicia el upgrade, espera más que el timeout configurado y después completa `onsuccess` sin falso fallo.
 
-## 21. Resultados
+También existe una prueba independiente para una apertura que realmente nunca responde.
 
-GitHub Actions `HOTFIX Dexie Recovery Validation`, ejecución final de código `30062142741`:
+## 8. Solicitudes bloqueadas y coordinación de reintentos
 
-| Job | Resultado |
-|---|---|
-| Dexie recovery + schema order | PASS |
-| AdminLoginModal | PASS |
-| Admin session + bootstrap | PASS |
-| ProductStore + POS Meta | PASS |
-| StorageManager | PASS |
-| ESLint focal | PASS |
-| `git diff --check` | PASS |
-| Build de producción | PASS |
+Cuando ocurre `onblocked`:
 
-Conteos del fixture legacy con datos:
+- se publica `DB_BLOCKED` con una instrucción para cerrar otra pestaña;
+- no se rechaza ni reemplaza la solicitud nativa activa;
+- la misma solicitud continúa cuando se cierra la conexión bloqueante;
+- no se crean backups o rebuilds paralelos;
+- el diagnóstico se emite una sola vez por operación.
 
-| Store | Registros antes | Registros después | Backup conservado |
-|---|---:|---:|---:|
-| `sales` | 2 | 2 | 2 |
-| `deleted_sales` | 2 | 2 | 2 |
+Además, `indexedDbPreflightCoordinator.js` coordina la preparación completa por fábrica y nombre de base.
 
-Fixture legacy vacío:
+Varios clics o llamadas concurrentes reciben exactamente la misma promesa de:
 
-| Store | Registros antes | Registros después | Backup conservado |
-|---|---:|---:|---:|
-| `sales` | 0 | 0 | 0 |
-| `deleted_sales` | 0 | 0 | 0 |
+```text
+inspection → backup → rebuild → validation
+```
 
-Los importes, timestamps, clientes, estados y campos opcionales del fixture se conservaron; los IDs existentes se mantuvieron y los ausentes se generaron determinísticamente.
+La propiedad se libera únicamente cuando la preparación completa termina realmente.
 
-## 22. Limitaciones
+## 9. Respaldo preservador
 
-- No se ejecutó todavía la matriz manual en Chrome/Edge desktop, PWA instalada, incógnito y dos pestañas reales.
-- No se migró una base real del usuario desde esta sesión; las garantías verificadas corresponden a fixtures `fake-indexeddb` y a transacciones estándar de IndexedDB.
-- No se inspeccionó un checkout local del usuario. La rama se creó directamente desde el SHA remoto confirmado, por lo que no se tocaron su árbol de trabajo ni sus stashes; su estado local no puede certificarse desde el conector.
-- `src/services/deviceFingerprint.js` no existe en el HEAD auditado. La identidad estable está implementada en servicios existentes de Supabase/utilidades; no se modificó `src/services/supabase.js`.
-- No se ejecutó una suite global ajena al hotfix. Las pruebas focales, lint focal, diff y build son verdes.
+Durante el primer `versionchange` se crean o reutilizan:
 
-## 23. Pasos manuales de recuperación
+```text
+__lanzo_sales_backup_v30
+__lanzo_deleted_sales_backup_v30
+__lanzo_db_recovery
+```
 
-Para una base bloqueada:
+Cada entrada contiene:
 
-1. cerrar todas las demás pestañas y ventanas de Lanzo;
-2. cerrar la PWA instalada si está abierta;
-3. volver a la pantalla de recuperación;
-4. pulsar `Reintentar recuperación`;
-5. permitir que la página recargue después de completar.
+```javascript
+{
+  legacyKey,
+  sourceKey,
+  originalId,
+  migratedId,
+  idRemapped,
+  remapReason,
+  record
+}
+```
 
-Para una base con esquema legacy:
+Los valores de `remapReason` son:
 
-1. no borrar datos del sitio;
-2. no limpiar localStorage ni caché;
-3. cerrar otras conexiones;
-4. iniciar la recuperación explícita;
-5. comprobar que el marcador final sea `rebuild_complete`;
-6. comparar conteos reportados por el marcador;
-7. validar ventas, caja y movimientos desde la interfaz.
+```text
+missing_id
+duplicate_id
+secondary_collision
+null
+```
 
-Solo para un dispositivo confirmado vacío puede considerarse, como procedimiento técnico manual externo a este hotfix, borrar exclusivamente `LanzoDB1` después de una confirmación humana explícita. La aplicación no ofrece ni ejecuta ese borrado automáticamente.
+Se registran únicamente metadatos técnicos, conteos y hashes; no se imprimen ventas, clientes ni contenido sensible.
 
-## 24. Plan futuro para retirar backups
+## 10. Resolución determinista de IDs duplicados
 
-Los backups deben retirarse en una actualización separada, nunca en este despliegue. Condiciones previas sugeridas:
+La decisión de ID se toma y fija durante el backup, por store:
 
-1. completar validación manual en FREE y PRO;
-2. mantener el hotfix durante un periodo suficiente;
-3. comprobar `rebuild_complete` y conteos iguales;
-4. verificar que no existen reportes de colisión o pérdida;
-5. publicar una versión Dexie nueva, no reutilizada;
-6. retirar únicamente los stores `__lanzo_*_backup_v30` y su metadata;
-7. agregar una prueba de upgrade desde v30;
-8. documentar rollback y conservación previa.
+1. un `record.id` válido y único se conserva;
+2. un ID faltante o vacío se genera desde el store y `sourceKey`;
+3. un ID duplicado se genera desde `originalId`, store y `sourceKey`;
+4. una colisión secundaria genera un candidato determinista adicional;
+5. se comprueba unicidad antes de continuar.
 
-## 25. Confirmaciones de alcance
+No se utilizan:
 
-- PR #126 permanece integrado; no se revirtió su cutover.
-- No se modificó Supabase ni se crearon migraciones PostgreSQL.
-- No se ejecutó `supabase db push`.
-- No se ejecutó despliegue manual de Vercel.
-- No se cambió el nombre `LanzoDB1`.
-- No se borró IndexedDB automáticamente.
-- No se limpiaron localStorage, Cache Storage ni credenciales.
-- No se activó auto-merge.
-- PR #127 permanece abierto, en draft y sin merge.
+```text
+Math.random()
+Date.now()
+crypto.randomUUID()
+```
+
+Los mismos registros producen exactamente los mismos IDs en ejecuciones repetidas.
+
+La restauración usa exclusivamente `backupEntry.migratedId`; no recalcula decisiones.
+
+## 11. Validación atómica de restauración
+
+La reconstrucción compara:
+
+- conteo de origen;
+- conteo de backup;
+- conteo de destino;
+- hash de claves de origen;
+- hash de IDs migrados;
+- unicidad de IDs.
+
+La restauración usa `add`, no `put`, para impedir sobrescrituras silenciosas.
+
+Cualquier discrepancia o colisión:
+
+- aborta atómicamente el `versionchange`;
+- conserva el estado anterior y los backups;
+- propaga un error estructurado;
+- no se degrada a un `AbortError` genérico.
+
+## 12. Interrupción y reanudación
+
+### Durante backup
+
+La transacción se aborta y los stores originales siguen siendo autoritativos.
+
+### Después de `backup_complete`
+
+El siguiente intento conserva los `migratedId` ya fijados y continúa con rebuild.
+
+### Durante rebuild
+
+La transacción de reconstrucción se aborta atómicamente; los backups permanecen disponibles.
+
+### Después de `rebuild_complete`
+
+El marcador final impide repetir la migración.
+
+## 13. Versión superior y esquema compatible incompleto
+
+Una base con versión nativa superior a la soportada:
+
+- no intenta downgrade;
+- no se elimina;
+- devuelve `DB_UNSUPPORTED_NATIVE_VERSION`;
+- se marca como no reparable automáticamente.
+
+Una base con primary keys correctas pero stores o índices compatibles faltantes no se clasifica como primary-key mismatch; se permite que Dexie aplique su upgrade compatible normal.
+
+## 14. DatabaseRecoveryGate
+
+El árbol de la aplicación no se monta durante:
+
+```text
+checking
+migrating
+recovery_required
+failed
+```
+
+La UI muestra:
+
+- `Comprobando la base local...` en checking;
+- `Actualizando la base local de forma segura...` en migrating;
+- fase, stores, sourceCounts y targetCounts cuando existen;
+- reintento en `recovery_required`;
+- diagnóstico no destructivo en `failed`.
+
+Los clics repetidos de reintento se colapsan en una sola operación. La recarga ocurre únicamente después de que la preparación termina, Dexie abre y el estado es `ready`.
+
+## 15. ProductStore interno
+
+La protección no depende únicamente de un wrapper externo.
+
+Dentro del propietario de `isInvalidating` y `pendingInvalidation`, un error estructural:
+
+- limpia `pendingInvalidation`;
+- establece `isInvalidating=false`;
+- establece `isLoading=false`;
+- no programa otro reintento;
+- convierte wake-ups en no-op durante recuperación;
+- emite un diagnóstico agregado;
+- no registra falsamente `Invalidation complete`.
+
+Se cubren eventos de:
+
+```text
+focus
+visibilitychange
+pageshow
+BroadcastChannel
+lanzo:products-sync-updated
+```
+
+El comportamiento normal se reanuda cuando la base vuelve a `ready`.
+
+## 16. StorageManager, POS Sync y bootstrap
+
+- StorageManager trata `navigator.storage.persist()` como best-effort independiente del estado estructural.
+- POS Sync Meta evita lecturas y escrituras mientras la recuperación está pendiente.
+- El bootstrap POS Sync se difiere hasta que la base local está lista.
+- La definición Dexie canónica se registra antes de abrir la base.
+- El worker de migración no usa la versión nativa legacy como si fuera una versión lógica Dexie.
+
+## 17. Pruebas focales
+
+El workflow final ejecuta:
+
+- recuperación Dexie y registro de esquema;
+- duplicados, IDs faltantes y numéricos;
+- migración lenta determinista;
+- volumen de 500 registros;
+- base bloqueada y cierre posterior;
+- reintentos concurrentes;
+- interrupción después de backup;
+- versión nativa superior;
+- esquema compatible incompleto;
+- DatabaseRecoveryGate;
+- AdminLoginModal;
+- acciones administrativas existentes;
+- transiciones admin/staff existentes;
+- recuperación administrativa local;
+- coordinador de bootstrap;
+- ProductStore estructural;
+- POS Sync Meta;
+- StorageManager.
+
+Run final:
+
+```text
+HOTFIX Dexie Recovery Validation
+run_id: 30139096070
+head:   5cabe66548e4fcb4b157bcafeae9c27ea636e9a5
+result: success
+```
+
+Todos los jobs focales y el agregador terminaron en success.
+
+## 18. Quality, diff y builds
+
+En el mismo run `30139096070` pasaron:
+
+```text
+Focal ESLint                          PASS
+git diff --check origin/main...HEAD   PASS
+residual self-writing grep            PASS
+npm run build                         PASS
+npm run build:store                   PASS
+admin PWA architecture                PASS
+```
+
+## 19. Comparación global contra main
+
+Workflow final:
+
+```text
+PR127 Global Comparison
+run_id: 30139096067
+head:   5cabe66548e4fcb4b157bcafeae9c27ea636e9a5
+result: success
+```
+
+Resultados normalizados:
+
+```text
+PR failures:       149
+main failures:     149
+shared failures:   149
+new failures:        0
+resolved failures:   0
+```
+
+La suite global completa continúa roja tanto en el PR como en `main` por deuda heredada. El hotfix no introduce fallos globales nuevos y no modifica deuda ajena.
+
+## 20. Riesgo FREE
+
+En FREE, IndexedDB es la fuente local principal. Por ello el riesgo de pérdida por una reparación destructiva sería alto.
+
+Mitigaciones aplicadas:
+
+- cero borrado automático;
+- backup previo obligatorio;
+- transacciones `versionchange` atómicas;
+- hashes y conteos;
+- IDs deterministas;
+- reanudación después de interrupción;
+- gate que impide montar consumidores mientras la base no está lista.
+
+Riesgo residual: debe validarse manualmente una copia real de una instalación histórica antes del lanzamiento general.
+
+## 21. Riesgo PRO
+
+En PRO existen datos cloud y sesiones administrativas/dispositivos, pero la base local sigue participando en POS, perfil y sincronización.
+
+Mitigaciones aplicadas:
+
+- la sesión remota válida se conserva;
+- no se consume un segundo cupo al reanudar;
+- POS Sync espera a DB ready;
+- no se modifican tablas, RPC, RLS ni datos Supabase;
+- no se repite enrolamiento.
+
+Riesgo residual: validar manualmente inicio en un segundo dispositivo, recuperación con dos pestañas y reanudación de sync contra una cuenta PRO de prueba.
+
+## 22. Limitaciones reales
+
+- `fake-indexeddb` valida semántica, concurrencia y atomicidad, pero no sustituye una prueba en Chrome/Edge con una base histórica real.
+- No se simuló corte físico de energía; se cubrieron estados equivalentes de transacción e interrupción mediante marcadores.
+- Los stores de backup se conservan intencionalmente en esta versión.
+- Una versión nativa futura superior no se repara automáticamente.
+- El workflow global refleja deuda heredada de `main`; no se corrigió fuera del alcance del hotfix.
+- GitHub no expone stashes locales; no se ejecutó ninguna operación sobre stashes.
+
+## 23. Validación manual pendiente
+
+Antes del merge se recomienda ejecutar en una copia controlada:
+
+1. instalación FREE legacy con ventas y eliminadas duplicadas;
+2. login admin remoto válido seguido de fallo local y recuperación;
+3. LIC-A → logout/cambio → LIC-B;
+4. dos pestañas abiertas y cierre posterior de la bloqueante;
+5. recarga después de `backup_complete`;
+6. recarga después de un rebuild abortado;
+7. verificación de montos, timestamps, clientes y estados;
+8. cuenta PRO con sync reanudado únicamente después de DB ready;
+9. build administrativo y tienda pública en navegador real.
+
+## 24. Salvaguardas verificadas
+
+El diff del PR no agrega:
+
+```text
+indexedDB.deleteDatabase()
+localStorage.clear()
+caches.delete()
+Supabase
+migraciones SQL
+deploy manual
+auto-merge
+workflows contents: write
+```
+
+Las llamadas destructivas presentes únicamente dentro de pruebas crean o limpian bases efímeras de test y no forman parte del runtime productivo.
+
+## 25. Estado de entrega
+
+- PR abierto.
+- PR draft.
+- PR sin merge.
+- Sin aprobación automática.
+- Sin Supabase.
+- Sin borrado automático.
+- Sin workflows escritores.
+- Listo para una nueva auditoría externa y validación manual, no para aprobación automática.
