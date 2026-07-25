@@ -721,13 +721,13 @@ export default function StatsGrid({
           </div>
         </div>
 
-        {/* TARJETA 2: UTILIDAD */}
+        {/* TARJETA 2: GANANCIA BRUTA */}
         <div className={`stat-card-modern profit-card ${metrics.shouldWarnFinancialQuality ? 'card-warning-state' : ''}`}>
           <div className="card-icon-wrapper purple">
             <TrendingUp size={24} />
           </div>
           <div className="card-content">
-            <span className="card-label">Utilidad Confirmada</span>
+            <span className="card-label">Ganancia bruta confirmada</span>
             <h2 className="card-value-main">{formatCurrency(metrics.profitConfirmed || 0)}</h2>
 
             {metrics.shouldWarnFinancialQuality ? (
@@ -735,8 +735,8 @@ export default function StatsGrid({
                 <AlertTriangle size={14} />
                 <span>
                   {metrics.shouldBlockProfitAnalysis
-                    ? 'Utilidad no definitiva: demasiadas ventas sin costo.'
-                    : 'Utilidad con advertencia por costos faltantes.'}
+                    ? 'Ganancia bruta no definitiva: demasiadas ventas sin costo.'
+                    : 'Ganancia bruta con advertencia por costos faltantes.'}
                 </span>
               </div>
             ) : (
