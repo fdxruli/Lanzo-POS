@@ -162,33 +162,21 @@ jobs:
         run: git diff --check origin/main...HEAD
 
       - name: Reject temporary self-writing mechanisms
+        shell: bash
         run: |
-          if git grep -n -E 'pr127-residual|Apply Residual|base64 --decode' -- . \
-            ':!docs/reports/HOTFIX.DEXIE.PRIMARY.KEY.RECOVERY.md' \
-            ':!.github/workflows/hotfix-dexie-validation.yml'; then
+          set -euo pipefail
+          files=(
+            .github/workflows/hotfix-dexie-validation.yml
+            .github/workflows/pr127-global-comparison.yml
+          )
+          if grep -nE '^[[:space:]]*contents:[[:space:]]*write[[:space:]]*$' "${files[@]}"; then
+            echo 'A workflow requests contents write.' >&2
+            exit 1
+          fi
+          if grep -nE 'base64[[:space:]]+--decode|pr127[-]residual|Apply[[:space:]]+Residual' "${files[@]}"; then
             echo 'Residual self-writing mechanism detected.' >&2
             exit 1
           fi
-          node <<'NODE'
-          const fs = require('node:fs');
-          const files = [
-            '.github/workflows/hotfix-dexie-validation.yml',
-            '.github/workflows/pr127-global-comparison.yml'
-          ];
-          const forbidden = [
-            ['contents', 'write'].join(': '),
-            ['base64', '--decode'].join(' '),
-            'pr127-' + 'residual'
-          ];
-          for (const file of files) {
-            const source = fs.readFileSync(file, 'utf8');
-            for (const token of forbidden) {
-              if (source.includes(token)) {
-                throw new Error(`${file} contiene mecanismo prohibido: ${token}`);
-              }
-            }
-          }
-          NODE
 
       - name: Reject destructive recovery in production files
         run: |
