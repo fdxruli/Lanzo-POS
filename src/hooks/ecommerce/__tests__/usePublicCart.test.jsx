@@ -44,6 +44,19 @@ const products = [
     isAvailable: true,
     stock: { mode: 'exact', status: null, quantity: 0 },
   },
+  {
+    id: 'wholesale',
+    name: 'Producto mayoreo',
+    price: 24,
+    currency: 'MXN',
+    isAvailable: true,
+    wholesaleEnabled: true,
+    wholesaleTiers: [
+      { sourceTierRef: 'min:6', minQuantity: 6, unitPrice: 21 },
+      { sourceTierRef: 'min:12', minQuantity: 12, unitPrice: 19 },
+    ],
+    stock: { mode: 'hidden', status: null },
+  },
 ];
 
 const renderCart = (overrides = {}) => renderHook((props) => usePublicCart(props), {
@@ -220,5 +233,33 @@ describe('usePublicCart', () => {
     });
     await waitFor(() => expect(result.current.items[0]?.product.id).toBe('b'));
     expect(result.current.subtotal).toBe('0.20');
+  });
+
+  it('keeps standard pricing below the threshold and estimates the best wholesale tier', async () => {
+    const { result } = renderCart({ maxItemQuantity: 20 });
+    await waitFor(() => expect(result.current.isReconciled).toBe(true));
+
+    act(() => result.current.addProduct(products[5]));
+    expect(result.current.items[0]).toMatchObject({
+      appliedUnitPrice: 24,
+      pricingMode: 'standard',
+      lineTotal: '24.00',
+    });
+
+    act(() => result.current.setQuantity('wholesale', 6));
+    expect(result.current.items[0]).toMatchObject({
+      appliedUnitPrice: 21,
+      pricingMode: 'wholesale',
+      wholesaleMinQuantity: 6,
+      wholesaleTierRef: 'min:6',
+      lineTotal: '126.00',
+    });
+
+    act(() => result.current.setQuantity('wholesale', 15));
+    expect(result.current.items[0]).toMatchObject({
+      appliedUnitPrice: 19,
+      wholesaleMinQuantity: 12,
+      lineTotal: '285.00',
+    });
   });
 });

@@ -235,7 +235,7 @@ describe('ecommerceAdminService', () => {
     }));
   });
 
-  it('uses the atomic v2 RPC for manual publication and sends the exact transport contract', async () => {
+  it('uses the atomic v3 RPC for manual publication and sends the exact transport contract', async () => {
     const { rpc, service } = createService();
 
     await service.savePublishedProduct({
@@ -248,7 +248,7 @@ describe('ecommerceAdminService', () => {
 
     expect(rpc).toHaveBeenCalledTimes(1);
     const [rpcName, params] = rpc.mock.calls[0];
-    expect(rpcName).toBe('ecommerce_admin_upsert_published_product_v2');
+    expect(rpcName).toBe('ecommerce_admin_upsert_published_product_v3');
     expect(params.p_payload.localProduct).toBeUndefined();
     expect(params.p_payload.configurationSourceRevision).toBe('version:12');
     expect(sortedKeys(params.p_payload.configuration)).toEqual(
@@ -279,7 +279,7 @@ describe('ecommerceAdminService', () => {
     });
 
     const [rpcName, params] = rpc.mock.calls[0];
-    expect(rpcName).toBe('ecommerce_admin_sync_published_catalog_v2');
+    expect(rpcName).toBe('ecommerce_admin_sync_published_catalog_v3');
     expect(params.p_idempotency_key).toBe('catalog-fixture');
     expect(params.p_expected_catalog_revision).toBe(8);
     expect(params.p_projections).toBe(projections);
