@@ -398,3 +398,117 @@ confirmado de esta corrección y no se relajó.
 - No se hizo merge ni se activó auto-merge.
 - No se marcó el PR como ready.
 - No se desplegó ni se creó preview manual de Vercel.
+
+## Cierre de validación pendiente del PR #128 — 2026-07-25
+
+> Esta sección sustituye los resultados de validación del bloque anterior cuando
+> difieran. Se añadió después de convertir las pruebas SQL en fixtures reales y
+> de ejecutar nuevamente las validaciones contra el HEAD vigente de `main`.
+
+### Alcance y estado inicial de este cierre
+
+- Base remota auditada: `main` en
+  `fe15eb64ef5d7fddc6675b1c5a116082a4fbe41a`.
+- PR #128 auditado antes de publicar este cierre: abierto, draft, contra `main`,
+  sin auto-merge ni merge. El HEAD remoto entonces era
+  `e3011d4907c322041e2f348f64d21e6dd3745518`.
+- No se modificaron `main`, las migraciones históricas `20260725030000` y
+  `20260725040000`, pedidos, ventas, caja, inventario ni datos reales.
+
+### Defectos hallados por pruebas reales y corrección aplicada
+
+1. El escritor de configuración rechazaba ajustes negativos aunque el contrato
+   permite deltas de variante y opción con signo, con el único límite de que el
+   precio final no sea negativo. La migración compensatoria permite deltas
+   negativos y conserva precios absolutos/base no negativos.
+2. El escritor de niveles comparaba la clave del padre con un `id` ambiguo de la
+   tabla de tiers. Por ello podía persistir tiers activos sin activar
+   `wholesale_enabled`, y checkout no aplicaba mayoreo. La corrección califica la
+   referencia al padre (`v_product.id`) y mantiene el escritor idempotente.
+
+Migraciones nuevas, aplicadas exclusivamente mediante la herramienta conectada
+de Supabase y registradas en `odlrhijtfyavryeqivaa`:
+
+- `20260725200000_ecom_business_capabilities_wholesale_1_signed_adjustments_fix.sql`
+  → versión remota `20260725140305`.
+- `20260725210000_ecom_business_capabilities_wholesale_1_tier_activation_fix.sql`
+  → versión remota `20260725140405`.
+
+Ambas son aditivas, usan `CREATE OR REPLACE FUNCTION` donde corresponde,
+reafirman propietario `postgres`, `search_path` fijo y revocación explícita de
+`EXECUTE` para funciones privadas. No eliminan datos válidos.
+
+### Pruebas SQL transaccionales reales
+
+Se añadieron y ejecutaron con `BEGIN/ROLLBACK`:
+
+- `ecom_business_capabilities_wholesale_1_checkout_validation_test.sql`:
+  precio estándar; tiers 6 y 12; mayor nivel alcanzado; variante delta positiva
+  y negativa; variante absoluta mayor y menor; opciones positivas y negativas;
+  clamp final a cero; payload de precio manipulado; tier inactivo; producto
+  incompatible; configuración obsoleta; cross-license; idempotencia de orden;
+  snapshot y conversión POS; y ausencia de efectos en venta/caja/inventario.
+  Resultado: **PASS**.
+- `ecom_business_capabilities_wholesale_1_multibatch_validation_test.sql`:
+  201 proyecciones en lotes 200 + 1, handoff de revisión final, repetición sin
+  cambio material y cambio posterior que incrementa revisión. Resultado:
+  **PASS** (`projections=201`, `rpcBatchSize=200`,
+  `repeatIdempotent=true`, `finalRevisionHandoff=true`,
+  `materialChangeRevision=true`).
+- `ecom_business_capabilities_wholesale_1_test.sql`: **PASS**.
+- `ecom_products_model_1_1_test.sql`: se corrigieron sus fixtures para crear un
+  perfil de rubro conocido y revisiones fuente reales; **PASS**.
+
+Después de cada rollback se verificó `0` fixtures en licencias, portales,
+productos POS/publicados, órdenes, tiers y solicitudes de sincronización.
+
+### Seguridad remota
+
+Consulta de privilegios y RLS posterior a las migraciones:
+
+- `anon_tier_writer=false`
+- `authenticated_config_writer=false`
+- `service_tier_writer=false`
+- `anon_tier_dml=false`
+- `authenticated_tier_dml=false`
+- `service_tier_dml=false`
+- `rls_enabled=true`
+
+El aviso de advisor de RLS sin políticas permanece intencional: la tabla de
+tiers es deny-all y sólo la acceden las RPC/JSON autorizados.
+
+### JavaScript, comparación y calidad
+
+- Suites focales nuevas y afectadas: **15 archivos, 100 pruebas PASS**. Incluyen
+  capacidades, pricing, carrito público, admin, snapshot, modal de publicación,
+  modal público y checkout.
+- Dos suites adicionales no inicializan por
+  `createEcommercePublishedStockAlertService is not a function`. Se reprodujo el
+  mismo error sin cambios en el HEAD de `main`; no es regresión del PR.
+- Global normalizado por JSON: rama PR `1474` pruebas (`1305` passed, `110`
+  failed, `59` pending) frente a `main` `1459` (`1276` passed, `124` failed,
+  `59` pending). Comparación por aserción: **0 fallos exclusivos del PR**;
+  los restantes son heredados o fixtures corregidos en la rama.
+- ESLint focal de los archivos JavaScript modificados: **PASS**.
+- Lint global: **FAIL heredado**, idéntico en rama y `main` (`159` errores,
+  `224` warnings; 0 errores exclusivos del PR).
+- `git diff --check`: **PASS**.
+- `npm run build`: **PASS**.
+- `npm run build:store`: **PASS**.
+- `npm run build:store:vercel`: **PASS**, artefacto auditado y staged,
+  `deployed=false`; se restauraron los artefactos generados para no incluirlos
+  en este PR.
+
+### Cambios de este cierre
+
+- Dos migraciones compensatorias indicadas arriba.
+- Dos pruebas SQL de comportamiento real.
+- Ajustes de fixtures en `ecom_products_model_1_1_test.sql`,
+  `usePublicCart.catalogRevision.test.jsx`,
+  `usePublicCart.configured.test.jsx` y
+  `PublicProductConfigurationModal.test.jsx`.
+- Este reporte.
+
+El SHA final y los commits publicados se actualizan junto con el cierre remoto
+del PR; no se declara un workflow remoto PASS antes de que GitHub procese ese
+HEAD. No se realizó despliegue manual ni preview de Vercel.
