@@ -3,8 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EcommerceProductPublishModal from '../EcommerceProductPublishModal';
 import { getEcommercePortal } from '../../../services/ecommerce/ecommerceAdminService';
+import { useAppStore } from '../../../store/useAppStore';
 
-vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
+vi.mock('../../../services/ecommerce/ecommerceAdminService', async (importOriginal) => ({
+  ...(await importOriginal()),
   getEcommercePortal: vi.fn()
 }));
 
@@ -49,13 +51,17 @@ const chooseLocalProduct = () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAppStore.setState({ companyProfile: { business_type: 'abarrotes' } });
   getEcommercePortal.mockResolvedValue({
     success: true,
     features: { stockVisibility: true }
   });
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({ companyProfile: null });
+});
 
 describe('EcommerceProductPublishModal stock visibility', () => {
   it('forces hidden for FREE and does not expose the selector', async () => {

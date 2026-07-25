@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link2, LoaderCircle, Save, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getEcommercePortal } from '../../services/ecommerce/ecommerceAdminService';
+import { useAppStore } from '../../store/useAppStore';
+import {
+  BUSINESS_CAPABILITY_STATUS,
+  resolveEcommerceBusinessPolicy
+} from '../../utils/businessCapabilities';
+import { normalizeEcommerceWholesaleTiers } from '../../utils/ecommerceWholesalePricing';
 
 const MANUAL_SYNC_CONFIG = Object.freeze({
   name: 'manual',
@@ -39,6 +45,8 @@ const emptyForm = {
   imageUrl: null,
   stockMode: 'hidden',
   stockTracked: false,
+  publicConfigurationMode: null,
+  wholesaleEnabled: false,
   syncConfig: MANUAL_SYNC_CONFIG
 };
 
@@ -103,6 +111,25 @@ export default function EcommerceProductPublishModal({
   const [stockFeatureLoading, setStockFeatureLoading] = useState(false);
   const [stockFeatureError, setStockFeatureError] = useState(false);
   const [stockVisibilityEnabled, setStockVisibilityEnabled] = useState(false);
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const selectedLocalProduct = useMemo(
+    () => localProducts.find(
+      (product) => String(product.id) === String(form.localProductRef)
+    ) || null,
+    [form.localProductRef, localProducts]
+  );
+  const businessPolicy = useMemo(() => resolveEcommerceBusinessPolicy({
+    profile: companyProfile,
+    product: selectedLocalProduct || {},
+    publicConfigurationMode: form.publicConfigurationMode
+  }), [companyProfile, form.publicConfigurationMode, selectedLocalProduct]);
+  const wholesalePreview = useMemo(() => normalizeEcommerceWholesaleTiers(
+    selectedLocalProduct?.wholesaleTiers ?? selectedLocalProduct?.wholesale_tiers,
+    {
+      productRef: selectedLocalProduct?.id,
+      replacementCost: selectedLocalProduct?.cost
+    }
+  ), [selectedLocalProduct]);
   const allFieldsLinked = useMemo(
     () => Object.values(form.syncConfig).every((mode) => mode === 'source'),
     [form.syncConfig]
@@ -137,6 +164,12 @@ export default function EcommerceProductPublishModal({
       stockTracked: linkedProduct
         ? isProductStockTracked(linkedProduct)
         : isProductStockTracked(editingProduct),
+      publicConfigurationMode: editingProduct.publicConfigurationMode
+        ?? editingProduct.public_configuration_mode
+        ?? null,
+      wholesaleEnabled: editingProduct.wholesaleEnabled
+        ?? editingProduct.wholesale_enabled
+        ?? false,
       syncConfig: isPro
         ? normalizeSyncConfig(editingProduct.syncConfig, MANUAL_SYNC_CONFIG)
         : MANUAL_SYNC_CONFIG
@@ -183,7 +216,9 @@ export default function EcommerceProductPublishModal({
         ...current,
         localProductRef: '',
         stockMode: 'hidden',
-        stockTracked: false
+        stockTracked: false,
+        publicConfigurationMode: null,
+        wholesaleEnabled: false
       }));
       return;
     }
@@ -197,7 +232,9 @@ export default function EcommerceProductPublishModal({
       categoryName: categoriesById.get(product.categoryId) || product.category || '',
       imageUrl: publicUrl(product.imageUrl || product.image),
       stockTracked,
-      stockMode: stockTracked ? current.stockMode : 'hidden'
+      stockMode: stockTracked ? current.stockMode : 'hidden',
+      publicConfigurationMode: null,
+      wholesaleEnabled: false
     }));
   };
 
@@ -232,6 +269,17 @@ export default function EcommerceProductPublishModal({
     if (isPro && stockFeatureError) {
       return toast.error('No se pudo validar la política de inventario público. Intenta nuevamente.');
     }
+    if (
+      form.isPublished
+      && businessPolicy.status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
+    ) {
+      return toast.error(
+        'El producto requiere revisión. Publícalo sin extras o déjalo despublicado.'
+      );
+    }
+    if (form.wholesaleEnabled && !wholesalePreview.valid) {
+      return toast.error('No hay niveles de mayoreo públicos válidos.');
+    }
 
     setSaving(true);
     const saved = await onSave({
@@ -254,6 +302,8 @@ export default function EcommerceProductPublishModal({
         stockTracked: form.stockTracked,
         requestedMode: form.stockMode
       }),
+      publicConfigurationMode: form.publicConfigurationMode,
+      wholesaleEnabled: form.wholesaleEnabled,
       syncConfig: isPro ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
       metadata: { source: 'admin_ui' }
     });
@@ -291,7 +341,14 @@ export default function EcommerceProductPublishModal({
                 const linked = linkedRefs.has(ref) && ref !== editingProduct?.localProductRef;
                 return (
                   <option key={ref} value={ref} disabled={linked}>
-                    {product.name} — ${safeNumber(product.price).toFixed(2)}{linked ? ' (ya agregado)' : ''}
+                    {product.name} — ${safeNumber(product.price).toFixed(2)}
+                    {resolveEcommerceBusinessPolicy({
+                      profile: companyProfile,
+                      product
+                    }).status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
+                      ? ' — Requiere revisión'
+                      : ''}
+                    {linked ? ' (ya agregado)' : ''}
                   </option>
                 );
               })}
@@ -394,6 +451,63 @@ export default function EcommerceProductPublishModal({
             <label><input type="checkbox" checked={form.isAvailable} onChange={(event) => setForm((current) => ({ ...current, isAvailable: event.target.checked }))} /> Disponible manualmente para clientes</label>
             <label><input type="checkbox" checked={form.isPublished} onChange={(event) => setForm((current) => ({ ...current, isPublished: event.target.checked }))} disabled={!editingProduct && limitReached} /> Publicado</label>
           </div>
+          {(businessPolicy.status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
+            || form.publicConfigurationMode === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE) && (
+            <div className="ecom-admin-alert ecom-admin-span-2" role="alert">
+              <strong>Requiere revisión</strong>
+              <span>
+                Este producto utiliza extras que no están disponibles para el rubro
+                actual. Los datos originales del POS no se modificarán.
+              </span>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.publicConfigurationMode === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    publicConfigurationMode: event.target.checked
+                      ? BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE
+                      : null
+                  }))}
+                />
+                Publicar sin extras en la tienda online
+              </label>
+            </div>
+          )}
+          {wholesalePreview.tiers.length > 0 && (
+            <div className="ecom-admin-span-2">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.wholesaleEnabled}
+                  disabled={(
+                    !businessPolicy.capabilities.supportsWholesalePricing
+                    || !wholesalePreview.valid
+                  )}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    wholesaleEnabled: event.target.checked
+                  }))}
+                />
+                Mostrar precios de mayoreo en la tienda online
+              </label>
+              {form.wholesaleEnabled && (
+                <small className="ecom-admin-help">
+                  Precio normal: ${safeNumber(selectedLocalProduct?.price).toFixed(2)}.{' '}
+                  {wholesalePreview.tiers
+                    .filter((tier) => tier.sourceAvailable)
+                    .map((tier) => `Desde ${tier.minQuantity} piezas: $${tier.unitPrice.toFixed(2)} c/u`)
+                    .join(' · ')}
+                </small>
+              )}
+              {wholesalePreview.warnings.length > 0 && (
+                <small className="ecom-admin-help" role="alert">
+                  Revisa los niveles duplicados, inválidos o inferiores al costo antes
+                  de publicarlos.
+                </small>
+              )}
+            </div>
+          )}
           {isPro && (
             <small className="ecom-admin-help ecom-admin-span-2">
               La disponibilidad pública requiere que el producto esté publicado, habilitado manualmente y disponible en la fuente local.

@@ -171,6 +171,33 @@ function StockReviewBanner({ snapshot }) {
   );
 }
 
+function BusinessCapabilityReviewBanner({ products }) {
+  const reviewCount = products.filter(
+    (product) => product.businessCapabilityStatus === 'requires_review'
+  ).length;
+
+  if (reviewCount === 0) return null;
+
+  return (
+    <div className="ecom-admin-stock-alerts" aria-live="polite">
+      <div className="ecom-admin-stock-alert is-review" role="alert">
+        <AlertTriangle size={21} aria-hidden="true" />
+        <div>
+          <strong>
+            {reviewCount === 1
+              ? '1 producto requiere revisión por rubro'
+              : `${reviewCount} productos requieren revisión por rubro`}
+          </strong>
+          <p>
+            Algunos productos utilizan funciones que no están disponibles para el
+            rubro actual del negocio. Revisa su publicación o publícalos sin extras.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EcommercePortalSettings() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const canAccess = useAppStore((state) => state.canAccess);
@@ -948,6 +975,7 @@ export default function EcommercePortalSettings() {
         />
 
         <StockReviewBanner snapshot={stockSnapshot} />
+        <BusinessCapabilityReviewBanner products={products} />
 
         {!isPro && (
           <div className={`ecom-admin-limit ${limitReached ? 'is-blocked' : ''}`}>
@@ -1000,6 +1028,15 @@ export default function EcommercePortalSettings() {
                       >
                         <AlertTriangle size={15} aria-hidden="true" />
                         {warningText}
+                      </span>
+                    )}
+                    {product.businessCapabilityStatus === 'requires_review' && (
+                      <span className="ecom-admin-stock-warning status-unverified" role="status">
+                        <AlertTriangle size={15} aria-hidden="true" />
+                        Requiere revisión
+                        {product.businessCapabilityReason
+                          ? ` · ${product.businessCapabilityReason}`
+                          : ''}
                       </span>
                     )}
                     <span>

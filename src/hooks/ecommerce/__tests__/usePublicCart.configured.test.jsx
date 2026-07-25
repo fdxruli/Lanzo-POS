@@ -9,6 +9,7 @@ const product = {
   stock: { mode: 'hidden', status: 'available', quantity: null },
   configuration: { type: 'variant_parent', version: 2, hasVariants: true, hasOptionGroups: true, requiresConfiguration: true }
 };
+const configurationRevision = 'a'.repeat(64);
 const line = (variantId, optionId, quantity = 1) => ({
   success: true,
   lineKey: buildEcommerceConfiguredLineKey({
@@ -18,7 +19,14 @@ const line = (variantId, optionId, quantity = 1) => ({
   productId: 'p1', variantId,
   selections: [{ groupId: 'extras', optionIds: [optionId] }],
   configurationVersion: 2,
+  configurationRevision,
   configurationSnapshot: {
+    configurationVersion: 2,
+    configurationRevision,
+    pricing: {
+      variantAdjustment: 20,
+      optionsAdjustment: optionId === 'cheese' ? 10 : 20
+    },
     variant: { id: variantId, name: variantId, optionValues: { size: variantId } },
     groups: [{ id: 'extras', name: 'Extras', options: [{ id: optionId, name: optionId }] }]
   },

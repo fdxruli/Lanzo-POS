@@ -42,6 +42,13 @@ begin
     (v_license_pro,'ECOM-MODEL-1-1-PRO-ROLLBACK','pro','active',now()+interval '1 day',
       '{"ecommerce_portal_enabled":true,"ecommerce_max_published_products":-1,"ecommerce_stock_visibility":true,"ecommerce_cloud_catalog_source":true}'::jsonb);
 
+  -- The capability policy is intentionally fail-closed for unknown business
+  -- types. These legacy availability fixtures model known compatible profiles.
+  insert into public.business_profiles(license_id,business_name,business_type)
+  values
+    (v_license_free,'Model 1.1 Free rollback',array['abarrotes']::public.business_category[]),
+    (v_license_pro,'Model 1.1 Pro rollback',array['abarrotes']::public.business_category[]);
+
   insert into public.license_devices(id,license_id,device_fingerprint,security_token,is_active,device_role)
   values
     (v_device_free,v_license_free,'model-1-1-free-device','model-1-1-free-token',true,'admin'),
@@ -106,12 +113,14 @@ begin
   end if;
   v_test_count := v_test_count + 2;
 
-  -- 4-5. C/H: removing required configuration restores a valid product.
+  -- 4-5. C/H: removing required configuration restores a simple contract but
+  -- retains the fail-closed source availability set while the variant aggregate
+  -- is being reconciled. A later source projection restores availability.
   v_result := private.ecommerce_apply_product_configuration(v_license_free,v_pub_reversible,
     '{"type":"simple","version":1,"hasRecipe":false,"variants":[],"optionGroups":[],"availabilitySource":"direct","availabilityReasonCode":null,"limitingSource":{"productId":null,"name":null}}','version:2');
-  if (select source_available from public.ecommerce_published_products where id=v_pub_reversible) is not true
+  if (select source_available from public.ecommerce_published_products where id=v_pub_reversible) is not false
      or (select requires_configuration from public.ecommerce_published_products where id=v_pub_reversible) is not false
-     or (select is_available from public.ecommerce_published_products where id=v_pub_reversible) is not true then
+     or (select is_available from public.ecommerce_published_products where id=v_pub_reversible) is not false then
     raise exception 'TEST_04_05_AVAILABILITY_C_H_FAILED';
   end if;
   v_test_count := v_test_count + 2;
@@ -140,6 +149,8 @@ begin
   v_test_count := v_test_count + 1;
 
   -- 9. Manual Free publication is atomic, persists recipe and keeps hidden stock.
+  update public.pos_products set server_version=10
+  where license_id=v_license_free and id='m11-recipe';
   v_result := public.ecommerce_admin_upsert_published_product_v2(
     'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-free-device','model-1-1-free-token',null,
     '{"sourceType":"local_snapshot","localProductRef":"m11-recipe","publicName":"Receta publica","price":30,"manualAvailable":true,"isAvailable":true,"isPublished":true,"stockMode":"exact","syncConfig":{"name":"manual","description":"manual","category":"manual","price":"manual","image":"manual"},"metadata":{"source":"test"},"configuration":{"type":"recipe","version":1,"hasRecipe":true,"variants":[],"optionGroups":[],"availabilitySource":"recipe","availabilityReasonCode":"RECIPE_CAPACITY_CALCULATED","limitingSource":{"productId":"m11-ingredient","name":"Ingrediente"}},"configurationSourceRevision":"version:10"}'::jsonb
@@ -157,6 +168,8 @@ begin
   v_test_count := v_test_count + 1;
 
   -- 10. Full real transport payload: group, two options, ingredient and price delta.
+  update public.pos_products set server_version=11
+  where license_id=v_license_free and id='m11-recipe';
   v_config := '{"type":"configurable","version":1,"hasRecipe":true,"variants":[],"optionGroups":[{"sourceGroupRef":"extras","publicName":"Extras","selectionType":"multiple","required":true,"minSelect":1,"maxSelect":2,"displayOrder":0,"options":[{"sourceOptionRef":"cheese","publicName":"Queso","priceDelta":15,"sourceIngredientId":"m11-option-ing","ingredientQuantity":1,"ingredientUnit":"pza","tracksInventory":true,"manualAvailable":true,"sourceAvailable":true,"displayOrder":0,"metadata":{}},{"sourceOptionRef":"onion","publicName":"Sin cebolla","priceDelta":0,"sourceIngredientId":null,"ingredientQuantity":null,"ingredientUnit":null,"tracksInventory":false,"manualAvailable":true,"sourceAvailable":true,"displayOrder":1,"metadata":{}}],"metadata":{}}],"availabilitySource":"recipe","availabilityReasonCode":"RECIPE_CAPACITY_CALCULATED","limitingSource":{"productId":"m11-ingredient","name":"Ingrediente"}}'::jsonb;
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-free-device','model-1-1-free-token',null,v_manual_id,v_config,'version:11');
@@ -165,7 +178,7 @@ begin
      or (select count(*) from public.ecommerce_published_options where published_product_id=v_manual_id and deleted_at is null)<>2
      or (select source_available from public.ecommerce_published_products where id=v_manual_id) is not true
      or (select requires_configuration from public.ecommerce_published_products where id=v_manual_id) is not true
-     or (select is_available from public.ecommerce_published_products where id=v_manual_id) is not false then
+     or (select is_available from public.ecommerce_published_products where id=v_manual_id) is not true then
     raise exception 'TEST_10_REAL_PAYLOAD_FAILED: %',v_result;
   end if;
   v_test_count := v_test_count + 1;
@@ -213,6 +226,8 @@ begin
 
   -- 15. Cross-license reference rolls back and preserves the previous product state.
   select count(*) into v_before_variants from public.ecommerce_published_product_variants where published_product_id=v_manual_id and deleted_at is null;
+  update public.pos_products set server_version=17
+  where license_id=v_license_free and id='m11-recipe';
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-free-device','model-1-1-free-token',null,v_manual_id,
     '{"type":"variant_parent","version":1,"hasRecipe":false,"variants":[{"sourceVariantRef":"cross","sourceProductId":"m11-cross","localProductRef":"m11-cross","sku":"CROSS","publicName":"Cross","optionValues":{"color":"X"},"priceMode":"base","priceValue":0,"imageUrl":null,"imageRef":null,"trackStock":true,"stockMode":"hidden","stockSnapshot":1,"sourceAvailable":true,"manualAvailable":true,"displayOrder":0,"sourceRevision":"version:1","metadata":{}}],"optionGroups":[],"availabilitySource":"variant_aggregate","availabilityReasonCode":null,"limitingSource":{"productId":null,"name":null}}','version:17');
@@ -224,6 +239,8 @@ begin
   v_test_count := v_test_count + 1;
 
   -- 16-17. Staff permission contract.
+  update public.pos_products set server_version=18
+  where license_id=v_license_free and id='m11-recipe';
   v_result := public.ecommerce_admin_sync_product_configuration(
     'ECOM-MODEL-1-1-FREE-ROLLBACK','model-1-1-staff-allowed','model-1-1-staff-allowed-token','model-1-1-session-allowed',v_manual_id,
     '{"type":"simple","version":1,"hasRecipe":false,"variants":[],"optionGroups":[],"availabilitySource":"direct","availabilityReasonCode":null,"limitingSource":{"productId":null,"name":null}}','version:18');
@@ -235,6 +252,8 @@ begin
   v_test_count := v_test_count + 2;
 
   -- 18-19. Automatic PRO sync uses the same writer and remains idempotent.
+  update public.pos_products set server_version=2
+  where license_id=v_license_pro and id='m11-cloud';
   select catalog_revision into v_revision from public.ecommerce_portals where id=v_portal_pro;
   v_cloud_projection := jsonb_build_array(jsonb_build_object(
     'publishedProductId',v_pub_cloud::text,

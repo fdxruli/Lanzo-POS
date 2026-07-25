@@ -16,8 +16,9 @@ const publicDetail = {
   product: {
     id: 'product-1', name: 'Playera Urban', description: 'Algodón', imageUrl: '',
     currency: 'MXN', basePrice: 100, configurationType: 'variant_parent',
-    configurationVersion: 3, requiresConfiguration: true, hasVariants: true,
-    hasOptionGroups: true, isAvailable: true
+    configurationVersion: 3, configurationRevision: 'b'.repeat(64),
+    requiresConfiguration: true, hasVariants: true, hasOptionGroups: true,
+    isAvailable: true, availability: { message: 'Disponible' }
   },
   variants: [
     { id: 'v-black-m', publicName: 'Negro / M', optionValues: { color: 'Negro', talla: 'M' }, priceMode: 'base', priceValue: 0, imageUrl: '', stock: { mode: 'hidden', status: 'available', quantity: null }, isAvailable: true },

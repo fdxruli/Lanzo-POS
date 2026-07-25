@@ -217,7 +217,7 @@ describe('catalog configuration snapshot and idempotency', () => {
 
     expect(localSource.getProductsByIds).toHaveBeenCalledTimes(1);
     const [rpcName, params] = rpc.mock.calls[0];
-    expect(rpcName).toBe('ecommerce_admin_sync_published_catalog_v2');
+    expect(rpcName).toBe('ecommerce_admin_sync_published_catalog_v3');
     expect(params.p_idempotency_key).toMatch(/^ecom-catalog-sync:portal-1:/);
     expect(params.p_expected_catalog_revision).toBe(4);
     expect(params.p_projections).toHaveLength(1);

@@ -53,6 +53,15 @@ function PublicProductCard({ product, onAdd, onConfigure }) {
               {configurable ? 'Desde ' : ''}
               {formatCurrency(product.price, product.currency)}
             </strong>
+            {product.wholesaleEnabled && product.wholesaleTiers?.length > 0 ? (
+              <span className="public-product-card__wholesale">
+                {product.wholesaleTiers.map((tier) => (
+                  <small key={tier.sourceTierRef || tier.minQuantity}>
+                    Compra {tier.minQuantity} o más: {formatCurrency(tier.unitPrice, product.currency)} c/u
+                  </small>
+                ))}
+              </span>
+            ) : null}
             {stockLabel ? (
               <span className={`public-product-card__stock${isUnavailableStockLabel ? ' is-unavailable' : ''}`}>
                 {stockLabel}

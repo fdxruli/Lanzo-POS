@@ -8,6 +8,7 @@ import {
   buildEcommerceConfiguredLineKey,
   decodeEcommerceConfiguredLineKey
 } from '../../utils/ecommerceConfiguredProduct';
+import { resolveEcommerceUnitPrice } from '../../utils/ecommerceWholesalePricing';
 
 const CART_VERSION = 3;
 const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
@@ -114,7 +115,7 @@ export function getPublicCartStorageKey(slug) {
 function calculateMoney(lines) {
   try {
     return lines.reduce((total, line) => (
-      total.plus(new Big(line.product.price || 0).times(line.quantity))
+      total.plus(new Big((line.appliedUnitPrice ?? line.product.price) || 0).times(line.quantity))
     ), new Big(0));
   } catch {
     return new Big(0);
@@ -162,6 +163,18 @@ const buildConfiguredProduct = (entry, product) => ({
     quantity: entry.maxQuantity < 99 ? entry.maxQuantity : product.stock?.quantity
   }
 });
+
+const resolveCartLinePricing = ({ product, catalogProduct, quantity }) => {
+  const configuredPricing = product.configurationLine?.configurationSnapshot?.pricing || {};
+  return resolveEcommerceUnitPrice({
+    baseUnitPrice: catalogProduct.price,
+    quantity,
+    wholesaleEnabled: catalogProduct.wholesaleEnabled === true,
+    tiers: catalogProduct.wholesaleTiers,
+    variantAdjustment: configuredPricing.variantAdjustment || 0,
+    optionsAdjustment: configuredPricing.optionsAdjustment || 0
+  });
+};
 
 export default function usePublicCart({
   slug,
@@ -313,13 +326,20 @@ export default function usePublicCart({
     const product = isConfiguredEntry(entry)
       ? buildConfiguredProduct(entry, catalogProduct)
       : catalogProduct;
+    const pricing = resolveCartLinePricing({ product, catalogProduct, quantity });
     let lineTotal = '0';
     try {
-      lineTotal = new Big(product.price || 0).times(quantity).toFixed(2);
+      lineTotal = new Big(pricing.appliedUnitPrice).times(quantity).toFixed(2);
     } catch {
       lineTotal = '0';
     }
-    lines.push({ product, quantity, maxQuantity: effectiveMaximum, lineTotal });
+    lines.push({
+      product,
+      quantity,
+      maxQuantity: effectiveMaximum,
+      lineTotal,
+      ...pricing
+    });
     return lines;
   }, []), [entries, productMap, safeMaxItemQuantity]);
 

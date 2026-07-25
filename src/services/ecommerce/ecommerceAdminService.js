@@ -6,6 +6,13 @@ import {
   getEcommerceConfigurationSourceRevision,
   serializeEcommerceProductConfigurationForSync
 } from '../../utils/ecommerceProductConfigurationSync';
+import {
+  BUSINESS_CAPABILITY_STATUS,
+  resolveEcommerceBusinessPolicy
+} from '../../utils/businessCapabilities';
+import {
+  normalizeEcommerceWholesaleTiers
+} from '../../utils/ecommerceWholesalePricing';
 import { ecommercePublishedStockLocalSource } from './ecommercePublishedStockLocalSource';
 import {
   decorateProductWithEcommerceApparelProjection,
@@ -125,26 +132,67 @@ const isProjectionObject = (value) => (
   && !Array.isArray(value)
 );
 
-const buildPublishedProductConfiguration = (localProduct = {}) => {
+const buildPublishedProductProjection = (
+  localProduct = {},
+  {
+    publicConfigurationMode,
+    wholesaleEnabled = false,
+    profile,
+    businessTypes
+  } = {}
+) => {
+  const policy = resolveEcommerceBusinessPolicy({
+    profile,
+    businessTypes,
+    product: localProduct,
+    publicConfigurationMode
+  });
   const baseConfiguration = buildEcommerceProductConfigurationSyncPayload(localProduct);
   const apparelState = getEcommerceApparelProjectionState(localProduct);
-  if (!apparelState) return baseConfiguration;
+  const configuration = !apparelState
+    ? baseConfiguration
+    : serializeEcommerceProductConfigurationForSync({
+        ...baseConfiguration,
+        type: 'variant_parent',
+        variants: Array.isArray(localProduct.variants) ? localProduct.variants : [],
+        availabilitySource: 'variant_aggregate',
+        availabilityReasonCode: apparelState.availabilityReasonCode,
+        limitingSource: baseConfiguration.limitingSource
+      });
+  const wholesale = normalizeEcommerceWholesaleTiers(
+    localProduct.wholesaleTiers ?? localProduct.wholesale_tiers,
+    {
+      productRef: localProduct.id,
+      replacementCost: localProduct.cost
+    }
+  );
 
-  return serializeEcommerceProductConfigurationForSync({
-    ...baseConfiguration,
-    type: 'variant_parent',
-    variants: Array.isArray(localProduct.variants) ? localProduct.variants : [],
-    availabilitySource: 'variant_aggregate',
-    availabilityReasonCode: apparelState.availabilityReasonCode,
-    limitingSource: baseConfiguration.limitingSource
-  });
+  return {
+    configuration,
+    businessCapabilityStatus: policy.status,
+    businessCapabilityReason: policy.reason,
+    publicConfigurationMode: policy.status === BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE
+      ? BUSINESS_CAPABILITY_STATUS.SIMPLE_OVERRIDE
+      : policy.status,
+    wholesaleEnabled: wholesaleEnabled === true
+      && policy.capabilities.supportsWholesalePricing
+      && wholesale.valid,
+    wholesaleTiers: wholesale.tiers,
+    wholesaleWarnings: wholesale.warnings
+  };
 };
 
-const preparePublishedProductPayload = (payload = {}) => {
+const buildPublishedProductConfiguration = (localProduct = {}, context = {}) => (
+  buildPublishedProductProjection(localProduct, context).configuration
+);
+
+const preparePublishedProductPayload = (payload = {}, context = {}) => {
   const {
     localProduct,
     configuration: suppliedConfiguration,
     configurationSourceRevision: suppliedSourceRevision,
+    publicConfigurationMode,
+    wholesaleEnabled,
     ...publishedPayload
   } = payload || {};
 
@@ -152,9 +200,21 @@ const preparePublishedProductPayload = (payload = {}) => {
     return { payload: publishedPayload, useV2: false };
   }
 
-  const configuration = suppliedConfiguration
-    ? serializeEcommerceProductConfigurationForSync(suppliedConfiguration)
-    : buildPublishedProductConfiguration(localProduct);
+  const projection = suppliedConfiguration
+    ? {
+        configuration: serializeEcommerceProductConfigurationForSync(suppliedConfiguration),
+        businessCapabilityStatus: publishedPayload.businessCapabilityStatus,
+        businessCapabilityReason: publishedPayload.businessCapabilityReason,
+        publicConfigurationMode,
+        wholesaleEnabled: wholesaleEnabled === true,
+        wholesaleTiers: publishedPayload.wholesaleTiers || [],
+        wholesaleWarnings: []
+      }
+    : buildPublishedProductProjection(localProduct, {
+        publicConfigurationMode,
+        wholesaleEnabled,
+        ...context
+      });
   const configurationSourceRevision = suppliedSourceRevision
     || getEcommerceConfigurationSourceRevision(localProduct)
     || null;
@@ -163,7 +223,7 @@ const preparePublishedProductPayload = (payload = {}) => {
     useV2: true,
     payload: {
       ...publishedPayload,
-      configuration,
+      ...projection,
       configurationSourceRevision
     }
   };
@@ -195,23 +255,32 @@ const hydrateLocalProductApparelVariants = async ({
 
 const preparePublishedProductPayloadAsync = async (
   payload = {},
-  { localSource = ecommercePublishedStockLocalSource, now = new Date() } = {}
+  {
+    localSource = ecommercePublishedStockLocalSource,
+    now = new Date(),
+    profile,
+    businessTypes
+  } = {}
 ) => {
   if (!payload?.localProduct || payload?.configuration) {
-    return preparePublishedProductPayload(payload);
+    return preparePublishedProductPayload(payload, { profile, businessTypes });
   }
   const localProduct = await hydrateLocalProductApparelVariants({
     localProduct: payload.localProduct,
     localSource,
     now
   });
-  return preparePublishedProductPayload({ ...payload, localProduct });
+  return preparePublishedProductPayload(
+    { ...payload, localProduct },
+    { profile, businessTypes }
+  );
 };
 
 export const createEcommerceAdminService = ({
   rpc = (name, payload) => supabaseClient?.rpc(name, payload),
   isConfigured = () => Boolean(supabaseClient),
   getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
+  getCompanyProfile = () => useAppStore.getState()?.companyProfile || null,
   buildAuthContext = buildDefaultEcommerceAdminAuthContext,
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
   localSource = ecommercePublishedStockLocalSource
@@ -297,10 +366,13 @@ export const createEcommerceAdminService = ({
     savePublishedProduct: async (payload) => {
       const fallback = 'No se pudo guardar el producto publicado.';
       try {
-        const prepared = await preparePublishedProductPayloadAsync(payload, { localSource });
+        const prepared = await preparePublishedProductPayloadAsync(payload, {
+          localSource,
+          profile: getCompanyProfile()
+        });
         return callRpc(
           prepared.useV2
-            ? 'ecommerce_admin_upsert_published_product_v2'
+            ? 'ecommerce_admin_upsert_published_product_v3'
             : 'ecommerce_admin_upsert_published_product',
           { p_payload: prepared.payload },
           fallback
@@ -352,7 +424,7 @@ export const createEcommerceAdminService = ({
       }
 
       return callRpc(
-        'ecommerce_admin_sync_published_catalog_v2',
+        'ecommerce_admin_sync_published_catalog_v3',
         {
           p_projections: projections,
           p_idempotency_key: idempotencyKey || 'catalog-sync',
