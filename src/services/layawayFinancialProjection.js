@@ -15,11 +15,11 @@ const movementAmount = (movement) => movement?.monto ?? movement?.amount ?? 0;
 const movementSessionId = (movement) => movement?.cash_session_id || movement?.caja_id || movement?.cashSessionId || null;
 const paymentSessionId = (payment) => payment?.cash_session_id || payment?.cajaId || payment?.cashSessionId || null;
 const movementDate = (movement) => movement?.fecha || movement?.createdAt || null;
-const paymentDate = (payment, layaway) => payment?.date || payment?.createdAt || layaway?.createdAt || null;
+const paymentRecordedDate = (payment) => payment?.date || payment?.createdAt || null;
 const isConfirmedPayment = (payment) => payment?.status !== 'pending' && payment?.status !== 'failed';
 const movementType = (movement = {}) => String(movement.tipo || movement.type || '').toLowerCase();
 const movementSource = (movement = {}) => String(movement.source || movement.origen || '').toLowerCase();
-const LEGACY_MATCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const LEGACY_MATCH_WINDOW_MS = 60 * 60 * 1000;
 const isLayawayPaymentMovement = (movement = {}) => (
   movementSource(movement) === 'layaway_payment'
   || (String(movement.referenceType || '').toLowerCase() === 'layaway' && Boolean(movement.paymentId))
@@ -69,17 +69,26 @@ const hasCanonicalMovementMetadata = (movement = {}) => Boolean(
   || movement.payment_id
 );
 
-const isLegacyCashDateCompatible = (payment, layaway, movement, range = {}) => {
+const normalizeLegacyConcept = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+const hasCompatibleLegacyConcept = (movement = {}) => (
+  /\b(apartado|anticipo|abono|layaway)\b/.test(
+    normalizeLegacyConcept(movement.concepto || movement.concept)
+  )
+);
+
+const isLegacyCashDateCompatible = (payment, movement, range = {}) => {
   const movementTimestamp = Date.parse(movementDate(movement) || 0);
   if (!Number.isFinite(movementTimestamp) || !dateInRange(movementDate(movement), range)) return false;
 
-  const recordedPaymentDate = paymentDate(payment, layaway);
-  const paymentTimestamp = Date.parse(recordedPaymentDate || 0);
-  if (range.start || range.end) {
-    return !recordedPaymentDate || dateInRange(recordedPaymentDate, range);
-  }
-  return Number.isFinite(paymentTimestamp)
-    && Math.abs(movementTimestamp - paymentTimestamp) <= LEGACY_MATCH_WINDOW_MS;
+  const recordedPaymentDate = paymentRecordedDate(payment);
+  const paymentTimestamp = recordedPaymentDate ? Date.parse(recordedPaymentDate) : Number.NaN;
+  if (!Number.isFinite(paymentTimestamp)) return hasCompatibleLegacyConcept(movement);
+  if (!dateInRange(recordedPaymentDate, range)) return false;
+  return Math.abs(movementTimestamp - paymentTimestamp) <= LEGACY_MATCH_WINDOW_MS;
 };
 
 const reconcileLegacyCashBacking = ({
@@ -103,7 +112,7 @@ const reconcileLegacyCashBacking = ({
       Boolean(sessionId)
       && movementSessionId(movement) === sessionId
       && amount(movementAmount(movement)).eq(amount(entry.payment.amount))
-      && isLegacyCashDateCompatible(entry.payment, entry.layaway, movement, range)
+      && isLegacyCashDateCompatible(entry.payment, movement, range)
     ));
     candidateMovementsByPayment.set(entry, candidates);
     for (const movement of candidates) {
@@ -240,7 +249,7 @@ export const buildLayawayFinancialProjection = ({
       const belongsToSession = !cashSessionId
         || paymentSessionId(payment) === cashSessionId
         || movementSessionId(linkMovement) === cashSessionId;
-      const date = movementDate(linkMovement) || paymentDate(payment, layaway);
+      const date = movementDate(linkMovement) || paymentRecordedDate(payment);
       // Historical payments can have a session ID but no trustworthy timestamp.
       // Keep them visible as an anomaly for that session; never turn them into cash.
       if (!belongsToSession || (date && !dateInRange(date, range)) || (!date && !cashSessionId)) continue;
@@ -470,5 +479,12 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
     )).map((movement) => ({ layawayId: null, paymentId: null, cashMovementId: movement.id || null, amount: number(amount(movementAmount(movement))), status: null, reason: 'legacy_unclassified_cash_entry', legacyHint: movement.concepto || null }))
   };
 };
+
+export const hasHistoricalIntegrityWarning = (reconciliation = {}) => (
+  Number(reconciliation.unlinkedTechnicalPayments?.length || 0) > 0
+  || Number(reconciliation.unverifiedHistoricalPayments?.length || 0) > 0
+  || Number(reconciliation.paymentsWithMissingCashMovementRecord?.length || 0) > 0
+  || Number(reconciliation.unverifiedHistoricalPaymentsAmount || 0) > 0
+);
 
 export { isLayawayPaymentMovement, isLayawayRefundMovement };

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { resolveCashSessionAmounts } from '../../../services/cajaProjection';
+import { hasHistoricalIntegrityWarning } from '../../../services/layawayFinancialProjection';
 
 const CajaStatusCard = ({
   cajaActual,
@@ -44,6 +45,12 @@ const CajaStatusCard = ({
   const abonosTurnoSafe = Money.init(cashAmounts?.abonosFiado || 0);
   const salidasTotalesSafe = Money.init(cashAmounts?.salidasEfectivo || 0);
   const reconciliation = cashAmounts?.reconciliation || null;
+  const unlinkedTechnicalPaymentsCount = Number(reconciliation?.unlinkedTechnicalPayments?.length || 0);
+  const missingCashMovementRecords = reconciliation?.paymentsWithMissingCashMovementRecord || [];
+  const missingCashMovementRecordsAmount = missingCashMovementRecords.reduce(
+    (total, item) => Money.add(total, item.amount || 0),
+    Money.init(0)
+  );
 
   const liquidityLevel = porcentajeLiquidez >= 100
     ? 'danger'
@@ -274,12 +281,21 @@ const CajaStatusCard = ({
           <div className="cash-metric"><span className="cash-metric-label">Anticipos pendientes</span><strong className="amount warning">${Money.toNumber(reconciliation.layawayPendingAdvances).toFixed(2)}</strong></div>
           <div className="cash-metric"><span className="cash-metric-label">Ganancia bruta reconocida (apartados)</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedGrossProfit).toFixed(2)}</strong></div>
           <div className="cash-metric"><span className="cash-metric-label">Diferencia sin clasificar</span><strong className="amount neutral">${Money.toNumber(reconciliation.unclassifiedDifference).toFixed(2)}</strong></div>
-          {Number(reconciliation.unlinkedTechnicalPayments?.length || 0) > 0 && (
+          {hasHistoricalIntegrityWarning(reconciliation) && (
             <div className="cash-metric" style={{ gridColumn: '1 / -1' }} role="status">
               <span className="cash-metric-label">Advertencia de integridad histórica</span>
-              <span className="cash-metric-label">Pagos sin vínculo técnico: {reconciliation.unlinkedTechnicalPayments?.length || 0} por ${Money.toNumber(reconciliation.unlinkedTechnicalPaymentsAmount).toFixed(2)}</span>
-              <span className="cash-metric-label">Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>
-              <strong className="amount warning">Monto sin respaldo verificable: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>
+              {unlinkedTechnicalPaymentsCount > 0 && (
+                <span className="cash-metric-label">Pagos sin vínculo técnico: {unlinkedTechnicalPaymentsCount} por ${Money.toNumber(reconciliation.unlinkedTechnicalPaymentsAmount).toFixed(2)}</span>
+              )}
+              {missingCashMovementRecords.length > 0 && (
+                <span className="cash-metric-label">Pagos con movimiento de Caja no localizado: {missingCashMovementRecords.length} por ${Money.toNumber(missingCashMovementRecordsAmount).toFixed(2)}</span>
+              )}
+              {Number(reconciliation.probableLegacyCashBackingAmount || 0) > 0 && (
+                <span className="cash-metric-label">Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>
+              )}
+              {Number(reconciliation.unverifiedHistoricalPaymentsAmount || 0) > 0 && (
+                <strong className="amount warning">Monto sin respaldo verificable: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>
+              )}
               <span className="cash-metric-label">Los movimientos históricos no fueron modificados ni vinculados automáticamente.</span>
             </div>
           )}

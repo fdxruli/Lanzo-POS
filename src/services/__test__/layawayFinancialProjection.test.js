@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { auditLayawayFinancialLinks, buildCashReconciliation, buildLayawayFinancialProjection } from '../layawayFinancialProjection';
+import {
+  auditLayawayFinancialLinks,
+  buildCashReconciliation,
+  buildLayawayFinancialProjection,
+  hasHistoricalIntegrityWarning
+} from '../layawayFinancialProjection';
 
 const session = {
   id: 'cash-1',
@@ -176,6 +181,99 @@ describe('layaway financial projection', () => {
     ]);
   });
 
+  it('attributes a unique legacy entry when its timestamp is close to the payment', () => {
+    const projection = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-close-time',
+        payments: [{ id: 'payment-close-time', amount: 100, status: 'confirmed', cajaId: 'cash-1', date: '2026-07-25T10:00:00.000Z' }]
+      }],
+      cashMovements: [
+        { id: 'legacy-close-time', cash_session_id: 'cash-1', tipo: 'entrada', monto: 100, fecha: '2026-07-25T10:10:00.000Z' }
+      ],
+      cashSessionId: 'cash-1',
+      range: { start: session.fecha_apertura, end: session.fecha_cierre }
+    });
+
+    expect(projection.probableLegacyCashMatches).toEqual([
+      expect.objectContaining({ paymentId: 'payment-close-time', cashMovementId: 'legacy-close-time', reason: 'probable_legacy_cash_match' })
+    ]);
+  });
+
+  it('does not attribute a legacy entry outside the temporal window', () => {
+    const projection = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-far-time',
+        payments: [{ id: 'payment-far-time', amount: 100, status: 'confirmed', cajaId: 'cash-1', date: '2026-07-25T08:00:00.000Z' }]
+      }],
+      cashMovements: [
+        { id: 'legacy-far-time', cash_session_id: 'cash-1', tipo: 'entrada', monto: 100, fecha: '2026-07-25T20:00:00.000Z' }
+      ],
+      cashSessionId: 'cash-1',
+      range: { start: '2026-07-25T08:00:00.000Z', end: '2026-07-25T22:00:00.000Z' }
+    });
+
+    expect(projection.probableLegacyCashMatches).toEqual([]);
+    expect(projection.unverifiedHistoricalPayments).toEqual([
+      expect.objectContaining({ paymentId: 'payment-far-time', reason: 'missing_cash_movement' })
+    ]);
+  });
+
+  it('requires a compatible legacy concept when the payment has no reliable date', () => {
+    const compatible = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-no-date-compatible',
+        createdAt: '2026-07-01T10:00:00.000Z',
+        payments: [{ id: 'payment-no-date-compatible', amount: 100, status: 'confirmed', cajaId: 'cash-1' }]
+      }],
+      cashMovements: [{
+        id: 'legacy-compatible-concept', cash_session_id: 'cash-1', tipo: 'entrada', monto: 100,
+        fecha: '2026-07-25T10:10:00.000Z', concepto: 'ÁBÓNO Apartado #0096'
+      }],
+      cashSessionId: 'cash-1',
+      range: { start: session.fecha_apertura, end: session.fecha_cierre }
+    });
+    const generic = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-no-date-generic',
+        createdAt: '2026-07-01T10:00:00.000Z',
+        payments: [{ id: 'payment-no-date-generic', amount: 100, status: 'confirmed', cajaId: 'cash-1' }]
+      }],
+      cashMovements: [{
+        id: 'legacy-generic-concept', cash_session_id: 'cash-1', tipo: 'entrada', monto: 100,
+        fecha: '2026-07-25T10:10:00.000Z', concepto: 'Entrada de efectivo'
+      }],
+      cashSessionId: 'cash-1',
+      range: { start: session.fecha_apertura, end: session.fecha_cierre }
+    });
+
+    expect(compatible.probableLegacyCashMatches).toEqual([
+      expect.objectContaining({ cashMovementId: 'legacy-compatible-concept', reason: 'probable_legacy_cash_match' })
+    ]);
+    expect(generic.probableLegacyCashMatches).toEqual([]);
+    expect(generic.unverifiedHistoricalPaymentsAmount).toBe(100);
+  });
+
+  it('keeps both payments ambiguous when one legacy entry could back either one', () => {
+    const projection = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-shared-candidate',
+        payments: [
+          { id: 'payment-shared-1', amount: 100, status: 'confirmed', cajaId: 'cash-1', date: '2026-07-25T10:00:00.000Z' },
+          { id: 'payment-shared-2', amount: 100, status: 'confirmed', cajaId: 'cash-1', date: '2026-07-25T10:05:00.000Z' }
+        ]
+      }],
+      cashMovements: [
+        { id: 'legacy-shared', cash_session_id: 'cash-1', tipo: 'entrada', monto: 100, fecha: '2026-07-25T10:10:00.000Z' }
+      ],
+      cashSessionId: 'cash-1',
+      range: { start: session.fecha_apertura, end: session.fecha_cierre }
+    });
+
+    expect(projection.probableLegacyCashMatches).toEqual([]);
+    expect(projection.unverifiedHistoricalPayments).toHaveLength(2);
+    expect(projection.unverifiedHistoricalPayments.every((item) => item.reason === 'ambiguous_legacy_cash_match')).toBe(true);
+  });
+
   it('does not attribute an exact legacy entry from another cash session', () => {
     const projection = buildLayawayFinancialProjection({
       layaways: [{
@@ -250,5 +348,31 @@ describe('layaway financial projection', () => {
     expect(projection.unlinkedTechnicalPayments).toEqual([]);
     expect(projection.probableLegacyCashMatches).toEqual([]);
     expect(projection.unverifiedHistoricalPayments).toEqual([]);
+  });
+
+  it('surfaces a broken cashMovementId as an integrity warning without increasing Caja', () => {
+    const projection = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-broken-link',
+        status: 'completed',
+        payments: [{
+          id: 'payment-broken-link',
+          amount: 100,
+          status: 'confirmed',
+          cashMovementId: 'move-does-not-exist',
+          cajaId: 'cash-1'
+        }]
+      }],
+      cashMovements: [],
+      cashSessionId: 'cash-1',
+      range: { start: session.fecha_apertura, end: session.fecha_cierre }
+    });
+
+    expect(projection.paymentsWithMissingCashMovementRecord).toHaveLength(1);
+    expect(projection.unlinkedTechnicalPayments).toEqual([]);
+    expect(projection.unverifiedHistoricalPayments).toHaveLength(1);
+    expect(projection.unverifiedHistoricalPaymentsAmount).toBe(100);
+    expect(projection.layawayCashCollected).toBe(0);
+    expect(hasHistoricalIntegrityWarning(projection)).toBe(true);
   });
 });
