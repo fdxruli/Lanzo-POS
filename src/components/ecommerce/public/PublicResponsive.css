@@ -34,6 +34,7 @@
 .public-store-shell .public-store-header__identity,
 .public-store-shell .public-store-header__details,
 .public-store-shell .public-store-header__details span,
+.public-store-shell .public-store-header__details a,
 .public-store-shell .public-store-header__headline,
 .public-store-shell .public-store-header__description,
 .public-store-shell .public-store-badge {
@@ -44,6 +45,7 @@
 .public-store-shell .public-store-header__headline,
 .public-store-shell .public-store-header__description,
 .public-store-shell .public-store-header__details span,
+.public-store-shell .public-store-header__details a,
 .public-store-shell .public-store-badge {
   overflow-wrap: anywhere;
 }
@@ -66,7 +68,8 @@
   margin-top: 1rem;
 }
 
-.public-store-shell .public-store-header__details span {
+.public-store-shell .public-store-header__details span,
+.public-store-shell .public-store-header__details a {
   align-items: flex-start;
 }
 

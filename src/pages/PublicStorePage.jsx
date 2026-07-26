@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ShoppingCart } from 'lucide-react';
+import { ArrowUpRight } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import LogoMark from '../components/common/LogoMark';
 import EcommerceSiteRenderer from '../components/ecommerce/site/EcommerceSiteRenderer';
@@ -105,8 +105,7 @@ function PublicStorePage() {
   const portalTemplate = useMemo(() => normalizeEcommercePortalTemplate(portal?.templateCode), [portal?.templateCode]);
   const portalThemeStyle = useMemo(() => buildEcommercePortalThemeStyle(portalTheme), [portalTheme]);
   const features = portalResult?.features || {};
-  const availability = resolveAvailability(portalResult);
-  availabilityRef.current = availability;
+  const availability = useMemo(() => resolveAvailability(portalResult), [portalResult]);
   const catalogExhausted = catalogReady && pagination.hasMore === false;
   const checkoutCatalogReady = (
     catalogValidated
@@ -126,6 +125,10 @@ function PublicStorePage() {
       revisionRevalidationPromiseRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    availabilityRef.current = availability;
+  }, [availability]);
 
   useEffect(() => {
     revisionRestartCountRef.current = 0;
@@ -750,7 +753,7 @@ function PublicStorePage() {
 
   return (
     <main
-      className="public-store-shell ecommerce-site-surface"
+      className={`public-store-shell ecommerce-site-surface${cart.totalUnits > 0 ? ' public-store-shell--has-cart' : ''}`}
       data-catalog-source={catalogSource}
       data-catalog-revision={catalogRevision || undefined}
       data-site-version={portalResult?.site?.versionNumber || undefined}
@@ -776,20 +779,6 @@ function PublicStorePage() {
           maxItemQuantity: portal.maxItemQuantity
         }}
         catalogChrome={<>
-        <div className="public-store-content__topbar">
-          <p>Compra de forma sencilla desde el catálogo del negocio.</p>
-          <button
-            type="button"
-            className="ui-button ui-button--secondary public-store-cart-button"
-            onClick={() => setIsCartOpen(true)}
-            aria-label={`Ver carrito, ${cart.totalUnits} unidades`}
-          >
-            <ShoppingCart aria-hidden="true" size={19} />
-            Carrito
-            <span>{cart.totalUnits}</span>
-          </button>
-        </div>
-
         {catalogRefreshing ? (
           <div className="public-store-notice" role="status" aria-live="polite">
             Actualizando catálogo… El checkout se habilitará al confirmar precios y disponibilidad.
@@ -825,19 +814,14 @@ function PublicStorePage() {
             <LogoMark />
           </div>
           <div className="public-store-footer__copy">
-            <p className="public-store-section-kicker">Haz crecer tu negocio</p>
-            <h2>¿Quieres tu propia tienda en línea?</h2>
-            <p>
-              Con Lanzo publica tu catálogo, recibe pedidos y organiza tus ventas desde un solo lugar.
-              Convierte cada visita en una oportunidad para vender más.
-            </p>
+            <p className="public-store-footer__brand">Tienda creada con Lanzo</p>
           </div>
           <a
-            className="ui-button ui-button--secondary public-store-footer__cta"
+            className="public-store-footer__cta"
             href={`/conoce-lanzo?tienda=${encodeURIComponent(slug)}`}
           >
             Conoce Lanzo
-            <ArrowUpRight aria-hidden="true" size={18} />
+            <ArrowUpRight aria-hidden="true" size={15} />
           </a>
         </div>
       ) : null}

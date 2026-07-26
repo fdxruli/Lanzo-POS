@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
-  Copy,
-  Crown,
+  Clock3,
   ExternalLink,
   Eye,
   EyeOff,
@@ -12,15 +11,12 @@ import {
   Link2,
   LoaderCircle,
   Lock,
-  MessageCircle,
   PackagePlus,
-  PauseCircle,
+  Palette,
   Pencil,
-  PlayCircle,
-  QrCode,
   RefreshCw,
   Save,
-  Share2,
+  Search,
   Store
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -44,7 +40,7 @@ import EcommerceProductPublishModal from './EcommerceProductPublishModal';
 import EcommerceCatalogSyncPanel, {
   EcommerceCatalogSyncBadge
 } from './EcommerceCatalogSyncPanel';
-import PublicStoreQrCode from './PublicStoreQrCode';
+import EcommerceBusinessInformationPanel from './EcommerceBusinessInformationPanel';
 import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
 import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
 import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
@@ -52,6 +48,8 @@ import EcommerceSiteBuilderFoundation from './EcommerceSiteBuilderFoundation';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
+const POSTAL_CODE_PATTERN = /^\d{5}$/;
+const UNKNOWN_ADDRESS_PART_PATTERN = /^(?:s\/?n|sin n[uú]mero)$/i;
 const STATUS_LABELS = {
   draft: 'Borrador',
   published: 'Publicado',
@@ -78,6 +76,12 @@ const publicUrl = (value) => {
 const IMAGE_INTENT_PRESERVE = 'preserve';
 const IMAGE_INTENT_SET = 'set';
 const IMAGE_INTENT_CLEAR = 'clear';
+const PORTAL_SECTIONS = Object.freeze([
+  { id: 'information', label: 'Información', Icon: Store },
+  { id: 'catalog', label: 'Catálogo', Icon: PackagePlus },
+  { id: 'operation', label: 'Operación', Icon: Clock3 },
+  { id: 'design', label: 'Diseño', Icon: Palette }
+]);
 
 const portalCustomization = (portal) => ({
   templateCode: portal?.templateCode || 'classic',
@@ -92,7 +96,12 @@ const portalForm = (portal, profile) => ({
   headline: portal?.headline || '',
   description: portal?.description || '',
   whatsappPhone: portal?.whatsappPhone || profile?.phone || '',
-  address: portal?.address || profile?.address || '',
+  contactEmail: portal?.contactEmail || profile?.email || '',
+  addressStreet: portal?.addressStreet || '',
+  addressNeighborhood: portal?.addressNeighborhood || '',
+  addressMunicipality: portal?.addressMunicipality || '',
+  addressState: portal?.addressState || '',
+  addressPostalCode: portal?.addressPostalCode || '',
   pickupEnabled: portal?.pickupEnabled !== false,
   deliveryEnabled: portal?.deliveryEnabled === true,
   minOrderTotal: String(portal?.minOrderTotal ?? 0),
@@ -100,15 +109,6 @@ const portalForm = (portal, profile) => ({
   slug: portal?.slug || '',
   logoUrl: portal?.logoUrl || publicUrl(profile?.logo)
 });
-
-function PlanBadge({ isPro }) {
-  return (
-    <span className={`ecom-admin-plan-badge ${isPro ? 'is-pro' : 'is-free'}`}>
-      {isPro ? <Crown size={14} /> : <Store size={14} />}
-      {isPro ? 'Lanzo Nube' : 'Plan Free'}
-    </span>
-  );
-}
 
 function StateMessage({ error, onRetry }) {
   return (
@@ -198,7 +198,7 @@ function BusinessCapabilityReviewBanner({ products }) {
   );
 }
 
-export default function EcommercePortalSettings() {
+export default function EcommercePortalSettings({ requestedSection = null }) {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -242,7 +242,15 @@ export default function EcommercePortalSettings() {
   const [operations, setOperations] = useState(null);
   const [customization, setCustomization] = useState(() => portalCustomization(null));
   const [customizationBusy, setCustomizationBusy] = useState(false);
+  const [activeSection, setActiveSection] = useState('information');
+  const [productSearch, setProductSearch] = useState('');
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
+
+  useEffect(() => {
+    if (PORTAL_SECTIONS.some(({ id }) => id === requestedSection)) {
+      setActiveSection(requestedSection);
+    }
+  }, [requestedSection]);
 
   const authorizationPending = isLicenseInitializing
     || currentDeviceRole === null
@@ -264,7 +272,18 @@ export default function EcommercePortalSettings() {
     ? Number.MAX_SAFE_INTEGER
     : (features.maxPublishedProducts || 10);
   const limitReached = !isPro && publishedCount >= maxProducts;
-  const showBasicPortalEditor = !isPro || !portal;
+  const showBasicPortalEditor = !isPro;
+  const publicationRequirements = {
+    whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
+    street: form.addressStreet.trim().length > 0,
+    neighborhood: form.addressNeighborhood.trim().length > 0,
+    municipality: (
+      form.addressMunicipality.trim().length >= 2
+      && !UNKNOWN_ADDRESS_PART_PATTERN.test(form.addressMunicipality.trim())
+    ),
+    state: form.addressState.trim().length > 0,
+    postalCode: POSTAL_CODE_PATTERN.test(form.addressPostalCode.trim())
+  };
   const linkedRefs = useMemo(
     () => new Set(products.map((item) => item.localProductRef).filter(Boolean)),
     [products]
@@ -275,6 +294,16 @@ export default function EcommercePortalSettings() {
       result
     ])
   ), [stockSnapshot]);
+  const filteredProducts = useMemo(() => {
+    const query = productSearch.trim().toLocaleLowerCase('es-MX');
+    if (!query) return products;
+
+    return products.filter((product) => [
+      product.publicName,
+      product.categoryName,
+      product.description
+    ].some((value) => String(value || '').toLocaleLowerCase('es-MX').includes(query)));
+  }, [productSearch, products]);
 
   const evaluateStock = useCallback(async ({
     nextPortal,
@@ -352,12 +381,54 @@ export default function EcommercePortalSettings() {
 
   const validatePortal = (candidate) => {
     if (!candidate.name.trim()) return 'El nombre publico del negocio es obligatorio.';
-    if (isPro && !SLUG_PATTERN.test(candidate.slug.trim())) {
+    if (portal && candidate.name.trim() !== portal.name.trim()) {
+      return 'El nombre del negocio queda protegido después de crear la tienda.';
+    }
+    if (isPro && candidate.slug.trim() && !SLUG_PATTERN.test(candidate.slug.trim())) {
       return 'El slug debe tener entre 3 y 64 caracteres, usar minusculas, numeros o guiones y no iniciar ni terminar con guion.';
     }
     const phone = candidate.whatsappPhone.replace(/\D/g, '');
     if (candidate.whatsappPhone.trim() && phone.length < 8) {
       return 'WhatsApp debe tener al menos 8 digitos.';
+    }
+    if (
+      candidate.contactEmail.trim()
+      && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate.contactEmail.trim())
+    ) {
+      return 'Ingresa un correo electrónico válido.';
+    }
+    if (candidate.status === 'published' && phone.length < 8) {
+      return 'Agrega un WhatsApp válido antes de publicar la tienda.';
+    }
+    if (
+      candidate.addressPostalCode.trim()
+      && !POSTAL_CODE_PATTERN.test(candidate.addressPostalCode.trim())
+    ) {
+      return 'El código postal debe tener exactamente 5 dígitos.';
+    }
+    if (candidate.status === 'published' && !candidate.addressStreet.trim()) {
+      return 'Agrega la calle o avenida antes de publicar la tienda. Puedes escribir S/N.';
+    }
+    if (candidate.status === 'published' && !candidate.addressNeighborhood.trim()) {
+      return 'Agrega la colonia o ejido antes de publicar la tienda. Puedes escribir S/N.';
+    }
+    if (
+      candidate.status === 'published'
+      && (
+        candidate.addressMunicipality.trim().length < 2
+        || UNKNOWN_ADDRESS_PART_PATTERN.test(candidate.addressMunicipality.trim())
+      )
+    ) {
+      return 'Agrega un municipio válido antes de publicar la tienda.';
+    }
+    if (candidate.status === 'published' && !candidate.addressState.trim()) {
+      return 'Selecciona el estado antes de publicar la tienda.';
+    }
+    if (
+      candidate.status === 'published'
+      && !POSTAL_CODE_PATTERN.test(candidate.addressPostalCode.trim())
+    ) {
+      return 'Agrega un código postal válido de 5 dígitos antes de publicar la tienda.';
     }
     if (numberOr(candidate.minOrderTotal, -1) < 0) {
       return 'El pedido minimo no puede ser negativo.';
@@ -377,7 +448,12 @@ export default function EcommercePortalSettings() {
       headline: candidate.headline.trim() || null,
       description: candidate.description.trim() || null,
       whatsappPhone: candidate.whatsappPhone.trim() || null,
-      address: candidate.address.trim() || null,
+      contactEmail: candidate.contactEmail.trim().toLowerCase() || null,
+      addressStreet: candidate.addressStreet.trim() || null,
+      addressNeighborhood: candidate.addressNeighborhood.trim() || null,
+      addressMunicipality: candidate.addressMunicipality.trim() || null,
+      addressState: candidate.addressState.trim() || null,
+      addressPostalCode: candidate.addressPostalCode.trim() || null,
       pickupEnabled: candidate.pickupEnabled,
       deliveryEnabled: candidate.deliveryEnabled,
       minOrderTotal: numberOr(candidate.minOrderTotal, 0),
@@ -437,16 +513,6 @@ export default function EcommercePortalSettings() {
     return true;
   };
 
-  const createPortal = () => {
-    const initial = portalForm(null, companyProfile);
-    if (!initial.name.trim()) {
-      return toast.error(
-        'Primero agrega el nombre del negocio en Datos y Apariencia o en este formulario.'
-      );
-    }
-    return savePortal(initial, 'Portal online creado correctamente.');
-  };
-
   const submitPortal = async (event) => {
     event.preventDefault();
     await savePortal(
@@ -457,6 +523,12 @@ export default function EcommercePortalSettings() {
 
   const changeStatus = async (status) => {
     const next = { ...form, status };
+    const validationError = validatePortal(next);
+    if (validationError) {
+      setActiveSection('information');
+      toast.error(validationError);
+      return;
+    }
     setForm(next);
     await savePortal(
       next,
@@ -654,153 +726,105 @@ export default function EcommercePortalSettings() {
 
   return (
     <div className="ecom-admin-page">
-      <header className="ecom-admin-hero">
+      <header className="ecom-admin-workspace-header">
         <div>
           <span className="ecom-admin-kicker">
             <Globe2 size={16} /> Portal online
           </span>
-          <h2>Tu tienda sencilla para compartir por WhatsApp</h2>
-          <p>
-            Configura lo que veran tus clientes. La sincronizacion PRO mantiene vinculados solo los campos elegidos.
-          </p>
+          <h2>{portal?.name || companyProfile?.name || 'Tu tienda'}</h2>
+          <p>Administra el catálogo y la operación de tu tienda.</p>
         </div>
-        <PlanBadge isPro={isPro} />
+        {portal && (
+          <div className="ecom-admin-workspace-actions">
+            <span className={`ecom-admin-status status-${portal.status}`}>
+              {STATUS_LABELS[portal.status] || portal.status}
+            </span>
+            <a
+              className="btn btn-secondary ecom-admin-open-store"
+              href={reservedLink}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink size={17} />
+              <span>Abrir tienda</span>
+            </a>
+          </div>
+        )}
       </header>
 
-      <div className="ecom-admin-plan-copy">
-        {isPro
-          ? 'Lanzo Nube incluye catalogo ilimitado y sincronizacion automatica de los campos vinculados, sin sobrescribir personalizaciones manuales.'
-          : 'Tu Plan Free incluye una mini tienda online con hasta 10 productos publicados y cache publico.'}
-      </div>
-
-      {!portal ? (
-        <section className="ui-card ecom-admin-empty-card">
-          <span className="ecom-admin-empty-icon"><Store size={34} /></span>
-          <div>
-            <span className="ecom-admin-eyebrow">Aun no existe un portal</span>
-            <h3>Reserva el enlace de tu negocio</h3>
-            <p>
-              Se creara en borrador usando los datos guardados. La tienda publica todavia no se habilitara.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={createPortal}
-            disabled={savingPortal}
-          >
-            {savingPortal
-              ? <LoaderCircle className="ecom-admin-spin" size={17} />
-              : <Store size={17} />}
-            {' '}Crear portal online
-          </button>
-        </section>
-      ) : (
-        <section className="ui-card ecom-admin-status-card">
-          <div className="ecom-admin-card-heading">
-            <div>
-              <span className="ecom-admin-eyebrow">Estado del portal</span>
-              <h3>{portal.name}</h3>
-            </div>
-            <div className="ecom-admin-badges">
-              <PlanBadge isPro={isPro} />
-              <span className={`ecom-admin-status status-${portal.status}`}>
-                {STATUS_LABELS[portal.status] || portal.status}
-              </span>
-            </div>
-          </div>
-          <div className="ecom-admin-public-link-panel">
-            <div className="ecom-admin-link-box">
-              <Globe2 size={22} />
-              <div>
-                <span>Link reservado</span>
-                <strong>{reservedLink}</strong>
-                <small>
-                  Revisión actual del catálogo: {portal.catalogRevision || 1}.
-                </small>
-              </div>
-              <div className="ecom-admin-link-actions">
-                <a
-                  className="btn btn-secondary"
-                  href={reservedLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink size={16} /> Abrir tienda
-                </a>
-                <button type="button" className="btn btn-secondary" onClick={copyLink}>
-                  <Copy size={16} /> Copiar link
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={shareLink}>
-                  <Share2 size={16} /> Compartir
-                </button>
-                <a
-                  className="btn btn-secondary"
-                  href={whatsappShareUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <MessageCircle size={16} /> WhatsApp
-                </a>
-              </div>
-            </div>
-            <div className="ecom-admin-qr-box">
-              <PublicStoreQrCode value={reservedLink} />
-              <span><QrCode size={14} /> QR de la tienda</span>
-            </div>
-          </div>
-          <div className="ecom-admin-status-actions">
-            <span><Globe2 size={18} /> Slug: <strong>{portal.slug}</strong></span>
+      {portal && (
+        <nav
+          className="ecom-admin-section-nav tabs-container"
+          aria-label="Secciones del portal"
+          role="tablist"
+        >
+          {PORTAL_SECTIONS.map(({ id, label, Icon }) => (
             <button
+              key={id}
+              id={`ecom-portal-tab-${id}`}
               type="button"
-              className={`btn ${portal.status === 'published' ? 'btn-secondary' : 'btn-primary'}`}
-              onClick={() => changeStatus(
-                portal.status === 'published' ? 'paused' : 'published'
-              )}
-              disabled={savingPortal}
+              role="tab"
+              aria-selected={activeSection === id}
+              aria-controls={`ecom-portal-panel-${id}`}
+              className={activeSection === id ? 'tab-btn active' : 'tab-btn'}
+              onClick={() => setActiveSection(id)}
             >
-              {portal.status === 'published'
-                ? <PauseCircle size={17} />
-                : <PlayCircle size={17} />}
-              {portal.status === 'published' ? 'Pausar portal' : 'Publicar portal'}
+              <Icon size={19} aria-hidden="true" />
+              <span>{label}</span>
             </button>
-          </div>
-          <p className="ecom-admin-help">
-            “Pausar portal” oculta la tienda completa. Usa “Pausar pedidos” para mantener visible el catálogo.
-          </p>
-        </section>
+          ))}
+        </nav>
       )}
 
-      {portal ? <EcommerceSiteBuilderFoundation isPro={isPro} portal={portal} /> : null}
-
-      {portal ? (
-        <div className="ecom-operations-grid">
-          <EcommerceOperatingHoursSettings data={operations} onSaved={updateOperations} />
-          <EcommerceOrderPauseControl data={operations} onSaved={updateOperations} />
-        </div>
+      {(!portal || activeSection === 'information') ? (
+        <EcommerceBusinessInformationPanel
+          portal={portal}
+          form={form}
+          onFieldChange={updateForm}
+          onSubmit={submitPortal}
+          saving={savingPortal}
+          reservedLink={reservedLink}
+          onCopyLink={copyLink}
+          onShareLink={shareLink}
+          whatsappShareUrl={whatsappShareUrl}
+          onChangeStatus={changeStatus}
+          requirements={publicationRequirements}
+        />
       ) : null}
 
-      {showBasicPortalEditor && (
+      {portal && activeSection === 'design' ? (
+        <section
+          id="ecom-portal-panel-design"
+          role="tabpanel"
+          aria-labelledby="ecom-portal-tab-design"
+        >
+          <EcommerceSiteBuilderFoundation isPro={isPro} portal={portal} />
+        </section>
+      ) : null}
+
+      {portal && activeSection === 'operation' ? (
+        <section
+          id="ecom-portal-panel-operation"
+          className="ecom-operations-grid"
+          role="tabpanel"
+          aria-labelledby="ecom-portal-tab-operation"
+        >
+          <EcommerceOperatingHoursSettings data={operations} onSaved={updateOperations} />
+          <EcommerceOrderPauseControl data={operations} onSaved={updateOperations} />
+        </section>
+      ) : null}
+
+      {portal && showBasicPortalEditor && activeSection === 'design' && (
         <form className="ui-card ecom-admin-form-card" onSubmit={submitPortal}>
           <div className="ecom-admin-card-heading">
-          <div>
-            <span className="ecom-admin-eyebrow">Datos publicos basicos</span>
-            <h3>Informacion de tu tienda</h3>
-            <p>Estos datos se muestran en la ruta publica.</p>
+            <div>
+              <span className="ecom-admin-eyebrow">Contenido y apariencia</span>
+              <h3>Presentación de tu tienda</h3>
+              <p>Personaliza el mensaje, la entrega y la identidad visual.</p>
+            </div>
+            <Save size={22} />
           </div>
-          <Save size={22} />
-        </div>
         <div className="ecom-admin-form-grid">
-          <label className="form-group">
-            <span className="form-label">Nombre publico *</span>
-            <input
-              className="form-input"
-              value={form.name}
-              onChange={updateForm('name')}
-              maxLength={120}
-              required
-            />
-          </label>
           <label className="form-group">
             <span className="form-label">Enlace / slug *</span>
             <div className="ecom-admin-input-icon">
@@ -842,17 +866,6 @@ export default function EcommercePortalSettings() {
             />
           </label>
           <label className="form-group">
-            <span className="form-label">WhatsApp</span>
-            <input
-              className="form-input"
-              type="tel"
-              value={form.whatsappPhone}
-              onChange={updateForm('whatsappPhone')}
-              placeholder="961 000 0000"
-            />
-            <small className="ecom-admin-help">Minimo 8 digitos si agregas un numero.</small>
-          </label>
-          <label className="form-group">
             <span className="form-label">Pedido minimo</span>
             <input
               className="form-input"
@@ -861,16 +874,6 @@ export default function EcommercePortalSettings() {
               step="0.01"
               value={form.minOrderTotal}
               onChange={updateForm('minOrderTotal')}
-            />
-          </label>
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Direccion publica</span>
-            <textarea
-              className="form-textarea"
-              value={form.address}
-              onChange={updateForm('address')}
-              rows={3}
-              maxLength={500}
             />
           </label>
           <fieldset className="ecom-admin-delivery ecom-admin-span-2">
@@ -892,18 +895,6 @@ export default function EcommercePortalSettings() {
               <span><strong>Domicilio</strong><small>El negocio coordina la entrega.</small></span>
             </label>
           </fieldset>
-          <label className="form-group">
-            <span className="form-label">Estado</span>
-            <select
-              className="form-input"
-              value={form.status}
-              onChange={updateForm('status')}
-            >
-              <option value="draft">Borrador</option>
-              <option value="published">Publicado</option>
-              <option value="paused">Pausado</option>
-            </select>
-          </label>
           <div className="form-group">
             <span className="form-label">Logo reutilizado</span>
             <div className="ecom-admin-logo">
@@ -934,22 +925,24 @@ export default function EcommercePortalSettings() {
             {savingPortal
               ? <LoaderCircle className="ecom-admin-spin" size={17} />
               : <Save size={17} />}
-            {' '}Guardar portal
+            {' '}Guardar diseño
           </button>
           </div>
         </form>
       )}
 
-      <section
+      {portal && activeSection === 'catalog' && <section
         id="ecommerce-published-products"
         className="ui-card ecom-admin-products-card"
         tabIndex={-1}
         aria-label="Productos publicados en portal"
+        role="tabpanel"
+        aria-labelledby="ecom-portal-tab-catalog"
       >
         <div className="ecom-admin-card-heading">
           <div>
-            <span className="ecom-admin-eyebrow">Catalogo publico</span>
-            <h3>Productos publicados en portal</h3>
+            <span className="ecom-admin-eyebrow">Catálogo</span>
+            <h3>Productos publicados</h3>
             <p>
               {isPro
                 ? `${publishedCount} productos publicados`
@@ -959,7 +952,7 @@ export default function EcommercePortalSettings() {
           </div>
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-primary ecom-admin-publish-product"
             onClick={openNewProduct}
             disabled={!portal || limitReached || loadingCatalog}
           >
@@ -970,30 +963,32 @@ export default function EcommercePortalSettings() {
           </button>
         </div>
 
-        <EcommerceCatalogSyncPanel
-          isPro={isPro}
-          products={products}
-          catalogRevision={portal?.catalogRevision}
-          onRefresh={loadProducts}
-        />
+        <label className="ecom-admin-product-search">
+          <Search size={19} aria-hidden="true" />
+          <span className="sr-only">Buscar productos publicados</span>
+          <input
+            type="search"
+            value={productSearch}
+            onChange={(event) => setProductSearch(event.target.value)}
+            placeholder="Buscar productos"
+          />
+        </label>
 
-        <StockReviewBanner snapshot={stockSnapshot} />
-        <BusinessCapabilityReviewBanner products={products} />
-
-        {!isPro && (
-          <div className={`ecom-admin-limit ${limitReached ? 'is-blocked' : ''}`}>
-            <Lock size={17} /> Plan Free permite publicar hasta 10 productos. La sincronizacion automatica requiere Lanzo Nube.
-          </div>
-        )}
         {products.length === 0 ? (
           <div className="ecom-admin-products-empty">
             <PackagePlus size={30} />
             <strong>Aun no hay productos en el portal</strong>
             <span>Elige productos del catalogo local y crea un snapshot publico controlado.</span>
           </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="ecom-admin-products-empty">
+            <Search size={30} />
+            <strong>No encontramos productos</strong>
+            <span>Prueba con otro nombre o categoría.</span>
+          </div>
         ) : (
           <div className="ecom-admin-product-list">
-            {products.map((product) => {
+            {filteredProducts.map((product) => {
               const stockResult = product.isPublished
                 ? stockByPublishedProductId.get(String(product.id))
                 : null;
@@ -1081,7 +1076,23 @@ export default function EcommercePortalSettings() {
             })}
           </div>
         )}
-      </section>
+
+        <div className="ecom-admin-catalog-support">
+          <StockReviewBanner snapshot={stockSnapshot} />
+          <BusinessCapabilityReviewBanner products={products} />
+          <EcommerceCatalogSyncPanel
+            isPro={isPro}
+            products={products}
+            catalogRevision={portal?.catalogRevision}
+            onRefresh={loadProducts}
+          />
+          {!isPro && (
+            <div className={`ecom-admin-limit ${limitReached ? 'is-blocked' : ''}`}>
+              <Lock size={17} /> Plan Free permite publicar hasta 10 productos. La sincronizacion automatica requiere Lanzo Nube.
+            </div>
+          )}
+        </div>
+      </section>}
 
       <EcommerceProductPublishModal
         open={modalOpen}

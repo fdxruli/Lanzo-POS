@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Plus, Search, SlidersHorizontal } from 'lucide-react';
+import { LayoutGrid, List, Plus, Search } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import {
   getPublicProductStockLabel,
@@ -103,7 +103,8 @@ function PublicCatalog({
   offline = false,
   maxItemQuantity = 99,
   showSearch = true,
-  showCategories = true
+  showCategories = true,
+  initialViewMode = 'grid'
 }) {
   const { slug = '' } = useParams();
   const resolvedCatalogRevision = normalizeCatalogRevision(catalogRevision);
@@ -111,6 +112,11 @@ function PublicCatalog({
   const resolvedMaxItemQuantity = Math.max(1, Math.floor(Number(maxItemQuantity) || 99));
   const [configurationProduct, setConfigurationProduct] = useState(null);
   const [initialLine, setInitialLine] = useState(null);
+  const [viewMode, setViewMode] = useState(initialViewMode === 'list' ? 'list' : 'grid');
+
+  useEffect(() => {
+    setViewMode(initialViewMode === 'list' ? 'list' : 'grid');
+  }, [initialViewMode]);
 
   const productMap = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
@@ -176,15 +182,11 @@ function PublicCatalog({
 
   return (
     <>
-      <section className="public-catalog" aria-labelledby="public-catalog-title">
-        <div className="public-catalog__heading">
-          <div>
-            <p className="public-store-section-kicker">Catálogo</p>
-            <h2 id="public-catalog-title">Elige tus productos</h2>
-          </div>
-          <span>{products.length} producto{products.length === 1 ? '' : 's'}</span>
-        </div>
-
+      <section
+        className={`public-catalog public-catalog--view-${viewMode}`}
+        aria-labelledby="public-catalog-title"
+        data-catalog-view={viewMode}
+      >
         {(showSearch || showCategories) ? (
           <div className="public-catalog__tools">
           {showSearch ? (
@@ -201,8 +203,8 @@ function PublicCatalog({
           ) : null}
 
           {showCategories ? (
-          <label className="public-catalog__category">
-            <SlidersHorizontal aria-hidden="true" size={18} />
+          <>
+          <label className="public-catalog__category public-catalog__category-select">
             <span className="sr-only">Filtrar por categoría</span>
             <select value={selectedCategory} onChange={(event) => onCategoryChange(event.target.value)}>
               <option value="all">Todos</option>
@@ -211,9 +213,57 @@ function PublicCatalog({
               ))}
             </select>
           </label>
+          <div className="public-catalog__category-chips" aria-label="Categorías">
+            <button
+              type="button"
+              className={selectedCategory === 'all' ? 'is-selected' : ''}
+              aria-pressed={selectedCategory === 'all'}
+              onClick={() => onCategoryChange('all')}
+            >
+              Todos
+            </button>
+            {categories.map((category) => (
+              <button
+                type="button"
+                key={category}
+                className={selectedCategory === category ? 'is-selected' : ''}
+                aria-pressed={selectedCategory === category}
+                onClick={() => onCategoryChange(category)}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+          </>
           ) : null}
         </div>
         ) : null}
+
+        <div className="public-catalog__heading">
+          <div>
+            <p className="public-store-section-kicker">Catálogo</p>
+            <h2 id="public-catalog-title">Elige tus productos</h2>
+            <span>{products.length} producto{products.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="public-catalog__view-toggle" aria-label="Vista de productos">
+            <button
+              type="button"
+              aria-pressed={viewMode === 'grid'}
+              onClick={() => setViewMode('grid')}
+            >
+              <LayoutGrid aria-hidden="true" size={17} />
+              Cuadrícula
+            </button>
+            <button
+              type="button"
+              aria-pressed={viewMode === 'list'}
+              onClick={() => setViewMode('list')}
+            >
+              <List aria-hidden="true" size={18} />
+              Lista
+            </button>
+          </div>
+        </div>
 
         {filteredProducts.length === 0 ? (
           <PublicStoreState

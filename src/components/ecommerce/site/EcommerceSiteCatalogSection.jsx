@@ -12,6 +12,7 @@ export default function EcommerceSiteCatalogSection({ section, catalogProps, chr
         {...catalogProps}
         showSearch={section.props.showSearch}
         showCategories={section.props.showCategories}
+        initialViewMode={section.layout === 'compact' ? 'list' : 'grid'}
       />
     </div>
   );

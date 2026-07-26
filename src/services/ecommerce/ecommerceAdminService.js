@@ -56,6 +56,16 @@ const SAFE_ERROR_MESSAGES = {
   ECOMMERCE_THEME_COLOR_INVALID: 'Los colores deben usar formato hexadecimal #RRGGBB.',
   ECOMMERCE_IMAGE_URL_INVALID: 'La dirección de imagen no es válida.',
   ECOMMERCE_BRANDING_REQUIRES_PRO: 'La personalización avanzada requiere Lanzo Nube.',
+  ECOMMERCE_NAME_LOCKED: 'El nombre del negocio queda protegido después de crear la tienda.',
+  ECOMMERCE_WHATSAPP_REQUIRED_TO_PUBLISH: 'Agrega un WhatsApp válido antes de publicar la tienda.',
+  ECOMMERCE_ADDRESS_REQUIRED_TO_PUBLISH: 'Agrega el domicilio o punto de atención antes de publicar la tienda.',
+  ECOMMERCE_ADDRESS_STREET_REQUIRED_TO_PUBLISH: 'Agrega la calle o avenida antes de publicar. Puedes escribir S/N.',
+  ECOMMERCE_ADDRESS_NEIGHBORHOOD_REQUIRED_TO_PUBLISH: 'Agrega la colonia o ejido antes de publicar. Puedes escribir S/N.',
+  ECOMMERCE_ADDRESS_MUNICIPALITY_REQUIRED_TO_PUBLISH: 'Agrega un municipio válido antes de publicar.',
+  ECOMMERCE_ADDRESS_STATE_REQUIRED_TO_PUBLISH: 'Selecciona el estado antes de publicar.',
+  ECOMMERCE_ADDRESS_POSTAL_CODE_REQUIRED_TO_PUBLISH: 'Agrega un código postal válido de 5 dígitos antes de publicar.',
+  ECOMMERCE_ADDRESS_POSTAL_CODE_INVALID: 'El código postal debe tener exactamente 5 dígitos.',
+  ECOMMERCE_CONTACT_EMAIL_INVALID: 'Ingresa un correo electrónico válido.',
   ECOMMERCE_PORTAL_SAVE_FAILED: 'No se pudo guardar el portal online. Intenta nuevamente.'
 };
 

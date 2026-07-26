@@ -1,7 +1,37 @@
-import { Clock3, MapPin, PackageCheck, ShoppingBag, Truck } from 'lucide-react';
+import {
+  ChevronDown,
+  Clock3,
+  Info,
+  Mail,
+  MapPin,
+  MessageCircle,
+  PackageCheck,
+  ShoppingBag,
+  Truck
+} from 'lucide-react';
 import PublicSafeImage from './PublicSafeImage';
 import { getAvailabilityDetail, getAvailabilityLabel } from '../../../utils/ecommerceAvailability';
+import { normalizeBusinessType } from '../../../utils/businessType';
 import './PublicResponsive.css';
+
+const BUSINESS_TYPE_LABELS = Object.freeze({
+  food_service: 'Restaurante / Cocina',
+  farmacia: 'Farmacia',
+  'verduleria/fruteria': 'Frutería / Verdulería',
+  abarrotes: 'Abarrotes / Tienda',
+  apparel: 'Ropa / Boutique',
+  hardware: 'Ferretería',
+  otro: 'Otro'
+});
+
+const getBusinessTypeLabel = (value) => {
+  const values = Array.isArray(value) ? value : [value];
+  const firstValue = values.find((item) => String(item || '').trim());
+  if (!firstValue) return '';
+
+  const normalized = normalizeBusinessType(firstValue, null);
+  return BUSINESS_TYPE_LABELS[normalized] || String(firstValue).trim();
+};
 
 const formatTime = (value) => {
   if (typeof value !== 'string' || !value) return '';
@@ -31,10 +61,12 @@ export function getTodayHoursLabel(hours, now = new Date()) {
   return `Abierto hoy de ${opensAt} a ${closesAt}`;
 }
 
-const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
+const MXN_CURRENCY_FORMATTER = new Intl.NumberFormat('es-MX', {
   style: 'currency',
-  currency,
-}).format(Number(value) || 0);
+  currency: 'MXN',
+});
+
+const formatCurrency = (value) => MXN_CURRENCY_FORMATTER.format(Number(value) || 0);
 
 function PublicStoreHeader({ portal, hours, availability }) {
   const availabilityLabel = getAvailabilityLabel(availability);
@@ -42,6 +74,8 @@ function PublicStoreHeader({ portal, hours, availability }) {
     ? getTodayHoursLabel(hours)
     : getAvailabilityDetail(availability);
   const hasFulfillment = portal.pickupEnabled || portal.deliveryEnabled;
+  const whatsappDigits = String(portal.whatsappPhone || '').replace(/\D/g, '');
+  const businessTypeLabel = getBusinessTypeLabel(portal.businessType);
 
   return (
     <header className="public-store-header">
@@ -66,28 +100,59 @@ function PublicStoreHeader({ portal, hours, availability }) {
         />
 
         <div className="public-store-header__identity">
-          <p className="public-store-header__eyebrow">Tienda online</p>
+          <p className="public-store-header__eyebrow">
+            <span>Tienda online</span>
+            {businessTypeLabel ? (
+              <span className="public-store-header__business-type">{businessTypeLabel}</span>
+            ) : null}
+          </p>
           <h1>{portal.name}</h1>
           {portal.headline ? <p className="public-store-header__headline">{portal.headline}</p> : null}
-          {portal.description ? <p className="public-store-header__description">{portal.description}</p> : null}
         </div>
 
-        <div className="public-store-header__details" aria-label="Información del negocio">
-          {portal.address ? (
-            <span><MapPin aria-hidden="true" size={18} />{portal.address}</span>
-          ) : null}
+        <div className="public-store-header__summary">
           <span className="public-store-availability" aria-live="polite">
             <Clock3 aria-hidden="true" size={18} />
             <span><strong>{availabilityLabel}</strong>{availabilityDetail ? ` · ${availabilityDetail}` : ''}</span>
           </span>
-          {portal.minOrderTotal > 0 ? (
-            <span><ShoppingBag aria-hidden="true" size={18} />Pedido mínimo {formatCurrency(portal.minOrderTotal)}</span>
+          {portal.address ? (
+            <span><MapPin aria-hidden="true" size={18} />{portal.address}</span>
           ) : null}
-          <span>
-            <PackageCheck aria-hidden="true" size={18} />
-            Catálogo disponible
-          </span>
         </div>
+
+        <details className="public-store-header__information">
+          <summary>
+            <Info aria-hidden="true" size={17} />
+            Información
+            <ChevronDown aria-hidden="true" size={16} />
+          </summary>
+          <div className="public-store-header__details" aria-label="Información del negocio">
+            {portal.description ? <p className="public-store-header__description">{portal.description}</p> : null}
+            {whatsappDigits ? (
+              <a
+                href={`https://wa.me/${whatsappDigits}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MessageCircle aria-hidden="true" size={18} />
+                WhatsApp {portal.whatsappPhone}
+              </a>
+            ) : null}
+            {portal.contactEmail ? (
+              <a href={`mailto:${portal.contactEmail}`}>
+                <Mail aria-hidden="true" size={18} />
+                {portal.contactEmail}
+              </a>
+            ) : null}
+            {portal.minOrderTotal > 0 ? (
+              <span><ShoppingBag aria-hidden="true" size={18} />Pedido mínimo {formatCurrency(portal.minOrderTotal)}</span>
+            ) : null}
+            <span>
+              <PackageCheck aria-hidden="true" size={18} />
+              Catálogo disponible
+            </span>
+          </div>
+        </details>
 
         {hasFulfillment ? (
           <div className="public-store-header__badges" aria-label="Métodos de entrega">

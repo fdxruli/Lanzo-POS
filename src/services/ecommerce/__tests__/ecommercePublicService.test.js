@@ -41,7 +41,19 @@ describe('ecommercePublicService', () => {
       .mockResolvedValueOnce({
         data: {
           success: true,
-          portal: { slug: 'mi-negocio', name: 'Mi negocio', maxOrderItems: 30, maxItemQuantity: 99 },
+          portal: {
+            slug: 'mi-negocio',
+            name: 'Mi negocio',
+            contactEmail: 'contacto@example.com',
+            address: 'S/N, Centro, Comitán de Domínguez, Chiapas, C.P. 30000',
+            addressStreet: 'S/N',
+            addressNeighborhood: 'Centro',
+            addressMunicipality: 'Comitán de Domínguez',
+            addressState: 'Chiapas',
+            addressPostalCode: '30000',
+            maxOrderItems: 30,
+            maxItemQuantity: 99
+          },
           hours: { weekly: [], exceptions: [] },
           features: { stockVisibility: false, orderInbox: true, whatsappCheckout: true },
         },
@@ -67,6 +79,12 @@ describe('ecommercePublicService', () => {
     const catalog = await service.getPublicCatalog('mi-negocio', { limit: 100, offset: 0 });
 
     expect(portal.portal.name).toBe('Mi negocio');
+    expect(portal.portal.contactEmail).toBe('contacto@example.com');
+    expect(portal.portal.addressStreet).toBe('S/N');
+    expect(portal.portal.addressNeighborhood).toBe('Centro');
+    expect(portal.portal.addressMunicipality).toBe('Comitán de Domínguez');
+    expect(portal.portal.addressState).toBe('Chiapas');
+    expect(portal.portal.addressPostalCode).toBe('30000');
     expect(portal.features).toMatchObject({ orderInbox: true, whatsappCheckout: true });
     expect(catalog.items[0]).toMatchObject({ price: 50, currency: 'MXN' });
     expect(rpc).toHaveBeenNthCalledWith(1, 'ecommerce_get_portal_by_slug', { p_slug: 'mi-negocio' });

@@ -17,11 +17,26 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
   });
 
   it('uses the central builder for every administrative store action', async () => {
-    const source = await readProjectFile('src/components/ecommerce/EcommercePortalSettings.jsx');
-    expect(source).toContain('buildPublicStoreUrl(portal.slug)');
-    expect(source).not.toContain('window.location.origin}/tienda');
-    expect(source).toContain('navigator.share');
-    expect(source).toContain('<PublicStoreQrCode value={reservedLink}');
+    const administrativeStoreFiles = [
+      'src/components/ecommerce/EcommercePortalSettings.jsx',
+      'src/components/ecommerce/EcommerceBusinessInformationPanel.jsx'
+    ];
+    const [settingsSource, informationSource] = await Promise.all(
+      administrativeStoreFiles.map(readProjectFile)
+    );
+    const administrativeStoreSource = [settingsSource, informationSource].join('\n');
+
+    expect(settingsSource).toContain('buildPublicStoreUrl(portal.slug)');
+    expect(settingsSource).toContain('reservedLink={reservedLink}');
+    expect(settingsSource).toContain('navigator.share');
+    expect(settingsSource).toContain('copyTextWithFallback(reservedLink)');
+    expect(informationSource).toContain('href={reservedLink}');
+    expect(informationSource).toContain('<PublicStoreQrCode value={reservedLink}');
+    expect(informationSource).toContain('href={whatsappShareUrl}');
+    expect(administrativeStoreSource).not.toMatch(
+      /(?:window|globalThis)\.location(?:\?\.|\.)origin[^;\n]*\/tienda/
+    );
+    expect(administrativeStoreSource).not.toMatch(/[`'"]\/tienda\/\$\{/);
   });
 
   it('uses the central tracking builder after checkout', async () => {
