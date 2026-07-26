@@ -170,13 +170,18 @@ describe('loadCashSessionProjection', () => {
     });
 
     const result = await loadCashSessionProjection(testDb, cloudSession);
-    const amounts = resolveCashSessionAmounts(cloudSession, result.totals, { isCloudCash: true });
+    const amounts = resolveCashSessionAmounts(cloudSession, {
+      ...result.totals,
+      reconciliation: { theoreticalCash: '999' }
+    }, { isCloudCash: true });
 
     expect(result.totals).toEqual({
       ventasContado: '0',
       abonosFiado: '50'
     });
     expect(amounts.totalTeorico).toBe('50');
+    expect(amounts.source).toBe('cloud_aggregate');
+    expect(amounts.reconciliation).toBeUndefined();
     expect(result.movements.map((movement) => movement.id)).toContain('cloud-payment-1');
   });
 
