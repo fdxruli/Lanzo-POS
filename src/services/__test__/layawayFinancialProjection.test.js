@@ -35,6 +35,43 @@ const paymentMovements = pendingLayaway.payments.map((payment) => ({
   referenceId: 'layaway-1', layawayId: 'layaway-1', paymentId: payment.id
 }));
 
+const buildExplicitLinkProjection = ({ payment = {}, movement, layaway = {} } = {}) => {
+  const explicitPayment = {
+    id: 'payment-explicit',
+    amount: 100,
+    status: 'confirmed',
+    cashMovementId: 'move-explicit',
+    cajaId: 'cash-1',
+    ...payment
+  };
+  const explicitLayaway = {
+    id: 'layaway-explicit',
+    status: 'ready',
+    payments: [explicitPayment],
+    ...layaway
+  };
+  const cashMovements = movement === null ? [] : [{
+    id: 'move-explicit',
+    tipo: 'entrada',
+    monto: 100,
+    cash_session_id: 'cash-1',
+    fecha: '2026-07-25T10:00:00.000Z',
+    source: 'layaway_payment',
+    referenceType: 'layaway',
+    referenceId: explicitLayaway.id,
+    layawayId: explicitLayaway.id,
+    paymentId: explicitPayment.id,
+    ...movement
+  }];
+
+  return buildLayawayFinancialProjection({
+    layaways: [explicitLayaway],
+    cashMovements,
+    cashSessionId: 'cash-1',
+    range: { start: session.fecha_apertura, end: session.fecha_cierre }
+  });
+};
+
 describe('layaway financial projection', () => {
   it('reconciles direct sales and pending advances without treating advances as recognized revenue', () => {
     const reconciliation = buildCashReconciliation({
@@ -348,6 +385,10 @@ describe('layaway financial projection', () => {
     expect(projection.unlinkedTechnicalPayments).toEqual([]);
     expect(projection.probableLegacyCashMatches).toEqual([]);
     expect(projection.unverifiedHistoricalPayments).toEqual([]);
+    expect(projection.layawayCashCollected).toBe(100);
+    expect(projection.linkedPaymentMovementLinks).toEqual([
+      expect.objectContaining({ paymentId: 'payment-modern', reason: 'linked_to_cash' })
+    ]);
   });
 
   it('surfaces a broken cashMovementId as an integrity warning without increasing Caja', () => {
@@ -369,10 +410,143 @@ describe('layaway financial projection', () => {
     });
 
     expect(projection.paymentsWithMissingCashMovementRecord).toHaveLength(1);
+    expect(projection.paymentsWithInvalidCashMovementLink).toEqual([]);
     expect(projection.unlinkedTechnicalPayments).toEqual([]);
     expect(projection.unverifiedHistoricalPayments).toHaveLength(1);
     expect(projection.unverifiedHistoricalPaymentsAmount).toBe(100);
     expect(projection.layawayCashCollected).toBe(0);
     expect(hasHistoricalIntegrityWarning(projection)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: 'different amount',
+      movement: { monto: 75 },
+      reason: 'cash_movement_amount_mismatch',
+      expected: { paymentAmount: 100, movementAmount: 75 }
+    },
+    {
+      name: 'different cash session',
+      movement: { cash_session_id: 'cash-2' },
+      reason: 'cash_movement_session_mismatch',
+      expected: { paymentSessionId: 'cash-1', movementSessionId: 'cash-2' }
+    },
+    {
+      name: 'different payment',
+      movement: { paymentId: 'payment-other' },
+      reason: 'cash_movement_payment_mismatch',
+      expected: { movementPaymentId: 'payment-other' }
+    },
+    {
+      name: 'different layaway',
+      movement: { layawayId: 'layaway-other' },
+      reason: 'cash_movement_layaway_mismatch',
+      expected: { movementLayawayId: 'layaway-other' }
+    },
+    {
+      name: 'incompatible source',
+      movement: { source: 'customer_payment' },
+      reason: 'cash_movement_source_mismatch',
+      expected: { movementSource: 'customer_payment' }
+    },
+    {
+      name: 'cash adjustment type',
+      movement: { tipo: 'ajuste_entrada' },
+      reason: 'cash_movement_not_layaway_entry',
+      expected: { movementAmount: 100 }
+    }
+  ])('rejects an explicit cash movement link with $name', ({ movement, reason, expected }) => {
+    const projection = buildExplicitLinkProjection({ movement });
+
+    expect(projection.layawayCashCollected).toBe(0);
+    expect(projection.paymentsWithMissingCashMovementRecord).toEqual([]);
+    expect(projection.paymentsWithInvalidCashMovementLink).toEqual([
+      expect.objectContaining({
+        layawayId: 'layaway-explicit',
+        paymentId: 'payment-explicit',
+        cashMovementId: 'move-explicit',
+        reason,
+        ...expected
+      })
+    ]);
+    expect(projection.paymentsWithInvalidCashMovementLinkAmount).toBe(100);
+    expect(projection.unverifiedHistoricalPaymentsAmount).toBe(100);
+    expect(hasHistoricalIntegrityWarning(projection)).toBe(true);
+  });
+
+  it('accepts a structurally valid explicit legacy cash movement link', () => {
+    const projection = buildExplicitLinkProjection({
+      movement: {
+        source: undefined,
+        referenceType: undefined,
+        referenceId: undefined,
+        layawayId: undefined,
+        paymentId: undefined
+      }
+    });
+
+    expect(projection.layawayCashCollected).toBe(100);
+    expect(projection.paymentsWithInvalidCashMovementLink).toEqual([]);
+    expect(projection.unverifiedHistoricalPayments).toEqual([]);
+    expect(projection.linkedPaymentMovementLinks).toEqual([
+      expect.objectContaining({ reason: 'linked_to_cash_legacy_id' })
+    ]);
+  });
+
+  it('validates canonical layaway fields stored inside movement.metadata', () => {
+    const projection = buildExplicitLinkProjection({
+      movement: {
+        source: undefined,
+        referenceType: undefined,
+        referenceId: undefined,
+        layawayId: undefined,
+        paymentId: undefined,
+        metadata: {
+          source: 'layaway_payment',
+          referenceType: 'layaway',
+          referenceId: 'layaway-explicit',
+          layawayId: 'layaway-explicit',
+          paymentId: 'payment-explicit'
+        }
+      }
+    });
+
+    expect(projection.layawayCashCollected).toBe(100);
+    expect(projection.paymentsWithInvalidCashMovementLink).toEqual([]);
+    expect(projection.linkedPaymentMovementLinks).toEqual([
+      expect.objectContaining({ reason: 'linked_to_cash' })
+    ]);
+  });
+
+  it('never counts the same explicitly linked movement twice', () => {
+    const projection = buildLayawayFinancialProjection({
+      layaways: [{
+        id: 'layaway-duplicate-explicit',
+        status: 'ready',
+        payments: [
+          { id: 'payment-duplicate-1', amount: 100, status: 'confirmed', cashMovementId: 'move-duplicate-explicit', cajaId: 'cash-1' },
+          { id: 'payment-duplicate-2', amount: 100, status: 'confirmed', cashMovementId: 'move-duplicate-explicit', cajaId: 'cash-1' }
+        ]
+      }],
+      cashMovements: [{
+        id: 'move-duplicate-explicit',
+        tipo: 'entrada',
+        monto: 100,
+        cash_session_id: 'cash-1',
+        fecha: '2026-07-25T10:00:00.000Z'
+      }],
+      cashSessionId: 'cash-1',
+      range: { start: session.fecha_apertura, end: session.fecha_cierre }
+    });
+
+    expect(projection.layawayCashCollected).toBe(100);
+    expect(projection.duplicatePaymentMovementLinks).toHaveLength(1);
+    expect(projection.paymentsWithInvalidCashMovementLink).toEqual([
+      expect.objectContaining({
+        paymentId: 'payment-duplicate-2',
+        reason: 'cash_movement_linked_to_multiple_payments'
+      })
+    ]);
+    expect(projection.unverifiedHistoricalPaymentsAmount).toBe(100);
   });
 });

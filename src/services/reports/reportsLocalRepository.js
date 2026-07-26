@@ -27,6 +27,8 @@ const buildLocalOverview = ({ sales = [], wasteLogs = [], menu = [], customers =
   unlinked_technical_payments_amount: Number(layawayFinancial.unlinkedTechnicalPaymentsAmount || 0),
   probable_legacy_cash_matches: Number(layawayFinancial.probableLegacyCashMatches?.length || 0),
   probable_legacy_cash_backing_amount: Number(layawayFinancial.probableLegacyCashBackingAmount || 0),
+  invalid_cash_movement_links: Number(layawayFinancial.paymentsWithInvalidCashMovementLink?.length || 0),
+  invalid_cash_movement_links_amount: Number(layawayFinancial.paymentsWithInvalidCashMovementLinkAmount || 0),
   unverified_historical_payments: Number(layawayFinancial.unverifiedHistoricalPayments?.length || 0),
   unverified_historical_payments_amount: Number(layawayFinancial.unverifiedHistoricalPaymentsAmount || 0),
   layaway_completed_revenue: Number(layawayFinancial.layawayCompletedRevenue || 0),

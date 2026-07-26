@@ -12,21 +12,54 @@ const dateInRange = (value, { start = null, end = null } = {}) => {
 };
 
 const movementAmount = (movement) => movement?.monto ?? movement?.amount ?? 0;
-const movementSessionId = (movement) => movement?.cash_session_id || movement?.caja_id || movement?.cashSessionId || null;
+const movementMetadata = (movement = {}) => movement.metadata || {};
+const movementSessionId = (movement = {}) => (
+  movement.cash_session_id
+  || movement.caja_id
+  || movement.cashSessionId
+  || movementMetadata(movement).cash_session_id
+  || movementMetadata(movement).caja_id
+  || movementMetadata(movement).cashSessionId
+  || null
+);
 const paymentSessionId = (payment) => payment?.cash_session_id || payment?.cajaId || payment?.cashSessionId || null;
 const movementDate = (movement) => movement?.fecha || movement?.createdAt || null;
 const paymentRecordedDate = (payment) => payment?.date || payment?.createdAt || null;
 const isConfirmedPayment = (payment) => payment?.status !== 'pending' && payment?.status !== 'failed';
 const movementType = (movement = {}) => String(movement.tipo || movement.type || '').toLowerCase();
-const movementSource = (movement = {}) => String(movement.source || movement.origen || '').toLowerCase();
+const movementPaymentId = (movement = {}) => (
+  movement.paymentId
+  || movement.payment_id
+  || movementMetadata(movement).paymentId
+  || movementMetadata(movement).payment_id
+  || null
+);
+const movementReferenceType = (movement = {}) => (
+  movement.referenceType
+  || movement.reference_type
+  || movementMetadata(movement).referenceType
+  || movementMetadata(movement).reference_type
+  || null
+);
+const movementCanonicalSource = (movement = {}) => (
+  movement.source
+  || movement.origen
+  || movementMetadata(movement).source
+  || movementMetadata(movement).origen
+  || null
+);
+const movementSource = (movement = {}) => String(movementCanonicalSource(movement) || '').toLowerCase();
 const LEGACY_MATCH_WINDOW_MS = 60 * 60 * 1000;
 const isLayawayPaymentMovement = (movement = {}) => (
   movementSource(movement) === 'layaway_payment'
-  || (String(movement.referenceType || '').toLowerCase() === 'layaway' && Boolean(movement.paymentId))
+  || (String(movementReferenceType(movement) || '').toLowerCase() === 'layaway' && Boolean(movementPaymentId(movement)))
 );
 const isLayawayRefundMovement = (movement = {}) => (
   movementSource(movement) === 'layaway_refund'
-  || (String(movement.referenceType || '').toLowerCase() === 'layaway' && Boolean(movement.refundId))
+  || (
+    String(movementReferenceType(movement) || '').toLowerCase() === 'layaway'
+    && Boolean(movement.refundId || movementMetadata(movement).refundId || movementMetadata(movement).refund_id)
+  )
 );
 const isCustomerCollection = (movement = {}) => (
   movementType(movement) === 'abono_cliente' || movementSource(movement) === 'customer_payment'
@@ -40,7 +73,17 @@ const isCashSale = (sale = {}) => {
 };
 const lineCost = (item = {}) => amount(item.cost || 0).times(Number(item.quantity || 0));
 
-const movementLayawayId = (movement = {}) => movement.layawayId || movement.referenceId || null;
+const movementLayawayId = (movement = {}) => (
+  movement.layawayId
+  || movement.layaway_id
+  || movement.referenceId
+  || movement.reference_id
+  || movementMetadata(movement).layawayId
+  || movementMetadata(movement).layaway_id
+  || movementMetadata(movement).referenceId
+  || movementMetadata(movement).reference_id
+  || null
+);
 const movementMatchesLayaway = (movement, layawayId) => !layawayId || movementLayawayId(movement) === layawayId;
 const inScopeMovement = (movement, cashSessionId, range) => (
   (!cashSessionId || movementSessionId(movement) === cashSessionId)
@@ -56,17 +99,23 @@ const paymentAuditItem = (layaway, payment, reason, cashMovementId = payment?.ca
   reason
 });
 
+const invalidCashMovementAuditItem = (layaway, payment, movement, reason) => ({
+  ...paymentAuditItem(layaway, payment, reason, payment?.cashMovementId || movement?.id || null),
+  paymentAmount: number(amount(payment?.amount)),
+  movementAmount: number(amount(movementAmount(movement))),
+  paymentSessionId: paymentSessionId(payment),
+  movementSessionId: movementSessionId(movement),
+  movementPaymentId: movementPaymentId(movement),
+  movementLayawayId: movementLayawayId(movement),
+  movementSource: movementCanonicalSource(movement),
+  movementReferenceType: movementReferenceType(movement)
+});
+
 const hasCanonicalMovementMetadata = (movement = {}) => Boolean(
-  movement.source
-  || movement.origen
-  || movement.referenceType
-  || movement.reference_type
-  || movement.referenceId
-  || movement.reference_id
-  || movement.layawayId
-  || movement.layaway_id
-  || movement.paymentId
-  || movement.payment_id
+  movementCanonicalSource(movement)
+  || movementReferenceType(movement)
+  || movementLayawayId(movement)
+  || movementPaymentId(movement)
 );
 
 const normalizeLegacyConcept = (value) => String(value || '')
@@ -154,7 +203,7 @@ const reconcileLegacyCashBacking = ({
 const hasCanonicalCashLink = (movement, layawayId, paymentId) => (
   isLayawayPaymentMovement(movement)
   && Boolean(paymentId)
-  && movement.paymentId === paymentId
+  && movementPaymentId(movement) === paymentId
   && movementMatchesLayaway(movement, layawayId)
 );
 
@@ -165,10 +214,11 @@ const buildPaymentIndexes = (cashMovements = []) => {
 
   for (const movement of cashMovements) {
     if (movement?.id) movementById.set(movement.id, movement);
-    if (movement?.paymentId) {
-      const group = movementsByPaymentId.get(movement.paymentId) || [];
+    const paymentId = movementPaymentId(movement);
+    if (paymentId) {
+      const group = movementsByPaymentId.get(paymentId) || [];
       group.push(movement);
-      movementsByPaymentId.set(movement.paymentId, group);
+      movementsByPaymentId.set(paymentId, group);
     }
     const layawayId = movementLayawayId(movement);
     if (layawayId) {
@@ -186,8 +236,35 @@ const resolvePaymentMovement = (payment, layaway, indexes) => {
   if (cashMovementId) {
     const movement = indexes.movementById.get(cashMovementId);
     if (!movement) return { movement: null, reason: 'cash_movement_not_found' };
-    if (!isCashEntryMovement(movement)) return { movement: null, reason: 'cash_movement_not_cash_entry' };
-    return { movement, reason: 'linked_to_cash' };
+    if (movementType(movement) !== 'entrada') {
+      return { movement: null, invalidMovement: movement, reason: 'cash_movement_not_layaway_entry' };
+    }
+    if (!amount(movementAmount(movement)).eq(amount(payment.amount))) {
+      return { movement: null, invalidMovement: movement, reason: 'cash_movement_amount_mismatch' };
+    }
+    const paymentCashSessionId = paymentSessionId(payment);
+    const movementCashSessionId = movementSessionId(movement);
+    if (paymentCashSessionId && movementCashSessionId && paymentCashSessionId !== movementCashSessionId) {
+      return { movement: null, invalidMovement: movement, reason: 'cash_movement_session_mismatch' };
+    }
+    const paymentId = payment?.id || payment?.paymentId || null;
+    const linkedPaymentId = movementPaymentId(movement);
+    if (linkedPaymentId && linkedPaymentId !== paymentId) {
+      return { movement: null, invalidMovement: movement, reason: 'cash_movement_payment_mismatch' };
+    }
+    const linkedLayawayId = movementLayawayId(movement);
+    if (linkedLayawayId && linkedLayawayId !== layaway?.id) {
+      return { movement: null, invalidMovement: movement, reason: 'cash_movement_layaway_mismatch' };
+    }
+    const source = movementSource(movement);
+    const referenceType = String(movementReferenceType(movement) || '').toLowerCase();
+    if ((source && source !== 'layaway_payment') || (referenceType && referenceType !== 'layaway')) {
+      return { movement: null, invalidMovement: movement, reason: 'cash_movement_source_mismatch' };
+    }
+    return {
+      movement,
+      reason: hasCanonicalMovementMetadata(movement) ? 'linked_to_cash' : 'linked_to_cash_legacy_id'
+    };
   }
 
   const paymentId = payment?.id || payment?.paymentId;
@@ -234,6 +311,7 @@ export const buildLayawayFinancialProjection = ({
   let retainedPenalties = amount(0);
   const confirmedPaymentsWithoutCashMovement = [];
   const paymentsWithMissingCashMovementRecord = [];
+  const paymentsWithInvalidCashMovementLink = [];
   const duplicatePaymentMovementLinks = [];
   const unlinkedPaymentEntries = [];
   const unresolvedPaymentsWithTechnicalLink = [];
@@ -261,10 +339,16 @@ export const buildLayawayFinancialProjection = ({
       paymentsRecorded = paymentsRecorded.plus(paymentAmount);
 
       if (!linkMovement) {
-        const item = paymentAuditItem(layaway, payment, resolved.reason);
+        const item = resolved.invalidMovement
+          ? invalidCashMovementAuditItem(layaway, payment, resolved.invalidMovement, resolved.reason)
+          : paymentAuditItem(layaway, payment, resolved.reason);
         confirmedPaymentsWithoutCashMovement.push(item);
         if (payment.cashMovementId) {
-          paymentsWithMissingCashMovementRecord.push(item);
+          if (resolved.reason === 'cash_movement_not_found') {
+            paymentsWithMissingCashMovementRecord.push(item);
+          } else {
+            paymentsWithInvalidCashMovementLink.push(item);
+          }
           unresolvedPaymentsWithTechnicalLink.push({ layaway, payment, item });
         } else {
           unlinkedPaymentEntries.push({ layaway, payment, item });
@@ -273,12 +357,21 @@ export const buildLayawayFinancialProjection = ({
       }
       if (!scopedMovementIds.has(linkMovement.id)) continue;
       if (claimedMovementIds.has(linkMovement.id)) {
-        duplicatePaymentMovementLinks.push(paymentAuditItem(layaway, payment, 'cash_movement_linked_to_multiple_payments', linkMovement.id));
+        const item = invalidCashMovementAuditItem(
+          layaway,
+          payment,
+          linkMovement,
+          'cash_movement_linked_to_multiple_payments'
+        );
+        duplicatePaymentMovementLinks.push(item);
+        paymentsWithInvalidCashMovementLink.push(item);
+        confirmedPaymentsWithoutCashMovement.push(item);
+        unresolvedPaymentsWithTechnicalLink.push({ layaway, payment, item });
         continue;
       }
 
       claimedMovementIds.add(linkMovement.id);
-      paymentByCashMovementId.set(linkMovement.id, { layaway, payment });
+      paymentByCashMovementId.set(linkMovement.id, { layaway, payment, reason: resolved.reason });
       const movementCash = amount(movementAmount(linkMovement));
       cashCollected = cashCollected.plus(movementCash);
       if (isPending) pendingAdvances = pendingAdvances.plus(movementCash);
@@ -328,8 +421,16 @@ export const buildLayawayFinancialProjection = ({
     unverifiedHistoricalPaymentsAmount: number(unverifiedHistoricalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
     confirmedPaymentsWithoutCashMovement,
     paymentsWithMissingCashMovementRecord,
+    paymentsWithInvalidCashMovementLink,
+    paymentsWithInvalidCashMovementLinkAmount: number(paymentsWithInvalidCashMovementLink.reduce(
+      (total, item) => total.plus(item.paymentAmount ?? item.amount),
+      amount(0)
+    )),
     duplicatePaymentMovementLinks,
     linkedCashMovementIds: Array.from(paymentByCashMovementId.keys()),
+    linkedPaymentMovementLinks: Array.from(paymentByCashMovementId.entries()).map(([cashMovementId, entry]) => (
+      paymentAuditItem(entry.layaway, entry.payment, entry.reason, cashMovementId)
+    )),
     layawayCompletedRevenue: number(completedRevenue),
     layawayCompletedCost: number(completedCost),
     layawayCompletedGrossProfit: number(completedRevenue.minus(completedCost)),
@@ -417,6 +518,7 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
   const movementClaims = new Map();
   const confirmedPaymentsWithoutCashMovement = [];
   const paymentsWithMissingCashMovementRecord = [];
+  const paymentsWithInvalidCashMovementLink = [];
   const unlinkedPaymentEntries = [];
   const unresolvedPaymentsWithTechnicalLink = [];
 
@@ -424,10 +526,16 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
     if (!isConfirmedPayment(payment)) continue;
     const resolved = resolvePaymentMovement(payment, layaway, indexes);
     if (!resolved.movement) {
-      const item = paymentAuditItem(layaway, payment, resolved.reason);
+      const item = resolved.invalidMovement
+        ? invalidCashMovementAuditItem(layaway, payment, resolved.invalidMovement, resolved.reason)
+        : paymentAuditItem(layaway, payment, resolved.reason);
       confirmedPaymentsWithoutCashMovement.push(item);
       if (payment.cashMovementId) {
-        paymentsWithMissingCashMovementRecord.push(item);
+        if (resolved.reason === 'cash_movement_not_found') {
+          paymentsWithMissingCashMovementRecord.push(item);
+        } else {
+          paymentsWithInvalidCashMovementLink.push(item);
+        }
         unresolvedPaymentsWithTechnicalLink.push({ layaway, payment, item });
       } else {
         unlinkedPaymentEntries.push({ layaway, payment, item });
@@ -435,6 +543,17 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
       continue;
     }
     const claims = movementClaims.get(resolved.movement.id) || [];
+    if (claims.length > 0) {
+      const item = invalidCashMovementAuditItem(
+        layaway,
+        payment,
+        resolved.movement,
+        'cash_movement_linked_to_multiple_payments'
+      );
+      paymentsWithInvalidCashMovementLink.push(item);
+      confirmedPaymentsWithoutCashMovement.push(item);
+      unresolvedPaymentsWithTechnicalLink.push({ layaway, payment, item });
+    }
     claims.push(paymentAuditItem(layaway, payment, resolved.reason, resolved.movement.id));
     movementClaims.set(resolved.movement.id, claims);
   }
@@ -460,6 +579,11 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
       .map(([layawayId, group]) => ({ layawayId, saleIds: group.map((sale) => sale.id), reason: 'multiple_conversion_sales' })),
     confirmedPaymentsWithoutCashMovement,
     paymentsWithMissingCashMovementRecord,
+    paymentsWithInvalidCashMovementLink,
+    paymentsWithInvalidCashMovementLinkAmount: number(paymentsWithInvalidCashMovementLink.reduce(
+      (total, item) => total.plus(item.paymentAmount ?? item.amount),
+      amount(0)
+    )),
     unlinkedTechnicalPayments,
     unlinkedTechnicalPaymentsAmount: number(unlinkedTechnicalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
     probableLegacyCashMatches,
@@ -467,7 +591,7 @@ export const auditLayawayFinancialLinks = ({ layaways = [], sales = [], cashMove
     unverifiedHistoricalPayments,
     unverifiedHistoricalPaymentsAmount: number(unverifiedHistoricalPayments.reduce((total, item) => total.plus(item.amount), amount(0))),
     cashMovementsWithoutPayment: cashMovements.filter((movement) => isLayawayPaymentMovement(movement) && !linkedMovementIds.has(movement.id))
-      .map((movement) => ({ layawayId: movementLayawayId(movement), paymentId: movement.paymentId || null, cashMovementId: movement.id || null, amount: number(amount(movementAmount(movement))), status: null, reason: 'cash_movement_without_payment' })),
+      .map((movement) => ({ layawayId: movementLayawayId(movement), paymentId: movementPaymentId(movement), cashMovementId: movement.id || null, amount: number(amount(movementAmount(movement))), status: null, reason: 'cash_movement_without_payment' })),
     duplicatePaymentMovementLinks: Array.from(movementClaims.entries()).filter(([, claims]) => claims.length > 1)
       .map(([cashMovementId, claims]) => ({ cashMovementId, paymentIds: claims.map((claim) => claim.paymentId), amount: claims[0]?.amount || 0, status: 'duplicate_link', reason: 'cash_movement_linked_to_multiple_payments' })),
     conversionsWithoutLayaway: sales.filter((sale) => sale.isLayawayConversion === true && sale.originalLayawayId && !layawayIds.has(sale.originalLayawayId))
@@ -484,6 +608,7 @@ export const hasHistoricalIntegrityWarning = (reconciliation = {}) => (
   Number(reconciliation.unlinkedTechnicalPayments?.length || 0) > 0
   || Number(reconciliation.unverifiedHistoricalPayments?.length || 0) > 0
   || Number(reconciliation.paymentsWithMissingCashMovementRecord?.length || 0) > 0
+  || Number(reconciliation.paymentsWithInvalidCashMovementLink?.length || 0) > 0
   || Number(reconciliation.unverifiedHistoricalPaymentsAmount || 0) > 0
 );
 

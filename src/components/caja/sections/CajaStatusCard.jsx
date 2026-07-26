@@ -51,6 +51,7 @@ const CajaStatusCard = ({
     (total, item) => Money.add(total, item.amount || 0),
     Money.init(0)
   );
+  const invalidCashMovementLinks = reconciliation?.paymentsWithInvalidCashMovementLink || [];
 
   const liquidityLevel = porcentajeLiquidez >= 100
     ? 'danger'
@@ -289,6 +290,9 @@ const CajaStatusCard = ({
               )}
               {missingCashMovementRecords.length > 0 && (
                 <span className="cash-metric-label">Pagos con movimiento de Caja no localizado: {missingCashMovementRecords.length} por ${Money.toNumber(missingCashMovementRecordsAmount).toFixed(2)}</span>
+              )}
+              {invalidCashMovementLinks.length > 0 && (
+                <span className="cash-metric-label">Pagos con vínculo de Caja inválido: {invalidCashMovementLinks.length} por ${Money.toNumber(reconciliation.paymentsWithInvalidCashMovementLinkAmount).toFixed(2)}</span>
               )}
               {Number(reconciliation.probableLegacyCashBackingAmount || 0) > 0 && (
                 <span className="cash-metric-label">Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>
