@@ -111,7 +111,7 @@ describe('EcommercePortalSettings internal access guard', () => {
     render(<EcommercePortalSettings />);
 
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Aun no existe un portal')).not.toBeNull();
+    expect(await screen.findByText('Datos visibles para tus clientes')).not.toBeNull();
     expect(screen.queryByText('No tienes permiso para administrar el portal online.')).toBeNull();
   });
 
@@ -121,7 +121,7 @@ describe('EcommercePortalSettings internal access guard', () => {
     render(<EcommercePortalSettings />);
 
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Aun no existe un portal')).not.toBeNull();
+    expect(await screen.findByText('Datos visibles para tus clientes')).not.toBeNull();
     expect(screen.queryByText('Solo el propietario o dispositivo administrador puede configurar el portal online.')).toBeNull();
     expect(screen.queryByText('No tienes permiso para administrar el portal online.')).toBeNull();
   });
@@ -165,7 +165,7 @@ describe('EcommercePortalSettings internal access guard', () => {
     }));
 
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Aun no existe un portal')).not.toBeNull();
+    expect(await screen.findByText('Datos visibles para tus clientes')).not.toBeNull();
     expect(screen.queryByText('No tienes permiso para administrar el portal online.')).toBeNull();
   });
 
@@ -175,12 +175,12 @@ describe('EcommercePortalSettings internal access guard', () => {
     render(<EcommercePortalSettings />);
 
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText('Aun no existe un portal')).not.toBeNull();
+    expect(await screen.findByText('Datos visibles para tus clientes')).not.toBeNull();
 
     act(() => setStoreState({ role: 'staff', settings: true, ecommerce: false }));
 
     expect(await screen.findByText('No tienes permiso para administrar el portal online.')).not.toBeNull();
-    expect(screen.queryByText('Aun no existe un portal')).toBeNull();
+    expect(screen.queryByText('Datos visibles para tus clientes')).toBeNull();
     expect(getEcommercePortal).toHaveBeenCalledTimes(1);
     expect(listPublishedProducts).not.toHaveBeenCalled();
     expect(saveEcommercePortal).not.toHaveBeenCalled();
@@ -200,6 +200,14 @@ describe('EcommercePortalSettings image intent payloads', () => {
     name: 'Negocio de prueba',
     slug: 'negocio-prueba',
     status: 'draft',
+    whatsappPhone: '529610000000',
+    contactEmail: 'contacto@example.com',
+    address: 'Calle pública 1, Centro, Comitán de Domínguez, Chiapas, C.P. 30000',
+    addressStreet: 'Calle pública 1',
+    addressNeighborhood: 'Centro',
+    addressMunicipality: 'Comitán de Domínguez',
+    addressState: 'Chiapas',
+    addressPostalCode: '30000',
     pickupEnabled: true,
     deliveryEnabled: false,
     minOrderTotal: 0,
@@ -249,23 +257,141 @@ describe('EcommercePortalSettings image intent payloads', () => {
     return render(<EcommercePortalSettings />);
   };
 
-  const saveNewProPortal = () => {
-    fireEvent.change(screen.getByPlaceholderText('mi-negocio'), {
-      target: { value: 'negocio-prueba' }
+  const renderExistingFreePortal = () => {
+    const freeFeatures = {
+      customSlug: false,
+      cloudCatalogSource: false,
+      maxPublishedProducts: 10
+    };
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: existingPortal,
+      plan: { code: 'free_trial', name: 'Plan Free' },
+      features: freeFeatures
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+    saveEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: existingPortal,
+      plan: { code: 'free_trial', name: 'Plan Free' },
+      features: freeFeatures
+    });
+    return render(<EcommercePortalSettings />);
+  };
+
+  const saveNewProPortal = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Crear tienda' }));
   };
 
   it('keeps the basic Free editor out of an existing Pro portal', async () => {
     renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
+    const informationTab = screen.getByRole('tab', { name: 'Información' });
+    expect(screen.getByRole('tablist', { name: 'Secciones del portal' }))
+      .toHaveClass('tabs-container');
+    expect(informationTab).toHaveAttribute('aria-selected', 'true');
+    expect(informationTab).toHaveClass('tab-btn', 'active');
+    expect(screen.queryByText('Editor visual del borrador')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+
     expect(screen.getByText('Editor visual del borrador')).not.toBeNull();
-    expect(screen.queryByText('Informacion de tu tienda')).toBeNull();
+    expect(screen.queryByText('Presentación de tu tienda')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Clear test logo' })).toBeNull();
   });
 
-  it('omits untouched image fields for an existing portal', async () => {
+  it('opens on business information and keeps the catalog one tap away', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByRole('tab', { name: 'Información' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByDisplayValue('Negocio de prueba')).toHaveAttribute('readonly');
+    expect(screen.getByDisplayValue('529610000000')).not.toBeNull();
+    expect(screen.getByDisplayValue('contacto@example.com')).not.toBeNull();
+    expect(screen.getByDisplayValue('Calle pública 1')).not.toBeNull();
+    expect(screen.getByDisplayValue('Centro')).not.toBeNull();
+    expect(screen.getByDisplayValue('Comitán de Domínguez')).not.toBeNull();
+    expect(screen.getByDisplayValue('Chiapas')).not.toBeNull();
+    expect(screen.getByDisplayValue('30000')).not.toBeNull();
+    expect(screen.queryByText('Tu tienda sencilla para compartir por WhatsApp')).toBeNull();
+    expect(screen.queryByText(/Lanzo Nube incluye catalogo ilimitado/i)).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Compartir' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Catálogo' }));
+
+    expect(screen.getByPlaceholderText('Buscar productos')).not.toBeNull();
+    expect(screen.queryByText('Datos visibles para tus clientes')).toBeNull();
+  });
+
+  it('blocks publication until WhatsApp and the pickup address are complete', async () => {
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: {
+        ...existingPortal,
+        whatsappPhone: null,
+        address: null,
+        addressStreet: null,
+        addressNeighborhood: null,
+        addressMunicipality: null,
+        addressState: null,
+        addressPostalCode: null
+      },
+      plan: { code: 'pro_monthly', name: 'Lanzo Nube' },
+      features: proFeatures
+    });
+
+    render(<EcommercePortalSettings />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByText('Completa los datos para publicar')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Publicar portal' })).toBeDisabled();
+  });
+
+  it('saves the public contact email from the information workspace', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByDisplayValue('contacto@example.com'), {
+      target: { value: 'VENTAS@EXAMPLE.COM' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
+      name: 'Negocio de prueba',
+      whatsappPhone: '529610000000',
+      contactEmail: 'ventas@example.com',
+      addressStreet: 'Calle pública 1',
+      addressNeighborhood: 'Centro',
+      addressMunicipality: 'Comitán de Domínguez',
+      addressState: 'Chiapas',
+      addressPostalCode: '30000'
+    });
+  });
+
+  it('accepts S/N for street and neighborhood when the rest of the address is complete', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByDisplayValue('Calle pública 1'), {
+      target: { value: 'S/N' }
+    });
+    fireEvent.change(screen.getByDisplayValue('Centro'), {
+      target: { value: 's/n' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar portal' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
+      status: 'published',
+      addressStreet: 'S/N',
+      addressNeighborhood: 's/n',
+      addressMunicipality: 'Comitán de Domínguez',
+      addressState: 'Chiapas',
+      addressPostalCode: '30000'
+    });
+  });
+
+  it('omits untouched image fields when creating a portal', async () => {
     renderNewProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
@@ -278,10 +404,11 @@ describe('EcommercePortalSettings image intent payloads', () => {
   });
 
   it('sends explicit null only when the logo is unlinked', async () => {
-    renderNewProPortal();
+    renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
     fireEvent.click(screen.getByRole('button', { name: 'Clear test logo' }));
-    saveNewProPortal();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({ logoUrl: null });
@@ -289,23 +416,25 @@ describe('EcommercePortalSettings image intent payloads', () => {
   });
 
   it('sends HTTPS replacement images', async () => {
-    renderNewProPortal();
+    renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
     fireEvent.click(screen.getByRole('button', { name: 'Set test images' }));
-    saveNewProPortal();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
-      logoUrl: 'https://cdn.example/logo-new.png',
-      coverImageUrl: 'https://cdn.example/cover-new.png'
+      logoUrl: 'https://cdn.example/logo-new.png'
     });
+    expect(saveEcommercePortal.mock.calls[0][0]).not.toHaveProperty('coverImageUrl');
   });
 
   it('never transports a blob URL', async () => {
-    renderNewProPortal();
+    renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
     fireEvent.click(screen.getByRole('button', { name: 'Set invalid test image' }));
-    saveNewProPortal();
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
     expect(saveEcommercePortal).not.toHaveBeenCalled();
   });
 
@@ -318,10 +447,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
 
     render(<EcommercePortalSettings />);
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByPlaceholderText('mi-negocio'), {
-      target: { value: 'negocio-prueba' }
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar portal' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Crear tienda' }));
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({

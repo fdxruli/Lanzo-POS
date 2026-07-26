@@ -107,7 +107,9 @@ const setNavigatorOnline = (online) => {
 
 async function addAndOpenCart(user) {
   await user.click(await screen.findByRole('button', { name: 'Agregar Alitas BBQ' }));
-  await user.click(screen.getByRole('button', { name: 'Ver carrito, 1 unidades' }));
+  await user.click(screen.getByRole('button', {
+    name: 'Ver carrito, 1 unidades, subtotal $80.00'
+  }));
 }
 
 async function openAndFillCheckout(user) {

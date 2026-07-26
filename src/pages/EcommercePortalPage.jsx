@@ -38,7 +38,9 @@ export default function EcommercePortalPage() {
 
   return (
     <main className="ui-page ecommerce-portal-page" aria-label="Portal online">
-      <EcommercePortalSettings />
+      <EcommercePortalSettings
+        requestedSection={requestedFocus === 'products' ? 'catalog' : null}
+      />
     </main>
   );
 }

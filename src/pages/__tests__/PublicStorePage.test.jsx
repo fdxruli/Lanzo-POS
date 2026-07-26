@@ -36,6 +36,8 @@ const portalResult = {
     description: 'Descripción pública',
     logoUrl: '',
     coverImageUrl: '',
+    whatsappPhone: '529610000000',
+    contactEmail: 'contacto@example.com',
     address: 'Centro, Chiapas',
     orderingEnabled: true,
     pickupEnabled: true,
@@ -117,6 +119,10 @@ describe('PublicStorePage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
     expect(screen.getByText('Comida hecha al momento')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'WhatsApp 529610000000' }))
+      .toHaveAttribute('href', 'https://wa.me/529610000000');
+    expect(screen.getByRole('link', { name: 'contacto@example.com' }))
+      .toHaveAttribute('href', 'mailto:contacto@example.com');
     expect(screen.getByText(/Abierto hoy de 14:00 a 22:00/)).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
     expect(screen.queryByText('WelcomeModal')).not.toBeInTheDocument();
@@ -144,7 +150,9 @@ describe('PublicStorePage', () => {
       limit: 100,
       offset: 100,
     });
-    await user.click(await screen.findByRole('button', { name: 'Ver carrito, 2 unidades' }));
+    await user.click(await screen.findByRole('button', {
+      name: 'Ver carrito, 2 unidades, subtotal $110.00'
+    }));
 
     expect(screen.getByRole('dialog', { name: 'Carrito (2)' })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { name: 'Producto 120' })).toHaveLength(2);
@@ -296,6 +304,13 @@ describe('PublicStorePage', () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Alitas BBQ' });
 
+    const catalog = screen.getByRole('region', { name: 'Elige tus productos' });
+    expect(catalog).toHaveClass('public-catalog--view-grid');
+    expect(screen.getByRole('button', { name: 'Cuadrícula' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Lista' }));
+    expect(catalog).toHaveClass('public-catalog--view-list');
+    expect(screen.getByRole('button', { name: 'Lista' })).toHaveAttribute('aria-pressed', 'true');
+
     await user.type(screen.getByRole('searchbox', { name: 'Buscar productos' }), 'papas');
     expect(screen.queryByRole('heading', { name: 'Alitas BBQ' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Papas' })).toBeInTheDocument();
@@ -313,7 +328,9 @@ describe('PublicStorePage', () => {
     await screen.findByRole('heading', { name: 'Alitas BBQ' });
 
     await user.click(screen.getByRole('button', { name: 'Agregar Alitas BBQ' }));
-    await user.click(screen.getByRole('button', { name: 'Ver carrito, 1 unidades' }));
+    await user.click(screen.getByRole('button', {
+      name: 'Ver carrito, 1 unidades, subtotal $80.00'
+    }));
 
     expect(screen.getByRole('dialog', { name: 'Carrito (1)' })).toBeInTheDocument();
     expect(screen.getAllByText('$80.00').length).toBeGreaterThan(0);

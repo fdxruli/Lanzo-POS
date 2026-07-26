@@ -119,6 +119,15 @@ describe('EcommerceSiteRenderer', () => {
     );
   });
 
+  it('shows the configured business type beside the online store label', () => {
+    renderSite({
+      portal: { ...portal, businessType: ['abarrotes'] }
+    });
+
+    expect(screen.getByText('Tienda online')).toBeTruthy();
+    expect(screen.getByText('Abarrotes / Tienda')).toBeTruthy();
+  });
+
   it('uses the current portal preset only when the document is absent or invalid', () => {
     const compactPortal = { ...portal, templateCode: 'compact' };
     const { rerender } = renderSite({ siteDocument: null, portal: compactPortal });
