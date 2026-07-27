@@ -4,7 +4,9 @@
  * scrolling; otherwise content below the viewport is unreachable.
  */
 html:has(.public-store-shell),
-body:has(.public-store-shell) {
+body:has(.public-store-shell),
+html.public-store-document,
+body.public-store-body {
   height: auto;
   min-height: 100%;
   overflow-x: hidden;
@@ -12,7 +14,8 @@ body:has(.public-store-shell) {
   overscroll-behavior-y: auto;
 }
 
-#root:has(.public-store-shell) {
+#root:has(.public-store-shell),
+#root.public-store-root {
   display: block;
   height: auto;
   min-height: 100%;

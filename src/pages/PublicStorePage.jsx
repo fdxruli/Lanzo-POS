@@ -28,12 +28,16 @@ import {
   normalizeEcommercePortalTemplate,
   normalizeEcommercePortalTheme
 } from '../utils/ecommercePortalTheme';
+import { preparePublicStoreDocument } from '../router/preparePublicStoreDocument';
+import { resetPublicDocumentScroll } from '../utils/publicDocumentScroll';
 import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
 const DEFAULT_META_DESCRIPTION = 'Consulta el catálogo de esta tienda online.';
 const INITIAL_PAGINATION = { offset: 0, limit: 100, hasMore: false };
 const REVISION_REVALIDATION_INTERVAL_MS = 60_000;
+const FULL_RECOVERY_HIDDEN_THRESHOLD_MS = 30_000;
+const RESUME_EVENT_COALESCE_MS = 75;
 const AVAILABILITY_ERROR_CODES = new Set([
   'ECOMMERCE_ORDERS_PAUSED',
   'ECOMMERCE_STORE_CLOSED',
@@ -73,7 +77,13 @@ function PublicStorePage() {
   const activeCheckoutPromiseRef = useRef(null);
   const checkoutOpeningPromiseRef = useRef(null);
   const availabilityRef = useRef(null);
+  const catalogReadyRef = useRef(false);
+  const productsRef = useRef([]);
+  const checkoutStatusRef = useRef('idle');
   const revisionRevalidationPromiseRef = useRef(null);
+  const recoveryPromiseRef = useRef(null);
+  const hiddenAtRef = useRef(null);
+  const resumeTimerRef = useRef(null);
   const revisionRestartCountRef = useRef(0);
 
   const [portalResult, setPortalResult] = useState(null);
@@ -85,6 +95,7 @@ function PublicStorePage() {
   const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
   const [catalogReady, setCatalogReady] = useState(false);
   const [catalogError, setCatalogError] = useState(null);
+  const [catalogRefreshError, setCatalogRefreshError] = useState(null);
   const [catalogSource, setCatalogSource] = useState('network');
   const [catalogRevision, setCatalogRevision] = useState(null);
   const [catalogValidated, setCatalogValidated] = useState(false);
@@ -123,12 +134,20 @@ function PublicStorePage() {
       activeCheckoutPromiseRef.current = null;
       checkoutOpeningPromiseRef.current = null;
       revisionRevalidationPromiseRef.current = null;
+      recoveryPromiseRef.current = null;
+      window.clearTimeout(resumeTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
     availabilityRef.current = availability;
   }, [availability]);
+
+  useEffect(() => {
+    catalogReadyRef.current = catalogReady;
+    productsRef.current = products;
+    checkoutStatusRef.current = checkoutStatus;
+  }, [catalogReady, checkoutStatus, products]);
 
   useEffect(() => {
     revisionRestartCountRef.current = 0;
@@ -162,6 +181,7 @@ function PublicStorePage() {
         setCatalogLoadingMore(true);
       }
       setCatalogError(null);
+      setCatalogRefreshError(null);
     }
 
     try {
@@ -205,6 +225,7 @@ function PublicStorePage() {
       setCatalogValidated(result.offline !== true && isOnlineNow());
       setCatalogReady(true);
       setCatalogRefreshing(false);
+      setCatalogRefreshError(null);
       revisionRestartCountRef.current = 0;
       return true;
     } catch (error) {
@@ -249,6 +270,8 @@ function PublicStorePage() {
     activeCheckoutPromiseRef.current = null;
     checkoutOpeningPromiseRef.current = null;
     revisionRevalidationPromiseRef.current = null;
+    recoveryPromiseRef.current = null;
+    hiddenAtRef.current = null;
 
     setStoreStatus('loading');
     setPortalResult(null);
@@ -258,6 +281,7 @@ function PublicStorePage() {
     setCatalogLoadingMore(false);
     setCatalogReady(false);
     setCatalogError(null);
+    setCatalogRefreshError(null);
     setCatalogSource('network');
     setCatalogRevision(null);
     setCatalogValidated(false);
@@ -324,6 +348,7 @@ function PublicStorePage() {
   }, [loadCatalog, slug, storeReloadKey]);
 
   const revalidateCatalogRevision = useCallback((reason = 'visible') => {
+    if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
     if (!portal || !isOnlineNow()) {
       setConnectionOnline(false);
       setOfflineCatalog(true);
@@ -399,12 +424,106 @@ function PublicStorePage() {
     return request;
   }, [catalogReady, loadCatalog, portal]);
 
+  const closeTransientPublicOverlaysForRecovery = useCallback(async () => {
+    const protectedCheckout = (
+      checkoutStatusRef.current === 'submitting'
+      || checkoutStatusRef.current === 'confirmed'
+    );
+    window.dispatchEvent(new Event('lanzo:public-store-close-transient-overlays'));
+    setIsCartOpen(false);
+    if (!protectedCheckout) setCheckoutOpen(false);
+    await Promise.resolve();
+    if (!protectedCheckout) resetPublicDocumentScroll();
+  }, []);
+
+  const recoverPublicStore = useCallback((reason = 'resume', { closeOverlays = false } = {}) => {
+    if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
+    if (!portal || !isOnlineNow()) {
+      if (closeOverlays) void closeTransientPublicOverlaysForRecovery();
+      preparePublicStoreDocument();
+      setConnectionOnline(false);
+      setOfflineCatalog(true);
+      setCatalogValidated(false);
+      return Promise.resolve(false);
+    }
+
+    const requestSlug = activeSlugRef.current;
+    const recoveryGeneration = requestGenerationRef.current + 1;
+    requestGenerationRef.current = recoveryGeneration;
+    requestedOffsetsRef.current = new Set();
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && activeSlugRef.current === requestSlug
+      && requestGenerationRef.current === recoveryGeneration
+    );
+
+    setCatalogRefreshing(true);
+    setCatalogError(null);
+    setCatalogRefreshError(null);
+    setCatalogValidated(false);
+
+    const request = (async () => {
+      try {
+        if (closeOverlays) await closeTransientPublicOverlaysForRecovery();
+        preparePublicStoreDocument();
+        const nextPortal = await getPublicPortalBySlug(requestSlug, { reason });
+        if (!isCurrentRequest()) return false;
+        const nextRevision = normalizeRevision(nextPortal.catalogRevision);
+        const nextCachePolicy = nextPortal.cachePolicy || null;
+        const nextCatalog = await getPublicCatalog(requestSlug, {
+          limit: 100,
+          offset: 0,
+          catalogRevision: nextRevision,
+          cachePolicy: nextCachePolicy,
+          cacheStrategy: 'network-first'
+        });
+        if (!isCurrentRequest()) return false;
+
+        const nextPagination = nextCatalog.pagination;
+        activeCatalogRevisionRef.current = nextRevision;
+        cachePolicyRef.current = nextCachePolicy;
+        paginationRef.current = nextPagination;
+        availabilityRef.current = resolveAvailability(nextPortal);
+        setPortalResult(nextPortal);
+        setCatalogRevision(nextRevision);
+        setProducts(nextCatalog.items);
+        setPagination(nextPagination);
+        setCatalogSource(nextCatalog.source === 'cache' ? 'cache' : 'network');
+        setOfflineCatalog(nextCatalog.offline === true);
+        setConnectionOnline(isOnlineNow());
+        setCatalogReady(true);
+        setCatalogValidated(nextCatalog.offline !== true && isOnlineNow());
+        setCatalogRefreshError(null);
+        return true;
+      } catch (error) {
+        if (!isCurrentRequest()) return false;
+        setConnectionOnline(isOnlineNow());
+        setOfflineCatalog(!isOnlineNow());
+        if (catalogReadyRef.current && productsRef.current.length > 0) {
+          setCatalogRefreshError(error);
+        } else {
+          setCatalogError({ error, offset: 0, replace: true });
+        }
+        return false;
+      } finally {
+        if (isCurrentRequest()) setCatalogRefreshing(false);
+      }
+    })();
+
+    recoveryPromiseRef.current = request;
+    const release = () => {
+      if (recoveryPromiseRef.current === request) recoveryPromiseRef.current = null;
+    };
+    request.then(release, release);
+    return request;
+  }, [closeTransientPublicOverlaysForRecovery, portal]);
+
   useEffect(() => {
     if (!portal) return undefined;
 
     const handleOnline = () => {
       setConnectionOnline(true);
-      void revalidateCatalogRevision('online');
+      void recoverPublicStore('online');
     };
     const handleOffline = () => {
       setConnectionOnline(false);
@@ -412,12 +531,36 @@ function PublicStorePage() {
       setCatalogValidated(false);
     };
     const handleFocus = () => {
-      void revalidateCatalogRevision('focus');
+      window.clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = window.setTimeout(() => {
+        void revalidateCatalogRevision('focus');
+      }, RESUME_EVENT_COALESCE_MS);
     };
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void revalidateCatalogRevision('visibility');
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now();
+        return;
       }
+      const hiddenFor = hiddenAtRef.current === null ? 0 : Date.now() - hiddenAtRef.current;
+      hiddenAtRef.current = null;
+      window.clearTimeout(resumeTimerRef.current);
+      if (hiddenFor >= FULL_RECOVERY_HIDDEN_THRESHOLD_MS) {
+        void recoverPublicStore('visibility-long', { closeOverlays: true });
+      } else {
+        resumeTimerRef.current = window.setTimeout(() => {
+          void revalidateCatalogRevision('visibility-short');
+        }, RESUME_EVENT_COALESCE_MS);
+      }
+    };
+    const handlePageShow = (event) => {
+      preparePublicStoreDocument();
+      if (event.persisted) {
+        window.clearTimeout(resumeTimerRef.current);
+        void recoverPublicStore('pageshow-bfcache', { closeOverlays: true });
+      }
+    };
+    const handleControlledRecovery = () => {
+      void recoverPublicStore('manual-controlled', { closeOverlays: true });
     };
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
@@ -428,6 +571,8 @@ function PublicStorePage() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('lanzo:public-store-recover', handleControlledRecovery);
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
@@ -435,9 +580,12 @@ function PublicStorePage() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('lanzo:public-store-recover', handleControlledRecovery);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearTimeout(resumeTimerRef.current);
     };
-  }, [portal, revalidateCatalogRevision]);
+  }, [portal, recoverPublicStore, revalidateCatalogRevision]);
 
   useEffect(() => {
     if (!portal || !availability?.nextChangeAt) return undefined;
@@ -782,6 +930,12 @@ function PublicStorePage() {
         {catalogRefreshing ? (
           <div className="public-store-notice" role="status" aria-live="polite">
             Actualizando catálogo… El checkout se habilitará al confirmar precios y disponibilidad.
+          </div>
+        ) : null}
+
+        {catalogRefreshError ? (
+          <div className="public-store-notice" role="alert">
+            No pudimos actualizar la tienda. Mostramos la última información disponible.
           </div>
         ) : null}
 

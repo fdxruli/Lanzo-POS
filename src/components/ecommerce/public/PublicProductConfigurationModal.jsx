@@ -11,6 +11,10 @@ import {
   validateEcommerceConfiguration
 } from '../../../utils/ecommerceConfiguredProduct';
 import PublicSafeImage from './PublicSafeImage';
+import {
+  lockPublicDocumentScroll,
+  unlockPublicDocumentScroll
+} from '../../../utils/publicDocumentScroll';
 import './PublicProductConfiguration.css';
 
 const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
@@ -74,7 +78,7 @@ function PublicProductConfigurationModal({
       setLoadError(error);
       setStatus('error');
     }
-  }, [catalogRevision, offline, product?.configuration?.version, product?.id, slug]);
+  }, [catalogRevision, offline, product, slug]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -95,8 +99,7 @@ function PublicProductConfigurationModal({
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockPublicDocumentScroll('public-product-configuration');
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (event) => {
@@ -123,7 +126,7 @@ function PublicProductConfigurationModal({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockPublicDocumentScroll('public-product-configuration');
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);

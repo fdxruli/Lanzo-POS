@@ -74,12 +74,24 @@ describe('public ecommerce site layout styles', () => {
   });
 
   it('keeps document-level escape rules exclusive to the public shell', () => {
-    expect(normalizedPublicStyles).toContain(
-      'html:has(.public-store-shell), body:has(.public-store-shell) {'
-    );
-    expect(normalizedPublicStyles).toContain('#root:has(.public-store-shell) {');
+    const documentRules = normalizedPublicStyles.slice(0, normalizedPublicStyles.indexOf('.ecommerce-site-surface'));
+    expect(documentRules).toMatch(/html:has\(\.public-store-shell\)/);
+    expect(documentRules).toMatch(/body:has\(\.public-store-shell\)/);
+    expect(documentRules).toMatch(/#root:has\(\.public-store-shell\)/);
+    expect(documentRules).toMatch(/html\.public-store-document/);
+    expect(documentRules).toMatch(/body\.public-store-body/);
+    expect(documentRules).toMatch(/#root\.public-store-root/);
     expect(normalizedPublicStyles).not.toMatch(
       /(?:html|body|#root):has\(\.ecommerce-site-surface\)/
+    );
+    expect(normalizedPublicStyles).not.toMatch(
+      /(?:html|body|#root)\.ecommerce-site-surface/
+    );
+    expect(normalizedPreviewStyles).not.toMatch(
+      /public-store-(?:document|body|root)|:has\(\.public-store-shell\)/
+    );
+    expect(normalizedPreviewStyles).not.toMatch(
+      /(?:html|body|#root).*?(?:overflow|min-height|height)/
     );
   });
 
