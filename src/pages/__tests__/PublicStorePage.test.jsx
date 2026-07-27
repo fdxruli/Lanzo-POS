@@ -352,6 +352,37 @@ describe('PublicStorePage', () => {
     expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
   });
 
+  it('rebuilds the first page on BFCache restore without clearing visible products', async () => {
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue({
+      ...portalResult,
+      catalogRevision: 7,
+      cachePolicy: { schemaVersion: 2, freshSeconds: 300, maxStaleSeconds: 86400 }
+    });
+    const pendingCatalog = deferred();
+    serviceMocks.getPublicCatalog
+      .mockResolvedValueOnce(catalogResult)
+      .mockReturnValueOnce(pendingCatalog.promise);
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+
+    const pageShow = new Event('pageshow');
+    Object.defineProperty(pageShow, 'persisted', { value: true });
+    fireEvent(window, pageShow);
+
+    expect(screen.getByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    expect(await screen.findByText(/Actualizando catálogo/)).toBeInTheDocument();
+    pendingCatalog.resolve({
+      ...catalogResult,
+      items: [makeProduct('fresh', { name: 'Producto recuperado' })]
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Producto recuperado' })).toBeInTheDocument();
+    expect(serviceMocks.getPublicCatalog).toHaveBeenLastCalledWith(
+      'mi-negocio',
+      expect.objectContaining({ offset: 0, cacheStrategy: 'network-first', catalogRevision: 7 })
+    );
+  });
+
   it('shows the same generic state for an unavailable portal', async () => {
     serviceMocks.getPublicPortalBySlug.mockRejectedValue(
       new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.')

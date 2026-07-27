@@ -20,7 +20,7 @@ const portalResponse = (revision) => ({
   hours: { weekly: [], exceptions: [] },
   features: { orderInbox: true },
   catalogRevision: revision,
-  cachePolicy: { schemaVersion: 1, freshSeconds: 300, maxStaleSeconds: 86400 }
+  cachePolicy: { schemaVersion: 2, freshSeconds: 300, maxStaleSeconds: 86400 }
 });
 
 const catalogResponse = (revision, offset = 0) => ({
@@ -153,5 +153,80 @@ describe('ecommercePublicService catalog cache', () => {
 
     expect(offlinePortal.offline).toBe(true);
     expect(offlineCatalog).toMatchObject({ source: 'cache', offline: true });
+  });
+
+  it('uses network-first even when the requested revision is cached', async () => {
+    let productName = 'Guardado';
+    const rpc = vi.fn(async (name) => {
+      if (name === 'ecommerce_get_portal_by_slug') return { data: portalResponse(9), error: null };
+      return {
+        data: {
+          ...catalogResponse(9),
+          items: [{ ...catalogResponse(9).items[0], name: productName }]
+        },
+        error: null
+      };
+    });
+    const { database, service } = createService(rpc, 'public-service-network-first');
+    await service.getPublicCatalog('mi-tienda', { catalogRevision: 9 });
+    await waitForCachedPage(database);
+    productName = 'Canónico';
+
+    const result = await service.getPublicCatalog('mi-tienda', {
+      catalogRevision: 9,
+      cacheStrategy: 'network-first'
+    });
+
+    expect(result.source).toBe('network');
+    expect(result.items[0].name).toBe('Canónico');
+    expect(rpc.mock.calls.filter(([name]) => name === 'ecommerce_get_catalog')).toHaveLength(2);
+  });
+
+  it('falls back to the matching cached revision when network-first fails', async () => {
+    let online = true;
+    const rpc = vi.fn(async () => (
+      online
+        ? { data: catalogResponse(11), error: null }
+        : { data: null, error: { code: 'NETWORK', message: 'unavailable' } }
+    ));
+    const { database, service } = createService(rpc, 'public-service-network-fallback');
+    await service.getPublicCatalog('mi-tienda', { catalogRevision: 11 });
+    await waitForCachedPage(database);
+    online = false;
+
+    const result = await service.getPublicCatalog('mi-tienda', {
+      catalogRevision: 11,
+      cacheStrategy: 'network-first'
+    });
+
+    expect(result).toMatchObject({ source: 'cache', offline: true, catalogRevision: 11 });
+  });
+
+  it('returns stale content and notifies the background network result', async () => {
+    let productName = 'Guardado';
+    const rpc = vi.fn(async () => ({
+      data: {
+        ...catalogResponse(13),
+        items: [{ ...catalogResponse(13).items[0], name: productName }]
+      },
+      error: null
+    }));
+    const { database, service } = createService(rpc, 'public-service-swr');
+    await service.getPublicCatalog('mi-tienda', { catalogRevision: 13 });
+    await waitForCachedPage(database);
+    productName = 'Actualizado';
+    const onRevalidated = vi.fn();
+
+    const cached = await service.getPublicCatalog('mi-tienda', {
+      catalogRevision: 13,
+      cacheStrategy: 'stale-while-revalidate',
+      onRevalidated
+    });
+
+    expect(cached).toMatchObject({ source: 'cache' });
+    await vi.waitFor(() => expect(onRevalidated).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'network' })
+    ));
+    expect(onRevalidated.mock.calls[0][0].items[0].name).toBe('Actualizado');
   });
 });

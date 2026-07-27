@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Minus, Pencil, Plus, ShoppingCart, Trash2, X } from 'lucide-react';
+import {
+  lockPublicDocumentScroll,
+  unlockPublicDocumentScroll
+} from '../../../utils/publicDocumentScroll';
 import './PublicProductConfiguration.css';
 
 const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
@@ -80,15 +84,14 @@ function PublicCartDrawer({
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockPublicDocumentScroll('public-cart');
     closeButtonRef.current?.focus();
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockPublicDocumentScroll('public-cart');
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);

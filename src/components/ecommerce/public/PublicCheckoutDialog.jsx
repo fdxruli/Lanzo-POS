@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, LoaderCircle, MapPin, PackageCheck, Truck, X } from 'lucide-react';
 import PublicOrderConfirmation from './PublicOrderConfirmation';
+import {
+  lockPublicDocumentScroll,
+  unlockPublicDocumentScroll
+} from '../../../utils/publicDocumentScroll';
 
 const STALE_CART_CODES = new Set([
   'ECOMMERCE_PRODUCT_NOT_FOUND',
@@ -104,8 +108,7 @@ function PublicCheckoutDialog({
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockPublicDocumentScroll('public-checkout');
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (event) => {
@@ -114,7 +117,7 @@ function PublicCheckoutDialog({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockPublicDocumentScroll('public-checkout');
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, isSubmitting, onClose]);

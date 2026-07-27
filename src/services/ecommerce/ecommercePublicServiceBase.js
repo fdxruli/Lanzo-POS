@@ -463,6 +463,14 @@ const safely = async (operation, fallback = null) => {
     return fallback;
   }
 };
+const PUBLIC_CATALOG_CACHE_STRATEGIES = new Set([
+  'cache-first',
+  'network-first',
+  'stale-while-revalidate'
+]);
+const normalizeCatalogCacheStrategy = (value) => (
+  PUBLIC_CATALOG_CACHE_STRATEGIES.has(value) ? value : 'cache-first'
+);
 
 export function createEcommercePublicService(
   client = ecommercePublicClient,
@@ -524,7 +532,13 @@ export function createEcommercePublicService(
       const cachePolicy = normalizeCachePolicy(
         options.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY
       );
-      if (cache && options.cache !== false && catalogRevision) {
+      const cacheStrategy = normalizeCatalogCacheStrategy(options.cacheStrategy);
+      if (
+        cacheStrategy !== 'network-first'
+        && cache
+        && options.cache !== false
+        && catalogRevision
+      ) {
         const cached = await safely(() => cache.getPage({
           slug: normalizedSlug,
           catalogRevision,
@@ -534,6 +548,12 @@ export function createEcommercePublicService(
           allowStale: true
         }));
         if (cached) {
+          if (cacheStrategy === 'stale-while-revalidate' && options.offline !== true) {
+            void this.getPublicCatalog(normalizedSlug, {
+              ...options,
+              cacheStrategy: 'network-first'
+            }).then((fresh) => options.onRevalidated?.(fresh)).catch(() => {});
+          }
           return {
             ...cached.page,
             source: 'cache',
@@ -724,5 +744,6 @@ export const ecommercePublicServiceInternals = Object.freeze({
   normalizeOrderResult,
   normalizeRpcFailure,
   normalizeOrderItems,
-  isLegacyCatalogSignatureError
+  isLegacyCatalogSignatureError,
+  normalizeCatalogCacheStrategy
 });
