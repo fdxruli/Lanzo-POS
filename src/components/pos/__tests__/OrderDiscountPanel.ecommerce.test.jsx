@@ -95,10 +95,25 @@ describe('OrderDiscountPanel ecommerce guard', () => {
     expect(mocks.activeState.updateCurrentOrder).not.toHaveBeenCalled();
   });
 
+  it('starts collapsed and only displays its content after the user opens it', () => {
+    setOrder({ origin: undefined });
+    render(<OrderDiscountPanel />);
+
+    const trigger = screen.getByRole('button', { name: /Descuentos/ });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('line-discounts')).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('line-discounts')).toBeInTheDocument();
+  });
+
   it('keeps applying a general discount for a normal POS order', () => {
     setOrder({ origin: undefined });
     render(<OrderDiscountPanel />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Descuentos/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Descuento general' }));
     fireEvent.change(screen.getByLabelText('Tipo de descuento'), { target: { value: 'amount' } });
     fireEvent.change(screen.getByPlaceholderText('Valor'), { target: { value: '5' } });
@@ -119,6 +134,7 @@ describe('OrderDiscountPanel ecommerce guard', () => {
     });
     render(<OrderDiscountPanel />);
 
+    fireEvent.click(screen.getByRole('button', { name: /Descuentos/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Quitar descuento general' }));
 
     expect(mocks.activeState.updateCurrentOrder).toHaveBeenCalledWith(

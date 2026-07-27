@@ -29,7 +29,7 @@ export default function OrderDiscountPanel({
   useAppStore((state) => state.currentStaffUser);
 
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(defaultExpanded || !restaurant);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [type, setType] = useState('amount');
   const [value, setValue] = useState('');
   const [reason, setReason] = useState('');
@@ -113,10 +113,8 @@ export default function OrderDiscountPanel({
   }
 
   const toggleExpanded = () => {
-    setExpanded((current) => {
-      if (current) closeForm();
-      return !current;
-    });
+    if (expanded) closeForm();
+    setExpanded(!expanded);
   };
 
   return (

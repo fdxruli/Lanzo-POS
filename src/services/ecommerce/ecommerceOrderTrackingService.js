@@ -1,4 +1,5 @@
 import { ecommercePublicClient } from './ecommercePublicService';
+import { normalizeEcommercePortalTheme } from '../../utils/ecommercePortalTheme';
 
 export const ECOMMERCE_TRACKING_POLL_MS = 45_000;
 const TRACKING_REQUEST_MESSAGE = 'No se pudo actualizar el seguimiento. Revisa tu conexión e intenta nuevamente.';
@@ -49,6 +50,7 @@ function normalizeTracking(data) {
   })).filter((item) => item.quantity > 0);
   const realtime = asObject(source.realtime);
   const topic = asText(realtime.topic);
+  const storefront = asObject(source.storefront);
 
   return {
     orderCode: asText(source.orderCode, 'Pedido'),
@@ -63,6 +65,11 @@ function normalizeTracking(data) {
     version: Math.max(0, Math.floor(asNumber(source.version, 0))),
     paymentRegistered: asBoolean(source.paymentRegistered, false),
     storefrontAvailable: asBoolean(source.storefrontAvailable, false),
+    storefront: {
+      name: asText(storefront.name, 'Tienda online').slice(0, 160),
+      logoUrl: asText(storefront.logoUrl).slice(0, 2_000),
+      theme: normalizeEcommercePortalTheme(storefront.theme)
+    },
     realtime: {
       enabled: asBoolean(realtime.enabled, false) && /^ecom-track:[a-f0-9]{48}$/.test(topic),
       topic: /^ecom-track:[a-f0-9]{48}$/.test(topic) ? topic : ''

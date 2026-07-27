@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Circle, Clock3, PackageCheck, RefreshCw, Truck } from 'lucide-react';
+import {
+  Check,
+  CircleAlert,
+  Circle,
+  Clock3,
+  ArrowLeft,
+  Ban,
+  Info,
+  MessageSquareText,
+  PackageCheck,
+  RefreshCw,
+  ShoppingBag,
+  Truck,
+  WifiOff
+} from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ECOMMERCE_TRACKING_POLL_MS,
@@ -9,6 +23,8 @@ import {
   subscribeToPublicTrackingSignals,
   writeTrackingCache
 } from '../services/ecommerce/ecommerceOrderTrackingService';
+import { buildEcommercePortalThemeStyle } from '../utils/ecommercePortalTheme';
+import PublicSafeImage from '../components/ecommerce/public/PublicSafeImage';
 import './PublicOrderTrackingPage.css';
 
 const STATUS_LABELS = Object.freeze({
@@ -24,19 +40,13 @@ const STATUS_LABELS = Object.freeze({
 });
 
 const formatCurrency = (value, currency = 'MXN') => new Intl.NumberFormat('es-MX', {
-  style: 'currency',
-  currency,
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2
+  style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2
 }).format(Number(value) || 0);
 
 const formatDateTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'No disponible';
-  return new Intl.DateTimeFormat('es-MX', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(date);
+  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 };
 
 const buildSteps = (fulfillmentMethod) => [
@@ -44,13 +54,36 @@ const buildSteps = (fulfillmentMethod) => [
   { key: 'accepted', label: 'Pedido aceptado', icon: Check },
   { key: 'preparing', label: 'En preparación', icon: Clock3 },
   { key: 'ready', label: 'Listo', icon: PackageCheck },
-  ...(fulfillmentMethod === 'delivery'
-    ? [{ key: 'out_for_delivery', label: 'En camino', icon: Truck }]
-    : []),
+  ...(fulfillmentMethod === 'delivery' ? [{ key: 'out_for_delivery', label: 'En camino', icon: Truck }] : []),
   { key: 'completed', label: 'Completado', icon: Check }
 ];
 
 const getProgressIndex = (steps, status) => steps.findIndex((step) => step.key === status);
+
+const getStatusDescription = (status, fulfillmentMethod) => {
+  if (status === 'preparing') return 'Estamos preparando tus productos.';
+  if (status === 'ready') return fulfillmentMethod === 'delivery'
+    ? 'Tu pedido está listo para salir.' : 'Tu pedido ya está listo para recoger.';
+  if (status === 'out_for_delivery') return 'Tu pedido va en camino a la dirección indicada.';
+  if (status === 'completed') return 'Tu pedido fue entregado correctamente.';
+  if (status === 'accepted') return 'Tu pedido fue confirmado por el negocio.';
+  if (status === 'cancelled') return 'Este pedido fue cancelado. Revisa el mensaje del negocio para más información.';
+  if (status === 'rejected') return 'El negocio no pudo aceptar este pedido. Revisa el mensaje del negocio para más información.';
+  if (status === 'attention') return 'El negocio necesita confirmar información de tu pedido. Revisa el mensaje mostrado a continuación.';
+  return 'Recibimos tu pedido y lo estamos revisando.';
+};
+
+const STATUS_ICONS = Object.freeze({
+  received: Circle,
+  accepted: Check,
+  preparing: Clock3,
+  ready: PackageCheck,
+  out_for_delivery: Truck,
+  completed: Check,
+  cancelled: Ban,
+  rejected: Ban,
+  attention: CircleAlert
+});
 
 export default function PublicOrderTrackingPage() {
   const { slug = '', trackingToken = '' } = useParams();
@@ -64,16 +97,12 @@ export default function PublicOrderTrackingPage() {
     const requestEpoch = ++requestEpochRef.current;
     if (!background) setNetworkState((current) => (trackingRef.current ? 'refreshing' : current));
     setMessage('');
-
     try {
       const next = await getPublicOrderTracking(slug, trackingToken);
       if (requestEpoch !== requestEpochRef.current) return;
       setTracking((current) => {
         const resolved = current?.status === 'completed' && next.status !== 'completed'
-          ? current
-          : Number(current?.version || 0) > Number(next.version || 0)
-            ? current
-            : next;
+          ? current : Number(current?.version || 0) > Number(next.version || 0) ? current : next;
         trackingRef.current = resolved;
         return resolved;
       });
@@ -89,7 +118,6 @@ export default function PublicOrderTrackingPage() {
         void clearTrackingCache(slug, trackingToken);
         return;
       }
-
       const cached = await readTrackingCache(slug, trackingToken);
       if (requestEpoch !== requestEpochRef.current) return;
       if (cached?.tracking) {
@@ -111,7 +139,6 @@ export default function PublicOrderTrackingPage() {
     setTracking(null);
     setNetworkState('loading');
     setMessage('');
-
     (async () => {
       const cached = await readTrackingCache(slug, trackingToken);
       if (cancelled) return;
@@ -126,28 +153,16 @@ export default function PublicOrderTrackingPage() {
       }
       await refresh({ background: Boolean(cached?.tracking) });
     })();
-
-    return () => {
-      cancelled = true;
-      requestEpochRef.current += 1;
-    };
+    return () => { cancelled = true; requestEpochRef.current += 1; };
   }, [refresh, slug, trackingToken]);
 
   useEffect(() => {
     const handleOnline = () => refresh({ background: true });
-    const handleOffline = () => {
-      setNetworkState('offline');
-      setMessage('Sin conexión. El estado visible no está confirmado en este momento.');
-    };
+    const handleOffline = () => { setNetworkState('offline'); setMessage('Sin conexión. El estado visible no está confirmado en este momento.'); };
     const handleFocus = () => {
-      if (document.visibilityState !== 'hidden' && globalThis.navigator?.onLine !== false) {
-        refresh({ background: true });
-      }
+      if (document.visibilityState !== 'hidden' && globalThis.navigator?.onLine !== false) refresh({ background: true });
     };
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') handleFocus();
-    };
-
+    const handleVisibility = () => { if (document.visibilityState === 'visible') handleFocus(); };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
@@ -162,138 +177,61 @@ export default function PublicOrderTrackingPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && globalThis.navigator?.onLine !== false) {
-        refresh({ background: true });
-      }
+      if (document.visibilityState === 'visible' && globalThis.navigator?.onLine !== false) refresh({ background: true });
     }, ECOMMERCE_TRACKING_POLL_MS);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
   useEffect(() => {
     if (!tracking?.realtime?.enabled || !tracking.realtime.topic) return undefined;
-    return subscribeToPublicTrackingSignals({
-      topic: tracking.realtime.topic,
-      onSignal: () => refresh({ background: true })
-    });
+    return subscribeToPublicTrackingSignals({ topic: tracking.realtime.topic, onSignal: () => refresh({ background: true }) });
   }, [refresh, tracking?.realtime?.enabled, tracking?.realtime?.topic]);
 
-  const steps = useMemo(
-    () => buildSteps(tracking?.fulfillmentMethod),
-    [tracking?.fulfillmentMethod]
-  );
+  const steps = useMemo(() => buildSteps(tracking?.fulfillmentMethod), [tracking?.fulfillmentMethod]);
   const progressIndex = getProgressIndex(steps, tracking?.status);
   const terminalProblem = ['cancelled', 'attention', 'rejected'].includes(tracking?.status);
+  const StatusIcon = STATUS_ICONS[tracking?.status] || Circle;
+  const storefrontThemeStyle = useMemo(
+    () => buildEcommercePortalThemeStyle(tracking?.storefront?.theme),
+    [tracking?.storefront?.theme]
+  );
 
-  if (networkState === 'loading' && !tracking) {
-    return (
-      <main className="public-tracking-shell public-tracking-shell--centered" aria-busy="true">
-        <section className="public-tracking-card public-tracking-loading">
-          <div className="public-tracking-skeleton public-tracking-skeleton--title" />
-          <div className="public-tracking-skeleton" />
-          <div className="public-tracking-skeleton" />
-        </section>
-      </main>
-    );
-  }
-
-  if (networkState === 'not_found' || (!tracking && networkState === 'offline')) {
-    return (
-      <main className="public-tracking-shell public-tracking-shell--centered">
-        <section className="public-tracking-card public-tracking-empty" role="alert">
-          <h1>No se encontró el seguimiento</h1>
-          <p>{message || 'No se pudo encontrar este seguimiento.'}</p>
-          <Link className="ui-button ui-button--secondary" to={`/tienda/${slug}`}>Volver a la tienda</Link>
-        </section>
-      </main>
-    );
-  }
-
-  if (!tracking) {
-    return (
-      <main className="public-tracking-shell public-tracking-shell--centered">
-        <section className="public-tracking-card public-tracking-empty" role="alert">
-          <h1>No se pudo cargar el seguimiento</h1>
-          <p>{message}</p>
-          <button type="button" className="ui-button ui-button--primary" onClick={() => refresh()}>
-            <RefreshCw aria-hidden="true" size={18} /> Reintentar
-          </button>
-        </section>
-      </main>
-    );
-  }
+  if (networkState === 'loading' && !tracking) return <main className="public-tracking-shell public-tracking-shell--centered" aria-busy="true"><section className="public-tracking-card public-tracking-loading"><div className="public-tracking-skeleton public-tracking-skeleton--title" /><div className="public-tracking-skeleton" /><div className="public-tracking-skeleton" /></section></main>;
+  if (networkState === 'not_found' || (!tracking && networkState === 'offline')) return <main className="public-tracking-shell public-tracking-shell--centered"><section className="public-tracking-card public-tracking-empty" role="alert"><h1>No se encontró el seguimiento</h1><p>{message || 'No se pudo encontrar este seguimiento.'}</p><Link className="ui-button ui-button--secondary" to={`/tienda/${slug}`}>Volver a la tienda</Link></section></main>;
+  if (!tracking) return <main className="public-tracking-shell public-tracking-shell--centered"><section className="public-tracking-card public-tracking-empty" role="alert"><h1>No se pudo cargar el seguimiento</h1><p>{message}</p><button type="button" className="ui-button ui-button--primary" onClick={() => refresh()}><RefreshCw aria-hidden="true" size={18} /> Reintentar</button></section></main>;
 
   return (
-    <main className="public-tracking-shell">
-      <section className="public-tracking-card" aria-labelledby="public-tracking-title">
+    <main className="public-tracking-shell" style={storefrontThemeStyle}>
+      <section className="public-tracking-page" aria-labelledby="public-tracking-title">
         <header className="public-tracking-header">
-          <div>
+          <div className="public-tracking-business">
+            <div className="public-tracking-store-identity">
+              <PublicSafeImage className="public-tracking-store-logo" src={tracking.storefront?.logoUrl} alt="" fallbackLabel="Logo del negocio" eager />
+              {tracking.storefront?.name && tracking.storefront.name !== 'Tienda online' ? <span>{tracking.storefront.name}</span> : null}
+            </div>
+          </div>
+          <div className="public-tracking-heading">
             <p className="public-tracking-kicker">Seguimiento del pedido</p>
             <h1 id="public-tracking-title">{tracking.orderCode}</h1>
           </div>
-          <button
-            type="button"
-            className="ui-button ui-button--secondary public-tracking-refresh"
-            onClick={() => refresh()}
-            disabled={networkState === 'refreshing'}
-          >
-            <RefreshCw aria-hidden="true" size={18} />
-            {networkState === 'refreshing' ? 'Actualizando…' : 'Actualizar'}
-          </button>
+          <button type="button" className="public-tracking-refresh" onClick={() => refresh()} disabled={networkState === 'refreshing'} aria-label={networkState === 'refreshing' ? 'Actualizando pedido' : 'Actualizar seguimiento'} title={networkState === 'refreshing' ? 'Actualizando pedido' : 'Actualizar seguimiento'}><RefreshCw aria-hidden="true" size={18} /></button>
         </header>
 
-        <div className={`public-tracking-network public-tracking-network--${networkState}`} aria-live="polite">
-          {networkState === 'offline'
-            ? message || 'Sin conexión. El estado puede estar desactualizado.'
-            : `Estado actual: ${STATUS_LABELS[tracking.status] || 'Pedido recibido'}`}
-        </div>
+        <div className={`public-tracking-network public-tracking-network--${networkState}`} aria-live="polite">{networkState === 'offline' ? <WifiOff aria-hidden="true" size={17} /> : <Info aria-hidden="true" size={17} />}{networkState === 'offline' ? message || 'Sin conexión. El estado puede estar desactualizado.' : `Actualizado: ${formatDateTime(tracking.updatedAt)}`}</div>
 
         <section className={`public-tracking-status ${terminalProblem ? 'public-tracking-status--attention' : ''}`}>
-          <p>Estado actual</p>
-          <h2 aria-live="polite">{STATUS_LABELS[tracking.status] || 'Pedido recibido'}</h2>
-          {tracking.publicMessage ? <p className="public-tracking-public-message">{tracking.publicMessage}</p> : null}
-          {tracking.paymentRegistered ? <span className="public-tracking-payment">Pago registrado</span> : null}
+          <span className="public-tracking-status-icon" aria-hidden="true"><StatusIcon size={30} /></span>
+          <div><p>Estado actual</p><h2 aria-live="polite">{STATUS_LABELS[tracking.status] || 'Pedido recibido'}</h2><p className="public-tracking-status-description">{getStatusDescription(tracking.status, tracking.fulfillmentMethod)}</p>{tracking.publicMessage ? <aside className="public-tracking-business-note" aria-label="Mensaje del negocio"><MessageSquareText aria-hidden="true" size={17} /><div><strong>Mensaje del negocio</strong><p>{tracking.publicMessage}</p></div></aside> : null}{tracking.paymentRegistered ? <span className="public-tracking-payment"><Check aria-hidden="true" size={14} /> Pago registrado</span> : null}</div>
         </section>
 
-        {!terminalProblem ? (
-          <ol className="public-tracking-timeline" aria-label="Progreso del pedido">
-            {steps.map((step, index) => {
-              const StepIcon = step.icon;
-              const completed = progressIndex >= 0 && index <= progressIndex;
-              const current = index === progressIndex;
-              return (
-                <li key={step.key} className={completed ? 'is-complete' : ''} aria-current={current ? 'step' : undefined}>
-                  <span className="public-tracking-step-icon"><StepIcon aria-hidden="true" size={18} /></span>
-                  <span>{step.label}</span>
-                </li>
-              );
-            })}
-          </ol>
-        ) : null}
+        {!terminalProblem ? <ol className="public-tracking-timeline" aria-label="Progreso del pedido" style={{ '--tracking-step-count': steps.length }}>{steps.map((step, index) => { const StepIcon = step.icon; const completed = progressIndex >= 0 && index <= progressIndex; const current = index === progressIndex; return <li key={step.key} className={completed ? 'is-complete' : ''} aria-current={current ? 'step' : undefined}><span className="public-tracking-step-icon"><StepIcon aria-hidden="true" size={18} /></span><span>{step.label}</span></li>; })}</ol> : null}
 
-        <dl className="public-tracking-details">
-          <div><dt>Modalidad</dt><dd>{tracking.fulfillmentMethod === 'delivery' ? 'Entrega a domicilio' : 'Recoger en el negocio'}</dd></div>
-          <div><dt>Creado</dt><dd>{formatDateTime(tracking.createdAt)}</dd></div>
-          <div><dt>Última actualización</dt><dd>{formatDateTime(tracking.updatedAt)}</dd></div>
-          <div><dt>Total</dt><dd>{formatCurrency(tracking.total, tracking.currency)}</dd></div>
-        </dl>
+        <div className="public-tracking-content">
+          <section className="public-tracking-details-section" aria-labelledby="public-tracking-details-title"><h2 id="public-tracking-details-title">Detalles del pedido</h2><dl className="public-tracking-details"><div><dt>Modalidad</dt><dd>{tracking.fulfillmentMethod === 'delivery' ? 'Entrega a domicilio' : 'Recoger en el negocio'}</dd></div><div><dt>Creado</dt><dd>{formatDateTime(tracking.createdAt)}</dd></div><div><dt>Última actualización</dt><dd>{formatDateTime(tracking.updatedAt)}</dd></div><div><dt>Total</dt><dd>{formatCurrency(tracking.total, tracking.currency)}</dd></div></dl></section>
+          <section className="public-tracking-items" aria-labelledby="public-tracking-items-title"><div className="public-tracking-section-title"><ShoppingBag aria-hidden="true" size={19} /><h2 id="public-tracking-items-title">Resumen de productos</h2></div><ul>{tracking.items.map((item, index) => <li key={`${item.name}-${index}`}><span>{item.name}</span><strong>× {item.quantity}</strong></li>)}</ul></section>
+        </div>
 
-        <section className="public-tracking-items" aria-labelledby="public-tracking-items-title">
-          <h2 id="public-tracking-items-title">Resumen de productos</h2>
-          <ul>
-            {tracking.items.map((item, index) => (
-              <li key={`${item.name}-${index}`}><span>{item.name}</span><strong>× {item.quantity}</strong></li>
-            ))}
-          </ul>
-        </section>
-
-        <footer className="public-tracking-footer">
-          {tracking.storefrontAvailable ? (
-            <Link className="ui-button ui-button--secondary" to={`/tienda/${slug}`}>Volver a la tienda</Link>
-          ) : (
-            <span className="public-tracking-storefront-unavailable">La tienda no está recibiendo pedidos en este momento.</span>
-          )}
-          <small>Versión del estado: {tracking.version}</small>
-        </footer>
+        <footer className="public-tracking-footer">{tracking.storefrontAvailable ? <Link className="public-tracking-back-link" to={`/tienda/${slug}`}><ArrowLeft aria-hidden="true" size={17} />Volver a la tienda</Link> : <span className="public-tracking-storefront-unavailable">La tienda no está recibiendo pedidos en este momento.</span>}<small>Versión del estado: {tracking.version}</small></footer>
       </section>
     </main>
   );
@@ -301,6 +239,8 @@ export default function PublicOrderTrackingPage() {
 
 export const publicOrderTrackingInternals = Object.freeze({
   STATUS_LABELS,
+  STATUS_ICONS,
   buildSteps,
-  getProgressIndex
+  getProgressIndex,
+  getStatusDescription
 });
