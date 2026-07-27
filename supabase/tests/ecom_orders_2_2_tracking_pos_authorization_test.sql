@@ -118,6 +118,14 @@ begin
       'license_id', v_license_id,
       'slug', v_slug,
       'status', 'published',
+      'name', 'ECOM 2.2 Branding Fixture',
+      'logo_url', 'https://example.com/ecom22-logo.png',
+      'theme', jsonb_build_object(
+        'primaryColor', '#14532d',
+        'secondaryColor', '#166534',
+        'cornerStyle', 'square',
+        'fontStyle', 'editorial'
+      ),
       'deleted_at', null,
       'created_at', now(),
       'updated_at', now()
@@ -250,6 +258,23 @@ begin
   if coalesce((v_result->>'success')::boolean, false) is not true then
     raise exception 'valid tracking failed: %', v_result;
   end if;
+  if v_result#>>'{tracking,storefront,name}' <> 'ECOM 2.2 Branding Fixture'
+     or v_result#>>'{tracking,storefront,logoUrl}' <> 'https://example.com/ecom22-logo.png' then
+    raise exception 'allowlisted storefront identity is incorrect: %', v_result;
+  end if;
+  if (select array_agg(key order by key)
+      from jsonb_object_keys(v_result#>'{tracking,storefront,theme}') key)
+     <> array['cornerStyle', 'fontStyle', 'primaryColor', 'secondaryColor'] then
+    raise exception 'storefront theme keys are not allowlisted: %', v_result#>'{tracking,storefront,theme}';
+  end if;
+  if (v_result#>'{tracking,storefront}') ?| array[
+    'id', 'license_id', 'metadata', 'settings', 'whatsapp_phone', 'address', 'email'
+  ] then
+    raise exception 'storefront leaked an internal portal field: %', v_result#>'{tracking,storefront}';
+  end if;
+  if v_result::text ~* '(customer_phone|customer_address|delivery_address|tracking_token|token_hash|staff_id|device_fingerprint)' then
+    raise exception 'tracking payload leaked personal or internal data: %', v_result;
+  end if;
   if not exists (
     select 1 from public.pos_rpc_rate_limits
     where license_key = 'ecommerce-tracking:' || v_license_id::text
@@ -307,10 +332,24 @@ begin
   update public.ecommerce_portals set status = 'paused', updated_at = now() where id = v_portal_id;
   v_result := public.ecommerce_get_order_tracking(v_slug, v_tracking_token);
   if coalesce((v_result->>'success')::boolean, false) is not true
-     or coalesce((v_result#>>'{tracking,storefrontAvailable}')::boolean, true) is not false then
+     or coalesce((v_result#>>'{tracking,storefrontAvailable}')::boolean, true) is not false
+     or v_result#>>'{tracking,storefront,name}' <> 'ECOM 2.2 Branding Fixture' then
     raise exception 'paused portal valid tracking regression: %', v_result;
   end if;
   update public.ecommerce_portals set status = 'published', updated_at = now() where id = v_portal_id;
+
+  update public.ecommerce_portals
+  set theme = '{}'::jsonb, logo_url = null, updated_at = now()
+  where id = v_portal_id;
+  v_result := public.ecommerce_get_order_tracking(v_slug, v_tracking_token);
+  if v_result#>'{tracking,storefront,theme}' <> jsonb_build_object(
+    'primaryColor', '#0284c7',
+    'secondaryColor', '#0369a1',
+    'cornerStyle', 'rounded',
+    'fontStyle', 'system'
+  ) or (v_result#>'{tracking,storefront}') ? 'logoUrl' then
+    raise exception 'empty branding did not produce safe defaults: %', v_result;
+  end if;
 
   -- POS: one authorization/rate-limit entry per public operation.
   delete from public.pos_rpc_rate_limits
@@ -407,6 +446,20 @@ begin
      or has_function_privilege('anon', 'private.ecommerce_complete_pos_conversion_authorized_v1(jsonb,uuid,uuid,text,text,text,text)', 'EXECUTE')
      or has_function_privilege('authenticated', 'private.ecommerce_complete_pos_conversion_authorized_v1(jsonb,uuid,uuid,text,text,text,text)', 'EXECUTE') then
     raise exception 'authorized helpers have public role grants';
+  end if;
+
+  if not has_function_privilege('anon', 'public.ecommerce_get_order_tracking(text,text)', 'EXECUTE')
+     or not has_function_privilege('authenticated', 'public.ecommerce_get_order_tracking(text,text)', 'EXECUTE')
+     or not has_function_privilege('service_role', 'public.ecommerce_get_order_tracking(text,text)', 'EXECUTE')
+     or exists (
+       select 1
+       from aclexplode(
+         (select proacl from pg_proc
+          where oid = 'public.ecommerce_get_order_tracking(text,text)'::regprocedure)
+       ) acl
+       where acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
+     ) then
+    raise exception 'public tracking privileges regressed';
   end if;
 
   select pg_get_functiondef('public.ecommerce_admin_release_pos_draft(text,text,text,text,uuid,uuid,text)'::regprocedure)

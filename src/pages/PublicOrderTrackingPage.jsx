@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
+  CircleAlert,
   Circle,
   Clock3,
   ArrowLeft,
+  Ban,
   Info,
   MessageSquareText,
   PackageCheck,
@@ -65,8 +67,23 @@ const getStatusDescription = (status, fulfillmentMethod) => {
   if (status === 'out_for_delivery') return 'Tu pedido va en camino a la dirección indicada.';
   if (status === 'completed') return 'Tu pedido fue entregado correctamente.';
   if (status === 'accepted') return 'Tu pedido fue confirmado por el negocio.';
+  if (status === 'cancelled') return 'Este pedido fue cancelado. Revisa el mensaje del negocio para más información.';
+  if (status === 'rejected') return 'El negocio no pudo aceptar este pedido. Revisa el mensaje del negocio para más información.';
+  if (status === 'attention') return 'El negocio necesita confirmar información de tu pedido. Revisa el mensaje mostrado a continuación.';
   return 'Recibimos tu pedido y lo estamos revisando.';
 };
+
+const STATUS_ICONS = Object.freeze({
+  received: Circle,
+  accepted: Check,
+  preparing: Clock3,
+  ready: PackageCheck,
+  out_for_delivery: Truck,
+  completed: Check,
+  cancelled: Ban,
+  rejected: Ban,
+  attention: CircleAlert
+});
 
 export default function PublicOrderTrackingPage() {
   const { slug = '', trackingToken = '' } = useParams();
@@ -173,6 +190,7 @@ export default function PublicOrderTrackingPage() {
   const steps = useMemo(() => buildSteps(tracking?.fulfillmentMethod), [tracking?.fulfillmentMethod]);
   const progressIndex = getProgressIndex(steps, tracking?.status);
   const terminalProblem = ['cancelled', 'attention', 'rejected'].includes(tracking?.status);
+  const StatusIcon = STATUS_ICONS[tracking?.status] || Circle;
   const storefrontThemeStyle = useMemo(
     () => buildEcommercePortalThemeStyle(tracking?.storefront?.theme),
     [tracking?.storefront?.theme]
@@ -202,7 +220,7 @@ export default function PublicOrderTrackingPage() {
         <div className={`public-tracking-network public-tracking-network--${networkState}`} aria-live="polite">{networkState === 'offline' ? <WifiOff aria-hidden="true" size={17} /> : <Info aria-hidden="true" size={17} />}{networkState === 'offline' ? message || 'Sin conexión. El estado puede estar desactualizado.' : `Actualizado: ${formatDateTime(tracking.updatedAt)}`}</div>
 
         <section className={`public-tracking-status ${terminalProblem ? 'public-tracking-status--attention' : ''}`}>
-          <span className="public-tracking-status-icon" aria-hidden="true"><PackageCheck size={30} /></span>
+          <span className="public-tracking-status-icon" aria-hidden="true"><StatusIcon size={30} /></span>
           <div><p>Estado actual</p><h2 aria-live="polite">{STATUS_LABELS[tracking.status] || 'Pedido recibido'}</h2><p className="public-tracking-status-description">{getStatusDescription(tracking.status, tracking.fulfillmentMethod)}</p>{tracking.publicMessage ? <aside className="public-tracking-business-note" aria-label="Mensaje del negocio"><MessageSquareText aria-hidden="true" size={17} /><div><strong>Mensaje del negocio</strong><p>{tracking.publicMessage}</p></div></aside> : null}{tracking.paymentRegistered ? <span className="public-tracking-payment"><Check aria-hidden="true" size={14} /> Pago registrado</span> : null}</div>
         </section>
 
@@ -219,4 +237,10 @@ export default function PublicOrderTrackingPage() {
   );
 }
 
-export const publicOrderTrackingInternals = Object.freeze({ STATUS_LABELS, buildSteps, getProgressIndex, getStatusDescription });
+export const publicOrderTrackingInternals = Object.freeze({
+  STATUS_LABELS,
+  STATUS_ICONS,
+  buildSteps,
+  getProgressIndex,
+  getStatusDescription
+});

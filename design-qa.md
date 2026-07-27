@@ -74,6 +74,18 @@ final result: passed
 3. Capture desktop and mobile tracking states in an approved browser, compare them against the source, then replace this result with `passed` if no P0/P1/P2 issues remain.
 
 final result: blocked
+
+## Security and regression correction — PR #136
+
+- Initial HEAD: `2989528fae9e746a01bd6f1de8452666c3505263`.
+- Root cause: the original branding migration was based on a pre-`ECOM.ORDERS.2.2` RPC and regressed its client, portal, and valid-token buckets, paused-portal resolver, uniform response flow, and `service_role` grant.
+- Corrected source of truth: deployed `public.ecommerce_get_order_tracking(text,text)` plus `20260713023529_ecom_orders_2_2_tracking_client_rate_limit.sql`.
+- Branding is now an allowlisted additive object; historical themes are normalized to four safe keys and defaults.
+- Terminal states use specific copy and semantic icons; cancelled, rejected, and attention states do not render the normal progress timeline.
+- Automated checks cover paused portals, legacy payloads, safe image fallback, CSS theme normalization, RPC privileges, rate-limit isolation, and rollback-only SQL fixtures.
+- Visual status: pending. No desktop or mobile browser capture is claimed until the required states are rendered at 1440 × 1024 and 390 × 844.
+
+final result: blocked
 - Image quality and assets: real cover/logo assets are preserved. Products without source images use the existing Lanzo fallback rather than fabricated product imagery.
 - Copy and content: business identity, availability, address, delivery, categories, product data, and actions remain. Promotional footer copy is deliberately shortened.
 
