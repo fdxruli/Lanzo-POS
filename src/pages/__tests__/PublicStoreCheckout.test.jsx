@@ -105,6 +105,30 @@ const setNavigatorOnline = (online) => {
   });
 };
 
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
+const dispatchPersistedPageShow = () => {
+  const event = new Event('pageshow');
+  Object.defineProperty(event, 'persisted', { value: true });
+  fireEvent(window, event);
+};
+
+const setVisibilityState = (value) => {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    value
+  });
+  fireEvent(document, new Event('visibilitychange'));
+};
+
 async function addAndOpenCart(user) {
   await user.click(await screen.findByRole('button', { name: 'Agregar Alitas BBQ' }));
   await user.click(screen.getByRole('button', {
@@ -131,6 +155,10 @@ describe('PublicStorePage checkout integration', () => {
 
   afterEach(() => {
     setNavigatorOnline(true);
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible'
+    });
     cleanup();
   });
 
@@ -243,6 +271,92 @@ describe('PublicStorePage checkout integration', () => {
     expect(screen.getByText('PED-1001')).toBeInTheDocument();
     expect(screen.getAllByText('$80.00').length).toBeGreaterThan(0);
     await waitFor(() => expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).toBeNull());
+  });
+
+  it('keeps a submitting checkout visible through BFCache recovery and shows confirmation', async () => {
+    const pendingOrder = deferred();
+    serviceMocks.createPublicOrder.mockReturnValue(pendingOrder.promise);
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    await waitFor(() => expect(serviceMocks.createPublicOrder).toHaveBeenCalledOnce());
+
+    dispatchPersistedPageShow();
+    expect(screen.getByRole('dialog', { name: 'Finalizar pedido' })).toBeInTheDocument();
+    expect(screen.getByText('Enviando pedido...')).toBeInTheDocument();
+
+    pendingOrder.resolve(successfulOrder());
+    expect(await screen.findByRole('heading', { name: 'Pedido enviado' })).toBeInTheDocument();
+    expect(screen.getByText('PED-1001')).toBeInTheDocument();
+    const cartKey = getPublicCartStorageKey('mi-negocio');
+    await waitFor(() => expect(window.sessionStorage.getItem(cartKey)).toBeNull());
+    expect(serviceMocks.createPublicOrder).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a submitting checkout visible after a suspension longer than 30 seconds', async () => {
+    const pendingOrder = deferred();
+    serviceMocks.createPublicOrder.mockReturnValue(pendingOrder.promise);
+    let currentTime = 1_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    await waitFor(() => expect(serviceMocks.createPublicOrder).toHaveBeenCalledOnce());
+
+    setVisibilityState('hidden');
+    currentTime = 32_000;
+    setVisibilityState('visible');
+
+    expect(screen.getByRole('dialog', { name: 'Finalizar pedido' })).toBeInTheDocument();
+    pendingOrder.resolve(successfulOrder());
+    expect(await screen.findByRole('heading', { name: 'Pedido enviado' })).toBeInTheDocument();
+    expect(serviceMocks.createPublicOrder).toHaveBeenCalledOnce();
+    now.mockRestore();
+  });
+
+  it('keeps an already confirmed order and tracking action visible during recovery', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    expect(await screen.findByRole('heading', { name: 'Pedido enviado' })).toBeInTheDocument();
+
+    dispatchPersistedPageShow();
+
+    expect(screen.getByRole('heading', { name: 'Pedido enviado' })).toBeInTheDocument();
+    expect(screen.getByText('PED-1001')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Pedido enviado' })).toBeInTheDocument();
+  });
+
+  it('closes editing and recoverable checkout states without clearing the cart', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    dispatchPersistedPageShow();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
+    });
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+
+    await user.click(screen.getByRole('button', {
+      name: 'Ver carrito, 1 unidades, subtotal $80.00'
+    }));
+    await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
+    serviceMocks.createPublicOrder.mockRejectedValueOnce(
+      new EcommercePublicError('ECOMMERCE_ORDER_CREATE_FAILED', 'No se pudo confirmar.')
+    );
+    await user.type(await screen.findByLabelText('Nombre *'), 'Cliente QA');
+    await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar');
+
+    dispatchPersistedPageShow();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
+    });
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
   });
 
   it('also clears the cart after an idempotent success', async () => {

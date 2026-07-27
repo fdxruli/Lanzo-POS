@@ -383,6 +383,75 @@ describe('PublicStorePage', () => {
     );
   });
 
+  it('keeps the existing catalog visible when a recovery refresh fails', async () => {
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue({
+      ...portalResult,
+      catalogRevision: 7,
+      cachePolicy: { schemaVersion: 2, freshSeconds: 300, maxStaleSeconds: 86400 }
+    });
+    serviceMocks.getPublicCatalog
+      .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
+      .mockRejectedValueOnce(new EcommercePublicError(
+        'ECOMMERCE_PUBLIC_NETWORK_ERROR',
+        'temporary rpc failure'
+      ))
+      .mockResolvedValueOnce({
+        ...catalogResult,
+        catalogRevision: 7,
+        items: [makeProduct('fresh', { name: 'Catálogo vigente' })]
+      });
+    const user = userEvent.setup();
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Agregar Alitas BBQ' }));
+
+    const firstRestore = new Event('pageshow');
+    Object.defineProperty(firstRestore, 'persisted', { value: true });
+    fireEvent(window, firstRestore);
+
+    expect(await screen.findByText(
+      'No pudimos actualizar la tienda. Mostramos la última información disponible.'
+    )).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No se pudo cargar el catálogo' }))
+      .not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+    await user.click(screen.getByRole('button', {
+      name: 'Ver carrito, 1 unidades, subtotal $80.00'
+    }));
+    expect(screen.getByRole('button', { name: 'Continuar pedido' })).toBeDisabled();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cerrar carrito' })[0]);
+
+    const secondRestore = new Event('pageshow');
+    Object.defineProperty(secondRestore, 'persisted', { value: true });
+    fireEvent(window, secondRestore);
+    expect(await screen.findByRole('heading', { name: 'Catálogo vigente' })).toBeInTheDocument();
+    expect(screen.queryByText(/No pudimos actualizar la tienda/)).not.toBeInTheDocument();
+  });
+
+  it('deduplicates a persisted pageshow followed immediately by focus', async () => {
+    serviceMocks.getPublicPortalBySlug.mockResolvedValue({
+      ...portalResult,
+      catalogRevision: 7
+    });
+    const pendingCatalog = deferred();
+    serviceMocks.getPublicCatalog
+      .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
+      .mockReturnValueOnce(pendingCatalog.promise);
+    renderPage();
+    await screen.findByRole('heading', { name: 'Alitas BBQ' });
+
+    const restore = new Event('pageshow');
+    Object.defineProperty(restore, 'persisted', { value: true });
+    fireEvent(window, restore);
+    fireEvent.focus(window);
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+
+    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
+    expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
+    pendingCatalog.resolve({ ...catalogResult, catalogRevision: 7 });
+  });
+
   it('shows the same generic state for an unavailable portal', async () => {
     serviceMocks.getPublicPortalBySlug.mockRejectedValue(
       new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.')

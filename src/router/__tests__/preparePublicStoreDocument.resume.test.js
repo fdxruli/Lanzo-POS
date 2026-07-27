@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { preparePublicStoreDocument } from '../preparePublicStoreDocument';
 import {
   lockPublicDocumentScroll,
-  resetPublicDocumentScroll
+  resetPublicDocumentScroll,
+  unlockPublicDocumentScroll
 } from '../../utils/publicDocumentScroll';
 
 describe('public document recovery', () => {
@@ -30,5 +31,19 @@ describe('public document recovery', () => {
     expect(document.body.style.overflow).toBe('hidden');
     resetPublicDocumentScroll();
     expect(document.body.style.overflow).toBe('auto');
+  });
+
+  it('preserves the original snapshot until every overlay owner releases its lock', () => {
+    document.body.style.overflow = 'clip';
+    document.body.style.position = 'relative';
+    lockPublicDocumentScroll('checkout');
+    lockPublicDocumentScroll('configuration');
+
+    unlockPublicDocumentScroll('configuration');
+    expect(document.body.style.overflow).toBe('hidden');
+    unlockPublicDocumentScroll('checkout');
+
+    expect(document.body.style.overflow).toBe('clip');
+    expect(document.body.style.position).toBe('relative');
   });
 });

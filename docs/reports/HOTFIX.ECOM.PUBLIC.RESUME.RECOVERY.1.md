@@ -16,8 +16,10 @@ PASS focal. La tienda pública conserva la vista y el carrito mientras reconstru
 - `focus` y regreso visible se coalescen durante 75 ms para que eventos simultáneos no dupliquen solicitudes.
 - La recuperación completa conserva portal/productos renderizados, muestra `Actualizando catálogo…`, obtiene portal y página cero, y sustituye productos + paginación de forma atómica.
 - Una revisión igual no evita la reconstrucción completa.
-- Fallos de red no vacían los productos actuales. La caché queda como fallback.
-- BFCache/suspensión prolongada cierra carrito, checkout y configurador transitorios, pero no borra los artículos persistidos.
+- Fallos de red no vacían ni reemplazan los productos actuales: se presenta un aviso no bloqueante, la vista queda marcada sin validar y checkout permanece protegido.
+- BFCache/suspensión prolongada cierra carrito, configurador y checkout en edición/error recuperable, pero no borra los artículos persistidos.
+- Checkout `submitting` nunca se cierra, cancela o reinicia durante recuperación; la promesa e idempotencia existentes continúan y la confirmación resultante queda visible.
+- Checkout `confirmed` permanece abierto con código, resultado y acción de seguimiento. La recuperación no limpia `confirmedOrder`.
 
 ## Estrategias de caché
 
@@ -37,7 +39,11 @@ La recuperación usa `network-first`. No se borra IndexedDB y una respuesta inv�
 - `body.public-store-body`
 - `#root.public-store-root`
 
-El CSS conserva `:has()` como compatibilidad, pero ya no depende de él. El bloqueo de scroll se centralizó con propietarios y snapshot de `overflow`, `position`, `inset` y overflow del elemento raíz. La recuperación crítica libera locks huérfanos.
+El CSS conserva `:has()` como compatibilidad, pero ya no depende de él. La prueba arquitectónica valida ambos contratos, su exclusividad pública y que el preview administrativo no reciba reglas de documento. El bloqueo de scroll se centralizó con propietarios y snapshot de `overflow`, `position`, `inset` y overflow del elemento raíz. La recuperación crítica emite `lanzo:public-store-close-transient-overlays`; `PublicCatalog` limpia `configurationProduct` e `initialLine`. Los locks huérfanos solo se reinician cuando no existe checkout `submitting`/`confirmed` legítimamente abierto.
+
+## Errores iniciales y de actualización
+
+`catalogError` queda reservado para la carga inicial sin catálogo válido. Una recuperación fallida con productos existentes utiliza `catalogRefreshError`: conserva catálogo y carrito, no presenta “No se pudo cargar el catálogo”, avisa que se muestra la última información disponible y mantiene `catalogValidated=false`. Una recuperación posterior exitosa elimina el aviso.
 
 ## Chunks antiguos y Error Boundary
 
@@ -47,19 +53,20 @@ El Error Boundary público nunca deja el root vacío. Muestra “No pudimos rest
 
 ## Cambios por archivo
 
-- `src/pages/PublicStorePage.jsx`: coordinador, `pageshow`, umbral oculto, recuperación atómica y carreras.
+- `src/pages/PublicStorePage.jsx`: coordinador, `pageshow`, umbral oculto, política de checkout/overlays, error de refresh no bloqueante y carreras.
+- `src/components/ecommerce/public/PublicCatalog.jsx`: cierre explícito y desmontable del configurador interno.
 - `src/services/ecommerce/ecommercePublicServiceBase.js`: estrategias explícitas de caché.
 - `src/router/preparePublicStoreDocument.js` y `PublicStorePage.css`: clases públicas explícitas.
 - `src/utils/publicDocumentScroll.js`: bloqueo/restauración central.
 - `PublicCartDrawer.jsx`, `PublicCheckoutDialog.jsx`, `PublicProductConfigurationModal.jsx`: uso del coordinador de scroll.
 - `src/utils/publicChunkRecovery.js` y `src/main-store.jsx`: recarga única de chunks y limpieza tras arranque.
 - `PublicStoreErrorBoundary.jsx`: fallback móvil con reintento controlado y recarga manual.
-- Pruebas focales: página, servicio/caché, documento/scroll, chunks y Error Boundary.
+- Pruebas focales: página, checkout `submitting`/`confirmed`/`editing`/error, configurador, servicio/caché, documento/scroll, chunks y Error Boundary.
 - `store/vercel.json`: auditado, sin cambios.
 
 ## Pruebas y resultados
 
-- PASS: 67/67 pruebas funcionales focales en el primer conjunto ampliado tras aislar el Error Boundary.
+- PASS: 84/84 pruebas focales de la corrección residual.
 - PASS: pruebas de `PublicStorePage`, checkout, configuración, caché, rutas, documento, chunks y Error Boundary.
 - PASS: ESLint focal de todos los archivos modificados.
 - PASS: `npm run build:store`.
@@ -67,6 +74,7 @@ El Error Boundary público nunca deja el root vacío. Muestra “No pudimos rest
 - PASS: auditoría del bundle: cero manifest, Service Worker, Workbox, `registerSW`, precache o chunks administrativos.
 - PASS: `publicCutoverArchitecture`.
 - PASS: `git diff --check`.
+- PASS comparación global local equivalente al workflow: PR 136 fallos; `main` 141; compartidos 136; nuevos 0; resueltos 5.
 - Advertencia no bloqueante: Node 24 está fuera del rango declarado por `react-zxing` (`^18 || ^20 || ^22`).
 - Deuda heredada: `publicBuildArchitecture` espera que el wrapper `ecommercePublicService.js` importe directamente `supabasePublic`, aunque actualmente delega en `ecommercePublicServiceBase.js`; el archivo no fue modificado por este hotfix.
 - Entorno: `publicDeploymentArchitecture` no puede confirmar host/credencial/persistencia desde el artefacto porque las variables públicas de Supabase no están disponibles aquí (`public-client:persistSession-false-not-found`, `publishable-credential-not-found`, `expected-one-supabase-hostname`). El empaquetador propio sí pasó con cero violaciones. No se modificó ni ejecutó Supabase.
@@ -97,15 +105,18 @@ El Error Boundary público nunca deja el root vacío. Muestra “No pudimos rest
 3. Cambiar a WhatsApp menos de 30 segundos; volver y verificar vista, scroll y carrito.
 4. Cambiar de aplicación más de 30 segundos; volver y observar actualización silenciosa.
 5. Dejar la pestaña varios minutos; volver y confirmar que no queda blanca.
-6. Repetir con carrito abierto y con checkout abierto; deben cerrarse sin borrar el carrito.
-7. Desactivar internet; volver y validar catálogo guardado + aviso offline.
-8. Reactivar internet; confirmar sustitución canónica mediante red.
-9. Con una pestaña antigua abierta, publicar por el flujo normal y provocar/corroborar un chunk antiguo: debe recargar una sola vez.
-10. Si la recuperación falla, verificar fallback, “Intentar de nuevo” y “Actualizar tienda”.
+6. Repetir con carrito y configurador abiertos; deben cerrarse sin borrar el carrito.
+7. Repetir mientras checkout envía y después de confirmar; ambos deben permanecer visibles y el pedido debe crearse una sola vez.
+8. Desactivar internet; volver y validar catálogo guardado + aviso offline.
+9. Reactivar internet; confirmar sustitución canónica mediante red.
+10. Con una pestaña antigua abierta, publicar por el flujo normal y provocar/corroborar un chunk antiguo: debe recargar una sola vez.
+11. Si la recuperación falla, verificar fallback, “Intentar de nuevo” y “Actualizar tienda”.
 
 ## Trazabilidad
 
 - Rama: `hotfix/ecom-public-resume-recovery`
 - HEAD inicial remoto de `main`: `4e6d671798366461149fb0facf6dd99d14754188`
+- HEAD anterior revisado del PR: `e210b79a6e4476a2159f42241c878ac1426b43c6`
 - HEAD final: ver SHA del PR/entrega, ya que el hash del commit que contiene este reporte no puede autorreferenciarse.
-- Commits creados: se registran en la entrega final y en el PR draft.
+- Commit original: `e210b79a6e4476a2159f42241c878ac1426b43c6`.
+- Commit de bloqueantes residuales: se registra en la entrega final y en el PR draft.

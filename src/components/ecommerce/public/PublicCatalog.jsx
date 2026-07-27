@@ -135,6 +135,21 @@ function PublicCatalog({
     return () => window.removeEventListener('lanzo:ecommerce:edit-configured-line', handleEdit);
   }, [productMap]);
 
+  useEffect(() => {
+    const closeTransientOverlays = () => {
+      setConfigurationProduct(null);
+      setInitialLine(null);
+    };
+    window.addEventListener(
+      'lanzo:public-store-close-transient-overlays',
+      closeTransientOverlays
+    );
+    return () => window.removeEventListener(
+      'lanzo:public-store-close-transient-overlays',
+      closeTransientOverlays
+    );
+  }, []);
+
   const openConfiguration = (product) => {
     setInitialLine(null);
     setConfigurationProduct(product);
