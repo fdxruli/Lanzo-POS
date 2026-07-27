@@ -25,6 +25,11 @@ const publicPayload = (overrides = {}) => ({
     version: 0,
     paymentRegistered: false,
     storefrontAvailable: true,
+    storefront: {
+      name: 'Alitas MX',
+      logoUrl: 'https://cdn.example.com/logo.png',
+      theme: { primaryColor: '#14532d', secondaryColor: '#166534', cornerStyle: 'square', fontStyle: 'editorial' }
+    },
     realtime: { enabled: false, topic: null },
     license_id: 'must-not-survive',
     ...overrides
@@ -60,6 +65,11 @@ describe('ecommerceOrderTrackingService', () => {
       version: 0,
       paymentRegistered: false,
       storefrontAvailable: true,
+      storefront: {
+        name: 'Alitas MX',
+        logoUrl: 'https://cdn.example.com/logo.png',
+        theme: { primaryColor: '#14532d', secondaryColor: '#166534', cornerStyle: 'square', fontStyle: 'editorial' }
+      },
       realtime: { enabled: false, topic: '' }
     });
     expect(JSON.stringify(result)).not.toContain('license_id');

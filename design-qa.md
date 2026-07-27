@@ -47,6 +47,33 @@ The rendered implementation uses three columns at the 843 px breakpoint instead 
 - The explanatory footer copy and full-width background were removed. Theme tokens and Free/Pro personalization remain unchanged.
 
 final result: passed
+
+---
+
+# Public order tracking redesign (option 1)
+
+- Source visual truth: `C:\Users\pituf\.codex\generated_images\019fa0a7-b19d-7403-a0c1-e253f6214019\exec-9ff79c17-2db3-4342-a668-b046f08f7f40.png`
+- Intended viewports: desktop 1440 × 1024; mobile below 672px.
+- Target state: paid delivery order in `preparing`.
+
+## Findings
+
+- [P1] Browser-rendered comparison is unavailable. The Product Design browser policy forbids substituting Playwright without the user's browser choice, and this task has no in-app Browser tool exposed.
+
+## Implementation checks
+
+- The status hero and payment confirmation are the primary region.
+- The desktop stepper shows the full route horizontally; mobile switches the same steps to a full vertical timeline without clipping.
+- The tracking payload allowlists storefront name, logo, and normalized theme; the page maps those values to the same color, font, and corner tokens used by the public store.
+- Existing refresh, offline, realtime, availability, and product-summary behaviors remain.
+
+## Required follow-up
+
+1. Apply `20260726200000_ecom_order_tracking_storefront_branding.sql`.
+2. Run the focused tests and storefront build in a terminal with process output available.
+3. Capture desktop and mobile tracking states in an approved browser, compare them against the source, then replace this result with `passed` if no P0/P1/P2 issues remain.
+
+final result: blocked
 - Image quality and assets: real cover/logo assets are preserved. Products without source images use the existing Lanzo fallback rather than fabricated product imagery.
 - Copy and content: business identity, availability, address, delivery, categories, product data, and actions remain. Promotional footer copy is deliberately shortened.
 
@@ -98,3 +125,25 @@ final result: passed
 - Mobile viewport `390×844`: no horizontal overflow; both labels remain on one flexible row.
 
 final result: passed
+
+---
+
+# Public order tracking redesign (option 1)
+
+- Source visual truth: `C:\Users\pituf\.codex\generated_images\019fa0a7-b19d-7403-a0c1-e253f6214019\exec-9ff79c17-2db3-4342-a668-b046f08f7f40.png`
+- Implementation capture: blocked; no user-selected or in-app Browser is available in this task.
+- Intended viewports: desktop 1440 × 1024 and mobile below 672px.
+
+**Findings**
+
+- [P1] Browser-rendered comparison cannot be completed under the current Browser policy. The implementation needs a desktop and a mobile screenshot at the selected state before visual QA can pass.
+
+**Implementation Checklist**
+
+1. Apply `20260726200000_ecom_order_tracking_storefront_branding.sql`.
+2. Run the focused tracking tests and `npm run build:store` in a terminal with process output available.
+3. Capture and compare the approved browser states against the selected visual.
+
+The implementation maps safe storefront name, logo, color, font, and radius values to the tracking page; its desktop stepper becomes a complete vertical timeline on mobile.
+
+final result: blocked
