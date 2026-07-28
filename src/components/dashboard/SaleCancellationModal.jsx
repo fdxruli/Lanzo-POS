@@ -7,6 +7,11 @@ import {
   isCloudCommittedSale,
   normalizeCloudCancellationPreview
 } from '../../services/salesCloud/salesCloudCancellationMapper';
+import {
+  getSaleEcommerceOrderCode,
+  getSaleFinancialFolio,
+  isEcommerceSale
+} from '../../services/sales/saleReference';
 import './SaleCancellationModal.css';
 
 const getLineId = (item, index) =>
@@ -185,8 +190,12 @@ export default function SaleCancellationModal({
       >
         <header className="sale-cancellation-header">
           <div>
-            <h2 id="sale-cancellation-title">Cancelar venta</h2>
-            <p>Folio {sale.folio || sale.cloudFolio || sale.id || 'sin folio'}</p>
+            <h2 id="sale-cancellation-title">
+              Cancelar venta {getSaleFinancialFolio(sale) || 'sin folio'}
+            </h2>
+            {isEcommerceSale(sale) && (
+              <p>Pedido relacionado: {getSaleEcommerceOrderCode(sale) || 'sin código normalizado'}</p>
+            )}
           </div>
 
           <button

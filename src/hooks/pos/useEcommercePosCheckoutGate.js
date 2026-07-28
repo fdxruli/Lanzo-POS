@@ -748,6 +748,7 @@ export function useEcommercePosCheckoutGate({ checkout }) {
 
     updateEcommerceConversionState(orderId, ECOMMERCE_CONVERSION_STATUS.SALE_CREATED, {
       ecommerceConvertedSaleId: saleId,
+      ecommerceConvertedSaleFolio: saleResult.folio || null,
       ecommerceRemoteConversionStatus: 'reserved',
       ecommerceCheckoutGateStatus: 'blocked',
       ecommerceConversionError: null

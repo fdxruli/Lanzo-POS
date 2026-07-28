@@ -7,6 +7,7 @@ import {
   REPORT_SOURCE_MODES,
   buildReportSource
 } from './reportSourceBadges';
+import { normalizeSaleTraceability } from '../sales/saleReference';
 
 const parsePayload = (payload) => {
   if (typeof payload === 'string') {
@@ -101,6 +102,7 @@ const normalizeSalesFinalHistoryRow = (row = {}) => {
   const cashReversalStatus = pick(row, ['cashReversalStatus', 'cash_reversal_status'], null);
   const inventoryReversalStatus = pick(row, ['inventoryReversalStatus', 'inventory_reversal_status'], null);
   const creditReversalStatus = pick(row, ['creditReversalStatus', 'credit_reversal_status'], null);
+  const traceability = normalizeSaleTraceability(row);
 
   return {
     ...row,
@@ -110,6 +112,9 @@ const normalizeSalesFinalHistoryRow = (row = {}) => {
     localSaleId,
     folio: pick(row, ['folio', 'cloud_folio', 'cloudFolio'], cloudSaleId),
     cloudFolio: pick(row, ['cloudFolio', 'cloud_folio', 'folio'], null),
+    salesChannel: traceability.salesChannel,
+    ecommerceOrderId: traceability.ecommerceOrderId,
+    ecommerceOrderCode: traceability.ecommerceOrderCode,
     timestamp: soldAt || cancelledAt || new Date().toISOString(),
     soldAt,
     sourceMode,

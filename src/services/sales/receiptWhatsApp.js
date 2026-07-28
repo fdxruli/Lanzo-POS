@@ -1,3 +1,9 @@
+import {
+    getSaleEcommerceOrderCode,
+    getSaleFinancialFolio,
+    isEcommerceSale
+} from './saleReference';
+
 export async function sendReceiptWhatsApp({
     sale,
     items,
@@ -16,6 +22,10 @@ export async function sendReceiptWhatsApp({
             let receiptText = '*--- TICKET DE VENTA ---*\n';
             receiptText += `*Negocio:* ${companyName}\n`;
             receiptText += `*Fecha:* ${new Date().toLocaleString()}\n\n`;
+            if (isEcommerceSale(sale)) {
+                receiptText += `*Pedido online:* ${getSaleEcommerceOrderCode(sale) || 'Sin código normalizado'}\n`;
+            }
+            receiptText += `*Folio de venta:* ${getSaleFinancialFolio(sale) || 'Sin folio'}\n\n`;
 
             if (sale.prescriptionDetails) {
                 receiptText += '*--- DATOS DE DISPENSACIÓN ---*\n';

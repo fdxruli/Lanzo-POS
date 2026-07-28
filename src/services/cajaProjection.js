@@ -2,6 +2,11 @@ import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
 import { STORES } from './db/dexie';
 import { buildCashReconciliation } from './layawayFinancialProjection';
+import {
+  getSaleDisplayReference,
+  getSaleSecondaryReference,
+  normalizeSaleTraceability
+} from './sales/saleReference';
 
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
 
@@ -173,15 +178,18 @@ const normalizeSaleMovements = (sales) => {
     const isCash = method === 'efectivo' || method === 'cash' ||
       (!method && Number(paymentAmount) > 0);
     const isCredit = method === 'fiado';
-    const saleLabel = sale.folio || sale.ticketNumber || sale.id;
-    const shortLabel = String(saleLabel).substring(0, 12);
+    const saleLabel = getSaleDisplayReference(sale) || sale.ticketNumber || sale.id;
+    const traceability = normalizeSaleTraceability(sale);
+    const secondaryReference = getSaleSecondaryReference(sale);
 
     if (isCash) {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,
         tipo: 'venta',
         monto: String(sale.total || paymentAmount || 0),
-        concepto: `Venta #${shortLabel}`,
+        concepto: saleLabel,
+        secondaryReference,
+        ...traceability,
         fecha: sale.timestamp
       });
     } else if (isCredit && Number(sale.abono) > 0) {
@@ -189,7 +197,9 @@ const normalizeSaleMovements = (sales) => {
         id: sale.id || `abono-${sale.timestamp}`,
         tipo: 'abono',
         monto: String(sale.abono),
-        concepto: `Abono Fiado #${shortLabel}`,
+        concepto: saleLabel,
+        secondaryReference: `Abono fiado · ${secondaryReference}`,
+        ...traceability,
         fecha: sale.timestamp
       });
     } else if (!isCredit) {
@@ -197,7 +207,9 @@ const normalizeSaleMovements = (sales) => {
         id: sale.id || `venta-${sale.timestamp}`,
         tipo: 'venta_tarjeta',
         monto: String(sale.total || paymentAmount || 0),
-        concepto: `Venta (${sale.paymentMethod || 'Otro'}) #${shortLabel}`,
+        concepto: saleLabel,
+        secondaryReference: `${secondaryReference} · ${sale.paymentMethod || 'Otro'}`,
+        ...traceability,
         fecha: sale.timestamp
       });
     }

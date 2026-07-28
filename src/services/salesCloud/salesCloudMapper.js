@@ -21,6 +21,24 @@ const firstText = (...values) => {
   return null;
 };
 
+const getSaleTraceability = (sale = {}) => {
+  const ecommerceOrderId = firstText(
+    sale.ecommerceOrderId,
+    sale.ecommerce_order_id,
+    sale.metadata?.ecommerceOrderId,
+    sale.metadata?.ecommerce_order_id
+  );
+  const ecommerceOrderCode = firstText(
+    sale.ecommerceOrderCode,
+    sale.ecommerce_order_code,
+    sale.metadata?.ecommerceOrderCode,
+    sale.metadata?.ecommerce_order_code
+  );
+  const salesChannel = firstText(sale.salesChannel, sale.sales_channel)
+    || (ecommerceOrderId || ecommerceOrderCode ? 'ecommerce' : 'local');
+  return { salesChannel, ecommerceOrderId, ecommerceOrderCode };
+};
+
 const getDiscountMetadata = (item = {}) => (
   item.discount && typeof item.discount === 'object'
     ? item.discount
@@ -181,12 +199,16 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
   const amountPaid = toNumber(localSale.abono ?? localSale.amountPaid, localSale.paymentMethod === 'fiado' ? 0 : total);
   const balanceDue = toNumber(localSale.saldoPendiente ?? localSale.balanceDue, 0);
   const discountTotal = toNumber(localSale.discountTotal ?? localSale.discount_total ?? localSale.discount, 0);
+  const traceability = getSaleTraceability(localSale);
 
   const sale = compactObject({
     id: localSale.id,
     local_sale_id: localSale.id,
     folio: firstText(localSale.folio),
     local_folio: firstText(localSale.folio),
+    sales_channel: traceability.salesChannel,
+    ecommerce_order_id: traceability.ecommerceOrderId,
+    ecommerce_order_code: traceability.ecommerceOrderCode,
     timestamp: soldAt,
     sold_at: soldAt,
     status: localSale.status || 'closed',
@@ -234,6 +256,11 @@ export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
   paymentStatus: cloudSale.payment_status || undefined,
   folio: cloudSale.cloud_folio || cloudSale.folio || undefined,
   cloudFolio: cloudSale.cloud_folio || undefined,
+  salesChannel: cloudSale.sales_channel || cloudSale.salesChannel || undefined,
+  ecommerceOrderId: cloudSale.ecommerce_order_id || cloudSale.ecommerceOrderId
+    || cloudSale.metadata?.ecommerceOrderId || cloudSale.metadata?.ecommerce_order_id || undefined,
+  ecommerceOrderCode: cloudSale.ecommerce_order_code || cloudSale.ecommerceOrderCode
+    || cloudSale.metadata?.ecommerceOrderCode || cloudSale.metadata?.ecommerce_order_code || undefined,
   abono: cloudSale.amount_paid === undefined ? undefined : String(cloudSale.amount_paid),
   saldoPendiente: cloudSale.balance_due === undefined ? undefined : String(cloudSale.balance_due),
   discountTotal: cloudSale.discount_total === undefined ? undefined : String(cloudSale.discount_total),

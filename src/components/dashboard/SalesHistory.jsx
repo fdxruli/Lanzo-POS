@@ -1,6 +1,15 @@
 import { useMemo, useState } from 'react';
 import { salesRepository } from '../../services/db/sales';
 import { REPORT_SOURCE_MODES } from '../../services/reports/reportSourceBadges';
+import {
+  getSaleDisplayReference,
+  getSaleEcommerceOrderCode,
+  getSaleFinancialFolio,
+  getSaleOriginLabel,
+  getSaleSecondaryReference,
+  isEcommerceSale,
+  saleMatchesReference
+} from '../../services/sales/saleReference';
 import './SalesHistory.css';
 
 const toText = (value) => String(value || '').trim().toLowerCase();
@@ -224,12 +233,14 @@ export default function SalesHistory({
         sale.cloudSaleId,
         sale.folio,
         sale.cloudFolio,
+        sale.ecommerceOrderCode,
+        sale.ecommerce_order_code,
         getCustomerLabel(sale),
         getPaymentLabel(sale),
         sale.total
       ].map(toText).join(' ');
 
-      if (query && !haystack.includes(query)) return false;
+      if (query && !haystack.includes(query) && !saleMatchesReference(sale, query)) return false;
       if (fromMs && Number.isFinite(saleTime) && saleTime < fromMs) return false;
       if (toMs && Number.isFinite(saleTime) && saleTime > toMs) return false;
       if (filters.paymentMethod !== 'all' && getPaymentLabel(sale) !== filters.paymentMethod) return false;
@@ -278,11 +289,13 @@ export default function SalesHistory({
   };
 
   const exportCsv = () => {
-    const header = ['id', 'cloud_sale_id', 'folio', 'fecha', 'cliente', 'metodo_pago', 'estado', 'source_mode', 'total'];
+    const header = ['id', 'cloud_sale_id', 'folio_venta', 'pedido_ecommerce', 'canal', 'fecha', 'cliente', 'metodo_pago', 'estado', 'source_mode', 'total'];
     const rows = filteredSales.map((sale) => [
       sale.id,
       sale.cloudSaleId || sale.cloud_sale_id,
-      sale.folio || sale.cloudFolio,
+      getSaleFinancialFolio(sale),
+      getSaleEcommerceOrderCode(sale),
+      getSaleOriginLabel(sale),
       getSaleTimestamp(sale),
       getCustomerLabel(sale),
       getPaymentLabel(sale),
@@ -305,7 +318,9 @@ export default function SalesHistory({
   const printPdf = () => {
     const rows = filteredSales.map((sale) => `
       <tr>
-        <td>${sale.folio || sale.cloudFolio || sale.id || ''}</td>
+        <td>${getSaleFinancialFolio(sale) || ''}</td>
+        <td>${getSaleEcommerceOrderCode(sale) || ''}</td>
+        <td>${getSaleOriginLabel(sale)}</td>
         <td>${new Date(getSaleTimestamp(sale)).toLocaleString()}</td>
         <td>${getCustomerLabel(sale) || '-'}</td>
         <td>${getPaymentLabel(sale) || '-'}</td>
@@ -331,7 +346,7 @@ export default function SalesHistory({
           <h1>Historial de ventas</h1>
           <table>
             <thead>
-              <tr><th>Folio</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th>Fuente</th><th>Total</th></tr>
+              <tr><th>Folio de venta</th><th>Pedido ecommerce</th><th>Canal</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th>Fuente</th><th>Total</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -419,15 +434,20 @@ export default function SalesHistory({
             const itemsQuantity = Number(sale.itemsQuantity || sale.items_quantity || 0);
             const amountPaid = Number(sale.amountPaid || sale.amount_paid || 0);
             const balanceDue = Number(sale.balanceDue || sale.balance_due || 0);
+            const ecommerce = isEcommerceSale(sale);
 
             return (
               <div key={getSaleKey(sale)} className={`sale-card-wrapper ${isSplitParent ? 'split-parent-card' : ''}`}>
                 <div className="sale-item">
                   <div className="sale-header">
                     <div className="sale-date">
-                      <span className="sale-folio-tag">
-                        Folio: {sale.folio || sale.cloudFolio || sale.id?.substring?.(0, 6) || '---'}
+                      <span className="sale-reference">
+                        <span className="sale-folio-tag">
+                          {getSaleDisplayReference(sale) || sale.id?.substring?.(0, 6) || '---'}
+                        </span>
+                        {ecommerce && <span className="sale-reference-secondary">{getSaleSecondaryReference(sale)}</span>}
                       </span>
+                      {ecommerce && <span className="ui-badge ui-badge--info ui-badge--sm">Ecommerce</span>}
                       {new Date(getSaleTimestamp(sale)).toLocaleString()}
                       {isSplitParent && (
                         <span className="split-badge">Cuentas Separadas</span>
