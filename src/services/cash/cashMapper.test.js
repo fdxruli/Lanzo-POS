@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cloudCashMovementToLocal,
   cloudCashSessionToLocal,
   localOpeningToCloudPayload
 } from './cashMapper.js';
@@ -48,5 +49,29 @@ describe('cashMapper cloud opening contract', () => {
     expect(local.politica_apertura).toBeNull();
     expect(local.es_auto_apertura).toBe(false);
     expect(local.apertura_origen).toBe('manual');
+  });
+
+  it('preserves cloud sale and reference aliases used by Caja enrichment', () => {
+    const local = cloudCashMovementToLocal({
+      id: 'movement-1',
+      cash_session_id: 'cash-1',
+      type: 'venta',
+      amount: '31',
+      reference_type: 'sale',
+      reference_id: 'sale-1',
+      sale_id: 'sale-1',
+      metadata: {
+        sale_id: 'sale-1'
+      }
+    });
+
+    expect(local).toMatchObject({
+      saleId: 'sale-1',
+      sale_id: 'sale-1',
+      referenceType: 'sale',
+      reference_type: 'sale',
+      referenceId: 'sale-1',
+      reference_id: 'sale-1'
+    });
   });
 });

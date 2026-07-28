@@ -31,6 +31,20 @@ describe('saleReference', () => {
     expect(saleMatchesReference(sale, 'V-000034')).toBe(true);
   });
 
+  it('matches every persisted local/cloud sale identity alias', () => {
+    const sale = {
+      id: 'sale-primary',
+      cloud_sale_id: 'sale-cloud',
+      localSaleId: 'sale-local',
+      metadata: { sale_id: 'sale-metadata' }
+    };
+
+    expect(saleMatchesReference(sale, 'sale-primary')).toBe(true);
+    expect(saleMatchesReference(sale, 'sale-cloud')).toBe(true);
+    expect(saleMatchesReference(sale, 'sale-local')).toBe(true);
+    expect(saleMatchesReference(sale, 'sale-metadata')).toBe(true);
+  });
+
   it('accepts legacy metadata without inventing an ecommerce code', () => {
     const legacy = {
       folio: 'V-000010',

@@ -29,6 +29,18 @@ export const getSaleEcommerceOrderCode = (sale = {}) => firstText(
   sale.metadata?.ecommerce_order_code
 );
 
+export const getSaleIdentityReferences = (sale = {}) => [
+  sale.id,
+  sale.saleId,
+  sale.sale_id,
+  sale.cloudSaleId,
+  sale.cloud_sale_id,
+  sale.localSaleId,
+  sale.local_sale_id,
+  sale.metadata?.saleId,
+  sale.metadata?.sale_id
+].map((value) => firstText(value)).filter(Boolean);
+
 export const getSaleChannel = (sale = {}) => {
   const explicit = firstText(sale.salesChannel, sale.sales_channel);
   if (explicit) return explicit.toLowerCase();
@@ -71,6 +83,7 @@ export const saleMatchesReference = (sale = {}, query = '') => {
   if (!normalizedQuery) return true;
 
   return [
+    ...getSaleIdentityReferences(sale),
     getSaleDisplayReference(sale),
     getSaleFinancialFolio(sale),
     getSaleEcommerceOrderCode(sale),
@@ -85,6 +98,7 @@ export default {
   getSaleFinancialFolio,
   getSaleEcommerceOrderId,
   getSaleEcommerceOrderCode,
+  getSaleIdentityReferences,
   getSaleChannel,
   isEcommerceSale,
   normalizeSaleTraceability,

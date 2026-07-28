@@ -30,41 +30,53 @@ exception
 end;
 $$;
 
+create or replace function private.pos_ecommerce_sale_backfill_candidates(
+  p_license_id uuid default null
+)
+returns table (
+  sale_id text,
+  license_id uuid,
+  ecommerce_order_id uuid,
+  ecommerce_order_code text,
+  sale_candidate_count bigint,
+  order_candidate_count bigint
+)
+language sql
+stable
+set search_path = ''
+as $$
 with metadata_candidates as (
   select
     s.id as sale_id,
     s.license_id,
-    private.pos_sale_try_uuid(coalesce(
+    coalesce(
+      s.ecommerce_order_id,
+      private.pos_sale_try_uuid(coalesce(
       s.metadata->>'ecommerceOrderId',
       s.metadata->>'ecommerce_order_id'
-    )) as order_id,
+      ))
+    ) as order_id,
+    coalesce(
+      nullif(btrim(s.ecommerce_order_code), ''),
+      nullif(btrim(coalesce(
+        s.metadata->>'ecommerceOrderCode',
+        s.metadata->>'ecommerce_order_code'
+      )), '')
+    ) as order_code,
     nullif(btrim(coalesce(
-      s.metadata->>'ecommerceOrderCode',
-      s.metadata->>'ecommerce_order_code'
-    )), '') as order_code
+      s.metadata->>'ecommerceConversionKey',
+      s.metadata->>'idempotencyKey'
+    )), '') as metadata_conversion_key
   from public.pos_sales s
-), relation_candidates as (
-  select
+  where p_license_id is null or s.license_id = p_license_id
+), candidate_edges as (
+  select distinct
     s.id as sale_id,
     s.license_id,
     o.id as order_id,
-    o.public_order_code as order_code,
-    row_number() over (
-      partition by s.license_id, s.id
-      order by
-        case
-          when mc.order_id = o.id then 1
-          when mc.order_code = o.public_order_code then 2
-          when o.converted_sale_id = s.id or o.pos_conversion_sale_id = s.id then 3
-          when o.pos_conversion_key = s.idempotency_key then 4
-          else 5
-        end,
-        o.created_at,
-        o.id
-    ) as sale_match_rank,
-    count(*) over (partition by s.license_id, o.id) as order_sale_matches
+    o.public_order_code as order_code
   from public.pos_sales s
-  left join metadata_candidates mc
+  join metadata_candidates mc
     on mc.license_id = s.license_id
    and mc.sale_id = s.id
   join public.ecommerce_orders o
@@ -79,67 +91,83 @@ with metadata_candidates as (
        and o.pos_conversion_key = s.idempotency_key
      )
      or (
-       coalesce(s.metadata->>'ecommerceConversionKey', s.metadata->>'idempotencyKey') is not null
-       and o.pos_conversion_key = coalesce(
-         s.metadata->>'ecommerceConversionKey',
-         s.metadata->>'idempotencyKey'
-       )
+       mc.metadata_conversion_key is not null
+       and o.pos_conversion_key = mc.metadata_conversion_key
      )
    )
-), safe_relation as (
-  select sale_id, license_id, order_id, order_code
-  from relation_candidates
-  where sale_match_rank = 1
-    and order_sale_matches = 1
+)
+select
+  ce.sale_id,
+  ce.license_id,
+  ce.order_id,
+  ce.order_code,
+  count(*) over (partition by ce.license_id, ce.sale_id),
+  count(*) over (partition by ce.license_id, ce.order_id)
+from candidate_edges ce
+$$;
+
+comment on function private.pos_ecommerce_sale_backfill_candidates(uuid) is
+  'Read-only preflight for ecommerce/POS backfill. Only rows with both candidate counts equal to one are safe to link.';
+
+with safe_relation as (
+  select
+    c.sale_id,
+    c.license_id,
+    c.ecommerce_order_id as order_id,
+    c.ecommerce_order_code as order_code
+  from private.pos_ecommerce_sale_backfill_candidates(null) c
+  where c.sale_candidate_count = 1
+    and c.order_candidate_count = 1
 )
 update public.pos_sales s
 set ecommerce_order_id = coalesce(s.ecommerce_order_id, r.order_id),
     ecommerce_order_code = coalesce(
       nullif(btrim(s.ecommerce_order_code), ''),
-      r.order_code,
-      mc.order_code
+      r.order_code
     )
-from metadata_candidates mc
-left join safe_relation r
-  on r.license_id = mc.license_id
- and r.sale_id = mc.sale_id
-where s.license_id = mc.license_id
-  and s.id = mc.sale_id
+from safe_relation r
+where s.license_id = r.license_id
+  and s.id = r.sale_id
   and (
     s.ecommerce_order_id is null
     or nullif(btrim(s.ecommerce_order_code), '') is null
   );
 
 update public.pos_sales s
-set ecommerce_order_id = coalesce(s.ecommerce_order_id, o.id),
-    ecommerce_order_code = coalesce(
-      nullif(btrim(s.ecommerce_order_code), ''),
-      o.public_order_code
-    )
+set ecommerce_order_code = o.public_order_code
 from public.ecommerce_orders o
 where o.license_id = s.license_id
-  and (
-    (s.ecommerce_order_id is not null and o.id = s.ecommerce_order_id)
-    or (
-      s.ecommerce_order_id is null
-      and s.ecommerce_order_code is not null
-      and o.public_order_code = s.ecommerce_order_code
-    )
-  );
+  and s.ecommerce_order_id = o.id;
 
 update public.pos_sales
 set sales_channel = case
   when ecommerce_order_id is not null
-    or nullif(btrim(ecommerce_order_code), '') is not null
-    or coalesce(metadata->>'origin', '') = 'ecommerce'
-    or metadata ? 'ecommerceOrderId'
-    or metadata ? 'ecommerce_order_id'
-    or idempotency_key like 'ecommerce:%'
+    and nullif(btrim(ecommerce_order_code), '') is not null
   then 'ecommerce'
   else 'local'
-end
+end,
+    ecommerce_order_id = case
+      when ecommerce_order_id is not null
+        and nullif(btrim(ecommerce_order_code), '') is not null
+      then ecommerce_order_id
+      else null
+    end,
+    ecommerce_order_code = case
+      when ecommerce_order_id is not null
+        and nullif(btrim(ecommerce_order_code), '') is not null
+      then ecommerce_order_code
+      else null
+    end
 where sales_channel is null
-   or sales_channel not in ('local', 'ecommerce');
+   or sales_channel not in ('local', 'ecommerce')
+   or (sales_channel = 'local' and (
+     ecommerce_order_id is not null
+     or ecommerce_order_code is not null
+   ))
+   or (sales_channel = 'ecommerce' and (
+     ecommerce_order_id is null
+     or nullif(btrim(ecommerce_order_code), '') is null
+   ));
 
 alter table public.pos_sales
   alter column sales_channel set default 'local',
@@ -156,6 +184,28 @@ begin
     alter table public.pos_sales
       add constraint pos_sales_sales_channel_check
       check (sales_channel in ('local', 'ecommerce'));
+  end if;
+
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.pos_sales'::regclass
+      and c.conname = 'pos_sales_ecommerce_traceability_coherence_check'
+  ) then
+    alter table public.pos_sales
+      add constraint pos_sales_ecommerce_traceability_coherence_check
+      check (
+        (
+          sales_channel = 'local'
+          and ecommerce_order_id is null
+          and ecommerce_order_code is null
+        )
+        or (
+          sales_channel = 'ecommerce'
+          and ecommerce_order_id is not null
+          and nullif(btrim(ecommerce_order_code), '') is not null
+        )
+      );
   end if;
 
   if not exists (
@@ -202,16 +252,19 @@ set search_path = ''
 as $$
 declare
   v_metadata jsonb := coalesce(new.metadata, '{}'::jsonb);
+  v_requested_order_id uuid;
+  v_requested_order_code text;
   v_order_id uuid;
   v_order_code text;
   v_conversion_key text;
+  v_ecommerce_intent boolean;
 begin
-  v_order_id := coalesce(
+  v_requested_order_id := coalesce(
     new.ecommerce_order_id,
     private.pos_sale_try_uuid(v_metadata->>'ecommerceOrderId'),
     private.pos_sale_try_uuid(v_metadata->>'ecommerce_order_id')
   );
-  v_order_code := coalesce(
+  v_requested_order_code := coalesce(
     nullif(btrim(new.ecommerce_order_code), ''),
     nullif(btrim(v_metadata->>'ecommerceOrderCode'), ''),
     nullif(btrim(v_metadata->>'ecommerce_order_code'), '')
@@ -222,57 +275,71 @@ begin
     nullif(btrim(v_metadata->>'idempotencyKey'), '')
   );
 
-  if v_order_id is null
+  if v_requested_order_id is null
      and v_conversion_key like 'ecommerce:%' then
-    v_order_id := private.pos_sale_try_uuid(substring(v_conversion_key from 11));
+    v_requested_order_id := private.pos_sale_try_uuid(substring(v_conversion_key from 11));
   end if;
 
-  if v_order_id is not null then
+  v_ecommerce_intent := coalesce((
+    coalesce(new.sales_channel, '') = 'ecommerce'
+    or coalesce(v_metadata->>'origin', '') = 'ecommerce'
+    or new.ecommerce_order_id is not null
+    or nullif(btrim(new.ecommerce_order_code), '') is not null
+    or v_metadata ? 'ecommerceOrderId'
+    or v_metadata ? 'ecommerce_order_id'
+    or v_metadata ? 'ecommerceOrderCode'
+    or v_metadata ? 'ecommerce_order_code'
+    or v_metadata ? 'ecommerceConversionKey'
+    or v_conversion_key like 'ecommerce:%'
+  ), false);
+
+  if not v_ecommerce_intent then
+    new.sales_channel := 'local';
+    new.ecommerce_order_id := null;
+    new.ecommerce_order_code := null;
+    return new;
+  end if;
+
+  if v_requested_order_id is not null then
     select o.id, o.public_order_code
     into v_order_id, v_order_code
     from public.ecommerce_orders o
     where o.license_id = new.license_id
-      and o.id = v_order_id
-    limit 1;
-  elsif v_order_code is not null then
+      and o.id = v_requested_order_id;
+  elsif v_requested_order_code is not null then
     select o.id, o.public_order_code
     into v_order_id, v_order_code
     from public.ecommerce_orders o
     where o.license_id = new.license_id
-      and o.public_order_code = v_order_code
-    limit 1;
+      and o.public_order_code = v_requested_order_code;
   elsif v_conversion_key is not null then
     select o.id, o.public_order_code
     into v_order_id, v_order_code
     from public.ecommerce_orders o
     where o.license_id = new.license_id
-      and o.pos_conversion_key = v_conversion_key
-    limit 1;
+      and o.pos_conversion_key = v_conversion_key;
+  end if;
+
+  if v_order_id is null or v_order_code is null then
+    raise exception 'ECOMMERCE_ORDER_NOT_FOUND'
+      using errcode = 'P0001',
+        detail = format(
+          'license_id=%s order_id=%s order_code=%s conversion_key=%s',
+          new.license_id,
+          v_requested_order_id,
+          v_requested_order_code,
+          v_conversion_key
+        );
   end if;
 
   new.ecommerce_order_id := v_order_id;
   new.ecommerce_order_code := v_order_code;
-  new.sales_channel := case
-    when v_order_id is not null
-      or v_order_code is not null
-      or coalesce(new.sales_channel, '') = 'ecommerce'
-      or coalesce(v_metadata->>'origin', '') = 'ecommerce'
-    then 'ecommerce'
-    else 'local'
-  end;
-
-  if new.sales_channel = 'ecommerce' then
-    new.metadata := v_metadata
-      || jsonb_build_object('origin', 'ecommerce')
-      || case when v_order_id is not null
-        then jsonb_build_object('ecommerceOrderId', v_order_id)
-        else '{}'::jsonb
-      end
-      || case when v_order_code is not null
-        then jsonb_build_object('ecommerceOrderCode', v_order_code)
-        else '{}'::jsonb
-      end;
-  end if;
+  new.sales_channel := 'ecommerce';
+  new.metadata := v_metadata || jsonb_build_object(
+    'origin', 'ecommerce',
+    'ecommerceOrderId', v_order_id,
+    'ecommerceOrderCode', v_order_code
+  );
 
   return new;
 end;
@@ -291,18 +358,6 @@ before insert or update of
 on public.pos_sales
 for each row
 execute function private.pos_sales_normalize_ecommerce_traceability();
-
-create or replace function private.pos_sale_to_jsonb(p_sale public.pos_sales)
-returns jsonb
-language sql
-stable
-set search_path = ''
-as $$
-  select case
-    when p_sale.id is null then null
-    else jsonb_strip_nulls(to_jsonb(p_sale))
-  end
-$$;
 
 create or replace function private.pos_ecommerce_sale_integrity_issues(
   p_license_id uuid default null
@@ -418,6 +473,42 @@ as $$
         and coalesce(o.converted_sale_id, o.pos_conversion_sale_id) <> s.id
       )
     )
+
+  union all
+
+  select
+    'ECOMMERCE_SALE_MULTIPLE_ORDER_CANDIDATES',
+    'error',
+    null,
+    null,
+    c.sale_id,
+    jsonb_build_object(
+      'candidate_order_ids',
+      jsonb_agg(c.ecommerce_order_id order by c.ecommerce_order_id),
+      'count',
+      max(c.sale_candidate_count)
+    )
+  from private.pos_ecommerce_sale_backfill_candidates(p_license_id) c
+  where c.sale_candidate_count > 1
+  group by c.license_id, c.sale_id
+
+  union all
+
+  select
+    'ECOMMERCE_ORDER_MULTIPLE_SALE_CANDIDATES',
+    'error',
+    c.ecommerce_order_id,
+    min(c.ecommerce_order_code),
+    null,
+    jsonb_build_object(
+      'candidate_sale_ids',
+      jsonb_agg(c.sale_id order by c.sale_id),
+      'count',
+      max(c.order_candidate_count)
+    )
+  from private.pos_ecommerce_sale_backfill_candidates(p_license_id) c
+  where c.order_candidate_count > 1
+  group by c.license_id, c.ecommerce_order_id
 
   union all
 
@@ -777,6 +868,7 @@ end;
 $$;
 
 revoke all on function private.pos_sale_try_uuid(text) from public, anon, authenticated;
+revoke all on function private.pos_ecommerce_sale_backfill_candidates(uuid) from public, anon, authenticated;
 revoke all on function private.pos_sales_normalize_ecommerce_traceability() from public, anon, authenticated;
 revoke all on function private.pos_ecommerce_sale_integrity_issues(uuid) from public, anon, authenticated;
 revoke all on function private.sales_final_payment_family(text) from public, anon, authenticated;

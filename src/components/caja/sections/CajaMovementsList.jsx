@@ -140,7 +140,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
           <Search size={17} aria-hidden="true" />
           <input
             type="text"
-            placeholder="Buscar por concepto..."
+            placeholder="Buscar por V-, EC-, cliente o método..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             className="search-input"

@@ -212,4 +212,153 @@ describe('loadCashSessionProjection', () => {
       abonosFiado: '50'
     });
   });
+
+  it('enriquece el movimiento oficial ecommerce y omite el sintetico equivalente sin cambiar totales', async () => {
+    const cloudSession = {
+      ...cashSession,
+      id: 'cloud-ecommerce-cash',
+      cloudCash: true,
+      ventas_efectivo: '31',
+      abonos_fiado: '0',
+      total_teorico_cloud: '31'
+    };
+    const sale = {
+      id: 'ecom-order-1',
+      cash_session_id: cloudSession.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      folio: 'V-000034',
+      salesChannel: 'ecommerce',
+      ecommerceOrderId: 'order-uuid-1',
+      ecommerceOrderCode: 'EC-00000115',
+      paymentMethod: 'cash',
+      total: 31
+    };
+
+    await testDb.table('sales').add(sale);
+    await testDb.table('movimientos_caja').add({
+      id: 'mov-1',
+      cash_session_id: cloudSession.id,
+      tipo: 'venta',
+      monto: '31',
+      concepto: 'Venta V-000034',
+      referenceType: 'sale',
+      referenceId: 'ecom-order-1',
+      saleId: 'ecom-order-1',
+      metadata: { sale_id: 'ecom-order-1' },
+      fecha: '2026-06-14T12:00:00.000Z'
+    });
+
+    const result = await loadCashSessionProjection(testDb, cloudSession);
+
+    expect(result.movements).toHaveLength(1);
+    expect(result.movements[0]).toMatchObject({
+      id: 'mov-1',
+      primaryReference: 'EC-00000115',
+      secondaryReference: 'Venta V-000034 · Ecommerce',
+      salesChannel: 'ecommerce',
+      ecommerceOrderId: 'order-uuid-1',
+      ecommerceOrderCode: 'EC-00000115'
+    });
+    expect(result.totals).toEqual({
+      ventasContado: '31',
+      abonosFiado: '0'
+    });
+  });
+
+  it('conserva un sintetico si no existe movimiento oficial y no elimina efectos distintos', async () => {
+    const session = { ...cashSession, id: 'cash-effects' };
+    await testDb.table('sales').add({
+      id: 'sale-effects',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      folio: 'V-000035',
+      paymentMethod: 'cash',
+      total: 50
+    });
+    await testDb.table('movimientos_caja').add({
+      id: 'cancel-effect',
+      cash_session_id: session.id,
+      tipo: 'cancelacion',
+      monto: '50',
+      referenceType: 'sale',
+      referenceId: 'sale-effects',
+      fecha: '2026-06-14T13:00:00.000Z'
+    });
+
+    const result = await loadCashSessionProjection(testDb, session);
+
+    expect(result.movements.map((movement) => movement.id)).toEqual([
+      'cancel-effect',
+      'sale-effects'
+    ]);
+    expect(result.movements[1]).toMatchObject({
+      concepto: 'V-000035',
+      secondaryReference: 'Venta local'
+    });
+  });
+
+  it('conserva el abono inicial sintetico si el oficial es un abono posterior de monto distinto', async () => {
+    const session = { ...cashSession, id: 'cash-later-payment' };
+    await testDb.table('sales').add({
+      id: 'credit-sale',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      folio: 'V-000040',
+      paymentMethod: 'fiado',
+      total: 50,
+      abono: 10
+    });
+    await testDb.table('movimientos_caja').add({
+      id: 'later-payment',
+      cash_session_id: session.id,
+      tipo: 'abono_cliente',
+      monto: '15',
+      sale_id: 'credit-sale',
+      fecha: '2026-06-14T13:00:00.000Z'
+    });
+
+    const result = await loadCashSessionProjection(testDb, session);
+
+    expect(result.movements.map((movement) => movement.id)).toEqual([
+      'later-payment',
+      'credit-sale'
+    ]);
+    expect(result.movements[1]).toMatchObject({ tipo: 'abono', monto: '10' });
+  });
+
+  it.each([
+    { sale_id: 'sale-alias' },
+    { reference_id: 'sale-alias' },
+    { reference_type: 'sale', reference_id: 'sale-alias' },
+    { referenceType: 'sale', referenceId: 'sale-alias' },
+    { metadata: { sale_id: 'sale-alias' } },
+    { metadata: { saleId: 'sale-alias' } }
+  ])('resuelve aliases cloud para deduplicar: %o', async (alias) => {
+    const session = { ...cashSession, id: `cash-${crypto.randomUUID()}` };
+    await testDb.table('sales').add({
+      id: 'sale-alias',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      folio: 'V-000036',
+      paymentMethod: 'cash',
+      total: 25
+    });
+    await testDb.table('movimientos_caja').add({
+      id: `mov-${crypto.randomUUID()}`,
+      cash_session_id: session.id,
+      tipo: 'venta',
+      monto: '25',
+      fecha: '2026-06-14T12:00:00.000Z',
+      ...alias
+    });
+
+    const result = await loadCashSessionProjection(testDb, session);
+
+    expect(result.movements).toHaveLength(1);
+    expect(result.movements[0].sale?.id).toBe('sale-alias');
+  });
 });

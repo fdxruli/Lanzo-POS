@@ -78,6 +78,26 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
   if (!movement?.id) return null;
 
   const syncedAt = nowIso();
+  const metadata = movement.metadata || existing?.metadata || {};
+  const referenceType = movement.reference_type
+    || movement.referenceType
+    || existing?.referenceType
+    || existing?.reference_type
+    || null;
+  const referenceId = movement.reference_id
+    || movement.referenceId
+    || existing?.referenceId
+    || existing?.reference_id
+    || null;
+  const saleId = movement.sale_id
+    || movement.saleId
+    || (String(referenceType || '').toLowerCase() === 'sale' ? referenceId : null)
+    || metadata.sale_id
+    || metadata.saleId
+    || existing?.saleId
+    || existing?.sale_id
+    || null;
+
   return {
     ...(existing || {}),
     id: movement.id,
@@ -90,9 +110,13 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
     actor: movement.actor_name || null,
     actorName: movement.actor_name || null,
     origen: movement.source || 'manual',
-    referenceType: movement.reference_type || null,
-    referenceId: movement.reference_id || null,
-    metadata: movement.metadata || {},
+    saleId,
+    sale_id: saleId,
+    referenceType,
+    reference_type: referenceType,
+    referenceId,
+    reference_id: referenceId,
+    metadata,
     syncStatus: CASH_SYNC_STATUS.SYNCED,
     serverVersion: Number(movement.server_version || existing?.serverVersion || 1),
     lastSyncedAt: syncedAt,
