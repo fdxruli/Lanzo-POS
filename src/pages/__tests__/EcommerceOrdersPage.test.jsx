@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +58,7 @@ import EcommerceOrdersPage from '../EcommerceOrdersPage';
 
 const orderId = '11111111-1111-4111-8111-111111111111';
 const secondOrderId = '22222222-2222-4222-8222-222222222222';
+const ecommerceOrdersPageCss = readFileSync('src/pages/EcommerceOrdersPage.css', 'utf8');
 
 const selectedOrder = (id = orderId, status = 'seen') => ({
   id,
@@ -164,6 +166,20 @@ describe('EcommerceOrdersPage', () => {
     expect(screen.getByRole('button', { name: 'Marcar como listo' })).toBeInTheDocument();
   });
 
+  it('keeps secondary mobile detail sections collapsed until requested', () => {
+    store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
+
+    renderPage();
+
+    const customerSection = screen.getByRole('button', { name: /Cliente: Cliente/i });
+    const itemsSection = screen.getByRole('button', { name: /Artículos y total: 1 artículo/i });
+    expect(customerSection).toHaveAttribute('aria-expanded', 'false');
+    expect(itemsSection).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(itemsSection);
+    expect(itemsSection).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('shows prepare only to admin or staff with ecommerce and POS permissions', () => {
     store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
     const { unmount } = renderPage();
@@ -245,9 +261,8 @@ describe('EcommerceOrdersPage', () => {
   it('creates a new detail intent for every card click', () => {
     renderPage();
 
-    const cards = screen.getAllByRole('listitem');
-    fireEvent.click(cards[0]);
-    fireEvent.click(cards[1]);
+    fireEvent.click(screen.getByRole('button', { name: /Abrir EC-00000011/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Abrir EC-00000012/i }));
 
     expect(store.openEcommerceOrder).toHaveBeenNthCalledWith(1, orderId, { markSeen: true });
     expect(store.openEcommerceOrder).toHaveBeenNthCalledWith(2, secondOrderId, { markSeen: true });
@@ -261,12 +276,178 @@ describe('EcommerceOrdersPage', () => {
     renderPage(`/pedidos-online?order=${orderId}`);
     await waitFor(() => expect(store.openEcommerceOrder).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /Pendientes/i }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Estado' }), {
+      target: { value: 'pending' }
+    });
 
     await waitFor(() => expect(store.clearSelectedEcommerceOrder).toHaveBeenCalled());
     expect(store.setEcommerceOrdersFilter).toHaveBeenCalledWith('pending');
     expect(store.loadEcommerceOrders).toHaveBeenCalledWith({ filter: 'pending', force: true });
     expect(screen.getByTestId('location')).not.toHaveTextContent('?order=');
+  });
+
+  it('groups orders by operational stage and searches without exposing more customer data', () => {
+    renderPage();
+
+    expect(screen.getByRole('heading', { name: 'Pedidos en línea' })).toBeInTheDocument();
+    expect(screen.queryByText('Tienda online')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Requieren atención' }))
+      .toContainElement(screen.getByText('EC-00000011'));
+    expect(screen.getByRole('region', { name: 'En proceso' }))
+      .toContainElement(screen.getByText('EC-00000012'));
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'Segundo cliente' }
+    });
+
+    expect(screen.queryByText('EC-00000011')).not.toBeInTheDocument();
+    expect(screen.getByText('EC-00000012')).toBeInTheDocument();
+  });
+
+  it('lets mobile users jump between operational groups without traversing every list', () => {
+    renderPage();
+
+    const attentionTab = screen.getByRole('tab', { name: 'Atención, 1 pedido' });
+    const processTab = screen.getByRole('tab', { name: 'En proceso, 1 pedido' });
+    expect(attentionTab).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(processTab);
+
+    expect(processTab).toHaveAttribute('aria-selected', 'true');
+    expect(attentionTab).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('region', { name: 'En proceso' })).toHaveClass('is-mobile-active');
+  });
+
+  it('selects attention when pending results replace a previously selected closed group', () => {
+    const view = renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'Cerrados, 0 pedidos' }));
+
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'pending',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[0], status: 'new' }]
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/pedidos-online']}>
+        <Routes><Route path="/pedidos-online" element={<><EcommerceOrdersPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('tab', { name: 'Atención, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Requieren atención' })).toHaveClass('is-mobile-active');
+  });
+
+  it('selects the first populated group when all results replace a previous empty group', () => {
+    const view = renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'Cerrados, 0 pedidos' }));
+
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'all',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[1], status: 'seen' }]
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/pedidos-online']}>
+        <Routes><Route path="/pedidos-online" element={<><EcommerceOrdersPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('selects process when pending results contain only seen orders', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'pending',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[1], status: 'seen' }]
+    };
+    renderPage();
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('selects closed when accepted results only contain converted sales', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'accepted',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[0], status: 'converted_to_sale' }]
+    };
+    renderPage();
+
+    expect(screen.getByRole('tab', { name: 'Cerrados, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('prioritizes process when accepted results include accepted and converted sales', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'accepted',
+      ecommerceOrders: [
+        { ...baseState().ecommerceOrders[0], status: 'accepted' },
+        { ...baseState().ecommerceOrders[1], status: 'converted_to_sale' }
+      ]
+    };
+    renderPage();
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the active mobile group when it still has visible orders', () => {
+    renderPage();
+    const processTab = screen.getByRole('tab', { name: 'En proceso, 1 pedido' });
+    fireEvent.click(processTab);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'Segundo cliente' }
+    });
+
+    expect(processTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps a stable valid group for an empty result set', () => {
+    renderPage();
+    const closedTab = screen.getByRole('tab', { name: 'Cerrados, 0 pedidos' });
+    fireEvent.click(closedTab);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'sin coincidencias' }
+    });
+
+    expect(closedTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('moves to the group containing the first local search match', () => {
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'Segundo cliente' }
+    });
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the three-column detail grid out of tablet widths', () => {
+    expect(ecommerceOrdersPageCss).toContain('@media (min-width: 960px)');
+    expect(ecommerceOrdersPageCss).not.toContain('@media (min-width: 760px)');
+  });
+
+  it('collapses long mobile groups into six-order batches', () => {
+    const seedOrder = baseState().ecommerceOrders[0];
+    store.state = {
+      ...baseState(),
+      ecommerceOrders: Array.from({ length: 8 }, (_, index) => ({
+        ...seedOrder,
+        id: `mobile-order-${index + 1}`,
+        code: `EC-MOBILE-${index + 1}`
+      }))
+    };
+    renderPage();
+
+    const moreButton = screen.getByRole('button', { name: 'Mostrar 2 más · 2 restantes' });
+    expect(moreButton).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(moreButton);
+    expect(screen.getByRole('button', { name: 'Mostrar menos' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('region', { name: 'Requieren atención' })).toHaveClass('is-mobile-expanded');
   });
 
   it('closes the detail through clearSelectedEcommerceOrder', () => {

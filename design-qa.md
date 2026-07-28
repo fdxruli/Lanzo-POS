@@ -75,6 +75,143 @@ final result: passed
 
 final result: blocked
 
+---
+
+# Modal de pedido — opción 3
+
+- Source visual truth path: `C:\Users\pituf\.codex\generated_images\019fa748-24b9-7a91-be1a-b46501bfbfe9\call_ptKvVUEitDy4Ufg7GovefL9h.png`
+- Implementation route: `/pedidos-online`, modal de un pedido aceptado.
+- Implementation screenshot path: unavailable; the in-app browser did not attach and the authenticated Chrome tab lost control while reloading.
+- Intended viewports: desktop 1440 × 900 CSS px and mobile 390 × 844 CSS px, device scale factor 1.
+- State: light theme; accepted pickup order; operation panel visible; customer, items/total and history collapsed on mobile.
+- Density normalization: not applicable until the browser-rendered captures are available.
+
+**Full-view comparison evidence**
+
+- Blocked. The selected reference was opened and inspected, but a browser-rendered implementation capture could not be obtained in the same state. No fidelity claim is made from code inspection alone.
+
+**Focused region comparison evidence**
+
+- Blocked. The operation panel, sticky action bar, desktop three-column workspace, mobile accordions and history expansion still require same-state captures.
+
+**Findings**
+
+- [P1] Visual comparison is unavailable.
+  Location: order detail modal at `/pedidos-online`.
+  Evidence: the approved source exists, but there is no valid implementation screenshot.
+  Impact: layout overflow, hierarchy, sticky controls and responsive proportions cannot be accepted visually.
+  Fix: capture the accepted-order modal at both intended viewports, combine each capture with the selected source in one comparison input, and fix any P0/P1/P2 differences.
+
+**Open Questions**
+
+- None in the implementation scope. The blocker is browser capture only.
+
+**Implementation Checklist**
+
+1. Capture the desktop accepted-order state at 1440 × 900.
+2. Capture the mobile accepted-order state at 390 × 844 with secondary sections collapsed.
+3. Test expanding “Cliente”, “Artículos y total” and “Historial”.
+4. Compare source and implementation together and resolve visible P0/P1/P2 differences.
+
+**Comparison history**
+
+- Initial implementation pass: mobile-first disclosure panels, operation-first ordering, combined items/total presentation, bounded internal lists, desktop three-column layout and persistent bottom actions were implemented.
+- Post-fix automated evidence: 18 focused tests passed, focused ESLint passed, the production build passed, and React Doctor scored 97/100 with only the two pre-existing custom-modal warnings.
+- Post-fix visual evidence: unavailable; no visual QA iteration can be counted.
+
+final result: blocked
+
+---
+
+# Pedidos en línea — adaptación mobile first
+
+- Source visual truth: desktop option 3 at `C:\Users\pituf\.codex\generated_images\019fa748-24b9-7a91-be1a-b46501bfbfe9\call_7BRHVP0NFPbtwggbysbAs83O.png`.
+- Intended implementation viewport: 390 × 844 CSS px at device scale factor 1.
+- Implementation screenshot: unavailable. The authenticated Chrome tab and the in-app browser both remained in the administrative bootstrap after reload.
+- State: light theme, `/pedidos-online`, authenticated order inbox with representative order volume.
+
+## Full-view comparison evidence
+
+Blocked. The desktop source remains the approved visual language, but there is no valid browser-rendered mobile implementation capture to evaluate composition, sticky controls, card density, or safe-area spacing.
+
+## Focused comparison evidence
+
+Blocked. The mobile tab strip, six-order progressive disclosure, search/filter controls, and expanded/collapsed states could not be captured in the authenticated app.
+
+## Findings
+
+- [P1] Mobile browser-rendered comparison is unavailable.
+  - Location: `/pedidos-online` at 390 × 844.
+  - Evidence: both available browser surfaces stopped at “Preparando Lanzo POS...” after loading the updated route.
+  - Impact: sticky positioning, real-data wrapping, horizontal tab scrolling, and the expanded list state cannot be visually accepted.
+  - Fix: capture the authenticated route after bootstrap completes, test the three mobile tabs and “Mostrar más”, then compare the same states.
+
+## Automated interaction evidence
+
+- 22 focused tests pass, including mobile group navigation and six-order progressive disclosure.
+- Focused ESLint passes.
+- Production build completes its main application bundle; existing PWA and dynamic-import warnings remain unrelated to this screen.
+
+## Comparison history
+
+- Initial mobile-first pass: implementation completed; visual QA blocked before a valid authenticated mobile capture.
+
+final result: blocked
+
+---
+
+# Pedidos en línea — rediseño opción 3
+
+- Source visual truth path: `C:\Users\pituf\.codex\generated_images\019fa748-24b9-7a91-be1a-b46501bfbfe9\call_7BRHVP0NFPbtwggbysbAs83O.png`
+- Original product reference: `C:\Users\pituf\AppData\Local\Temp\codex-clipboard-4c913d7f-2661-4d03-960f-ca135f3bbf6e.png`
+- Implementation screenshot path: unavailable; the in-app Browser remained in the administrative bootstrap without an active license and the authenticated Chrome connection was unavailable.
+- Intended comparison viewport: 1440 × 850 CSS px at device scale factor 1.
+- Source pixels: 1631 × 964.
+- Original reference pixels: 1098 × 648.
+- Implementation pixels: unavailable.
+- State: light theme, `/pedidos-online`, real authenticated order data.
+
+## Full-view comparison evidence
+
+Blocked. The selected source visual and original product screenshot were opened and inspected, but the rendered implementation could not be captured in the same authenticated state. No fidelity claim is made from code or automated tests alone.
+
+## Focused comparison evidence
+
+Not performed because the full browser-rendered comparison is unavailable. Typography, filter controls, grouped columns, order cards, semantic colors, responsive stacking, and empty states still require visual inspection in the authenticated app.
+
+## Findings
+
+- [P1] Browser-rendered comparison is unavailable.
+  - Location: `/pedidos-online`.
+  - Evidence: the in-app Browser remained on “Preparando Lanzo POS...” and did not inherit the active license; the Chrome session that produced the original screenshot could not be connected.
+  - Impact: spacing, column density, real-data wrapping, dark-theme rendering, and the 960 px responsive breakpoint cannot be accepted visually.
+  - Fix: refresh the authenticated Pedidos en línea screen and capture the updated desktop view for comparison.
+
+## Required fidelity surfaces
+
+- Fonts and typography: implementation reuses the global Inter/Segoe UI stack and existing type tokens; visual weight and wrapping remain unverified.
+- Spacing and layout rhythm: the three-column composition, 12 px gutters, 16 px group headers, and compact cards follow the selected direction; browser evidence is missing.
+- Colors and visual tokens: all new surfaces and semantic states use Lanzo UI variables and `color-mix`; light and dark rendering remain visually unverified.
+- Image quality and asset fidelity: no raster assets are required; icons come from the existing Lucide dependency used by the product.
+- Copy and content: the redundant eyebrow is removed, the title is “Pedidos en línea”, and existing order fields/actions are preserved.
+
+## Primary interactions checked
+
+- Focused automated tests passed for opening orders, changing the real server-side status filter, local code/customer search, accepting, rejecting, preparing in POS, releasing claims, and clearing deep links.
+- Browser console inspection reached only the bootstrap state and showed no implementation-specific error.
+
+## Comparison history
+
+- Initial pass: blocked before a valid implementation capture. No P0/P1/P2 visual fixes can be confirmed without authenticated browser evidence.
+
+## Implementation checklist
+
+1. Refresh the authenticated Pedidos en línea screen.
+2. Capture the 1440 × 850 light-theme state with representative orders.
+3. Compare it with the selected source, fix any P0/P1/P2 drift, and repeat until passed.
+
+final result: blocked
+
 ## Security and regression correction — PR #136
 
 - Initial HEAD: `2989528fae9e746a01bd6f1de8452666c3505263`.
@@ -157,5 +294,75 @@ final result: passed
 3. Capture and compare the approved browser states against the selected visual.
 
 The implementation maps safe storefront name, logo, color, font, and radius values to the tracking page; its desktop stepper becomes a complete vertical timeline on mobile.
+
+final result: blocked
+
+---
+
+# Latest QA status — Pedidos en línea, opción 3
+
+- Automated verification: ESLint passed; production build passed; 20 focused tests passed; React Doctor scored 97/100.
+- Visual source: `C:\Users\pituf\.codex\generated_images\019fa748-24b9-7a91-be1a-b46501bfbfe9\call_7BRHVP0NFPbtwggbysbAs83O.png`.
+- [P1] The authenticated implementation could not be captured: the in-app browser remained in the license bootstrap and the active Chrome session was unavailable.
+- Required next step: capture the refreshed authenticated `/pedidos-online` page at 1440 × 850, compare against the visual source, and resolve any P0/P1/P2 differences.
+
+final result: blocked
+
+---
+
+# Latest QA status — Pedidos en línea mobile first
+
+- Source visual truth: desktop option 3 at `C:\Users\pituf\.codex\generated_images\019fa748-24b9-7a91-be1a-b46501bfbfe9\call_7BRHVP0NFPbtwggbysbAs83O.png`.
+- Intended implementation capture: `/pedidos-online`, light theme, 390 × 844 CSS px, device scale factor 1.
+- Implementation screenshot: unavailable. Both the authenticated Chrome tab and the in-app browser remained at “Preparando Lanzo POS...” after reload.
+- Full-view and focused comparisons: blocked; sticky controls, horizontal group navigation, six-order progressive disclosure, real-data wrapping, and safe-area spacing still require browser-rendered evidence.
+- [P1] Capture the authenticated mobile route, test all three group controls plus “Mostrar más”, and compare those states against the approved system language before visual acceptance.
+- Automated verification: 22 focused tests passed; focused ESLint passed; production build passed; React Doctor scored 97/100 with only the two pre-existing custom-modal warnings.
+
+final result: blocked
+
+---
+
+# Modal de pedido — opción 3
+
+- Source visual truth path: `C:\Users\pituf\.codex\generated_images\019fa748-24b9-7a91-be1a-b46501bfbfe9\call_ptKvVUEitDy4Ufg7GovefL9h.png`
+- Implementation route: `/pedidos-online`, modal de un pedido aceptado.
+- Implementation screenshot path: unavailable; the in-app browser did not attach and the authenticated Chrome tab lost control while reloading.
+- Intended viewports: desktop 1440 × 900 CSS px and mobile 390 × 844 CSS px, device scale factor 1.
+- State: light theme; accepted pickup order; operation panel visible; customer, items/total and history collapsed on mobile.
+- Density normalization: not applicable until the browser-rendered captures are available.
+
+**Full-view comparison evidence**
+
+- Blocked. The selected reference was opened and inspected, but a browser-rendered implementation capture could not be obtained in the same state. No fidelity claim is made from code inspection alone.
+
+**Focused region comparison evidence**
+
+- Blocked. The operation panel, sticky action bar, desktop three-column workspace, mobile accordions and history expansion still require same-state captures.
+
+**Findings**
+
+- [P1] Visual comparison is unavailable.
+  Location: order detail modal at `/pedidos-online`.
+  Evidence: the approved source exists, but there is no valid implementation screenshot.
+  Impact: layout overflow, hierarchy, sticky controls and responsive proportions cannot be accepted visually.
+  Fix: capture the accepted-order modal at both intended viewports, combine each capture with the selected source in one comparison input, and fix any P0/P1/P2 differences.
+
+**Open Questions**
+
+- None in the implementation scope. The blocker is browser capture only.
+
+**Implementation Checklist**
+
+1. Capture the desktop accepted-order state at 1440 × 900.
+2. Capture the mobile accepted-order state at 390 × 844 with secondary sections collapsed.
+3. Test expanding “Cliente”, “Artículos y total” and “Historial”.
+4. Compare source and implementation together and resolve visible P0/P1/P2 differences.
+
+**Comparison history**
+
+- Initial implementation pass: mobile-first disclosure panels, operation-first ordering, combined items/total presentation, bounded internal lists, desktop three-column layout and persistent bottom actions were implemented.
+- Post-fix automated evidence: 18 focused tests passed, focused ESLint passed, the production build passed, and React Doctor scored 97/100 with only the two pre-existing custom-modal warnings.
+- Post-fix visual evidence: unavailable; no visual QA iteration can be counted.
 
 final result: blocked
