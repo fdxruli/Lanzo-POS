@@ -404,3 +404,87 @@ Con esta decisión y contrato, queda habilitada:
 ```text
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.1 — Constructores seguros de metadatos sociales
 ```
+
+## Estado de la minifase 1.1
+
+- Estado: **PASS**.
+- HEAD inicial remoto: `56cdf7c5350a8ee7dbaa25e30f445fe695735446`.
+- Rama: `feat/ecom-public-social-preview-1`.
+- Módulo creado: `store/api/_lib/socialMetadata.js`.
+- Pruebas creadas: `store/api/_lib/__tests__/socialMetadata.test.js`.
+- Supabase modificado: **no**.
+- Vercel modificado: **no**.
+- Dependencias agregadas: **no**.
+
+### Contrato de entrada y salida
+
+El constructor principal es:
+
+```js
+buildStoreSocialMetadata({
+  publicOrigin,
+  slug,
+  portal,
+  siteVersionNumber
+})
+```
+
+`slug` se mantiene separado de `portal` para que el constructor solo lea de ese objeto la allowlist social `name`, `headline` y `description`. La salida es un objeto profundamente congelado con título, descripción, canonical, imagen, alt, locale, site name, indicador de versión y objetos consistentes de Open Graph y Twitter/X.
+
+### Constantes y políticas
+
+- `MIN_STORE_SLUG_LENGTH = 3`.
+- `MAX_STORE_SLUG_LENGTH = 64`.
+- `MAX_STORE_NAME_LENGTH = 80`.
+- `MAX_SOCIAL_TITLE_LENGTH = 110`.
+- `MAX_SOCIAL_DESCRIPTION_LENGTH = 200`.
+- `MAX_IMAGE_ALT_LENGTH = 160`.
+- Open Graph: `website`, 1200 × 630, `image/png`.
+- Locale: `es_MX`.
+- Site name: `Lanzo Tienda`.
+- Twitter/X: `summary_large_image`.
+
+El slug aplica estrictamente `^[a-z0-9][a-z0-9-]*[a-z0-9]$` y longitud de 3 a 64. No hace `trim`, no convierte mayúsculas y no transforma entradas inválidas. Los errores usan `SocialMetadataValidationError` con códigos `INVALID_STORE_SLUG` o `INVALID_PUBLIC_ORIGIN` y mensajes genéricos que no incluyen la entrada rechazada.
+
+La normalización acepta solo strings, elimina caracteres de control, colapsa whitespace a un espacio, aplica `trim()` y conserva español y Unicode visible. El truncado cuenta puntos de código con `Array.from`, reserva un único carácter `…`, elimina espacio final y nunca rebasa el máximo.
+
+El título usa `[Nombre] | Tienda en línea` y fallback `Tienda en línea | Lanzo`. La descripción prioriza headline, después description, después el fallback con nombre y finalmente el fallback global.
+
+### Canonical, imagen y escape
+
+`publicOrigin` debe ser una URL absoluta HTTPS, sin credenciales, query, hash ni pathname ajeno al origen. Se normaliza a `URL.origin`.
+
+- Canonical: `[publicOrigin]/tienda/[slug]`.
+- Imagen controlada: `[publicOrigin]/api/og/store/[slug]`.
+- Solo un entero positivo seguro en `siteVersionNumber` agrega `?v=`; ningún otro campo actúa como reemplazo.
+- `imageVersioned` indica si la URL quedó versionada.
+
+`escapeHtmlText` y `escapeHtmlAttribute` son funciones explícitas y separadas del objeto semántico. Escapan `&`, `<`, `>`, comillas dobles y comilla simple. El constructor conserva texto plano para evitar doble escape.
+
+### Campos permitidos y excluidos
+
+Campos leídos desde `portal`: `name`, `headline`, `description`.
+
+Campos ignorados y cubiertos por prueba de privacidad: WhatsApp, correo, domicilio y sus componentes, horarios, disponibilidad, stock, settings, features, catalogRevision, licencia, pedidos, tracking token, logo, portada y theme.
+
+### Pruebas y validación
+
+La suite focal cubre slug, texto, límites, Unicode, escape, intentos de cierre de tag y atributo, ausencia de preescape, origen confiable, canonical, imagen controlada, versiones válidas e inválidas, consistencia Open Graph/Twitter, inmutabilidad y exclusión de datos privados.
+
+- Pruebas focales Vitest: **NOT RUN**.
+- Motivo: la ejecución se realizó mediante integración directa de GitHub, sin checkout local ni dependencias instaladas; por alcance no se ejecutaron `npm install` ni `npm ci`.
+- Comprobación sintáctica con `node --check`: **PASS**.
+- Aserciones runtime-neutral independientes para slug, origen, truncado Unicode, escape, canonical, imagen, consistencia, privacidad e inmutabilidad: **PASS**.
+- Inspección estática de imports, efectos secundarios, TODO, secretos y aislamiento: **PASS**.
+
+### Riesgos y habilitación
+
+No se encontraron bloqueantes para esta minifase. Riesgo no bloqueante: la suite Vitest deberá ejecutarse en un entorno con las dependencias ya disponibles; no se adelantaron endpoints, consultas de red, imagen PNG, inyección HTML ni cambios de routing.
+
+Se confirma que Supabase no fue modificado y `SUPABASE_MIGRATION_REQUIRED = false`.
+
+Queda habilitada:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.2 — Cliente server-side del portal público
+```
