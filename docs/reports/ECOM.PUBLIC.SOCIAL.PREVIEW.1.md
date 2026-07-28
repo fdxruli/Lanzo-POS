@@ -1308,3 +1308,146 @@ No quedan bloqueantes conocidos dentro de 1.4. Queda habilitada:
 ```text
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.5 — Enrutamiento público y aislamiento
 ```
+
+## Estado de la minifase 1.5
+
+- Estado: **PASS**.
+- HEAD inicial remoto: `3b73f355565262574e1cacdace22624587f0823c`.
+- HEAD de `main` verificado: `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
+- PR #141 permaneció abierto, sin merge y como draft.
+- Rama exclusiva: `feat/ecom-public-social-preview-1`.
+- Base: `main`.
+- `SUPABASE_MIGRATION_REQUIRED = false`.
+
+### Configuración anterior y final
+
+La configuración anterior enviaba cualquier ruta bajo `/tienda/:path*` a
+`/index.html` y aplicaba sobre el mismo patrón
+`Cache-Control: public, max-age=0, must-revalidate`. Ese contrato impedía que
+la raíz exacta de una tienda alcanzara el endpoint de HTML social y podía
+sobrescribir la caché dinámica emitida por la función.
+
+La configuración final conserva rewrites internas y establece:
+
+```text
+/                                      → /index.html
+/tienda                                → /index.html
+/tienda/:slug/pedido/:trackingToken    → /index.html
+/tienda/:slug                          → /api/store-page?slug=:slug
+/conoce-lanzo                          → /index.html
+/tienda/:path*                         → /index.html
+```
+
+La precedencia explícita es seguimiento antes de tienda exacta y tienda exacta
+antes del fallback anidado. No se agregó redirect, catch-all global, regla para
+`/api` ni rewrite de assets.
+
+### Ruta dinámica, seguimiento y aislamiento
+
+Solo `/tienda/:slug` llega a `/api/store-page?slug=:slug`. Es una rewrite
+interna, por lo que el navegador conserva la URL pública y React Router sigue
+resolviendo `/tienda/:slug` después de cargar los mismos assets del SPA.
+
+`/tienda/:slug/pedido/:trackingToken` conserva HTML genérico y llega
+exclusivamente a `/index.html`. El destino no contiene el token, no invoca
+`store-page` ni `/api/og/store`, y no genera canonical o metadata social de
+seguimiento. Los endpoints `/api/store-page` y `/api/og/store` permanecen
+fuera de todos los fallbacks SPA. `/assets/*` continúa servido por filesystem.
+
+Las rutas anidadas desconocidas bajo tienda se atienden después de las reglas
+exactas mediante `/tienda/:path* → /index.html`; por ello no se convierten en
+páginas sociales dinámicas.
+
+### Headers, caché y trailing slash
+
+Se conserva globalmente:
+
+```text
+X-Robots-Tag: noindex, nofollow, noarchive
+```
+
+La caché estática revalidable permanece en `/`, `/index.html`, `/tienda`,
+`/conoce-lanzo` y la ruta exacta de seguimiento. Se eliminó el header amplio
+de `/tienda/:path*`; `/tienda/:slug` y `/api/store-page` no reciben
+`Cache-Control` desde `store/vercel.json`. Sus respuestas conservan las
+políticas propias de `store/api/store-page.js`: 300 segundos para tienda
+válida o inexistente, 60 segundos para error temporal y `no-store` para slug
+inválido.
+
+Los assets conservan:
+
+```text
+Cache-Control: public, max-age=31536000, immutable
+```
+
+Ninguna ruta HTML recibe caché inmutable. `trailingSlash: false` permanece sin
+una segunda redirección manual; la 308 canónica y su incorporación de
+`X-Robots-Tag` continúan bajo el flujo de integración ya existente.
+
+El destino dinámico declara únicamente `slug=:slug`. Los parámetros públicos
+adicionales no se convierten en title, description, canonical, imagen o
+branding; la validación definitiva de query y slug permanece en
+`store-page.js`.
+
+### Pruebas y validación
+
+Se creó:
+
+- `store/tests/social-preview/storeVercelRouting.test.js`.
+
+La suite carga y analiza el `store/vercel.json` real, sin duplicar la
+configuración. Contiene 12 casos para contrato general, precedencia, rutas
+representativas, aislamiento, loops, privacidad, headers, caché, assets y
+continuidad estática de las rutas React.
+
+Resultados ejecutados:
+
+- validación JSON: **PASS**;
+- `node --check store/tests/social-preview/storeVercelRouting.test.js`: **PASS**;
+- matcher runtime-neutral con rutas, precedencia, aislamiento y headers:
+  **PASS**;
+- comprobación equivalente a `git diff --check`: **PASS**.
+
+```text
+Vitest focal: NOT RUN
+Motivo: node_modules no existe en el entorno conectado y esta minifase prohíbe
+npm install y npm ci.
+```
+
+No se ejecutaron las suites de endpoint porque dependen de Vitest ausente. No se
+ejecutaron suite global, build, `vercel build` ni deploy.
+
+### Archivos y confirmaciones
+
+Creado:
+
+- `store/tests/social-preview/storeVercelRouting.test.js`.
+
+Modificados:
+
+- `store/vercel.json`;
+- `docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md`.
+
+El cambio productivo principal es exclusivamente `store/vercel.json`. No se
+modificaron rutas React, endpoints, Supabase, migraciones, RPC, tablas, RLS,
+grants, datos, dependencias, `package.json`, `package-lock.json`,
+`prepare-store-deployment.mjs`, scripts de empaquetado ni allowlists de build o
+prebuilt. No se usó `service_role`, no se agregaron dominios, secretos, TODO o
+stubs y no se desplegó manualmente.
+
+### Riesgos residuales y habilitación
+
+No quedan bloqueantes conocidos dentro del routing fuente. Riesgos no
+bloqueantes:
+
+- Vitest focal queda pendiente de un entorno con dependencias ya instaladas;
+- la 308 de trailing slash no se comprobó en un deployment remoto;
+- las funciones y la plantilla generada todavía no forman parte del paquete
+  temporal `lanzo-store`, por diseño de la secuencia.
+
+Con este PASS queda habilitada exclusivamente:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.6 — Integración de build, staging y auditorías
+```
+
