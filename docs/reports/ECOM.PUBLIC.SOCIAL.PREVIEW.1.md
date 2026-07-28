@@ -415,6 +415,7 @@ ECOM.PUBLIC.SOCIAL.PREVIEW.1.1 — Constructores seguros de metadatos sociales
 - Supabase modificado: **no**.
 - Vercel modificado: **no**.
 - Dependencias agregadas: **no**.
+- Historial: se requirió un segundo commit correctivo para retirar del reporte un marcador literal detectado por la auditoría final; no cambió el código ni las pruebas.
 
 ### Contrato de entrada y salida
 
@@ -475,7 +476,7 @@ La suite focal cubre slug, texto, límites, Unicode, escape, intentos de cierre 
 - Motivo: la ejecución se realizó mediante integración directa de GitHub, sin checkout local ni dependencias instaladas; por alcance no se ejecutaron `npm install` ni `npm ci`.
 - Comprobación sintáctica con `node --check`: **PASS**.
 - Aserciones runtime-neutral independientes para slug, origen, truncado Unicode, escape, canonical, imagen, consistencia, privacidad e inmutabilidad: **PASS**.
-- Inspección estática de imports, efectos secundarios, TODO, secretos y aislamiento: **PASS**.
+- Inspección estática de imports, efectos secundarios, marcadores pendientes, secretos y aislamiento: **PASS**.
 
 ### Riesgos y habilitación
 
