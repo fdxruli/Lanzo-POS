@@ -488,7 +488,7 @@ describe('not_found y fallos seguros', () => {
   });
 
   it('acepta un cuerpo exactamente en el límite', async () => {
-    const suffix = '"}';
+    const suffix = '"}}';
     const prefix = `{"success":false,"error":{"code":"UNKNOWN","padding":"`;
     const paddingBytes = MAX_PUBLIC_PORTAL_RESPONSE_BYTES
       - new TextEncoder().encode(prefix + suffix).byteLength;

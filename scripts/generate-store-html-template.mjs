@@ -1,4 +1,5 @@
 import { constants } from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   access,
   mkdir,
@@ -32,9 +33,13 @@ export function serializeStoreHtmlTemplateModule(template) {
   if (/file:\/\/|sourceMappingURL|[\r\n][A-Za-z]:\\/iu.test(template)) {
     throw new Error('Store HTML contains a forbidden local or source-map reference.');
   }
+  const htmlBytes = Buffer.byteLength(template, 'utf8');
+  const htmlSha256 = createHash('sha256').update(template).digest('hex');
   return [
     '// Generated from dist-store/index.html. Do not edit manually.',
     `export const STORE_HTML_TEMPLATE = ${JSON.stringify(template)};`,
+    `export const STORE_HTML_BYTES = ${htmlBytes};`,
+    `export const STORE_HTML_SHA256 = ${JSON.stringify(htmlSha256)};`,
     `export const STORE_SOCIAL_HEAD_START = ${JSON.stringify(STORE_SOCIAL_HEAD_START)};`,
     `export const STORE_SOCIAL_HEAD_END = ${JSON.stringify(STORE_SOCIAL_HEAD_END)};`,
     '',

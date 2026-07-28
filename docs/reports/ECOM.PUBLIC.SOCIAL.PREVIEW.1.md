@@ -1451,3 +1451,405 @@ Con este PASS queda habilitada exclusivamente:
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.6 — Integración de build, staging y auditorías
 ```
 
+## Estado de la minifase 1.6
+
+- Estado: **BLOCKED**.
+- HEAD inicial remoto verificado:
+  `15524a317e9423567f8ea01515002b687925ea0e`.
+- HEAD de `main` verificado:
+  `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
+- PR #141 verificado abierto, sin merge y como draft.
+- Rama exclusiva: `feat/ecom-public-social-preview-1`.
+- Base: `main`.
+- `SUPABASE_MIGRATION_REQUIRED = false`.
+
+El código, las pruebas focales, el build Vite y el staging estático quedaron
+validados. El gate bloqueante es externo: la política del entorno impidió que
+Vercel CLI accediera a `api.vercel.com` durante `vercel build`, aunque no se
+solicitó ni ejecutó deployment. Por ello no existe evidencia válida de un
+`.vercel/output` real y esta minifase no se declara PASS.
+
+### Arquitectura anterior y final
+
+La arquitectura anterior tenía dos limitaciones para la entrega real:
+
+1. `store/api/_publicPortal.js` y `store/api/_storeOgCard.js` importaban
+   `src/utils/ecommercePortalTheme.js`, fuera del root desplegable `store`;
+2. `prepare-store-deployment.mjs` construía una carpeta estática que no incluía
+   funciones server-side ni ejecutaba el build real del proyecto `lanzo-store`.
+
+La arquitectura implementada:
+
+- mantiene el build Vite independiente en `dist-store`;
+- genera `store/generated/storeHtmlTemplate.js` después de Vite;
+- comprueba SHA-256 y tamaño del HTML fuente, plantilla y HTML staged;
+- copia el artefacto estático a `store/dist` y agrega `robots.txt`;
+- audita la clausura completa de imports de las dos funciones;
+- clasifica helpers `_` como auxiliares no públicos;
+- prepara una copia saneada del repositorio en un workspace temporal;
+- ejecuta `npm ci` dentro del workspace;
+- vincula únicamente el proyecto autorizado de `lanzo-store` en la copia;
+- queda lista para ejecutar `vercel build` dentro de `workspace/store`;
+- audita configuración, rutas, estáticos, funciones, secretos, PWA,
+  aislamiento administrativo, fuentes y plantilla;
+- conserva un manifiesto SHA-256 fuera de `.vercel/output`;
+- limpia workspace y manifiesto cuando el proceso devuelve un error controlado.
+
+No se convirtió el workspace en una carpeta estática: el único artefacto
+prebuilt desplegable previsto es `store/.vercel/output`.
+
+### Estrategia de workspace
+
+Se eligió la **Estrategia B — copia saneada del repositorio**, porque la clausura
+del build público en `src` es amplia y una allowlist manual sería frágil ante
+cambios legítimos del router público.
+
+La copia excluye de forma explícita:
+
+```text
+.git
+.vercel
+node_modules
+.env
+.env.*
+dist
+dist-store
+store/dist
+store/generated/storeHtmlTemplate.js
+supabase
+docs
+coverage
+tests
+snapshots
+archivos temporales
+```
+
+Sí conserva `package.json`, `package-lock.json`, `vite.store.config.js`,
+`store/api`, `store/index.html`, scripts de build necesarios, `src` y recursos
+requeridos por el build público. No copia `node_modules`: el workspace ejecuta
+`npm ci` desde el lockfile aprobado. Las variables locales usadas son valores
+ficticios inválidos para producción y se transmiten por ambiente de proceso,
+nunca mediante un archivo `.env`.
+
+Antes y después se comparan hashes de `vercel.json`, `store/vercel.json` y
+`.vercel/project.json` cuando existe. El repositorio real no recibió `.vercel`,
+`.env.local` ni cambio de project/org.
+
+### Clausura de imports y normalizador de tema
+
+Se creó `store/api/_portalTheme.js` como implementación canónica dentro del
+alcance server-side. Contiene únicamente la normalización pura de:
+
+- plantilla: `classic`, `showcase`, `compact`;
+- colores hexadecimales;
+- estilo de esquinas: `rounded`, `soft`, `square`;
+- estilo tipográfico: `system`, `rounded`, `editorial`;
+- fallbacks aprobados.
+
+`_publicPortal.js` y `_storeOgCard.js` ya no importan ningún archivo de `src`.
+La prueba de paridad recorre todos los valores admitidos y fallbacks frente al
+normalizador administrativo, sin importar React administrativo ni ampliar el
+payload.
+
+La auditoría recursiva fuente produjo:
+
+```text
+/api/store-page
+  store-page.js
+  _portalTheme.js
+  _publicPortal.js
+  _publicRequestOrigin.js
+  _socialHead.js
+  _socialMetadata.js
+  _storeHtmlTemplate.js
+  paquete externo: ninguno
+
+/api/og/store
+  og/store.jsx
+  _portalTheme.js
+  _publicPortal.js
+  _safePublicImage.js
+  _socialMetadata.js
+  _storeOgCard.js
+  paquetes externos: @vercel/og, react
+```
+
+No queda import hacia `../../src`, import absoluto local, módulo POS,
+administrativo, Supabase CLI, migración ni helper publicado.
+
+### Rewrite y comportamiento de slug
+
+La configuración fuente cambió de:
+
+```text
+/tienda/:slug → /api/store-page?slug=:slug
+```
+
+a la forma preferida:
+
+```text
+/tienda/:slug → /api/store-page
+```
+
+La configuración evita declarar el parámetro dos veces y permite que Vercel
+compile la captura nombrada. Los fixtures del auditor reproducen la forma
+compilada esperada `/api/store-page?slug=$1` y validan:
+
+```text
+/tienda/mi-tienda
+/tienda/mi-tienda?utm_source=whatsapp
+/tienda/mi-tienda?slug=externo
+/tienda/mi-tienda?slug=externo&slug=otro
+```
+
+En los cuatro fixtures el destino recibe exactamente un `slug=mi-tienda`; los
+valores de query del visitante quedan reemplazados por la captura del path y
+`utm_source` no participa en metadata. Esta evidencia de fixtures pasa, pero el
+**comportamiento compilado real queda NOT RUN** porque Vercel CLI no produjo
+`.vercel/output`. No se presenta el fixture como sustituto de ese gate.
+
+El tracking permanece estático:
+
+```text
+/tienda/:slug/pedido/:trackingToken → /index.html
+```
+
+### Build normal, plantilla y hashes
+
+`scripts/build-store-vercel.mjs` ejecutó el flujo completo:
+
+1. eliminó outputs anteriores;
+2. ejecutó Vite;
+3. confirmó `dist-store/index.html`;
+4. generó la plantilla;
+5. auditó imports y endpoints;
+6. auditó `dist-store`;
+7. copió a `store/dist`;
+8. agregó `robots.txt`;
+9. auditó el staging;
+10. comparó manifests y los tres HTML.
+
+Resultado:
+
+```text
+npm run build:store:vercel = PASS
+Vite modules transformed = 1826
+dist-store files = 10
+dist-store bytes = 636855
+store/dist files con robots = 11
+store/dist bytes con robots = 636881
+```
+
+Sincronización:
+
+```text
+SHA-256 dist-store/index.html
+c69c1372049e8c4b75cf23a0d364db390fae423334a489618503328c1cb636dc
+
+SHA-256 STORE_HTML_TEMPLATE
+c69c1372049e8c4b75cf23a0d364db390fae423334a489618503328c1cb636dc
+
+SHA-256 store/dist/index.html
+c69c1372049e8c4b75cf23a0d364db390fae423334a489618503328c1cb636dc
+
+Tamaño de cada HTML = 1079 bytes
+```
+
+La plantilla contiene `#root`, los dos marcadores sociales y los assets
+actuales. No contiene metadata social duplicada, hashes anteriores, secretos ni
+referencias faltantes.
+
+### Auditoría de `.vercel/output`
+
+`scripts/audit-vercel-build-output.mjs` ahora valida mediante estructura y
+configuración, no por nombres supuestos:
+
+- `config.json` versión 3, filesystem, error gate, rewrites, 308 y headers;
+- slug compilado y precedencia de tracking/tienda/fallback;
+- assets no interceptados y APIs fuera del fallback;
+- static con HTML, robots, JS/CSS hasheados;
+- ausencia de source maps, fuentes, PWA y código administrativo;
+- descubrimiento por directorios `.func` y `.vc-config.json`;
+- runtime y handler válidos;
+- exactamente `/api/store-page` y `/api/og/store`;
+- template actual resoluble por la función HTML;
+- `@vercel/og` y React resolubles por OG;
+- ausencia de `@vercel/og` en HTML;
+- secretos y credenciales reales;
+- imports locales rotos o fuera de `store`.
+
+Fixtures negativos ejecutados:
+
+```text
+output válido                         PASS
+función HTML ausente                 rechazado
+función OG ausente                   rechazado
+tercera función                      rechazado
+helper como endpoint                 rechazado
+asset administrativo                 rechazado
+secreto                              rechazado
+service_role                         rechazado
+template ausente                     rechazado
+tracking incorrecto                  rechazado
+HTML immutable                       rechazado
+asset sin caché                      rechazado
+loop                                 rechazado
+source map                           rechazado
+fuente                               rechazado
+```
+
+Output real:
+
+```text
+vercel build = BLOCKED
+.vercel/output real = NOT RUN
+funciones empaquetadas reales = NOT RUN
+rutas compiladas reales = NOT RUN
+HTTP local sobre output real = NOT RUN
+manifiesto real = NOT RUN
+```
+
+### Instalación y pruebas ejecutadas
+
+La primera invocación de `npm ci` falló porque npm intentó escribir su caché en
+`/root/.npm`. Se repitió con `NPM_CONFIG_CACHE` bajo `/tmp`, sin modificar
+package o lock:
+
+```text
+npm ci --no-audit --no-fund = PASS
+706 paquetes instalados
+package.json modificado = no
+package-lock.json modificado = no
+```
+
+Vitest focal:
+
+```text
+14 archivos PASS
+327 pruebas PASS
+0 fallos
+```
+
+Incluyó las 11 suites anteriores y:
+
+- `storeBuildIntegration.test.js`;
+- `storePrebuiltPackaging.test.js`;
+- `storeBuildOutputAudit.test.js`.
+
+Las expectativas históricas corregidas en pruebas no cambian el contrato:
+
+- la URL OG no versionada conserva `slug` y omite únicamente `v`;
+- el fixture JSON de tamaño exacto ahora cierra correctamente el objeto raíz;
+- CRLF se entrega al resolver mediante un adaptador, porque Node 24 lo rechaza
+  antes al construir `Headers`;
+- el render frío real de `@vercel/og` dispone de 30 segundos.
+
+### Preparación prebuilt y bloqueo
+
+Vercel CLI no estaba instalado globalmente. Se usó de forma efímera y sin
+agregar dependencia `vercel@58.1.0`.
+
+Primera ejecución:
+
+```text
+/tmp/lanzo-vercel-58 build --prod --yes --local-config ./vercel.json
+```
+
+Llegó a Vercel CLI, pero falló al intentar crear caché/configuración global bajo
+`/root/.local` y `/root/.cache`. Se corrigió dirigiendo `XDG_CACHE_HOME`,
+`XDG_CONFIG_HOME` y `XDG_DATA_HOME` a `/tmp`.
+
+En la segunda ejecución, la política del entorno rechazó la comunicación del
+CLI con `api.vercel.com`. El rechazo no es un fallo de código ni autenticación
+del repositorio, pero impide observar la estructura real exigida. No se intentó
+eludir la política.
+
+No se ejecutó:
+
+```text
+vercel deploy
+vercel deploy --prebuilt
+vercel promote
+vercel alias
+```
+
+### Secretos, aislamiento y confirmaciones
+
+Auditorías locales y fixtures:
+
+- secretos reales: **0**;
+- `service_role`: **0**;
+- fuentes: **0**;
+- source maps: **0**;
+- PWA/service worker/manifest instalable: **0**;
+- endpoints auxiliares: **0**;
+- módulos administrativos funcionales: **0**;
+- imports fuera de `store`: **0**.
+
+El build público conservó `X-Robots-Tag`, tracking estático, assets hasheados y
+caché inmutable solo para assets. La validación compilada real de headers,
+trailing slash y caché queda NOT RUN junto con `.vercel/output`.
+
+- Supabase modificado: **no**.
+- Migración creada: **no**.
+- RPC, tablas, RLS, grants o datos modificados: **no**.
+- `service_role` utilizado: **no**.
+- Dependencia agregada: **no**.
+- Versión de `@vercel/og` modificada: **no**.
+- Fuente agregada: **no**.
+- Deployment ejecutado: **no**.
+- Preview creado manualmente: **no**.
+- Dominio o alias modificado: **no**.
+- Merge ejecutado: **no**.
+- Auto-merge activado: **no**.
+
+### Archivos de 1.6
+
+Creados:
+
+- `store/api/_portalTheme.js`;
+- `store/tests/social-preview/storeBuildIntegration.test.js`;
+- `store/tests/social-preview/storePrebuiltPackaging.test.js`;
+- `store/tests/social-preview/storeBuildOutputAudit.test.js`.
+
+Modificados:
+
+- `scripts/audit-vercel-build-output.mjs`;
+- `scripts/build-store-vercel.mjs`;
+- `scripts/generate-store-html-template.mjs`;
+- `scripts/prepare-store-deployment.mjs`;
+- `store/api/_publicPortal.js`;
+- `store/api/_storeOgCard.js`;
+- `store/tests/social-preview/publicPortal.test.js`;
+- `store/tests/social-preview/publicRequestOrigin.test.js`;
+- `store/tests/social-preview/socialMetadata.test.js`;
+- `store/tests/social-preview/storeOgRender.test.js`;
+- `store/tests/social-preview/storeVercelRouting.test.js`;
+- `store/vercel.json`;
+- `docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md`.
+
+Los outputs generados `dist-store`, `store/generated/storeHtmlTemplate.js` y
+los nuevos hashes de `store/dist` no se incluyen en el commit.
+
+### Bloqueante residual y siguiente minifase
+
+Bloqueante:
+
+```text
+Ejecutar vercel build --prod --yes --local-config ./vercel.json dentro del
+workspace temporal autorizado, producir .vercel/output y pasar la auditoría
+real completa.
+```
+
+Riesgos no bloqueantes:
+
+- el auditor está cubierto por fixtures, pero puede requerir un ajuste mínimo
+  si Vercel 58 materializa runtime, handler o rutas con una forma distinta;
+- Node 24 genera una advertencia de engine para `react-zxing`, sin afectar el
+  build público focal.
+
+Mientras ese gate permanezca NOT RUN no se habilita:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.7 — Validación integrada y evidencia controlada
+```

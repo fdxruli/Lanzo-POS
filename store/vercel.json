@@ -84,7 +84,7 @@
     },
     {
       "source": "/tienda/:slug",
-      "destination": "/api/store-page?slug=:slug"
+      "destination": "/api/store-page"
     },
     {
       "source": "/conoce-lanzo",

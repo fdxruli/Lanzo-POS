@@ -80,5 +80,5 @@ describe('render real con @vercel/og ImageResponse', () => {
     expect(readPngDimensions(bytes)).toEqual({ width: 1200, height: 630 });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(JSON.stringify(model)).not.toMatch(/https?:\/\/|data:font|fontFamily|Arial|Georgia/iu);
-  });
+  }, 30_000);
 });

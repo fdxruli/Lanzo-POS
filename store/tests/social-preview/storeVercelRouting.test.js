@@ -76,7 +76,7 @@ describe('store/vercel.json', () => {
   it.each([
     ['/', '/index.html'],
     ['/tienda', '/index.html'],
-    ['/tienda/farmacia-gary', '/api/store-page?slug=:slug'],
+    ['/tienda/farmacia-gary', '/api/store-page'],
     ['/tienda/farmacia-gary/pedido/token-ficticio', '/index.html'],
     ['/conoce-lanzo', '/index.html'],
     ['/tienda/farmacia-gary/ruta-desconocida', '/index.html'],

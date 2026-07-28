@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { cp, lstat, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { validateStoreHtmlTemplate } from '../store/api/_storeHtmlTemplate.js';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const sourceRoot = path.join(projectRoot, 'dist-store');
@@ -38,9 +39,12 @@ const forbiddenContentPatterns = Object.freeze({
 
 const allowedRootFiles = new Set(['index.html', 'robots.txt']);
 const allowedAssetExtensions = new Set([
-  '.avif', '.css', '.gif', '.ico', '.jpeg', '.jpg', '.js', '.png', '.svg', '.webp', '.woff', '.woff2'
+  '.avif', '.css', '.gif', '.ico', '.jpeg', '.jpg', '.js', '.png', '.svg', '.webp'
 ]);
 const textExtensions = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt', '.webmanifest']);
+const functionSourceExtensions = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx']);
+const allowedBareImports = new Set(['@vercel/og', 'react']);
+const expectedPublicFunctions = Object.freeze(['/api/og/store', '/api/store-page']);
 
 async function pathExists(filePath) {
   try {
@@ -150,9 +154,154 @@ export function compareArtifactManifests(sourceManifest, stagingManifest) {
   }
 }
 
-function run(command, args) {
+function extractGeneratedConstant(moduleSource, name) {
+  const match = moduleSource.match(new RegExp(
+    `export const ${name} = (.+);`,
+    'u',
+  ));
+  if (!match) throw new Error(`Generated template is missing ${name}.`);
+  return JSON.parse(match[1]);
+}
+
+export async function verifyTemplateSynchronization({
+  sourceHtmlPath,
+  generatedModulePath,
+  stagedHtmlPath,
+}) {
+  const [sourceHtml, generatedSource, stagedHtml] = await Promise.all([
+    readFile(sourceHtmlPath, 'utf8'),
+    readFile(generatedModulePath, 'utf8'),
+    readFile(stagedHtmlPath, 'utf8'),
+  ]);
+  const templateHtml = extractGeneratedConstant(generatedSource, 'STORE_HTML_TEMPLATE');
+  const declaredBytes = extractGeneratedConstant(generatedSource, 'STORE_HTML_BYTES');
+  const declaredHash = extractGeneratedConstant(generatedSource, 'STORE_HTML_SHA256');
+  validateStoreHtmlTemplate(sourceHtml);
+  validateStoreHtmlTemplate(templateHtml);
+  validateStoreHtmlTemplate(stagedHtml);
+  const hashes = {
+    source: sha256(sourceHtml),
+    template: sha256(templateHtml),
+    staged: sha256(stagedHtml),
+  };
+  const bytes = {
+    source: Buffer.byteLength(sourceHtml, 'utf8'),
+    template: Buffer.byteLength(templateHtml, 'utf8'),
+    staged: Buffer.byteLength(stagedHtml, 'utf8'),
+  };
+  if (
+    sourceHtml !== templateHtml
+    || sourceHtml !== stagedHtml
+    || new Set(Object.values(hashes)).size !== 1
+    || declaredHash !== hashes.source
+    || declaredBytes !== bytes.source
+  ) {
+    throw new Error('Generated store HTML template is not synchronized with the current build.');
+  }
+  const assetReferences = [
+    ...sourceHtml.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/gu),
+  ].map((match) => match[1].slice(1));
+  for (const reference of assetReferences) {
+    if (!await pathExists(path.join(path.dirname(stagedHtmlPath), reference))) {
+      throw new Error(`Generated template references a missing staged asset: ${reference}.`);
+    }
+  }
+  return Object.freeze({ hashes, bytes, assets: [...new Set(assetReferences)].sort() });
+}
+
+function localImports(source) {
+  return [
+    ...source.matchAll(
+      /(?:\bimport\s+(?:[^'"]*?\s+from\s+)?|\bimport\s*\()\s*['"]([^'"]+)['"]/gu,
+    ),
+  ].map((match) => match[1]);
+}
+
+function endpointForSource(relativePath) {
+  const segments = normalizePath(relativePath).split('/');
+  const fileName = segments.at(-1);
+  if (
+    !functionSourceExtensions.has(path.extname(fileName).toLowerCase())
+    || fileName.startsWith('_')
+    || segments.slice(0, -1).some((segment) => segment.startsWith('_'))
+  ) return null;
+  const extension = path.extname(fileName);
+  const routeSegments = [...segments.slice(0, -1), fileName.slice(0, -extension.length)];
+  return `/api/${routeSegments.join('/')}`;
+}
+
+export async function auditStoreServerImports(repositoryRoot = projectRoot) {
+  const storeRoot = path.join(repositoryRoot, 'store');
+  const apiRoot = path.join(storeRoot, 'api');
+  const sourceFiles = (await walkFiles(apiRoot))
+    .filter(({ relativePath }) => functionSourceExtensions.has(path.extname(relativePath)));
+  const publicFunctions = sourceFiles
+    .map(({ relativePath }) => endpointForSource(relativePath))
+    .filter(Boolean)
+    .sort();
+  if (JSON.stringify(publicFunctions) !== JSON.stringify(expectedPublicFunctions)) {
+    throw new Error(`Unexpected public store functions: ${publicFunctions.join(', ') || 'none'}.`);
+  }
+
+  const dependencyClosure = {};
+  for (const endpoint of expectedPublicFunctions) {
+    const relativeEntry = endpoint === '/api/store-page' ? 'store-page.js' : 'og/store.jsx';
+    const pending = [path.join(apiRoot, relativeEntry)];
+    const visited = new Set();
+    const bareImports = new Set();
+    while (pending.length > 0) {
+      const current = path.resolve(pending.pop());
+      if (visited.has(current)) continue;
+      visited.add(current);
+      const relativeToStore = normalizePath(path.relative(storeRoot, current));
+      if (relativeToStore.startsWith('../') || path.isAbsolute(relativeToStore)) {
+        throw new Error(`${endpoint} import escaped store/: ${relativeToStore}.`);
+      }
+      const source = await readFile(current, 'utf8');
+      for (const specifier of localImports(source)) {
+        if (specifier.startsWith('node:')) continue;
+        if (!specifier.startsWith('.')) {
+          const packageName = specifier.startsWith('@')
+            ? specifier.split('/').slice(0, 2).join('/')
+            : specifier.split('/')[0];
+          bareImports.add(packageName);
+          if (!allowedBareImports.has(packageName)) {
+            throw new Error(`${endpoint} has an unapproved runtime dependency: ${packageName}.`);
+          }
+          continue;
+        }
+        const resolved = path.resolve(path.dirname(current), specifier);
+        const relativeResolved = normalizePath(path.relative(storeRoot, resolved));
+        if (relativeResolved.startsWith('../') || path.isAbsolute(relativeResolved)) {
+          throw new Error(`${endpoint} import escaped store/: ${specifier}.`);
+        }
+        if (resolved.includes(`${path.sep}generated${path.sep}`)) continue;
+        if (!await pathExists(resolved)) {
+          throw new Error(`${endpoint} has a missing local import: ${relativeResolved}.`);
+        }
+        pending.push(resolved);
+      }
+    }
+    dependencyClosure[endpoint] = Object.freeze({
+      files: [...visited].map((file) => normalizePath(path.relative(storeRoot, file))).sort(),
+      packages: [...bareImports].sort(),
+    });
+  }
+  if (!dependencyClosure['/api/og/store'].packages.includes('@vercel/og')) {
+    throw new Error('The OG function does not resolve @vercel/og.');
+  }
+  if (!dependencyClosure['/api/og/store'].packages.includes('react')) {
+    throw new Error('The OG function does not resolve react.');
+  }
+  if (dependencyClosure['/api/store-page'].packages.includes('@vercel/og')) {
+    throw new Error('The HTML function must not depend on @vercel/og.');
+  }
+  return Object.freeze({ publicFunctions, dependencyClosure });
+}
+
+function run(command, args, cwd = projectRoot) {
   const result = spawnSync(command, args, {
-    cwd: projectRoot,
+    cwd,
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
     stdio: ['ignore', 'inherit', 'inherit'],
@@ -182,6 +331,7 @@ export async function buildStoreForVercel() {
       path.join(sourceRoot, 'index.html'),
       generatedTemplatePath
     ]);
+    const serverAudit = await auditStoreServerImports(projectRoot);
 
     run(process.execPath, [path.join(projectRoot, 'scripts', 'audit-public-delivery.mjs'), 'dist-store']);
     const sourceAudit = await auditStoreArtifact(sourceRoot);
@@ -193,13 +343,18 @@ export async function buildStoreForVercel() {
     const stagingAudit = await auditStoreArtifact(stagingRoot, { requireRobots: true });
     if (!stagingAudit.passed) throw new Error(`store/dist audit failed: ${stagingAudit.violations.join(', ')}`);
     compareArtifactManifests(sourceAudit.manifest, stagingAudit.manifest);
+    const template = await verifyTemplateSynchronization({
+      sourceHtmlPath: path.join(sourceRoot, 'index.html'),
+      generatedModulePath: generatedTemplatePath,
+      stagedHtmlPath: path.join(stagingRoot, 'index.html'),
+    });
 
     run(process.execPath, [path.join(projectRoot, 'scripts', 'audit-public-delivery.mjs'), 'store/dist']);
     const finalAudit = await auditStoreArtifact(stagingRoot, { requireRobots: true });
     if (!finalAudit.passed) throw new Error(`Final store/dist audit failed: ${finalAudit.violations.join(', ')}`);
 
     const summary = {
-      phase: 'ECOM.PUBLIC.GIT.1',
+      phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.6',
       status: 'staged',
       deployed: false,
       source: {
@@ -216,6 +371,8 @@ export async function buildStoreForVercel() {
         robotsTxt: true
       },
       copiedFilesByteIdentical: true,
+      template,
+      functions: serverAudit,
       violations: []
     };
     console.log(JSON.stringify(summary, null, 2));
@@ -232,7 +389,7 @@ const invokedDirectly = process.argv[1]
 if (invokedDirectly) {
   buildStoreForVercel().catch((error) => {
     console.error(JSON.stringify({
-      phase: 'ECOM.PUBLIC.GIT.1',
+      phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.6',
       status: 'failed',
       error: String(error?.message || error).slice(0, 500)
     }));

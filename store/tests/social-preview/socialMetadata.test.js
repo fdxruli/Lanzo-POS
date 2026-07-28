@@ -273,7 +273,7 @@ describe('origen, canonical e imagen controlada', () => {
     });
 
     expect(result.imageVersioned).toBe(false);
-    expect(new URL(result.imageUrl).search).toBe('');
+    expect(new URL(result.imageUrl).search).toBe('?slug=mi-tienda');
   });
 });
 

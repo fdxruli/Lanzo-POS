@@ -6,10 +6,21 @@ import {
 } from '../../api/_publicRequestOrigin.js';
 import { buildStoreSocialMetadata } from '../../api/_socialMetadata.js';
 
-const request = (url, headers = {}) => ({
-  url,
-  headers: new Headers(headers),
-});
+const request = (url, headers = {}) => {
+  let normalizedHeaders;
+  try {
+    normalizedHeaders = new Headers(headers);
+  } catch {
+    normalizedHeaders = {
+      get(name) {
+        const entry = Object.entries(headers)
+          .find(([key]) => key.toLowerCase() === name.toLowerCase());
+        return entry?.[1] ?? null;
+      },
+    };
+  }
+  return { url, headers: normalizedHeaders };
+};
 
 const expectRejected = (input) => {
   expect(() => resolvePublicRequestOrigin(input)).toThrow(PublicRequestOriginError);

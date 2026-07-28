@@ -4,9 +4,9 @@ import {
   validateStoreSlug,
 } from './_socialMetadata.js';
 import {
-  normalizeEcommercePortalTemplate,
-  normalizeEcommercePortalTheme,
-} from '../../src/utils/ecommercePortalTheme.js';
+  normalizePublicPortalTemplate,
+  normalizePublicPortalTheme,
+} from './_portalTheme.js';
 
 export const DEFAULT_PUBLIC_PORTAL_TIMEOUT_MS = 4_000;
 export const MIN_PUBLIC_PORTAL_TIMEOUT_MS = 500;
@@ -230,8 +230,8 @@ function projectPortal(payload, requestedSlug) {
         payload.portal.description,
         MAX_PORTAL_DESCRIPTION_LENGTH,
       ),
-      templateCode: normalizeEcommercePortalTemplate(payload.portal.templateCode),
-      theme: normalizeEcommercePortalTheme(theme),
+      templateCode: normalizePublicPortalTemplate(payload.portal.templateCode),
+      theme: normalizePublicPortalTheme(theme),
       logoUrl: normalizeImageCandidate(payload.portal.logoUrl),
       coverImageUrl: normalizeImageCandidate(payload.portal.coverImageUrl),
       businessType: normalizeBusinessType(payload.portal.businessType),

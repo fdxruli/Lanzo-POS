@@ -1,5 +1,5 @@
 import React from 'react';
-import { normalizeEcommercePortalTheme } from '../../src/utils/ecommercePortalTheme.js';
+import { normalizePublicPortalTheme } from './_portalTheme.js';
 import {
   normalizeSocialText,
   truncateSocialText,
@@ -81,7 +81,7 @@ export function buildStoreOgCardModel({
   const portal = isOk && result.portal && typeof result.portal === 'object'
     ? result.portal
     : {};
-  const theme = normalizeEcommercePortalTheme(isOk ? portal.theme : GENERIC_THEME);
+  const theme = normalizePublicPortalTheme(isOk ? portal.theme : GENERIC_THEME);
   const name = isOk
     ? truncateSocialText(portal.name, 80) || FALLBACK_NAME
     : (isNotFound ? NOT_FOUND_NAME : FALLBACK_NAME);
