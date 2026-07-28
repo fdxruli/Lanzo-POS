@@ -88,12 +88,45 @@ function normalizeContentType(response) {
   return value.split(';', 1)[0].trim().toLowerCase();
 }
 
-async function readLimitedBody(response, maximumBytes, signal) {
+function startsWithBytes(bytes, signature) {
+  return bytes.byteLength >= signature.length
+    && signature.every((value, index) => bytes[index] === value);
+}
+
+export function hasValidImageSignature(contentType, bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) return false;
+  if (contentType === 'image/png') {
+    return startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  }
+  if (contentType === 'image/jpeg') {
+    return startsWithBytes(bytes, [0xff, 0xd8, 0xff]);
+  }
+  if (contentType === 'image/webp') {
+    return bytes.byteLength >= 12
+      && startsWithBytes(bytes, [0x52, 0x49, 0x46, 0x46])
+      && bytes[8] === 0x57
+      && bytes[9] === 0x45
+      && bytes[10] === 0x42
+      && bytes[11] === 0x50;
+  }
+  return false;
+}
+
+async function readLimitedBody(response, maximumBytes, signal, declaredLength) {
   const reader = response?.body?.getReader?.();
   if (!reader) {
-    if (typeof response?.arrayBuffer !== 'function') return null;
+    if (
+      !Number.isSafeInteger(declaredLength)
+      || declaredLength < 0
+      || declaredLength > maximumBytes
+      || typeof response?.arrayBuffer !== 'function'
+    ) {
+      return null;
+    }
     const bytes = new Uint8Array(await response.arrayBuffer());
-    return bytes.byteLength <= maximumBytes ? bytes : null;
+    return bytes.byteLength <= maximumBytes && bytes.byteLength <= declaredLength
+      ? bytes
+      : null;
   }
 
   const chunks = [];
@@ -197,10 +230,10 @@ export function createSafePublicImageLoader({
       if (declaredLength != null && declaredLength > maximumBytes) return null;
 
       const bytes = await Promise.race([
-        readLimitedBody(response, maximumBytes, controller.signal),
+        readLimitedBody(response, maximumBytes, controller.signal, declaredLength),
         timeout,
       ]);
-      if (!bytes?.byteLength) return null;
+      if (!bytes?.byteLength || !hasValidImageSignature(contentType, bytes)) return null;
       return `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`;
     } catch {
       return null;

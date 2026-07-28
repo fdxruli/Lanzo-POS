@@ -23,6 +23,12 @@ const BASE_HEADERS = Object.freeze({
   'X-Content-Type-Options': 'nosniff',
   'X-Robots-Tag': 'noindex, nofollow, noarchive',
 });
+const FINAL_ERROR_HEADERS = Object.freeze({
+  'Cache-Control': 'no-store',
+  'Content-Type': 'text/plain; charset=utf-8',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Robots-Tag': 'noindex, nofollow, noarchive',
+});
 
 function parseRequest(request) {
   const method = typeof request?.method === 'string' ? request.method.toUpperCase() : '';
@@ -72,6 +78,23 @@ function methodNotAllowed() {
     status: 405,
     headers: responseHeaders(TEMPORARY_CACHE, { Allow: 'GET, HEAD' }),
   });
+}
+
+export function renderStoreOgImage({
+  ImageResponseImpl,
+  model,
+  status,
+  headers,
+}) {
+  return new ImageResponseImpl(
+    StoreOgCard({ model }),
+    {
+      width: OPEN_GRAPH_IMAGE_WIDTH,
+      height: OPEN_GRAPH_IMAGE_HEIGHT,
+      status,
+      headers,
+    },
+  );
 }
 
 export function createStoreOgHandler({
@@ -126,15 +149,33 @@ export function createStoreOgHandler({
     }
 
     const model = buildStoreOgCardModel({ result, logoImage, coverImage });
-    return new ImageResponseImpl(
-      StoreOgCard({ model }),
-      {
-        width: OPEN_GRAPH_IMAGE_WIDTH,
-        height: OPEN_GRAPH_IMAGE_HEIGHT,
+    try {
+      return renderStoreOgImage({
+        ImageResponseImpl,
+        model,
         status: responseStatus,
         headers,
-      },
-    );
+      });
+    } catch {
+      const fallbackModel = buildStoreOgCardModel({
+        result: Object.freeze({ status: 'unavailable', reason: 'render_failure' }),
+        logoImage: null,
+        coverImage: null,
+      });
+      try {
+        return renderStoreOgImage({
+          ImageResponseImpl,
+          model: fallbackModel,
+          status: responseStatus,
+          headers: responseHeaders(TEMPORARY_CACHE),
+        });
+      } catch {
+        return new Response('Open Graph image unavailable.', {
+          status: 500,
+          headers: FINAL_ERROR_HEADERS,
+        });
+      }
+    }
   };
 }
 

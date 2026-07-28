@@ -51,12 +51,6 @@ export function mixOgColor(hex, target, ratio) {
   return `#${channels.join('')}`;
 }
 
-function fontFamily(fontStyle) {
-  if (fontStyle === 'editorial') return 'Georgia, serif';
-  if (fontStyle === 'rounded') return 'Arial, sans-serif';
-  return 'Arial, sans-serif';
-}
-
 function radius(cornerStyle) {
   if (cornerStyle === 'square') return 0;
   if (cornerStyle === 'soft') return 22;
@@ -111,7 +105,6 @@ export function buildStoreOgCardModel({
       primaryText,
       darkPrimary,
       lightAccent,
-      fontFamily: fontFamily(theme.fontStyle),
       radius: radius(theme.cornerStyle),
       nameSize: Array.from(name).length > 52 ? 54 : (Array.from(name).length > 30 ? 64 : 76),
     },
@@ -147,7 +140,6 @@ export function StoreOgCard({ model }) {
       overflow: 'hidden',
       color: '#ffffff',
       background: `linear-gradient(135deg, ${visual.darkPrimary}, ${visual.primaryColor})`,
-      fontFamily: visual.fontFamily,
     },
   },
   model.coverImage && h('img', {

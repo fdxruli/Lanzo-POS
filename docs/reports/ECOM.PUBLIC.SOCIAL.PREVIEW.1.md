@@ -625,7 +625,8 @@ ECOM.PUBLIC.SOCIAL.PREVIEW.1.3 — Imagen Open Graph dinámica de tienda
 
 ## Estado de la minifase 1.3
 
-- Estado: **PASS CON VITEST NOT RUN**.
+- Estado tras revisión posterior: **BLOCKED** por cinco hallazgos de endurecimiento,
+  corregidos en la minifase 1.3.1 documentada a continuación.
 - HEAD inicial real de la rama: `8425f06418812e951a0ff059446520358aebfc33`.
 - HEAD de `main` verificado: `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
 - El PR #141 permaneció abierto, sin merge y como draft.
@@ -874,9 +875,182 @@ auditorías prebuilt corresponde a la minifase 1.6; esta minifase no relajó
 allowlists de build ni modificó Vercel. La personalización del HTML inicial aún
 no existe y corresponde a 1.4.
 
-No se identificaron bloqueantes residuales dentro del alcance de 1.3. Queda
-habilitada:
+La revisión posterior identificó bloqueantes en el fallback sin stream, la
+validación binaria, la resiliencia del renderer, las familias tipográficas no
+incorporadas y la ausencia de una prueba real con `ImageResponse`. La habilitación
+de 1.4 quedó suspendida hasta completar 1.3.1.
 
 ```text
-ECOM.PUBLIC.SOCIAL.PREVIEW.1.4 — HTML inicial dinámico de tienda
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.3.1 — Endurecimiento del render Open Graph
+```
+
+## Estado de la minifase 1.3.1
+
+- Estado: **PASS**.
+- HEAD inicial remoto: `034ac911c1f80d8c312b1600f504d66c0f4abe18`.
+- Base `main`: `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
+- PR #141: abierto y draft durante la implementación.
+- Dependencias agregadas o modificadas: **no**.
+- Supabase modificado: **no**.
+- Migración creada: **no**.
+- `store/vercel.json` modificado: **no**.
+- HTML dinámico, rewrites o empaquetado implementados: **no**.
+
+### Límite real sin stream
+
+`store/api/_safePublicImage.js` conserva la lectura por
+`response.body.getReader()` como vía preferente. Cuando el runtime o un mock no
+ofrece stream, el fallback ahora exige un `Content-Length` decimal válido,
+entero, no negativo y menor o igual al límite configurado antes de invocar
+`arrayBuffer()`.
+
+Una longitud ausente, inválida, negativa o excesiva rechaza la imagen sin
+asignar el cuerpo en memoria. Después de leer, se comprueba nuevamente que el
+tamaño real no exceda ni `Content-Length` ni `maximumBytes`. Las pruebas cubren
+longitud válida, ausente, inválida, negativa, excesiva, cuerpo real mayor al
+declarado y tamaño exactamente igual al máximo.
+
+### Firmas binarias
+
+La función pura `hasValidImageSignature(contentType, bytes)` aplica estas reglas:
+
+- PNG: `89 50 4E 47 0D 0A 1A 0A`;
+- JPEG: inicio `FF D8 FF`;
+- WebP: `RIFF` en bytes 0–3 y `WEBP` en bytes 8–11.
+
+El tipo declarado debe coincidir con los bytes. Un cuerpo vacío, corto,
+truncado, aleatorio o con una firma de otro formato devuelve `null` antes de la
+conversión a data URI y nunca llega a `ImageResponse`. Los fixtures unitarios
+dejan explícito que la firma PNG completa se usa para reconocimiento de formato
+y no pretende representar por sí sola un PNG decodificable.
+
+### Fallback del renderer
+
+El render quedó separado en:
+
+```js
+renderStoreOgImage({
+  ImageResponseImpl,
+  model,
+  status,
+  headers
+})
+```
+
+El endpoint construye primero el modelo personalizado y realiza un intento. Si
+la construcción de `ImageResponse` lanza, crea un modelo genérico nuevo sin logo
+ni portada y reintenta exactamente una vez. Este segundo intento siempre usa:
+
+```text
+Cache-Control: public, max-age=0, s-maxage=60
+```
+
+Por ello una tarjeta originalmente versionada pierde `immutable` después de un
+fallo del primer render.
+
+Si el segundo intento también lanza, la respuesta es:
+
+```text
+HTTP 500
+Cache-Control: no-store
+Content-Type: text/plain; charset=utf-8
+X-Content-Type-Options: nosniff
+X-Robots-Tag: noindex, nofollow, noarchive
+```
+
+El cuerpo contiene únicamente `Open Graph image unavailable.`. No declara PNG,
+no incluye stack, slug, credenciales, detalles internos y no existe un ciclo de
+reintento ni logging sensible.
+
+### Fuentes no incorporadas
+
+Se eliminaron `Arial`, `Georgia` y toda propiedad `fontFamily` del modelo y del
+árbol renderizado. `fontStyle` continúa normalizándose en el contrato público,
+pero no altera el render en esta versión. `ImageResponse` utiliza su fuente
+incorporada predeterminada.
+
+La diferenciación editorial o rounded queda fuera de alcance mientras no exista
+una estrategia de fuentes autorizada. No se agregaron `.ttf`, `.otf`, `.woff` o
+`.woff2`, URLs de fuentes ni otra dependencia.
+
+### Prueba con ImageResponse real
+
+Se creó:
+
+```text
+store/tests/social-preview/storeOgRender.test.js
+```
+
+La prueba importa `ImageResponse` directamente desde `@vercel/og` y cubre:
+
+1. tarjeta genérica sin imágenes;
+2. tarjeta con nombre y tema;
+3. fallback de tienda inexistente.
+
+Para cada caso valida respuesta 200, `image/png`, cuerpo no vacío, firma PNG,
+dimensiones leídas del IHDR de 1200 × 630, ausencia de red, Supabase y fuentes
+externas.
+
+```text
+Prueba real ImageResponse: NOT RUN
+Motivo: dependencias no instaladas en el entorno conectado
+```
+
+La minifase no instaló módulos ni ejecutó `npm ci`.
+
+### Pruebas y validación
+
+Suites focales completas en código:
+
+- `store/tests/social-preview/socialMetadata.test.js`;
+- `store/tests/social-preview/publicPortal.test.js`;
+- `store/tests/social-preview/safePublicImage.test.js`;
+- `store/tests/social-preview/storeOgCard.test.js`;
+- `store/tests/social-preview/storeOgEndpoint.test.js`;
+- `store/tests/social-preview/storeOgRender.test.js`.
+
+Resultados:
+
+- Vitest focal: **NOT RUN**, porque `node_modules` no existe en el entorno
+  conectado.
+- Prueba real `ImageResponse`: **NOT RUN** por el mismo motivo.
+- `node --check` para módulos `.js` y pruebas: **PASS ejecutado**.
+- Validación del parser del endpoint `.jsx` mediante copia temporal `.mjs` sin
+  modificar el fuente: **PASS ejecutado**.
+- Aserciones runtime-neutral de firmas y fallback sin stream:
+  **PASS ejecutado**.
+- Revisión estática del fallback del renderer, doble fallo, headers, caché,
+  privacidad, fuentes e imports: **PASS por inspección estática**.
+
+### Archivos creados y modificados
+
+Creado:
+
+- `store/tests/social-preview/storeOgRender.test.js`.
+
+Modificados:
+
+- `store/api/_safePublicImage.js`;
+- `store/api/_storeOgCard.js`;
+- `store/api/og/store.jsx`;
+- `store/tests/social-preview/safePublicImage.test.js`;
+- `store/tests/social-preview/storeOgCard.test.js`;
+- `store/tests/social-preview/storeOgEndpoint.test.js`;
+- `docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md`.
+
+No se modificaron `package.json`, `package-lock.json`, Supabase, migraciones,
+RPC, RLS, grants, tablas, datos, `store/vercel.json`, checkout, catálogo,
+pedidos, stock, horarios, rutas de tienda, HTML dinámico, rewrites, scripts de
+build o empaquetado.
+
+### Riesgos residuales y habilitación
+
+Riesgo no bloqueante: el render real queda pendiente de ejecución en un entorno
+que ya tenga instaladas las dependencias aprobadas. La integración de la función
+en el paquete `lanzo-store` y sus auditorías continúa reservada a 1.6.
+
+No quedan bloqueantes conocidos dentro del alcance de 1.3.1. Queda habilitada:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.4 — HTML dinámico con metadatos sociales
 ```

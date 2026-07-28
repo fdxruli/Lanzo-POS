@@ -179,6 +179,80 @@ describe('estados, imágenes y privacidad', () => {
   });
 });
 
+describe('resiliencia del renderer', () => {
+  it('conserva el render personalizado cuando ImageResponse funciona', async () => {
+    const { handler } = createHandler({
+      imageLoader: vi.fn(async (url) => (
+        url.includes('logo')
+          ? 'data:image/png;base64,iVBORw0KGgo='
+          : 'data:image/jpeg;base64,/9j/4A=='
+      )),
+    });
+    const response = await handler(new Request(ENDPOINT));
+    expect(response.status).toBe(200);
+    expect(imageCalls).toHaveLength(1);
+    expect(JSON.stringify(imageCalls[0].element)).toContain('Tienda Segura');
+  });
+
+  it('primer fallo activa una sola tarjeta genérica sin imágenes y caché temporal', async () => {
+    class FailOnceImageResponse {
+      constructor(element, options) {
+        imageCalls.push({ element, options });
+        if (imageCalls.length === 1) throw new Error('renderer private details');
+        return new Response(new Uint8Array([137, 80, 78, 71]), {
+          status: options.status,
+          headers: options.headers,
+        });
+      }
+    }
+    const imageLoader = vi.fn(async (url) => (
+      url.includes('logo')
+        ? 'data:image/png;base64,iVBORw0KGgo='
+        : 'data:image/jpeg;base64,/9j/4A=='
+    ));
+    const client = { getPortalBySlug: vi.fn(async () => okResult) };
+    const handler = createStoreOgHandler({
+      portalClient: client,
+      imageLoader,
+      ImageResponseImpl: FailOnceImageResponse,
+    });
+
+    const response = await handler(new Request(`${ENDPOINT}&v=7`));
+    expect(response.status).toBe(200);
+    expect(imageCalls).toHaveLength(2);
+    expect(JSON.stringify(imageCalls[0].element)).toMatch(/data:image\/(?:png|jpeg);base64/u);
+    expect(JSON.stringify(imageCalls[1].element)).not.toContain('data:image/');
+    expect(JSON.stringify(imageCalls[1].element)).toContain('Tienda en línea');
+    expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
+    expect(response.headers.get('cache-control')).not.toContain('immutable');
+  });
+
+  it('segundo fallo devuelve 500 no-store sin declarar PNG ni filtrar detalles', async () => {
+    class AlwaysFailImageResponse {
+      constructor() {
+        throw new Error('renderer stack slug=tienda-segura credential=private');
+      }
+    }
+    const client = { getPortalBySlug: vi.fn(async () => okResult) };
+    const handler = createStoreOgHandler({
+      portalClient: client,
+      imageLoader: vi.fn(async () => null),
+      ImageResponseImpl: AlwaysFailImageResponse,
+    });
+
+    const response = await handler(new Request(`${ENDPOINT}&v=7`));
+    const body = await response.text();
+    expect(response.status).toBe(500);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('content-type')).toContain('text/plain');
+    expect(response.headers.get('content-type')).not.toContain('image/png');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
+    expect(body).toBe('Open Graph image unavailable.');
+    expect(body).not.toMatch(/renderer|stack|tienda-segura|credential|private/iu);
+  });
+});
+
 describe('política de caché por versión publicada', () => {
   it('usa immutable solo cuando v coincide con siteVersionNumber', async () => {
     const { handler } = createHandler();

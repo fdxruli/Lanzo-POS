@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  StoreOgCard,
   buildStoreOgCardModel,
   colorLuminance,
   mixOgColor,
@@ -127,6 +128,24 @@ describe('buildStoreOgCardModel', () => {
       secondaryColor: '#0369a1',
       radius: 38,
     });
+  });
+
+  it('usa la fuente incorporada predeterminada sin familias ni URLs externas', () => {
+    const model = buildStoreOgCardModel({
+      result: okResult({
+        theme: {
+          primaryColor: '#112233',
+          secondaryColor: '#aabbcc',
+          cornerStyle: 'rounded',
+          fontStyle: 'editorial',
+        },
+      }),
+    });
+    const serialized = JSON.stringify(model);
+    const tree = JSON.stringify(StoreOgCard({ model }));
+    expect(serialized).not.toMatch(/Arial|Georgia/iu);
+    expect(serialized).not.toMatch(/https?:\/\/|data:font|fontFamily/iu);
+    expect(tree).not.toMatch(/Arial|Georgia|https?:\/\/|data:font|fontFamily/iu);
   });
 
   it('expone utilidades puras y deterministas de luminancia y mezcla', () => {
