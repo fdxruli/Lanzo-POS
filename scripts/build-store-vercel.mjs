@@ -11,6 +11,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const sourceRoot = path.join(projectRoot, 'dist-store');
 const stagingRoot = path.join(projectRoot, 'store', 'dist');
+const generatedTemplatePath = path.join(
+  projectRoot,
+  'store',
+  'generated',
+  'storeHtmlTemplate.js'
+);
 const robotsText = 'User-agent: *\nDisallow: /\n';
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -165,11 +171,17 @@ export async function buildStoreForVercel() {
   }
 
   await rm(stagingRoot, { recursive: true, force: true });
+  await rm(generatedTemplatePath, { force: true });
   try {
     const npmCli = process.env.npm_execpath;
     if (!npmCli) throw new Error('npm_execpath is required to run the public build safely.');
     run(process.execPath, [npmCli, 'run', 'build:store']);
     if (!await pathExists(sourceRoot)) throw new Error('dist-store was not generated.');
+    run(process.execPath, [
+      path.join(projectRoot, 'scripts', 'generate-store-html-template.mjs'),
+      path.join(sourceRoot, 'index.html'),
+      generatedTemplatePath
+    ]);
 
     run(process.execPath, [path.join(projectRoot, 'scripts', 'audit-public-delivery.mjs'), 'dist-store']);
     const sourceAudit = await auditStoreArtifact(sourceRoot);
@@ -210,6 +222,7 @@ export async function buildStoreForVercel() {
     return summary;
   } catch (error) {
     await rm(stagingRoot, { recursive: true, force: true });
+    await rm(generatedTemplatePath, { force: true });
     throw error;
   }
 }

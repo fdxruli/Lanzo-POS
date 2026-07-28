@@ -16,6 +16,9 @@ const TITLE_SUFFIX = 'Tienda en línea';
 const GLOBAL_TITLE = 'Tienda en línea | Lanzo';
 const GLOBAL_DESCRIPTION = 'Consulta productos y realiza tu pedido en línea.';
 const GLOBAL_IMAGE_ALT = 'Vista previa de Lanzo Tienda';
+const NOT_FOUND_TITLE = 'Tienda no disponible | Lanzo';
+const NOT_FOUND_DESCRIPTION = 'Esta tienda no está disponible. Consulta otras tiendas creadas con Lanzo.';
+const APPROVED_SOCIAL_METADATA = new WeakSet();
 
 const HTML_ESCAPE_PATTERN = /[&<>"']/g;
 const HTML_ESCAPE_ENTITIES = Object.freeze({
@@ -184,6 +187,58 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
+function approveMetadata(value) {
+  APPROVED_SOCIAL_METADATA.add(value);
+  return deepFreeze(value);
+}
+
+export function isApprovedStoreSocialMetadata(value) {
+  return Boolean(value && typeof value === 'object' && APPROVED_SOCIAL_METADATA.has(value));
+}
+
+export function buildGenericStoreSocialMetadata({ status = 'unavailable' } = {}) {
+  const notFound = status === 'not_found';
+  if (!notFound && status !== 'unavailable') {
+    throw new SocialMetadataValidationError(
+      'INVALID_GENERIC_METADATA_STATUS',
+      'El estado de metadatos genéricos no es válido.',
+    );
+  }
+
+  const title = notFound ? NOT_FOUND_TITLE : GLOBAL_TITLE;
+  const description = notFound ? NOT_FOUND_DESCRIPTION : GLOBAL_DESCRIPTION;
+  return approveMetadata({
+    title,
+    description,
+    canonicalUrl: null,
+    imageUrl: null,
+    imageAlt: null,
+    locale: SOCIAL_LOCALE,
+    siteName: SOCIAL_SITE_NAME,
+    imageVersioned: false,
+    openGraph: {
+      type: 'website',
+      title,
+      description,
+      url: null,
+      image: null,
+      imageAlt: null,
+      imageWidth: null,
+      imageHeight: null,
+      imageType: null,
+      locale: SOCIAL_LOCALE,
+      siteName: SOCIAL_SITE_NAME,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      image: null,
+      imageAlt: null,
+    },
+  });
+}
+
 export function buildStoreSocialMetadata({
   publicOrigin,
   slug,
@@ -215,7 +270,7 @@ export function buildStoreSocialMetadata({
     MAX_IMAGE_ALT_LENGTH,
   );
 
-  return deepFreeze({
+  return approveMetadata({
     title,
     description,
     canonicalUrl,

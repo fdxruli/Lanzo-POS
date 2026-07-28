@@ -1054,3 +1054,257 @@ No quedan bloqueantes conocidos dentro del alcance de 1.3.1. Queda habilitada:
 ```text
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.4 — HTML dinámico con metadatos sociales
 ```
+
+## Estado de la minifase 1.4
+
+- Estado: **PASS**.
+- HEAD inicial real de la rama:
+  `08f5efe8b9c32debdd6bb4c71dba4205b675d4b2`.
+- HEAD de `main` al iniciar:
+  `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
+- PR #141 permaneció abierto y como draft.
+- Rama exclusiva: `feat/ecom-public-social-preview-1`.
+- Base: `main`.
+- `SUPABASE_MIGRATION_REQUIRED = false`.
+
+### Endpoint interno y métodos
+
+Se creó un único endpoint interno:
+
+```text
+/api/store-page?slug=:slug
+```
+
+Su fuente es `store/api/store-page.js`. Acepta exclusivamente `GET` y `HEAD`;
+otros métodos reciben `405 Method Not Allowed`, `Allow: GET, HEAD` y
+`Cache-Control: no-store`. No acepta body, slug por header ni metadatos del
+cliente.
+
+La query exige exactamente una instancia de `slug`, reutiliza
+`validateStoreSlug` y no normaliza silenciosamente el valor. Slug ausente,
+duplicado, anidado o inválido devuelve HTML genérico con estado 400, no incluye
+el valor recibido y no consulta el portal.
+
+### Resolución del origen y allowlist
+
+`store/api/_publicRequestOrigin.js` resuelve el origen desde una fuente de
+plataforma en este orden:
+
+1. `x-forwarded-host`;
+2. `host`;
+3. el origen de `request.url`.
+
+Los headers deben contener un solo valor. Se rechazan HTTP, CRLF, listas
+separadas por comas, credenciales, path, query, hash, puertos distintos de 443,
+localhost, IP, loopback, link-local y hostnames inválidos. El protocolo final
+siempre es HTTPS.
+
+`PUBLIC_STORE_ORIGINS` admite una allowlist opcional separada por comas:
+
+```text
+https://tienda.ejemplo.com,https://preview-ejemplo.vercel.app
+```
+
+Si está definida, la coincidencia del origen normalizado debe ser exacta. Si no
+existe, solo se acepta el origen HTTPS derivado de la solicitud de plataforma.
+No se hardcodeó un dominio de producción. Tanto el request como la allowlist
+son inyectables en pruebas.
+
+### Contrato, serialización y privacidad
+
+El endpoint crea el cliente mediante
+`createPublicPortalSocialClient({ supabaseUrl, publishableKey, fetchImpl,
+timeoutMs })` y lee únicamente:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+```
+
+No importa dependencias del cliente Supabase, no consulta tablas, catálogo,
+pedidos o stock y no serializa credenciales.
+
+Para una tienda válida reutiliza `buildStoreSocialMetadata`. Los fallbacks se
+crean mediante `buildGenericStoreSocialMetadata`, agregado al mismo módulo de
+constructores aprobados:
+
+- `not_found`: `Tienda no disponible | Lanzo` y la descripción pactada;
+- `unavailable`: `Tienda en línea | Lanzo` y la descripción pactada.
+
+El fallback genérico omite canonical, `og:url` e imagen porque el endpoint OG
+actual exige un slug válido. Así no inventa una tienda ni una URL falsa.
+
+`store/api/_socialHead.js` solo acepta objetos producidos por los constructores
+aprobados. `renderSocialHead` escapa texto y atributos una sola vez, usa comillas
+dobles y genera un bloque determinista sin scripts ni etiquetas aportadas por
+el negocio. La respuesta personalizada contiene un solo title, description,
+canonical, conjunto Open Graph y conjunto Twitter/X.
+
+### Marcador y fallback estático
+
+`store/index.html` usa exactamente un bloque delimitado dentro de `head`, después
+de charset y viewport:
+
+```html
+<!-- LANZO_SOCIAL_HEAD_START -->
+<title>Tienda en línea | Lanzo</title>
+<meta name="description" content="Consulta productos y realiza tu pedido en línea." />
+<!-- LANZO_SOCIAL_HEAD_END -->
+```
+
+El HTML estático conserva title y description aunque la función no se ejecute.
+La función sustituye exclusivamente el contenido entre ambos marcadores; no
+busca genéricamente `</head>`, `<title>` o description. La validación impide
+metadata social duplicada fuera del bloque.
+
+### Plantilla generada e integración focal
+
+`scripts/generate-store-html-template.mjs` recibe el `index.html` real de Vite,
+valida UTF-8, doctype, estructura HTML, un solo bloque marcador, un solo
+`id="root"`, script módulo, stylesheet y assets hasheados. También bloquea
+source maps, referencias locales, nombres de variables de entorno, secretos y
+assets administrativos.
+
+El HTML completo se serializa mediante `JSON.stringify` como módulo ESM y se
+escribe atómicamente en:
+
+```text
+store/generated/storeHtmlTemplate.js
+```
+
+El archivo incluye una advertencia de no edición manual. La estrategia elegida
+es **no versionarlo**: `.gitignore` lo excluye y las pruebas usan un fixture
+mínimo. `scripts/build-store-vercel.mjs` elimina cualquier plantilla anterior,
+ejecuta el build Vite, genera el módulo desde ese mismo
+`dist-store/index.html` y solo entonces continúa con las auditorías y el
+staging. Si algo falla, elimina la salida generada y `store/dist`.
+
+No se modificaron las allowlists completas de empaquetado, el empaquetado
+independiente ni `prepare-store-deployment.mjs`. La incorporación de funciones
+y del módulo generado al paquete `lanzo-store` permanece reservada a 1.6.
+
+No se copiaron hashes ni nombres de bundles en código productivo. La plantilla
+conserva literalmente los scripts, CSS, `modulepreload`, hashes y `#root`
+producidos por Vite, por lo que React y React Router continúan arrancando como
+SPA.
+
+### Estados, headers, caché y fallbacks
+
+Todas las respuestas HTML usan:
+
+```text
+Content-Type: text/html; charset=utf-8
+X-Robots-Tag: noindex, nofollow, noarchive
+X-Content-Type-Options: nosniff
+```
+
+Política de estado y caché:
+
+| Caso | Estado | Cache-Control |
+| --- | ---: | --- |
+| tienda válida | 200 | `public, max-age=0, s-maxage=300, stale-while-revalidate=86400` |
+| tienda inexistente | 200 | `public, max-age=0, s-maxage=300` |
+| Supabase, origen o metadata temporalmente indisponible | 200 | `public, max-age=0, s-maxage=60` |
+| slug/query/body inválido | 400 | `no-store` |
+| método no permitido | 405 | `no-store` |
+
+`HEAD` determina estado y caché, conserva los headers y devuelve cuerpo vacío
+sin serializar metadata ni copiar el HTML final. Puede consultar el portal,
+pero nunca consulta imágenes.
+
+Un fallo de Supabase o del constructor personalizado usa metadata genérica,
+conserva el HTML completo y permite que la SPA reintente. No expone la razón
+técnica. Si la plantilla falta o no supera la validación, devuelve:
+
+```text
+HTTP 500
+Content-Type: text/plain; charset=utf-8
+Cache-Control: no-store
+
+Store page temporarily unavailable.
+```
+
+No incluye stack, path, slug, configuración, credenciales ni fragmentos de la
+plantilla.
+
+### Pruebas y validación
+
+Se crearon:
+
+- `store/tests/social-preview/socialHead.test.js`;
+- `store/tests/social-preview/publicRequestOrigin.test.js`;
+- `store/tests/social-preview/storeHtmlTemplate.test.js`;
+- `store/tests/social-preview/storePageEndpoint.test.js`;
+- `store/tests/social-preview/fixtures/storeHtmlFixture.js`.
+
+Cobertura incluida: escape e inyección, tags únicos, fallbacks, privacidad,
+orígenes y allowlist, métodos, slug, body, estados y caché, plantilla ambigua,
+UTF-8, ESM, Unicode, backticks, `${}`, escritura atómica, error 500 seguro y
+preservación literal de `#root`, módulo, stylesheet, modulepreload y assets.
+
+Resultados ejecutados:
+
+- `node --check` de todos los módulos y pruebas nuevos/modificados: **PASS**;
+- aserciones focales runtime-neutral de origen, metadata, escape, plantilla,
+  endpoint, caché y slug inválido: **PASS**;
+- `git diff --check`: **PASS**.
+
+```text
+Vitest focal: NOT RUN
+Motivo: node_modules no existe en el entorno conectado y esta minifase prohíbe
+npm install y npm ci.
+```
+
+No se ejecutaron suite global, build global ni deploy.
+
+### Archivos creados y modificados
+
+Creados:
+
+- `scripts/generate-store-html-template.mjs`;
+- `store/api/_publicRequestOrigin.js`;
+- `store/api/_socialHead.js`;
+- `store/api/_storeHtmlTemplate.js`;
+- `store/api/store-page.js`;
+- `store/tests/social-preview/fixtures/storeHtmlFixture.js`;
+- `store/tests/social-preview/publicRequestOrigin.test.js`;
+- `store/tests/social-preview/socialHead.test.js`;
+- `store/tests/social-preview/storeHtmlTemplate.test.js`;
+- `store/tests/social-preview/storePageEndpoint.test.js`.
+
+Modificados:
+
+- `.gitignore`;
+- `docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md`;
+- `scripts/build-store-vercel.mjs`;
+- `store/api/_socialMetadata.js`;
+- `store/index.html`.
+
+### Confirmaciones y riesgos residuales
+
+- Supabase modificado: **no**.
+- Migración creada: **no**.
+- RPC, RLS, grants, tablas o datos modificados: **no**.
+- `store/vercel.json` modificado: **no**.
+- `prepare-store-deployment.mjs` modificado: **no**.
+- `/tienda/:slug` conectado al endpoint: **no**.
+- Rewrites modificadas: **no**.
+- Empaquetado `lanzo-store` modificado: **no**.
+- Dependencias agregadas: **no**.
+- Deploy manual: **no**.
+- Merge o auto-merge: **no**.
+
+Riesgos no bloqueantes:
+
+- Vitest focal y el build Vite real no se ejecutaron porque las dependencias no
+  están instaladas y no se autorizó instalarlas.
+- El paquete independiente todavía no incluye las funciones ni el módulo
+  generado; esa integración corresponde explícitamente a 1.6.
+- El endpoint aún no recibe tráfico de `/tienda/:slug`; esa conexión corresponde
+  a 1.5.
+
+No quedan bloqueantes conocidos dentro de 1.4. Queda habilitada:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.5 — Enrutamiento público y aislamiento
+```

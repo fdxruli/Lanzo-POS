@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-store/
 store/dist/
+store/generated/storeHtmlTemplate.js
 .vercel/
 .env
 .env.*
@@ -9,4 +10,3 @@ store/dist/
 *.tgz
 *.tmp
 *.temp
-
