@@ -1022,7 +1022,8 @@
   font-size: 0.78rem;
 }
 
-@media (min-width: 760px) {
+/* 820px minimum tracks + 48px viewport shell + borders requires a 960px viewport. */
+@media (min-width: 960px) {
   .ecommerce-order-detail-shell {
     align-items: center;
     justify-content: center;
@@ -1040,6 +1041,10 @@
     border: 1px solid var(--ui-border-color, var(--border-color, #e2e8f0));
     border-radius: var(--ui-radius-xl, 20px);
     box-shadow: 0 28px 80px rgb(15 23 42 / 28%);
+  }
+
+  .ecommerce-order-detail > * {
+    min-width: 0;
   }
 
   .ecommerce-order-detail__header {

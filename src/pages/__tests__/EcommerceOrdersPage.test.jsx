@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
+import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +58,7 @@ import EcommerceOrdersPage from '../EcommerceOrdersPage';
 
 const orderId = '11111111-1111-4111-8111-111111111111';
 const secondOrderId = '22222222-2222-4222-8222-222222222222';
+const ecommerceOrdersPageCss = readFileSync('src/pages/EcommerceOrdersPage.css', 'utf8');
 
 const selectedOrder = (id = orderId, status = 'seen') => ({
   id,
@@ -314,6 +316,118 @@ describe('EcommerceOrdersPage', () => {
     expect(processTab).toHaveAttribute('aria-selected', 'true');
     expect(attentionTab).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByRole('region', { name: 'En proceso' })).toHaveClass('is-mobile-active');
+  });
+
+  it('selects attention when pending results replace a previously selected closed group', () => {
+    const view = renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'Cerrados, 0 pedidos' }));
+
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'pending',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[0], status: 'new' }]
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/pedidos-online']}>
+        <Routes><Route path="/pedidos-online" element={<><EcommerceOrdersPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('tab', { name: 'Atención, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Requieren atención' })).toHaveClass('is-mobile-active');
+  });
+
+  it('selects the first populated group when all results replace a previous empty group', () => {
+    const view = renderPage();
+    fireEvent.click(screen.getByRole('tab', { name: 'Cerrados, 0 pedidos' }));
+
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'all',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[1], status: 'seen' }]
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/pedidos-online']}>
+        <Routes><Route path="/pedidos-online" element={<><EcommerceOrdersPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('selects process when pending results contain only seen orders', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'pending',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[1], status: 'seen' }]
+    };
+    renderPage();
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('selects closed when accepted results only contain converted sales', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'accepted',
+      ecommerceOrders: [{ ...baseState().ecommerceOrders[0], status: 'converted_to_sale' }]
+    };
+    renderPage();
+
+    expect(screen.getByRole('tab', { name: 'Cerrados, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('prioritizes process when accepted results include accepted and converted sales', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersFilter: 'accepted',
+      ecommerceOrders: [
+        { ...baseState().ecommerceOrders[0], status: 'accepted' },
+        { ...baseState().ecommerceOrders[1], status: 'converted_to_sale' }
+      ]
+    };
+    renderPage();
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the active mobile group when it still has visible orders', () => {
+    renderPage();
+    const processTab = screen.getByRole('tab', { name: 'En proceso, 1 pedido' });
+    fireEvent.click(processTab);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'Segundo cliente' }
+    });
+
+    expect(processTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps a stable valid group for an empty result set', () => {
+    renderPage();
+    const closedTab = screen.getByRole('tab', { name: 'Cerrados, 0 pedidos' });
+    fireEvent.click(closedTab);
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'sin coincidencias' }
+    });
+
+    expect(closedTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('moves to the group containing the first local search match', () => {
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'Segundo cliente' }
+    });
+
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the three-column detail grid out of tablet widths', () => {
+    expect(ecommerceOrdersPageCss).toContain('@media (min-width: 960px)');
+    expect(ecommerceOrdersPageCss).not.toContain('@media (min-width: 760px)');
   });
 
   it('collapses long mobile groups into six-order batches', () => {

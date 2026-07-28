@@ -109,6 +109,37 @@ const getOrderGroup = (status) => (
   ORDER_GROUPS.find((group) => group.statuses.has(status)) || ORDER_GROUPS[1]
 );
 
+const getNextMobileGroup = (orders, currentGroup, { preferFirstMatch = false } = {}) => {
+  if (orders.length === 0) return currentGroup;
+
+  const groupsWithOrders = new Set(orders.map((order) => getOrderGroup(order.status).key));
+  if (preferFirstMatch) return getOrderGroup(orders[0].status).key;
+  if (groupsWithOrders.has(currentGroup)) return currentGroup;
+
+  return ORDER_GROUPS.find((group) => groupsWithOrders.has(group.key))?.key || currentGroup;
+};
+
+function useMediaQuery(query) {
+  const getMatches = () => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(query).matches
+  );
+  const [matches, setMatches] = useState(getMatches);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = () => setMatches(mediaQuery.matches);
+    updateMatches();
+    mediaQuery.addEventListener?.('change', updateMatches);
+    return () => mediaQuery.removeEventListener?.('change', updateMatches);
+  }, [query]);
+
+  return matches;
+}
+
 function OrderCard({ order, onOpen }) {
   const itemCount = Number(order.itemCount || 0);
 
@@ -389,23 +420,35 @@ function OrdersInbox({
 
 function DetailSection({ title, summary, variant = 'default', icon: Icon, children }) {
   const [open, setOpen] = useState(false);
+  const usesWideLayout = useMediaQuery('(min-width: 960px)');
+  const triggerContent = (
+    <>
+      {Icon && <Icon size={18} aria-hidden="true" />}
+      <span>
+        <strong>{title}</strong>
+        {summary && <small>{summary}</small>}
+      </span>
+      <ChevronDown className="ecommerce-order-detail__section-chevron" size={18} aria-hidden="true" />
+    </>
+  );
 
   return (
     <section className={`ecommerce-order-detail__section ecommerce-order-detail__section--${variant} ${open ? 'is-open' : ''}`}>
-      <button
-        type="button"
-        className="ecommerce-order-detail__section-trigger"
-        aria-label={summary ? `${title}: ${summary}` : title}
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {Icon && <Icon size={18} aria-hidden="true" />}
-        <span>
-          <strong>{title}</strong>
-          {summary && <small>{summary}</small>}
-        </span>
-        <ChevronDown className="ecommerce-order-detail__section-chevron" size={18} aria-hidden="true" />
-      </button>
+      {usesWideLayout ? (
+        <div className="ecommerce-order-detail__section-trigger">
+          {triggerContent}
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="ecommerce-order-detail__section-trigger"
+          aria-label={summary ? `${title}: ${summary}` : title}
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {triggerContent}
+        </button>
+      )}
       <div className="ecommerce-order-detail__section-content">{children}</div>
     </section>
   );
@@ -788,19 +831,8 @@ export default function EcommerceOrdersPage() {
   }, [selectedLoading]);
 
   useEffect(() => {
-    const groupByFilter = {
-      new: 'attention',
-      seen: 'process',
-      accepted: 'process',
-      rejected: 'closed'
-    };
-    const nextGroup = groupByFilter[filter];
-    if (nextGroup) setMobileGroup(nextGroup);
-  }, [filter]);
-
-  useEffect(() => {
-    if (!searchQuery.trim() || visibleOrders.length === 0) return;
-    setMobileGroup(getOrderGroup(visibleOrders[0].status).key);
+    const preferFirstMatch = Boolean(searchQuery.trim());
+    setMobileGroup((currentGroup) => getNextMobileGroup(visibleOrders, currentGroup, { preferFirstMatch }));
   }, [searchQuery, visibleOrders]);
 
   const handleOpenOrder = (orderId) => {
