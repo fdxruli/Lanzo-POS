@@ -242,7 +242,7 @@ describe('origen, canonical e imagen controlada', () => {
       publicOrigin: PUBLIC_ORIGIN,
       slug: 'mi-tienda',
     })).toEqual({
-      imageUrl: `${PUBLIC_ORIGIN}/api/og/store/mi-tienda`,
+      imageUrl: `${PUBLIC_ORIGIN}/api/og/store?slug=mi-tienda`,
       imageVersioned: false,
     });
   });
@@ -253,7 +253,7 @@ describe('origen, canonical e imagen controlada', () => {
       slug: 'mi-tienda',
       siteVersionNumber: 12,
     })).toEqual({
-      imageUrl: `${PUBLIC_ORIGIN}/api/og/store/mi-tienda?v=12`,
+      imageUrl: `${PUBLIC_ORIGIN}/api/og/store?slug=mi-tienda&v=12`,
       imageVersioned: true,
     });
   });
@@ -294,7 +294,7 @@ describe('buildStoreSocialMetadata', () => {
       title: 'Café Lanzo | Tienda en línea',
       description: 'Compra café mexicano en línea',
       canonicalUrl: `${PUBLIC_ORIGIN}/tienda/cafe-lanzo`,
-      imageUrl: `${PUBLIC_ORIGIN}/api/og/store/cafe-lanzo?v=7`,
+      imageUrl: `${PUBLIC_ORIGIN}/api/og/store?slug=cafe-lanzo&v=7`,
       imageAlt: 'Vista previa de Café Lanzo',
       locale: 'es_MX',
       siteName: 'Lanzo Tienda',

@@ -164,7 +164,8 @@ export function buildOpenGraphImageUrl({
 }) {
   const origin = normalizePublicOrigin(publicOrigin);
   const validSlug = validateStoreSlug(slug);
-  const imageUrl = new URL(`/api/og/store/${validSlug}`, `${origin}/`);
+  const imageUrl = new URL('/api/og/store', `${origin}/`);
+  imageUrl.searchParams.set('slug', validSlug);
   const imageVersioned = Number.isSafeInteger(siteVersionNumber) && siteVersionNumber > 0;
 
   if (imageVersioned) {

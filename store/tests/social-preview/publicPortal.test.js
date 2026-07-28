@@ -48,6 +48,43 @@ const mockResponse = (body, { status = 200, contentLength } = {}) => {
   };
 };
 
+const streamResponse = (
+  chunks,
+  {
+    status = 200,
+    contentLength = null,
+    readImpl,
+  } = {},
+) => {
+  const encodedChunks = chunks.map((chunk) => (
+    typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk
+  ));
+  let index = 0;
+  const reader = {
+    read: vi.fn(readImpl || (async () => (
+      index < encodedChunks.length
+        ? { done: false, value: encodedChunks[index++] }
+        : { done: true, value: undefined }
+    ))),
+    cancel: vi.fn(async () => {}),
+    releaseLock: vi.fn(),
+  };
+  return {
+    response: {
+      ok: status >= 200 && status < 300,
+      status,
+      headers: {
+        get: vi.fn((name) => (
+          name.toLowerCase() === 'content-length' ? contentLength : null
+        )),
+      },
+      body: { getReader: vi.fn(() => reader) },
+      text: vi.fn(),
+    },
+    reader,
+  };
+};
+
 const createClient = (fetchImpl, overrides = {}) => createPublicPortalSocialClient({
   supabaseUrl: SUPABASE_URL,
   publishableKey: PUBLISHABLE_KEY,
@@ -426,6 +463,88 @@ describe('not_found y fallos seguros', () => {
     });
   });
 
+  it('lee un cuerpo válido por stream y libera el reader', async () => {
+    const streamed = streamResponse([JSON.stringify(validPayload())]);
+    const client = createClient(vi.fn(async () => streamed.response));
+
+    await expect(client.getPortalBySlug(SLUG)).resolves.toMatchObject({ status: 'ok' });
+    expect(streamed.response.text).not.toHaveBeenCalled();
+    expect(streamed.reader.cancel).not.toHaveBeenCalled();
+    expect(streamed.reader.releaseLock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconstruye JSON distribuido en múltiples chunks', async () => {
+    const payload = JSON.stringify(validPayload());
+    const streamed = streamResponse([
+      payload.slice(0, 17),
+      payload.slice(17, 83),
+      payload.slice(83),
+    ]);
+
+    await expect(createClient(
+      vi.fn(async () => streamed.response),
+    ).getPortalBySlug(SLUG)).resolves.toMatchObject({ status: 'ok' });
+    expect(streamed.reader.read).toHaveBeenCalledTimes(4);
+  });
+
+  it('acepta un cuerpo exactamente en el límite', async () => {
+    const suffix = '"}';
+    const prefix = `{"success":false,"error":{"code":"UNKNOWN","padding":"`;
+    const paddingBytes = MAX_PUBLIC_PORTAL_RESPONSE_BYTES
+      - new TextEncoder().encode(prefix + suffix).byteLength;
+    const streamed = streamResponse([prefix, 'x'.repeat(paddingBytes), suffix]);
+
+    await expect(createClient(
+      vi.fn(async () => streamed.response),
+    ).getPortalBySlug(SLUG)).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'remote_error',
+    });
+    expect(streamed.reader.cancel).not.toHaveBeenCalled();
+  });
+
+  it('cancela el reader al superar el límite por stream', async () => {
+    const streamed = streamResponse([
+      new Uint8Array(MAX_PUBLIC_PORTAL_RESPONSE_BYTES),
+      new Uint8Array([1]),
+      new Uint8Array([2]),
+    ]);
+
+    await expect(createClient(
+      vi.fn(async () => streamed.response),
+    ).getPortalBySlug(SLUG)).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'invalid_response',
+    });
+    expect(streamed.reader.cancel).toHaveBeenCalledTimes(1);
+    expect(streamed.reader.read).toHaveBeenCalledTimes(2);
+    expect(streamed.reader.releaseLock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mantiene el timeout durante la lectura y cancela el reader', async () => {
+    vi.useFakeTimers();
+    const streamed = streamResponse([], {
+      readImpl: () => new Promise(() => {}),
+    });
+    const pending = createClient(
+      vi.fn(async () => streamed.response),
+      { timeoutMs: 500 },
+    ).getPortalBySlug(SLUG);
+
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(pending).resolves.toEqual({ status: 'unavailable', reason: 'timeout' });
+    expect(streamed.reader.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('conserva el fallback controlado cuando response.body no existe', async () => {
+    const response = mockResponse(validPayload(), { contentLength: null });
+
+    await expect(createClient(
+      vi.fn(async () => response),
+    ).getPortalBySlug(SLUG)).resolves.toMatchObject({ status: 'ok' });
+    expect(response.text).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [{ success: false }, 'success !== true'],
     [{ success: false, error: { code: 'UNKNOWN_REMOTE_ERROR' } }, 'error remoto desconocido'],
@@ -435,6 +554,31 @@ describe('not_found y fallos seguros', () => {
       status: 'unavailable',
       reason: 'remote_error',
     });
+  });
+
+  it('mantiene HTTP 500 aunque el cuerpo contenga el código not_found', async () => {
+    const response = mockResponse({
+      success: false,
+      error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND' },
+    }, { status: 500 });
+
+    await expect(createClient(
+      vi.fn(async () => response),
+    ).getPortalBySlug(SLUG)).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'http_error',
+    });
+  });
+
+  it('clasifica not_found solo después de un HTTP exitoso', async () => {
+    const response = mockResponse({
+      success: false,
+      error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND' },
+    });
+
+    await expect(createClient(
+      vi.fn(async () => response),
+    ).getPortalBySlug(SLUG)).resolves.toEqual({ status: 'not_found' });
   });
 
   it.each([

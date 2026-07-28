@@ -623,3 +623,260 @@ Queda habilitada:
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.3 — Imagen Open Graph dinámica de tienda
 ```
 
+## Estado de la minifase 1.3
+
+- Estado: **PASS CON VITEST NOT RUN**.
+- HEAD inicial real de la rama: `8425f06418812e951a0ff059446520358aebfc33`.
+- HEAD de `main` verificado: `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
+- El PR #141 permaneció abierto, sin merge y como draft.
+- Endpoint público nuevo: `store/api/og/store.jsx`.
+- Ruta: `/api/og/store?slug=:slug&v=:siteVersionNumber`.
+- Dimensiones: 1200 × 630.
+- Formato: PNG mediante `ImageResponse`.
+- Supabase modificado: **no**.
+- `store/vercel.json` modificado: **no**.
+- HTML dinámico o rewrites de tienda modificados: **no**.
+- `SUPABASE_MIGRATION_REQUIRED = false`.
+
+### Gates correctivos de 1.2
+
+`store/api/_publicPortal.js` dejó de depender de `response.text()` cuando el runtime
+ofrece un stream. La lectura:
+
+- inspecciona primero `Content-Length`;
+- rechaza declaraciones superiores a 256 KiB sin leer el cuerpo;
+- usa `response.body.getReader()` por chunks;
+- deja de acumular al superar `MAX_PUBLIC_PORTAL_RESPONSE_BYTES`;
+- cancela el reader al exceder el límite o abortarse la solicitud;
+- libera el lock en la salida;
+- conserva un fallback medido para mocks o runtimes sin `response.body`;
+- permanece cubierta por el timeout global de la consulta;
+- no registra ni expone el cuerpo.
+
+También se corrigió la precedencia de clasificación. Después de analizar el cuerpo
+y rechazar claves peligrosas, la respuesta HTTP no exitosa prevalece sobre los
+códigos contractuales. Un HTTP 500 que contenga
+`ECOMMERCE_PORTAL_NOT_FOUND` ahora es `http_error`; el mismo código bajo HTTP
+exitoso sigue siendo `not_found`.
+
+Las regresiones agregadas cubren stream válido, múltiples chunks, límite exacto,
+exceso y cancelación, timeout durante lectura, fallback sin stream y ambos casos
+de precedencia HTTP.
+
+### Dependencia y lockfile
+
+La auditoría confirmó que `@vercel/og` no existía en el contrato. Se agregó como
+dependencia de producción:
+
+```text
+@vercel/og@0.11.1
+```
+
+La versión publicada declara Node `>=16` y no declara peer dependency
+incompatible con React 19. El `package-lock.json` se regeneró de forma coherente
+con:
+
+```text
+npm --cache /tmp/lanzo-npm-cache install \
+  --package-lock-only \
+  --ignore-scripts \
+  --no-audit \
+  --no-fund \
+  @vercel/og@0.11.1
+```
+
+No se ejecutó `npm ci`, no se instalaron módulos, no se hizo instalación global y
+no se ejecutó un build global. npm emitió únicamente una advertencia histórica de
+engine para `react-zxing@2.1.0` porque el entorno conectado usa Node 24; no impidió
+la generación del lockfile.
+
+### Endpoint, runtime y variables
+
+El endpoint usa la firma Web API:
+
+```js
+export default {
+  async fetch(request) {
+    // Response o ImageResponse
+  }
+}
+```
+
+Admite `GET` y `HEAD`. Otros métodos devuelven 405 con `Allow: GET, HEAD`. El
+`slug` debe aparecer exactamente una vez y pasar `validateStoreSlug`; no se
+normaliza silenciosamente ni se consulta red con un valor inválido. `v` solo se
+conserva cuando aparece una vez y es un entero positivo seguro; nunca selecciona
+branding histórico ni reemplaza `result.siteVersionNumber`.
+
+La configuración se lee exclusivamente desde:
+
+```text
+process.env.VITE_SUPABASE_URL
+process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+```
+
+Estos valores se pasan a `createPublicPortalSocialClient`. Configuración ausente o
+inválida produce una tarjeta genérica con caché temporal; no se incluye la razón
+técnica, stack, URL de Supabase ni credencial en la salida.
+
+### Arquitectura y diseño
+
+La minifase separa:
+
+1. validación de request y política de respuesta en `store/api/og/store.jsx`;
+2. consulta pública mediante `store/api/_publicPortal.js`;
+3. descarga controlada en `store/api/_safePublicImage.js`;
+4. modelo visual puro y render en `store/api/_storeOgCard.js`;
+5. PNG mediante `@vercel/og` `ImageResponse`;
+6. headers y caché determinados por estado y versión.
+
+`createStoreOgHandler` permite inyectar cliente, cargador de imágenes e
+implementación de `ImageResponse`. Las pruebas no necesitan Supabase, Vercel,
+imágenes ni credenciales reales.
+
+La tarjeta contiene fondo completo, superficie de branding, logo o inicial,
+etiqueta “Tienda en línea”, nombre, descripción breve, decoración derivada del
+tema y “Impulsado por Lanzo”. Usa flexbox, posicionamiento absoluto y estilos
+inline deterministas; no usa CSS Grid, clases externas ni fuentes descargadas.
+
+El modelo normaliza `primaryColor`, `secondaryColor`, `cornerStyle` y `fontStyle`
+con el tema canónico. Sus funciones puras calculan luminancia, texto legible y
+mezclas claras u oscuras. El nombre y la descripción se limitan a dos líneas
+visuales; el tamaño del nombre se reduce según longitud.
+
+Fallbacks:
+
+```text
+portada + logo
+→ color del tema + logo
+→ color del tema + inicial
+→ plantilla genérica Lanzo
+```
+
+La inicial usa la primera letra visible del nombre y cae a `L`. No se muestran
+teléfono, WhatsApp, correo, domicilio, horarios, disponibilidad, stock, precios,
+promociones, cantidades, pedidos, tracking, licencia, usuario ni datos
+administrativos.
+
+### Imágenes públicas y anti-SSRF
+
+`store/api/_safePublicImage.js` deriva el único hostname permitido desde
+`VITE_SUPABASE_URL`. Exige HTTPS, hostname exacto, puerto estándar, ausencia de
+credenciales y una de estas rutas:
+
+```text
+/storage/v1/object/public/
+/storage/v1/render/image/public/
+```
+
+Rechaza hosts parecidos, subdominios inesperados, localhost, IPv4, IPv6, puertos
+no estándar, rutas no públicas y esquemas `http:`, `data:`, `blob:`, `file:` o
+`javascript:`. No amplía la allowlist a CDN o hosts externos.
+
+La descarga usa `GET`, `redirect: "error"`, timeout independiente de 2500 ms,
+`Accept: image/png,image/jpeg,image/webp`, máximo de 5 MiB, revisión de
+`Content-Length`, lectura limitada por stream y allowlist estricta de
+`Content-Type`. No envía cookies, `Authorization`, `apikey` ni headers de
+Supabase. Los bytes validados se convierten con `Buffer` a data URI para evitar
+una segunda descarga de Satori. Un fallo omite la imagen y conserva el PNG de
+fallback.
+
+### Caché y headers
+
+Tarjeta `ok` con `v` coincidente con `siteVersionNumber`:
+
+```text
+Cache-Control: public, max-age=31536000, immutable
+```
+
+Tarjeta `ok` sin versión, versión inválida o discordante:
+
+```text
+Cache-Control: public, max-age=0, s-maxage=300, stale-while-revalidate=86400
+```
+
+Tienda inexistente:
+
+```text
+Cache-Control: public, max-age=0, s-maxage=300
+```
+
+Error temporal, configuración faltante o slug inválido:
+
+```text
+Cache-Control: public, max-age=0, s-maxage=60
+```
+
+Todas las respuestas controladas conservan `Content-Type: image/png`,
+`X-Content-Type-Options: nosniff` y
+`X-Robots-Tag: noindex, nofollow, noarchive`. `HEAD` consulta el estado necesario
+para elegir caché pero no descarga imágenes ni renderiza el cuerpo PNG.
+
+### Pruebas y validación
+
+Pruebas creadas:
+
+- `store/tests/social-preview/storeOgCard.test.js`;
+- `store/tests/social-preview/storeOgEndpoint.test.js`;
+- `store/tests/social-preview/safePublicImage.test.js`.
+
+Pruebas ampliadas:
+
+- `store/tests/social-preview/publicPortal.test.js`;
+- `store/tests/social-preview/socialMetadata.test.js`.
+
+Cobertura declarada: modelo y fallbacks; nombres y descripciones largas; temas
+claros, oscuros e inválidos; inmutabilidad; privacidad; GET, HEAD y 405; query de
+slug y versión; estados `ok`, `not_found` y `unavailable`; dimensiones, formato y
+headers; caché coincidente y fallbacks no inmutables; allowlist exacta,
+anti-SSRF, redirects, tipos, límites, streams, timeouts, errores de red y ausencia
+de headers privados.
+
+- Suites focales Vitest: **NOT RUN**.
+- Motivo: las dependencias no están instaladas en el entorno conectado y la
+  minifase autoriza solo la actualización `--package-lock-only`.
+- `node --check` sobre archivos `.js` productivos y pruebas: **PASS**.
+- Validación focal del parser para `store/api/og/store.jsx`, copiado sin cambios a
+  extensión temporal `.mjs` porque no contiene sintaxis JSX: **PASS**.
+- Aserciones runtime-neutral para lectura stream, límite, precedencia HTTP,
+  metadata con `URLSearchParams` y allowlist anti-SSRF: **PASS**.
+
+### Archivos creados y modificados
+
+Creados:
+
+- `store/api/og/store.jsx`;
+- `store/api/_safePublicImage.js`;
+- `store/api/_storeOgCard.js`;
+- `store/tests/social-preview/storeOgCard.test.js`;
+- `store/tests/social-preview/storeOgEndpoint.test.js`;
+- `store/tests/social-preview/safePublicImage.test.js`.
+
+Modificados:
+
+- `store/api/_publicPortal.js`;
+- `store/api/_socialMetadata.js`;
+- `store/tests/social-preview/publicPortal.test.js`;
+- `store/tests/social-preview/socialMetadata.test.js`;
+- `package.json`;
+- `package-lock.json`;
+- `docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md`.
+
+No se modificaron Supabase, migraciones, RPC, tablas, RLS, grants, datos,
+`store/vercel.json`, checkout, catálogo, pedidos, stock, horarios, HTML dinámico,
+rewrites ni fuentes.
+
+### Riesgos residuales y habilitación
+
+Vitest permanece pendiente de un entorno que ya tenga las dependencias
+instaladas. La integración del endpoint en el paquete de despliegue y las
+auditorías prebuilt corresponde a la minifase 1.6; esta minifase no relajó
+allowlists de build ni modificó Vercel. La personalización del HTML inicial aún
+no existe y corresponde a 1.4.
+
+No se identificaron bloqueantes residuales dentro del alcance de 1.3. Queda
+habilitada:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.4 — HTML inicial dinámico de tienda
+```

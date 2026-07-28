@@ -244,7 +244,62 @@ function responseByteLength(value) {
   return new TextEncoder().encode(value).byteLength;
 }
 
-async function readResponse(response) {
+async function readResponseStream(body, signal) {
+  const reader = body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  let cancelled = false;
+  const cancel = async () => {
+    if (cancelled) return;
+    cancelled = true;
+    try {
+      await reader.cancel();
+    } catch {
+      // Cancellation is best-effort after a timeout or oversized body.
+    }
+  };
+  const onAbort = () => {
+    void cancel();
+  };
+  signal?.addEventListener?.('abort', onAbort, { once: true });
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) {
+        await cancel();
+        return { invalid: true, payload: null };
+      }
+
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PUBLIC_PORTAL_RESPONSE_BYTES) {
+        await cancel();
+        return { oversized: true, payload: null };
+      }
+      chunks.push(value);
+    }
+
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { text: new TextDecoder().decode(bytes) };
+  } catch {
+    return { invalid: true, payload: null };
+  } finally {
+    signal?.removeEventListener?.('abort', onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // Some mocked or already-cancelled readers cannot release twice.
+    }
+  }
+}
+
+async function readResponse(response, signal) {
   const contentLength = response?.headers?.get?.('content-length');
   if (typeof contentLength === 'string' && /^\d+$/u.test(contentLength.trim())) {
     const declaredLength = Number(contentLength);
@@ -256,21 +311,26 @@ async function readResponse(response) {
     }
   }
 
-  let text;
-  try {
-    text = await response.text();
-  } catch {
-    return { invalid: true, payload: null };
+  let readResult;
+  if (response?.body && typeof response.body.getReader === 'function') {
+    readResult = await readResponseStream(response.body, signal);
+  } else {
+    let text;
+    try {
+      text = await response.text();
+    } catch {
+      return { invalid: true, payload: null };
+    }
+    if (typeof text !== 'string') return { invalid: true, payload: null };
+    if (responseByteLength(text) > MAX_PUBLIC_PORTAL_RESPONSE_BYTES) {
+      return { oversized: true, payload: null };
+    }
+    readResult = { text };
   }
-  if (
-    typeof text !== 'string'
-    || responseByteLength(text) > MAX_PUBLIC_PORTAL_RESPONSE_BYTES
-  ) {
-    return { oversized: true, payload: null };
-  }
+  if (readResult.invalid || readResult.oversized) return readResult;
 
   try {
-    return { payload: JSON.parse(text) };
+    return { payload: JSON.parse(readResult.text) };
   } catch {
     return { invalid: true, payload: null };
   }
@@ -292,7 +352,8 @@ export function createPublicPortalSocialClient({
       && typeof globalThis.fetch !== 'function'
     )
     || typeof globalThis.AbortController !== 'function'
-    || typeof globalThis.TextEncoder !== 'function';
+    || typeof globalThis.TextEncoder !== 'function'
+    || typeof globalThis.TextDecoder !== 'function';
 
   const normalizedUrl = supabaseUrl == null ? null : normalizeSupabaseUrl(supabaseUrl);
   const normalizedKey = publishableKey == null ? null : normalizePublishableKey(publishableKey);
@@ -340,7 +401,7 @@ export function createPublicPortalSocialClient({
           }),
           timeout,
         ]);
-        parsed = await Promise.race([readResponse(response), timeout]);
+        parsed = await Promise.race([readResponse(response, controller.signal), timeout]);
       } catch (error) {
         return unavailable(
           timedOut || error === TIMEOUT_SENTINEL ? 'timeout' : 'network',
@@ -354,10 +415,10 @@ export function createPublicPortalSocialClient({
         return unavailable(response?.ok === false ? 'http_error' : 'invalid_response');
       }
 
-      const remoteCode = getContractErrorCode(parsed.payload);
       if (hasDangerousOwnKeys(parsed.payload)) return unavailable('invalid_response');
-      if (remoteCode === PORTAL_NOT_FOUND_CODE) return notFound;
       if (!response || response.ok !== true) return unavailable('http_error');
+      const remoteCode = getContractErrorCode(parsed.payload);
+      if (remoteCode === PORTAL_NOT_FOUND_CODE) return notFound;
       if (parsed.payload?.success !== true) return unavailable('remote_error');
 
       const projected = projectPortal(parsed.payload, validSlug);
