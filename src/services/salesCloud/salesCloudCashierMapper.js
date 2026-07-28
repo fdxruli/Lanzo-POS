@@ -12,6 +12,24 @@ const toIsoString = (value, fallback = new Date().toISOString()) => {
 const compactObject = (value = {}) => Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 const firstText = (...values) => values.map((value) => String(value ?? '').trim()).find(Boolean) || null;
 
+const getSaleTraceability = (sale = {}) => {
+  const ecommerceOrderId = firstText(
+    sale.ecommerceOrderId,
+    sale.ecommerce_order_id,
+    sale.metadata?.ecommerceOrderId,
+    sale.metadata?.ecommerce_order_id
+  );
+  const ecommerceOrderCode = firstText(
+    sale.ecommerceOrderCode,
+    sale.ecommerce_order_code,
+    sale.metadata?.ecommerceOrderCode,
+    sale.metadata?.ecommerce_order_code
+  );
+  const salesChannel = firstText(sale.salesChannel, sale.sales_channel)
+    || (ecommerceOrderId || ecommerceOrderCode ? 'ecommerce' : 'local');
+  return { salesChannel, ecommerceOrderId, ecommerceOrderCode };
+};
+
 const getSelectedModifiers = (item = {}) => {
   const modifiers = item.selectedModifiers || item.selected_modifiers || item.metadata?.selectedModifiers || item.metadata?.selected_modifiers;
   return Array.isArray(modifiers) ? modifiers : [];
@@ -232,12 +250,16 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
   const balanceDue = toNumber(localSale.saldoPendiente ?? localSale.balanceDue, 0);
   const discount = getSaleDiscountObject(localSale);
   const discountTotal = getSaleDiscountTotal(localSale, {}, localSale.items);
+  const traceability = getSaleTraceability(localSale);
 
   const sale = compactObject({
     id: localSale.id,
     local_sale_id: localSale.id,
     folio: firstText(localSale.folio),
     local_folio: firstText(localSale.folio),
+    sales_channel: traceability.salesChannel,
+    ecommerce_order_id: traceability.ecommerceOrderId,
+    ecommerce_order_code: traceability.ecommerceOrderCode,
     timestamp: soldAt,
     sold_at: soldAt,
     status: localSale.status || 'closed',
@@ -277,11 +299,15 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
   const amountPaid = paymentMethod === 'cash' ? toNumber(paymentData.amountPaid ?? sale.abono ?? sale.amountPaid, saleTotal) : saleTotal;
   const discount = getSaleDiscountObject(sale, paymentData);
   const discountTotal = getSaleDiscountTotal(sale, paymentData, processedItems);
+  const traceability = getSaleTraceability(sale);
 
   const cloudSale = compactObject({
     id: sale.id,
     local_sale_id: sale.id,
     local_folio: firstText(sale.folio),
+    sales_channel: traceability.salesChannel,
+    ecommerce_order_id: traceability.ecommerceOrderId,
+    ecommerce_order_code: traceability.ecommerceOrderCode,
     timestamp: soldAt,
     sold_at: soldAt,
     status: sale.status || 'closed',
@@ -319,11 +345,15 @@ export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = 
   const customerId = firstText(paymentData.customerId, sale.customerId, sale.customer_id);
   const discount = getSaleDiscountObject(sale, paymentData);
   const discountTotal = getSaleDiscountTotal(sale, paymentData, processedItems);
+  const traceability = getSaleTraceability(sale);
 
   const cloudSale = compactObject({
     id: sale.id,
     local_sale_id: sale.id,
     local_folio: firstText(sale.folio),
+    sales_channel: traceability.salesChannel,
+    ecommerce_order_id: traceability.ecommerceOrderId,
+    ecommerce_order_code: traceability.ecommerceOrderCode,
     timestamp: soldAt,
     sold_at: soldAt,
     status: sale.status || 'closed',

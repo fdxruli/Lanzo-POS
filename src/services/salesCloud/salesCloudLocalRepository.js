@@ -77,6 +77,14 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   status: cloudSale.status || localSale.status || 'closed',
   folio: cloudSale.cloud_folio || cloudSale.folio || localSale.folio,
   cloudFolio: cloudSale.cloud_folio || null,
+  salesChannel: cloudSale.sales_channel || cloudSale.salesChannel || localSale.salesChannel
+    || (cloudSale.ecommerce_order_id || cloudSale.ecommerce_order_code ? 'ecommerce' : 'local'),
+  ecommerceOrderId: cloudSale.ecommerce_order_id || cloudSale.ecommerceOrderId
+    || cloudSale.metadata?.ecommerceOrderId || cloudSale.metadata?.ecommerce_order_id
+    || localSale.ecommerceOrderId || localSale.metadata?.ecommerceOrderId || null,
+  ecommerceOrderCode: cloudSale.ecommerce_order_code || cloudSale.ecommerceOrderCode
+    || cloudSale.metadata?.ecommerceOrderCode || cloudSale.metadata?.ecommerce_order_code
+    || localSale.ecommerceOrderCode || localSale.metadata?.ecommerceOrderCode || null,
   cloudSaleId: cloudSale.id || response.sale?.id || null,
   cloudSalesSyncStatus: 'synced',
   cloudSalesLastSyncAt: nowIso(),

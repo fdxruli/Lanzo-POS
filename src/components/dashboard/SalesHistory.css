@@ -111,6 +111,7 @@
   border-bottom: 1px solid var(--light-background);
   /* Gris suave variable */
   padding-bottom: 5px;
+  gap: var(--spacing-sm);
 }
 
 .sale-date {
@@ -121,6 +122,22 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
+}
+
+.sale-reference {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sale-reference-secondary {
+  color: var(--text-light);
+  font-size: 0.72rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .sale-folio-tag {
@@ -132,13 +149,15 @@
   padding: 2px 8px;
   border-radius: 12px;
   letter-spacing: 0.3px;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .sale-total {
   font-weight: 700;
   color: var(--success-color);
   font-size: 1rem;
+  flex: 0 0 auto;
 }
 
 /* Info del cuerpo */
@@ -410,5 +429,10 @@
 @media (max-width: 560px) {
   .history-filters {
     grid-template-columns: 1fr;
+  }
+
+  .sale-header,
+  .sale-date {
+    align-items: flex-start;
   }
 }

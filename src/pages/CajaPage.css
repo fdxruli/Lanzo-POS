@@ -875,12 +875,11 @@
 
 .caja-grid .movement-title {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   color: var(--text-dark);
   font-size: 0.82rem;
   font-weight: 720;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
@@ -916,6 +915,11 @@
   color: var(--text-light);
   font-size: 0.68rem;
   min-width: 0;
+}
+
+.caja-grid .movement-reference-secondary {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
 }
 
 .caja-grid .movement-badge {
@@ -976,11 +980,12 @@
   }
 
   .caja-grid .movement-header {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
   }
 
   .caja-grid .movement-amount {
-    white-space: normal;
+    white-space: nowrap;
   }
 }
 

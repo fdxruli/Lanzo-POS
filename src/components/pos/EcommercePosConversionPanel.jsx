@@ -288,10 +288,25 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
           </div>
         </div>
       ) : conversionStatus === ECOMMERCE_CONVERSION_STATUS.COMPLETED ? (
-        <p className="ecommerce-conversion-panel__success" role="status">
+        <div className="ecommerce-conversion-panel__success" role="status">
           <CheckCircle2 size={18} aria-hidden="true" />
-          <span>Pedido convertido en venta correctamente.</span>
-        </p>
+          <span>
+            Pedido convertido en venta correctamente.
+            {order.ecommerceConvertedSaleFolio && (
+              <> Venta vinculada: {order.ecommerceConvertedSaleFolio}.</>
+            )}
+          </span>
+          {order.ecommerceConvertedSaleId && (
+            <button
+              type="button"
+              className="ecommerce-conversion-panel__button"
+              onClick={() => navigate('/ventas', { state: { saleId: order.ecommerceConvertedSaleId } })}
+            >
+              <ReceiptText size={18} aria-hidden="true" />
+              <span>Ver venta</span>
+            </button>
+          )}
+        </div>
       ) : (
         <button
           type="button"

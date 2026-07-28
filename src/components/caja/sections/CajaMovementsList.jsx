@@ -10,6 +10,12 @@ import {
   WalletCards
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import {
+  getSaleDisplayReference,
+  getSaleSecondaryReference,
+  normalizeSaleTraceability,
+  saleMatchesReference
+} from '../../../services/sales/saleReference';
 
 const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCash = false }) => {
   const [filtroTipo, setFiltroTipo] = useState(initialFilterType);
@@ -30,7 +36,10 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
 
     if (busqueda.trim()) {
       const busquedaLower = busqueda.toLowerCase().trim();
-      filtrados = filtrados.filter(m => String(m.concepto || '').toLowerCase().includes(busquedaLower));
+      filtrados = filtrados.filter(m => (
+        String(m.concepto || '').toLowerCase().includes(busquedaLower)
+        || saleMatchesReference(m.sale || m.metadata || m, busquedaLower)
+      ));
     }
 
     return filtrados.map(mov => {
@@ -65,9 +74,23 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
       else if (mov.tipo === 'entrada') badge = 'Entrada';
       else if (mov.tipo === 'salida') badge = 'Salida';
 
+      const referenceSource = mov.sale || {
+        ...mov,
+        ...(mov.metadata || {})
+      };
+      const traceability = normalizeSaleTraceability(referenceSource);
+      const isSaleMovement = ['venta', 'venta_efectivo', 'venta_tarjeta'].includes(mov.tipo);
+      const primaryReference = isSaleMovement
+        ? getSaleDisplayReference(referenceSource) || mov.concepto
+        : mov.concepto;
+      const secondaryReference = mov.secondaryReference
+        || (isSaleMovement ? getSaleSecondaryReference(referenceSource) : null);
+
       return {
         id: mov.id,
-        concepto: esAjuste || esAjusteFondoInicial ? `[Ajuste] ${mov.concepto}` : mov.concepto,
+        concepto: esAjuste || esAjusteFondoInicial ? `[Ajuste] ${mov.concepto}` : primaryReference,
+        secondaryReference,
+        salesChannel: traceability.salesChannel,
         monto: `${prefijo}$${Money.toNumber(mov.monto).toFixed(2)}`,
         hora: mov.fecha ? new Date(mov.fecha).toLocaleTimeString() : '',
         actor: mov.actor || mov.actorName || mov.audit?.actor || null,
@@ -117,7 +140,7 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
           <Search size={17} aria-hidden="true" />
           <input
             type="text"
-            placeholder="Buscar por concepto..."
+            placeholder="Buscar por V-, EC-, cliente o método..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             className="search-input"
@@ -157,12 +180,14 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
                 <span className="movement-title">{mov.concepto}</span>
                 <span className="movement-amount">{mov.monto}</span>
                 <div className="movement-details">
+                  {mov.secondaryReference && <small className="movement-reference-secondary">{mov.secondaryReference}</small>}
                   <small>{mov.hora}</small>
                   {mov.actor && <small>Actor: {mov.actor}</small>}
                   {mov.staff && <small>Staff: {mov.staff}</small>}
                   {mov.actorKey && <small>Actor key: {mov.actorKey}</small>}
                   {mov.origen && <small>Origen: {mov.origen}</small>}
                   {mov.badge && <span className="ui-badge ui-badge--neutral ui-badge--sm movement-badge">{mov.badge}</span>}
+                  {mov.salesChannel === 'ecommerce' && <span className="ui-badge ui-badge--info ui-badge--sm movement-badge">Ecommerce</span>}
                 </div>
               </div>
             </div>

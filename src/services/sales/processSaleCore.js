@@ -332,6 +332,9 @@ export const processSaleCore = async ({
         const sale = {
             id: activeOrderId || generateID('sal'),
             timestamp: currentIsoTime,
+            salesChannel: isEcommerceSale ? 'ecommerce' : 'local',
+            ecommerceOrderId: isEcommerceSale ? ecommerceCheckout.ecommerceOrderId : null,
+            ecommerceOrderCode: isEcommerceSale ? ecommerceCheckout.ecommerceOrderCode || null : null,
             items: processedItems,
             subtotal,
             discount: discountTotal,

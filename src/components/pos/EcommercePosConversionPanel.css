@@ -53,6 +53,7 @@
 
 .ecommerce-conversion-panel__success {
   color: var(--success-color, #166534);
+  flex-wrap: wrap;
 }
 
 .ecommerce-conversion-panel__pending {

@@ -2,6 +2,12 @@ import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
 import { STORES } from './db/dexie';
 import { buildCashReconciliation } from './layawayFinancialProjection';
+import {
+  getSaleDisplayReference,
+  getSaleIdentityReferences,
+  getSaleSecondaryReference,
+  normalizeSaleTraceability
+} from './sales/saleReference';
 
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
 
@@ -162,7 +168,79 @@ export async function loadCashSessionTotals(database, cashSession, endOverride) 
   return buildCashSessionTotals(cashSession, calculateSessionTotals(sales));
 }
 
-const normalizeSaleMovements = (sales) => {
+const normalizeIdentity = (value) => String(value ?? '').trim().toLowerCase();
+
+const saleEffectType = (movement = {}) => {
+  const type = String(movement.tipo || movement.type || '').toLowerCase();
+  if (['venta', 'venta_efectivo', 'venta_tarjeta'].includes(type)) return 'sale';
+  if (['abono', 'abono_cliente'].includes(type)) return 'customer_payment';
+  if (['cancelacion', 'reversa'].includes(type)) return type;
+  return type || null;
+};
+
+const movementSaleReferences = (movement = {}) => {
+  const referenceType = normalizeIdentity(
+    movement.referenceType || movement.reference_type
+  );
+  const referenceIdAllowed = !referenceType || referenceType === 'sale';
+
+  return [
+    movement.saleId,
+    movement.sale_id,
+    ...(referenceIdAllowed
+      ? [movement.referenceId, movement.reference_id]
+      : []),
+    movement.metadata?.sale_id,
+    movement.metadata?.saleId
+  ].map(normalizeIdentity).filter(Boolean);
+};
+
+export const buildSaleIdentityIndex = (sales = []) => {
+  const index = new Map();
+  for (const sale of sales) {
+    for (const identity of getSaleIdentityReferences(sale)) {
+      index.set(normalizeIdentity(identity), sale);
+    }
+  }
+  return index;
+};
+
+const resolveMovementSale = (movement, saleIndex) => {
+  for (const identity of movementSaleReferences(movement)) {
+    const sale = saleIndex.get(identity);
+    if (sale) return sale;
+  }
+  return null;
+};
+
+const saleEffectKey = (sale, movement) => {
+  const identity = normalizeIdentity(getSaleIdentityReferences(sale)[0]);
+  const effect = saleEffectType(movement);
+  const amount = Money.toExactString(Money.init(movement.monto ?? movement.amount ?? 0));
+  return identity && effect ? `${identity}::${effect}::${amount}` : null;
+};
+
+export const enrichOfficialCashMovements = (cashMovements = [], sales = []) => {
+  const saleIndex = buildSaleIdentityIndex(sales);
+
+  return cashMovements.map((movement) => {
+    const sale = resolveMovementSale(movement, saleIndex);
+    if (!sale) return movement;
+
+    const traceability = normalizeSaleTraceability(sale);
+    return {
+      ...movement,
+      sale,
+      saleId: movement.saleId || movement.sale_id || sale.id || null,
+      sale_id: movement.sale_id || movement.saleId || sale.id || null,
+      ...traceability,
+      primaryReference: getSaleDisplayReference(sale),
+      secondaryReference: getSaleSecondaryReference(sale)
+    };
+  });
+};
+
+export const normalizeSaleMovements = (sales) => {
   const movements = [];
 
   for (const sale of sales) {
@@ -173,37 +251,75 @@ const normalizeSaleMovements = (sales) => {
     const isCash = method === 'efectivo' || method === 'cash' ||
       (!method && Number(paymentAmount) > 0);
     const isCredit = method === 'fiado';
-    const saleLabel = sale.folio || sale.ticketNumber || sale.id;
-    const shortLabel = String(saleLabel).substring(0, 12);
+    const saleLabel = getSaleDisplayReference(sale) || sale.ticketNumber || sale.id;
+    const traceability = normalizeSaleTraceability(sale);
+    const secondaryReference = getSaleSecondaryReference(sale);
 
     if (isCash) {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,
+        sale,
+        saleId: sale.id || null,
+        sale_id: sale.id || null,
+        referenceType: 'sale',
+        referenceId: sale.id || null,
         tipo: 'venta',
         monto: String(sale.total || paymentAmount || 0),
-        concepto: `Venta #${shortLabel}`,
+        concepto: saleLabel,
+        secondaryReference,
+        ...traceability,
         fecha: sale.timestamp
       });
     } else if (isCredit && Number(sale.abono) > 0) {
       movements.push({
         id: sale.id || `abono-${sale.timestamp}`,
+        sale,
+        saleId: sale.id || null,
+        sale_id: sale.id || null,
+        referenceType: 'sale',
+        referenceId: sale.id || null,
         tipo: 'abono',
         monto: String(sale.abono),
-        concepto: `Abono Fiado #${shortLabel}`,
+        concepto: saleLabel,
+        secondaryReference: `Abono fiado · ${secondaryReference}`,
+        ...traceability,
         fecha: sale.timestamp
       });
     } else if (!isCredit) {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,
+        sale,
+        saleId: sale.id || null,
+        sale_id: sale.id || null,
+        referenceType: 'sale',
+        referenceId: sale.id || null,
         tipo: 'venta_tarjeta',
         monto: String(sale.total || paymentAmount || 0),
-        concepto: `Venta (${sale.paymentMethod || 'Otro'}) #${shortLabel}`,
+        concepto: saleLabel,
+        secondaryReference: `${secondaryReference} · ${sale.paymentMethod || 'Otro'}`,
+        ...traceability,
         fecha: sale.timestamp
       });
     }
   }
 
   return movements;
+};
+
+export const deduplicateSyntheticSaleMovements = (
+  officialMovements = [],
+  syntheticMovements = []
+) => {
+  const officialKeys = new Set(
+    officialMovements
+      .map((movement) => movement.sale ? saleEffectKey(movement.sale, movement) : null)
+      .filter(Boolean)
+  );
+
+  return syntheticMovements.filter((movement) => {
+    const key = movement.sale ? saleEffectKey(movement.sale, movement) : null;
+    return !key || !officialKeys.has(key);
+  });
 };
 
 export async function loadCashSessionProjection(database, cashSession, endOverride) {
@@ -245,9 +361,15 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
   // La proyeccion completa viaja como campo propio del resultado.
   Object.defineProperty(totals, 'reconciliation', { value: reconciliation, enumerable: false });
 
+  const officialCashMovements = enrichOfficialCashMovements(cashMovements, sales);
+  const syntheticSaleMovements = deduplicateSyntheticSaleMovements(
+    officialCashMovements,
+    normalizeSaleMovements(sales)
+  );
+
   const movements = [
-    ...cashMovements,
-    ...normalizeSaleMovements(sales),
+    ...officialCashMovements,
+    ...syntheticSaleMovements,
     ...deletedSales.map((sale) => ({
       id: `del-sale-${sale.id}`,
       tipo: 'venta_eliminada',
