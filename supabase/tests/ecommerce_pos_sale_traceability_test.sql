@@ -38,6 +38,10 @@ begin
       clock_timestamp() + interval '1 day',
       jsonb_build_object(
         'cloud_pos_sync', true,
+        'cloud_reports_sync', true,
+        'cloud_sales_sync_base', true,
+        'cloud_cash_sync', true,
+        'cloud_sales_cashier', true,
         'cloud_sales_reports_final', true,
         'ecommerce_portal_enabled', true,
         'ecommerce_order_inbox', true
@@ -50,8 +54,6 @@ begin
       'active',
       clock_timestamp() + interval '1 day',
       jsonb_build_object(
-        'cloud_pos_sync', true,
-        'cloud_sales_reports_final', true,
         'ecommerce_portal_enabled', true,
         'ecommerce_order_inbox', true
       )

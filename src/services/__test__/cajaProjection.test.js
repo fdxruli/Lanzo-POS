@@ -361,4 +361,64 @@ describe('loadCashSessionProjection', () => {
     expect(result.movements).toHaveLength(1);
     expect(result.movements[0].sale?.id).toBe('sale-alias');
   });
+
+  it('no enlaza reference_id cuando reference_type pertenece a otra entidad', async () => {
+    const session = { ...cashSession, id: 'cash-customer-ledger-reference' };
+    await testDb.table('sales').add({
+      id: 'sale-customer-ledger-collision',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      folio: 'V-000041',
+      paymentMethod: 'cash',
+      total: 40
+    });
+    await testDb.table('movimientos_caja').add({
+      id: 'customer-ledger-movement',
+      cash_session_id: session.id,
+      tipo: 'venta',
+      monto: '40',
+      reference_type: 'customer_ledger',
+      reference_id: 'sale-customer-ledger-collision',
+      fecha: '2026-06-14T12:00:00.000Z'
+    });
+
+    const result = await loadCashSessionProjection(testDb, session);
+
+    expect(result.movements).toHaveLength(2);
+    expect(result.movements.find((movement) => movement.id === 'customer-ledger-movement')?.sale).toBeUndefined();
+    expect(result.movements.find((movement) => movement.id === 'sale-customer-ledger-collision')?.sale?.id)
+      .toBe('sale-customer-ledger-collision');
+  });
+
+  it('enlaza sale_id explicito aunque reference_type pertenezca a otra entidad', async () => {
+    const session = { ...cashSession, id: 'cash-explicit-sale-reference' };
+    await testDb.table('sales').add({
+      id: 'sale-explicit-reference',
+      cash_session_id: session.id,
+      timestamp: '2026-06-14T12:00:00.000Z',
+      status: 'closed',
+      folio: 'V-000042',
+      paymentMethod: 'cash',
+      total: 42
+    });
+    await testDb.table('movimientos_caja').add({
+      id: 'explicit-sale-movement',
+      cash_session_id: session.id,
+      tipo: 'venta',
+      monto: '42',
+      reference_type: 'customer_ledger',
+      reference_id: 'ledger-1',
+      sale_id: 'sale-explicit-reference',
+      fecha: '2026-06-14T12:00:00.000Z'
+    });
+
+    const result = await loadCashSessionProjection(testDb, session);
+
+    expect(result.movements).toHaveLength(1);
+    expect(result.movements[0]).toMatchObject({
+      id: 'explicit-sale-movement',
+      sale: { id: 'sale-explicit-reference' }
+    });
+  });
 });

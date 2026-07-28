@@ -179,11 +179,17 @@ const saleEffectType = (movement = {}) => {
 };
 
 const movementSaleReferences = (movement = {}) => {
+  const referenceType = normalizeIdentity(
+    movement.referenceType || movement.reference_type
+  );
+  const referenceIdAllowed = !referenceType || referenceType === 'sale';
+
   return [
     movement.saleId,
     movement.sale_id,
-    movement.referenceId,
-    movement.reference_id,
+    ...(referenceIdAllowed
+      ? [movement.referenceId, movement.reference_id]
+      : []),
     movement.metadata?.sale_id,
     movement.metadata?.saleId
   ].map(normalizeIdentity).filter(Boolean);
