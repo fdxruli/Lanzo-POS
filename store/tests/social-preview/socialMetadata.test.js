@@ -16,7 +16,7 @@ import {
   normalizeSocialText,
   truncateSocialText,
   validateStoreSlug,
-} from '../socialMetadata.js';
+} from '../../api/_socialMetadata.js';
 
 const PUBLIC_ORIGIN = 'https://tienda.lanzo.test';
 

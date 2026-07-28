@@ -489,3 +489,137 @@ Queda habilitada:
 ```text
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.2 — Cliente server-side del portal público
 ```
+
+## Estado de la minifase 1.2
+
+- Estado: **PASS**.
+- HEAD inicial real de la rama: `b014e885f2a3314df0e10bb38396628a11f72dcb`.
+- HEAD de `main` verificado: `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
+- El PR #141 permaneció abierto y como draft durante la implementación.
+- Corrección preventiva: `socialMetadata.js` se renombró como `store/api/_socialMetadata.js`; sus pruebas se movieron a `store/tests/social-preview/socialMetadata.test.js`.
+- Cliente nuevo: `store/api/_publicPortal.js`.
+- Pruebas nuevas: `store/tests/social-preview/publicPortal.test.js`.
+- Los auxiliares bajo `store/api` comienzan con `_` y las pruebas quedaron fuera de `/api`; ninguno constituye una función HTTP.
+- No se creó endpoint, no se modificó routing y no se modificó `store/vercel.json`.
+
+### Contrato del cliente público
+
+Constructor:
+
+```js
+createPublicPortalSocialClient({
+  supabaseUrl,
+  publishableKey,
+  fetchImpl,
+  timeoutMs
+})
+```
+
+Operación:
+
+```js
+client.getPortalBySlug(slug)
+```
+
+El módulo es JavaScript ESM puro, sin React, DOM, IndexedDB, cachés browser, imports administrativos, lectura de variables de entorno ni efectos secundarios de importación. `fetchImpl` es inyectable y el fallback usa únicamente `globalThis.fetch` disponible en runtime.
+
+La URL configurada debe ser un origen HTTPS absoluto sin credenciales, query, hash ni pathname arbitrario. Se normalizan diagonales finales redundantes. La clave se normaliza solo con `trim()`; se aceptan credenciales públicas heredadas anon y `sb_publishable_*`, y se rechazan antes de red `service_role`, `SUPABASE_SERVICE_ROLE`, `sb_secret_*` y JWT cuyo payload declare rol `service_role`. Los errores de configuración son genéricos y nunca incluyen la URL completa ni la clave.
+
+Configuración ausente produce:
+
+```js
+{ status: 'unavailable', reason: 'configuration_missing' }
+```
+
+Los valores presentes pero inválidos producen `PublicPortalClientConfigurationError` con códigos constantes.
+
+### RPC, solicitud, timeout y límite
+
+Única operación remota:
+
+```text
+POST [supabaseUrl]/rest/v1/rpc/ecommerce_get_portal_by_slug
+```
+
+Body exacto:
+
+```json
+{"p_slug":"slug-validado"}
+```
+
+Headers exactos:
+
+- `Content-Type: application/json`
+- `Accept: application/json`
+- `apikey: [publishableKey]`
+- `Authorization: Bearer [publishableKey]`
+
+Se utiliza `redirect: "error"` y una señal de `AbortController`. `DEFAULT_PUBLIC_PORTAL_TIMEOUT_MS = 4000`; solo se aceptan enteros seguros entre 500 y 10000 ms. El timeout aborta la solicitud, cubre lectura del cuerpo y siempre libera el temporizador.
+
+`MAX_PUBLIC_PORTAL_RESPONSE_BYTES = 262144` (256 KiB). Primero se inspecciona `Content-Length`, después se lee texto, se mide en bytes con `TextEncoder` y solo entonces se usa `JSON.parse`. No se registra ni se retorna el cuerpo remoto.
+
+### Estados y proyección
+
+Estados implementados:
+
+- `{ status: 'ok', portal, siteVersionNumber }`
+- `{ status: 'not_found' }` únicamente para `ECOMMERCE_PORTAL_NOT_FOUND`
+- `{ status: 'unavailable', reason }` con `timeout`, `network`, `http_error`, `remote_error`, `invalid_response` o `configuration_missing`
+
+Un HTTP 404 genérico permanece `http_error`. Para `ok` se exige HTTP exitoso, `success === true`, portal objeto, slug válido y coincidencia exacta con el solicitado. Se rechazan estructuras con claves propias `__proto__`, `constructor` o `prototype`.
+
+Allowlist retornada:
+
+- `slug`
+- `name`
+- `headline`
+- `description`
+- `templateCode`
+- `theme`
+- `logoUrl`
+- `coverImageUrl`
+- `businessType`
+- `siteVersionNumber`
+
+Se excluyen WhatsApp, correo, domicilio y componentes, horarios, disponibilidad, flags de pedidos, límites operativos, stock, settings, features, catálogo y revisión, licencia, pedidos, tracking, dispositivo, staff y metadata. La proyección se construye desde cero y se congela profundamente.
+
+Los textos aceptan solo strings, normalizan espacios y aplican límites. `businessType` acepta solo arrays, elimina vacíos y duplicados y limita cantidad y longitud sin inferir rubros. `siteVersionNumber` solo conserva enteros positivos seguros y no usa `catalogRevision` como fallback.
+
+`templateCode` reutiliza el normalizador vigente y cae a `classic`. `theme` reutiliza `normalizeEcommercePortalTheme` con una entrada previamente proyectada a `primaryColor`, `secondaryColor`, `cornerStyle` y `fontStyle`; no conserva JSON arbitrario ni settings.
+
+`logoUrl` y `coverImageUrl` son únicamente candidatas: strings HTTPS válidos, sin credenciales y con longitud máxima de 2048. Se rechazan HTTP, `data:`, `javascript:`, `blob:` y `file:`. No se descargan imágenes ni se siguen redirecciones; la allowlist final de hosts y el control anti-SSRF corresponden a 1.3.
+
+### Pruebas y validación
+
+Las suites focales quedan en:
+
+- `store/tests/social-preview/socialMetadata.test.js`
+- `store/tests/social-preview/publicPortal.test.js`
+
+La suite nueva cubre configuración, URLs, claves públicas y privilegiadas, solicitud exacta, validador compartido de slug, ausencia de red con slug inválido, inyección de fetch, señal, timeout, liberación de timer, portal completo y opcional, textos, template, theme, rubros, imágenes, versión, inmutabilidad, not found contractual, HTTP 400/401/404/500, red, JSON inválido, cuerpos excesivos, errores remotos, portales incompletos, slug discordante, claves de prototipo, privacidad, ubicación de credenciales y ausencia de logging.
+
+- Pruebas focales Vitest: **NOT RUN**.
+- Motivo: Vitest no está disponible en el entorno de trabajo conectado y el alcance prohíbe `npm install` y `npm ci`.
+- Validación sintáctica con `node --check`: **PASS**.
+- Aserciones runtime-neutral independientes para solicitud, proyección, normalización, privacidad, configuración faltante, slug inválido y rechazo de credenciales privilegiadas: **PASS**.
+- Validación estática de imports, runtime, endpoint único, logging, marcadores pendientes y secretos reales: **PASS**.
+- Comprobación equivalente a `git diff --check`: **PASS** por inspección del parche remoto sin errores de whitespace.
+
+### Límites y habilitación
+
+- Supabase modificado: **no**.
+- Migración creada: **no**.
+- RPC, tablas, RLS, grants o datos modificados: **no**.
+- Vercel modificado: **no**.
+- Endpoint HTTP creado: **no**.
+- Dependencias agregadas: **no**.
+- Builds o suites globales ejecutados: **no**.
+- Bloqueantes residuales: ninguno conocido.
+- Riesgos no bloqueantes: Vitest queda pendiente de ejecución en un entorno con dependencias existentes; la descarga de imágenes, allowlist de hosts y defensa anti-SSRF se implementarán en 1.3.
+
+Queda habilitada:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.3 — Imagen Open Graph dinámica de tienda
+```
+
