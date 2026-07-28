@@ -1,5 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, PackageCheck, RefreshCw, ShoppingBag, Store, X } from 'lucide-react';
+import {
+  Archive,
+  BellRing,
+  CheckCircle2,
+  ChevronDown,
+  CircleUserRound,
+  Clock3,
+  ExternalLink,
+  History,
+  Package,
+  PackageCheck,
+  RefreshCw,
+  Search,
+  ShoppingBag,
+  SlidersHorizontal,
+  Store,
+  X
+} from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -26,15 +43,50 @@ const FILTERS = Object.freeze([
   { key: 'rejected', label: 'Rechazados' }
 ]);
 
+const ORDER_GROUPS = Object.freeze([
+  {
+    key: 'attention',
+    title: 'Requieren atención',
+    description: 'Nuevos por revisar',
+    emptyTitle: 'Todo al día',
+    emptyDescription: 'No tienes pedidos nuevos por revisar.',
+    icon: BellRing,
+    statuses: new Set(['new'])
+  },
+  {
+    key: 'process',
+    title: 'En proceso',
+    description: 'Vistos y aceptados',
+    emptyTitle: 'Sin pedidos en proceso',
+    emptyDescription: 'Los pedidos vistos o aceptados aparecerán aquí.',
+    icon: Clock3,
+    statuses: new Set(['seen', 'accepted', 'preparing', 'ready'])
+  },
+  {
+    key: 'closed',
+    title: 'Cerrados',
+    description: 'Rechazados y finalizados',
+    emptyTitle: 'Sin pedidos cerrados',
+    emptyDescription: 'Los pedidos resueltos aparecerán aquí.',
+    icon: Archive,
+    statuses: new Set(['rejected', 'cancelled', 'completed', 'converted_to_sale'])
+  }
+]);
+
 const KNOWN_POS_DRAFT_STATES = new Set(['none', 'released', 'claimed', 'prepared']);
+const MOBILE_ORDER_BATCH_SIZE = 6;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  dateStyle: 'medium',
+  timeStyle: 'short'
+});
 
 const formatMoney = (value, currency = 'MXN') => {
   try {
-    return new Intl.NumberFormat('es-MX', {
+    return Number(value || 0).toLocaleString('es-MX', {
       style: 'currency',
       currency: currency || 'MXN'
-    }).format(Number(value || 0));
+    });
   } catch {
     return `$${Number(value || 0).toFixed(2)} ${currency || 'MXN'}`;
   }
@@ -43,10 +95,7 @@ const formatMoney = (value, currency = 'MXN') => {
 const formatDate = (value) => {
   if (!value) return 'Sin fecha';
   try {
-    return new Intl.DateTimeFormat('es-MX', {
-      dateStyle: 'medium',
-      timeStyle: 'short'
-    }).format(new Date(value));
+    return DATE_TIME_FORMATTER.format(new Date(value));
   } catch {
     return String(value);
   }
@@ -56,18 +105,107 @@ const fulfillmentLabel = (method) => (
   method === 'delivery' ? 'Entrega a domicilio' : 'Recoger en el negocio'
 );
 
-function SummaryCard({ label, value, tone = 'neutral' }) {
+const getOrderGroup = (status) => (
+  ORDER_GROUPS.find((group) => group.statuses.has(status)) || ORDER_GROUPS[1]
+);
+
+function OrderCard({ order, onOpen }) {
+  const itemCount = Number(order.itemCount || 0);
+
   return (
-    <article className={`ecommerce-orders-summary__card ecommerce-orders-summary__card--${tone}`}>
-      <span>{label}</span>
-      <strong>{Number(value || 0)}</strong>
-    </article>
+    <li className="ecommerce-order-card-shell">
+      <button
+        type="button"
+        className="ecommerce-order-card"
+        onClick={() => onOpen(order.id)}
+        aria-label={`Abrir ${order.code || 'pedido en línea'} de ${order.customerName || 'Cliente'}`}
+      >
+        <span className="ecommerce-order-card__topline">
+          <strong>{order.code || 'Pedido en línea'}</strong>
+          <EcommerceOrderStatusBadge status={order.status} />
+        </span>
+        <span className="ecommerce-order-card__date">{formatDate(order.createdAt)}</span>
+        <span className="ecommerce-order-card__customer">{order.customerName || 'Cliente'}</span>
+        <span className="ecommerce-order-card__meta">
+          <span><Store size={15} aria-hidden="true" />{fulfillmentLabel(order.fulfillmentMethod)}</span>
+          <span><Package size={15} aria-hidden="true" />{itemCount} {itemCount === 1 ? 'artículo' : 'artículos'}</span>
+        </span>
+        <strong className="ecommerce-order-card__total">{formatMoney(order.total, order.currency)}</strong>
+      </button>
+    </li>
   );
 }
 
-function OrderList({ orders, loading, error, onOpen }) {
+function OrderGroup({ group, orders, onOpen, mobileActive, mobileExpanded, onToggleMobileExpanded }) {
+  const Icon = group.icon;
+  const headingId = `ecommerce-orders-group-${group.key}`;
+  const remainingOrders = Math.max(orders.length - MOBILE_ORDER_BATCH_SIZE, 0);
+
+  return (
+    <section
+      id={`ecommerce-orders-panel-${group.key}`}
+      className={[
+        'ecommerce-orders-group',
+        `ecommerce-orders-group--${group.key}`,
+        mobileActive ? 'is-mobile-active' : '',
+        mobileExpanded ? 'is-mobile-expanded' : ''
+      ].filter(Boolean).join(' ')}
+      aria-labelledby={headingId}
+    >
+      <header className="ecommerce-orders-group__header">
+        <span className="ecommerce-orders-group__icon" aria-hidden="true"><Icon size={20} /></span>
+        <span>
+          <span className="ecommerce-orders-group__title-row">
+            <h2 id={headingId}>{group.title}</h2>
+            <span className="ecommerce-orders-group__count">{orders.length}</span>
+          </span>
+          <small>{group.description}</small>
+        </span>
+      </header>
+
+      {orders.length > 0 ? (
+        <>
+          <ul className="ecommerce-orders-group__list">
+            {orders.map((order) => (
+              <OrderCard key={order.id} order={order} onOpen={onOpen} />
+            ))}
+          </ul>
+          {remainingOrders > 0 && (
+            <button
+              type="button"
+              className="ecommerce-orders-group__more ui-button ui-button--secondary"
+              onClick={() => onToggleMobileExpanded(group.key)}
+              aria-expanded={mobileExpanded}
+              aria-controls={`ecommerce-orders-panel-${group.key}`}
+            >
+              {mobileExpanded
+                ? 'Mostrar menos'
+                : `Mostrar ${Math.min(MOBILE_ORDER_BATCH_SIZE, remainingOrders)} más · ${remainingOrders} restantes`}
+            </button>
+          )}
+        </>
+      ) : (
+        <div className="ecommerce-orders-group__empty">
+          <CheckCircle2 size={28} aria-hidden="true" />
+          <strong>{group.emptyTitle}</strong>
+          <span>{group.emptyDescription}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OrderBoard({
+  orders,
+  loading,
+  error,
+  onOpen,
+  mobileGroup,
+  expandedMobileGroups,
+  onToggleMobileExpanded
+}) {
   if (loading) {
-    return <div className="ecommerce-orders-state" role="status">Cargando pedidos online…</div>;
+    return <div className="ecommerce-orders-state" role="status">Cargando pedidos en línea…</div>;
   }
   if (error && orders.length === 0) {
     return <div className="ecommerce-orders-state ecommerce-orders-state--error">{error}</div>;
@@ -75,48 +213,200 @@ function OrderList({ orders, loading, error, onOpen }) {
   if (orders.length === 0) {
     return (
       <div className="ecommerce-orders-state">
-        <ShoppingBag size={34} aria-hidden="true" />
+        <CheckCircle2 size={34} aria-hidden="true" />
         <strong>No hay pedidos en este filtro</strong>
         <span>Los pedidos nuevos aparecerán aquí.</span>
       </div>
     );
   }
 
+  const groupedOrders = ORDER_GROUPS.map((group) => ({
+    ...group,
+    orders: orders.filter((order) => getOrderGroup(order.status).key === group.key)
+  }));
+
   return (
-    <div className="ecommerce-orders-list" role="list" aria-busy={loading}>
-      {orders.map((order) => (
-        <button
-          key={order.id}
-          type="button"
-          className={`ecommerce-order-card ${order.status === 'new' ? 'is-new' : ''}`}
-          onClick={() => onOpen(order.id)}
-          role="listitem"
-        >
-          <div className="ecommerce-order-card__topline">
-            <strong>{order.code || 'Pedido online'}</strong>
-            <EcommerceOrderStatusBadge status={order.status} />
-          </div>
-          <div className="ecommerce-order-card__meta">
-            <span>{formatDate(order.createdAt)}</span>
-            <span>{fulfillmentLabel(order.fulfillmentMethod)}</span>
-          </div>
-          <div className="ecommerce-order-card__body">
-            <span className="ecommerce-order-card__customer">{order.customerName || 'Cliente'}</span>
-            <span>{Number(order.itemCount || 0)} {Number(order.itemCount || 0) === 1 ? 'artículo' : 'artículos'}</span>
-            <strong>{formatMoney(order.total, order.currency)}</strong>
-          </div>
-          {order.status === 'new' && <span className="ecommerce-order-card__new-indicator">Nuevo</span>}
-        </button>
+    <div className="ecommerce-orders-board" aria-busy={loading}>
+      {groupedOrders.map((group) => (
+        <OrderGroup
+          key={group.key}
+          group={group}
+          orders={group.orders}
+          onOpen={onOpen}
+          mobileActive={mobileGroup === group.key}
+          mobileExpanded={expandedMobileGroups.has(group.key)}
+          onToggleMobileExpanded={onToggleMobileExpanded}
+        />
       ))}
     </div>
   );
 }
 
-function DetailSection({ title, children }) {
+function OrdersControls({
+  searchQuery,
+  onSearchChange,
+  filter,
+  onFilter,
+  loading,
+  counts,
+  totalCount,
+  mobileGroups,
+  mobileGroup,
+  onMobileGroup
+}) {
   return (
-    <section className="ecommerce-order-detail__section">
-      <h3>{title}</h3>
-      {children}
+    <div className="ecommerce-orders-mobile-controls">
+      <section className="ecommerce-orders-toolbar" aria-label="Buscar y filtrar pedidos">
+        <label className="ecommerce-orders-search">
+          <Search size={19} aria-hidden="true" />
+          <span className="ecommerce-orders-sr-only">Buscar pedidos</span>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Buscar pedido o cliente"
+          />
+        </label>
+
+        <label className="ecommerce-orders-filter">
+          <SlidersHorizontal size={18} aria-hidden="true" />
+          <span className="ecommerce-orders-filter__label">Estado</span>
+          <select
+            value={filter}
+            onChange={(event) => onFilter(event.target.value)}
+            disabled={loading}
+          >
+            {FILTERS.map((item) => {
+              const count = item.key === 'all' ? totalCount : Number(counts[item.key] || 0);
+              return (
+                <option key={item.key} value={item.key}>
+                  {item.label}{count > 0 ? ` (${count})` : ''}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      </section>
+
+      <nav className="ecommerce-orders-mobile-nav" aria-label="Grupos de pedidos">
+        <div role="tablist" aria-label="Cambiar grupo de pedidos">
+          {mobileGroups.map((group) => {
+            const label = group.key === 'attention' ? 'Atención' : group.title;
+            return (
+              <button
+                key={group.key}
+                type="button"
+                role="tab"
+                aria-selected={mobileGroup === group.key}
+                aria-controls={`ecommerce-orders-panel-${group.key}`}
+                aria-label={`${label}, ${group.count} ${group.count === 1 ? 'pedido' : 'pedidos'}`}
+                className={mobileGroup === group.key ? 'is-active' : ''}
+                onClick={() => onMobileGroup(group.key)}
+              >
+                <span>{label}</span>
+                <strong>{group.count}</strong>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+function OrdersInbox({
+  loading,
+  refreshing,
+  error,
+  orders,
+  visibleOrders,
+  refreshOrders,
+  searchQuery,
+  setSearchQuery,
+  filter,
+  handleFilter,
+  counts,
+  totalCount,
+  mobileGroups,
+  mobileGroup,
+  handleMobileGroup,
+  expandedMobileGroups,
+  handleToggleMobileExpanded,
+  handleOpenOrder
+}) {
+  return (
+    <>
+      <header className="ecommerce-orders-page__header">
+        <div>
+          <h1>Pedidos en línea</h1>
+          <p>Revisa y gestiona cada pedido según su estado para mantener tu operación al día.</p>
+        </div>
+        <button
+          type="button"
+          className="ui-button ui-button--ghost"
+          onClick={() => refreshOrders?.()}
+          disabled={loading || refreshing}
+        >
+          <RefreshCw size={17} className={refreshing ? 'is-spinning' : ''} />
+          <span>{refreshing ? 'Actualizando…' : 'Actualizar'}</span>
+        </button>
+      </header>
+
+      <OrdersControls
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        filter={filter}
+        onFilter={handleFilter}
+        loading={loading}
+        counts={counts}
+        totalCount={totalCount}
+        mobileGroups={mobileGroups}
+        mobileGroup={mobileGroup}
+        onMobileGroup={handleMobileGroup}
+      />
+
+      {error && orders.length > 0 && <div className="ecommerce-orders-inline-error" role="alert">{error}</div>}
+      {searchQuery.trim() && !loading && orders.length > 0 && visibleOrders.length === 0 ? (
+        <div className="ecommerce-orders-state">
+          <Search size={32} aria-hidden="true" />
+          <strong>No encontramos pedidos</strong>
+          <span>Prueba con otro número de pedido o nombre de cliente.</span>
+        </div>
+      ) : (
+        <OrderBoard
+          orders={visibleOrders}
+          loading={loading}
+          error={error}
+          onOpen={handleOpenOrder}
+          mobileGroup={mobileGroup}
+          expandedMobileGroups={expandedMobileGroups}
+          onToggleMobileExpanded={handleToggleMobileExpanded}
+        />
+      )}
+    </>
+  );
+}
+
+function DetailSection({ title, summary, variant = 'default', icon: Icon, children }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section className={`ecommerce-order-detail__section ecommerce-order-detail__section--${variant} ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="ecommerce-order-detail__section-trigger"
+        aria-label={summary ? `${title}: ${summary}` : title}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {Icon && <Icon size={18} aria-hidden="true" />}
+        <span>
+          <strong>{title}</strong>
+          {summary && <small>{summary}</small>}
+        </span>
+        <ChevronDown className="ecommerce-order-detail__section-chevron" size={18} aria-hidden="true" />
+      </button>
+      <div className="ecommerce-order-detail__section-content">{children}</div>
     </section>
   );
 }
@@ -167,7 +457,7 @@ function OrderDetail({
       <aside className="ecommerce-order-detail">
         <header className="ecommerce-order-detail__header">
           <div>
-            <small>Pedido online</small>
+            <small>Pedido en línea</small>
             <h2>{order?.code || 'Cargando…'}</h2>
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar detalle"><X size={20} /></button>
@@ -183,11 +473,21 @@ function OrderDetail({
               <span>{formatDate(order.timestamps?.createdAt)}</span>
             </div>
 
-            <DetailSection title="Modalidad">
+            <DetailSection
+              title="Modalidad"
+              summary={fulfillmentLabel(order.fulfillmentMethod)}
+              variant="fulfillment"
+              icon={Store}
+            >
               <p>{fulfillmentLabel(order.fulfillmentMethod)}</p>
             </DetailSection>
 
-            <DetailSection title="Cliente">
+            <DetailSection
+              title="Cliente"
+              summary={order.customer?.name || 'Sin nombre'}
+              variant="customer"
+              icon={CircleUserRound}
+            >
               <dl className="ecommerce-order-detail__definition-list">
                 <div><dt>Nombre</dt><dd>{order.customer?.name || 'Sin nombre'}</dd></div>
                 <div><dt>Teléfono</dt><dd>{order.customer?.phone || 'Sin teléfono'}</dd></div>
@@ -196,7 +496,12 @@ function OrderDetail({
               </dl>
             </DetailSection>
 
-            <DetailSection title="Artículos">
+            <DetailSection
+              title="Artículos y total"
+              summary={`${order.items.length} ${order.items.length === 1 ? 'artículo' : 'artículos'} · ${formatMoney(order.totals?.total, order.totals?.currency)}`}
+              variant="items"
+              icon={ShoppingBag}
+            >
               <div className="ecommerce-order-detail__items">
                 {order.items.map((item) => (
                   <article key={item.id || `${item.productName}-${item.quantity}`}>
@@ -210,7 +515,7 @@ function OrderDetail({
               </div>
             </DetailSection>
 
-            <DetailSection title="Totales">
+            <DetailSection title="Totales" variant="totals">
               <dl className="ecommerce-order-detail__totals">
                 <div><dt>Subtotal</dt><dd>{formatMoney(order.totals?.subtotal, order.totals?.currency)}</dd></div>
                 {Number(order.totals?.deliveryFee || 0) !== 0 && <div><dt>Envío</dt><dd>{formatMoney(order.totals.deliveryFee, order.totals.currency)}</dd></div>}
@@ -223,10 +528,15 @@ function OrderDetail({
 
             <EcommerceFulfillmentPanel />
 
-            <DetailSection title="Historial">
+            <DetailSection
+              title="Historial"
+              summary={order.events.at(-1)?.message || 'Sin movimientos registrados'}
+              variant="history"
+              icon={History}
+            >
               <ol className="ecommerce-order-detail__timeline">
-                {order.events.map((event, index) => (
-                  <li key={`${event.eventType}-${event.createdAt}-${index}`}>
+                {order.events.map((event) => (
+                  <li key={event.id || `${event.eventType}-${event.createdAt}-${event.actorLabel || ''}-${event.message || ''}`}>
                     <span>{formatDate(event.createdAt)}</span>
                     <strong>{event.message || event.eventType}</strong>
                     <small>{event.actorLabel}</small>
@@ -402,6 +712,9 @@ export default function EcommerceOrdersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [dialogMode, setDialogMode] = useState(null);
   const [posAction, setPosAction] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [mobileGroup, setMobileGroup] = useState('attention');
+  const [expandedMobileGroups, setExpandedMobileGroups] = useState(() => new Set());
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
@@ -427,6 +740,28 @@ export default function EcommerceOrdersPage() {
   const canAccess = canAccessEcommerceOrders(licenseDetails, staffSession);
   const canPrepareInPos = canPrepareEcommerceOrderInPos(licenseDetails, staffSession);
   const isAdmin = currentDeviceRole === 'admin';
+  const visibleOrders = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('es-MX');
+    if (!query) return orders;
+
+    return orders.filter((order) => (
+      String(order.code || '').toLocaleLowerCase('es-MX').includes(query)
+      || String(order.customerName || '').toLocaleLowerCase('es-MX').includes(query)
+    ));
+  }, [orders, searchQuery]);
+  const totalCount = Number(
+    counts.total
+    ?? (
+      Number(counts.new || 0)
+      + Number(counts.seen || 0)
+      + Number(counts.accepted || 0)
+      + Number(counts.rejected || 0)
+    )
+  );
+  const mobileGroups = useMemo(() => ORDER_GROUPS.map((group) => ({
+    ...group,
+    count: visibleOrders.filter((order) => getOrderGroup(order.status).key === group.key).length
+  })), [visibleOrders]);
 
   useEffect(() => {
     if (!canAccess) return;
@@ -452,6 +787,22 @@ export default function EcommerceOrdersPage() {
     if (selectedLoading) setDialogMode(null);
   }, [selectedLoading]);
 
+  useEffect(() => {
+    const groupByFilter = {
+      new: 'attention',
+      seen: 'process',
+      accepted: 'process',
+      rejected: 'closed'
+    };
+    const nextGroup = groupByFilter[filter];
+    if (nextGroup) setMobileGroup(nextGroup);
+  }, [filter]);
+
+  useEffect(() => {
+    if (!searchQuery.trim() || visibleOrders.length === 0) return;
+    setMobileGroup(getOrderGroup(visibleOrders[0].status).key);
+  }, [searchQuery, visibleOrders]);
+
   const handleOpenOrder = (orderId) => {
     setDialogMode(null);
     openOrder?.(orderId, { markSeen: true });
@@ -476,6 +827,24 @@ export default function EcommerceOrdersPage() {
 
     setFilter?.(nextFilter);
     await loadOrders?.({ filter: nextFilter, force: true });
+  };
+
+  const handleMobileGroup = (groupKey) => {
+    setMobileGroup(groupKey);
+    setExpandedMobileGroups((current) => {
+      const next = new Set(current);
+      next.delete(groupKey);
+      return next;
+    });
+  };
+
+  const handleToggleMobileExpanded = (groupKey) => {
+    setExpandedMobileGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
   };
 
   const handleConfirmAction = async (reason) => {
@@ -577,47 +946,26 @@ export default function EcommerceOrdersPage() {
 
   return (
     <main className="ecommerce-orders-page">
-      <header className="ecommerce-orders-page__header">
-        <div>
-          <span className="ecommerce-orders-page__eyebrow">Tienda online</span>
-          <h1>Pedidos online</h1>
-          <p>Revisa, acepta o rechaza pedidos. Aceptar todavía no crea una venta ni afecta inventario o caja.</p>
-        </div>
-        <button
-          type="button"
-          className="ui-button ui-button--secondary"
-          onClick={() => refreshOrders?.()}
-          disabled={loading || refreshing}
-        >
-          <RefreshCw size={17} className={refreshing ? 'is-spinning' : ''} />
-          {refreshing ? 'Actualizando…' : 'Actualizar'}
-        </button>
-      </header>
-
-      <section className="ecommerce-orders-summary" aria-label="Resumen de pedidos">
-        <SummaryCard label="Nuevos" value={counts.new} tone="new" />
-        <SummaryCard label="Vistos" value={counts.seen} tone="seen" />
-        <SummaryCard label="Aceptados" value={counts.accepted} tone="accepted" />
-        <SummaryCard label="Rechazados" value={counts.rejected} tone="rejected" />
-        <SummaryCard label="Pendientes" value={counts.pending} tone="pending" />
-      </section>
-
-      <nav className="ecommerce-orders-filters" aria-label="Filtrar pedidos">
-        {FILTERS.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={filter === item.key ? 'is-active' : ''}
-            onClick={() => handleFilter(item.key)}
-          >
-            {item.label}
-            {item.key !== 'all' && Number(counts[item.key] || 0) > 0 && <span>{counts[item.key]}</span>}
-          </button>
-        ))}
-      </nav>
-
-      {error && orders.length > 0 && <div className="ecommerce-orders-inline-error" role="alert">{error}</div>}
-      <OrderList orders={orders} loading={loading} error={error} onOpen={handleOpenOrder} />
+      <OrdersInbox
+        loading={loading}
+        refreshing={refreshing}
+        error={error}
+        orders={orders}
+        visibleOrders={visibleOrders}
+        refreshOrders={refreshOrders}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        filter={filter}
+        handleFilter={handleFilter}
+        counts={counts}
+        totalCount={totalCount}
+        mobileGroups={mobileGroups}
+        mobileGroup={mobileGroup}
+        handleMobileGroup={handleMobileGroup}
+        expandedMobileGroups={expandedMobileGroups}
+        handleToggleMobileExpanded={handleToggleMobileExpanded}
+        handleOpenOrder={handleOpenOrder}
+      />
 
       <OrderDetail
         order={selectedOrder}
