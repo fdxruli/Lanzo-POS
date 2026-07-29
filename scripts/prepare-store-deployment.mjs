@@ -97,6 +97,7 @@ export function shouldCopyStoreWorkspacePath(relativePath) {
   if (!normalized) return true;
   const segments = normalized.split('/');
   if (excludedRootNames.has(segments[0])) return false;
+  if (segments.at(-1)?.toLowerCase() === 'auth.json') return false;
   if (segments.some((segment) => /^\.env(?:\.|$)/iu.test(segment))) return false;
   if (normalized === 'store/dist' || normalized.startsWith('store/dist/')) return false;
   if (
@@ -209,6 +210,30 @@ export async function resolveWindowsPathCommand(command, environment = process.e
     if (await isFile(candidate)) return candidate;
   }
   throw new Error(`Required executable not found: ${executableName(command)}`);
+}
+
+export function buildNpmExecutionEnvironment({
+  environment = process.env,
+  temporaryDirectory = os.tmpdir(),
+} = {}) {
+  return Object.freeze({
+    ...environment,
+    NPM_CONFIG_CACHE: path.join(temporaryDirectory, 'lanzo-store-social-preview-npm-cache'),
+    XDG_CACHE_HOME: path.join(temporaryDirectory, 'lanzo-store-npm-cache'),
+  });
+}
+
+export function buildVercelExecutionEnvironment({
+  environment = process.env,
+  useLoggedInAuthentication = true,
+} = {}) {
+  const vercelEnvironment = { ...environment };
+  if (useLoggedInAuthentication) {
+    for (const name of Object.keys(vercelEnvironment)) {
+      if (name.toUpperCase() === 'VERCEL_TOKEN') delete vercelEnvironment[name];
+    }
+  }
+  return Object.freeze(vercelEnvironment);
 }
 
 function assertSafeWindowsWrapperCommand(command) {
@@ -491,26 +516,23 @@ export async function prepareStoreDeployment({
     const storeRoot = path.join(workspaceRoot, 'store');
     await writeProjectLink(storeRoot);
 
-    const npmCache = path.join(os.tmpdir(), 'lanzo-store-social-preview-npm-cache');
-    await mkdir(npmCache, { recursive: true });
-    const executionEnvironment = {
-      ...environment,
-      NPM_CONFIG_CACHE: npmCache,
-      XDG_CACHE_HOME: path.join(os.tmpdir(), 'lanzo-store-vercel-cache'),
-      XDG_CONFIG_HOME: path.join(os.tmpdir(), 'lanzo-store-vercel-config'),
-      XDG_DATA_HOME: path.join(os.tmpdir(), 'lanzo-store-vercel-data'),
+    const npmExecutionEnvironment = buildNpmExecutionEnvironment({ environment });
+    await mkdir(npmExecutionEnvironment.NPM_CONFIG_CACHE, { recursive: true });
+    const vercelExecutionEnvironment = buildVercelExecutionEnvironment({ environment });
+    const buildEnvironment = {
+      ...vercelExecutionEnvironment,
       VITE_SUPABASE_URL: 'https://invalid-for-local-build.supabase.invalid',
       VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_invalid_for_local_build',
       PUBLIC_STORE_ORIGINS: 'https://store.invalid',
     };
     commandRunner(installInvocation.command, installInvocation.args, {
       cwd: workspaceRoot,
-      environment: executionEnvironment,
+      environment: npmExecutionEnvironment,
     });
     commandRunner(
       resolvedVercelCommand,
       ['build', '--prod', '--yes', '--local-config', './vercel.json'],
-      { cwd: storeRoot, environment: executionEnvironment },
+      { cwd: storeRoot, environment: buildEnvironment },
     );
 
     await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);

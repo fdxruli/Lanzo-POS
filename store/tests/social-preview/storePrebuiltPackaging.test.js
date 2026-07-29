@@ -8,6 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildNpmExecutionEnvironment,
+  buildVercelExecutionEnvironment,
   buildWindowsCmdPayload,
   buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
@@ -63,6 +65,42 @@ async function expectControlledStopPreservesRepository(sourceRoot) {
 }
 
 describe('workspace prebuilt saneado', () => {
+  it('aísla únicamente el caché de npm sin mutar el entorno padre', () => {
+    const parent = Object.freeze({
+      APPDATA: 'C:\\Users\\fixture\\AppData\\Roaming',
+      XDG_CONFIG_HOME: 'C:\\Users\\fixture\\config',
+      XDG_DATA_HOME: 'C:\\Users\\fixture\\data',
+    });
+    const result = buildNpmExecutionEnvironment({
+      environment: parent,
+      temporaryDirectory: 'C:\\Temp\\with spaces',
+    });
+    expect(result.NPM_CONFIG_CACHE).toBe('C:\\Temp\\with spaces\\lanzo-store-social-preview-npm-cache');
+    expect(result.XDG_CACHE_HOME).toBe('C:\\Temp\\with spaces\\lanzo-store-npm-cache');
+    expect(result.XDG_CONFIG_HOME).toBe(parent.XDG_CONFIG_HOME);
+    expect(result.XDG_DATA_HOME).toBe(parent.XDG_DATA_HOME);
+    expect(parent).not.toHaveProperty('NPM_CONFIG_CACHE');
+  });
+
+  it('preserva el perfil de Vercel y elimina solo VERCEL_TOKEN del hijo', () => {
+    const parent = Object.freeze({
+      APPDATA: 'C:\\Users\\fixture\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\fixture\\AppData\\Local',
+      HOME: 'C:\\Users\\fixture',
+      USERPROFILE: 'C:\\Users\\fixture',
+      XDG_CONFIG_HOME: 'C:\\Users\\fixture\\config',
+      XDG_DATA_HOME: 'C:\\Users\\fixture\\data',
+      VERCEL_TOKEN: 'test-token-value',
+    });
+    const result = buildVercelExecutionEnvironment({ environment: parent });
+    for (const name of ['APPDATA', 'LOCALAPPDATA', 'HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME']) {
+      expect(result[name]).toBe(parent[name]);
+    }
+    expect(result).not.toHaveProperty('VERCEL_TOKEN');
+    expect(parent.VERCEL_TOKEN).toBe('test-token-value');
+    expect(JSON.stringify(result)).not.toContain('test-token-value');
+  });
+
   it('invoca npm mediante el Node real y npm_execpath, sin wrapper', () => {
     const invocation = resolveNpmInvocation({
       platform: 'win32',
@@ -372,6 +410,8 @@ describe('workspace prebuilt saneado', () => {
     ['src/main-store.jsx', true],
     ['.git/config', false],
     ['.env', false],
+    ['auth.json', false],
+    ['.config/com.vercel.cli/auth.json', false],
     ['store/.env.local', false],
     ['.vercel/project.json', false],
     ['node_modules/react/index.js', false],
@@ -460,6 +500,44 @@ describe('workspace prebuilt saneado', () => {
       },
     ]);
     expect(calls.every(({ args }) => Array.isArray(args))).toBe(true);
+  });
+
+  it('separa los entornos de npm y Vercel sin propagar auth al workspace', async () => {
+    const sourceRoot = await createRepositoryFixture();
+    const calls = [];
+    const parentEnvironment = {
+      APPDATA: 'C:\\Users\\fixture\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\fixture\\AppData\\Local',
+      HOME: 'C:\\Users\\fixture',
+      USERPROFILE: 'C:\\Users\\fixture',
+      XDG_CONFIG_HOME: 'C:\\Users\\fixture\\config',
+      XDG_DATA_HOME: 'C:\\Users\\fixture\\data',
+      VERCEL_TOKEN: 'test-token-value',
+      npm_execpath: process.execPath,
+    };
+    await expect(prepareStoreDeployment({
+      repositoryRoot: sourceRoot,
+      environment: parentEnvironment,
+      npmInvocation: {
+        command: 'node-fixture',
+        args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
+        options: { shell: false },
+      },
+      vercelCommand: 'vercel-fixture',
+      commandRunner(command, _args, options) {
+        calls.push({ command, environment: options.environment });
+        if (command === 'vercel-fixture') throw new Error('controlled Vercel stop');
+      },
+    })).rejects.toThrow('controlled Vercel stop');
+    const [npmCall, vercelCall] = calls;
+    expect(npmCall.environment.NPM_CONFIG_CACHE).toContain('lanzo-store-social-preview-npm-cache');
+    expect(npmCall.environment.XDG_CACHE_HOME).toContain('lanzo-store-npm-cache');
+    expect(vercelCall.environment.XDG_CONFIG_HOME).toBe(parentEnvironment.XDG_CONFIG_HOME);
+    expect(vercelCall.environment.XDG_DATA_HOME).toBe(parentEnvironment.XDG_DATA_HOME);
+    expect(vercelCall.environment.APPDATA).toBe(parentEnvironment.APPDATA);
+    expect(vercelCall.environment).not.toHaveProperty('VERCEL_TOKEN');
+    expect(parentEnvironment.VERCEL_TOKEN).toBe('test-token-value');
+    expect(JSON.stringify(vercelCall.environment)).not.toContain('test-token-value');
   });
 
   it('reporta ENOENT sin rutas, limpia el workspace y preserva el repositorio', async () => {
