@@ -113,34 +113,62 @@ function applyCompiledDestination(route, pathname, incomingSearch = '') {
   });
 }
 
-export function inspectCompiledStoreRoutes(outputConfig) {
+function outputStaticPathname(pathname) {
+  return pathname.replace(/^\//u, '');
+}
+
+/**
+ * Small, deliberately conservative model of the compiled Build Output routing
+ * order.  Header routes continue; filesystem ends the request only for an
+ * existing static file; redirects and destinations are terminal.
+ */
+export function evaluateCompiledRoute(routes, pathname, staticPaths = new Set()) {
+  const headers = [];
+  for (let index = 0; index < routes.length; index += 1) {
+    const route = routes[index];
+    if (route.handle === 'filesystem') {
+      if (staticPaths.has(outputStaticPathname(pathname))) {
+        return { kind: 'filesystem', pathname, index, headers };
+      }
+      continue;
+    }
+    if (route.handle === 'error') return { kind: 'error', pathname, index, headers };
+    if (!routeMatches(route, pathname)) continue;
+    if (route.headers) headers.push({ index, headers: route.headers });
+    if (route.status && route.status >= 300 && route.status < 400) {
+      return { kind: 'redirect', pathname, index, status: route.status, headers };
+    }
+    if (typeof route.dest === 'string') {
+      const destination = applyCompiledDestination(route, pathname);
+      return { kind: 'rewrite', pathname: destination?.pathname || null, index, headers };
+    }
+  }
+  return { kind: 'unmatched', pathname, index: -1, headers };
+}
+
+export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = {}) {
   const routes = Array.isArray(outputConfig?.routes) ? outputConfig.routes : [];
+  const staticPathSet = new Set(staticPaths.map(outputStaticPathname));
   const filesystemIndex = routes.findIndex((route) => route.handle === 'filesystem');
   const errorIndex = routes.findIndex((route) => route.handle === 'error');
-  const dynamicRoute = matchingRoute(
-    routes,
-    '/tienda/mi-tienda',
-    (route) => typeof route.dest === 'string' && route.dest.startsWith('/api/store-page'),
-  );
-  const trackingRoute = matchingRoute(
-    routes,
-    '/tienda/mi-tienda/pedido/token-ficticio',
-    (route) => typeof route.dest === 'string',
-  );
-  const nestedRoute = matchingRoute(
-    routes,
-    '/tienda/mi-tienda/ruta-anidada',
-    (route) => typeof route.dest === 'string',
-  );
+  const realAsset = [...staticPathSet].find((item) => /^assets\/.*-[A-Za-z0-9_-]{6,}\.js$/u.test(item)) || null;
+  const assetPathname = realAsset ? `/${realAsset}` : null;
+  const dynamicEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda', staticPathSet);
+  const trackingEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda/pedido/token-ficticio', staticPathSet);
+  const nestedEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda/ruta-anidada', staticPathSet);
+  const assetEvaluation = assetPathname
+    ? evaluateCompiledRoute(routes, assetPathname, staticPathSet)
+    : null;
+  const apiEvaluation = evaluateCompiledRoute(routes, '/api/store-page', staticPathSet);
   const canonicalRoute = routes.find((route) => (
     route.status === 308
     && routeHeader(route, 'Location') === '/$1'
     && typeof route.src === 'string'
     && route.src.includes('(.*)/$')
   ));
-  const assetHeader = matchingRoute(
+  const assetHeader = assetPathname && matchingRoute(
     routes,
-    '/assets/example-AbCd1234.js',
+    assetPathname,
     (route) => routeHeader(route, 'Cache-Control') === IMMUTABLE_CACHE,
   );
   const htmlImmutable = routes.some((route) => (
@@ -163,8 +191,8 @@ export function inspectCompiledStoreRoutes(outputConfig) {
     ['/tienda/mi-tienda', '?slug=externo'],
     ['/tienda/mi-tienda', '?slug=externo&slug=otro'],
   ].map(([pathname, search]) => {
-    const result = dynamicRoute
-      ? applyCompiledDestination(dynamicRoute, pathname, search)
+    const result = dynamicEvaluation.kind === 'rewrite'
+      ? applyCompiledDestination(routes[dynamicEvaluation.index], pathname, search)
       : null;
     return {
       request: `${pathname}${search}`,
@@ -179,26 +207,19 @@ export function inspectCompiledStoreRoutes(outputConfig) {
     routesPresent: routes.length > 1,
     filesystemPresent: filesystemIndex >= 0,
     errorAfterFilesystem: errorIndex > filesystemIndex,
-    dynamicStoreRoute: Boolean(dynamicRoute),
-    dynamicAfterFilesystem: dynamicRoute ? routes.indexOf(dynamicRoute) > filesystemIndex : false,
+    dynamicStoreRoute: dynamicEvaluation.kind === 'rewrite',
+    dynamicAfterFilesystem: dynamicEvaluation.index > filesystemIndex,
     dynamicDestination: cases.every((item) => item.destination === '/api/store-page'),
     pathSlugExactlyOnce: cases.every((item) => (
       item.slugValues.length === 1 && item.slugValues[0] === 'mi-tienda'
     )),
-    trackingStatic: Boolean(trackingRoute)
-      && trackingRoute.dest.startsWith('/index.html')
-      && !trackingRoute.dest.includes('tracking'),
-    nestedStoreStatic: Boolean(nestedRoute) && nestedRoute.dest.startsWith('/index.html'),
-    assetsNotIntercepted: !matchingRoute(
-      routes.slice(filesystemIndex + 1),
-      '/assets/example-AbCd1234.js',
-      (route) => typeof route.dest === 'string',
-    ),
-    apiNotIntercepted: !matchingRoute(
-      routes.slice(filesystemIndex + 1),
-      '/api/store-page',
-      (route) => typeof route.dest === 'string' && route.dest.startsWith('/index.html'),
-    ),
+    trackingStatic: trackingEvaluation.kind === 'rewrite' && trackingEvaluation.pathname === '/index.html',
+    nestedStoreStatic: nestedEvaluation.kind === 'rewrite' && nestedEvaluation.pathname === '/index.html',
+    realAssetExists: Boolean(realAsset),
+    filesystemPrecedesFallback: Boolean(assetEvaluation) && filesystemIndex >= 0
+      && assetEvaluation.kind === 'filesystem' && assetEvaluation.index === filesystemIndex,
+    assetsNotIntercepted: Boolean(assetEvaluation) && assetEvaluation.kind === 'filesystem',
+    apiNotIntercepted: apiEvaluation.kind !== 'rewrite' || apiEvaluation.pathname !== '/index.html',
     trailingSlashCanonical: Boolean(canonicalRoute),
     trailingSlashNoindex: routeHeader(canonicalRoute, 'X-Robots-Tag') === NOINDEX,
     globalNoindex: routes.some((route) => routeHeader(route, 'X-Robots-Tag') === NOINDEX),
@@ -218,13 +239,43 @@ export function inspectCompiledStoreRoutes(outputConfig) {
     routes: routes.length,
     filesystemIndex,
     errorIndex,
-    dynamicRoute: dynamicRoute
-      ? { src: dynamicRoute.src, dest: dynamicRoute.dest }
+    dynamicRoute: dynamicEvaluation.kind === 'rewrite'
+      ? { src: routes[dynamicEvaluation.index].src, dest: routes[dynamicEvaluation.index].dest }
       : null,
+    compiled: {
+      asset: assetPathname ? { request: assetPathname, result: assetEvaluation } : null,
+      store: { request: '/tienda/mi-tienda', result: dynamicEvaluation },
+      tracking: { request: '/tienda/mi-tienda/pedido/token-ficticio', result: trackingEvaluation },
+      nested: { request: '/tienda/mi-tienda/ruta-anidada', result: nestedEvaluation },
+      api: { request: '/api/store-page', result: apiEvaluation },
+    },
   });
 }
 
-async function discoverFunctionBundles(functionsRoot) {
+function canonicalFunctionRoute(relative, config, outputConfig) {
+  const rawRoute = `/${relative.slice(0, -'.func'.length)}`;
+  const extension = path.extname(rawRoute);
+  if (!['.js', '.jsx', '.ts', '.tsx'].includes(extension)) return { rawRoute, route: rawRoute, normalized: false };
+  const canonicalRoute = rawRoute.slice(0, -extension.length);
+  const expectedInput = new Map([
+    ['/api/store-page', '/api/store-page.js'],
+    ['/api/og/store', '/api/og/store.jsx'],
+  ]).get(canonicalRoute);
+  const routes = Array.isArray(outputConfig?.routes) ? outputConfig.routes : [];
+  const configRoutesCanonical = routes.some((route) => (
+    typeof route?.src === 'string' && route.src.includes(canonicalRoute.replaceAll('/', '\\/'))
+  ) || (typeof route?.dest === 'string' && route.dest.split('?')[0] === canonicalRoute));
+  const validRuntime = /^nodejs\d+(?:\.x)?$/u.test(config?.runtime || '');
+  const validHandler = typeof config?.handler === 'string' && config.handler.length > 0;
+  const extensionMatches = expectedInput === rawRoute;
+  return {
+    rawRoute,
+    route: extensionMatches && configRoutesCanonical && validRuntime && validHandler ? canonicalRoute : rawRoute,
+    normalized: extensionMatches && configRoutesCanonical && validRuntime && validHandler,
+  };
+}
+
+async function discoverFunctionBundles(functionsRoot, outputConfig) {
   if (!await pathExists(functionsRoot)) return [];
   const bundles = [];
   async function visit(directory) {
@@ -236,14 +287,17 @@ async function discoverFunctionBundles(functionsRoot) {
         const relative = normalizePath(path.relative(functionsRoot, absolutePath));
         const configPath = path.join(absolutePath, '.vc-config.json');
         if (!await pathExists(configPath)) {
-          bundles.push({ absolutePath, relative, route: null, config: null, missingConfig: true });
+        bundles.push({ absolutePath, relative, route: null, rawRoute: null, config: null, missingConfig: true });
           continue;
         }
         const config = JSON.parse(await readFile(configPath, 'utf8'));
+        const resolved = canonicalFunctionRoute(relative, config, outputConfig);
         bundles.push({
           absolutePath,
           relative,
-          route: `/${relative.slice(0, -'.func'.length)}`,
+          route: resolved.route,
+          rawRoute: resolved.rawRoute,
+          normalized: resolved.normalized,
           config,
           missingConfig: false,
         });
@@ -471,8 +525,8 @@ export function formatSafetyFailureDetails(safety, failedChecks, limit = 5) {
   return details;
 }
 
-async function inspectFunctions(functionsRoot, sourceStaticPath) {
-  const bundles = await discoverFunctionBundles(functionsRoot);
+async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
+  const bundles = await discoverFunctionBundles(functionsRoot, outputConfig);
   const routes = bundles.map((bundle) => bundle.route).filter(Boolean).sort();
   const details = [];
   const allViolations = {
@@ -491,10 +545,32 @@ async function inspectFunctions(functionsRoot, sourceStaticPath) {
     const files = await walkOutputFiles(bundle.absolutePath);
     const paths = files.map((file) => file.relativePath);
     const sources = await Promise.all(files
-      .filter((file) => textExtensions.has(path.extname(file.relativePath).toLowerCase()))
+      .filter((file) => textExtensions.has(path.extname(file.relativePath).toLowerCase()) || file.relativePath.endsWith('.map'))
       .map(async (file) => ({ ...file, source: await readFile(file.absolutePath, 'utf8') })));
     const joined = sources.map(({ source }) => source).join('\n');
     const safety = inspectTextForSafety(sources, 'store');
+    const sourceMapPaths = paths.filter((item) => item.endsWith('.map'));
+    const sourceMaps = await Promise.all(sourceMapPaths.map(async (relativePath) => {
+      const source = await readFile(path.join(bundle.absolutePath, relativePath), 'utf8');
+      let parsed = null;
+      try { parsed = JSON.parse(source); } catch { /* rejected below */ }
+      const references = Array.isArray(parsed?.sources) ? parsed.sources.map(String) : [];
+      const outsideClosure = references.some((reference) => (
+        path.isAbsolute(reference)
+        || /^[A-Za-z]:[\\/]/u.test(reference)
+        || /(?:^|[\\/])(?:src|supabase|tests|docs)(?:[\\/]|$)/iu.test(reference)
+      ));
+      return {
+        path: relativePath,
+        generatedBy: /^nodejs\d+(?:\.x)?$/u.test(bundle.config?.runtime || '') ? '@vercel/node (inferred)' : 'unknown',
+        insideFunctionBundle: true,
+        public: false,
+        referencedFromConfig: false,
+        validJson: Boolean(parsed),
+        sources: references,
+        closureSafe: !outsideClosure,
+      };
+    }));
     for (const key of [
       'secretViolations',
       'administrativeViolations',
@@ -515,13 +591,17 @@ async function inspectFunctions(functionsRoot, sourceStaticPath) {
     const handler = bundle.config?.handler;
     details.push({
       route: bundle.route,
+      rawRoute: bundle.rawRoute,
+      bundle: bundle.relative,
+      normalized: bundle.normalized === true,
       runtime: bundle.config?.runtime || null,
       handler: handler || null,
       files: files.length,
       bytes: files.reduce((total, file) => total + file.bytes, 0),
       configReadable,
       handlerPresent: typeof handler === 'string' && paths.includes(handler),
-      sourceMaps: paths.filter((item) => item.endsWith('.map')),
+      sourceMaps: sourceMaps.map((item) => item.path),
+      internalFunctionSourceMaps: sourceMaps,
       fonts: paths.filter((item) => /\.(?:otf|ttf|woff2?)$/iu.test(item)),
       environmentFiles: paths.filter((item) => /(^|\/)\.env(?:\.|$)/iu.test(item)),
       dependencies: {
@@ -538,14 +618,23 @@ async function inspectFunctions(functionsRoot, sourceStaticPath) {
     });
   }
 
+  const duplicateRoutes = routes.some((route, index) => routes.indexOf(route) !== index);
   const htmlFunction = details.find((item) => item.route === '/api/store-page');
   const ogFunction = details.find((item) => item.route === '/api/og/store');
   const checks = {
-    exactlyExpectedFunctions: JSON.stringify(routes) === JSON.stringify(EXPECTED_STORE_FUNCTIONS),
+    exactlyExpectedFunctions: !duplicateRoutes
+      && JSON.stringify(routes) === JSON.stringify(EXPECTED_STORE_FUNCTIONS),
     readableConfigs: details.every((item) => item.configReadable),
     validRuntime: details.every((item) => /^nodejs\d+(?:\.x)?$/u.test(item.runtime || '')),
     validHandlers: details.every((item) => item.handlerPresent),
-    noSourceMaps: details.every((item) => item.sourceMaps.length === 0),
+    internalFunctionSourceMapsSafe: details.every((item) => item.internalFunctionSourceMaps.every((map) => (
+      map.generatedBy === '@vercel/node (inferred)'
+      && map.insideFunctionBundle
+      && !map.public
+      && !map.referencedFromConfig
+      && map.validJson
+      && map.closureSafe
+    ))),
     noFonts: details.every((item) => item.fonts.length === 0),
     noEnvironmentFiles: details.every((item) => item.environmentFiles.length === 0),
     ogResolvesVercelOg: ogFunction?.dependencies.vercelOg === true,
@@ -579,7 +668,7 @@ export async function inspectStatic(staticRoot, targetName) {
     hashedJavascript: assetPaths.some((item) => /-[A-Za-z0-9_-]{6,}\.js$/u.test(item)),
     hashedCss: assetPaths.some((item) => /-[A-Za-z0-9_-]{6,}\.css$/u.test(item)),
     rootPresent: /\bid=["']root["']/u.test(indexHtml),
-    noSourceMaps: !paths.some((item) => item.endsWith('.map')),
+    noPublicSourceMaps: !paths.some((item) => item.endsWith('.map')),
     noFonts: !paths.some((item) => /\.(?:otf|ttf|woff2?)$/iu.test(item)),
     noSourceFiles: !paths.some((item) => /^(?:src|scripts|docs|tests|supabase)\//iu.test(item)),
     noPackages: !paths.some((item) => /^package(?:-lock)?\.json$/iu.test(item)),
@@ -605,12 +694,21 @@ export async function inspectStatic(staticRoot, targetName) {
   return { files, manifest: items, checks, safety };
 }
 
-function verifyTemporaryStoreRoot(packageRoot) {
-  const resolved = path.resolve(packageRoot);
-  const workspaceRoot = path.dirname(resolved);
-  return path.basename(resolved) === 'store'
-    && path.dirname(workspaceRoot) === path.resolve(os.tmpdir())
-    && path.basename(workspaceRoot).startsWith(STORE_WORKSPACE_PREFIX);
+export function verifyTemporaryStoreRoot({ workspaceRoot, effectiveStoreRoot, temporaryRoot = os.tmpdir(), prefix = STORE_WORKSPACE_PREFIX }) {
+  const workspace = path.resolve(workspaceRoot);
+  const store = path.resolve(effectiveStoreRoot);
+  const temporary = path.resolve(temporaryRoot);
+  const workspaceRelative = path.relative(temporary, workspace);
+  const storeRelative = path.relative(workspace, store);
+  return path.dirname(workspace) === temporary
+    && !workspaceRelative.startsWith('..')
+    && !path.isAbsolute(workspaceRelative)
+    && path.basename(workspace).startsWith(prefix)
+    && store === path.join(workspace, 'store')
+    && storeRelative === 'store'
+    && !normalizePath(store).includes('/store/store')
+    && !storeRelative.startsWith('..')
+    && !path.isAbsolute(storeRelative);
 }
 
 export async function auditPrebuiltOutput(targetName, packageRootArgument, options = {}) {
@@ -623,9 +721,10 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     projectId: options.expectedProjectId || baseTarget.projectId,
     organizationId: options.expectedOrganizationId || baseTarget.organizationId,
   };
-  const packageRoot = path.resolve(packageRootArgument);
-  const projectLinkPath = path.join(packageRoot, '.vercel', 'project.json');
-  const outputRoot = path.join(packageRoot, '.vercel', 'output');
+  const workspaceRoot = path.resolve(packageRootArgument);
+  const effectiveStoreRoot = path.resolve(options.effectiveStoreRoot || path.join(workspaceRoot, 'store'));
+  const projectLinkPath = path.join(workspaceRoot, '.vercel', 'project.json');
+  const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
   const outputConfigPath = path.join(outputRoot, 'config.json');
   const outputStaticPath = path.join(outputRoot, 'static');
   const outputFunctionsPath = path.join(outputRoot, 'functions');
@@ -651,6 +750,10 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     walkOutputFiles(target.sourceStatic),
     inspectStatic(outputStaticPath, targetName),
   ]);
+  const outputFiles = await walkOutputFiles(outputRoot);
+  const outputSourceMaps = outputFiles
+    .map((file) => file.relativePath)
+    .filter((item) => item.endsWith('.map'));
   const sourceStaticManifest = await manifest(sourceStaticFiles);
   const outputByPath = new Map(staticAudit.manifest.map((item) => [item.path, item]));
   const artifactMatches = sourceStaticManifest.length === staticAudit.manifest.length
@@ -667,17 +770,22 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     noDomainsOrAliases: !outputConfig.domains && !outputConfig.alias,
     noMiddleware: !outputConfig.middleware
       && !(outputConfig.routes || []).some((route) => route.middlewarePath),
-    ...(targetName === 'store' ? inspectCompiledStoreRoutes(outputConfig).checks : {}),
+    ...(targetName === 'store' ? inspectCompiledStoreRoutes(outputConfig, {
+      staticPaths: staticAudit.manifest.map((item) => item.path),
+    }).checks : {}),
     ...staticAudit.checks,
   };
 
   let functionAudit = null;
   let routeAudit = null;
   if (targetName === 'store') {
-    routeAudit = inspectCompiledStoreRoutes(outputConfig);
-    functionAudit = await inspectFunctions(outputFunctionsPath, target.sourceStatic);
+    routeAudit = inspectCompiledStoreRoutes(outputConfig, {
+      staticPaths: staticAudit.manifest.map((item) => item.path),
+    });
+    functionAudit = await inspectFunctions(outputFunctionsPath, target.sourceStatic, outputConfig);
     Object.assign(checks, functionAudit.checks);
-    checks.noSourceMaps = staticAudit.checks.noSourceMaps && functionAudit.checks.noSourceMaps;
+    checks.noPublicSourceMaps = staticAudit.checks.noPublicSourceMaps
+      && outputSourceMaps.every((item) => item.startsWith('functions/') && item.includes('.func/'));
     checks.noFonts = staticAudit.checks.noFonts && functionAudit.checks.noFonts;
     checks.noSecrets = staticAudit.checks.noSecrets && functionAudit.checks.noSecrets;
     checks.noAdministrativeCode = staticAudit.checks.noAdministrativeCode
@@ -689,7 +797,7 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     checks.noFunctions = !await pathExists(outputFunctionsPath);
   }
   if (options.enforceTemporaryRoot !== false && targetName === 'store') {
-    checks.temporaryWorkspace = verifyTemporaryStoreRoot(packageRoot);
+    checks.temporaryWorkspace = verifyTemporaryStoreRoot({ workspaceRoot, effectiveStoreRoot });
   }
   const failedChecks = Object.entries(checks)
     .filter(([, passed]) => !passed)
@@ -711,12 +819,15 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
       staticFiles: staticAudit.files.length,
       staticBytes: staticAudit.files.reduce((total, file) => total + file.bytes, 0),
       functions: functionAudit?.routes || [],
+      outputRoot: normalizePath(path.relative(workspaceRoot, outputRoot)),
+      sourceMaps: outputSourceMaps,
     },
     routing: routeAudit,
     functionAudit,
     staticAudit: {
       checks: staticAudit.checks,
       safety: staticAudit.safety,
+      sourceMaps: staticAudit.manifest.filter((item) => item.path.endsWith('.map')).map((item) => item.path),
     },
     checks,
     failedChecks,

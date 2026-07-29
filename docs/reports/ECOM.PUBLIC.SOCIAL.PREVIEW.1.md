@@ -2392,3 +2392,61 @@ las dos funciones, static y paridad SHA-256.
 No se ejecutó deployment, preview, promote, alias ni cambio de dominio.
 Supabase, migraciones, `package.json`, `package-lock.json` y `store/vercel.json`
 no se modificaron.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.7 — Reconciliación del Build Output real
+
+HEAD inicial y remoto confirmado: `b8999ac428a73d479a9fe6a855fb70479f7d8d17`
+en `feat/ecom-public-social-preview-1` (PR #141, draft, base `main`).
+
+El auditor ahora recibe el `workspaceRoot` y `effectiveStoreRoot` de forma
+explícita: sólo acepta un hijo directo del temporal cuyo nombre usa el prefijo
+`lanzo-store-social-preview-1-6-`, con `effectiveStoreRoot=workspace/store`.
+Rechaza la raíz del repositorio, una carpeta arbitraria llamada `store`, escapes
+y `store/store`.
+
+Los bundles físicos se registran con ruta original, ruta canónica, handler,
+runtime, número de archivos, dependencias y source maps. La normalización se
+limita a `api/store-page.js.func -> /api/store-page` y
+`api/og/store.jsx.func -> /api/og/store`, y exige input esperado, config válido,
+handler existente, runtime Node válido, ruta extensionless compilada y ausencia
+de colisión. Las dependencias OG y la plantilla HTML se evalúan después de esa
+normalización.
+
+La evaluación de rutas es ordenada y semántica: headers continúan, filesystem
+sólo termina para el asset existente, y rewrites/redirects son terminales. El
+asset auditado se elige del manifest real `static/assets`, verifica cache
+immutable, y no se usa una ruta inventada. Tracking debe terminar en
+`/index.html`; `/tienda/:slug` en `/api/store-page`; rutas anidadas de tienda en
+la SPA.
+
+La política de mapas separa `noPublicSourceMaps` de
+`internalFunctionSourceMaps`. Un `.map` en static o fuera de una `.func` falla.
+Un mapa interno sólo se clasifica si es JSON válido, está dentro del bundle Node,
+no es público ni está referenciado por `config.json`, pertenece al cierre
+esperado y supera los escáneres de secretos y código administrativo.
+
+Ante fallo, el preparador emite antes de limpiar un diagnóstico limitado y
+redactado con fallback, output relativo, versión, bundles/rutas/handlers/runtimes,
+maps, rutas compiladas, asset elegido, validación temporal y checks fallidos.
+`preserveFailedWorkspace` es una inyección explícita de desarrollo/prueba y su
+valor predeterminado es `false`.
+
+Pruebas ejecutadas antes del gate:
+
+```text
+npx vitest run store/tests/social-preview = exit 0
+```
+
+Gate real ejecutado una vez:
+
+```text
+npm run deploy:store:prepare
+```
+
+La ejecución alcanzó `vercel pull`, el build público y `.vercel/output/builds.json`,
+pero terminó limpiando el workspace antes de devolver PASS. No se repitió el gate;
+por lo tanto no se afirma PASS ni se inventan los hashes, funciones, rutas o maps
+finales. `usedExplicitBuildsFallback` no pudo recuperarse de esa salida ya
+limpiada. No se ejecutó deployment (`deploymentExecuted: false`), preview,
+promote, alias o cambio de dominio. Supabase y dependencias permanecen sin
+cambios; tampoco se modificó permanentemente `store/vercel.json`.

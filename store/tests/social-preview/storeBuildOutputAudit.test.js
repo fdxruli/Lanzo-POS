@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -11,6 +12,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   auditPrebuiltOutput,
   classifyCredentialAssignment,
+  verifyTemporaryStoreRoot,
 } from '../../../scripts/audit-vercel-build-output.mjs';
 
 const PROJECT_ID = 'fixture-store-project';
@@ -71,7 +73,7 @@ async function createFixture() {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-social-preview-1-6-'));
   const storeRoot = path.join(workspaceRoot, 'store');
   const sourceStatic = path.join(workspaceRoot, 'source-static');
-  const outputRoot = path.join(storeRoot, '.vercel', 'output');
+  const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
   const staticRoot = path.join(outputRoot, 'static');
   const functionsRoot = path.join(outputRoot, 'functions');
   await Promise.all([
@@ -90,7 +92,7 @@ async function createFixture() {
   }
   const sourceConfigPath = path.join(workspaceRoot, 'store-vercel.json');
   await writeJson(sourceConfigPath, { trailingSlash: false });
-  await writeJson(path.join(storeRoot, '.vercel', 'project.json'), {
+  await writeJson(path.join(workspaceRoot, '.vercel', 'project.json'), {
     projectId: PROJECT_ID,
     orgId: ORG_ID,
   });
@@ -127,9 +129,10 @@ export default [STORE_HTML_TEMPLATE,rejectsPrivileged];`,
 }
 
 async function audit(fixture) {
-  return auditPrebuiltOutput('store', fixture.storeRoot, {
+  return auditPrebuiltOutput('store', fixture.workspaceRoot, {
     sourceConfigPath: fixture.sourceConfigPath,
     sourceStaticPath: fixture.sourceStatic,
+    effectiveStoreRoot: fixture.storeRoot,
     expectedProjectId: PROJECT_ID,
     expectedOrganizationId: ORG_ID,
   });
@@ -151,6 +154,61 @@ describe('auditoría de .vercel/output', () => {
       ['mi-tienda'],
       ['mi-tienda'],
     ]);
+  });
+
+  it('acepta el contrato de workspace temporal con store efectivo explícito', () => {
+    expect(verifyTemporaryStoreRoot({
+      workspaceRoot: fixture.workspaceRoot,
+      effectiveStoreRoot: fixture.storeRoot,
+    })).toBe(true);
+  });
+
+  it('normaliza solamente los bundles de entrada esperados con evidencia', async () => {
+    await rename(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func'),
+      path.join(fixture.functionsRoot, 'api', 'store-page.js.func'),
+    );
+    await rename(
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.func'),
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.jsx.func'),
+    );
+    const result = await audit(fixture);
+    expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
+    expect(result.functionAudit.bundles.map((bundle) => [bundle.rawRoute, bundle.route, bundle.normalized]))
+      .toEqual(expect.arrayContaining([
+        ['/api/store-page.js', '/api/store-page', true],
+        ['/api/og/store.jsx', '/api/og/store', true],
+      ]));
+  });
+
+  it('rechaza una extensión arbitraria aunque tenga handler y runtime', async () => {
+    await rename(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func'),
+      path.join(fixture.functionsRoot, 'api', 'store-page.ts.func'),
+    );
+    const result = await audit(fixture);
+    expect(result.checks.exactlyExpectedFunctions).toBe(false);
+  });
+
+  it('clasifica mapas internos seguros y bloquea mapas públicos o con secretos', async () => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'index.mjs.map'),
+      JSON.stringify({ version: 3, sources: ['node_modules/react/index.js'], mappings: '' }),
+    );
+    let result = await audit(fixture);
+    expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
+    expect(result.functionAudit.bundles.find((bundle) => bundle.route === '/api/store-page')
+      .internalFunctionSourceMaps[0]).toMatchObject({ generatedBy: '@vercel/node (inferred)', closureSafe: true });
+    await writeFile(path.join(fixture.staticRoot, 'assets', 'index-ZyXw9876.js.map'), '{}');
+    result = await audit(fixture);
+    expect(result.checks.noPublicSourceMaps).toBe(false);
+  });
+
+  it.each([
+    ['workspace fuera de TEMP', path.join(process.cwd(), 'store'), path.join(process.cwd(), 'store', 'store')],
+    ['store/store duplicado', fixture.workspaceRoot, path.join(fixture.workspaceRoot, 'store', 'store')],
+  ])('rechaza el contrato temporal: %s', (_label, workspaceRoot, effectiveStoreRoot) => {
+    expect(verifyTemporaryStoreRoot({ workspaceRoot, effectiveStoreRoot })).toBe(false);
   });
 
   it('acepta vocabulario defensivo sin valores credenciales', async () => {
@@ -330,10 +388,10 @@ describe('auditoría de .vercel/output', () => {
       config.routes.splice(-1, 0, { src: '/loop', dest: '/loop' });
       await writeJson(configPath, config);
     }, 'noRouteLoop'],
-    ['source map', async () => writeFile(
-      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'index.mjs.map'),
+    ['source map público', async () => writeFile(
+      path.join(fixture.staticRoot, 'assets', 'index.mjs.map'),
       '{}',
-    ), 'noSourceMaps'],
+    ), 'noPublicSourceMaps'],
     ['fuente', async () => writeFile(
       path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'custom.woff2'),
       'font',

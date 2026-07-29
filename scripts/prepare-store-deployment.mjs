@@ -137,6 +137,42 @@ export function sanitizeVercelDebugLog(value, cwd = '') {
     .replace(/(?:[A-Za-z]:)?[^\s"']*\/\.vercel\/[^\s"']*/giu, '<vercel-state>');
 }
 
+/** A bounded, path-redacted report emitted before a failed workspace is removed. */
+export function sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallback }) {
+  const bundles = (audit.functionAudit?.bundles || []).map((bundle) => ({
+    bundle: bundle.bundle,
+    route: bundle.route,
+    rawRoute: bundle.rawRoute,
+    normalized: bundle.normalized,
+    handler: bundle.handler,
+    runtime: bundle.runtime,
+    files: bundle.files,
+    sourceMaps: bundle.sourceMaps,
+    dependencies: bundle.dependencies,
+  }));
+  return {
+    usedExplicitBuildsFallback,
+    outputRoot: audit.output?.outputRoot || '.vercel/output',
+    configVersion: audit.output?.configVersion ?? null,
+    functionBundles: bundles,
+    functionRoutes: audit.output?.functions || [],
+    functionHandlers: bundles.map(({ route, handler }) => ({ route, handler })),
+    functionRuntimes: bundles.map(({ route, runtime }) => ({ route, runtime })),
+    sourceMapPaths: audit.output?.sourceMaps || [],
+    compiledRoutes: audit.routing?.compiled || null,
+    staticAsset: audit.routing?.compiled?.asset?.request || null,
+    workspaceValidation: {
+      workspaceRoot: '<temporary-workspace>',
+      effectiveStoreRoot: 'store',
+      temporaryRoot: '<system-temp>',
+      prefix: TEMPORARY_PREFIX,
+      valid: audit.checks?.temporaryWorkspace === true,
+    },
+    failedChecks: audit.failedChecks || [],
+    workspaceRetainedForDevelopment: false,
+  };
+}
+
 export async function assertEffectiveVercelProjectRoot({
   workspaceRoot,
   configuredRootDirectory,
@@ -675,6 +711,7 @@ export async function prepareStoreDeployment({
   npmInvocation,
   projectInspection,
   environment = process.env,
+  preserveFailedWorkspace = false,
 } = {}) {
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
@@ -846,7 +883,9 @@ export async function prepareStoreDeployment({
       sourceStaticPath: path.join(workspaceRoot, 'store', 'dist'),
     });
     if (audit.status !== 'PASS') {
-      throw new Error(`Vercel output audit failed: ${audit.failedChecks.join(', ')}.`);
+      const diagnostic = sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallback });
+      diagnostic.workspaceRetainedForDevelopment = preserveFailedWorkspace === true;
+      throw new Error(`Vercel output audit failed:\n${JSON.stringify(diagnostic)}`);
     }
     const manifest = await writeExternalManifest(workspaceRoot, outputRoot);
     manifestPath = manifest.manifestPath;
@@ -920,7 +959,7 @@ export async function prepareStoreDeployment({
     } catch (integrityError) {
       failure = integrityError;
     }
-    if (workspaceRoot) {
+    if (workspaceRoot && !preserveFailedWorkspace) {
       try {
         await removeTemporaryWorkspace(workspaceRoot);
       } catch (cleanupError) {
@@ -946,7 +985,7 @@ if (invokedDirectly) {
       console.error(JSON.stringify({
         phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.6',
         status: 'BLOCKED',
-        error: String(error?.message || error).slice(0, 1_000),
+        error: String(error?.message || error).slice(0, 12_000),
         deploymentExecuted: false,
       }));
       process.exitCode = 1;
