@@ -162,6 +162,11 @@ describe('auditoría de .vercel/output', () => {
     );
   });
 
+  it('requiere static materializado para auditar el Build Output completo', async () => {
+    await rm(fixture.staticRoot, { recursive: true });
+    await expect(audit(fixture)).rejects.toThrow('Missing prebuilt input: static');
+  });
+
   it.each([
     ['función HTML ausente', async () => rm(
       path.join(fixture.functionsRoot, 'api', 'store-page.func'),

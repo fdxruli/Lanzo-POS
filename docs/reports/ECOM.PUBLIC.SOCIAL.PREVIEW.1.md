@@ -2100,6 +2100,59 @@ Confirmaciones:
 - Merge ejecutado: **no**.
 - Auto-merge activado: **no**.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.4 — Materialización segura de static en Build Output API
+
+```text
+HEAD inicial = e6b704274f952cf20aeab6389c642c4ff6a465c7
+PR #141 = OPEN / DRAFT
+rama = feat/ecom-public-social-preview-1
+```
+
+La ausencia inicial de `.vercel/output/static` se abordó sin modificar
+`store/vercel.json`: Vercel conserva la responsabilidad de `config.json` y
+`functions`; el preparador valida `store/dist` con el auditor estático existente,
+inventaría el output de Vercel y materializa únicamente el contenido de `dist`
+en `output/static` mediante APIs de Node. La copia rechaza enlaces simbólicos,
+archivos `.env` y `vercel.prebuilt.json`, conserva bytes y subdirectorios, y
+compara manifiestos de ruta/tamaño/SHA-256 antes de permitir la auditoría final.
+
+La estrategia distingue output estático inexistente, vacío, idéntico y diferente:
+un árbol idéntico se verifica sin recopia; uno vacío se llena; uno diferente se
+rechaza sin sobrescribirlo. La información devuelta incluye número de archivos,
+bytes, SHA de ambos árboles y `parity: true` sólo tras igualdad exacta.
+
+Validación local:
+
+```text
+storePrebuiltPackaging.test.js = 51 PASS
+storeBuildOutputAudit.test.js = 21 PASS
+storeBuildIntegration.test.js = 3 PASS
+```
+
+El gate real ejecutó, sin deployment, `npm ci`, build público, `vercel pull` y
+`node.exe .../vercel/dist/vc.js build --prod --local-config ./vercel.prebuilt.json`.
+El inventario posterior confirmó `config.json`, pero Vercel no produjo
+`.vercel/output/functions`. El flujo se bloqueó antes de materializar static:
+
+```text
+Vercel did not produce .vercel/output/functions
+```
+
+No se fabricaron `config.json`, funciones, rutas ni static como sustituto de
+Vercel. Por ello no hay funciones, rutas, hashes, bytes, auditoría completa ni
+integridad final declarables para el output real. El workspace fallido se limpió;
+el repositorio protegido quedó intacto.
+
+```text
+estado = BLOCKED
+deploymentExecuted = false
+Supabase/migraciones = sin cambios
+package.json/package-lock.json = sin cambios
+store/vercel.json = sin cambios
+merge = no
+auto-merge = desactivado
+```
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.2 — Corrección de wrappers residuales de Windows
 
 ```text

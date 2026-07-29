@@ -18,7 +18,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { auditPrebuiltOutput } from './audit-vercel-build-output.mjs';
+import { auditPrebuiltOutput, inspectStatic } from './audit-vercel-build-output.mjs';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
@@ -190,6 +190,102 @@ export function resolveNpmInvocation({
     args: Object.freeze([npmCliPath, 'ci', '--no-audit', '--no-fund']),
     options: Object.freeze({ shell: false }),
   });
+}
+
+async function directoryManifest(directory) {
+  const files = await walk(directory);
+  const items = await Promise.all(files.map(async (file) => ({
+    path: file.relativePath,
+    bytes: file.bytes,
+    sha256: sha256(await readFile(file.absolutePath)),
+  })));
+  return {
+    files: items,
+    bytes: items.reduce((total, item) => total + item.bytes, 0),
+    treeSha256: sha256(items.map((item) => `${item.sha256}  ${item.path}`).join('\n')),
+  };
+}
+
+function manifestsMatch(source, output) {
+  return source.files.length === output.files.length
+    && source.files.every((item, index) => (
+      item.path === output.files[index]?.path
+      && item.bytes === output.files[index]?.bytes
+      && item.sha256 === output.files[index]?.sha256
+    ));
+}
+
+async function isEmptyDirectory(directory) {
+  return (await readdir(directory)).length === 0;
+}
+
+export async function materializePrebuiltStaticOutput({ sourceStaticRoot, outputStaticRoot }) {
+  if (!await pathExists(sourceStaticRoot)) {
+    throw new Error('Public static build input is missing.');
+  }
+  if (!(await stat(sourceStaticRoot)).isDirectory()) {
+    throw new Error('Public static build input must be a directory.');
+  }
+  const sourceAudit = await inspectStatic(sourceStaticRoot, 'store');
+  const failedSourceChecks = Object.entries(sourceAudit.checks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  if (failedSourceChecks.length > 0) {
+    throw new Error(`Public static build audit failed: ${failedSourceChecks.join(', ')}.`);
+  }
+  const source = await directoryManifest(sourceStaticRoot);
+  if (source.files.some((item) => item.path === 'vercel.prebuilt.json' || /(^|\/)\.env(?:\.|$)/iu.test(item.path))) {
+    throw new Error('Public static build contains forbidden deployment input.');
+  }
+
+  let strategy = 'copied';
+  if (await pathExists(outputStaticRoot)) {
+    if (!(await stat(outputStaticRoot)).isDirectory()) {
+      throw new Error('Vercel output static path must be a directory.');
+    }
+    if (await isEmptyDirectory(outputStaticRoot)) {
+      strategy = 'filled-empty-output';
+    } else {
+      const existing = await directoryManifest(outputStaticRoot);
+      if (!manifestsMatch(source, existing)) {
+        throw new Error('Vercel output static differs from the audited public build.');
+      }
+      return {
+        strategy: 'verified-existing-output',
+        sourceFiles: source.files.length,
+        outputFiles: existing.files.length,
+        sourceBytes: source.bytes,
+        outputBytes: existing.bytes,
+        sourceTreeSha256: source.treeSha256,
+        outputTreeSha256: existing.treeSha256,
+        parity: true,
+      };
+    }
+  } else {
+    await mkdir(outputStaticRoot, { recursive: true });
+  }
+
+  for (const entry of await readdir(sourceStaticRoot)) {
+    await cp(path.join(sourceStaticRoot, entry), path.join(outputStaticRoot, entry), {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      dereference: false,
+    });
+  }
+  const output = await directoryManifest(outputStaticRoot);
+  const parity = manifestsMatch(source, output);
+  if (!parity) throw new Error('Materialized static output does not match the audited public build.');
+  return {
+    strategy,
+    sourceFiles: source.files.length,
+    outputFiles: output.files.length,
+    sourceBytes: source.bytes,
+    outputBytes: output.bytes,
+    sourceTreeSha256: source.treeSha256,
+    outputTreeSha256: output.treeSha256,
+    parity,
+  };
 }
 
 export function resolveNpmScriptInvocation({
@@ -564,11 +660,25 @@ export async function prepareStoreDeployment({
     await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
     const outputRoot = path.join(storeRoot, '.vercel', 'output');
     const outputConfigPath = path.join(outputRoot, 'config.json');
+    const outputFunctionsPath = path.join(outputRoot, 'functions');
+    const outputStaticPath = path.join(outputRoot, 'static');
     if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output.');
+    const vercelOutputInventory = (await walk(outputRoot)).map((file) => ({
+      path: file.relativePath,
+      bytes: file.bytes,
+    }));
     if (await pathExists(path.join(outputRoot, 'vercel.prebuilt.json'))) {
       throw new Error('The temporary Vercel configuration must not be included in .vercel/output.');
     }
+    const inventoryPaths = vercelOutputInventory.map((file) => file.path).join(', ') || '<empty>';
+    if (!await pathExists(outputFunctionsPath) || !(await stat(outputFunctionsPath)).isDirectory()) {
+      throw new Error(`Vercel did not produce .vercel/output/functions (inventory: ${inventoryPaths}).`);
+    }
     await applyCanonicalNoindex(outputConfigPath);
+    const staticMaterialization = await materializePrebuiltStaticOutput({
+      sourceStaticRoot: path.join(storeRoot, 'dist'),
+      outputStaticRoot: outputStaticPath,
+    });
 
     const audit = await auditPrebuiltOutput('store', storeRoot, {
       sourceConfigPath: path.join(workspaceRoot, 'store', 'vercel.json'),
@@ -591,6 +701,8 @@ export async function prepareStoreDeployment({
       outputRoot,
       manifestPath,
       manifestTreeSha256: manifest.treeSha256,
+      vercelOutputInventory,
+      staticMaterialization,
       output: {
         files: outputFiles.length,
         bytes: outputFiles.reduce((total, file) => total + file.bytes, 0),

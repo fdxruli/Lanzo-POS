@@ -12,6 +12,7 @@ import {
   buildNpmExecutionEnvironment,
   buildVercelExecutionEnvironment,
   createSanitizedStoreWorkspace,
+  materializePrebuiltStaticOutput,
   createPrebuiltVercelConfig,
   assertPrebuiltVercelConfigParity,
   prepareStoreDeployment,
@@ -33,6 +34,70 @@ async function exists(filePath) {
     return false;
   }
 }
+
+async function createStaticMaterializationFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-static-materialization-'));
+  const sourceStaticRoot = path.join(root, 'dist');
+  const outputStaticRoot = path.join(root, 'output', 'static');
+  await mkdir(path.join(sourceStaticRoot, 'assets', 'nested'), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(sourceStaticRoot, 'index.html'), [
+      '<!doctype html><div id="root"></div>',
+      '<!-- LANZO_SOCIAL_HEAD_START --><!-- LANZO_SOCIAL_HEAD_END -->',
+      '<script src="/assets/index-AbCd1234.js"></script>',
+      '<link href="/assets/index-ZyXw9876.css">',
+    ].join('')),
+    writeFile(path.join(sourceStaticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n'),
+    writeFile(path.join(sourceStaticRoot, 'assets', 'index-AbCd1234.js'), 'export const store = true;'),
+    writeFile(path.join(sourceStaticRoot, 'assets', 'index-ZyXw9876.css'), 'body{color:#123456}'),
+    writeFile(path.join(sourceStaticRoot, 'assets', 'nested', 'chunk-QwEr1234.js'), 'export default 1;'),
+  ]);
+  return { root, sourceStaticRoot, outputStaticRoot };
+}
+
+describe('materialización estática prebuilt', () => {
+  it('crea output/static con el contenido de dist y conserva la paridad', async () => {
+    const fixture = await createStaticMaterializationFixture();
+    try {
+      const result = await materializePrebuiltStaticOutput(fixture);
+      expect(result).toMatchObject({ strategy: 'copied', parity: true, sourceFiles: 5, outputFiles: 5 });
+      expect(await readFile(path.join(fixture.outputStaticRoot, 'assets', 'nested', 'chunk-QwEr1234.js'), 'utf8'))
+        .toBe('export default 1;');
+      expect(await exists(path.join(fixture.outputStaticRoot, 'dist', 'index.html'))).toBe(false);
+    } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+  });
+
+  it('acepta output/static idéntico y llena uno vacío sin sobrescribir diferencias', async () => {
+    const identical = await createStaticMaterializationFixture();
+    const empty = await createStaticMaterializationFixture();
+    const different = await createStaticMaterializationFixture();
+    try {
+      await materializePrebuiltStaticOutput(identical);
+      expect((await materializePrebuiltStaticOutput(identical)).strategy).toBe('verified-existing-output');
+      await mkdir(empty.outputStaticRoot, { recursive: true });
+      expect((await materializePrebuiltStaticOutput(empty)).strategy).toBe('filled-empty-output');
+      await mkdir(different.outputStaticRoot, { recursive: true });
+      const differentFile = path.join(different.outputStaticRoot, 'index.html');
+      await writeFile(differentFile, 'different bytes');
+      await expect(materializePrebuiltStaticOutput(different))
+        .rejects.toThrow('Vercel output static differs');
+      expect(await readFile(differentFile, 'utf8')).toBe('different bytes');
+    } finally {
+      for (const fixture of [identical, empty, different]) rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it('rechaza fuente inexistente o no auditada', async () => {
+    const fixture = await createStaticMaterializationFixture();
+    try {
+      await expect(materializePrebuiltStaticOutput({
+        sourceStaticRoot: path.join(fixture.root, 'missing'), outputStaticRoot: fixture.outputStaticRoot,
+      })).rejects.toThrow('Public static build input is missing');
+      await writeFile(path.join(fixture.sourceStaticRoot, '.env.production'), 'SECRET=value');
+      await expect(materializePrebuiltStaticOutput(fixture)).rejects.toThrow('Public static build audit failed');
+    } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+  });
+});
 
 async function createRepositoryFixture({ withAdministrativeLink = false } = {}) {
   const sourceRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-package-protected-source-'));

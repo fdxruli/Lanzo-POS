@@ -480,7 +480,7 @@ async function inspectFunctions(functionsRoot, sourceStaticPath) {
   return { bundles: details, routes, checks, safety: allViolations };
 }
 
-async function inspectStatic(staticRoot, targetName) {
+export async function inspectStatic(staticRoot, targetName) {
   const files = await walkOutputFiles(staticRoot);
   const items = await manifest(files);
   const paths = items.map((item) => item.path);
