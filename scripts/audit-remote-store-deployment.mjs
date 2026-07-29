@@ -15,13 +15,66 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const DEFAULT_EVIDENCE_PATH = path.join(projectRoot, '.tmp', 'social-preview-1.7-evidence.json');
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const STATIC_CACHE = 'public, max-age=0, must-revalidate';
-const ASSET_CACHE = 'public, max-age=31536000, immutable';
 const NOINDEX = 'noindex, nofollow, noarchive';
 const INVALID_SLUG = 'INVALIDO';
 const MISSING_SLUG = 'slug-inexistente-controlado';
 const TRACKING_TOKEN = 'token-ficticio';
 const DEFAULT_PRODUCTION_HOSTS = Object.freeze(['lanzo-store.vercel.app']);
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+
+export function parseCacheControl(value) {
+  const directives = new Map();
+  for (const part of String(value || '').split(',')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
+    const name = rawName.toLowerCase();
+    if (!name) continue;
+    directives.set(name, rawValue.join('=').replace(/^"|"$/gu, '').trim() || true);
+  }
+  const integer = (name) => {
+    const candidate = directives.get(name);
+    return typeof candidate === 'string' && /^\d+$/u.test(candidate)
+      ? Number(candidate)
+      : null;
+  };
+  return Object.freeze({
+    public: directives.has('public'),
+    private: directives.has('private'),
+    noStore: directives.has('no-store'),
+    immutable: directives.has('immutable'),
+    staleWhileRevalidate: directives.has('stale-while-revalidate'),
+    maxAge: integer('max-age'),
+    sharedMaxAge: integer('s-maxage'),
+  });
+}
+
+export function validateCacheControl(value, policy) {
+  const cache = parseCacheControl(value);
+  if (policy === 'og-unversioned') {
+    return cache.public
+      && !cache.private
+      && !cache.noStore
+      && !cache.immutable
+      && cache.maxAge === 0
+      && cache.sharedMaxAge === 300
+      && cache.staleWhileRevalidate;
+  }
+  if (policy === 'og-versioned' || policy === 'hashed-asset') {
+    return cache.public
+      && !cache.private
+      && !cache.noStore
+      && cache.immutable
+      && cache.maxAge === 31_536_000
+      && cache.sharedMaxAge !== 300;
+  }
+  if (policy === 'dynamic-html') {
+    return cache.public
+      && !cache.private
+      && !cache.noStore
+      && !cache.immutable
+      && cache.sharedMaxAge === 300;
+  }
+  throw new Error(`Unknown cache policy: ${policy}.`);
+}
 
 const REQUIRED_METADATA = Object.freeze({
   title: /<title\b[^>]*>([\s\S]*?)<\/title>/giu,
@@ -125,6 +178,7 @@ export function validatePreviewDeploymentPlan({
 export function parseAuditArguments(argv = process.argv.slice(2)) {
   const allowed = new Set([
     '--base-url', '--slug', '--evidence-path', '--head', '--artifact-audit',
+    '--deployment-id-hash', '--deployment-created-by-this-run',
   ]);
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -139,6 +193,12 @@ export function parseAuditArguments(argv = process.argv.slice(2)) {
   if (!values['--base-url'] || !values['--slug']) {
     throw new Error('--base-url and --slug are required.');
   }
+  if (
+    values['--deployment-created-by-this-run'] != null
+    && !['true', 'false'].includes(values['--deployment-created-by-this-run'])
+  ) {
+    throw new Error('--deployment-created-by-this-run must be true or false.');
+  }
   validateStoreSlug(values['--slug']);
   return Object.freeze({
     baseUrl: validatePreviewUrl(values['--base-url']),
@@ -148,6 +208,10 @@ export function parseAuditArguments(argv = process.argv.slice(2)) {
     artifactAuditPath: values['--artifact-audit']
       ? path.resolve(values['--artifact-audit'])
       : null,
+    deploymentIdHash: values['--deployment-id-hash'] || null,
+    deploymentCreatedByThisRun: values['--deployment-created-by-this-run'] == null
+      ? null
+      : values['--deployment-created-by-this-run'] === 'true',
   });
 }
 
@@ -163,6 +227,8 @@ export function inspectSocialHtml(html) {
   const assetPaths = [
     ...html.matchAll(/(?:src|href)=["'](\/assets\/[^"']+\.(?:js|css))["']/giu),
   ].map((match) => match[1]);
+  const canonicalPath = metadata.canonical ? new URL(metadata.canonical).pathname : null;
+  const canonicalSlug = /^\/tienda\/([^/]+)$/u.exec(canonicalPath || '')?.[1] || null;
   return Object.freeze({
     bytes: Buffer.byteLength(html),
     sha256: sha256(html),
@@ -178,8 +244,10 @@ export function inspectSocialHtml(html) {
     )),
     canonicalHost: safeUrlHost(metadata.canonical),
     ogImageHost: safeUrlHost(metadata.ogImage),
-    canonicalPath: metadata.canonical ? new URL(metadata.canonical).pathname : null,
+    canonicalPath,
     ogUrlPath: metadata.ogUrl ? new URL(metadata.ogUrl).pathname : null,
+    effectiveSlug: canonicalSlug,
+    slugValues: Object.freeze(canonicalSlug ? [canonicalSlug] : []),
     assetPaths: [...new Set(assetPaths)].sort(),
     forbiddenPrivateData: /(?:\b(?:wa\.me|whatsapp)\b|mailto:|@[\w.-]+\.[a-z]{2,}|(?:calle|domicilio|direcci[oó]n)\s*:|(?:\+?52)?\s*\d{10})/iu.test(html),
     stackTrace: /\b(?:Error:|at\s+\w+\s*\(|node:internal\/)/u.test(html),
@@ -259,8 +327,36 @@ function sanitizedHeaders(headers) {
 
 async function fetchBounded(fetchImpl, url, options = {}) {
   const response = await fetchImpl(url, { ...options, redirect: 'manual' });
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_RESPONSE_BYTES) throw new Error('Remote response exceeds the audit limit.');
+  const declaredLength = response.headers.get('content-length');
+  if (
+    declaredLength
+    && /^\d+$/u.test(declaredLength)
+    && Number(declaredLength) > MAX_RESPONSE_BYTES
+  ) {
+    throw new Error('Remote response exceeds the audit limit.');
+  }
+  const chunks = [];
+  let total = 0;
+  if (response.body) {
+    const reader = response.body.getReader?.();
+    if (!reader) throw new Error('Remote response body cannot be read safely.');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error('Remote response exceeds the audit limit.');
+      }
+      chunks.push(value);
+    }
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   return { response, bytes, headers: sanitizedHeaders(response.headers) };
 }
 
@@ -360,12 +456,12 @@ export async function auditRemoteStoreDeployment({
   addCheck(checks, 'store:metadata', store.status === 200
     && store.contentType === 'text/html'
     && store.headers.xRobotsTag === NOINDEX
-    && /s-maxage=300/u.test(store.headers.cacheControl)
+    && validateCacheControl(store.headers.cacheControl, 'dynamic-html')
     && metadataPass(storeHtml, slug));
   const storeHead = await request('store-head', paths.store, 'HEAD');
   addCheck(checks, 'store:head', storeHead.status === 200
     && storeHead.contentType === 'text/html'
-    && /s-maxage=300/u.test(storeHead.headers.cacheControl));
+    && validateCacheControl(storeHead.headers.cacheControl, 'dynamic-html'));
 
   const storeSlash = await request('store-slash', paths.storeSlash);
   addCheck(checks, 'store:trailing-slash', storeSlash.status === 308
@@ -383,9 +479,13 @@ export async function auditRemoteStoreDeployment({
     addCheck(checks, `${name}:path-authoritative`, item.status === 200
       && inspection.valueHashes.title === storeHtml.valueHashes.title
       && inspection.valueHashes.canonical === storeHtml.valueHashes.canonical
+      && inspection.canonicalPath === storeHtml.canonicalPath
       && inspection.valueHashes.ogUrl === storeHtml.valueHashes.ogUrl
       && inspection.valueHashes.ogImage === storeHtml.valueHashes.ogImage
-      && !/(?:externo|otro)/iu.test(item.text || ''));
+      && inspection.valueHashes.twitterImage === storeHtml.valueHashes.twitterImage
+      && inspection.canonicalHost === storeHtml.canonicalHost
+      && inspection.ogImageHost === storeHtml.ogImageHost
+      && JSON.stringify(inspection.slugValues) === JSON.stringify([slug]));
   }
 
   for (const [name, requestPath] of [['tracking', paths.tracking], ['nested', paths.nested]]) {
@@ -413,7 +513,7 @@ export async function auditRemoteStoreDeployment({
       && inspection.counts.title === 1
       && inspection.counts.canonical === 0
       && !inspection.stackTrace
-      && /s-maxage=300/u.test(item.headers.cacheControl));
+      && validateCacheControl(item.headers.cacheControl, 'dynamic-html'));
   }
 
   const invalidApi = await request('invalid-api', paths.invalidApi);
@@ -432,18 +532,22 @@ export async function auditRemoteStoreDeployment({
       && inspection.width === 1200
       && inspection.height === 630
       && inspection.bytes > 1_000
-      && !item.headers.locationHost);
+      && !item.headers.locationHost
+      && validateCacheControl(
+        item.headers.cacheControl,
+        name === 'og' ? 'og-unversioned' : 'og-versioned',
+      ));
   }
   const ogHead = await request('og-head', paths.og, 'HEAD');
   addCheck(checks, 'og:head', ogHead.status === 200 && ogHead.contentType === 'image/png');
 
   const asset = await request('asset', paths.asset);
   addCheck(checks, 'asset:immutable', asset.status === 200
-    && asset.headers.cacheControl === ASSET_CACHE
+    && validateCacheControl(asset.headers.cacheControl, 'hashed-asset')
     && asset.bodySha256 === sha256(await readFile(path.join(path.dirname(localIndexPath), paths.asset.slice(1)))));
   const assetHead = await request('asset-head', paths.asset, 'HEAD');
   addCheck(checks, 'asset:head', assetHead.status === 200
-    && assetHead.headers.cacheControl === ASSET_CACHE);
+    && validateCacheControl(assetHead.headers.cacheControl, 'hashed-asset'));
 
   addCheck(checks, 'security:no-markers', securityFindings.length === 0);
   const failedChecks = checks.filter((item) => !item.passed).map((item) => item.name);
@@ -459,6 +563,11 @@ export async function auditRemoteStoreDeployment({
       canonicalHash: inspection.valueHashes.canonical,
       ogUrlHash: inspection.valueHashes.ogUrl,
       ogImageHash: inspection.valueHashes.ogImage,
+      twitterImageHash: inspection.valueHashes.twitterImage,
+      canonicalPath: inspection.canonicalPath,
+      canonicalHost: inspection.canonicalHost,
+      ogImageHost: inspection.ogImageHost,
+      slugValues: inspection.slugValues,
     })),
     ogImage: ogInspection,
     security: {
@@ -475,18 +584,51 @@ export function buildEvidenceReport({
   head,
   artifact,
   remote,
+  deployment,
   timestamp = new Date().toISOString(),
 } = {}) {
   if (!/^[a-f0-9]{40}$/u.test(head || '')) throw new Error('A full Git HEAD is required.');
-  if (remote?.productionModified !== false) throw new Error('Production modification must be explicitly false.');
+  if (artifact?.status !== 'PASS') throw new Error('Artifact audit must be PASS.');
+  if (artifact?.target !== 'store') throw new Error('Artifact target must be store.');
+  if (!Array.isArray(artifact?.failedChecks) || artifact.failedChecks.length !== 0) {
+    throw new Error('Artifact audit must have no failed checks.');
+  }
+  if (remote?.status !== 'PASS') throw new Error('Remote audit must be PASS.');
+  if (!Array.isArray(remote?.failedChecks) || remote.failedChecks.length !== 0) {
+    throw new Error('Remote audit must have no failed checks.');
+  }
+  if ('deploymentExecuted' in remote) {
+    throw new Error('Deployment execution must come from deployment evidence.');
+  }
+  if (!deployment || typeof deployment !== 'object') {
+    throw new Error('Deployment evidence is required.');
+  }
+  if (deployment.projectName !== 'lanzo-store') {
+    throw new Error('Deployment project must be lanzo-store.');
+  }
+  if (deployment.type !== 'preview' || deployment.production !== false) {
+    throw new Error('Deployment evidence must describe a non-production preview.');
+  }
+  if (typeof deployment.executed !== 'boolean') {
+    throw new Error('Deployment execution evidence must be explicit.');
+  }
+  if (!/^[a-f0-9]{64}$/u.test(deployment.deploymentIdHash || '')) {
+    throw new Error('Deployment ID hash is required.');
+  }
+  const previewUrl = validatePreviewUrl(`https://${deployment.previewHost || ''}`);
+  if (previewUrl.hostname !== remote.previewHost) {
+    throw new Error('Deployment and audited preview hosts must match.');
+  }
   const report = {
     schemaVersion: 1,
     phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
     timestamp,
     HEAD: head,
-    projectName: 'lanzo-store',
-    deploymentType: 'preview',
-    previewHost: remote.previewHost,
+    evidenceStatus: 'PASS',
+    projectName: deployment.projectName,
+    deploymentType: deployment.type,
+    previewHost: previewUrl.hostname,
+    deploymentIdHash: deployment.deploymentIdHash,
     artifactHashes: {
       config: artifact.hashes.outputConfig,
       static: artifact.hashes.outputStaticTree,
@@ -515,7 +657,9 @@ export function buildEvidenceReport({
       findings: remote.security.findings,
     },
     failedChecks: remote.failedChecks,
-    deploymentExecuted: true,
+    deploymentExecuted: deployment.executed,
+    deploymentCreatedByThisRun: deployment.executed,
+    previewAudited: true,
     productionModified: false,
   };
   const serialized = JSON.stringify(report);
@@ -540,14 +684,30 @@ async function main() {
   const remote = await auditRemoteStoreDeployment(input);
   let evidenceWritten = false;
   if (input.artifactAuditPath || input.head) {
-    if (!input.artifactAuditPath || !input.head) {
-      throw new Error('--artifact-audit and --head must be supplied together.');
+    if (
+      !input.artifactAuditPath
+      || !input.head
+      || !input.deploymentIdHash
+      || input.deploymentCreatedByThisRun == null
+    ) {
+      throw new Error(
+        '--artifact-audit, --head, --deployment-id-hash and '
+        + '--deployment-created-by-this-run must be supplied together.',
+      );
     }
     const artifact = JSON.parse(await readFile(input.artifactAuditPath, 'utf8'));
     const evidence = buildEvidenceReport({
       head: input.head,
       artifact,
-      remote: { ...remote, productionModified: false },
+      remote,
+      deployment: {
+        executed: input.deploymentCreatedByThisRun,
+        type: 'preview',
+        projectName: 'lanzo-store',
+        production: false,
+        deploymentIdHash: input.deploymentIdHash,
+        previewHost: remote.previewHost,
+      },
     });
     await writeEvidenceReport(input.evidencePath, evidence);
     evidenceWritten = true;
@@ -562,7 +722,7 @@ async function main() {
     security: remote.security,
     failedChecks: remote.failedChecks,
     evidenceWritten,
-    deploymentExecuted: true,
+    deploymentExecuted: input.deploymentCreatedByThisRun === true,
     productionModified: false,
   };
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

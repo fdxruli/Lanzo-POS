@@ -712,17 +712,62 @@ export async function writeProjectLink(linkedDirectory) {
   })}\n`, { encoding: 'utf8', flag: 'wx' });
 }
 
-async function removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot) {
-  const candidates = [
-    path.join(workspaceRoot, '.env.local'),
-    path.join(workspaceRoot, '.env.production.local'),
-    path.join(storeRoot, '.env.local'),
-    path.join(storeRoot, '.env.production.local'),
-    path.join(storeRoot, '.vercel', '.env.production.local'),
-    path.join(storeRoot, '.vercel', '.env.preview.local'),
-    path.join(storeRoot, '.vercel', '.env.development.local'),
-  ];
-  for (const candidate of candidates) await rm(candidate, { force: true });
+function isEnvironmentFileName(name) {
+  return name === '.env' || name.startsWith('.env.');
+}
+
+export async function findWorkspaceEnvironmentFiles(workspaceRoot) {
+  const root = path.resolve(workspaceRoot);
+  const relativeToTemp = path.relative(path.resolve(os.tmpdir()), root);
+  if (
+    path.dirname(root) !== path.resolve(os.tmpdir())
+    || relativeToTemp.startsWith('..')
+    || path.isAbsolute(relativeToTemp)
+    || !path.basename(root).startsWith(TEMPORARY_PREFIX)
+  ) {
+    throw new Error('Environment scan requires a controlled temporary store workspace.');
+  }
+  const matches = [];
+  async function visit(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const absolutePath = path.join(directory, entry.name);
+      const metadata = await lstat(absolutePath);
+      if (metadata.isSymbolicLink()) {
+        if (isEnvironmentFileName(entry.name)) matches.push(absolutePath);
+        continue;
+      }
+      if (metadata.isDirectory()) {
+        await visit(absolutePath);
+        continue;
+      }
+      if (metadata.isFile() && isEnvironmentFileName(entry.name)) matches.push(absolutePath);
+    }
+  }
+  await visit(root);
+  return matches.sort().map((absolutePath) => normalizePath(path.relative(root, absolutePath)));
+}
+
+export async function removeWorkspaceEnvironmentFiles({
+  workspaceRoot,
+  removeFile = rm,
+} = {}) {
+  const found = await findWorkspaceEnvironmentFiles(workspaceRoot);
+  for (const relativePath of found) {
+    const absolutePath = path.resolve(workspaceRoot, relativePath);
+    const relative = path.relative(path.resolve(workspaceRoot), absolutePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error('Environment cleanup attempted to escape the temporary workspace.');
+    }
+    await removeFile(absolutePath, { force: true });
+  }
+  const remaining = await findWorkspaceEnvironmentFiles(workspaceRoot);
+  if (remaining.length > 0) {
+    throw new Error(`Environment cleanup incomplete: ${remaining.join(', ')}.`);
+  }
+  return Object.freeze({
+    removed: Object.freeze(found),
+    environmentFilesFound: Object.freeze(remaining),
+  });
 }
 
 async function applyCanonicalNoindex(outputConfigPath) {
@@ -741,7 +786,7 @@ async function applyCanonicalNoindex(outputConfigPath) {
   await writeFile(outputConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
-async function writeExternalManifest(workspaceRoot, outputRoot) {
+export async function writeExternalManifest(workspaceRoot, outputRoot) {
   const files = await walk(outputRoot);
   const manifest = await Promise.all(files.map(async (file) => ({
     path: file.relativePath,
@@ -850,6 +895,38 @@ export async function cleanupPreparedStoreWorkspace({
   });
 }
 
+export async function finalizePassedStoreWorkspace({
+  workspaceRoot,
+  storeRoot = path.join(workspaceRoot, 'store'),
+  auditOptions,
+  prebuiltAuditor = auditPrebuiltOutput,
+  removeFile = rm,
+} = {}) {
+  try {
+    const environmentCleanup = await removeWorkspaceEnvironmentFiles({
+      workspaceRoot,
+      removeFile,
+    });
+    await rm(path.join(storeRoot, 'vercel.prebuilt.json'), { force: true });
+    const audit = await prebuiltAuditor('store', workspaceRoot, auditOptions);
+    if (audit.status !== 'PASS' || (audit.failedChecks || []).length > 0) {
+      throw new Error('Post-cleanup Vercel output audit did not pass.');
+    }
+    const environmentFilesFound = await findWorkspaceEnvironmentFiles(workspaceRoot);
+    if (environmentFilesFound.length > 0) {
+      throw new Error(`Environment files remained after the preservation gate: ${environmentFilesFound.join(', ')}.`);
+    }
+    return Object.freeze({
+      audit,
+      environmentCleanup,
+      environmentFilesFound: Object.freeze(environmentFilesFound),
+    });
+  } catch (error) {
+    await cleanupPreparedStoreWorkspace({ workspaceRoot });
+    throw error;
+  }
+}
+
 export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
@@ -859,6 +936,7 @@ export async function prepareStoreDeployment({
   projectInspection,
   environment = process.env,
   preservePassedWorkspace = shouldPreservePassedWorkspace(environment),
+  prebuiltAuditor = auditPrebuiltOutput,
 } = {}) {
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
@@ -866,7 +944,11 @@ export async function prepareStoreDeployment({
   try {
     // Capture and validate the parent npm entrypoint before any work in the
     // temporary workspace. A bare npm.cmd makes %~dp0 point at that workspace.
-    const npmCliPath = await resolveNpmCliPath({
+    const injectedNpmCliPath = npmInvocation?.args?.[0];
+    if (npmInvocation && (typeof injectedNpmCliPath !== 'string' || !injectedNpmCliPath)) {
+      throw new Error('Injected npm invocation must identify npm-cli.js as its first argument.');
+    }
+    const npmCliPath = injectedNpmCliPath || await resolveNpmCliPath({
       environment,
       nodeExecutable: process.execPath,
     });
@@ -973,7 +1055,7 @@ export async function prepareStoreDeployment({
       { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
 
-    await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
+    await removeWorkspaceEnvironmentFiles({ workspaceRoot });
     const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
     const outputConfigPath = path.join(outputRoot, 'config.json');
     const outputFunctionsPath = path.join(outputRoot, 'functions');
@@ -1003,7 +1085,7 @@ export async function prepareStoreDeployment({
         [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json'],
         { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
       );
-      await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
+      await removeWorkspaceEnvironmentFiles({ workspaceRoot });
       usedExplicitBuildsFallback = true;
       finalFunctionInventory = await inspectGeneratedFunctionInventory(outputFunctionsPath);
       if (!finalFunctionInventory.complete) {
@@ -1031,10 +1113,11 @@ export async function prepareStoreDeployment({
       outputStaticRoot: outputStaticPath,
     });
 
-    const audit = await auditPrebuiltOutput('store', workspaceRoot, {
+    const auditOptions = {
       sourceConfigPath: path.join(workspaceRoot, 'store', 'vercel.json'),
       sourceStaticPath: path.join(workspaceRoot, 'store', 'dist'),
-    });
+    };
+    const audit = await prebuiltAuditor('store', workspaceRoot, auditOptions);
     if (audit.status !== 'PASS') {
       const diagnostic = sanitizeFailedOutputDiagnostic({
         audit,
@@ -1044,13 +1127,18 @@ export async function prepareStoreDeployment({
       });
       throw new Error(`Vercel output audit failed:\n${JSON.stringify(diagnostic)}`);
     }
+    const finalized = await finalizePassedStoreWorkspace({
+      workspaceRoot,
+      storeRoot,
+      auditOptions,
+      prebuiltAuditor,
+    });
+    const finalAudit = finalized.audit;
     const manifest = await writeExternalManifest(workspaceRoot, outputRoot);
     manifestPath = manifest.manifestPath;
 
     const finalState = await assertProtectedRepositoryIntegrity(repositoryRoot, baseline);
     const outputFiles = await walk(outputRoot);
-    await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
-    await rm(prebuiltConfigPath, { force: true });
     const result = {
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
       status: 'PASS',
@@ -1065,10 +1153,11 @@ export async function prepareStoreDeployment({
       output: {
         files: outputFiles.length,
         bytes: outputFiles.reduce((total, file) => total + file.bytes, 0),
-        functions: audit.output.functions,
-        routes: audit.output.routes,
+        functions: finalAudit.output.functions,
+        routes: finalAudit.output.routes,
       },
-      audit,
+      audit: finalAudit,
+      environmentFilesFound: finalized.environmentFilesFound,
       protectedRepository: {
         administrativeConfigUnchanged:
           baseline.administrativeConfigHash === finalState.administrativeConfigHash,

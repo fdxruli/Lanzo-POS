@@ -1,4 +1,11 @@
-import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import {
   mkdirSync,
   readFileSync,
@@ -16,6 +23,8 @@ import {
   materializePrebuiltStaticOutput,
   createPrebuiltVercelConfig,
   assertPrebuiltVercelConfigParity,
+  finalizePassedStoreWorkspace,
+  findWorkspaceEnvironmentFiles,
   prepareStoreDeployment,
   resolveNpmCliPath,
   resolveNpmInvocation,
@@ -30,6 +39,7 @@ import {
   shouldCopyStoreWorkspacePath,
   shouldPreservePassedWorkspace,
   writeProjectLink,
+  writeExternalManifest,
   writePrebuiltVercelConfig,
 } from '../../../scripts/prepare-store-deployment.mjs';
 
@@ -40,6 +50,16 @@ async function exists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function readAllFiles(directory) {
+  const values = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const absolutePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) values.push(...await readAllFiles(absolutePath));
+    else if (entry.isFile()) values.push(await readFile(absolutePath, 'utf8'));
+  }
+  return values;
 }
 
 async function writeGeneratedFunction(functionsRoot, relativeRoute) {
@@ -280,6 +300,171 @@ describe('workspace prebuilt saneado', () => {
     await expect(cleanupPreparedStoreWorkspace({
       workspaceRoot: path.join(os.tmpdir(), 'uncontrolled-store-workspace'),
     })).rejects.toThrow('outside the controlled store workspace');
+  });
+
+  it('preserva un PASS sin ningún .env ni valor descargado', async () => {
+    const workspaceRoot = await mkdtemp(path.join(
+      os.tmpdir(),
+      'lanzo-store-social-preview-1-6-',
+    ));
+    const storeRoot = path.join(workspaceRoot, 'store');
+    const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
+    const repositoryRoot = await createRepositoryFixture();
+    const secretFixture = 'FIXTURE_DOWNLOADED_VALUE_1_7_1';
+    await Promise.all([
+      mkdir(outputRoot, { recursive: true }),
+      mkdir(path.join(storeRoot, '.vercel'), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(path.join(workspaceRoot, '.vercel', 'project.json'), '{"projectId":"fixture"}'),
+      writeFile(path.join(outputRoot, 'config.json'), '{"version":3}'),
+      writeFile(path.join(workspaceRoot, '.vercel', '.env.production.local'), secretFixture),
+      writeFile(path.join(workspaceRoot, '.vercel', '.env.preview.local'), secretFixture),
+      writeFile(path.join(workspaceRoot, '.env.local'), secretFixture),
+      writeFile(path.join(storeRoot, '.env.production.local'), secretFixture),
+      writeFile(path.join(storeRoot, '.vercel', '.env.development.local'), secretFixture),
+      writeFile(path.join(storeRoot, 'vercel.prebuilt.json'), '{"temporary":true}'),
+    ]);
+    const repositoryBefore = await readFile(path.join(repositoryRoot, 'vercel.json'), 'utf8');
+    const finalized = await finalizePassedStoreWorkspace({
+      workspaceRoot,
+      storeRoot,
+      auditOptions: { fixture: true },
+      prebuiltAuditor: async (_target, auditedRoot, options) => {
+        expect(auditedRoot).toBe(workspaceRoot);
+        expect(options).toEqual({ fixture: true });
+        expect(await findWorkspaceEnvironmentFiles(workspaceRoot)).toEqual([]);
+        return { status: 'PASS', failedChecks: [], target: 'store' };
+      },
+    });
+    const manifest = await writeExternalManifest(workspaceRoot, outputRoot);
+    expect(await exists(workspaceRoot)).toBe(true);
+    expect(await exists(path.join(workspaceRoot, '.vercel', 'project.json'))).toBe(true);
+    expect(await exists(outputRoot)).toBe(true);
+    expect(await findWorkspaceEnvironmentFiles(workspaceRoot)).toEqual([]);
+    expect(await exists(path.join(storeRoot, 'vercel.prebuilt.json'))).toBe(false);
+    expect((await readAllFiles(workspaceRoot)).join('\n')).not.toContain(secretFixture);
+    expect(await readFile(manifest.manifestPath, 'utf8')).not.toContain(secretFixture);
+    expect(JSON.stringify(finalized)).not.toContain(secretFixture);
+    expect(await readFile(path.join(repositoryRoot, 'vercel.json'), 'utf8')).toBe(repositoryBefore);
+    await cleanupPreparedStoreWorkspace({
+      workspaceRoot,
+      manifestPath: manifest.manifestPath,
+    });
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  });
+
+  it('prepara un PASS preservado y reaudita después de limpiar todos los .env', async () => {
+    const repositoryRoot = await createRepositoryFixture();
+    const downloadedValue = 'DOWNLOADED_ENV_FIXTURE_1_7_1';
+    const auditCalls = [];
+    const result = await prepareStoreDeployment({
+      repositoryRoot,
+      preservePassedWorkspace: true,
+      npmInvocation: {
+        command: 'node-fixture',
+        args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
+        options: { shell: false },
+      },
+      vercelCommand: 'vercel-fixture',
+      commandRunner(_command, args, options) {
+        const workspaceRoot = options.cwd;
+        if (args.includes('build:store:vercel')) {
+          const staticRoot = path.join(workspaceRoot, 'store', 'dist');
+          mkdirSync(path.join(staticRoot, 'assets'), { recursive: true });
+          writeFileSync(path.join(staticRoot, 'index.html'), [
+            '<!doctype html><html><head>',
+            '<!-- LANZO_SOCIAL_HEAD_START --><title>Tienda</title><!-- LANZO_SOCIAL_HEAD_END -->',
+            '<link rel="stylesheet" href="/assets/index-AbCd1234.css"></head>',
+            '<body><div id="root"></div>',
+            '<script type="module" src="/assets/index-ZyXw9876.js"></script></body></html>',
+          ].join(''));
+          writeFileSync(path.join(staticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
+          writeFileSync(path.join(staticRoot, 'assets', 'index-AbCd1234.css'), 'body{color:#123456}');
+          writeFileSync(path.join(staticRoot, 'assets', 'index-ZyXw9876.js'), 'export const store=true;');
+          return;
+        }
+        if (args.includes('pull')) {
+          mkdirSync(path.join(workspaceRoot, 'store', '.vercel'), { recursive: true });
+          for (const relativePath of [
+            '.vercel/.env.production.local',
+            '.vercel/.env.preview.local',
+            '.env.local',
+            'store/.env.production.local',
+            'store/.vercel/.env.development.local',
+          ]) {
+            writeFileSync(path.join(workspaceRoot, relativePath), downloadedValue);
+          }
+          return;
+        }
+        if (args.includes('build')) {
+          const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
+          const functionsRoot = path.join(outputRoot, 'functions');
+          mkdirSync(functionsRoot, { recursive: true });
+          writeFileSync(path.join(outputRoot, 'config.json'), JSON.stringify({
+            version: 3,
+            routes: [{ src: '^/(.*)/$', status: 308, headers: { Location: '/$1' } }],
+          }));
+          for (const relativeRoute of ['api/store-page', 'api/og/store.js']) {
+            const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);
+            const handler = relativeRoute.includes('/og/')
+              ? 'store/api/og/store.js'
+              : 'store/api/store-page.js';
+            mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
+            writeFileSync(path.join(bundleRoot, handler), 'export default {};');
+            writeFileSync(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({
+              runtime: 'nodejs24.x',
+              handler,
+            }));
+          }
+        }
+      },
+      prebuiltAuditor: async (target, workspaceRoot) => {
+        auditCalls.push(target);
+        expect(await findWorkspaceEnvironmentFiles(workspaceRoot)).toEqual([]);
+        return {
+          status: 'PASS',
+          target: 'store',
+          failedChecks: [],
+          output: { functions: ['/api/og/store', '/api/store-page'], routes: 1 },
+        };
+      },
+    });
+    expect(result).toMatchObject({
+      status: 'PASS',
+      workspacePreserved: true,
+      cleanupRequired: true,
+      environmentFilesFound: [],
+    });
+    expect(auditCalls).toEqual(['store', 'store']);
+    expect(await exists(path.join(result.workspaceRoot, '.vercel', 'project.json'))).toBe(true);
+    expect(await exists(result.outputRoot)).toBe(true);
+    expect(await findWorkspaceEnvironmentFiles(result.workspaceRoot)).toEqual([]);
+    expect((await readAllFiles(result.workspaceRoot)).join('\n')).not.toContain(downloadedValue);
+    expect(await readFile(result.manifestPath, 'utf8')).not.toContain(downloadedValue);
+    expect(JSON.stringify(result)).not.toContain(downloadedValue);
+    expect(await exists(path.join(repositoryRoot, '.vercel'))).toBe(false);
+    await cleanupPreparedStoreWorkspace({
+      workspaceRoot: result.workspaceRoot,
+      manifestPath: result.manifestPath,
+    });
+    rmSync(repositoryRoot, { recursive: true, force: true });
+  });
+
+  it('bloquea y elimina el workspace si no puede retirar un .env', async () => {
+    const workspaceRoot = await mkdtemp(path.join(
+      os.tmpdir(),
+      'lanzo-store-social-preview-1-6-',
+    ));
+    await writeFile(path.join(workspaceRoot, '.env.preview.local'), 'FIXTURE_ONLY=value');
+    await expect(finalizePassedStoreWorkspace({
+      workspaceRoot,
+      prebuiltAuditor: async () => ({ status: 'PASS', failedChecks: [] }),
+      removeFile: async () => {
+        throw new Error('controlled environment cleanup failure');
+      },
+    })).rejects.toThrow('controlled environment cleanup failure');
+    expect(await exists(workspaceRoot)).toBe(false);
   });
 
   it('preserva el perfil de Vercel y elimina solo VERCEL_TOKEN del hijo', () => {

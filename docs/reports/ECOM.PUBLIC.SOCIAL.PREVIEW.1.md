@@ -2580,6 +2580,157 @@ No se ejecutó deployment, preview, promote, alias ni cambio de dominio.
 Supabase, migraciones, `package.json`, `package-lock.json` y `store/vercel.json`
 no se modificaron.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.7.1 — Endurecimiento de evidencia y preparación segura
+
+### Estado inicial y corrección del diagnóstico
+
+```text
+fecha                     = 2026-07-29
+PR                        = #141 OPEN / DRAFT
+rama                      = feat/ecom-public-social-preview-1
+base                      = main
+HEAD inicial confirmado   = ee6b9313993f52014e782c5437ad58c500fbcc64
+HEAD remoto de main       = bc603ef0ae3e60f241eafdbae6966191fe75d62c
+ahead / behind            = 25 / 0
+mergeable                 = true
+```
+
+La conclusión anterior de que la autenticación de Vercel era el único bloqueo
+pendiente resultó incompleta. Antes de producir evidencia publicable quedaban
+cuatro defectos locales confirmados:
+
+1. la limpieza usaba una lista fija y podía conservar
+   `workspaceRoot/.vercel/.env.production.local`;
+2. la auditoría remota no validaba la política de caché del PNG OG y aceptaba
+   assets mediante comparaciones textuales demasiado rígidas;
+3. la query hostil rechazaba HTML válido si el copy comercial contenía palabras
+   como «externo» u «otro»;
+4. el constructor de evidencia fijaba `deploymentExecuted: true` y no exigía
+   PASS verificable del artefacto, PASS remoto ni evidencia explícita del
+   deployment.
+
+Los cuatro defectos quedaron corregidos localmente.
+
+### Workspace preservado sin secretos
+
+La limpieza recorre el workspace temporal controlado completo, sin seguir
+symlinks, y elimina cualquier basename `.env` o `.env.*`, incluidos los
+ubicados bajo `.vercel`, `store/.vercel` o futuros subdirectorios. Después de la
+limpieza:
+
+- se elimina `store/vercel.prebuilt.json`;
+- se vuelve a ejecutar la auditoría prebuilt;
+- se exige `PASS` sin checks fallidos;
+- se vuelve a buscar cualquier `.env`;
+- sólo entonces se permite conservar el workspace y escribir el manifiesto.
+
+Si no puede eliminarse un archivo de entorno, falla la reauditoría o queda un
+`.env`, el workspace completo se elimina y no se preserva evidencia parcial.
+Las pruebas cubren tanto el helper como el flujo completo con
+`PRESERVE_STORE_PREBUILT_EVIDENCE=1`: conservan proyecto y
+`.vercel/output`, eliminan todos los `.env` y el config temporal, no filtran el
+valor sintético al resultado ni al manifiesto y no modifican el repositorio
+administrativo.
+
+### Caché HTTP y query hostil
+
+La auditoría remota analiza directivas de `Cache-Control` en vez de buscar
+substrings. Las políticas exigidas son:
+
+| Recurso | Política |
+|---|---|
+| OG sin versión | `public`, `max-age=0`, `s-maxage=300`, `stale-while-revalidate`; sin `private`, `no-store` ni `immutable` |
+| OG versionado | `public`, `max-age=31536000`, `immutable`; sin `private`, `no-store` ni `s-maxage=300` |
+| asset hasheado | `public`, `max-age=31536000`, `immutable`; sin `private` ni `no-store` |
+| HTML dinámico | `public`, `s-maxage=300`; nunca `private`, `no-store` ni `immutable` |
+
+Los fixtures aceptan copy legítimo con «otro» y «externo». La defensa contra
+`?slug=` ya no inspecciona texto libre: compara estructuralmente title,
+canonical, `og:url`, `og:image`, `twitter:image`, hosts y el slug efectivo
+extraído de `/tienda/:slug`. Un canonical o una imagen desviados al slug
+inyectado siguen bloqueando.
+
+La lectura HTTP también corta el stream cuando supera 2 MiB y rechaza
+`Content-Length` declarado por encima del límite. La evidencia no conserva
+HTML, bytes PNG, cookies, autorización ni headers privados.
+
+### Contrato de evidencia
+
+`buildEvidenceReport()` sólo devuelve PASS cuando:
+
+- el artefacto es `PASS`, target `store` y no tiene checks fallidos;
+- la auditoría remota es `PASS` y no tiene checks fallidos;
+- existe evidencia explícita del proyecto `lanzo-store`;
+- el tipo es `preview`, `production=false` y el host es un preview Vercel no
+  productivo coincidente con el auditado;
+- existe un hash SHA-256 válido del deployment;
+- `executed` se proporciona como booleano.
+
+El reporte conserva dos conceptos distintos:
+
+```text
+deploymentCreatedByThisRun = true|false
+previewAudited              = true
+```
+
+Por tanto, una preview creada en esta ejecución no se confunde con una preview
+preexistante auditada manualmente. El campo legado
+`remote.deploymentExecuted` se rechaza y nunca se convierte en prueba.
+
+### Validación local 1.7.1
+
+Se invocó exactamente una vez el comando solicitado de instalación:
+
+```text
+npm ci --no-audit --no-fund = FAIL antes de instalar
+causa = se lanzó desde el directorio padre, donde no existe package-lock.json
+segundo npm ci = no ejecutado
+package.json / package-lock.json = sin cambios
+```
+
+El checkout ya contenía el árbol de dependencias necesario. Desde la raíz real
+del repositorio:
+
+```text
+npx vitest run store/tests/social-preview
+archivos = 16 PASS
+pruebas  = 440 PASS
+skips    = 2 específicos de plataforma
+fallos   = 0
+
+npm run build:store:vercel = PASS
+dist-store                 = 10 archivos / 636855 bytes
+store/dist                 = 11 archivos / 636881 bytes
+PWA / service worker       = ausentes
+código administrativo      = ausente
+violaciones                = 0
+```
+
+Los outputs generados se retiraron después de validar el build; no forman parte
+del cambio.
+
+### Gate externo y estado
+
+No se repitió `PRESERVE_STORE_PREBUILT_EVIDENCE=1 npm run
+deploy:store:prepare` en 1.7.1. La ejecución única de 1.7 ya había confirmado
+que el entorno carecía de autenticación Vercel y se había detenido antes de
+crear output. Reintentar sin nuevas credenciales sólo habría repetido el mismo
+bloqueo externo. No se inventaron hashes, preview, slug ni evidencia remota.
+
+```text
+correcciones locales                = PASS
+suite focal                         = PASS
+build público                       = PASS
+Gate A/B Vercel                     = BLOCKED: autenticación externa ausente
+preview / auditoría HTTP / evidencia= NOT RUN
+deploymentExecuted                  = false
+productionModified                  = false
+Supabase / migraciones              = sin cambios
+package / lock / dependencias       = sin cambios
+merge / auto-merge                  = no
+estado total                        = BLOCKED
+```
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.7 — Reconciliación del Build Output real
 
 HEAD inicial y remoto confirmado: `b8999ac428a73d479a9fe6a855fb70479f7d8d17`

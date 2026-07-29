@@ -4,7 +4,11 @@ import {
 } from '../../../scripts/audit-remote-store-deployment.mjs';
 
 const head = 'a'.repeat(40);
+const previewHost = 'lanzo-store-git-fixture-team.vercel.app';
 const artifact = Object.freeze({
+  status: 'PASS',
+  target: 'store',
+  failedChecks: [],
   hashes: {
     outputConfig: 'b'.repeat(64),
     outputStaticTree: 'c'.repeat(64),
@@ -19,8 +23,8 @@ const artifact = Object.freeze({
   routing: { checks: { compiledStorePage: true, compiledTracking: true } },
 });
 const remote = Object.freeze({
-  previewHost: 'lanzo-store-git-fixture-team.vercel.app',
-  productionModified: false,
+  status: 'PASS',
+  previewHost,
   requests: [
     {
       name: 'store',
@@ -49,39 +53,79 @@ const remote = Object.freeze({
       twitterDescription: 1,
       twitterImage: 1,
     },
-    canonicalHost: 'lanzo-store-git-fixture-team.vercel.app',
-    ogImageHost: 'lanzo-store-git-fixture-team.vercel.app',
+    canonicalHost: previewHost,
+    ogImageHost: previewHost,
   },
   ogImage: { sha256: 'd'.repeat(64) },
   security: { passed: true, scannedResponses: 12, findings: [] },
   failedChecks: [],
 });
 
+const deployment = Object.freeze({
+  executed: true,
+  type: 'preview',
+  projectName: 'lanzo-store',
+  production: false,
+  deploymentIdHash: 'e'.repeat(64),
+  previewHost,
+});
+
 describe('evidencia controlada de social preview 1.7', () => {
-  it('conserva solo campos saneados y bloquea producción', () => {
-    const report = buildEvidenceReport({ head, artifact, remote });
+  it.each([
+    ['artifact BLOCKED', { artifact: { ...artifact, status: 'BLOCKED' } }, 'Artifact audit must be PASS'],
+    ['artifact con fallos', { artifact: { ...artifact, failedChecks: ['routing'] } }, 'no failed checks'],
+    ['target administrativo', { artifact: { ...artifact, target: 'admin' } }, 'target must be store'],
+    ['remote BLOCKED', { remote: { ...remote, status: 'BLOCKED' } }, 'Remote audit must be PASS'],
+    ['remote con fallos', { remote: { ...remote, failedChecks: ['cache'] } }, 'no failed checks'],
+    ['proyecto distinto', { deployment: { ...deployment, projectName: 'lanzo-pos' } }, 'project must be lanzo-store'],
+    ['producción true', { deployment: { ...deployment, production: true } }, 'non-production preview'],
+    ['sin evidencia deployment', { deployment: undefined }, 'Deployment evidence is required'],
+    ['host productivo', { deployment: { ...deployment, previewHost: 'lanzo-store.vercel.app' } }, 'Production deployments'],
+    ['deployment inventado en remote', { remote: { ...remote, deploymentExecuted: true } }, 'must come from deployment evidence'],
+  ])('rechaza evidencia no respaldada: %s', (_label, override, message) => {
+    expect(() => buildEvidenceReport({
+      head,
+      artifact: override.artifact ?? artifact,
+      remote: override.remote ?? remote,
+      deployment: Object.hasOwn(override, 'deployment') ? override.deployment : deployment,
+    })).toThrow(message);
+  });
+
+  it.each([
+    ['preview creada por esta ejecución', true],
+    ['preview proporcionada para auditoría', false],
+  ])('distingue %s', (_label, executed) => {
+    const report = buildEvidenceReport({
+      head,
+      artifact,
+      remote,
+      deployment: { ...deployment, executed },
+    });
     expect(report).toMatchObject({
       schemaVersion: 1,
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
+      evidenceStatus: 'PASS',
       HEAD: head,
       projectName: 'lanzo-store',
       deploymentType: 'preview',
-      deploymentExecuted: true,
+      deploymentExecuted: executed,
+      deploymentCreatedByThisRun: executed,
+      previewAudited: true,
       productionModified: false,
       failedChecks: [],
     });
     const serialized = JSON.stringify(report);
     expect(serialized).not.toMatch(/<!doctype|<html|authorization|cookie|@example/u);
     expect(serialized).not.toContain('Tienda privada');
-    expect(() => buildEvidenceReport({
-      head,
-      artifact,
-      remote: { ...remote, productionModified: true },
-    })).toThrow('Production modification');
   });
 
-  it('exige HEAD completo y no incorpora cuerpos remotos aunque se los inyecten', () => {
-    expect(() => buildEvidenceReport({ head: 'abc', artifact, remote })).toThrow('full Git HEAD');
+  it('exige HEAD completo y no incorpora cuerpos remotos', () => {
+    expect(() => buildEvidenceReport({
+      head: 'abc',
+      artifact,
+      remote,
+      deployment,
+    })).toThrow('full Git HEAD');
     const report = buildEvidenceReport({
       head,
       artifact,
@@ -89,6 +133,7 @@ describe('evidencia controlada de social preview 1.7', () => {
         ...remote,
         requests: [{ ...remote.requests[0], text: '<html>privado</html>' }],
       },
+      deployment,
     });
     expect(JSON.stringify(report)).not.toContain('privado');
   });
