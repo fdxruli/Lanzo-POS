@@ -13,6 +13,7 @@ import {
   buildWindowsCmdPayload,
   buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
+  injectWindowsBuildEnvironment,
   getEnvironmentValueCaseInsensitive,
   prependPathEntry,
   prepareStoreDeployment,
@@ -117,6 +118,22 @@ describe('workspace prebuilt saneado', () => {
     expect(getEnvironmentValueCaseInsensitive(result, 'path')).toBe(result.PATH);
     expect(prependPathEntry('C:\\Tools', 'C:\\Tools')).toBe('C:\\Tools');
     expect(setEnvironmentValueCaseInsensitive({ Path: 'x', PATH: 'y' }, 'PATH', 'z')).toEqual({ PATH: 'z' });
+  });
+
+  it('inyecta el entorno Windows en dotenv sin perder variables descargadas', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-dotenv-'));
+    const file = path.join(root, '.env.production.local');
+    await writeFile(file, 'REMOTE_VALUE="kept value"\nPath="remote"\n');
+    try {
+      await injectWindowsBuildEnvironment({ envFilePath: file, environment: {
+        PATH: 'C:\\Windows\\System32;C:\\Program Files\\nodejs', SystemRoot: 'C:\\Windows', WINDIR: 'C:\\Windows', ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+      } });
+      const result = await readFile(file, 'utf8');
+      expect(result).toContain('REMOTE_VALUE="kept value"');
+      expect(result.match(/^Path=/gimu)).toBeNull();
+      expect(result).toContain('PATH="C:\\\\Windows\\\\System32;C:\\\\Program Files\\\\nodejs"');
+      expect(result).toContain('ComSpec="C:\\\\Windows\\\\System32\\\\cmd.exe"');
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
   it.runIf(process.platform === 'win32')('ejecuta cmd.exe desde un directorio temporal con el entorno final', async () => {

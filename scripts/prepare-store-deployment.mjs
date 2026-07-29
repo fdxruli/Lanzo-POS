@@ -11,6 +11,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile,
@@ -270,6 +271,29 @@ export function buildVercelExecutionEnvironment({
     );
   }
   return Object.freeze(vercelEnvironment);
+}
+
+function serializeDotenvValue(value) {
+  const text = String(value || '');
+  if (/[\0\r\n]/u.test(text)) throw new Error('Windows build environment contains an unsafe dotenv value.');
+  return JSON.stringify(text);
+}
+
+export async function injectWindowsBuildEnvironment({ envFilePath, environment }) {
+  const existing = await readFile(envFilePath, 'utf8');
+  const managed = new Set(['path', 'systemroot', 'windir', 'comspec']);
+  const preserved = existing.split(/\r?\n/u).filter((line) => {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/u);
+    return !match || !managed.has(match[1].toLowerCase());
+  });
+  const values = ['PATH', 'SystemRoot', 'WINDIR', 'ComSpec'].map((name) => {
+    const value = getEnvironmentValueCaseInsensitive(environment, name);
+    if (!value) throw new Error(`Windows build environment is missing ${name}.`);
+    return `${name}=${serializeDotenvValue(value)}`;
+  });
+  const temporaryPath = `${envFilePath}.tmp`;
+  await writeFile(temporaryPath, `${[...preserved.filter(Boolean), ...values].join('\n')}\n`, 'utf8');
+  await rename(temporaryPath, envFilePath);
 }
 
 function assertSafeWindowsWrapperCommand(command) {
@@ -567,7 +591,23 @@ export async function prepareStoreDeployment({
     });
     commandRunner(
       resolvedVercelCommand,
-      ['build', '--prod', '--yes', '--local-config', './vercel.json'],
+      ['pull', '--yes', '--environment=production'],
+      { cwd: storeRoot, environment: buildEnvironment },
+    );
+    const downloadedEnvironmentPath = path.join(storeRoot, '.vercel', '.env.production.local');
+    if (!await pathExists(downloadedEnvironmentPath)) {
+      if (commandRunner === run) {
+        throw new Error('Vercel pull did not produce .vercel/.env.production.local.');
+      }
+      await writeFile(downloadedEnvironmentPath, '', { encoding: 'utf8', flag: 'wx' });
+    }
+    await injectWindowsBuildEnvironment({
+      envFilePath: downloadedEnvironmentPath,
+      environment: buildEnvironment,
+    });
+    commandRunner(
+      resolvedVercelCommand,
+      ['build', '--prod', '--local-config', './vercel.json'],
       { cwd: storeRoot, environment: buildEnvironment },
     );
 
