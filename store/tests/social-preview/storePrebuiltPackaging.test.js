@@ -22,7 +22,11 @@ import {
   resolveSpawnInvocation,
   resolveVercelInvocation,
   run,
+  assertEffectiveVercelProjectRoot,
+  sanitizeVercelDebugLog,
+  sanitizeVercelProjectInspection,
   shouldCopyStoreWorkspacePath,
+  writeProjectLink,
   writePrebuiltVercelConfig,
 } from '../../../scripts/prepare-store-deployment.mjs';
 
@@ -101,12 +105,14 @@ describe('materialización estática prebuilt', () => {
 
 async function createRepositoryFixture({ withAdministrativeLink = false } = {}) {
   const sourceRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-package-protected-source-'));
-  await mkdir(path.join(sourceRoot, 'store'), { recursive: true });
+  await mkdir(path.join(sourceRoot, 'store', 'api', 'og'), { recursive: true });
   await Promise.all([
     writeFile(path.join(sourceRoot, 'package.json'), '{"name":"fixture"}'),
     writeFile(path.join(sourceRoot, 'package-lock.json'), '{"lockfileVersion":3}'),
     writeFile(path.join(sourceRoot, 'vercel.json'), '{"project":"administrative"}'),
     writeFile(path.join(sourceRoot, 'store', 'vercel.json'), '{"trailingSlash":false}'),
+    writeFile(path.join(sourceRoot, 'store', 'api', 'store-page.js'), 'export default { fetch() {} };'),
+    writeFile(path.join(sourceRoot, 'store', 'api', 'og', 'store.jsx'), 'export default { fetch() {} };'),
   ]);
   if (withAdministrativeLink) {
     await mkdir(path.join(sourceRoot, '.vercel'), { recursive: true });
@@ -263,6 +269,90 @@ describe('workspace prebuilt saneado', () => {
       expect(await readFile(sourcePath, 'utf8')).toContain('installCommand');
       expect(JSON.parse(await readFile(targetPath, 'utf8'))).toEqual({ rewrites: [] });
     } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('sanitiza la inspección remota del proyecto y los logs debug', () => {
+    const inspection = sanitizeVercelProjectInspection([
+      '    ID                prj_fixture',
+      '    Name              lanzo-store',
+      '    Root Directory    store',
+      '    Framework Preset  Other',
+      '    Build Command     `npm run build`',
+      '    Install Command   `npm install`',
+      '    Output Directory  `public`',
+      '    Node.js Version   24.x',
+    ].join('\n'), 'C:\\private\\workspace');
+    expect(inspection).toEqual({
+      projectId: 'prj_fixture', projectName: 'lanzo-store', configuredRootDirectory: 'store',
+      framework: 'Other', buildCommand: 'npm run build', installCommand: 'npm install',
+      outputDirectory: 'public', nodeVersion: '24.x',
+    });
+    const debug = sanitizeVercelDebugLog(
+      'C:\\private\\workspace\\.vercel\\output token vcp_example_secret_123456',
+      'C:\\private\\workspace',
+    );
+    expect(debug).not.toContain('private\\workspace');
+    expect(debug).not.toContain('vcp_example_secret_123456');
+  });
+
+  it('valida la raíz Vercel efectiva con ambos endpoints y la configuración temporal', async () => {
+    const root = await createRepositoryFixture();
+    const prebuiltConfigPath = path.join(root, 'store', 'vercel.prebuilt.json');
+    await writeFile(prebuiltConfigPath, '{}');
+    try {
+      await expect(assertEffectiveVercelProjectRoot({
+        workspaceRoot: root, configuredRootDirectory: 'store', prebuiltConfigPath,
+      })).resolves.toMatchObject({
+        effectiveSourceRoot: path.join(root, 'store'),
+        apiDirectory: path.join(root, 'store', 'api'),
+        apiDirectoryExists: true,
+      });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('rechaza una raíz efectiva sin api y la duplicación store/store', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-effective-root-'));
+    await mkdir(path.join(root, 'store', 'store'), { recursive: true });
+    try {
+      await expect(assertEffectiveVercelProjectRoot({
+        workspaceRoot: root, configuredRootDirectory: 'missing',
+      })).rejects.toThrow('Effective Vercel project root is missing: api');
+      await expect(assertEffectiveVercelProjectRoot({
+        workspaceRoot: root, configuredRootDirectory: 'store/store',
+      })).rejects.toThrow('duplicated store/store');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('escribe el enlace temporal en el workspace y no dentro de store', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-project-link-'));
+    try {
+      await writeProjectLink(root);
+      expect(JSON.parse(await readFile(path.join(root, '.vercel', 'project.json'), 'utf8'))).toMatchObject({
+        projectId: 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4',
+      });
+      expect(await exists(path.join(root, 'store', '.vercel', 'project.json'))).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('solo permite el fallback explícito para los dos endpoints públicos exactos', () => {
+    const source = { installCommand: 'npm ci', buildCommand: 'npm run build', rewrites: [] };
+    const allowed = {
+      rewrites: [],
+      builds: [
+        { src: 'api/store-page.js', use: '@vercel/node' },
+        { src: 'api/og/store.jsx', use: '@vercel/node' },
+      ],
+    };
+    expect(() => assertPrebuiltVercelConfigParity(source, allowed)).not.toThrow();
+    for (const invalid of [
+      [{ src: 'api/**/*.js', use: '@vercel/node' }, { src: 'api/og/store.jsx', use: '@vercel/node' }],
+      [{ src: 'api/_publicPortal.js', use: '@vercel/node' }, { src: 'api/og/store.jsx', use: '@vercel/node' }],
+      [{ src: 'api/store-page.js', use: '@vercel/node' }],
+    ]) {
+      expect(() => assertPrebuiltVercelConfigParity(source, { rewrites: [], builds: invalid }))
+        .toThrow('only add the two exact public function entries');
+    }
+    expect(createPrebuiltVercelConfig(source)).not.toHaveProperty('builds');
   });
 
   it.each([
@@ -438,14 +528,14 @@ describe('workspace prebuilt saneado', () => {
           writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
           return;
         }
-        capturedPrebuilt = JSON.parse(readFileSync(path.join(options.cwd, 'vercel.prebuilt.json'), 'utf8'));
+        capturedPrebuilt = JSON.parse(readFileSync(path.join(options.cwd, 'store', 'vercel.prebuilt.json'), 'utf8'));
         throw new Error('controlled build stop');
       },
     })).rejects.toThrow('controlled build stop');
     expect(calls.map(({ args }) => args.at(-1))).toEqual([
-      '--no-fund', 'build:store:vercel', '--environment=production', './vercel.prebuilt.json',
+      '--no-fund', 'build:store:vercel', '--environment=production', './store/vercel.prebuilt.json',
     ]);
-    expect(calls.at(-1).args).toEqual(['build', '--prod', '--local-config', './vercel.prebuilt.json']);
+    expect(calls.at(-1).args).toEqual(['build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json']);
     expect(capturedPrebuilt).toEqual({ trailingSlash: false });
     expect(await exists(path.join(sourceRoot, 'store', 'vercel.prebuilt.json'))).toBe(false);
     expect(await exists(workspaceRoot)).toBe(false);
@@ -626,7 +716,7 @@ describe('workspace prebuilt saneado', () => {
 
     const logicalCalls = calls.map(({ args }) => args.join(' '));
     expect(logicalCalls.some((call) => call.includes(
-      'build --prod --local-config ./vercel.prebuilt.json',
+      'build --prod --debug --local-config ./store/vercel.prebuilt.json',
     ))).toBe(true);
     expect(logicalCalls.join(' ')).not.toMatch(/\b(?:deploy|promote|alias)\b|--prebuilt/u);
     expect(calls.every(({ options }) => options.shell === false)).toBe(true);

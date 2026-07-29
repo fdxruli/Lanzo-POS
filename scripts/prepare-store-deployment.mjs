@@ -23,8 +23,9 @@ import { auditPrebuiltOutput, inspectStatic } from './audit-vercel-build-output.
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
 const STORE_ORGANIZATION_ID = 'team_buvft2mAJErTNR8gDhXcZGfS';
+const STORE_PROJECT_NAME = 'lanzo-store';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
-const BUILD_COMMAND = 'vercel build --prod --local-config ./vercel.prebuilt.json';
+const BUILD_COMMAND = 'vercel build --prod --local-config ./store/vercel.prebuilt.json';
 const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
 const DEFAULT_VERCEL_COMMAND = 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
@@ -79,6 +80,20 @@ export function assertPrebuiltVercelConfigParity(sourceConfig, prebuiltConfig) {
   const expected = structuredClone(sourceConfig);
   delete expected.installCommand;
   delete expected.buildCommand;
+  const allowedBuilds = prebuiltConfig.builds;
+  if (allowedBuilds !== undefined) {
+    if (!Array.isArray(allowedBuilds) || allowedBuilds.length !== 2) {
+      throw new Error('The prebuilt Vercel configuration may only add the two exact public function entries.');
+    }
+    const expectedEntries = [
+      { src: 'api/store-page.js', use: '@vercel/node' },
+      { src: 'api/og/store.jsx', use: '@vercel/node' },
+    ];
+    if (JSON.stringify(allowedBuilds) !== JSON.stringify(expectedEntries)) {
+      throw new Error('The prebuilt Vercel configuration may only add the two exact public function entries.');
+    }
+    expected.builds = allowedBuilds;
+  }
   if (JSON.stringify(expected) !== JSON.stringify(prebuiltConfig)) {
     throw new Error('The prebuilt Vercel configuration differs from store/vercel.json beyond shell build commands.');
   }
@@ -92,6 +107,67 @@ export async function writePrebuiltVercelConfig({ sourceConfigPath, targetConfig
     flag: 'wx',
   });
   return { sourceConfig, prebuiltConfig, targetConfigPath };
+}
+
+export function sanitizeVercelProjectInspection(value, cwd = '') {
+  const sanitized = sanitizeCommandDiagnostic(value, cwd);
+  const pick = (label) => {
+    const match = new RegExp(`^\\s*${label}\\s+(.+?)\\s*$`, 'imu').exec(sanitized);
+    return match ? match[1].replaceAll('`', '').trim() : null;
+  };
+  return Object.freeze({
+    projectId: pick('ID'),
+    projectName: pick('Name'),
+    framework: pick('Framework Preset'),
+    configuredRootDirectory: pick('Root Directory'),
+    buildCommand: pick('Build Command'),
+    installCommand: pick('Install Command'),
+    outputDirectory: pick('Output Directory'),
+    nodeVersion: pick('Node\\.js Version'),
+  });
+}
+
+export function sanitizeVercelDebugLog(value, cwd = '') {
+  return sanitizeCommandDiagnostic(value, cwd)
+    .replace(/(?:[A-Za-z]:)?[^\s"']*\\.vercel\\[^\s"']*/giu, '<vercel-state>')
+    .replace(/(?:[A-Za-z]:)?[^\s"']*\/\.vercel\/[^\s"']*/giu, '<vercel-state>');
+}
+
+export async function assertEffectiveVercelProjectRoot({
+  workspaceRoot,
+  configuredRootDirectory,
+  prebuiltConfigPath,
+}) {
+  const normalizedRootDirectory = String(configuredRootDirectory || '').trim().replaceAll('\\', '/');
+  const effectiveSourceRoot = path.resolve(workspaceRoot, normalizedRootDirectory || '.');
+  const relativeRoot = path.relative(workspaceRoot, effectiveSourceRoot);
+  if (relativeRoot.startsWith('..') || path.isAbsolute(relativeRoot)) {
+    throw new Error('Configured Vercel root directory escapes the temporary workspace.');
+  }
+  const normalizedEffective = normalizePath(effectiveSourceRoot);
+  if (/\/store\/store(?:\/|$)/u.test(normalizedEffective)) {
+    throw new Error('Vercel effective source root contains a duplicated store/store directory.');
+  }
+  const apiDirectory = path.join(effectiveSourceRoot, 'api');
+  const requiredPaths = [
+    apiDirectory,
+    path.join(apiDirectory, 'store-page.js'),
+    path.join(apiDirectory, 'og', 'store.jsx'),
+    prebuiltConfigPath || path.join(effectiveSourceRoot, 'vercel.prebuilt.json'),
+  ];
+  const missing = [];
+  for (const requiredPath of requiredPaths) {
+    if (!await pathExists(requiredPath)) missing.push(normalizePath(path.relative(effectiveSourceRoot, requiredPath)));
+  }
+  if (missing.length > 0) {
+    throw new Error(`Effective Vercel project root is missing: ${missing.join(', ')}.`);
+  }
+  return Object.freeze({
+    configuredRootDirectory: normalizedRootDirectory || null,
+    effectiveSourceRoot,
+    apiDirectory,
+    apiDirectoryExists: true,
+  });
 }
 
 async function hashOptional(filePath) {
@@ -350,20 +426,28 @@ export async function resolveVercelInvocation({
   const configured = typeof environment.VERCEL_CLI_PATH === 'string'
     ? environment.VERCEL_CLI_PATH.trim()
     : '';
-  const candidate = configured || vercelCommand;
-  const commandPath = await resolveWindowsPathCommand(
-    candidate === DEFAULT_VERCEL_COMMAND ? 'vercel.cmd' : candidate,
-    environment,
-  );
-  const cliPath = commandPath.toLowerCase().endsWith('.js')
-    ? commandPath
-    : path.join(path.dirname(commandPath), 'node_modules', 'vercel', 'dist', 'vc.js');
-  if (!await isFile(cliPath)) {
+  const candidates = configured
+    ? [configured]
+    : [
+      vercelCommand.toLowerCase().endsWith('.js') ? vercelCommand : '',
+      environment.APPDATA ? path.join(environment.APPDATA, 'npm', 'node_modules', 'vercel', 'dist', 'vc.js') : '',
+      environment.npm_config_prefix ? path.join(environment.npm_config_prefix, 'node_modules', 'vercel', 'dist', 'vc.js') : '',
+    ].filter(Boolean);
+  // Resolution is restricted to JavaScript CLI entrypoints rather than Windows
+  // shell wrappers.
+  let resolvedCliPath = '';
+  for (const candidate of candidates) {
+    if (candidate.toLowerCase().endsWith('.js') && await isFile(candidate)) {
+      resolvedCliPath = candidate;
+      break;
+    }
+  }
+  if (!resolvedCliPath) {
     throw new Error('Unable to resolve the Vercel JavaScript CLI without a Windows command wrapper.');
   }
   return Object.freeze({
     command: nodeExecutable,
-    argsPrefix: Object.freeze([cliPath]),
+    argsPrefix: Object.freeze([resolvedCliPath]),
     options: Object.freeze({ shell: false }),
   });
 }
@@ -460,8 +544,8 @@ export function run(
   return result;
 }
 
-async function writeProjectLink(storeRoot) {
-  const vercelDirectory = path.join(storeRoot, '.vercel');
+export async function writeProjectLink(linkedDirectory) {
+  const vercelDirectory = path.join(linkedDirectory, '.vercel');
   await mkdir(vercelDirectory, { recursive: true });
   await writeFile(path.join(vercelDirectory, 'project.json'), `${JSON.stringify({
     projectId: STORE_PROJECT_ID,
@@ -570,8 +654,8 @@ async function removeTemporaryWorkspace(workspaceRoot) {
   await rm(workspaceRoot, {
     recursive: true,
     force: true,
-    maxRetries: 5,
-    retryDelay: 250,
+    maxRetries: 20,
+    retryDelay: 500,
   });
 }
 
@@ -581,6 +665,7 @@ export async function prepareStoreDeployment({
   vercelCommand = process.env.VERCEL_CLI_PATH || DEFAULT_VERCEL_COMMAND,
   vercelInvocation,
   npmInvocation,
+  projectInspection,
   environment = process.env,
 } = {}) {
   const baseline = await protectedRepositoryState(repositoryRoot);
@@ -613,11 +698,41 @@ export async function prepareStoreDeployment({
       temporaryRoot: workspaceRoot,
     });
     const storeRoot = path.join(workspaceRoot, 'store');
-    await writeProjectLink(storeRoot);
+    const vercelExecutionEnvironment = buildVercelExecutionEnvironment({ environment });
+    const inspectedProject = projectInspection || (
+      commandRunner === run
+        ? sanitizeVercelProjectInspection(
+          [
+            (() => {
+              const result = commandRunner(
+              resolvedVercelInvocation.command,
+              [...resolvedVercelInvocation.argsPrefix, 'project', 'inspect', STORE_PROJECT_NAME],
+              { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
+              );
+              return `${result?.stdout || ''}\n${result?.stderr || ''}`;
+            })(),
+          ].join('\n'),
+          workspaceRoot,
+        )
+        : Object.freeze({
+          projectId: STORE_PROJECT_ID,
+          projectName: STORE_PROJECT_NAME,
+          configuredRootDirectory: 'store',
+        })
+    );
+    if (inspectedProject.projectId && inspectedProject.projectId !== STORE_PROJECT_ID) {
+      throw new Error('Vercel project inspection does not match the expected store project.');
+    }
+    if (inspectedProject.projectName && inspectedProject.projectName !== STORE_PROJECT_NAME) {
+      throw new Error('Vercel project inspection does not match the expected store project name.');
+    }
+    if (inspectedProject.configuredRootDirectory !== 'store') {
+      throw new Error('Vercel project inspection must confirm Root Directory = store.');
+    }
+    await writeProjectLink(workspaceRoot);
 
     const npmExecutionEnvironment = buildNpmExecutionEnvironment({ environment });
     await mkdir(npmExecutionEnvironment.NPM_CONFIG_CACHE, { recursive: true });
-    const vercelExecutionEnvironment = buildVercelExecutionEnvironment({ environment });
     const buildEnvironment = {
       ...npmExecutionEnvironment,
       VITE_SUPABASE_URL: 'https://invalid-for-local-build.supabase.invalid',
@@ -637,9 +752,13 @@ export async function prepareStoreDeployment({
     commandRunner(
       resolvedVercelInvocation.command,
       [...resolvedVercelInvocation.argsPrefix, 'pull', '--yes', '--environment=production'],
-      { cwd: storeRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
+      { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
-    const downloadedEnvironmentPath = path.join(storeRoot, '.vercel', '.env.production.local');
+    const linkedProject = JSON.parse(await readFile(path.join(workspaceRoot, '.vercel', 'project.json'), 'utf8'));
+    if (linkedProject.projectId !== STORE_PROJECT_ID || linkedProject.orgId !== STORE_ORGANIZATION_ID) {
+      throw new Error('Temporary Vercel project link does not match the inspected store project.');
+    }
+    const downloadedEnvironmentPath = path.join(workspaceRoot, '.vercel', '.env.production.local');
     if (!await pathExists(downloadedEnvironmentPath)) {
       if (commandRunner === run) {
         throw new Error('Vercel pull did not produce .vercel/.env.production.local.');
@@ -651,18 +770,52 @@ export async function prepareStoreDeployment({
       sourceConfigPath: path.join(storeRoot, 'vercel.json'),
       targetConfigPath: prebuiltConfigPath,
     });
-    commandRunner(
+    const effectiveProjectRoot = await assertEffectiveVercelProjectRoot({
+      workspaceRoot,
+      configuredRootDirectory: inspectedProject.configuredRootDirectory,
+      prebuiltConfigPath,
+    });
+    const zeroConfigBuild = commandRunner(
       resolvedVercelInvocation.command,
-      [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--local-config', './vercel.prebuilt.json'],
-      { cwd: storeRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
+      [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json'],
+      { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
 
     await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
-    const outputRoot = path.join(storeRoot, '.vercel', 'output');
+    const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
     const outputConfigPath = path.join(outputRoot, 'config.json');
     const outputFunctionsPath = path.join(outputRoot, 'functions');
     const outputStaticPath = path.join(outputRoot, 'static');
     if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output.');
+    const zeroConfigDebugLog = sanitizeVercelDebugLog(
+      `${zeroConfigBuild?.stdout || ''}\n${zeroConfigBuild?.stderr || ''}`,
+      workspaceRoot,
+    );
+    let usedExplicitBuildsFallback = false;
+    let generatedPrebuiltConfig = prebuiltConfig;
+    if (!await pathExists(outputFunctionsPath)) {
+      if (/@vercel\/node/iu.test(zeroConfigDebugLog)) {
+        throw new Error('Vercel selected @vercel/node but did not produce the expected functions.');
+      }
+      generatedPrebuiltConfig = {
+        ...prebuiltConfig,
+        builds: [
+          { src: 'api/store-page.js', use: '@vercel/node' },
+          { src: 'api/og/store.jsx', use: '@vercel/node' },
+        ],
+      };
+      assertPrebuiltVercelConfigParity(sourceConfig, generatedPrebuiltConfig);
+      await rm(outputRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
+      await writeFile(prebuiltConfigPath, `${JSON.stringify(generatedPrebuiltConfig, null, 2)}\n`, 'utf8');
+      commandRunner(
+        resolvedVercelInvocation.command,
+        [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json'],
+        { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
+      );
+      await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
+      usedExplicitBuildsFallback = true;
+    }
+    if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output after function packaging.');
     const vercelOutputInventory = (await walk(outputRoot)).map((file) => ({
       path: file.relativePath,
       bytes: file.bytes,
@@ -680,7 +833,7 @@ export async function prepareStoreDeployment({
       outputStaticRoot: outputStaticPath,
     });
 
-    const audit = await auditPrebuiltOutput('store', storeRoot, {
+    const audit = await auditPrebuiltOutput('store', workspaceRoot, {
       sourceConfigPath: path.join(workspaceRoot, 'store', 'vercel.json'),
       sourceStaticPath: path.join(workspaceRoot, 'store', 'dist'),
     });
@@ -737,8 +890,18 @@ export async function prepareStoreDeployment({
       },
       prebuiltConfig: {
         source: sourceConfig,
-        generated: prebuiltConfig,
+        generated: generatedPrebuiltConfig,
         path: prebuiltConfigPath,
+      },
+      projectInspection: {
+        ...inspectedProject,
+        linkedDirectory: workspaceRoot,
+        vercelCommandCwd: workspaceRoot,
+        effectiveSourceRoot: effectiveProjectRoot.effectiveSourceRoot,
+        apiDirectory: effectiveProjectRoot.apiDirectory,
+        apiDirectoryExists: effectiveProjectRoot.apiDirectoryExists,
+        zeroConfigDebugLog,
+        usedExplicitBuildsFallback,
       },
       deploymentExecuted: false,
     };

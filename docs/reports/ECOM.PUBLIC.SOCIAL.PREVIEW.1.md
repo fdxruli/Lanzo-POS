@@ -2244,3 +2244,60 @@ Mientras el output real no exista, 1.6.1 permanece **BLOCKED** y no habilita:
 ```text
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.7 — Validación integrada y evidencia controlada
 ```
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.5 - raiz efectiva de Vercel Functions
+
+```text
+HEAD inicial = bd75705c35df6779307fbbbdff6f7f5e9807df3e
+PR #141 = OPEN / DRAFT
+rama = feat/ecom-public-social-preview-1
+base = main
+deploymentExecuted = false
+```
+
+La inspeccion remota de solo lectura mediante `node.exe .../vercel/dist/vc.js project inspect lanzo-store` confirmo:
+
+```text
+project ID       = prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4
+project name     = lanzo-store
+framework        = Other
+rootDirectory    = store
+build command    = npm run vercel-build or npm run build
+install command  = yarn install, pnpm install, npm install, or bun install
+output directory = public if it exists, or .
+Node.js          = 24.x
+```
+
+El preparador anterior enlazaba, hacia `pull` y hacia `build` desde `workspaceRoot/store`, mientras la configuracion remota volvia a aplicar `rootDirectory = store`. La raiz efectiva quedaba en riesgo de resolver `workspaceRoot/store/store`, por lo que no habia un directorio `api` visible para el descubrimiento zero-config.
+
+La correccion usa la estrategia A. El enlace temporal se escribe en `workspaceRoot/.vercel/project.json`, `vercel pull` y `vercel build` se ejecutan con `cwd = workspaceRoot`, y `--local-config` apunta a `./store/vercel.prebuilt.json`. Antes de cada build se exige que la raiz efectiva contenga directamente:
+
+```text
+api/store-page.js
+api/og/store.jsx
+vercel.prebuilt.json
+```
+
+La asercion rechaza `store/store`, una raiz sin `api` y cualquier raiz fuera del workspace. La inspeccion y el debug se sanitizan; no se persisten variables ni secretos. Zero-config sigue siendo el primer intento. El fallback, si y solo si zero-config no produce funciones y no selecciona `@vercel/node`, se limita a los dos `src` exactos; bloquea globs y helpers privados. Ninguna carpeta `.func` ni `.vc-config.json` se crea manualmente.
+
+Validacion focal completada:
+
+```text
+storePrebuiltPackaging.test.js = 56 PASS
+storeBuildIntegration.test.js  = 3 PASS
+storeBuildOutputAudit.test.js  = PASS
+```
+
+El build publico se inicio dentro del workspace efimero y la inspeccion remota fue satisfactoria. El gate completo no se declara PASS en esta evidencia: la instalacion temporal de npm encontro `ENOTEMPTY` durante la limpieza de `node_modules` de un workspace efimero antes de conservar un Build Output API auditado. Por tanto no se afirma todavia `config.json`, funciones, runtimes, rutas, static ni hashes reales.
+
+```text
+estado = BLOCKED
+funciones reales = NOT RUN
+fallback builds = NOT USED
+Supabase = sin cambios
+dependencias = sin cambios
+store/vercel.json = sin cambios
+deployment / preview / promote / alias = no ejecutado
+merge = no
+auto-merge = desactivado
+```
