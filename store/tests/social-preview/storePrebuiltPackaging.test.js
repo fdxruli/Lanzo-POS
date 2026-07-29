@@ -8,9 +8,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
   prepareStoreDeployment,
   resolveCliCommands,
+  resolveSpawnInvocation,
   run,
   shouldCopyStoreWorkspacePath,
 } from '../../../scripts/prepare-store-deployment.mjs';
@@ -86,6 +88,130 @@ describe('workspace prebuilt saneado', () => {
       environment: { VERCEL_CLI_PATH: '/opt/vercel-custom' },
     }).vercelCommand).toBe('/opt/vercel-custom');
   });
+
+  it.each([
+    ['npm.cmd', ['ci', '--no-audit', '--no-fund']],
+    ['vercel.cmd', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
+  ])('envuelve %s con cmd.exe y conserva los argumentos', (command, args) => {
+    const invocation = resolveSpawnInvocation({
+      command,
+      args,
+      platform: 'win32',
+      environment: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' },
+    });
+    expect(invocation.command).toBe('C:\\Windows\\System32\\cmd.exe');
+    expect(invocation.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
+    expect(invocation.args[3]).toBe([
+      `"${command}"`,
+      ...args.map((argument) => `"${argument}"`),
+    ].join(' '));
+    expect(invocation.options).toMatchObject({
+      shell: false,
+      windowsHide: true,
+    });
+  });
+
+  it('cita una ruta Windows con espacios', () => {
+    expect(buildWindowsCommandLine(
+      'C:\\Program Files\\nodejs\\npm.cmd',
+      ['ci', '--no-audit', '--no-fund'],
+    )).toBe(
+      '"C:\\Program Files\\nodejs\\npm.cmd" "ci" "--no-audit" "--no-fund"',
+    );
+  });
+
+  it('respeta ComSpec y acepta COMSPEC como fallback de entorno', () => {
+    expect(resolveSpawnInvocation({
+      command: 'npm.cmd',
+      args: ['ci'],
+      platform: 'win32',
+      environment: { ComSpec: 'D:\\Windows\\cmd.exe' },
+    }).command).toBe('D:\\Windows\\cmd.exe');
+    expect(resolveSpawnInvocation({
+      command: 'vercel.cmd',
+      args: ['build'],
+      platform: 'win32',
+      environment: { COMSPEC: 'E:\\Windows\\cmd.exe' },
+    }).command).toBe('E:\\Windows\\cmd.exe');
+  });
+
+  it('usa el fallback absoluto de cmd.exe cuando ComSpec falta', () => {
+    expect(resolveSpawnInvocation({
+      command: 'npm.cmd',
+      args: ['ci'],
+      platform: 'win32',
+      environment: {},
+    }).command).toBe('C:\\Windows\\System32\\cmd.exe');
+  });
+
+  it.each([
+    ['npm.cmd\rmalicioso', ['ci']],
+    ['npm.cmd\nmalicioso', ['ci']],
+    ['npm.cmd', ['ci\rmalicioso']],
+    ['npm.cmd', ['ci\nmalicioso']],
+  ])('rechaza CR/LF en comando o argumentos Windows', (command, args) => {
+    expect(() => buildWindowsCommandLine(command, args)).toThrow();
+  });
+
+  it.each(['&', '|', '<', '>', '^', '%', '!', '"'])(
+    'rechaza el metacarácter %s en overrides Windows',
+    (operator) => {
+      expect(() => resolveSpawnInvocation({
+        command: `npm.cmd ${operator} comando-malicioso`,
+        args: ['ci'],
+        platform: 'win32',
+        environment: {},
+      })).toThrow('Unsafe Windows CLI executable');
+    },
+  );
+
+  it('escapa comillas en argumentos controlados', () => {
+    expect(buildWindowsCommandLine('npm.cmd', ['valor"interno']))
+      .toBe('"npm.cmd" "valor""interno"');
+  });
+
+  it('diagnostica el comando lógico cuando falla el wrapper', () => {
+    expect(() => run('npm.cmd', ['ci', '--no-audit'], {
+      platform: 'win32',
+      environment: { ComSpec: process.execPath },
+    })).toThrow(/^npm\.cmd ci --no-audit failed with exit code/u);
+  });
+
+  it.each([
+    ['npm', ['ci', '--no-audit', '--no-fund']],
+    ['vercel', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
+  ])('ejecuta %s directamente en POSIX sin cmd.exe', (command, args) => {
+    const invocation = resolveSpawnInvocation({
+      command,
+      args,
+      platform: 'linux',
+      environment: {},
+    });
+    expect(invocation).toEqual({
+      command,
+      args,
+      options: { shell: false },
+    });
+    expect(invocation.command).not.toMatch(/cmd\.exe/iu);
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'ejecuta realmente un fixture .cmd, devuelve status 0 y captura stdout',
+    async () => {
+      const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-cmd-fixture-'));
+      const fixtureCommand = path.join(fixtureRoot, 'fixture command.cmd');
+      await writeFile(fixtureCommand, '@echo off\r\necho wrapper-ok\r\n', 'utf8');
+      try {
+        const result = run(fixtureCommand, ['argumento-inocuo'], {
+          cwd: fixtureRoot,
+        });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('wrapper-ok');
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([
     ['package.json', true],
@@ -201,7 +327,7 @@ describe('workspace prebuilt saneado', () => {
         vercelCommand: 'vercel-fixture',
         commandRunner(command, args, options) {
           workspaceRoot ||= options.cwd;
-          return run(command, args, options);
+          return run(command, args, { ...options, platform: 'linux' });
         },
       });
     } catch (error) {
@@ -293,6 +419,8 @@ describe('workspace prebuilt saneado', () => {
     expect(source).not.toMatch(/vercel\s+(?:deploy|promote|alias)/u);
     expect(source).toContain("['build', '--prod', '--yes'");
     expect(source).not.toContain('shell: true');
-    expect(source).not.toMatch(/cmd\.exe|\/c(?:\s|['"])/iu);
+    expect(source).toContain("args: ['/d', '/s', '/c'");
+    expect(source).toContain('shell: false');
+    expect(source).not.toMatch(/exec(?:Sync)?\(/u);
   });
 });

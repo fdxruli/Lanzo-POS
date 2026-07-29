@@ -28,6 +28,8 @@ const BUILD_COMMAND = 'vercel build --prod --yes --local-config ./vercel.json';
 const IS_WINDOWS = process.platform === 'win32';
 const DEFAULT_NPM_COMMAND = IS_WINDOWS ? 'npm.cmd' : 'npm';
 const DEFAULT_VERCEL_COMMAND = IS_WINDOWS ? 'vercel.cmd' : 'vercel';
+const DEFAULT_WINDOWS_COMMAND_PROCESSOR = 'C:\\Windows\\System32\\cmd.exe';
+const WINDOWS_COMMAND_WRAPPER_PATTERN = /\.(?:cmd|bat)$/iu;
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -141,6 +143,64 @@ export function resolveCliCommands({
   });
 }
 
+function assertSafeWindowsWrapperCommand(command) {
+  const value = String(command || '');
+  if (!value || /[\0\r\n"&|<>^%!]/u.test(value)) {
+    throw new Error('Unsafe Windows CLI executable.');
+  }
+  return value;
+}
+
+function quoteWindowsCommandArgument(value) {
+  const argument = String(value);
+  if (/[\0\r\n]/u.test(argument)) {
+    throw new Error('Windows CLI arguments must not contain CR, LF, or NUL.');
+  }
+  if (/[%!]/u.test(argument)) {
+    throw new Error('Windows CLI arguments must not contain expansion operators.');
+  }
+  return `"${argument.replaceAll('"', '""')}"`;
+}
+
+export function buildWindowsCommandLine(command, args) {
+  const executable = assertSafeWindowsWrapperCommand(command);
+  if (!Array.isArray(args)) throw new TypeError('CLI arguments must be an array.');
+  return [
+    quoteWindowsCommandArgument(executable),
+    ...args.map(quoteWindowsCommandArgument),
+  ].join(' ');
+}
+
+export function resolveSpawnInvocation({
+  command,
+  args,
+  platform = process.platform,
+  environment = process.env,
+}) {
+  if (!Array.isArray(args)) throw new TypeError('CLI arguments must be an array.');
+  const resolvedCommand = platform === 'win32'
+    ? assertSafeWindowsWrapperCommand(command)
+    : command;
+  if (platform !== 'win32' || !WINDOWS_COMMAND_WRAPPER_PATTERN.test(resolvedCommand)) {
+    return {
+      command: resolvedCommand,
+      args,
+      options: { shell: false },
+    };
+  }
+  const commandProcessor = environment?.ComSpec
+    || environment?.COMSPEC
+    || DEFAULT_WINDOWS_COMMAND_PROCESSOR;
+  return {
+    command: commandProcessor,
+    args: ['/d', '/s', '/c', buildWindowsCommandLine(resolvedCommand, args)],
+    options: {
+      shell: false,
+      windowsHide: true,
+    },
+  };
+}
+
 function executableName(command) {
   const name = normalizePath(String(command || '')).split('/').at(-1) || 'unknown';
   return name.replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120);
@@ -160,26 +220,53 @@ function sanitizeCommandDiagnostic(value, cwd) {
     .slice(0, 1_000);
 }
 
-export function run(command, args, { cwd, environment = process.env } = {}) {
-  const result = spawnSync(command, args, {
+export function run(
+  command,
+  args,
+  {
+    cwd,
+    environment = process.env,
+    platform = process.platform,
+  } = {},
+) {
+  const invocation = resolveSpawnInvocation({
+    command,
+    args,
+    platform,
+    environment,
+  });
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd,
     env: environment,
     encoding: 'utf8',
     maxBuffer: 30 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+    shell: false,
+    ...invocation.options,
   });
   if (result.status !== 0) {
     const stderr = sanitizeCommandDiagnostic(result.stderr, cwd);
     if (result.error?.code === 'ENOENT') {
       throw new Error(
-        `Required executable not found: ${executableName(command)}`
+        `Required executable not found: ${executableName(invocation.command)}`
+        + ` (status: ${String(result.status)}).${stderr ? ` ${stderr}` : ''}`,
+      );
+    }
+    if (
+      result.error?.code === 'EINVAL'
+      && platform === 'win32'
+      && invocation.command !== command
+    ) {
+      throw new Error(
+        `Unable to launch Windows command wrapper for ${executableName(command)}`
         + ` (status: ${String(result.status)}).${stderr ? ` ${stderr}` : ''}`,
       );
     }
     const diagnostic = stderr || sanitizeCommandDiagnostic(result.error?.message, cwd);
     throw new Error(
-      `${executableName(command)} ${args.join(' ')} failed with exit code`
+      `${executableName(command)} ${sanitizeCommandDiagnostic(args.join(' '), cwd)}`
+      + ' failed with exit code'
       + ` ${result.status}: ${diagnostic}`,
     );
   }
