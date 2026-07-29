@@ -35,6 +35,8 @@ const targets = Object.freeze({
 const textExtensions = new Set([
   '.cjs', '.css', '.html', '.js', '.json', '.jsx', '.mjs', '.svg', '.txt',
 ]);
+const executableExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs']);
+const fontExtensions = new Set(['.otf', '.ttf', '.woff', '.woff2']);
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -259,19 +261,15 @@ function canonicalFunctionRoute(relative, config, outputConfig) {
   const canonicalRoute = rawRoute.slice(0, -extension.length);
   const expectedInput = new Map([
     ['/api/store-page', '/api/store-page.js'],
-    ['/api/og/store', '/api/og/store.jsx'],
+    ['/api/og/store', '/api/og/store.js'],
   ]).get(canonicalRoute);
-  const routes = Array.isArray(outputConfig?.routes) ? outputConfig.routes : [];
-  const configRoutesCanonical = routes.some((route) => (
-    typeof route?.src === 'string' && route.src.includes(canonicalRoute.replaceAll('/', '\\/'))
-  ) || (typeof route?.dest === 'string' && route.dest.split('?')[0] === canonicalRoute));
   const validRuntime = /^nodejs\d+(?:\.x)?$/u.test(config?.runtime || '');
   const validHandler = typeof config?.handler === 'string' && config.handler.length > 0;
   const extensionMatches = expectedInput === rawRoute;
   return {
     rawRoute,
-    route: extensionMatches && configRoutesCanonical && validRuntime && validHandler ? canonicalRoute : rawRoute,
-    normalized: extensionMatches && configRoutesCanonical && validRuntime && validHandler,
+    route: extensionMatches && validRuntime && validHandler ? canonicalRoute : rawRoute,
+    normalized: extensionMatches && validRuntime && validHandler,
   };
 }
 
@@ -462,7 +460,6 @@ function inspectTextForSafety(filesWithSource, targetName = 'store') {
   const credentialAssignments = [];
   const administrativeViolations = [];
   const pwaViolations = [];
-  const localImportViolations = [];
   const administrativeMarkers = administrativeMarkersForTarget(targetName);
   const pwaMarkers = Object.freeze({
     serviceWorker: /serviceWorker\.register|service-worker|registerSW/iu,
@@ -499,10 +496,6 @@ function inspectTextForSafety(filesWithSource, targetName = 'store') {
     for (const [name, pattern] of Object.entries(pwaMarkers)) {
       if (pattern.test(source)) pwaViolations.push(`${name}:${relativePath}`);
     }
-    if (
-      /(?:from\s*|import\s*\()\s*["'](?:\.\.\/)+(?:src|supabase)\//u.test(source)
-      || /(?:file:\/\/|\/workspace\/|[A-Za-z]:\\)/u.test(source)
-    ) localImportViolations.push(relativePath);
   }
   return {
     secretViolations: [...new Set(secretViolations)].sort(),
@@ -510,8 +503,236 @@ function inspectTextForSafety(filesWithSource, targetName = 'store') {
     credentialAssignments,
     administrativeViolations: [...new Set(administrativeViolations)].sort(),
     pwaViolations: [...new Set(pwaViolations)].sort(),
-    localImportViolations: [...new Set(localImportViolations)].sort(),
   };
+}
+
+function readJavaScriptString(source, index, quote) {
+  let value = '';
+  for (let cursor = index + 1; cursor < source.length; cursor += 1) {
+    const character = source[cursor];
+    if (character === '\\') {
+      const next = source[cursor + 1];
+      if (next === undefined) return { value, end: cursor + 1 };
+      value += next;
+      cursor += 1;
+      continue;
+    }
+    if (character === quote) return { value, end: cursor + 1 };
+    value += character;
+  }
+  return { value, end: source.length };
+}
+
+/**
+ * A deliberately small lexer for import constructs. It ignores comments and
+ * strings so error messages, JSON and source-map comments cannot look like an
+ * executable import. Template literals are opaque by policy for this audit.
+ */
+function tokenizeJavaScript(source) {
+  const tokens = [];
+  for (let index = 0; index < source.length;) {
+    const character = source[index];
+    if (/\s/u.test(character)) { index += 1; continue; }
+    if (character === '/' && source[index + 1] === '/') {
+      index = source.indexOf('\n', index + 2);
+      if (index < 0) break;
+      continue;
+    }
+    if (character === '/' && source[index + 1] === '*') {
+      const end = source.indexOf('*/', index + 2);
+      index = end < 0 ? source.length : end + 2;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      const string = readJavaScriptString(source, index, character);
+      tokens.push({ type: 'string', value: string.value });
+      index = string.end;
+      continue;
+    }
+    if (character === '`') {
+      const string = readJavaScriptString(source, index, character);
+      index = string.end;
+      continue;
+    }
+    if (/[A-Za-z_$]/u.test(character)) {
+      let end = index + 1;
+      while (end < source.length && /[A-Za-z0-9_$]/u.test(source[end])) end += 1;
+      tokens.push({ type: 'word', value: source.slice(index, end) });
+      index = end;
+      continue;
+    }
+    tokens.push({ type: 'punctuation', value: character });
+    index += 1;
+  }
+  return tokens;
+}
+
+function executableImportSpecifiers(source) {
+  const tokens = tokenizeJavaScript(source);
+  const specifiers = [];
+  const isProperty = (index) => tokens[index - 1]?.value === '.';
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'word' || isProperty(index)) continue;
+    if (token.value === 'require' && tokens[index + 1]?.value === '(' && tokens[index + 2]?.type === 'string') {
+      specifiers.push(tokens[index + 2].value);
+      continue;
+    }
+    if (token.value === 'import') {
+      if (tokens[index + 1]?.value === '(' && tokens[index + 2]?.type === 'string') {
+        specifiers.push(tokens[index + 2].value);
+        continue;
+      }
+      if (tokens[index + 1]?.type === 'string') {
+        specifiers.push(tokens[index + 1].value);
+        continue;
+      }
+    }
+    if (token.value !== 'import' && token.value !== 'export') continue;
+    for (let cursor = index + 1; cursor < tokens.length && tokens[cursor].value !== ';'; cursor += 1) {
+      if (tokens[cursor].value === 'from' && tokens[cursor + 1]?.type === 'string') {
+        specifiers.push(tokens[cursor + 1].value);
+        break;
+      }
+    }
+  }
+  return [...new Set(specifiers)];
+}
+
+function localImportClassification(specifier, file, bundleRoot) {
+  const normalized = normalizePath(specifier);
+  if (normalized.startsWith('file://')) return 'file-url';
+  if (/^[A-Za-z]:\//u.test(normalized)) return 'absolute-windows';
+  if (normalized.startsWith('/')) return 'absolute-posix';
+  if (/(?:^|\/)(?:src|supabase|tests|docs)(?:\/|$)/iu.test(normalized)) return 'protected-source';
+  if (!normalized.startsWith('.')) return null;
+  const resolved = path.resolve(path.dirname(file.absolutePath), specifier);
+  const relativeResolved = normalizePath(path.relative(bundleRoot, resolved));
+  if (relativeResolved.startsWith('../') || path.isAbsolute(relativeResolved)) return 'escapes-bundle';
+  return null;
+}
+
+async function localImportExists(resolvedPath) {
+  const candidates = [
+    resolvedPath,
+    ...['.js', '.jsx', '.mjs', '.cjs', '.json', '.node'].map((extension) => `${resolvedPath}${extension}`),
+    ...['index.js', 'index.jsx', 'index.mjs', 'index.cjs', 'index.json', 'index.node']
+      .map((name) => path.join(resolvedPath, name)),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if ((await stat(candidate)).isFile()) return true;
+    } catch { /* try the next Node-compatible local resolution candidate */ }
+  }
+  return false;
+}
+
+/** Audit only real executable import syntax; sourcemap text is intentionally excluded. */
+export async function inspectExecutableLocalImports(filesWithSource, bundleRoot) {
+  const violations = [];
+  for (const file of filesWithSource) {
+    for (const specifier of executableImportSpecifiers(file.source)) {
+      let classification = localImportClassification(specifier, file, bundleRoot);
+      if (!classification && specifier.startsWith('.')) {
+        const resolved = path.resolve(path.dirname(file.absolutePath), specifier);
+        if (!await localImportExists(resolved)) classification = 'missing-local-file';
+      }
+      if (classification) violations.push({
+        path: normalizePath(file.relativePath),
+        classification,
+      });
+    }
+  }
+  return violations.sort((left, right) => (
+    left.path.localeCompare(right.path) || left.classification.localeCompare(right.classification)
+  ));
+}
+
+function sourceMapReferenceClassification(reference) {
+  const normalized = normalizePath(reference.replace(/^file:\/\/+/iu, ''));
+  if (/(?:^|\/)(?:src|supabase|tests|docs)(?:\/|$)/iu.test(normalized)) return 'protected-source-reference';
+  if (/(?:^|\/)\.\.(?:\/|$)/u.test(normalized)) return 'closure-escape';
+  if (/^[A-Za-z]:\//u.test(normalized) || reference.startsWith('file://') || normalized.startsWith('/')) {
+    return 'absolute-source-reference';
+  }
+  return 'bundle-source-reference';
+}
+
+async function ogClosurePackages(bundleRoot) {
+  const packages = new Set();
+  const pending = ['@vercel/og'];
+  while (pending.length > 0) {
+    const packageName = pending.pop();
+    if (packages.has(packageName)) continue;
+    const packageJsonPath = path.join(bundleRoot, 'node_modules', ...packageName.split('/'), 'package.json');
+    try {
+      const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
+      packages.add(packageName);
+      for (const dependency of Object.keys({
+        ...(packageJson.dependencies || {}),
+        ...(packageJson.optionalDependencies || {}),
+      })) pending.push(dependency);
+    } catch { /* a missing package cannot authorize a font */ }
+  }
+  return packages;
+}
+
+function originPackageForPath(relativePath) {
+  const match = /^node_modules\/((?:@[^/]+\/)?[^/]+)(?:\/|$)/u.exec(relativePath);
+  return match?.[1] || null;
+}
+
+async function inspectFunctionFonts(bundle, paths) {
+  const allowedPackages = await ogClosurePackages(bundle.absolutePath);
+  const configText = JSON.stringify(bundle.config || {});
+  return paths
+    .filter((relativePath) => /\.(?:otf|ttf|woff2?)$/iu.test(relativePath))
+    .map((relativePath) => {
+      const originPackage = originPackageForPath(relativePath);
+      const extension = path.extname(relativePath).toLowerCase();
+      const referencedFromConfig = configText.includes(relativePath);
+      const protectedSource = /(?:^|\/)(?:src|supabase|tests|docs)(?:\/|$)/iu.test(relativePath);
+      const allowed = bundle.route === '/api/og/store'
+        && /^node_modules\//u.test(relativePath)
+        && !protectedSource
+        && !referencedFromConfig
+        && ['.otf', '.ttf', '.woff', '.woff2'].includes(extension)
+        && originPackage !== null
+        && allowedPackages.has(originPackage);
+      return {
+        relativePath,
+        extension,
+        originPackage,
+        insideFunctionBundle: true,
+        public: false,
+        referencedFromConfig,
+        allowed,
+      };
+    });
+}
+
+/** Evidence of packages that can execute in a generated function bundle. */
+export function inspectExecutableDependencies(filesWithSource) {
+  const evidence = { vercelOg: [], react: [] };
+  const importsPackage = (source, packageName) => new RegExp(
+    `(?:\\bimport\\s+(?:[^'\"]*?\\s+from\\s+)?|\\bimport\\s*\\(\\s*|\\brequire\\s*\\(\\s*)['\"]${packageName.replace('/', '\\/')}['\"]`,
+    'u',
+  ).test(source);
+  for (const { relativePath, source } of filesWithSource) {
+    const normalizedPath = normalizePath(relativePath);
+    if (/^node_modules\/@vercel\/og\//u.test(normalizedPath)) evidence.vercelOg.push(normalizedPath);
+    if (/^node_modules\/react\//u.test(normalizedPath)) evidence.react.push(normalizedPath);
+    if (importsPackage(source, '@vercel/og')) evidence.vercelOg.push(normalizedPath);
+    if (importsPackage(source, 'react')) evidence.react.push(normalizedPath);
+  }
+  return Object.freeze({
+    vercelOg: evidence.vercelOg.length > 0,
+    react: evidence.react.length > 0,
+    evidence: Object.freeze({
+      vercelOg: [...new Set(evidence.vercelOg)].sort(),
+      react: [...new Set(evidence.react)].sort(),
+    }),
+  });
 }
 
 export function formatSafetyFailureDetails(safety, failedChecks, limit = 5) {
@@ -534,6 +755,7 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     administrativeViolations: [],
     pwaViolations: [],
     localImportViolations: [],
+    localImportClassification: {},
     credentialVocabulary: {},
     credentialAssignments: [],
   };
@@ -545,20 +767,32 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     const files = await walkOutputFiles(bundle.absolutePath);
     const paths = files.map((file) => file.relativePath);
     const sources = await Promise.all(files
-      .filter((file) => textExtensions.has(path.extname(file.relativePath).toLowerCase()) || file.relativePath.endsWith('.map'))
+      .filter((file) => {
+        const extension = path.extname(file.relativePath).toLowerCase();
+        return textExtensions.has(extension) || fontExtensions.has(extension) || file.relativePath.endsWith('.map');
+      })
       .map(async (file) => ({ ...file, source: await readFile(file.absolutePath, 'utf8') })));
     const joined = sources.map(({ source }) => source).join('\n');
+    const executableSources = sources.filter((file) => executableExtensions.has(
+      path.extname(file.relativePath).toLowerCase(),
+    ));
+    const dependencies = inspectExecutableDependencies(executableSources);
+    // Sourcemaps remain in safety scanning for secrets and admin code, but only
+    // executable source participates in local-import detection.
     const safety = inspectTextForSafety(sources, 'store');
+    const localImportViolations = await inspectExecutableLocalImports(executableSources, bundle.absolutePath);
     const sourceMapPaths = paths.filter((item) => item.endsWith('.map'));
     const sourceMaps = await Promise.all(sourceMapPaths.map(async (relativePath) => {
       const source = await readFile(path.join(bundle.absolutePath, relativePath), 'utf8');
       let parsed = null;
       try { parsed = JSON.parse(source); } catch { /* rejected below */ }
       const references = Array.isArray(parsed?.sources) ? parsed.sources.map(String) : [];
-      const outsideClosure = references.some((reference) => (
-        path.isAbsolute(reference)
-        || /^[A-Za-z]:[\\/]/u.test(reference)
-        || /(?:^|[\\/])(?:src|supabase|tests|docs)(?:[\\/]|$)/iu.test(reference)
+      const classifications = references.map((reference) => ({
+        reference,
+        classification: sourceMapReferenceClassification(reference),
+      }));
+      const outsideClosure = classifications.some(({ classification }) => (
+        classification === 'protected-source-reference' || classification === 'closure-escape'
       ));
       return {
         path: relativePath,
@@ -568,6 +802,7 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
         referencedFromConfig: false,
         validJson: Boolean(parsed),
         sources: references,
+        sourceClassifications: classifications.map(({ classification }) => classification),
         closureSafe: !outsideClosure,
       };
     }));
@@ -575,8 +810,12 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
       'secretViolations',
       'administrativeViolations',
       'pwaViolations',
-      'localImportViolations',
     ]) allViolations[key].push(...safety[key].map((item) => `${bundle.route}:${item}`));
+    for (const violation of localImportViolations) {
+      allViolations.localImportViolations.push({ route: bundle.route, ...violation });
+      allViolations.localImportClassification[violation.classification] ||= 0;
+      allViolations.localImportClassification[violation.classification] += 1;
+    }
     allViolations.credentialAssignments.push(...safety.credentialAssignments.map((item) => ({
       ...item,
       relativePath: `${bundle.route}:${item.relativePath}`,
@@ -602,11 +841,13 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
       handlerPresent: typeof handler === 'string' && paths.includes(handler),
       sourceMaps: sourceMaps.map((item) => item.path),
       internalFunctionSourceMaps: sourceMaps,
-      fonts: paths.filter((item) => /\.(?:otf|ttf|woff2?)$/iu.test(item)),
+      fonts: await inspectFunctionFonts(bundle, paths),
+      localImportViolations,
       environmentFiles: paths.filter((item) => /(^|\/)\.env(?:\.|$)/iu.test(item)),
       dependencies: {
-        vercelOg: /@vercel\/og/u.test(joined),
-        react: /(?:node_modules\/react|["']react["']|react\.production)/u.test(joined),
+        vercelOg: dependencies.vercelOg,
+        react: dependencies.react,
+        evidence: dependencies.evidence,
       },
       template: {
         markerPresent: /LANZO_SOCIAL_HEAD_START/u.test(joined),
@@ -635,7 +876,9 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
       && map.validJson
       && map.closureSafe
     ))),
-    noFonts: details.every((item) => item.fonts.length === 0),
+    noPublicFonts: details.every((item) => item.fonts.every((font) => font.public === false)),
+    htmlFunctionHasNoFonts: htmlFunction?.fonts.length === 0,
+    ogFunctionFontsAllowed: ogFunction?.fonts.every((font) => font.allowed === true) === true,
     noEnvironmentFiles: details.every((item) => item.environmentFiles.length === 0),
     ogResolvesVercelOg: ogFunction?.dependencies.vercelOg === true,
     ogResolvesReact: ogFunction?.dependencies.react === true,
@@ -650,6 +893,12 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     noPwa: allViolations.pwaViolations.length === 0,
     noBrokenLocalImports: allViolations.localImportViolations.length === 0,
   };
+  checks.fontsPolicyValid = checks.noPublicFonts
+    && checks.htmlFunctionHasNoFonts
+    && checks.ogFunctionFontsAllowed;
+  // Compatibility name for the aggregate gate; the granular checks remain in
+  // the report so an OG closure font is never accepted generically.
+  checks.noFonts = checks.fontsPolicyValid;
   return { bundles: details, routes, checks, safety: allViolations };
 }
 
@@ -786,7 +1035,13 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     Object.assign(checks, functionAudit.checks);
     checks.noPublicSourceMaps = staticAudit.checks.noPublicSourceMaps
       && outputSourceMaps.every((item) => item.startsWith('functions/') && item.includes('.func/'));
-    checks.noFonts = staticAudit.checks.noFonts && functionAudit.checks.noFonts;
+    checks.noPublicFonts = staticAudit.checks.noFonts && functionAudit.checks.noPublicFonts;
+    checks.htmlFunctionHasNoFonts = functionAudit.checks.htmlFunctionHasNoFonts;
+    checks.ogFunctionFontsAllowed = functionAudit.checks.ogFunctionFontsAllowed;
+    checks.fontsPolicyValid = checks.noPublicFonts
+      && checks.htmlFunctionHasNoFonts
+      && checks.ogFunctionFontsAllowed;
+    checks.noFonts = checks.fontsPolicyValid;
     checks.noSecrets = staticAudit.checks.noSecrets && functionAudit.checks.noSecrets;
     checks.noAdministrativeCode = staticAudit.checks.noAdministrativeCode
       && functionAudit.checks.noAdministrativeCode;

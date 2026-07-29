@@ -23,6 +23,7 @@ import {
   resolveVercelInvocation,
   run,
   assertEffectiveVercelProjectRoot,
+  inspectGeneratedFunctionInventory,
   sanitizeVercelDebugLog,
   sanitizeVercelProjectInspection,
   shouldCopyStoreWorkspacePath,
@@ -37,6 +38,14 @@ async function exists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function writeGeneratedFunction(functionsRoot, relativeRoute) {
+  const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);
+  const handler = relativeRoute.includes('og/') ? 'store/api/og/store.js' : 'store/api/store-page.js';
+  await mkdir(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
+  await writeFile(path.join(bundleRoot, handler), 'export default {};');
+  await writeFile(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({ runtime: 'nodejs24.x', handler }));
 }
 
 async function createStaticMaterializationFixture() {
@@ -130,7 +139,7 @@ async function createRepositoryFixture({ withAdministrativeLink = false } = {}) 
     writeFile(path.join(sourceRoot, 'vercel.json'), '{"project":"administrative"}'),
     writeFile(path.join(sourceRoot, 'store', 'vercel.json'), '{"trailingSlash":false}'),
     writeFile(path.join(sourceRoot, 'store', 'api', 'store-page.js'), 'export default { fetch() {} };'),
-    writeFile(path.join(sourceRoot, 'store', 'api', 'og', 'store.jsx'), 'export default { fetch() {} };'),
+    writeFile(path.join(sourceRoot, 'store', 'api', 'og', 'store.js'), 'export default { fetch() {} };'),
   ]);
   if (withAdministrativeLink) {
     await mkdir(path.join(sourceRoot, '.vercel'), { recursive: true });
@@ -156,6 +165,80 @@ async function expectControlledStopPreservesRepository(sourceRoot) {
 }
 
 describe('workspace prebuilt saneado', () => {
+  it('inspecciona el inventario generado y solo acepta exactamente las dos funciones públicas', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-function-inventory-'));
+    const functionsRoot = path.join(root, 'functions');
+    try {
+      await mkdir(functionsRoot, { recursive: true });
+      expect((await inspectGeneratedFunctionInventory(functionsRoot)).complete).toBe(false);
+      await writeGeneratedFunction(functionsRoot, 'api/store-page');
+      let inventory = await inspectGeneratedFunctionInventory(functionsRoot);
+      expect(inventory).toMatchObject({
+        complete: false,
+        canonicalRoutes: ['/api/store-page'],
+        missingExpectedRoutes: ['/api/og/store'],
+      });
+      await writeGeneratedFunction(functionsRoot, 'api/og/store.js');
+      inventory = await inspectGeneratedFunctionInventory(functionsRoot);
+      expect(inventory).toMatchObject({
+        complete: true,
+        canonicalRoutes: ['/api/og/store', '/api/store-page'],
+      });
+      await writeGeneratedFunction(functionsRoot, 'api/unexpected');
+      expect((await inspectGeneratedFunctionInventory(functionsRoot)).complete).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it.each([
+    ['dos funciones zero-config', ['api/store-page', 'api/og/store.js'], false],
+    ['solo store-page zero-config', ['api/store-page'], true],
+    ['solo OG zero-config', ['api/og/store.js'], true],
+    ['directorio functions vacío', [], true],
+    ['función adicional zero-config', ['api/store-page', 'api/og/store.js', 'api/unexpected'], true],
+  ])('activa fallback según la integridad del inventario: %s', async (_label, initialBundles, expectsFallback) => {
+    const sourceRoot = await createRepositoryFixture();
+    const builds = [];
+    let fallbackConfig;
+    try {
+      await expect(prepareStoreDeployment({
+        repositoryRoot: sourceRoot,
+        npmInvocation: { command: 'node-fixture', args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'] },
+        vercelCommand: 'vercel-fixture',
+        commandRunner(_command, args, options) {
+          if (args.includes('pull')) {
+            mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
+            writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
+            return;
+          }
+          if (!args.includes('build')) return;
+          builds.push(args);
+          if (builds.length === 2) {
+            fallbackConfig = JSON.parse(readFileSync(path.join(options.cwd, 'store', 'vercel.prebuilt.json'), 'utf8'));
+          }
+          const outputRoot = path.join(options.cwd, '.vercel', 'output');
+          const functionsRoot = path.join(outputRoot, 'functions');
+          mkdirSync(functionsRoot, { recursive: true });
+          writeFileSync(path.join(outputRoot, 'config.json'), JSON.stringify({ version: 3, routes: [] }));
+          const bundles = builds.length === 1 ? initialBundles : ['api/store-page', 'api/og/store.js'];
+          for (const bundle of bundles) {
+            const bundleRoot = path.join(functionsRoot, `${bundle}.func`);
+            const handler = bundle.includes('og/') ? 'store/api/og/store.js' : 'store/api/store-page.js';
+            mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
+            writeFileSync(path.join(bundleRoot, handler), 'export default {};');
+            writeFileSync(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({ runtime: 'nodejs24.x', handler }));
+          }
+        },
+      })).rejects.toThrow('Vercel did not compile the expected trailing-slash canonical route');
+      expect(builds).toHaveLength(expectsFallback ? 2 : 1);
+      if (expectsFallback) {
+        expect(fallbackConfig.builds).toEqual([
+          { src: 'api/store-page.js', use: '@vercel/node' },
+          { src: 'api/og/store.js', use: '@vercel/node' },
+        ]);
+      }
+    } finally { rmSync(sourceRoot, { recursive: true, force: true }); }
+  });
+
   it('aísla únicamente el caché de npm sin mutar el entorno padre', () => {
     const parent = Object.freeze({
       APPDATA: 'C:\\Users\\fixture\\AppData\\Roaming',
@@ -358,13 +441,13 @@ describe('workspace prebuilt saneado', () => {
       rewrites: [],
       builds: [
         { src: 'api/store-page.js', use: '@vercel/node' },
-        { src: 'api/og/store.jsx', use: '@vercel/node' },
+        { src: 'api/og/store.js', use: '@vercel/node' },
       ],
     };
     expect(() => assertPrebuiltVercelConfigParity(source, allowed)).not.toThrow();
     for (const invalid of [
-      [{ src: 'api/**/*.js', use: '@vercel/node' }, { src: 'api/og/store.jsx', use: '@vercel/node' }],
-      [{ src: 'api/_publicPortal.js', use: '@vercel/node' }, { src: 'api/og/store.jsx', use: '@vercel/node' }],
+      [{ src: 'api/**/*.js', use: '@vercel/node' }, { src: 'api/og/store.js', use: '@vercel/node' }],
+      [{ src: 'api/_publicPortal.js', use: '@vercel/node' }, { src: 'api/og/store.js', use: '@vercel/node' }],
       [{ src: 'api/store-page.js', use: '@vercel/node' }],
     ]) {
       expect(() => assertPrebuiltVercelConfigParity(source, { rewrites: [], builds: invalid }))

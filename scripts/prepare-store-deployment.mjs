@@ -34,6 +34,7 @@ const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
 const DEFAULT_VERCEL_COMMAND = 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const EXPECTED_PUBLIC_FUNCTION_ROUTES = Object.freeze(['/api/og/store', '/api/store-page']);
 
 const excludedRootNames = new Set([
   '.git',
@@ -91,7 +92,7 @@ export function assertPrebuiltVercelConfigParity(sourceConfig, prebuiltConfig) {
     }
     const expectedEntries = [
       { src: 'api/store-page.js', use: '@vercel/node' },
-      { src: 'api/og/store.jsx', use: '@vercel/node' },
+      { src: 'api/og/store.js', use: '@vercel/node' },
     ];
     if (JSON.stringify(allowedBuilds) !== JSON.stringify(expectedEntries)) {
       throw new Error('The prebuilt Vercel configuration may only add the two exact public function entries.');
@@ -138,7 +139,13 @@ export function sanitizeVercelDebugLog(value, cwd = '') {
 }
 
 /** A bounded, path-redacted report emitted before a failed workspace is removed. */
-export function sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallback }) {
+export function sanitizeFailedOutputDiagnostic({
+  audit,
+  usedExplicitBuildsFallback,
+  zeroConfigFunctionInventory = null,
+  finalFunctionInventory = null,
+}) {
+  const limit = 20;
   const bundles = (audit.functionAudit?.bundles || []).map((bundle) => ({
     bundle: bundle.bundle,
     route: bundle.route,
@@ -150,6 +157,21 @@ export function sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallba
     sourceMaps: bundle.sourceMaps,
     dependencies: bundle.dependencies,
   }));
+  const functionFonts = (audit.functionAudit?.bundles || []).map((bundle) => ({
+    route: bundle.route,
+    paths: (bundle.fonts || []).slice(0, limit).map((font) => font.relativePath),
+  }));
+  const localImportViolations = (audit.functionAudit?.bundles || []).map((bundle) => ({
+    route: bundle.route,
+    paths: [...new Set((bundle.localImportViolations || []).map((item) => item.path))].slice(0, limit),
+  }));
+  const brokenLocalImports = (audit.functionAudit?.safety?.localImportViolations || [])
+    .slice(0, limit)
+    .map(({ route, path: relativePath, classification }) => ({
+      route,
+      path: relativePath,
+      classification,
+    }));
   return {
     usedExplicitBuildsFallback,
     outputRoot: audit.output?.outputRoot || '.vercel/output',
@@ -158,6 +180,12 @@ export function sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallba
     functionRoutes: audit.output?.functions || [],
     functionHandlers: bundles.map(({ route, handler }) => ({ route, handler })),
     functionRuntimes: bundles.map(({ route, runtime }) => ({ route, runtime })),
+    functionFonts,
+    localImportViolations,
+    localImportClassification: audit.functionAudit?.safety?.localImportClassification || {},
+    brokenLocalImports,
+    zeroConfigFunctionInventory,
+    finalFunctionInventory,
     sourceMapPaths: audit.output?.sourceMaps || [],
     compiledRoutes: audit.routing?.compiled || null,
     staticAsset: audit.routing?.compiled?.asset?.request || null,
@@ -171,6 +199,91 @@ export function sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallba
     failedChecks: audit.failedChecks || [],
     workspaceRetainedForDevelopment: false,
   };
+}
+
+function canonicalGeneratedFunctionRoute(relativeBundlePath) {
+  const rawRoute = `/${normalizePath(relativeBundlePath).slice(0, -'.func'.length)}`;
+  const route = rawRoute.replace(/\.js$/u, '');
+  return {
+    rawRoute,
+    canonicalRoute: EXPECTED_PUBLIC_FUNCTION_ROUTES.includes(route) ? route : rawRoute,
+  };
+}
+
+/**
+ * Reads only Build Output created by Vercel.  It intentionally does not infer
+ * functions from source files or fabricate Vercel bundle metadata.
+ */
+export async function inspectGeneratedFunctionInventory(functionsRoot) {
+  const bundles = [];
+  if (!await pathExists(functionsRoot) || !(await stat(functionsRoot)).isDirectory()) {
+    return Object.freeze({
+      bundles,
+      rawRoutes: [],
+      canonicalRoutes: [],
+      handlers: [],
+      runtimes: [],
+      complete: false,
+      missingExpectedRoutes: [...EXPECTED_PUBLIC_FUNCTION_ROUTES],
+      unexpectedRoutes: [],
+      duplicateRoutes: [],
+    });
+  }
+  async function visit(directory) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const absolutePath = path.join(directory, entry.name);
+      if (!entry.name.endsWith('.func')) {
+        await visit(absolutePath);
+        continue;
+      }
+      const relativePath = normalizePath(path.relative(functionsRoot, absolutePath));
+      const { rawRoute, canonicalRoute } = canonicalGeneratedFunctionRoute(relativePath);
+      const configPath = path.join(absolutePath, '.vc-config.json');
+      let config = null;
+      let configReadable = false;
+      try {
+        config = JSON.parse(await readFile(configPath, 'utf8'));
+        configReadable = Boolean(config && typeof config === 'object' && !Array.isArray(config));
+      } catch { /* represented below as an invalid generated bundle */ }
+      const handler = typeof config?.handler === 'string' ? config.handler : null;
+      const runtime = typeof config?.runtime === 'string' ? config.runtime : null;
+      bundles.push({
+        bundle: relativePath,
+        rawRoute,
+        route: canonicalRoute,
+        handler,
+        runtime,
+        configReadable,
+        handlerPresent: Boolean(handler) && await isFile(path.join(absolutePath, handler)),
+        validRuntime: /^nodejs\d+(?:\.x)?$/u.test(runtime || ''),
+      });
+    }
+  }
+  await visit(functionsRoot);
+  bundles.sort((left, right) => left.bundle.localeCompare(right.bundle));
+  const rawRoutes = bundles.map(({ rawRoute }) => rawRoute).sort();
+  const canonicalRoutes = bundles.map(({ route }) => route).sort();
+  const duplicateRoutes = canonicalRoutes.filter((route, index) => canonicalRoutes.indexOf(route) !== index);
+  const missingExpectedRoutes = EXPECTED_PUBLIC_FUNCTION_ROUTES
+    .filter((route) => !canonicalRoutes.includes(route));
+  const unexpectedRoutes = canonicalRoutes
+    .filter((route) => !EXPECTED_PUBLIC_FUNCTION_ROUTES.includes(route));
+  const complete = bundles.length === 2
+    && duplicateRoutes.length === 0
+    && JSON.stringify(canonicalRoutes) === JSON.stringify(EXPECTED_PUBLIC_FUNCTION_ROUTES)
+    && bundles.every((bundle) => bundle.configReadable && bundle.handlerPresent && bundle.validRuntime);
+  return Object.freeze({
+    bundles,
+    rawRoutes,
+    canonicalRoutes,
+    handlers: bundles.map(({ route, handler, handlerPresent }) => ({ route, handler, present: handlerPresent })),
+    runtimes: bundles.map(({ route, runtime, validRuntime }) => ({ route, runtime, valid: validRuntime })),
+    complete,
+    missingExpectedRoutes,
+    unexpectedRoutes,
+    duplicateRoutes: [...new Set(duplicateRoutes)],
+  });
 }
 
 export async function assertEffectiveVercelProjectRoot({
@@ -192,7 +305,7 @@ export async function assertEffectiveVercelProjectRoot({
   const requiredPaths = [
     apiDirectory,
     path.join(apiDirectory, 'store-page.js'),
-    path.join(apiDirectory, 'og', 'store.jsx'),
+    path.join(apiDirectory, 'og', 'store.js'),
     prebuiltConfigPath || path.join(effectiveSourceRoot, 'vercel.prebuilt.json'),
   ];
   const missing = [];
@@ -836,17 +949,16 @@ export async function prepareStoreDeployment({
       `${zeroConfigBuild?.stdout || ''}\n${zeroConfigBuild?.stderr || ''}`,
       workspaceRoot,
     );
+    const zeroConfigFunctionInventory = await inspectGeneratedFunctionInventory(outputFunctionsPath);
+    let finalFunctionInventory = zeroConfigFunctionInventory;
     let usedExplicitBuildsFallback = false;
     let generatedPrebuiltConfig = prebuiltConfig;
-    if (!await pathExists(outputFunctionsPath)) {
-      if (/@vercel\/node/iu.test(zeroConfigDebugLog)) {
-        throw new Error('Vercel selected @vercel/node but did not produce the expected functions.');
-      }
+    if (!zeroConfigFunctionInventory.complete) {
       generatedPrebuiltConfig = {
         ...prebuiltConfig,
         builds: [
           { src: 'api/store-page.js', use: '@vercel/node' },
-          { src: 'api/og/store.jsx', use: '@vercel/node' },
+          { src: 'api/og/store.js', use: '@vercel/node' },
         ],
       };
       assertPrebuiltVercelConfigParity(sourceConfig, generatedPrebuiltConfig);
@@ -859,6 +971,13 @@ export async function prepareStoreDeployment({
       );
       await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
       usedExplicitBuildsFallback = true;
+      finalFunctionInventory = await inspectGeneratedFunctionInventory(outputFunctionsPath);
+      if (!finalFunctionInventory.complete) {
+        throw new Error(`Vercel fallback did not generate exactly the two public functions: ${JSON.stringify({
+          zeroConfigFunctionInventory,
+          finalFunctionInventory,
+        })}`);
+      }
     }
     if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output after function packaging.');
     const vercelOutputInventory = (await walk(outputRoot)).map((file) => ({
@@ -883,7 +1002,12 @@ export async function prepareStoreDeployment({
       sourceStaticPath: path.join(workspaceRoot, 'store', 'dist'),
     });
     if (audit.status !== 'PASS') {
-      const diagnostic = sanitizeFailedOutputDiagnostic({ audit, usedExplicitBuildsFallback });
+      const diagnostic = sanitizeFailedOutputDiagnostic({
+        audit,
+        usedExplicitBuildsFallback,
+        zeroConfigFunctionInventory,
+        finalFunctionInventory,
+      });
       diagnostic.workspaceRetainedForDevelopment = preserveFailedWorkspace === true;
       throw new Error(`Vercel output audit failed:\n${JSON.stringify(diagnostic)}`);
     }
@@ -935,6 +1059,8 @@ export async function prepareStoreDeployment({
         directBuild: DIRECT_STORE_BUILD_COMMAND,
         build: BUILD_COMMAND,
       },
+      zeroConfigFunctionInventory,
+      finalFunctionInventory,
       prebuiltConfig: {
         source: sourceConfig,
         generated: generatedPrebuiltConfig,
@@ -975,7 +1101,7 @@ export async function prepareStoreDeployment({
 }
 
 const invokedDirectly = process.argv[1]
-  && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
   prepareStoreDeployment()
     .then((result) => {

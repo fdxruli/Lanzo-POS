@@ -5,7 +5,7 @@ import {
   TEMPORARY_CACHE,
   VERSIONED_CACHE,
   createStoreOgHandler,
-} from '../../api/og/store.jsx';
+} from '../../api/og/store.js';
 
 const SLUG = 'tienda-segura';
 const ENDPOINT = `https://tienda.lanzo.test/api/og/store?slug=${SLUG}`;

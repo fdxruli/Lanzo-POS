@@ -630,7 +630,7 @@ ECOM.PUBLIC.SOCIAL.PREVIEW.1.3 — Imagen Open Graph dinámica de tienda
 - HEAD inicial real de la rama: `8425f06418812e951a0ff059446520358aebfc33`.
 - HEAD de `main` verificado: `bc603ef0ae3e60f241eafdbae6966191fe75d62c`.
 - El PR #141 permaneció abierto, sin merge y como draft.
-- Endpoint público nuevo: `store/api/og/store.jsx`.
+- Endpoint público nuevo: `store/api/og/store.js`.
 - Ruta: `/api/og/store?slug=:slug&v=:siteVersionNumber`.
 - Dimensiones: 1200 × 630.
 - Formato: PNG mediante `ImageResponse`.
@@ -724,7 +724,7 @@ técnica, stack, URL de Supabase ni credencial en la salida.
 
 La minifase separa:
 
-1. validación de request y política de respuesta en `store/api/og/store.jsx`;
+1. validación de request y política de respuesta en `store/api/og/store.js`;
 2. consulta pública mediante `store/api/_publicPortal.js`;
 3. descarga controlada en `store/api/_safePublicImage.js`;
 4. modelo visual puro y render en `store/api/_storeOgCard.js`;
@@ -837,7 +837,7 @@ de headers privados.
 - Motivo: las dependencias no están instaladas en el entorno conectado y la
   minifase autoriza solo la actualización `--package-lock-only`.
 - `node --check` sobre archivos `.js` productivos y pruebas: **PASS**.
-- Validación focal del parser para `store/api/og/store.jsx`, copiado sin cambios a
+- Validación focal del parser para `store/api/og/store.js`, sin transformación JSX,
   extensión temporal `.mjs` porque no contiene sintaxis JSX: **PASS**.
 - Aserciones runtime-neutral para lectura stream, límite, precedencia HTTP,
   metadata con `URLSearchParams` y allowlist anti-SSRF: **PASS**.
@@ -846,7 +846,7 @@ de headers privados.
 
 Creados:
 
-- `store/api/og/store.jsx`;
+- `store/api/og/store.js`;
 - `store/api/_safePublicImage.js`;
 - `store/api/_storeOgCard.js`;
 - `store/tests/social-preview/storeOgCard.test.js`;
@@ -1032,7 +1032,7 @@ Modificados:
 
 - `store/api/_safePublicImage.js`;
 - `store/api/_storeOgCard.js`;
-- `store/api/og/store.jsx`;
+- `store/api/og/store.js`;
 - `store/tests/social-preview/safePublicImage.test.js`;
 - `store/tests/social-preview/storeOgCard.test.js`;
 - `store/tests/social-preview/storeOgEndpoint.test.js`;
@@ -1565,7 +1565,7 @@ La auditoría recursiva fuente produjo:
   paquete externo: ninguno
 
 /api/og/store
-  og/store.jsx
+  og/store.js
   _portalTheme.js
   _publicPortal.js
   _safePublicImage.js
@@ -2274,7 +2274,7 @@ La correccion usa la estrategia A. El enlace temporal se escribe en `workspaceRo
 
 ```text
 api/store-page.js
-api/og/store.jsx
+api/og/store.js
 vercel.prebuilt.json
 ```
 
@@ -2407,7 +2407,7 @@ y `store/store`.
 Los bundles físicos se registran con ruta original, ruta canónica, handler,
 runtime, número de archivos, dependencias y source maps. La normalización se
 limita a `api/store-page.js.func -> /api/store-page` y
-`api/og/store.jsx.func -> /api/og/store`, y exige input esperado, config válido,
+`api/og/store.js.func -> /api/og/store`, y exige input esperado, config válido,
 handler existente, runtime Node válido, ruta extensionless compilada y ausencia
 de colisión. Las dependencias OG y la plantilla HTML se evalúan después de esa
 normalización.

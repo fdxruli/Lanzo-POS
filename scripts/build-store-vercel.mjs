@@ -245,7 +245,7 @@ export async function auditStoreServerImports(repositoryRoot = projectRoot) {
 
   const dependencyClosure = {};
   for (const endpoint of expectedPublicFunctions) {
-    const relativeEntry = endpoint === '/api/store-page' ? 'store-page.js' : 'og/store.jsx';
+    const relativeEntry = endpoint === '/api/store-page' ? 'store-page.js' : 'og/store.js';
     const pending = [path.join(apiRoot, relativeEntry)];
     const visited = new Set();
     const bareImports = new Set();

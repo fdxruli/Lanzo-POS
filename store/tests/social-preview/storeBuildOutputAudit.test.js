@@ -14,6 +14,7 @@ import {
   classifyCredentialAssignment,
   verifyTemporaryStoreRoot,
 } from '../../../scripts/audit-vercel-build-output.mjs';
+import { sanitizeFailedOutputDiagnostic } from '../../../scripts/prepare-store-deployment.mjs';
 
 const PROJECT_ID = 'fixture-store-project';
 const ORG_ID = 'fixture-store-org';
@@ -170,14 +171,14 @@ describe('auditoría de .vercel/output', () => {
     );
     await rename(
       path.join(fixture.functionsRoot, 'api', 'og', 'store.func'),
-      path.join(fixture.functionsRoot, 'api', 'og', 'store.jsx.func'),
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.js.func'),
     );
     const result = await audit(fixture);
     expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
     expect(result.functionAudit.bundles.map((bundle) => [bundle.rawRoute, bundle.route, bundle.normalized]))
       .toEqual(expect.arrayContaining([
         ['/api/store-page.js', '/api/store-page', true],
-        ['/api/og/store.jsx', '/api/og/store', true],
+        ['/api/og/store.js', '/api/og/store', true],
       ]));
   });
 
@@ -205,10 +206,143 @@ describe('auditoría de .vercel/output', () => {
   });
 
   it.each([
-    ['workspace fuera de TEMP', path.join(process.cwd(), 'store'), path.join(process.cwd(), 'store', 'store')],
-    ['store/store duplicado', fixture.workspaceRoot, path.join(fixture.workspaceRoot, 'store', 'store')],
+    ['ruta Windows', { version: 3, sources: ['C:\\workspace\\generated\\entry.js'], mappings: '' }],
+    ['file URL', { version: 3, sources: ['file:///workspace/generated/entry.js'], mappings: '' }],
+  ])('no trata %s en un sourcemap seguro como import ejecutable', async (_label, sourceMap) => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'index.mjs.map'),
+      JSON.stringify(sourceMap),
+    );
+    const result = await audit(fixture);
+    expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
+    expect(result.checks.noBrokenLocalImports).toBe(true);
+    expect(result.functionAudit.bundles.find((bundle) => bundle.route === '/api/og/store')
+      .internalFunctionSourceMaps[0].closureSafe).toBe(true);
+  });
+
+  it.each([
+    ['src', 'src/admin.js'],
+    ['supabase', 'supabase/functions/private.js'],
+  ])('sigue bloqueando un sourcemap que referencia %s', async (_label, reference) => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'index.mjs.map'),
+      JSON.stringify({ version: 3, sources: [reference], mappings: '' }),
+    );
+    const result = await audit(fixture);
+    expect(result.checks.internalFunctionSourceMapsSafe).toBe(false);
+    expect(result.checks.noBrokenLocalImports).toBe(true);
+  });
+
+  it('sigue bloqueando secretos dentro de un sourcemap', async () => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'index.mjs.map'),
+      JSON.stringify({
+        version: 3,
+        sources: ['node_modules/@vercel/og/index.js'],
+        sourcesContent: ["const GITHUB_TOKEN='ghp_12345678901234567890';"],
+        mappings: '',
+      }),
+    );
+    const result = await audit(fixture);
+    expect(result.checks.noSecrets).toBe(false);
+  });
+
+  it.each([
+    ['ruta absoluta Windows', "import value from 'C:\\\\workspace\\\\outside.js';", 'absolute-windows'],
+    ['file URL', "import('file:///workspace/outside.js');", 'file-url'],
+    ['escape con ../', "const value=require('../outside.js');", 'escapes-bundle'],
+  ])('bloquea imports ejecutables con %s', async (_label, source, classification) => {
+    await writeFile(path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'unsafe.mjs'), source);
+    const result = await audit(fixture);
+    expect(result.checks.noBrokenLocalImports).toBe(false);
+    expect(result.functionAudit.safety.localImportViolations).toContainEqual({
+      route: '/api/og/store', path: 'unsafe.mjs', classification,
+    });
+  });
+
+  it('no interpreta texto normal con C:\\ como import ejecutable', async () => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'message.mjs'),
+      "const message = 'Error at C:\\\\workspace\\\\report.txt';",
+    );
+    const result = await audit(fixture);
+    expect(result.checks.noBrokenLocalImports).toBe(true);
+  });
+
+  it('enumera fuentes del closure OG y rechaza las no autorizadas', async () => {
+    const ogRoot = path.join(fixture.functionsRoot, 'api', 'og', 'store.func');
+    await mkdir(path.join(ogRoot, 'node_modules', '@vercel', 'og'), { recursive: true });
+    await writeFile(path.join(ogRoot, 'node_modules', '@vercel', 'og', 'package.json'), '{"name":"@vercel/og"}');
+    await writeFile(path.join(ogRoot, 'node_modules', '@vercel', 'og', 'noto.woff'), 'font');
+    let result = await audit(fixture);
+    const og = result.functionAudit.bundles.find((bundle) => bundle.route === '/api/og/store');
+    expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
+    expect(og.fonts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        relativePath: 'node_modules/@vercel/og/noto.woff',
+        extension: '.woff', originPackage: '@vercel/og', insideFunctionBundle: true,
+        public: false, referencedFromConfig: false, allowed: true,
+      }),
+    ]));
+    await writeFile(path.join(ogRoot, 'manual.woff2'), 'font');
+    result = await audit(fixture);
+    expect(result.checks.ogFunctionFontsAllowed).toBe(false);
+    expect(result.checks.noFonts).toBe(false);
+  });
+
+  it('mantiene las fuentes prohibidas en static y store-page, y bloquea una fuente administrativa', async () => {
+    await writeFile(path.join(fixture.staticRoot, 'assets', 'public.woff2'), 'font');
+    let result = await audit(fixture);
+    expect(result.checks.noPublicFonts).toBe(false);
+    expect(result.checks.noFonts).toBe(false);
+    await rm(path.join(fixture.staticRoot, 'assets', 'public.woff2'));
+    await writeFile(path.join(fixture.functionsRoot, 'api', 'store-page.func', 'private.woff2'), 'font');
+    result = await audit(fixture);
+    expect(result.checks.htmlFunctionHasNoFonts).toBe(false);
+    await rm(path.join(fixture.functionsRoot, 'api', 'store-page.func', 'private.woff2'));
+    await mkdir(path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'src'), { recursive: true });
+    await writeFile(path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'src', 'CajaPage.woff2'), 'CajaPage');
+    result = await audit(fixture);
+    expect(result.checks.ogFunctionFontsAllowed).toBe(false);
+    expect(result.checks.noAdministrativeCode).toBe(false);
+  });
+
+  it('emite diagnóstico acotado de fuentes e imports sin rutas absolutas ni contenido', async () => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'unsafe.mjs'),
+      "export { value } from 'C:\\\\Users\\\\private\\\\outside.js';",
+    );
+    await writeFile(path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'manual.woff2'), 'font');
+    const auditResult = await audit(fixture);
+    const diagnostic = sanitizeFailedOutputDiagnostic({ audit: auditResult, usedExplicitBuildsFallback: false });
+    expect(diagnostic.functionFonts).toContainEqual({ route: '/api/og/store', paths: ['manual.woff2'] });
+    expect(diagnostic.localImportViolations).toContainEqual({ route: '/api/og/store', paths: ['unsafe.mjs'] });
+    expect(diagnostic.brokenLocalImports).toContainEqual({
+      route: '/api/og/store', path: 'unsafe.mjs', classification: 'absolute-windows',
+    });
+    expect(diagnostic.localImportClassification).toMatchObject({ 'absolute-windows': 1 });
+    expect(JSON.stringify(diagnostic)).not.toContain('C:\\Users\\private');
+  });
+
+  it.each([
+    ['workspace fuera de TEMP', () => path.join(process.cwd(), 'store'), () => path.join(process.cwd(), 'store', 'store')],
+    ['store/store duplicado', () => fixture.workspaceRoot, () => path.join(fixture.workspaceRoot, 'store', 'store')],
   ])('rechaza el contrato temporal: %s', (_label, workspaceRoot, effectiveStoreRoot) => {
-    expect(verifyTemporaryStoreRoot({ workspaceRoot, effectiveStoreRoot })).toBe(false);
+    expect(verifyTemporaryStoreRoot({ workspaceRoot: workspaceRoot(), effectiveStoreRoot: effectiveStoreRoot() })).toBe(false);
+  });
+
+  it('usa solo código ejecutable para clasificar dependencias y conserva sourcemaps para seguridad', async () => {
+    await writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'index.mjs.map'),
+      JSON.stringify({ version: 3, sources: ['node_modules/react/index.js'], names: ['@vercel/og'], mappings: '' }),
+    );
+    const result = await audit(fixture);
+    const html = result.functionAudit.bundles.find((bundle) => bundle.route === '/api/store-page');
+    const og = result.functionAudit.bundles.find((bundle) => bundle.route === '/api/og/store');
+    expect(html.dependencies).toMatchObject({ vercelOg: false, react: false });
+    expect(og.dependencies).toMatchObject({ vercelOg: true, react: true });
+    expect(html.internalFunctionSourceMaps).toHaveLength(1);
+    expect(result.checks.internalFunctionSourceMapsSafe).toBe(true);
   });
 
   it('acepta vocabulario defensivo sin valores credenciales', async () => {
