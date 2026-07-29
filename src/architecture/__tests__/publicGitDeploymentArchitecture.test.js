@@ -60,23 +60,39 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
 
   it('preserves noindex, immutable assets, public rewrites, and no trailing slash', () => {
     expect(config.trailingSlash).toBe(false);
-    expect(config.headers).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        headers: expect.arrayContaining([
-          { key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' }
-        ])
-      }),
-      expect.objectContaining({
-        source: '/assets/:path*',
-        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }]
-      })
+    expect(config.headers[0]).toEqual({
+      source: '/(.*)',
+      headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' }]
+    });
+    const cacheHeaders = new Map(config.headers.slice(1).map(({ source, headers }) => [
+      source,
+      headers.find(({ key }) => key === 'Cache-Control')?.value
     ]));
+    for (const source of [
+      '/',
+      '/index.html',
+      '/tienda',
+      '/tienda/:slug/pedido/:trackingToken',
+      '/conoce-lanzo'
+    ]) {
+      expect(cacheHeaders.get(source)).toBe('public, max-age=0, must-revalidate');
+    }
+    expect(cacheHeaders.get('/assets/:path*')).toBe('public, max-age=31536000, immutable');
+    expect(cacheHeaders.has('/tienda/:path*')).toBe(false);
+    expect(cacheHeaders.has('/tienda/:slug')).toBe(false);
     expect(config.rewrites).toEqual([
       { source: '/', destination: '/index.html' },
       { source: '/tienda', destination: '/index.html' },
-      { source: '/tienda/:path*', destination: '/index.html' },
-      { source: '/conoce-lanzo', destination: '/index.html' }
+      { source: '/tienda/:slug/pedido/:trackingToken', destination: '/index.html' },
+      { source: '/tienda/:slug', destination: '/api/store-page' },
+      { source: '/conoce-lanzo', destination: '/index.html' },
+      { source: '/tienda/:path*', destination: '/index.html' }
     ]);
+    expect(config.rewrites[3].destination).not.toContain('?slug=:slug');
+    expect(config.rewrites.findIndex(({ source }) => source.includes('trackingToken')))
+      .toBeLessThan(config.rewrites.findIndex(({ source }) => source === '/tienda/:slug'));
+    expect(config.rewrites.findIndex(({ source }) => source === '/tienda/:slug'))
+      .toBeLessThan(config.rewrites.findIndex(({ source }) => source === '/tienda/:path*'));
   });
 
   it('does not copy the administrative COOP, PWA, or broad SPA fallback', () => {
@@ -84,6 +100,11 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
     expect(serialized).not.toMatch(/Cross-Origin-Opener-Policy|same-origin-allow-popups/i);
     expect(serialized).not.toMatch(/manifest|serviceWorker|workbox|registerSW/i);
     expect(config.rewrites).not.toContainEqual({ source: '/(.*)', destination: '/index.html' });
+    expect(config.rewrites.some(({ source }) => (
+      ['/api/store-page', '/api/og/store', '/assets/:path*'].includes(source)
+    ))).toBe(false);
+    expect(config.rewrites.some(({ destination }) => /lanzo-pos/iu.test(destination))).toBe(false);
+    expect(config.redirects || []).toEqual([]);
   });
 
   it('keeps the administrative project build and PWA configuration independent', async () => {
@@ -101,8 +122,10 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
     const rootNames = await readdir(projectRoot);
     expect(rootNames.filter((name) => /^vercel\..*\.json$/i.test(name))).toEqual([]);
     expect(config).not.toHaveProperty('projectId');
+    expect(config).not.toHaveProperty('orgId');
     expect(config).not.toHaveProperty('name');
     expect(config).not.toHaveProperty('github');
+    expect(await exists(path.join(projectRoot, 'store', 'vercel.prebuilt.json'))).toBe(false);
   });
 
   it('stages an audited real artifact with robots.txt', async () => {
@@ -150,7 +173,14 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
 
   it('ignores all generated and Vercel-local artifacts', async () => {
     const gitignore = await readProjectFile('.gitignore');
-    for (const entry of ['dist/', 'dist-store/', 'store/dist/', '.vercel/', 'node_modules/']) {
+    for (const entry of [
+      'dist/',
+      'dist-store/',
+      'store/dist/',
+      'store/generated/storeHtmlTemplate.js',
+      '.vercel/',
+      'node_modules/'
+    ]) {
       expect(gitignore).toContain(entry);
     }
   });

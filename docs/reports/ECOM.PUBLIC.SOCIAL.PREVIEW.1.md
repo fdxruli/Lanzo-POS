@@ -2731,6 +2731,204 @@ merge / auto-merge                  = no
 estado total                        = BLOCKED
 ```
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.7.2 — Reconciliación de pruebas de arquitectura heredadas
+
+### Estado inicial y evidencia CI
+
+```text
+fecha                     = 2026-07-29
+PR                        = #141 OPEN / DRAFT
+rama                      = feat/ecom-public-social-preview-1
+base                      = main
+HEAD inicial real         = 96b3b4df773d8e476f5142106ee3e5fd8d6ab986
+HEAD de main              = bc603ef0ae3e60f241eafdbae6966191fe75d62c
+ahead / behind            = 26 / 0
+mergeable                 = true
+```
+
+Se revisó el artifact:
+
+```text
+workflow = PR127 Global Comparison
+run      = 30493299908 / run number 98
+artifact = pr127-global-comparison-96b3b4df773d8e476f5142106ee3e5fd8d6ab986
+digest   = sha256:3daa8c88f89c51d96918bf2c363fc33c814dd487bbaddcf64c2af97d298f6b57
+shared failures = 138
+new failures    = 17
+```
+
+Las suites PR y main se ejecutaron; el fallo ocurrió únicamente al normalizar y
+comparar porque `newFailures` no estaba vacío. Los 17 fallos nuevos se
+concentraban en tres archivos, cuyas rutas reales son:
+
+```text
+src/architecture/__tests__/publicBuildArchitecture.test.js       1
+src/architecture/__tests__/publicGitDeploymentArchitecture.test.js 1
+src/architecture/__tests__/vercelPrebuiltDeployment.test.js     15
+```
+
+Los tres archivos están bajo `src/architecture/__tests__`, no bajo
+`store/tests/architecture`.
+
+### Clasificación de los 17 fallos
+
+Todos se clasificaron como **prueba heredada obsoleta**. No se encontró una
+regresión productiva nueva.
+
+- `publicBuildArchitecture`: exigía el título histórico con raya en vez de
+  validar el título y el bloque social funcional.
+- `publicGitDeploymentArchitecture`: exigía cuatro rewrites completamente
+  estáticos e ignoraba el HTML dinámico, tracking y precedencia actual.
+- `vercelPrebuiltDeployment`: sus 15 fallos dependían de `CUTOVER.1.1`, un
+  paquete estático plano, ausencia absoluta de Functions, nombres internos
+  eliminados y deployment productivo automático.
+
+También existía una assertion compartida con `main` que buscaba la importación
+de Supabase en el wrapper, aunque la conexión real vive en
+`ecommercePublicServiceBase`. Se corrigió siguiendo la cadena de imports y
+manteniendo la prohibición del cliente administrativo.
+
+### Contratos certificados
+
+`publicBuildArchitecture` comprueba ahora:
+
+- `lang="es-MX"`, un único `#root` y entrada `../src/main-store.jsx`;
+- un único marcador social inicial y final, en orden;
+- title genérico que contiene «Tienda en línea» y «Lanzo», sin fijar puntuación;
+- description genérica dentro del bloque;
+- ausencia de canonical, `og:url`, `og:image`, metadata/token de tracking,
+  PWA, Service Worker, manifest y bootstrap administrativo;
+- router, cliente Supabase, sesión no persistente, root/output de Vite y
+  ausencia de chunks administrativos.
+
+`publicGitDeploymentArchitecture` exige exactamente y en orden:
+
+```text
+/                                   -> /index.html
+/tienda                             -> /index.html
+/tienda/:slug/pedido/:trackingToken -> /index.html
+/tienda/:slug                       -> /api/store-page
+/conoce-lanzo                       -> /index.html
+/tienda/:path*                      -> /index.html
+```
+
+También valida noindex global, caché estática sólo para shells, assets
+immutable, HTML dinámico sin header estático amplio, APIs/assets no
+interceptados, ausencia de fallback administrativo y aislamiento de config,
+IDs y outputs generados.
+
+`vercelPrebuiltDeployment` fue reescrita sobre helpers y comportamiento
+observable. Cubre:
+
+- copia saneada sin `.git`, `.vercel`, `.env`, `node_modules`, Supabase, docs
+  ni tests, y rechazo de symlinks;
+- workspace bajo el temporal del sistema con prefijo controlado y store hijo
+  directo; rechazo de escapes y `store/store`;
+- enlace temporal exclusivo de `lanzo-store`, IDs separados y repositorio real
+  intacto;
+- `vercel pull --yes --environment=production` seguido por
+  `vercel build --prod --debug --local-config
+  ./store/vercel.prebuilt.json`, sin deploy;
+- exactamente `/api/store-page` y `/api/og/store`, rechazando cero, una,
+  tercera función, helper, handler ausente, runtime inválido y duplicados;
+- paridad static, `index.html`, `robots.txt`, JS/CSS, ausencia de `.env` y
+  source maps públicos;
+- routing compilado, tracking/fallback estáticos, APIs/assets aislados,
+  noindex, 308, HTML no immutable y assets immutable;
+- preview futura permitida únicamente mediante
+  `vercel deploy --prebuilt --yes`; producción, promote y alias rechazados;
+- contrato PWA/SPA administrativo conservado por separado.
+
+No se eliminó ninguna suite, no se añadieron skips y no se reemplazaron
+assertions por snapshots.
+
+### Validación local
+
+La raíz fue verificada antes de instalar:
+
+```text
+package.json      = presente
+package-lock.json = presente
+npm ci --no-audit --no-fund = PASS
+paquetes instalados = 706
+package / lock modificados = no
+```
+
+Resultados finales:
+
+```text
+publicBuildArchitecture.test.js          = 5 PASS
+publicGitDeploymentArchitecture.test.js  = 13 PASS
+vercelPrebuiltDeployment.test.js         = 25 PASS
+store/tests/social-preview               = 440 PASS / 2 skips de plataforma
+npm run build:store:vercel               = PASS
+git diff --check                         = PASS
+```
+
+El build produjo y auditó:
+
+```text
+dist-store = 10 archivos / 636855 bytes
+store/dist = 11 archivos / 636881 bytes
+PWA / Service Worker = ausentes
+código administrativo = ausente
+violaciones = 0
+```
+
+Los outputs generados se retiraron después de la validación.
+
+La suite global se ejecutó con el comando del workflow. Una primera ejecución
+en la zona local `America/Merida` expuso dos falsos positivos de fechas; ambos
+pasaron bajo `TZ=UTC`, la zona del runner. Otra ejecución concurrente produjo
+un `STACK_TRACE_ERROR` aislado en `PublicStorePage.siteVersion`; la prueba pasó
+1/1 al ejecutarse sola y ya había pasado en el artifact remoto inicial. No se
+modificaron esas pruebas ajenas.
+
+La ejecución global final estable bajo `TZ=UTC` y el mismo normalizador del
+workflow produjo:
+
+```text
+PR failures       = 134
+main failures     = 138
+shared failures   = 134
+new failures      = 0
+resolved failures = 4
+```
+
+Los cuatro fallos resueltos corresponden a dos assertions de
+`publicBuildArchitecture`, la paridad de `publicGitDeploymentArchitecture` y
+la comprobación pública PWA de `adminPwaArchitecture`.
+
+### Alcance y estado de publicación
+
+```text
+archivos de prueba modificados = 3
+reporte modificado             = 1
+código productivo modificado   = no
+scripts productivos            = no
+workflow                       = no
+package / lock / dependencias  = no
+Supabase / migraciones         = no
+deployment / preview           = no
+producción / alias / promote   = no
+merge / auto-merge             = no
+```
+
+El resultado remoto del nuevo `PR127 Global Comparison` queda pendiente hasta
+publicar el único commit de 1.7.2. Se consulta después de la publicación y no se
+crea un segundo commit únicamente para sustituir este estado histórico.
+
+Bloqueantes locales conocidos:
+
+```text
+ninguno
+```
+
+Riesgo residual: la suite global contiene fallos heredados compartidos y
+algunas pruebas sensibles al entorno/concurrencia. El gate remoto sólo debe
+declararse PASS si su comparación normalizada mantiene `newFailures = 0`; el
+status externo `Vercel – lanzo-pos` no sustituye ese resultado.
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.7 — Reconciliación del Build Output real
 
 HEAD inicial y remoto confirmado: `b8999ac428a73d479a9fe6a855fb70479f7d8d17`

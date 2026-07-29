@@ -28,13 +28,16 @@ describe('standalone public build architecture', () => {
   });
 
   it('uses an isolated public Supabase client with no administrative imports or session persistence', async () => {
-    const [service, client] = await Promise.all([
+    const [service, serviceBase, client] = await Promise.all([
       readProjectFile('src/services/ecommerce/ecommercePublicService.js'),
+      readProjectFile('src/services/ecommerce/ecommercePublicServiceBase.js'),
       readProjectFile('src/services/supabasePublic.js')
     ]);
 
-    expect(service).toMatch(/from ['"]\.\.\/supabasePublic['"]/);
+    expect(service).toMatch(/from ['"]\.\/ecommercePublicServiceBase['"]/);
     expect(service).not.toMatch(/from ['"]\.\.\/supabase['"]/);
+    expect(serviceBase).toMatch(/from ['"]\.\.\/supabasePublic['"]/);
+    expect(serviceBase).not.toMatch(/from ['"]\.\.\/supabase['"]/);
     expect(client).toContain('VITE_SUPABASE_URL');
     expect(client).toContain('VITE_SUPABASE_PUBLISHABLE_KEY');
     expect(client).toMatch(/persistSession:\s*false/);
@@ -45,12 +48,34 @@ describe('standalone public build architecture', () => {
 
   it('keeps the public HTML free of administrative PWA bootstrapping', async () => {
     const html = await readProjectFile('store/index.html');
+    const starts = [...html.matchAll(/<!-- LANZO_SOCIAL_HEAD_START -->/gu)];
+    const ends = [...html.matchAll(/<!-- LANZO_SOCIAL_HEAD_END -->/gu)];
+    const rootElements = [...html.matchAll(/\bid=["']root["']/gu)];
+    const startIndex = starts[0]?.index ?? -1;
+    const endIndex = ends[0]?.index ?? -1;
+    const socialShell = html.slice(startIndex, endIndex);
+    const title = /<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(socialShell)?.[1] || '';
 
+    expect(html).toContain('<html lang="es-MX">');
+    expect(rootElements).toHaveLength(1);
     expect(html).toContain('../src/main-store.jsx');
-    expect(html).toContain('Tienda en línea — Lanzo');
+    expect(starts).toHaveLength(1);
+    expect(ends).toHaveLength(1);
+    expect(startIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(startIndex);
+    expect(title).toContain('Tienda en línea');
+    expect(title).toContain('Lanzo');
+    expect(socialShell).toMatch(/<meta\b[^>]*name=["']description["'][^>]*content=["'][^"']+["']/iu);
+    expect(html).not.toMatch(/<link\b[^>]*rel=["']canonical["']/iu);
+    expect(html).not.toMatch(/<meta\b[^>]*property=["']og:(?:url|image)["']/iu);
+    expect(html).not.toMatch(
+      /<meta\b[^>]*(?:name|property)=["'][^"']*(?:pedido|tracking)[^"']*["']/iu
+    );
+    expect(html).not.toMatch(/trackingToken|token-ficticio|\/pedido\/[^"'<>\s]+/iu);
     expect(html).not.toMatch(/rel=["']manifest|manifest\.webmanifest|beforeinstallprompt|appinstalled/i);
     expect(html).not.toMatch(/apple-mobile-web-app-capable|mobile-web-app-capable|apple-touch-icon/i);
     expect(html).not.toMatch(/registerSW|serviceWorker|virtual:pwa-register/i);
+    expect(html).not.toMatch(/App\.jsx|LanzoDB|PosPage|CajaPage|GoogleOAuthProvider|StorageManager/iu);
   });
 
   it('builds to dist-store from a dedicated root without a PWA plugin or public asset copy', async () => {
