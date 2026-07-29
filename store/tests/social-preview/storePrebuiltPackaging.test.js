@@ -11,25 +11,17 @@ import { describe, expect, it } from 'vitest';
 import {
   buildNpmExecutionEnvironment,
   buildVercelExecutionEnvironment,
-  buildWindowsCmdPayload,
-  buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
   createPrebuiltVercelConfig,
   assertPrebuiltVercelConfigParity,
-  injectWindowsBuildEnvironment,
-  getEnvironmentValueCaseInsensitive,
-  prependPathEntry,
   prepareStoreDeployment,
-  resolveCliCommands,
   resolveNpmCliPath,
   resolveNpmInvocation,
   resolveNpmScriptInvocation,
   resolveSpawnInvocation,
   resolveVercelInvocation,
-  resolveWindowsPathCommand,
   run,
   shouldCopyStoreWorkspacePath,
-  setEnvironmentValueCaseInsensitive,
   writePrebuiltVercelConfig,
 } from '../../../scripts/prepare-store-deployment.mjs';
 
@@ -111,47 +103,14 @@ describe('workspace prebuilt saneado', () => {
     expect(JSON.stringify(result)).not.toContain('test-token-value');
   });
 
-  it('normaliza PATH y el procesador de comandos de Windows sin mutar el padre', () => {
+  it('conserva el entorno de Vercel y elimina el token sin mutar el padre', () => {
     const parent = { Path: 'C:\\tools;C:\\WINDOWS\\System32', PATH: 'C:\\duplicate', SystemRoot: 'C:\\Windows', VERCEL_TOKEN: 'secret' };
     const result = buildVercelExecutionEnvironment({ environment: parent });
-    expect(Object.keys(result).filter((key) => key.toLowerCase() === 'path')).toEqual(['PATH']);
-    expect(result.PATH).toMatch(/Windows\\System32/iu);
-    expect(result.ComSpec).toMatch(/Windows\\System32\\cmd\.exe$/iu);
+    expect(result.Path).toBe(parent.Path);
+    expect(result.PATH).toBe(parent.PATH);
     expect(result.SystemRoot).toBe('C:\\Windows');
-    expect(result.WINDIR).toBe('C:\\Windows');
     expect(result).not.toHaveProperty('VERCEL_TOKEN');
     expect(parent).toHaveProperty('Path');
-    expect(getEnvironmentValueCaseInsensitive(result, 'path')).toBe(result.PATH);
-    expect(prependPathEntry('C:\\Tools', 'C:\\Tools')).toBe('C:\\Tools');
-    expect(setEnvironmentValueCaseInsensitive({ Path: 'x', PATH: 'y' }, 'PATH', 'z')).toEqual({ PATH: 'z' });
-  });
-
-  it('inyecta el entorno Windows en dotenv sin perder variables descargadas', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-dotenv-'));
-    const file = path.join(root, '.env.production.local');
-    await writeFile(file, 'REMOTE_VALUE="kept value"\nPath="remote"\n');
-    try {
-      await injectWindowsBuildEnvironment({ envFilePath: file, environment: {
-        PATH: 'C:\\Windows\\System32;C:\\Program Files\\nodejs', SystemRoot: 'C:\\Windows', WINDIR: 'C:\\Windows', ComSpec: 'C:\\Windows\\System32\\cmd.exe',
-      } });
-      const result = await readFile(file, 'utf8');
-      expect(result).toContain('REMOTE_VALUE="kept value"');
-      expect(result.match(/^Path=/gimu)).toBeNull();
-      expect(result).toContain('PATH="C:\\\\Windows\\\\System32;C:\\\\Program Files\\\\nodejs"');
-      expect(result).toContain('ComSpec="C:\\\\Windows\\\\System32\\\\cmd.exe"');
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  });
-
-  it.runIf(process.platform === 'win32')('ejecuta cmd.exe desde un directorio temporal con el entorno final', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'lanzo-cmd-environment-'));
-    try {
-      const result = run('cmd.exe', ['/d', '/s', '/c', 'echo wrapper-ok'], {
-        cwd: directory,
-        environment: buildVercelExecutionEnvironment({ environment: process.env }),
-      });
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain('wrapper-ok');
-    } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 
   it('invoca npm mediante el Node real y npm_execpath, sin wrapper', () => {
@@ -184,7 +143,7 @@ describe('workspace prebuilt saneado', () => {
     expect(invocation.options).toEqual({ shell: false });
   });
 
-  it('ejecuta el build pÃºblico mediante node y npm-cli.js, sin shell', () => {
+  it('ejecuta el build público mediante node y npm-cli.js, sin shell', () => {
     const invocation = resolveNpmScriptInvocation({
       nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
       npmCliPath: 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js',
@@ -209,7 +168,7 @@ describe('workspace prebuilt saneado', () => {
     },
   );
 
-  it('deriva la configuraciÃ³n temporal sin mutar la original y conserva su paridad funcional', () => {
+  it('deriva la configuración temporal sin mutar la original y conserva su paridad funcional', () => {
     const source = {
       $schema: 'https://openapi.vercel.sh/vercel.json', framework: null,
       installCommand: 'cd .. && npm ci', buildCommand: 'cd .. && npm run build:store:vercel',
@@ -229,7 +188,7 @@ describe('workspace prebuilt saneado', () => {
       .toThrow('differs from store/vercel.json');
   });
 
-  it('escribe la configuraciÃ³n temporal solo donde se le pide', async () => {
+  it('escribe la configuración temporal solo donde se le pide', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-prebuilt-config-'));
     const sourcePath = path.join(root, 'vercel.json');
     const targetPath = path.join(root, 'vercel.prebuilt.json');
@@ -267,185 +226,16 @@ describe('workspace prebuilt saneado', () => {
     expect(failure.message).not.toContain(missingNpmCli);
   });
 
-  it('selecciona npm.cmd para Windows', () => {
-    expect(resolveCliCommands({ platform: 'win32' }).npmCommand).toBe('npm.cmd');
-  });
-
-  it('selecciona vercel.cmd para Windows', () => {
-    expect(resolveCliCommands({ platform: 'win32' }).vercelCommand).toBe('vercel.cmd');
-  });
-
-  it.each(['linux', 'darwin'])('selecciona npm para %s', (platform) => {
-    expect(resolveCliCommands({ platform }).npmCommand).toBe('npm');
-  });
-
-  it.each(['linux', 'darwin'])('selecciona vercel para %s', (platform) => {
-    expect(resolveCliCommands({ platform }).vercelCommand).toBe('vercel');
-  });
-
-  it('NPM_CLI_PATH sobrescribe el ejecutable npm', () => {
-    expect(resolveCliCommands({
-      platform: 'win32',
-      environment: { NPM_CLI_PATH: 'C:\\tools\\npm-custom.cmd' },
-    }).npmCommand).toBe('C:\\tools\\npm-custom.cmd');
-  });
-
-  it('VERCEL_CLI_PATH sobrescribe el ejecutable Vercel', () => {
-    expect(resolveCliCommands({
-      platform: 'linux',
-      environment: { VERCEL_CLI_PATH: '/opt/vercel-custom' },
-    }).vercelCommand).toBe('/opt/vercel-custom');
-  });
-
-  it.each([
-    ['npm.cmd', ['ci', '--no-audit', '--no-fund']],
-    ['vercel.cmd', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
-    ['fixture.bat', ['argumento-inocuo']],
-  ])('envuelve %s con cmd.exe y conserva los argumentos', (command, args) => {
-    const invocation = resolveSpawnInvocation({
-      command,
-      args,
-      platform: 'win32',
-      environment: { ComSpec: 'C:\\Windows\\System32\\cmd.exe' },
-    });
-    expect(invocation.command).toBe('C:\\Windows\\System32\\cmd.exe');
-    expect(invocation.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
-    expect(invocation.args[3]).toBe(`"${[
-      `"${command}"`,
-      ...args.map((argument) => `"${argument}"`),
-    ].join(' ')}"`);
-    expect(invocation.options).toMatchObject({
-      shell: false,
-      windowsHide: true,
-      windowsVerbatimArguments: true,
-    });
-  });
-
-  it('no activa argumentos verbatim para ejecutables Windows que no son .cmd/.bat', () => {
+  it('invoca directamente ejecutables y conserva los argumentos', () => {
     expect(resolveSpawnInvocation({
       command: 'node.exe',
       args: ['--version'],
-      platform: 'win32',
-      environment: {},
     })).toEqual({
       command: 'node.exe',
       args: ['--version'],
       options: { shell: false },
     });
   });
-
-  it('construye por separado la orden interna y el payload completo de npm', () => {
-    const args = ['ci', '--no-audit', '--no-fund'];
-    const commandLine = buildWindowsCommandLine('npm.cmd', args);
-    const payload = buildWindowsCmdPayload('npm.cmd', args);
-    expect(commandLine).toBe('"npm.cmd" "ci" "--no-audit" "--no-fund"');
-    expect(payload).toBe('""npm.cmd" "ci" "--no-audit" "--no-fund""');
-    expect(payload).not.toContain('\\"');
-  });
-
-  it('envuelve correctamente una ruta Windows con espacios', () => {
-    const args = ['ci', '--no-audit', '--no-fund'];
-    expect(buildWindowsCommandLine('C:\\Program Files\\nodejs\\npm.cmd', args))
-      .toBe('"C:\\Program Files\\nodejs\\npm.cmd" "ci" "--no-audit" "--no-fund"');
-    expect(buildWindowsCmdPayload('C:\\Program Files\\nodejs\\npm.cmd', args))
-      .toBe('""C:\\Program Files\\nodejs\\npm.cmd" "ci" "--no-audit" "--no-fund""');
-  });
-
-  it('respeta ComSpec y acepta COMSPEC como fallback de entorno', () => {
-    expect(resolveSpawnInvocation({
-      command: 'npm.cmd',
-      args: ['ci'],
-      platform: 'win32',
-      environment: { ComSpec: 'D:\\Windows\\cmd.exe' },
-    }).command).toBe('D:\\Windows\\cmd.exe');
-    expect(resolveSpawnInvocation({
-      command: 'vercel.cmd',
-      args: ['build'],
-      platform: 'win32',
-      environment: { COMSPEC: 'E:\\Windows\\cmd.exe' },
-    }).command).toBe('E:\\Windows\\cmd.exe');
-  });
-
-  it('usa el fallback absoluto de cmd.exe cuando ComSpec falta', () => {
-    expect(resolveSpawnInvocation({
-      command: 'npm.cmd',
-      args: ['ci'],
-      platform: 'win32',
-      environment: {},
-    }).command).toBe('C:\\Windows\\System32\\cmd.exe');
-  });
-
-  it.each([
-    ['npm.cmd\rmalicioso', ['ci']],
-    ['npm.cmd\nmalicioso', ['ci']],
-    ['npm.cmd', ['ci\rmalicioso']],
-    ['npm.cmd', ['ci\nmalicioso']],
-  ])('rechaza CR/LF en comando o argumentos Windows', (command, args) => {
-    expect(() => buildWindowsCommandLine(command, args)).toThrow();
-  });
-
-  it.each(['&', '|', '<', '>', '^', '%', '!', '"'])(
-    'rechaza el metacarácter %s en overrides Windows',
-    (operator) => {
-      expect(() => resolveSpawnInvocation({
-        command: `npm.cmd ${operator} comando-malicioso`,
-        args: ['ci'],
-        platform: 'win32',
-        environment: {},
-      })).toThrow('Unsafe Windows CLI executable');
-    },
-  );
-
-  it('escapa comillas en argumentos controlados', () => {
-    expect(buildWindowsCommandLine('npm.cmd', ['valor"interno']))
-      .toBe('"npm.cmd" "valor""interno"');
-  });
-
-  it('diagnostica el comando lógico cuando falla el wrapper', () => {
-    expect(() => run('npm.cmd', ['ci', '--no-audit'], {
-      platform: 'win32',
-      environment: { ComSpec: process.execPath },
-    })).toThrow(/^npm\.cmd ci --no-audit failed with exit code/u);
-  });
-
-  it.each([
-    ['linux', 'npm', ['ci', '--no-audit', '--no-fund']],
-    ['linux', 'vercel', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
-    ['darwin', 'npm', ['ci', '--no-audit', '--no-fund']],
-    ['darwin', 'vercel', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
-  ])('ejecuta %s/%s directamente sin cmd.exe', (platform, command, args) => {
-    const invocation = resolveSpawnInvocation({
-      command,
-      args,
-      platform,
-      environment: {},
-    });
-    expect(invocation).toEqual({
-      command,
-      args,
-      options: { shell: false },
-    });
-    expect(invocation.command).not.toMatch(/cmd\.exe/iu);
-    expect(invocation.options).not.toHaveProperty('windowsVerbatimArguments');
-  });
-
-  it.runIf(process.platform === 'win32')(
-    'ejecuta realmente un fixture .cmd, devuelve status 0 y captura stdout',
-    async () => {
-      const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-cmd-fixture-'));
-      const fixtureCommand = path.join(fixtureRoot, 'fixture command.cmd');
-      await writeFile(fixtureCommand, '@echo off\r\necho wrapper-ok\r\n', 'utf8');
-      try {
-        const result = run(fixtureCommand, ['argumento-inocuo'], {
-          cwd: fixtureRoot,
-        });
-        expect(result.status).toBe(0);
-        expect(result.stdout).toContain('wrapper-ok');
-      } finally {
-        rmSync(fixtureRoot, { recursive: true, force: true });
-      }
-    },
-  );
 
   it.runIf(process.platform === 'win32')(
     'ejecuta realmente node.exe npm-cli.js --version con la entrada heredada',
@@ -457,58 +247,6 @@ describe('workspace prebuilt saneado', () => {
       const result = run(invocation.command, [invocation.args[0], '--version']);
       expect(result.status).toBe(0);
       expect(result.stdout.trim()).not.toBe('');
-    },
-  );
-
-  it.runIf(process.platform === 'win32')(
-    'ejecuta vercel.cmd --version de forma no destructiva cuando está disponible',
-    async ({ skip }) => {
-      try {
-        run('where.exe', ['vercel.cmd']);
-      } catch {
-        skip();
-        return;
-      }
-      const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-vercel-version-'));
-      try {
-        const command = await resolveWindowsPathCommand('vercel.cmd', process.env);
-        const result = run(command, ['--version'], { cwd: fixtureRoot });
-        expect(result.status).toBe(0);
-        expect(result.stdout.trim()).not.toBe('');
-      } finally {
-        rmSync(fixtureRoot, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it.runIf(process.platform === 'win32')(
-    'ejecuta npm ci real en un fixture temporal sin node_modules del repositorio',
-    async () => {
-      const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-npm-ci-'));
-      try {
-        await Promise.all([
-          writeFile(path.join(fixtureRoot, 'package.json'), JSON.stringify({
-            name: 'lanzo-npm-ci-fixture', version: '1.0.0', private: true,
-          })),
-          writeFile(path.join(fixtureRoot, 'package-lock.json'), JSON.stringify({
-            name: 'lanzo-npm-ci-fixture', version: '1.0.0', lockfileVersion: 3,
-            requires: true, packages: { '': { name: 'lanzo-npm-ci-fixture', version: '1.0.0' } },
-          })),
-        ]);
-        const npmCli = await resolveNpmCliPath({
-          environment: process.env,
-          nodeExecutable: process.execPath,
-        });
-        const invocation = resolveNpmInvocation({
-          environment: { ...process.env, npm_execpath: npmCli },
-          nodeExecutable: process.execPath,
-        });
-        const result = run(invocation.command, invocation.args, { cwd: fixtureRoot });
-        expect(result.status).toBe(0);
-        expect(await exists(path.join(fixtureRoot, 'node_modules', 'npm'))).toBe(false);
-      } finally {
-        rmSync(fixtureRoot, { recursive: true, force: true });
-      }
     },
   );
 
@@ -583,7 +321,7 @@ describe('workspace prebuilt saneado', () => {
     expect(await exists(`${workspaceRoot}-output-sha256.json`)).toBe(false);
   });
 
-  it('ordena npm ci, build pÃºblico directo y Vercel sin comandos de shell', async () => {
+  it('ordena npm ci, build público directo y Vercel sin comandos de shell', async () => {
     const sourceRoot = await createRepositoryFixture();
     const calls = [];
     await expect(prepareStoreDeployment({
@@ -697,7 +435,7 @@ describe('workspace prebuilt saneado', () => {
       readFile(storeConfig, 'utf8'),
       readFile(projectLink, 'utf8'),
     ]);
-    const missingExecutable = path.join(sourceRoot, 'private-tools', 'npm.cmd');
+    const missingExecutable = path.join(sourceRoot, 'private-tools', 'missing-node.exe');
     let workspaceRoot;
     let failure;
     try {
@@ -711,14 +449,14 @@ describe('workspace prebuilt saneado', () => {
         vercelCommand: 'vercel-fixture',
         commandRunner(command, args, options) {
           workspaceRoot ||= options.cwd;
-          return run(command, args, { ...options, platform: 'linux' });
+          return run(command, args, options);
         },
       });
     } catch (error) {
       failure = error;
     }
     expect(failure).toBeInstanceOf(Error);
-    expect(failure.message).toContain('Required executable not found: npm.cmd');
+    expect(failure.message).toContain('Required executable not found: missing-node.exe');
     expect(failure.message).toContain('status: null');
     expect(failure.message).not.toContain(sourceRoot);
     expect(await exists(workspaceRoot)).toBe(false);
@@ -795,16 +533,45 @@ describe('workspace prebuilt saneado', () => {
     expect(await exists(workspaceRoot)).toBe(false);
   });
 
-  it('no contiene comandos de deploy', async () => {
-    const source = await readFile(
-      new URL('../../../scripts/prepare-store-deployment.mjs', import.meta.url),
-      'utf8',
-    );
-    expect(source).not.toMatch(/vercel\s+(?:deploy|promote|alias)/u);
-    expect(source).toContain("['build', '--prod', '--local-config', './vercel.prebuilt.json']");
-    expect(source).toContain("script: 'build:store:vercel'");
-    expect(source).not.toContain('shell: true');
-    expect(source).toContain('shell: false');
-    expect(source).not.toMatch(/exec(?:Sync)?\(/u);
+  it('prepara el artefacto sin deployment y con invocaciones directas', async () => {
+    const sourceRoot = await createRepositoryFixture();
+    const calls = [];
+    const npmCliPath = 'C:\\tools\\npm\\bin\\npm-cli.js';
+    const vercelCliPath = 'C:\\tools\\vercel\\dist\\vc.js';
+    await expect(prepareStoreDeployment({
+      repositoryRoot: sourceRoot,
+      npmInvocation: {
+        command: 'C:\\tools\\node.exe',
+        args: [npmCliPath, 'ci', '--no-audit', '--no-fund'],
+        options: { shell: false },
+      },
+      vercelInvocation: {
+        command: 'C:\\tools\\node.exe',
+        argsPrefix: [vercelCliPath],
+        options: { shell: false },
+      },
+      commandRunner(command, args, options) {
+        calls.push({ command, args, options });
+        if (args.includes('pull')) {
+          mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
+          writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
+        }
+      },
+    })).rejects.toThrow('Vercel did not produce .vercel/output');
+
+    const logicalCalls = calls.map(({ args }) => args.join(' '));
+    expect(logicalCalls.some((call) => call.includes(
+      'build --prod --local-config ./vercel.prebuilt.json',
+    ))).toBe(true);
+    expect(logicalCalls.join(' ')).not.toMatch(/\b(?:deploy|promote|alias)\b|--prebuilt/u);
+    expect(calls.every(({ options }) => options.shell === false)).toBe(true);
+    expect(calls[0]).toMatchObject({
+      command: 'C:\\tools\\node.exe',
+      args: [npmCliPath, 'ci', '--no-audit', '--no-fund'],
+    });
+    expect(calls.filter(({ args }) => args.includes('pull') || args.includes('build')))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ command: 'C:\\tools\\node.exe', args: expect.arrayContaining([vercelCliPath]) }),
+      ]));
   });
 });

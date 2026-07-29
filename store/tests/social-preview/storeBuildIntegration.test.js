@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   auditStoreServerImports,
@@ -17,7 +18,7 @@ import {
   normalizePublicPortalTheme,
 } from '../../api/_portalTheme.js';
 
-const projectRoot = path.resolve(new URL('../../../', import.meta.url).pathname);
+const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const htmlFixture = `<!doctype html>
 <html><head>

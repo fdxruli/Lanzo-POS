@@ -2100,6 +2100,84 @@ Confirmaciones:
 - Merge ejecutado: **no**.
 - Auto-merge activado: **no**.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.2 — Corrección de wrappers residuales de Windows
+
+```text
+HEAD inicial = cfcd84a3520f3f8f65d1d1720aa00e60e2ce8223
+PR #141 = OPEN / DRAFT
+rama = feat/ecom-public-social-preview-1
+base = main
+auto-merge = desactivado
+```
+
+Los 15 fallos reales de Vitest tenían una única causa raíz:
+`resolveSpawnInvocation()` seguía evaluando
+`WINDOWS_COMMAND_WRAPPER_PATTERN` y `DEFAULT_WINDOWS_COMMAND_PROCESSOR`,
+constantes ya eliminadas. Por eso cualquier prueba que alcanzaba el runner
+fallaba con `ReferenceError`, incluso al ejecutar directamente `node.exe`.
+
+Se eliminó el código residual sin consumidores de la estrategia `cmd.exe`:
+`resolveCliCommands`, `injectWindowsBuildEnvironment`, la manipulación dotenv,
+la validación/quoting/payload de `.cmd`/`.bat`, el fallback `ComSpec` y la
+clasificación especial de `EINVAL`. `run()` ahora ejecuta directamente
+`spawnSync(command, args, { shell: false })`, conservando npm mediante
+`node.exe + npm-cli.js`, Vercel mediante `node.exe + vercel/dist/vc.js`,
+ejecutables directos en Linux/macOS, diagnóstico `ENOENT`, sanitización y
+limpieza del workspace.
+
+Se eliminaron las pruebas obsoletas de wrappers, `cmd.exe`, `ComSpec`, argumentos
+verbatim y fixtures `.cmd`. La ausencia de deployment se comprueba ahora por
+comportamiento: captura las invocaciones, exige el build lógico con
+`build --prod --local-config ./vercel.prebuilt.json`, prohíbe `deploy`,
+`promote`, `alias` y `--prebuilt`, y valida `shell: false`, npm vía
+`node + npm-cli.js` y Vercel vía `node + vc.js`. También se retiró el fixture
+Windows de `npm ci` real, redundante y frágil; el gate de preparación lo valida.
+
+`storeBuildIntegration.test.js` usa
+`fileURLToPath(new URL('../../../', import.meta.url))`, evitando la ruta
+`C:\\C:\\...` en Windows. Vuelve a auditar exclusivamente `/api/og/store`,
+`/api/store-page` y cierres de importación dentro de `store/`. Los títulos de
+prueba se guardaron en UTF-8 (`público`, `configuración`).
+
+### Validación ejecutada
+
+```text
+storePrebuiltPackaging.test.js = 48 PASS, 0 failed
+storeBuildIntegration.test.js = 3 PASS, 0 failed
+store/tests/social-preview = 0 fallos observados
+build público = PASS dentro del gate real antes de Vercel
+vercel pull = PASS dentro del workspace temporal
+vercel build = ejecutado por node.exe + vc.js, sin deploy
+```
+
+### Gate real y bloqueante residual
+
+El gate llegó a la auditoría de Build Output, pero se bloqueó con:
+
+```text
+Missing prebuilt input: static
+```
+
+La salida real de Vercel no contenía `.vercel/output/static`. Por tanto no fue
+posible confirmar de forma honesta las dos funciones, `/api/store-page`,
+`/api/og/store`, rutas compiladas, tracking, assets, hashes, ausencia de PWA,
+código administrativo, secretos, `service_role`, source maps ni
+`vercel.prebuilt.json` dentro del output. El workspace fallido se limpió; ningún
+fixture se presenta como sustituto de la auditoría real.
+
+```text
+estado = BLOCKED
+deploymentExecuted = false
+Supabase/migraciones = sin cambios
+package.json/package-lock.json = sin cambios
+store/vercel.json = sin cambios
+main = sin cambios
+merge = no
+auto-merge = desactivado
+```
+
+### Bloqueante residual histórico 1.6.1
+
 Bloqueante residual:
 
 ```text

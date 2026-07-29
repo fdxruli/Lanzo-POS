@@ -11,7 +11,6 @@ import {
   mkdtemp,
   readFile,
   readdir,
-  rename,
   rm,
   stat,
   writeFile,
@@ -27,7 +26,6 @@ const STORE_ORGANIZATION_ID = 'team_buvft2mAJErTNR8gDhXcZGfS';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
 const BUILD_COMMAND = 'vercel build --prod --local-config ./vercel.prebuilt.json';
 const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
-const IS_WINDOWS = process.platform === 'win32';
 const DEFAULT_VERCEL_COMMAND = 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -170,25 +168,6 @@ export async function createSanitizedStoreWorkspace({
   }
 }
 
-export function resolveCliCommands({
-  platform = process.platform,
-  environment = {},
-} = {}) {
-  const windows = platform === 'win32';
-  const npmOverride = typeof environment?.NPM_CLI_PATH === 'string'
-    ? environment.NPM_CLI_PATH.trim()
-    : '';
-  const vercelOverride = typeof environment?.VERCEL_CLI_PATH === 'string'
-    ? environment.VERCEL_CLI_PATH.trim()
-    : '';
-  return Object.freeze({
-    // Kept for callers that only need to display the configured value.  npm itself
-    // is invoked through resolveNpmInvocation, never through this wrapper name.
-    npmCommand: npmOverride || (windows ? 'npm.cmd' : 'npm'),
-    vercelCommand: vercelOverride || (windows ? 'vercel.cmd' : 'vercel'),
-  });
-}
-
 export function resolveNpmInvocation({
   platform = process.platform,
   environment = process.env,
@@ -304,138 +283,28 @@ export function buildNpmExecutionEnvironment({
   });
 }
 
-export function getEnvironmentValueCaseInsensitive(environment, name) {
-  const key = Object.keys(environment || {}).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
-  return key ? environment[key] : undefined;
-}
-
-export function setEnvironmentValueCaseInsensitive(environment, name, value) {
-  const normalized = { ...environment };
-  for (const key of Object.keys(normalized)) {
-    if (key.toLowerCase() === name.toLowerCase()) delete normalized[key];
-  }
-  normalized[name] = value;
-  return normalized;
-}
-
-export function prependPathEntry(inheritedPath, entry) {
-  const entries = String(inheritedPath || '').split(path.delimiter).filter(Boolean);
-  const normalizedEntry = path.normalize(entry).toLowerCase();
-  return [entry, ...entries.filter((item) => path.normalize(item).toLowerCase() !== normalizedEntry)].join(path.delimiter);
-}
-
 export function buildVercelExecutionEnvironment({
   environment = process.env,
   useLoggedInAuthentication = true,
 } = {}) {
-  let vercelEnvironment = { ...environment };
+  const vercelEnvironment = { ...environment };
   if (useLoggedInAuthentication) {
     for (const name of Object.keys(vercelEnvironment)) {
       if (name.toUpperCase() === 'VERCEL_TOKEN') delete vercelEnvironment[name];
     }
   }
-  if (process.platform === 'win32') {
-    const systemRoot = getEnvironmentValueCaseInsensitive(environment, 'SystemRoot')
-      || getEnvironmentValueCaseInsensitive(environment, 'WINDIR')
-      || process.env.SystemRoot
-      || 'C:\\Windows';
-    const commandProcessor = getEnvironmentValueCaseInsensitive(environment, 'ComSpec')
-      || path.join(systemRoot, 'System32', 'cmd.exe');
-    const system32 = path.dirname(commandProcessor);
-    const inheritedPath = getEnvironmentValueCaseInsensitive(environment, 'PATH') || '';
-    vercelEnvironment = setEnvironmentValueCaseInsensitive(vercelEnvironment, 'SystemRoot', systemRoot);
-    vercelEnvironment = setEnvironmentValueCaseInsensitive(vercelEnvironment, 'WINDIR', systemRoot);
-    vercelEnvironment = setEnvironmentValueCaseInsensitive(vercelEnvironment, 'ComSpec', commandProcessor);
-    vercelEnvironment = setEnvironmentValueCaseInsensitive(
-      vercelEnvironment, 'PATH', prependPathEntry(inheritedPath, system32),
-    );
-  }
   return Object.freeze(vercelEnvironment);
-}
-
-function serializeDotenvValue(value) {
-  const text = String(value || '');
-  if (/[\0\r\n]/u.test(text)) throw new Error('Windows build environment contains an unsafe dotenv value.');
-  return JSON.stringify(text);
-}
-
-export async function injectWindowsBuildEnvironment({ envFilePath, environment }) {
-  const existing = await readFile(envFilePath, 'utf8');
-  const managed = new Set(['path', 'systemroot', 'windir', 'comspec']);
-  const preserved = existing.split(/\r?\n/u).filter((line) => {
-    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/u);
-    return !match || !managed.has(match[1].toLowerCase());
-  });
-  const values = ['PATH', 'SystemRoot', 'WINDIR', 'ComSpec'].map((name) => {
-    const value = getEnvironmentValueCaseInsensitive(environment, name);
-    if (!value) throw new Error(`Windows build environment is missing ${name}.`);
-    return `${name}=${serializeDotenvValue(value)}`;
-  });
-  const temporaryPath = `${envFilePath}.tmp`;
-  await writeFile(temporaryPath, `${[...preserved.filter(Boolean), ...values].join('\n')}\n`, 'utf8');
-  await rename(temporaryPath, envFilePath);
-}
-
-function assertSafeWindowsWrapperCommand(command) {
-  const value = String(command || '');
-  if (!value || /[\0\r\n"&|<>^%!]/u.test(value)) {
-    throw new Error('Unsafe Windows CLI executable.');
-  }
-  return value;
-}
-
-function quoteWindowsCommandArgument(value) {
-  const argument = String(value);
-  if (/[\0\r\n]/u.test(argument)) {
-    throw new Error('Windows CLI arguments must not contain CR, LF, or NUL.');
-  }
-  if (/[%!]/u.test(argument)) {
-    throw new Error('Windows CLI arguments must not contain expansion operators.');
-  }
-  return `"${argument.replaceAll('"', '""')}"`;
-}
-
-export function buildWindowsCommandLine(command, args) {
-  const executable = assertSafeWindowsWrapperCommand(command);
-  if (!Array.isArray(args)) throw new TypeError('CLI arguments must be an array.');
-  return [
-    quoteWindowsCommandArgument(executable),
-    ...args.map(quoteWindowsCommandArgument),
-  ].join(' ');
-}
-
-export function buildWindowsCmdPayload(command, args) {
-  return `"${buildWindowsCommandLine(command, args)}"`;
 }
 
 export function resolveSpawnInvocation({
   command,
   args,
-  platform = process.platform,
-  environment = process.env,
 }) {
   if (!Array.isArray(args)) throw new TypeError('CLI arguments must be an array.');
-  const resolvedCommand = platform === 'win32'
-    ? assertSafeWindowsWrapperCommand(command)
-    : command;
-  if (platform !== 'win32' || !WINDOWS_COMMAND_WRAPPER_PATTERN.test(resolvedCommand)) {
-    return {
-      command: resolvedCommand,
-      args,
-      options: { shell: false },
-    };
-  }
-  const commandProcessor = environment?.ComSpec
-    || environment?.COMSPEC
-    || DEFAULT_WINDOWS_COMMAND_PROCESSOR;
   return {
-    command: commandProcessor,
-    args: ['/d', '/s', '/c', buildWindowsCmdPayload(resolvedCommand, args)],
-    options: {
-      shell: false,
-      windowsHide: true,
-      windowsVerbatimArguments: true,
-    },
+    command,
+    args,
+    options: { shell: false },
   };
 }
 
@@ -464,15 +333,9 @@ export function run(
   {
     cwd,
     environment = process.env,
-    platform = process.platform,
   } = {},
 ) {
-  const invocation = resolveSpawnInvocation({
-    command,
-    args,
-    platform,
-    environment,
-  });
+  const invocation = resolveSpawnInvocation({ command, args });
   const result = spawnSync(invocation.command, invocation.args, {
     cwd,
     env: environment,
@@ -488,16 +351,6 @@ export function run(
     if (result.error?.code === 'ENOENT') {
       throw new Error(
         `Required executable not found: ${executableName(invocation.command)}`
-        + ` (status: ${String(result.status)}).${stderr ? ` ${stderr}` : ''}`,
-      );
-    }
-    if (
-      result.error?.code === 'EINVAL'
-      && platform === 'win32'
-      && invocation.command !== command
-    ) {
-      throw new Error(
-        `Unable to launch Windows command wrapper for ${executableName(command)}`
         + ` (status: ${String(result.status)}).${stderr ? ` ${stderr}` : ''}`,
       );
     }
@@ -678,16 +531,17 @@ export async function prepareStoreDeployment({
     commandRunner(installInvocation.command, installInvocation.args, {
       cwd: workspaceRoot,
       environment: npmExecutionEnvironment,
+      ...installInvocation.options,
     });
     commandRunner(
       directBuildInvocation.command,
       directBuildInvocation.args,
-      { cwd: workspaceRoot, environment: buildEnvironment },
+      { cwd: workspaceRoot, environment: buildEnvironment, ...directBuildInvocation.options },
     );
     commandRunner(
       resolvedVercelInvocation.command,
       [...resolvedVercelInvocation.argsPrefix, 'pull', '--yes', '--environment=production'],
-      { cwd: storeRoot, environment: vercelExecutionEnvironment },
+      { cwd: storeRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
     const downloadedEnvironmentPath = path.join(storeRoot, '.vercel', '.env.production.local');
     if (!await pathExists(downloadedEnvironmentPath)) {
@@ -704,7 +558,7 @@ export async function prepareStoreDeployment({
     commandRunner(
       resolvedVercelInvocation.command,
       [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--local-config', './vercel.prebuilt.json'],
-      { cwd: storeRoot, environment: vercelExecutionEnvironment },
+      { cwd: storeRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
 
     await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
