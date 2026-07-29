@@ -171,6 +171,10 @@ export function buildWindowsCommandLine(command, args) {
   ].join(' ');
 }
 
+export function buildWindowsCmdPayload(command, args) {
+  return `"${buildWindowsCommandLine(command, args)}"`;
+}
+
 export function resolveSpawnInvocation({
   command,
   args,
@@ -193,10 +197,11 @@ export function resolveSpawnInvocation({
     || DEFAULT_WINDOWS_COMMAND_PROCESSOR;
   return {
     command: commandProcessor,
-    args: ['/d', '/s', '/c', buildWindowsCommandLine(resolvedCommand, args)],
+    args: ['/d', '/s', '/c', buildWindowsCmdPayload(resolvedCommand, args)],
     options: {
       shell: false,
       windowsHide: true,
+      windowsVerbatimArguments: true,
     },
   };
 }

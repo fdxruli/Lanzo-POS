@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildWindowsCmdPayload,
   buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
   prepareStoreDeployment,
@@ -92,6 +93,7 @@ describe('workspace prebuilt saneado', () => {
   it.each([
     ['npm.cmd', ['ci', '--no-audit', '--no-fund']],
     ['vercel.cmd', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
+    ['fixture.bat', ['argumento-inocuo']],
   ])('envuelve %s con cmd.exe y conserva los argumentos', (command, args) => {
     const invocation = resolveSpawnInvocation({
       command,
@@ -101,23 +103,45 @@ describe('workspace prebuilt saneado', () => {
     });
     expect(invocation.command).toBe('C:\\Windows\\System32\\cmd.exe');
     expect(invocation.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
-    expect(invocation.args[3]).toBe([
+    expect(invocation.args[3]).toBe(`"${[
       `"${command}"`,
       ...args.map((argument) => `"${argument}"`),
-    ].join(' '));
+    ].join(' ')}"`);
     expect(invocation.options).toMatchObject({
       shell: false,
       windowsHide: true,
+      windowsVerbatimArguments: true,
     });
   });
 
-  it('cita una ruta Windows con espacios', () => {
-    expect(buildWindowsCommandLine(
-      'C:\\Program Files\\nodejs\\npm.cmd',
-      ['ci', '--no-audit', '--no-fund'],
-    )).toBe(
-      '"C:\\Program Files\\nodejs\\npm.cmd" "ci" "--no-audit" "--no-fund"',
-    );
+  it('no activa argumentos verbatim para ejecutables Windows que no son .cmd/.bat', () => {
+    expect(resolveSpawnInvocation({
+      command: 'node.exe',
+      args: ['--version'],
+      platform: 'win32',
+      environment: {},
+    })).toEqual({
+      command: 'node.exe',
+      args: ['--version'],
+      options: { shell: false },
+    });
+  });
+
+  it('construye por separado la orden interna y el payload completo de npm', () => {
+    const args = ['ci', '--no-audit', '--no-fund'];
+    const commandLine = buildWindowsCommandLine('npm.cmd', args);
+    const payload = buildWindowsCmdPayload('npm.cmd', args);
+    expect(commandLine).toBe('"npm.cmd" "ci" "--no-audit" "--no-fund"');
+    expect(payload).toBe('""npm.cmd" "ci" "--no-audit" "--no-fund""');
+    expect(payload).not.toContain('\\"');
+  });
+
+  it('envuelve correctamente una ruta Windows con espacios', () => {
+    const args = ['ci', '--no-audit', '--no-fund'];
+    expect(buildWindowsCommandLine('C:\\Program Files\\nodejs\\npm.cmd', args))
+      .toBe('"C:\\Program Files\\nodejs\\npm.cmd" "ci" "--no-audit" "--no-fund"');
+    expect(buildWindowsCmdPayload('C:\\Program Files\\nodejs\\npm.cmd', args))
+      .toBe('""C:\\Program Files\\nodejs\\npm.cmd" "ci" "--no-audit" "--no-fund""');
   });
 
   it('respeta ComSpec y acepta COMSPEC como fallback de entorno', () => {
@@ -178,13 +202,15 @@ describe('workspace prebuilt saneado', () => {
   });
 
   it.each([
-    ['npm', ['ci', '--no-audit', '--no-fund']],
-    ['vercel', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
-  ])('ejecuta %s directamente en POSIX sin cmd.exe', (command, args) => {
+    ['linux', 'npm', ['ci', '--no-audit', '--no-fund']],
+    ['linux', 'vercel', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
+    ['darwin', 'npm', ['ci', '--no-audit', '--no-fund']],
+    ['darwin', 'vercel', ['build', '--prod', '--yes', '--local-config', './vercel.json']],
+  ])('ejecuta %s/%s directamente sin cmd.exe', (platform, command, args) => {
     const invocation = resolveSpawnInvocation({
       command,
       args,
-      platform: 'linux',
+      platform,
       environment: {},
     });
     expect(invocation).toEqual({
@@ -193,6 +219,7 @@ describe('workspace prebuilt saneado', () => {
       options: { shell: false },
     });
     expect(invocation.command).not.toMatch(/cmd\.exe/iu);
+    expect(invocation.options).not.toHaveProperty('windowsVerbatimArguments');
   });
 
   it.runIf(process.platform === 'win32')(
@@ -210,6 +237,30 @@ describe('workspace prebuilt saneado', () => {
       } finally {
         rmSync(fixtureRoot, { recursive: true, force: true });
       }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'ejecuta realmente npm.cmd --version mediante el wrapper',
+    () => {
+      const result = run('npm.cmd', ['--version']);
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).not.toBe('');
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'ejecuta vercel.cmd --version de forma no destructiva cuando está disponible',
+    ({ skip }) => {
+      try {
+        run('where.exe', ['vercel.cmd']);
+      } catch {
+        skip();
+        return;
+      }
+      const result = run('vercel.cmd', ['--version']);
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).not.toBe('');
     },
   );
 
@@ -421,6 +472,7 @@ describe('workspace prebuilt saneado', () => {
     expect(source).not.toContain('shell: true');
     expect(source).toContain("args: ['/d', '/s', '/c'");
     expect(source).toContain('shell: false');
+    expect(source).toContain('windowsVerbatimArguments: true');
     expect(source).not.toMatch(/exec(?:Sync)?\(/u);
   });
 });
