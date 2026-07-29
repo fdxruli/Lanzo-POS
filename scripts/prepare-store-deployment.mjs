@@ -53,6 +53,14 @@ async function pathExists(filePath) {
   }
 }
 
+async function isFile(filePath) {
+  try {
+    return (await stat(filePath)).isFile();
+  } catch {
+    return false;
+  }
+}
+
 async function hashOptional(filePath) {
   return await pathExists(filePath) ? sha256(await readFile(filePath)) : null;
 }
@@ -138,9 +146,69 @@ export function resolveCliCommands({
     ? environment.VERCEL_CLI_PATH.trim()
     : '';
   return Object.freeze({
+    // Kept for callers that only need to display the configured value.  npm itself
+    // is invoked through resolveNpmInvocation, never through this wrapper name.
     npmCommand: npmOverride || (windows ? 'npm.cmd' : 'npm'),
     vercelCommand: vercelOverride || (windows ? 'vercel.cmd' : 'vercel'),
   });
+}
+
+export function resolveNpmInvocation({
+  platform = process.platform,
+  environment = process.env,
+  nodeExecutable = process.execPath,
+} = {}) {
+  const npmCliPath = typeof environment?.npm_execpath === 'string'
+    ? environment.npm_execpath.trim()
+    : '';
+  if (!npmCliPath) {
+    throw new Error('Unable to resolve the npm CLI safely: npm_execpath is not set.');
+  }
+  if (!nodeExecutable || typeof nodeExecutable !== 'string') {
+    throw new Error('Unable to resolve the npm CLI safely: Node executable is unavailable.');
+  }
+  // platform is deliberately accepted: Node can execute the JavaScript CLI directly
+  // on Windows, Linux, and macOS, without relying on a shell wrapper.
+  void platform;
+  return Object.freeze({
+    command: nodeExecutable,
+    args: Object.freeze([npmCliPath, 'ci', '--no-audit', '--no-fund']),
+    options: Object.freeze({ shell: false }),
+  });
+}
+
+export async function resolveNpmCliPath({
+  environment = process.env,
+  nodeExecutable = process.execPath,
+} = {}) {
+  const inherited = typeof environment?.npm_execpath === 'string'
+    ? environment.npm_execpath.trim()
+    : '';
+  if (inherited && await isFile(inherited)) return inherited;
+
+  // npm is distributed alongside the Windows and standalone Node installations.
+  // This fallback is rooted in the real Node executable, never in the workspace.
+  const bundled = path.join(path.dirname(nodeExecutable), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (await isFile(bundled)) return bundled;
+
+  const reason = inherited
+    ? 'npm_execpath does not reference a readable file'
+    : 'npm_execpath is not set';
+  throw new Error(
+    `Unable to resolve the npm CLI safely: ${reason}; no bundled npm CLI was found next to Node.`,
+  );
+}
+
+export async function resolveWindowsPathCommand(command, environment = process.env) {
+  if (path.isAbsolute(command) || command.includes('\\') || command.includes('/')) return command;
+  const pathEntries = String(environment?.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean);
+  for (const directory of pathEntries) {
+    const candidate = path.join(directory, command);
+    if (await isFile(candidate)) return candidate;
+  }
+  throw new Error(`Required executable not found: ${executableName(command)}`);
 }
 
 function assertSafeWindowsWrapperCommand(command) {
@@ -382,16 +450,39 @@ async function assertProtectedRepositoryIntegrity(repositoryRoot, baseline) {
   return finalState;
 }
 
+async function removeTemporaryWorkspace(workspaceRoot) {
+  await rm(workspaceRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 250,
+  });
+}
+
 export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
-  npmCommand = process.env.NPM_CLI_PATH || DEFAULT_NPM_COMMAND,
   vercelCommand = process.env.VERCEL_CLI_PATH || DEFAULT_VERCEL_COMMAND,
+  npmInvocation,
+  environment = process.env,
 } = {}) {
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
   let manifestPath = '';
   try {
+    // Capture and validate the parent npm entrypoint before any work in the
+    // temporary workspace. A bare npm.cmd makes %~dp0 point at that workspace.
+    const npmCliPath = await resolveNpmCliPath({
+      environment,
+      nodeExecutable: process.execPath,
+    });
+    const installInvocation = npmInvocation || resolveNpmInvocation({
+      environment: { ...environment, npm_execpath: npmCliPath },
+      nodeExecutable: process.execPath,
+    });
+    const resolvedVercelCommand = IS_WINDOWS && vercelCommand === DEFAULT_VERCEL_COMMAND
+      ? await resolveWindowsPathCommand(vercelCommand, environment)
+      : vercelCommand;
     workspaceRoot = await mkdtemp(path.join(os.tmpdir(), TEMPORARY_PREFIX));
     await createSanitizedStoreWorkspace({
       sourceRoot: repositoryRoot,
@@ -402,8 +493,8 @@ export async function prepareStoreDeployment({
 
     const npmCache = path.join(os.tmpdir(), 'lanzo-store-social-preview-npm-cache');
     await mkdir(npmCache, { recursive: true });
-    const environment = {
-      ...process.env,
+    const executionEnvironment = {
+      ...environment,
       NPM_CONFIG_CACHE: npmCache,
       XDG_CACHE_HOME: path.join(os.tmpdir(), 'lanzo-store-vercel-cache'),
       XDG_CONFIG_HOME: path.join(os.tmpdir(), 'lanzo-store-vercel-config'),
@@ -412,14 +503,14 @@ export async function prepareStoreDeployment({
       VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_invalid_for_local_build',
       PUBLIC_STORE_ORIGINS: 'https://store.invalid',
     };
-    commandRunner(npmCommand, ['ci', '--no-audit', '--no-fund'], {
+    commandRunner(installInvocation.command, installInvocation.args, {
       cwd: workspaceRoot,
-      environment,
+      environment: executionEnvironment,
     });
     commandRunner(
-      vercelCommand,
+      resolvedVercelCommand,
       ['build', '--prod', '--yes', '--local-config', './vercel.json'],
-      { cwd: storeRoot, environment },
+      { cwd: storeRoot, environment: executionEnvironment },
     );
 
     await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
@@ -473,7 +564,7 @@ export async function prepareStoreDeployment({
             === JSON.stringify(finalState.repositoryEnvironment),
       },
       commands: {
-        install: 'npm ci --no-audit --no-fund',
+        install: `${path.basename(process.execPath)} ${path.basename(npmCliPath)} ci --no-audit --no-fund`,
         build: BUILD_COMMAND,
       },
       deploymentExecuted: false,
@@ -485,7 +576,16 @@ export async function prepareStoreDeployment({
     } catch (integrityError) {
       failure = integrityError;
     }
-    if (workspaceRoot) await rm(workspaceRoot, { recursive: true, force: true });
+    if (workspaceRoot) {
+      try {
+        await removeTemporaryWorkspace(workspaceRoot);
+      } catch (cleanupError) {
+        const cleanupDiagnostic = sanitizeCommandDiagnostic(cleanupError?.message, workspaceRoot);
+        failure = new Error(
+          `${String(failure?.message || failure)} Workspace cleanup was blocked: ${cleanupDiagnostic}`,
+        );
+      }
+    }
     if (manifestPath) await rm(manifestPath, { force: true });
     throw failure;
   }

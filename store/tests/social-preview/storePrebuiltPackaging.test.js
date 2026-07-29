@@ -13,7 +13,10 @@ import {
   createSanitizedStoreWorkspace,
   prepareStoreDeployment,
   resolveCliCommands,
+  resolveNpmCliPath,
+  resolveNpmInvocation,
   resolveSpawnInvocation,
+  resolveWindowsPathCommand,
   run,
   shouldCopyStoreWorkspacePath,
 } from '../../../scripts/prepare-store-deployment.mjs';
@@ -60,6 +63,62 @@ async function expectControlledStopPreservesRepository(sourceRoot) {
 }
 
 describe('workspace prebuilt saneado', () => {
+  it('invoca npm mediante el Node real y npm_execpath, sin wrapper', () => {
+    const invocation = resolveNpmInvocation({
+      platform: 'win32',
+      nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
+      environment: { npm_execpath: 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js' },
+    });
+    expect(invocation).toEqual({
+      command: 'C:\\Program Files\\nodejs\\node.exe',
+      args: [
+        'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js',
+        'ci',
+        '--no-audit',
+        '--no-fund',
+      ],
+      options: { shell: false },
+    });
+    expect(invocation.args).toEqual(expect.any(Array));
+    expect(invocation.command).not.toMatch(/npm(?:\.cmd)?$/iu);
+  });
+
+  it.each(['linux', 'darwin'])('usa la misma invocación directa de npm en %s', (platform) => {
+    const invocation = resolveNpmInvocation({
+      platform,
+      nodeExecutable: '/usr/local/bin/node',
+      environment: { npm_execpath: '/usr/local/lib/node_modules/npm/bin/npm-cli.js' },
+    });
+    expect(invocation.command).toBe('/usr/local/bin/node');
+    expect(invocation.options).toEqual({ shell: false });
+  });
+
+  it.each([
+    [{}, 'npm_execpath is not set'],
+    [{ npm_execpath: '  ' }, 'npm_execpath is not set'],
+  ])('falla de forma segura cuando falta npm_execpath', (environment, message) => {
+    expect(() => resolveNpmInvocation({ environment, nodeExecutable: process.execPath }))
+      .toThrow(message);
+  });
+
+  it('rechaza npm_execpath inexistente sin incluir PATH', async () => {
+    const missingNpmCli = path.join(os.tmpdir(), 'lanzo-missing-npm-cli.js');
+    const missingNode = path.join(os.tmpdir(), 'lanzo-missing-node', 'node.exe');
+    let failure;
+    try {
+      await resolveNpmCliPath({
+        environment: { npm_execpath: missingNpmCli, PATH: 'private-path-value' },
+        nodeExecutable: missingNode,
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toContain('npm_execpath does not reference a readable file');
+    expect(failure.message).not.toContain('private-path-value');
+    expect(failure.message).not.toContain(missingNpmCli);
+  });
+
   it('selecciona npm.cmd para Windows', () => {
     expect(resolveCliCommands({ platform: 'win32' }).npmCommand).toBe('npm.cmd');
   });
@@ -241,9 +300,13 @@ describe('workspace prebuilt saneado', () => {
   );
 
   it.runIf(process.platform === 'win32')(
-    'ejecuta realmente npm.cmd --version mediante el wrapper',
+    'ejecuta realmente node.exe npm-cli.js --version con la entrada heredada',
     () => {
-      const result = run('npm.cmd', ['--version']);
+      const invocation = resolveNpmInvocation({
+        environment: process.env,
+        nodeExecutable: process.execPath,
+      });
+      const result = run(invocation.command, [invocation.args[0], '--version']);
       expect(result.status).toBe(0);
       expect(result.stdout.trim()).not.toBe('');
     },
@@ -251,16 +314,53 @@ describe('workspace prebuilt saneado', () => {
 
   it.runIf(process.platform === 'win32')(
     'ejecuta vercel.cmd --version de forma no destructiva cuando está disponible',
-    ({ skip }) => {
+    async ({ skip }) => {
       try {
         run('where.exe', ['vercel.cmd']);
       } catch {
         skip();
         return;
       }
-      const result = run('vercel.cmd', ['--version']);
-      expect(result.status).toBe(0);
-      expect(result.stdout.trim()).not.toBe('');
+      const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-vercel-version-'));
+      try {
+        const command = await resolveWindowsPathCommand('vercel.cmd', process.env);
+        const result = run(command, ['--version'], { cwd: fixtureRoot });
+        expect(result.status).toBe(0);
+        expect(result.stdout.trim()).not.toBe('');
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'ejecuta npm ci real en un fixture temporal sin node_modules del repositorio',
+    async () => {
+      const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-npm-ci-'));
+      try {
+        await Promise.all([
+          writeFile(path.join(fixtureRoot, 'package.json'), JSON.stringify({
+            name: 'lanzo-npm-ci-fixture', version: '1.0.0', private: true,
+          })),
+          writeFile(path.join(fixtureRoot, 'package-lock.json'), JSON.stringify({
+            name: 'lanzo-npm-ci-fixture', version: '1.0.0', lockfileVersion: 3,
+            requires: true, packages: { '': { name: 'lanzo-npm-ci-fixture', version: '1.0.0' } },
+          })),
+        ]);
+        const npmCli = await resolveNpmCliPath({
+          environment: process.env,
+          nodeExecutable: process.execPath,
+        });
+        const invocation = resolveNpmInvocation({
+          environment: { ...process.env, npm_execpath: npmCli },
+          nodeExecutable: process.execPath,
+        });
+        const result = run(invocation.command, invocation.args, { cwd: fixtureRoot });
+        expect(result.status).toBe(0);
+        expect(await exists(path.join(fixtureRoot, 'node_modules', 'npm'))).toBe(false);
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
     },
   );
 
@@ -338,7 +438,11 @@ describe('workspace prebuilt saneado', () => {
     const calls = [];
     await expect(prepareStoreDeployment({
       repositoryRoot: sourceRoot,
-      npmCommand: 'npm-fixture',
+      npmInvocation: {
+        command: 'node-fixture',
+        args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
+        options: { shell: false },
+      },
       vercelCommand: 'vercel-fixture',
       commandRunner(command, args) {
         calls.push({ command, args });
@@ -347,8 +451,8 @@ describe('workspace prebuilt saneado', () => {
     })).rejects.toThrow('controlled Vercel stop');
     expect(calls).toEqual([
       {
-        command: 'npm-fixture',
-        args: ['ci', '--no-audit', '--no-fund'],
+        command: 'node-fixture',
+        args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
       },
       {
         command: 'vercel-fixture',
@@ -374,7 +478,11 @@ describe('workspace prebuilt saneado', () => {
     try {
       await prepareStoreDeployment({
         repositoryRoot: sourceRoot,
-        npmCommand: missingExecutable,
+        npmInvocation: {
+          command: missingExecutable,
+          args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
+          options: { shell: false },
+        },
         vercelCommand: 'vercel-fixture',
         commandRunner(command, args, options) {
           workspaceRoot ||= options.cwd;
