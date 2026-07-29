@@ -25,6 +25,9 @@ const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
 const STORE_ORGANIZATION_ID = 'team_buvft2mAJErTNR8gDhXcZGfS';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
 const BUILD_COMMAND = 'vercel build --prod --yes --local-config ./vercel.json';
+const IS_WINDOWS = process.platform === 'win32';
+const DEFAULT_NPM_COMMAND = IS_WINDOWS ? 'npm.cmd' : 'npm';
+const DEFAULT_VERCEL_COMMAND = IS_WINDOWS ? 'vercel.cmd' : 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -121,7 +124,43 @@ export async function createSanitizedStoreWorkspace({
   }
 }
 
-function run(command, args, { cwd, environment = process.env } = {}) {
+export function resolveCliCommands({
+  platform = process.platform,
+  environment = {},
+} = {}) {
+  const windows = platform === 'win32';
+  const npmOverride = typeof environment?.NPM_CLI_PATH === 'string'
+    ? environment.NPM_CLI_PATH.trim()
+    : '';
+  const vercelOverride = typeof environment?.VERCEL_CLI_PATH === 'string'
+    ? environment.VERCEL_CLI_PATH.trim()
+    : '';
+  return Object.freeze({
+    npmCommand: npmOverride || (windows ? 'npm.cmd' : 'npm'),
+    vercelCommand: vercelOverride || (windows ? 'vercel.cmd' : 'vercel'),
+  });
+}
+
+function executableName(command) {
+  const name = normalizePath(String(command || '')).split('/').at(-1) || 'unknown';
+  return name.replace(/[^A-Za-z0-9._-]/gu, '_').slice(0, 120);
+}
+
+function sanitizeCommandDiagnostic(value, cwd) {
+  let diagnostic = String(value || '');
+  for (const [protectedPath, replacement] of [
+    [process.cwd(), '<repository>'],
+    [cwd, '<workspace>'],
+  ]) {
+    if (protectedPath) diagnostic = diagnostic.replaceAll(protectedPath, replacement);
+  }
+  return diagnostic
+    .replace(/\b(?:sb_secret|ghp|github_pat|vcp|vercel)_[A-Za-z0-9_-]{8,}\b/giu, '<redacted>')
+    .replace(/(SUPABASE_SERVICE_ROLE\s*=\s*)[^\s]+/giu, '$1<redacted>')
+    .slice(0, 1_000);
+}
+
+export function run(command, args, { cwd, environment = process.env } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     env: environment,
@@ -131,12 +170,17 @@ function run(command, args, { cwd, environment = process.env } = {}) {
     windowsHide: true,
   });
   if (result.status !== 0) {
-    const stderr = String(result.stderr || result.error?.message || '')
-      .replaceAll(process.cwd(), '<repository>')
-      .replaceAll(cwd || '', '<workspace>')
-      .slice(0, 1_000);
+    const stderr = sanitizeCommandDiagnostic(result.stderr, cwd);
+    if (result.error?.code === 'ENOENT') {
+      throw new Error(
+        `Required executable not found: ${executableName(command)}`
+        + ` (status: ${String(result.status)}).${stderr ? ` ${stderr}` : ''}`,
+      );
+    }
+    const diagnostic = stderr || sanitizeCommandDiagnostic(result.error?.message, cwd);
     throw new Error(
-      `${command} ${args.join(' ')} failed with exit code ${result.status}: ${stderr}`,
+      `${executableName(command)} ${args.join(' ')} failed with exit code`
+      + ` ${result.status}: ${diagnostic}`,
     );
   }
   return result;
@@ -249,7 +293,8 @@ async function assertProtectedRepositoryIntegrity(repositoryRoot, baseline) {
 export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
-  vercelCommand = process.env.VERCEL_CLI_PATH || 'vercel',
+  npmCommand = process.env.NPM_CLI_PATH || DEFAULT_NPM_COMMAND,
+  vercelCommand = process.env.VERCEL_CLI_PATH || DEFAULT_VERCEL_COMMAND,
 } = {}) {
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
@@ -275,7 +320,7 @@ export async function prepareStoreDeployment({
       VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_invalid_for_local_build',
       PUBLIC_STORE_ORIGINS: 'https://store.invalid',
     };
-    commandRunner('npm', ['ci', '--no-audit', '--no-fund'], {
+    commandRunner(npmCommand, ['ci', '--no-audit', '--no-fund'], {
       cwd: workspaceRoot,
       environment,
     });

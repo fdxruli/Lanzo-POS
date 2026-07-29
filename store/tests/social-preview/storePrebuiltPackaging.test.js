@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createSanitizedStoreWorkspace,
   prepareStoreDeployment,
+  resolveCliCommands,
+  run,
   shouldCopyStoreWorkspacePath,
 } from '../../../scripts/prepare-store-deployment.mjs';
 
@@ -55,6 +57,36 @@ async function expectControlledStopPreservesRepository(sourceRoot) {
 }
 
 describe('workspace prebuilt saneado', () => {
+  it('selecciona npm.cmd para Windows', () => {
+    expect(resolveCliCommands({ platform: 'win32' }).npmCommand).toBe('npm.cmd');
+  });
+
+  it('selecciona vercel.cmd para Windows', () => {
+    expect(resolveCliCommands({ platform: 'win32' }).vercelCommand).toBe('vercel.cmd');
+  });
+
+  it.each(['linux', 'darwin'])('selecciona npm para %s', (platform) => {
+    expect(resolveCliCommands({ platform }).npmCommand).toBe('npm');
+  });
+
+  it.each(['linux', 'darwin'])('selecciona vercel para %s', (platform) => {
+    expect(resolveCliCommands({ platform }).vercelCommand).toBe('vercel');
+  });
+
+  it('NPM_CLI_PATH sobrescribe el ejecutable npm', () => {
+    expect(resolveCliCommands({
+      platform: 'win32',
+      environment: { NPM_CLI_PATH: 'C:\\tools\\npm-custom.cmd' },
+    }).npmCommand).toBe('C:\\tools\\npm-custom.cmd');
+  });
+
+  it('VERCEL_CLI_PATH sobrescribe el ejecutable Vercel', () => {
+    expect(resolveCliCommands({
+      platform: 'linux',
+      environment: { VERCEL_CLI_PATH: '/opt/vercel-custom' },
+    }).vercelCommand).toBe('/opt/vercel-custom');
+  });
+
   it.each([
     ['package.json', true],
     ['package-lock.json', true],
@@ -113,15 +145,78 @@ describe('workspace prebuilt saneado', () => {
     let workspaceRoot;
     await expect(prepareStoreDeployment({
       repositoryRoot: sourceRoot,
-      commandRunner(command, args, options) {
-        workspaceRoot ||= command === 'npm' ? options.cwd : path.dirname(options.cwd);
-        if (command !== 'npm') throw new Error('controlled Vercel failure');
+      commandRunner(_command, args, options) {
+        workspaceRoot ||= args[0] === 'ci' ? options.cwd : path.dirname(options.cwd);
+        if (args[0] !== 'ci') throw new Error('controlled Vercel failure');
         expect(args).toContain('ci');
       },
       vercelCommand: 'vercel-fixture',
     })).rejects.toThrow('controlled Vercel failure');
     expect(await exists(workspaceRoot)).toBe(false);
     expect(await exists(`${workspaceRoot}-output-sha256.json`)).toBe(false);
+  });
+
+  it('inyecta ambos ejecutables y conserva los argumentos como arrays', async () => {
+    const sourceRoot = await createRepositoryFixture();
+    const calls = [];
+    await expect(prepareStoreDeployment({
+      repositoryRoot: sourceRoot,
+      npmCommand: 'npm-fixture',
+      vercelCommand: 'vercel-fixture',
+      commandRunner(command, args) {
+        calls.push({ command, args });
+        if (command === 'vercel-fixture') throw new Error('controlled Vercel stop');
+      },
+    })).rejects.toThrow('controlled Vercel stop');
+    expect(calls).toEqual([
+      {
+        command: 'npm-fixture',
+        args: ['ci', '--no-audit', '--no-fund'],
+      },
+      {
+        command: 'vercel-fixture',
+        args: ['build', '--prod', '--yes', '--local-config', './vercel.json'],
+      },
+    ]);
+    expect(calls.every(({ args }) => Array.isArray(args))).toBe(true);
+  });
+
+  it('reporta ENOENT sin rutas, limpia el workspace y preserva el repositorio', async () => {
+    const sourceRoot = await createRepositoryFixture({ withAdministrativeLink: true });
+    const administrativeConfig = path.join(sourceRoot, 'vercel.json');
+    const storeConfig = path.join(sourceRoot, 'store', 'vercel.json');
+    const projectLink = path.join(sourceRoot, '.vercel', 'project.json');
+    const before = await Promise.all([
+      readFile(administrativeConfig, 'utf8'),
+      readFile(storeConfig, 'utf8'),
+      readFile(projectLink, 'utf8'),
+    ]);
+    const missingExecutable = path.join(sourceRoot, 'private-tools', 'npm.cmd');
+    let workspaceRoot;
+    let failure;
+    try {
+      await prepareStoreDeployment({
+        repositoryRoot: sourceRoot,
+        npmCommand: missingExecutable,
+        vercelCommand: 'vercel-fixture',
+        commandRunner(command, args, options) {
+          workspaceRoot ||= options.cwd;
+          return run(command, args, options);
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure.message).toContain('Required executable not found: npm.cmd');
+    expect(failure.message).toContain('status: null');
+    expect(failure.message).not.toContain(sourceRoot);
+    expect(await exists(workspaceRoot)).toBe(false);
+    expect(await Promise.all([
+      readFile(administrativeConfig, 'utf8'),
+      readFile(storeConfig, 'utf8'),
+      readFile(projectLink, 'utf8'),
+    ])).toEqual(before);
   });
 
   it('preserva un enlace administrativo .vercel preexistente', async () => {
@@ -197,5 +292,7 @@ describe('workspace prebuilt saneado', () => {
     );
     expect(source).not.toMatch(/vercel\s+(?:deploy|promote|alias)/u);
     expect(source).toContain("['build', '--prod', '--yes'");
+    expect(source).not.toContain('shell: true');
+    expect(source).not.toMatch(/cmd\.exe|\/c(?:\s|['"])/iu);
   });
 });
