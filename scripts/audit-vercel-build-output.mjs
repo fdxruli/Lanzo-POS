@@ -256,20 +256,81 @@ async function discoverFunctionBundles(functionsRoot) {
   return bundles.sort((left, right) => String(left.route).localeCompare(String(right.route)));
 }
 
+function decodeJwtPayload(candidate) {
+  const segments = candidate.split('.');
+  if (segments.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'));
+    return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function inspectPrivilegedJwt(source) {
+  const violations = [];
+  const candidates = source.match(
+    /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}(?![A-Za-z0-9_-])/gu,
+  ) || [];
+  for (const candidate of candidates) {
+    if (decodeJwtPayload(candidate)?.role === 'service_role') {
+      violations.push('privilegedJwt');
+    }
+  }
+  return violations;
+}
+
+function inspectCredentialValues(source) {
+  const patterns = Object.freeze({
+    supabaseSecret: /\bsb_secret_[A-Za-z0-9_-]{8,}\b/u,
+    vercelToken: /\b(?:vcp|vercel)_[A-Za-z0-9_-]{20,}\b/u,
+    githubToken: /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/u,
+    privateKey: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
+    credentialValue: /\b(?:client_secret|refresh_token|access_token)\b\s*[:=]\s*["'][^"'${}<>\s]{8,}["']/iu,
+  });
+  return Object.entries(patterns)
+    .filter(([, pattern]) => pattern.test(source))
+    .map(([name]) => name);
+}
+
+function inspectCredentialAssignments(source) {
+  const violations = [];
+  const patterns = Object.freeze({
+    supabaseServiceRoleEnvironment:
+      /(?:^|[\r\n;])\s*(?:process\.env\.)?SUPABASE_SERVICE_ROLE\s*=\s*(?![=])(?:["'][^"'\r\n]+["']|[^\s;\r\n]+)/gimu,
+    supabaseServiceRoleDeclaration:
+      /\b(?:const|let|var)\s+SUPABASE_SERVICE_ROLE\s*=\s*["'][^"'\r\n]+["']/gimu,
+    supabaseServiceRoleProperty:
+      /["']?SUPABASE_SERVICE_ROLE["']?\s*:\s*["'][^"'\r\n]+["']/gimu,
+  });
+  for (const [name, pattern] of Object.entries(patterns)) {
+    if (pattern.test(source)) violations.push(name);
+  }
+  const privilegedRoleDeclarations = source.matchAll(
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*["']service_role["']/gimu,
+  );
+  for (const match of privilegedRoleDeclarations) {
+    if (/(?:key|secret|token|role|credential)/iu.test(match[1])) {
+      violations.push('privilegedRoleDeclaration');
+    }
+  }
+  return violations;
+}
+
+function inspectDefensiveVocabulary(source) {
+  const occurrences = [];
+  for (const marker of ['service_role', 'supabase_service_role', 'SUPABASE_SERVICE_ROLE']) {
+    if (source.includes(marker)) occurrences.push(marker);
+  }
+  return occurrences;
+}
+
 function inspectTextForSafety(filesWithSource) {
   const secretViolations = [];
   const credentialVocabulary = {};
   const administrativeViolations = [];
   const pwaViolations = [];
   const localImportViolations = [];
-  const forbiddenSecretMarkers = Object.freeze({
-    serviceRole: /service_role|SUPABASE_SERVICE_ROLE/iu,
-    supabaseSecret: /\bsb_secret_[A-Za-z0-9_-]+/u,
-    vercelToken: /\bVERCEL_TOKEN\b|\b(?:vcp|vercel)_[A-Za-z0-9_-]{20,}\b/u,
-    githubToken: /\bGITHUB_TOKEN\b|\bghp_[A-Za-z0-9]{20,}\b/u,
-    privateKey: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
-    credentialValue: /\b(?:client_secret|refresh_token|access_token)\b\s*[:=]\s*["'][^"'${}<>\s]{8,}["']/iu,
-  });
   const administrativeMarkers = Object.freeze({
     LanzoDB: /\bLanzoDB\b/u,
     Dexie: /\bDexie\b/u,
@@ -291,8 +352,19 @@ function inspectTextForSafety(filesWithSource) {
     manifest: /manifest\.webmanifest/iu,
   });
   for (const { relativePath, source } of filesWithSource) {
-    for (const [name, pattern] of Object.entries(forbiddenSecretMarkers)) {
-      if (pattern.test(source)) secretViolations.push(`${name}:${relativePath}`);
+    for (const name of [
+      ...inspectCredentialValues(source),
+      ...inspectPrivilegedJwt(source),
+      ...inspectCredentialAssignments(source),
+    ]) {
+      secretViolations.push(`${name}:${relativePath}`);
+    }
+    const defensiveVocabulary = inspectDefensiveVocabulary(source);
+    if (defensiveVocabulary.length > 0) {
+      credentialVocabulary.defensive ||= [];
+      credentialVocabulary.defensive.push(
+        ...defensiveVocabulary.map((marker) => `${marker}:${relativePath}`),
+      );
     }
     for (const marker of ['client_secret', 'refresh_token', 'access_token']) {
       if (new RegExp(`\\b${marker}\\b`, 'iu').test(source)) {
@@ -535,10 +607,6 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
   if (options.enforceTemporaryRoot !== false && targetName === 'store') {
     checks.temporaryWorkspace = verifyTemporaryStoreRoot(packageRoot);
   }
-  if (options.protectedRootVercelPath) {
-    checks.protectedRootVercelUntouched = !await pathExists(options.protectedRootVercelPath);
-  }
-
   const failedChecks = Object.entries(checks)
     .filter(([, passed]) => !passed)
     .map(([name]) => name)

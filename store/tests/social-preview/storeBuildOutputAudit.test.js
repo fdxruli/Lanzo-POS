@@ -12,6 +12,11 @@ import { auditPrebuiltOutput } from '../../../scripts/audit-vercel-build-output.
 
 const PROJECT_ID = 'fixture-store-project';
 const ORG_ID = 'fixture-store-org';
+const PRIVILEGED_JWT = [
+  Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'),
+  Buffer.from(JSON.stringify({ role: 'service_role', fixture: true })).toString('base64url'),
+  Buffer.from('fictitious-signature').toString('base64url'),
+].join('.');
 const INDEX_HTML = `<!doctype html><html><head>
 <!-- LANZO_SOCIAL_HEAD_START --><title>Tienda</title><!-- LANZO_SOCIAL_HEAD_END -->
 <link rel="stylesheet" href="/assets/index-AbCd1234.css"></head>
@@ -90,7 +95,17 @@ async function createFixture() {
   await createFunction(
     functionsRoot,
     'api/store-page',
-    `const STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};export default STORE_HTML_TEMPLATE;`,
+    `const STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};
+function rejectsPrivileged(value,payload){
+  const envName='SUPABASE_SERVICE_ROLE';
+  const forbidden=/service_role/;
+  return value.includes('service_role')
+    || value.includes('supabase_service_role')
+    || payload.role === 'service_role'
+    || forbidden.test(value)
+    || envName.length === 0;
+}
+export default [STORE_HTML_TEMPLATE,rejectsPrivileged];`,
   );
   await createFunction(
     functionsRoot,
@@ -135,6 +150,18 @@ describe('auditoría de .vercel/output', () => {
     ]);
   });
 
+  it('acepta vocabulario defensivo sin valores credenciales', async () => {
+    const result = await audit(fixture);
+    expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
+    expect(result.functionAudit.safety.secretViolations).toEqual([]);
+    expect(result.functionAudit.safety.credentialVocabulary.defensive).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('service_role'),
+        expect.stringContaining('SUPABASE_SERVICE_ROLE'),
+      ]),
+    );
+  });
+
   it.each([
     ['función HTML ausente', async () => rm(
       path.join(fixture.functionsRoot, 'api', 'store-page.func'),
@@ -162,9 +189,25 @@ describe('auditoría de .vercel/output', () => {
       path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
       "const GITHUB_TOKEN='ghp_12345678901234567890';",
     ), 'noSecrets'],
-    ['service role', async () => writeFile(
+    ['asignación service role', async () => writeFile(
       path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
       "const role='service_role';",
+    ), 'noSecrets'],
+    ['clave Supabase secreta', async () => writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
+      "const serviceRoleKey='sb_secret_real_example_123456';",
+    ), 'noSecrets'],
+    ['variable Supabase service role', async () => writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
+      "const SUPABASE_SERVICE_ROLE='secret-value-example';",
+    ), 'noSecrets'],
+    ['archivo env con service role', async () => writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
+      'SUPABASE_SERVICE_ROLE=secret-value-example',
+    ), 'noSecrets'],
+    ['JWT service role', async () => writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
+      `headers.authorization='Bearer ${PRIVILEGED_JWT}';`,
     ), 'noSecrets'],
     ['template ausente', async () => writeFile(
       path.join(fixture.functionsRoot, 'api', 'store-page.func', 'index.mjs'),

@@ -52,6 +52,19 @@ async function hashOptional(filePath) {
   return await pathExists(filePath) ? sha256(await readFile(filePath)) : null;
 }
 
+async function manifestOptionalDirectory(directory) {
+  if (!await pathExists(directory)) return { present: false, files: [] };
+  const files = await walk(directory);
+  return {
+    present: true,
+    files: await Promise.all(files.map(async (file) => ({
+      path: file.relativePath,
+      bytes: file.bytes,
+      sha256: sha256(await readFile(file.absolutePath)),
+    }))),
+  };
+}
+
 async function walk(directory, root = directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -188,13 +201,49 @@ async function writeExternalManifest(workspaceRoot, outputRoot) {
 }
 
 async function protectedRepositoryState(repositoryRoot) {
+  const administrativeProjectLinkPath = path.join(
+    repositoryRoot,
+    '.vercel',
+    'project.json',
+  );
   return {
-    administrativeConfig: await hashOptional(path.join(repositoryRoot, 'vercel.json')),
-    storeConfig: await hashOptional(path.join(repositoryRoot, 'store', 'vercel.json')),
-    administrativeProjectLink: await hashOptional(
-      path.join(repositoryRoot, '.vercel', 'project.json'),
+    administrativeConfigHash: await hashOptional(path.join(repositoryRoot, 'vercel.json')),
+    storeConfigHash: await hashOptional(path.join(repositoryRoot, 'store', 'vercel.json')),
+    administrativeProjectLinkHash: await hashOptional(administrativeProjectLinkPath),
+    administrativeProjectLinkPresent: await pathExists(administrativeProjectLinkPath),
+    administrativeVercel: await manifestOptionalDirectory(
+      path.join(repositoryRoot, '.vercel'),
     ),
+    repositoryEnvironment: {
+      envLocalHash: await hashOptional(path.join(repositoryRoot, '.env.local')),
+      envProductionLocalHash: await hashOptional(
+        path.join(repositoryRoot, '.env.production.local'),
+      ),
+      storeEnvLocalHash: await hashOptional(
+        path.join(repositoryRoot, 'store', '.env.local'),
+      ),
+      storeEnvProductionLocalHash: await hashOptional(
+        path.join(repositoryRoot, 'store', '.env.production.local'),
+      ),
+    },
   };
+}
+
+function changedProtectedState(baseline, finalState) {
+  return Object.keys(baseline).filter(
+    (name) => JSON.stringify(baseline[name]) !== JSON.stringify(finalState[name]),
+  );
+}
+
+async function assertProtectedRepositoryIntegrity(repositoryRoot, baseline) {
+  const finalState = await protectedRepositoryState(repositoryRoot);
+  const changed = changedProtectedState(baseline, finalState);
+  if (changed.length > 0) {
+    throw new Error(
+      `Repository protected state changed during prebuilt preparation: ${changed.join(', ')}.`,
+    );
+  }
+  return finalState;
 }
 
 export async function prepareStoreDeployment({
@@ -245,7 +294,6 @@ export async function prepareStoreDeployment({
     const audit = await auditPrebuiltOutput('store', storeRoot, {
       sourceConfigPath: path.join(workspaceRoot, 'store', 'vercel.json'),
       sourceStaticPath: path.join(workspaceRoot, 'store', 'dist'),
-      protectedRootVercelPath: path.join(repositoryRoot, '.vercel'),
     });
     if (audit.status !== 'PASS') {
       throw new Error(`Vercel output audit failed: ${audit.failedChecks.join(', ')}.`);
@@ -253,10 +301,7 @@ export async function prepareStoreDeployment({
     const manifest = await writeExternalManifest(workspaceRoot, outputRoot);
     manifestPath = manifest.manifestPath;
 
-    const finalState = await protectedRepositoryState(repositoryRoot);
-    if (JSON.stringify(baseline) !== JSON.stringify(finalState)) {
-      throw new Error('Repository Vercel configuration changed during prebuilt preparation.');
-    }
+    const finalState = await assertProtectedRepositoryIntegrity(repositoryRoot, baseline);
     const outputFiles = await walk(outputRoot);
     return {
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.6',
@@ -275,10 +320,20 @@ export async function prepareStoreDeployment({
       },
       audit,
       protectedRepository: {
-        administrativeConfigUnchanged: baseline.administrativeConfig === finalState.administrativeConfig,
-        storeConfigUnchanged: baseline.storeConfig === finalState.storeConfig,
+        administrativeConfigUnchanged:
+          baseline.administrativeConfigHash === finalState.administrativeConfigHash,
+        storeConfigUnchanged: baseline.storeConfigHash === finalState.storeConfigHash,
         administrativeProjectLinkUnchanged:
-          baseline.administrativeProjectLink === finalState.administrativeProjectLink,
+          baseline.administrativeProjectLinkHash
+            === finalState.administrativeProjectLinkHash,
+        administrativeProjectLinkPresent:
+          finalState.administrativeProjectLinkPresent,
+        administrativeVercelUnchanged:
+          JSON.stringify(baseline.administrativeVercel)
+            === JSON.stringify(finalState.administrativeVercel),
+        repositoryEnvironmentUnchanged:
+          JSON.stringify(baseline.repositoryEnvironment)
+            === JSON.stringify(finalState.repositoryEnvironment),
       },
       commands: {
         install: 'npm ci --no-audit --no-fund',
@@ -287,9 +342,15 @@ export async function prepareStoreDeployment({
       deploymentExecuted: false,
     };
   } catch (error) {
+    let failure = error;
+    try {
+      await assertProtectedRepositoryIntegrity(repositoryRoot, baseline);
+    } catch (integrityError) {
+      failure = integrityError;
+    }
     if (workspaceRoot) await rm(workspaceRoot, { recursive: true, force: true });
     if (manifestPath) await rm(manifestPath, { force: true });
-    throw error;
+    throw failure;
   }
 }
 

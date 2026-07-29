@@ -1853,3 +1853,205 @@ Mientras ese gate permanezca NOT RUN no se habilita:
 ```text
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.7 — Validación integrada y evidencia controlada
 ```
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.1 — Corrección de auditoría y validación prebuilt real
+
+### Estado y referencia inicial
+
+```text
+HEAD inicial remoto = 1de69d08d402a5d1521ddaa2b0ba9a25b1cfb985
+PR #141 = OPEN / DRAFT
+rama = feat/ecom-public-social-preview-1
+base = main
+estado total = BLOCKED
+correcciones locales = PASS
+SUPABASE_MIGRATION_REQUIRED = false
+```
+
+La afirmación histórica de 1.6 que atribuía el único bloqueo a la política
+externa era incompleta. También existían dos defectos locales en la auditoría:
+
+1. `service_role` se rechazaba por mera presencia textual, aunque perteneciera
+   a validaciones defensivas;
+2. el auditor exigía incorrectamente que `.vercel` administrativo no existiera,
+   aunque un enlace preexistente e intacto es legítimo.
+
+Ambos defectos quedaron corregidos sin modificar el contrato funcional de
+1.1–1.5.
+
+### Vocabulario defensivo y secretos reales
+
+La inspección quedó separada en detecciones específicas para:
+
+- valores credenciales reales;
+- JWT con tres segmentos y payload JSON decodificable;
+- asignaciones de credenciales privilegiadas;
+- vocabulario defensivo, que se registra como evidencia pero no falla.
+
+Se acepta:
+
+```js
+value.includes('service_role');
+value.includes('supabase_service_role');
+payload.role === 'service_role';
+const forbidden = /service_role/;
+const envName = 'SUPABASE_SERVICE_ROLE';
+```
+
+Se continúa rechazando:
+
+```text
+sb_secret_real_example_123456
+SUPABASE_SERVICE_ROLE=secret-value-example
+const SUPABASE_SERVICE_ROLE = 'secret-value-example'
+const role = 'service_role'
+JWT ficticio con payload role=service_role
+tokens Vercel o GitHub con forma real
+private keys
+client_secret, refresh_token y access_token con valor
+```
+
+Los JWT inválidos o el texto documental aislado no se clasifican como secreto.
+El fixture válido de la función HTML contiene las mismas comparaciones
+defensivas de `_publicPortal.js`; no se simplificó para ocultar el caso real.
+
+### Integridad administrativa antes y después
+
+`auditPrebuiltOutput()` ya no recibe ni inspecciona una ruta `.vercel` del
+repositorio real. Su alcance queda limitado al workspace temporal y a
+`.vercel/output`.
+
+`prepareStoreDeployment()` captura y compara:
+
+```text
+hash de vercel.json
+hash de store/vercel.json
+presencia y hash de .vercel/project.json
+manifiesto ordenado de todos los archivos bajo .vercel
+presencia y hash de .env.local y .env.production.local
+presencia y hash de los equivalentes bajo store
+```
+
+La comparación también se ejecuta en la ruta de error del runner, antes de
+limpiar el workspace temporal. Por tanto, una mutación no puede quedar oculta
+por un fallo posterior del comando.
+
+Casos validados:
+
+```text
+sin .vercel antes y después                         PASS
+.vercel/project.json preexistente intacto           PASS
+mutación de projectId                               RECHAZADA
+mutación de orgId                                   RECHAZADA
+creación de .vercel                                 RECHAZADA
+eliminación del enlace administrativo               RECHAZADA
+creación de .env.local                              RECHAZADA
+creación de .vercel/.env.production.local           RECHAZADA
+modificación de vercel.json                         RECHAZADA
+modificación de store/vercel.json                   RECHAZADA
+limpieza del workspace después de cada fallo        PASS
+```
+
+### Instalación, pruebas y build
+
+La primera instalación intentó usar `/root/.npm`, no escribible en este
+entorno. Se descartó únicamente el `node_modules` parcial del workspace
+temporal y se repitió con caché bajo `/tmp`:
+
+```text
+npm ci --no-audit --no-fund = PASS
+706 paquetes instalados
+package.json modificado = no
+package-lock.json modificado = no
+```
+
+Vitest focal obligatorio:
+
+```text
+storeBuildIntegration.test.js       3 PASS
+storePrebuiltPackaging.test.js     27 PASS
+storeBuildOutputAudit.test.js      20 PASS
+total                              50 PASS
+fallos                              0
+```
+
+El intento directo de `npm run build:store:vercel` sobre el checkout temporal
+materializado por el conector no pudo completar el build público porque ese
+workspace de ejecución no contenía la totalidad de `src`; falló al resolver
+`src/main-store.jsx`. Esto describe una limitación del workspace temporal, no
+un error observado en el árbol remoto completo.
+
+Se instaló Vercel CLI `58.1.0` de forma efímera bajo `/tmp`, sin modificar
+package o lock. Después se ejecutó mediante `prepareStoreDeployment()`:
+
+```text
+vercel build --prod --yes --local-config ./vercel.json
+cwd = workspace temporal/store
+resultado = BLOCKED
+```
+
+El CLI alcanzó `Retrieving project…`, pero no produjo output: informó fallo al
+consultar `dist-tags` y token Vercel inválido. No se intentó login, deploy,
+promoción, alias ni evasión de autenticación.
+
+### Output real y gates pendientes
+
+```text
+.vercel/output real = NO PRODUCIDO
+auditoría real = NOT RUN
+funciones reales encontradas = NOT RUN
+rutas compiladas reales = NOT RUN
+slug efectivo compilado = NOT RUN
+tracking compilado = NOT RUN
+```
+
+Los fixtures confirman que un slug de path reemplaza cualquier `slug` entrante
+y queda exactamente una vez, pero no se presentan como sustituto de la
+comprobación compilada real.
+
+Auditoría local:
+
+```text
+vocabulario defensivo service_role = aceptado
+JWT role=service_role = rechazado
+sb_secret_* = rechazado
+mutaciones administrativas = rechazadas
+workspace saneado = PASS
+```
+
+### Alcance y confirmaciones
+
+Archivos modificados en 1.6.1:
+
+- `scripts/audit-vercel-build-output.mjs`;
+- `scripts/prepare-store-deployment.mjs`;
+- `store/tests/social-preview/storeBuildOutputAudit.test.js`;
+- `store/tests/social-preview/storePrebuiltPackaging.test.js`;
+- `docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md`.
+
+Confirmaciones:
+
+- Supabase modificado: **no**.
+- Migración creada: **no**.
+- RPC, tablas, RLS, grants o datos modificados: **no**.
+- `_publicPortal.js` modificado: **no**.
+- Dependencia o fuente agregada: **no**.
+- `@vercel/og` modificado: **no**.
+- Deployment ejecutado: **no**.
+- Dominio o alias modificado: **no**.
+- Merge ejecutado: **no**.
+- Auto-merge activado: **no**.
+
+Bloqueante residual:
+
+```text
+Ejecutar vercel build con acceso válido al proyecto de tienda, producir un
+.vercel/output real y pasar la auditoría completa de funciones, rutas, slug,
+tracking, secretos, assets, PWA, fuentes y source maps.
+```
+
+Mientras el output real no exista, 1.6.1 permanece **BLOCKED** y no habilita:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.7 — Validación integrada y evidencia controlada
+```

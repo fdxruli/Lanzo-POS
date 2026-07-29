@@ -1,4 +1,9 @@
 import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -15,6 +20,38 @@ async function exists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function createRepositoryFixture({ withAdministrativeLink = false } = {}) {
+  const sourceRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-package-protected-source-'));
+  await mkdir(path.join(sourceRoot, 'store'), { recursive: true });
+  await Promise.all([
+    writeFile(path.join(sourceRoot, 'package.json'), '{"name":"fixture"}'),
+    writeFile(path.join(sourceRoot, 'package-lock.json'), '{"lockfileVersion":3}'),
+    writeFile(path.join(sourceRoot, 'vercel.json'), '{"project":"administrative"}'),
+    writeFile(path.join(sourceRoot, 'store', 'vercel.json'), '{"trailingSlash":false}'),
+  ]);
+  if (withAdministrativeLink) {
+    await mkdir(path.join(sourceRoot, '.vercel'), { recursive: true });
+    await writeFile(
+      path.join(sourceRoot, '.vercel', 'project.json'),
+      '{"projectId":"prj_admin_fixture","orgId":"team_admin_fixture"}\n',
+    );
+  }
+  return sourceRoot;
+}
+
+async function expectControlledStopPreservesRepository(sourceRoot) {
+  let workspaceRoot;
+  await expect(prepareStoreDeployment({
+    repositoryRoot: sourceRoot,
+    commandRunner(_command, _args, options) {
+      workspaceRoot ||= options.cwd;
+      throw new Error('controlled local stop');
+    },
+    vercelCommand: 'vercel-fixture',
+  })).rejects.toThrow('controlled local stop');
+  expect(await exists(workspaceRoot)).toBe(false);
 }
 
 describe('workspace prebuilt saneado', () => {
@@ -85,6 +122,72 @@ describe('workspace prebuilt saneado', () => {
     })).rejects.toThrow('controlled Vercel failure');
     expect(await exists(workspaceRoot)).toBe(false);
     expect(await exists(`${workspaceRoot}-output-sha256.json`)).toBe(false);
+  });
+
+  it('preserva un enlace administrativo .vercel preexistente', async () => {
+    const sourceRoot = await createRepositoryFixture({ withAdministrativeLink: true });
+    const projectLink = path.join(sourceRoot, '.vercel', 'project.json');
+    const before = await readFile(projectLink, 'utf8');
+    await expectControlledStopPreservesRepository(sourceRoot);
+    expect(await readFile(projectLink, 'utf8')).toBe(before);
+  });
+
+  it('no crea .vercel administrativo cuando no existía', async () => {
+    const sourceRoot = await createRepositoryFixture();
+    await expectControlledStopPreservesRepository(sourceRoot);
+    expect(await exists(path.join(sourceRoot, '.vercel'))).toBe(false);
+  });
+
+  it.each([
+    ['modificación de projectId', true, (root) => writeFileSync(
+      path.join(root, '.vercel', 'project.json'),
+      '{"projectId":"prj_mutated","orgId":"team_admin_fixture"}\n',
+    )],
+    ['modificación de orgId', true, (root) => writeFileSync(
+      path.join(root, '.vercel', 'project.json'),
+      '{"projectId":"prj_admin_fixture","orgId":"team_mutated"}\n',
+    )],
+    ['creación de .vercel', false, (root) => {
+      mkdirSync(path.join(root, '.vercel'), { recursive: true });
+      writeFileSync(
+        path.join(root, '.vercel', 'project.json'),
+        '{"projectId":"prj_created","orgId":"team_created"}\n',
+      );
+    }],
+    ['creación de .env.local', true, (root) => writeFileSync(
+      path.join(root, '.env.local'),
+      'FIXTURE_ONLY=value\n',
+    )],
+    ['modificación de vercel.json', true, (root) => writeFileSync(
+      path.join(root, 'vercel.json'),
+      '{"project":"mutated"}',
+    )],
+    ['modificación de store/vercel.json', true, (root) => writeFileSync(
+      path.join(root, 'store', 'vercel.json'),
+      '{"trailingSlash":true}',
+    )],
+    ['eliminación del enlace administrativo', true, (root) => rmSync(
+      path.join(root, '.vercel', 'project.json'),
+    )],
+    ['creación de .vercel/.env.production.local', true, (root) => writeFileSync(
+      path.join(root, '.vercel', '.env.production.local'),
+      'FIXTURE_ONLY=value\n',
+    )],
+  ])('rechaza %s y limpia el workspace', async (_label, withLink, mutate) => {
+    const sourceRoot = await createRepositoryFixture({
+      withAdministrativeLink: withLink,
+    });
+    let workspaceRoot;
+    await expect(prepareStoreDeployment({
+      repositoryRoot: sourceRoot,
+      commandRunner(_command, _args, options) {
+        workspaceRoot ||= options.cwd;
+        mutate(sourceRoot);
+        throw new Error('controlled command failure');
+      },
+      vercelCommand: 'vercel-fixture',
+    })).rejects.toThrow('Repository protected state changed');
+    expect(await exists(workspaceRoot)).toBe(false);
   });
 
   it('no contiene comandos de deploy', async () => {
