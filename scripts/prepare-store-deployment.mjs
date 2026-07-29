@@ -25,12 +25,10 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
 const STORE_ORGANIZATION_ID = 'team_buvft2mAJErTNR8gDhXcZGfS';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
-const BUILD_COMMAND = 'vercel build --prod --yes --local-config ./vercel.json';
+const BUILD_COMMAND = 'vercel build --prod --local-config ./vercel.prebuilt.json';
+const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
 const IS_WINDOWS = process.platform === 'win32';
-const DEFAULT_NPM_COMMAND = IS_WINDOWS ? 'npm.cmd' : 'npm';
-const DEFAULT_VERCEL_COMMAND = IS_WINDOWS ? 'vercel.cmd' : 'vercel';
-const DEFAULT_WINDOWS_COMMAND_PROCESSOR = 'C:\\Windows\\System32\\cmd.exe';
-const WINDOWS_COMMAND_WRAPPER_PATTERN = /\.(?:cmd|bat)$/iu;
+const DEFAULT_VERCEL_COMMAND = 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
@@ -60,6 +58,42 @@ async function isFile(filePath) {
   } catch {
     return false;
   }
+}
+
+export function createPrebuiltVercelConfig(sourceConfig) {
+  const prebuiltConfig = structuredClone(sourceConfig);
+  delete prebuiltConfig.installCommand;
+  delete prebuiltConfig.buildCommand;
+  assertPrebuiltVercelConfigParity(sourceConfig, prebuiltConfig);
+  return prebuiltConfig;
+}
+
+export function assertPrebuiltVercelConfigParity(sourceConfig, prebuiltConfig) {
+  if (!sourceConfig || typeof sourceConfig !== 'object' || Array.isArray(sourceConfig)) {
+    throw new TypeError('The source Vercel configuration must be an object.');
+  }
+  if (!prebuiltConfig || typeof prebuiltConfig !== 'object' || Array.isArray(prebuiltConfig)) {
+    throw new TypeError('The prebuilt Vercel configuration must be an object.');
+  }
+  if ('installCommand' in prebuiltConfig || 'buildCommand' in prebuiltConfig) {
+    throw new Error('The prebuilt Vercel configuration must not contain shell build commands.');
+  }
+  const expected = structuredClone(sourceConfig);
+  delete expected.installCommand;
+  delete expected.buildCommand;
+  if (JSON.stringify(expected) !== JSON.stringify(prebuiltConfig)) {
+    throw new Error('The prebuilt Vercel configuration differs from store/vercel.json beyond shell build commands.');
+  }
+}
+
+export async function writePrebuiltVercelConfig({ sourceConfigPath, targetConfigPath }) {
+  const sourceConfig = JSON.parse(await readFile(sourceConfigPath, 'utf8'));
+  const prebuiltConfig = createPrebuiltVercelConfig(sourceConfig);
+  await writeFile(targetConfigPath, `${JSON.stringify(prebuiltConfig, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+  });
+  return { sourceConfig, prebuiltConfig, targetConfigPath };
 }
 
 async function hashOptional(filePath) {
@@ -179,6 +213,22 @@ export function resolveNpmInvocation({
   });
 }
 
+export function resolveNpmScriptInvocation({
+  npmCliPath,
+  script,
+  nodeExecutable = process.execPath,
+} = {}) {
+  if (!npmCliPath || typeof npmCliPath !== 'string') {
+    throw new Error('Unable to resolve the npm CLI safely: npm-cli.js is unavailable.');
+  }
+  if (!script || typeof script !== 'string') throw new TypeError('The npm script name is required.');
+  return Object.freeze({
+    command: nodeExecutable,
+    args: Object.freeze([npmCliPath, 'run', script]),
+    options: Object.freeze({ shell: false }),
+  });
+}
+
 export async function resolveNpmCliPath({
   environment = process.env,
   nodeExecutable = process.execPath,
@@ -211,6 +261,36 @@ export async function resolveWindowsPathCommand(command, environment = process.e
     if (await isFile(candidate)) return candidate;
   }
   throw new Error(`Required executable not found: ${executableName(command)}`);
+}
+
+export async function resolveVercelInvocation({
+  platform = process.platform,
+  environment = process.env,
+  nodeExecutable = process.execPath,
+  vercelCommand = DEFAULT_VERCEL_COMMAND,
+} = {}) {
+  if (platform !== 'win32') {
+    return Object.freeze({ command: vercelCommand, argsPrefix: Object.freeze([]), options: { shell: false } });
+  }
+  const configured = typeof environment.VERCEL_CLI_PATH === 'string'
+    ? environment.VERCEL_CLI_PATH.trim()
+    : '';
+  const candidate = configured || vercelCommand;
+  const commandPath = await resolveWindowsPathCommand(
+    candidate === DEFAULT_VERCEL_COMMAND ? 'vercel.cmd' : candidate,
+    environment,
+  );
+  const cliPath = commandPath.toLowerCase().endsWith('.js')
+    ? commandPath
+    : path.join(path.dirname(commandPath), 'node_modules', 'vercel', 'dist', 'vc.js');
+  if (!await isFile(cliPath)) {
+    throw new Error('Unable to resolve the Vercel JavaScript CLI without a Windows command wrapper.');
+  }
+  return Object.freeze({
+    command: nodeExecutable,
+    argsPrefix: Object.freeze([cliPath]),
+    options: Object.freeze({ shell: false }),
+  });
 }
 
 export function buildNpmExecutionEnvironment({
@@ -498,6 +578,8 @@ async function protectedRepositoryState(repositoryRoot) {
   return {
     administrativeConfigHash: await hashOptional(path.join(repositoryRoot, 'vercel.json')),
     storeConfigHash: await hashOptional(path.join(repositoryRoot, 'store', 'vercel.json')),
+    storePrebuiltConfigHash: await hashOptional(path.join(repositoryRoot, 'store', 'vercel.prebuilt.json')),
+    storePrebuiltConfigPresent: await pathExists(path.join(repositoryRoot, 'store', 'vercel.prebuilt.json')),
     administrativeProjectLinkHash: await hashOptional(administrativeProjectLinkPath),
     administrativeProjectLinkPresent: await pathExists(administrativeProjectLinkPath),
     administrativeVercel: await manifestOptionalDirectory(
@@ -548,6 +630,7 @@ export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
   vercelCommand = process.env.VERCEL_CLI_PATH || DEFAULT_VERCEL_COMMAND,
+  vercelInvocation,
   npmInvocation,
   environment = process.env,
 } = {}) {
@@ -565,9 +648,16 @@ export async function prepareStoreDeployment({
       environment: { ...environment, npm_execpath: npmCliPath },
       nodeExecutable: process.execPath,
     });
-    const resolvedVercelCommand = IS_WINDOWS && vercelCommand === DEFAULT_VERCEL_COMMAND
-      ? await resolveWindowsPathCommand(vercelCommand, environment)
-      : vercelCommand;
+    const directBuildInvocation = resolveNpmScriptInvocation({
+      npmCliPath,
+      script: 'build:store:vercel',
+      nodeExecutable: process.execPath,
+    });
+    const resolvedVercelInvocation = vercelInvocation || (
+      commandRunner === run
+        ? await resolveVercelInvocation({ environment, vercelCommand })
+        : { command: vercelCommand, argsPrefix: [], options: { shell: false } }
+    );
     workspaceRoot = await mkdtemp(path.join(os.tmpdir(), TEMPORARY_PREFIX));
     await createSanitizedStoreWorkspace({
       sourceRoot: repositoryRoot,
@@ -580,7 +670,7 @@ export async function prepareStoreDeployment({
     await mkdir(npmExecutionEnvironment.NPM_CONFIG_CACHE, { recursive: true });
     const vercelExecutionEnvironment = buildVercelExecutionEnvironment({ environment });
     const buildEnvironment = {
-      ...vercelExecutionEnvironment,
+      ...npmExecutionEnvironment,
       VITE_SUPABASE_URL: 'https://invalid-for-local-build.supabase.invalid',
       VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_invalid_for_local_build',
       PUBLIC_STORE_ORIGINS: 'https://store.invalid',
@@ -590,9 +680,14 @@ export async function prepareStoreDeployment({
       environment: npmExecutionEnvironment,
     });
     commandRunner(
-      resolvedVercelCommand,
-      ['pull', '--yes', '--environment=production'],
-      { cwd: storeRoot, environment: buildEnvironment },
+      directBuildInvocation.command,
+      directBuildInvocation.args,
+      { cwd: workspaceRoot, environment: buildEnvironment },
+    );
+    commandRunner(
+      resolvedVercelInvocation.command,
+      [...resolvedVercelInvocation.argsPrefix, 'pull', '--yes', '--environment=production'],
+      { cwd: storeRoot, environment: vercelExecutionEnvironment },
     );
     const downloadedEnvironmentPath = path.join(storeRoot, '.vercel', '.env.production.local');
     if (!await pathExists(downloadedEnvironmentPath)) {
@@ -601,20 +696,24 @@ export async function prepareStoreDeployment({
       }
       await writeFile(downloadedEnvironmentPath, '', { encoding: 'utf8', flag: 'wx' });
     }
-    await injectWindowsBuildEnvironment({
-      envFilePath: downloadedEnvironmentPath,
-      environment: buildEnvironment,
+    const prebuiltConfigPath = path.join(storeRoot, 'vercel.prebuilt.json');
+    const { sourceConfig, prebuiltConfig } = await writePrebuiltVercelConfig({
+      sourceConfigPath: path.join(storeRoot, 'vercel.json'),
+      targetConfigPath: prebuiltConfigPath,
     });
     commandRunner(
-      resolvedVercelCommand,
-      ['build', '--prod', '--local-config', './vercel.json'],
-      { cwd: storeRoot, environment: buildEnvironment },
+      resolvedVercelInvocation.command,
+      [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--local-config', './vercel.prebuilt.json'],
+      { cwd: storeRoot, environment: vercelExecutionEnvironment },
     );
 
     await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
     const outputRoot = path.join(storeRoot, '.vercel', 'output');
     const outputConfigPath = path.join(outputRoot, 'config.json');
     if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output.');
+    if (await pathExists(path.join(outputRoot, 'vercel.prebuilt.json'))) {
+      throw new Error('The temporary Vercel configuration must not be included in .vercel/output.');
+    }
     await applyCanonicalNoindex(outputConfigPath);
 
     const audit = await auditPrebuiltOutput('store', storeRoot, {
@@ -649,6 +748,10 @@ export async function prepareStoreDeployment({
         administrativeConfigUnchanged:
           baseline.administrativeConfigHash === finalState.administrativeConfigHash,
         storeConfigUnchanged: baseline.storeConfigHash === finalState.storeConfigHash,
+        storePrebuiltConfigUnchanged:
+          baseline.storePrebuiltConfigHash === finalState.storePrebuiltConfigHash,
+        storePrebuiltConfigPresent:
+          finalState.storePrebuiltConfigPresent,
         administrativeProjectLinkUnchanged:
           baseline.administrativeProjectLinkHash
             === finalState.administrativeProjectLinkHash,
@@ -663,7 +766,13 @@ export async function prepareStoreDeployment({
       },
       commands: {
         install: `${path.basename(process.execPath)} ${path.basename(npmCliPath)} ci --no-audit --no-fund`,
+        directBuild: DIRECT_STORE_BUILD_COMMAND,
         build: BUILD_COMMAND,
+      },
+      prebuiltConfig: {
+        source: sourceConfig,
+        generated: prebuiltConfig,
+        path: prebuiltConfigPath,
       },
       deploymentExecuted: false,
     };

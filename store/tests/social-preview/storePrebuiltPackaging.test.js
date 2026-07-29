@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import {
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -13,6 +14,8 @@ import {
   buildWindowsCmdPayload,
   buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
+  createPrebuiltVercelConfig,
+  assertPrebuiltVercelConfigParity,
   injectWindowsBuildEnvironment,
   getEnvironmentValueCaseInsensitive,
   prependPathEntry,
@@ -20,11 +23,14 @@ import {
   resolveCliCommands,
   resolveNpmCliPath,
   resolveNpmInvocation,
+  resolveNpmScriptInvocation,
   resolveSpawnInvocation,
+  resolveVercelInvocation,
   resolveWindowsPathCommand,
   run,
   shouldCopyStoreWorkspacePath,
   setEnvironmentValueCaseInsensitive,
+  writePrebuiltVercelConfig,
 } from '../../../scripts/prepare-store-deployment.mjs';
 
 async function exists(filePath) {
@@ -176,6 +182,63 @@ describe('workspace prebuilt saneado', () => {
     });
     expect(invocation.command).toBe('/usr/local/bin/node');
     expect(invocation.options).toEqual({ shell: false });
+  });
+
+  it('ejecuta el build pÃºblico mediante node y npm-cli.js, sin shell', () => {
+    const invocation = resolveNpmScriptInvocation({
+      nodeExecutable: 'C:\\Program Files\\nodejs\\node.exe',
+      npmCliPath: 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js',
+      script: 'build:store:vercel',
+    });
+    expect(invocation).toEqual({
+      command: 'C:\\Program Files\\nodejs\\node.exe',
+      args: ['C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js', 'run', 'build:store:vercel'],
+      options: { shell: false },
+    });
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'resuelve el CLI autenticado de Vercel como JavaScript directo, sin vercel.cmd',
+    async () => {
+      const invocation = await resolveVercelInvocation();
+      expect(invocation.command).toBe(process.execPath);
+      expect(invocation.argsPrefix).toHaveLength(1);
+      expect(invocation.argsPrefix[0]).toMatch(/vercel[\\/]dist[\\/]vc\.js$/iu);
+      expect(invocation.argsPrefix[0]).not.toMatch(/\.cmd$/iu);
+      expect(invocation.options).toEqual({ shell: false });
+    },
+  );
+
+  it('deriva la configuraciÃ³n temporal sin mutar la original y conserva su paridad funcional', () => {
+    const source = {
+      $schema: 'https://openapi.vercel.sh/vercel.json', framework: null,
+      installCommand: 'cd .. && npm ci', buildCommand: 'cd .. && npm run build:store:vercel',
+      outputDirectory: 'dist', headers: [{ source: '/(.*)', headers: [{ key: 'X-Test', value: 'yes' }] }],
+      rewrites: [{ source: '/tienda/:slug', destination: '/api/store-page' }], trailingSlash: false,
+      futureOption: { preserved: true },
+    };
+    const generated = createPrebuiltVercelConfig(source);
+    expect(source.installCommand).toBe('cd .. && npm ci');
+    expect(source.buildCommand).toBe('cd .. && npm run build:store:vercel');
+    expect(generated).not.toHaveProperty('installCommand');
+    expect(generated).not.toHaveProperty('buildCommand');
+    expect(generated.headers).toEqual(source.headers);
+    expect(generated.rewrites).toEqual(source.rewrites);
+    expect(generated.futureOption).toEqual({ preserved: true });
+    expect(() => assertPrebuiltVercelConfigParity(source, { ...generated, trailingSlash: true }))
+      .toThrow('differs from store/vercel.json');
+  });
+
+  it('escribe la configuraciÃ³n temporal solo donde se le pide', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-prebuilt-config-'));
+    const sourcePath = path.join(root, 'vercel.json');
+    const targetPath = path.join(root, 'vercel.prebuilt.json');
+    await writeFile(sourcePath, JSON.stringify({ installCommand: 'cd .. && npm ci', buildCommand: 'cd .. && npm run build', rewrites: [] }));
+    try {
+      await writePrebuiltVercelConfig({ sourceConfigPath: sourcePath, targetConfigPath: targetPath });
+      expect(await readFile(sourcePath, 'utf8')).toContain('installCommand');
+      expect(JSON.parse(await readFile(targetPath, 'utf8'))).toEqual({ rewrites: [] });
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
   it.each([
@@ -510,8 +573,8 @@ describe('workspace prebuilt saneado', () => {
     await expect(prepareStoreDeployment({
       repositoryRoot: sourceRoot,
       commandRunner(_command, args, options) {
-        workspaceRoot ||= args[0] === 'ci' ? options.cwd : path.dirname(options.cwd);
-        if (args[0] !== 'ci') throw new Error('controlled Vercel failure');
+        workspaceRoot ||= options.cwd;
+        if (!args.includes('ci')) throw new Error('controlled Vercel failure');
         expect(args).toContain('ci');
       },
       vercelCommand: 'vercel-fixture',
@@ -520,7 +583,7 @@ describe('workspace prebuilt saneado', () => {
     expect(await exists(`${workspaceRoot}-output-sha256.json`)).toBe(false);
   });
 
-  it('inyecta ambos ejecutables y conserva los argumentos como arrays', async () => {
+  it('ordena npm ci, build pÃºblico directo y Vercel sin comandos de shell', async () => {
     const sourceRoot = await createRepositoryFixture();
     const calls = [];
     await expect(prepareStoreDeployment({
@@ -542,11 +605,47 @@ describe('workspace prebuilt saneado', () => {
         args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
       },
       {
+        command: process.execPath,
+        args: expect.arrayContaining(['run', 'build:store:vercel']),
+      },
+      {
         command: 'vercel-fixture',
-        args: ['build', '--prod', '--yes', '--local-config', './vercel.json'],
+        args: ['pull', '--yes', '--environment=production'],
       },
     ]);
     expect(calls.every(({ args }) => Array.isArray(args))).toBe(true);
+    expect(JSON.stringify(calls)).not.toMatch(/cmd\.exe|npm\.cmd|cd \.\. &&/iu);
+  });
+
+  it('genera, usa y limpia vercel.prebuilt.json en el orden completo', async () => {
+    const sourceRoot = await createRepositoryFixture();
+    const calls = [];
+    let workspaceRoot;
+    let capturedPrebuilt;
+    await expect(prepareStoreDeployment({
+      repositoryRoot: sourceRoot,
+      npmInvocation: { command: 'node-fixture', args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'] },
+      vercelCommand: 'vercel-fixture',
+      commandRunner(command, args, options) {
+        calls.push({ command, args, cwd: options.cwd });
+        workspaceRoot ||= options.cwd;
+        if (command !== 'vercel-fixture') return;
+        if (args.includes('pull')) {
+          mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
+          writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
+          return;
+        }
+        capturedPrebuilt = JSON.parse(readFileSync(path.join(options.cwd, 'vercel.prebuilt.json'), 'utf8'));
+        throw new Error('controlled build stop');
+      },
+    })).rejects.toThrow('controlled build stop');
+    expect(calls.map(({ args }) => args.at(-1))).toEqual([
+      '--no-fund', 'build:store:vercel', '--environment=production', './vercel.prebuilt.json',
+    ]);
+    expect(calls.at(-1).args).toEqual(['build', '--prod', '--local-config', './vercel.prebuilt.json']);
+    expect(capturedPrebuilt).toEqual({ trailingSlash: false });
+    expect(await exists(path.join(sourceRoot, 'store', 'vercel.prebuilt.json'))).toBe(false);
+    expect(await exists(workspaceRoot)).toBe(false);
   });
 
   it('separa los entornos de npm y Vercel sin propagar auth al workspace', async () => {
@@ -576,9 +675,10 @@ describe('workspace prebuilt saneado', () => {
         if (command === 'vercel-fixture') throw new Error('controlled Vercel stop');
       },
     })).rejects.toThrow('controlled Vercel stop');
-    const [npmCall, vercelCall] = calls;
+    const [npmCall, directBuildCall, vercelCall] = calls;
     expect(npmCall.environment.NPM_CONFIG_CACHE).toContain('lanzo-store-social-preview-npm-cache');
     expect(npmCall.environment.XDG_CACHE_HOME).toContain('lanzo-store-npm-cache');
+    expect(directBuildCall.environment.VITE_SUPABASE_URL).toContain('invalid-for-local-build');
     expect(vercelCall.environment.XDG_CONFIG_HOME).toBe(parentEnvironment.XDG_CONFIG_HOME);
     expect(vercelCall.environment.XDG_DATA_HOME).toBe(parentEnvironment.XDG_DATA_HOME);
     expect(vercelCall.environment.APPDATA).toBe(parentEnvironment.APPDATA);
@@ -701,11 +801,10 @@ describe('workspace prebuilt saneado', () => {
       'utf8',
     );
     expect(source).not.toMatch(/vercel\s+(?:deploy|promote|alias)/u);
-    expect(source).toContain("['build', '--prod', '--yes'");
+    expect(source).toContain("['build', '--prod', '--local-config', './vercel.prebuilt.json']");
+    expect(source).toContain("script: 'build:store:vercel'");
     expect(source).not.toContain('shell: true');
-    expect(source).toContain("args: ['/d', '/s', '/c'");
     expect(source).toContain('shell: false');
-    expect(source).toContain('windowsVerbatimArguments: true');
     expect(source).not.toMatch(/exec(?:Sync)?\(/u);
   });
 });

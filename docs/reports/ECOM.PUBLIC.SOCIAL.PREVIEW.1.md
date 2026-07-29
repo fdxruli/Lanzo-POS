@@ -1839,6 +1839,64 @@ Bloqueante:
 Ejecutar vercel build --prod --yes --local-config ./vercel.json dentro del
 workspace temporal autorizado, producir .vercel/output y pasar la auditoría
 real completa.
+
+### Minifase 1.6.2 — build prebuilt independiente del shell de Windows
+
+HEAD inicial remoto verificado: `e9c43559fc81e681c24a7eb817386828799aa286` en
+`feat/ecom-public-social-preview-1` (PR #141 abierto, draft, contra `main`, sin
+auto-merge). No se creó rama ni PR adicional.
+
+#### Causa raíz y corrección local
+
+Los CLI nativo y estándar de Vercel 58.1.0 autenticados reproducían
+`Error: spawn cmd.exe ENOENT` dentro de `@vercel/static-build`. La causa no era
+la autenticación ni el PATH del proceso exterior: `store/vercel.json` pedía al
+builder ejecutar `cd .. && npm ci` y `cd .. && npm run build:store:vercel`.
+
+`scripts/prepare-store-deployment.mjs` ahora ejecuta, desde el workspace temporal
+sanitizado y con `shell: false`, esta secuencia:
+
+1. `node.exe npm-cli.js ci --no-audit --no-fund`;
+2. `node.exe npm-cli.js run build:store:vercel` con `cwd = workspaceRoot`;
+3. `vercel pull --yes --environment=production`;
+4. `vercel build --prod --local-config ./vercel.prebuilt.json`;
+5. auditoría del Build Output API real.
+
+En Windows, los pasos de Vercel usan directamente `node.exe` y la entrada
+JavaScript autenticada del CLI (`.../vercel/dist/vc.js`), no `vercel.cmd` ni
+`cmd.exe`. El build público tampoco usa `npm.cmd` ni `cd .. &&`.
+
+Antes del paso 4 se deriva `store/vercel.prebuilt.json` únicamente en el
+workspace. Conserva `$schema`, `framework`, `outputDirectory`, `headers`,
+`rewrites`, `trailingSlash` y cualquier campo futuro; elimina solamente
+`installCommand` y `buildCommand`. La paridad se valida antes de escribirla. El
+archivo se rechaza si llega a `.vercel/output`, no se copia al repositorio real y
+se elimina junto con el workspace.
+
+Las pruebas focales amplían la paridad, inmutabilidad, orden de comandos,
+ausencia de wrappers de shell, limpieza tras fallo y preservación de la
+integridad administrativa. La validación aislada confirmó que la configuración
+generada elimina exactamente ambos comandos y que npm y Vercel se invocan con
+`shell: false`.
+
+#### Estado real de validación
+
+`npm ci --no-audit --no-fund` fue iniciado. La primera ejecución quedó bloqueada
+por binarios de Vitest preexistentes que retenían Rollup (`EPERM` al desvincular
+`rollup.win32-x64-msvc.node`); tras finalizar esos procesos, NPM dejó el árbol
+local inconsistente y reportó `ENOTEMPTY` durante su limpieza. El entorno no
+permite eliminar recursivamente ese `node_modules` regenerable para restablecer
+el árbol. Por ello no se ejecutaron la suite focal, `npm run build:store:vercel`,
+`npm run deploy:store:prepare`, `vercel pull` ni `vercel build` finales.
+
+No existe `.vercel/output` auditado para esta minifase y no se declara PASS. No
+se ejecutó ningún deployment, preview, promote, alias o cambio de dominio; no se
+modificó Supabase, migraciones, `package.json` ni `package-lock.json`.
+
+Estado: `BLOCKED` — resta restaurar una instalación local íntegra y ejecutar el
+gate real. Si Vercel 58.1.0 volviera a bloquear el Build Output después de esa
+restauración, el fallback requerido es ejecutar el mismo gate en Linux o GitHub
+Actions, sin declarar PASS local sin `.vercel/output`.
 ```
 
 Riesgos no bloqueantes:
