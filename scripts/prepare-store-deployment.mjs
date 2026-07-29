@@ -18,7 +18,11 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { auditPrebuiltOutput, inspectStatic } from './audit-vercel-build-output.mjs';
+import {
+  auditPrebuiltOutput,
+  formatSafetyFailureDetails,
+  inspectStatic,
+} from './audit-vercel-build-output.mjs';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
@@ -307,7 +311,11 @@ export async function materializePrebuiltStaticOutput({ sourceStaticRoot, output
     .filter(([, passed]) => !passed)
     .map(([name]) => name);
   if (failedSourceChecks.length > 0) {
-    throw new Error(`Public static build audit failed: ${failedSourceChecks.join(', ')}.`);
+    const details = formatSafetyFailureDetails(sourceAudit.safety, failedSourceChecks);
+    throw new Error([
+      'Public static build audit failed:',
+      ...(details.length > 0 ? details : [failedSourceChecks.join(', ')]),
+    ].join('\n'));
   }
   const source = await directoryManifest(sourceStaticRoot);
   if (source.files.some((item) => item.path === 'vercel.prebuilt.json' || /(^|\/)\.env(?:\.|$)/iu.test(item.path))) {

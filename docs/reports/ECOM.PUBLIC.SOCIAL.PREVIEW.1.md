@@ -2301,3 +2301,94 @@ deployment / preview / promote / alias = no ejecutado
 merge = no
 auto-merge = desactivado
 ```
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.6 — Precisión contextual de la auditoría pública
+
+```text
+HEAD inicial = 80170816d1b53159db53199d249baf9b382c6f8f
+PR #141 = OPEN / DRAFT
+rama = feat/ecom-public-social-preview-1
+base = main
+```
+
+La auditoría estructural previa ya confirmó que el grafo público no contenía
+chunks `app`, `pos`, `caja` o `dashboard`, ni contratos `processSale`,
+`cashSync`, `posSync` o `LanzoDB`. El Build Output sí contenía tres falsos
+positivos textuales; se ajustó su precisión sin desactivar auditorías.
+
+### Coincidencias originales y su clasificación
+
+- `Dexie:assets/vendor_store_public-*.js`: dependencia deliberada de la
+  tienda pública (persistencia local del storefront), permitida únicamente por
+  la política del target `store`. El marcador sigue vigente en targets donde
+  Dexie sea anómalo.
+- `Caja:assets/index-*.js`: copy de la landing pública, originado en
+  `src/pages/PublicLanzoLandingPage.jsx`, específicamente el contenido
+  «Caja y control» y textos descriptivos de funcionalidades. No se encontró
+  `CajaPage`, `cajaService`, `useCaja`, ni importaciones de `components/caja`
+  o `pages/CajaPage` dentro del grafo público.
+- `access_token` y `refresh_token:assets/vendor_supabase_public-*.js`:
+  vocabulario de protocolo/OAuth interno del SDK público de Supabase. Se
+  conserva en `credentialVocabulary` como evidencia informativa y no modifica
+  `checks.noSecrets` por sí solo.
+
+### Reglas corregidas
+
+Para `store`, una palabra `Dexie` o `Caja` aislada no constituye código
+administrativo. Se mantienen los indicadores de alta precisión: `LanzoDB`,
+`PosPage`, `CajaPage`, `cajaService`, `useCaja`, `CajaStatusCard`,
+`CajaActionsCard`, `CajaMovementsList`, rutas/imports hacia componentes de Caja,
+`processSale`, `cashSync`, `posSync`, tokens de dispositivo/personal, licencias,
+release de dispositivo y Google Drive.
+
+La detección de OAuth ahora extrae asignaciones y registra solamente:
+
+```text
+key, value=<redacted>, valueLength, classification, relativePath
+```
+
+Los nombres de campo, vocabulario de protocolo, placeholders, URLs, mensajes y
+valores simbólicos o de baja entropía no bloquean. Una asignación genérica se
+marca `credential-like` sólo con longitud, diversidad y forma token-like
+suficientes. Los errores muestran, como máximo, claves, longitudes y rutas; no
+el valor. Se preservan `sb_secret_*`, `ghp_*`, `github_pat_*`, `vcp_*`, claves
+privadas PEM, JWT con `role=service_role` y asignaciones
+`SUPABASE_SERVICE_ROLE`.
+
+Cuando la materialización de static falla, su mensaje ya incluye un resumen
+sanitizado, por ejemplo `noSecrets[credentialValue:access_token:length=29:…]`
+y `noAdministrativeCode[CajaPage:…]`.
+
+### Pruebas y validación
+
+Se añadieron fixtures que aceptan `Dexie`, «Pago en caja», «Caja»,
+`access_token`, `refresh_token`, `grant_type=refresh_token` y
+`your_access_token`; y que rechazan `LanzoDB`, `CajaPage`, `processSale`,
+importaciones de Caja, tokens OAuth sintéticos, `SUPABASE_SERVICE_ROLE`, JWT
+sintético `service_role`, GitHub/Vercel/Supabase sintéticos y una clave privada
+sintética. Las pruebas verifican que los valores de los tokens nunca aparecen
+en resultados ni diagnósticos.
+
+Resultados focales:
+
+```text
+storeBuildOutputAudit.test.js  = PASS (29 tests antes de añadir dos fixtures sintéticos finales)
+storePrebuiltPackaging.test.js = PASS (57 tests)
+storeBuildIntegration.test.js  = PASS (3 tests)
+```
+
+La ejecución focal confirmó las suites de packaging e integración; la ejecución
+completa de `store/tests/social-preview` fue iniciada, pero la sesión local la
+interrumpió antes de emitir su resumen final. Se reintentaron también
+`npm run build:store:vercel` y `npm run deploy:store:prepare` con
+`TEMP=TMP=C:\dev\lanzo-gate-tmp`; ambos procesos alcanzaron respectivamente
+Vite y el preparador, pero la sesión local terminó antes de que Vite o el gate
+produjeran resultado, Build Output o diagnóstico final. `store/dist` se restauró
+desde `HEAD` tras el intento de build. No hay evidencia suficiente para declarar
+el gate real PASS; por ello esta minifase queda **BLOCKED** hasta repetir esos
+dos comandos en un entorno que permita su finalización y confirme `config.json`,
+las dos funciones, static y paridad SHA-256.
+
+No se ejecutó deployment, preview, promote, alias ni cambio de dominio.
+Supabase, migraciones, `package.json`, `package-lock.json` y `store/vercel.json`
+no se modificaron.

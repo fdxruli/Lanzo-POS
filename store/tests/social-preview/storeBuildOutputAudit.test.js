@@ -8,7 +8,10 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { auditPrebuiltOutput } from '../../../scripts/audit-vercel-build-output.mjs';
+import {
+  auditPrebuiltOutput,
+  classifyCredentialAssignment,
+} from '../../../scripts/audit-vercel-build-output.mjs';
 
 const PROJECT_ID = 'fixture-store-project';
 const ORG_ID = 'fixture-store-org';
@@ -162,6 +165,83 @@ describe('auditoría de .vercel/output', () => {
     );
   });
 
+  it('acepta Dexie y copy público de caja en el storefront', async () => {
+    const publicCopy = 'const storeDb = Dexie; const copy = "Pago en caja"; const label = "Caja";';
+    await Promise.all([
+      writeFile(path.join(fixture.staticRoot, 'assets', 'public-copy-AbCd1234.js'), publicCopy),
+      writeFile(path.join(fixture.sourceStatic, 'assets', 'public-copy-AbCd1234.js'), publicCopy),
+    ]);
+    const result = await audit(fixture);
+    expect(result.checks.noAdministrativeCode).toBe(true);
+    expect(result.staticAudit.safety.administrativeViolations).toEqual([]);
+  });
+
+  it('conserva los marcadores administrativos de alta precisión', async () => {
+    const administrativeCode = 'const db = LanzoDB; const page = CajaPage; processSale(order);';
+    await Promise.all([
+      writeFile(path.join(fixture.staticRoot, 'assets', 'administrative-AbCd1234.js'), administrativeCode),
+      writeFile(path.join(fixture.sourceStatic, 'assets', 'administrative-AbCd1234.js'), administrativeCode),
+    ]);
+    const result = await audit(fixture);
+    expect(result.checks.noAdministrativeCode).toBe(false);
+    expect(result.staticAudit.safety.administrativeViolations).toEqual(expect.arrayContaining([
+      'CajaPage:assets/administrative-AbCd1234.js',
+      'LanzoDB:assets/administrative-AbCd1234.js',
+      'processSale:assets/administrative-AbCd1234.js',
+    ]));
+  });
+
+  it('clasifica vocabulario OAuth y placeholders sin ocultar valores reales', async () => {
+    const defensive = [
+      '{ access_token: "access_token" }',
+      '{ refresh_token: "refresh_token" }',
+      '{ grant_type: "refresh_token" }',
+      'const field = "access_token";',
+      'const placeholder = "your_access_token";',
+    ].join('\n');
+    await Promise.all([
+      writeFile(path.join(fixture.staticRoot, 'assets', 'oauth-AbCd1234.js'), defensive),
+      writeFile(path.join(fixture.sourceStatic, 'assets', 'oauth-AbCd1234.js'), defensive),
+    ]);
+    const result = await audit(fixture);
+    expect(result.checks.noSecrets).toBe(true);
+    expect(result.staticAudit.safety.credentialVocabulary.access_token)
+      .toContain('assets/oauth-AbCd1234.js');
+    expect(result.staticAudit.safety.credentialAssignments).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        key: 'access_token', value: '<redacted>', valueLength: 12, classification: 'oauth-vocabulary',
+      }),
+      expect.objectContaining({ key: 'refresh_token', classification: 'oauth-vocabulary' }),
+    ]));
+  });
+
+  it('bloquea asignaciones OAuth con apariencia de credencial y no expone su valor', async () => {
+    const syntheticToken = 'AbC9_xY7-KlM2_qRs8-TuV4_WxZ6';
+    const syntheticRefresh = 'rt_8fK3mN9qT6vX2pL7sC4dH1jA';
+    const values = `{ access_token: "${syntheticToken}" }\n{ refresh_token: "${syntheticRefresh}" }`;
+    await Promise.all([
+      writeFile(path.join(fixture.staticRoot, 'assets', 'credential-AbCd1234.js'), values),
+      writeFile(path.join(fixture.sourceStatic, 'assets', 'credential-AbCd1234.js'), values),
+    ]);
+    const result = await audit(fixture);
+    expect(result.checks.noSecrets).toBe(false);
+    expect(result.staticAudit.safety.secretViolations).toEqual(expect.arrayContaining([
+      `credentialValue:access_token:length=${syntheticToken.length}:assets/credential-AbCd1234.js`,
+      `credentialValue:refresh_token:length=${syntheticRefresh.length}:assets/credential-AbCd1234.js`,
+    ]));
+    expect(JSON.stringify(result.staticAudit.safety)).not.toContain(syntheticToken);
+    expect(JSON.stringify(result.staticAudit.safety)).not.toContain(syntheticRefresh);
+  });
+
+  it.each([
+    ['access_token', 'access_token', 'oauth-vocabulary'],
+    ['refresh_token', 'refresh_token', 'oauth-vocabulary'],
+    ['access_token', 'your_access_token', 'placeholder'],
+    ['access_token', 'AbC9_xY7-KlM2_qRs8-TuV4_WxZ6', 'credential-like'],
+  ])('clasifica %s sin depender del nombre de archivo', (key, value, classification) => {
+    expect(classifyCredentialAssignment(key, value)).toBe(classification);
+  });
+
   it('requiere static materializado para auditar el Build Output completo', async () => {
     await rm(fixture.staticRoot, { recursive: true });
     await expect(audit(fixture)).rejects.toThrow('Missing prebuilt input: static');
@@ -201,6 +281,14 @@ describe('auditoría de .vercel/output', () => {
     ['clave Supabase secreta', async () => writeFile(
       path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
       "const serviceRoleKey='sb_secret_real_example_123456';",
+    ), 'noSecrets'],
+    ['token Vercel sintético', async () => writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
+      "const token='vcp_1234567890abcdefghijklmnopqrst';",
+    ), 'noSecrets'],
+    ['clave privada sintética', async () => writeFile(
+      path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),
+      '-----BEGIN PRIVATE KEY-----\nfixture\n-----END PRIVATE KEY-----',
     ), 'noSecrets'],
     ['variable Supabase service role', async () => writeFile(
       path.join(fixture.functionsRoot, 'api', 'store-page.func', 'secret.js'),

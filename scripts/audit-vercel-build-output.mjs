@@ -286,11 +286,56 @@ function inspectCredentialValues(source) {
     vercelToken: /\b(?:vcp|vercel)_[A-Za-z0-9_-]{20,}\b/u,
     githubToken: /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/u,
     privateKey: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
-    credentialValue: /\b(?:client_secret|refresh_token|access_token)\b\s*[:=]\s*["'][^"'${}<>\s]{8,}["']/iu,
   });
   return Object.entries(patterns)
     .filter(([, pattern]) => pattern.test(source))
     .map(([name]) => name);
+}
+
+const credentialAssignmentPattern = /\b(client_secret|refresh_token|access_token)\b\s*[:=]\s*["']([^"'\r\n]*)["']/giu;
+
+export function classifyCredentialAssignment(key, value) {
+  const normalizedKey = String(key || '').trim().toLowerCase();
+  const normalizedValue = String(value || '').trim();
+  const lowerValue = normalizedValue.toLowerCase();
+  if (!normalizedValue || lowerValue === normalizedKey) return 'oauth-vocabulary';
+  if (['access_token', 'refresh_token', 'client_secret'].includes(lowerValue)) {
+    return 'oauth-protocol';
+  }
+  if (/^(?:your[_-]?|<|\[|\{|redacted|placeholder|example|changeme|replace[_-]?me)/iu.test(normalizedValue)) {
+    return 'placeholder';
+  }
+  if (/^https?:\/\//iu.test(normalizedValue) || /\s/u.test(normalizedValue)) return 'non-secret-value';
+  if (/^[A-Za-z_$][\w$.-]*$/u.test(normalizedValue) && !/[0-9_-]/u.test(normalizedValue)) {
+    return 'symbolic-value';
+  }
+  const categories = [/[a-z]/u, /[A-Z]/u, /\d/u, /[_-]/u]
+    .filter((pattern) => pattern.test(normalizedValue)).length;
+  const tokenLike = /^[A-Za-z0-9_-]+$/u.test(normalizedValue);
+  return tokenLike && normalizedValue.length >= 24 && categories >= 3
+    ? 'credential-like'
+    : 'low-entropy-value';
+}
+
+function inspectGenericCredentialAssignments(source, relativePath) {
+  const records = [];
+  const violations = [];
+  for (const match of source.matchAll(credentialAssignmentPattern)) {
+    const [, key, value] = match;
+    const classification = classifyCredentialAssignment(key, value);
+    const record = Object.freeze({
+      key: key.toLowerCase(),
+      value: '<redacted>',
+      valueLength: value.length,
+      classification,
+      relativePath,
+    });
+    records.push(record);
+    if (classification === 'credential-like') {
+      violations.push(`credentialValue:${record.key}:length=${record.valueLength}:${relativePath}`);
+    }
+  }
+  return { records, violations };
 }
 
 function inspectCredentialAssignments(source) {
@@ -325,17 +370,10 @@ function inspectDefensiveVocabulary(source) {
   return occurrences;
 }
 
-function inspectTextForSafety(filesWithSource) {
-  const secretViolations = [];
-  const credentialVocabulary = {};
-  const administrativeViolations = [];
-  const pwaViolations = [];
-  const localImportViolations = [];
-  const administrativeMarkers = Object.freeze({
+function administrativeMarkersForTarget(targetName) {
+  const commonMarkers = {
     LanzoDB: /\bLanzoDB\b/u,
-    Dexie: /\bDexie\b/u,
     PosPage: /\bPosPage\b/u,
-    Caja: /\bCaja\b/u,
     Dashboard: /\bDashboard\b/u,
     processSale: /\bprocessSale\b/u,
     cashSync: /\bcashSync\b/u,
@@ -345,13 +383,40 @@ function inspectTextForSafety(filesWithSource) {
     createFreeTrialLicense: /\bcreate_free_trial_license\b/u,
     releaseDeviceAnon: /\breleaseDeviceAnon|release_device_anon/u,
     googleDrive: /\bgoogleDrive\b/u,
+  };
+  if (targetName !== 'store') {
+    return Object.freeze({
+      ...commonMarkers,
+      Dexie: /\bDexie\b/u,
+      Caja: /\bCaja\b/u,
+    });
+  }
+  return Object.freeze({
+    ...commonMarkers,
+    CajaPage: /\bCajaPage\b/u,
+    cajaService: /\bcajaService\b|(?:from\s*|import\s*\()["'][^"']*(?:components\/caja|pages\/CajaPage)[^"']*["']/iu,
+    useCaja: /\buseCaja\b/u,
+    CajaStatusCard: /\bCajaStatusCard\b/u,
+    CajaActionsCard: /\bCajaActionsCard\b/u,
+    CajaMovementsList: /\bCajaMovementsList\b/u,
   });
+}
+
+function inspectTextForSafety(filesWithSource, targetName = 'store') {
+  const secretViolations = [];
+  const credentialVocabulary = {};
+  const credentialAssignments = [];
+  const administrativeViolations = [];
+  const pwaViolations = [];
+  const localImportViolations = [];
+  const administrativeMarkers = administrativeMarkersForTarget(targetName);
   const pwaMarkers = Object.freeze({
     serviceWorker: /serviceWorker\.register|service-worker|registerSW/iu,
     workbox: /\bworkbox\b|__WB_MANIFEST/iu,
     manifest: /manifest\.webmanifest/iu,
   });
   for (const { relativePath, source } of filesWithSource) {
+    const genericCredentials = inspectGenericCredentialAssignments(source, relativePath);
     for (const name of [
       ...inspectCredentialValues(source),
       ...inspectPrivilegedJwt(source),
@@ -359,6 +424,8 @@ function inspectTextForSafety(filesWithSource) {
     ]) {
       secretViolations.push(`${name}:${relativePath}`);
     }
+    secretViolations.push(...genericCredentials.violations);
+    credentialAssignments.push(...genericCredentials.records);
     const defensiveVocabulary = inspectDefensiveVocabulary(source);
     if (defensiveVocabulary.length > 0) {
       credentialVocabulary.defensive ||= [];
@@ -386,10 +453,22 @@ function inspectTextForSafety(filesWithSource) {
   return {
     secretViolations: [...new Set(secretViolations)].sort(),
     credentialVocabulary,
+    credentialAssignments,
     administrativeViolations: [...new Set(administrativeViolations)].sort(),
     pwaViolations: [...new Set(pwaViolations)].sort(),
     localImportViolations: [...new Set(localImportViolations)].sort(),
   };
+}
+
+export function formatSafetyFailureDetails(safety, failedChecks, limit = 5) {
+  const details = [];
+  if (failedChecks.includes('noSecrets')) {
+    details.push(`noSecrets[${(safety.secretViolations || []).slice(0, limit).join(', ') || 'unknown'}]`);
+  }
+  if (failedChecks.includes('noAdministrativeCode')) {
+    details.push(`noAdministrativeCode[${(safety.administrativeViolations || []).slice(0, limit).join(', ') || 'unknown'}]`);
+  }
+  return details;
 }
 
 async function inspectFunctions(functionsRoot, sourceStaticPath) {
@@ -402,6 +481,7 @@ async function inspectFunctions(functionsRoot, sourceStaticPath) {
     pwaViolations: [],
     localImportViolations: [],
     credentialVocabulary: {},
+    credentialAssignments: [],
   };
   const currentHtml = await readFile(path.join(sourceStaticPath, 'index.html'), 'utf8');
   const currentAssets = [...currentHtml.matchAll(/\/assets\/[^"' ]+-[A-Za-z0-9_-]{6,}\.(?:js|css)/gu)]
@@ -414,13 +494,17 @@ async function inspectFunctions(functionsRoot, sourceStaticPath) {
       .filter((file) => textExtensions.has(path.extname(file.relativePath).toLowerCase()))
       .map(async (file) => ({ ...file, source: await readFile(file.absolutePath, 'utf8') })));
     const joined = sources.map(({ source }) => source).join('\n');
-    const safety = inspectTextForSafety(sources);
+    const safety = inspectTextForSafety(sources, 'store');
     for (const key of [
       'secretViolations',
       'administrativeViolations',
       'pwaViolations',
       'localImportViolations',
     ]) allViolations[key].push(...safety[key].map((item) => `${bundle.route}:${item}`));
+    allViolations.credentialAssignments.push(...safety.credentialAssignments.map((item) => ({
+      ...item,
+      relativePath: `${bundle.route}:${item.relativePath}`,
+    })));
     for (const [name, occurrences] of Object.entries(safety.credentialVocabulary)) {
       allViolations.credentialVocabulary[name] ||= [];
       allViolations.credentialVocabulary[name].push(
@@ -487,7 +571,7 @@ export async function inspectStatic(staticRoot, targetName) {
   const sources = await Promise.all(files
     .filter((file) => textExtensions.has(path.extname(file.relativePath).toLowerCase()))
     .map(async (file) => ({ ...file, source: await readFile(file.absolutePath, 'utf8') })));
-  const safety = inspectTextForSafety(sources);
+  const safety = inspectTextForSafety(sources, targetName);
   const indexHtml = await readFile(path.join(staticRoot, 'index.html'), 'utf8');
   const assetPaths = paths.filter((item) => item.startsWith('assets/'));
   const checks = {

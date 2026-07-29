@@ -101,6 +101,24 @@ describe('materialización estática prebuilt', () => {
       await expect(materializePrebuiltStaticOutput(fixture)).rejects.toThrow('Public static build audit failed');
     } finally { rmSync(fixture.root, { recursive: true, force: true }); }
   });
+
+  it('incluye diagnósticos estructurados y redactados cuando falla la auditoría', async () => {
+    const fixture = await createStaticMaterializationFixture();
+    const token = 'AbC9_xY7-KlM2_qRs8-TuV4_WxZ6';
+    try {
+      await writeFile(
+        path.join(fixture.sourceStaticRoot, 'assets', 'unsafe-AbCd1234.js'),
+        `{ access_token: "${token}" }; const page = CajaPage;`,
+      );
+      await expect(materializePrebuiltStaticOutput(fixture)).rejects.toThrow(
+        `noSecrets[credentialValue:access_token:length=${token.length}:assets/unsafe-AbCd1234.js]`,
+      );
+      await expect(materializePrebuiltStaticOutput(fixture)).rejects.not.toThrow(token);
+      await expect(materializePrebuiltStaticOutput(fixture)).rejects.toThrow(
+        'noAdministrativeCode[CajaPage:assets/unsafe-AbCd1234.js]',
+      );
+    } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+  });
 });
 
 async function createRepositoryFixture({ withAdministrativeLink = false } = {}) {
