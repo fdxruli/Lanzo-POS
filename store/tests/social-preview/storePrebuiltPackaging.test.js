@@ -13,6 +13,8 @@ import {
   buildWindowsCmdPayload,
   buildWindowsCommandLine,
   createSanitizedStoreWorkspace,
+  getEnvironmentValueCaseInsensitive,
+  prependPathEntry,
   prepareStoreDeployment,
   resolveCliCommands,
   resolveNpmCliPath,
@@ -21,6 +23,7 @@ import {
   resolveWindowsPathCommand,
   run,
   shouldCopyStoreWorkspacePath,
+  setEnvironmentValueCaseInsensitive,
 } from '../../../scripts/prepare-store-deployment.mjs';
 
 async function exists(filePath) {
@@ -99,6 +102,33 @@ describe('workspace prebuilt saneado', () => {
     expect(result).not.toHaveProperty('VERCEL_TOKEN');
     expect(parent.VERCEL_TOKEN).toBe('test-token-value');
     expect(JSON.stringify(result)).not.toContain('test-token-value');
+  });
+
+  it('normaliza PATH y el procesador de comandos de Windows sin mutar el padre', () => {
+    const parent = { Path: 'C:\\tools;C:\\WINDOWS\\System32', PATH: 'C:\\duplicate', SystemRoot: 'C:\\Windows', VERCEL_TOKEN: 'secret' };
+    const result = buildVercelExecutionEnvironment({ environment: parent });
+    expect(Object.keys(result).filter((key) => key.toLowerCase() === 'path')).toEqual(['PATH']);
+    expect(result.PATH).toMatch(/Windows\\System32/iu);
+    expect(result.ComSpec).toMatch(/Windows\\System32\\cmd\.exe$/iu);
+    expect(result.SystemRoot).toBe('C:\\Windows');
+    expect(result.WINDIR).toBe('C:\\Windows');
+    expect(result).not.toHaveProperty('VERCEL_TOKEN');
+    expect(parent).toHaveProperty('Path');
+    expect(getEnvironmentValueCaseInsensitive(result, 'path')).toBe(result.PATH);
+    expect(prependPathEntry('C:\\Tools', 'C:\\Tools')).toBe('C:\\Tools');
+    expect(setEnvironmentValueCaseInsensitive({ Path: 'x', PATH: 'y' }, 'PATH', 'z')).toEqual({ PATH: 'z' });
+  });
+
+  it.runIf(process.platform === 'win32')('ejecuta cmd.exe desde un directorio temporal con el entorno final', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'lanzo-cmd-environment-'));
+    try {
+      const result = run('cmd.exe', ['/d', '/s', '/c', 'echo wrapper-ok'], {
+        cwd: directory,
+        environment: buildVercelExecutionEnvironment({ environment: process.env }),
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain('wrapper-ok');
+    } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 
   it('invoca npm mediante el Node real y npm_execpath, sin wrapper', () => {

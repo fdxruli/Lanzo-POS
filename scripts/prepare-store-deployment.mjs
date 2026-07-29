@@ -223,15 +223,51 @@ export function buildNpmExecutionEnvironment({
   });
 }
 
+export function getEnvironmentValueCaseInsensitive(environment, name) {
+  const key = Object.keys(environment || {}).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  return key ? environment[key] : undefined;
+}
+
+export function setEnvironmentValueCaseInsensitive(environment, name, value) {
+  const normalized = { ...environment };
+  for (const key of Object.keys(normalized)) {
+    if (key.toLowerCase() === name.toLowerCase()) delete normalized[key];
+  }
+  normalized[name] = value;
+  return normalized;
+}
+
+export function prependPathEntry(inheritedPath, entry) {
+  const entries = String(inheritedPath || '').split(path.delimiter).filter(Boolean);
+  const normalizedEntry = path.normalize(entry).toLowerCase();
+  return [entry, ...entries.filter((item) => path.normalize(item).toLowerCase() !== normalizedEntry)].join(path.delimiter);
+}
+
 export function buildVercelExecutionEnvironment({
   environment = process.env,
   useLoggedInAuthentication = true,
 } = {}) {
-  const vercelEnvironment = { ...environment };
+  let vercelEnvironment = { ...environment };
   if (useLoggedInAuthentication) {
     for (const name of Object.keys(vercelEnvironment)) {
       if (name.toUpperCase() === 'VERCEL_TOKEN') delete vercelEnvironment[name];
     }
+  }
+  if (process.platform === 'win32') {
+    const systemRoot = getEnvironmentValueCaseInsensitive(environment, 'SystemRoot')
+      || getEnvironmentValueCaseInsensitive(environment, 'WINDIR')
+      || process.env.SystemRoot
+      || 'C:\\Windows';
+    const commandProcessor = getEnvironmentValueCaseInsensitive(environment, 'ComSpec')
+      || path.join(systemRoot, 'System32', 'cmd.exe');
+    const system32 = path.dirname(commandProcessor);
+    const inheritedPath = getEnvironmentValueCaseInsensitive(environment, 'PATH') || '';
+    vercelEnvironment = setEnvironmentValueCaseInsensitive(vercelEnvironment, 'SystemRoot', systemRoot);
+    vercelEnvironment = setEnvironmentValueCaseInsensitive(vercelEnvironment, 'WINDIR', systemRoot);
+    vercelEnvironment = setEnvironmentValueCaseInsensitive(vercelEnvironment, 'ComSpec', commandProcessor);
+    vercelEnvironment = setEnvironmentValueCaseInsensitive(
+      vercelEnvironment, 'PATH', prependPathEntry(inheritedPath, system32),
+    );
   }
   return Object.freeze(vercelEnvironment);
 }
