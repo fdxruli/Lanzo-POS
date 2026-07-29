@@ -2929,6 +2929,170 @@ algunas pruebas sensibles al entorno/concurrencia. El gate remoto sólo debe
 declararse PASS si su comparación normalizada mantiene `newFailures = 0`; el
 status externo `Vercel – lanzo-pos` no sustituye ese resultado.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 — Gate de release y preparación productiva
+
+### Gate 0 y estado inicial
+
+```text
+fecha                     = 2026-07-29
+PR                        = #141 OPEN / DRAFT
+rama                      = feat/ecom-public-social-preview-1
+base                      = main
+HEAD inicial real         = 50689c4dd818651339e504debc8a7fe25eca71fa
+HEAD revisado             = 50689c4dd818651339e504debc8a7fe25eca71fa
+HEAD de main              = bc603ef0ae3e60f241eafdbae6966191fe75d62c
+commits nuevos            = ninguno
+mergeable                 = true
+```
+
+Se confirmó que el último commit sigue siendo
+`test(ecommerce): reconcile public deployment architecture`. Las correcciones
+1.7.1 de saneamiento, caché, query hostil y procedencia de evidencia, y la
+reconciliación 1.7.2 de arquitectura pública, continúan presentes. `main` no fue
+modificado por esta minifase.
+
+El workflow remoto asociado al HEAD inicial fue:
+
+```text
+workflow   = PR127 Global Comparison
+run        = 30495443216 / run number 99
+status     = completed
+conclusion = success
+```
+
+El status independiente `Vercel – lanzo-pos = success` no se usó como
+evidencia de `lanzo-store`.
+
+### Implementación
+
+Se crearon:
+
+```text
+scripts/verify-social-preview-release-readiness.mjs
+store/tests/social-preview/storeReleaseReadiness.test.js
+docs/runbooks/ECOM.PUBLIC.SOCIAL.PREVIEW.PRODUCTION.md
+```
+
+Se modificaron:
+
+```text
+.gitignore
+docs/reports/ECOM.PUBLIC.SOCIAL.PREVIEW.1.md
+```
+
+El verificador es importable, determinista respecto de sus entradas y
+read-only para servicios externos. No importa APIs de procesos, no ejecuta
+shell, no hace requests y no contiene operaciones de deployment, promote,
+alias o dominio. Rechaza argumentos desconocidos o duplicados, limita cada
+JSON a 2 MiB, exige objetos planos, limita profundidad, nodos y strings, y
+bloquea JSON inválido o estructuras peligrosas.
+
+El contrato exige:
+
+- artifact `PASS`, target `store`, HEAD coincidente y
+  `deploymentExecuted=false`;
+- proyecto `lanzo-store`, repositorio protegido intacto, hashes SHA-256 y
+  checks completos;
+- exactamente `/api/og/store` y `/api/store-page`, sin helpers, duplicados,
+  runtimes o handlers inválidos;
+- routing compilado, tracking estático, slug efectivo, caché, assets,
+  ausencia de secretos, código administrativo, PWA, fuentes y source maps;
+- evidencia remota 1.7 `PASS`, preview auditada, no-producción, mismo HEAD y
+  mismos hashes/bundles;
+- host HTTPS de preview `.vercel.app`, canonical e imagen consistentes,
+  metadata única, PNG 1200 × 630 y checks remotos completos;
+- `PR127 Global Comparison = success`.
+
+El escáner recursivo usa claves normalizadas y allowlist contextual para hashes
+saneados. Ante una detección sólo reporta `path`, `classification` y
+`valueLength`; nunca imprime el valor. El manifiesto usa creación exclusiva
+`wx`, modo `0600` cuando la plataforma lo soporta, no sobrescribe evidencia y
+sólo incluye el contrato saneado de 1.8.
+
+### Validación local
+
+La primera ejecución de `npm ci` fue bloqueada por la caché global no escribible
+`/root/.npm`. Se repitió el mismo comando con una caché temporal aislada:
+
+```text
+NPM_CONFIG_CACHE=<temporal> npm ci --no-audit --no-fund = PASS
+paquetes instalados                                      = 706
+package.json / package-lock.json modificados             = no
+```
+
+Resultados finales:
+
+```text
+storeReleaseReadiness.test.js            = 41 PASS
+store/tests/social-preview               = 481 PASS / 2 skips de plataforma
+publicBuildArchitecture.test.js          = 5 PASS
+publicGitDeploymentArchitecture.test.js  = 13 PASS
+vercelPrebuiltDeployment.test.js         = 25 PASS
+npm run build:store:vercel               = PASS
+git diff --check                         = PASS
+```
+
+Las dos suites que inspeccionan `dist-store` se ejecutaron inicialmente antes
+del build y sólo reportaron `ENOENT`; ambas pasaron después del build requerido.
+El build final produjo 10 archivos / 636855 bytes en `dist-store` y 11 archivos
+/ 636881 bytes en `store/dist`, con `compliance.passed=true`, cero violaciones,
+sin PWA y sin código administrativo. Los cambios versionados generados en
+`store/dist` fueron retirados después de la validación.
+
+Las pruebas cubren 41 casos, incluidos evidencia completa, HEAD obsoleto,
+artifacts/remotos bloqueados, funciones faltantes o adicionales, runtime y
+handler, hashes, proyecto/host/producción, metadata/imagen/seguridad, CI,
+límites JSON, contenido sensible, overwrite, permisos, salida saneada,
+ejecución BLOCKED sin manifiesto y ausencia de procesos/publicación.
+
+### Estado del gate
+
+```text
+implementación local 1.8             = PASS
+artifact audit real del HEAD         = ausente
+autenticación Vercel                 = no disponible
+preview lanzo-store                  = ausente
+slug público confirmado             = ausente
+evidencia remota 1.7 PASS            = ausente
+manifiesto readiness real generado   = no
+readiness real                       = BLOCKED
+certificación total 1.8              = BLOCKED
+```
+
+No se ejecutó el verificador con fixtures como si fueran evidencia real. La
+ruta READY quedó certificada únicamente mediante pruebas sintéticas con
+dominios y valores ficticios. Al faltar evidencia real, el gate no intenta
+autenticarse, crear una preview, elegir un slug ni ejecutar Vercel.
+
+### Alcance y seguridad operativa
+
+```text
+producción autorizada       = no
+producción ejecutada        = no
+preview creada              = no
+promote / alias / dominios  = no
+lanzo-pos desplegado        = no
+Supabase modificado         = no
+migración creada            = no
+dependencias modificadas    = no
+merge                       = no
+auto-merge                  = desactivado
+PR ready                    = no
+```
+
+Bloqueantes residuales para PASS total: autenticación Vercel válida, Build
+Output real PASS del HEAD final, preview `lanzo-store`, slug público confirmado,
+auditoría HTTP remota PASS, evidencia 1.7 PASS coincidente y ejecución del gate
+con el run de CI `success` correspondiente al HEAD final.
+
+Riesgos no bloqueantes: el runtime local es Node 24 y una dependencia declara
+soporte hasta Node 22; npm emitió `EBADENGINE`, pero instalación, pruebas y
+build terminaron en PASS. La certificación del HEAD final dependerá de un nuevo
+run remoto posterior al commit.
+
+La minifase `ECOM.PUBLIC.SOCIAL.PREVIEW.1.9` no queda habilitada mientras la
+certificación total permanezca BLOCKED.
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.7 — Reconciliación del Build Output real
 
 HEAD inicial y remoto confirmado: `b8999ac428a73d479a9fe6a855fb70479f7d8d17`
