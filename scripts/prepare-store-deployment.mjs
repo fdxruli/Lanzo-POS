@@ -29,6 +29,7 @@ const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
 const STORE_ORGANIZATION_ID = 'team_buvft2mAJErTNR8gDhXcZGfS';
 const STORE_PROJECT_NAME = 'lanzo-store';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
+const PRESERVE_PASSED_EVIDENCE_ENV = 'PRESERVE_STORE_PREBUILT_EVIDENCE';
 const BUILD_COMMAND = 'vercel build --prod --local-config ./store/vercel.prebuilt.json';
 const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
 const DEFAULT_VERCEL_COMMAND = 'vercel';
@@ -613,10 +614,11 @@ export function buildNpmExecutionEnvironment({
   environment = process.env,
   temporaryDirectory = os.tmpdir(),
 } = {}) {
+  const pathApi = /^[A-Za-z]:\\/u.test(temporaryDirectory) ? path.win32 : path;
   return Object.freeze({
     ...environment,
-    NPM_CONFIG_CACHE: path.join(temporaryDirectory, 'lanzo-store-social-preview-npm-cache'),
-    XDG_CACHE_HOME: path.join(temporaryDirectory, 'lanzo-store-npm-cache'),
+    NPM_CONFIG_CACHE: pathApi.join(temporaryDirectory, 'lanzo-store-social-preview-npm-cache'),
+    XDG_CACHE_HOME: pathApi.join(temporaryDirectory, 'lanzo-store-npm-cache'),
   });
 }
 
@@ -816,6 +818,38 @@ async function removeTemporaryWorkspace(workspaceRoot) {
   });
 }
 
+export function shouldPreservePassedWorkspace(environment = process.env) {
+  const value = environment?.[PRESERVE_PASSED_EVIDENCE_ENV];
+  if (value == null || value === '' || value === '0') return false;
+  if (value === '1') return true;
+  throw new Error(`${PRESERVE_PASSED_EVIDENCE_ENV} must be 1, 0, or unset.`);
+}
+
+export async function cleanupPreparedStoreWorkspace({
+  workspaceRoot,
+  manifestPath = '',
+  temporaryRoot = os.tmpdir(),
+} = {}) {
+  if (!workspaceRoot) return Object.freeze({ workspaceRemoved: true, manifestRemoved: true });
+  const workspace = path.resolve(workspaceRoot);
+  const temporary = path.resolve(temporaryRoot);
+  const relative = path.relative(temporary, workspace);
+  if (
+    path.dirname(workspace) !== temporary
+    || relative.startsWith('..')
+    || path.isAbsolute(relative)
+    || !path.basename(workspace).startsWith(TEMPORARY_PREFIX)
+  ) {
+    throw new Error('Refusing to clean a path outside the controlled store workspace.');
+  }
+  await removeTemporaryWorkspace(workspace);
+  if (manifestPath) await rm(path.resolve(manifestPath), { force: true });
+  return Object.freeze({
+    workspaceRemoved: !await pathExists(workspace),
+    manifestRemoved: !manifestPath || !await pathExists(path.resolve(manifestPath)),
+  });
+}
+
 export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
@@ -824,7 +858,7 @@ export async function prepareStoreDeployment({
   npmInvocation,
   projectInspection,
   environment = process.env,
-  preserveFailedWorkspace = false,
+  preservePassedWorkspace = shouldPreservePassedWorkspace(environment),
 } = {}) {
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
@@ -1008,7 +1042,6 @@ export async function prepareStoreDeployment({
         zeroConfigFunctionInventory,
         finalFunctionInventory,
       });
-      diagnostic.workspaceRetainedForDevelopment = preserveFailedWorkspace === true;
       throw new Error(`Vercel output audit failed:\n${JSON.stringify(diagnostic)}`);
     }
     const manifest = await writeExternalManifest(workspaceRoot, outputRoot);
@@ -1016,8 +1049,10 @@ export async function prepareStoreDeployment({
 
     const finalState = await assertProtectedRepositoryIntegrity(repositoryRoot, baseline);
     const outputFiles = await walk(outputRoot);
-    return {
-      phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.6',
+    await removeGeneratedEnvironmentFiles(workspaceRoot, storeRoot);
+    await rm(prebuiltConfigPath, { force: true });
+    const result = {
+      phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
       status: 'PASS',
       strategy: 'sanitized-repository-copy',
       workspaceRoot,
@@ -1077,7 +1112,23 @@ export async function prepareStoreDeployment({
         usedExplicitBuildsFallback,
       },
       deploymentExecuted: false,
+      workspacePreserved: preservePassedWorkspace === true,
+      cleanupRequired: preservePassedWorkspace === true,
     };
+    if (!preservePassedWorkspace) {
+      await cleanupPreparedStoreWorkspace({ workspaceRoot, manifestPath });
+      return {
+        ...result,
+        workspaceRoot: null,
+        storeRoot: null,
+        outputRoot: null,
+        manifestPath: null,
+        workspacePreserved: false,
+        cleanupRequired: false,
+        cleanupCompleted: true,
+      };
+    }
+    return result;
   } catch (error) {
     let failure = error;
     try {
@@ -1085,9 +1136,10 @@ export async function prepareStoreDeployment({
     } catch (integrityError) {
       failure = integrityError;
     }
-    if (workspaceRoot && !preserveFailedWorkspace) {
+    if (workspaceRoot) {
       try {
-        await removeTemporaryWorkspace(workspaceRoot);
+        await cleanupPreparedStoreWorkspace({ workspaceRoot, manifestPath });
+        manifestPath = '';
       } catch (cleanupError) {
         const cleanupDiagnostic = sanitizeCommandDiagnostic(cleanupError?.message, workspaceRoot);
         failure = new Error(

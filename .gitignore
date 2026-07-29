@@ -10,3 +10,4 @@ store/generated/storeHtmlTemplate.js
 *.tgz
 *.tmp
 *.temp
+.tmp/social-preview-1.7-evidence.json

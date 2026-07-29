@@ -1912,6 +1912,193 @@ Mientras ese gate permanezca NOT RUN no se habilita:
 ECOM.PUBLIC.SOCIAL.PREVIEW.1.7 — Validación integrada y evidencia controlada
 ```
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.7 — Validación integrada y evidencia controlada
+
+### Estado remoto inicial verificado
+
+```text
+fecha UTC de validación = 2026-07-29
+PR                       = #141 OPEN / DRAFT
+rama                     = feat/ecom-public-social-preview-1
+base                     = main
+HEAD inicial             = ac253eb0a5d8c7f18d3e16ecd883e3ee8228782f
+HEAD remoto de la rama   = ac253eb0a5d8c7f18d3e16ecd883e3ee8228782f
+HEAD remoto de main      = bc603ef0ae3e60f241eafdbae6966191fe75d62c
+ahead / behind           = 24 / 0
+mergeable                = true
+auto-merge permitido repo= false
+```
+
+El único status combinado visible pertenecía a `Vercel – lanzo-pos` y estaba en
+success. No se usó como evidencia de `lanzo-store`. El workflow
+`PR127 Global Comparison` asociado al HEAD estaba completed/failure; esta
+minifase no alteró ese workflow ni presentó su resultado como sustituto de los
+gates focales.
+
+Se revisó el rango completo desde
+`1de69d08d402a5d1521ddaa2b0ba9a25b1cfb985`, que integró 1.6.1, hasta el HEAD
+inicial. Las correcciones posteriores de Windows, raíz efectiva, materialización
+static, empaquetado de funciones y precisión de auditoría siguen presentes.
+
+### Implementación 1.7
+
+El preparador incorpora preservación explícita únicamente después de PASS:
+
+```text
+PRESERVE_STORE_PREBUILT_EVIDENCE=1
+```
+
+Por defecto limpia el workspace y el manifiesto. Un valor distinto de `0`, `1`
+o vacío se rechaza. Un fallo nunca conserva el workspace. La limpieza explícita
+valida que el destino sea un directorio temporal con el prefijo controlado antes
+de eliminarlo. Antes de devolver un output preservado elimina los `.env`
+generados y `store/vercel.prebuilt.json`.
+
+También se corrigió el aislamiento del caché npm para rutas Windows: una ruta
+`C:\...` usa `path.win32` aun cuando la prueba corre desde Linux. No se modificó
+el entorno padre.
+
+`scripts/audit-remote-store-deployment.mjs` ahora exige:
+
+```text
+--base-url <preview-https-vercel-app>
+--slug <slug-publico-de-prueba>
+```
+
+La auditoría es read-only, limita cuerpos, no persiste HTML y registra hashes,
+longitudes, conteos, hosts y headers permitidos. Rechaza dominios no Vercel,
+credenciales en URL, producción declarada, `--prod`, alias y promote. Valida
+rutas estáticas, HTML social, canonical, query hostil, tracking, ruta anidada,
+tienda inexistente, slug inválido, PNG 1200 × 630, caché y marcadores de
+seguridad de alta precisión. La evidencia opcional requiere además
+`--artifact-audit` y `--head`; se escribe con modo restrictivo y sin cuerpos.
+
+El reporte local de evidencia quedó ignorado mediante:
+
+```text
+.tmp/social-preview-1.7-evidence.json
+```
+
+### Gate local y pruebas focales
+
+La primera ejecución de npm no alcanzó a validar el lock porque el entorno
+intentó crear `/root/.npm`. Se eliminó únicamente el `node_modules` parcial y se
+repitió el mismo comando con caché efímera en `/tmp`:
+
+```text
+npm ci --no-audit --no-fund = PASS
+paquetes instalados          = 706
+package.json modificado      = no
+package-lock.json modificado = no
+```
+
+La línea base detectó un fallo real de separadores Windows. Después de la
+corrección:
+
+```text
+npx vitest run store/tests/social-preview
+archivos = 16 PASS
+pruebas  = 414 PASS
+skips    = 2 específicos de plataforma
+fallos   = 0
+```
+
+Las nuevas pruebas cubren redacción, ausencia de HTML en evidencia, metadata
+única, canonical, query hostil, tracking estático, PNG, host preview,
+producción, alias/promote, límite lógico del flujo, caché y limpieza local. No
+realizan requests remotos.
+
+El build público real pasó:
+
+```text
+npm run build:store:vercel = PASS
+dist-store                 = 10 archivos / 636855 bytes
+store/dist                 = 11 archivos / 636881 bytes
+PWA                        = ausente
+service worker             = ausente
+código administrativo      = ausente
+source maps públicos       = ausentes
+funciones fuente esperadas = /api/og/store, /api/store-page
+```
+
+### Gates A–E reales
+
+Se instaló Vercel CLI 58.1.0 únicamente bajo `/tmp`, sin modificar package ni
+lock. La lectura `vercel whoami` confirmó que no había credenciales existentes.
+No se inició ni completó login.
+
+Se ejecutó una vez:
+
+```text
+PRESERVE_STORE_PREBUILT_EVIDENCE=1 npm run deploy:store:prepare
+```
+
+El preparador llegó a la inspección read-only del proyecto, pero Vercel intentó
+abrir el flujo de login. El proceso no interactivo se detuvo tras 30 segundos.
+No se produjo `.vercel/output`. El workspace interrumpido y los workspaces
+controlados creados por las pruebas se limpiaron explícitamente; no se conservó
+un workspace fallido.
+
+```text
+Gate A — Build Output real       = BLOCKED: falta autenticación Vercel
+Gate B — Auditoría prebuilt      = NOT RUN: no existe output real
+Gate C — Preview lanzo-store     = NOT RUN: prohibido por Gate A/B
+Gate D — HTTP integrado          = NOT RUN: no existe preview ni slug confirmado
+Gate E — Evidencia saneada       = NOT GENERATED
+
+.vercel/output                   = no producido
+hash config                      = NOT RUN
+hash static                      = NOT RUN
+funciones reales                 = NOT RUN
+runtimes / handlers              = NOT RUN
+rutas compiladas                 = NOT RUN
+slug compilado                   = NOT RUN
+fallback builds                  = NOT RUN
+preview creada                   = no
+deploymentExecuted              = false
+productionModified              = false
+```
+
+No se inventó un slug público de prueba. Aunque el código y los fixtures
+focales están en PASS, no sustituyen la validación HTTP real.
+
+### Aislamiento y cierre
+
+```text
+proyecto administrativo desplegado = no
+enlace .vercel administrativo       = ausente antes y después
+dominio / alias / promote           = sin cambios
+deployment preview                  = no
+deployment productivo               = no
+Supabase                            = sin cambios
+migraciones                         = ninguna
+RPC / tablas / RLS / grants / datos = sin cambios
+service_role                        = no usado
+merge                               = no
+auto-merge                          = desactivado
+```
+
+Estado de la minifase:
+
+```text
+BLOCKED
+```
+
+Bloqueantes residuales:
+
+1. autenticar el CLI de Vercel con acceso a `lanzo-store` sin exponer tokens;
+2. repetir Gate A y Gate B y obtener el output real auditado;
+3. proporcionar un slug público de prueba confirmado;
+4. solo entonces crear una preview y ejecutar Gate D;
+5. si `PUBLIC_STORE_ORIGINS` rechaza legítimamente el host exacto de preview,
+   documentar ese origen sin añadir wildcard ni modificar producción.
+
+Mientras estos bloqueantes permanezcan, no queda habilitada:
+
+```text
+ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 — Cierre técnico y preparación de despliegue productivo
+```
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.6.1 — Corrección de auditoría y validación prebuilt real
 
 ### Estado y referencia inicial

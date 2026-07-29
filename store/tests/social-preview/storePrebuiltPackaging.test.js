@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildNpmExecutionEnvironment,
   buildVercelExecutionEnvironment,
+  cleanupPreparedStoreWorkspace,
   createSanitizedStoreWorkspace,
   materializePrebuiltStaticOutput,
   createPrebuiltVercelConfig,
@@ -27,6 +28,7 @@ import {
   sanitizeVercelDebugLog,
   sanitizeVercelProjectInspection,
   shouldCopyStoreWorkspacePath,
+  shouldPreservePassedWorkspace,
   writeProjectLink,
   writePrebuiltVercelConfig,
 } from '../../../scripts/prepare-store-deployment.mjs';
@@ -254,6 +256,30 @@ describe('workspace prebuilt saneado', () => {
     expect(result.XDG_CONFIG_HOME).toBe(parent.XDG_CONFIG_HOME);
     expect(result.XDG_DATA_HOME).toBe(parent.XDG_DATA_HOME);
     expect(parent).not.toHaveProperty('NPM_CONFIG_CACHE');
+  });
+
+  it('solo habilita preservación explícita después de PASS', () => {
+    expect(shouldPreservePassedWorkspace({})).toBe(false);
+    expect(shouldPreservePassedWorkspace({ PRESERVE_STORE_PREBUILT_EVIDENCE: '0' })).toBe(false);
+    expect(shouldPreservePassedWorkspace({ PRESERVE_STORE_PREBUILT_EVIDENCE: '1' })).toBe(true);
+    expect(() => shouldPreservePassedWorkspace({
+      PRESERVE_STORE_PREBUILT_EVIDENCE: 'yes',
+    })).toThrow('must be 1, 0, or unset');
+  });
+
+  it('limpia únicamente un workspace de evidencia controlado', async () => {
+    const workspaceRoot = await mkdtemp(path.join(
+      os.tmpdir(),
+      'lanzo-store-social-preview-1-6-',
+    ));
+    const manifestPath = `${workspaceRoot}-output-sha256.json`;
+    await writeFile(manifestPath, '{"fixture":true}\n');
+    await writeFile(path.join(workspaceRoot, 'fixture.txt'), 'fixture');
+    await expect(cleanupPreparedStoreWorkspace({ workspaceRoot, manifestPath }))
+      .resolves.toEqual({ workspaceRemoved: true, manifestRemoved: true });
+    await expect(cleanupPreparedStoreWorkspace({
+      workspaceRoot: path.join(os.tmpdir(), 'uncontrolled-store-workspace'),
+    })).rejects.toThrow('outside the controlled store workspace');
   });
 
   it('preserva el perfil de Vercel y elimina solo VERCEL_TOKEN del hijo', () => {
