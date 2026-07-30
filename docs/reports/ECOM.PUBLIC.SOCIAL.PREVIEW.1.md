@@ -4320,3 +4320,137 @@ Riesgo residual: hace falta generar un artifact nuevo desde el HEAD final y
 ejecutar la única preview de certificación final autorizada. Hasta entonces la
 certificación externa permanece `BLOCKED`. Este cambio no genera artifact ni
 deployment.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.8 — Entorno público real y `@vercel/og` ESM
+
+### Tercera preview fallida
+
+El artifact del HEAD `978dd2b20c7338722b9bd3595a72dd4dfbbcbb66`
+(tree `72976ec5f5e7612e47d4bee3358ead159f481478`) se desplegó como:
+
+```text
+https://lanzo-store-evx3mzpn1-fdxrulis-projects.vercel.app
+```
+
+Vercel reportó `READY`, proyecto `lanzo-store`, tipo preview,
+`production=false` y dos funciones `nodejs24.x`. El identificador del
+deployment no se conserva en claro; su única referencia permitida es:
+
+```text
+SHA-256 = 3c212866b1c49c3cf983d8f0d35a374c5effd99dc38ae1c3d6f3c0b0085f7a41
+```
+
+La certificación fue `FAILED_CERTIFICATION` y `evidencePass=false`. La preview
+se preserva, no se elimina, reutiliza, promueve ni recibe alias.
+
+`GET /tienda/farmaciagary` respondió HTML 200 con metadata social correcta,
+pero el cliente público mostró:
+
+```text
+No se pudo cargar la tienda.
+Revisa tu conexión e intenta de nuevo.
+```
+
+El preparador había compilado `store/dist` antes de ejecutar `vercel pull` y
+usó los marcadores ficticios `invalid-for-local-build`, `supabase.invalid`,
+`sb_publishable_invalid_for_local_build` y `store.invalid`. Por tanto, el HTML
+server-side era correcto mientras el cliente React no podía inicializar su
+cliente Supabase ni cargar el catálogo.
+
+En paralelo, `GET /api/og/store?slug=farmaciagary` respondió HTTP 500 con
+`FUNCTION_INVOCATION_FAILED`. El log saneado confirmó `ERR_REQUIRE_ESM`: el
+handler CommonJS generado convirtió el import estático de `@vercel/og` en
+`require()`, aunque el paquete efectivo es ESM.
+
+### Por qué los smokes anteriores no lo detectaron
+
+El smoke de tienda sólo ejercitaba el handler server-side y la plantilla
+dinámica. No auditaba los literales del bundle estático ni distinguía el éxito
+del HTML del estado ejecutable del cliente. El smoke OG utilizaba una fixture
+compatible que verificaba PNG y carga del handler, pero no exigía que el bundle
+real preservara `import('@vercel/og')` ni rechazaba `require('@vercel/og')`.
+
+### Correcciones
+
+El preparador ahora impone este orden:
+
+```text
+vercel pull --yes --environment=preview
+→ lectura segura de .vercel/.env.preview.local
+→ allowlist VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY
+→ build:store:vercel con esos valores públicos
+→ vercel build preview
+→ eliminación de todos los .env*
+→ auditoría final
+```
+
+El parser no ejecuta ni importa el archivo de entorno, ignora variables fuera
+de la allowlist, valida formato HTTPS y formato de clave pública, rechaza
+duplicados y marcadores ficticios, y sólo emite evidencia de presencia,
+formato y SHA-256. `PUBLIC_STORE_ORIGINS` queda fuera del build estático y
+permanece en el contexto runtime descargado para Vercel.
+
+La auditoría recorre HTML, JavaScript, CSS, mapas y manifiestos desplegables.
+Bloquea cualquiera de los cuatro marcadores ficticios, exige configuración
+pública coherente en el bundle y conserva únicamente hashes y formatos. Los
+archivos `.env*` se eliminan antes del manifiesto y no se copian al artifact.
+
+OG eliminó el import estático. `ImageResponse` se resuelve con un loader lazy
+cacheado basado en `import('@vercel/og')`, dentro del flujo asíncrono, y la
+inyección de pruebas se conserva. El auditor rechaza
+`require("@vercel/og")`, `require('@vercel/og')` y cargas de `index.node.js`;
+también exige importación dinámica preservada, paquete efectivo `type=module`
+y smoke PNG contra la dependencia empacada real.
+
+La auditoría remota ya no considera PASS al HTML 200 por sí solo. Expone y
+exige por separado:
+
+```text
+serverHtmlPassed
+clientConfigurationPassed
+clientStoreLoadPassed
+ogRuntimePassed
+```
+
+También bloquea assets `.invalid`, OG HTML/500, `FUNCTION_INVOCATION_FAILED`,
+Content-Type distinto de `image/png`, firma o dimensiones PNG inválidas y el
+estado de error textual de la tienda.
+
+### Política cerrada de recertificación
+
+La tercera preview demostró que `fourthPreviewForbidden=true` era una
+restricción prematura. La política no queda abierta: autoriza exactamente una
+cuarta preview de recertificación, con máximo total de cuatro y quinta preview
+prohibida.
+
+La cuarta requiere tres previews `FAILED_CERTIFICATION`, preservadas,
+`production=false`, `evidencePass=false`, hashes SHA-256 sin IDs planos,
+ancestry validada desde `978dd2b20c7338722b9bd3595a72dd4dfbbcbb66` y
+corrección ligada a:
+
+```text
+PUBLIC_STATIC_ENV_AND_OG_ESM_INTEROP_MISMATCH
+```
+
+El único comando permitido continúa siendo:
+
+```text
+vercel deploy --prebuilt --yes
+```
+
+`--prod`, promoción y aliases permanecen prohibidos.
+
+### Estado
+
+```text
+implementación local                  = PASS
+Node 24, suite social                 = 589 PASS / 2 skips Windows
+Node 22, fixtures compatibles         = 231 PASS / 2 skips Windows
+lint focal                            = PASS
+git diff --check                      = PASS
+artifact nuevo                        = no
+cuarta preview                        = no
+producción modificada                 = no
+Supabase modificado                   = no
+certificación externa                 = BLOCKED hasta recertificación final
+```

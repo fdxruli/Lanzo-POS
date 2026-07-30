@@ -1,4 +1,3 @@
-import { ImageResponse } from '@vercel/og';
 import {
   createPublicPortalSocialClient,
 } from '../_publicPortal.js';
@@ -30,6 +29,19 @@ const FINAL_ERROR_HEADERS = Object.freeze({
   'X-Robots-Tag': 'noindex, nofollow, noarchive',
 });
 
+let imageResponsePromise;
+
+export function loadImageResponse() {
+  imageResponsePromise ??= import('@vercel/og')
+    .then((module) => {
+      if (typeof module?.ImageResponse !== 'function') {
+        throw new TypeError('@vercel/og did not export ImageResponse.');
+      }
+      return module.ImageResponse;
+    });
+  return imageResponsePromise;
+}
+
 function parseRequest(request) {
   const method = typeof request?.method === 'string' ? request.method.toUpperCase() : '';
   const url = new URL(request.url);
@@ -56,7 +68,7 @@ function cacheFor(result, requestedVersion) {
   if (result?.status === 'not_found') return NOT_FOUND_CACHE;
   if (result?.status !== 'ok') return TEMPORARY_CACHE;
   if (
-    requestedVersion != null
+    requestedVersion !== null
     && Number.isSafeInteger(result.siteVersionNumber)
     && requestedVersion === result.siteVersionNumber
   ) {
@@ -100,7 +112,8 @@ export function renderStoreOgImage({
 export function createStoreOgHandler({
   portalClient,
   imageLoader,
-  ImageResponseImpl = ImageResponse,
+  ImageResponseImpl,
+  imageResponseLoader = loadImageResponse,
   environment = process.env,
   fetchImpl = globalThis.fetch,
 } = {}) {
@@ -150,8 +163,9 @@ export function createStoreOgHandler({
 
     const model = buildStoreOgCardModel({ result, logoImage, coverImage });
     try {
+      const ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
       return renderStoreOgImage({
-        ImageResponseImpl,
+        ImageResponseImpl: ResolvedImageResponseImpl,
         model,
         status: responseStatus,
         headers,
@@ -163,8 +177,9 @@ export function createStoreOgHandler({
         coverImage: null,
       });
       try {
+        const ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
         return renderStoreOgImage({
-          ImageResponseImpl,
+          ImageResponseImpl: ResolvedImageResponseImpl,
           model: fallbackModel,
           status: responseStatus,
           headers: responseHeaders(TEMPORARY_CACHE),

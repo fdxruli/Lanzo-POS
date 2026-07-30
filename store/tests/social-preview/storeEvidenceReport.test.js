@@ -26,6 +26,10 @@ const artifact = Object.freeze({
 const remote = Object.freeze({
   status: 'PASS',
   previewHost,
+  serverHtmlPassed: true,
+  clientConfigurationPassed: true,
+  clientStoreLoadPassed: true,
+  ogRuntimePassed: true,
   requests: [
     {
       name: 'store',
@@ -88,6 +92,9 @@ const remote = Object.freeze({
     'asset:immutable',
     'asset:head',
     'security:no-markers',
+    'store:client-configuration',
+    'store:client-load',
+    'og:runtime',
   ].map((name) => ({ name, passed: true })),
   failedChecks: [],
 });
@@ -151,6 +158,10 @@ describe('evidencia controlada de social preview 1.7', () => {
         bytes: 32_768,
       },
       checks: {
+        serverHtmlPassed: true,
+        clientConfigurationPassed: true,
+        clientStoreLoadPassed: true,
+        ogRuntimePassed: true,
         metadataUnique: true,
         canonicalConsistent: true,
         ogImageConsistent: true,

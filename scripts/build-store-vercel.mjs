@@ -34,7 +34,8 @@ const forbiddenContentPatterns = Object.freeze({
   pwa: /virtual:pwa-register|serviceWorker\.register|registerSW|workbox|manifest\.webmanifest/i,
   adminShell: /(?:^|["'\/])App\.jsx|PosPage|CajaPage|Dashboard|EcommercePortalSettings|ScannerModal|PublicStoreQrCode/i,
   adminContracts: /create_free_trial_license|device_security_token|staff_session_token|processSale|cashSync|posSync/i,
-  privateToken: /(?:VERCEL_TOKEN|GITHUB_TOKEN|SUPABASE_SERVICE_ROLE|service_role|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i
+  privateToken: /(?:VERCEL_TOKEN|GITHUB_TOKEN|SUPABASE_SERVICE_ROLE|service_role|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i,
+  fictitiousPublicEnvironment: /invalid-for-local-build|supabase\.invalid|sb_publishable_invalid_for_local_build|store\.invalid/i
 });
 
 const allowedRootFiles = new Set(['index.html', 'robots.txt']);

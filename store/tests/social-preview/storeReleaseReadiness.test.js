@@ -171,6 +171,10 @@ const remote = {
   ogImage: { passed: true, width: 1200, height: 630, bytes: 32_768 },
   ogImageSha256: 'e'.repeat(64),
   checks: allTrue([
+    'serverHtmlPassed',
+    'clientConfigurationPassed',
+    'clientStoreLoadPassed',
+    'ogRuntimePassed',
     'metadataUnique',
     'canonicalConsistent',
     'ogImageConsistent',
@@ -208,10 +212,17 @@ const detailedRemoteChecks = [
   'asset:immutable',
   'asset:head',
   'security:no-markers',
+  'store:client-configuration',
+  'store:client-load',
+  'og:runtime',
 ];
 const realisticRemoteAudit = {
   status: 'PASS',
   previewHost,
+  serverHtmlPassed: true,
+  clientConfigurationPassed: true,
+  clientStoreLoadPassed: true,
+  ogRuntimePassed: true,
   requests: [{
     name: 'store',
     method: 'GET',
@@ -723,12 +734,22 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
           );
           writeFileSync(path.join(staticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
           writeFileSync(path.join(staticRoot, 'assets', 'index-AbCd1234.css'), 'body{color:#123456}');
-          writeFileSync(path.join(staticRoot, 'assets', 'index-ZyXw9876.js'), 'export const store=true;');
+          writeFileSync(
+            path.join(staticRoot, 'assets', 'index-ZyXw9876.js'),
+            'const url="https://public-fixture.supabase.co/";'
+              + 'const key="sb_publishable_fixture_public_key_123456";'
+              + 'const storageKey="lanzo-public-store-auth";'
+              + 'export const configured=Boolean(url&&key&&storageKey);',
+          );
           return {};
         }
         if (args.includes('pull')) {
           mkdirSync(path.join(workspaceRoot, '.vercel'), { recursive: true });
-          writeFileSync(path.join(workspaceRoot, '.vercel', '.env.preview.local'), 'FIXTURE_ONLY=value\n');
+          writeFileSync(
+            path.join(workspaceRoot, '.vercel', '.env.preview.local'),
+            'VITE_SUPABASE_URL="https://public-fixture.supabase.co/"\n'
+              + 'VITE_SUPABASE_PUBLISHABLE_KEY="sb_publishable_fixture_public_key_123456"\n',
+          );
           return {};
         }
         if (args.includes('build')) {

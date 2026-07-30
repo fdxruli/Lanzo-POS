@@ -22,8 +22,18 @@ const correctiveHead = 'b'.repeat(40);
 const deploymentIdHash = 'c'.repeat(64);
 const finalCertificationHead = 'd'.repeat(40);
 const secondDeploymentIdHash = 'e'.repeat(64);
+const thirdDeploymentIdHash = '3c212866b1c49c3cf983d8f0d35a374c5effd99dc38ae1c3d6f3c0b0085f7a41';
+const thirdPreviewHead = '978dd2b20c7338722b9bd3595a72dd4dfbbcbb66';
+const recertificationHead = 'f'.repeat(40);
 const runtimeFailureCode = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
 const transitiveRuntimeFailureCode = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
+const publicRuntimeEnvironmentFailureCode = 'PUBLIC_STATIC_ENV_AND_OG_ESM_INTEROP_MISMATCH';
+const publicAssetSource = [
+  'const url="https://public-fixture.supabase.co/";',
+  'const key="sb_publishable_fixture_public_key_123456";',
+  'const storageKey="lanzo-public-store-auth";',
+  'export const configured=Boolean(url&&key&&storageKey);',
+].join('');
 const staticHtml = `<!doctype html><html lang="es-MX"><head>
 <title>Tienda en línea | Lanzo</title>
 <meta name="description" content="Consulta productos">
@@ -174,6 +184,42 @@ function finalCertificationPreviewPlan(overrides = {}) {
   };
 }
 
+function recertificationPreviewPlan(overrides = {}) {
+  return {
+    deploymentPolicy: 'single-recertification-preview',
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewDeployments: 3,
+    previousPreviews: [
+      ...finalCertificationPreviewPlan().previousPreviews,
+      {
+        projectName: 'lanzo-store',
+        deploymentType: 'preview',
+        production: false,
+        status: 'FAILED_CERTIFICATION',
+        evidencePass: false,
+        deploymentIdHash: thirdDeploymentIdHash,
+        head: thirdPreviewHead,
+        preserved: true,
+        failureCode: publicRuntimeEnvironmentFailureCode,
+      },
+    ],
+    head: recertificationHead,
+    headRelationship: 'validated-descendant',
+    headAncestryVerified: true,
+    previousFailureCode: publicRuntimeEnvironmentFailureCode,
+    correctionFailureCode: publicRuntimeEnvironmentFailureCode,
+    previousCorrectivePreviewDeployments: 1,
+    previousFinalCertificationPreviewDeployments: 1,
+    recertificationAuthorized: true,
+    recertificationNumber: 1,
+    recertificationExecuted: false,
+    commandArgs: ['deploy', '--prebuilt', '--yes'],
+    ...overrides,
+  };
+}
+
 async function fixtureFetch(input, options = {}) {
   const url = new URL(input);
   if (options.method === 'HEAD') {
@@ -226,7 +272,7 @@ async function fixtureFetch(input, options = {}) {
     });
   }
   if (url.pathname === assetPath) {
-    return response('export const store=true;', {
+    return response(publicAssetSource, {
       contentType: 'text/javascript',
       cacheControl: 'public, max-age=31536000, immutable',
     });
@@ -237,6 +283,23 @@ async function fixtureFetch(input, options = {}) {
 function withFixtureOverride(overrides = {}) {
   return async (input, options = {}) => {
     const url = new URL(input);
+    if (overrides.assetSource && url.pathname === assetPath && options.method !== 'HEAD') {
+      return response(overrides.assetSource, {
+        contentType: 'text/javascript',
+        cacheControl: 'public, max-age=31536000, immutable',
+      });
+    }
+    if (
+      overrides.ogHtml
+      && url.pathname === '/api/og/store'
+      && options.method !== 'HEAD'
+    ) {
+      return response('<!doctype html><h1>FUNCTION_INVOCATION_FAILED</h1>', {
+        status: 500,
+        contentType: 'text/html; charset=utf-8',
+        cacheControl: 'no-store',
+      });
+    }
     if (
       overrides.poisonHostileQuery
       && url.pathname === `/tienda/${slug}`
@@ -366,13 +429,64 @@ describe('validación remota saneada de lanzo-store', () => {
     });
   });
 
+  it('autoriza exactamente una cuarta preview de recertificación y prohíbe una quinta', () => {
+    expect(validatePreviewDeploymentPlan(recertificationPreviewPlan())).toMatchObject({
+      deploymentPolicy: 'single-recertification-preview',
+      previousPreviewCount: 3,
+      previousPreviewFailedCertifications: 3,
+      previousPreviewEvidencePass: false,
+      previousPreviewsPreserved: true,
+      previousPreviewDeploymentIdHashes: [
+        deploymentIdHash,
+        secondDeploymentIdHash,
+        thirdDeploymentIdHash,
+      ],
+      previousFailureCodes: [
+        runtimeFailureCode,
+        transitiveRuntimeFailureCode,
+        publicRuntimeEnvironmentFailureCode,
+      ],
+      correctionFailureCode: publicRuntimeEnvironmentFailureCode,
+      recertificationAuthorized: true,
+      recertificationNumber: 1,
+      recertificationExecuted: false,
+      fourthPreviewAuthorized: true,
+      maximumTotalPreviewCount: 4,
+      fifthPreviewForbidden: true,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+  });
+
+  it.each([
+    ['quinta preview', { previousPreviewDeployments: 4 }, 'At most three'],
+    ['tercera preview PASS', {
+      previousPreviews: recertificationPreviewPlan().previousPreviews.map((entry, index) => (
+        index === 2 ? { ...entry, evidencePass: true } : entry
+      )),
+    }, 'without PASS evidence'],
+    ['hash plano', {
+      previousPreviews: recertificationPreviewPlan().previousPreviews.map((entry, index) => (
+        index === 2 ? { ...entry, deploymentIdHash: 'dpl_plain_identifier' } : entry
+      )),
+    }, 'SHA-256'],
+    ['failure code distinto', {
+      correctionFailureCode: transitiveRuntimeFailureCode,
+    }, 'public runtime environment failure'],
+    ['ancestry ausente', { headAncestryVerified: false }, 'descend from the third'],
+    ['recertificación ya ejecutada', { recertificationExecuted: true }, 'unexecuted fourth-preview'],
+  ])('rechaza recertificación contradictoria: %s', (_label, override, message) => {
+    expect(() => validatePreviewDeploymentPlan(recertificationPreviewPlan(override)))
+      .toThrow(message);
+  });
+
   it('rechaza historial distinto de exactamente dos previews para certificación final', () => {
     expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({
       previousPreviewDeployments: 1,
     }))).toThrow('exactly two');
     expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({
       previousPreviewDeployments: 3,
-    }))).toThrow('At most two');
+    }))).toThrow('exactly two');
   });
 
   it.each([
@@ -431,6 +545,8 @@ describe('validación remota saneada de lanzo-store', () => {
         .toThrow('Only vercel deploy');
       expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({ commandArgs })))
         .toThrow('Only vercel deploy');
+      expect(() => validatePreviewDeploymentPlan(recertificationPreviewPlan({ commandArgs })))
+        .toThrow('Only vercel deploy');
     }
   });
 
@@ -482,6 +598,8 @@ describe('validación remota saneada de lanzo-store', () => {
       .toMatchObject({ correctivePreviewAuthorized: true });
     expect(validatePreviewDeploymentPlan(finalCertificationPreviewPlan()))
       .toMatchObject({ finalCertificationAuthorized: true });
+    expect(validatePreviewDeploymentPlan(recertificationPreviewPlan()))
+      .toMatchObject({ recertificationAuthorized: true });
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
@@ -539,7 +657,7 @@ describe('validación remota saneada de lanzo-store', () => {
     await mkdir(path.join(root, 'assets'), { recursive: true });
     await Promise.all([
       writeFile(indexPath, staticHtml),
-      writeFile(path.join(root, assetPath.slice(1)), 'export const store=true;'),
+      writeFile(path.join(root, assetPath.slice(1)), publicAssetSource),
     ]);
     const result = await auditRemoteStoreDeployment({
       baseUrl: preview,
@@ -555,6 +673,12 @@ describe('validación remota saneada de lanzo-store', () => {
     expect(result.metadata.canonicalPath).toBe(`/tienda/${slug}`);
     expect(result.ogImage).toMatchObject({ png: true, width: 1200, height: 630 });
     expect(result.security).toMatchObject({ passed: true, findings: [] });
+    expect(result).toMatchObject({
+      serverHtmlPassed: true,
+      clientConfigurationPassed: true,
+      clientStoreLoadPassed: true,
+      ogRuntimePassed: true,
+    });
     expect(JSON.stringify(result.requests)).not.toContain('<html');
     expect(JSON.stringify(result.requests)).not.toContain('137,80,78,71');
     expect(JSON.stringify(result.requests)).not.toMatch(/authorization|set-cookie/iu);
@@ -567,7 +691,7 @@ describe('validación remota saneada de lanzo-store', () => {
     await mkdir(path.join(root, 'assets'), { recursive: true });
     await Promise.all([
       writeFile(indexPath, staticHtml),
-      writeFile(path.join(root, assetPath.slice(1)), 'export const store=true;'),
+      writeFile(path.join(root, assetPath.slice(1)), publicAssetSource),
     ]);
     for (const [override, expectedCheck] of [
       [{ ogUnversioned: 'public, no-store' }, 'og:png'],
@@ -586,13 +710,38 @@ describe('validación remota saneada de lanzo-store', () => {
     }
   });
 
+  it.each([
+    ['placeholder estático', {
+      assetSource: `${publicAssetSource};const bad="supabase.invalid";`,
+    }, ['store:client-configuration', 'store:client-load']],
+    ['HTML de error OG', {
+      ogHtml: true,
+    }, ['og:png', 'og-versioned:png', 'og:runtime']],
+  ])('bloquea el fallo remoto real: %s', async (_label, override, expectedChecks) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-remote-runtime-fixture-'));
+    const indexPath = path.join(root, 'index.html');
+    await mkdir(path.join(root, 'assets'), { recursive: true });
+    await Promise.all([
+      writeFile(indexPath, staticHtml),
+      writeFile(path.join(root, assetPath.slice(1)), publicAssetSource),
+    ]);
+    const result = await auditRemoteStoreDeployment({
+      baseUrl: preview,
+      slug,
+      fetchImpl: withFixtureOverride(override),
+      localIndexPath: indexPath,
+    });
+    expect(result.status).toBe('BLOCKED');
+    expect(result.failedChecks).toEqual(expect.arrayContaining(expectedChecks));
+  });
+
   it('acepta copy legítimo con otro/externo y bloquea slug estructural alterado', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-hostile-query-fixture-'));
     const indexPath = path.join(root, 'index.html');
     await mkdir(path.join(root, 'assets'), { recursive: true });
     await Promise.all([
       writeFile(indexPath, staticHtml),
-      writeFile(path.join(root, assetPath.slice(1)), 'export const store=true;'),
+      writeFile(path.join(root, assetPath.slice(1)), publicAssetSource),
     ]);
     const valid = await auditRemoteStoreDeployment({
       baseUrl: preview,

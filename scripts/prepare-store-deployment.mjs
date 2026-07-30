@@ -43,6 +43,16 @@ const DEFAULT_VERCEL_COMMAND = 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const EXPECTED_PUBLIC_FUNCTION_ROUTES = Object.freeze(['/api/og/store', '/api/store-page']);
+const ALLOWED_PUBLIC_BUILD_ENVIRONMENT = Object.freeze([
+  'VITE_SUPABASE_URL',
+  'VITE_SUPABASE_PUBLISHABLE_KEY',
+]);
+const FORBIDDEN_DEPLOYABLE_MARKERS = Object.freeze([
+  'invalid-for-local-build',
+  'supabase.invalid',
+  'sb_publishable_invalid_for_local_build',
+  'store.invalid',
+]);
 
 const excludedRootNames = new Set([
   '.git',
@@ -767,6 +777,99 @@ export function buildVercelExecutionEnvironment({
   return Object.freeze(vercelEnvironment);
 }
 
+function parseDotenvValue(rawValue) {
+  const value = rawValue.trim();
+  if (!value) return '';
+  if (value.startsWith("'")) {
+    if (!value.endsWith("'")) throw new Error('Preview environment contains an unterminated quoted value.');
+    return value.slice(1, -1);
+  }
+  if (value.startsWith('"')) {
+    if (!value.endsWith('"')) throw new Error('Preview environment contains an unterminated quoted value.');
+    return value.slice(1, -1)
+      .replaceAll('\\n', '\n')
+      .replaceAll('\\r', '\r')
+      .replaceAll('\\t', '\t')
+      .replace(/\\"/gu, '"')
+      .replace(/\\\\/gu, '\\');
+  }
+  return value.replace(/\s+#.*$/u, '').trim();
+}
+
+export function parsePreviewPublicEnvironment(source) {
+  if (typeof source !== 'string') throw new TypeError('Preview environment must be text.');
+  const allowed = new Set(ALLOWED_PUBLIC_BUILD_ENVIRONMENT);
+  const values = {};
+  for (const rawLine of source.replace(/^\uFEFF/u, '').split(/\r?\n/u)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/u.exec(line);
+    if (!match || !allowed.has(match[1])) continue;
+    if (Object.hasOwn(values, match[1])) {
+      throw new Error(`Preview environment contains duplicate ${match[1]}.`);
+    }
+    values[match[1]] = parseDotenvValue(match[2]);
+  }
+  if (!ALLOWED_PUBLIC_BUILD_ENVIRONMENT.every((name) => values[name])) {
+    throw new Error('Preview environment is missing an allowlisted public build variable.');
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(values.VITE_SUPABASE_URL);
+  } catch {
+    throw new Error('Preview VITE_SUPABASE_URL has an invalid format.');
+  }
+  if (
+    parsedUrl.protocol !== 'https:'
+    || parsedUrl.username
+    || parsedUrl.password
+    || parsedUrl.port
+    || parsedUrl.pathname !== '/'
+    || parsedUrl.search
+    || parsedUrl.hash
+    || parsedUrl.hostname.endsWith('.invalid')
+  ) {
+    throw new Error('Preview VITE_SUPABASE_URL must be a safe HTTPS origin.');
+  }
+  const publishableKey = values.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const publishableKeyFormat = /^sb_publishable_[A-Za-z0-9_-]{12,}$/u.test(publishableKey)
+    ? 'sb_publishable'
+    : (/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(publishableKey)
+        ? 'anon-jwt'
+        : null);
+  if (!publishableKeyFormat) {
+    throw new Error('Preview VITE_SUPABASE_PUBLISHABLE_KEY has an invalid public-key format.');
+  }
+  const serialized = JSON.stringify(values).toLowerCase();
+  if (FORBIDDEN_DEPLOYABLE_MARKERS.some((marker) => serialized.includes(marker))) {
+    throw new Error('Preview public build variables contain a forbidden placeholder.');
+  }
+  return Object.freeze({
+    buildEnvironment: Object.freeze({
+      VITE_SUPABASE_URL: values.VITE_SUPABASE_URL,
+      VITE_SUPABASE_PUBLISHABLE_KEY: publishableKey,
+    }),
+    evidence: Object.freeze({
+      VITE_SUPABASE_URL: Object.freeze({
+        present: true,
+        format: 'https-origin',
+        hostSha256: sha256(parsedUrl.hostname),
+        fictitiousMarkerAbsent: true,
+      }),
+      VITE_SUPABASE_PUBLISHABLE_KEY: Object.freeze({
+        present: true,
+        format: publishableKeyFormat,
+        valueSha256: sha256(publishableKey),
+        fictitiousMarkerAbsent: true,
+      }),
+    }),
+  });
+}
+
+export async function loadPreviewPublicEnvironment(environmentPath) {
+  return parsePreviewPublicEnvironment(await readFile(environmentPath, 'utf8'));
+}
+
 export function resolveSpawnInvocation({
   command,
   args,
@@ -795,6 +898,10 @@ function sanitizeCommandDiagnostic(value, cwd) {
   return diagnostic
     .replace(/\b(?:sb_secret|ghp|github_pat|vcp|vercel)_[A-Za-z0-9_-]{8,}\b/giu, '<redacted>')
     .replace(/(SUPABASE_SERVICE_ROLE\s*=\s*)[^\s]+/giu, '$1<redacted>')
+    .replace(
+      /((?:VITE_SUPABASE_URL|VITE_SUPABASE_PUBLISHABLE_KEY)\s*=\s*)[^\s]+/giu,
+      '$1<present>',
+    )
     .slice(0, 1_000);
 }
 
@@ -1575,22 +1682,11 @@ export async function prepareStoreDeployment({
 
     const npmExecutionEnvironment = buildNpmExecutionEnvironment({ environment });
     await mkdir(npmExecutionEnvironment.NPM_CONFIG_CACHE, { recursive: true });
-    const buildEnvironment = {
-      ...npmExecutionEnvironment,
-      VITE_SUPABASE_URL: 'https://invalid-for-local-build.supabase.invalid',
-      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_invalid_for_local_build',
-      PUBLIC_STORE_ORIGINS: 'https://store.invalid',
-    };
     commandRunner(installInvocation.command, installInvocation.args, {
       cwd: workspaceRoot,
       environment: npmExecutionEnvironment,
       ...installInvocation.options,
     });
-    commandRunner(
-      directBuildInvocation.command,
-      directBuildInvocation.args,
-      { cwd: workspaceRoot, environment: buildEnvironment, ...directBuildInvocation.options },
-    );
     commandRunner(
       resolvedVercelInvocation.command,
       [...resolvedVercelInvocation.argsPrefix, 'pull', '--yes', '--environment=preview'],
@@ -1607,6 +1703,16 @@ export async function prepareStoreDeployment({
       }
       await writeFile(downloadedEnvironmentPath, '', { encoding: 'utf8', flag: 'wx' });
     }
+    const previewPublicEnvironment = await loadPreviewPublicEnvironment(downloadedEnvironmentPath);
+    const buildEnvironment = {
+      ...npmExecutionEnvironment,
+      ...previewPublicEnvironment.buildEnvironment,
+    };
+    commandRunner(
+      directBuildInvocation.command,
+      directBuildInvocation.args,
+      { cwd: workspaceRoot, environment: buildEnvironment, ...directBuildInvocation.options },
+    );
     const prebuiltConfigPath = path.join(storeRoot, 'vercel.prebuilt.json');
     const { sourceConfig, prebuiltConfig } = await writePrebuiltVercelConfig({
       sourceConfigPath: path.join(storeRoot, 'vercel.json'),
@@ -1623,7 +1729,6 @@ export async function prepareStoreDeployment({
       { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
 
-    await removeWorkspaceEnvironmentFiles({ workspaceRoot });
     const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
     const outputConfigPath = path.join(outputRoot, 'config.json');
     const outputFunctionsPath = path.join(outputRoot, 'functions');
@@ -1653,7 +1758,6 @@ export async function prepareStoreDeployment({
         [...resolvedVercelInvocation.argsPrefix, 'build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
         { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
       );
-      await removeWorkspaceEnvironmentFiles({ workspaceRoot });
       usedExplicitBuildsFallback = true;
       finalFunctionInventory = await inspectGeneratedFunctionInventory(outputFunctionsPath);
       if (!finalFunctionInventory.complete) {
@@ -1663,6 +1767,7 @@ export async function prepareStoreDeployment({
         })}`);
       }
     }
+    await removeWorkspaceEnvironmentFiles({ workspaceRoot });
     if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output after function packaging.');
     const functionRuntimeCompatibility = await applyGeneratedFunctionRuntimeCompatibility(
       outputFunctionsPath,
@@ -1794,6 +1899,15 @@ export async function prepareStoreDeployment({
         build: BUILD_COMMAND,
         deploy: DEPLOY_COMMAND,
       },
+      executionOrder: Object.freeze([
+        'vercel pull preview',
+        'load allowlisted public environment',
+        'build static store',
+        'vercel build',
+        'remove environment files',
+        'audit final output',
+      ]),
+      publicBuildEnvironment: previewPublicEnvironment.evidence,
       zeroConfigFunctionInventory,
       finalFunctionInventory,
       prebuiltConfig: {

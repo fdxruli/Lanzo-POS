@@ -21,6 +21,12 @@ const MISSING_SLUG = 'slug-inexistente-controlado';
 const TRACKING_TOKEN = 'token-ficticio';
 const DEFAULT_PRODUCTION_HOSTS = Object.freeze(['lanzo-store.vercel.app']);
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const FORBIDDEN_PUBLIC_RUNTIME_MARKERS = Object.freeze([
+  'invalid-for-local-build',
+  'supabase.invalid',
+  'sb_publishable_invalid_for_local_build',
+  'store.invalid',
+]);
 
 export function parseCacheControl(value) {
   const directives = new Map();
@@ -177,10 +183,15 @@ const PREVIEW_DEPLOYMENT_PLAN_KEYS = new Set([
   'finalCertificationAuthorized',
   'finalCertificationNumber',
   'finalCertificationExecuted',
+  'previousFinalCertificationPreviewDeployments',
+  'recertificationAuthorized',
+  'recertificationNumber',
+  'recertificationExecuted',
   'commandArgs',
 ]);
 const CORRECTIVE_RUNTIME_FAILURE = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
 const TRANSITIVE_RUNTIME_FAILURE = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
+const PUBLIC_RUNTIME_ENVIRONMENT_FAILURE = 'PUBLIC_STATIC_ENV_AND_OG_ESM_INTEROP_MISMATCH';
 const PREVIOUS_PREVIEW_HISTORY_KEYS = new Set([
   'projectName',
   'deploymentType',
@@ -271,6 +282,10 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     finalCertificationAuthorized,
     finalCertificationNumber,
     finalCertificationExecuted,
+    previousFinalCertificationPreviewDeployments,
+    recertificationAuthorized,
+    recertificationNumber,
+    recertificationExecuted,
     commandArgs,
   } = plan;
   if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
@@ -283,8 +298,8 @@ export function validatePreviewDeploymentPlan(plan = {}) {
   if (!/^[a-f0-9]{40}$/u.test(head || '')) {
     throw new Error('The candidate deployment HEAD must be a full Git SHA-1.');
   }
-  if (![0, 1, 2].includes(previousPreviewDeployments)) {
-    throw new Error('At most two failed previews may precede the final certification.');
+  if (![0, 1, 2, 3].includes(previousPreviewDeployments)) {
+    throw new Error('At most three failed previews may precede the final recertification.');
   }
 
   const previousEvidenceFields = [
@@ -305,6 +320,10 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     finalCertificationAuthorized,
     finalCertificationNumber,
     finalCertificationExecuted,
+    previousFinalCertificationPreviewDeployments,
+    recertificationAuthorized,
+    recertificationNumber,
+    recertificationExecuted,
   ];
   if (deploymentPolicy === 'single-preview') {
     if (previousPreviewDeployments !== 0) {
@@ -414,8 +433,92 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     });
   }
 
-  if (deploymentPolicy !== 'single-final-certification-preview') {
-    throw new Error('The deployment policy must explicitly select initial, corrective, or final preview.');
+  if (
+    deploymentPolicy !== 'single-final-certification-preview'
+    && deploymentPolicy !== 'single-recertification-preview'
+  ) {
+    throw new Error('The deployment policy must explicitly select initial, corrective, final, or recertification preview.');
+  }
+  if (deploymentPolicy === 'single-recertification-preview') {
+    if (
+      previousPreviewDeployments !== 3
+      || !Array.isArray(previousPreviews)
+      || previousPreviews.length !== 3
+    ) {
+      throw new Error('Recertification requires exactly three previous failed previews.');
+    }
+    const sanitizedHistory = previousPreviews
+      .map((entry, index) => validateFailedPreviewHistoryEntry(entry, index));
+    const expectedFailures = [
+      CORRECTIVE_RUNTIME_FAILURE,
+      TRANSITIVE_RUNTIME_FAILURE,
+      PUBLIC_RUNTIME_ENVIRONMENT_FAILURE,
+    ];
+    if (
+      JSON.stringify(sanitizedHistory.map((entry) => entry.failureCode))
+      !== JSON.stringify(expectedFailures)
+    ) {
+      throw new Error('Recertification history must contain the three diagnosed failures in order.');
+    }
+    const latestPreviewHead = sanitizedHistory[2].head;
+    const directDescendant = headRelationship === 'direct-descendant'
+      && headParent === latestPreviewHead;
+    const validatedDescendant = headRelationship === 'validated-descendant'
+      && headAncestryVerified === true;
+    if (head === latestPreviewHead || (!directDescendant && !validatedDescendant)) {
+      throw new Error('The recertification HEAD must descend from the third failed preview.');
+    }
+    if (
+      previousFailureCode !== PUBLIC_RUNTIME_ENVIRONMENT_FAILURE
+      || correctionFailureCode !== previousFailureCode
+    ) {
+      throw new Error('The recertification correction must match the public runtime environment failure.');
+    }
+    if (
+      previousCorrectivePreviewDeployments !== 1
+      || previousFinalCertificationPreviewDeployments !== 1
+      || recertificationAuthorized !== true
+      || recertificationNumber !== 1
+      || recertificationExecuted !== false
+    ) {
+      throw new Error('Exactly one unexecuted fourth-preview recertification must be authorized.');
+    }
+    if (
+      finalCertificationAuthorized !== undefined
+      || finalCertificationNumber !== undefined
+      || finalCertificationExecuted !== undefined
+      || correctivePreviewAuthorized !== undefined
+      || correctivePreviewNumber !== undefined
+      || correctivePreviewExecuted !== undefined
+    ) {
+      throw new Error('Recertification evidence cannot reuse earlier preview authorization fields.');
+    }
+    return Object.freeze({
+      deploymentPolicy,
+      projectName,
+      deploymentType,
+      previousPreviewCount: 3,
+      previousPreviewFailedCertifications: 3,
+      previousPreviewEvidencePass: false,
+      previousPreviewsPreserved: sanitizedHistory.every((entry) => entry.preserved),
+      previousPreviewDeploymentIdHashes: Object.freeze(
+        sanitizedHistory.map((entry) => entry.deploymentIdHash),
+      ),
+      previousPreviewHeads: Object.freeze(sanitizedHistory.map((entry) => entry.head)),
+      previousFailureCodes: Object.freeze(sanitizedHistory.map((entry) => entry.failureCode)),
+      candidateHead: head,
+      headRelationship,
+      headAncestryVerified: directDescendant ? true : headAncestryVerified,
+      correctionFailureCode,
+      recertificationAuthorized: true,
+      recertificationNumber: 1,
+      recertificationExecuted: false,
+      fourthPreviewAuthorized: true,
+      maximumTotalPreviewCount: 4,
+      fifthPreviewForbidden: true,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
   }
   if (previousPreviewDeployments !== 2 || !Array.isArray(previousPreviews) || previousPreviews.length !== 2) {
     throw new Error('Final certification requires exactly two previous failed previews.');
@@ -854,6 +957,32 @@ export async function auditRemoteStoreDeployment({
   addCheck(checks, 'og:head', ogHead.status === 200 && ogHead.contentType === 'image/png');
 
   const asset = await request('asset', paths.asset);
+  const assetSource = asset.text || '';
+  const assetHasPublicOrigin = /https:\/\/[a-z0-9-]+\.supabase\.co(?:\/)?/iu.test(assetSource);
+  const assetHasPublishableKey = (
+    /\bsb_publishable_[A-Za-z0-9_-]{12,}\b/u.test(assetSource)
+    || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/u.test(assetSource)
+  );
+  const assetHasPublicClientOptions = assetSource.includes('lanzo-public-store-auth');
+  const assetHasFictitiousMarker = FORBIDDEN_PUBLIC_RUNTIME_MARKERS
+    .some((marker) => assetSource.toLowerCase().includes(marker));
+  const serverHtmlPassed = checks.find((item) => item.name === 'store:metadata')?.passed === true;
+  const clientConfigurationPassed = asset.status === 200
+    && assetHasPublicOrigin
+    && assetHasPublishableKey
+    && assetHasPublicClientOptions
+    && !assetHasFictitiousMarker;
+  const clientStoreLoadPassed = clientConfigurationPassed
+    && apiStore.status === 200
+    && apiStore.contentType === 'text/html'
+    && apiHtml.valueHashes.canonical === storeHtml.valueHashes.canonical
+    && !(store.text || '').includes('No se pudo cargar la tienda');
+  const ogRuntimePassed = checks.find((item) => item.name === 'og:png')?.passed === true
+    && ogInspection?.png === true
+    && ogInspection.bytes > 1_000;
+  addCheck(checks, 'store:client-configuration', clientConfigurationPassed);
+  addCheck(checks, 'store:client-load', clientStoreLoadPassed);
+  addCheck(checks, 'og:runtime', ogRuntimePassed);
   addCheck(checks, 'asset:immutable', asset.status === 200
     && validateCacheControl(asset.headers.cacheControl, 'hashed-asset')
     && asset.bodySha256 === sha256(await readFile(path.join(path.dirname(localIndexPath), paths.asset.slice(1)))));
@@ -866,6 +995,10 @@ export async function auditRemoteStoreDeployment({
   return Object.freeze({
     status: failedChecks.length === 0 ? 'PASS' : 'BLOCKED',
     previewHost: origin.hostname,
+    serverHtmlPassed,
+    clientConfigurationPassed,
+    clientStoreLoadPassed,
+    ogRuntimePassed,
     requests: requests.map(({ name, method, status, headers, bytes, bodySha256, contentType }) => ({
       name, method, status, headers, bytes, bodySha256, contentType,
     })),
@@ -949,6 +1082,10 @@ export function buildEvidenceReport({
     && remote.ogImage.bytes > 0
     && /^[a-f0-9]{64}$/u.test(remote.ogImage?.sha256 || '');
   const checks = Object.freeze({
+    serverHtmlPassed: remote.serverHtmlPassed === true,
+    clientConfigurationPassed: remote.clientConfigurationPassed === true,
+    clientStoreLoadPassed: remote.clientStoreLoadPassed === true,
+    ogRuntimePassed: remote.ogRuntimePassed === true,
     metadataUnique,
     canonicalConsistent: passed(
       'store:metadata',
@@ -972,6 +1109,9 @@ export function buildEvidenceReport({
       'asset:immutable',
       'asset:head',
       'invalid-api:safe',
+      'store:client-configuration',
+      'store:client-load',
+      'og:runtime',
     ),
     trackingPassed: passed('tracking:static-fallback'),
     hostileQueryPassed: passed(

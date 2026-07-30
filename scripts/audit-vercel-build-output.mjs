@@ -1216,6 +1216,42 @@ export function inspectExecutableDependencies(filesWithSource) {
   });
 }
 
+async function inspectVercelOgEsmInterop(bundleRoot, executableSources) {
+  const applicationSources = executableSources.filter(({ relativePath }) => (
+    !normalizePath(relativePath).startsWith('node_modules/')
+  ));
+  const dynamicImportEvidence = applicationSources
+    .filter(({ source }) => /\bimport\s*\(\s*['"]@vercel\/og['"]\s*\)/u.test(source))
+    .map(({ relativePath }) => normalizePath(relativePath))
+    .sort();
+  const forbiddenRequireEvidence = applicationSources
+    .filter(({ source }) => (
+      /\brequire\s*\(\s*['"]@vercel\/og['"]\s*\)/u.test(source)
+      || /\brequire\s*\([^)]*(?:@vercel\/og|index\.node\.js)/u.test(source)
+    ))
+    .map(({ relativePath }) => normalizePath(relativePath))
+    .sort();
+  let packageType = null;
+  let packageReadable = false;
+  try {
+    const packageJson = JSON.parse(await readFile(
+      path.join(bundleRoot, 'node_modules', '@vercel', 'og', 'package.json'),
+      'utf8',
+    ));
+    packageReadable = Boolean(packageJson && typeof packageJson === 'object');
+    packageType = packageJson?.type || null;
+  } catch { /* represented by packageReadable=false */ }
+  return Object.freeze({
+    dynamicImportPreserved: dynamicImportEvidence.length > 0,
+    dynamicImportEvidence: Object.freeze(dynamicImportEvidence),
+    forbiddenRequireAbsent: forbiddenRequireEvidence.length === 0,
+    forbiddenRequireEvidence: Object.freeze(forbiddenRequireEvidence),
+    packageReadable,
+    packageType,
+    packageIsEsm: packageReadable && packageType === 'module',
+  });
+}
+
 export function formatSafetyFailureDetails(safety, failedChecks, limit = 5) {
   const details = [];
   if (failedChecks.includes('noSecrets')) {
@@ -1258,6 +1294,9 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
       path.extname(file.relativePath).toLowerCase(),
     ));
     const dependencies = inspectExecutableDependencies(executableSources);
+    const ogEsmInterop = bundle.route === '/api/og/store'
+      ? await inspectVercelOgEsmInterop(bundle.absolutePath, executableSources)
+      : null;
     // Sourcemaps remain in safety scanning for secrets and admin code, but only
     // executable source participates in local-import detection.
     const safety = inspectTextForSafety(sources, 'store');
@@ -1414,6 +1453,7 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
         react: dependencies.react,
         evidence: dependencies.evidence,
       },
+      ogEsmInterop,
       template: {
         markerPresent: /LANZO_SOCIAL_HEAD_START/u.test(joined),
         symbolPresent: /STORE_HTML_TEMPLATE/u.test(joined),
@@ -1511,6 +1551,9 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     ogFunctionFontsAllowed: ogFunction?.fonts.every((font) => font.allowed === true) === true,
     noEnvironmentFiles: details.every((item) => item.environmentFiles.length === 0),
     ogResolvesVercelOg: ogFunction?.dependencies.vercelOg === true,
+    ogDynamicImportPreserved: ogFunction?.ogEsmInterop?.dynamicImportPreserved === true,
+    ogHasNoVercelOgRequire: ogFunction?.ogEsmInterop?.forbiddenRequireAbsent === true,
+    vercelOgPackageIsEsm: ogFunction?.ogEsmInterop?.packageIsEsm === true,
     ogResolvesReact: ogFunction?.dependencies.react === true,
     htmlExcludesVercelOg: htmlFunction?.dependencies.vercelOg === false,
     htmlResolvesTemplate: Boolean(
@@ -1542,6 +1585,48 @@ export async function inspectStatic(staticRoot, targetName) {
   const safety = inspectTextForSafety(sources, targetName);
   const indexHtml = await readFile(path.join(staticRoot, 'index.html'), 'utf8');
   const assetPaths = paths.filter((item) => item.startsWith('assets/'));
+  const forbiddenPublicMarkers = Object.freeze([
+    'invalid-for-local-build',
+    'supabase.invalid',
+    'sb_publishable_invalid_for_local_build',
+    'store.invalid',
+  ]);
+  const placeholderViolations = sources.flatMap(({ relativePath, source }) => (
+    forbiddenPublicMarkers
+      .filter((marker) => source.toLowerCase().includes(marker))
+      .map((marker) => Object.freeze({ path: normalizePath(relativePath), marker }))
+  ));
+  const javascriptSources = sources.filter(({ relativePath }) => (
+    path.extname(relativePath).toLowerCase() === '.js'
+  ));
+  const publicConfigurationAssets = javascriptSources.flatMap(({ relativePath, source }) => {
+    const origins = [...source.matchAll(/https:\/\/[a-z0-9-]+\.supabase\.co(?:\/)?/giu)]
+      .map((match) => match[0]);
+    const publishableKeys = [
+      ...(source.match(/\bsb_publishable_[A-Za-z0-9_-]{12,}\b/gu) || []),
+      ...(source.match(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu) || []),
+    ];
+    if (origins.length === 0 && publishableKeys.length === 0) return [];
+    const hosts = origins.flatMap((value) => {
+      try { return [new URL(value).hostname]; } catch { return []; }
+    });
+    return [Object.freeze({
+      path: normalizePath(relativePath),
+      supabaseOriginPresent: origins.length > 0,
+      publishableKeyPresent: publishableKeys.length > 0,
+      hostSha256: Object.freeze([...new Set(hosts.map((host) => sha256(host)))].sort()),
+      publishableKeyFormats: Object.freeze([
+        ...(publishableKeys.some((value) => value.startsWith('sb_publishable_')) ? ['sb_publishable'] : []),
+        ...(publishableKeys.some((value) => value.startsWith('eyJ')) ? ['anon-jwt'] : []),
+      ]),
+      publicAuthOptionsPresent: source.includes('lanzo-public-store-auth'),
+    })];
+  });
+  const configuredPublicAsset = publicConfigurationAssets.find((item) => (
+    item.supabaseOriginPresent
+    && item.publishableKeyPresent
+    && item.publicAuthOptionsPresent
+  ));
   const checks = {
     indexPresent: paths.includes('index.html'),
     hashedJavascript: assetPaths.some((item) => /-[A-Za-z0-9_-]{6,}\.js$/u.test(item)),
@@ -1555,6 +1640,13 @@ export async function inspectStatic(staticRoot, targetName) {
     noSecrets: safety.secretViolations.length === 0,
     noAdministrativeCode: safety.administrativeViolations.length === 0,
     noPwaContent: safety.pwaViolations.length === 0,
+    noFictitiousPublicEnvironment: placeholderViolations.length === 0,
+    publicClientConfigurationPresent: Boolean(configuredPublicAsset),
+    publicSupabaseClientInitializable: Boolean(
+      configuredPublicAsset
+      && configuredPublicAsset.hostSha256.length === 1
+      && configuredPublicAsset.publishableKeyFormats.length >= 1
+    ),
   };
   if (targetName === 'store') {
     checks.robotsPresent = paths.includes('robots.txt');
@@ -1570,7 +1662,20 @@ export async function inspectStatic(staticRoot, targetName) {
     delete checks.noPwaContent;
     checks.adminPwaPresent = paths.includes('manifest.webmanifest') && paths.includes('sw.js');
   }
-  return { files, manifest: items, checks, safety };
+  return {
+    files,
+    manifest: items,
+    checks,
+    safety,
+    publicConfiguration: Object.freeze({
+      configured: Boolean(configuredPublicAsset),
+      configurationAsset: configuredPublicAsset?.path || null,
+      hostSha256: configuredPublicAsset?.hostSha256 || Object.freeze([]),
+      publishableKeyFormats: configuredPublicAsset?.publishableKeyFormats || Object.freeze([]),
+      fictitiousMarkersAbsent: placeholderViolations.length === 0,
+      placeholderViolations: Object.freeze(placeholderViolations),
+    }),
+  };
 }
 
 export function verifyTemporaryStoreRoot({ workspaceRoot, effectiveStoreRoot, temporaryRoot = os.tmpdir(), prefix = STORE_WORKSPACE_PREFIX }) {
@@ -1760,6 +1865,7 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     staticAudit: {
       checks: staticAudit.checks,
       safety: staticAudit.safety,
+      publicConfiguration: staticAudit.publicConfiguration,
       sourceMaps: staticAudit.manifest.filter((item) => item.path.endsWith('.map')).map((item) => item.path),
     },
     checks,

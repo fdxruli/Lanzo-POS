@@ -80,15 +80,16 @@ async function createFunction(functionsRoot, relativeRoute, source) {
       await writeJson(path.join(packageRoot, 'package.json'), {
         name: packageName,
         main: 'index.js',
+        ...(packageName === '@vercel/og' ? { type: 'module' } : {}),
       });
       await writeFile(
         path.join(packageRoot, 'index.js'),
         packageName === '@vercel/og'
-          ? `exports.ImageResponse=class ImageResponse extends Response{
+          ? `export class ImageResponse extends Response{
 constructor(){super(Uint8Array.from([137,80,78,71,13,10,26,10]),{
 status:200,headers:{"Content-Type":"image/png"}
 });}
-};\n`
+}\n`
           : 'module.exports={fixture:true};\n',
       );
     }
@@ -110,7 +111,11 @@ async function createFixture() {
     'index.html': INDEX_HTML,
     'robots.txt': 'User-agent: *\nDisallow: /\n',
     'assets/index-AbCd1234.css': 'body{color:#123456}',
-    'assets/index-ZyXw9876.js': 'export const publicStore=true;',
+    'assets/index-ZyXw9876.js': `export const publicStore=true;
+const url="https://public-fixture.supabase.co/";
+const key="sb_publishable_fixture_public_key_123456";
+const storageKey="lanzo-public-store-auth";
+export const configured=Boolean(url&&key&&storageKey);`,
   };
   for (const [relativePath, source] of Object.entries(staticFiles)) {
     await writeFile(path.join(staticRoot, relativePath), source);
@@ -151,10 +156,11 @@ export default {async fetch(){
   await createFunction(
     functionsRoot,
     'api/og/store',
-    `import {ImageResponse} from '@vercel/og';
+    `const loadImageResponse=()=>import('@vercel/og').then((module)=>module.ImageResponse);
 import React from 'react';
 export default {async fetch(){
   if(!React) throw new Error('react fixture missing');
+  const ImageResponse=await loadImageResponse();
   return new ImageResponse(null,{width:1200,height:630});
 }};`,
   );
@@ -212,6 +218,47 @@ describe('auditoría de .vercel/output', () => {
       ['mi-tienda'],
       ['mi-tienda'],
     ]);
+    expect(result.checks).toMatchObject({
+      noFictitiousPublicEnvironment: true,
+      publicClientConfigurationPresent: true,
+      publicSupabaseClientInitializable: true,
+      ogDynamicImportPreserved: true,
+      ogHasNoVercelOgRequire: true,
+      vercelOgPackageIsEsm: true,
+    });
+  });
+
+  it.each([
+    'invalid-for-local-build',
+    'supabase.invalid',
+    'sb_publishable_invalid_for_local_build',
+    'store.invalid',
+  ])('rechaza el placeholder desplegable %s en assets estáticos', async (marker) => {
+    const assetPath = path.join(fixture.staticRoot, 'assets', 'index-ZyXw9876.js');
+    const sourceAssetPath = path.join(fixture.sourceStatic, 'assets', 'index-ZyXw9876.js');
+    await Promise.all([
+      writeFile(assetPath, `export const leaked=${JSON.stringify(marker)};`),
+      writeFile(sourceAssetPath, `export const leaked=${JSON.stringify(marker)};`),
+    ]);
+    const result = await audit(fixture);
+    expect(result.status).toBe('FAIL');
+    expect(result.failedChecks).toContain('noFictitiousPublicEnvironment');
+    expect(result.staticAudit.checks.publicSupabaseClientInitializable).toBe(false);
+    expect(JSON.stringify(result.staticAudit.publicConfiguration)).not.toContain(
+      'sb_publishable_fixture_public_key_123456',
+    );
+  });
+
+  it('rechaza require de @vercel/og aunque la dependencia esté empacada', async () => {
+    const handlerPath = path.join(fixture.functionsRoot, 'api', 'og', 'store.func', 'index.mjs');
+    await writeFile(handlerPath, `const {ImageResponse}=require("@vercel/og");
+export default {async fetch(){return new ImageResponse(null,{width:1200,height:630});}};`);
+    const result = await audit(fixture);
+    expect(result.status).toBe('FAIL');
+    expect(result.failedChecks).toEqual(expect.arrayContaining([
+      'ogDynamicImportPreserved',
+      'ogHasNoVercelOgRequire',
+    ]));
   });
 
   it('reproduce el fallo transitorio de la plantilla y corrige atómicamente ambos scopes', async () => {
@@ -239,11 +286,11 @@ exports.default={fetch:async function(){
         handler: 'store/api/og/store.js',
         source: `"use strict";
 Object.defineProperty(exports,"__esModule",{value:true});
-const {ImageResponse}=require("@vercel/og");
 const React=require("react");
 const runtimeHelper=require("../_ogRuntime.js");
 exports.default={fetch:async function(){
   if(!React||!runtimeHelper.assertRuntime())throw new Error("OG runtime fixture missing");
+  const {ImageResponse}=await import("@vercel/og");
   return new ImageResponse(null,{width:1200,height:630});
 }};`,
       },
@@ -543,7 +590,10 @@ exports.STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};`,
   it('enumera fuentes del closure OG y rechaza las no autorizadas', async () => {
     const ogRoot = path.join(fixture.functionsRoot, 'api', 'og', 'store.func');
     await mkdir(path.join(ogRoot, 'node_modules', '@vercel', 'og'), { recursive: true });
-    await writeFile(path.join(ogRoot, 'node_modules', '@vercel', 'og', 'package.json'), '{"name":"@vercel/og"}');
+    await writeFile(
+      path.join(ogRoot, 'node_modules', '@vercel', 'og', 'package.json'),
+      '{"name":"@vercel/og","type":"module"}',
+    );
     await writeFile(path.join(ogRoot, 'node_modules', '@vercel', 'og', 'noto.woff'), 'font');
     let result = await audit(fixture);
     const og = result.functionAudit.bundles.find((bundle) => bundle.route === '/api/og/store');

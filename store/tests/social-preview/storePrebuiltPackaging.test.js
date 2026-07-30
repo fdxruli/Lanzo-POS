@@ -24,6 +24,8 @@ import {
   cleanupPreparedStoreWorkspace,
   createSanitizedStoreWorkspace,
   materializePrebuiltStaticOutput,
+  loadPreviewPublicEnvironment,
+  parsePreviewPublicEnvironment,
   createPrebuiltVercelConfig,
   createGitHeadSnapshot,
   assertPrebuiltVercelConfigParity,
@@ -54,10 +56,59 @@ import {
 
 const fixtureHead = 'a'.repeat(40);
 const fixtureTree = 'b'.repeat(40);
+const previewPublicEnvironmentFixture = [
+  'VITE_SUPABASE_URL="https://public-fixture.supabase.co/"',
+  'VITE_SUPABASE_PUBLISHABLE_KEY="sb_publishable_fixture_public_key_123456"',
+  'PRIVATE_RUNTIME_VALUE="must-not-be-loaded"',
+  '',
+].join('\n');
 const fixtureIdentity = Object.freeze({
   HEAD: fixtureHead,
   treeOid: fixtureTree,
   objectFormat: 'sha1',
+});
+
+describe('entorno público allowlisted de preview', () => {
+  it('carga únicamente las dos variables públicas y conserva evidencia saneada', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-preview-public-env-'));
+    const filePath = path.join(root, '.env.preview.local');
+    await writeFile(filePath, previewPublicEnvironmentFixture);
+    const parsed = await loadPreviewPublicEnvironment(filePath);
+
+    expect(parsed.buildEnvironment).toEqual({
+      VITE_SUPABASE_URL: 'https://public-fixture.supabase.co/',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_fixture_public_key_123456',
+    });
+    expect(parsed.evidence).toMatchObject({
+      VITE_SUPABASE_URL: {
+        present: true,
+        format: 'https-origin',
+        fictitiousMarkerAbsent: true,
+      },
+      VITE_SUPABASE_PUBLISHABLE_KEY: {
+        present: true,
+        format: 'sb_publishable',
+        fictitiousMarkerAbsent: true,
+      },
+    });
+    expect(JSON.stringify(parsed.evidence)).not.toContain('public-fixture.supabase.co');
+    expect(JSON.stringify(parsed.evidence)).not.toContain('sb_publishable_fixture');
+    expect(parsed.buildEnvironment).not.toHaveProperty('PRIVATE_RUNTIME_VALUE');
+  });
+
+  it.each([
+    ['URL ficticia', previewPublicEnvironmentFixture.replace(
+      'https://public-fixture.supabase.co/',
+      'https://invalid-for-local-build.supabase.invalid',
+    )],
+    ['key ficticia', previewPublicEnvironmentFixture.replace(
+      'sb_publishable_fixture_public_key_123456',
+      'sb_publishable_invalid_for_local_build',
+    )],
+    ['variable pública ausente', 'VITE_SUPABASE_URL=https://public-fixture.supabase.co/\n'],
+  ])('bloquea %s antes del build estático', (_label, source) => {
+    expect(() => parsePreviewPublicEnvironment(source)).toThrow();
+  });
 });
 
 function identityCommandResult(args, {
@@ -171,7 +222,13 @@ async function createStaticMaterializationFixture() {
       '<link href="/assets/index-ZyXw9876.css">',
     ].join('')),
     writeFile(path.join(sourceStaticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n'),
-    writeFile(path.join(sourceStaticRoot, 'assets', 'index-AbCd1234.js'), 'export const store = true;'),
+    writeFile(path.join(sourceStaticRoot, 'assets', 'index-AbCd1234.js'), [
+      'export const store = true;',
+      'const url="https://public-fixture.supabase.co/";',
+      'const key="sb_publishable_fixture_public_key_123456";',
+      'const storageKey="lanzo-public-store-auth";',
+      'export const configured=Boolean(url&&key&&storageKey);',
+    ].join('')),
     writeFile(path.join(sourceStaticRoot, 'assets', 'index-ZyXw9876.css'), 'body{color:#123456}'),
     writeFile(path.join(sourceStaticRoot, 'assets', 'nested', 'chunk-QwEr1234.js'), 'export default 1;'),
   ]);
@@ -772,7 +829,7 @@ describe('workspace prebuilt saneado', () => {
         commandRunner(_command, args, options) {
           if (args.includes('pull')) {
             mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
-            writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), 'REMOTE_VALUE=kept\n');
+            writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), previewPublicEnvironmentFixture);
             return;
           }
           if (!args.includes('build')) return;
@@ -907,7 +964,7 @@ describe('workspace prebuilt saneado', () => {
 
   it('prepara un PASS preservado y reaudita después de limpiar todos los .env', async () => {
     const repositoryRoot = await createRepositoryFixture();
-    const downloadedValue = 'DOWNLOADED_ENV_FIXTURE_1_7_1';
+    const downloadedValue = previewPublicEnvironmentFixture;
     const auditCalls = [];
     const result = await prepareStoreDeployment({
       repositoryRoot,
@@ -932,7 +989,13 @@ describe('workspace prebuilt saneado', () => {
           ].join(''));
           writeFileSync(path.join(staticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
           writeFileSync(path.join(staticRoot, 'assets', 'index-AbCd1234.css'), 'body{color:#123456}');
-          writeFileSync(path.join(staticRoot, 'assets', 'index-ZyXw9876.js'), 'export const store=true;');
+          writeFileSync(
+            path.join(staticRoot, 'assets', 'index-ZyXw9876.js'),
+            'const url="https://public-fixture.supabase.co/";'
+              + 'const key="sb_publishable_fixture_public_key_123456";'
+              + 'const storageKey="lanzo-public-store-auth";'
+              + 'export const configured=Boolean(url&&key&&storageKey);',
+          );
           return;
         }
         if (args.includes('pull')) {
@@ -1366,9 +1429,18 @@ describe('workspace prebuilt saneado', () => {
         options: { shell: false },
       },
       vercelCommand: 'vercel-fixture',
-      commandRunner(command, args) {
+      commandRunner(command, args, options) {
         calls.push({ command, args });
-        if (command === 'vercel-fixture') throw new Error('controlled Vercel stop');
+        if (command !== 'vercel-fixture') return;
+        if (args.includes('pull')) {
+          mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
+          writeFileSync(
+            path.join(options.cwd, '.vercel', '.env.preview.local'),
+            previewPublicEnvironmentFixture,
+          );
+          return;
+        }
+        throw new Error('controlled Vercel stop');
       },
     })).rejects.toThrow('controlled Vercel stop');
     expect(calls).toEqual([
@@ -1377,12 +1449,16 @@ describe('workspace prebuilt saneado', () => {
         args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
       },
       {
+        command: 'vercel-fixture',
+        args: ['pull', '--yes', '--environment=preview'],
+      },
+      {
         command: process.execPath,
         args: expect.arrayContaining(['run', 'build:store:vercel']),
       },
       {
         command: 'vercel-fixture',
-        args: ['pull', '--yes', '--environment=preview'],
+        args: ['build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
       },
     ]);
     expect(calls.every(({ args }) => Array.isArray(args))).toBe(true);
@@ -1404,7 +1480,7 @@ describe('workspace prebuilt saneado', () => {
         if (command !== 'vercel-fixture') return;
         if (args.includes('pull')) {
           mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
-          writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), 'REMOTE_VALUE=kept\n');
+          writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), previewPublicEnvironmentFixture);
           return;
         }
         capturedPrebuilt = JSON.parse(readFileSync(path.join(options.cwd, 'store', 'vercel.prebuilt.json'), 'utf8'));
@@ -1412,7 +1488,7 @@ describe('workspace prebuilt saneado', () => {
       },
     })).rejects.toThrow('controlled build stop');
     expect(calls.map(({ args }) => args.at(-1))).toEqual([
-      '--no-fund', 'build:store:vercel', '--environment=preview', './store/vercel.prebuilt.json',
+      '--no-fund', '--environment=preview', 'build:store:vercel', './store/vercel.prebuilt.json',
     ]);
     expect(calls.at(-1).args).toEqual(['build', '--debug', '--local-config', './store/vercel.prebuilt.json']);
     expect(capturedPrebuilt).toEqual({ trailingSlash: false });
@@ -1442,21 +1518,39 @@ describe('workspace prebuilt saneado', () => {
         options: { shell: false },
       },
       vercelCommand: 'vercel-fixture',
-      commandRunner(command, _args, options) {
-        calls.push({ command, environment: options.environment });
-        if (command === 'vercel-fixture') throw new Error('controlled Vercel stop');
+      commandRunner(command, args, options) {
+        calls.push({ command, args, environment: options.environment });
+        if (command !== 'vercel-fixture') return;
+        if (args.includes('pull')) {
+          mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
+          writeFileSync(
+            path.join(options.cwd, '.vercel', '.env.preview.local'),
+            previewPublicEnvironmentFixture,
+          );
+          return;
+        }
+        throw new Error('controlled Vercel stop');
       },
     })).rejects.toThrow('controlled Vercel stop');
-    const [npmCall, directBuildCall, vercelCall] = calls;
+    const npmCall = calls[0];
+    const pullCall = calls[1];
+    const directBuildCall = calls[2];
+    const vercelBuildCall = calls[3];
     expect(npmCall.environment.NPM_CONFIG_CACHE).toContain('lanzo-store-social-preview-npm-cache');
     expect(npmCall.environment.XDG_CACHE_HOME).toContain('lanzo-store-npm-cache');
-    expect(directBuildCall.environment.VITE_SUPABASE_URL).toContain('invalid-for-local-build');
-    expect(vercelCall.environment.XDG_CONFIG_HOME).toBe(parentEnvironment.XDG_CONFIG_HOME);
-    expect(vercelCall.environment.XDG_DATA_HOME).toBe(parentEnvironment.XDG_DATA_HOME);
-    expect(vercelCall.environment.APPDATA).toBe(parentEnvironment.APPDATA);
-    expect(vercelCall.environment).not.toHaveProperty('VERCEL_TOKEN');
+    expect(directBuildCall.environment.VITE_SUPABASE_URL)
+      .toBe('https://public-fixture.supabase.co/');
+    expect(directBuildCall.environment.VITE_SUPABASE_PUBLISHABLE_KEY)
+      .toBe('sb_publishable_fixture_public_key_123456');
+    expect(directBuildCall.environment).not.toHaveProperty('PRIVATE_RUNTIME_VALUE');
+    for (const vercelCall of [pullCall, vercelBuildCall]) {
+      expect(vercelCall.environment.XDG_CONFIG_HOME).toBe(parentEnvironment.XDG_CONFIG_HOME);
+      expect(vercelCall.environment.XDG_DATA_HOME).toBe(parentEnvironment.XDG_DATA_HOME);
+      expect(vercelCall.environment.APPDATA).toBe(parentEnvironment.APPDATA);
+      expect(vercelCall.environment).not.toHaveProperty('VERCEL_TOKEN');
+    }
     expect(parentEnvironment.VERCEL_TOKEN).toBe('test-token-value');
-    expect(JSON.stringify(vercelCall.environment)).not.toContain('test-token-value');
+    expect(JSON.stringify(vercelBuildCall.environment)).not.toContain('test-token-value');
   });
 
   it('reporta ENOENT sin rutas, limpia el workspace y preserva el repositorio', async () => {
@@ -1596,7 +1690,7 @@ describe('workspace prebuilt saneado', () => {
         calls.push({ command, args, options });
         if (args.includes('pull')) {
           mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
-          writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), 'REMOTE_VALUE=kept\n');
+          writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), previewPublicEnvironmentFixture);
         }
       },
     })).rejects.toThrow('Vercel did not produce .vercel/output');
