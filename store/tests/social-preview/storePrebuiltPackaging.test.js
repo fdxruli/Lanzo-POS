@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  buildSanitizedGitEnvironment,
   buildNpmExecutionEnvironment,
   buildVercelExecutionEnvironment,
   cleanupPreparedStoreWorkspace,
@@ -58,6 +59,23 @@ const fixtureIdentity = Object.freeze({
   treeOid: fixtureTree,
   objectFormat: 'sha1',
 });
+
+function identityCommandResult(args, {
+  HEAD = fixtureHead,
+  treeOid = fixtureTree,
+  objectFormat = 'sha1',
+  isInsideWorkTree = 'true',
+  showToplevel = '/private/repository',
+} = {}) {
+  const valueByArgument = new Map([
+    ['HEAD', HEAD],
+    ['HEAD^{tree}', treeOid],
+    ['--show-object-format', objectFormat],
+    ['--is-inside-work-tree', isInsideWorkTree],
+    ['--show-toplevel', showToplevel],
+  ]);
+  return { status: 0, stdout: `${valueByArgument.get(args[1]) ?? ''}\n` };
+}
 
 async function createInjectedSnapshot({ repositoryRoot, temporaryRoot = os.tmpdir() }) {
   const provenanceRoot = await mkdtemp(path.join(temporaryRoot, 'lanzo-store-git-snapshot-'));
@@ -232,15 +250,60 @@ async function expectControlledStopPreservesRepository(sourceRoot) {
 }
 
 describe('workspace prebuilt saneado', () => {
+  it('sanea todas las variables Git heredadas sin mutar el entorno padre', () => {
+    const parentEnvironment = {
+      PATH: '/controlled/bin',
+      SystemRoot: 'C:\\Windows',
+      TEMP: 'C:\\Temp',
+      TMPDIR: '/tmp/controlled',
+      GIT_DIR: '/external/.git',
+      git_dir: '/external/lowercase.git',
+      GIT_WORK_TREE: '/external',
+      GIT_COMMON_DIR: '/external/common',
+      GIT_OBJECT_DIRECTORY: '/external/objects',
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: '/external/alternate',
+      GIT_INDEX_FILE: '/external/index',
+      GIT_INDEX_VERSION: '4',
+      GIT_NAMESPACE: 'external',
+      GIT_SHALLOW_FILE: '/external/shallow',
+      GIT_GRAFT_FILE: '/external/grafts',
+      GIT_REPLACE_REF_BASE: 'refs/external',
+      GIT_CONFIG: '/external/config',
+      GIT_CONFIG_GLOBAL: '/external/global-config',
+      GIT_CONFIG_SYSTEM: '/external/system-config',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.worktree',
+      GIT_CONFIG_VALUE_0: '/external',
+    };
+    const before = structuredClone(parentEnvironment);
+    const normal = buildSanitizedGitEnvironment({ environment: parentEnvironment });
+    const indexed = buildSanitizedGitEnvironment({
+      environment: parentEnvironment,
+      temporaryIndexPath: '/controlled/git-index',
+    });
+
+    expect(parentEnvironment).toEqual(before);
+    expect(normal).toMatchObject({
+      PATH: '/controlled/bin',
+      SystemRoot: 'C:\\Windows',
+      TEMP: 'C:\\Temp',
+      TMPDIR: '/tmp/controlled',
+      GIT_TERMINAL_PROMPT: '0',
+    });
+    expect(Object.keys(normal).filter((name) => name.toUpperCase().startsWith('GIT_')))
+      .toEqual(['GIT_TERMINAL_PROMPT']);
+    expect(Object.keys(indexed).filter((name) => name.toUpperCase().startsWith('GIT_')).sort())
+      .toEqual(['GIT_INDEX_FILE', 'GIT_TERMINAL_PROMPT']);
+    expect(indexed.GIT_INDEX_FILE).toBe('/controlled/git-index');
+  });
+
   it('resuelve HEAD desde repositoryRoot mediante Git directo y valida el SHA', async () => {
     const calls = [];
     await expect(resolveRepositoryHead({
       repositoryRoot: '/private/repository',
       commandRunner(command, args, options) {
         calls.push({ command, args, options });
-        if (args[1] === 'HEAD') return { stdout: `${fixtureHead}\n` };
-        if (args[1] === 'HEAD^{tree}') return { stdout: `${fixtureTree}\n` };
-        return { stdout: 'sha1\n' };
+        return identityCommandResult(args);
       },
     })).resolves.toBe(fixtureHead);
     expect(calls).toEqual([
@@ -251,7 +314,13 @@ describe('workspace prebuilt saneado', () => {
       }),
       expect.objectContaining({ args: ['rev-parse', 'HEAD^{tree}'] }),
       expect.objectContaining({ args: ['rev-parse', '--show-object-format'] }),
+      expect.objectContaining({ args: ['rev-parse', '--is-inside-work-tree'] }),
+      expect.objectContaining({ args: ['rev-parse', '--show-toplevel'] }),
     ]);
+    expect(calls.every(({ options }) => (
+      options.environment.GIT_TERMINAL_PROMPT === '0'
+      && options.environment.GIT_INDEX_FILE === undefined
+    ))).toBe(true);
   });
 
   it.each([
@@ -263,9 +332,7 @@ describe('workspace prebuilt saneado', () => {
     await expect(resolveRepositoryHead({
       repositoryRoot: '/private/repository',
       commandRunner(_command, args) {
-        if (args[1] === 'HEAD') return { stdout };
-        if (args[1] === 'HEAD^{tree}') return { stdout: fixtureTree };
-        return { stdout: 'sha1' };
+        return identityCommandResult(args, { HEAD: stdout });
       },
     })).rejects.toThrow('invalid repository HEAD');
   });
@@ -329,10 +396,46 @@ describe('workspace prebuilt saneado', () => {
   });
 
   it('exige exit code cero al inspeccionar el checkout', async () => {
+    let childEnvironment;
     await expect(readRepositoryStatus({
       repositoryRoot: '/private/repository',
-      commandRunner: () => ({ status: 1, stdout: '' }),
+      environment: { PATH: '/controlled/bin', GIT_INDEX_FILE: '/redirected/index' },
+      commandRunner(_command, _args, options) {
+        childEnvironment = options.environment;
+        return { status: 1, stdout: '' };
+      },
     })).rejects.toThrow('Unable to inspect repository checkout with Git.');
+    expect(childEnvironment).toEqual({
+      PATH: '/controlled/bin',
+      GIT_TERMINAL_PROMPT: '0',
+    });
+  });
+
+  it('bloquea un work tree falso o un show-toplevel distinto sin exponer rutas', async () => {
+    const requestedRoot = '/private/repository';
+    const externalRoot = '/private/external-repository';
+    await expect(resolveRepositoryIdentity({
+      repositoryRoot: requestedRoot,
+      commandRunner(_command, args) {
+        return identityCommandResult(args, { isInsideWorkTree: 'false' });
+      },
+    })).rejects.toThrow('not inside a Git work tree');
+
+    let mismatchError;
+    try {
+      await resolveRepositoryIdentity({
+        repositoryRoot: requestedRoot,
+        commandRunner(_command, args) {
+          return identityCommandResult(args, { showToplevel: externalRoot });
+        },
+      });
+    } catch (error) {
+      mismatchError = error;
+    }
+    expect(mismatchError?.message)
+      .toBe('Git repository root does not match the requested repositoryRoot.');
+    expect(mismatchError?.message).not.toContain(requestedRoot);
+    expect(mismatchError?.message).not.toContain(externalRoot);
   });
 
   it('el flujo principal bloquea un checkout dirty antes de crear snapshot o workspace', async () => {
@@ -356,28 +459,69 @@ describe('workspace prebuilt saneado', () => {
     await expect(resolveRepositoryIdentity({
       repositoryRoot: '/private/repository',
       commandRunner(_command, args) {
-        if (args[1] === 'HEAD') return { status: 0, stdout: fixture.HEAD };
-        if (args[1] === 'HEAD^{tree}') return { status: 0, stdout: fixture.tree };
-        return { status: 0, stdout: fixture.format };
+        return identityCommandResult(args, {
+          HEAD: fixture.HEAD,
+          treeOid: fixture.tree,
+          objectFormat: fixture.format,
+        });
       },
     })).rejects.toThrow(message);
   });
 
-  it('materializa bytes exactos del HEAD con índice temporal y excluye contenido no rastreado e ignorado', async () => {
+  it('aísla un repositorio externo y materializa bytes exactos del HEAD con índice temporal', async () => {
     const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo git fixture with spaces-'));
+    const externalRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo external git fixture-'));
     let snapshot;
-    const calls = [];
+    const identityCalls = [];
+    const snapshotCalls = [];
     try {
-      run('git', ['init'], { cwd: repositoryRoot });
-      run('git', ['config', 'user.email', 'fixture@example.invalid'], { cwd: repositoryRoot });
-      run('git', ['config', 'user.name', 'Fixture'], { cwd: repositoryRoot });
+      const fixtureGitEnvironment = buildSanitizedGitEnvironment();
+      run('git', ['init'], { cwd: repositoryRoot, environment: fixtureGitEnvironment });
+      run('git', ['init'], { cwd: externalRoot, environment: fixtureGitEnvironment });
       await Promise.all([
         writeFile(path.join(repositoryRoot, 'tracked.txt'), 'version-committed'),
         writeFile(path.join(repositoryRoot, '.gitignore'), 'ignored.txt\n'),
+        writeFile(path.join(externalRoot, 'external-only.txt'), 'version-external'),
       ]);
-      run('git', ['add', '.gitignore', 'tracked.txt'], { cwd: repositoryRoot });
-      run('git', ['commit', '-m', 'fixture'], { cwd: repositoryRoot });
-      const identity = await resolveRepositoryIdentity({ repositoryRoot });
+      run('git', ['add', '.gitignore', 'tracked.txt'], {
+        cwd: repositoryRoot,
+        environment: fixtureGitEnvironment,
+      });
+      run('git', ['-c', 'user.email=fixture@example.invalid', '-c', 'user.name=Fixture',
+        'commit', '-m', 'fixture A'], { cwd: repositoryRoot, environment: fixtureGitEnvironment });
+      run('git', ['add', 'external-only.txt'], {
+        cwd: externalRoot,
+        environment: fixtureGitEnvironment,
+      });
+      run('git', ['-c', 'user.email=fixture@example.invalid', '-c', 'user.name=Fixture',
+        'commit', '-m', 'fixture B'], { cwd: externalRoot, environment: fixtureGitEnvironment });
+      const repositoryHead = run('git', ['rev-parse', 'HEAD'], {
+        cwd: repositoryRoot,
+        environment: fixtureGitEnvironment,
+      }).stdout.trim();
+      const externalHead = run('git', ['rev-parse', 'HEAD'], {
+        cwd: externalRoot,
+        environment: fixtureGitEnvironment,
+      }).stdout.trim();
+      const contaminatedEnvironment = {
+        ...process.env,
+        GIT_DIR: path.join(externalRoot, '.git'),
+        GIT_WORK_TREE: externalRoot,
+        GIT_INDEX_FILE: path.join(externalRoot, 'redirected-index'),
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.worktree',
+        GIT_CONFIG_VALUE_0: externalRoot,
+      };
+      const identity = await resolveRepositoryIdentity({
+        repositoryRoot,
+        environment: contaminatedEnvironment,
+        commandRunner(command, args, options) {
+          identityCalls.push({ command, args: [...args], options });
+          return run(command, args, options);
+        },
+      });
+      expect(identity.HEAD).toBe(repositoryHead);
+      expect(identity.HEAD).not.toBe(externalHead);
       await Promise.all([
         writeFile(path.join(repositoryRoot, 'tracked.txt'), 'version-working-tree'),
         writeFile(path.join(repositoryRoot, 'untracked.txt'), 'untracked'),
@@ -386,8 +530,9 @@ describe('workspace prebuilt saneado', () => {
       snapshot = await createGitHeadSnapshot({
         repositoryRoot,
         identity,
+        environment: contaminatedEnvironment,
         commandRunner(command, args, options) {
-          calls.push({ command, args: [...args], options });
+          snapshotCalls.push({ command, args: [...args], options });
           return run(command, args, options);
         },
       });
@@ -395,17 +540,30 @@ describe('workspace prebuilt saneado', () => {
         .toBe('version-committed');
       expect(await exists(path.join(snapshot.snapshotRoot, 'untracked.txt'))).toBe(false);
       expect(await exists(path.join(snapshot.snapshotRoot, 'ignored.txt'))).toBe(false);
-      expect(calls.map(({ args }) => args)).toEqual([
+      expect(await exists(path.join(snapshot.snapshotRoot, 'external-only.txt'))).toBe(false);
+      expect(snapshotCalls.map(({ args }) => args)).toEqual([
         ['read-tree', identity.HEAD],
         ['checkout-index', '--all', '--force', expect.stringMatching(/^--prefix=.+\/$/u)],
       ]);
-      expect(calls.every(({ options }) => (
+      expect(identityCalls).toHaveLength(5);
+      expect(identityCalls.every(({ options }) => (
+        options.environment.GIT_TERMINAL_PROMPT === '0'
+        && options.environment.GIT_INDEX_FILE === undefined
+        && options.environment.GIT_DIR === undefined
+        && options.environment.GIT_WORK_TREE === undefined
+        && options.environment.GIT_CONFIG_COUNT === undefined
+      ))).toBe(true);
+      expect(snapshotCalls.every(({ options }) => (
         options.shell === false
         && options.cwd === repositoryRoot
         && options.environment.GIT_INDEX_FILE === snapshot.temporaryIndexPath
+        && options.environment.GIT_TERMINAL_PROMPT === '0'
+        && options.environment.GIT_DIR === undefined
+        && options.environment.GIT_WORK_TREE === undefined
+        && options.environment.GIT_CONFIG_COUNT === undefined
       ))).toBe(true);
       expect(process.env.GIT_INDEX_FILE).not.toBe(snapshot.temporaryIndexPath);
-      expect(calls.every(({ options }) => options.cwd.includes('lanzo git fixture'))).toBe(true);
+      expect(snapshotCalls.every(({ options }) => options.cwd.includes('lanzo git fixture'))).toBe(true);
       expect(snapshot.prefix).not.toContain('\\');
       expect(snapshot.prefix.endsWith('/')).toBe(true);
       const cleanup = await removeGitHeadSnapshot({ ...snapshot, repositoryRoot });
@@ -416,6 +574,7 @@ describe('workspace prebuilt saneado', () => {
         await removeGitHeadSnapshot({ ...snapshot, repositoryRoot });
       }
       rmSync(repositoryRoot, { recursive: true, force: true });
+      rmSync(externalRoot, { recursive: true, force: true });
     }
   });
 

@@ -716,6 +716,23 @@ export async function resolveRepositoryHead({
   })).HEAD;
 }
 
+export function buildSanitizedGitEnvironment({
+  environment = process.env,
+  temporaryIndexPath,
+} = {}) {
+  const sanitizedEnvironment = {};
+  for (const [name, value] of Object.entries(environment || {})) {
+    if (!name.toUpperCase().startsWith('GIT_')) {
+      sanitizedEnvironment[name] = value;
+    }
+  }
+  sanitizedEnvironment.GIT_TERMINAL_PROMPT = '0';
+  if (temporaryIndexPath !== undefined) {
+    sanitizedEnvironment.GIT_INDEX_FILE = temporaryIndexPath;
+  }
+  return sanitizedEnvironment;
+}
+
 async function runGitIdentityCommand({
   repositoryRoot,
   commandRunner,
@@ -725,7 +742,7 @@ async function runGitIdentityCommand({
   try {
     const result = await commandRunner('git', args, {
       cwd: repositoryRoot,
-      environment,
+      environment: buildSanitizedGitEnvironment({ environment }),
       shell: false,
     });
     if (result?.status != null && result.status !== 0) throw new Error('git failed');
@@ -745,7 +762,11 @@ export async function readRepositoryStatus({
     result = await commandRunner(
       'git',
       ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
-      { cwd: repositoryRoot, environment, shell: false },
+      {
+        cwd: repositoryRoot,
+        environment: buildSanitizedGitEnvironment({ environment }),
+        shell: false,
+      },
     );
     if (result?.status != null && result.status !== 0) throw new Error('git failed');
   } catch {
@@ -762,20 +783,27 @@ export async function resolveRepositoryIdentity({
   commandRunner = run,
   environment = process.env,
 } = {}) {
-  const [headResult, treeResult, formatResult] = await Promise.all([
-    runGitIdentityCommand({
-      repositoryRoot, commandRunner, environment, args: ['rev-parse', 'HEAD'],
-    }),
-    runGitIdentityCommand({
-      repositoryRoot, commandRunner, environment, args: ['rev-parse', 'HEAD^{tree}'],
-    }),
-    runGitIdentityCommand({
-      repositoryRoot, commandRunner, environment, args: ['rev-parse', '--show-object-format'],
-    }),
-  ]);
+  const results = [];
+  for (const args of [
+    ['rev-parse', 'HEAD'],
+    ['rev-parse', 'HEAD^{tree}'],
+    ['rev-parse', '--show-object-format'],
+    ['rev-parse', '--is-inside-work-tree'],
+    ['rev-parse', '--show-toplevel'],
+  ]) {
+    results.push(await runGitIdentityCommand({
+      repositoryRoot,
+      commandRunner,
+      environment,
+      args,
+    }));
+  }
+  const [headResult, treeResult, formatResult, insideResult, topLevelResult] = results;
   const HEAD = String(headResult?.stdout || '').trim();
   const treeOid = String(treeResult?.stdout || '').trim();
   const objectFormat = String(formatResult?.stdout || '').trim();
+  const isInsideWorkTree = String(insideResult?.stdout || '').trim();
+  const showToplevel = String(topLevelResult?.stdout || '').trim();
   if (!/^[a-f0-9]{40}$/u.test(HEAD)) {
     throw new Error('Git returned an invalid repository HEAD.');
   }
@@ -785,6 +813,22 @@ export async function resolveRepositoryIdentity({
   const expectedTreeLength = objectFormat === 'sha1' ? 40 : 64;
   if (!new RegExp(`^[a-f0-9]{${expectedTreeLength}}$`, 'u').test(treeOid)) {
     throw new Error('Git returned an invalid repository tree OID.');
+  }
+  if (isInsideWorkTree !== 'true') {
+    throw new Error('The requested repositoryRoot is not inside a Git work tree.');
+  }
+  const normalizeRepositoryRoot = (value) => {
+    const rawValue = String(value || '').trim();
+    const windowsPath = /^(?:[A-Za-z]:[\\/]|\\\\)/u.test(rawValue);
+    const pathImplementation = windowsPath ? path.win32 : path;
+    const normalized = normalizePath(pathImplementation.resolve(rawValue)).replace(/\/+$/u, '');
+    return windowsPath || process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  };
+  if (
+    !showToplevel
+    || normalizeRepositoryRoot(showToplevel) !== normalizeRepositoryRoot(repositoryRoot)
+  ) {
+    throw new Error('Git repository root does not match the requested repositoryRoot.');
   }
   return Object.freeze({ HEAD, treeOid, objectFormat });
 }
@@ -922,7 +966,10 @@ export async function createGitHeadSnapshot({
       temporaryRoot,
     });
     await makeDirectory(snapshotRoot, { recursive: false });
-    const indexEnvironment = { ...environment, GIT_INDEX_FILE: temporaryIndexPath };
+    const indexEnvironment = buildSanitizedGitEnvironment({
+      environment,
+      temporaryIndexPath,
+    });
     try {
       const result = await commandRunner('git', ['read-tree', HEAD], {
         cwd: repositoryRoot,

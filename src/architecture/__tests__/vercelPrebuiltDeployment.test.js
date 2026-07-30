@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertEffectiveVercelProjectRoot,
   assertPrebuiltVercelConfigParity,
+  buildSanitizedGitEnvironment,
   createPrebuiltVercelConfig,
   createSanitizedStoreWorkspace,
   inspectGeneratedFunctionInventory,
@@ -354,6 +355,42 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     );
     expect(source).toContain('deploymentExecuted: false');
     expect(source).not.toMatch(/['"]deploy['"]|['"]promote['"]|['"]alias['"]/u);
+  });
+
+  it('isolates every Git provenance operation from inherited Git routing', async () => {
+    const [source, vitestConfig, pageTest] = await Promise.all([
+      readFile(path.join(projectRoot, 'scripts', 'prepare-store-deployment.mjs'), 'utf8'),
+      readFile(path.join(projectRoot, 'vite.config.js'), 'utf8'),
+      readFile(
+        path.join(projectRoot, 'src', 'pages', '__tests__', 'PublicStorePage.siteVersion.test.jsx'),
+        'utf8',
+      ),
+    ]);
+    const parentEnvironment = {
+      PATH: '/controlled/bin',
+      GIT_DIR: '/redirected/.git',
+      git_work_tree: '/redirected',
+      GIT_INDEX_FILE: '/redirected/index',
+    };
+    const childEnvironment = buildSanitizedGitEnvironment({ environment: parentEnvironment });
+    expect(childEnvironment).toEqual({
+      PATH: '/controlled/bin',
+      GIT_TERMINAL_PROMPT: '0',
+    });
+    expect(parentEnvironment).toHaveProperty('GIT_DIR', '/redirected/.git');
+    expect(source).toContain("name.toUpperCase().startsWith('GIT_')");
+    expect(source).toContain("['rev-parse', '--is-inside-work-tree']");
+    expect(source).toContain("['rev-parse', '--show-toplevel']");
+    expect(source).toContain('buildSanitizedGitEnvironment({ environment })');
+    expect(source).toContain('temporaryIndexPath,');
+    expect(source).toContain("['read-tree', HEAD]");
+    expect(source).toContain("['checkout-index', '--all', '--force'");
+    expect(source).not.toMatch(
+      /shell:\s*true|cmd\.exe|powershell|bash|git\s+(?:reset|clean|stash|restore)/iu,
+    );
+    expect(vitestConfig).toContain('testTimeout: 15_000');
+    expect(vitestConfig).not.toMatch(/testTimeout:\s*(?:1[6-9]|[2-9]\d)_?\d{3}/u);
+    expect(pageTest).not.toMatch(/\.(?:skip|todo)\s*\(|test\.fails\s*\(/u);
   });
 
   it('accepts exactly the two generated Functions with valid handlers and runtimes', async () => {

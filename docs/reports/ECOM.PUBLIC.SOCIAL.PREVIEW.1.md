@@ -3585,3 +3585,168 @@ Riesgos no bloqueantes: la validación Windows se cubre mediante invocaciones
 sin shell, prefijos normalizados, rutas con espacios, separadores compatibles y
 reintentos limitados de limpieza; las dos pruebas que requieren ejecutables
 Windows reales permanecen omitidas fuera de Windows.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.3 — Aislamiento del entorno Git y estabilización del CI global
+
+### Corte remoto y reproducción
+
+Antes de modificar se verificó que el PR `#141` seguía abierto, draft,
+mergeable, con rama `feat/ecom-public-social-preview-1` y base `main`. El HEAD
+remoto real y parent de esta minifase fue:
+
+```text
+66ecc9d4593058bf4bd9c62d7d7a660b1c3850cc
+```
+
+El HEAD de `main` era:
+
+```text
+bc603ef0ae3e60f241eafdbae6966191fe75d62c
+```
+
+No había commits posteriores al HEAD revisado. El checkout usado para
+implementar y validar se creó detached sobre el SHA remoto exacto; no se usó
+como evidencia el commit local equivalente con SHA diferente ni se movió
+ninguna ref.
+
+`PR127 Global Comparison`, run `102` (`30505703693`), terminó en `failure`.
+La normalización encontró 137 fallos compartidos y un único fallo nuevo:
+
+```text
+src/pages/__tests__/PublicStorePage.siteVersion.test.jsx
+PublicStorePage published site versions
+keeps v1 while only the draft changes, then renders v2
+without changing catalogRevision
+```
+
+El artifact registró `15011.57 ms`, coincidente con el timeout global. La
+reproducción aislada sobre el HEAD remoto pasó cuatro veces entre 564 y 637 ms,
+sin warnings de `act`; la combinación con la suite de packaging pasó en ambos
+órdenes y el caso tardó entre 602 y 713 ms. El parent
+`47aacd162bef3f123453fc8979d621e9ea577352` pasó dos veces entre 600 y 639 ms.
+El archivo del test es idéntico entre parent y HEAD.
+
+El comando global exacto del workflow,
+`npm run test:ci -- --reporter=json --outputFile=global-pr.json`, conservó los
+fallos heredados locales y, en la primera corrida, `PublicStorePage.siteVersion`
+pasó. Una repetición focal posterior sí reprodujo el timeout exacto de 15
+segundos y permitió localizar la carrera.
+
+El test esperaba que comenzara cada llamada a `getPublicPortalBySlug`, pero no
+esperaba a que terminara la promesa de revalidación y se liberara el
+single-flight antes de disparar el `focus` siguiente. En la ventana
+desafortunada, el segundo evento se deduplicaba contra la revalidación anterior
+y la tercera llamada esperada nunca ocurría.
+
+La corrección se limita a la sincronización del test: `fireEvent.focus` dispara
+el evento dentro de `act`, se espera la llamada observable del mock, su promesa
+y las microtareas que liberan la revalidación. Se mantienen todas las
+aserciones. No se agregaron sleeps, reintentos, omisiones ni cambios de timeout;
+el componente productivo y el normalizador no se modificaron. Después de la
+corrección, seis repeticiones focales pasaron entre 588 y 648 ms y la ejecución
+combinada pasó en 585 ms para el caso de página.
+
+### Aislamiento Git
+
+`buildSanitizedGitEnvironment()` copia las variables no Git necesarias y
+elimina, sin distinguir mayúsculas, toda clave cuyo nombre empiece por
+`GIT_`. No muta el entorno padre. Las operaciones normales agregan sólo
+`GIT_TERMINAL_PROMPT=0`; `read-tree` y `checkout-index` agregan además el
+`GIT_INDEX_FILE` temporal controlado.
+
+El saneamiento se aplica a status, resolución de identidad, resolución de
+HEAD, snapshot y verificación final. La identidad exige además:
+
+```text
+git rev-parse --is-inside-work-tree = true
+git rev-parse --show-toplevel       = repositoryRoot normalizado
+```
+
+La comparación admite separadores Windows/Linux, rutas con espacios y
+diferencias de mayúsculas propias de Windows. `show-toplevel` se usa sólo para
+validación y no se guarda en evidencia ni se incluye en errores.
+
+La prueba real consolidada crea dos repositorios temporales. El entorno
+solicitante redirige `GIT_DIR`, `GIT_WORK_TREE`, índice y configuración hacia
+el repositorio externo; los procesos hijos reciben el entorno saneado,
+resuelven HEAD/tree del repositorio solicitado y materializan únicamente sus
+bytes. El archivo exclusivo del repositorio externo, los no rastreados y los
+ignorados quedan fuera. La misma prueba conserva la demostración
+`version-committed` frente a `version-working-tree` y limpia ambos repositorios
+y el snapshot en `finally`.
+
+Las cinco consultas de identidad se ejecutan secuencialmente para evitar una
+ráfaga innecesaria de procesos Git. Las validaciones de entorno, argumentos y
+errores permanecen unitarias mediante runners inyectados; sólo la prueba de
+bytes/redirección usa repositorios reales. No se dejaron handles, timers,
+procesos ni directorios temporales abiertos.
+
+### Certificación
+
+La integración
+`prepareStoreDeployment → buildEvidenceReport → validateArtifactEvidence →
+validateRemoteEvidence → verifyReleaseReadiness` conserva el contrato
+`sourceProvenance` de 1.8.2. El snapshot continúa derivándose de HEAD mediante
+índice temporal; el working tree no se copia.
+
+Resultados locales finales:
+
+```text
+npm ci con caché temporal aislada       = PASS, 706 paquetes
+focal PublicStorePage (estabilidad)     = 6/6 PASS, 588–648 ms
+focal PublicStorePage final             = PASS
+packaging + PublicStorePage             = 90 PASS / 2 skips Windows
+storePrebuiltPackaging.test.js          = 89 PASS / 2 skips Windows
+storeReleaseReadiness.test.js           = 72 PASS
+storeEvidenceReport.test.js             = 14 PASS
+store/tests/social-preview              = 536 PASS / 2 skips Windows
+publicBuildArchitecture.test.js         = 5 PASS
+publicGitDeploymentArchitecture.test.js = 13 PASS
+vercelPrebuiltDeployment.test.js        = 26 PASS
+arquitectura final                      = 44 PASS
+npm run build:store:vercel              = PASS
+lint focal                              = PASS, 0 errores / 0 warnings
+git diff --check                        = PASS
+```
+
+La suite global exacta final conservó 113 fallos heredados locales y por ello
+retornó el código esperado distinto de cero; el caso corregido pasó en 652 ms.
+El gate operativo definitivo es la comparación remota contra `main`, que debe
+concluir con `newFailures = []`.
+
+El commit funcional único es
+`fix(ecommerce): isolate git provenance and stabilize global ci`. Su SHA remoto,
+tree final, run final y `newFailures` se registran en la entrega posterior al
+workflow, porque auto-incluirlos cambiaría el propio commit y dispararía otro
+workflow.
+
+No se autorizó ni ejecutó Vercel real. No hubo preview, deployment productivo,
+cambio de dominios, Supabase, migraciones, dependencias, merge, auto-merge ni
+rama adicional. `package.json`, `package-lock.json` y el workflow global
+permanecen sin cambios.
+
+```text
+certificación total 1.8             = BLOCKED
+readiness real                      = BLOCKED
+artifact Vercel real                = no disponible
+preview lanzo-store                 = no disponible
+evidencia remota real 1.7           = no disponible
+manifiesto readiness real           = no generado
+producción autorizada               = no
+deployment productivo               = no
+Supabase modificado                 = no
+migración creada                    = no
+dependencias modificadas            = no
+merge                               = no
+auto-merge                          = desactivado
+rama adicional creada               = no
+1.9 habilitada                      = no
+```
+
+Bloqueantes residuales: autenticación Vercel, Build Output real del HEAD final,
+preview `lanzo-store`, slug público confirmado, auditoría HTTP real, evidencia
+remota real 1.7 y manifiesto readiness real.
+
+Riesgo no bloqueante: el entorno local usa Node 24 y la dependencia
+`react-zxing` declara soporte hasta Node 22; la instalación, las pruebas y el
+build no resultaron afectados.
