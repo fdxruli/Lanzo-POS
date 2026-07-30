@@ -3150,3 +3150,252 @@ finales. `usedExplicitBuildsFallback` no pudo recuperarse de esa salida ya
 limpiada. No se ejecutó deployment (`deploymentExecuted: false`), preview,
 promote, alias o cambio de dominio. Supabase y dependencias permanecen sin
 cambios; tampoco se modificó permanentemente `store/vercel.json`.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.1 — Reconciliación de contratos de evidencia
+
+### Estado inicial remoto
+
+```text
+fecha                  = 2026-07-29
+PR                     = #141 OPEN / DRAFT
+rama                   = feat/ecom-public-social-preview-1
+base                   = main
+HEAD inicial real      = 9cd5c3fdc65c779f97477e857f8f9c1fd1ebd472
+HEAD de main           = bc603ef0ae3e60f241eafdbae6966191fe75d62c
+commits posteriores    = ninguno
+mergeable              = true
+rama respecto a main   = 28 ahead / 0 behind
+```
+
+El commit inicial fue
+`test(ecommerce): add social preview release readiness gate`. El workflow
+`PR127 Global Comparison`, run `30497905204` / número `100`, estaba
+`completed / success`. El status separado `Vercel – lanzo-pos = success` no se
+consideró evidencia de `lanzo-store`.
+
+### Causa raíz y contrato anterior
+
+Los productores 1.7 y el consumidor 1.8 existían, pero no compartían un
+contrato ejecutable:
+
+- `prepareStoreDeployment()` no identificaba el commit del checkout;
+- el normalizador del gate aplanaba el wrapper sin verificar contradicciones;
+- `protectedRepository` trataba estados descriptivos `false` como fallos;
+- `buildEvidenceReport()` no emitía `status`, `checks` ni `ogImage`
+  estructurado;
+- las pruebas de readiness construían formatos manuales que no provenían de
+  los productores.
+
+### Contrato canónico reconciliado
+
+`prepareStoreDeployment()` resuelve el HEAD exclusivamente desde
+`repositoryRoot` mediante la invocación directa, sin shell:
+
+```text
+git rev-parse HEAD
+```
+
+La salida debe ser exactamente un SHA hexadecimal minúsculo de 40 caracteres.
+No se acepta HEAD por entorno ni por input de usuario. Los errores de Git y de
+checkout inválido se sanejan sin exponer la ruta. El runner y el resolver son
+inyectables para pruebas. El HEAD se captura antes de crear el workspace
+temporal y se conserva igual tanto si el workspace se preserva como si se
+limpia.
+
+El artifact envolvente canónico contiene `HEAD`, `audit`,
+`deploymentExecuted`, `protectedRepository`, `projectInspection` y `output`.
+El consumidor extrae esos campos explícitamente y bloquea si:
+
+- `wrapper.status !== audit.status`;
+- `wrapper.output.functions !== audit.output.functions`;
+- `deploymentExecuted !== false`;
+- `projectInspection.projectName !== lanzo-store`;
+- HEAD, proyecto o deployment se contradicen con campos equivalentes del
+  audit.
+
+Los hashes consumidos continúan siendo los producidos por el auditor real:
+
+```text
+audit.hashes.outputConfig
+audit.hashes.outputStaticTree
+```
+
+El target `store` proviene de `auditPrebuiltOutput()`; el consumidor no lo
+inventa.
+
+### Repositorio protegido
+
+La allowlist canónica separa invariantes que deben ser `true`:
+
+```text
+administrativeConfigUnchanged
+storeConfigUnchanged
+storePrebuiltConfigUnchanged
+administrativeProjectLinkUnchanged
+administrativeVercelUnchanged
+repositoryEnvironmentUnchanged
+```
+
+de estados descriptivos que deben existir y ser booleanos, pero pueden ser
+`false`:
+
+```text
+storePrebuiltConfigPresent
+administrativeProjectLinkPresent
+```
+
+Campos faltantes, tipos incorrectos, objetos vacíos y booleanos desconocidos
+bloquean. No se convierten valores ausentes a `false`.
+
+### Evidencia remota 1.7
+
+`buildEvidenceReport()` genera un único esquema versión `1` con:
+
+```text
+schemaVersion, phase, status, evidenceStatus, HEAD
+projectName, deploymentType, previewHost, deploymentIdHash
+artifactHashes, functions, runtimes, handlers, routingChecks
+httpStatuses, headerChecks, metadataTagCounts
+canonicalHost, ogImageHost, ogImage, ogImageSha256
+checks, securityCheckSummary, failedChecks
+deploymentExecuted, deploymentCreatedByThisRun
+previewAudited, productionModified
+```
+
+`status` y `evidenceStatus` deben existir, coincidir y ser `PASS`. El gate no
+usa fallback entre ambos.
+
+La imagen OG se registra sólo como evidencia saneada:
+
+```json
+{
+  "passed": true,
+  "width": 1200,
+  "height": 630,
+  "bytes": 32768
+}
+```
+
+El hash SHA-256 permanece separado. No se incluyen PNG, bytes crudos, base64
+ni URLs con query.
+
+Los checks resumidos se derivan del array detallado real de
+`auditRemoteStoreDeployment()`:
+
+```text
+metadataUnique
+canonicalConsistent
+ogImageConsistent
+cachePassed
+trackingPassed
+hostileQueryPassed
+missingStorePassed
+invalidSlugPassed
+securityPassed
+```
+
+Metadata exige el check real, conteos unitarios y canonical/`og:url` del slug
+efectivo. Caché exige HTML dinámico, OG versionado y no versionado, assets,
+shell/tracking estático y slug inválido `no-store`. Queries hostiles,
+missing-store, tracking y seguridad se derivan de sus checks detallados; no se
+hardcodean.
+
+El consumidor exige además igualdad de hashes, funciones, runtimes, handlers y
+`routingChecks`, evidencia HTTP/headers no vacía, PNG `1200 × 630`, bytes
+seguros, hash válido y coherencia entre `deploymentExecuted` y
+`deploymentCreatedByThisRun`.
+
+### Pruebas productor → consumidor
+
+La prueba contractual completa usa directamente:
+
+```text
+prepareStoreDeployment
+buildEvidenceReport
+validateArtifactEvidence
+validateRemoteEvidence
+verifyReleaseReadiness
+```
+
+El preparador produce el wrapper; el reporte 1.7 consume su `audit`; el gate
+consume ambos JSON sin spread posterior, adaptación ni mutación. El caso
+positivo crea un manifiesto `READY_FOR_MANUAL_APPROVAL` exclusivamente dentro
+del fixture. Los command runners inyectados prueban que no existen procesos
+externos, requests remotos ni comandos `deploy`, `promote` o `alias`.
+
+Los casos negativos cubren HEAD ausente/inválido/divergente, errores de Git y
+checkout no Git, contradicciones wrapper/audit, proyecto y deployment,
+inventario de funciones, runtimes, handlers, hashes y routing, allowlist de
+repositorio, ambos estados remotos, checks, HTTP/headers, OG, seguridad y
+ausencia de evidencia/manifiesto.
+
+### Validación local
+
+La primera ejecución de `npm ci --no-audit --no-fund` falló porque la caché
+global `/root/.npm` no era escribible. La repetición prevista con caché temporal
+aislada pasó e instaló 706 paquetes; no modificó package ni lock.
+
+Resultados finales:
+
+```text
+storePrebuiltPackaging.test.js          = 74 PASS / 2 skips Windows
+storeEvidenceReport.test.js             = 14 PASS
+storeReleaseReadiness.test.js           = 60 PASS
+tres pruebas focales combinadas         = 148 PASS / 2 skips Windows
+store/tests/social-preview              = 509 PASS / 2 skips Windows
+publicBuildArchitecture.test.js         = 5 PASS
+publicGitDeploymentArchitecture.test.js = 13 PASS
+vercelPrebuiltDeployment.test.js        = 25 PASS
+arquitectura total                      = 43 PASS
+npm run build:store:vercel              = PASS
+lint focal                              = PASS, 0 errores / 0 warnings
+git diff --check                        = PASS
+```
+
+Las dos pruebas de arquitectura que inspeccionan `dist-store` reportaron
+inicialmente `ENOENT` porque el artifact todavía no se había generado. Después
+del build público permitido pasaron. El build produjo 10 archivos / 636855
+bytes en `dist-store` y 11 archivos / 636881 bytes en `store/dist`, con
+`compliance.passed=true`, cero violaciones, sin PWA ni código administrativo.
+Los cambios generados en `store/dist` se retiraron después de validar.
+
+La verificación estática confirmó que el gate 1.8 no importa ni usa
+`child_process`, `spawn`, `spawnSync`, `exec`, `execSync` o `fetch`, y no
+contiene operaciones de deploy, promote o alias. Las únicas referencias a
+`vercel` son validación del host de preview y clasificación saneada de tokens.
+
+### Estado y alcance
+
+```text
+implementación local 1.8.1              = PASS
+integración productor → consumidor      = PASS
+certificación total 1.8                 = BLOCKED
+readiness real                          = BLOCKED
+artifact Vercel real del HEAD final     = no disponible
+preview lanzo-store                     = no disponible
+evidencia remota real 1.7               = no disponible
+manifiesto readiness real               = no generado
+producción autorizada                   = no
+deployment productivo                   = no
+Supabase modificado                     = no
+migración creada                        = no
+dependencias modificadas                = no
+merge                                   = no
+auto-merge                              = desactivado
+1.9 habilitada                          = no
+```
+
+El único commit final de 1.8.1 se registra en GitHub y en la respuesta de
+entrega; su SHA no puede auto-incluirse dentro del mismo commit. El workflow
+global del HEAD final queda pendiente hasta la publicación y no justifica un
+segundo commit documental.
+
+Bloqueantes residuales para la certificación real: autenticación Vercel,
+Build Output real del HEAD final, preview `lanzo-store`, slug público
+confirmado, auditoría HTTP real, evidencia 1.7 real y ejecución del gate 1.8
+con el CI `success` del mismo HEAD.
+
+Riesgos no bloqueantes: Node 24 provoca `EBADENGINE` en una dependencia que
+declara soporte hasta Node 22, sin afectar instalación, pruebas o build. La
+primera ejecución de arquitectura dependía del artifact generado; la
+repetición posterior al build fue completamente verde.

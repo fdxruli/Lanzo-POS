@@ -619,11 +619,70 @@ export function buildEvidenceReport({
   if (previewUrl.hostname !== remote.previewHost) {
     throw new Error('Deployment and audited preview hosts must match.');
   }
+  const detailedChecks = new Map(
+    (remote.checks || []).map((check) => [check?.name, check?.passed === true]),
+  );
+  const passed = (...names) => names.every((name) => detailedChecks.get(name) === true);
+  const metadataUnique = passed('store:metadata')
+    && Object.values(remote.metadata?.counts || {}).length > 0
+    && Object.values(remote.metadata.counts).every((count) => count === 1)
+    && typeof remote.metadata.effectiveSlug === 'string'
+    && remote.metadata.canonicalPath === `/tienda/${remote.metadata.effectiveSlug}`
+    && remote.metadata.ogUrlPath === remote.metadata.canonicalPath;
+  const ogImagePassed = passed('og:png', 'og-versioned:png', 'og:head')
+    && remote.ogImage?.png === true
+    && remote.ogImage?.width === 1200
+    && remote.ogImage?.height === 630
+    && Number.isSafeInteger(remote.ogImage?.bytes)
+    && remote.ogImage.bytes > 0
+    && /^[a-f0-9]{64}$/u.test(remote.ogImage?.sha256 || '');
+  const checks = Object.freeze({
+    metadataUnique,
+    canonicalConsistent: passed(
+      'store:metadata',
+      'api-store:metadata',
+      'store-utm:path-authoritative',
+      'hostile-single:path-authoritative',
+      'hostile-multiple:path-authoritative',
+    ),
+    ogImageConsistent: ogImagePassed
+      && remote.metadata?.canonicalHost === remote.previewHost
+      && remote.metadata?.ogImageHost === remote.previewHost,
+    cachePassed: passed(
+      'root:static',
+      'tienda:static',
+      'store:metadata',
+      'store:head',
+      'og:png',
+      'og-versioned:png',
+      'tracking:static-fallback',
+      'nested:static-fallback',
+      'asset:immutable',
+      'asset:head',
+      'invalid-api:safe',
+    ),
+    trackingPassed: passed('tracking:static-fallback'),
+    hostileQueryPassed: passed(
+      'store-utm:path-authoritative',
+      'hostile-single:path-authoritative',
+      'hostile-multiple:path-authoritative',
+    ),
+    missingStorePassed: passed('missing-store:generic', 'missing-api:generic'),
+    invalidSlugPassed: passed('invalid-api:safe'),
+    securityPassed: passed('security:no-markers')
+      && remote.security?.passed === true
+      && Array.isArray(remote.security?.findings)
+      && remote.security.findings.length === 0,
+  });
+  if (Object.values(checks).some((check) => check !== true)) {
+    throw new Error('Remote audit summary checks must all be derived as PASS.');
+  }
   const report = {
     schemaVersion: 1,
     phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
     timestamp,
     HEAD: head,
+    status: 'PASS',
     evidenceStatus: 'PASS',
     projectName: deployment.projectName,
     deploymentType: deployment.type,
@@ -650,7 +709,14 @@ export function buildEvidenceReport({
     metadataTagCounts: remote.metadata.counts,
     canonicalHost: remote.metadata.canonicalHost,
     ogImageHost: remote.metadata.ogImageHost,
+    ogImage: {
+      passed: ogImagePassed,
+      width: remote.ogImage.width,
+      height: remote.ogImage.height,
+      bytes: remote.ogImage.bytes,
+    },
     ogImageSha256: remote.ogImage.sha256,
+    checks,
     securityCheckSummary: {
       passed: remote.security.passed,
       scannedResponses: remote.security.scannedResponses,

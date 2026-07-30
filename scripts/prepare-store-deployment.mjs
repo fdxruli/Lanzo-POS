@@ -703,6 +703,27 @@ export function run(
   return result;
 }
 
+export async function resolveRepositoryHead({
+  repositoryRoot = projectRoot,
+  commandRunner = run,
+} = {}) {
+  let result;
+  try {
+    result = await commandRunner('git', ['rev-parse', 'HEAD'], {
+      cwd: repositoryRoot,
+      environment: process.env,
+      shell: false,
+    });
+  } catch {
+    throw new Error('Unable to resolve the repository HEAD with Git.');
+  }
+  const head = String(result?.stdout || '').trim();
+  if (!/^[a-f0-9]{40}$/u.test(head)) {
+    throw new Error('Git returned an invalid repository HEAD.');
+  }
+  return head;
+}
+
 export async function writeProjectLink(linkedDirectory) {
   const vercelDirectory = path.join(linkedDirectory, '.vercel');
   await mkdir(vercelDirectory, { recursive: true });
@@ -930,6 +951,8 @@ export async function finalizePassedStoreWorkspace({
 export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
+  gitCommandRunner = run,
+  headResolver = resolveRepositoryHead,
   vercelCommand = process.env.VERCEL_CLI_PATH || DEFAULT_VERCEL_COMMAND,
   vercelInvocation,
   npmInvocation,
@@ -938,6 +961,13 @@ export async function prepareStoreDeployment({
   preservePassedWorkspace = shouldPreservePassedWorkspace(environment),
   prebuiltAuditor = auditPrebuiltOutput,
 } = {}) {
+  const HEAD = await headResolver({
+    repositoryRoot,
+    commandRunner: gitCommandRunner,
+  });
+  if (!/^[a-f0-9]{40}$/u.test(HEAD || '')) {
+    throw new Error('The repository HEAD is invalid.');
+  }
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
   let manifestPath = '';
@@ -1142,6 +1172,7 @@ export async function prepareStoreDeployment({
     const result = {
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
       status: 'PASS',
+      HEAD,
       strategy: 'sanitized-repository-copy',
       workspaceRoot,
       storeRoot,

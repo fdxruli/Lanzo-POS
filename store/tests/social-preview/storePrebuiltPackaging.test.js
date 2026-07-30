@@ -25,7 +25,8 @@ import {
   assertPrebuiltVercelConfigParity,
   finalizePassedStoreWorkspace,
   findWorkspaceEnvironmentFiles,
-  prepareStoreDeployment,
+  prepareStoreDeployment as prepareStoreDeploymentProducer,
+  resolveRepositoryHead,
   resolveNpmCliPath,
   resolveNpmInvocation,
   resolveNpmScriptInvocation,
@@ -42,6 +43,12 @@ import {
   writeExternalManifest,
   writePrebuiltVercelConfig,
 } from '../../../scripts/prepare-store-deployment.mjs';
+
+const fixtureHead = 'a'.repeat(40);
+const prepareStoreDeployment = (options = {}) => prepareStoreDeploymentProducer({
+  headResolver: async () => fixtureHead,
+  ...options,
+});
 
 async function exists(filePath) {
   try {
@@ -187,6 +194,73 @@ async function expectControlledStopPreservesRepository(sourceRoot) {
 }
 
 describe('workspace prebuilt saneado', () => {
+  it('resuelve HEAD desde repositoryRoot mediante Git directo y valida el SHA', async () => {
+    const calls = [];
+    await expect(resolveRepositoryHead({
+      repositoryRoot: '/private/repository',
+      commandRunner(command, args, options) {
+        calls.push({ command, args, options });
+        return { stdout: `${fixtureHead}\n` };
+      },
+    })).resolves.toBe(fixtureHead);
+    expect(calls).toEqual([expect.objectContaining({
+      command: 'git',
+      args: ['rev-parse', 'HEAD'],
+      options: expect.objectContaining({ cwd: '/private/repository', shell: false }),
+    })]);
+  });
+
+  it.each([
+    ['HEAD ausente', ''],
+    ['HEAD corto', 'abc'],
+    ['HEAD con mayúsculas', 'A'.repeat(40)],
+    ['HEAD con salida adicional', `${fixtureHead}\nsecond-line`],
+  ])('rechaza %s', async (_label, stdout) => {
+    await expect(resolveRepositoryHead({
+      repositoryRoot: '/private/repository',
+      commandRunner: () => ({ stdout }),
+    })).rejects.toThrow('invalid repository HEAD');
+  });
+
+  it('sanea errores de Git y no expone repositoryRoot', async () => {
+    const repositoryRoot = '/private/repository/without-git';
+    let error;
+    try {
+      await resolveRepositoryHead({
+        repositoryRoot,
+        commandRunner: () => {
+          throw new Error(`fatal: not a git repository: ${repositoryRoot}`);
+        },
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.message).toBe('Unable to resolve the repository HEAD with Git.');
+    expect(error?.message).not.toContain(repositoryRoot);
+  });
+
+  it('bloquea un repositoryRoot real que no contiene .git', async () => {
+    const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-not-a-git-checkout-'));
+    try {
+      await expect(resolveRepositoryHead({ repositoryRoot }))
+        .rejects.toThrow('Unable to resolve the repository HEAD with Git.');
+    } finally {
+      rmSync(repositoryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('bloquea el preparador si el resolver inyectado no entrega HEAD', async () => {
+    const repositoryRoot = await createRepositoryFixture();
+    try {
+      await expect(prepareStoreDeploymentProducer({
+        repositoryRoot,
+        headResolver: async () => undefined,
+      })).rejects.toThrow('repository HEAD is invalid');
+    } finally {
+      rmSync(repositoryRoot, { recursive: true, force: true });
+    }
+  });
+
   it('inspecciona el inventario generado y solo acepta exactamente las dos funciones públicas', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'lanzo-function-inventory-'));
     const functionsRoot = path.join(root, 'functions');
@@ -432,6 +506,7 @@ describe('workspace prebuilt saneado', () => {
     });
     expect(result).toMatchObject({
       status: 'PASS',
+      HEAD: fixtureHead,
       workspacePreserved: true,
       cleanupRequired: true,
       environmentFilesFound: [],

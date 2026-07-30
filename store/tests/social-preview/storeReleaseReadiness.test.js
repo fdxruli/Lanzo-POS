@@ -1,15 +1,26 @@
 // @vitest-environment node
 import {
   chmod,
+  mkdir,
   mkdtemp,
   readFile,
   stat,
   writeFile,
 } from 'node:fs/promises';
+import {
+  mkdirSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  buildEvidenceReport,
+} from '../../../scripts/audit-remote-store-deployment.mjs';
+import {
+  prepareStoreDeployment,
+} from '../../../scripts/prepare-store-deployment.mjs';
 import {
   buildReadinessManifest,
   parseJsonEvidence,
@@ -18,6 +29,7 @@ import {
   scanSensitiveContent,
   validateArtifactEvidence,
   validateRemoteEvidence,
+  validateProtectedRepositoryEvidence,
   verifyReleaseReadiness,
   writeReadinessManifest,
 } from '../../../scripts/verify-social-preview-release-readiness.mjs';
@@ -77,6 +89,11 @@ const artifact = {
   protectedRepository: {
     administrativeConfigUnchanged: true,
     storeConfigUnchanged: true,
+    storePrebuiltConfigUnchanged: true,
+    storePrebuiltConfigPresent: false,
+    administrativeProjectLinkUnchanged: true,
+    administrativeProjectLinkPresent: false,
+    administrativeVercelUnchanged: true,
     repositoryEnvironmentUnchanged: true,
   },
 };
@@ -98,6 +115,7 @@ const remote = {
   schemaVersion: 1,
   phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
   status: 'PASS',
+  evidenceStatus: 'PASS',
   HEAD: head,
   projectName: 'lanzo-store',
   deploymentType: 'preview',
@@ -107,10 +125,21 @@ const remote = {
   functions,
   runtimes: bundles.map(({ route, runtime }) => ({ route, runtime })),
   handlers: bundles.map(({ route, handler }) => ({ route, handler })),
+  routingChecks: artifact.routing.checks,
+  httpStatuses: [{ name: 'store', method: 'GET', status: 200 }],
+  headerChecks: [{
+    name: 'store',
+    headers: {
+      contentType: 'text/html; charset=utf-8',
+      cacheControl: 'public, max-age=0, s-maxage=300',
+      xRobotsTag: 'noindex, nofollow, noarchive',
+      locationHost: null,
+    },
+  }],
   metadataTagCounts,
   canonicalHost: previewHost,
   ogImageHost: previewHost,
-  ogImage: { passed: true, width: 1200, height: 630 },
+  ogImage: { passed: true, width: 1200, height: 630, bytes: 32_768 },
   ogImageSha256: 'e'.repeat(64),
   checks: allTrue([
     'metadataUnique',
@@ -125,9 +154,73 @@ const remote = {
   ]),
   securityCheckSummary: { passed: true, findings: [] },
   failedChecks: [],
+  deploymentExecuted: false,
   deploymentCreatedByThisRun: false,
   previewAudited: true,
   productionModified: false,
+};
+const detailedRemoteChecks = [
+  'root:static',
+  'tienda:static',
+  'store:metadata',
+  'store:head',
+  'api-store:metadata',
+  'store-utm:path-authoritative',
+  'hostile-single:path-authoritative',
+  'hostile-multiple:path-authoritative',
+  'tracking:static-fallback',
+  'nested:static-fallback',
+  'missing-store:generic',
+  'missing-api:generic',
+  'invalid-api:safe',
+  'og:png',
+  'og-versioned:png',
+  'og:head',
+  'asset:immutable',
+  'asset:head',
+  'security:no-markers',
+];
+const realisticRemoteAudit = {
+  status: 'PASS',
+  previewHost,
+  requests: [{
+    name: 'store',
+    method: 'GET',
+    status: 200,
+    headers: {
+      contentType: 'text/html; charset=utf-8',
+      cacheControl: 'public, max-age=0, s-maxage=300',
+      xRobotsTag: 'noindex, nofollow, noarchive',
+      locationHost: null,
+    },
+  }],
+  metadata: {
+    counts: metadataTagCounts,
+    canonicalHost: previewHost,
+    ogImageHost: previewHost,
+    effectiveSlug: 'tienda-fixture',
+    canonicalPath: '/tienda/tienda-fixture',
+    ogUrlPath: '/tienda/tienda-fixture',
+  },
+  ogImage: {
+    png: true,
+    passed: true,
+    width: 1200,
+    height: 630,
+    bytes: 32_768,
+    sha256: 'e'.repeat(64),
+  },
+  security: { passed: true, scannedResponses: 12, findings: [] },
+  checks: detailedRemoteChecks.map((name) => ({ name, passed: true })),
+  failedChecks: [],
+};
+const realisticDeploymentEvidence = {
+  executed: false,
+  type: 'preview',
+  projectName: 'lanzo-store',
+  production: false,
+  deploymentIdHash: deploymentHash,
+  previewHost,
 };
 
 const roots = [];
@@ -201,7 +294,7 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
   });
 
   it.each([
-    ['remote BLOCKED', { ...remote, status: 'BLOCKED' }, 'remote-evidence-not-pass'],
+    ['remote BLOCKED', { ...remote, status: 'BLOCKED', evidenceStatus: 'BLOCKED' }, 'remote-evidence-not-pass'],
     ['remote failedChecks', { ...remote, failedChecks: ['cache'] }, 'remote-failed-checks'],
     ['different HEAD', { ...remote, HEAD: 'f'.repeat(40) }, 'remote-head-mismatch'],
     ['different project', { ...remote, projectName: 'lanzo-pos' }, 'remote-project-invalid'],
@@ -226,9 +319,109 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
       ...remote,
       artifactHashes: { ...remote.artifactHashes, static: 'f'.repeat(64) },
     }, 'evidence-artifact-hash-mismatch'],
+    ['funciones diferentes', {
+      ...remote,
+      functions: ['/api/og/store'],
+    }, 'evidence-functions-mismatch'],
+    ['runtime diferente', {
+      ...remote,
+      runtimes: remote.runtimes.map((item, index) => (
+        index === 0 ? { ...item, runtime: 'nodejs24.x' } : item
+      )),
+    }, 'evidence-bundles-mismatch'],
+    ['handler diferente', {
+      ...remote,
+      handlers: remote.handlers.map((item, index) => (
+        index === 0 ? { ...item, handler: 'store/api/store-page.js' } : item
+      )),
+    }, 'artifact-handler-invalid'],
+    ['routing diferente', {
+      ...remote,
+      routingChecks: { ...remote.routingChecks, dynamicStoreRoute: false },
+    }, 'evidence-routing-mismatch'],
   ])('blocks remote evidence: %s', (_label, value, reason) => {
     const validatedArtifact = validateArtifactEvidence(artifact, head);
     expect(() => validateRemoteEvidence(value, head, validatedArtifact))
+      .toThrow(expect.objectContaining({ reason }));
+  });
+
+  it.each([
+    ['status ausente', { ...remote, status: undefined }, 'remote-status-missing'],
+    ['evidenceStatus ausente', { ...remote, evidenceStatus: undefined }, 'remote-status-missing'],
+    ['status contradictorio', { ...remote, evidenceStatus: 'BLOCKED' }, 'remote-status-contradictory'],
+    ['checks ausentes', { ...remote, checks: undefined }, 'remote-check-failed-invalid'],
+    ['OG image ausente', { ...remote, ogImage: undefined }, 'remote-og-image-invalid'],
+    ['estado de deployment contradictorio', {
+      ...remote,
+      deploymentExecuted: true,
+    }, 'remote-deployment-state-contradictory'],
+    ['statuses HTTP ausentes', { ...remote, httpStatuses: undefined }, 'remote-http-statuses-invalid'],
+    ['headers ausentes', { ...remote, headerChecks: undefined }, 'remote-header-checks-invalid'],
+  ])('bloquea contratos remotos incompletos: %s', (_label, value, reason) => {
+    const validatedArtifact = validateArtifactEvidence(artifact, head);
+    expect(() => validateRemoteEvidence(value, head, validatedArtifact))
+      .toThrow(expect.objectContaining({ reason }));
+  });
+
+  it('acepta directamente la evidencia producida por buildEvidenceReport', () => {
+    const realRemoteEvidence = buildEvidenceReport({
+      head,
+      artifact,
+      remote: realisticRemoteAudit,
+      deployment: realisticDeploymentEvidence,
+      timestamp: '2026-07-29T23:00:00.000Z',
+    });
+    const validatedArtifact = validateArtifactEvidence(artifact, head);
+    expect(validateRemoteEvidence(realRemoteEvidence, head, validatedArtifact))
+      .toMatchObject({ previewHost, deploymentIdHash: deploymentHash });
+  });
+
+  it('valida estados descriptivos false y bloquea campos protegidos desconocidos', () => {
+    expect(validateProtectedRepositoryEvidence(artifact.protectedRepository))
+      .toMatchObject({
+        storePrebuiltConfigPresent: false,
+        administrativeProjectLinkPresent: false,
+      });
+    expect(() => validateProtectedRepositoryEvidence({
+      ...artifact.protectedRepository,
+      futureBoolean: true,
+    })).toThrow(expect.objectContaining({
+      reason: 'artifact-repository-integrity-field-invalid',
+    }));
+    const missingState = { ...artifact.protectedRepository };
+    delete missingState.storePrebuiltConfigPresent;
+    expect(() => validateProtectedRepositoryEvidence(missingState))
+      .toThrow(expect.objectContaining({ reason: 'artifact-repository-state-invalid' }));
+  });
+
+  it.each([
+    ['wrapper PASS y audit BLOCKED', {
+      ...artifact,
+      audit: { ...artifact, status: 'BLOCKED' },
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-store' },
+    }, 'artifact-status-contradictory'],
+    ['functions contradictorias', {
+      ...artifact,
+      audit: artifact,
+      output: { functions: ['/api/og/store'] },
+      projectInspection: { projectName: 'lanzo-store' },
+    }, 'artifact-functions-contradictory'],
+    ['proyecto distinto', {
+      ...artifact,
+      audit: artifact,
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-pos' },
+    }, 'artifact-project-invalid'],
+    ['deployment ejecutado', {
+      ...artifact,
+      audit: artifact,
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-store' },
+      deploymentExecuted: true,
+    }, 'artifact-deployment-state-invalid'],
+  ])('bloquea contradicciones del wrapper: %s', (_label, value, reason) => {
+    expect(() => validateArtifactEvidence(value, head))
       .toThrow(expect.objectContaining({ reason }));
   });
 
@@ -342,6 +535,124 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
     });
     const serialized = await readFile(input.outputPath, 'utf8');
     expect(serialized).not.toMatch(/slug|business|title|description|supabase|authorization|cookie/iu);
+  });
+
+  it('integra preparador real, reporte 1.7 real y gate 1.8 sin procesos externos', async () => {
+    const repositoryRoot = await temporaryRoot();
+    await mkdir(path.join(repositoryRoot, 'store', 'api', 'og'), { recursive: true });
+    await Promise.all([
+      writeFile(path.join(repositoryRoot, 'package.json'), '{"name":"fixture"}\n'),
+      writeFile(path.join(repositoryRoot, 'package-lock.json'), '{"lockfileVersion":3}\n'),
+      writeFile(path.join(repositoryRoot, 'vercel.json'), '{"project":"administrative"}\n'),
+      writeFile(path.join(repositoryRoot, 'store', 'vercel.json'), '{"trailingSlash":false}\n'),
+      writeFile(path.join(repositoryRoot, 'store', 'api', 'store-page.js'), 'export default {};\n'),
+      writeFile(path.join(repositoryRoot, 'store', 'api', 'og', 'store.js'), 'export default {};\n'),
+    ]);
+    const realArtifactAudit = structuredClone(artifact);
+    for (const name of ['HEAD', 'projectName', 'deploymentExecuted', 'protectedRepository']) {
+      delete realArtifactAudit[name];
+    }
+    const commands = [];
+    const prepared = await prepareStoreDeployment({
+      repositoryRoot,
+      preservePassedWorkspace: false,
+      headResolver: async ({ repositoryRoot: resolvedRoot }) => {
+        expect(resolvedRoot).toBe(repositoryRoot);
+        return head;
+      },
+      npmInvocation: {
+        command: 'node-fixture',
+        args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],
+        options: { shell: false },
+      },
+      vercelInvocation: {
+        command: 'vercel-fixture',
+        argsPrefix: [],
+        options: { shell: false },
+      },
+      projectInspection: {
+        projectId: 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4',
+        projectName: 'lanzo-store',
+        configuredRootDirectory: 'store',
+      },
+      commandRunner(command, args, options) {
+        commands.push({ command, args: [...args], shell: options.shell });
+        const workspaceRoot = options.cwd;
+        if (args.includes('build:store:vercel')) {
+          const staticRoot = path.join(workspaceRoot, 'store', 'dist');
+          mkdirSync(path.join(staticRoot, 'assets'), { recursive: true });
+          writeFileSync(
+            path.join(staticRoot, 'index.html'),
+            '<!doctype html><div id="root"></div><!-- LANZO_SOCIAL_HEAD_START --><!-- LANZO_SOCIAL_HEAD_END --><link href="/assets/index-AbCd1234.css"><script src="/assets/index-ZyXw9876.js"></script>',
+          );
+          writeFileSync(path.join(staticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
+          writeFileSync(path.join(staticRoot, 'assets', 'index-AbCd1234.css'), 'body{color:#123456}');
+          writeFileSync(path.join(staticRoot, 'assets', 'index-ZyXw9876.js'), 'export const store=true;');
+          return {};
+        }
+        if (args.includes('pull')) {
+          mkdirSync(path.join(workspaceRoot, '.vercel'), { recursive: true });
+          writeFileSync(path.join(workspaceRoot, '.vercel', '.env.production.local'), 'FIXTURE_ONLY=value\n');
+          return {};
+        }
+        if (args.includes('build')) {
+          const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
+          const functionsRoot = path.join(outputRoot, 'functions');
+          mkdirSync(functionsRoot, { recursive: true });
+          writeFileSync(path.join(outputRoot, 'config.json'), JSON.stringify({
+            version: 3,
+            routes: [{ src: '^/(.*)/$', status: 308, headers: { Location: '/$1' } }],
+          }));
+          for (const relativeRoute of ['api/store-page', 'api/og/store.js']) {
+            const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);
+            const handler = relativeRoute.includes('/og/')
+              ? 'store/api/og/store.js'
+              : 'store/api/store-page.js';
+            mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
+            writeFileSync(path.join(bundleRoot, handler), 'export default {};\n');
+            writeFileSync(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({
+              runtime: 'nodejs22.x',
+              handler,
+            }));
+          }
+          return {};
+        }
+        return {};
+      },
+      prebuiltAuditor: async () => structuredClone(realArtifactAudit),
+    });
+    const validatedArtifact = validateArtifactEvidence(prepared, head);
+    const realRemoteEvidence = buildEvidenceReport({
+      head,
+      artifact: prepared.audit,
+      remote: realisticRemoteAudit,
+      deployment: realisticDeploymentEvidence,
+      timestamp: '2026-07-29T23:00:00.000Z',
+    });
+    expect(validateRemoteEvidence(realRemoteEvidence, head, validatedArtifact))
+      .toMatchObject({ previewHost, deploymentIdHash: deploymentHash });
+
+    const evidenceRoot = await temporaryRoot();
+    const artifactAuditPath = path.join(evidenceRoot, 'artifact.json');
+    const remoteEvidencePath = path.join(evidenceRoot, 'remote.json');
+    const outputPath = path.join(evidenceRoot, 'readiness.json');
+    await Promise.all([
+      writeFile(artifactAuditPath, JSON.stringify(prepared)),
+      writeFile(remoteEvidencePath, JSON.stringify(realRemoteEvidence)),
+    ]);
+    await expect(verifyReleaseReadiness({
+      artifactAuditPath,
+      remoteEvidencePath,
+      outputPath,
+      head,
+      ciConclusion: 'success',
+      ciRunId: '30497905204',
+    }, { timestamp: '2026-07-29T23:00:00.000Z' })).resolves.toMatchObject({
+      status: 'READY_FOR_MANUAL_APPROVAL',
+      HEAD: head,
+    });
+    expect(commands.every(({ shell }) => shell === false)).toBe(true);
+    expect(JSON.stringify(commands)).not.toMatch(/\b(?:deploy|promote|alias)\b/iu);
   });
 
   it('returns BLOCKED without creating a manifest when remote evidence is absent', async () => {

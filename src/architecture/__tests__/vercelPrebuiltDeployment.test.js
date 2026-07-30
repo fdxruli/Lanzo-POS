@@ -289,6 +289,7 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     const calls = [];
     await expect(prepareStoreDeployment({
       repositoryRoot,
+      headResolver: async () => 'a'.repeat(40),
       npmInvocation: {
         command: 'node-fixture',
         args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],

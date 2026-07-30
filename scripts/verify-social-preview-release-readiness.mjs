@@ -59,6 +59,22 @@ const REQUIRED_REMOTE_CHECKS = Object.freeze([
   'invalidSlugPassed',
   'securityPassed',
 ]);
+const PROTECTED_REPOSITORY_INVARIANTS = Object.freeze([
+  'administrativeConfigUnchanged',
+  'storeConfigUnchanged',
+  'storePrebuiltConfigUnchanged',
+  'administrativeProjectLinkUnchanged',
+  'administrativeVercelUnchanged',
+  'repositoryEnvironmentUnchanged',
+]);
+const PROTECTED_REPOSITORY_STATES = Object.freeze([
+  'storePrebuiltConfigPresent',
+  'administrativeProjectLinkPresent',
+]);
+const PROTECTED_REPOSITORY_FIELDS = new Set([
+  ...PROTECTED_REPOSITORY_INVARIANTS,
+  ...PROTECTED_REPOSITORY_STATES,
+]);
 const FORBIDDEN_KEYS = new Set([
   'authorization',
   'cookie',
@@ -255,6 +271,33 @@ export function parseReadinessArguments(argv = process.argv.slice(2)) {
 
 function normalizedArtifact(raw) {
   if (isPlainObject(raw.audit)) {
+    if (raw.status !== raw.audit.status) {
+      fail('artifact-status-contradictory', 'artifact', 'Wrapper and audit statuses must match.');
+    }
+    if (
+      !Array.isArray(raw.output?.functions)
+      || !Array.isArray(raw.audit.output?.functions)
+      || JSON.stringify(raw.output.functions) !== JSON.stringify(raw.audit.output.functions)
+    ) {
+      fail('artifact-functions-contradictory', 'functions', 'Wrapper and audit functions must match.');
+    }
+    if (raw.deploymentExecuted !== false) {
+      fail('artifact-deployment-state-invalid', 'production', 'Artifact evidence must prove no deployment executed.');
+    }
+    if (raw.projectInspection?.projectName !== 'lanzo-store') {
+      fail('artifact-project-invalid', 'artifact', 'Artifact wrapper must target lanzo-store.');
+    }
+    if (Object.hasOwn(raw.audit, 'HEAD') && raw.audit.HEAD !== raw.HEAD) {
+      fail('artifact-head-contradictory', 'head', 'Wrapper and audit HEAD values must match.');
+    }
+    if (Object.hasOwn(raw.audit, 'deploymentExecuted')
+      && raw.audit.deploymentExecuted !== raw.deploymentExecuted) {
+      fail('artifact-deployment-state-contradictory', 'production', 'Deployment states contradict.');
+    }
+    if (Object.hasOwn(raw.audit, 'projectName')
+      && raw.audit.projectName !== raw.projectInspection.projectName) {
+      fail('artifact-project-contradictory', 'artifact', 'Project names contradict.');
+    }
     return {
       ...raw.audit,
       HEAD: raw.HEAD,
@@ -264,6 +307,46 @@ function normalizedArtifact(raw) {
     };
   }
   return raw;
+}
+
+export function validateProtectedRepositoryEvidence(value) {
+  const evidence = assertPlainObject(
+    value,
+    'artifact-repository-integrity-missing',
+    'artifact',
+  );
+  const names = Object.keys(evidence);
+  if (names.length === 0) {
+    fail('artifact-repository-integrity-missing', 'artifact', 'Protected repository evidence is required.');
+  }
+  for (const name of names) {
+    if (!PROTECTED_REPOSITORY_FIELDS.has(name)) {
+      fail(
+        'artifact-repository-integrity-field-invalid',
+        'artifact',
+        'Protected repository evidence contains an unknown field.',
+      );
+    }
+  }
+  for (const name of PROTECTED_REPOSITORY_INVARIANTS) {
+    if (evidence[name] !== true) {
+      fail(
+        'artifact-repository-integrity-failed',
+        'artifact',
+        'A protected repository invariant did not pass.',
+      );
+    }
+  }
+  for (const name of PROTECTED_REPOSITORY_STATES) {
+    if (typeof evidence[name] !== 'boolean') {
+      fail(
+        'artifact-repository-state-invalid',
+        'artifact',
+        'A protected repository state is missing or invalid.',
+      );
+    }
+  }
+  return Object.freeze({ ...evidence });
 }
 
 function assertAllTrue(object, required, reason, gate) {
@@ -332,15 +415,7 @@ export function validateArtifactEvidence(raw, expectedHead) {
   const bundles = canonicalBundles(artifact);
   assertAllTrue(artifact.checks, REQUIRED_ARTIFACT_CHECKS, 'artifact-check-failed', 'artifact');
   assertAllTrue(artifact.routing?.checks, REQUIRED_ROUTING_CHECKS, 'artifact-routing-failed', 'routing');
-  assertAllTrue(
-    artifact.protectedRepository,
-    Object.keys(artifact.protectedRepository || {}),
-    'artifact-repository-integrity-failed',
-    'artifact',
-  );
-  if (Object.keys(artifact.protectedRepository || {}).length === 0) {
-    fail('artifact-repository-integrity-missing', 'artifact', 'Protected repository evidence is required.');
-  }
+  validateProtectedRepositoryEvidence(artifact.protectedRepository);
   return Object.freeze({
     HEAD: artifact.HEAD,
     projectName: artifact.projectName,
@@ -348,6 +423,7 @@ export function validateArtifactEvidence(raw, expectedHead) {
     staticSha256: artifact.hashes.outputStaticTree,
     functions: Object.freeze([...artifact.output.functions].sort()),
     bundles: Object.freeze(bundles),
+    routingChecks: Object.freeze({ ...artifact.routing.checks }),
   });
 }
 
@@ -376,11 +452,14 @@ function validatePreviewHost(value) {
   return url.hostname;
 }
 
-function normalizedEvidenceStatus(remote) {
-  if (remote.status && remote.evidenceStatus && remote.status !== remote.evidenceStatus) {
+function validateEvidenceStatus(remote) {
+  if (remote.status == null || remote.evidenceStatus == null) {
+    fail('remote-status-missing', 'remote', 'Both remote status fields are required.');
+  }
+  if (remote.status !== remote.evidenceStatus) {
     fail('remote-status-contradictory', 'remote', 'Remote status fields contradict each other.');
   }
-  return remote.status || remote.evidenceStatus;
+  return remote.status;
 }
 
 function sameBundles(left, right) {
@@ -390,7 +469,11 @@ function sameBundles(left, right) {
 
 export function validateRemoteEvidence(remote, expectedHead, artifact) {
   assertPlainObject(remote, 'remote-evidence', 'remote');
-  if (remote.phase !== 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7' || normalizedEvidenceStatus(remote) !== 'PASS') {
+  if (
+    remote.schemaVersion !== 1
+    || remote.phase !== 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7'
+    || validateEvidenceStatus(remote) !== 'PASS'
+  ) {
     fail('remote-evidence-not-pass', 'remote', 'Remote evidence 1.7 must be PASS.');
   }
   if (!Array.isArray(remote.failedChecks) || remote.failedChecks.length !== 0) {
@@ -406,6 +489,12 @@ export function validateRemoteEvidence(remote, expectedHead, artifact) {
   if (remote.productionModified !== false) fail('remote-production-modified', 'production', 'Production must be unchanged.');
   if (typeof remote.deploymentCreatedByThisRun !== 'boolean') {
     fail('remote-deployment-origin-invalid', 'remote', 'Deployment origin must be explicit.');
+  }
+  if (
+    typeof remote.deploymentExecuted !== 'boolean'
+    || remote.deploymentExecuted !== remote.deploymentCreatedByThisRun
+  ) {
+    fail('remote-deployment-state-contradictory', 'remote', 'Deployment states must be explicit and consistent.');
   }
   const previewHost = validatePreviewHost(remote.previewHost);
   if (!isSha64(remote.deploymentIdHash)) {
@@ -434,6 +523,18 @@ export function validateRemoteEvidence(remote, expectedHead, artifact) {
   if (!sameBundles(remoteBundles, artifact.bundles)) {
     fail('evidence-bundles-mismatch', 'functions', 'Function runtimes or handlers do not match.');
   }
+  if (
+    !isPlainObject(remote.routingChecks)
+    || JSON.stringify(remote.routingChecks) !== JSON.stringify(artifact.routingChecks)
+  ) {
+    fail('evidence-routing-mismatch', 'routing', 'Build Output routing checks do not match.');
+  }
+  if (!Array.isArray(remote.httpStatuses) || remote.httpStatuses.length === 0) {
+    fail('remote-http-statuses-invalid', 'remote', 'Remote HTTP status evidence is required.');
+  }
+  if (!Array.isArray(remote.headerChecks) || remote.headerChecks.length === 0) {
+    fail('remote-header-checks-invalid', 'remote', 'Remote header evidence is required.');
+  }
   assertPlainObject(remote.metadataTagCounts, 'metadata-counts', 'metadata');
   for (const name of EXPECTED_METADATA) {
     if (remote.metadataTagCounts[name] !== 1) {
@@ -447,6 +548,8 @@ export function validateRemoteEvidence(remote, expectedHead, artifact) {
     remote.ogImage?.passed !== true
     || remote.ogImage?.width !== 1200
     || remote.ogImage?.height !== 630
+    || !Number.isSafeInteger(remote.ogImage?.bytes)
+    || remote.ogImage.bytes <= 0
     || !isSha64(remote.ogImageSha256)
   ) {
     fail('remote-og-image-invalid', 'metadata', 'Remote OG image evidence is invalid.');

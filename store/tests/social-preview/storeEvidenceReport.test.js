@@ -5,6 +5,7 @@ import {
 
 const head = 'a'.repeat(40);
 const previewHost = 'lanzo-store-git-fixture-team.vercel.app';
+const slug = 'tienda-fixture';
 const artifact = Object.freeze({
   status: 'PASS',
   target: 'store',
@@ -55,9 +56,39 @@ const remote = Object.freeze({
     },
     canonicalHost: previewHost,
     ogImageHost: previewHost,
+    canonicalPath: `/tienda/${slug}`,
+    ogUrlPath: `/tienda/${slug}`,
+    effectiveSlug: slug,
   },
-  ogImage: { sha256: 'd'.repeat(64) },
+  ogImage: {
+    png: true,
+    width: 1200,
+    height: 630,
+    bytes: 32_768,
+    sha256: 'd'.repeat(64),
+  },
   security: { passed: true, scannedResponses: 12, findings: [] },
+  checks: [
+    'root:static',
+    'tienda:static',
+    'store:metadata',
+    'store:head',
+    'api-store:metadata',
+    'store-utm:path-authoritative',
+    'hostile-single:path-authoritative',
+    'hostile-multiple:path-authoritative',
+    'tracking:static-fallback',
+    'nested:static-fallback',
+    'missing-store:generic',
+    'missing-api:generic',
+    'invalid-api:safe',
+    'og:png',
+    'og-versioned:png',
+    'og:head',
+    'asset:immutable',
+    'asset:head',
+    'security:no-markers',
+  ].map((name) => ({ name, passed: true })),
   failedChecks: [],
 });
 
@@ -104,6 +135,7 @@ describe('evidencia controlada de social preview 1.7', () => {
     expect(report).toMatchObject({
       schemaVersion: 1,
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
+      status: 'PASS',
       evidenceStatus: 'PASS',
       HEAD: head,
       projectName: 'lanzo-store',
@@ -112,6 +144,23 @@ describe('evidencia controlada de social preview 1.7', () => {
       deploymentCreatedByThisRun: executed,
       previewAudited: true,
       productionModified: false,
+      ogImage: {
+        passed: true,
+        width: 1200,
+        height: 630,
+        bytes: 32_768,
+      },
+      checks: {
+        metadataUnique: true,
+        canonicalConsistent: true,
+        ogImageConsistent: true,
+        cachePassed: true,
+        trackingPassed: true,
+        hostileQueryPassed: true,
+        missingStorePassed: true,
+        invalidSlugPassed: true,
+        securityPassed: true,
+      },
       failedChecks: [],
     });
     const serialized = JSON.stringify(report);
@@ -136,5 +185,22 @@ describe('evidencia controlada de social preview 1.7', () => {
       deployment,
     });
     expect(JSON.stringify(report)).not.toContain('privado');
+  });
+
+  it('deriva los checks resumidos y bloquea si un check detallado falla', () => {
+    const failedRemote = {
+      ...remote,
+      checks: remote.checks.map((check) => (
+        check.name === 'tracking:static-fallback'
+          ? { ...check, passed: false }
+          : check
+      )),
+    };
+    expect(() => buildEvidenceReport({
+      head,
+      artifact,
+      remote: failedRemote,
+      deployment,
+    })).toThrow('summary checks must all be derived as PASS');
   });
 });
