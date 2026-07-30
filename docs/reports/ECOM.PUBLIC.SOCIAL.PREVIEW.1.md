@@ -3863,3 +3863,154 @@ remota real 1.7 y manifiesto readiness real.
 Riesgo no bloqueante: el entorno local usa Node 24 y la dependencia
 `react-zxing` declara soporte hasta Node 22; la instalación, las pruebas y el
 build no resultaron afectados.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.5 — Compatibilidad runtime del Build Output
+
+### Preview real y bloqueante
+
+El artifact del HEAD `993226e173537bd61692d61e875f390bcd8aae4e`
+(tree `099158bfaf37a8dc4a71dd5326257532e0487c65`) se desplegó correctamente
+como preview, sin `--prod`, promoción ni alias:
+
+```text
+https://lanzo-store-7k6knpm19-fdxrulis-projects.vercel.app
+```
+
+Vercel reportó el proyecto `lanzo-store`, source `cli`, estado `READY` y
+`production = false`. Producción no fue modificada. Sin embargo, las dos rutas
+dinámicas respondieron HTTP 500:
+
+```text
+GET /tienda/farmaciagary                 = 500 FUNCTION_INVOCATION_FAILED
+GET /api/og/store?slug=farmaciagary     = 500 FUNCTION_INVOCATION_FAILED
+```
+
+El error runtime confirmado fue:
+
+```text
+ReferenceError: exports is not defined in ES module scope
+
+This file is being treated as an ES module because it has a '.js'
+file extension and '/var/task/package.json' contains "type": "module".
+
+at file:///var/task/store/api/store-page.js:3:23
+```
+
+La preview anterior demuestra que el deployment preview puede crearse, pero no
+es evidencia `PASS` de las funciones ni de la certificación externa. No se
+borra ni se reutiliza como prueba aprobatoria.
+
+### Reproducción y causa raíz
+
+Se generó un Build Output real con Vercel CLI, `@vercel/node 5.9.2` y Node
+`24.14.0`. Ambas funciones produjeron:
+
+| Ruta | Bundle | Handler | Runtime | Sintaxis generada | Scope efectivo anterior |
+| --- | --- | --- | --- | --- | --- |
+| `/api/store-page` | `api/store-page.func` | `store/api/store-page.js` | `nodejs24.x` | CommonJS (`exports`, `require`) | `type=module` |
+| `/api/og/store` | `api/og/store.func` | `store/api/og/store.js` | `nodejs24.x` | CommonJS (`exports`, `require`) | `type=module` |
+
+Cada bundle contenía una copia del `package.json` raíz con `"type":"module"`.
+La importación real e independiente de ambos handlers bajo Node 24 terminó con
+código 1 y reprodujo `ReferenceError: exports is not defined in ES module
+scope`.
+
+El audit anterior comprobaba runtime, presencia del handler declarado, closure,
+imports, secretos, código administrativo, fuentes y routing, pero no resolvía
+el scope `package.json`, no comparaba sintaxis con extensión y formato efectivo,
+y no cargaba el módulo con Node. Por eso el artifact incompatible pudo obtener
+audit `PASS`.
+
+### Corrección y nuevo gate
+
+Después de que Vercel genere exactamente las dos funciones, el preparador
+clasifica la sintaxis real de cada handler `.js` y escribe atómicamente este
+scope mínimo dentro de cada bundle:
+
+```json
+{
+  "type": "commonjs"
+}
+```
+
+La ubicación es `store/api/package.json`. Ese scope cubre tanto el handler como
+todos los helpers `.js` compilados que el handler carga mediante `require`.
+`.vc-config.json` conserva sin cambios los handlers reales:
+
+```text
+store/api/store-page.js
+store/api/og/store.js
+```
+
+Renombrar solamente el entrypoint a `.cjs` no era suficiente: los helpers
+requeridos seguirían siendo `.js` bajo el scope ESM copiado al root del bundle.
+No se cambiaron a CommonJS los handlers fuente y no se agregó ninguna
+dependencia.
+
+El artifact audit ahora:
+
+- resuelve el handler desde `.vc-config.json` y exige que exista;
+- resuelve el `package.json` efectivo desde el directorio del handler;
+- clasifica CommonJS, ESM, formato mixto o desconocido sin confundir strings,
+  comentarios ni `import()` dinámico;
+- valida extensión, sintaxis y scope;
+- exige que el Node local sea de la misma versión mayor que el runtime;
+- crea un proceso Node 24 aislado por cada función;
+- bloquea timeout, exit code distinto de cero, fallo de carga o interfaz no
+  invocable (`function`, `fetch` o `handler`);
+- usa variables ficticias y desactiva `fetch` durante la carga;
+- no hace llamadas remotas ni incluye credenciales.
+
+La reproducción negativa cubre CommonJS `.js` bajo `type=module`; también se
+rechaza ESM `.js` bajo `type=commonjs`. Después de aplicar el scope corregido,
+las dos funciones cargaron en procesos independientes con exit code 0 y
+expusieron una interfaz válida. El target continuó siendo `preview`,
+`production=false` y no se ejecutó deployment.
+
+### Pruebas, riesgo residual y estado
+
+Pruebas focales iniciales:
+
+```text
+storeBuildOutputAudit.test.js       = 55 PASS
+storePrebuiltPackaging.test.js      = 91 PASS / 2 skips Windows
+store/tests/social-preview          = 546 PASS / 2 skips Windows
+arquitectura build/deployment       = 45 PASS
+npm run build:store:vercel          = PASS
+lint focal                          = PASS
+git diff --check                    = PASS
+npm run test:ci                     = 113 fallos heredados locales
+Build Output real, runtime gates    = PASS para ambas funciones
+Node runtime                        = 24.14.0 / nodejs24.x
+preview nueva creada                = no
+producción modificada               = no
+```
+
+La suite global conservó la línea base local conocida de 113 fallos. La
+comparación normalizada del workflow contra `main` debe confirmar
+`newFailures=[]`; su resultado se registra en la entrega posterior al push para
+no volver autorreferencial este reporte.
+
+La auditoría del output real confirmó `targetEnvironment=preview`,
+`production=false`, formato CommonJS compatible, scope legible, versión mayor
+24 coincidente, carga independiente e interfaz invocable para
+`/api/store-page` y `/api/og/store`. El único check ajeno al runtime que no se
+aplicó en esa reproducción manual fue la normalización posterior de
+`trailingSlashNoindex`; el preparador certificado la aplica antes del audit
+final, como ya estaba cubierto por la minifase anterior.
+
+Riesgo residual: se necesita generar un artifact nuevo desde el commit
+corregido y desplegarlo como una nueva preview para certificar las respuestas
+HTTP reales. La preview actual permanece fallida y no cuenta como evidencia
+`PASS`. No se autoriza producción.
+
+Estado permitido de esta corrección:
+
+```text
+Implementación                         = PASS
+Pruebas                                = PASS
+Preview nueva creada                   = no
+Producción modificada                  = no
+Certificación externa                  = BLOCKED
+Motivo                                 = requiere artifact y preview corregidos
+```

@@ -11,6 +11,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile,
@@ -20,6 +21,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   auditPrebuiltOutput,
+  classifyGeneratedHandlerSyntax,
   formatSafetyFailureDetails,
   inspectStatic,
 } from './audit-vercel-build-output.mjs';
@@ -290,6 +292,56 @@ export async function inspectGeneratedFunctionInventory(functionsRoot) {
     unexpectedRoutes,
     duplicateRoutes: [...new Set(duplicateRoutes)],
   });
+}
+
+const GENERATED_FUNCTION_SCOPE = Object.freeze({
+  '/api/og/store': 'store/api',
+  '/api/store-page': 'store/api',
+});
+
+/**
+ * @vercel/node currently emits the two ESM sources as CommonJS .js files and
+ * also copies the repository package.json ("type":"module") into each bundle.
+ * Set the narrow generated store/api scope to the syntax Vercel actually
+ * emitted. This never edits source handlers or package manifests.
+ */
+export async function applyGeneratedFunctionRuntimeCompatibility(functionsRoot) {
+  const inventory = await inspectGeneratedFunctionInventory(functionsRoot);
+  if (!inventory.complete) {
+    throw new Error('Generated function runtime compatibility requires exactly the two public functions.');
+  }
+  const scopes = [];
+  for (const bundle of inventory.bundles) {
+    const expectedScope = GENERATED_FUNCTION_SCOPE[bundle.route];
+    const normalizedHandler = normalizePath(bundle.handler || '');
+    if (!expectedScope || !normalizedHandler.startsWith(`${expectedScope}/`)) {
+      throw new Error(`Generated handler is outside its approved runtime scope: ${bundle.route}.`);
+    }
+    const handlerPath = path.join(functionsRoot, bundle.bundle, ...normalizedHandler.split('/'));
+    const source = await readFile(handlerPath, 'utf8');
+    const syntax = classifyGeneratedHandlerSyntax(source);
+    if (!['commonjs', 'module'].includes(syntax) || path.extname(handlerPath) !== '.js') {
+      throw new Error(`Generated handler format is not safely scopeable: ${bundle.route}.`);
+    }
+    const scopeRoot = path.join(functionsRoot, bundle.bundle, ...expectedScope.split('/'));
+    const packagePath = path.join(scopeRoot, 'package.json');
+    const temporaryPackagePath = path.join(
+      scopeRoot,
+      `.runtime-package-${process.pid}-${scopes.length}.json`,
+    );
+    const packageJson = `${JSON.stringify({ type: syntax }, null, 2)}\n`;
+    await writeFile(temporaryPackagePath, packageJson, { encoding: 'utf8', flag: 'wx' });
+    await rename(temporaryPackagePath, packagePath);
+    scopes.push(Object.freeze({
+      route: bundle.route,
+      handler: normalizedHandler,
+      syntax,
+      packageScope: `${expectedScope}/package.json`,
+      packageType: syntax,
+      atomic: true,
+    }));
+  }
+  return Object.freeze(scopes.sort((left, right) => left.route.localeCompare(right.route)));
 }
 
 export async function assertEffectiveVercelProjectRoot({
@@ -1537,6 +1589,9 @@ export async function prepareStoreDeployment({
       }
     }
     if (!await pathExists(outputConfigPath)) throw new Error('Vercel did not produce .vercel/output after function packaging.');
+    const functionRuntimeCompatibility = await applyGeneratedFunctionRuntimeCompatibility(
+      outputFunctionsPath,
+    );
     const vercelOutputInventory = (await walk(outputRoot)).map((file) => ({
       path: file.relativePath,
       bytes: file.bytes,
@@ -1624,6 +1679,7 @@ export async function prepareStoreDeployment({
         deploymentExecuted: manifest.deploymentExecuted,
       },
       vercelOutputInventory,
+      functionRuntimeCompatibility,
       staticMaterialization,
       output: {
         files: outputFiles.length,

@@ -14,10 +14,14 @@ import {
   classifyCredentialAssignment,
   verifyTemporaryStoreRoot,
 } from '../../../scripts/audit-vercel-build-output.mjs';
-import { sanitizeFailedOutputDiagnostic } from '../../../scripts/prepare-store-deployment.mjs';
+import {
+  applyGeneratedFunctionRuntimeCompatibility,
+  sanitizeFailedOutputDiagnostic,
+} from '../../../scripts/prepare-store-deployment.mjs';
 
 const PROJECT_ID = 'fixture-store-project';
 const ORG_ID = 'fixture-store-org';
+const CURRENT_NODE_RUNTIME = `nodejs${process.versions.node.split('.')[0]}.x`;
 const PRIVILEGED_JWT = [
   Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url'),
   Buffer.from(JSON.stringify({ role: 'service_role', fixture: true })).toString('base64url'),
@@ -64,10 +68,26 @@ async function createFunction(functionsRoot, relativeRoute, source) {
   const root = path.join(functionsRoot, `${relativeRoute}.func`);
   await mkdir(root, { recursive: true });
   await writeJson(path.join(root, '.vc-config.json'), {
-    runtime: 'nodejs22.x',
+    runtime: CURRENT_NODE_RUNTIME,
     handler: 'index.mjs',
   });
   await writeFile(path.join(root, 'index.mjs'), source);
+  if (relativeRoute === 'api/og/store') {
+    for (const packageName of ['@vercel/og', 'react']) {
+      const packageRoot = path.join(root, 'node_modules', ...packageName.split('/'));
+      await mkdir(packageRoot, { recursive: true });
+      await writeJson(path.join(packageRoot, 'package.json'), {
+        name: packageName,
+        main: 'index.js',
+      });
+      await writeFile(
+        path.join(packageRoot, 'index.js'),
+        packageName === '@vercel/og'
+          ? 'exports.ImageResponse=class ImageResponse {};\n'
+          : 'module.exports={fixture:true};\n',
+      );
+    }
+  }
 }
 
 async function createFixture() {
@@ -115,12 +135,12 @@ function rejectsPrivileged(value,payload){
     || forbidden.test(value)
     || envName.length === 0;
 }
-export default [STORE_HTML_TEMPLATE,rejectsPrivileged];`,
+export default function handler(){return [STORE_HTML_TEMPLATE,rejectsPrivileged];}`,
   );
   await createFunction(
     functionsRoot,
     'api/og/store',
-    "import {ImageResponse} from '@vercel/og';import React from 'react';export default [ImageResponse,React];",
+    "import {ImageResponse} from '@vercel/og';import React from 'react';export default function handler(){return [ImageResponse,React];}",
   );
   return {
     workspaceRoot,
@@ -176,6 +196,86 @@ describe('auditoría de .vercel/output', () => {
       ['mi-tienda'],
       ['mi-tienda'],
     ]);
+  });
+
+  it('reproduce CommonJS .js bajo type=module y corrige el scope de ambas funciones', async () => {
+    const handlers = [
+      {
+        bundle: path.join(fixture.functionsRoot, 'api', 'store-page.func'),
+        handler: 'store/api/store-page.js',
+        source: `"use strict";
+Object.defineProperty(exports,"__esModule",{value:true});
+const STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};
+exports.default=function handler(){return STORE_HTML_TEMPLATE;};`,
+      },
+      {
+        bundle: path.join(fixture.functionsRoot, 'api', 'og', 'store.func'),
+        handler: 'store/api/og/store.js',
+        source: `"use strict";
+Object.defineProperty(exports,"__esModule",{value:true});
+const ImageResponse=require("@vercel/og");
+const React=require("react");
+exports.default=function handler(){return [ImageResponse,React];};`,
+      },
+    ];
+    for (const item of handlers) {
+      await writeJson(path.join(item.bundle, 'package.json'), { type: 'module' });
+      await writeJson(path.join(item.bundle, '.vc-config.json'), {
+        runtime: CURRENT_NODE_RUNTIME,
+        handler: item.handler,
+      });
+      await mkdir(path.dirname(path.join(item.bundle, item.handler)), { recursive: true });
+      await writeFile(path.join(item.bundle, item.handler), item.source);
+    }
+
+    let result = await audit(fixture);
+    expect(result.status).toBe('FAIL');
+    expect(result.checks.functionModuleFormatsCompatible).toBe(false);
+    expect(result.checks.functionHandlersLoadable).toBe(false);
+    expect(result.functionAudit.bundles.every((bundle) => (
+      bundle.module.syntax === 'commonjs'
+      && bundle.module.packageType === 'module'
+      && bundle.module.smoke.exitCode !== 0
+    ))).toBe(true);
+
+    const corrected = await applyGeneratedFunctionRuntimeCompatibility(fixture.functionsRoot);
+    expect(corrected).toEqual([
+      expect.objectContaining({ route: '/api/og/store', packageType: 'commonjs', atomic: true }),
+      expect.objectContaining({ route: '/api/store-page', packageType: 'commonjs', atomic: true }),
+    ]);
+    for (const item of handlers) {
+      expect(JSON.parse(await readFile(path.join(item.bundle, 'store', 'api', 'package.json'), 'utf8')))
+        .toEqual({ type: 'commonjs' });
+      expect(JSON.parse(await readFile(path.join(item.bundle, '.vc-config.json'), 'utf8')).handler)
+        .toBe(item.handler);
+    }
+    result = await audit(fixture);
+    expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
+    expect(result.checks.functionHandlersLoadable).toBe(true);
+    expect(result.checks.functionHandlersInvocable).toBe(true);
+    expect(result.checks.independentFunctionSmokePassed).toBe(true);
+  });
+
+  it('rechaza un handler ESM .js bajo type=commonjs antes del deployment', async () => {
+    const root = path.join(fixture.functionsRoot, 'api', 'store-page.func');
+    await rename(path.join(root, 'index.mjs'), path.join(root, 'index.js'));
+    await writeJson(path.join(root, 'package.json'), { type: 'commonjs' });
+    await writeJson(path.join(root, '.vc-config.json'), {
+      runtime: CURRENT_NODE_RUNTIME,
+      handler: 'index.js',
+    });
+    const result = await audit(fixture);
+    const html = result.functionAudit.bundles.find((bundle) => bundle.route === '/api/store-page');
+    expect(result.status).toBe('FAIL');
+    expect(result.checks.functionModuleFormatsCompatible).toBe(false);
+    expect(result.checks.functionHandlersLoadable).toBe(false);
+    expect(html.module).toMatchObject({
+      syntax: 'module',
+      packageType: 'commonjs',
+      interpretedAs: 'commonjs',
+      compatible: false,
+    });
+    expect(html.module.smoke.exitCode).not.toBe(0);
   });
 
   it('acepta el contrato de workspace temporal con store efectivo explícito', () => {

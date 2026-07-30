@@ -5,6 +5,7 @@
  *   node scripts/audit-vercel-build-output.mjs store <temporary-workspace-store-root>
  *   node scripts/audit-vercel-build-output.mjs admin <temporary-package-root>
  */
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
@@ -568,6 +569,145 @@ function tokenizeJavaScript(source) {
   return tokens;
 }
 
+export function classifyGeneratedHandlerSyntax(source) {
+  const tokens = tokenizeJavaScript(source);
+  let commonJs = false;
+  let esm = false;
+  const isProperty = (index) => tokens[index - 1]?.value === '.';
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'word' || isProperty(index)) continue;
+    if (
+      token.value === 'require'
+      && tokens[index + 1]?.value === '('
+    ) commonJs = true;
+    if (
+      token.value === 'exports'
+      && ['.', '[', '='].includes(tokens[index + 1]?.value)
+    ) commonJs = true;
+    if (
+      token.value === 'module'
+      && tokens[index + 1]?.value === '.'
+      && tokens[index + 2]?.value === 'exports'
+    ) commonJs = true;
+    if (
+      token.value === 'export'
+      || (token.value === 'import' && tokens[index + 1]?.value !== '(')
+    ) esm = true;
+  }
+  if (commonJs && esm) return 'mixed';
+  if (commonJs) return 'commonjs';
+  if (esm) return 'module';
+  return 'unknown';
+}
+
+async function effectivePackageScope(handlerPath, bundleRoot) {
+  let directory = path.dirname(handlerPath);
+  const root = path.resolve(bundleRoot);
+  while (directory === root || directory.startsWith(`${root}${path.sep}`)) {
+    const packagePath = path.join(directory, 'package.json');
+    if (await pathExists(packagePath)) {
+      try {
+        const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
+        const packageType = packageJson?.type === 'module' ? 'module' : 'commonjs';
+        return {
+          packageType,
+          packageScope: normalizePath(path.relative(root, packagePath)),
+          packageReadable: true,
+        };
+      } catch {
+        return {
+          packageType: null,
+          packageScope: normalizePath(path.relative(root, packagePath)),
+          packageReadable: false,
+        };
+      }
+    }
+    if (directory === root) break;
+    directory = path.dirname(directory);
+  }
+  return { packageType: 'commonjs', packageScope: null, packageReadable: true };
+}
+
+function interpretedModuleFormat(extension, packageType) {
+  if (extension === '.cjs') return 'commonjs';
+  if (extension === '.mjs') return 'module';
+  if (extension === '.js') return packageType;
+  return null;
+}
+
+const handlerSmokeSource = String.raw`
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+globalThis.fetch = async () => { throw new Error('NETWORK_DISABLED_DURING_HANDLER_LOAD'); };
+try {
+  const loaded = await import(pathToFileURL(path.resolve(process.argv[1])).href);
+  const invocable = (value) => typeof value === 'function'
+    || typeof value?.fetch === 'function'
+    || typeof value?.handler === 'function';
+  const candidate = invocable(loaded.default)
+    ? loaded.default
+    : invocable(loaded.default?.default)
+      ? loaded.default.default
+      : invocable(loaded)
+        ? loaded
+        : null;
+  if (!candidate) throw Object.assign(new TypeError('HANDLER_INTERFACE_NOT_INVOKABLE'), {
+    code: 'HANDLER_INTERFACE_NOT_INVOKABLE',
+  });
+  process.stdout.write(JSON.stringify({ loaded: true, invocable: true }));
+} catch (error) {
+  process.stderr.write(JSON.stringify({
+    loaded: false,
+    invocable: false,
+    name: String(error?.name || 'Error'),
+    code: String(error?.code || ''),
+    message: String(error?.message || 'handler load failed').slice(0, 500),
+  }));
+  process.exit(1);
+}
+`;
+
+function sanitizeHandlerSmokeError(value, bundleRoot) {
+  const normalizedRoot = normalizePath(path.resolve(bundleRoot));
+  return String(value || '')
+    .replaceAll(normalizedRoot, '<function-bundle>')
+    .replaceAll('\\', '/')
+    .slice(0, 1000);
+}
+
+function smokeLoadGeneratedHandler(handlerPath, bundleRoot, runtime) {
+  const runtimeMajor = Number(/^nodejs(\d+)(?:\.x)?$/u.exec(runtime || '')?.[1]);
+  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', handlerSmokeSource, handlerPath], {
+    cwd: bundleRoot,
+    encoding: 'utf8',
+    timeout: 15_000,
+    maxBuffer: 1024 * 1024,
+    windowsHide: true,
+    env: {
+      NODE_ENV: 'test',
+      PUBLIC_STORE_ORIGINS: 'https://store.invalid',
+      VITE_SUPABASE_URL: 'https://supabase.invalid',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_runtime_smoke_fixture',
+    },
+  });
+  let payload = null;
+  const rawPayload = result.status === 0 ? result.stdout : result.stderr;
+  try { payload = JSON.parse(rawPayload || '{}'); } catch { /* represented as a failed smoke */ }
+  return Object.freeze({
+    nodeMajor,
+    runtimeMajor: Number.isInteger(runtimeMajor) ? runtimeMajor : null,
+    nodeMajorMatchesRuntime: nodeMajor === runtimeMajor,
+    exitCode: Number.isInteger(result.status) ? result.status : null,
+    signal: result.signal || null,
+    timedOut: result.error?.code === 'ETIMEDOUT',
+    loaded: result.status === 0 && payload?.loaded === true,
+    invocable: result.status === 0 && payload?.invocable === true,
+    error: result.status === 0 ? null : sanitizeHandlerSmokeError(rawPayload, bundleRoot),
+  });
+}
+
 function executableImportSpecifiers(source) {
   const tokens = tokenizeJavaScript(source);
   const specifiers = [];
@@ -829,6 +969,33 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     }
     const configReadable = Boolean(bundle.config && typeof bundle.config === 'object');
     const handler = bundle.config?.handler;
+    const handlerPresent = typeof handler === 'string' && paths.includes(handler);
+    const handlerPath = handlerPresent ? path.join(bundle.absolutePath, handler) : null;
+    const handlerSource = handlerPath ? await readFile(handlerPath, 'utf8') : '';
+    const handlerExtension = handlerPath ? path.extname(handlerPath).toLowerCase() : null;
+    const packageScope = handlerPath
+      ? await effectivePackageScope(handlerPath, bundle.absolutePath)
+      : { packageType: null, packageScope: null, packageReadable: false };
+    const syntax = handlerPath ? classifyGeneratedHandlerSyntax(handlerSource) : null;
+    const interpretedAs = interpretedModuleFormat(handlerExtension, packageScope.packageType);
+    const moduleFormatCompatible = (
+      syntax === 'commonjs' && interpretedAs === 'commonjs'
+    ) || (
+      syntax === 'module' && interpretedAs === 'module'
+    );
+    const runtimeSmoke = handlerPath
+      ? smokeLoadGeneratedHandler(handlerPath, bundle.absolutePath, bundle.config?.runtime)
+      : Object.freeze({
+        nodeMajor: Number(process.versions.node.split('.')[0]),
+        runtimeMajor: null,
+        nodeMajorMatchesRuntime: false,
+        exitCode: null,
+        signal: null,
+        timedOut: false,
+        loaded: false,
+        invocable: false,
+        error: 'DECLARED_HANDLER_NOT_FOUND',
+      });
     details.push({
       route: bundle.route,
       rawRoute: bundle.rawRoute,
@@ -839,7 +1006,17 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
       files: files.length,
       bytes: files.reduce((total, file) => total + file.bytes, 0),
       configReadable,
-      handlerPresent: typeof handler === 'string' && paths.includes(handler),
+      handlerPresent,
+      module: {
+        extension: handlerExtension,
+        syntax,
+        packageType: packageScope.packageType,
+        packageScope: packageScope.packageScope,
+        packageReadable: packageScope.packageReadable,
+        interpretedAs,
+        compatible: moduleFormatCompatible,
+        smoke: runtimeSmoke,
+      },
       sourceMaps: sourceMaps.map((item) => item.path),
       internalFunctionSourceMaps: sourceMaps,
       fonts: await inspectFunctionFonts(bundle, paths),
@@ -869,6 +1046,23 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     readableConfigs: details.every((item) => item.configReadable),
     validRuntime: details.every((item) => /^nodejs\d+(?:\.x)?$/u.test(item.runtime || '')),
     validHandlers: details.every((item) => item.handlerPresent),
+    functionPackageScopesReadable: details.every((item) => item.module.packageReadable),
+    functionModuleFormatsCompatible: details.every((item) => item.module.compatible),
+    functionNodeMajorMatchesRuntime: details.every((item) => (
+      item.module.smoke.nodeMajorMatchesRuntime
+    )),
+    functionHandlersLoadable: details.every((item) => (
+      item.module.smoke.exitCode === 0
+      && item.module.smoke.loaded
+      && !item.module.smoke.timedOut
+    )),
+    functionHandlersInvocable: details.every((item) => item.module.smoke.invocable),
+    independentFunctionSmokePassed: details.length === EXPECTED_STORE_FUNCTIONS.length
+      && details.every((item) => (
+        item.module.smoke.exitCode === 0
+        && item.module.smoke.loaded
+        && item.module.smoke.invocable
+      )),
     internalFunctionSourceMapsSafe: details.every((item) => item.internalFunctionSourceMaps.every((map) => (
       map.generatedBy === '@vercel/node (inferred)'
       && map.insideFunctionBundle
