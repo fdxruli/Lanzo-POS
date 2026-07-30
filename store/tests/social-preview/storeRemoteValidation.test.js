@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   auditRemoteStoreDeployment,
   inspectPng,
@@ -17,6 +17,10 @@ import {
 const slug = 'tienda-publica-fixture';
 const preview = 'https://lanzo-store-git-fixture-team.vercel.app';
 const assetPath = '/assets/index-AbCd1234.js';
+const deployedHead = 'a'.repeat(40);
+const correctiveHead = 'b'.repeat(40);
+const deploymentIdHash = 'c'.repeat(64);
+const runtimeFailureCode = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
 const staticHtml = `<!doctype html><html lang="es-MX"><head>
 <title>Tienda en línea | Lanzo</title>
 <meta name="description" content="Consulta productos">
@@ -74,6 +78,52 @@ function response(body, {
       ...(location ? { Location: location } : {}),
     },
   });
+}
+
+function initialPreviewPlan(overrides = {}) {
+  return {
+    deploymentPolicy: 'single-preview',
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewDeployments: 0,
+    head: deployedHead,
+    correctivePreviewAuthorized: false,
+    correctivePreviewNumber: 0,
+    correctivePreviewExecuted: false,
+    previousCorrectivePreviewDeployments: 0,
+    commandArgs: ['deploy', '--prebuilt', '--yes'],
+    ...overrides,
+  };
+}
+
+function correctivePreviewPlan(overrides = {}) {
+  return {
+    deploymentPolicy: 'single-corrective-preview',
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewDeployments: 1,
+    previousPreviewProjectName: 'lanzo-store',
+    previousPreviewDeploymentType: 'preview',
+    previousPreviewProduction: false,
+    previousPreviewStatus: 'FAILED_CERTIFICATION',
+    previousPreviewEvidencePass: false,
+    previousPreviewDeploymentIdHash: deploymentIdHash,
+    previousPreviewHead: deployedHead,
+    previousPreviewPreserved: true,
+    head: correctiveHead,
+    headRelationship: 'validated-descendant',
+    headAncestryVerified: true,
+    previousFailureCode: runtimeFailureCode,
+    correctionFailureCode: runtimeFailureCode,
+    correctivePreviewAuthorized: true,
+    correctivePreviewNumber: 1,
+    correctivePreviewExecuted: false,
+    previousCorrectivePreviewDeployments: 0,
+    commandArgs: ['deploy', '--prebuilt', '--yes'],
+    ...overrides,
+  };
 }
 
 async function fixtureFetch(input, options = {}) {
@@ -153,7 +203,11 @@ function withFixtureOverride(overrides = {}) {
       ? (url.searchParams.has('v') ? 'ogVersioned' : 'ogUnversioned')
       : (url.pathname === `/tienda/${slug}` ? 'dynamicHtml'
           : (url.pathname === assetPath ? 'asset' : null));
-    if (!cacheKey || overrides[cacheKey] == null) return original;
+    if (
+      !cacheKey
+      || overrides[cacheKey] === null
+      || overrides[cacheKey] === undefined
+    ) return original;
     const bytes = new Uint8Array(await original.arrayBuffer());
     const headers = new Headers(original.headers);
     headers.set('Cache-Control', overrides[cacheKey]);
@@ -181,34 +235,138 @@ describe('validación remota saneada de lanzo-store', () => {
       .toThrow('Expected');
   });
 
-  it('limita el plan a una sola preview prebuilt de lanzo-store', () => {
-    expect(validatePreviewDeploymentPlan({
-      projectName: 'lanzo-store',
-      deploymentType: 'preview',
+  it('autoriza la primera preview solo con historial vacío y count 0', () => {
+    expect(validatePreviewDeploymentPlan(initialPreviewPlan())).toMatchObject({
+      deploymentPolicy: 'single-preview',
+      previousPreviewCount: 0,
+      correctivePreviewAuthorized: false,
+      correctivePreviewExecuted: false,
       production: false,
+    });
+  });
+
+  it('autoriza una única preview correctiva tras la certificación fallida', () => {
+    expect(validatePreviewDeploymentPlan(correctivePreviewPlan())).toMatchObject({
+      deploymentPolicy: 'single-corrective-preview',
+      previousPreviewCount: 1,
+      previousPreviewProjectName: 'lanzo-store',
+      previousPreviewDeploymentType: 'preview',
+      previousPreviewFailedCertification: true,
+      previousPreviewEvidencePass: false,
+      previousPreviewDeploymentIdHash: deploymentIdHash,
+      previousPreviewPreserved: true,
+      headRelationship: 'validated-descendant',
+      headAncestryVerified: true,
+      correctionFailureCode: runtimeFailureCode,
+      correctivePreviewAuthorized: true,
+      correctivePreviewNumber: 1,
+      correctivePreviewExecuted: false,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+    expect(validatePreviewDeploymentPlan(correctivePreviewPlan({
+      headRelationship: 'direct-descendant',
+      headParent: deployedHead,
+      headAncestryVerified: undefined,
+    }))).toMatchObject({
+      headRelationship: 'direct-descendant',
+      headAncestryVerified: true,
+    });
+  });
+
+  it('rechaza flujo correctivo sin exactamente una preview anterior', () => {
+    expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
       previousPreviewDeployments: 0,
-      commandArgs: ['deploy', '--prebuilt', '--yes'],
-    })).toMatchObject({ projectName: 'lanzo-store', production: false });
-    expect(() => validatePreviewDeploymentPlan({
-      projectName: 'lanzo-store',
-      deploymentType: 'preview',
-      production: false,
-      previousPreviewDeployments: 1,
-      commandArgs: ['deploy', '--prebuilt', '--yes'],
-    })).toThrow('Only one preview');
+    }))).toThrow('requires exactly one');
+    expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
+      previousPreviewDeployments: 2,
+    }))).toThrow('At most one');
+  });
+
+  it('rechaza una preview anterior que ya produjo evidencia PASS', () => {
+    expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
+      previousPreviewEvidencePass: true,
+    }))).toThrow('without PASS evidence');
+  });
+
+  it('rechaza una segunda preview correctiva', () => {
+    expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
+      previousCorrectivePreviewDeployments: 1,
+    }))).toThrow('second corrective preview');
+    expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
+      correctivePreviewExecuted: true,
+    }))).toThrow('executed already');
+  });
+
+  it('rechaza producción en cualquier flujo', () => {
+    expect(() => validatePreviewDeploymentPlan(initialPreviewPlan({
+      production: true,
+    }))).toThrow('Production deployments');
+    expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
+      deploymentType: 'production',
+    }))).toThrow('Production deployments');
+  });
+
+  it('conserva exactamente deploy --prebuilt --yes y rechaza prod, promote o alias', () => {
     for (const commandArgs of [
       ['deploy', '--prebuilt', '--yes', '--prod'],
       ['promote'],
       ['alias'],
+      ['deploy', '--prebuilt'],
     ]) {
-      expect(() => validatePreviewDeploymentPlan({
-        projectName: 'lanzo-store',
-        deploymentType: 'preview',
-        production: false,
-        previousPreviewDeployments: 0,
-        commandArgs,
-      })).toThrow('Only vercel deploy');
+      expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({ commandArgs })))
+        .toThrow('Only vercel deploy');
     }
+  });
+
+  it.each([
+    ['historial previo en flujo inicial', initialPreviewPlan({
+      previousPreviewStatus: 'FAILED_CERTIFICATION',
+    }), 'history is contradictory'],
+    ['proyecto previo distinto', correctivePreviewPlan({
+      previousPreviewProjectName: 'lanzo-pos',
+    }), 'non-production lanzo-store preview'],
+    ['preview previa productiva', correctivePreviewPlan({
+      previousPreviewProduction: true,
+    }), 'non-production lanzo-store preview'],
+    ['estado previo no fallido', correctivePreviewPlan({
+      previousPreviewStatus: 'READY',
+    }), 'failed certification'],
+    ['ID plano', correctivePreviewPlan({
+      previousPreviewDeploymentIdHash: 'dpl_plain_identifier',
+    }), 'SHA-256'],
+    ['HEAD sin ancestry validada', correctivePreviewPlan({
+      headAncestryVerified: false,
+    }), 'direct or validated descendant'],
+    ['corrección ajena al fallo', correctivePreviewPlan({
+      correctionFailureCode: 'OTHER_FAILURE',
+    }), 'match the diagnosed'],
+    ['evidencia no saneada', {
+      ...correctivePreviewPlan(),
+      previousPreviewDeploymentId: 'dpl_plain_identifier',
+    }, 'Unexpected or unsanitized'],
+  ])('rechaza evidencia contradictoria o no saneada: %s', (_label, plan, message) => {
+    expect(() => validatePreviewDeploymentPlan(plan)).toThrow(message);
+  });
+
+  it('preserva la preview fallida y no muta su historial diagnóstico', () => {
+    const plan = Object.freeze(correctivePreviewPlan());
+    const before = JSON.stringify(plan);
+    const evidence = validatePreviewDeploymentPlan(plan);
+    expect(evidence.previousPreviewPreserved).toBe(true);
+    expect(evidence.previousPreviewDeploymentIdHash).toBe(deploymentIdHash);
+    expect(JSON.stringify(plan)).toBe(before);
+    expect(JSON.stringify(evidence)).not.toContain('dpl_');
+  });
+
+  it('valida el plan sin realizar llamadas a Vercel ni a la red', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+      new Error('Network access is forbidden in this test.'),
+    );
+    expect(validatePreviewDeploymentPlan(correctivePreviewPlan()))
+      .toMatchObject({ correctivePreviewAuthorized: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
 
   it('cuenta metadata única, canonical e imagen sin persistir HTML', () => {

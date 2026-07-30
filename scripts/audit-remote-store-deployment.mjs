@@ -149,29 +149,203 @@ export function validatePreviewUrl(value, { productionHosts = DEFAULT_PRODUCTION
   return url;
 }
 
-export function validatePreviewDeploymentPlan({
-  projectName,
-  deploymentType,
-  production,
-  previousPreviewDeployments,
-  commandArgs,
-} = {}) {
-  if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
-  if (deploymentType !== 'preview' || production !== false) {
-    throw new Error('Production deployments are forbidden.');
+const PREVIEW_DEPLOYMENT_PLAN_KEYS = new Set([
+  'deploymentPolicy',
+  'projectName',
+  'deploymentType',
+  'production',
+  'previousPreviewDeployments',
+  'previousPreviewProjectName',
+  'previousPreviewDeploymentType',
+  'previousPreviewProduction',
+  'previousPreviewStatus',
+  'previousPreviewEvidencePass',
+  'previousPreviewDeploymentIdHash',
+  'previousPreviewHead',
+  'previousPreviewPreserved',
+  'head',
+  'headRelationship',
+  'headParent',
+  'headAncestryVerified',
+  'previousFailureCode',
+  'correctionFailureCode',
+  'correctivePreviewAuthorized',
+  'correctivePreviewNumber',
+  'correctivePreviewExecuted',
+  'previousCorrectivePreviewDeployments',
+  'commandArgs',
+]);
+const CORRECTIVE_RUNTIME_FAILURE = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
+
+export function validatePreviewDeploymentPlan(plan = {}) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    throw new TypeError('Preview deployment plan evidence must be an object.');
   }
-  if (previousPreviewDeployments !== 0) {
-    throw new Error('Only one preview deployment is allowed.');
+  const unexpectedKeys = Object.keys(plan)
+    .filter((key) => !PREVIEW_DEPLOYMENT_PLAN_KEYS.has(key));
+  if (unexpectedKeys.length > 0) {
+    throw new Error(`Unexpected or unsanitized deployment evidence: ${unexpectedKeys.join(', ')}.`);
   }
-  if (JSON.stringify(commandArgs) !== JSON.stringify(['deploy', '--prebuilt', '--yes'])) {
-    throw new Error('Only vercel deploy --prebuilt --yes is allowed.');
-  }
-  return Object.freeze({
+  const {
+    deploymentPolicy,
     projectName,
     deploymentType,
     production,
     previousPreviewDeployments,
-    commandArgs: Object.freeze([...commandArgs]),
+    previousPreviewProjectName,
+    previousPreviewDeploymentType,
+    previousPreviewProduction,
+    previousPreviewStatus,
+    previousPreviewEvidencePass,
+    previousPreviewDeploymentIdHash,
+    previousPreviewHead,
+    previousPreviewPreserved,
+    head,
+    headRelationship,
+    headParent,
+    headAncestryVerified,
+    previousFailureCode,
+    correctionFailureCode,
+    correctivePreviewAuthorized,
+    correctivePreviewNumber,
+    correctivePreviewExecuted,
+    previousCorrectivePreviewDeployments,
+    commandArgs,
+  } = plan;
+  if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
+  if (deploymentType !== 'preview' || production !== false) {
+    throw new Error('Production deployments are forbidden.');
+  }
+  if (JSON.stringify(commandArgs) !== JSON.stringify(['deploy', '--prebuilt', '--yes'])) {
+    throw new Error('Only vercel deploy --prebuilt --yes is allowed.');
+  }
+  if (!/^[a-f0-9]{40}$/u.test(head || '')) {
+    throw new Error('The candidate deployment HEAD must be a full Git SHA-1.');
+  }
+  if (![0, 1].includes(previousPreviewDeployments)) {
+    throw new Error('At most one previous preview deployment is allowed.');
+  }
+  if (correctivePreviewExecuted !== false) {
+    throw new Error('The planned preview must not have been executed already.');
+  }
+  if (previousCorrectivePreviewDeployments !== 0) {
+    throw new Error('A second corrective preview is forbidden.');
+  }
+
+  const previousEvidenceFields = [
+    previousPreviewProjectName,
+    previousPreviewDeploymentType,
+    previousPreviewProduction,
+    previousPreviewStatus,
+    previousPreviewEvidencePass,
+    previousPreviewDeploymentIdHash,
+    previousPreviewHead,
+    previousPreviewPreserved,
+    headRelationship,
+    headParent,
+    headAncestryVerified,
+    previousFailureCode,
+    correctionFailureCode,
+  ];
+  if (deploymentPolicy === 'single-preview') {
+    if (previousPreviewDeployments !== 0) {
+      throw new Error('The initial preview plan requires zero previous previews.');
+    }
+    if (previousEvidenceFields.some((value) => value !== undefined)) {
+      throw new Error('Initial preview history is contradictory.');
+    }
+    if (
+      correctivePreviewAuthorized !== false
+      || correctivePreviewNumber !== 0
+    ) {
+      throw new Error('The initial preview cannot claim corrective authorization.');
+    }
+    return Object.freeze({
+      deploymentPolicy,
+      projectName,
+      deploymentType,
+      previousPreviewCount: 0,
+      previousPreviewFailedCertification: false,
+      previousPreviewEvidencePass: false,
+      correctivePreviewAuthorized: false,
+      correctivePreviewNumber: 0,
+      correctivePreviewExecuted: false,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+  }
+
+  if (deploymentPolicy !== 'single-corrective-preview') {
+    throw new Error('The deployment policy must explicitly select initial or corrective preview.');
+  }
+  if (previousPreviewDeployments !== 1) {
+    throw new Error('The corrective preview requires exactly one previous preview.');
+  }
+  if (
+    previousPreviewProjectName !== 'lanzo-store'
+    || previousPreviewDeploymentType !== 'preview'
+    || previousPreviewProduction !== false
+  ) {
+    throw new Error('The previous deployment must be a non-production lanzo-store preview.');
+  }
+  if (
+    previousPreviewStatus !== 'FAILED_CERTIFICATION'
+    || previousPreviewEvidencePass !== false
+  ) {
+    throw new Error('The previous preview must have failed certification without PASS evidence.');
+  }
+  if (!/^[a-f0-9]{64}$/u.test(previousPreviewDeploymentIdHash || '')) {
+    throw new Error('Only a SHA-256 deployment ID hash is allowed in corrective history.');
+  }
+  if (
+    !/^[a-f0-9]{40}$/u.test(previousPreviewHead || '')
+    || previousPreviewHead === head
+  ) {
+    throw new Error('Corrective history requires distinct full deployed and candidate HEADs.');
+  }
+  const directDescendant = headRelationship === 'direct-descendant'
+    && headParent === previousPreviewHead;
+  const validatedDescendant = headRelationship === 'validated-descendant'
+    && headAncestryVerified === true;
+  if (!directDescendant && !validatedDescendant) {
+    throw new Error('The corrective HEAD must be a direct or validated descendant.');
+  }
+  if (
+    previousFailureCode !== CORRECTIVE_RUNTIME_FAILURE
+    || correctionFailureCode !== previousFailureCode
+  ) {
+    throw new Error('The corrective change must match the diagnosed preview failure.');
+  }
+  if (previousPreviewPreserved !== true) {
+    throw new Error('The failed preview must remain preserved as diagnostic evidence.');
+  }
+  if (
+    correctivePreviewAuthorized !== true
+    || correctivePreviewNumber !== 1
+  ) {
+    throw new Error('Exactly one corrective preview must be explicitly authorized.');
+  }
+  return Object.freeze({
+    deploymentPolicy,
+    projectName,
+    deploymentType,
+    previousPreviewCount: 1,
+    previousPreviewProjectName,
+    previousPreviewDeploymentType,
+    previousPreviewFailedCertification: true,
+    previousPreviewEvidencePass: false,
+    previousPreviewDeploymentIdHash,
+    previousPreviewHead,
+    previousPreviewPreserved: true,
+    candidateHead: head,
+    headRelationship,
+    headAncestryVerified: directDescendant ? true : headAncestryVerified,
+    correctionFailureCode,
+    correctivePreviewAuthorized: true,
+    correctivePreviewNumber: 1,
+    correctivePreviewExecuted: false,
+    command: 'vercel deploy --prebuilt --yes',
+    production: false,
   });
 }
 

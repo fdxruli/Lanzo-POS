@@ -531,16 +531,23 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     });
   });
 
-  it('allows only one later preview deployment through deploy --prebuilt --yes', () => {
+  it('allows the first preview only through deploy --prebuilt --yes', () => {
     expect(validatePreviewDeploymentPlan({
+      deploymentPolicy: 'single-preview',
       projectName: 'lanzo-store',
       deploymentType: 'preview',
       production: false,
       previousPreviewDeployments: 0,
+      head: fixtureIdentity.HEAD,
+      correctivePreviewAuthorized: false,
+      correctivePreviewNumber: 0,
+      correctivePreviewExecuted: false,
+      previousCorrectivePreviewDeployments: 0,
       commandArgs: ['deploy', '--prebuilt', '--yes'],
     })).toMatchObject({
       projectName: 'lanzo-store',
       deploymentType: 'preview',
+      previousPreviewCount: 0,
       production: false,
     });
   });
@@ -551,10 +558,16 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     ['alias', ['alias']],
   ])('rejects %s', (_label, commandArgs) => {
     expect(() => validatePreviewDeploymentPlan({
+      deploymentPolicy: 'single-preview',
       projectName: 'lanzo-store',
       deploymentType: commandArgs.includes('--prod') ? 'production' : 'preview',
       production: commandArgs.includes('--prod'),
       previousPreviewDeployments: 0,
+      head: fixtureIdentity.HEAD,
+      correctivePreviewAuthorized: false,
+      correctivePreviewNumber: 0,
+      correctivePreviewExecuted: false,
+      previousCorrectivePreviewDeployments: 0,
       commandArgs,
     })).toThrow();
   });

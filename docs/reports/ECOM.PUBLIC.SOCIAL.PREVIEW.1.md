@@ -4014,3 +4014,106 @@ Producción modificada                  = no
 Certificación externa                  = BLOCKED
 Motivo                                 = requiere artifact y preview corregidos
 ```
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.6 — Autorización de una preview correctiva
+
+### Contradicción corregida
+
+El contrato original de `validatePreviewDeploymentPlan` exigía
+`previousPreviewDeployments === 0`. Esa condición representaba correctamente
+la primera certificación, pero dejó de representar el historial real después
+de desplegar la preview diagnóstica:
+
+```text
+https://lanzo-store-7k6knpm19-fdxrulis-projects.vercel.app
+```
+
+La preview pertenece a `lanzo-store`, es preview y no producción. Sus respuestas
+HTTP 500 y el error CommonJS/ESM dejaron la certificación en estado fallido. Se
+conserva como evidencia diagnóstica, no se elimina, no se reutiliza, no se
+promueve y no cuenta como evidencia remota `PASS`.
+
+Mantener el gate simplista hacía imposible ejecutar el único deployment
+correctivo requerido para validar el artifact runtime-compatible. El gate no se
+eliminó ni se convirtió en un contador abierto: ahora distingue explícitamente
+entre la primera preview y una única preview correctiva.
+
+### Política cerrada de historial
+
+La primera preview continúa requiriendo:
+
+- política `single-preview`;
+- cero previews anteriores;
+- ausencia total de historial previo;
+- cero autorizaciones correctivas;
+- comando exacto `vercel deploy --prebuilt --yes`;
+- `production=false`.
+
+La preview correctiva requiere simultáneamente:
+
+- política `single-corrective-preview`;
+- exactamente una preview anterior;
+- proyecto anterior `lanzo-store`;
+- tipo anterior `preview` y `production=false`;
+- estado anterior `FAILED_CERTIFICATION`;
+- `previousPreviewEvidencePass=false`;
+- solamente el SHA-256 del deployment anterior, nunca su ID plano;
+- preview fallida preservada;
+- HEAD candidato distinto y descendiente directo o con ancestry Git validada;
+- código de corrección igual al fallo diagnosticado
+  `FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH`;
+- cero previews correctivas anteriores;
+- autorización explícita para `correctivePreviewNumber=1`;
+- `correctivePreviewExecuted=false`;
+- comando exacto `vercel deploy --prebuilt --yes`.
+
+Se rechazan cero previews en flujo correctivo, más de una preview anterior,
+evidencia `PASS`, proyecto o tipo distintos, producción, historial
+contradictorio, ID sin hash, ancestry no validada, corrección ajena al fallo,
+una segunda preview correctiva, `--prod`, promoción, alias o cualquier variante
+del comando permitido. No se autoriza una tercera preview.
+
+La evidencia saneada generada por el gate tiene esta forma:
+
+```json
+{
+  "deploymentPolicy": "single-corrective-preview",
+  "previousPreviewCount": 1,
+  "previousPreviewFailedCertification": true,
+  "previousPreviewEvidencePass": false,
+  "previousPreviewPreserved": true,
+  "correctivePreviewAuthorized": true,
+  "correctivePreviewNumber": 1,
+  "correctivePreviewExecuted": false,
+  "command": "vercel deploy --prebuilt --yes",
+  "production": false
+}
+```
+
+El objeto de evidencia no acepta campos desconocidos o no saneados. Esto
+bloquea específicamente que un deployment ID plano se filtre al reporte.
+
+### Pruebas y estado
+
+Las pruebas deterministas cubren la primera preview con count 0, la correctiva
+válida con count 1, PASS previo, count mayor que 1, segunda correctiva,
+producción, comandos alternativos, historial contradictorio, ID plano,
+ancestry, relación entre diagnóstico y corrección, preservación de la preview
+fallida, ausencia de mutación de la evidencia y ausencia de llamadas de red o
+Vercel.
+
+Resultado focal previo al commit:
+
+```text
+storeRemoteValidation.test.js          = 32 PASS
+store/tests/social-preview             = 562 PASS / 2 skips Windows
+arquitectura build/Git/prebuilt         = 45 PASS
+npm run build:store:vercel              = PASS
+preview correctiva creada              = no
+producción modificada                  = no
+```
+
+El artifact corregido y su único deployment preview correctivo siguen
+pendientes. Hasta generarlos y completar la auditoría HTTP real, la
+certificación externa permanece `BLOCKED`. La preview fallida anterior continúa
+siendo exclusivamente evidencia diagnóstica.
