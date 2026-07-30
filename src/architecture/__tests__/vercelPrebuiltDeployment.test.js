@@ -10,6 +10,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -171,7 +172,12 @@ async function createStaticFixture() {
     ].join('')),
     writeFile(path.join(sourceStaticRoot, 'robots.txt'), 'User-agent: *\nDisallow: /\n'),
     writeFile(path.join(sourceStaticRoot, 'assets', 'index-AbCd1234.css'), 'body{color:#123456}'),
-    writeFile(path.join(sourceStaticRoot, 'assets', 'index-ZyXw9876.js'), 'export const store=true;'),
+    writeFile(path.join(sourceStaticRoot, 'assets', 'index-ZyXw9876.js'), [
+      "export const supabaseUrl = 'https://fixture-project.supabase.co';",
+      "export const publishableKey = 'sb_publishable_fixture_1234567890';",
+      "export const publicStorageKey = 'lanzo-public-store-auth';",
+      'export const store = true;',
+    ].join('\n')),
   ]);
   return { root, sourceStaticRoot, outputStaticRoot };
 }
@@ -335,6 +341,18 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
       },
       commandRunner(command, args, options) {
         calls.push({ command, args, cwd: options.cwd });
+        if (
+          command === 'vercel-fixture'
+          && args.join(' ') === 'pull --yes --environment=preview'
+        ) {
+          const environmentDirectory = path.join(options.cwd, '.vercel');
+          mkdirSync(environmentDirectory, { recursive: true });
+          writeFileSync(path.join(environmentDirectory, '.env.preview.local'), [
+            'VITE_SUPABASE_URL=https://fixture-project.supabase.co',
+            'VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fixture_1234567890',
+            '',
+          ].join('\n'));
+        }
       },
     })).rejects.toThrow('Vercel did not produce .vercel/output');
 
