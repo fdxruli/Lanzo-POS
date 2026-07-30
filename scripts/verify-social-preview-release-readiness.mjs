@@ -75,6 +75,24 @@ const PROTECTED_REPOSITORY_FIELDS = new Set([
   ...PROTECTED_REPOSITORY_INVARIANTS,
   ...PROTECTED_REPOSITORY_STATES,
 ]);
+const SOURCE_PROVENANCE_BOOLEAN_FIELDS = Object.freeze([
+  'checkoutCleanBefore',
+  'checkoutCleanAfter',
+  'headStable',
+  'treeStable',
+  'snapshotFromTemporaryIndex',
+  'trackedFilesOnly',
+  'snapshotRemoved',
+  'temporaryIndexRemoved',
+]);
+const SOURCE_PROVENANCE_FIELDS = new Set([
+  'mode',
+  'HEAD',
+  'treeOid',
+  'objectFormat',
+  ...SOURCE_PROVENANCE_BOOLEAN_FIELDS,
+  'workingTreeCopied',
+]);
 const FORBIDDEN_KEYS = new Set([
   'authorization',
   'cookie',
@@ -303,6 +321,7 @@ function normalizedArtifact(raw) {
       HEAD: raw.HEAD,
       deploymentExecuted: raw.deploymentExecuted,
       protectedRepository: raw.protectedRepository,
+      sourceProvenance: raw.sourceProvenance,
       projectName: raw.projectInspection?.projectName,
     };
   }
@@ -347,6 +366,73 @@ export function validateProtectedRepositoryEvidence(value) {
     }
   }
   return Object.freeze({ ...evidence });
+}
+
+export function validateSourceProvenance(value, expectedHead) {
+  const provenance = assertPlainObject(
+    value,
+    'artifact-source-provenance-missing',
+    'artifact',
+  );
+  const names = Object.keys(provenance);
+  if (
+    names.length !== SOURCE_PROVENANCE_FIELDS.size
+    || names.some((name) => !SOURCE_PROVENANCE_FIELDS.has(name))
+  ) {
+    fail(
+      'artifact-source-provenance-field-invalid',
+      'artifact',
+      'Source provenance must contain only the exact allowed fields.',
+    );
+  }
+  if (provenance.mode !== 'git-head-temporary-index') {
+    fail(
+      'artifact-source-provenance-mode-invalid',
+      'artifact',
+      'Source provenance mode is invalid.',
+    );
+  }
+  if (!isSha40(provenance.HEAD) || provenance.HEAD !== expectedHead) {
+    fail(
+      'artifact-source-provenance-head-mismatch',
+      'head',
+      'Source provenance HEAD does not match.',
+    );
+  }
+  if (!['sha1', 'sha256'].includes(provenance.objectFormat)) {
+    fail(
+      'artifact-source-provenance-object-format-invalid',
+      'artifact',
+      'Source provenance object format is invalid.',
+    );
+  }
+  const validTree = provenance.objectFormat === 'sha1'
+    ? isSha40(provenance.treeOid)
+    : isSha64(provenance.treeOid);
+  if (!validTree) {
+    fail(
+      'artifact-source-provenance-tree-invalid',
+      'artifact',
+      'Source provenance tree OID is invalid.',
+    );
+  }
+  for (const name of SOURCE_PROVENANCE_BOOLEAN_FIELDS) {
+    if (provenance[name] !== true) {
+      fail(
+        'artifact-source-provenance-failed',
+        'artifact',
+        'A required source provenance invariant did not pass.',
+      );
+    }
+  }
+  if (provenance.workingTreeCopied !== false) {
+    fail(
+      'artifact-source-provenance-working-tree-invalid',
+      'artifact',
+      'The artifact must not be copied from the working tree.',
+    );
+  }
+  return Object.freeze({ ...provenance });
 }
 
 function assertAllTrue(object, required, reason, gate) {
@@ -416,6 +502,7 @@ export function validateArtifactEvidence(raw, expectedHead) {
   assertAllTrue(artifact.checks, REQUIRED_ARTIFACT_CHECKS, 'artifact-check-failed', 'artifact');
   assertAllTrue(artifact.routing?.checks, REQUIRED_ROUTING_CHECKS, 'artifact-routing-failed', 'routing');
   validateProtectedRepositoryEvidence(artifact.protectedRepository);
+  const sourceProvenance = validateSourceProvenance(artifact.sourceProvenance, expectedHead);
   return Object.freeze({
     HEAD: artifact.HEAD,
     projectName: artifact.projectName,
@@ -424,6 +511,7 @@ export function validateArtifactEvidence(raw, expectedHead) {
     functions: Object.freeze([...artifact.output.functions].sort()),
     bundles: Object.freeze(bundles),
     routingChecks: Object.freeze({ ...artifact.routing.checks }),
+    sourceProvenance,
   });
 }
 

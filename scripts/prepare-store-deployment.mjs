@@ -29,6 +29,7 @@ const STORE_PROJECT_ID = 'prj_AVq3FAQMrSmo5E7zkAE23dbBpZW4';
 const STORE_ORGANIZATION_ID = 'team_buvft2mAJErTNR8gDhXcZGfS';
 const STORE_PROJECT_NAME = 'lanzo-store';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
+const GIT_SNAPSHOT_PREFIX = 'lanzo-store-git-snapshot-';
 const PRESERVE_PASSED_EVIDENCE_ENV = 'PRESERVE_STORE_PREBUILT_EVIDENCE';
 const BUILD_COMMAND = 'vercel build --prod --local-config ./store/vercel.prebuilt.json';
 const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
@@ -706,22 +707,304 @@ export function run(
 export async function resolveRepositoryHead({
   repositoryRoot = projectRoot,
   commandRunner = run,
+  environment = process.env,
+} = {}) {
+  return (await resolveRepositoryIdentity({
+    repositoryRoot,
+    commandRunner,
+    environment,
+  })).HEAD;
+}
+
+async function runGitIdentityCommand({
+  repositoryRoot,
+  commandRunner,
+  environment,
+  args,
+}) {
+  try {
+    const result = await commandRunner('git', args, {
+      cwd: repositoryRoot,
+      environment,
+      shell: false,
+    });
+    if (result?.status != null && result.status !== 0) throw new Error('git failed');
+    return result;
+  } catch {
+    throw new Error('Unable to resolve repository identity with Git.');
+  }
+}
+
+export async function readRepositoryStatus({
+  repositoryRoot = projectRoot,
+  commandRunner = run,
+  environment = process.env,
 } = {}) {
   let result;
   try {
-    result = await commandRunner('git', ['rev-parse', 'HEAD'], {
-      cwd: repositoryRoot,
-      environment: process.env,
-      shell: false,
-    });
+    result = await commandRunner(
+      'git',
+      ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
+      { cwd: repositoryRoot, environment, shell: false },
+    );
+    if (result?.status != null && result.status !== 0) throw new Error('git failed');
   } catch {
-    throw new Error('Unable to resolve the repository HEAD with Git.');
+    throw new Error('Unable to inspect repository checkout with Git.');
   }
-  const head = String(result?.stdout || '').trim();
-  if (!/^[a-f0-9]{40}$/u.test(head)) {
+  if (String(result?.stdout || '') !== '') {
+    throw new Error('Repository checkout must be clean before preparing the artifact.');
+  }
+  return Object.freeze({ clean: true });
+}
+
+export async function resolveRepositoryIdentity({
+  repositoryRoot = projectRoot,
+  commandRunner = run,
+  environment = process.env,
+} = {}) {
+  const [headResult, treeResult, formatResult] = await Promise.all([
+    runGitIdentityCommand({
+      repositoryRoot, commandRunner, environment, args: ['rev-parse', 'HEAD'],
+    }),
+    runGitIdentityCommand({
+      repositoryRoot, commandRunner, environment, args: ['rev-parse', 'HEAD^{tree}'],
+    }),
+    runGitIdentityCommand({
+      repositoryRoot, commandRunner, environment, args: ['rev-parse', '--show-object-format'],
+    }),
+  ]);
+  const HEAD = String(headResult?.stdout || '').trim();
+  const treeOid = String(treeResult?.stdout || '').trim();
+  const objectFormat = String(formatResult?.stdout || '').trim();
+  if (!/^[a-f0-9]{40}$/u.test(HEAD)) {
     throw new Error('Git returned an invalid repository HEAD.');
   }
-  return head;
+  if (!['sha1', 'sha256'].includes(objectFormat)) {
+    throw new Error('Git returned an unknown object format.');
+  }
+  const expectedTreeLength = objectFormat === 'sha1' ? 40 : 64;
+  if (!new RegExp(`^[a-f0-9]{${expectedTreeLength}}$`, 'u').test(treeOid)) {
+    throw new Error('Git returned an invalid repository tree OID.');
+  }
+  return Object.freeze({ HEAD, treeOid, objectFormat });
+}
+
+function assertValidRepositoryIdentity(identity) {
+  if (!/^[a-f0-9]{40}$/u.test(identity?.HEAD || '')) {
+    throw new Error('Git returned an invalid repository HEAD.');
+  }
+  if (!['sha1', 'sha256'].includes(identity?.objectFormat)) {
+    throw new Error('Git returned an unknown object format.');
+  }
+  const length = identity.objectFormat === 'sha1' ? 40 : 64;
+  if (!new RegExp(`^[a-f0-9]{${length}}$`, 'u').test(identity?.treeOid || '')) {
+    throw new Error('Git returned an invalid repository tree OID.');
+  }
+  return identity;
+}
+
+function hasParentTraversal(value) {
+  return normalizePath(String(value)).split('/').includes('..');
+}
+
+async function assertControlledGitSnapshotDirectory({
+  provenanceRoot,
+  repositoryRoot,
+  workspaceRoot = '',
+  temporaryRoot = os.tmpdir(),
+  requireExisting = true,
+}) {
+  if (!path.isAbsolute(provenanceRoot) || hasParentTraversal(provenanceRoot)) {
+    throw new Error('Git snapshot path is not a controlled absolute path.');
+  }
+  const controlledRoot = path.resolve(provenanceRoot);
+  const controlledTemporaryRoot = path.resolve(temporaryRoot);
+  const forbidden = new Set([
+    path.parse(controlledRoot).root,
+    path.resolve(os.homedir()),
+    path.resolve(repositoryRoot),
+    ...(workspaceRoot ? [path.resolve(workspaceRoot)] : []),
+  ]);
+  if (
+    controlledTemporaryRoot !== path.resolve(os.tmpdir())
+    || path.dirname(controlledRoot) !== controlledTemporaryRoot
+    || !path.basename(controlledRoot).startsWith(GIT_SNAPSHOT_PREFIX)
+    || forbidden.has(controlledRoot)
+  ) {
+    throw new Error('Git snapshot path is outside the controlled temporary directory.');
+  }
+  if (requireExisting) {
+    let metadata;
+    try {
+      metadata = await lstat(controlledRoot);
+    } catch {
+      throw new Error('Controlled Git snapshot directory is missing.');
+    }
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error('Controlled Git snapshot directory is unsafe.');
+    }
+  }
+  return controlledRoot;
+}
+
+function gitCheckoutIndexPrefix(snapshotRoot) {
+  const normalized = normalizePath(path.resolve(snapshotRoot)).replace(/\/+$/u, '');
+  return `${normalized}/`;
+}
+
+export async function removeGitHeadSnapshot({
+  provenanceRoot,
+  snapshotRoot,
+  temporaryIndexPath,
+  repositoryRoot,
+  workspaceRoot = '',
+  temporaryRoot = os.tmpdir(),
+  removePath = rm,
+  exists = pathExists,
+} = {}) {
+  const controlledRoot = await assertControlledGitSnapshotDirectory({
+    provenanceRoot,
+    repositoryRoot,
+    workspaceRoot,
+    temporaryRoot,
+  });
+  const expectedSnapshotRoot = path.join(controlledRoot, 'snapshot');
+  const expectedIndexPath = path.join(controlledRoot, 'git-index');
+  if (
+    path.resolve(snapshotRoot) !== path.resolve(expectedSnapshotRoot)
+    || path.resolve(temporaryIndexPath) !== path.resolve(expectedIndexPath)
+  ) {
+    throw new Error('Git snapshot resources do not match the controlled layout.');
+  }
+  await removePath(controlledRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 200,
+  });
+  const [rootPresent, snapshotPresent, indexPresent] = await Promise.all([
+    exists(controlledRoot),
+    exists(expectedSnapshotRoot),
+    exists(expectedIndexPath),
+  ]);
+  if (rootPresent || snapshotPresent || indexPresent) {
+    throw new Error('Git snapshot resources could not be removed completely.');
+  }
+  return Object.freeze({
+    snapshotRemoved: true,
+    temporaryIndexRemoved: true,
+  });
+}
+
+export async function createGitHeadSnapshot({
+  repositoryRoot = projectRoot,
+  identity,
+  commandRunner = run,
+  environment = process.env,
+  temporaryRoot = os.tmpdir(),
+  makeTemporaryDirectory = mkdtemp,
+  makeDirectory = mkdir,
+  snapshotRemover = removeGitHeadSnapshot,
+} = {}) {
+  const HEAD = identity?.HEAD;
+  if (!/^[a-f0-9]{40}$/u.test(HEAD || '')) {
+    throw new Error('The repository HEAD is invalid for Git snapshot creation.');
+  }
+  const provenanceRoot = await makeTemporaryDirectory(
+    path.join(path.resolve(temporaryRoot), GIT_SNAPSHOT_PREFIX),
+  );
+  const snapshotRoot = path.join(provenanceRoot, 'snapshot');
+  const temporaryIndexPath = path.join(provenanceRoot, 'git-index');
+  try {
+    await assertControlledGitSnapshotDirectory({
+      provenanceRoot,
+      repositoryRoot,
+      temporaryRoot,
+    });
+    await makeDirectory(snapshotRoot, { recursive: false });
+    const indexEnvironment = { ...environment, GIT_INDEX_FILE: temporaryIndexPath };
+    try {
+      const result = await commandRunner('git', ['read-tree', HEAD], {
+        cwd: repositoryRoot,
+        environment: indexEnvironment,
+        shell: false,
+      });
+      if (result?.status != null && result.status !== 0) throw new Error('git failed');
+    } catch {
+      throw new Error('Unable to load repository HEAD into the temporary Git index.');
+    }
+    const prefix = gitCheckoutIndexPrefix(snapshotRoot);
+    if (path.resolve(prefix) !== path.resolve(snapshotRoot)) {
+      throw new Error('Git checkout-index prefix is unsafe.');
+    }
+    try {
+      const result = await commandRunner(
+        'git',
+        ['checkout-index', '--all', '--force', `--prefix=${prefix}`],
+        { cwd: repositoryRoot, environment: indexEnvironment, shell: false },
+      );
+      if (result?.status != null && result.status !== 0) throw new Error('git failed');
+    } catch {
+      throw new Error('Unable to materialize repository HEAD from the temporary Git index.');
+    }
+    await walk(snapshotRoot);
+    return Object.freeze({
+      provenanceRoot,
+      snapshotRoot,
+      temporaryIndexPath,
+      prefix,
+      snapshotFromTemporaryIndex: true,
+      trackedFilesOnly: true,
+    });
+  } catch (error) {
+    try {
+      await snapshotRemover({
+        provenanceRoot,
+        snapshotRoot,
+        temporaryIndexPath,
+        repositoryRoot,
+        temporaryRoot,
+      });
+    } catch {
+      throw new Error('Git snapshot preparation failed and temporary resources could not be removed.');
+    }
+    throw error;
+  }
+}
+
+export async function assertRepositoryIdentityStable({
+  initialIdentity,
+  repositoryRoot = projectRoot,
+  commandRunner = run,
+  environment = process.env,
+  statusReader = readRepositoryStatus,
+  identityResolver = resolveRepositoryIdentity,
+} = {}) {
+  const finalIdentity = await identityResolver({ repositoryRoot, commandRunner, environment });
+  let finalStatus;
+  try {
+    finalStatus = await statusReader({ repositoryRoot, commandRunner, environment });
+  } catch (error) {
+    if (error?.message === 'Repository checkout must be clean before preparing the artifact.') {
+      throw new Error('Repository checkout changed while preparing the artifact.');
+    }
+    throw error;
+  }
+  if (initialIdentity.HEAD !== finalIdentity.HEAD) {
+    throw new Error('Repository HEAD changed while preparing the artifact.');
+  }
+  if (initialIdentity.treeOid !== finalIdentity.treeOid) {
+    throw new Error('Repository tree changed while preparing the artifact.');
+  }
+  if (initialIdentity.objectFormat !== finalIdentity.objectFormat) {
+    throw new Error('Repository object format changed while preparing the artifact.');
+  }
+  return Object.freeze({
+    identity: finalIdentity,
+    checkoutCleanAfter: finalStatus.clean === true,
+    headStable: true,
+    treeStable: true,
+  });
 }
 
 export async function writeProjectLink(linkedDirectory) {
@@ -952,7 +1235,13 @@ export async function prepareStoreDeployment({
   repositoryRoot = projectRoot,
   commandRunner = run,
   gitCommandRunner = run,
-  headResolver = resolveRepositoryHead,
+  repositoryStatusReader = readRepositoryStatus,
+  repositoryIdentityResolver = resolveRepositoryIdentity,
+  gitSnapshotCreator = createGitHeadSnapshot,
+  gitSnapshotRemover = removeGitHeadSnapshot,
+  repositoryStabilityChecker = assertRepositoryIdentityStable,
+  sanitizedWorkspaceCreator = createSanitizedStoreWorkspace,
+  temporaryRoot = os.tmpdir(),
   vercelCommand = process.env.VERCEL_CLI_PATH || DEFAULT_VERCEL_COMMAND,
   vercelInvocation,
   npmInvocation,
@@ -961,19 +1250,84 @@ export async function prepareStoreDeployment({
   preservePassedWorkspace = shouldPreservePassedWorkspace(environment),
   prebuiltAuditor = auditPrebuiltOutput,
 } = {}) {
-  const HEAD = await headResolver({
+  const initialStatus = await repositoryStatusReader({
     repositoryRoot,
     commandRunner: gitCommandRunner,
+    environment,
   });
-  if (!/^[a-f0-9]{40}$/u.test(HEAD || '')) {
-    throw new Error('The repository HEAD is invalid.');
+  if (initialStatus?.clean !== true) {
+    throw new Error('Repository checkout must be clean before preparing the artifact.');
   }
+  const initialIdentity = assertValidRepositoryIdentity(await repositoryIdentityResolver({
+    repositoryRoot,
+    commandRunner: gitCommandRunner,
+    environment,
+  }));
+  const { HEAD } = initialIdentity;
   const baseline = await protectedRepositoryState(repositoryRoot);
   let workspaceRoot = '';
   let manifestPath = '';
+  let gitSnapshot = null;
+  let sourceCleanup = null;
+  let snapshotEvidence = null;
   try {
-    // Capture and validate the parent npm entrypoint before any work in the
-    // temporary workspace. A bare npm.cmd makes %~dp0 point at that workspace.
+    gitSnapshot = await gitSnapshotCreator({
+      repositoryRoot,
+      identity: initialIdentity,
+      commandRunner: gitCommandRunner,
+      environment,
+      temporaryRoot,
+    });
+    if (
+      gitSnapshot?.snapshotFromTemporaryIndex !== true
+      || gitSnapshot?.trackedFilesOnly !== true
+    ) {
+      throw new Error('Git snapshot provenance is incomplete.');
+    }
+    const controlledProvenanceRoot = await assertControlledGitSnapshotDirectory({
+      provenanceRoot: gitSnapshot.provenanceRoot,
+      repositoryRoot,
+      temporaryRoot,
+    });
+    if (
+      path.resolve(gitSnapshot.snapshotRoot)
+        !== path.resolve(controlledProvenanceRoot, 'snapshot')
+      || path.resolve(gitSnapshot.temporaryIndexPath)
+        !== path.resolve(controlledProvenanceRoot, 'git-index')
+      || !await pathExists(gitSnapshot.temporaryIndexPath)
+    ) {
+      throw new Error('Git snapshot resources do not match the controlled layout.');
+    }
+    const workingTreeCopied = path.resolve(gitSnapshot.snapshotRoot)
+      === path.resolve(repositoryRoot);
+    if (workingTreeCopied) {
+      throw new Error('The repository working tree cannot be used as the artifact source.');
+    }
+    snapshotEvidence = {
+      snapshotFromTemporaryIndex: gitSnapshot.snapshotFromTemporaryIndex,
+      trackedFilesOnly: gitSnapshot.trackedFilesOnly,
+      workingTreeCopied,
+    };
+    workspaceRoot = await mkdtemp(path.join(temporaryRoot, TEMPORARY_PREFIX));
+    await sanitizedWorkspaceCreator({
+      sourceRoot: gitSnapshot.snapshotRoot,
+      temporaryRoot: workspaceRoot,
+    });
+    sourceCleanup = await gitSnapshotRemover({
+      ...gitSnapshot,
+      repositoryRoot,
+      workspaceRoot,
+      temporaryRoot,
+    });
+    gitSnapshot = null;
+    if (
+      sourceCleanup.snapshotRemoved !== true
+      || sourceCleanup.temporaryIndexRemoved !== true
+    ) {
+      throw new Error('Git snapshot cleanup did not pass.');
+    }
+
+    // Capture and validate the parent npm JavaScript entrypoint before work.
     const injectedNpmCliPath = npmInvocation?.args?.[0];
     if (npmInvocation && (typeof injectedNpmCliPath !== 'string' || !injectedNpmCliPath)) {
       throw new Error('Injected npm invocation must identify npm-cli.js as its first argument.');
@@ -996,11 +1350,6 @@ export async function prepareStoreDeployment({
         ? await resolveVercelInvocation({ environment, vercelCommand })
         : { command: vercelCommand, argsPrefix: [], options: { shell: false } }
     );
-    workspaceRoot = await mkdtemp(path.join(os.tmpdir(), TEMPORARY_PREFIX));
-    await createSanitizedStoreWorkspace({
-      sourceRoot: repositoryRoot,
-      temporaryRoot: workspaceRoot,
-    });
     const storeRoot = path.join(workspaceRoot, 'store');
     const vercelExecutionEnvironment = buildVercelExecutionEnvironment({ environment });
     const inspectedProject = projectInspection || (
@@ -1168,12 +1517,35 @@ export async function prepareStoreDeployment({
     manifestPath = manifest.manifestPath;
 
     const finalState = await assertProtectedRepositoryIntegrity(repositoryRoot, baseline);
+    const repositoryStability = await repositoryStabilityChecker({
+      initialIdentity,
+      repositoryRoot,
+      commandRunner: gitCommandRunner,
+      environment,
+      statusReader: repositoryStatusReader,
+      identityResolver: repositoryIdentityResolver,
+    });
     const outputFiles = await walk(outputRoot);
     const result = {
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
       status: 'PASS',
       HEAD,
-      strategy: 'sanitized-repository-copy',
+      strategy: 'git-head-temporary-index',
+      sourceProvenance: {
+        mode: 'git-head-temporary-index',
+        HEAD,
+        treeOid: initialIdentity.treeOid,
+        objectFormat: initialIdentity.objectFormat,
+        checkoutCleanBefore: true,
+        checkoutCleanAfter: repositoryStability.checkoutCleanAfter,
+        headStable: repositoryStability.headStable,
+        treeStable: repositoryStability.treeStable,
+        snapshotFromTemporaryIndex: snapshotEvidence.snapshotFromTemporaryIndex,
+        trackedFilesOnly: snapshotEvidence.trackedFilesOnly,
+        workingTreeCopied: snapshotEvidence.workingTreeCopied,
+        snapshotRemoved: sourceCleanup.snapshotRemoved,
+        temporaryIndexRemoved: sourceCleanup.temporaryIndexRemoved,
+      },
       workspaceRoot,
       storeRoot,
       outputRoot,
@@ -1251,6 +1623,21 @@ export async function prepareStoreDeployment({
     return result;
   } catch (error) {
     let failure = error;
+    if (gitSnapshot) {
+      try {
+        await gitSnapshotRemover({
+          ...gitSnapshot,
+          repositoryRoot,
+          workspaceRoot,
+          temporaryRoot,
+        });
+        gitSnapshot = null;
+      } catch {
+        failure = new Error(
+          `${String(failure?.message || failure)} Git snapshot cleanup was blocked.`,
+        );
+      }
+    }
     try {
       await assertProtectedRepositoryIntegrity(repositoryRoot, baseline);
     } catch (integrityError) {

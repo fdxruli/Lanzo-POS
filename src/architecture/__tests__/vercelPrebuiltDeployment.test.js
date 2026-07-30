@@ -1,5 +1,6 @@
 // @vitest-environment node
 import {
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -39,6 +40,11 @@ const NOINDEX = 'noindex, nofollow, noarchive';
 const STATIC_CACHE = 'public, max-age=0, must-revalidate';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const temporaryRoots = [];
+const fixtureIdentity = Object.freeze({
+  HEAD: 'a'.repeat(40),
+  treeOid: 'b'.repeat(40),
+  objectFormat: 'sha1',
+});
 
 async function exists(filePath) {
   try {
@@ -85,6 +91,22 @@ async function createRepositoryFixture() {
     writeFile(path.join(root, 'store', '.env.production.local'), 'SECRET=store\n'),
   ]);
   return root;
+}
+
+async function createInjectedGitSnapshot({ repositoryRoot, temporaryRoot = os.tmpdir() }) {
+  const provenanceRoot = await mkdtemp(path.join(temporaryRoot, 'lanzo-store-git-snapshot-'));
+  const snapshotRoot = path.join(provenanceRoot, 'snapshot');
+  const temporaryIndexPath = path.join(provenanceRoot, 'git-index');
+  await mkdir(snapshotRoot);
+  await writeFile(temporaryIndexPath, 'fixture-index');
+  await cp(repositoryRoot, snapshotRoot, { recursive: true });
+  return {
+    provenanceRoot,
+    snapshotRoot,
+    temporaryIndexPath,
+    snapshotFromTemporaryIndex: true,
+    trackedFilesOnly: true,
+  };
 }
 
 async function createEffectiveWorkspace() {
@@ -289,7 +311,15 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     const calls = [];
     await expect(prepareStoreDeployment({
       repositoryRoot,
-      headResolver: async () => 'a'.repeat(40),
+      repositoryStatusReader: async () => ({ clean: true }),
+      repositoryIdentityResolver: async () => fixtureIdentity,
+      repositoryStabilityChecker: async () => ({
+        identity: fixtureIdentity,
+        checkoutCleanAfter: true,
+        headStable: true,
+        treeStable: true,
+      }),
+      gitSnapshotCreator: createInjectedGitSnapshot,
       npmInvocation: {
         command: 'node-fixture',
         args: ['npm-cli-fixture.js', 'ci', '--no-audit', '--no-fund'],

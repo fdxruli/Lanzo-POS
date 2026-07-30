@@ -1,6 +1,7 @@
 // @vitest-environment node
 import {
   chmod,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -30,6 +31,7 @@ import {
   validateArtifactEvidence,
   validateRemoteEvidence,
   validateProtectedRepositoryEvidence,
+  validateSourceProvenance,
   verifyReleaseReadiness,
   writeReadinessManifest,
 } from '../../../scripts/verify-social-preview-release-readiness.mjs';
@@ -46,6 +48,7 @@ const head = 'a'.repeat(40);
 const configHash = 'b'.repeat(64);
 const staticHash = 'c'.repeat(64);
 const deploymentHash = 'd'.repeat(64);
+const treeOid = 'e'.repeat(40);
 const previewHost = 'lanzo-store-git-fixture-team.vercel.app';
 const functions = ['/api/og/store', '/api/store-page'];
 const bundles = [
@@ -95,6 +98,21 @@ const artifact = {
     administrativeProjectLinkPresent: false,
     administrativeVercelUnchanged: true,
     repositoryEnvironmentUnchanged: true,
+  },
+  sourceProvenance: {
+    mode: 'git-head-temporary-index',
+    HEAD: head,
+    treeOid,
+    objectFormat: 'sha1',
+    checkoutCleanBefore: true,
+    checkoutCleanAfter: true,
+    headStable: true,
+    treeStable: true,
+    snapshotFromTemporaryIndex: true,
+    trackedFilesOnly: true,
+    workingTreeCopied: false,
+    snapshotRemoved: true,
+    temporaryIndexRemoved: true,
   },
 };
 const metadataTagCounts = Object.fromEntries([
@@ -394,6 +412,53 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
       .toThrow(expect.objectContaining({ reason: 'artifact-repository-state-invalid' }));
   });
 
+  it('exige procedencia Git exacta y acepta SHA-1 o SHA-256 según objectFormat', () => {
+    expect(validateSourceProvenance(artifact.sourceProvenance, head))
+      .toEqual(artifact.sourceProvenance);
+    expect(validateSourceProvenance({
+      ...artifact.sourceProvenance,
+      treeOid: 'f'.repeat(64),
+      objectFormat: 'sha256',
+    }, head)).toMatchObject({ objectFormat: 'sha256', treeOid: 'f'.repeat(64) });
+  });
+
+  it.each([
+    ['ausente', undefined, 'artifact-source-provenance-missing-invalid'],
+    ['modo desconocido', { ...artifact.sourceProvenance, mode: 'working-tree' }, 'artifact-source-provenance-mode-invalid'],
+    ['working tree copiado', { ...artifact.sourceProvenance, workingTreeCopied: true }, 'artifact-source-provenance-working-tree-invalid'],
+    ['no solo rastreados', { ...artifact.sourceProvenance, trackedFilesOnly: false }, 'artifact-source-provenance-failed'],
+    ['snapshot no eliminado', { ...artifact.sourceProvenance, snapshotRemoved: false }, 'artifact-source-provenance-failed'],
+    ['índice no eliminado', { ...artifact.sourceProvenance, temporaryIndexRemoved: false }, 'artifact-source-provenance-failed'],
+    ['HEAD distinto', { ...artifact.sourceProvenance, HEAD: 'f'.repeat(40) }, 'artifact-source-provenance-head-mismatch'],
+    ['tree de longitud incorrecta', { ...artifact.sourceProvenance, treeOid: 'f'.repeat(64) }, 'artifact-source-provenance-tree-invalid'],
+    ['formato desconocido', { ...artifact.sourceProvenance, objectFormat: 'md5' }, 'artifact-source-provenance-object-format-invalid'],
+    ['campo desconocido', { ...artifact.sourceProvenance, repositoryRoot: '/private/repository' }, 'artifact-source-provenance-field-invalid'],
+  ])('bloquea procedencia inválida: %s', (_label, value, reason) => {
+    expect(() => validateSourceProvenance(value, head))
+      .toThrow(expect.objectContaining({ reason }));
+  });
+
+  it('el normalizador transfiere sourceProvenance del wrapper sin inventarlo en audit', () => {
+    const wrapper = {
+      ...artifact,
+      audit: Object.fromEntries(
+        Object.entries(artifact).filter(([name]) => ![
+          'HEAD',
+          'deploymentExecuted',
+          'projectName',
+          'protectedRepository',
+          'sourceProvenance',
+        ].includes(name)),
+      ),
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-store' },
+    };
+    expect(validateArtifactEvidence(wrapper, head).sourceProvenance)
+      .toEqual(artifact.sourceProvenance);
+    expect(() => validateArtifactEvidence({ ...wrapper, sourceProvenance: undefined }, head))
+      .toThrow(expect.objectContaining({ reason: 'artifact-source-provenance-missing-invalid' }));
+  });
+
   it.each([
     ['wrapper PASS y audit BLOCKED', {
       ...artifact,
@@ -549,16 +614,40 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
       writeFile(path.join(repositoryRoot, 'store', 'api', 'og', 'store.js'), 'export default {};\n'),
     ]);
     const realArtifactAudit = structuredClone(artifact);
-    for (const name of ['HEAD', 'projectName', 'deploymentExecuted', 'protectedRepository']) {
+    for (const name of ['HEAD', 'projectName', 'deploymentExecuted', 'protectedRepository', 'sourceProvenance']) {
       delete realArtifactAudit[name];
     }
     const commands = [];
     const prepared = await prepareStoreDeployment({
       repositoryRoot,
       preservePassedWorkspace: false,
-      headResolver: async ({ repositoryRoot: resolvedRoot }) => {
+      repositoryStatusReader: async ({ repositoryRoot: resolvedRoot }) => {
         expect(resolvedRoot).toBe(repositoryRoot);
-        return head;
+        return { clean: true };
+      },
+      repositoryIdentityResolver: async () => ({ HEAD: head, treeOid, objectFormat: 'sha1' }),
+      repositoryStabilityChecker: async () => ({
+        identity: { HEAD: head, treeOid, objectFormat: 'sha1' },
+        checkoutCleanAfter: true,
+        headStable: true,
+        treeStable: true,
+      }),
+      gitSnapshotCreator: async ({ temporaryRoot: snapshotTemporaryRoot }) => {
+        const provenanceRoot = await mkdtemp(
+          path.join(snapshotTemporaryRoot, 'lanzo-store-git-snapshot-'),
+        );
+        const snapshotRoot = path.join(provenanceRoot, 'snapshot');
+        const temporaryIndexPath = path.join(provenanceRoot, 'git-index');
+        await mkdir(snapshotRoot);
+        await writeFile(temporaryIndexPath, 'fixture-index');
+        await cp(repositoryRoot, snapshotRoot, { recursive: true });
+        return {
+          provenanceRoot,
+          snapshotRoot,
+          temporaryIndexPath,
+          snapshotFromTemporaryIndex: true,
+          trackedFilesOnly: true,
+        };
       },
       npmInvocation: {
         command: 'node-fixture',

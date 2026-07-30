@@ -1,9 +1,11 @@
 import {
+  cp,
   mkdtemp,
   mkdir,
   readFile,
   readdir,
   stat,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import {
@@ -22,11 +24,15 @@ import {
   createSanitizedStoreWorkspace,
   materializePrebuiltStaticOutput,
   createPrebuiltVercelConfig,
+  createGitHeadSnapshot,
   assertPrebuiltVercelConfigParity,
   finalizePassedStoreWorkspace,
   findWorkspaceEnvironmentFiles,
   prepareStoreDeployment as prepareStoreDeploymentProducer,
   resolveRepositoryHead,
+  resolveRepositoryIdentity,
+  readRepositoryStatus,
+  removeGitHeadSnapshot,
   resolveNpmCliPath,
   resolveNpmInvocation,
   resolveNpmScriptInvocation,
@@ -34,6 +40,7 @@ import {
   resolveVercelInvocation,
   run,
   assertEffectiveVercelProjectRoot,
+  assertRepositoryIdentityStable,
   inspectGeneratedFunctionInventory,
   sanitizeVercelDebugLog,
   sanitizeVercelProjectInspection,
@@ -45,8 +52,39 @@ import {
 } from '../../../scripts/prepare-store-deployment.mjs';
 
 const fixtureHead = 'a'.repeat(40);
+const fixtureTree = 'b'.repeat(40);
+const fixtureIdentity = Object.freeze({
+  HEAD: fixtureHead,
+  treeOid: fixtureTree,
+  objectFormat: 'sha1',
+});
+
+async function createInjectedSnapshot({ repositoryRoot, temporaryRoot = os.tmpdir() }) {
+  const provenanceRoot = await mkdtemp(path.join(temporaryRoot, 'lanzo-store-git-snapshot-'));
+  const snapshotRoot = path.join(provenanceRoot, 'snapshot');
+  const temporaryIndexPath = path.join(provenanceRoot, 'git-index');
+  await mkdir(snapshotRoot);
+  await writeFile(temporaryIndexPath, 'fixture-index');
+  await cp(repositoryRoot, snapshotRoot, { recursive: true });
+  return {
+    provenanceRoot,
+    snapshotRoot,
+    temporaryIndexPath,
+    snapshotFromTemporaryIndex: true,
+    trackedFilesOnly: true,
+  };
+}
+
 const prepareStoreDeployment = (options = {}) => prepareStoreDeploymentProducer({
-  headResolver: async () => fixtureHead,
+  repositoryStatusReader: async () => ({ clean: true }),
+  repositoryIdentityResolver: async () => fixtureIdentity,
+  gitSnapshotCreator: createInjectedSnapshot,
+  repositoryStabilityChecker: async () => ({
+    identity: fixtureIdentity,
+    checkoutCleanAfter: true,
+    headStable: true,
+    treeStable: true,
+  }),
   ...options,
 });
 
@@ -200,14 +238,20 @@ describe('workspace prebuilt saneado', () => {
       repositoryRoot: '/private/repository',
       commandRunner(command, args, options) {
         calls.push({ command, args, options });
-        return { stdout: `${fixtureHead}\n` };
+        if (args[1] === 'HEAD') return { stdout: `${fixtureHead}\n` };
+        if (args[1] === 'HEAD^{tree}') return { stdout: `${fixtureTree}\n` };
+        return { stdout: 'sha1\n' };
       },
     })).resolves.toBe(fixtureHead);
-    expect(calls).toEqual([expect.objectContaining({
-      command: 'git',
-      args: ['rev-parse', 'HEAD'],
-      options: expect.objectContaining({ cwd: '/private/repository', shell: false }),
-    })]);
+    expect(calls).toEqual([
+      expect.objectContaining({
+        command: 'git',
+        args: ['rev-parse', 'HEAD'],
+        options: expect.objectContaining({ cwd: '/private/repository', shell: false }),
+      }),
+      expect.objectContaining({ args: ['rev-parse', 'HEAD^{tree}'] }),
+      expect.objectContaining({ args: ['rev-parse', '--show-object-format'] }),
+    ]);
   });
 
   it.each([
@@ -218,7 +262,11 @@ describe('workspace prebuilt saneado', () => {
   ])('rechaza %s', async (_label, stdout) => {
     await expect(resolveRepositoryHead({
       repositoryRoot: '/private/repository',
-      commandRunner: () => ({ stdout }),
+      commandRunner(_command, args) {
+        if (args[1] === 'HEAD') return { stdout };
+        if (args[1] === 'HEAD^{tree}') return { stdout: fixtureTree };
+        return { stdout: 'sha1' };
+      },
     })).rejects.toThrow('invalid repository HEAD');
   });
 
@@ -235,7 +283,7 @@ describe('workspace prebuilt saneado', () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error?.message).toBe('Unable to resolve the repository HEAD with Git.');
+    expect(error?.message).toBe('Unable to resolve repository identity with Git.');
     expect(error?.message).not.toContain(repositoryRoot);
   });
 
@@ -243,7 +291,7 @@ describe('workspace prebuilt saneado', () => {
     const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-not-a-git-checkout-'));
     try {
       await expect(resolveRepositoryHead({ repositoryRoot }))
-        .rejects.toThrow('Unable to resolve the repository HEAD with Git.');
+        .rejects.toThrow('Unable to resolve repository identity with Git.');
     } finally {
       rmSync(repositoryRoot, { recursive: true, force: true });
     }
@@ -254,11 +302,248 @@ describe('workspace prebuilt saneado', () => {
     try {
       await expect(prepareStoreDeploymentProducer({
         repositoryRoot,
-        headResolver: async () => undefined,
-      })).rejects.toThrow('repository HEAD is invalid');
+        repositoryStatusReader: async () => ({ clean: true }),
+        repositoryIdentityResolver: async () => ({ ...fixtureIdentity, HEAD: undefined }),
+      })).rejects.toThrow('invalid repository HEAD');
     } finally {
       rmSync(repositoryRoot, { recursive: true, force: true });
     }
+  });
+
+  it.each([
+    ['cambio staged', 'M\0'],
+    ['cambio unstaged', ' M\0'],
+    ['archivo no rastreado', '??\0'],
+  ])('bloquea el checkout antes de preparar por %s sin revelar rutas', async (_label, stdout) => {
+    let error;
+    try {
+      await readRepositoryStatus({
+        repositoryRoot: '/private/repository',
+        commandRunner: () => ({ status: 0, stdout }),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.message).toBe('Repository checkout must be clean before preparing the artifact.');
+    expect(error?.message).not.toContain(stdout);
+  });
+
+  it('exige exit code cero al inspeccionar el checkout', async () => {
+    await expect(readRepositoryStatus({
+      repositoryRoot: '/private/repository',
+      commandRunner: () => ({ status: 1, stdout: '' }),
+    })).rejects.toThrow('Unable to inspect repository checkout with Git.');
+  });
+
+  it('el flujo principal bloquea un checkout dirty antes de crear snapshot o workspace', async () => {
+    let snapshotCreated = false;
+    await expect(prepareStoreDeploymentProducer({
+      repositoryRoot: '/private/repository',
+      repositoryStatusReader: async () => {
+        throw new Error('Repository checkout must be clean before preparing the artifact.');
+      },
+      gitSnapshotCreator: async () => {
+        snapshotCreated = true;
+      },
+    })).rejects.toThrow('Repository checkout must be clean');
+    expect(snapshotCreated).toBe(false);
+  });
+
+  it.each([
+    ['tree OID inválido', { HEAD: fixtureHead, tree: 'c'.repeat(64), format: 'sha1' }, 'tree OID'],
+    ['object format desconocido', { HEAD: fixtureHead, tree: fixtureTree, format: 'md5' }, 'object format'],
+  ])('rechaza identidad Git inválida: %s', async (_label, fixture, message) => {
+    await expect(resolveRepositoryIdentity({
+      repositoryRoot: '/private/repository',
+      commandRunner(_command, args) {
+        if (args[1] === 'HEAD') return { status: 0, stdout: fixture.HEAD };
+        if (args[1] === 'HEAD^{tree}') return { status: 0, stdout: fixture.tree };
+        return { status: 0, stdout: fixture.format };
+      },
+    })).rejects.toThrow(message);
+  });
+
+  it('materializa bytes exactos del HEAD con índice temporal y excluye contenido no rastreado e ignorado', async () => {
+    const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo git fixture with spaces-'));
+    let snapshot;
+    const calls = [];
+    try {
+      run('git', ['init'], { cwd: repositoryRoot });
+      run('git', ['config', 'user.email', 'fixture@example.invalid'], { cwd: repositoryRoot });
+      run('git', ['config', 'user.name', 'Fixture'], { cwd: repositoryRoot });
+      await Promise.all([
+        writeFile(path.join(repositoryRoot, 'tracked.txt'), 'version-committed'),
+        writeFile(path.join(repositoryRoot, '.gitignore'), 'ignored.txt\n'),
+      ]);
+      run('git', ['add', '.gitignore', 'tracked.txt'], { cwd: repositoryRoot });
+      run('git', ['commit', '-m', 'fixture'], { cwd: repositoryRoot });
+      const identity = await resolveRepositoryIdentity({ repositoryRoot });
+      await Promise.all([
+        writeFile(path.join(repositoryRoot, 'tracked.txt'), 'version-working-tree'),
+        writeFile(path.join(repositoryRoot, 'untracked.txt'), 'untracked'),
+        writeFile(path.join(repositoryRoot, 'ignored.txt'), 'ignored'),
+      ]);
+      snapshot = await createGitHeadSnapshot({
+        repositoryRoot,
+        identity,
+        commandRunner(command, args, options) {
+          calls.push({ command, args: [...args], options });
+          return run(command, args, options);
+        },
+      });
+      expect(await readFile(path.join(snapshot.snapshotRoot, 'tracked.txt'), 'utf8'))
+        .toBe('version-committed');
+      expect(await exists(path.join(snapshot.snapshotRoot, 'untracked.txt'))).toBe(false);
+      expect(await exists(path.join(snapshot.snapshotRoot, 'ignored.txt'))).toBe(false);
+      expect(calls.map(({ args }) => args)).toEqual([
+        ['read-tree', identity.HEAD],
+        ['checkout-index', '--all', '--force', expect.stringMatching(/^--prefix=.+\/$/u)],
+      ]);
+      expect(calls.every(({ options }) => (
+        options.shell === false
+        && options.cwd === repositoryRoot
+        && options.environment.GIT_INDEX_FILE === snapshot.temporaryIndexPath
+      ))).toBe(true);
+      expect(process.env.GIT_INDEX_FILE).not.toBe(snapshot.temporaryIndexPath);
+      expect(calls.every(({ options }) => options.cwd.includes('lanzo git fixture'))).toBe(true);
+      expect(snapshot.prefix).not.toContain('\\');
+      expect(snapshot.prefix.endsWith('/')).toBe(true);
+      const cleanup = await removeGitHeadSnapshot({ ...snapshot, repositoryRoot });
+      snapshot = null;
+      expect(cleanup).toEqual({ snapshotRemoved: true, temporaryIndexRemoved: true });
+    } finally {
+      if (snapshot) {
+        await removeGitHeadSnapshot({ ...snapshot, repositoryRoot });
+      }
+      rmSync(repositoryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('limpia snapshot e índice cuando read-tree o checkout-index fallan', async () => {
+    for (const failingCommand of ['read-tree', 'checkout-index']) {
+      let provenanceRoot;
+      await expect(createGitHeadSnapshot({
+        repositoryRoot: '/private/repository',
+        identity: fixtureIdentity,
+        makeTemporaryDirectory: async (prefix) => {
+          provenanceRoot = await mkdtemp(prefix);
+          return provenanceRoot;
+        },
+        commandRunner(_command, args) {
+          if (args[0] === failingCommand) throw new Error('private failure');
+          return { status: 0, stdout: '' };
+        },
+      })).rejects.toThrow(failingCommand === 'read-tree'
+        ? 'temporary Git index'
+        : 'temporary Git index');
+      expect(await exists(provenanceRoot)).toBe(false);
+    }
+  });
+
+  it('rechaza un snapshot fuera de temp y elimina symlinks inseguros', async () => {
+    const repositoryRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-snapshot-path-guard-'));
+    try {
+      await expect(createGitHeadSnapshot({
+        repositoryRoot,
+        identity: fixtureIdentity,
+        makeTemporaryDirectory: async () => repositoryRoot,
+      })).rejects.toThrow('temporary resources could not be removed');
+
+      if (process.platform !== 'win32') {
+        let provenanceRoot;
+        await expect(createGitHeadSnapshot({
+          repositoryRoot,
+          identity: fixtureIdentity,
+          makeTemporaryDirectory: async (prefix) => {
+            provenanceRoot = await mkdtemp(prefix);
+            return provenanceRoot;
+          },
+          async commandRunner(_command, args) {
+            if (args[0] === 'checkout-index') {
+              const prefix = args.find((arg) => arg.startsWith('--prefix=')).slice('--prefix='.length);
+              await symlink(repositoryRoot, path.join(prefix, 'unsafe-link'));
+            }
+            return { status: 0, stdout: '' };
+          },
+        })).rejects.toThrow('Symbolic link forbidden');
+        expect(await exists(provenanceRoot)).toBe(false);
+      }
+    } finally {
+      rmSync(repositoryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('bloquea limpieza incompleta del snapshot y cambios finales de HEAD, tree o checkout', async () => {
+    const provenanceRoot = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-git-snapshot-'));
+    const snapshotRoot = path.join(provenanceRoot, 'snapshot');
+    const temporaryIndexPath = path.join(provenanceRoot, 'git-index');
+    await mkdir(snapshotRoot);
+    await writeFile(temporaryIndexPath, 'index');
+    try {
+      await expect(removeGitHeadSnapshot({
+        provenanceRoot,
+        snapshotRoot,
+        temporaryIndexPath,
+        repositoryRoot: '/private/repository',
+        removePath: async () => {},
+      })).rejects.toThrow('could not be removed completely');
+    } finally {
+      rmSync(provenanceRoot, { recursive: true, force: true });
+    }
+
+    await expect(assertRepositoryIdentityStable({
+      initialIdentity: fixtureIdentity,
+      identityResolver: async () => ({ ...fixtureIdentity, HEAD: 'c'.repeat(40) }),
+      statusReader: async () => ({ clean: true }),
+    })).rejects.toThrow('HEAD changed');
+    await expect(assertRepositoryIdentityStable({
+      initialIdentity: fixtureIdentity,
+      identityResolver: async () => ({ ...fixtureIdentity, treeOid: 'c'.repeat(40) }),
+      statusReader: async () => ({ clean: true }),
+    })).rejects.toThrow('tree changed');
+    await expect(assertRepositoryIdentityStable({
+      initialIdentity: fixtureIdentity,
+      identityResolver: async () => fixtureIdentity,
+      statusReader: async () => {
+        throw new Error('Repository checkout must be clean before preparing the artifact.');
+      },
+    })).rejects.toThrow('checkout changed');
+  });
+
+  it('limpia snapshot, índice y workspace cuando falla la copia saneada', async () => {
+    const repositoryRoot = await createRepositoryFixture();
+    let snapshot;
+    let workspaceRoot;
+    try {
+      await expect(prepareStoreDeployment({
+        repositoryRoot,
+        gitSnapshotCreator: async (options) => {
+          snapshot = await createInjectedSnapshot(options);
+          return snapshot;
+        },
+        sanitizedWorkspaceCreator: async ({ temporaryRoot }) => {
+          workspaceRoot = temporaryRoot;
+          throw new Error('controlled sanitized copy failure');
+        },
+      })).rejects.toThrow('controlled sanitized copy failure');
+      expect(await exists(snapshot.provenanceRoot)).toBe(false);
+      expect(await exists(snapshot.snapshotRoot)).toBe(false);
+      expect(await exists(snapshot.temporaryIndexPath)).toBe(false);
+      expect(await exists(workspaceRoot)).toBe(false);
+    } finally {
+      rmSync(repositoryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('mantiene el preparador libre de shells y comandos Git mutantes', async () => {
+    const source = await readFile(
+      new URL('../../../scripts/prepare-store-deployment.mjs', import.meta.url),
+      'utf8',
+    );
+    expect(source).not.toMatch(
+      /shell\s*:\s*true|cmd\.exe|npm\.cmd|powershell|(?:^|[^\w])bash(?:[^\w]|$)|git reset|git clean|git checkout \.|git restore|git stash/iu,
+    );
+    expect(source).toContain("['checkout-index', '--all', '--force'");
   });
 
   it('inspecciona el inventario generado y solo acepta exactamente las dos funciones públicas', async () => {
@@ -510,6 +795,21 @@ describe('workspace prebuilt saneado', () => {
       workspacePreserved: true,
       cleanupRequired: true,
       environmentFilesFound: [],
+      sourceProvenance: {
+        mode: 'git-head-temporary-index',
+        HEAD: fixtureHead,
+        treeOid: fixtureTree,
+        objectFormat: 'sha1',
+        checkoutCleanBefore: true,
+        checkoutCleanAfter: true,
+        headStable: true,
+        treeStable: true,
+        snapshotFromTemporaryIndex: true,
+        trackedFilesOnly: true,
+        workingTreeCopied: false,
+        snapshotRemoved: true,
+        temporaryIndexRemoved: true,
+      },
     });
     expect(auditCalls).toEqual(['store', 'store']);
     expect(await exists(path.join(result.workspaceRoot, '.vercel', 'project.json'))).toBe(true);

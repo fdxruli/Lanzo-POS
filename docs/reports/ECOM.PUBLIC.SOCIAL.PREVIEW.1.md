@@ -3399,3 +3399,189 @@ Riesgos no bloqueantes: Node 24 provoca `EBADENGINE` en una dependencia que
 declara soporte hasta Node 22, sin afectar instalación, pruebas o build. La
 primera ejecución de arquitectura dependía del artifact generado; la
 repetición posterior al build fue completamente verde.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.2 — Integridad del checkout y procedencia verificable del artifact
+
+### Corte inicial verificado
+
+Antes de modificar se verificó el PR `#141`: abierto, draft, rama
+`feat/ecom-public-social-preview-1`, base `main` y mergeable. El HEAD remoto
+real inicial fue:
+
+```text
+47aacd162bef3f123453fc8979d621e9ea577352
+```
+
+El HEAD de `main` fue:
+
+```text
+bc603ef0ae3e60f241eafdbae6966191fe75d62c
+```
+
+No había commits posteriores al HEAD revisado. El checkout inicial estaba
+limpio. Su identidad Git fue:
+
+```text
+HEAD inicial     = 47aacd162bef3f123453fc8979d621e9ea577352
+tree OID inicial = 7df8dcdfe707627a638e6f85de2bc8dadf48587f
+object format    = sha1
+```
+
+`PR127 Global Comparison`, run `101` (`30502612574`), estaba concluido en
+`success` para ese HEAD. El check `Vercel – lanzo-pos` no se utilizó como
+evidencia de `lanzo-store`.
+
+### Causa raíz y corrección
+
+El preparador resolvía `git rev-parse HEAD`, pero copiaba los archivos desde el
+working tree. Por tanto, cambios locales sin commit podían producir bytes
+distintos del commit declarado por el artifact.
+
+La ruta real ahora es:
+
+```text
+checkout limpio
+  → HEAD + tree OID + object format
+  → GIT_INDEX_FILE temporal
+  → git read-tree <HEAD>
+  → git checkout-index hacia snapshot temporal
+  → shouldCopyStoreWorkspacePath()
+  → workspace saneado
+```
+
+El preparador ejecuta Git directamente, con `shell: false`. No acepta HEAD ni
+tree OID desde variables de entorno. El índice se crea fuera de `.git` y el
+prefijo de `checkout-index` sólo puede apuntar al snapshot controlado bajo el
+directorio temporal del sistema.
+
+El snapshot contiene exclusivamente archivos rastreados del árbol de HEAD.
+Archivos no rastreados e ignorados no entran. El filtro existente continúa
+excluyendo `.env`, `.vercel`, `.git`, `node_modules`, outputs, caches,
+documentación, tests, Supabase y demás contenido fuera del alcance público.
+El working tree no es fuente de la copia.
+
+Después de crear el workspace saneado se eliminan inmediatamente snapshot,
+índice y directorio temporal de procedencia. La eliminación se comprueba en el
+filesystem y ocurre antes de instalación, build, Vercel pull/build, auditoría o
+preservación. Los fallos limpian también workspace y manifiesto sin modificar
+el repositorio.
+
+Antes de PASS se vuelven a resolver HEAD, tree OID y object format y se vuelve
+a exigir checkout limpio. Cualquier cambio de identidad o suciedad final
+bloquea sin ejecutar reset, clean, checkout, restore o stash.
+
+### Contrato `sourceProvenance`
+
+El wrapper del artifact incluye exactamente:
+
+```text
+mode = git-head-temporary-index
+HEAD = HEAD esperado
+treeOid = OID válido para objectFormat
+objectFormat = sha1 | sha256
+checkoutCleanBefore = true
+checkoutCleanAfter = true
+headStable = true
+treeStable = true
+snapshotFromTemporaryIndex = true
+trackedFilesOnly = true
+workingTreeCopied = false
+snapshotRemoved = true
+temporaryIndexRemoved = true
+```
+
+No registra rutas, nombres de archivos, salida Git, usuario, hostname ni
+entorno. El wrapper transfiere `sourceProvenance` explícitamente al consumidor.
+El gate 1.8 aplica una allowlist cerrada, valida el OID según SHA-1/SHA-256 y
+bloquea campos ausentes, adicionales o contradictorios.
+
+La cadena remota 1.7 no se relajó:
+
+```text
+artifact con procedencia Git verificada
+  → hashes config/static
+  → evidencia remota con los mismos hashes
+```
+
+### Pruebas y certificación
+
+La prueba focal usa un repositorio Git temporal real. El commit contiene
+`version-committed`, el working tree se cambia a `version-working-tree` y el
+materializador entrega exclusivamente `version-committed`. También demuestra
+que archivos no rastreados e ignorados no aparecen en el snapshot. El flujo
+principal, por separado, rechaza el checkout dirty.
+
+Se cubren errores de status e identidad, SHA-1/SHA-256, índice separado,
+argumentos directos, prefijo normalizado, espacios, symlinks, fallos de
+read-tree/checkout-index/copia, limpieza incompleta, cambios finales de
+HEAD/tree/checkout y el contrato cerrado de procedencia. La integración real
+productor → reporte 1.7 → consumidor 1.8 continúa en PASS con runners locales
+inyectados y sin procesos externos.
+
+Resultados:
+
+```text
+npm ci estándar                         = BLOCKED por caché global no escribible
+npm ci con caché temporal aislada       = PASS, 706 paquetes
+storePrebuiltPackaging.test.js          = 87 PASS / 2 skips Windows
+storeReleaseReadiness.test.js           = 72 PASS
+storeEvidenceReport.test.js             = 14 PASS
+tests focales                           = 173 PASS / 2 skips Windows
+store/tests/social-preview              = 534 PASS / 2 skips Windows
+publicBuildArchitecture.test.js         = 5 PASS
+publicGitDeploymentArchitecture.test.js = 13 PASS
+vercelPrebuiltDeployment.test.js        = 25 PASS
+arquitectura final                      = 43 PASS
+npm run build:store:vercel              = PASS
+lint focal                              = PASS, 0 errores / 0 warnings
+git diff --check                        = PASS
+```
+
+La primera ejecución de `publicGitDeploymentArchitecture` observó outputs
+públicos anteriores no idénticos. Después del build público permitido, la
+repetición final pasó. El build auditado produjo 10 archivos / 636855 bytes en
+la fuente y 11 archivos / 636881 bytes en staging, con paridad, cero
+violaciones, sin PWA y sin código administrativo. Los cambios generados
+rastreados se retiraron mediante otra instantánea temporal del HEAD, no con
+reset, clean, checkout o restore.
+
+El HEAD final es el único commit funcional
+`fix(ecommerce): bind store artifact to git head snapshot`; su SHA y tree OID
+finales se registran en Git y en la entrega porque un commit no puede
+auto-incluir su propia identidad sin cambiarla. El checkout final se certifica
+limpio después de crear y publicar ese commit. El workflow final corresponde a
+ese mismo HEAD y se verifica después de la publicación.
+
+```text
+implementación local 1.8.2              = PASS
+procedencia HEAD → artifact             = PASS
+integración productor → consumidor      = PASS
+certificación total 1.8                 = BLOCKED
+readiness real                          = BLOCKED
+artifact Vercel real del HEAD final     = no disponible
+preview lanzo-store                     = no disponible
+evidencia remota real 1.7               = no disponible
+manifiesto readiness real               = no generado
+producción autorizada                   = no
+deployment productivo                   = no
+Supabase modificado                     = no
+migración creada                        = no
+dependencias modificadas                = no
+merge                                   = no
+auto-merge                              = desactivado
+rama adicional creada                   = no
+1.9 habilitada                          = no
+```
+
+No se ejecutó Vercel real ni se generaron previews. No se modificaron
+endpoints, dominios, Supabase, migraciones, `package.json` o
+`package-lock.json`.
+
+Bloqueantes residuales: autenticación Vercel, Build Output real del HEAD final,
+preview `lanzo-store`, slug público confirmado, auditoría HTTP real, evidencia
+remota real 1.7 y manifiesto readiness real.
+
+Riesgos no bloqueantes: la validación Windows se cubre mediante invocaciones
+sin shell, prefijos normalizados, rutas con espacios, separadores compatibles y
+reintentos limitados de limpieza; las dos pruebas que requieren ejecutables
+Windows reales permanecen omitidas fuera de Windows.
