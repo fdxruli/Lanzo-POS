@@ -31,7 +31,11 @@ const STORE_PROJECT_NAME = 'lanzo-store';
 const TEMPORARY_PREFIX = 'lanzo-store-social-preview-1-6-';
 const GIT_SNAPSHOT_PREFIX = 'lanzo-store-git-snapshot-';
 const PRESERVE_PASSED_EVIDENCE_ENV = 'PRESERVE_STORE_PREBUILT_EVIDENCE';
-const BUILD_COMMAND = 'vercel build --prod --local-config ./store/vercel.prebuilt.json';
+const TARGET_ENVIRONMENT = 'preview';
+const DEPLOYMENT_TYPE = 'preview';
+const PULL_COMMAND = 'vercel pull --yes --environment=preview';
+const BUILD_COMMAND = 'vercel build --debug --local-config ./store/vercel.prebuilt.json';
+const DEPLOY_COMMAND = 'vercel deploy --prebuilt --yes';
 const DIRECT_STORE_BUILD_COMMAND = 'npm run build:store:vercel';
 const DEFAULT_VERCEL_COMMAND = 'vercel';
 const normalizePath = (value) => value.replaceAll('\\', '/');
@@ -1137,7 +1141,12 @@ async function applyCanonicalNoindex(outputConfigPath) {
   await writeFile(outputConfigPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
-export async function writeExternalManifest(workspaceRoot, outputRoot) {
+export async function writeExternalManifest(workspaceRoot, outputRoot, {
+  targetEnvironment = TARGET_ENVIRONMENT,
+  deploymentType = DEPLOYMENT_TYPE,
+  production = false,
+  deploymentExecuted = false,
+} = {}) {
   const files = await walk(outputRoot);
   const manifest = await Promise.all(files.map(async (file) => ({
     path: file.relativePath,
@@ -1146,7 +1155,11 @@ export async function writeExternalManifest(workspaceRoot, outputRoot) {
   })));
   const manifestPath = `${workspaceRoot}-output-sha256.json`;
   const document = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    targetEnvironment,
+    deploymentType,
+    production,
+    deploymentExecuted,
     files: manifest,
     treeSha256: sha256(manifest.map((item) => `${item.sha256}  ${item.path}`).join('\n')),
   };
@@ -1164,6 +1177,8 @@ async function protectedRepositoryState(repositoryRoot) {
     'project.json',
   );
   return {
+    rootGitignoreHash: await hashOptional(path.join(repositoryRoot, '.gitignore')),
+    storeGitignoreHash: await hashOptional(path.join(repositoryRoot, 'store', '.gitignore')),
     administrativeConfigHash: await hashOptional(path.join(repositoryRoot, 'vercel.json')),
     storeConfigHash: await hashOptional(path.join(repositoryRoot, 'store', 'vercel.json')),
     storePrebuiltConfigHash: await hashOptional(path.join(repositoryRoot, 'store', 'vercel.prebuilt.json')),
@@ -1451,17 +1466,17 @@ export async function prepareStoreDeployment({
     );
     commandRunner(
       resolvedVercelInvocation.command,
-      [...resolvedVercelInvocation.argsPrefix, 'pull', '--yes', '--environment=production'],
+      [...resolvedVercelInvocation.argsPrefix, 'pull', '--yes', '--environment=preview'],
       { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
     const linkedProject = JSON.parse(await readFile(path.join(workspaceRoot, '.vercel', 'project.json'), 'utf8'));
     if (linkedProject.projectId !== STORE_PROJECT_ID || linkedProject.orgId !== STORE_ORGANIZATION_ID) {
       throw new Error('Temporary Vercel project link does not match the inspected store project.');
     }
-    const downloadedEnvironmentPath = path.join(workspaceRoot, '.vercel', '.env.production.local');
+    const downloadedEnvironmentPath = path.join(workspaceRoot, '.vercel', '.env.preview.local');
     if (!await pathExists(downloadedEnvironmentPath)) {
       if (commandRunner === run) {
-        throw new Error('Vercel pull did not produce .vercel/.env.production.local.');
+        throw new Error('Vercel pull did not produce .vercel/.env.preview.local.');
       }
       await writeFile(downloadedEnvironmentPath, '', { encoding: 'utf8', flag: 'wx' });
     }
@@ -1477,7 +1492,7 @@ export async function prepareStoreDeployment({
     });
     const zeroConfigBuild = commandRunner(
       resolvedVercelInvocation.command,
-      [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json'],
+      [...resolvedVercelInvocation.argsPrefix, 'build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
       { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
     );
 
@@ -1508,7 +1523,7 @@ export async function prepareStoreDeployment({
       await writeFile(prebuiltConfigPath, `${JSON.stringify(generatedPrebuiltConfig, null, 2)}\n`, 'utf8');
       commandRunner(
         resolvedVercelInvocation.command,
-        [...resolvedVercelInvocation.argsPrefix, 'build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json'],
+        [...resolvedVercelInvocation.argsPrefix, 'build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
         { cwd: workspaceRoot, environment: vercelExecutionEnvironment, ...resolvedVercelInvocation.options },
       );
       await removeWorkspaceEnvironmentFiles({ workspaceRoot });
@@ -1576,6 +1591,9 @@ export async function prepareStoreDeployment({
     const result = {
       phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
       status: 'PASS',
+      targetEnvironment: TARGET_ENVIRONMENT,
+      deploymentType: DEPLOYMENT_TYPE,
+      production: false,
       HEAD,
       strategy: 'git-head-temporary-index',
       sourceProvenance: {
@@ -1598,6 +1616,13 @@ export async function prepareStoreDeployment({
       outputRoot,
       manifestPath,
       manifestTreeSha256: manifest.treeSha256,
+      artifactManifest: {
+        schemaVersion: manifest.schemaVersion,
+        targetEnvironment: manifest.targetEnvironment,
+        deploymentType: manifest.deploymentType,
+        production: manifest.production,
+        deploymentExecuted: manifest.deploymentExecuted,
+      },
       vercelOutputInventory,
       staticMaterialization,
       output: {
@@ -1609,6 +1634,9 @@ export async function prepareStoreDeployment({
       audit: finalAudit,
       environmentFilesFound: finalized.environmentFilesFound,
       protectedRepository: {
+        gitignoreUnchanged:
+          baseline.rootGitignoreHash === finalState.rootGitignoreHash
+          && baseline.storeGitignoreHash === finalState.storeGitignoreHash,
         administrativeConfigUnchanged:
           baseline.administrativeConfigHash === finalState.administrativeConfigHash,
         storeConfigUnchanged: baseline.storeConfigHash === finalState.storeConfigHash,
@@ -1631,7 +1659,9 @@ export async function prepareStoreDeployment({
       commands: {
         install: `${path.basename(process.execPath)} ${path.basename(npmCliPath)} ci --no-audit --no-fund`,
         directBuild: DIRECT_STORE_BUILD_COMMAND,
+        pull: PULL_COMMAND,
         build: BUILD_COMMAND,
+        deploy: DEPLOY_COMMAND,
       },
       zeroConfigFunctionInventory,
       finalFunctionInventory,

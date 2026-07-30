@@ -64,6 +64,16 @@ const artifact = {
   HEAD: head,
   failedChecks: [],
   deploymentExecuted: false,
+  targetEnvironment: 'preview',
+  deploymentType: 'preview',
+  production: false,
+  artifactManifest: {
+    schemaVersion: 2,
+    targetEnvironment: 'preview',
+    deploymentType: 'preview',
+    production: false,
+    deploymentExecuted: false,
+  },
   hashes: { outputConfig: configHash, outputStaticTree: staticHash },
   output: { functions },
   functionAudit: { bundles },
@@ -90,6 +100,7 @@ const artifact = {
     ]),
   },
   protectedRepository: {
+    gitignoreUnchanged: true,
     administrativeConfigUnchanged: true,
     storeConfigUnchanged: true,
     storePrebuiltConfigUnchanged: true,
@@ -485,6 +496,35 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
       projectInspection: { projectName: 'lanzo-store' },
       deploymentExecuted: true,
     }, 'artifact-deployment-state-invalid'],
+    ['target ausente', {
+      ...artifact,
+      audit: { ...artifact, targetEnvironment: undefined },
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-store' },
+    }, 'artifact-target-contradictory'],
+    ['output production contradice wrapper preview', {
+      ...artifact,
+      audit: {
+        ...artifact,
+        targetEnvironment: 'production',
+        deploymentType: 'production',
+        production: true,
+      },
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-store' },
+    }, 'artifact-target-contradictory'],
+    ['manifest production contradice wrapper preview', {
+      ...artifact,
+      audit: artifact,
+      artifactManifest: {
+        ...artifact.artifactManifest,
+        targetEnvironment: 'production',
+        deploymentType: 'production',
+        production: true,
+      },
+      output: artifact.output,
+      projectInspection: { projectName: 'lanzo-store' },
+    }, 'artifact-manifest-target-invalid'],
   ])('bloquea contradicciones del wrapper: %s', (_label, value, reason) => {
     expect(() => validateArtifactEvidence(value, head))
       .toThrow(expect.objectContaining({ reason }));
@@ -614,7 +654,14 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
       writeFile(path.join(repositoryRoot, 'store', 'api', 'og', 'store.js'), 'export default {};\n'),
     ]);
     const realArtifactAudit = structuredClone(artifact);
-    for (const name of ['HEAD', 'projectName', 'deploymentExecuted', 'protectedRepository', 'sourceProvenance']) {
+    for (const name of [
+      'HEAD',
+      'projectName',
+      'deploymentExecuted',
+      'artifactManifest',
+      'protectedRepository',
+      'sourceProvenance',
+    ]) {
       delete realArtifactAudit[name];
     }
     const commands = [];
@@ -681,7 +728,7 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
         }
         if (args.includes('pull')) {
           mkdirSync(path.join(workspaceRoot, '.vercel'), { recursive: true });
-          writeFileSync(path.join(workspaceRoot, '.vercel', '.env.production.local'), 'FIXTURE_ONLY=value\n');
+          writeFileSync(path.join(workspaceRoot, '.vercel', '.env.preview.local'), 'FIXTURE_ONLY=value\n');
           return {};
         }
         if (args.includes('build')) {
@@ -691,6 +738,10 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
           writeFileSync(path.join(outputRoot, 'config.json'), JSON.stringify({
             version: 3,
             routes: [{ src: '^/(.*)/$', status: 308, headers: { Location: '/$1' } }],
+          }));
+          writeFileSync(path.join(outputRoot, 'builds.json'), JSON.stringify({
+            target: 'preview',
+            argv: ['build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
           }));
           for (const relativeRoute of ['api/store-page', 'api/og/store.js']) {
             const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);

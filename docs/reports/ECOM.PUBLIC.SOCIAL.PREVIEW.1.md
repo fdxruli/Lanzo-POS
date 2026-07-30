@@ -3743,6 +3743,119 @@ rama adicional creada               = no
 1.9 habilitada                      = no
 ```
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.4 — Target preview del Build Output certificado
+
+### Corte y bloqueante externo
+
+El PR `#141` continuaba abierto, draft, sin merge, con base `main`, rama
+`feat/ecom-public-social-preview-1` y HEAD remoto inicial:
+
+```text
+62caa6f7789fcb5300d9be4e3bfb135ae5b0c17a
+```
+
+Su tree OID era `5e539afae0253f125c562a50e80174361e4a50a0`.
+La certificación externa reprodujo este rechazo antes de crear el deployment:
+
+```text
+The "--prebuilt" option was used with the target environment "preview",
+but the prebuilt output found in ".vercel/output" was built with target
+environment "production".
+```
+
+La causa era la combinación `vercel pull --yes --environment=production` y
+`vercel build --prod`. El deploy permitido,
+`vercel deploy --prebuilt --yes`, es preview y por eso rechazó correctamente el
+Build Output productivo. No se corrigió ejecutando `--prod`: producción no está
+autorizada en esta fase. El intento no creó preview, no promovió aliases y no
+modificó producción.
+
+### Corrección
+
+El workspace temporal de `lanzo-store` usa ahora:
+
+```text
+vercel project inspect lanzo-store
+vercel pull --yes --environment=preview
+vercel build --debug --local-config ./store/vercel.prebuilt.json
+```
+
+El build principal y el fallback omiten `--prod` y
+`--target=production`. El comando manual posterior permitido permanece
+exactamente:
+
+```text
+vercel deploy --prebuilt --yes
+```
+
+El auditor lee `.vercel/output/builds.json`, que es la evidencia creada por
+`vercel build`, y exige `target = preview`, target presente y ausencia de flags
+de producción. El wrapper, la auditoría y el manifiesto SHA-256 declaran y
+reconcilian explícitamente:
+
+```json
+{
+  "targetEnvironment": "preview",
+  "deploymentType": "preview",
+  "production": false,
+  "deploymentExecuted": false
+}
+```
+
+El readiness gate bloquea target ausente, target productivo y cualquier
+contradicción entre wrapper, auditoría y manifiesto. El manifiesto externo usa
+`schemaVersion = 2`; conserva hashes de archivos y árbol, pero no incluye
+variables, valores descargados ni contenido privado.
+
+La procedencia sigue derivándose exclusivamente del HEAD mediante índice Git
+temporal. Se mantienen checkout limpio inicial/final, validación de root, HEAD,
+tree y object format, aislamiento case-insensitive de `GIT_*`, exclusión de
+bytes locales y limpieza de snapshot, índice y workspace. La protección del
+working tree cubre además `.gitignore`, `.vercel/repo.json`,
+`.vercel/project.json`, `.env*` y configuraciones administrativas.
+
+### Pruebas y evidencia
+
+Las pruebas deterministas cubren preview en `pull`, build principal y fallback
+sin `--prod`, target explícito, target ausente, production, contradicción
+wrapper/output, manifiesto contradictorio, mismatch reproducible, comando
+preview exacto, prohibición de producción, integridad del repositorio y
+ausencia de autenticación/deployment real.
+
+Resultados locales previos al commit:
+
+```text
+npm ci                                      = PASS, 706 paquetes
+prepare + prebuilt + audit + readiness      = 246 PASS / 2 skips Windows
+remote evidence y remote validation         = 30 PASS
+public cutover architecture                  = 12 PASS
+npm run build:store:vercel                   = PASS
+lint focal                                   = PASS
+git diff --check                             = PASS
+preview deployment executed                  = false
+production modified                          = false
+```
+
+La suite `publicDeploymentArchitecture` exige un checkout limpio porque ejecuta
+el preparador real; se ejecuta después de crear el commit enfocado. La
+comparación global normalizada contra `main`, el run ID, `newFailures`, HEAD
+remoto final y tree final se registran en la entrega posterior al push para no
+crear autorreferencia ni un segundo commit documental.
+
+Commit único previsto:
+
+```text
+fix(ecommerce): build certified store preview output
+```
+
+### Riesgo residual y procedimiento manual
+
+No se reutiliza el artifact productivo anterior. La única acción pendiente tras
+publicar y revisar el nuevo HEAD es preparar un artifact nuevo desde ese HEAD,
+confirmar auditoría `PASS` y ejecutar una sola vez, desde el workspace
+preservado, `vercel deploy --prebuilt --yes`. Después se realiza la auditoría
+HTTP del host preview. No ejecutar `--prod`, promoción ni alias.
+
 Bloqueantes residuales: autenticación Vercel, Build Output real del HEAD final,
 preview `lanzo-store`, slug público confirmado, auditoría HTTP real, evidencia
 remota real 1.7 y manifiesto readiness real.

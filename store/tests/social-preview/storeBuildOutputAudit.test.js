@@ -98,6 +98,10 @@ async function createFixture() {
     orgId: ORG_ID,
   });
   await writeJson(path.join(outputRoot, 'config.json'), { version: 3, routes: validRoutes() });
+  await writeJson(path.join(outputRoot, 'builds.json'), {
+    target: 'preview',
+    argv: ['build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
+  });
   await createFunction(
     functionsRoot,
     'api/store-page',
@@ -143,6 +147,23 @@ describe('auditoría de .vercel/output', () => {
   let fixture;
   beforeEach(async () => {
     fixture = await createFixture();
+  });
+
+  it.each([
+    ['production', { target: 'production', argv: ['build', '--prod'] }],
+    ['target ausente', { argv: ['build'] }],
+    ['flag production contradictorio', { target: 'preview', argv: ['build', '--target=production'] }],
+  ])('rechaza el Build Output con %s', async (_label, builds) => {
+    await writeJson(path.join(fixture.outputRoot, 'builds.json'), builds);
+    const report = await audit(fixture);
+    expect(report.status).toBe('FAIL');
+    expect(report.failedChecks).toEqual(expect.arrayContaining([
+      ...(!builds.target ? ['targetEnvironmentPresent'] : []),
+      ...(builds.target !== 'preview' ? ['targetEnvironmentPreview'] : []),
+      ...(builds.argv.some((value) => value.includes('production') || value === '--prod')
+        ? ['noProductionBuildFlags']
+        : []),
+    ]));
   });
 
   it('acepta un output mínimo válido', async () => {

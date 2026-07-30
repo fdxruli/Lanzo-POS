@@ -60,6 +60,7 @@ const REQUIRED_REMOTE_CHECKS = Object.freeze([
   'securityPassed',
 ]);
 const PROTECTED_REPOSITORY_INVARIANTS = Object.freeze([
+  'gitignoreUnchanged',
   'administrativeConfigUnchanged',
   'storeConfigUnchanged',
   'storePrebuiltConfigUnchanged',
@@ -305,6 +306,27 @@ function normalizedArtifact(raw) {
     if (raw.projectInspection?.projectName !== 'lanzo-store') {
       fail('artifact-project-invalid', 'artifact', 'Artifact wrapper must target lanzo-store.');
     }
+    for (const [field, expected] of [
+      ['targetEnvironment', 'preview'],
+      ['deploymentType', 'preview'],
+      ['production', false],
+    ]) {
+      if (raw[field] !== raw.audit[field]) {
+        fail('artifact-target-contradictory', 'production', 'Wrapper and audit targets contradict.');
+      }
+      if (raw[field] !== expected) {
+        fail('artifact-target-invalid', 'production', 'Artifact target must be explicit preview.');
+      }
+      if (raw.artifactManifest?.[field] !== expected) {
+        fail('artifact-manifest-target-invalid', 'production', 'Artifact manifest target must be explicit preview.');
+      }
+    }
+    if (
+      raw.artifactManifest?.deploymentExecuted !== false
+      || raw.artifactManifest?.deploymentExecuted !== raw.deploymentExecuted
+    ) {
+      fail('artifact-manifest-deployment-state-invalid', 'production', 'Artifact manifest deployment state is invalid.');
+    }
     if (Object.hasOwn(raw.audit, 'HEAD') && raw.audit.HEAD !== raw.HEAD) {
       fail('artifact-head-contradictory', 'head', 'Wrapper and audit HEAD values must match.');
     }
@@ -323,6 +345,10 @@ function normalizedArtifact(raw) {
       protectedRepository: raw.protectedRepository,
       sourceProvenance: raw.sourceProvenance,
       projectName: raw.projectInspection?.projectName,
+      targetEnvironment: raw.targetEnvironment,
+      deploymentType: raw.deploymentType,
+      production: raw.production,
+      artifactManifest: raw.artifactManifest,
     };
   }
   return raw;
@@ -483,6 +509,13 @@ export function validateArtifactEvidence(raw, expectedHead) {
   }
   if (artifact.deploymentExecuted !== false) {
     fail('artifact-deployment-state-invalid', 'production', 'Artifact evidence must prove no deployment executed.');
+  }
+  if (
+    artifact.targetEnvironment !== 'preview'
+    || artifact.deploymentType !== 'preview'
+    || artifact.production !== false
+  ) {
+    fail('artifact-target-invalid', 'production', 'Artifact target must be explicit preview.');
   }
   if (!isSha40(artifact.HEAD) || artifact.HEAD !== expectedHead) {
     fail('artifact-head-mismatch', 'head', 'Artifact HEAD does not match.');

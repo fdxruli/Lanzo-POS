@@ -28,6 +28,7 @@ import {
 } from '../../../scripts/prepare-store-deployment.mjs';
 import {
   inspectCompiledStoreRoutes,
+  inspectPrebuiltBuildTarget,
   verifyTemporaryStoreRoot,
 } from '../../../scripts/audit-vercel-build-output.mjs';
 import { validatePreviewDeploymentPlan } from '../../../scripts/audit-remote-store-deployment.mjs';
@@ -307,7 +308,7 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     })).toThrow('two exact public function entries');
   });
 
-  it('runs pull and production-config build without invoking deployment commands', async () => {
+  it('runs pull and preview build without invoking deployment commands', async () => {
     const repositoryRoot = await createRepositoryFixture();
     const calls = [];
     await expect(prepareStoreDeployment({
@@ -339,13 +340,47 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
 
     const logical = calls.map(({ command, args }) => [command, ...args].join(' '));
     expect(logical).toEqual(expect.arrayContaining([
-      'vercel-fixture pull --yes --environment=production',
-      'vercel-fixture build --prod --debug --local-config ./store/vercel.prebuilt.json',
+      'vercel-fixture pull --yes --environment=preview',
+      'vercel-fixture build --debug --local-config ./store/vercel.prebuilt.json',
     ]));
+    expect(logical.join('\n')).not.toContain('--prod');
     expect(logical.join('\n')).not.toMatch(/\b(?:deploy|promote|alias)\b|--prebuilt/iu);
     expect(new Set(calls.map(({ cwd }) => cwd)).size).toBe(1);
     expect(path.basename(calls[0].cwd)).toMatch(/^lanzo-store-social-preview-1-6-/u);
     expect(await exists(calls[0].cwd)).toBe(false);
+  });
+
+  it('models the prebuilt environment mismatch deterministically', () => {
+    const production = inspectPrebuiltBuildTarget({
+      target: 'production',
+      argv: ['build', '--prod'],
+    });
+    expect(production).toMatchObject({
+      targetEnvironment: 'production',
+      production: true,
+      checks: {
+        targetEnvironmentPresent: true,
+        targetEnvironmentPreview: false,
+        noProductionBuildFlags: false,
+      },
+    });
+
+    const preview = inspectPrebuiltBuildTarget({
+      target: 'preview',
+      argv: ['build', '--debug', '--local-config', './store/vercel.prebuilt.json'],
+    });
+    expect(preview).toMatchObject({
+      targetEnvironment: 'preview',
+      deploymentType: 'preview',
+      production: false,
+      checks: {
+        targetEnvironmentPresent: true,
+        targetEnvironmentPreview: true,
+        noProductionBuildFlags: true,
+      },
+    });
+    expect(inspectPrebuiltBuildTarget({ argv: ['build'] }).checks)
+      .toMatchObject({ targetEnvironmentPresent: false, targetEnvironmentPreview: false });
   });
 
   it('reports preparation as non-deploying by contract', async () => {

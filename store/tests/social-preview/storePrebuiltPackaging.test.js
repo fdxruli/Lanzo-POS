@@ -747,7 +747,7 @@ describe('workspace prebuilt saneado', () => {
         commandRunner(_command, args, options) {
           if (args.includes('pull')) {
             mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
-            writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
+            writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), 'REMOTE_VALUE=kept\n');
             return;
           }
           if (!args.includes('build')) return;
@@ -770,6 +770,11 @@ describe('workspace prebuilt saneado', () => {
         },
       })).rejects.toThrow('Vercel did not compile the expected trailing-slash canonical route');
       expect(builds).toHaveLength(expectsFallback ? 2 : 1);
+      expect(builds.every((args) => (
+        args[0] === 'build'
+        && !args.includes('--prod')
+        && !args.includes('--target=production')
+      ))).toBe(true);
       if (expectsFallback) {
         expect(fallbackConfig.builds).toEqual([
           { src: 'api/store-page.js', use: '@vercel/node' },
@@ -856,6 +861,13 @@ describe('workspace prebuilt saneado', () => {
       },
     });
     const manifest = await writeExternalManifest(workspaceRoot, outputRoot);
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      targetEnvironment: 'preview',
+      deploymentType: 'preview',
+      production: false,
+      deploymentExecuted: false,
+    });
     expect(await exists(workspaceRoot)).toBe(true);
     expect(await exists(path.join(workspaceRoot, '.vercel', 'project.json'))).toBe(true);
     expect(await exists(outputRoot)).toBe(true);
@@ -951,6 +963,15 @@ describe('workspace prebuilt saneado', () => {
     expect(result).toMatchObject({
       status: 'PASS',
       HEAD: fixtureHead,
+      targetEnvironment: 'preview',
+      deploymentType: 'preview',
+      production: false,
+      deploymentExecuted: false,
+      commands: {
+        pull: 'vercel pull --yes --environment=preview',
+        build: 'vercel build --debug --local-config ./store/vercel.prebuilt.json',
+        deploy: 'vercel deploy --prebuilt --yes',
+      },
       workspacePreserved: true,
       cleanupRequired: true,
       environmentFilesFound: [],
@@ -1349,7 +1370,7 @@ describe('workspace prebuilt saneado', () => {
       },
       {
         command: 'vercel-fixture',
-        args: ['pull', '--yes', '--environment=production'],
+        args: ['pull', '--yes', '--environment=preview'],
       },
     ]);
     expect(calls.every(({ args }) => Array.isArray(args))).toBe(true);
@@ -1371,7 +1392,7 @@ describe('workspace prebuilt saneado', () => {
         if (command !== 'vercel-fixture') return;
         if (args.includes('pull')) {
           mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
-          writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
+          writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), 'REMOTE_VALUE=kept\n');
           return;
         }
         capturedPrebuilt = JSON.parse(readFileSync(path.join(options.cwd, 'store', 'vercel.prebuilt.json'), 'utf8'));
@@ -1379,9 +1400,9 @@ describe('workspace prebuilt saneado', () => {
       },
     })).rejects.toThrow('controlled build stop');
     expect(calls.map(({ args }) => args.at(-1))).toEqual([
-      '--no-fund', 'build:store:vercel', '--environment=production', './store/vercel.prebuilt.json',
+      '--no-fund', 'build:store:vercel', '--environment=preview', './store/vercel.prebuilt.json',
     ]);
-    expect(calls.at(-1).args).toEqual(['build', '--prod', '--debug', '--local-config', './store/vercel.prebuilt.json']);
+    expect(calls.at(-1).args).toEqual(['build', '--debug', '--local-config', './store/vercel.prebuilt.json']);
     expect(capturedPrebuilt).toEqual({ trailingSlash: false });
     expect(await exists(path.join(sourceRoot, 'store', 'vercel.prebuilt.json'))).toBe(false);
     expect(await exists(workspaceRoot)).toBe(false);
@@ -1506,6 +1527,14 @@ describe('workspace prebuilt saneado', () => {
       path.join(root, 'vercel.json'),
       '{"project":"mutated"}',
     )],
+    ['creación de .gitignore', true, (root) => writeFileSync(
+      path.join(root, '.gitignore'),
+      '.vercel\n',
+    )],
+    ['creación de .vercel/repo.json', true, (root) => writeFileSync(
+      path.join(root, '.vercel', 'repo.json'),
+      '{"repo":"mutated"}\n',
+    )],
     ['modificación de store/vercel.json', true, (root) => writeFileSync(
       path.join(root, 'store', 'vercel.json'),
       '{"trailingSlash":true}',
@@ -1555,14 +1584,14 @@ describe('workspace prebuilt saneado', () => {
         calls.push({ command, args, options });
         if (args.includes('pull')) {
           mkdirSync(path.join(options.cwd, '.vercel'), { recursive: true });
-          writeFileSync(path.join(options.cwd, '.vercel', '.env.production.local'), 'REMOTE_VALUE=kept\n');
+          writeFileSync(path.join(options.cwd, '.vercel', '.env.preview.local'), 'REMOTE_VALUE=kept\n');
         }
       },
     })).rejects.toThrow('Vercel did not produce .vercel/output');
 
     const logicalCalls = calls.map(({ args }) => args.join(' '));
     expect(logicalCalls.some((call) => call.includes(
-      'build --prod --debug --local-config ./store/vercel.prebuilt.json',
+      'build --debug --local-config ./store/vercel.prebuilt.json',
     ))).toBe(true);
     expect(logicalCalls.join(' ')).not.toMatch(/\b(?:deploy|promote|alias)\b|--prebuilt/u);
     expect(calls.every(({ options }) => options.shell === false)).toBe(true);

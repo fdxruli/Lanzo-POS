@@ -16,6 +16,7 @@ const NOINDEX = 'noindex, nofollow, noarchive';
 const STATIC_CACHE = 'public, max-age=0, must-revalidate';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const EXPECTED_STORE_FUNCTIONS = Object.freeze(['/api/og/store', '/api/store-page']);
+const EXPECTED_STORE_TARGET_ENVIRONMENT = 'preview';
 const STORE_WORKSPACE_PREFIX = 'lanzo-store-social-preview-1-6-';
 const targets = Object.freeze({
   store: {
@@ -960,6 +961,35 @@ export function verifyTemporaryStoreRoot({ workspaceRoot, effectiveStoreRoot, te
     && !path.isAbsolute(storeRelative);
 }
 
+export function inspectPrebuiltBuildTarget(buildsJson) {
+  const targetEnvironment = typeof buildsJson?.target === 'string'
+    ? buildsJson.target.trim().toLowerCase()
+    : null;
+  const argv = Array.isArray(buildsJson?.argv)
+    ? buildsJson.argv.filter((value) => typeof value === 'string')
+    : [];
+  const productionFlagPresent = argv.some((value) => (
+    value === '--prod'
+    || value === '--target=production'
+    || value === '--target'
+  )) && (
+    argv.includes('--prod')
+    || argv.includes('--target=production')
+    || argv.some((value, index) => value === '--target' && argv[index + 1] === 'production')
+  );
+  return Object.freeze({
+    targetEnvironment,
+    deploymentType: targetEnvironment,
+    production: targetEnvironment === 'production',
+    argv,
+    checks: Object.freeze({
+      targetEnvironmentPresent: targetEnvironment !== null,
+      targetEnvironmentPreview: targetEnvironment === EXPECTED_STORE_TARGET_ENVIRONMENT,
+      noProductionBuildFlags: !productionFlagPresent,
+    }),
+  });
+}
+
 export async function auditPrebuiltOutput(targetName, packageRootArgument, options = {}) {
   const baseTarget = targets[targetName];
   if (!baseTarget) throw new Error('Target must be store or admin.');
@@ -975,6 +1005,7 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
   const projectLinkPath = path.join(workspaceRoot, '.vercel', 'project.json');
   const outputRoot = path.join(workspaceRoot, '.vercel', 'output');
   const outputConfigPath = path.join(outputRoot, 'config.json');
+  const outputBuildsPath = path.join(outputRoot, 'builds.json');
   const outputStaticPath = path.join(outputRoot, 'static');
   const outputFunctionsPath = path.join(outputRoot, 'functions');
   for (const requiredPath of [
@@ -983,18 +1014,23 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     projectLinkPath,
     outputConfigPath,
     outputStaticPath,
+    ...(targetName === 'store' ? [outputBuildsPath] : []),
   ]) {
     if (!await pathExists(requiredPath)) throw new Error(`Missing prebuilt input: ${path.basename(requiredPath)}`);
   }
 
-  const [sourceConfigBytes, outputConfigBytes, projectLinkBytes] = await Promise.all([
+  const [sourceConfigBytes, outputConfigBytes, projectLinkBytes, outputBuildsBytes] = await Promise.all([
     readFile(target.sourceConfig),
     readFile(outputConfigPath),
     readFile(projectLinkPath),
+    targetName === 'store' ? readFile(outputBuildsPath) : Promise.resolve(null),
   ]);
   const sourceConfig = JSON.parse(sourceConfigBytes.toString('utf8'));
   const outputConfig = JSON.parse(outputConfigBytes.toString('utf8'));
   const projectLink = JSON.parse(projectLinkBytes.toString('utf8'));
+  const prebuiltBuild = outputBuildsBytes
+    ? inspectPrebuiltBuildTarget(JSON.parse(outputBuildsBytes.toString('utf8')))
+    : null;
   const [sourceStaticFiles, staticAudit] = await Promise.all([
     walkOutputFiles(target.sourceStatic),
     inspectStatic(outputStaticPath, targetName),
@@ -1022,6 +1058,7 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     ...(targetName === 'store' ? inspectCompiledStoreRoutes(outputConfig, {
       staticPaths: staticAudit.manifest.map((item) => item.path),
     }).checks : {}),
+    ...(targetName === 'store' ? prebuiltBuild.checks : {}),
     ...staticAudit.checks,
   };
 
@@ -1065,6 +1102,7 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
     hashes: {
       sourceConfig: sha256(sourceConfigBytes),
       outputConfig: sha256(outputConfigBytes),
+      ...(outputBuildsBytes ? { outputBuilds: sha256(outputBuildsBytes) } : {}),
       sourceStaticTree: treeHash(sourceStaticManifest),
       outputStaticTree: treeHash(staticAudit.manifest),
     },
@@ -1076,7 +1114,18 @@ export async function auditPrebuiltOutput(targetName, packageRootArgument, optio
       functions: functionAudit?.routes || [],
       outputRoot: normalizePath(path.relative(workspaceRoot, outputRoot)),
       sourceMaps: outputSourceMaps,
+      ...(prebuiltBuild ? {
+        targetEnvironment: prebuiltBuild.targetEnvironment,
+        deploymentType: prebuiltBuild.deploymentType,
+        production: prebuiltBuild.production,
+      } : {}),
     },
+    ...(prebuiltBuild ? {
+      targetEnvironment: prebuiltBuild.targetEnvironment,
+      deploymentType: prebuiltBuild.deploymentType,
+      production: prebuiltBuild.production,
+      deploymentExecuted: false,
+    } : {}),
     routing: routeAudit,
     functionAudit,
     staticAudit: {
