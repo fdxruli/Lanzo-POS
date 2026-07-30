@@ -4113,7 +4113,210 @@ preview correctiva creada              = no
 producción modificada                  = no
 ```
 
-El artifact corregido y su único deployment preview correctivo siguen
-pendientes. Hasta generarlos y completar la auditoría HTTP real, la
-certificación externa permanece `BLOCKED`. La preview fallida anterior continúa
-siendo exclusivamente evidencia diagnóstica.
+Este era el estado al cerrar 1.8.6. Posteriormente se generó y desplegó la
+preview correctiva descrita en 1.8.7; también falló certificación y no cuenta
+como evidencia `PASS`. La certificación externa permaneció `BLOCKED`.
+
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.7 — Scope de módulos runtime transitorios
+
+### Segunda preview fallida y diagnóstico
+
+El artifact del HEAD `2f7be1b309fd03e521c445834e20748a7258e247`
+(tree `b12e9334c7e79faf41c704ecdff204583b3d6e57`) se desplegó como la
+preview correctiva:
+
+```text
+https://lanzo-store-c38nwon2s-fdxrulis-projects.vercel.app
+```
+
+Vercel reportó deployment `READY`, proyecto `lanzo-store`, tipo preview,
+`production=false` y dos funciones `nodejs24.x`. Producción no fue modificada.
+La corrección anterior eliminó el fallo al importar el handler principal:
+
+```text
+store/api/package.json
+{"type":"commonjs"}
+```
+
+Sin embargo, la petición dinámica continuó fallando de forma controlada:
+
+```text
+GET /tienda/farmaciagary                 = 500
+body                                     = Store page temporarily unavailable.
+Cache-Control                            = no-store
+```
+
+El log runtime confirmó:
+
+```text
+ReferenceError: exports is not defined in ES module scope
+store/generated/storeHtmlTemplate.js
+```
+
+Dentro del bundle real, `store/generated/storeHtmlTemplate.js` es `.js`
+CommonJS y usa `exports`, pero no existía
+`store/generated/package.json`. Por ello heredaba `"type":"module"` del
+`package.json` raíz del bundle. No fue un fallo de Supabase, credenciales,
+portal o RPC.
+
+Las dos previews creadas hasta este punto se preservan como evidencia
+diagnóstica fallida. Ninguna cuenta como evidencia remota `PASS`; no se
+eliminan, reutilizan, promueven ni reciben alias. Los identificadores de
+deployment solamente pueden registrarse mediante SHA-256.
+
+### Por qué el smoke anterior no lo detectó
+
+El gate anterior resolvía `.vc-config.json`, importaba el handler y comprobaba
+que expusiera una interfaz invocable. La plantilla se carga mediante importación
+dinámica durante `fetch`, no al importar el handler. Por eso:
+
+```text
+handler load                              = PASS
+handler interface                         = PASS
+store/generated/storeHtmlTemplate.js      = no ejecutado
+request end-to-end                        = no ejecutada
+```
+
+El fallback final convertía la excepción del módulo transitorio en una respuesta
+HTTP 500 segura. La carga superficial del handler no podía observarlo.
+
+### Scopes mínimos y atómicos
+
+`applyGeneratedFunctionRuntimeCompatibility` ahora aplica scopes declarativos
+por ruta:
+
+```text
+/api/store-page
+  store/api/package.json
+  store/generated/package.json
+
+/api/og/store
+  store/api/package.json
+```
+
+Para `store/generated`, el conjunto permitido queda limitado exactamente a:
+
+```text
+store/generated/storeHtmlTemplate.js
+```
+
+Cada directorio se inspecciona antes de escribir. Todos sus módulos `.js`
+deben ser legibles, clasificables y compartir un único formato real. El
+`package.json` mínimo se escribe mediante archivo temporal más `rename`. Si ya
+existe con el mismo contenido, se registra como idempotente; si es ilegible,
+contiene campos adicionales, declara otro tipo o cubre un conjunto inesperado
+de módulos, el proceso bloquea determinísticamente. No se modifican fuentes,
+la plantilla fuente ni el `package.json` del repositorio.
+
+La evidencia registra por scope:
+
+- ruta;
+- handler;
+- módulos cubiertos;
+- sintaxis individual;
+- `packageScope`;
+- `packageType`;
+- escritura atómica;
+- creación nueva o validación idempotente.
+
+### Auditoría transitoria e invocación real
+
+La auditoría recorre desde cada handler los imports y `require` locales
+ejecutables, incluida la importación dinámica de la plantilla. Para cada módulo
+registra extensión, sintaxis CommonJS/ESM, scope efectivo más cercano, scope
+requerido, formato interpretado, compatibilidad y carga aislada en un proceso
+Node de la misma versión mayor que el runtime.
+
+El gate rechaza módulo ausente o ilegible, `.js` CommonJS bajo `type=module`,
+`.js` ESM bajo `type=commonjs`, scope requerido ausente, scope más amplio que
+el aprobado, scope contradictorio, módulo transitorio no cargable y mismatch
+de versión mayor.
+
+Además, cada función se invoca realmente en un proceso aislado. `fetch` se
+reemplaza antes de importar el handler por una implementación controlada que
+bloquea toda salida externa y usa variables ficticias.
+
+Para `store-page` se ejecuta:
+
+```text
+GET https://preview.invalid/api/store-page?slug=farmaciagary
+```
+
+El smoke exige carga e interfaz válidas, terminación de la petición, status
+distinto de 500, `Content-Type: text/html`, ausencia del fallback final,
+`<!doctype html>` y exactamente un `id="root"`. Esto ejecuta la importación
+transitoria que faltaba.
+
+Para OG se ejecuta el handler con slug controlado y se exige una respuesta PNG
+válida por firma binaria cuando produce imagen. Ninguno de los smokes puede
+realizar una llamada externa real.
+
+La fixture fiel reproduce inequívocamente el artifact fallido:
+
+```text
+store/api/package.json                   = commonjs
+store/generated/package.json             = ausente
+handler load                             = PASS
+template isolated load                   = FAIL
+request status                           = 500
+failure reason                           = FINAL_TEMPLATE_FALLBACK_500
+```
+
+Después del scope transitorio:
+
+```text
+template isolated load                   = PASS
+store-page request                       = PASS, HTML 200
+doctype                                  = presente
+id="root"                                = exactamente 1
+OG request                               = PASS, PNG
+external network                         = bloqueada
+```
+
+### Política cerrada para la certificación final
+
+La eventual certificación remota final no abre un contador ilimitado. La nueva
+política `single-final-certification-preview` requiere simultáneamente:
+
+- exactamente dos previews anteriores;
+- ambas `lanzo-store`, preview y `production=false`;
+- ambas `FAILED_CERTIFICATION`, preservadas y con `evidencePass=false`;
+- solamente hashes SHA-256 de sus identificadores;
+- fallos ordenados
+  `FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH` y
+  `TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH`;
+- candidato descendiente directo o con ancestry Git validada desde la segunda;
+- corrección ligada a `TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH`;
+- exactamente una preview correctiva ya ejecutada;
+- una sola certificación final autorizada y todavía no ejecutada;
+- comando exacto `vercel deploy --prebuilt --yes`;
+- `maximumTotalPreviewCount=3` y `fourthPreviewForbidden=true`;
+- producción, `--prod`, promoción y aliases prohibidos.
+
+Se rechaza cualquier tercera evidencia fallida seguida de otro intento, una
+preview anterior con PASS, ausencia de preservación, ID plano, orden de fallos
+contradictorio, corrección no relacionada o certificación final ya ejecutada.
+
+### Estado y riesgo residual
+
+Pruebas focales iniciales:
+
+```text
+storeBuildOutputAudit.test.js            = 55 PASS, Node 24
+storeRemoteValidation.test.js            = 41 PASS
+store/tests/social-preview               = 571 PASS / 2 skips Windows
+equivalencia explícita Node 22           = 96 PASS
+artifact nuevo generado                  = no
+preview final creada                     = no
+producción modificada                    = no
+Supabase modificado                      = no
+```
+
+Node 22 se usa únicamente como equivalencia CI explícita de la semántica de
+módulos y siempre declara `nodejs22.x` en sus fixtures; el artifact real
+continúa exigiendo coincidencia `nodejs24.x` con Node 24.
+
+Riesgo residual: hace falta generar un artifact nuevo desde el HEAD final y
+ejecutar la única preview de certificación final autorizada. Hasta entonces la
+certificación externa permanece `BLOCKED`. Este cambio no genera artifact ni
+deployment.

@@ -173,9 +173,66 @@ const PREVIEW_DEPLOYMENT_PLAN_KEYS = new Set([
   'correctivePreviewNumber',
   'correctivePreviewExecuted',
   'previousCorrectivePreviewDeployments',
+  'previousPreviews',
+  'finalCertificationAuthorized',
+  'finalCertificationNumber',
+  'finalCertificationExecuted',
   'commandArgs',
 ]);
 const CORRECTIVE_RUNTIME_FAILURE = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
+const TRANSITIVE_RUNTIME_FAILURE = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
+const PREVIOUS_PREVIEW_HISTORY_KEYS = new Set([
+  'projectName',
+  'deploymentType',
+  'production',
+  'status',
+  'evidencePass',
+  'deploymentIdHash',
+  'head',
+  'preserved',
+  'failureCode',
+]);
+
+function validateFailedPreviewHistoryEntry(entry, index) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`Previous preview history entry ${index + 1} must be an object.`);
+  }
+  const unexpected = Object.keys(entry)
+    .filter((key) => !PREVIOUS_PREVIEW_HISTORY_KEYS.has(key));
+  if (unexpected.length > 0) {
+    throw new Error(`Unexpected or unsanitized previous preview evidence: ${unexpected.join(', ')}.`);
+  }
+  if (
+    entry.projectName !== 'lanzo-store'
+    || entry.deploymentType !== 'preview'
+    || entry.production !== false
+  ) {
+    throw new Error(`Previous preview ${index + 1} must be a non-production lanzo-store preview.`);
+  }
+  if (entry.status !== 'FAILED_CERTIFICATION' || entry.evidencePass !== false) {
+    throw new Error(`Previous preview ${index + 1} must be failed without PASS evidence.`);
+  }
+  if (!/^[a-f0-9]{64}$/u.test(entry.deploymentIdHash || '')) {
+    throw new Error(`Previous preview ${index + 1} requires only a SHA-256 deployment ID hash.`);
+  }
+  if (!/^[a-f0-9]{40}$/u.test(entry.head || '')) {
+    throw new Error(`Previous preview ${index + 1} requires a full deployed Git HEAD.`);
+  }
+  if (entry.preserved !== true) {
+    throw new Error(`Previous preview ${index + 1} must remain preserved.`);
+  }
+  return Object.freeze({
+    projectName: entry.projectName,
+    deploymentType: entry.deploymentType,
+    production: false,
+    status: entry.status,
+    evidencePass: false,
+    deploymentIdHash: entry.deploymentIdHash,
+    head: entry.head,
+    preserved: true,
+    failureCode: entry.failureCode,
+  });
+}
 
 export function validatePreviewDeploymentPlan(plan = {}) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
@@ -210,6 +267,10 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     correctivePreviewNumber,
     correctivePreviewExecuted,
     previousCorrectivePreviewDeployments,
+    previousPreviews,
+    finalCertificationAuthorized,
+    finalCertificationNumber,
+    finalCertificationExecuted,
     commandArgs,
   } = plan;
   if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
@@ -222,14 +283,8 @@ export function validatePreviewDeploymentPlan(plan = {}) {
   if (!/^[a-f0-9]{40}$/u.test(head || '')) {
     throw new Error('The candidate deployment HEAD must be a full Git SHA-1.');
   }
-  if (![0, 1].includes(previousPreviewDeployments)) {
-    throw new Error('At most one previous preview deployment is allowed.');
-  }
-  if (correctivePreviewExecuted !== false) {
-    throw new Error('The planned preview must not have been executed already.');
-  }
-  if (previousCorrectivePreviewDeployments !== 0) {
-    throw new Error('A second corrective preview is forbidden.');
+  if (![0, 1, 2].includes(previousPreviewDeployments)) {
+    throw new Error('At most two failed previews may precede the final certification.');
   }
 
   const previousEvidenceFields = [
@@ -246,6 +301,10 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     headAncestryVerified,
     previousFailureCode,
     correctionFailureCode,
+    previousPreviews,
+    finalCertificationAuthorized,
+    finalCertificationNumber,
+    finalCertificationExecuted,
   ];
   if (deploymentPolicy === 'single-preview') {
     if (previousPreviewDeployments !== 0) {
@@ -259,6 +318,12 @@ export function validatePreviewDeploymentPlan(plan = {}) {
       || correctivePreviewNumber !== 0
     ) {
       throw new Error('The initial preview cannot claim corrective authorization.');
+    }
+    if (
+      correctivePreviewExecuted !== false
+      || previousCorrectivePreviewDeployments !== 0
+    ) {
+      throw new Error('Initial preview execution history is contradictory.');
     }
     return Object.freeze({
       deploymentPolicy,
@@ -275,75 +340,148 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     });
   }
 
-  if (deploymentPolicy !== 'single-corrective-preview') {
-    throw new Error('The deployment policy must explicitly select initial or corrective preview.');
+  if (deploymentPolicy === 'single-corrective-preview') {
+    if (previousPreviewDeployments !== 1) {
+      throw new Error('The corrective preview requires exactly one previous preview.');
+    }
+    if (
+      previousPreviewProjectName !== 'lanzo-store'
+      || previousPreviewDeploymentType !== 'preview'
+      || previousPreviewProduction !== false
+    ) {
+      throw new Error('The previous deployment must be a non-production lanzo-store preview.');
+    }
+    if (
+      previousPreviewStatus !== 'FAILED_CERTIFICATION'
+      || previousPreviewEvidencePass !== false
+    ) {
+      throw new Error('The previous preview must have failed certification without PASS evidence.');
+    }
+    if (!/^[a-f0-9]{64}$/u.test(previousPreviewDeploymentIdHash || '')) {
+      throw new Error('Only a SHA-256 deployment ID hash is allowed in corrective history.');
+    }
+    if (
+      !/^[a-f0-9]{40}$/u.test(previousPreviewHead || '')
+      || previousPreviewHead === head
+    ) {
+      throw new Error('Corrective history requires distinct full deployed and candidate HEADs.');
+    }
+    const directDescendant = headRelationship === 'direct-descendant'
+      && headParent === previousPreviewHead;
+    const validatedDescendant = headRelationship === 'validated-descendant'
+      && headAncestryVerified === true;
+    if (!directDescendant && !validatedDescendant) {
+      throw new Error('The corrective HEAD must be a direct or validated descendant.');
+    }
+    if (
+      previousFailureCode !== CORRECTIVE_RUNTIME_FAILURE
+      || correctionFailureCode !== previousFailureCode
+    ) {
+      throw new Error('The corrective change must match the diagnosed preview failure.');
+    }
+    if (previousPreviewPreserved !== true) {
+      throw new Error('The failed preview must remain preserved as diagnostic evidence.');
+    }
+    if (
+      correctivePreviewAuthorized !== true
+      || correctivePreviewNumber !== 1
+      || correctivePreviewExecuted !== false
+      || previousCorrectivePreviewDeployments !== 0
+    ) {
+      throw new Error('Exactly one unexecuted corrective preview must be explicitly authorized.');
+    }
+    return Object.freeze({
+      deploymentPolicy,
+      projectName,
+      deploymentType,
+      previousPreviewCount: 1,
+      previousPreviewProjectName,
+      previousPreviewDeploymentType,
+      previousPreviewFailedCertification: true,
+      previousPreviewEvidencePass: false,
+      previousPreviewDeploymentIdHash,
+      previousPreviewHead,
+      previousPreviewPreserved: true,
+      candidateHead: head,
+      headRelationship,
+      headAncestryVerified: directDescendant ? true : headAncestryVerified,
+      correctionFailureCode,
+      correctivePreviewAuthorized: true,
+      correctivePreviewNumber: 1,
+      correctivePreviewExecuted: false,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
   }
-  if (previousPreviewDeployments !== 1) {
-    throw new Error('The corrective preview requires exactly one previous preview.');
+
+  if (deploymentPolicy !== 'single-final-certification-preview') {
+    throw new Error('The deployment policy must explicitly select initial, corrective, or final preview.');
   }
+  if (previousPreviewDeployments !== 2 || !Array.isArray(previousPreviews) || previousPreviews.length !== 2) {
+    throw new Error('Final certification requires exactly two previous failed previews.');
+  }
+  const sanitizedHistory = previousPreviews
+    .map((entry, index) => validateFailedPreviewHistoryEntry(entry, index));
   if (
-    previousPreviewProjectName !== 'lanzo-store'
-    || previousPreviewDeploymentType !== 'preview'
-    || previousPreviewProduction !== false
+    sanitizedHistory[0].failureCode !== CORRECTIVE_RUNTIME_FAILURE
+    || sanitizedHistory[1].failureCode !== TRANSITIVE_RUNTIME_FAILURE
   ) {
-    throw new Error('The previous deployment must be a non-production lanzo-store preview.');
+    throw new Error('Final certification history must contain the two diagnosed runtime failures in order.');
   }
-  if (
-    previousPreviewStatus !== 'FAILED_CERTIFICATION'
-    || previousPreviewEvidencePass !== false
-  ) {
-    throw new Error('The previous preview must have failed certification without PASS evidence.');
-  }
-  if (!/^[a-f0-9]{64}$/u.test(previousPreviewDeploymentIdHash || '')) {
-    throw new Error('Only a SHA-256 deployment ID hash is allowed in corrective history.');
-  }
-  if (
-    !/^[a-f0-9]{40}$/u.test(previousPreviewHead || '')
-    || previousPreviewHead === head
-  ) {
-    throw new Error('Corrective history requires distinct full deployed and candidate HEADs.');
-  }
+  const latestPreviewHead = sanitizedHistory[1].head;
   const directDescendant = headRelationship === 'direct-descendant'
-    && headParent === previousPreviewHead;
+    && headParent === latestPreviewHead;
   const validatedDescendant = headRelationship === 'validated-descendant'
     && headAncestryVerified === true;
-  if (!directDescendant && !validatedDescendant) {
-    throw new Error('The corrective HEAD must be a direct or validated descendant.');
+  if (
+    head === latestPreviewHead
+    || (!directDescendant && !validatedDescendant)
+  ) {
+    throw new Error('The final certification HEAD must descend from the latest failed preview.');
   }
   if (
-    previousFailureCode !== CORRECTIVE_RUNTIME_FAILURE
+    previousFailureCode !== TRANSITIVE_RUNTIME_FAILURE
     || correctionFailureCode !== previousFailureCode
   ) {
-    throw new Error('The corrective change must match the diagnosed preview failure.');
-  }
-  if (previousPreviewPreserved !== true) {
-    throw new Error('The failed preview must remain preserved as diagnostic evidence.');
+    throw new Error('The final certification correction must match the transitive module failure.');
   }
   if (
-    correctivePreviewAuthorized !== true
-    || correctivePreviewNumber !== 1
+    previousCorrectivePreviewDeployments !== 1
+    || finalCertificationAuthorized !== true
+    || finalCertificationNumber !== 1
+    || finalCertificationExecuted !== false
   ) {
-    throw new Error('Exactly one corrective preview must be explicitly authorized.');
+    throw new Error('Exactly one unexecuted final certification preview must be authorized.');
+  }
+  if (
+    correctivePreviewAuthorized !== undefined
+    || correctivePreviewNumber !== undefined
+    || correctivePreviewExecuted !== undefined
+  ) {
+    throw new Error('Final certification evidence cannot reuse corrective authorization fields.');
   }
   return Object.freeze({
     deploymentPolicy,
     projectName,
     deploymentType,
-    previousPreviewCount: 1,
-    previousPreviewProjectName,
-    previousPreviewDeploymentType,
-    previousPreviewFailedCertification: true,
+    previousPreviewCount: 2,
+    previousPreviewFailedCertifications: 2,
     previousPreviewEvidencePass: false,
-    previousPreviewDeploymentIdHash,
-    previousPreviewHead,
-    previousPreviewPreserved: true,
+    previousPreviewsPreserved: sanitizedHistory.every((entry) => entry.preserved),
+    previousPreviewDeploymentIdHashes: Object.freeze(
+      sanitizedHistory.map((entry) => entry.deploymentIdHash),
+    ),
+    previousPreviewHeads: Object.freeze(sanitizedHistory.map((entry) => entry.head)),
+    previousFailureCodes: Object.freeze(sanitizedHistory.map((entry) => entry.failureCode)),
     candidateHead: head,
     headRelationship,
     headAncestryVerified: directDescendant ? true : headAncestryVerified,
     correctionFailureCode,
-    correctivePreviewAuthorized: true,
-    correctivePreviewNumber: 1,
-    correctivePreviewExecuted: false,
+    finalCertificationAuthorized: true,
+    finalCertificationNumber: 1,
+    finalCertificationExecuted: false,
+    maximumTotalPreviewCount: 3,
+    fourthPreviewForbidden: true,
     command: 'vercel deploy --prebuilt --yes',
     production: false,
   });

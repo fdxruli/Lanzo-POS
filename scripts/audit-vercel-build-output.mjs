@@ -17,6 +17,10 @@ const NOINDEX = 'noindex, nofollow, noarchive';
 const STATIC_CACHE = 'public, max-age=0, must-revalidate';
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 const EXPECTED_STORE_FUNCTIONS = Object.freeze(['/api/og/store', '/api/store-page']);
+const EXPECTED_TRANSITIVE_RUNTIME_MODULES = Object.freeze({
+  '/api/og/store': Object.freeze([]),
+  '/api/store-page': Object.freeze(['store/generated/storeHtmlTemplate.js']),
+});
 const EXPECTED_STORE_TARGET_ENVIRONMENT = 'preview';
 const STORE_WORKSPACE_PREFIX = 'lanzo-store-social-preview-1-6-';
 const targets = Object.freeze({
@@ -708,6 +712,229 @@ function smokeLoadGeneratedHandler(handlerPath, bundleRoot, runtime) {
   });
 }
 
+const runtimeModuleSmokeSource = String.raw`
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+globalThis.fetch = async () => { throw new Error('NETWORK_DISABLED_DURING_MODULE_LOAD'); };
+try {
+  await import(pathToFileURL(path.resolve(process.argv[1])).href);
+  process.stdout.write('__LANZO_SMOKE__' + JSON.stringify({ loaded: true }));
+} catch (error) {
+  process.stderr.write('__LANZO_SMOKE__' + JSON.stringify({
+    loaded: false,
+    name: String(error?.name || 'Error'),
+    code: String(error?.code || ''),
+    message: String(error?.message || 'runtime module load failed').slice(0, 500),
+  }));
+  process.exit(1);
+}
+`;
+
+const requestSmokeSource = String.raw`
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+const handlerPath = path.resolve(process.argv[1]);
+const route = process.argv[2];
+let controlledFetchCalls = 0;
+globalThis.fetch = async () => {
+  controlledFetchCalls += 1;
+  throw Object.assign(new Error('CONTROLLED_EXTERNAL_FETCH_BLOCKED'), {
+    code: 'CONTROLLED_EXTERNAL_FETCH_BLOCKED',
+  });
+};
+const invocable = (value) => typeof value === 'function'
+  || typeof value?.fetch === 'function'
+  || typeof value?.handler === 'function';
+const candidateFrom = (loaded) => invocable(loaded.default)
+  ? loaded.default
+  : invocable(loaded.default?.default)
+    ? loaded.default.default
+    : invocable(loaded)
+      ? loaded
+      : null;
+const invoke = async (candidate, request) => {
+  if (typeof candidate === 'function') return candidate(request);
+  if (typeof candidate?.fetch === 'function') return candidate.fetch(request);
+  return candidate.handler(request);
+};
+try {
+  const loaded = await import(pathToFileURL(handlerPath).href);
+  const candidate = candidateFrom(loaded);
+  if (!candidate) throw Object.assign(new TypeError('HANDLER_INTERFACE_NOT_INVOKABLE'), {
+    code: 'HANDLER_INTERFACE_NOT_INVOKABLE',
+  });
+  const requestUrl = route === '/api/store-page'
+    ? 'https://preview.invalid/api/store-page?slug=farmaciagary'
+    : 'https://preview.invalid/api/og/store?slug=farmaciagary';
+  const response = await invoke(candidate, new Request(requestUrl, { method: 'GET' }));
+  if (!response || typeof response.status !== 'number' || typeof response.arrayBuffer !== 'function') {
+    throw Object.assign(new TypeError('HANDLER_RESPONSE_NOT_RESPONSE_LIKE'), {
+      code: 'HANDLER_RESPONSE_NOT_RESPONSE_LIKE',
+    });
+  }
+  const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+  const payload = {
+    loaded: true,
+    invocable: true,
+    fetchExists: typeof globalThis.fetch === 'function',
+    requestFinished: true,
+    status: response.status,
+    contentType,
+    controlledFetchCalls,
+    externalNetworkDisabled: true,
+  };
+  if (route === '/api/store-page') {
+    const body = await response.text();
+    payload.html = contentType.includes('text/html');
+    payload.fallback500Absent = !body.includes('Store page temporarily unavailable.');
+    payload.doctype = /^\s*<!doctype html>/iu.test(body);
+    payload.rootCount = (body.match(/\bid=["']root["']/giu) || []).length;
+    payload.transitiveTemplateLoaded = payload.html
+      && payload.fallback500Absent
+      && payload.doctype
+      && payload.rootCount === 1;
+    payload.failureReason = payload.fallback500Absent
+      ? null
+      : 'FINAL_TEMPLATE_FALLBACK_500';
+    payload.passed = response.status !== 500
+      && payload.fetchExists
+      && payload.transitiveTemplateLoaded;
+  } else {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    payload.png = contentType.includes('image/png')
+      && bytes.length >= 8
+      && bytes[0] === 137
+      && bytes[1] === 80
+      && bytes[2] === 78
+      && bytes[3] === 71
+      && bytes[4] === 13
+      && bytes[5] === 10
+      && bytes[6] === 26
+      && bytes[7] === 10;
+    payload.bytes = bytes.length;
+    payload.passed = response.status !== 500
+      && payload.fetchExists
+      && payload.png;
+  }
+  const output = '__LANZO_SMOKE__' + JSON.stringify(payload);
+  (payload.passed ? process.stdout : process.stderr).write(output);
+  if (!payload.passed) process.exit(1);
+} catch (error) {
+  process.stderr.write('__LANZO_SMOKE__' + JSON.stringify({
+    loaded: false,
+    invocable: false,
+    fetchExists: typeof globalThis.fetch === 'function',
+    requestFinished: false,
+    controlledFetchCalls,
+    externalNetworkDisabled: true,
+    passed: false,
+    name: String(error?.name || 'Error'),
+    code: String(error?.code || ''),
+    message: String(error?.message || 'handler request failed').slice(0, 500),
+  }));
+  process.exit(1);
+}
+`;
+
+function parseMarkedSmokePayload(value) {
+  const marker = '__LANZO_SMOKE__';
+  const raw = String(value || '');
+  const markerIndex = raw.lastIndexOf(marker);
+  if (markerIndex < 0) return null;
+  try {
+    return JSON.parse(raw.slice(markerIndex + marker.length));
+  } catch {
+    return null;
+  }
+}
+
+function runtimeSmokeProcess(source, args, bundleRoot, runtime, timeout = 15_000) {
+  const runtimeMajor = Number(/^nodejs(\d+)(?:\.x)?$/u.exec(runtime || '')?.[1]);
+  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', source, ...args], {
+    cwd: bundleRoot,
+    encoding: 'utf8',
+    timeout,
+    maxBuffer: 2 * 1024 * 1024,
+    windowsHide: true,
+    env: {
+      NODE_ENV: 'test',
+      PUBLIC_STORE_ORIGINS: 'https://preview.invalid',
+      VITE_SUPABASE_URL: 'https://supabase.invalid',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_runtime_smoke_fixture',
+    },
+  });
+  const rawPayload = result.status === 0 ? result.stdout : result.stderr;
+  return {
+    result,
+    payload: parseMarkedSmokePayload(rawPayload),
+    rawPayload,
+    nodeMajor,
+    runtimeMajor: Number.isInteger(runtimeMajor) ? runtimeMajor : null,
+  };
+}
+
+function smokeLoadGeneratedRuntimeModule(modulePath, bundleRoot, runtime) {
+  const smoke = runtimeSmokeProcess(
+    runtimeModuleSmokeSource,
+    [modulePath],
+    bundleRoot,
+    runtime,
+  );
+  return Object.freeze({
+    nodeMajor: smoke.nodeMajor,
+    runtimeMajor: smoke.runtimeMajor,
+    nodeMajorMatchesRuntime: smoke.nodeMajor === smoke.runtimeMajor,
+    exitCode: Number.isInteger(smoke.result.status) ? smoke.result.status : null,
+    signal: smoke.result.signal || null,
+    timedOut: smoke.result.error?.code === 'ETIMEDOUT',
+    loaded: smoke.result.status === 0 && smoke.payload?.loaded === true,
+    error: smoke.result.status === 0
+      ? null
+      : sanitizeHandlerSmokeError(smoke.rawPayload, bundleRoot),
+  });
+}
+
+function smokeInvokeGeneratedHandler(handlerPath, bundleRoot, runtime, route) {
+  const smoke = runtimeSmokeProcess(
+    requestSmokeSource,
+    [handlerPath, route],
+    bundleRoot,
+    runtime,
+    30_000,
+  );
+  return Object.freeze({
+    nodeMajor: smoke.nodeMajor,
+    runtimeMajor: smoke.runtimeMajor,
+    nodeMajorMatchesRuntime: smoke.nodeMajor === smoke.runtimeMajor,
+    exitCode: Number.isInteger(smoke.result.status) ? smoke.result.status : null,
+    signal: smoke.result.signal || null,
+    timedOut: smoke.result.error?.code === 'ETIMEDOUT',
+    loaded: smoke.payload?.loaded === true,
+    invocable: smoke.payload?.invocable === true,
+    fetchExists: smoke.payload?.fetchExists === true,
+    requestFinished: smoke.payload?.requestFinished === true,
+    status: Number.isInteger(smoke.payload?.status) ? smoke.payload.status : null,
+    contentType: smoke.payload?.contentType || null,
+    controlledFetchCalls: Number.isInteger(smoke.payload?.controlledFetchCalls)
+      ? smoke.payload.controlledFetchCalls
+      : null,
+    externalNetworkDisabled: smoke.payload?.externalNetworkDisabled === true,
+    html: smoke.payload?.html === true,
+    fallback500Absent: smoke.payload?.fallback500Absent === true,
+    doctype: smoke.payload?.doctype === true,
+    rootCount: Number.isInteger(smoke.payload?.rootCount) ? smoke.payload.rootCount : null,
+    transitiveTemplateLoaded: smoke.payload?.transitiveTemplateLoaded === true,
+    failureReason: smoke.payload?.failureReason || null,
+    png: smoke.payload?.png === true,
+    bytes: Number.isInteger(smoke.payload?.bytes) ? smoke.payload.bytes : null,
+    passed: smoke.result.status === 0 && smoke.payload?.passed === true,
+    error: smoke.result.status === 0
+      ? null
+      : sanitizeHandlerSmokeError(smoke.rawPayload, bundleRoot),
+  });
+}
+
 function executableImportSpecifiers(source) {
   const tokens = tokenizeJavaScript(source);
   const specifiers = [];
@@ -766,6 +993,119 @@ async function localImportExists(resolvedPath) {
     } catch { /* try the next Node-compatible local resolution candidate */ }
   }
   return false;
+}
+
+async function resolveRuntimeLocalModule(specifier, fromPath, bundleRoot) {
+  if (!String(specifier).startsWith('.')) return null;
+  const resolvedPath = path.resolve(path.dirname(fromPath), specifier);
+  const relativeResolved = normalizePath(path.relative(bundleRoot, resolvedPath));
+  if (relativeResolved.startsWith('../') || path.isAbsolute(relativeResolved)) return null;
+  const candidates = [
+    resolvedPath,
+    ...['.js', '.jsx', '.mjs', '.cjs'].map((extension) => `${resolvedPath}${extension}`),
+    ...['index.js', 'index.jsx', 'index.mjs', 'index.cjs']
+      .map((name) => path.join(resolvedPath, name)),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (
+        (await stat(candidate)).isFile()
+        && executableExtensions.has(path.extname(candidate).toLowerCase())
+      ) return candidate;
+    } catch { /* try the next Node-compatible executable candidate */ }
+  }
+  return null;
+}
+
+function requiredGeneratedPackageScope(route, relativePath, extension) {
+  if (extension !== '.js') return null;
+  if (relativePath.startsWith('store/api/')) return 'store/api/package.json';
+  if ((EXPECTED_TRANSITIVE_RUNTIME_MODULES[route] || []).includes(relativePath)) {
+    return 'store/generated/package.json';
+  }
+  if (relativePath.startsWith('store/generated/')) return '__UNAPPROVED_GENERATED_SCOPE__';
+  return null;
+}
+
+async function inspectGeneratedRuntimeModules({
+  handlerPath,
+  bundleRoot,
+  route,
+  runtime,
+  handler,
+}) {
+  const pending = [handlerPath];
+  const visited = new Set();
+  const modules = [];
+  while (pending.length > 0) {
+    const modulePath = pending.shift();
+    const absolutePath = path.resolve(modulePath);
+    if (visited.has(absolutePath)) continue;
+    visited.add(absolutePath);
+    const relativePath = normalizePath(path.relative(bundleRoot, absolutePath));
+    let source;
+    try {
+      source = await readFile(absolutePath, 'utf8');
+    } catch {
+      modules.push({
+        path: relativePath,
+        exists: false,
+        readable: false,
+        extension: path.extname(relativePath).toLowerCase(),
+        syntax: null,
+        packageType: null,
+        packageScope: null,
+        packageReadable: false,
+        requiredPackageScope: null,
+        scopeNarrow: false,
+        interpretedAs: null,
+        compatible: false,
+        smoke: null,
+      });
+      continue;
+    }
+    const extension = path.extname(relativePath).toLowerCase();
+    const syntax = classifyGeneratedHandlerSyntax(source);
+    const packageScope = await effectivePackageScope(absolutePath, bundleRoot);
+    const interpretedAs = interpretedModuleFormat(extension, packageScope.packageType);
+    const compatible = (
+      syntax === 'commonjs' && interpretedAs === 'commonjs'
+    ) || (
+      syntax === 'module' && interpretedAs === 'module'
+    );
+    const requiredPackageScope = requiredGeneratedPackageScope(route, relativePath, extension);
+    const scopeNarrow = requiredPackageScope === null
+      || packageScope.packageScope === requiredPackageScope;
+    modules.push({
+      path: relativePath,
+      exists: true,
+      readable: true,
+      extension,
+      syntax,
+      packageType: packageScope.packageType,
+      packageScope: packageScope.packageScope,
+      packageReadable: packageScope.packageReadable,
+      requiredPackageScope,
+      scopeNarrow,
+      interpretedAs,
+      compatible,
+      smoke: smokeLoadGeneratedRuntimeModule(absolutePath, bundleRoot, runtime),
+    });
+    for (const specifier of executableImportSpecifiers(source)) {
+      const resolved = await resolveRuntimeLocalModule(specifier, absolutePath, bundleRoot);
+      if (resolved && !visited.has(path.resolve(resolved))) pending.push(resolved);
+    }
+  }
+  modules.sort((left, right) => left.path.localeCompare(right.path));
+  const expectedTransitiveModules = handler === 'store/api/store-page.js'
+    ? EXPECTED_TRANSITIVE_RUNTIME_MODULES[route] || []
+    : [];
+  const paths = modules.map((item) => item.path);
+  return Object.freeze({
+    expectedTransitiveModules: Object.freeze([...expectedTransitiveModules]),
+    expectedTransitiveModulesPresent: expectedTransitiveModules.every((item) => paths.includes(item)),
+    modules: Object.freeze(modules.map((item) => Object.freeze(item))),
+  });
 }
 
 /** Audit only real executable import syntax; sourcemap text is intentionally excluded. */
@@ -996,6 +1336,51 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
         invocable: false,
         error: 'DECLARED_HANDLER_NOT_FOUND',
       });
+    const runtimeModules = handlerPath
+      ? await inspectGeneratedRuntimeModules({
+          handlerPath,
+          bundleRoot: bundle.absolutePath,
+          route: bundle.route,
+          runtime: bundle.config?.runtime,
+          handler,
+        })
+      : Object.freeze({
+          expectedTransitiveModules: Object.freeze([]),
+          expectedTransitiveModulesPresent: false,
+          modules: Object.freeze([]),
+        });
+    const requestSmoke = handlerPath
+      ? smokeInvokeGeneratedHandler(
+          handlerPath,
+          bundle.absolutePath,
+          bundle.config?.runtime,
+          bundle.route,
+        )
+      : Object.freeze({
+          nodeMajor: Number(process.versions.node.split('.')[0]),
+          runtimeMajor: null,
+          nodeMajorMatchesRuntime: false,
+          exitCode: null,
+          signal: null,
+          timedOut: false,
+          loaded: false,
+          invocable: false,
+          fetchExists: false,
+          requestFinished: false,
+          status: null,
+          contentType: null,
+          controlledFetchCalls: null,
+          externalNetworkDisabled: false,
+          html: false,
+          fallback500Absent: false,
+          doctype: false,
+          rootCount: null,
+          transitiveTemplateLoaded: false,
+          png: false,
+          bytes: null,
+          passed: false,
+          error: 'DECLARED_HANDLER_NOT_FOUND',
+        });
     details.push({
       route: bundle.route,
       rawRoute: bundle.rawRoute,
@@ -1017,6 +1402,8 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
         compatible: moduleFormatCompatible,
         smoke: runtimeSmoke,
       },
+      runtimeModules,
+      requestSmoke,
       sourceMaps: sourceMaps.map((item) => item.path),
       internalFunctionSourceMaps: sourceMaps,
       fonts: await inspectFunctionFonts(bundle, paths),
@@ -1046,10 +1433,33 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
     readableConfigs: details.every((item) => item.configReadable),
     validRuntime: details.every((item) => /^nodejs\d+(?:\.x)?$/u.test(item.runtime || '')),
     validHandlers: details.every((item) => item.handlerPresent),
-    functionPackageScopesReadable: details.every((item) => item.module.packageReadable),
-    functionModuleFormatsCompatible: details.every((item) => item.module.compatible),
+    functionPackageScopesReadable: details.every((item) => (
+      item.module.packageReadable
+      && item.runtimeModules.modules.every((module) => module.packageReadable)
+    )),
+    functionModuleFormatsCompatible: details.every((item) => (
+      item.module.compatible
+      && item.runtimeModules.modules.every((module) => module.compatible)
+    )),
+    functionRuntimeModulesPresent: details.every((item) => (
+      item.runtimeModules.expectedTransitiveModulesPresent
+      && item.runtimeModules.modules.every((module) => module.exists && module.readable)
+    )),
+    functionRuntimeModuleScopesNarrow: details.every((item) => (
+      item.runtimeModules.modules.every((module) => module.scopeNarrow)
+    )),
+    functionRuntimeModulesLoadable: details.every((item) => (
+      item.runtimeModules.modules.length > 0
+      && item.runtimeModules.modules.every((module) => (
+        module.smoke?.exitCode === 0
+        && module.smoke.loaded
+        && !module.smoke.timedOut
+      ))
+    )),
     functionNodeMajorMatchesRuntime: details.every((item) => (
       item.module.smoke.nodeMajorMatchesRuntime
+      && item.requestSmoke.nodeMajorMatchesRuntime
+      && item.runtimeModules.modules.every((module) => module.smoke?.nodeMajorMatchesRuntime)
     )),
     functionHandlersLoadable: details.every((item) => (
       item.module.smoke.exitCode === 0
@@ -1057,11 +1467,36 @@ async function inspectFunctions(functionsRoot, sourceStaticPath, outputConfig) {
       && !item.module.smoke.timedOut
     )),
     functionHandlersInvocable: details.every((item) => item.module.smoke.invocable),
+    functionRequestsCompleted: details.every((item) => (
+      item.requestSmoke.exitCode === 0
+      && item.requestSmoke.loaded
+      && item.requestSmoke.invocable
+      && item.requestSmoke.fetchExists
+      && item.requestSmoke.requestFinished
+      && item.requestSmoke.externalNetworkDisabled
+      && item.requestSmoke.passed
+    )),
+    storePageEndToEndSmokePassed: htmlFunction?.requestSmoke.passed === true
+      && htmlFunction.requestSmoke.status !== 500
+      && htmlFunction.requestSmoke.html
+      && htmlFunction.requestSmoke.fallback500Absent
+      && htmlFunction.requestSmoke.doctype
+      && htmlFunction.requestSmoke.rootCount === 1
+      && htmlFunction.requestSmoke.transitiveTemplateLoaded,
+    ogEndToEndSmokePassed: ogFunction?.requestSmoke.passed === true
+      && ogFunction.requestSmoke.status !== 500
+      && ogFunction.requestSmoke.png
+      && Number.isInteger(ogFunction.requestSmoke.bytes)
+      && ogFunction.requestSmoke.bytes >= 8,
+    noExternalSmokeRequests: details.every((item) => (
+      item.requestSmoke.externalNetworkDisabled === true
+    )),
     independentFunctionSmokePassed: details.length === EXPECTED_STORE_FUNCTIONS.length
       && details.every((item) => (
         item.module.smoke.exitCode === 0
         && item.module.smoke.loaded
         && item.module.smoke.invocable
+        && item.requestSmoke.passed
       )),
     internalFunctionSourceMapsSafe: details.every((item) => item.internalFunctionSourceMaps.every((map) => (
       map.generatedBy === '@vercel/node (inferred)'

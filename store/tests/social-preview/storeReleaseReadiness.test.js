@@ -749,7 +749,14 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW.1.8 release readiness', () => {
               ? 'store/api/og/store.js'
               : 'store/api/store-page.js';
             mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
-            writeFileSync(path.join(bundleRoot, handler), 'export default {};\n');
+            writeFileSync(path.join(bundleRoot, handler), 'export default {fetch(){}};\n');
+            if (!relativeRoute.includes('/og/')) {
+              mkdirSync(path.join(bundleRoot, 'store', 'generated'), { recursive: true });
+              writeFileSync(
+                path.join(bundleRoot, 'store', 'generated', 'storeHtmlTemplate.js'),
+                'export const STORE_HTML_TEMPLATE="<!doctype html><div id=\\"root\\"></div>";\n',
+              );
+            }
             writeFileSync(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({
               runtime: 'nodejs22.x',
               handler,

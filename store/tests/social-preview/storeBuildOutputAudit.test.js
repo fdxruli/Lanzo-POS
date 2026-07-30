@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   writeFile,
@@ -83,7 +84,11 @@ async function createFunction(functionsRoot, relativeRoute, source) {
       await writeFile(
         path.join(packageRoot, 'index.js'),
         packageName === '@vercel/og'
-          ? 'exports.ImageResponse=class ImageResponse {};\n'
+          ? `exports.ImageResponse=class ImageResponse extends Response{
+constructor(){super(Uint8Array.from([137,80,78,71,13,10,26,10]),{
+status:200,headers:{"Content-Type":"image/png"}
+});}
+};\n`
           : 'module.exports={fixture:true};\n',
       );
     }
@@ -135,12 +140,23 @@ function rejectsPrivileged(value,payload){
     || forbidden.test(value)
     || envName.length === 0;
 }
-export default function handler(){return [STORE_HTML_TEMPLATE,rejectsPrivileged];}`,
+export default {async fetch(){
+  if(typeof rejectsPrivileged!=='function') throw new Error('fixture guard missing');
+  return new Response(STORE_HTML_TEMPLATE,{
+    status:200,
+    headers:{"Content-Type":"text/html; charset=utf-8"}
+  });
+}};`,
   );
   await createFunction(
     functionsRoot,
     'api/og/store',
-    "import {ImageResponse} from '@vercel/og';import React from 'react';export default function handler(){return [ImageResponse,React];}",
+    `import {ImageResponse} from '@vercel/og';
+import React from 'react';
+export default {async fetch(){
+  if(!React) throw new Error('react fixture missing');
+  return new ImageResponse(null,{width:1200,height:630});
+}};`,
   );
   return {
     workspaceRoot,
@@ -198,24 +214,38 @@ describe('auditoría de .vercel/output', () => {
     ]);
   });
 
-  it('reproduce CommonJS .js bajo type=module y corrige el scope de ambas funciones', async () => {
+  it('reproduce el fallo transitorio de la plantilla y corrige atómicamente ambos scopes', async () => {
     const handlers = [
       {
         bundle: path.join(fixture.functionsRoot, 'api', 'store-page.func'),
         handler: 'store/api/store-page.js',
         source: `"use strict";
 Object.defineProperty(exports,"__esModule",{value:true});
-const STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};
-exports.default=function handler(){return STORE_HTML_TEMPLATE;};`,
+exports.default={fetch:async function(){
+  try{
+    const generated=await import("../generated/storeHtmlTemplate.js");
+    return new Response(generated.STORE_HTML_TEMPLATE,{
+      status:200,headers:{"Content-Type":"text/html; charset=utf-8"}
+    });
+  }catch{
+    return new Response("Store page temporarily unavailable.",{
+      status:500,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}
+    });
+  }
+}};`,
       },
       {
         bundle: path.join(fixture.functionsRoot, 'api', 'og', 'store.func'),
         handler: 'store/api/og/store.js',
         source: `"use strict";
 Object.defineProperty(exports,"__esModule",{value:true});
-const ImageResponse=require("@vercel/og");
+const {ImageResponse}=require("@vercel/og");
 const React=require("react");
-exports.default=function handler(){return [ImageResponse,React];};`,
+const runtimeHelper=require("../_ogRuntime.js");
+exports.default={fetch:async function(){
+  if(!React||!runtimeHelper.assertRuntime())throw new Error("OG runtime fixture missing");
+  return new ImageResponse(null,{width:1200,height:630});
+}};`,
       },
     ];
     for (const item of handlers) {
@@ -227,6 +257,18 @@ exports.default=function handler(){return [ImageResponse,React];};`,
       await mkdir(path.dirname(path.join(item.bundle, item.handler)), { recursive: true });
       await writeFile(path.join(item.bundle, item.handler), item.source);
     }
+    await writeFile(
+      path.join(handlers[1].bundle, 'store', 'api', '_ogRuntime.js'),
+      '"use strict";exports.assertRuntime=()=>true;',
+    );
+    const generatedRoot = path.join(handlers[0].bundle, 'store', 'generated');
+    await mkdir(generatedRoot, { recursive: true });
+    await writeFile(
+      path.join(generatedRoot, 'storeHtmlTemplate.js'),
+      `"use strict";
+Object.defineProperty(exports,"__esModule",{value:true});
+exports.STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};`,
+    );
 
     let result = await audit(fixture);
     expect(result.status).toBe('FAIL');
@@ -238,10 +280,73 @@ exports.default=function handler(){return [ImageResponse,React];};`,
       && bundle.module.smoke.exitCode !== 0
     ))).toBe(true);
 
+    for (const item of handlers) {
+      await writeJson(path.join(item.bundle, 'store', 'api', 'package.json'), {
+        type: 'commonjs',
+      });
+    }
+    result = await audit(fixture);
+    const failedStorePage = result.functionAudit.bundles
+      .find((bundle) => bundle.route === '/api/store-page');
+    expect(result.status).toBe('FAIL');
+    expect(result.checks.functionHandlersLoadable).toBe(true);
+    expect(result.checks.functionRuntimeModulesLoadable).toBe(false);
+    expect(result.checks.storePageEndToEndSmokePassed).toBe(false);
+    expect(failedStorePage.module.smoke).toMatchObject({
+      exitCode: 0,
+      loaded: true,
+      invocable: true,
+    });
+    expect(failedStorePage.runtimeModules.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'store/generated/storeHtmlTemplate.js',
+        syntax: 'commonjs',
+        packageType: 'module',
+        packageScope: 'package.json',
+        requiredPackageScope: 'store/generated/package.json',
+        scopeNarrow: false,
+        compatible: false,
+        smoke: expect.objectContaining({ loaded: false }),
+      }),
+    ]));
+    expect(failedStorePage.requestSmoke).toMatchObject({
+      loaded: true,
+      invocable: true,
+      fetchExists: true,
+      requestFinished: true,
+      status: 500,
+      contentType: 'text/plain; charset=utf-8',
+      fallback500Absent: false,
+      transitiveTemplateLoaded: false,
+      failureReason: 'FINAL_TEMPLATE_FALLBACK_500',
+      passed: false,
+      externalNetworkDisabled: true,
+    });
+
     const corrected = await applyGeneratedFunctionRuntimeCompatibility(fixture.functionsRoot);
     expect(corrected).toEqual([
-      expect.objectContaining({ route: '/api/og/store', packageType: 'commonjs', atomic: true }),
-      expect.objectContaining({ route: '/api/store-page', packageType: 'commonjs', atomic: true }),
+      expect.objectContaining({
+        route: '/api/og/store',
+        packageScope: 'store/api/package.json',
+        packageType: 'commonjs',
+        atomic: true,
+        idempotent: true,
+      }),
+      expect.objectContaining({
+        route: '/api/store-page',
+        packageScope: 'store/api/package.json',
+        packageType: 'commonjs',
+        atomic: true,
+        idempotent: true,
+      }),
+      expect.objectContaining({
+        route: '/api/store-page',
+        packageScope: 'store/generated/package.json',
+        modules: ['store/generated/storeHtmlTemplate.js'],
+        packageType: 'commonjs',
+        atomic: true,
+        created: true,
+      }),
     ]);
     for (const item of handlers) {
       expect(JSON.parse(await readFile(path.join(item.bundle, 'store', 'api', 'package.json'), 'utf8')))
@@ -249,11 +354,56 @@ exports.default=function handler(){return [ImageResponse,React];};`,
       expect(JSON.parse(await readFile(path.join(item.bundle, '.vc-config.json'), 'utf8')).handler)
         .toBe(item.handler);
     }
+    expect(JSON.parse(await readFile(path.join(generatedRoot, 'package.json'), 'utf8')))
+      .toEqual({ type: 'commonjs' });
+    expect((await readdir(generatedRoot)).some((name) => name.startsWith('.runtime-package-')))
+      .toBe(false);
+    const repeated = await applyGeneratedFunctionRuntimeCompatibility(fixture.functionsRoot);
+    expect(repeated).toHaveLength(3);
+    expect(repeated.every((scope) => scope.idempotent && !scope.created)).toBe(true);
+
     result = await audit(fixture);
     expect(result.status, JSON.stringify(result.failedChecks)).toBe('PASS');
     expect(result.checks.functionHandlersLoadable).toBe(true);
     expect(result.checks.functionHandlersInvocable).toBe(true);
+    expect(result.checks.functionRuntimeModulesPresent).toBe(true);
+    expect(result.checks.functionRuntimeModuleScopesNarrow).toBe(true);
+    expect(result.checks.functionRuntimeModulesLoadable).toBe(true);
+    expect(result.checks.functionRequestsCompleted).toBe(true);
+    expect(result.checks.storePageEndToEndSmokePassed).toBe(true);
+    expect(result.checks.ogEndToEndSmokePassed).toBe(true);
+    expect(result.checks.noExternalSmokeRequests).toBe(true);
     expect(result.checks.independentFunctionSmokePassed).toBe(true);
+    const correctedStorePage = result.functionAudit.bundles
+      .find((bundle) => bundle.route === '/api/store-page');
+    expect(correctedStorePage.requestSmoke).toMatchObject({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      html: true,
+      fallback500Absent: true,
+      doctype: true,
+      rootCount: 1,
+      transitiveTemplateLoaded: true,
+      passed: true,
+    });
+    const correctedOg = result.functionAudit.bundles
+      .find((bundle) => bundle.route === '/api/og/store');
+    expect(correctedOg.runtimeModules.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: 'store/api/_ogRuntime.js',
+        syntax: 'commonjs',
+        packageScope: 'store/api/package.json',
+        scopeNarrow: true,
+        compatible: true,
+        smoke: expect.objectContaining({ loaded: true }),
+      }),
+    ]));
+    expect(correctedOg.requestSmoke).toMatchObject({
+      status: 200,
+      contentType: 'image/png',
+      png: true,
+      passed: true,
+    });
   });
 
   it('rechaza un handler ESM .js bajo type=commonjs antes del deployment', async () => {

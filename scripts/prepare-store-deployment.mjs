@@ -294,16 +294,25 @@ export async function inspectGeneratedFunctionInventory(functionsRoot) {
   });
 }
 
-const GENERATED_FUNCTION_SCOPE = Object.freeze({
-  '/api/og/store': 'store/api',
-  '/api/store-page': 'store/api',
+const GENERATED_FUNCTION_SCOPES = Object.freeze({
+  '/api/og/store': Object.freeze([
+    Object.freeze({ directory: 'store/api', requiredModules: null }),
+  ]),
+  '/api/store-page': Object.freeze([
+    Object.freeze({ directory: 'store/api', requiredModules: null }),
+    Object.freeze({
+      directory: 'store/generated',
+      requiredModules: Object.freeze(['store/generated/storeHtmlTemplate.js']),
+    }),
+  ]),
 });
 
 /**
  * @vercel/node currently emits the two ESM sources as CommonJS .js files and
  * also copies the repository package.json ("type":"module") into each bundle.
- * Set the narrow generated store/api scope to the syntax Vercel actually
- * emitted. This never edits source handlers or package manifests.
+ * Set only the approved runtime directories to the syntax Vercel actually
+ * emitted. This covers the handler closure and the lazily imported generated
+ * HTML template without editing source handlers or repository manifests.
  */
 export async function applyGeneratedFunctionRuntimeCompatibility(functionsRoot) {
   const inventory = await inspectGeneratedFunctionInventory(functionsRoot);
@@ -312,36 +321,102 @@ export async function applyGeneratedFunctionRuntimeCompatibility(functionsRoot) 
   }
   const scopes = [];
   for (const bundle of inventory.bundles) {
-    const expectedScope = GENERATED_FUNCTION_SCOPE[bundle.route];
+    const expectedScopes = GENERATED_FUNCTION_SCOPES[bundle.route];
     const normalizedHandler = normalizePath(bundle.handler || '');
-    if (!expectedScope || !normalizedHandler.startsWith(`${expectedScope}/`)) {
+    const handlerScope = expectedScopes?.[0]?.directory;
+    if (!handlerScope || !normalizedHandler.startsWith(`${handlerScope}/`)) {
       throw new Error(`Generated handler is outside its approved runtime scope: ${bundle.route}.`);
     }
-    const handlerPath = path.join(functionsRoot, bundle.bundle, ...normalizedHandler.split('/'));
-    const source = await readFile(handlerPath, 'utf8');
-    const syntax = classifyGeneratedHandlerSyntax(source);
-    if (!['commonjs', 'module'].includes(syntax) || path.extname(handlerPath) !== '.js') {
-      throw new Error(`Generated handler format is not safely scopeable: ${bundle.route}.`);
+    for (const scope of expectedScopes) {
+      const scopeRoot = path.join(
+        functionsRoot,
+        bundle.bundle,
+        ...scope.directory.split('/'),
+      );
+      if (!await pathExists(scopeRoot)) {
+        throw new Error(`Generated runtime scope is missing: ${bundle.route}:${scope.directory}.`);
+      }
+      const moduleFiles = (await walk(scopeRoot))
+        .filter((file) => (
+          path.extname(file.relativePath).toLowerCase() === '.js'
+          && !normalizePath(file.relativePath).startsWith('node_modules/')
+        ));
+      const modules = moduleFiles
+        .map((file) => `${scope.directory}/${normalizePath(file.relativePath)}`)
+        .sort();
+      if (scope.requiredModules) {
+        if (JSON.stringify(modules) !== JSON.stringify([...scope.requiredModules])) {
+          throw new Error(
+            `Generated runtime scope contains an unexpected module set: ${bundle.route}:${scope.directory}.`,
+          );
+        }
+      }
+      if (modules.length === 0) {
+        throw new Error(`Generated runtime scope has no JavaScript modules: ${bundle.route}:${scope.directory}.`);
+      }
+      const moduleSyntax = await Promise.all(moduleFiles.map(async (file) => ({
+        path: `${scope.directory}/${normalizePath(file.relativePath)}`,
+        syntax: classifyGeneratedHandlerSyntax(await readFile(file.absolutePath, 'utf8')),
+      })));
+      if (moduleSyntax.some((item) => !['commonjs', 'module'].includes(item.syntax))) {
+        throw new Error(`Generated runtime module format is not safely scopeable: ${bundle.route}.`);
+      }
+      const syntaxTypes = [...new Set(moduleSyntax.map((item) => item.syntax))];
+      if (syntaxTypes.length !== 1) {
+        throw new Error(`Generated runtime scope contains contradictory module formats: ${bundle.route}.`);
+      }
+      const syntax = syntaxTypes[0];
+      const packagePath = path.join(scopeRoot, 'package.json');
+      let created = false;
+      let idempotent = false;
+      if (await pathExists(packagePath)) {
+        let existing;
+        try {
+          existing = JSON.parse(await readFile(packagePath, 'utf8'));
+        } catch {
+          throw new Error(`Generated runtime package scope is unreadable: ${bundle.route}:${scope.directory}.`);
+        }
+        if (
+          !existing
+          || Array.isArray(existing)
+          || JSON.stringify(Object.keys(existing).sort()) !== JSON.stringify(['type'])
+          || existing.type !== syntax
+        ) {
+          throw new Error(`Generated runtime package scope is contradictory: ${bundle.route}:${scope.directory}.`);
+        }
+        idempotent = true;
+      } else {
+        const temporaryPackagePath = path.join(
+          scopeRoot,
+          `.runtime-package-${process.pid}-${scopes.length}.json`,
+        );
+        const packageJson = `${JSON.stringify({ type: syntax }, null, 2)}\n`;
+        try {
+          await writeFile(temporaryPackagePath, packageJson, { encoding: 'utf8', flag: 'wx' });
+          await rename(temporaryPackagePath, packagePath);
+          created = true;
+        } finally {
+          await rm(temporaryPackagePath, { force: true });
+        }
+      }
+      scopes.push(Object.freeze({
+        route: bundle.route,
+        handler: normalizedHandler,
+        modules: Object.freeze(modules),
+        moduleFormats: Object.freeze(moduleSyntax),
+        syntax,
+        packageScope: `${scope.directory}/package.json`,
+        packageType: syntax,
+        atomic: true,
+        created,
+        idempotent,
+      }));
     }
-    const scopeRoot = path.join(functionsRoot, bundle.bundle, ...expectedScope.split('/'));
-    const packagePath = path.join(scopeRoot, 'package.json');
-    const temporaryPackagePath = path.join(
-      scopeRoot,
-      `.runtime-package-${process.pid}-${scopes.length}.json`,
-    );
-    const packageJson = `${JSON.stringify({ type: syntax }, null, 2)}\n`;
-    await writeFile(temporaryPackagePath, packageJson, { encoding: 'utf8', flag: 'wx' });
-    await rename(temporaryPackagePath, packagePath);
-    scopes.push(Object.freeze({
-      route: bundle.route,
-      handler: normalizedHandler,
-      syntax,
-      packageScope: `${expectedScope}/package.json`,
-      packageType: syntax,
-      atomic: true,
-    }));
   }
-  return Object.freeze(scopes.sort((left, right) => left.route.localeCompare(right.route)));
+  return Object.freeze(scopes.sort((left, right) => (
+    left.route.localeCompare(right.route)
+    || left.packageScope.localeCompare(right.packageScope)
+  )));
 }
 
 export async function assertEffectiveVercelProjectRoot({

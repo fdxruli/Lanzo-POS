@@ -129,8 +129,33 @@ async function writeGeneratedFunction(functionsRoot, relativeRoute) {
   const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);
   const handler = relativeRoute.includes('og/') ? 'store/api/og/store.js' : 'store/api/store-page.js';
   await mkdir(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
-  await writeFile(path.join(bundleRoot, handler), 'export default {};');
+  await writeFile(path.join(bundleRoot, handler), 'export default {fetch(){}};');
+  if (!relativeRoute.includes('og/')) {
+    await mkdir(path.join(bundleRoot, 'store', 'generated'), { recursive: true });
+    await writeFile(
+      path.join(bundleRoot, 'store', 'generated', 'storeHtmlTemplate.js'),
+      'export const STORE_HTML_TEMPLATE="<!doctype html><div id=\\"root\\"></div>";',
+    );
+  }
   await writeFile(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({ runtime: 'nodejs24.x', handler }));
+}
+
+function writeGeneratedFunctionSync(functionsRoot, relativeRoute) {
+  const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);
+  const handler = relativeRoute.includes('og/') ? 'store/api/og/store.js' : 'store/api/store-page.js';
+  mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
+  writeFileSync(path.join(bundleRoot, handler), 'export default {fetch(){}};');
+  if (!relativeRoute.includes('og/')) {
+    mkdirSync(path.join(bundleRoot, 'store', 'generated'), { recursive: true });
+    writeFileSync(
+      path.join(bundleRoot, 'store', 'generated', 'storeHtmlTemplate.js'),
+      'export const STORE_HTML_TEMPLATE="<!doctype html><div id=\\"root\\"></div>";',
+    );
+  }
+  writeFileSync(
+    path.join(bundleRoot, '.vc-config.json'),
+    JSON.stringify({ runtime: 'nodejs24.x', handler }),
+  );
 }
 
 async function createStaticMaterializationFixture() {
@@ -761,11 +786,7 @@ describe('workspace prebuilt saneado', () => {
           writeFileSync(path.join(outputRoot, 'config.json'), JSON.stringify({ version: 3, routes: [] }));
           const bundles = builds.length === 1 ? initialBundles : ['api/store-page', 'api/og/store.js'];
           for (const bundle of bundles) {
-            const bundleRoot = path.join(functionsRoot, `${bundle}.func`);
-            const handler = bundle.includes('og/') ? 'store/api/og/store.js' : 'store/api/store-page.js';
-            mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
-            writeFileSync(path.join(bundleRoot, handler), 'export default {};');
-            writeFileSync(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({ runtime: 'nodejs24.x', handler }));
+            writeGeneratedFunctionSync(functionsRoot, bundle);
           }
         },
       })).rejects.toThrow('Vercel did not compile the expected trailing-slash canonical route');
@@ -936,16 +957,7 @@ describe('workspace prebuilt saneado', () => {
             routes: [{ src: '^/(.*)/$', status: 308, headers: { Location: '/$1' } }],
           }));
           for (const relativeRoute of ['api/store-page', 'api/og/store.js']) {
-            const bundleRoot = path.join(functionsRoot, `${relativeRoute}.func`);
-            const handler = relativeRoute.includes('/og/')
-              ? 'store/api/og/store.js'
-              : 'store/api/store-page.js';
-            mkdirSync(path.join(bundleRoot, path.dirname(handler)), { recursive: true });
-            writeFileSync(path.join(bundleRoot, handler), 'export default {};');
-            writeFileSync(path.join(bundleRoot, '.vc-config.json'), JSON.stringify({
-              runtime: 'nodejs24.x',
-              handler,
-            }));
+            writeGeneratedFunctionSync(functionsRoot, relativeRoute);
           }
         }
       },

@@ -20,7 +20,10 @@ const assetPath = '/assets/index-AbCd1234.js';
 const deployedHead = 'a'.repeat(40);
 const correctiveHead = 'b'.repeat(40);
 const deploymentIdHash = 'c'.repeat(64);
+const finalCertificationHead = 'd'.repeat(40);
+const secondDeploymentIdHash = 'e'.repeat(64);
 const runtimeFailureCode = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
+const transitiveRuntimeFailureCode = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
 const staticHtml = `<!doctype html><html lang="es-MX"><head>
 <title>Tienda en línea | Lanzo</title>
 <meta name="description" content="Consulta productos">
@@ -121,6 +124,51 @@ function correctivePreviewPlan(overrides = {}) {
     correctivePreviewNumber: 1,
     correctivePreviewExecuted: false,
     previousCorrectivePreviewDeployments: 0,
+    commandArgs: ['deploy', '--prebuilt', '--yes'],
+    ...overrides,
+  };
+}
+
+function finalCertificationPreviewPlan(overrides = {}) {
+  return {
+    deploymentPolicy: 'single-final-certification-preview',
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewDeployments: 2,
+    previousPreviews: [
+      {
+        projectName: 'lanzo-store',
+        deploymentType: 'preview',
+        production: false,
+        status: 'FAILED_CERTIFICATION',
+        evidencePass: false,
+        deploymentIdHash,
+        head: deployedHead,
+        preserved: true,
+        failureCode: runtimeFailureCode,
+      },
+      {
+        projectName: 'lanzo-store',
+        deploymentType: 'preview',
+        production: false,
+        status: 'FAILED_CERTIFICATION',
+        evidencePass: false,
+        deploymentIdHash: secondDeploymentIdHash,
+        head: correctiveHead,
+        preserved: true,
+        failureCode: transitiveRuntimeFailureCode,
+      },
+    ],
+    head: finalCertificationHead,
+    headRelationship: 'validated-descendant',
+    headAncestryVerified: true,
+    previousFailureCode: transitiveRuntimeFailureCode,
+    correctionFailureCode: transitiveRuntimeFailureCode,
+    previousCorrectivePreviewDeployments: 1,
+    finalCertificationAuthorized: true,
+    finalCertificationNumber: 1,
+    finalCertificationExecuted: false,
     commandArgs: ['deploy', '--prebuilt', '--yes'],
     ...overrides,
   };
@@ -280,7 +328,7 @@ describe('validación remota saneada de lanzo-store', () => {
     }))).toThrow('requires exactly one');
     expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
       previousPreviewDeployments: 2,
-    }))).toThrow('At most one');
+    }))).toThrow('requires exactly one');
   });
 
   it('rechaza una preview anterior que ya produjo evidencia PASS', () => {
@@ -292,10 +340,72 @@ describe('validación remota saneada de lanzo-store', () => {
   it('rechaza una segunda preview correctiva', () => {
     expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
       previousCorrectivePreviewDeployments: 1,
-    }))).toThrow('second corrective preview');
+    }))).toThrow('unexecuted corrective preview');
     expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
       correctivePreviewExecuted: true,
-    }))).toThrow('executed already');
+    }))).toThrow('unexecuted corrective preview');
+  });
+
+  it('autoriza una única certificación final después de dos previews fallidas', () => {
+    expect(validatePreviewDeploymentPlan(finalCertificationPreviewPlan())).toMatchObject({
+      deploymentPolicy: 'single-final-certification-preview',
+      previousPreviewCount: 2,
+      previousPreviewFailedCertifications: 2,
+      previousPreviewEvidencePass: false,
+      previousPreviewsPreserved: true,
+      previousPreviewDeploymentIdHashes: [deploymentIdHash, secondDeploymentIdHash],
+      previousFailureCodes: [runtimeFailureCode, transitiveRuntimeFailureCode],
+      correctionFailureCode: transitiveRuntimeFailureCode,
+      finalCertificationAuthorized: true,
+      finalCertificationNumber: 1,
+      finalCertificationExecuted: false,
+      maximumTotalPreviewCount: 3,
+      fourthPreviewForbidden: true,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+  });
+
+  it('rechaza historial distinto de exactamente dos previews para certificación final', () => {
+    expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({
+      previousPreviewDeployments: 1,
+    }))).toThrow('exactly two');
+    expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({
+      previousPreviewDeployments: 3,
+    }))).toThrow('At most two');
+  });
+
+  it.each([
+    ['PASS previo', {
+      previousPreviews: finalCertificationPreviewPlan().previousPreviews.map((entry, index) => (
+        index === 1 ? { ...entry, evidencePass: true } : entry
+      )),
+    }, 'without PASS evidence'],
+    ['preview no preservada', {
+      previousPreviews: finalCertificationPreviewPlan().previousPreviews.map((entry, index) => (
+        index === 1 ? { ...entry, preserved: false } : entry
+      )),
+    }, 'must remain preserved'],
+    ['ID plano', {
+      previousPreviews: finalCertificationPreviewPlan().previousPreviews.map((entry, index) => (
+        index === 1 ? { ...entry, deploymentIdHash: 'dpl_plain_identifier' } : entry
+      )),
+    }, 'SHA-256'],
+    ['fallos fuera de orden', {
+      previousPreviews: finalCertificationPreviewPlan().previousPreviews.toReversed(),
+    }, 'two diagnosed runtime failures in order'],
+    ['corrección no relacionada', {
+      correctionFailureCode: runtimeFailureCode,
+    }, 'transitive module failure'],
+    ['ancestry ausente', {
+      headAncestryVerified: false,
+    }, 'descend from the latest'],
+    ['certificación final ya ejecutada', {
+      finalCertificationExecuted: true,
+    }, 'unexecuted final certification'],
+  ])('rechaza una cuarta preview o evidencia final contradictoria: %s', (_label, override, message) => {
+    expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan(override)))
+      .toThrow(message);
   });
 
   it('rechaza producción en cualquier flujo', () => {
@@ -304,6 +414,9 @@ describe('validación remota saneada de lanzo-store', () => {
     }))).toThrow('Production deployments');
     expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({
       deploymentType: 'production',
+    }))).toThrow('Production deployments');
+    expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({
+      production: true,
     }))).toThrow('Production deployments');
   });
 
@@ -315,6 +428,8 @@ describe('validación remota saneada de lanzo-store', () => {
       ['deploy', '--prebuilt'],
     ]) {
       expect(() => validatePreviewDeploymentPlan(correctivePreviewPlan({ commandArgs })))
+        .toThrow('Only vercel deploy');
+      expect(() => validatePreviewDeploymentPlan(finalCertificationPreviewPlan({ commandArgs })))
         .toThrow('Only vercel deploy');
     }
   });
@@ -365,6 +480,8 @@ describe('validación remota saneada de lanzo-store', () => {
     );
     expect(validatePreviewDeploymentPlan(correctivePreviewPlan()))
       .toMatchObject({ correctivePreviewAuthorized: true });
+    expect(validatePreviewDeploymentPlan(finalCertificationPreviewPlan()))
+      .toMatchObject({ finalCertificationAuthorized: true });
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
