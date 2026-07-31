@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   NOT_FOUND_HTML_CACHE,
+  OPEN_GRAPH_RENDER_REVISION,
   REVALIDATED_HTML_CACHE,
   TEMPORARY_HTML_CACHE,
   createStorePageHandler,
@@ -121,7 +122,10 @@ describe('metadatos, fallbacks y caché', () => {
     expect(count(html, /property="og:type"/gu)).toBe(1);
     expect(count(html, /name="twitter:card"/gu)).toBe(1);
     expect(html).toContain('https://store.example.test/tienda/mi-tienda');
-    expect(html).toContain('https://store.example.test/api/og/store?slug=mi-tienda&amp;v=7');
+    expect(OPEN_GRAPH_RENDER_REVISION).toBe(2);
+    expect(html).toContain(
+      'https://store.example.test/api/og/store?slug=mi-tienda&amp;v=7&amp;rv=2',
+    );
   });
 
   it('not_found usa texto específico, omite URLs falsas y caché de 300 s', async () => {
