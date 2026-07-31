@@ -1,0 +1,5 @@
+{
+  "name": "lanzo-store-runtime",
+  "private": true,
+  "type": "module"
+}
