@@ -1,8 +1,11 @@
+import { Money } from '../../utils/moneyMath';
 import {
     getSaleEcommerceOrderCode,
     getSaleFinancialFolio,
     isEcommerceSale
 } from './saleReference';
+
+const formatMoney = (value) => Money.init(value).toFixed(2);
 
 export async function sendReceiptWhatsApp({
     sale,
@@ -37,20 +40,21 @@ export async function sendReceiptWhatsApp({
 
             receiptText += '*Productos:*\n';
             items.forEach(item => {
-                receiptText += `• ${item.name} (x${item.quantity}) - $${(item.price * item.quantity).toFixed(2)}\n`;
+                const lineTotal = Money.multiply(item.price, item.quantity);
+                receiptText += `• ${item.name} (x${item.quantity}) - $${lineTotal.toFixed(2)}\n`;
                 if (features.hasLabFields && item.requiresPrescription) {
                     receiptText += '  _(Antibiótico/Controlado)_\n';
                 }
             });
 
-            receiptText += `\n*TOTAL: $${total.toFixed(2)}*\n`;
+            receiptText += `\n*TOTAL: $${formatMoney(total)}*\n`;
 
             if (paymentData.paymentMethod === 'efectivo') {
-                const cambio = parseFloat(paymentData.amountPaid) - total;
-                receiptText += `Cambio: $${cambio.toFixed(2)}\n`;
+                const cambio = Money.subtract(paymentData.amountPaid, total);
+                receiptText += `Cambio: $${formatMoney(cambio)}\n`;
             } else if (paymentData.paymentMethod === 'fiado') {
-                receiptText += `Abono: $${parseFloat(paymentData.amountPaid).toFixed(2)}\n`;
-                receiptText += `Saldo Pendiente: $${parseFloat(paymentData.saldoPendiente).toFixed(2)}\n`;
+                receiptText += `Abono: $${formatMoney(paymentData.amountPaid)}\n`;
+                receiptText += `Saldo Pendiente: $${formatMoney(paymentData.saldoPendiente)}\n`;
             }
 
             receiptText += '\n¡Gracias por su preferencia!';
