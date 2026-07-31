@@ -84,8 +84,9 @@ describe('integración del build social', () => {
     const result = await auditStoreServerImports(projectRoot);
     expect(result.publicFunctions).toEqual(['/api/og/store', '/api/store-page']);
     expect(result.dependencyClosure['/api/og/store'].packages)
-      .toEqual(['@vercel/og', 'react']);
+      .toEqual(['@vercel/og', 'react', 'sharp']);
     expect(result.dependencyClosure['/api/store-page'].packages).not.toContain('@vercel/og');
+    expect(result.dependencyClosure['/api/store-page'].packages).not.toContain('sharp');
     for (const closure of Object.values(result.dependencyClosure)) {
       expect(closure.files.every((file) => file.startsWith('api/'))).toBe(true);
     }
