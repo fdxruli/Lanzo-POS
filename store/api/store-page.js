@@ -17,6 +17,7 @@ import {
 export const REVALIDATED_HTML_CACHE = 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400';
 export const NOT_FOUND_HTML_CACHE = 'public, max-age=0, s-maxage=300';
 export const TEMPORARY_HTML_CACHE = 'public, max-age=0, s-maxage=60';
+export const OPEN_GRAPH_RENDER_REVISION = 2;
 
 const NO_STORE = 'no-store';
 const ROBOTS_POLICY = 'noindex, nofollow, noarchive';
@@ -163,6 +164,7 @@ export function createStorePageHandler({
             slug: parsed.slug,
             portal: result.portal,
             siteVersionNumber: result.siteVersionNumber,
+            renderRevision: OPEN_GRAPH_RENDER_REVISION,
           });
         } catch {
           result = Object.freeze({ status: 'unavailable', reason: 'metadata_failure' });
