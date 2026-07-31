@@ -2,7 +2,6 @@
 import PropTypes from 'prop-types';
 import ProductMenu from './ProductMenu';
 import OrderSummary from './OrderSummary';
-import OrderDiscountPanel from './OrderDiscountPanel';
 import MobilePosCart from './MobilePosCart';
 import PosModals from './PosModals';
 import PosToast from './PosToast';
@@ -142,9 +141,6 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                                 order={currentOrder}
                                 onCheckout={actions.handleInitiateCheckout}
                             />
-                        )}
-                        {!features.hasTables && !isEcommerceDraft && (
-                            <OrderDiscountPanel />
                         )}
                     </div>
                 </div>

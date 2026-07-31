@@ -2,7 +2,6 @@
 import PropTypes from 'prop-types';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import OrderSummary from './OrderSummary';
-import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosConversionPanel from './EcommercePosConversionPanel';
 
 const currentOrderSelector = (state) => (
@@ -38,7 +37,6 @@ export default function MobilePosCart(props) {
                             onCheckout={props.onOpenPayment}
                         />
                     )}
-                    {!props.showRestaurantActions && !isEcommerceDraft && <OrderDiscountPanel compact />}
                 </div>
             </div>
         </div>

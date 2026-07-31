@@ -15,8 +15,8 @@ vi.mock('../OrderSummary', () => ({
   default: () => <div data-testid="order-summary">Resumen</div>
 }));
 
-vi.mock('../OrderDiscountPanel', () => ({
-  default: () => <div data-testid="discount-panel">Descuentos</div>
+vi.mock('../EcommercePosConversionPanel', () => ({
+  default: () => <div data-testid="conversion-panel">Conversión</div>
 }));
 
 import MobilePosCart from '../MobilePosCart';
@@ -57,14 +57,15 @@ describe('MobilePosCart ecommerce guard', () => {
     render(<MobilePosCart {...props} />);
 
     expect(screen.getByTestId('order-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('conversion-panel')).toBeInTheDocument();
     expect(screen.queryByTestId('discount-panel')).not.toBeInTheDocument();
   });
 
-  it('preserves the discount panel for normal POS orders', () => {
+  it('delegates the integrated discount trigger to OrderSummary for normal POS orders', () => {
     setOrder(undefined);
     render(<MobilePosCart {...props} />);
 
     expect(screen.getByTestId('order-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('discount-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('discount-panel')).not.toBeInTheDocument();
   });
 });

@@ -14,7 +14,7 @@ import NotificationCenterDrawer from './NotificationCenterDrawer';
 import './NotificationCenter.css';
 import './EcommercePublishedStockOperationalAlert.css';
 
-export default function NotificationBell({ className = '' }) {
+export default function NotificationBell({ className = '', showLabel = false, onOpen }) {
   const navigate = useNavigate();
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
@@ -80,13 +80,21 @@ export default function NotificationBell({ className = '' }) {
       <button
         type="button"
         className={buttonClassName}
-        onClick={isOpen ? closeNotificationCenter : openNotificationCenter}
+        onClick={() => {
+          if (isOpen) {
+            closeNotificationCenter?.();
+            return;
+          }
+          onOpen?.();
+          openNotificationCenter?.();
+        }}
         aria-label={isOpen ? 'Cerrar centro de notificaciones' : openLabel}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls="notification-center-drawer"
       >
         <Bell size={20} strokeWidth={2.35} aria-hidden="true" />
+        {showLabel && <span className="notification-bell__label">Notificaciones</span>}
         {safeUnreadCount > 0 && (
           <span className="notification-bell__badge" aria-label={`${safeUnreadCount} notificaciones sin leer`}>
             {safeUnreadCount > 99 ? '99+' : safeUnreadCount}

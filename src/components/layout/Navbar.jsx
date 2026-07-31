@@ -304,9 +304,6 @@ function Navbar() {
             style={{ width: '100%', justifyContent: 'center', position: 'relative' }}
           >
             <Logo style={{ height: '40px', width: 'auto' }} />
-            <div className="mobile-notification-slot">
-              <NotificationBell className="notification-bell--mobile" />
-            </div>
           </div>
         </div>
       )}
@@ -413,6 +410,10 @@ function Navbar() {
           >
             <X size={20} strokeWidth={2.5} />
           </button>
+        </div>
+
+        <div className="drawer-notification-slot">
+          <NotificationBell className="notification-bell--mobile-menu" showLabel onOpen={closeMenu} />
         </div>
 
         <div className="drawer-links">
@@ -556,7 +557,7 @@ function Navbar() {
             </span>
           </div>
           <div className="sidebar-notification-slot">
-            <NotificationBell className="notification-bell--desktop" />
+            <NotificationBell className="notification-bell--desktop" showLabel />
           </div>
         </div>
 
