@@ -6,6 +6,7 @@ import {
   supabaseClient
 } from '../supabase';
 import { checkInternetConnection } from '../utils';
+import { optimizeBrandingImageToWebp } from './brandingImageOptimizer';
 
 const IMAGE_BUCKET = 'images';
 const AUTHORIZE_FUNCTION = 'authorize-image-upload';
@@ -111,7 +112,25 @@ function buildUploadError(code, fallback) {
   return error;
 }
 
-export async function uploadImageFile({ file, licenseKey, purpose = IMAGE_UPLOAD_PURPOSES.MISC }) {
+async function prepareUploadFile(file, purpose, imageOptimizer) {
+  try {
+    const candidate = await imageOptimizer({ file, purpose });
+    const candidateValidation = validateClientSideImage(candidate, purpose);
+    return candidateValidation.valid
+      ? { file: candidate, validation: candidateValidation }
+      : { file, validation: validateClientSideImage(file, purpose) };
+  } catch {
+    Logger.warn('[Storage] No se pudo optimizar la imagen de marca; se usará el archivo original.');
+    return { file, validation: validateClientSideImage(file, purpose) };
+  }
+}
+
+export async function uploadImageFile({
+  file,
+  licenseKey,
+  purpose = IMAGE_UPLOAD_PURPOSES.MISC,
+  imageOptimizer = optimizeBrandingImageToWebp
+}) {
   const normalizedPurpose = normalizePurpose(purpose);
   const localValidation = validateClientSideImage(file, normalizedPurpose);
 
@@ -138,6 +157,10 @@ export async function uploadImageFile({ file, licenseKey, purpose = IMAGE_UPLOAD
     throw buildUploadError('SECURE_CONTEXT_REQUIRED');
   }
 
+  const prepared = await prepareUploadFile(file, normalizedPurpose, imageOptimizer);
+  const uploadFile = prepared.file;
+  const uploadValidation = prepared.validation;
+
   const { data: authorization, error: authorizationError } = await supabaseClient.functions.invoke(
     AUTHORIZE_FUNCTION,
     {
@@ -147,9 +170,9 @@ export async function uploadImageFile({ file, licenseKey, purpose = IMAGE_UPLOAD
         security_token: securityToken,
         staff_session_token: staffSessionToken || null,
         purpose: normalizedPurpose,
-        filename: file.name,
-        mime_type: file.type,
-        size_bytes: file.size
+        filename: uploadFile.name,
+        mime_type: uploadFile.type,
+        size_bytes: uploadFile.size
       }
     }
   );
@@ -179,9 +202,9 @@ export async function uploadImageFile({ file, licenseKey, purpose = IMAGE_UPLOAD
   const { error: uploadError } = await supabaseClient
     .storage
     .from(authorization.bucket)
-    .uploadToSignedUrl(authorization.path, authorization.token, file, {
+    .uploadToSignedUrl(authorization.path, authorization.token, uploadFile, {
       cacheControl: '3600',
-      contentType: authorization.mime_type || file.type,
+      contentType: authorization.mime_type || uploadFile.type,
       upsert: false
     });
 
@@ -199,9 +222,10 @@ export async function uploadImageFile({ file, licenseKey, purpose = IMAGE_UPLOAD
     bucket: authorization.bucket,
     path: authorization.path,
     publicUrl: publicUrlData?.publicUrl || null,
-    maxSizeBytes: authorization.max_size_bytes || localValidation.maxSize,
-    mimeType: authorization.mime_type || file.type,
-    purpose: normalizedPurpose
+    maxSizeBytes: authorization.max_size_bytes || uploadValidation.maxSize,
+    mimeType: authorization.mime_type || uploadFile.type,
+    purpose: normalizedPurpose,
+    optimized: uploadFile !== file
   };
 }
 
