@@ -66,10 +66,13 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
     expect(source).toContain("path: '/conoce-lanzo'");
   });
 
-  it('adds no administrative redirect from legacy public paths', async () => {
+  it('adds no administrative redirect and keeps static files outside the legacy SPA fallback', async () => {
     const config = JSON.parse(await readProjectFile('vercel.json'));
     expect(config.redirects || []).toEqual([]);
-    expect(config.rewrites).toContainEqual({ source: '/(.*)', destination: '/index.html' });
+    const fallback = config.rewrites.find(({ destination }) => destination === '/index.html');
+    expect(fallback?.source).toContain('(?!assets/');
+    expect(fallback?.source).toContain('sw\\.js$');
+    expect(fallback?.source).toContain('workbox-');
   });
 
   it('keeps the public deployment rewrites and canonical trailing slash policy', async () => {
