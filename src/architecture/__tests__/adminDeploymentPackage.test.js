@@ -72,11 +72,15 @@ describe('isolated administrative deployment package', () => {
     });
   });
 
-  it('preserves the administrative SPA rewrite without redirects', () => {
+  it('preserves the asset-safe administrative SPA rewrite without redirects', () => {
     expect(preparation.administrativeConfiguration.framework).toBeNull();
     expect(preparation.administrativeConfiguration.redirects).toEqual([]);
-    expect(preparation.administrativeConfiguration.rewrites)
-      .toContainEqual({ source: '/(.*)', destination: '/index.html' });
+    const fallback = preparation.administrativeConfiguration.rewrites
+      .find(({ destination }) => destination === '/index.html');
+    expect(fallback?.source).toContain('(?!assets/');
+    expect(fallback?.source).toContain('sw\\.js$');
+    expect(fallback?.source).toContain('workbox-');
+    expect(fallback?.source).toContain('manifest\\.webmanifest$');
   });
 
   it('contains no forbidden path or secret', () => {
