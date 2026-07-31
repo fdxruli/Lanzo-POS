@@ -164,15 +164,20 @@ export function buildOpenGraphImageUrl({
   publicOrigin,
   slug,
   siteVersionNumber,
+  renderRevision,
 }) {
   const origin = normalizePublicOrigin(publicOrigin);
   const validSlug = validateStoreSlug(slug);
   const imageUrl = new URL('/api/og/store', `${origin}/`);
   imageUrl.searchParams.set('slug', validSlug);
   const imageVersioned = Number.isSafeInteger(siteVersionNumber) && siteVersionNumber > 0;
+  const rendererVersioned = Number.isSafeInteger(renderRevision) && renderRevision > 0;
 
   if (imageVersioned) {
     imageUrl.searchParams.set('v', String(siteVersionNumber));
+  }
+  if (rendererVersioned) {
+    imageUrl.searchParams.set('rv', String(renderRevision));
   }
 
   return Object.freeze({
@@ -244,6 +249,7 @@ export function buildStoreSocialMetadata({
   slug,
   portal,
   siteVersionNumber,
+  renderRevision,
 } = {}) {
   const allowedPortal = portal && typeof portal === 'object'
     ? {
@@ -264,6 +270,7 @@ export function buildStoreSocialMetadata({
     publicOrigin,
     slug,
     siteVersionNumber,
+    renderRevision,
   });
   const imageAlt = truncateSocialText(
     name ? `Vista previa de ${name}` : GLOBAL_IMAGE_ALT,
