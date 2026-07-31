@@ -32,6 +32,65 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     expect(receiptText).toContain('*Pedido online:* EC-00000115\n*Folio de venta:* V-000034');
     expect(receiptText).toContain('• Producto (x2) - $31.00');
     expect(receiptText).toContain('*TOTAL: $31.00*');
+    expect(receiptText).not.toContain('*Subtotal:*');
+    expect(receiptText).not.toContain('*Descuento');
+    expect(dependencies.Logger.error).not.toHaveBeenCalled();
+  });
+
+  it('shows subtotal, discount detail, final total, received cash and change', async () => {
+    const dependencies = buildDependencies();
+
+    await sendReceiptWhatsApp({
+      sale: {
+        folio: 'V-000038',
+        subtotal: '50',
+        discountTotal: '40',
+        saleDiscount: {
+          type: 'percent',
+          value: 80,
+          amount: 40,
+          reason: 'Promoción'
+        }
+      },
+      items: [{ name: 'Producto Genérico', quantity: 1, price: '50' }],
+      paymentData: {
+        customerId: 'customer-1',
+        paymentMethod: 'efectivo',
+        amountPaid: '20'
+      },
+      total: '10',
+      ...dependencies
+    });
+
+    const [, receiptText] = dependencies.sendWhatsAppMessage.mock.calls[0];
+    expect(receiptText).toContain('• Producto Genérico (x1) - $50.00');
+    expect(receiptText).toContain('*Subtotal:* $50.00');
+    expect(receiptText).toContain('*Descuento (80% · Promoción):* -$40.00');
+    expect(receiptText).toContain('*TOTAL: $10.00*');
+    expect(receiptText).toContain('Efectivo recibido: $20.00');
+    expect(receiptText).toContain('Cambio: $10.00');
+    expect(dependencies.Logger.error).not.toHaveBeenCalled();
+  });
+
+  it('reads aggregate discount data from metadata when needed', async () => {
+    const dependencies = buildDependencies();
+
+    await sendReceiptWhatsApp({
+      sale: {
+        folio: 'V-000039',
+        subtotal: '100',
+        metadata: { discountTotal: '15' }
+      },
+      items: [{ name: 'Producto', quantity: 2, price: '50' }],
+      paymentData: { customerId: 'customer-1', paymentMethod: 'tarjeta' },
+      total: '85',
+      ...dependencies
+    });
+
+    const [, receiptText] = dependencies.sendWhatsAppMessage.mock.calls[0];
+    expect(receiptText).toContain('*Subtotal:* $100.00');
+    expect(receiptText).toContain('*Descuento:* -$15.00');
+    expect(receiptText).toContain('*TOTAL: $85.00*');
     expect(dependencies.Logger.error).not.toHaveBeenCalled();
   });
 
@@ -52,6 +111,7 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
 
     const [, receiptText] = dependencies.sendWhatsAppMessage.mock.calls[0];
     expect(receiptText).toContain('*TOTAL: $31.00*');
+    expect(receiptText).toContain('Efectivo recibido: $50.00');
     expect(receiptText).toContain('Cambio: $19.00');
     expect(dependencies.Logger.error).not.toHaveBeenCalled();
   });
