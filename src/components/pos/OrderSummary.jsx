@@ -676,7 +676,12 @@ export default function OrderSummary({
               </button>
             </header>
 
-            <OrderDiscountPanel compact restaurant embedded defaultExpanded />
+            <OrderDiscountPanel
+              compact
+              restaurant={showRestaurantActions}
+              embedded
+              defaultExpanded
+            />
           </div>
         </div>
       )}
