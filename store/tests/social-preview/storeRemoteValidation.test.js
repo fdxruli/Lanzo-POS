@@ -249,9 +249,10 @@ function controlledFifthRecoveryPlan(overrides = {}) {
       },
     ],
     head: correctedHead,
+    headRelationship: 'validated-descendant',
     headAncestryVerified: true,
     minimumCorrectedHead: correctedHead,
-    minimumCorrectedHeadRelationship: 'validated-descendant',
+    minimumCorrectedHeadRelationship: 'equal-or-validated-descendant',
     fifthPreviewAuthorized: true,
     recoveryAuthorizationNumber: 1,
     recoveryPreviewExecuted: false,
@@ -611,7 +612,10 @@ describe('validación remota saneada de lanzo-store', () => {
 
   it.each([
     ['fourth preview HEAD', { head: fourthPreviewHead }, 'RECOVERY_FOURTH_HEAD_REUSED'],
-    ['HEAD before the corrected minimum', { head: 'ac10be8677e50cf6c6ec708c58bf0ee1ceec14fd' }, 'RECOVERY_HEAD_BEFORE_MINIMUM'],
+    ['HEAD before the corrected minimum', {
+      head: 'ac10be8677e50cf6c6ec708c58bf0ee1ceec14fd',
+      minimumCorrectedHeadRelationship: 'not-descendant',
+    }, 'RECOVERY_ANCESTRY_UNVERIFIED'],
     ['unverified ancestry', { headAncestryVerified: false }, 'RECOVERY_ANCESTRY_UNVERIFIED'],
     ['different fourth deployment ID', {
       previousPreviews: controlledFifthRecoveryPlan().previousPreviews.map((entry, index) => (

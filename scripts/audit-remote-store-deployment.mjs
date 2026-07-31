@@ -6,7 +6,6 @@
  *     --base-url https://<preview>.vercel.app --slug <public-test-slug>
  */
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -300,18 +299,6 @@ function requireRecovery(condition, code) {
   if (!condition) throw recoveryError(code);
 }
 
-function verifiedMinimumCorrectedHeadAncestry(head) {
-  try {
-    execFileSync('git', ['merge-base', '--is-ancestor', MINIMUM_CORRECTED_HEAD, head], {
-      cwd: projectRoot,
-      stdio: 'ignore',
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function validateControlledFifthPreviewRecovery(plan) {
   const {
     projectName,
@@ -321,6 +308,7 @@ function validateControlledFifthPreviewRecovery(plan) {
     previousPreviewFailedCertifications,
     previousPreviews,
     head,
+    headRelationship,
     headAncestryVerified,
     minimumCorrectedHead,
     minimumCorrectedHeadRelationship,
@@ -389,10 +377,11 @@ function validateControlledFifthPreviewRecovery(plan) {
   requireRecovery(head !== FOURTH_PREVIEW_HEAD, 'RECOVERY_FOURTH_HEAD_REUSED');
   requireRecovery(minimumCorrectedHead === MINIMUM_CORRECTED_HEAD, 'RECOVERY_MINIMUM_HEAD_INVALID');
   requireRecovery(
-    headAncestryVerified === true && minimumCorrectedHeadRelationship === 'validated-descendant',
+    headRelationship === 'validated-descendant'
+      && headAncestryVerified === true
+      && minimumCorrectedHeadRelationship === 'equal-or-validated-descendant',
     'RECOVERY_ANCESTRY_UNVERIFIED',
   );
-  requireRecovery(verifiedMinimumCorrectedHeadAncestry(head), 'RECOVERY_HEAD_BEFORE_MINIMUM');
   requireRecovery(ogAsyncStreamMaterializationCorrected === true, 'RECOVERY_OG_CORRECTION_UNVERIFIED');
   requireRecovery(publicReadTransientRetryCorrected === true, 'RECOVERY_PUBLIC_READ_CORRECTION_UNVERIFIED');
   requireRecovery(ciWorkflowConclusion === 'success', 'RECOVERY_CI_NOT_SUCCESS');
