@@ -97,7 +97,7 @@ jobs:
           const normalizeAssertionName = (assertionName) => String(
             assertionName || 'unknown test'
           )
-            .replace(/\b\d+(?:\.\d+)?%\b/g, '<percentage>')
+            .replace(/\b\d+(?:\.\d+)?%/g, '<percentage>')
             .replace(/\s+/g, ' ')
             .trim();
 
