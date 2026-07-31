@@ -16,8 +16,7 @@ const BRANDING_WEBP_PROFILES = Object.freeze({
 const CONVERTIBLE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
-  'image/webp',
-  'image/gif'
+  'image/webp'
 ]);
 
 function getProfile(purpose) {
