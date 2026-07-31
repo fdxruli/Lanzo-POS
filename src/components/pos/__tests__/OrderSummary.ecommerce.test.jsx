@@ -93,6 +93,10 @@ vi.mock('../../../utils/restaurantModifierDisplay', () => ({
   formatSelectedModifiersForDisplay: () => []
 }));
 
+vi.mock('../EcommercePosDraftBanner', () => ({
+  default: () => <div data-testid="ecommerce-draft-banner" />
+}));
+
 vi.mock('../../../services/sales/orderTotals', () => ({
   getLineKey: (item, index) => item.lineId || item.id || String(index),
   makeSaleDiscount: vi.fn(),
