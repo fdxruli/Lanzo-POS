@@ -94,6 +94,52 @@ function methodNotAllowed() {
   });
 }
 
+function reportRenderFailure(logger, attempt) {
+  try {
+    logger?.warn?.(`[store-og] render_failed:${attempt}`);
+  } catch {
+    // Diagnostics must never affect the public response.
+  }
+}
+
+export function buildStoreOgRenderAttempts({
+  result,
+  logoImage = null,
+  coverImage = null,
+} = {}) {
+  if (result?.status !== 'ok') {
+    return Object.freeze([
+      Object.freeze({
+        name: 'status_fallback',
+        model: buildStoreOgCardModel({ result, logoImage: null, coverImage: null }),
+      }),
+    ]);
+  }
+
+  const attempts = [];
+  const seen = new Set();
+  const addAttempt = (name, nextLogoImage, nextCoverImage) => {
+    const signature = `${nextLogoImage ? 'logo' : 'no-logo'}:${nextCoverImage ? 'cover' : 'no-cover'}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    attempts.push(Object.freeze({
+      name,
+      model: buildStoreOgCardModel({
+        result,
+        logoImage: nextLogoImage,
+        coverImage: nextCoverImage,
+      }),
+    }));
+  };
+
+  addAttempt('logo_and_cover', logoImage, coverImage);
+  if (coverImage) addAttempt('cover_only', null, coverImage);
+  if (logoImage) addAttempt('logo_only', logoImage, null);
+  addAttempt('branding_only', null, null);
+
+  return Object.freeze(attempts);
+}
+
 export function renderStoreOgImage({
   ImageResponseImpl,
   model,
@@ -140,6 +186,7 @@ export function createStoreOgHandler({
   imageResponseLoader = loadImageResponse,
   environment = process.env,
   fetchImpl = globalThis.fetch,
+  logger = globalThis.console,
 } = {}) {
   return async function handleStoreOg(request) {
     const parsedRequest = parseRequest(request);
@@ -185,36 +232,37 @@ export function createStoreOgHandler({
       ]);
     }
 
-    const model = buildStoreOgCardModel({ result, logoImage, coverImage });
+    let ResolvedImageResponseImpl;
     try {
-      const ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
-      return await materializeStoreOgImage({
-        ImageResponseImpl: ResolvedImageResponseImpl,
-        model,
-        status: responseStatus,
-        headers,
-      });
+      ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
     } catch {
-      const fallbackModel = buildStoreOgCardModel({
-        result: Object.freeze({ status: 'unavailable', reason: 'render_failure' }),
-        logoImage: null,
-        coverImage: null,
+      reportRenderFailure(logger, 'image_response_unavailable');
+      return new Response('Open Graph image unavailable.', {
+        status: 500,
+        headers: FINAL_ERROR_HEADERS,
       });
+    }
+
+    const attempts = buildStoreOgRenderAttempts({ result, logoImage, coverImage });
+    for (let index = 0; index < attempts.length; index += 1) {
+      const attempt = attempts[index];
+      const degraded = index > 0;
       try {
-        const ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
         return await materializeStoreOgImage({
           ImageResponseImpl: ResolvedImageResponseImpl,
-          model: fallbackModel,
+          model: attempt.model,
           status: responseStatus,
-          headers: responseHeaders(TEMPORARY_CACHE),
+          headers: degraded ? responseHeaders(TEMPORARY_CACHE) : headers,
         });
       } catch {
-        return new Response('Open Graph image unavailable.', {
-          status: 500,
-          headers: FINAL_ERROR_HEADERS,
-        });
+        reportRenderFailure(logger, attempt.name);
       }
     }
+
+    return new Response('Open Graph image unavailable.', {
+      status: 500,
+      headers: FINAL_ERROR_HEADERS,
+    });
   };
 }
 
