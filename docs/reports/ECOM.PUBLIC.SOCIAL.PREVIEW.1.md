@@ -4321,6 +4321,35 @@ ejecutar la única preview de certificación final autorizada. Hasta entonces la
 certificación externa permanece `BLOCKED`. Este cambio no genera artifact ni
 deployment.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.9 - Fourth preview failed certification
+
+The fourth preview is preserved as failed evidence and must not be promoted,
+aliased, retried, or replaced by a fifth preview.
+
+```text
+deploymentId = dpl_BtKTkwWRMGYhatgKwFWwZps48p3u
+preview = https://lanzo-store-bt3fjfu4k-fdxrulis-projects.vercel.app
+artifactManifestSha256 = 473961a06745368360f259ab176e21ab8c5ef4382149f881208f85e9070bb2a1
+certification = FAILED_CERTIFICATION
+failureCode = OG_ASYNC_STREAM_RENDER_AND_PUBLIC_READ_RESILIENCE_MISMATCH
+HTML server-side = PASS
+OG body = FAIL
+public client visual load = FAIL
+production = unchanged
+```
+
+`GET /api/og/store?slug=farmaciagary` returned HTTP 200 with an empty body and
+an invalid PNG signature. Runtime logs identified the asynchronous Satori
+stream failure (`TypeError: u2 is not iterable`). The handler now consumes and
+validates the stream before returning `image/png`, falling back to a second,
+validated render or a controlled 500 text response.
+
+The browser-side `ERR_CONNECTION_CLOSED` is treated as a transient public-read
+failure only. The public service retries a read at most once; it never retries
+business responses, rate limits, validation failures, checkout, order creation,
+or other mutable operations. No production, Supabase, migration, RLS, Vercel
+environment, artifact, or additional preview was changed.
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.8 — Entorno público real y `@vercel/og` ESM
 
 ### Tercera preview fallida

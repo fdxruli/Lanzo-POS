@@ -16,6 +16,8 @@ export const VERSIONED_CACHE = 'public, max-age=31536000, immutable';
 export const REVALIDATED_CACHE = 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400';
 export const NOT_FOUND_CACHE = 'public, max-age=0, s-maxage=300';
 export const TEMPORARY_CACHE = 'public, max-age=0, s-maxage=60';
+export const MINIMUM_PNG_BYTES = 1_000;
+export const PNG_SIGNATURE = Object.freeze([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const BASE_HEADERS = Object.freeze({
   'Content-Type': 'image/png',
@@ -96,7 +98,6 @@ export function renderStoreOgImage({
   ImageResponseImpl,
   model,
   status,
-  headers,
 }) {
   return new ImageResponseImpl(
     StoreOgCard({ model }),
@@ -104,9 +105,32 @@ export function renderStoreOgImage({
       width: OPEN_GRAPH_IMAGE_WIDTH,
       height: OPEN_GRAPH_IMAGE_HEIGHT,
       status,
-      headers,
     },
   );
+}
+
+export function validateNonEmptyPng(bytes) {
+  const png = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (png.byteLength <= MINIMUM_PNG_BYTES) {
+    throw new TypeError('Open Graph renderer produced an empty or undersized PNG.');
+  }
+  for (let index = 0; index < PNG_SIGNATURE.length; index += 1) {
+    if (png[index] !== PNG_SIGNATURE[index]) {
+      throw new TypeError('Open Graph renderer produced an invalid PNG signature.');
+    }
+  }
+  return png;
+}
+
+export async function materializeStoreOgImage({
+  ImageResponseImpl,
+  model,
+  status,
+  headers,
+}) {
+  const imageResponse = renderStoreOgImage({ ImageResponseImpl, model, status });
+  const bytes = validateNonEmptyPng(new Uint8Array(await imageResponse.arrayBuffer()));
+  return new Response(bytes, { status, headers });
 }
 
 export function createStoreOgHandler({
@@ -164,7 +188,7 @@ export function createStoreOgHandler({
     const model = buildStoreOgCardModel({ result, logoImage, coverImage });
     try {
       const ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
-      return renderStoreOgImage({
+      return await materializeStoreOgImage({
         ImageResponseImpl: ResolvedImageResponseImpl,
         model,
         status: responseStatus,
@@ -178,7 +202,7 @@ export function createStoreOgHandler({
       });
       try {
         const ResolvedImageResponseImpl = ImageResponseImpl || await imageResponseLoader();
-        return renderStoreOgImage({
+        return await materializeStoreOgImage({
           ImageResponseImpl: ResolvedImageResponseImpl,
           model: fallbackModel,
           status: responseStatus,

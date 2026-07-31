@@ -297,6 +297,60 @@ describe('ecommercePublicService', () => {
     );
   });
 
+  it('retries one transient public portal read and returns the recovered store', async () => {
+    const retryDelay = vi.fn(async () => {});
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: 'connection closed' } })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          portal: { slug: 'mi-negocio', name: 'Mi negocio' },
+          hours: { weekly: [], exceptions: [] },
+          features: {},
+        },
+        error: null,
+      });
+    const service = createEcommercePublicService({ rpc }, {
+      cache: null,
+      publicReadRetryDelay: retryDelay,
+      publicReadRetryDelayMs: 1,
+    });
+
+    await expect(service.getPublicPortalBySlug('mi-negocio')).resolves.toMatchObject({
+      portal: { name: 'Mi negocio' },
+      source: 'network',
+      offline: false,
+    });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(retryDelay).toHaveBeenCalledOnce();
+  });
+
+  it('does not retry a public business error or a mutable checkout operation', async () => {
+    const retryDelay = vi.fn(async () => {});
+    const portalRpc = vi.fn().mockResolvedValue({
+      data: { success: false, error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND' } },
+      error: null,
+    });
+    const service = createEcommercePublicService({ rpc: portalRpc }, {
+      cache: null,
+      publicReadRetryDelay: retryDelay,
+    });
+    await expect(service.getPublicPortalBySlug('missing')).rejects.toMatchObject({
+      code: 'ECOMMERCE_PORTAL_NOT_FOUND',
+    });
+    expect(portalRpc).toHaveBeenCalledOnce();
+    expect(retryDelay).not.toHaveBeenCalled();
+
+    const checkoutRpc = vi.fn().mockResolvedValue({ data: null, error: { message: 'fetch failed' } });
+    const checkoutService = createEcommercePublicService({ rpc: checkoutRpc }, {
+      publicReadRetryDelay: retryDelay,
+    });
+    await expect(checkoutService.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({ code: 'ECOMMERCE_PUBLIC_NETWORK_ERROR' });
+    expect(checkoutRpc).toHaveBeenCalledOnce();
+  });
+
   it('does not expose Supabase network details while loading the store', async () => {
     const service = createEcommercePublicService({
       rpc: vi.fn().mockResolvedValue({

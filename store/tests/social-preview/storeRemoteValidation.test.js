@@ -314,6 +314,16 @@ function withFixtureOverride(overrides = {}) {
       ? (url.searchParams.has('v') ? 'ogVersioned' : 'ogUnversioned')
       : (url.pathname === `/tienda/${slug}` ? 'dynamicHtml'
           : (url.pathname === assetPath ? 'asset' : null));
+    if (cacheKey && (overrides.duplicateContentType || overrides.duplicateCacheControl)) {
+      const bytes = new Uint8Array(await original.arrayBuffer());
+      const headers = new Headers(original.headers);
+      if (overrides.duplicateContentType) headers.append('Content-Type', 'image/png');
+      if (overrides.duplicateCacheControl) headers.append('Cache-Control', headers.get('Cache-Control'));
+      return new Response(options.method === 'HEAD' ? null : bytes, {
+        status: original.status,
+        headers,
+      });
+    }
     if (
       !cacheKey
       || overrides[cacheKey] === null
@@ -698,6 +708,8 @@ describe('validación remota saneada de lanzo-store', () => {
       [{ ogVersioned: 'public, max-age=31536000' }, 'og-versioned:png'],
       [{ dynamicHtml: 'public, s-maxage=300, immutable' }, 'store:metadata'],
       [{ asset: 'public, max-age=31536000' }, 'asset:immutable'],
+      [{ duplicateContentType: true }, 'og:png'],
+      [{ duplicateCacheControl: true }, 'og:png'],
     ]) {
       const result = await auditRemoteStoreDeployment({
         baseUrl: preview,

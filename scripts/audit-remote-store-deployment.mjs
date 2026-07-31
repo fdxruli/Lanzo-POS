@@ -734,6 +734,14 @@ function sanitizedHeaders(headers) {
   return Object.freeze({
     contentType: headers.get('content-type') || '',
     cacheControl: headers.get('cache-control') || '',
+    duplicateContentType: (headers.get('content-type') || '').includes(','),
+    duplicateCacheControl: (() => {
+      const directives = (headers.get('cache-control') || '')
+        .split(',')
+        .map((item) => item.trim().split('=')[0].toLowerCase())
+        .filter(Boolean);
+      return new Set(directives).size !== directives.length;
+    })(),
     xRobotsTag: headers.get('x-robots-tag') || '',
     locationHost: safeUrlHost(location),
     locationPath,
@@ -943,6 +951,8 @@ export async function auditRemoteStoreDeployment({
     if (name === 'og') ogInspection = inspection;
     addCheck(checks, `${name}:png`, item.status === 200
       && item.contentType === 'image/png'
+      && !item.headers.duplicateContentType
+      && !item.headers.duplicateCacheControl
       && inspection.png
       && inspection.width === 1200
       && inspection.height === 630
@@ -954,7 +964,10 @@ export async function auditRemoteStoreDeployment({
       ));
   }
   const ogHead = await request('og-head', paths.og, 'HEAD');
-  addCheck(checks, 'og:head', ogHead.status === 200 && ogHead.contentType === 'image/png');
+  addCheck(checks, 'og:head', ogHead.status === 200
+    && ogHead.contentType === 'image/png'
+    && !ogHead.headers.duplicateContentType
+    && !ogHead.headers.duplicateCacheControl);
 
   const asset = await request('asset', paths.asset);
   const assetSource = asset.text || '';

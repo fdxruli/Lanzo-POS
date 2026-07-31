@@ -13,6 +13,8 @@ import {
 import { normalizeEcommerceSiteDocument } from '../../utils/ecommerceSiteDocument';
 
 const PUBLIC_RPC_TIMEOUT_MS = 12_000;
+const PUBLIC_READ_MAX_ATTEMPTS = 2;
+const PUBLIC_READ_RETRY_DELAY_MS = 120;
 const DEFAULT_CURRENCY = 'MXN';
 const STORE_REQUEST_MESSAGE = 'No se pudo cargar la tienda. Revisa tu conexión e intenta nuevamente.';
 const CONFIGURATION_REQUEST_MESSAGE = 'No se pudieron cargar las opciones de este producto.';
@@ -449,6 +451,33 @@ async function executeRpc(client, rpcName, params, operation = 'store') {
   return data;
 }
 
+function isTransientPublicReadError(error) {
+  if (['ECOMMERCE_PUBLIC_NETWORK_ERROR', 'ECOMMERCE_PUBLIC_TIMEOUT'].includes(error?.code)) {
+    return true;
+  }
+  const message = asText(error?.cause?.message || error?.message).toLowerCase();
+  return /(?:connection closed|fetch failed|network error|network request failed|timeout)/iu.test(message);
+}
+
+const waitForPublicReadRetry = (delayMs) => new Promise((resolve) => {
+  globalThis.setTimeout(resolve, delayMs);
+});
+
+async function executePublicReadRpc(client, rpcName, params, {
+  retryDelayMs = PUBLIC_READ_RETRY_DELAY_MS,
+  retryDelay = waitForPublicReadRetry,
+} = {}) {
+  for (let attempt = 1; attempt <= PUBLIC_READ_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await executeRpc(client, rpcName, params);
+    } catch (error) {
+      if (attempt === PUBLIC_READ_MAX_ATTEMPTS || !isTransientPublicReadError(error)) throw error;
+      await retryDelay(Math.max(0, Number(retryDelayMs) || 0));
+    }
+  }
+  throw new Error('Public read retry exhausted unexpectedly.');
+}
+
 const isLegacyCatalogSignatureError = (error) => {
   const code = asText(error?.cause?.code || error?.code);
   const message = asText(error?.cause?.message).toLowerCase();
@@ -476,7 +505,9 @@ export function createEcommercePublicService(
   client = ecommercePublicClient,
   {
     cache = ecommercePublicCatalogCache,
-    configurationCache = ecommercePublicConfigurationCache
+    configurationCache = ecommercePublicConfigurationCache,
+    publicReadRetryDelayMs = PUBLIC_READ_RETRY_DELAY_MS,
+    publicReadRetryDelay = waitForPublicReadRetry,
   } = {}
 ) {
   return {
@@ -489,9 +520,9 @@ export function createEcommercePublicService(
         );
       }
       try {
-        const data = await executeRpc(client, 'ecommerce_get_portal_by_slug', {
+        const data = await executePublicReadRpc(client, 'ecommerce_get_portal_by_slug', {
           p_slug: normalizedSlug
-        });
+        }, { retryDelayMs: publicReadRetryDelayMs, retryDelay: publicReadRetryDelay });
         const result = normalizePortalResult(data);
         if (cache && options.cache !== false && result.catalogRevision) {
           void safely(() => cache.putPortal({ slug: normalizedSlug, result }));
@@ -568,14 +599,17 @@ export function createEcommercePublicService(
       try {
         let data;
         try {
-          data = await executeRpc(client, 'ecommerce_get_catalog', params);
+          data = await executePublicReadRpc(client, 'ecommerce_get_catalog', params, {
+            retryDelayMs: publicReadRetryDelayMs,
+            retryDelay: publicReadRetryDelay,
+          });
         } catch (error) {
           if (!catalogRevision || !isLegacyCatalogSignatureError(error)) throw error;
-          data = await executeRpc(client, 'ecommerce_get_catalog', {
+          data = await executePublicReadRpc(client, 'ecommerce_get_catalog', {
             p_slug: normalizedSlug,
             p_limit: limit,
             p_offset: offset
-          });
+          }, { retryDelayMs: publicReadRetryDelayMs, retryDelay: publicReadRetryDelay });
         }
         const result = normalizeCatalogResult(data, catalogRevision);
         if (catalogRevision && result.catalogRevision !== catalogRevision) {

@@ -26,6 +26,10 @@ function parseHex(hex) {
   return [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
 }
 
+function rgba(hex, alpha) {
+  return `rgba(${parseHex(hex).join(',')},${alpha})`;
+}
+
 export function colorLuminance(hex) {
   const channels = parseHex(hex).map((channel) => {
     const normalized = channel / 255;
@@ -139,7 +143,8 @@ export function StoreOgCard({ model }) {
       position: 'relative',
       overflow: 'hidden',
       color: '#ffffff',
-      background: `linear-gradient(135deg, ${visual.darkPrimary}, ${visual.primaryColor})`,
+      backgroundColor: visual.darkPrimary,
+      backgroundImage: `linear-gradient(135deg, ${visual.darkPrimary}, ${visual.primaryColor})`,
     },
   },
   model.coverImage && h('img', {
@@ -158,7 +163,8 @@ export function StoreOgCard({ model }) {
       position: 'absolute',
       inset: 0,
       display: 'flex',
-      background: `linear-gradient(90deg, ${visual.darkPrimary}f2 0%, ${visual.darkPrimary}c9 58%, ${visual.primaryColor}73 100%)`,
+      backgroundColor: rgba(visual.darkPrimary, 0.95),
+      backgroundImage: `linear-gradient(90deg, ${rgba(visual.darkPrimary, 0.95)} 0%, ${rgba(visual.darkPrimary, 0.79)} 58%, ${rgba(visual.primaryColor, 0.45)} 100%)`,
     },
   }),
   h('div', {

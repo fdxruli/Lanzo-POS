@@ -148,6 +148,16 @@ describe('buildStoreOgCardModel', () => {
     expect(tree).not.toMatch(/Arial|Georgia|https?:\/\/|data:font|fontFamily/iu);
   });
 
+  it('usa gradientes compatibles con Satori sin colores hexadecimales de ocho dígitos', () => {
+    const tree = JSON.stringify(StoreOgCard({ model: buildStoreOgCardModel({ result: okResult() }) }));
+    expect(tree).toContain('backgroundImage');
+    expect(tree).toContain('boxShadow');
+    expect(tree).toContain('inset');
+    expect(tree).not.toContain('"background":"linear-gradient');
+    expect(tree).not.toMatch(/#[0-9a-f]{8}/iu);
+    expect(tree).toContain('rgba(');
+  });
+
   it('expone utilidades puras y deterministas de luminancia y mezcla', () => {
     expect(colorLuminance('#ffffff')).toBeCloseTo(1);
     expect(colorLuminance('#000000')).toBe(0);

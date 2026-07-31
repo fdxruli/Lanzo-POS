@@ -9,14 +9,15 @@ import {
 
 const SLUG = 'tienda-segura';
 const ENDPOINT = `https://tienda.lanzo.test/api/og/store?slug=${SLUG}`;
+const PNG_BYTES = new Uint8Array(1_001);
+PNG_BYTES.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 let imageCalls;
 
 class FakeImageResponse {
   constructor(element, options) {
     imageCalls.push({ element, options });
-    return new Response(new Uint8Array([137, 80, 78, 71]), {
+    return new Response(PNG_BYTES, {
       status: options.status,
-      headers: options.headers,
     });
   }
 }
@@ -73,6 +74,8 @@ describe('métodos, query y respuesta', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
+    expect([...response.headers.keys()].filter((name) => name === 'content-type')).toHaveLength(1);
+    expect([...response.headers.keys()].filter((name) => name === 'cache-control')).toHaveLength(1);
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
     expect(client.getPortalBySlug).toHaveBeenCalledWith(SLUG);
@@ -199,7 +202,7 @@ describe('resiliencia del renderer', () => {
       constructor(element, options) {
         imageCalls.push({ element, options });
         if (imageCalls.length === 1) throw new Error('renderer private details');
-        return new Response(new Uint8Array([137, 80, 78, 71]), {
+        return new Response(PNG_BYTES, {
           status: options.status,
           headers: options.headers,
         });
@@ -250,6 +253,49 @@ describe('resiliencia del renderer', () => {
     expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
     expect(body).toBe('Open Graph image unavailable.');
     expect(body).not.toMatch(/renderer|stack|tienda-segura|credential|private/iu);
+  });
+
+  it('materializa el fallo asíncrono del stream y usa la tarjeta de fallback', async () => {
+    class AsyncFailOnceImageResponse {
+      constructor(element, options) {
+        imageCalls.push({ element, options });
+        if (imageCalls.length === 1) {
+          return { arrayBuffer: async () => { throw new TypeError('u2 is not iterable'); } };
+        }
+        return new Response(PNG_BYTES, { status: options.status });
+      }
+    }
+    const handler = createStoreOgHandler({
+      portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
+      imageLoader: vi.fn(async () => null),
+      ImageResponseImpl: AsyncFailOnceImageResponse,
+    });
+
+    const response = await handler(new Request(ENDPOINT));
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toHaveLength(1_001);
+    expect(imageCalls).toHaveLength(2);
+    expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
+  });
+
+  it.each([
+    ['vacío', new Uint8Array()],
+    ['con firma inválida', new Uint8Array(1_001)],
+  ])('trata un PNG %s como fallo de render', async (_label, body) => {
+    class InvalidPngImageResponse {
+      constructor(_element, options) {
+        return new Response(body, { status: options.status });
+      }
+    }
+    const handler = createStoreOgHandler({
+      portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
+      imageLoader: vi.fn(async () => null),
+      ImageResponseImpl: InvalidPngImageResponse,
+    });
+
+    const response = await handler(new Request(ENDPOINT));
+    expect(response.status).toBe(500);
+    expect(response.headers.get('content-type')).toContain('text/plain');
   });
 });
 
