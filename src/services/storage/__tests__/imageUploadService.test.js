@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -58,6 +58,10 @@ beforeEach(() => {
   mocks.getPublicUrl.mockReturnValue({
     data: { publicUrl: 'https://storage.test/public_uploads/branding.webp' }
   });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('imageUploadService branding normalization', () => {
