@@ -124,6 +124,8 @@ export function StoreOgCard({ model }) {
     ? h('img', {
         src: model.logoImage,
         alt: '',
+        width: 112,
+        height: 112,
         style: { width: 112, height: 112, objectFit: 'contain' },
       })
     : h('div', {
@@ -150,6 +152,8 @@ export function StoreOgCard({ model }) {
   model.coverImage && h('img', {
     src: model.coverImage,
     alt: '',
+    width: 1200,
+    height: 630,
     style: {
       position: 'absolute',
       width: '1200px',

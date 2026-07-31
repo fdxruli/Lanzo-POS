@@ -44,7 +44,7 @@ const allowedAssetExtensions = new Set([
 ]);
 const textExtensions = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt', '.webmanifest']);
 const functionSourceExtensions = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx']);
-const allowedBareImports = new Set(['@vercel/og', 'react']);
+const allowedBareImports = new Set(['@vercel/og', 'react', 'sharp']);
 const expectedPublicFunctions = Object.freeze(['/api/og/store', '/api/store-page']);
 
 async function pathExists(filePath) {
@@ -294,8 +294,14 @@ export async function auditStoreServerImports(repositoryRoot = projectRoot) {
   if (!dependencyClosure['/api/og/store'].packages.includes('react')) {
     throw new Error('The OG function does not resolve react.');
   }
+  if (!dependencyClosure['/api/og/store'].packages.includes('sharp')) {
+    throw new Error('The OG function does not resolve sharp for WebP normalization.');
+  }
   if (dependencyClosure['/api/store-page'].packages.includes('@vercel/og')) {
     throw new Error('The HTML function must not depend on @vercel/og.');
+  }
+  if (dependencyClosure['/api/store-page'].packages.includes('sharp')) {
+    throw new Error('The HTML function must not depend on sharp.');
   }
   return Object.freeze({ publicFunctions, dependencyClosure });
 }

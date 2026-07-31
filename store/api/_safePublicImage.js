@@ -1,7 +1,10 @@
 import { Buffer } from 'node:buffer';
+import sharp from 'sharp';
 
 export const IMAGE_TIMEOUT_MS = 2_500;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_OG_IMAGE_DIMENSION = 1_200;
+export const MAX_OG_INPUT_PIXELS = 40_000_000;
 
 const ALLOWED_IMAGE_TYPES = new Set([
   'image/png',
@@ -112,6 +115,50 @@ export function hasValidImageSignature(contentType, bytes) {
   return false;
 }
 
+export async function normalizePublicImageForOg({
+  bytes,
+  contentType,
+  maximumBytes = MAX_IMAGE_BYTES,
+} = {}) {
+  if (!(bytes instanceof Uint8Array) || !bytes.byteLength) return null;
+  if (contentType !== 'image/webp') {
+    return Object.freeze({ bytes, contentType });
+  }
+
+  const input = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const output = await sharp(input, {
+    animated: false,
+    failOn: 'warning',
+    limitInputPixels: MAX_OG_INPUT_PIXELS,
+    sequentialRead: true,
+  })
+    .rotate()
+    .resize({
+      width: MAX_OG_IMAGE_DIMENSION,
+      height: MAX_OG_IMAGE_DIMENSION,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .png({
+      adaptiveFiltering: true,
+      compressionLevel: 9,
+    })
+    .toBuffer();
+
+  if (
+    !output.byteLength
+    || output.byteLength > maximumBytes
+    || !hasValidImageSignature('image/png', output)
+  ) {
+    return null;
+  }
+
+  return Object.freeze({
+    bytes: new Uint8Array(output.buffer, output.byteOffset, output.byteLength),
+    contentType: 'image/png',
+  });
+}
+
 async function readLimitedBody(response, maximumBytes, signal, declaredLength) {
   const reader = response?.body?.getReader?.();
   if (!reader) {
@@ -186,9 +233,11 @@ export function createSafePublicImageLoader({
   fetchImpl = globalThis.fetch,
   timeoutMs = IMAGE_TIMEOUT_MS,
   maximumBytes = MAX_IMAGE_BYTES,
+  imageNormalizer = normalizePublicImageForOg,
 } = {}) {
   const configured = normalizeSupabaseOrigin(supabaseUrl);
   const validRuntime = typeof fetchImpl === 'function'
+    && typeof imageNormalizer === 'function'
     && typeof globalThis.AbortController === 'function'
     && typeof Buffer?.from === 'function';
   const validLimits = Number.isSafeInteger(timeoutMs)
@@ -234,7 +283,20 @@ export function createSafePublicImageLoader({
         timeout,
       ]);
       if (!bytes?.byteLength || !hasValidImageSignature(contentType, bytes)) return null;
-      return `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`;
+
+      const normalized = await Promise.race([
+        imageNormalizer({ bytes, contentType, maximumBytes }),
+        timeout,
+      ]);
+      if (
+        !normalized?.bytes?.byteLength
+        || !ALLOWED_IMAGE_TYPES.has(normalized.contentType)
+        || !hasValidImageSignature(normalized.contentType, normalized.bytes)
+      ) {
+        return null;
+      }
+
+      return `data:${normalized.contentType};base64,${Buffer.from(normalized.bytes).toString('base64')}`;
     } catch {
       return null;
     } finally {
