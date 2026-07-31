@@ -4,11 +4,14 @@ import {
   REVALIDATED_CACHE,
   TEMPORARY_CACHE,
   VERSIONED_CACHE,
+  buildStoreOgRenderAttempts,
   createStoreOgHandler,
 } from '../../api/og/store.js';
 
 const SLUG = 'tienda-segura';
 const ENDPOINT = `https://tienda.lanzo.test/api/og/store?slug=${SLUG}`;
+const LOGO_IMAGE = 'data:image/png;base64,iVBORw0KGgo=';
+const COVER_IMAGE = 'data:image/jpeg;base64,/9j/4A==';
 const PNG_BYTES = new Uint8Array(1_001);
 PNG_BYTES.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 let imageCalls;
@@ -46,6 +49,7 @@ const createHandler = ({
   portalClient,
   imageLoader = vi.fn(async () => null),
   environment = {},
+  logger = { warn: vi.fn() },
 } = {}) => {
   const client = portalClient || {
     getPortalBySlug: vi.fn(async () => result),
@@ -53,12 +57,14 @@ const createHandler = ({
   return {
     client,
     imageLoader,
+    logger,
     handler: createStoreOgHandler({
       portalClient: client,
       imageLoader,
       ImageResponseImpl: FakeImageResponse,
       environment,
       fetchImpl: vi.fn(),
+      logger,
     }),
   };
 };
@@ -129,13 +135,29 @@ describe('estados, imágenes y privacidad', () => {
   it.each([
     ['logo', (url) => (url.includes('logo') ? null : 'data:image/png;base64,Y292ZXI=')],
     ['portada', (url) => (url.includes('cover') ? null : 'data:image/png;base64,bG9nbw==')],
-  ])('mantiene el PNG cuando falla la %s', async (label, implementation) => {
+  ])('mantiene el PNG cuando falla la %s', async (_label, implementation) => {
     const { handler } = createHandler({
       imageLoader: vi.fn(async (url) => implementation(url)),
     });
     const response = await handler(new Request(ENDPOINT));
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('image/png');
+    expect(JSON.stringify(imageCalls[0].element)).toContain('Tienda Segura');
+  });
+
+  it.each([
+    [null, null, ['branding_only']],
+    [LOGO_IMAGE, null, ['logo_only', 'branding_only']],
+    [null, COVER_IMAGE, ['cover_only', 'branding_only']],
+    [LOGO_IMAGE, COVER_IMAGE, ['logo_and_cover', 'cover_only', 'logo_only', 'branding_only']],
+  ])('construye la matriz progresiva para logo=%s portada=%s', (logoImage, coverImage, names) => {
+    const attempts = buildStoreOgRenderAttempts({ result: okResult, logoImage, coverImage });
+    expect(attempts.map((attempt) => attempt.name)).toEqual(names);
+    attempts.forEach((attempt) => {
+      expect(attempt.model.name).toBe('Tienda Segura');
+      expect(attempt.model.description).toBe('Compra en línea');
+      expect(attempt.model.initial).toBe('T');
+    });
   });
 
   it.each([
@@ -153,6 +175,7 @@ describe('estados, imágenes y privacidad', () => {
       ImageResponseImpl: FakeImageResponse,
       environment: {},
       fetchImpl: vi.fn(),
+      logger: { warn: vi.fn() },
     });
     const response = await handler(new Request(ENDPOINT));
     expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
@@ -186,9 +209,7 @@ describe('resiliencia del renderer', () => {
   it('conserva el render personalizado cuando ImageResponse funciona', async () => {
     const { handler } = createHandler({
       imageLoader: vi.fn(async (url) => (
-        url.includes('logo')
-          ? 'data:image/png;base64,iVBORw0KGgo='
-          : 'data:image/jpeg;base64,/9j/4A=='
+        url.includes('logo') ? LOGO_IMAGE : COVER_IMAGE
       )),
     });
     const response = await handler(new Request(ENDPOINT));
@@ -197,50 +218,87 @@ describe('resiliencia del renderer', () => {
     expect(JSON.stringify(imageCalls[0].element)).toContain('Tienda Segura');
   });
 
-  it('primer fallo activa una sola tarjeta genérica sin imágenes y caché temporal', async () => {
-    class FailOnceImageResponse {
+  it('si falla logo + portada, reintenta solo con portada sin perder la identidad', async () => {
+    class FailCombinedImagesResponse {
       constructor(element, options) {
+        const serialized = JSON.stringify(element);
         imageCalls.push({ element, options });
-        if (imageCalls.length === 1) throw new Error('renderer private details');
-        return new Response(PNG_BYTES, {
-          status: options.status,
-          headers: options.headers,
-        });
+        if (serialized.includes(LOGO_IMAGE) && serialized.includes(COVER_IMAGE)) {
+          throw new Error('renderer private details');
+        }
+        return new Response(PNG_BYTES, { status: options.status });
       }
     }
-    const imageLoader = vi.fn(async (url) => (
-      url.includes('logo')
-        ? 'data:image/png;base64,iVBORw0KGgo='
-        : 'data:image/jpeg;base64,/9j/4A=='
-    ));
-    const client = { getPortalBySlug: vi.fn(async () => okResult) };
+    const logger = { warn: vi.fn() };
     const handler = createStoreOgHandler({
-      portalClient: client,
-      imageLoader,
-      ImageResponseImpl: FailOnceImageResponse,
+      portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
+      imageLoader: vi.fn(async (url) => (url.includes('logo') ? LOGO_IMAGE : COVER_IMAGE)),
+      ImageResponseImpl: FailCombinedImagesResponse,
+      logger,
     });
 
     const response = await handler(new Request(`${ENDPOINT}&v=7`));
+    const degraded = JSON.stringify(imageCalls[1].element);
     expect(response.status).toBe(200);
     expect(imageCalls).toHaveLength(2);
-    expect(JSON.stringify(imageCalls[0].element)).toMatch(/data:image\/(?:png|jpeg);base64/u);
-    expect(JSON.stringify(imageCalls[1].element)).not.toContain('data:image/');
-    expect(JSON.stringify(imageCalls[1].element)).toContain('Tienda en línea');
+    expect(degraded).toContain('Tienda Segura');
+    expect(degraded).toContain('Compra en línea');
+    expect(degraded).toContain(COVER_IMAGE);
+    expect(degraded).not.toContain(LOGO_IMAGE);
     expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
     expect(response.headers.get('cache-control')).not.toContain('immutable');
+    expect(logger.warn).toHaveBeenCalledWith('[store-og] render_failed:logo_and_cover');
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toMatch(/private details|tienda-segura|credential/iu);
   });
 
-  it('segundo fallo devuelve 500 no-store sin declarar PNG ni filtrar detalles', async () => {
+  it('si fallan todas las variantes con imágenes, conserva nombre, inicial, colores y descripción', async () => {
+    class FailEmbeddedImagesResponse {
+      constructor(element, options) {
+        const serialized = JSON.stringify(element);
+        imageCalls.push({ element, options });
+        if (serialized.includes('data:image/')) {
+          throw new TypeError('unsupported image payload');
+        }
+        return new Response(PNG_BYTES, { status: options.status });
+      }
+    }
+    const logger = { warn: vi.fn() };
+    const handler = createStoreOgHandler({
+      portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
+      imageLoader: vi.fn(async (url) => (url.includes('logo') ? LOGO_IMAGE : COVER_IMAGE)),
+      ImageResponseImpl: FailEmbeddedImagesResponse,
+      logger,
+    });
+
+    const response = await handler(new Request(`${ENDPOINT}&v=7`));
+    const finalAttempt = JSON.stringify(imageCalls.at(-1).element);
+    expect(response.status).toBe(200);
+    expect(imageCalls).toHaveLength(4);
+    expect(finalAttempt).toContain('Tienda Segura');
+    expect(finalAttempt).toContain('Compra en línea');
+    expect(finalAttempt).toContain('T');
+    expect(finalAttempt).not.toContain('data:image/');
+    expect(finalAttempt).not.toContain('Consulta productos y realiza tu pedido con Lanzo.');
+    expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
+    expect(logger.warn.mock.calls.map(([message]) => message)).toEqual([
+      '[store-og] render_failed:logo_and_cover',
+      '[store-og] render_failed:cover_only',
+      '[store-og] render_failed:logo_only',
+    ]);
+  });
+
+  it('si falla incluso la tarjeta personalizada sin imágenes devuelve 500 no-store', async () => {
     class AlwaysFailImageResponse {
       constructor() {
         throw new Error('renderer stack slug=tienda-segura credential=private');
       }
     }
-    const client = { getPortalBySlug: vi.fn(async () => okResult) };
+    const logger = { warn: vi.fn() };
     const handler = createStoreOgHandler({
-      portalClient: client,
+      portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
       imageLoader: vi.fn(async () => null),
       ImageResponseImpl: AlwaysFailImageResponse,
+      logger,
     });
 
     const response = await handler(new Request(`${ENDPOINT}&v=7`));
@@ -253,9 +311,11 @@ describe('resiliencia del renderer', () => {
     expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow, noarchive');
     expect(body).toBe('Open Graph image unavailable.');
     expect(body).not.toMatch(/renderer|stack|tienda-segura|credential|private/iu);
+    expect(logger.warn).toHaveBeenCalledWith('[store-og] render_failed:branding_only');
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toMatch(/renderer|stack|tienda-segura|credential|private/iu);
   });
 
-  it('materializa el fallo asíncrono del stream y usa la tarjeta de fallback', async () => {
+  it('materializa un fallo asíncrono y continúa con la siguiente variante personalizada', async () => {
     class AsyncFailOnceImageResponse {
       constructor(element, options) {
         imageCalls.push({ element, options });
@@ -267,15 +327,36 @@ describe('resiliencia del renderer', () => {
     }
     const handler = createStoreOgHandler({
       portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
-      imageLoader: vi.fn(async () => null),
+      imageLoader: vi.fn(async (url) => (url.includes('logo') ? LOGO_IMAGE : COVER_IMAGE)),
       ImageResponseImpl: AsyncFailOnceImageResponse,
+      logger: { warn: vi.fn() },
     });
 
     const response = await handler(new Request(ENDPOINT));
     expect(response.status).toBe(200);
     expect(new Uint8Array(await response.arrayBuffer())).toHaveLength(1_001);
     expect(imageCalls).toHaveLength(2);
+    expect(JSON.stringify(imageCalls[1].element)).toContain('Tienda Segura');
     expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
+  });
+
+  it('si no puede cargar ImageResponse devuelve 500 con diagnóstico sanitizado', async () => {
+    const logger = { warn: vi.fn() };
+    const handler = createStoreOgHandler({
+      portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
+      imageLoader: vi.fn(async () => null),
+      imageResponseLoader: vi.fn(async () => {
+        throw new Error('private loader details');
+      }),
+      logger,
+    });
+
+    const response = await handler(new Request(ENDPOINT));
+    expect(response.status).toBe(500);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('Open Graph image unavailable.');
+    expect(logger.warn).toHaveBeenCalledWith('[store-og] render_failed:image_response_unavailable');
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('private loader details');
   });
 
   it.each([
@@ -291,6 +372,7 @@ describe('resiliencia del renderer', () => {
       portalClient: { getPortalBySlug: vi.fn(async () => okResult) },
       imageLoader: vi.fn(async () => null),
       ImageResponseImpl: InvalidPngImageResponse,
+      logger: { warn: vi.fn() },
     });
 
     const response = await handler(new Request(ENDPOINT));
