@@ -4321,6 +4321,67 @@ ejecutar la única preview de certificación final autorizada. Hasta entonces la
 certificación externa permanece `BLOCKED`. Este cambio no genera artifact ni
 deployment.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.9.0
+
+### Controlled fifth-preview recovery authorization
+
+La cuarta preview se conserva como evidencia fallida y no puede promoverse,
+reutilizarse, redeployarse ni recibir alias. Sus dos defectos fueron la
+materializacion asincrona de la respuesta OG y la resiliencia insuficiente de
+la lectura publica transitoria. El HEAD que contiene ambas correcciones es:
+
+```text
+correctedHead = c92c5eabb20fdc83bda325adeeb8815799e79de8
+correctedTree = 5425e7fe8f220e91dbcf8cc0155476b7a3e12370
+workflow = 30594785513
+workflowConclusion = success
+newFailures = []
+fourthDeployment = dpl_BtKTkwWRMGYhatgKwFWwZps48p3u
+fourthCertification = FAILED_CERTIFICATION
+fifthPreviewCreated = false
+productionChanged = false
+supabaseChanged = false
+```
+
+La politica anterior terminaba en cuatro previews y prohibia una quinta. Esta
+minifase agrega la excepcion cerrada `controlled-fifth-preview-recovery`: solo
+autoriza una recuperacion numero 1, con exactamente cuatro previews fallidas y
+preservadas, cuarta evidencia exacta, ancestry Git local verificada desde el
+HEAD corregido, CI `success`, `newFailures=[]` y el comando exacto
+`vercel deploy --prebuilt --yes`.
+
+El plan posterior debe incluir un artifact PASS del mismo HEAD y tree, sin
+archivos `.env`, sin deployment ejecutado, y pruebas certificadas de PNG real,
+firma, bytes minimos y retry de lectura publica. El resultado saneado fija
+`maximumTotalPreviewCount=5`, `sixthPreviewForbidden=true`,
+`productionForbidden=true`, `aliasForbidden=true`, `promotionForbidden=true`
+y `redeployForbidden=true`. La autorizacion del plan no equivale a una
+certificacion remota ni autoriza produccion despues de una quinta preview.
+
+La auditoria posterior de esa quinta preview exigira HTML 200 con doctype,
+React root, title, canonical y metadata OG/Twitter; frontend visible y en
+estado terminal `ready`; y OG `image/png` unico, PNG valido de 1200x630 y mas
+de 1000 bytes. Un primer fallo de lectura publica solo se permite si el
+segundo intento recupera y la UI termina en `ready`; datos seguidos de error no
+certifican. Tambien bloquea errores runtime de OG, incluyendo TypeError de
+Satori, `FUNCTION_INVOCATION_FAILED`, `INTERNAL_SERVER_ERROR`, imagen vacia y
+fallback server-side.
+
+La certificacion final posterior solo podra declarar:
+
+```text
+certification = PASS
+deploymentType = preview
+production = false
+deploymentCount = 5
+sixthPreviewForbidden = true
+productionPromotionAuthorized = false
+```
+
+En esta minifase no se genero artifact, no se creo la quinta preview, no se
+modificaron produccion, Supabase ni variables Vercel. La certificacion final
+queda bloqueada hasta una ejecucion posterior del artifact y la quinta preview.
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.9 - Fourth preview failed certification
 
 The fourth preview is preserved as failed evidence and must not be promoted,

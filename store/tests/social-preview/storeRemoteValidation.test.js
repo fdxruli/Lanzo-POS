@@ -11,6 +11,7 @@ import {
   parseAuditArguments,
   validateCacheControl,
   validatePreviewDeploymentPlan,
+  validateFifthPreviewRemoteCertification,
   validatePreviewUrl,
 } from '../../../scripts/audit-remote-store-deployment.mjs';
 
@@ -28,6 +29,11 @@ const recertificationHead = 'f'.repeat(40);
 const runtimeFailureCode = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
 const transitiveRuntimeFailureCode = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
 const publicRuntimeEnvironmentFailureCode = 'PUBLIC_STATIC_ENV_AND_OG_ESM_INTEROP_MISMATCH';
+const fourthPreviewDeploymentId = 'dpl_BtKTkwWRMGYhatgKwFWwZps48p3u';
+const fourthPreviewHead = '196d4703c6865e34b866bfa4ebc412fa5a35fc17';
+const correctedHead = 'c92c5eabb20fdc83bda325adeeb8815799e79de8';
+const correctedTree = '5425e7fe8f220e91dbcf8cc0155476b7a3e12370';
+const ogPublicReadFailureCode = 'OG_ASYNC_STREAM_RENDER_AND_PUBLIC_READ_RESILIENCE_MISMATCH';
 const publicAssetSource = [
   'const url="https://public-fixture.supabase.co/";',
   'const key="sb_publishable_fixture_public_key_123456";',
@@ -216,6 +222,110 @@ function recertificationPreviewPlan(overrides = {}) {
     recertificationNumber: 1,
     recertificationExecuted: false,
     commandArgs: ['deploy', '--prebuilt', '--yes'],
+    ...overrides,
+  };
+}
+
+function controlledFifthRecoveryPlan(overrides = {}) {
+  return {
+    deploymentPolicy: 'controlled-fifth-preview-recovery',
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewDeployments: 4,
+    previousPreviewFailedCertifications: 4,
+    previousPreviews: [
+      ...recertificationPreviewPlan().previousPreviews,
+      {
+        projectName: 'lanzo-store',
+        deploymentType: 'preview',
+        production: false,
+        status: 'FAILED_CERTIFICATION',
+        evidencePass: false,
+        deploymentId: fourthPreviewDeploymentId,
+        head: fourthPreviewHead,
+        preserved: true,
+        failureCode: ogPublicReadFailureCode,
+      },
+    ],
+    head: correctedHead,
+    headAncestryVerified: true,
+    minimumCorrectedHead: correctedHead,
+    minimumCorrectedHeadRelationship: 'validated-descendant',
+    fifthPreviewAuthorized: true,
+    recoveryAuthorizationNumber: 1,
+    recoveryPreviewExecuted: false,
+    ogAsyncStreamMaterializationCorrected: true,
+    publicReadTransientRetryCorrected: true,
+    ciWorkflowConclusion: 'success',
+    newFailures: [],
+    artifactGenerated: true,
+    artifactAuditStatus: 'PASS',
+    artifactFailedChecks: [],
+    artifactDeploymentExecuted: false,
+    artifactHead: correctedHead,
+    tree: correctedTree,
+    artifactTree: correctedTree,
+    targetEnvironment: 'preview',
+    artifactDeploymentType: 'preview',
+    artifactProduction: false,
+    environmentFilesFound: [],
+    pngMaterializationTest: 'PASS',
+    pngSignatureValidated: true,
+    pngMinimumBytesValidated: true,
+    publicReadRetryTest: 'PASS',
+    workingTreeClean: true,
+    headStable: true,
+    treeStable: true,
+    commandArgs: ['deploy', '--prebuilt', '--yes'],
+    ...overrides,
+  };
+}
+
+function expectRecoveryRejection(plan, code) {
+  try {
+    validatePreviewDeploymentPlan(plan);
+  } catch (error) {
+    expect(error.code).toBe(code);
+    expect(error.message).not.toContain(fourthPreviewDeploymentId);
+    return;
+  }
+  throw new Error(`Expected controlled recovery rejection ${code}.`);
+}
+
+function fifthPreviewRemoteCertificationPlan(overrides = {}) {
+  return {
+    remote: {
+      status: 'PASS',
+      metadata: { doctype: true, rootCount: 1 },
+      serverFallbackDetected: false,
+      ogImage: { png: true, looksLikeHtml: false, width: 1200, height: 630, bytes: 1024 },
+      runtimeErrors: [],
+      checks: [
+        { name: 'store:metadata', passed: true },
+        { name: 'og:png', passed: true },
+        { name: 'og-versioned:png', passed: true },
+        { name: 'og:runtime', passed: true },
+      ],
+    },
+    frontend: {
+      portalVisible: true,
+      catalogVisible: true,
+      productRendered: true,
+      terminalState: 'ready',
+      genericStoreErrorVisible: false,
+      blankScreen: false,
+      finalRpcError: false,
+      publicReadAttempts: [{ status: 'transient-failure' }, { status: 'ready' }],
+    },
+    deployment: {
+      projectName: 'lanzo-store',
+      deploymentType: 'preview',
+      production: false,
+      deploymentCount: 5,
+      sixthPreviewForbidden: true,
+      productionPromotionAuthorized: false,
+    },
     ...overrides,
   };
 }
@@ -466,6 +576,123 @@ describe('validación remota saneada de lanzo-store', () => {
       command: 'vercel deploy --prebuilt --yes',
       production: false,
     });
+  });
+
+  it('authorizes the controlled fifth-preview recovery without exposing deployment evidence', () => {
+    const plan = controlledFifthRecoveryPlan();
+    const historyBefore = JSON.stringify(plan.previousPreviews);
+    const evidence = validatePreviewDeploymentPlan(plan);
+    expect(evidence).toEqual(expect.objectContaining({
+      status: 'PASS',
+      deploymentPolicy: 'controlled-fifth-preview-recovery',
+      projectName: 'lanzo-store',
+      deploymentType: 'preview',
+      production: false,
+      previousPreviewCount: 4,
+      previousPreviewFailedCertifications: 4,
+      fourthPreviewPreserved: true,
+      fifthPreviewAuthorized: true,
+      recoveryAuthorizationNumber: 1,
+      recoveryPreviewExecuted: false,
+      maximumTotalPreviewCount: 5,
+      sixthPreviewForbidden: true,
+      productionForbidden: true,
+      aliasForbidden: true,
+      promotionForbidden: true,
+      redeployForbidden: true,
+      headAncestryVerified: true,
+      minimumCorrectedHead: correctedHead,
+      command: 'vercel deploy --prebuilt --yes',
+    }));
+    expect(Object.isFrozen(evidence)).toBe(true);
+    expect(JSON.stringify(plan.previousPreviews)).toBe(historyBefore);
+    expect(JSON.stringify(evidence)).not.toContain(fourthPreviewDeploymentId);
+  });
+
+  it.each([
+    ['fourth preview HEAD', { head: fourthPreviewHead }, 'RECOVERY_FOURTH_HEAD_REUSED'],
+    ['HEAD before the corrected minimum', { head: 'ac10be8677e50cf6c6ec708c58bf0ee1ceec14fd' }, 'RECOVERY_HEAD_BEFORE_MINIMUM'],
+    ['unverified ancestry', { headAncestryVerified: false }, 'RECOVERY_ANCESTRY_UNVERIFIED'],
+    ['different fourth deployment ID', {
+      previousPreviews: controlledFifthRecoveryPlan().previousPreviews.map((entry, index) => (
+        index === 3 ? { ...entry, deploymentId: 'dpl_not_the_preserved_fourth' } : entry
+      )),
+    }, 'RECOVERY_FOURTH_DEPLOYMENT_INVALID'],
+    ['different fourth failure code', {
+      previousPreviews: controlledFifthRecoveryPlan().previousPreviews.map((entry, index) => (
+        index === 3 ? { ...entry, failureCode: 'OTHER_FAILURE' } : entry
+      )),
+    }, 'RECOVERY_FOURTH_FAILURE_CODE_INVALID'],
+    ['unpreserved fourth preview', {
+      previousPreviews: controlledFifthRecoveryPlan().previousPreviews.map((entry, index) => (
+        index === 3 ? { ...entry, preserved: false } : entry
+      )),
+    }, 'RECOVERY_FOURTH_NOT_PRESERVED'],
+    ['fewer than four previews', { previousPreviewDeployments: 3 }, 'RECOVERY_PREVIEW_COUNT_INVALID'],
+    ['more than four previews', { previousPreviewDeployments: 5 }, 'RECOVERY_PREVIEW_COUNT_INVALID'],
+    ['executed recovery', { recoveryPreviewExecuted: true }, 'RECOVERY_ALREADY_EXECUTED'],
+    ['pending CI', { ciWorkflowConclusion: 'pending' }, 'RECOVERY_CI_NOT_SUCCESS'],
+    ['failed CI', { ciWorkflowConclusion: 'failure' }, 'RECOVERY_CI_NOT_SUCCESS'],
+    ['new failures', { newFailures: ['new failure'] }, 'RECOVERY_NEW_FAILURES_PRESENT'],
+    ['missing artifact', { artifactGenerated: false }, 'RECOVERY_ARTIFACT_MISSING'],
+    ['failed artifact', { artifactAuditStatus: 'FAIL' }, 'RECOVERY_ARTIFACT_AUDIT_INVALID'],
+    ['artifact from another HEAD', { artifactHead: fourthPreviewHead }, 'RECOVERY_ARTIFACT_HEAD_MISMATCH'],
+    ['artifact from another tree', { artifactTree: 'a'.repeat(40) }, 'RECOVERY_ARTIFACT_TREE_MISMATCH'],
+    ['artifact already deployed', { artifactDeploymentExecuted: true }, 'RECOVERY_ARTIFACT_ALREADY_DEPLOYED'],
+    ['production artifact', { artifactProduction: true }, 'RECOVERY_ARTIFACT_PRODUCTION_FORBIDDEN'],
+    ['artifact environment file', { environmentFilesFound: ['.env.preview.local'] }, 'RECOVERY_ENVIRONMENT_FILES_PRESENT'],
+    ['uncertified PNG materialization', { pngMaterializationTest: 'FAIL' }, 'RECOVERY_PNG_MATERIALIZATION_UNCERTIFIED'],
+    ['unvalidated PNG signature', { pngSignatureValidated: false }, 'RECOVERY_PNG_SIGNATURE_UNCERTIFIED'],
+    ['unvalidated PNG byte minimum', { pngMinimumBytesValidated: false }, 'RECOVERY_PNG_BYTES_UNCERTIFIED'],
+    ['uncertified public retry', { publicReadRetryTest: 'FAIL' }, 'RECOVERY_PUBLIC_READ_RETRY_UNCERTIFIED'],
+    ['dirty working tree', { workingTreeClean: false }, 'RECOVERY_WORKING_TREE_DIRTY'],
+    ['--prod command', { commandArgs: ['deploy', '--prebuilt', '--yes', '--prod'] }, 'RECOVERY_COMMAND_FORBIDDEN'],
+    ['promote command', { commandArgs: ['promote'] }, 'RECOVERY_COMMAND_FORBIDDEN'],
+    ['alias command', { commandArgs: ['alias'] }, 'RECOVERY_COMMAND_FORBIDDEN'],
+    ['redeploy command', { commandArgs: ['redeploy'] }, 'RECOVERY_COMMAND_FORBIDDEN'],
+    ['another project', { projectName: 'another-store' }, 'RECOVERY_PROJECT_FORBIDDEN'],
+    ['another deployment type', { deploymentType: 'production' }, 'RECOVERY_PRODUCTION_FORBIDDEN'],
+    ['sixth-preview attempt', { previousPreviewDeployments: 5 }, 'RECOVERY_PREVIEW_COUNT_INVALID'],
+    ['different authorization number', { recoveryAuthorizationNumber: 2 }, 'RECOVERY_AUTHORIZATION_NUMBER_INVALID'],
+  ])('rejects controlled fifth-preview recovery: %s', (_label, override, code) => {
+    expectRecoveryRejection(controlledFifthRecoveryPlan(override), code);
+  });
+
+  it('certifies the fifth preview only when the browser recovers to ready', () => {
+    expect(validateFifthPreviewRemoteCertification(fifthPreviewRemoteCertificationPlan())).toEqual({
+      certification: 'PASS',
+      deploymentType: 'preview',
+      production: false,
+      deploymentCount: 5,
+      sixthPreviewForbidden: true,
+      productionPromotionAuthorized: false,
+    });
+  });
+
+  it.each([
+    ['browser ends in error after data', {
+      frontend: { ...fifthPreviewRemoteCertificationPlan().frontend, terminalState: 'error' },
+    }, 'FRONTEND_NOT_READY'],
+    ['unrecovered transient public read', {
+      frontend: { ...fifthPreviewRemoteCertificationPlan().frontend, publicReadAttempts: [{ status: 'transient-failure' }] },
+    }, 'FRONTEND_NOT_READY'],
+    ['invalid OG body', {
+      remote: { ...fifthPreviewRemoteCertificationPlan().remote, ogImage: { ...fifthPreviewRemoteCertificationPlan().remote.ogImage, looksLikeHtml: true } },
+    }, 'OG_IMAGE_INVALID'],
+    ['runtime failure', {
+      remote: { ...fifthPreviewRemoteCertificationPlan().remote, runtimeErrors: ['FUNCTION_INVOCATION_FAILED'] },
+    }, 'RUNTIME_ERRORS_PRESENT'],
+    ['production promotion', {
+      deployment: { ...fifthPreviewRemoteCertificationPlan().deployment, productionPromotionAuthorized: true },
+    }, 'PRODUCTION_PROMOTION_NOT_FORBIDDEN'],
+  ])('rejects invalid fifth-preview remote certification: %s', (_label, override, code) => {
+    try {
+      validateFifthPreviewRemoteCertification(fifthPreviewRemoteCertificationPlan(override));
+    } catch (error) {
+      expect(error.code).toBe(code);
+      return;
+    }
+    throw new Error(`Expected fifth-preview certification rejection ${code}.`);
   });
 
   it.each([

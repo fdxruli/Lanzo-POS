@@ -6,6 +6,7 @@
  *     --base-url https://<preview>.vercel.app --slug <public-test-slug>
  */
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -187,11 +188,44 @@ const PREVIEW_DEPLOYMENT_PLAN_KEYS = new Set([
   'recertificationAuthorized',
   'recertificationNumber',
   'recertificationExecuted',
+  'previousPreviewFailedCertifications',
+  'fifthPreviewAuthorized',
+  'recoveryAuthorizationNumber',
+  'recoveryPreviewExecuted',
+  'minimumCorrectedHead',
+  'minimumCorrectedHeadRelationship',
+  'ogAsyncStreamMaterializationCorrected',
+  'publicReadTransientRetryCorrected',
+  'ciWorkflowConclusion',
+  'newFailures',
+  'artifactGenerated',
+  'artifactAuditStatus',
+  'artifactFailedChecks',
+  'artifactDeploymentExecuted',
+  'artifactHead',
+  'tree',
+  'artifactTree',
+  'targetEnvironment',
+  'artifactDeploymentType',
+  'artifactProduction',
+  'environmentFilesFound',
+  'pngMaterializationTest',
+  'pngSignatureValidated',
+  'pngMinimumBytesValidated',
+  'publicReadRetryTest',
+  'workingTreeClean',
+  'headStable',
+  'treeStable',
   'commandArgs',
 ]);
 const CORRECTIVE_RUNTIME_FAILURE = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
 const TRANSITIVE_RUNTIME_FAILURE = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
 const PUBLIC_RUNTIME_ENVIRONMENT_FAILURE = 'PUBLIC_STATIC_ENV_AND_OG_ESM_INTEROP_MISMATCH';
+const CONTROLLED_FIFTH_PREVIEW_RECOVERY = 'controlled-fifth-preview-recovery';
+const MINIMUM_CORRECTED_HEAD = 'c92c5eabb20fdc83bda325adeeb8815799e79de8';
+const FOURTH_PREVIEW_DEPLOYMENT_ID = 'dpl_BtKTkwWRMGYhatgKwFWwZps48p3u';
+const FOURTH_PREVIEW_HEAD = '196d4703c6865e34b866bfa4ebc412fa5a35fc17';
+const FOURTH_PREVIEW_FAILURE = 'OG_ASYNC_STREAM_RENDER_AND_PUBLIC_READ_RESILIENCE_MISMATCH';
 const PREVIOUS_PREVIEW_HISTORY_KEYS = new Set([
   'projectName',
   'deploymentType',
@@ -199,6 +233,17 @@ const PREVIOUS_PREVIEW_HISTORY_KEYS = new Set([
   'status',
   'evidencePass',
   'deploymentIdHash',
+  'head',
+  'preserved',
+  'failureCode',
+]);
+const FOURTH_RECOVERY_PREVIEW_KEYS = new Set([
+  'projectName',
+  'deploymentType',
+  'production',
+  'status',
+  'evidencePass',
+  'deploymentId',
   'head',
   'preserved',
   'failureCode',
@@ -245,6 +290,158 @@ function validateFailedPreviewHistoryEntry(entry, index) {
   });
 }
 
+function recoveryError(code) {
+  const error = new Error(`Controlled fifth-preview recovery rejected: ${code}.`);
+  error.code = code;
+  return error;
+}
+
+function requireRecovery(condition, code) {
+  if (!condition) throw recoveryError(code);
+}
+
+function verifiedMinimumCorrectedHeadAncestry(head) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', MINIMUM_CORRECTED_HEAD, head], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validateControlledFifthPreviewRecovery(plan) {
+  const {
+    projectName,
+    deploymentType,
+    production,
+    previousPreviewDeployments,
+    previousPreviewFailedCertifications,
+    previousPreviews,
+    head,
+    headAncestryVerified,
+    minimumCorrectedHead,
+    minimumCorrectedHeadRelationship,
+    fifthPreviewAuthorized,
+    recoveryAuthorizationNumber,
+    recoveryPreviewExecuted,
+    ogAsyncStreamMaterializationCorrected,
+    publicReadTransientRetryCorrected,
+    ciWorkflowConclusion,
+    newFailures,
+    artifactGenerated,
+    artifactAuditStatus,
+    artifactFailedChecks,
+    artifactDeploymentExecuted,
+    artifactHead,
+    tree,
+    artifactTree,
+    targetEnvironment,
+    artifactDeploymentType,
+    artifactProduction,
+    environmentFilesFound,
+    pngMaterializationTest,
+    pngSignatureValidated,
+    pngMinimumBytesValidated,
+    publicReadRetryTest,
+    workingTreeClean,
+    headStable,
+    treeStable,
+    commandArgs,
+  } = plan;
+  requireRecovery(projectName === 'lanzo-store', 'RECOVERY_PROJECT_FORBIDDEN');
+  requireRecovery(deploymentType === 'preview' && production === false, 'RECOVERY_PRODUCTION_FORBIDDEN');
+  requireRecovery(previousPreviewDeployments === 4, 'RECOVERY_PREVIEW_COUNT_INVALID');
+  requireRecovery(previousPreviewFailedCertifications === 4, 'RECOVERY_FAILED_CERTIFICATION_COUNT_INVALID');
+  requireRecovery(Array.isArray(previousPreviews) && previousPreviews.length === 4, 'RECOVERY_FOURTH_PREVIEW_MISSING');
+
+  previousPreviews.slice(0, 3).forEach((entry, index) => {
+    try {
+      validateFailedPreviewHistoryEntry(entry, index);
+    } catch {
+      throw recoveryError('RECOVERY_PREVIEW_HISTORY_INVALID');
+    }
+  });
+  const fourthPreview = previousPreviews?.[3];
+  requireRecovery(
+    fourthPreview && typeof fourthPreview === 'object' && !Array.isArray(fourthPreview)
+      && Object.keys(fourthPreview).every((key) => FOURTH_RECOVERY_PREVIEW_KEYS.has(key)),
+    'RECOVERY_FOURTH_PREVIEW_UNSANITIZED',
+  );
+  requireRecovery(
+    fourthPreview?.projectName === 'lanzo-store'
+      && fourthPreview?.deploymentType === 'preview'
+      && fourthPreview?.production === false
+      && fourthPreview?.evidencePass === false,
+    'RECOVERY_FOURTH_PREVIEW_SCOPE_INVALID',
+  );
+  requireRecovery(fourthPreview?.deploymentId === FOURTH_PREVIEW_DEPLOYMENT_ID, 'RECOVERY_FOURTH_DEPLOYMENT_INVALID');
+  requireRecovery(fourthPreview?.head === FOURTH_PREVIEW_HEAD, 'RECOVERY_FOURTH_HEAD_INVALID');
+  requireRecovery(fourthPreview?.status === 'FAILED_CERTIFICATION', 'RECOVERY_FOURTH_STATUS_INVALID');
+  requireRecovery(fourthPreview?.failureCode === FOURTH_PREVIEW_FAILURE, 'RECOVERY_FOURTH_FAILURE_CODE_INVALID');
+  requireRecovery(fourthPreview?.preserved === true, 'RECOVERY_FOURTH_NOT_PRESERVED');
+  requireRecovery(fifthPreviewAuthorized === true, 'RECOVERY_AUTHORIZATION_REQUIRED');
+  requireRecovery(recoveryAuthorizationNumber === 1, 'RECOVERY_AUTHORIZATION_NUMBER_INVALID');
+  requireRecovery(recoveryPreviewExecuted === false, 'RECOVERY_ALREADY_EXECUTED');
+  requireRecovery(/^[a-f0-9]{40}$/u.test(head || ''), 'RECOVERY_HEAD_INVALID');
+  requireRecovery(head !== FOURTH_PREVIEW_HEAD, 'RECOVERY_FOURTH_HEAD_REUSED');
+  requireRecovery(minimumCorrectedHead === MINIMUM_CORRECTED_HEAD, 'RECOVERY_MINIMUM_HEAD_INVALID');
+  requireRecovery(
+    headAncestryVerified === true && minimumCorrectedHeadRelationship === 'validated-descendant',
+    'RECOVERY_ANCESTRY_UNVERIFIED',
+  );
+  requireRecovery(verifiedMinimumCorrectedHeadAncestry(head), 'RECOVERY_HEAD_BEFORE_MINIMUM');
+  requireRecovery(ogAsyncStreamMaterializationCorrected === true, 'RECOVERY_OG_CORRECTION_UNVERIFIED');
+  requireRecovery(publicReadTransientRetryCorrected === true, 'RECOVERY_PUBLIC_READ_CORRECTION_UNVERIFIED');
+  requireRecovery(ciWorkflowConclusion === 'success', 'RECOVERY_CI_NOT_SUCCESS');
+  requireRecovery(Array.isArray(newFailures) && newFailures.length === 0, 'RECOVERY_NEW_FAILURES_PRESENT');
+  requireRecovery(artifactGenerated === true, 'RECOVERY_ARTIFACT_MISSING');
+  requireRecovery(artifactAuditStatus === 'PASS', 'RECOVERY_ARTIFACT_AUDIT_INVALID');
+  requireRecovery(Array.isArray(artifactFailedChecks) && artifactFailedChecks.length === 0, 'RECOVERY_ARTIFACT_FAILED_CHECKS_PRESENT');
+  requireRecovery(artifactDeploymentExecuted === false, 'RECOVERY_ARTIFACT_ALREADY_DEPLOYED');
+  requireRecovery(artifactHead === head, 'RECOVERY_ARTIFACT_HEAD_MISMATCH');
+  requireRecovery(/^[a-f0-9]{40}$/u.test(tree || '') && artifactTree === tree, 'RECOVERY_ARTIFACT_TREE_MISMATCH');
+  requireRecovery(targetEnvironment === 'preview', 'RECOVERY_TARGET_ENVIRONMENT_INVALID');
+  requireRecovery(artifactDeploymentType === 'preview' && artifactProduction === false, 'RECOVERY_ARTIFACT_PRODUCTION_FORBIDDEN');
+  requireRecovery(Array.isArray(environmentFilesFound) && environmentFilesFound.length === 0, 'RECOVERY_ENVIRONMENT_FILES_PRESENT');
+  requireRecovery(pngMaterializationTest === 'PASS', 'RECOVERY_PNG_MATERIALIZATION_UNCERTIFIED');
+  requireRecovery(pngSignatureValidated === true, 'RECOVERY_PNG_SIGNATURE_UNCERTIFIED');
+  requireRecovery(pngMinimumBytesValidated === true, 'RECOVERY_PNG_BYTES_UNCERTIFIED');
+  requireRecovery(publicReadRetryTest === 'PASS', 'RECOVERY_PUBLIC_READ_RETRY_UNCERTIFIED');
+  requireRecovery(workingTreeClean === true, 'RECOVERY_WORKING_TREE_DIRTY');
+  requireRecovery(headStable === true, 'RECOVERY_HEAD_UNSTABLE');
+  requireRecovery(treeStable === true, 'RECOVERY_TREE_UNSTABLE');
+  requireRecovery(
+    JSON.stringify(commandArgs) === JSON.stringify(['deploy', '--prebuilt', '--yes']),
+    'RECOVERY_COMMAND_FORBIDDEN',
+  );
+
+  return Object.freeze({
+    status: 'PASS',
+    deploymentPolicy: CONTROLLED_FIFTH_PREVIEW_RECOVERY,
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewCount: 4,
+    previousPreviewFailedCertifications: 4,
+    fourthPreviewPreserved: true,
+    fifthPreviewAuthorized: true,
+    recoveryAuthorizationNumber: 1,
+    recoveryPreviewExecuted: false,
+    maximumTotalPreviewCount: 5,
+    sixthPreviewForbidden: true,
+    productionForbidden: true,
+    aliasForbidden: true,
+    promotionForbidden: true,
+    redeployForbidden: true,
+    headAncestryVerified: true,
+    minimumCorrectedHead: MINIMUM_CORRECTED_HEAD,
+    command: 'vercel deploy --prebuilt --yes',
+  });
+}
+
 export function validatePreviewDeploymentPlan(plan = {}) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
     throw new TypeError('Preview deployment plan evidence must be an object.');
@@ -288,6 +485,9 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     recertificationExecuted,
     commandArgs,
   } = plan;
+  if (deploymentPolicy === CONTROLLED_FIFTH_PREVIEW_RECOVERY) {
+    return validateControlledFifthPreviewRecovery(plan);
+  }
   if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
   if (deploymentType !== 'preview' || production !== false) {
     throw new Error('Production deployments are forbidden.');
@@ -713,8 +913,12 @@ export function inspectPng(bytes) {
   const data = Buffer.from(bytes);
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const png = data.length >= 24 && data.subarray(0, 8).equals(signature);
+  const looksLikeHtml = /^\s*<(?:!doctype|html|head|body)\b/iu.test(
+    data.subarray(0, 128).toString('utf8'),
+  );
   return Object.freeze({
     png,
+    looksLikeHtml,
     width: png ? data.readUInt32BE(16) : null,
     height: png ? data.readUInt32BE(20) : null,
     bytes: data.length,
@@ -1005,6 +1209,16 @@ export async function auditRemoteStoreDeployment({
 
   addCheck(checks, 'security:no-markers', securityFindings.length === 0);
   const failedChecks = checks.filter((item) => !item.passed).map((item) => item.name);
+  const serverFallbackDetected = /(?:store page temporarily unavailable|tienda no disponible)/iu
+    .test(store.text || '');
+  const runtimeErrors = Object.freeze(requests.flatMap((item) => {
+    const source = item.text || '';
+    return [
+      ['TYPE_ERROR_SATORI', /TypeError.*Satori|Satori.*TypeError/iu],
+      ['FUNCTION_INVOCATION_FAILED', /FUNCTION_INVOCATION_FAILED/iu],
+      ['INTERNAL_SERVER_ERROR', /INTERNAL_SERVER_ERROR/iu],
+    ].filter(([, pattern]) => pattern.test(source)).map(([code]) => code);
+  }));
   return Object.freeze({
     status: failedChecks.length === 0 ? 'PASS' : 'BLOCKED',
     previewHost: origin.hostname,
@@ -1012,6 +1226,8 @@ export async function auditRemoteStoreDeployment({
     clientConfigurationPassed,
     clientStoreLoadPassed,
     ogRuntimePassed,
+    serverFallbackDetected,
+    runtimeErrors,
     requests: requests.map(({ name, method, status, headers, bytes, bodySha256, contentType }) => ({
       name, method, status, headers, bytes, bodySha256, contentType,
     })),
@@ -1035,6 +1251,82 @@ export async function auditRemoteStoreDeployment({
     },
     checks,
     failedChecks,
+  });
+}
+
+function fifthPreviewCertificationError(code) {
+  const error = new Error(`Fifth-preview remote certification rejected: ${code}.`);
+  error.code = code;
+  return error;
+}
+
+function requireFifthPreviewCertification(condition, code) {
+  if (!condition) throw fifthPreviewCertificationError(code);
+}
+
+/**
+ * Validates the post-deployment certification contract for the one permitted
+ * recovery preview. Browser evidence is supplied by the later runner rather
+ * than inferred from server HTML, so a transient read only passes when the UI
+ * ends in ready state on its bounded second attempt.
+ */
+export function validateFifthPreviewRemoteCertification({ remote, frontend, deployment } = {}) {
+  const checks = new Map((remote?.checks || []).map((check) => [check?.name, check?.passed === true]));
+  const attempts = frontend?.publicReadAttempts;
+  const recoveredTransientRead = Array.isArray(attempts)
+    && attempts.length === 2
+    && attempts[0]?.status === 'transient-failure'
+    && attempts[1]?.status === 'ready';
+  const immediateReady = Array.isArray(attempts)
+    && attempts.length === 1
+    && attempts[0]?.status === 'ready';
+
+  requireFifthPreviewCertification(remote?.status === 'PASS', 'REMOTE_AUDIT_NOT_PASS');
+  requireFifthPreviewCertification(
+    checks.get('store:metadata') === true
+      && remote?.metadata?.doctype === true
+      && remote?.metadata?.rootCount === 1
+      && remote?.serverFallbackDetected === false,
+    'STORE_HTML_INVALID',
+  );
+  requireFifthPreviewCertification(
+    checks.get('og:png') === true
+      && checks.get('og-versioned:png') === true
+      && checks.get('og:runtime') === true
+      && remote?.ogImage?.png === true
+      && remote?.ogImage?.looksLikeHtml === false
+      && remote?.ogImage?.width === 1200
+      && remote?.ogImage?.height === 630
+      && remote?.ogImage?.bytes > 1_000,
+    'OG_IMAGE_INVALID',
+  );
+  requireFifthPreviewCertification(Array.isArray(remote?.runtimeErrors) && remote.runtimeErrors.length === 0, 'RUNTIME_ERRORS_PRESENT');
+  requireFifthPreviewCertification(
+    frontend?.portalVisible === true
+      && frontend?.catalogVisible === true
+      && frontend?.productRendered === true
+      && frontend?.terminalState === 'ready'
+      && frontend?.genericStoreErrorVisible === false
+      && frontend?.blankScreen === false
+      && frontend?.finalRpcError === false
+      && (immediateReady || recoveredTransientRead),
+    'FRONTEND_NOT_READY',
+  );
+  requireFifthPreviewCertification(deployment?.projectName === 'lanzo-store', 'DEPLOYMENT_PROJECT_INVALID');
+  requireFifthPreviewCertification(
+    deployment?.deploymentType === 'preview' && deployment?.production === false,
+    'DEPLOYMENT_TYPE_INVALID',
+  );
+  requireFifthPreviewCertification(deployment?.deploymentCount === 5, 'DEPLOYMENT_COUNT_INVALID');
+  requireFifthPreviewCertification(deployment?.sixthPreviewForbidden === true, 'SIXTH_PREVIEW_NOT_FORBIDDEN');
+  requireFifthPreviewCertification(deployment?.productionPromotionAuthorized === false, 'PRODUCTION_PROMOTION_NOT_FORBIDDEN');
+  return Object.freeze({
+    certification: 'PASS',
+    deploymentType: 'preview',
+    production: false,
+    deploymentCount: 5,
+    sixthPreviewForbidden: true,
+    productionPromotionAuthorized: false,
   });
 }
 
