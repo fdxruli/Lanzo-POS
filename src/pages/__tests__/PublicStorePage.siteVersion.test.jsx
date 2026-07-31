@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor
+} from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -98,6 +105,19 @@ describe('PublicStorePage published site versions', () => {
   });
 
   it('keeps v1 while only the draft changes, then renders v2 without changing catalogRevision', async () => {
+    const focusAndWaitForRevalidation = async (expectedCalls) => {
+      fireEvent.focus(window);
+      await waitFor(() => (
+        expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(expectedCalls)
+      ));
+      const portalRequest = serviceMocks.getPublicPortalBySlug.mock.results[expectedCalls - 1]?.value;
+      await act(async () => {
+        await portalRequest;
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    };
+
     renderPage();
 
     await waitFor(() => expect(document.querySelector('.public-store-shell[data-site-version="1"]')).toBeTruthy());
@@ -108,8 +128,7 @@ describe('PublicStorePage published site versions', () => {
     expect(screen.queryByRole('combobox')).toBeNull();
 
     // A mutable draft is not part of the public response; revalidation still returns v1.
-    window.dispatchEvent(new Event('focus'));
-    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2));
+    await focusAndWaitForRevalidation(2);
     expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-site-version', '1');
     expect(screen.queryByRole('searchbox')).toBeNull();
 
@@ -121,8 +140,7 @@ describe('PublicStorePage published site versions', () => {
       document: v2
     }));
 
-    window.dispatchEvent(new Event('focus'));
-    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(3));
+    await focusAndWaitForRevalidation(3);
     await waitFor(() => expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-site-version', '2'));
     expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-catalog-revision', '7');
     expect(screen.getByRole('searchbox')).toBeInTheDocument();

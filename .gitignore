@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-store/
 store/dist/
+store/generated/storeHtmlTemplate.js
 .vercel/
 .env
 .env.*
@@ -9,4 +10,5 @@ store/dist/
 *.tgz
 *.tmp
 *.temp
-
+.tmp/social-preview-1.7-evidence.json
+.tmp/social-preview-1.8-release-readiness.json

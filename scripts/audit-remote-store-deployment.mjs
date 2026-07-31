@@ -1,814 +1,1590 @@
 /**
- * Read-only HTTP and Chrome DevTools Protocol audit for a Vercel storefront.
+ * Read-only, sanitized validation of a lanzo-store Vercel preview.
  *
  * Usage:
- *   node scripts/audit-remote-store-deployment.mjs https://<deployment>.vercel.app
- *
- * The script accepts one Vercel URL, uses an ephemeral browser profile, never
- * submits checkout, and emits one sanitized JSON document.
+ *   node scripts/audit-remote-store-deployment.mjs \
+ *     --base-url https://<preview>.vercel.app --slug <public-test-slug>
  */
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
-import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateStoreSlug } from '../store/api/_socialMetadata.js';
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
-const distRoot = path.join(projectRoot, 'dist-store');
-const safeSlug = 'slug-inexistente-seguro';
-const safeTrackingToken = 'token-invalido-seguro';
-const viewports = Object.freeze([
-  { width: 375, height: 812, path: `/tienda/${safeSlug}/#catalogo`, expectedPath: `/tienda/${safeSlug}` },
-  { width: 768, height: 1024, path: `/conoce-lanzo?tienda=${safeSlug}#inicio`, expectedPath: '/conoce-lanzo' },
-  { width: 1440, height: 900, path: '/', expectedPath: '/' }
+const DEFAULT_EVIDENCE_PATH = path.join(projectRoot, '.tmp', 'social-preview-1.7-evidence.json');
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const STATIC_CACHE = 'public, max-age=0, must-revalidate';
+const NOINDEX = 'noindex, nofollow, noarchive';
+const INVALID_SLUG = 'INVALIDO';
+const MISSING_SLUG = 'slug-inexistente-controlado';
+const TRACKING_TOKEN = 'token-ficticio';
+const DEFAULT_PRODUCTION_HOSTS = Object.freeze(['lanzo-store.vercel.app']);
+const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const FORBIDDEN_PUBLIC_RUNTIME_MARKERS = Object.freeze([
+  'invalid-for-local-build',
+  'supabase.invalid',
+  'sb_publishable_invalid_for_local_build',
+  'store.invalid',
 ]);
 
-const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-const sha256 = (value) => createHash('sha256').update(value).digest('hex');
-const normalizePath = (value) => value.replaceAll('\\', '/');
-const sanitizeText = (value) => String(value || '')
-  .replace(/https?:\/\/[^\s"')]+/gi, '[url]')
-  .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[jwt]')
-  .replace(/\b(?:sb_(?:publishable|secret)_[A-Za-z0-9_-]+|gh[pousr]_[A-Za-z0-9]+|vcp_[A-Za-z0-9_-]+)\b/g, '[credential]')
-  .replace(/(\/pedido\/)[^/?#\s]+/gi, '$1[token]')
-  .slice(0, 400);
-
-function validateInput() {
-  if (process.argv.length !== 3) throw new Error('Exactly one generated Vercel URL is required.');
-  const url = new URL(process.argv[2]);
-  if (url.protocol !== 'https:' || !url.hostname.endsWith('.vercel.app')) {
-    throw new Error('The audit accepts only an HTTPS *.vercel.app URL.');
+export function parseCacheControl(value) {
+  const directives = new Map();
+  for (const part of String(value || '').split(',')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
+    const name = rawName.toLowerCase();
+    if (!name) continue;
+    directives.set(name, rawValue.join('=').replace(/^"|"$/gu, '').trim() || true);
   }
-  if (url.username || url.password || url.port || url.pathname !== '/' || url.search || url.hash) {
-    throw new Error('The Vercel URL must contain only its origin.');
-  }
-  return url;
+  const integer = (name) => {
+    const candidate = directives.get(name);
+    return typeof candidate === 'string' && /^\d+$/u.test(candidate)
+      ? Number(candidate)
+      : null;
+  };
+  return Object.freeze({
+    public: directives.has('public'),
+    private: directives.has('private'),
+    noStore: directives.has('no-store'),
+    immutable: directives.has('immutable'),
+    staleWhileRevalidate: directives.has('stale-while-revalidate'),
+    maxAge: integer('max-age'),
+    sharedMaxAge: integer('s-maxage'),
+  });
 }
 
-async function walk(directory, root = directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const absolutePath = path.join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...await walk(absolutePath, root));
-    else if (entry.isFile()) {
-      const metadata = await stat(absolutePath);
-      files.push({
-        absolutePath,
-        bytes: metadata.size,
-        path: normalizePath(path.relative(root, absolutePath))
-      });
-    }
+export function validateCacheControl(value, policy) {
+  const cache = parseCacheControl(value);
+  if (policy === 'og-unversioned') {
+    return cache.public
+      && !cache.private
+      && !cache.noStore
+      && !cache.immutable
+      && cache.maxAge === 0
+      && cache.sharedMaxAge === 300
+      && cache.staleWhileRevalidate;
   }
-  return files.sort((left, right) => left.path.localeCompare(right.path));
+  if (policy === 'og-versioned' || policy === 'hashed-asset') {
+    return cache.public
+      && !cache.private
+      && !cache.noStore
+      && cache.immutable
+      && cache.maxAge === 31_536_000
+      && cache.sharedMaxAge !== 300;
+  }
+  if (policy === 'dynamic-html') {
+    return cache.public
+      && !cache.private
+      && !cache.noStore
+      && !cache.immutable
+      && cache.sharedMaxAge === 300;
+  }
+  throw new Error(`Unknown cache policy: ${policy}.`);
 }
 
-function localReference(value) {
-  if (!value || /^(?:data:|blob:|https?:|#|mailto:|tel:)/i.test(value)) return null;
+const REQUIRED_METADATA = Object.freeze({
+  title: /<title\b[^>]*>([\s\S]*?)<\/title>/giu,
+  description: /<meta\b(?=[^>]*\bname=["']description["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  canonical: /<link\b(?=[^>]*\brel=["']canonical["'])[^>]*\bhref=["']([^"']*)["'][^>]*>/giu,
+  ogTitle: /<meta\b(?=[^>]*\bproperty=["']og:title["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  ogDescription: /<meta\b(?=[^>]*\bproperty=["']og:description["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  ogUrl: /<meta\b(?=[^>]*\bproperty=["']og:url["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  ogImage: /<meta\b(?=[^>]*\bproperty=["']og:image["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  ogType: /<meta\b(?=[^>]*\bproperty=["']og:type["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  twitterCard: /<meta\b(?=[^>]*\bname=["']twitter:card["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  twitterTitle: /<meta\b(?=[^>]*\bname=["']twitter:title["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  twitterDescription: /<meta\b(?=[^>]*\bname=["']twitter:description["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+  twitterImage: /<meta\b(?=[^>]*\bname=["']twitter:image["'])[^>]*\bcontent=["']([^"']*)["'][^>]*>/giu,
+});
+
+const SECURITY_MARKERS = Object.freeze([
+  ['LanzoDB', /LanzoDB/u],
+  ['PosPage', /PosPage/u],
+  ['CajaPage', /CajaPage/u],
+  ['processSale', /processSale/u],
+  ['cashSync', /cashSync/u],
+  ['posSync', /posSync/u],
+  ['device_security_token', /device_security_token/u],
+  ['staff_session_token', /staff_session_token/u],
+  ['create_free_trial_license', /create_free_trial_license/u],
+  ['releaseDeviceAnon', /releaseDeviceAnon|release_device_anon/u],
+  ['googleDrive', /googleDrive/u],
+  ['sb_secret_', /\bsb_secret_[A-Za-z0-9_-]{8,}\b/u],
+  ['ghp_', /\bghp_[A-Za-z0-9]{12,}\b/u],
+  ['github_pat_', /\bgithub_pat_[A-Za-z0-9_]{12,}\b/u],
+  ['vcp_', /\bvcp_[A-Za-z0-9_-]{12,}\b/u],
+  ['private key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u],
+]);
+
+function valuesFor(html, pattern) {
+  return Array.from(html.matchAll(new RegExp(pattern.source, pattern.flags)), (match) => match[1] || '');
+}
+
+function safeUrlHost(value) {
   try {
-    return decodeURIComponent(new URL(value, 'https://lanzo-store.invalid').pathname).replace(/^\//, '');
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url.hostname : null;
   } catch {
     return null;
   }
 }
 
-function extractAssetReferences(html) {
-  const references = [
-    ...Array.from(html.matchAll(/<(?:script|img|source)\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi), (match) => match[1]),
-    ...Array.from(html.matchAll(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/gi), (match) => match[1])
-  ];
-  return [...new Set(references.map(localReference).filter(Boolean))].sort();
+export function validatePreviewUrl(value, { productionHosts = DEFAULT_PRODUCTION_HOSTS } = {}) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('The preview URL is invalid.');
+  }
+  if (
+    url.protocol !== 'https:'
+    || !url.hostname.endsWith('.vercel.app')
+    || url.hostname === 'vercel.app'
+    || url.username
+    || url.password
+    || url.port
+    || url.pathname !== '/'
+    || url.search
+    || url.hash
+  ) {
+    throw new Error('Only an HTTPS Vercel preview origin is accepted.');
+  }
+  if (productionHosts.includes(url.hostname)) {
+    throw new Error('Production deployments are forbidden.');
+  }
+  return url;
 }
 
-async function fetchBody(url, options = {}) {
-  const response = await fetch(url, { ...options, redirect: options.redirect || 'follow' });
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  return { response, bytes };
-}
-
-const officialVercelHostname = (hostname) => hostname === 'vercel.com' || hostname.endsWith('.vercel.com');
-const redirectStatuses = new Set([301, 302, 303, 307, 308]);
-const sourceExposurePatterns = Object.freeze([
-  /(?:^|[\\/])package(?:-lock)?\.json\b/i,
-  /(?:^|[\\/])\.env(?:\.[A-Za-z0-9_-]+)?\b/i,
-  /src[\\/]main-store\.jsx\b/i,
-  /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/i,
-  /service_role|SUPABASE_SERVICE_ROLE/i,
-  /<title>\s*Tienda en línea\s*[—-]\s*Lanzo\s*<\/title>/i,
-  /<div\s+id=["']root["']\s*>/i,
-  /(?:directory listing|index of \/)/i
+const PREVIEW_DEPLOYMENT_PLAN_KEYS = new Set([
+  'deploymentPolicy',
+  'projectName',
+  'deploymentType',
+  'production',
+  'previousPreviewDeployments',
+  'previousPreviewProjectName',
+  'previousPreviewDeploymentType',
+  'previousPreviewProduction',
+  'previousPreviewStatus',
+  'previousPreviewEvidencePass',
+  'previousPreviewDeploymentIdHash',
+  'previousPreviewHead',
+  'previousPreviewPreserved',
+  'head',
+  'headRelationship',
+  'headParent',
+  'headAncestryVerified',
+  'previousFailureCode',
+  'correctionFailureCode',
+  'correctivePreviewAuthorized',
+  'correctivePreviewNumber',
+  'correctivePreviewExecuted',
+  'previousCorrectivePreviewDeployments',
+  'previousPreviews',
+  'finalCertificationAuthorized',
+  'finalCertificationNumber',
+  'finalCertificationExecuted',
+  'previousFinalCertificationPreviewDeployments',
+  'recertificationAuthorized',
+  'recertificationNumber',
+  'recertificationExecuted',
+  'previousPreviewFailedCertifications',
+  'fifthPreviewAuthorized',
+  'recoveryAuthorizationNumber',
+  'recoveryPreviewExecuted',
+  'minimumCorrectedHead',
+  'minimumCorrectedHeadRelationship',
+  'ogAsyncStreamMaterializationCorrected',
+  'publicReadTransientRetryCorrected',
+  'ciWorkflowConclusion',
+  'newFailures',
+  'artifactGenerated',
+  'artifactAuditStatus',
+  'artifactFailedChecks',
+  'artifactDeploymentExecuted',
+  'artifactHead',
+  'tree',
+  'artifactTree',
+  'targetEnvironment',
+  'artifactDeploymentType',
+  'artifactProduction',
+  'environmentFilesFound',
+  'pngMaterializationTest',
+  'pngSignatureValidated',
+  'pngMinimumBytesValidated',
+  'publicReadRetryTest',
+  'workingTreeClean',
+  'headStable',
+  'treeStable',
+  'commandArgs',
+]);
+const CORRECTIVE_RUNTIME_FAILURE = 'FUNCTION_RUNTIME_MODULE_FORMAT_MISMATCH';
+const TRANSITIVE_RUNTIME_FAILURE = 'TRANSITIVE_GENERATED_MODULE_FORMAT_MISMATCH';
+const PUBLIC_RUNTIME_ENVIRONMENT_FAILURE = 'PUBLIC_STATIC_ENV_AND_OG_ESM_INTEROP_MISMATCH';
+const CONTROLLED_FIFTH_PREVIEW_RECOVERY = 'controlled-fifth-preview-recovery';
+const MINIMUM_CORRECTED_HEAD = 'c92c5eabb20fdc83bda325adeeb8815799e79de8';
+const FOURTH_PREVIEW_DEPLOYMENT_ID = 'dpl_BtKTkwWRMGYhatgKwFWwZps48p3u';
+const FOURTH_PREVIEW_HEAD = '196d4703c6865e34b866bfa4ebc412fa5a35fc17';
+const FOURTH_PREVIEW_FAILURE = 'OG_ASYNC_STREAM_RENDER_AND_PUBLIC_READ_RESILIENCE_MISMATCH';
+const PREVIOUS_PREVIEW_HISTORY_KEYS = new Set([
+  'projectName',
+  'deploymentType',
+  'production',
+  'status',
+  'evidencePass',
+  'deploymentIdHash',
+  'head',
+  'preserved',
+  'failureCode',
+]);
+const FOURTH_RECOVERY_PREVIEW_KEYS = new Set([
+  'projectName',
+  'deploymentType',
+  'production',
+  'status',
+  'evidencePass',
+  'deploymentId',
+  'head',
+  'preserved',
+  'failureCode',
 ]);
 
-export function classifyReservedSourceResponse({
-  status,
-  location = '',
-  contentType = '',
-  bytes = new Uint8Array(),
-  localIndexSha256 = ''
-}) {
-  const body = Buffer.from(bytes).toString('utf8');
-  const bodySha256 = sha256(bytes);
-  const returnedIndex = Boolean(localIndexSha256 && bodySha256 === localIndexSha256);
-  const exposureMarkers = sourceExposurePatterns
-    .filter((pattern) => pattern.test(body))
-    .map((pattern) => pattern.source);
-  const violations = [];
-  let destination = null;
-
-  if (returnedIndex) violations.push('reserved-src-returned-public-index');
-  if (exposureMarkers.length > 0) violations.push('reserved-src-exposed-package-content');
-
-  if (status === 404) {
-    return {
-      accepted: violations.length === 0,
-      classification: 'platform-reserved-not-found',
-      status,
-      location: '',
-      destinationHostname: '',
-      contentType: contentType.split(';')[0],
-      returnedIndex,
-      exposureMarkers,
-      violations
-    };
+function validateFailedPreviewHistoryEntry(entry, index) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`Previous preview history entry ${index + 1} must be an object.`);
   }
-
-  if (status !== 307 && status !== 308) {
-    violations.push(`reserved-src-status:${status}`);
+  const unexpected = Object.keys(entry)
+    .filter((key) => !PREVIOUS_PREVIEW_HISTORY_KEYS.has(key));
+  if (unexpected.length > 0) {
+    throw new Error(`Unexpected or unsanitized previous preview evidence: ${unexpected.join(', ')}.`);
   }
-  try {
-    destination = new URL(location);
-  } catch {
-    violations.push('reserved-src-invalid-location');
+  if (
+    entry.projectName !== 'lanzo-store'
+    || entry.deploymentType !== 'preview'
+    || entry.production !== false
+  ) {
+    throw new Error(`Previous preview ${index + 1} must be a non-production lanzo-store preview.`);
   }
-  if (destination) {
-    if (destination.protocol !== 'https:') violations.push('reserved-src-location-not-https');
-    if (!officialVercelHostname(destination.hostname)) violations.push('reserved-src-location-not-vercel');
-    if (destination.username || destination.password || destination.port) {
-      violations.push('reserved-src-location-credentials-or-port');
-    }
+  if (entry.status !== 'FAILED_CERTIFICATION' || entry.evidencePass !== false) {
+    throw new Error(`Previous preview ${index + 1} must be failed without PASS evidence.`);
   }
-
-  return {
-    accepted: violations.length === 0,
-    classification: 'platform-reserved-redirect',
-    status,
-    location,
-    destinationHostname: destination?.hostname || '',
-    contentType: contentType.split(';')[0],
-    returnedIndex,
-    exposureMarkers,
-    violations
-  };
-}
-
-function routeIdentity(url) {
-  return `${url.pathname}${url.search}`;
-}
-
-async function auditHttp(baseUrl) {
-  const localFiles = await walk(distRoot);
-  const localIndexFile = localFiles.find((file) => file.path === 'index.html');
-  if (!localIndexFile) throw new Error('dist-store/index.html is missing.');
-  const localIndex = await readFile(localIndexFile.absolutePath);
-  const localIndexHash = sha256(localIndex);
-  const directRoutes = [
-    '/',
-    '/tienda',
-    `/tienda/${safeSlug}`,
-    `/tienda/${safeSlug}/pedido/${safeTrackingToken}`,
-    '/conoce-lanzo'
-  ];
-  const canonicalizationRoutes = [
-    { path: '/tienda/', expected: '/tienda' },
-    { path: `/tienda/${safeSlug}/`, expected: `/tienda/${safeSlug}` },
-    {
-      path: `/tienda/${safeSlug}/pedido/${safeTrackingToken}/`,
-      expected: `/tienda/${safeSlug}/pedido/${safeTrackingToken}`
-    },
-    { path: '/conoce-lanzo/', expected: '/conoce-lanzo' },
-    {
-      path: `/tienda/${safeSlug}/?arch=cutover-1-1`,
-      expected: `/tienda/${safeSlug}?arch=cutover-1-1`
-    }
-  ];
-  const forbiddenRoutes = [
-    '/sw.js',
-    '/manifest.webmanifest',
-    '/registerSW.js',
-    '/workbox-fixture.js',
-    '/.env',
-    '/.env.local',
-    '/package.json',
-    '/package-lock.json',
-    '/src',
-    '/src/main-store.jsx',
-    '/vite.config.js',
-    '/vite.store.config.js',
-    '/vercel.json',
-    '/.git',
-    '/node_modules',
-    '/docs',
-    '/scripts'
-  ];
-  const routes = [];
-  const violations = [];
-
-  for (const route of directRoutes) {
-    const requestedUrl = new URL(route, baseUrl);
-    const { response, bytes } = await fetchBody(requestedUrl, { redirect: 'manual' });
-    const contentType = response.headers.get('content-type') || '';
-    const location = response.headers.get('location') || '';
-    const item = {
-      path: route,
-      initialStatus: response.status,
-      location,
-      expectedCanonicalUrl: routeIdentity(requestedUrl),
-      finalStatus: response.status,
-      finalContentType: contentType.split(';')[0],
-      finalMatchesIndex: sha256(bytes) === localIndexHash,
-      finalOriginMatches: new URL(response.url).origin === baseUrl.origin,
-      xRobotsTag: response.headers.get('x-robots-tag') || '',
-      cacheControl: response.headers.get('cache-control') || ''
-    };
-    routes.push(item);
-    if (redirectStatuses.has(item.initialStatus) || item.location) violations.push(`route-unexpected-redirect:${route}`);
-    if (item.finalStatus !== 200) violations.push(`route-status:${route}:${item.finalStatus}`);
-    if (!item.finalOriginMatches) violations.push(`route-origin:${route}`);
-    if (!item.finalContentType.includes('text/html')) violations.push(`route-content-type:${route}`);
-    if (!item.finalMatchesIndex) violations.push(`route-index-hash:${route}`);
-    if (item.xRobotsTag !== 'noindex, nofollow, noarchive') violations.push(`route-noindex:${route}`);
-    if (item.cacheControl !== 'public, max-age=0, must-revalidate') violations.push(`route-index-cache:${route}`);
+  if (!/^[a-f0-9]{64}$/u.test(entry.deploymentIdHash || '')) {
+    throw new Error(`Previous preview ${index + 1} requires only a SHA-256 deployment ID hash.`);
   }
-
-  for (const route of canonicalizationRoutes) {
-    const requestedUrl = new URL(route.path, baseUrl);
-    const expectedUrl = new URL(route.expected, baseUrl);
-    const initial = await fetchBody(requestedUrl, { redirect: 'manual' });
-    const location = initial.response.headers.get('location') || '';
-    let destination = null;
-    try {
-      destination = location ? new URL(location, requestedUrl) : null;
-    } catch {
-      destination = null;
-    }
-
-    let finalResponse = null;
-    let finalBytes = new Uint8Array();
-    if (destination && destination.origin === baseUrl.origin) {
-      const final = await fetchBody(destination, { redirect: 'manual' });
-      finalResponse = final.response;
-      finalBytes = final.bytes;
-    }
-
-    const item = {
-      path: route.path,
-      initialStatus: initial.response.status,
-      location,
-      expectedCanonicalUrl: routeIdentity(expectedUrl),
-      destinationUrl: destination ? routeIdentity(destination) : '',
-      finalStatus: finalResponse?.status || null,
-      finalContentType: (finalResponse?.headers.get('content-type') || '').split(';')[0],
-      finalMatchesIndex: finalResponse ? sha256(finalBytes) === localIndexHash : false,
-      finalOriginMatches: destination?.origin === baseUrl.origin,
-      finalLocation: finalResponse?.headers.get('location') || '',
-      initialXRobotsTag: initial.response.headers.get('x-robots-tag') || '',
-      initialCacheControl: initial.response.headers.get('cache-control') || '',
-      xRobotsTag: finalResponse?.headers.get('x-robots-tag') || '',
-      cacheControl: finalResponse?.headers.get('cache-control') || ''
-    };
-    routes.push(item);
-    if (item.initialStatus !== 308) violations.push(`canonical-status:${route.path}:${item.initialStatus}`);
-    if (!item.location) violations.push(`canonical-location-missing:${route.path}`);
-    if (!item.finalOriginMatches) violations.push(`canonical-origin:${route.path}`);
-    if (item.destinationUrl !== item.expectedCanonicalUrl) violations.push(`canonical-target:${route.path}`);
-    if (item.finalStatus !== 200) violations.push(`canonical-final-status:${route.path}:${item.finalStatus}`);
-    if (redirectStatuses.has(item.finalStatus) || item.finalLocation) violations.push(`canonical-multiple-redirects:${route.path}`);
-    if (!item.finalContentType.includes('text/html')) violations.push(`canonical-content-type:${route.path}`);
-    if (!item.finalMatchesIndex) violations.push(`canonical-index-hash:${route.path}`);
-    if (item.initialXRobotsTag !== 'noindex, nofollow, noarchive') {
-      violations.push(`canonical-initial-noindex:${route.path}`);
-    }
-    if (item.initialCacheControl !== 'public, max-age=0, must-revalidate') {
-      violations.push(`canonical-initial-cache:${route.path}`);
-    }
-    if (item.xRobotsTag !== 'noindex, nofollow, noarchive') violations.push(`canonical-noindex:${route.path}`);
-    if (item.cacheControl !== 'public, max-age=0, must-revalidate') violations.push(`canonical-index-cache:${route.path}`);
+  if (!/^[a-f0-9]{40}$/u.test(entry.head || '')) {
+    throw new Error(`Previous preview ${index + 1} requires a full deployed Git HEAD.`);
   }
-
-  const forbidden = [];
-  for (const route of forbiddenRoutes) {
-    const { response, bytes } = await fetchBody(new URL(route, baseUrl), { redirect: 'manual' });
-    const item = {
-      route,
-      status: response.status,
-      location: response.headers.get('location') || '',
-      contentType: (response.headers.get('content-type') || '').split(';')[0],
-      xRobotsTag: response.headers.get('x-robots-tag') || '',
-      returnedIndex: sha256(bytes) === localIndexHash
-    };
-    forbidden.push(item);
-    if (item.status !== 404) violations.push(`forbidden-status:${route}:${item.status}`);
-    if (item.returnedIndex) violations.push(`forbidden-index-fallback:${route}`);
-    if (item.contentType.includes('text/html')) violations.push(`forbidden-html:${route}`);
-    if (item.xRobotsTag !== 'noindex, nofollow, noarchive') violations.push(`forbidden-noindex:${route}`);
+  if (entry.preserved !== true) {
+    throw new Error(`Previous preview ${index + 1} must remain preserved.`);
   }
-
-  const sourceResponse = await fetchBody(new URL('/_src', baseUrl), { redirect: 'manual' });
-  const reservedSource = classifyReservedSourceResponse({
-    status: sourceResponse.response.status,
-    location: sourceResponse.response.headers.get('location') || '',
-    contentType: sourceResponse.response.headers.get('content-type') || '',
-    bytes: sourceResponse.bytes,
-    localIndexSha256: localIndexHash
-  });
-  if (!reservedSource.accepted) {
-    violations.push(...reservedSource.violations.map((violation) => `reserved-src:${violation}`));
-  }
-
-  const robots = await fetchBody(new URL('/robots.txt', baseUrl), { redirect: 'manual' });
-  const robotsText = Buffer.from(robots.bytes).toString('utf8');
-  const robotsResult = {
-    status: robots.response.status,
-    bodyMatches: robotsText === 'User-agent: *\nDisallow: /\n',
-    xRobotsTag: robots.response.headers.get('x-robots-tag') || ''
-  };
-  if (robotsResult.status !== 200 || !robotsResult.bodyMatches) violations.push('robots-contract');
-  if (robotsResult.xRobotsTag !== 'noindex, nofollow, noarchive') violations.push('robots-noindex');
-
-  const localIndexText = localIndex.toString('utf8');
-  const references = extractAssetReferences(localIndexText);
-  const assets = [];
-  for (const reference of references) {
-    const localFile = localFiles.find((file) => file.path === reference);
-    const { response, bytes } = await fetchBody(new URL(`/${reference}`, baseUrl), { redirect: 'manual' });
-    const remoteHash = sha256(bytes);
-    const localHash = localFile ? sha256(await readFile(localFile.absolutePath)) : null;
-    const item = {
-      path: reference,
-      status: response.status,
-      bytes: bytes.byteLength,
-      sha256: remoteHash,
-      matchesLocal: Boolean(localHash && localHash === remoteHash),
-      cacheControl: response.headers.get('cache-control') || ''
-    };
-    assets.push(item);
-    if (item.status !== 200) violations.push(`asset-status:${reference}:${item.status}`);
-    if (!item.matchesLocal) violations.push(`asset-hash:${reference}`);
-    if (item.cacheControl !== 'public, max-age=31536000, immutable') {
-      violations.push(`asset-cache:${reference}`);
-    }
-  }
-
-  const referencedPaths = new Set(['index.html', ...references]);
-  const unreferencedLocalFiles = localFiles.map((file) => file.path).filter((file) => !referencedPaths.has(file));
-  if (unreferencedLocalFiles.length > 0) violations.push(`unreferenced-local-files:${unreferencedLocalFiles.join(',')}`);
-
-  return {
-    https: baseUrl.protocol === 'https:',
-    routes,
-    forbidden,
-    reservedRoutes: [{ path: '/_src', ...reservedSource }],
-    robots: robotsResult,
-    artifact: {
-      localFiles: localFiles.length,
-      remoteComparedFiles: 1 + assets.length,
-      localBytes: localFiles.reduce((total, file) => total + file.bytes, 0),
-      remoteComparedBytes: localIndex.byteLength + assets.reduce((total, asset) => total + asset.bytes, 0),
-      indexSha256: localIndexHash,
-      assets,
-      unreferencedLocalFiles
-    },
-    violations
-  };
-}
-
-async function getOpenPort() {
-  const net = await import('node:net');
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : null;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
+  return Object.freeze({
+    projectName: entry.projectName,
+    deploymentType: entry.deploymentType,
+    production: false,
+    status: entry.status,
+    evidencePass: false,
+    deploymentIdHash: entry.deploymentIdHash,
+    head: entry.head,
+    preserved: true,
+    failureCode: entry.failureCode,
   });
 }
 
-async function findBrowser() {
-  const candidates = [
-    path.join(process.env['ProgramFiles(x86)'] || '', 'Google/Chrome/Application/chrome.exe'),
-    path.join(process.env.ProgramFiles || '', 'Google/Chrome/Application/chrome.exe'),
-    path.join(process.env.LOCALAPPDATA || '', 'Google/Chrome/Application/chrome.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || '', 'Microsoft/Edge/Application/msedge.exe'),
-    path.join(process.env.ProgramFiles || '', 'Microsoft/Edge/Application/msedge.exe')
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Continue to the next installed browser.
-    }
-  }
-  throw new Error('Chrome or Edge was not found.');
+function recoveryError(code) {
+  const error = new Error(`Controlled fifth-preview recovery rejected: ${code}.`);
+  error.code = code;
+  return error;
 }
 
-async function waitForJson(url, attempts = 150) {
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return response.json();
-    } catch {
-      // Browser is still starting.
-    }
-    await sleep(100);
-  }
-  throw new Error('Chrome DevTools endpoint did not become ready.');
+function requireRecovery(condition, code) {
+  if (!condition) throw recoveryError(code);
 }
 
-class CdpSession {
-  constructor(webSocketUrl) {
-    this.socket = new WebSocket(webSocketUrl);
-    this.nextId = 1;
-    this.pending = new Map();
-    this.listeners = new Map();
+export function verifyGitAncestry({ minimumHead, candidateHead } = {}) {
+  if (!/^[a-f0-9]{40}$/u.test(minimumHead || '') || !/^[a-f0-9]{40}$/u.test(candidateHead || '')) {
+    return false;
   }
-
-  async open() {
-    await new Promise((resolve, reject) => {
-      this.socket.addEventListener('open', resolve, { once: true });
-      this.socket.addEventListener('error', reject, { once: true });
-    });
-    this.socket.addEventListener('message', (event) => {
-      const message = JSON.parse(String(event.data));
-      if (message.id) {
-        const pending = this.pending.get(message.id);
-        if (!pending) return;
-        this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(message.error.message));
-        else pending.resolve(message.result);
-        return;
-      }
-      for (const listener of this.listeners.get(message.method) || []) listener(message.params || {});
-    });
-  }
-
-  send(method, params = {}) {
-    const id = this.nextId;
-    this.nextId += 1;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  on(method, listener) {
-    const listeners = this.listeners.get(method) || [];
-    listeners.push(listener);
-    this.listeners.set(method, listeners);
-    return () => this.listeners.set(method, (this.listeners.get(method) || []).filter((item) => item !== listener));
-  }
-
-  once(method, timeoutMs = 20_000) {
-    return new Promise((resolve, reject) => {
-      let remove = null;
-      const timer = setTimeout(() => {
-        remove?.();
-        reject(new Error(`Timed out waiting for ${method}`));
-      }, timeoutMs);
-      remove = this.on(method, (params) => {
-        clearTimeout(timer);
-        remove();
-        resolve(params);
-      });
-    });
-  }
-}
-
-async function launchBrowser() {
-  const browserPath = await findBrowser();
-  const debugPort = await getOpenPort();
-  const profileDirectory = await mkdtemp(path.join(os.tmpdir(), 'lanzo-store-remote-chrome-'));
-  const browser = spawn(browserPath, [
-    '--headless=new',
-    '--disable-gpu',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-background-networking',
-    '--disable-component-update',
-    '--disable-default-apps',
-    '--disable-sync',
-    '--metrics-recording-only',
-    '--remote-debugging-address=127.0.0.1',
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${profileDirectory}`,
-    'about:blank'
-  ], { stdio: 'ignore', windowsHide: true });
-
   try {
-    const target = await waitForJson(`http://127.0.0.1:${debugPort}/json/list`)
-      .then((targets) => targets.find((candidate) => candidate.type === 'page'));
-    if (!target?.webSocketDebuggerUrl) throw new Error('No Chrome page target was available.');
-    const cdp = new CdpSession(target.webSocketDebuggerUrl);
-    await cdp.open();
-    await Promise.all([
-      cdp.send('Page.enable'),
-      cdp.send('Network.enable'),
-      cdp.send('Runtime.enable'),
-      cdp.send('ServiceWorker.enable')
-    ]);
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `window.__lanzoBeforeInstallPromptEvents = 0;
-        addEventListener('beforeinstallprompt', () => { window.__lanzoBeforeInstallPromptEvents += 1; });`
+    execFileSync('git', ['merge-base', '--is-ancestor', minimumHead, candidateHead], {
+      cwd: projectRoot,
+      stdio: 'ignore',
     });
-    return { browser, browserName: path.basename(browserPath), cdp, profileDirectory };
-  } catch (error) {
-    browser.kill();
-    await rm(profileDirectory, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-async function closeBrowser(session) {
-  try {
-    await session.cdp.send('Browser.close');
+    return true;
   } catch {
-    session.browser.kill();
+    return false;
   }
-  session.cdp.socket.close();
-  await Promise.race([
-    new Promise((resolve) => session.browser.once('exit', resolve)),
-    sleep(2_000)
+}
+
+function validateControlledFifthPreviewRecovery(plan, ancestryVerifier) {
+  const {
+    projectName,
+    deploymentType,
+    production,
+    previousPreviewDeployments,
+    previousPreviewFailedCertifications,
+    previousPreviews,
+    head,
+    headRelationship,
+    headAncestryVerified,
+    minimumCorrectedHead,
+    minimumCorrectedHeadRelationship,
+    fifthPreviewAuthorized,
+    recoveryAuthorizationNumber,
+    recoveryPreviewExecuted,
+    ogAsyncStreamMaterializationCorrected,
+    publicReadTransientRetryCorrected,
+    ciWorkflowConclusion,
+    newFailures,
+    artifactGenerated,
+    artifactAuditStatus,
+    artifactFailedChecks,
+    artifactDeploymentExecuted,
+    artifactHead,
+    tree,
+    artifactTree,
+    targetEnvironment,
+    artifactDeploymentType,
+    artifactProduction,
+    environmentFilesFound,
+    pngMaterializationTest,
+    pngSignatureValidated,
+    pngMinimumBytesValidated,
+    publicReadRetryTest,
+    workingTreeClean,
+    headStable,
+    treeStable,
+    commandArgs,
+  } = plan;
+  requireRecovery(projectName === 'lanzo-store', 'RECOVERY_PROJECT_FORBIDDEN');
+  requireRecovery(deploymentType === 'preview' && production === false, 'RECOVERY_PRODUCTION_FORBIDDEN');
+  requireRecovery(previousPreviewDeployments === 4, 'RECOVERY_PREVIEW_COUNT_INVALID');
+  requireRecovery(previousPreviewFailedCertifications === 4, 'RECOVERY_FAILED_CERTIFICATION_COUNT_INVALID');
+  requireRecovery(Array.isArray(previousPreviews) && previousPreviews.length === 4, 'RECOVERY_FOURTH_PREVIEW_MISSING');
+
+  previousPreviews.slice(0, 3).forEach((entry, index) => {
+    try {
+      validateFailedPreviewHistoryEntry(entry, index);
+    } catch {
+      throw recoveryError('RECOVERY_PREVIEW_HISTORY_INVALID');
+    }
+  });
+  const fourthPreview = previousPreviews?.[3];
+  requireRecovery(
+    fourthPreview && typeof fourthPreview === 'object' && !Array.isArray(fourthPreview)
+      && Object.keys(fourthPreview).every((key) => FOURTH_RECOVERY_PREVIEW_KEYS.has(key)),
+    'RECOVERY_FOURTH_PREVIEW_UNSANITIZED',
+  );
+  requireRecovery(
+    fourthPreview?.projectName === 'lanzo-store'
+      && fourthPreview?.deploymentType === 'preview'
+      && fourthPreview?.production === false
+      && fourthPreview?.evidencePass === false,
+    'RECOVERY_FOURTH_PREVIEW_SCOPE_INVALID',
+  );
+  requireRecovery(fourthPreview?.deploymentId === FOURTH_PREVIEW_DEPLOYMENT_ID, 'RECOVERY_FOURTH_DEPLOYMENT_INVALID');
+  requireRecovery(fourthPreview?.head === FOURTH_PREVIEW_HEAD, 'RECOVERY_FOURTH_HEAD_INVALID');
+  requireRecovery(fourthPreview?.status === 'FAILED_CERTIFICATION', 'RECOVERY_FOURTH_STATUS_INVALID');
+  requireRecovery(fourthPreview?.failureCode === FOURTH_PREVIEW_FAILURE, 'RECOVERY_FOURTH_FAILURE_CODE_INVALID');
+  requireRecovery(fourthPreview?.preserved === true, 'RECOVERY_FOURTH_NOT_PRESERVED');
+  requireRecovery(fifthPreviewAuthorized === true, 'RECOVERY_AUTHORIZATION_REQUIRED');
+  requireRecovery(recoveryAuthorizationNumber === 1, 'RECOVERY_AUTHORIZATION_NUMBER_INVALID');
+  requireRecovery(recoveryPreviewExecuted === false, 'RECOVERY_ALREADY_EXECUTED');
+  requireRecovery(/^[a-f0-9]{40}$/u.test(head || ''), 'RECOVERY_HEAD_INVALID');
+  requireRecovery(head !== FOURTH_PREVIEW_HEAD, 'RECOVERY_FOURTH_HEAD_REUSED');
+  requireRecovery(minimumCorrectedHead === MINIMUM_CORRECTED_HEAD, 'RECOVERY_MINIMUM_HEAD_INVALID');
+  requireRecovery(
+    headRelationship === 'validated-descendant'
+      && headAncestryVerified === true
+      && minimumCorrectedHeadRelationship === 'equal-or-validated-descendant',
+    'RECOVERY_ANCESTRY_UNVERIFIED',
+  );
+  let ancestryVerified = false;
+  try {
+    ancestryVerified = ancestryVerifier({
+      minimumHead: MINIMUM_CORRECTED_HEAD,
+      candidateHead: head,
+    }) === true;
+  } catch {
+    throw recoveryError('RECOVERY_HEAD_BEFORE_MINIMUM');
+  }
+  requireRecovery(ancestryVerified, 'RECOVERY_HEAD_BEFORE_MINIMUM');
+  requireRecovery(ogAsyncStreamMaterializationCorrected === true, 'RECOVERY_OG_CORRECTION_UNVERIFIED');
+  requireRecovery(publicReadTransientRetryCorrected === true, 'RECOVERY_PUBLIC_READ_CORRECTION_UNVERIFIED');
+  requireRecovery(ciWorkflowConclusion === 'success', 'RECOVERY_CI_NOT_SUCCESS');
+  requireRecovery(Array.isArray(newFailures) && newFailures.length === 0, 'RECOVERY_NEW_FAILURES_PRESENT');
+  requireRecovery(artifactGenerated === true, 'RECOVERY_ARTIFACT_MISSING');
+  requireRecovery(artifactAuditStatus === 'PASS', 'RECOVERY_ARTIFACT_AUDIT_INVALID');
+  requireRecovery(Array.isArray(artifactFailedChecks) && artifactFailedChecks.length === 0, 'RECOVERY_ARTIFACT_FAILED_CHECKS_PRESENT');
+  requireRecovery(artifactDeploymentExecuted === false, 'RECOVERY_ARTIFACT_ALREADY_DEPLOYED');
+  requireRecovery(artifactHead === head, 'RECOVERY_ARTIFACT_HEAD_MISMATCH');
+  requireRecovery(/^[a-f0-9]{40}$/u.test(tree || '') && artifactTree === tree, 'RECOVERY_ARTIFACT_TREE_MISMATCH');
+  requireRecovery(targetEnvironment === 'preview', 'RECOVERY_TARGET_ENVIRONMENT_INVALID');
+  requireRecovery(artifactDeploymentType === 'preview' && artifactProduction === false, 'RECOVERY_ARTIFACT_PRODUCTION_FORBIDDEN');
+  requireRecovery(Array.isArray(environmentFilesFound) && environmentFilesFound.length === 0, 'RECOVERY_ENVIRONMENT_FILES_PRESENT');
+  requireRecovery(pngMaterializationTest === 'PASS', 'RECOVERY_PNG_MATERIALIZATION_UNCERTIFIED');
+  requireRecovery(pngSignatureValidated === true, 'RECOVERY_PNG_SIGNATURE_UNCERTIFIED');
+  requireRecovery(pngMinimumBytesValidated === true, 'RECOVERY_PNG_BYTES_UNCERTIFIED');
+  requireRecovery(publicReadRetryTest === 'PASS', 'RECOVERY_PUBLIC_READ_RETRY_UNCERTIFIED');
+  requireRecovery(workingTreeClean === true, 'RECOVERY_WORKING_TREE_DIRTY');
+  requireRecovery(headStable === true, 'RECOVERY_HEAD_UNSTABLE');
+  requireRecovery(treeStable === true, 'RECOVERY_TREE_UNSTABLE');
+  requireRecovery(
+    JSON.stringify(commandArgs) === JSON.stringify(['deploy', '--prebuilt', '--yes']),
+    'RECOVERY_COMMAND_FORBIDDEN',
+  );
+
+  return Object.freeze({
+    status: 'PASS',
+    deploymentPolicy: CONTROLLED_FIFTH_PREVIEW_RECOVERY,
+    projectName: 'lanzo-store',
+    deploymentType: 'preview',
+    production: false,
+    previousPreviewCount: 4,
+    previousPreviewFailedCertifications: 4,
+    fourthPreviewPreserved: true,
+    fifthPreviewAuthorized: true,
+    recoveryAuthorizationNumber: 1,
+    recoveryPreviewExecuted: false,
+    maximumTotalPreviewCount: 5,
+    sixthPreviewForbidden: true,
+    productionForbidden: true,
+    aliasForbidden: true,
+    promotionForbidden: true,
+    redeployForbidden: true,
+    headAncestryVerified: true,
+    minimumCorrectedHead: MINIMUM_CORRECTED_HEAD,
+    command: 'vercel deploy --prebuilt --yes',
+  });
+}
+
+export function createPreviewDeploymentPlanValidator({ ancestryVerifier = verifyGitAncestry } = {}) {
+  if (typeof ancestryVerifier !== 'function') {
+    throw new TypeError('Ancestry verifier must be a function.');
+  }
+  return function validatePreviewDeploymentPlan(plan = {}) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    throw new TypeError('Preview deployment plan evidence must be an object.');
+  }
+  const unexpectedKeys = Object.keys(plan)
+    .filter((key) => !PREVIEW_DEPLOYMENT_PLAN_KEYS.has(key));
+  if (unexpectedKeys.length > 0) {
+    throw new Error(`Unexpected or unsanitized deployment evidence: ${unexpectedKeys.join(', ')}.`);
+  }
+  const {
+    deploymentPolicy,
+    projectName,
+    deploymentType,
+    production,
+    previousPreviewDeployments,
+    previousPreviewProjectName,
+    previousPreviewDeploymentType,
+    previousPreviewProduction,
+    previousPreviewStatus,
+    previousPreviewEvidencePass,
+    previousPreviewDeploymentIdHash,
+    previousPreviewHead,
+    previousPreviewPreserved,
+    head,
+    headRelationship,
+    headParent,
+    headAncestryVerified,
+    previousFailureCode,
+    correctionFailureCode,
+    correctivePreviewAuthorized,
+    correctivePreviewNumber,
+    correctivePreviewExecuted,
+    previousCorrectivePreviewDeployments,
+    previousPreviews,
+    finalCertificationAuthorized,
+    finalCertificationNumber,
+    finalCertificationExecuted,
+    previousFinalCertificationPreviewDeployments,
+    recertificationAuthorized,
+    recertificationNumber,
+    recertificationExecuted,
+    commandArgs,
+  } = plan;
+  if (deploymentPolicy === CONTROLLED_FIFTH_PREVIEW_RECOVERY) {
+    return validateControlledFifthPreviewRecovery(plan, ancestryVerifier);
+  }
+  if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
+  if (deploymentType !== 'preview' || production !== false) {
+    throw new Error('Production deployments are forbidden.');
+  }
+  if (JSON.stringify(commandArgs) !== JSON.stringify(['deploy', '--prebuilt', '--yes'])) {
+    throw new Error('Only vercel deploy --prebuilt --yes is allowed.');
+  }
+  if (!/^[a-f0-9]{40}$/u.test(head || '')) {
+    throw new Error('The candidate deployment HEAD must be a full Git SHA-1.');
+  }
+  if (![0, 1, 2, 3].includes(previousPreviewDeployments)) {
+    throw new Error('At most three failed previews may precede the final recertification.');
+  }
+
+  const previousEvidenceFields = [
+    previousPreviewProjectName,
+    previousPreviewDeploymentType,
+    previousPreviewProduction,
+    previousPreviewStatus,
+    previousPreviewEvidencePass,
+    previousPreviewDeploymentIdHash,
+    previousPreviewHead,
+    previousPreviewPreserved,
+    headRelationship,
+    headParent,
+    headAncestryVerified,
+    previousFailureCode,
+    correctionFailureCode,
+    previousPreviews,
+    finalCertificationAuthorized,
+    finalCertificationNumber,
+    finalCertificationExecuted,
+    previousFinalCertificationPreviewDeployments,
+    recertificationAuthorized,
+    recertificationNumber,
+    recertificationExecuted,
+  ];
+  if (deploymentPolicy === 'single-preview') {
+    if (previousPreviewDeployments !== 0) {
+      throw new Error('The initial preview plan requires zero previous previews.');
+    }
+    if (previousEvidenceFields.some((value) => value !== undefined)) {
+      throw new Error('Initial preview history is contradictory.');
+    }
+    if (
+      correctivePreviewAuthorized !== false
+      || correctivePreviewNumber !== 0
+    ) {
+      throw new Error('The initial preview cannot claim corrective authorization.');
+    }
+    if (
+      correctivePreviewExecuted !== false
+      || previousCorrectivePreviewDeployments !== 0
+    ) {
+      throw new Error('Initial preview execution history is contradictory.');
+    }
+    return Object.freeze({
+      deploymentPolicy,
+      projectName,
+      deploymentType,
+      previousPreviewCount: 0,
+      previousPreviewFailedCertification: false,
+      previousPreviewEvidencePass: false,
+      correctivePreviewAuthorized: false,
+      correctivePreviewNumber: 0,
+      correctivePreviewExecuted: false,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+  }
+
+  if (deploymentPolicy === 'single-corrective-preview') {
+    if (previousPreviewDeployments !== 1) {
+      throw new Error('The corrective preview requires exactly one previous preview.');
+    }
+    if (
+      previousPreviewProjectName !== 'lanzo-store'
+      || previousPreviewDeploymentType !== 'preview'
+      || previousPreviewProduction !== false
+    ) {
+      throw new Error('The previous deployment must be a non-production lanzo-store preview.');
+    }
+    if (
+      previousPreviewStatus !== 'FAILED_CERTIFICATION'
+      || previousPreviewEvidencePass !== false
+    ) {
+      throw new Error('The previous preview must have failed certification without PASS evidence.');
+    }
+    if (!/^[a-f0-9]{64}$/u.test(previousPreviewDeploymentIdHash || '')) {
+      throw new Error('Only a SHA-256 deployment ID hash is allowed in corrective history.');
+    }
+    if (
+      !/^[a-f0-9]{40}$/u.test(previousPreviewHead || '')
+      || previousPreviewHead === head
+    ) {
+      throw new Error('Corrective history requires distinct full deployed and candidate HEADs.');
+    }
+    const directDescendant = headRelationship === 'direct-descendant'
+      && headParent === previousPreviewHead;
+    const validatedDescendant = headRelationship === 'validated-descendant'
+      && headAncestryVerified === true;
+    if (!directDescendant && !validatedDescendant) {
+      throw new Error('The corrective HEAD must be a direct or validated descendant.');
+    }
+    if (
+      previousFailureCode !== CORRECTIVE_RUNTIME_FAILURE
+      || correctionFailureCode !== previousFailureCode
+    ) {
+      throw new Error('The corrective change must match the diagnosed preview failure.');
+    }
+    if (previousPreviewPreserved !== true) {
+      throw new Error('The failed preview must remain preserved as diagnostic evidence.');
+    }
+    if (
+      correctivePreviewAuthorized !== true
+      || correctivePreviewNumber !== 1
+      || correctivePreviewExecuted !== false
+      || previousCorrectivePreviewDeployments !== 0
+    ) {
+      throw new Error('Exactly one unexecuted corrective preview must be explicitly authorized.');
+    }
+    return Object.freeze({
+      deploymentPolicy,
+      projectName,
+      deploymentType,
+      previousPreviewCount: 1,
+      previousPreviewProjectName,
+      previousPreviewDeploymentType,
+      previousPreviewFailedCertification: true,
+      previousPreviewEvidencePass: false,
+      previousPreviewDeploymentIdHash,
+      previousPreviewHead,
+      previousPreviewPreserved: true,
+      candidateHead: head,
+      headRelationship,
+      headAncestryVerified: directDescendant ? true : headAncestryVerified,
+      correctionFailureCode,
+      correctivePreviewAuthorized: true,
+      correctivePreviewNumber: 1,
+      correctivePreviewExecuted: false,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+  }
+
+  if (
+    deploymentPolicy !== 'single-final-certification-preview'
+    && deploymentPolicy !== 'single-recertification-preview'
+  ) {
+    throw new Error('The deployment policy must explicitly select initial, corrective, final, or recertification preview.');
+  }
+  if (deploymentPolicy === 'single-recertification-preview') {
+    if (
+      previousPreviewDeployments !== 3
+      || !Array.isArray(previousPreviews)
+      || previousPreviews.length !== 3
+    ) {
+      throw new Error('Recertification requires exactly three previous failed previews.');
+    }
+    const sanitizedHistory = previousPreviews
+      .map((entry, index) => validateFailedPreviewHistoryEntry(entry, index));
+    const expectedFailures = [
+      CORRECTIVE_RUNTIME_FAILURE,
+      TRANSITIVE_RUNTIME_FAILURE,
+      PUBLIC_RUNTIME_ENVIRONMENT_FAILURE,
+    ];
+    if (
+      JSON.stringify(sanitizedHistory.map((entry) => entry.failureCode))
+      !== JSON.stringify(expectedFailures)
+    ) {
+      throw new Error('Recertification history must contain the three diagnosed failures in order.');
+    }
+    const latestPreviewHead = sanitizedHistory[2].head;
+    const directDescendant = headRelationship === 'direct-descendant'
+      && headParent === latestPreviewHead;
+    const validatedDescendant = headRelationship === 'validated-descendant'
+      && headAncestryVerified === true;
+    if (head === latestPreviewHead || (!directDescendant && !validatedDescendant)) {
+      throw new Error('The recertification HEAD must descend from the third failed preview.');
+    }
+    if (
+      previousFailureCode !== PUBLIC_RUNTIME_ENVIRONMENT_FAILURE
+      || correctionFailureCode !== previousFailureCode
+    ) {
+      throw new Error('The recertification correction must match the public runtime environment failure.');
+    }
+    if (
+      previousCorrectivePreviewDeployments !== 1
+      || previousFinalCertificationPreviewDeployments !== 1
+      || recertificationAuthorized !== true
+      || recertificationNumber !== 1
+      || recertificationExecuted !== false
+    ) {
+      throw new Error('Exactly one unexecuted fourth-preview recertification must be authorized.');
+    }
+    if (
+      finalCertificationAuthorized !== undefined
+      || finalCertificationNumber !== undefined
+      || finalCertificationExecuted !== undefined
+      || correctivePreviewAuthorized !== undefined
+      || correctivePreviewNumber !== undefined
+      || correctivePreviewExecuted !== undefined
+    ) {
+      throw new Error('Recertification evidence cannot reuse earlier preview authorization fields.');
+    }
+    return Object.freeze({
+      deploymentPolicy,
+      projectName,
+      deploymentType,
+      previousPreviewCount: 3,
+      previousPreviewFailedCertifications: 3,
+      previousPreviewEvidencePass: false,
+      previousPreviewsPreserved: sanitizedHistory.every((entry) => entry.preserved),
+      previousPreviewDeploymentIdHashes: Object.freeze(
+        sanitizedHistory.map((entry) => entry.deploymentIdHash),
+      ),
+      previousPreviewHeads: Object.freeze(sanitizedHistory.map((entry) => entry.head)),
+      previousFailureCodes: Object.freeze(sanitizedHistory.map((entry) => entry.failureCode)),
+      candidateHead: head,
+      headRelationship,
+      headAncestryVerified: directDescendant ? true : headAncestryVerified,
+      correctionFailureCode,
+      recertificationAuthorized: true,
+      recertificationNumber: 1,
+      recertificationExecuted: false,
+      fourthPreviewAuthorized: true,
+      maximumTotalPreviewCount: 4,
+      fifthPreviewForbidden: true,
+      command: 'vercel deploy --prebuilt --yes',
+      production: false,
+    });
+  }
+  if (previousPreviewDeployments !== 2 || !Array.isArray(previousPreviews) || previousPreviews.length !== 2) {
+    throw new Error('Final certification requires exactly two previous failed previews.');
+  }
+  const sanitizedHistory = previousPreviews
+    .map((entry, index) => validateFailedPreviewHistoryEntry(entry, index));
+  if (
+    sanitizedHistory[0].failureCode !== CORRECTIVE_RUNTIME_FAILURE
+    || sanitizedHistory[1].failureCode !== TRANSITIVE_RUNTIME_FAILURE
+  ) {
+    throw new Error('Final certification history must contain the two diagnosed runtime failures in order.');
+  }
+  const latestPreviewHead = sanitizedHistory[1].head;
+  const directDescendant = headRelationship === 'direct-descendant'
+    && headParent === latestPreviewHead;
+  const validatedDescendant = headRelationship === 'validated-descendant'
+    && headAncestryVerified === true;
+  if (
+    head === latestPreviewHead
+    || (!directDescendant && !validatedDescendant)
+  ) {
+    throw new Error('The final certification HEAD must descend from the latest failed preview.');
+  }
+  if (
+    previousFailureCode !== TRANSITIVE_RUNTIME_FAILURE
+    || correctionFailureCode !== previousFailureCode
+  ) {
+    throw new Error('The final certification correction must match the transitive module failure.');
+  }
+  if (
+    previousCorrectivePreviewDeployments !== 1
+    || finalCertificationAuthorized !== true
+    || finalCertificationNumber !== 1
+    || finalCertificationExecuted !== false
+  ) {
+    throw new Error('Exactly one unexecuted final certification preview must be authorized.');
+  }
+  if (
+    correctivePreviewAuthorized !== undefined
+    || correctivePreviewNumber !== undefined
+    || correctivePreviewExecuted !== undefined
+  ) {
+    throw new Error('Final certification evidence cannot reuse corrective authorization fields.');
+  }
+  return Object.freeze({
+    deploymentPolicy,
+    projectName,
+    deploymentType,
+    previousPreviewCount: 2,
+    previousPreviewFailedCertifications: 2,
+    previousPreviewEvidencePass: false,
+    previousPreviewsPreserved: sanitizedHistory.every((entry) => entry.preserved),
+    previousPreviewDeploymentIdHashes: Object.freeze(
+      sanitizedHistory.map((entry) => entry.deploymentIdHash),
+    ),
+    previousPreviewHeads: Object.freeze(sanitizedHistory.map((entry) => entry.head)),
+    previousFailureCodes: Object.freeze(sanitizedHistory.map((entry) => entry.failureCode)),
+    candidateHead: head,
+    headRelationship,
+    headAncestryVerified: directDescendant ? true : headAncestryVerified,
+    correctionFailureCode,
+    finalCertificationAuthorized: true,
+    finalCertificationNumber: 1,
+    finalCertificationExecuted: false,
+    maximumTotalPreviewCount: 3,
+    fourthPreviewForbidden: true,
+    command: 'vercel deploy --prebuilt --yes',
+    production: false,
+  });
+  };
+}
+
+export const validatePreviewDeploymentPlan = createPreviewDeploymentPlanValidator();
+
+export function parseAuditArguments(argv = process.argv.slice(2)) {
+  const allowed = new Set([
+    '--base-url', '--slug', '--evidence-path', '--head', '--artifact-audit',
+    '--deployment-id-hash', '--deployment-created-by-this-run',
   ]);
-  if (session.browser.exitCode === null) session.browser.kill();
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    try {
-      await rm(session.profileDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      return true;
-    } catch {
-      await sleep(200);
+  const values = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const flag = argv[index];
+    const value = argv[index + 1];
+    if (!allowed.has(flag) || value == null || value.startsWith('--')) {
+      throw new Error('Expected --base-url, --slug and optional --evidence-path/--head.');
     }
+    if (values[flag] != null) throw new Error(`Duplicate argument: ${flag}.`);
+    values[flag] = value;
   }
-  return false;
+  if (!values['--base-url'] || !values['--slug']) {
+    throw new Error('--base-url and --slug are required.');
+  }
+  if (
+    values['--deployment-created-by-this-run'] != null
+    && !['true', 'false'].includes(values['--deployment-created-by-this-run'])
+  ) {
+    throw new Error('--deployment-created-by-this-run must be true or false.');
+  }
+  validateStoreSlug(values['--slug']);
+  return Object.freeze({
+    baseUrl: validatePreviewUrl(values['--base-url']),
+    slug: values['--slug'],
+    evidencePath: path.resolve(values['--evidence-path'] || DEFAULT_EVIDENCE_PATH),
+    head: values['--head'] || null,
+    artifactAuditPath: values['--artifact-audit']
+      ? path.resolve(values['--artifact-audit'])
+      : null,
+    deploymentIdHash: values['--deployment-id-hash'] || null,
+    deploymentCreatedByThisRun: values['--deployment-created-by-this-run'] == null
+      ? null
+      : values['--deployment-created-by-this-run'] === 'true',
+  });
 }
 
-async function auditBrowser(baseUrl) {
-  const session = await launchBrowser();
-  const { cdp } = session;
-  const requests = [];
-  const requestById = new Map();
-  const consoleErrors = [];
-  const exceptions = [];
-
-  cdp.on('Network.requestWillBeSent', ({ requestId, request, type }) => {
-    const parsed = new URL(request.url);
-    const record = {
-      requestId,
-      url: request.url,
-      origin: parsed.origin,
-      path: parsed.pathname,
-      method: request.method,
-      type,
-      failed: false,
-      tokenInUrl: /(?:token|key|secret|password)=/i.test(parsed.search)
-    };
-    requests.push(record);
-    requestById.set(requestId, record);
-  });
-  cdp.on('Network.responseReceived', ({ requestId, response }) => {
-    const record = requestById.get(requestId);
-    if (!record) return;
-    record.status = response.status;
-    record.mimeType = response.mimeType;
-    record.fromServiceWorker = response.fromServiceWorker === true;
-  });
-  cdp.on('Network.loadingFinished', ({ requestId, encodedDataLength }) => {
-    const record = requestById.get(requestId);
-    if (record) record.encodedBytes = Number(encodedDataLength) || 0;
-  });
-  cdp.on('Network.loadingFailed', ({ requestId, errorText, blockedReason, corsErrorStatus }) => {
-    const record = requestById.get(requestId);
-    if (!record) return;
-    record.failed = true;
-    record.errorText = sanitizeText(errorText);
-    record.blockedReason = blockedReason || '';
-    record.corsError = corsErrorStatus?.corsError || '';
-  });
-  cdp.on('Runtime.consoleAPICalled', ({ type, args }) => {
-    if (type === 'error') consoleErrors.push(sanitizeText(args.map((arg) => arg.value || arg.description || '').join(' ')));
-  });
-  cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
-    exceptions.push(sanitizeText(exceptionDetails?.exception?.description || exceptionDetails?.text));
-  });
-
-  async function evaluate(expression) {
-    const response = await cdp.send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    });
-    if (response.exceptionDetails) {
-      throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text || 'Evaluation failed.');
-    }
-    return response.result?.value;
+export function inspectSocialHtml(html) {
+  if (typeof html !== 'string') throw new TypeError('HTML must be text.');
+  const metadata = {};
+  const counts = {};
+  for (const [name, pattern] of Object.entries(REQUIRED_METADATA)) {
+    const values = valuesFor(html, pattern);
+    counts[name] = values.length;
+    metadata[name] = values[0] || null;
   }
+  const assetPaths = [
+    ...html.matchAll(/(?:src|href)=["'](\/assets\/[^"']+\.(?:js|css))["']/giu),
+  ].map((match) => match[1]);
+  const canonicalPath = metadata.canonical ? new URL(metadata.canonical).pathname : null;
+  const canonicalSlug = /^\/tienda\/([^/]+)$/u.exec(canonicalPath || '')?.[1] || null;
+  return Object.freeze({
+    bytes: Buffer.byteLength(html),
+    sha256: sha256(html),
+    doctype: /^\s*<!doctype html>/iu.test(html),
+    langEsMx: /<html\b[^>]*\blang=["']es-MX["']/iu.test(html),
+    rootCount: (html.match(/\bid=["']root["']/giu) || []).length,
+    counts: Object.freeze(counts),
+    valueHashes: Object.freeze(Object.fromEntries(
+      Object.entries(metadata).map(([name, value]) => [name, value == null ? null : sha256(value)]),
+    )),
+    valueLengths: Object.freeze(Object.fromEntries(
+      Object.entries(metadata).map(([name, value]) => [name, value == null ? 0 : value.length]),
+    )),
+    canonicalHost: safeUrlHost(metadata.canonical),
+    ogImageHost: safeUrlHost(metadata.ogImage),
+    canonicalPath,
+    ogUrlPath: metadata.ogUrl ? new URL(metadata.ogUrl).pathname : null,
+    effectiveSlug: canonicalSlug,
+    slugValues: Object.freeze(canonicalSlug ? [canonicalSlug] : []),
+    assetPaths: [...new Set(assetPaths)].sort(),
+    forbiddenPrivateData: /(?:\b(?:wa\.me|whatsapp)\b|mailto:|@[\w.-]+\.[a-z]{2,}|(?:calle|domicilio|direcci[oó]n)\s*:|(?:\+?52)?\s*\d{10})/iu.test(html),
+    stackTrace: /\b(?:Error:|at\s+\w+\s*\(|node:internal\/)/u.test(html),
+    supabaseUrl: /https:\/\/[a-z0-9-]+\.supabase\.co/iu.test(html),
+    fullHtml: undefined,
+  });
+}
 
-  async function navigate(pathname) {
-    const load = cdp.once('Page.loadEventFired').catch(() => null);
-    await cdp.send('Page.navigate', { url: new URL(pathname, baseUrl).href });
-    await Promise.race([load, sleep(20_000)]);
-    await sleep(1_000);
-  }
-
-  const viewportResults = [];
-  let cleanState = null;
-  let profileRemoved = false;
-  try {
-    for (const viewport of viewports) {
-      await cdp.send('Emulation.setDeviceMetricsOverride', {
-        width: viewport.width,
-        height: viewport.height,
-        deviceScaleFactor: 1,
-        mobile: viewport.width < 600
-      });
-      await navigate(viewport.path);
-      if (viewport.path.startsWith('/tienda/')) await sleep(3_000);
-      const measurement = await evaluate(`(() => ({
-        width: innerWidth,
-        height: innerHeight,
-        overflow: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0) > innerWidth + 1,
-        brokenImages: Array.from(document.images).filter((image) => !image.complete || image.naturalWidth === 0).length,
-        rootPresent: Boolean(document.querySelector('#root')),
-        finalPath: location.pathname,
-        finalSearch: location.search,
-        finalHash: location.hash
-      }))()`);
-      viewportResults.push({
-        ...viewport,
-        ...measurement,
-        canonicalPathMatches: measurement.finalPath === viewport.expectedPath
-      });
-      if (!cleanState) {
-        cleanState = await evaluate(`(async () => ({
-          manifestLinks: document.querySelectorAll('link[rel="manifest"]').length,
-          serviceWorkerRegistrations: 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0,
-          controller: Boolean(navigator.serviceWorker?.controller),
-          workboxGlobal: Boolean(window.workbox || window.Workbox),
-          beforeInstallPromptEvents: window.__lanzoBeforeInstallPromptEvents || 0,
-          adminShell: /iniciar sesi[oó]n|punto de venta|dashboard|caja/i.test(document.body?.innerText || ''),
-          indexedDbNames: typeof indexedDB.databases === 'function'
-            ? (await indexedDB.databases()).map((database) => database.name).filter(Boolean).sort()
-            : [],
-          localStorageKeys: Object.keys(localStorage).sort(),
-          sessionStorageKeys: Object.keys(sessionStorage).sort(),
-          cacheStorageNames: 'caches' in window ? (await caches.keys()).sort() : []
-        }))()`);
+function serviceRoleJwtMarkers(source, route) {
+  const findings = [];
+  for (const candidate of source.match(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu) || []) {
+    try {
+      const payload = JSON.parse(Buffer.from(candidate.split('.')[1], 'base64url').toString('utf8'));
+      if (payload?.role === 'service_role') {
+        findings.push({
+          marker: 'service_role JWT',
+          classification: 'credential',
+          relativeRoute: route,
+          valueLength: candidate.length,
+        });
       }
+    } catch {
+      // Invalid token-shaped vocabulary is not a credential.
     }
-
-    await navigate(`/tienda/${safeSlug}/pedido/${safeTrackingToken}`);
-    await sleep(2_000);
-    const finalStorage = await evaluate(`(async () => ({
-      manifestLinks: document.querySelectorAll('link[rel="manifest"]').length,
-      serviceWorkerRegistrations: 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0,
-      controller: Boolean(navigator.serviceWorker?.controller),
-      indexedDbNames: typeof indexedDB.databases === 'function'
-        ? (await indexedDB.databases()).map((database) => database.name).filter(Boolean).sort()
-        : [],
-      localStorageKeys: Object.keys(localStorage).sort(),
-      sessionStorageKeys: Object.keys(sessionStorage).sort(),
-      cacheStorageNames: 'caches' in window ? (await caches.keys()).sort() : []
-    }))()`);
-    const cookies = await cdp.send('Network.getAllCookies');
-    const cookieNames = [...new Set((cookies.cookies || [])
-      .filter((cookie) => baseUrl.hostname.endsWith(cookie.domain.replace(/^\./, '')))
-      .map((cookie) => cookie.name))].sort();
-
-    const sameOrigin = requests.filter((request) => request.origin === baseUrl.origin);
-    const supabaseRequests = requests.filter((request) => request.origin.endsWith('.supabase.co'));
-    const rpcRequests = supabaseRequests
-      .filter((request) => request.path.includes('/rest/v1/rpc/'))
-      .map((request) => ({
-        rpc: request.path.split('/').pop(),
-        method: request.method,
-        status: request.status || null,
-        failed: request.failed,
-        corsError: request.corsError || ''
-      }));
-    const administrativeChunks = sameOrigin
-      .filter((request) => /(?:App|PosPage|Caja|Dashboard|Settings|AssistantBot|ScannerModal|vendor_charts)/i.test(request.path))
-      .map((request) => request.path);
-    const violations = [];
-    if (cleanState.manifestLinks !== 0 || finalStorage.manifestLinks !== 0) violations.push('manifest-link');
-    if (cleanState.serviceWorkerRegistrations !== 0 || finalStorage.serviceWorkerRegistrations !== 0) violations.push('service-worker-registration');
-    if (cleanState.controller || finalStorage.controller) violations.push('service-worker-controller');
-    if (cleanState.workboxGlobal) violations.push('workbox-global');
-    if (cleanState.beforeInstallPromptEvents !== 0) violations.push('beforeinstallprompt');
-    if (cleanState.adminShell) violations.push('administrative-shell');
-    if (administrativeChunks.length > 0) violations.push('administrative-chunks');
-    if (consoleErrors.length > 0) violations.push('console-errors');
-    if (exceptions.length > 0) violations.push('exceptions');
-    if (sameOrigin.some((request) => request.status === 404 && /\.(?:js|css|svg|png|ico|woff2?)$/i.test(request.path))) {
-      violations.push('required-asset-404');
-    }
-    if (requests.some((request) => request.url.startsWith('http:'))) violations.push('mixed-content');
-    if (requests.some((request) => request.tokenInUrl)) violations.push('token-in-url');
-    if (rpcRequests.some((request) => request.rpc === 'ecommerce_create_order')) violations.push('order-write-rpc');
-    if (!rpcRequests.some((request) => request.rpc === 'ecommerce_get_portal_by_slug')) violations.push('portal-rpc-not-observed');
-    if (rpcRequests.some((request) => request.corsError || request.failed)) violations.push('rpc-network-or-cors-error');
-    if ([...cleanState.indexedDbNames, ...finalStorage.indexedDbNames].some((name) => name === 'LanzoDB1' || name === 'LanzoDB')) {
-      violations.push('administrative-indexeddb');
-    }
-    if ([...cleanState.cacheStorageNames, ...finalStorage.cacheStorageNames].length > 0) violations.push('unexpected-cache-storage');
-    if (viewportResults.some((viewport) => viewport.overflow || viewport.brokenImages > 0 || !viewport.rootPresent)) {
-      violations.push('responsive-or-image-failure');
-    }
-    if (viewportResults.some((viewport) => !viewport.canonicalPathMatches)) {
-      violations.push('browser-canonical-path');
-    }
-    if (cookieNames.some((name) => /lanzo|supabase|auth|session|staff|device/i.test(name))) violations.push('administrative-cookie');
-
-    return {
-      browser: session.browserName,
-      origin: baseUrl.origin,
-      viewportResults,
-      cleanState,
-      finalStorage,
-      network: {
-        requests: requests.length,
-        sameOriginRequests: sameOrigin.length,
-        javascriptTransferredBytes: sameOrigin
-          .filter((request) => request.type === 'Script')
-          .reduce((total, request) => total + (request.encodedBytes || 0), 0),
-        cssTransferredBytes: sameOrigin
-          .filter((request) => request.type === 'Stylesheet')
-          .reduce((total, request) => total + (request.encodedBytes || 0), 0),
-        requiredAsset404: sameOrigin
-          .filter((request) => request.status === 404 && /\.(?:js|css|svg|png|ico|woff2?)$/i.test(request.path))
-          .map((request) => request.path),
-        mixedContentRequests: requests.filter((request) => request.url.startsWith('http:')).length,
-        tokenInUrlRequests: requests.filter((request) => request.tokenInUrl).length,
-        fromServiceWorkerResponses: requests.filter((request) => request.fromServiceWorker).length,
-        administrativeChunks
-      },
-      supabase: {
-        rpcRequests,
-        portalReadObserved: rpcRequests.some((request) => request.rpc === 'ecommerce_get_portal_by_slug'),
-        corsErrors: rpcRequests.filter((request) => request.corsError).length,
-        writeRequests: rpcRequests.filter((request) => request.rpc === 'ecommerce_create_order').length,
-        safeSlug
-      },
-      cookies: {
-        names: cookieNames,
-        administrativeNames: cookieNames.filter((name) => /lanzo|supabase|auth|session|staff|device/i.test(name))
-      },
-      consoleErrors,
-      exceptions,
-      violations
-    };
-  } finally {
-    profileRemoved = await closeBrowser(session);
-    if (!profileRemoved) throw new Error('The ephemeral browser profile could not be removed.');
   }
+  return findings;
+}
+
+export function inspectSecurityMarkers(source, relativeRoute) {
+  if (typeof source !== 'string') return [];
+  const findings = SECURITY_MARKERS.flatMap(([marker, pattern]) => {
+    const match = pattern.exec(source);
+    return match ? [{
+      marker,
+      classification: marker === 'LanzoDB' || marker.endsWith('Page')
+        || ['processSale', 'cashSync', 'posSync', 'create_free_trial_license', 'releaseDeviceAnon', 'googleDrive']
+          .includes(marker)
+        ? 'administrative-code'
+        : 'credential',
+      relativeRoute,
+      valueLength: match[0].length,
+    }] : [];
+  });
+  return [...findings, ...serviceRoleJwtMarkers(source, relativeRoute)];
+}
+
+export function inspectPng(bytes) {
+  const data = Buffer.from(bytes);
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const png = data.length >= 24 && data.subarray(0, 8).equals(signature);
+  const looksLikeHtml = /^\s*<(?:!doctype|html|head|body)\b/iu.test(
+    data.subarray(0, 128).toString('utf8'),
+  );
+  return Object.freeze({
+    png,
+    looksLikeHtml,
+    width: png ? data.readUInt32BE(16) : null,
+    height: png ? data.readUInt32BE(20) : null,
+    bytes: data.length,
+    sha256: sha256(data),
+  });
+}
+
+function sanitizedHeaders(headers) {
+  const location = headers.get('location') || '';
+  let locationPath = '';
+  try {
+    const parsed = new URL(location, 'https://preview.invalid');
+    locationPath = `${parsed.pathname}${parsed.search}`;
+  } catch {
+    locationPath = '';
+  }
+  return Object.freeze({
+    contentType: headers.get('content-type') || '',
+    cacheControl: headers.get('cache-control') || '',
+    duplicateContentType: (headers.get('content-type') || '').includes(','),
+    duplicateCacheControl: (() => {
+      const directives = (headers.get('cache-control') || '')
+        .split(',')
+        .map((item) => item.trim().split('=')[0].toLowerCase())
+        .filter(Boolean);
+      return new Set(directives).size !== directives.length;
+    })(),
+    xRobotsTag: headers.get('x-robots-tag') || '',
+    locationHost: safeUrlHost(location),
+    locationPath,
+  });
+}
+
+async function fetchBounded(fetchImpl, url, options = {}) {
+  const response = await fetchImpl(url, { ...options, redirect: 'manual' });
+  const declaredLength = response.headers.get('content-length');
+  if (
+    declaredLength
+    && /^\d+$/u.test(declaredLength)
+    && Number(declaredLength) > MAX_RESPONSE_BYTES
+  ) {
+    throw new Error('Remote response exceeds the audit limit.');
+  }
+  const chunks = [];
+  let total = 0;
+  if (response.body) {
+    const reader = response.body.getReader?.();
+    if (!reader) throw new Error('Remote response body cannot be read safely.');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error('Remote response exceeds the audit limit.');
+      }
+      chunks.push(value);
+    }
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { response, bytes, headers: sanitizedHeaders(response.headers) };
+}
+
+function metadataPass(inspection, slug) {
+  return inspection.doctype
+    && inspection.langEsMx
+    && inspection.rootCount === 1
+    && Object.values(inspection.counts).every((count) => count === 1)
+    && inspection.canonicalPath === `/tienda/${slug}`
+    && inspection.ogUrlPath === `/tienda/${slug}`
+    && inspection.canonicalHost
+    && inspection.canonicalHost === inspection.ogImageHost
+    && inspection.assetPaths.some((item) => item.endsWith('.js'))
+    && inspection.assetPaths.some((item) => item.endsWith('.css'))
+    && !inspection.forbiddenPrivateData
+    && !inspection.stackTrace
+    && !inspection.supabaseUrl;
+}
+
+function addCheck(checks, name, passed, detail = null) {
+  checks.push(Object.freeze({ name, passed: Boolean(passed), detail }));
+}
+
+export async function auditRemoteStoreDeployment({
+  baseUrl,
+  slug,
+  fetchImpl = globalThis.fetch,
+  localIndexPath = path.join(projectRoot, 'store', 'dist', 'index.html'),
+} = {}) {
+  const origin = validatePreviewUrl(baseUrl instanceof URL ? baseUrl.href : baseUrl);
+  validateStoreSlug(slug);
+  const localIndex = await readFile(localIndexPath);
+  const localIndexHash = sha256(localIndex);
+  const localHtml = localIndex.toString('utf8');
+  const assetPath = inspectSocialHtml(localHtml).assetPaths[0];
+  if (!assetPath) throw new Error('The local store build has no hashed asset.');
+
+  const paths = Object.freeze({
+    root: '/',
+    tienda: '/tienda',
+    store: `/tienda/${slug}`,
+    storeSlash: `/tienda/${slug}/`,
+    storeUtm: `/tienda/${slug}?utm_source=whatsapp`,
+    hostileSingle: `/tienda/${slug}?slug=externo`,
+    hostileMultiple: `/tienda/${slug}?slug=externo&slug=otro`,
+    tracking: `/tienda/${slug}/pedido/${TRACKING_TOKEN}`,
+    nested: `/tienda/${slug}/ruta-desconocida`,
+    apiStore: `/api/store-page?slug=${encodeURIComponent(slug)}`,
+    og: `/api/og/store?slug=${encodeURIComponent(slug)}`,
+    ogVersioned: `/api/og/store?slug=${encodeURIComponent(slug)}&v=1`,
+    asset: assetPath,
+    missingStore: `/tienda/${MISSING_SLUG}`,
+    missingApi: `/api/store-page?slug=${MISSING_SLUG}`,
+    invalidApi: `/api/store-page?slug=${INVALID_SLUG}`,
+  });
+  const checks = [];
+  const requests = [];
+  const securityFindings = [];
+
+  async function request(name, requestPath, method = 'GET') {
+    const { response, bytes, headers } = await fetchBounded(
+      fetchImpl,
+      new URL(requestPath, origin),
+      { method },
+    );
+    const contentType = headers.contentType.split(';')[0].trim().toLowerCase();
+    const text = method === 'HEAD' || contentType.startsWith('image/')
+      ? null
+      : Buffer.from(bytes).toString('utf8');
+    if (text != null) securityFindings.push(...inspectSecurityMarkers(text, name));
+    const item = {
+      name,
+      method,
+      status: response.status,
+      headers,
+      bytes: bytes.byteLength,
+      bodySha256: bytes.byteLength ? sha256(bytes) : null,
+      contentType,
+      text,
+      rawBytes: bytes,
+    };
+    requests.push(item);
+    return item;
+  }
+
+  const root = await request('root', paths.root);
+  const tienda = await request('tienda', paths.tienda);
+  for (const item of [root, tienda]) {
+    addCheck(checks, `${item.name}:static`, item.status === 200
+      && item.bodySha256 === localIndexHash
+      && item.headers.cacheControl === STATIC_CACHE
+      && item.headers.xRobotsTag === NOINDEX);
+  }
+
+  const store = await request('store', paths.store);
+  const storeHtml = inspectSocialHtml(store.text || '');
+  addCheck(checks, 'store:metadata', store.status === 200
+    && store.contentType === 'text/html'
+    && store.headers.xRobotsTag === NOINDEX
+    && validateCacheControl(store.headers.cacheControl, 'dynamic-html')
+    && metadataPass(storeHtml, slug));
+  const storeHead = await request('store-head', paths.store, 'HEAD');
+  addCheck(checks, 'store:head', storeHead.status === 200
+    && storeHead.contentType === 'text/html'
+    && validateCacheControl(storeHead.headers.cacheControl, 'dynamic-html'));
+
+  const storeSlash = await request('store-slash', paths.storeSlash);
+  addCheck(checks, 'store:trailing-slash', storeSlash.status === 308
+    && storeSlash.headers.locationPath === `/tienda/${slug}`);
+
+  const queryResults = [];
+  for (const [name, requestPath] of [
+    ['store-utm', paths.storeUtm],
+    ['hostile-single', paths.hostileSingle],
+    ['hostile-multiple', paths.hostileMultiple],
+  ]) {
+    const item = await request(name, requestPath);
+    const inspection = inspectSocialHtml(item.text || '');
+    queryResults.push({ name, inspection });
+    addCheck(checks, `${name}:path-authoritative`, item.status === 200
+      && inspection.valueHashes.title === storeHtml.valueHashes.title
+      && inspection.valueHashes.canonical === storeHtml.valueHashes.canonical
+      && inspection.canonicalPath === storeHtml.canonicalPath
+      && inspection.valueHashes.ogUrl === storeHtml.valueHashes.ogUrl
+      && inspection.valueHashes.ogImage === storeHtml.valueHashes.ogImage
+      && inspection.valueHashes.twitterImage === storeHtml.valueHashes.twitterImage
+      && inspection.canonicalHost === storeHtml.canonicalHost
+      && inspection.ogImageHost === storeHtml.ogImageHost
+      && JSON.stringify(inspection.slugValues) === JSON.stringify([slug]));
+  }
+
+  for (const [name, requestPath] of [['tracking', paths.tracking], ['nested', paths.nested]]) {
+    const item = await request(name, requestPath);
+    const inspection = inspectSocialHtml(item.text || '');
+    addCheck(checks, `${name}:static-fallback`, item.status === 200
+      && item.bodySha256 === localIndexHash
+      && item.headers.cacheControl === STATIC_CACHE
+      && inspection.counts.canonical === 0
+      && inspection.counts.ogUrl === 0
+      && !(item.text || '').includes(TRACKING_TOKEN));
+  }
+
+  const apiStore = await request('api-store', paths.apiStore);
+  const apiHtml = inspectSocialHtml(apiStore.text || '');
+  addCheck(checks, 'api-store:metadata', apiStore.status === 200
+    && apiHtml.valueHashes.canonical === storeHtml.valueHashes.canonical);
+
+  const missingStore = await request('missing-store', paths.missingStore);
+  const missingApi = await request('missing-api', paths.missingApi);
+  for (const item of [missingStore, missingApi]) {
+    const inspection = inspectSocialHtml(item.text || '');
+    addCheck(checks, `${item.name}:generic`, item.status === 200
+      && item.contentType === 'text/html'
+      && inspection.counts.title === 1
+      && inspection.counts.canonical === 0
+      && !inspection.stackTrace
+      && validateCacheControl(item.headers.cacheControl, 'dynamic-html'));
+  }
+
+  const invalidApi = await request('invalid-api', paths.invalidApi);
+  addCheck(checks, 'invalid-api:safe', invalidApi.status === 400
+    && invalidApi.headers.cacheControl === 'no-store'
+    && !/Error:|node:internal|supabase/iu.test(invalidApi.text || ''));
+
+  let ogInspection = null;
+  for (const [name, requestPath] of [['og', paths.og], ['og-versioned', paths.ogVersioned]]) {
+    const item = await request(name, requestPath);
+    const inspection = inspectPng(item.rawBytes);
+    if (name === 'og') ogInspection = inspection;
+    addCheck(checks, `${name}:png`, item.status === 200
+      && item.contentType === 'image/png'
+      && !item.headers.duplicateContentType
+      && !item.headers.duplicateCacheControl
+      && inspection.png
+      && inspection.width === 1200
+      && inspection.height === 630
+      && inspection.bytes > 1_000
+      && !item.headers.locationHost
+      && validateCacheControl(
+        item.headers.cacheControl,
+        name === 'og' ? 'og-unversioned' : 'og-versioned',
+      ));
+  }
+  const ogHead = await request('og-head', paths.og, 'HEAD');
+  addCheck(checks, 'og:head', ogHead.status === 200
+    && ogHead.contentType === 'image/png'
+    && !ogHead.headers.duplicateContentType
+    && !ogHead.headers.duplicateCacheControl);
+
+  const asset = await request('asset', paths.asset);
+  const assetSource = asset.text || '';
+  const assetHasPublicOrigin = /https:\/\/[a-z0-9-]+\.supabase\.co(?:\/)?/iu.test(assetSource);
+  const assetHasPublishableKey = (
+    /\bsb_publishable_[A-Za-z0-9_-]{12,}\b/u.test(assetSource)
+    || /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/u.test(assetSource)
+  );
+  const assetHasPublicClientOptions = assetSource.includes('lanzo-public-store-auth');
+  const assetHasFictitiousMarker = FORBIDDEN_PUBLIC_RUNTIME_MARKERS
+    .some((marker) => assetSource.toLowerCase().includes(marker));
+  const serverHtmlPassed = checks.find((item) => item.name === 'store:metadata')?.passed === true;
+  const clientConfigurationPassed = asset.status === 200
+    && assetHasPublicOrigin
+    && assetHasPublishableKey
+    && assetHasPublicClientOptions
+    && !assetHasFictitiousMarker;
+  const clientStoreLoadPassed = clientConfigurationPassed
+    && apiStore.status === 200
+    && apiStore.contentType === 'text/html'
+    && apiHtml.valueHashes.canonical === storeHtml.valueHashes.canonical
+    && !(store.text || '').includes('No se pudo cargar la tienda');
+  const ogRuntimePassed = checks.find((item) => item.name === 'og:png')?.passed === true
+    && ogInspection?.png === true
+    && ogInspection.bytes > 1_000;
+  addCheck(checks, 'store:client-configuration', clientConfigurationPassed);
+  addCheck(checks, 'store:client-load', clientStoreLoadPassed);
+  addCheck(checks, 'og:runtime', ogRuntimePassed);
+  addCheck(checks, 'asset:immutable', asset.status === 200
+    && validateCacheControl(asset.headers.cacheControl, 'hashed-asset')
+    && asset.bodySha256 === sha256(await readFile(path.join(path.dirname(localIndexPath), paths.asset.slice(1)))));
+  const assetHead = await request('asset-head', paths.asset, 'HEAD');
+  addCheck(checks, 'asset:head', assetHead.status === 200
+    && validateCacheControl(assetHead.headers.cacheControl, 'hashed-asset'));
+
+  addCheck(checks, 'security:no-markers', securityFindings.length === 0);
+  const failedChecks = checks.filter((item) => !item.passed).map((item) => item.name);
+  const serverFallbackDetected = /(?:store page temporarily unavailable|tienda no disponible)/iu
+    .test(store.text || '');
+  const runtimeErrors = Object.freeze(requests.flatMap((item) => {
+    const source = item.text || '';
+    return [
+      ['TYPE_ERROR_SATORI', /TypeError.*Satori|Satori.*TypeError/iu],
+      ['FUNCTION_INVOCATION_FAILED', /FUNCTION_INVOCATION_FAILED/iu],
+      ['INTERNAL_SERVER_ERROR', /INTERNAL_SERVER_ERROR/iu],
+    ].filter(([, pattern]) => pattern.test(source)).map(([code]) => code);
+  }));
+  return Object.freeze({
+    status: failedChecks.length === 0 ? 'PASS' : 'BLOCKED',
+    previewHost: origin.hostname,
+    serverHtmlPassed,
+    clientConfigurationPassed,
+    clientStoreLoadPassed,
+    ogRuntimePassed,
+    serverFallbackDetected,
+    runtimeErrors,
+    requests: requests.map(({ name, method, status, headers, bytes, bodySha256, contentType }) => ({
+      name, method, status, headers, bytes, bodySha256, contentType,
+    })),
+    metadata: storeHtml,
+    hostileQueries: queryResults.map(({ name, inspection }) => ({
+      name,
+      canonicalHash: inspection.valueHashes.canonical,
+      ogUrlHash: inspection.valueHashes.ogUrl,
+      ogImageHash: inspection.valueHashes.ogImage,
+      twitterImageHash: inspection.valueHashes.twitterImage,
+      canonicalPath: inspection.canonicalPath,
+      canonicalHost: inspection.canonicalHost,
+      ogImageHost: inspection.ogImageHost,
+      slugValues: inspection.slugValues,
+    })),
+    ogImage: ogInspection,
+    security: {
+      passed: securityFindings.length === 0,
+      findings: securityFindings,
+      scannedResponses: requests.filter((item) => item.text != null).length,
+    },
+    checks,
+    failedChecks,
+  });
+}
+
+function fifthPreviewCertificationError(code) {
+  const error = new Error(`Fifth-preview remote certification rejected: ${code}.`);
+  error.code = code;
+  return error;
+}
+
+function requireFifthPreviewCertification(condition, code) {
+  if (!condition) throw fifthPreviewCertificationError(code);
+}
+
+/**
+ * Validates the post-deployment certification contract for the one permitted
+ * recovery preview. Browser evidence is supplied by the later runner rather
+ * than inferred from server HTML, so a transient read only passes when the UI
+ * ends in ready state on its bounded second attempt.
+ */
+export function validateFifthPreviewRemoteCertification({ remote, frontend, deployment } = {}) {
+  const checks = new Map((remote?.checks || []).map((check) => [check?.name, check?.passed === true]));
+  const attempts = frontend?.publicReadAttempts;
+  const recoveredTransientRead = Array.isArray(attempts)
+    && attempts.length === 2
+    && attempts[0]?.status === 'transient-failure'
+    && attempts[1]?.status === 'ready';
+  const immediateReady = Array.isArray(attempts)
+    && attempts.length === 1
+    && attempts[0]?.status === 'ready';
+
+  requireFifthPreviewCertification(remote?.status === 'PASS', 'REMOTE_AUDIT_NOT_PASS');
+  requireFifthPreviewCertification(
+    checks.get('store:metadata') === true
+      && remote?.metadata?.doctype === true
+      && remote?.metadata?.rootCount === 1
+      && remote?.serverFallbackDetected === false,
+    'STORE_HTML_INVALID',
+  );
+  requireFifthPreviewCertification(
+    checks.get('og:png') === true
+      && checks.get('og-versioned:png') === true
+      && checks.get('og:runtime') === true
+      && remote?.ogImage?.png === true
+      && remote?.ogImage?.looksLikeHtml === false
+      && remote?.ogImage?.width === 1200
+      && remote?.ogImage?.height === 630
+      && remote?.ogImage?.bytes > 1_000,
+    'OG_IMAGE_INVALID',
+  );
+  requireFifthPreviewCertification(Array.isArray(remote?.runtimeErrors) && remote.runtimeErrors.length === 0, 'RUNTIME_ERRORS_PRESENT');
+  requireFifthPreviewCertification(
+    frontend?.portalVisible === true
+      && frontend?.catalogVisible === true
+      && frontend?.productRendered === true
+      && frontend?.terminalState === 'ready'
+      && frontend?.genericStoreErrorVisible === false
+      && frontend?.blankScreen === false
+      && frontend?.finalRpcError === false
+      && (immediateReady || recoveredTransientRead),
+    'FRONTEND_NOT_READY',
+  );
+  requireFifthPreviewCertification(deployment?.projectName === 'lanzo-store', 'DEPLOYMENT_PROJECT_INVALID');
+  requireFifthPreviewCertification(
+    deployment?.deploymentType === 'preview' && deployment?.production === false,
+    'DEPLOYMENT_TYPE_INVALID',
+  );
+  requireFifthPreviewCertification(deployment?.deploymentCount === 5, 'DEPLOYMENT_COUNT_INVALID');
+  requireFifthPreviewCertification(deployment?.sixthPreviewForbidden === true, 'SIXTH_PREVIEW_NOT_FORBIDDEN');
+  requireFifthPreviewCertification(deployment?.productionPromotionAuthorized === false, 'PRODUCTION_PROMOTION_NOT_FORBIDDEN');
+  return Object.freeze({
+    certification: 'PASS',
+    deploymentType: 'preview',
+    production: false,
+    deploymentCount: 5,
+    sixthPreviewForbidden: true,
+    productionPromotionAuthorized: false,
+  });
+}
+
+export function buildEvidenceReport({
+  head,
+  artifact,
+  remote,
+  deployment,
+  timestamp = new Date().toISOString(),
+} = {}) {
+  if (!/^[a-f0-9]{40}$/u.test(head || '')) throw new Error('A full Git HEAD is required.');
+  if (artifact?.status !== 'PASS') throw new Error('Artifact audit must be PASS.');
+  if (artifact?.target !== 'store') throw new Error('Artifact target must be store.');
+  if (!Array.isArray(artifact?.failedChecks) || artifact.failedChecks.length !== 0) {
+    throw new Error('Artifact audit must have no failed checks.');
+  }
+  if (remote?.status !== 'PASS') throw new Error('Remote audit must be PASS.');
+  if (!Array.isArray(remote?.failedChecks) || remote.failedChecks.length !== 0) {
+    throw new Error('Remote audit must have no failed checks.');
+  }
+  if ('deploymentExecuted' in remote) {
+    throw new Error('Deployment execution must come from deployment evidence.');
+  }
+  if (!deployment || typeof deployment !== 'object') {
+    throw new Error('Deployment evidence is required.');
+  }
+  if (deployment.projectName !== 'lanzo-store') {
+    throw new Error('Deployment project must be lanzo-store.');
+  }
+  if (deployment.type !== 'preview' || deployment.production !== false) {
+    throw new Error('Deployment evidence must describe a non-production preview.');
+  }
+  if (typeof deployment.executed !== 'boolean') {
+    throw new Error('Deployment execution evidence must be explicit.');
+  }
+  if (!/^[a-f0-9]{64}$/u.test(deployment.deploymentIdHash || '')) {
+    throw new Error('Deployment ID hash is required.');
+  }
+  const previewUrl = validatePreviewUrl(`https://${deployment.previewHost || ''}`);
+  if (previewUrl.hostname !== remote.previewHost) {
+    throw new Error('Deployment and audited preview hosts must match.');
+  }
+  const detailedChecks = new Map(
+    (remote.checks || []).map((check) => [check?.name, check?.passed === true]),
+  );
+  const passed = (...names) => names.every((name) => detailedChecks.get(name) === true);
+  const metadataUnique = passed('store:metadata')
+    && Object.values(remote.metadata?.counts || {}).length > 0
+    && Object.values(remote.metadata.counts).every((count) => count === 1)
+    && typeof remote.metadata.effectiveSlug === 'string'
+    && remote.metadata.canonicalPath === `/tienda/${remote.metadata.effectiveSlug}`
+    && remote.metadata.ogUrlPath === remote.metadata.canonicalPath;
+  const ogImagePassed = passed('og:png', 'og-versioned:png', 'og:head')
+    && remote.ogImage?.png === true
+    && remote.ogImage?.width === 1200
+    && remote.ogImage?.height === 630
+    && Number.isSafeInteger(remote.ogImage?.bytes)
+    && remote.ogImage.bytes > 0
+    && /^[a-f0-9]{64}$/u.test(remote.ogImage?.sha256 || '');
+  const checks = Object.freeze({
+    serverHtmlPassed: remote.serverHtmlPassed === true,
+    clientConfigurationPassed: remote.clientConfigurationPassed === true,
+    clientStoreLoadPassed: remote.clientStoreLoadPassed === true,
+    ogRuntimePassed: remote.ogRuntimePassed === true,
+    metadataUnique,
+    canonicalConsistent: passed(
+      'store:metadata',
+      'api-store:metadata',
+      'store-utm:path-authoritative',
+      'hostile-single:path-authoritative',
+      'hostile-multiple:path-authoritative',
+    ),
+    ogImageConsistent: ogImagePassed
+      && remote.metadata?.canonicalHost === remote.previewHost
+      && remote.metadata?.ogImageHost === remote.previewHost,
+    cachePassed: passed(
+      'root:static',
+      'tienda:static',
+      'store:metadata',
+      'store:head',
+      'og:png',
+      'og-versioned:png',
+      'tracking:static-fallback',
+      'nested:static-fallback',
+      'asset:immutable',
+      'asset:head',
+      'invalid-api:safe',
+      'store:client-configuration',
+      'store:client-load',
+      'og:runtime',
+    ),
+    trackingPassed: passed('tracking:static-fallback'),
+    hostileQueryPassed: passed(
+      'store-utm:path-authoritative',
+      'hostile-single:path-authoritative',
+      'hostile-multiple:path-authoritative',
+    ),
+    missingStorePassed: passed('missing-store:generic', 'missing-api:generic'),
+    invalidSlugPassed: passed('invalid-api:safe'),
+    securityPassed: passed('security:no-markers')
+      && remote.security?.passed === true
+      && Array.isArray(remote.security?.findings)
+      && remote.security.findings.length === 0,
+  });
+  if (Object.values(checks).some((check) => check !== true)) {
+    throw new Error('Remote audit summary checks must all be derived as PASS.');
+  }
+  const report = {
+    schemaVersion: 1,
+    phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
+    timestamp,
+    HEAD: head,
+    status: 'PASS',
+    evidenceStatus: 'PASS',
+    projectName: deployment.projectName,
+    deploymentType: deployment.type,
+    previewHost: previewUrl.hostname,
+    deploymentIdHash: deployment.deploymentIdHash,
+    artifactHashes: {
+      config: artifact.hashes.outputConfig,
+      static: artifact.hashes.outputStaticTree,
+    },
+    functions: artifact.output.functions,
+    runtimes: artifact.functionAudit.bundles.map(({ route, runtime }) => ({ route, runtime })),
+    handlers: artifact.functionAudit.bundles.map(({ route, handler }) => ({ route, handler })),
+    routingChecks: artifact.routing.checks,
+    httpStatuses: remote.requests.map(({ name, method, status }) => ({ name, method, status })),
+    headerChecks: remote.requests.map(({ name, headers }) => ({
+      name,
+      headers: {
+        contentType: headers.contentType,
+        cacheControl: headers.cacheControl,
+        xRobotsTag: headers.xRobotsTag,
+        locationHost: headers.locationHost,
+      },
+    })),
+    metadataTagCounts: remote.metadata.counts,
+    canonicalHost: remote.metadata.canonicalHost,
+    ogImageHost: remote.metadata.ogImageHost,
+    ogImage: {
+      passed: ogImagePassed,
+      width: remote.ogImage.width,
+      height: remote.ogImage.height,
+      bytes: remote.ogImage.bytes,
+    },
+    ogImageSha256: remote.ogImage.sha256,
+    checks,
+    securityCheckSummary: {
+      passed: remote.security.passed,
+      scannedResponses: remote.security.scannedResponses,
+      findings: remote.security.findings,
+    },
+    failedChecks: remote.failedChecks,
+    deploymentExecuted: deployment.executed,
+    deploymentCreatedByThisRun: deployment.executed,
+    previewAudited: true,
+    productionModified: false,
+  };
+  const serialized = JSON.stringify(report);
+  if (/<(?:!doctype|html|head|body)\b|authorization|cookie|@[\w.-]+\.[a-z]{2,}/iu.test(serialized)) {
+    throw new Error('Evidence contains forbidden response or private data.');
+  }
+  return Object.freeze(report);
+}
+
+export async function writeEvidenceReport(filePath, report) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(report, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  });
+  return filePath;
 }
 
 async function main() {
-  const baseUrl = validateInput();
-  const httpAudit = await auditHttp(baseUrl);
-  const browserAudit = await auditBrowser(baseUrl);
-  const violations = [
-    ...httpAudit.violations.map((item) => `http:${item}`),
-    ...browserAudit.violations.map((item) => `browser:${item}`)
-  ];
-  const report = {
-    generatedAt: new Date().toISOString(),
-    target: { origin: baseUrl.origin, safeSlug },
-    http: httpAudit,
-    browser: browserAudit,
-    safety: {
-      credentialsUsed: false,
-      checkoutSubmitted: false,
-      ordersCreated: 0,
-      writesPerformed: 0,
-      ephemeralProfileRemoved: true
-    },
-    compliance: { passed: violations.length === 0, violations }
+  const input = parseAuditArguments();
+  const remote = await auditRemoteStoreDeployment(input);
+  let evidenceWritten = false;
+  if (input.artifactAuditPath || input.head) {
+    if (
+      !input.artifactAuditPath
+      || !input.head
+      || !input.deploymentIdHash
+      || input.deploymentCreatedByThisRun == null
+    ) {
+      throw new Error(
+        '--artifact-audit, --head, --deployment-id-hash and '
+        + '--deployment-created-by-this-run must be supplied together.',
+      );
+    }
+    const artifact = JSON.parse(await readFile(input.artifactAuditPath, 'utf8'));
+    const evidence = buildEvidenceReport({
+      head: input.head,
+      artifact,
+      remote,
+      deployment: {
+        executed: input.deploymentCreatedByThisRun,
+        type: 'preview',
+        projectName: 'lanzo-store',
+        production: false,
+        deploymentIdHash: input.deploymentIdHash,
+        previewHost: remote.previewHost,
+      },
+    });
+    await writeEvidenceReport(input.evidencePath, evidence);
+    evidenceWritten = true;
+  }
+  const summary = {
+    phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
+    status: remote.status,
+    previewHost: remote.previewHost,
+    requests: remote.requests,
+    metadata: remote.metadata,
+    ogImage: remote.ogImage,
+    security: remote.security,
+    failedChecks: remote.failedChecks,
+    evidenceWritten,
+    deploymentExecuted: input.deploymentCreatedByThisRun === true,
+    productionModified: false,
   };
-  console.log(JSON.stringify(report, null, 2));
-  if (!report.compliance.passed) process.exitCode = 1;
+  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+  if (remote.status !== 'PASS') process.exitCode = 1;
 }
 
-const invokedAsScript = Boolean(process.argv[1])
-  && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
-
-if (invokedAsScript) {
+const invokedDirectly = process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
   main().catch((error) => {
-    console.log(JSON.stringify({
-      generatedAt: new Date().toISOString(),
-      compliance: { passed: false, violations: [`fatal:${sanitizeText(error.message || error)}`] }
-    }, null, 2));
+    process.stderr.write(`${JSON.stringify({
+      phase: 'ECOM.PUBLIC.SOCIAL.PREVIEW.1.7',
+      status: 'BLOCKED',
+      error: String(error?.message || error).slice(0, 500),
+      deploymentExecuted: false,
+      productionModified: false,
+    })}\n`);
     process.exitCode = 1;
   });
 }

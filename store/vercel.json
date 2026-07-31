@@ -42,7 +42,7 @@
       ]
     },
     {
-      "source": "/tienda/:path*",
+      "source": "/tienda/:slug/pedido/:trackingToken",
       "headers": [
         {
           "key": "Cache-Control",
@@ -79,11 +79,19 @@
       "destination": "/index.html"
     },
     {
-      "source": "/tienda/:path*",
+      "source": "/tienda/:slug/pedido/:trackingToken",
       "destination": "/index.html"
     },
     {
+      "source": "/tienda/:slug",
+      "destination": "/api/store-page"
+    },
+    {
       "source": "/conoce-lanzo",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/tienda/:path*",
       "destination": "/index.html"
     }
   ],

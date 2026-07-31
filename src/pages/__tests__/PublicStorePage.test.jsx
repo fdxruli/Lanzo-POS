@@ -299,6 +299,39 @@ describe('PublicStorePage', () => {
     expect(screen.getByRole('heading', { name: 'Producto B' })).toBeInTheDocument();
   });
 
+  it('keeps the newer ready store when an older portal request fails late', async () => {
+    const oldPortal = deferred();
+    serviceMocks.getPublicPortalBySlug.mockImplementation((slug) => (
+      slug === 'tienda-a'
+        ? oldPortal.promise
+        : Promise.resolve({
+            ...portalResult,
+            portal: { ...portalResult.portal, slug, name: 'Tienda B' },
+          })
+    ));
+    serviceMocks.getPublicCatalog.mockResolvedValue({
+      items: [makeProduct('b-product', { name: 'Producto B' })],
+      pagination: { limit: 100, offset: 0, hasMore: false },
+    });
+    const router = createMemoryRouter([
+      { path: '/tienda/:slug', element: <PublicStorePage /> },
+    ], { initialEntries: ['/tienda/tienda-a'] });
+    render(<RouterProvider router={router} />);
+
+    await act(async () => {
+      await router.navigate('/tienda/tienda-b');
+    });
+    expect(await screen.findByRole('heading', { name: 'Tienda B' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Producto B' })).toBeInTheDocument();
+
+    await act(async () => {
+      oldPortal.reject(new EcommercePublicError('ECOMMERCE_PUBLIC_NETWORK_ERROR', 'late failure'));
+      await oldPortal.promise.catch(() => {});
+    });
+    expect(screen.getByRole('heading', { name: 'Tienda B' })).toBeInTheDocument();
+    expect(screen.queryByText('No se pudo cargar la tienda')).not.toBeInTheDocument();
+  });
+
   it('filters by search and category and disables unavailable products', async () => {
     const user = userEvent.setup();
     renderPage();
