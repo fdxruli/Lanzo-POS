@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { ImageResponse } from '@vercel/og';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -8,6 +9,7 @@ import {
   StoreOgCard,
   buildStoreOgCardModel,
 } from '../../api/_storeOgCard.js';
+import { normalizePublicImageForOg } from '../../api/_safePublicImage.js';
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -49,7 +51,7 @@ const farmaciaGaryResult = {
   siteVersionNumber: 12,
 };
 const ONE_PIXEL_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3jgAAAABJRU5ErkJggg==';
-const TWO_PIXEL_WEBP = 'data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAAAwAgCdASoCAAIAAMASJaACdLoB+AH4AARoAAD++iGX/3easNN39a3/9aOfron+tHP/WVgA';
+const TWO_PIXEL_WEBP_BASE64 = 'UklGRkAAAABXRUJQVlA4IDQAAAAwAgCdASoCAAIAAMASJaACdLoB+AH4AARoAAD++iGX/3easNN39a3/9aOfron+tHP/WVgA';
 
 function readPngDimensions(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -66,6 +68,17 @@ function collectImageElements(node, result = []) {
   const childList = Array.isArray(children) ? children : [children];
   childList.forEach((child) => collectImageElements(child, result));
   return result;
+}
+
+async function normalizedWebpLogo() {
+  const source = Buffer.from(TWO_PIXEL_WEBP_BASE64, 'base64');
+  const normalized = await normalizePublicImageForOg({
+    bytes: new Uint8Array(source.buffer, source.byteOffset, source.byteLength),
+    contentType: 'image/webp',
+  });
+  expect(normalized?.contentType).toBe('image/png');
+  expect(Array.from(normalized.bytes.slice(0, PNG_SIGNATURE.length))).toEqual(PNG_SIGNATURE);
+  return `data:image/png;base64,${Buffer.from(normalized.bytes).toString('base64')}`;
 }
 
 afterEach(() => {
@@ -86,10 +99,10 @@ describe('render real con @vercel/og ImageResponse', () => {
       buildStoreOgCardModel({ result: personalizedResult }),
     ],
     [
-      'tarjeta con portada PNG y logo WebP embebidos',
+      'tarjeta con portada y logo PNG normalizados',
       buildStoreOgCardModel({
         result: personalizedResult,
-        logoImage: TWO_PIXEL_WEBP,
+        logoImage: ONE_PIXEL_PNG,
         coverImage: ONE_PIXEL_PNG,
       }),
     ],
@@ -124,10 +137,30 @@ describe('render real con @vercel/og ImageResponse', () => {
     expect(JSON.stringify(model)).not.toMatch(/https?:\/\/|data:font|fontFamily|Arial|Georgia/iu);
   }, 30_000);
 
+  it('convierte un logo WebP a PNG antes de entregarlo a ImageResponse', async () => {
+    const logoImage = await normalizedWebpLogo();
+    const model = buildStoreOgCardModel({
+      result: personalizedResult,
+      logoImage,
+      coverImage: ONE_PIXEL_PNG,
+    });
+    const response = renderStoreOgImage({
+      ImageResponseImpl: ImageResponse,
+      model,
+      status: 200,
+      headers: { 'Cache-Control': 'no-store' },
+    });
+    const bytes = new Uint8Array(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(Array.from(bytes.slice(0, PNG_SIGNATURE.length))).toEqual(PNG_SIGNATURE);
+    expect(readPngDimensions(bytes)).toEqual({ width: 1200, height: 630 });
+  }, 30_000);
+
   it('declara dimensiones intrínsecas para portada y logo', () => {
     const model = buildStoreOgCardModel({
       result: personalizedResult,
-      logoImage: TWO_PIXEL_WEBP,
+      logoImage: ONE_PIXEL_PNG,
       coverImage: ONE_PIXEL_PNG,
     });
     const images = collectImageElements(StoreOgCard({ model }));
@@ -144,9 +177,10 @@ describe('render real con @vercel/og ImageResponse', () => {
   });
 
   it('materializa Farmacia Gary con logo y portada sin degradar a identidad textual', async () => {
+    const logoImage = await normalizedWebpLogo();
     const logger = { warn: vi.fn() };
     const imageLoader = vi.fn()
-      .mockResolvedValueOnce(TWO_PIXEL_WEBP)
+      .mockResolvedValueOnce(logoImage)
       .mockResolvedValueOnce(ONE_PIXEL_PNG);
     const handler = createStoreOgHandler({
       portalClient: { getPortalBySlug: vi.fn(async () => farmaciaGaryResult) },
