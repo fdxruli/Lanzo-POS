@@ -26,8 +26,8 @@ vi.mock('../ProductMenu', () => ({
 vi.mock('../OrderSummary', () => ({
   default: () => <div data-testid="order-summary" />
 }));
-vi.mock('../OrderDiscountPanel', () => ({
-  default: () => <div data-testid="discount-panel" />
+vi.mock('../EcommercePosConversionPanel', () => ({
+  default: () => <div data-testid="ecommerce-conversion-panel" />
 }));
 vi.mock('../MobilePosCart', () => ({
   default: () => <div data-testid="mobile-cart" />
@@ -138,7 +138,7 @@ describe('PosPageContent ecommerce discount surface', () => {
     expect(screen.queryByTestId('discount-panel')).not.toBeInTheDocument();
   });
 
-  it('keeps the desktop discount panel for a normal POS order', async () => {
+  it('delegates the normal POS discount surface to OrderSummary without mounting a duplicate panel', async () => {
     setOrder(undefined);
 
     render(
@@ -151,6 +151,6 @@ describe('PosPageContent ecommerce discount surface', () => {
     );
 
     expect(await screen.findByTestId('order-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('discount-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('discount-panel')).not.toBeInTheDocument();
   });
 });

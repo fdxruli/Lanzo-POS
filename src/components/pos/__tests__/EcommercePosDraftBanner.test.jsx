@@ -35,7 +35,7 @@ describe('EcommercePosDraftBanner', () => {
     expect(screen.queryByText('Privada 123')).not.toBeInTheDocument();
     expect(screen.queryByText('Tocar timbre')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Volver al detalle del pedido' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver pedido' }));
     expect(onOpenDetail).toHaveBeenCalledTimes(1);
   });
 

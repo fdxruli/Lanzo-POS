@@ -259,45 +259,57 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
 
   return (
     <section className="ecommerce-pos-draft-banner" aria-label="Pedido online preparado">
-      <div className="ecommerce-pos-draft-banner__title">
-        <ShoppingBag size={20} aria-hidden="true" />
-        <strong>Pedido online {effectiveOrder.ecommerceOrderCode || ''}</strong>
+      <div className="ecommerce-pos-draft-banner__header">
+        <div className="ecommerce-pos-draft-banner__title">
+          <ShoppingBag size={18} aria-hidden="true" />
+          <strong>Pedido online {effectiveOrder.ecommerceOrderCode || ''}</strong>
+        </div>
+        <button type="button" className="ecommerce-pos-draft-banner__link" onClick={onOpenDetail}>
+          Ver pedido
+        </button>
       </div>
-      <dl>
+      <dl className="ecommerce-pos-draft-banner__essentials">
         <div><dt>Modalidad</dt><dd>{effectiveOrder.fulfillmentMethod === 'delivery' ? 'Entrega' : 'Recolección'}</dd></div>
         <div><dt>Total esperado</dt><dd>${Number(effectiveOrder.expectedTotal || 0).toFixed(2)} {effectiveOrder.currency || 'MXN'}</dd></div>
-        <div><dt>Estado del pedido</dt><dd>{getDraftStatusLabel(effectiveOrder.ecommerceDraftStatus)}</dd></div>
-        <div className={`ecommerce-inventory-summary ecommerce-inventory-summary--${inventoryMeta.tone}`}>
-          <dt>Inventario</dt>
-          <dd><InventoryIcon size={15} aria-hidden="true" />{inventoryMeta.label}</dd>
-        </div>
       </dl>
 
-      <div className="ecommerce-inventory-lines" aria-label="Resolución de inventario por producto">
-        {(effectiveOrder.items || []).map((item, index) => {
-          const lineId = getLineId(item, index);
-          const lineStatus = item.inventoryResolution?.status || 'pending';
-          return (
-            <article key={lineId} className={`ecommerce-inventory-line ecommerce-inventory-line--${lineStatus}`}>
-              <div className="ecommerce-inventory-line__copy">
-                <strong>{item.ecommerceSnapshotName || item.name || 'Producto'}</strong>
-                <span>{getEcommerceInventoryLineMessage(item)}</span>
-              </div>
-              {isBatchLine(item) && canRunResolution && (
-                <button
-                  type="button"
-                  className="ecommerce-inventory-line__action"
-                  onClick={() => openBatchDialog(item, index)}
-                  disabled={isLoadingBatches || isSelectingBatch}
-                >
-                  <Boxes size={15} aria-hidden="true" />
-                  {item.inventoryResolution?.status === 'resolved' ? 'Cambiar lote' : 'Seleccionar lote'}
-                </button>
-              )}
-            </article>
-          );
-        })}
-      </div>
+      <details className="ecommerce-pos-draft-banner__details">
+        <summary>
+          <span>Estado e inventario</span>
+          <strong className={`ecommerce-inventory-summary ecommerce-inventory-summary--${inventoryMeta.tone}`}>
+            <InventoryIcon size={15} aria-hidden="true" />{inventoryMeta.label}
+          </strong>
+        </summary>
+        <dl className="ecommerce-pos-draft-banner__status-list">
+          <div><dt>Estado del pedido</dt><dd>{getDraftStatusLabel(effectiveOrder.ecommerceDraftStatus)}</dd></div>
+        </dl>
+
+        <div className="ecommerce-inventory-lines" aria-label="Resolución de inventario por producto">
+          {(effectiveOrder.items || []).map((item, index) => {
+            const lineId = getLineId(item, index);
+            const lineStatus = item.inventoryResolution?.status || 'pending';
+            return (
+              <article key={lineId} className={`ecommerce-inventory-line ecommerce-inventory-line--${lineStatus}`}>
+                <div className="ecommerce-inventory-line__copy">
+                  <strong>{item.ecommerceSnapshotName || item.name || 'Producto'}</strong>
+                  <span>{getEcommerceInventoryLineMessage(item)}</span>
+                </div>
+                {isBatchLine(item) && canRunResolution && (
+                  <button
+                    type="button"
+                    className="ecommerce-inventory-line__action"
+                    onClick={() => openBatchDialog(item, index)}
+                    disabled={isLoadingBatches || isSelectingBatch}
+                  >
+                    <Boxes size={15} aria-hidden="true" />
+                    {item.inventoryResolution?.status === 'resolved' ? 'Cambiar lote' : 'Seleccionar lote'}
+                  </button>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </details>
 
       {safeWarnings.length > 0 && (
         <ul className="ecommerce-pos-draft-banner__warnings">
@@ -327,9 +339,6 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
             {isResolving ? 'Comprobando inventario…' : 'Resolver inventario'}
           </button>
         )}
-        <button type="button" className="ecommerce-pos-draft-banner__link" onClick={onOpenDetail}>
-          Volver al detalle del pedido
-        </button>
       </div>
 
       {batchDialog && (

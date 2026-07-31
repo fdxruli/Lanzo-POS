@@ -15,6 +15,7 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.ecommerce-inventory-summary,
 .ecommerce-inventory-summary dd {
   display: inline-flex;
   align-items: center;
@@ -22,14 +23,17 @@
   gap: 5px;
 }
 
+.ecommerce-inventory-summary--ready,
 .ecommerce-inventory-summary--ready dd {
   color: #166534;
 }
 
+.ecommerce-inventory-summary--pending,
 .ecommerce-inventory-summary--pending dd {
   color: #92400e;
 }
 
+.ecommerce-inventory-summary--conflict,
 .ecommerce-inventory-summary--conflict dd {
   color: #b91c1c;
 }
@@ -37,7 +41,7 @@
 .ecommerce-inventory-lines {
   display: grid;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .ecommerce-inventory-line {
@@ -289,13 +293,8 @@
 
   .ecommerce-inventory-line__action,
   .ecommerce-inventory-resolve-button,
-  .ecommerce-pos-draft-banner__actions .ecommerce-pos-draft-banner__link {
+  .ecommerce-pos-draft-banner__actions .ecommerce-inventory-resolve-button {
     width: 100%;
-  }
-
-  .ecommerce-pos-draft-banner__actions .ecommerce-pos-draft-banner__link {
-    min-height: 38px;
-    text-align: center;
   }
 }
 

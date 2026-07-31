@@ -1086,8 +1086,8 @@
   }
 }
 .ecommerce-pos-draft-banner {
-  margin: 12px;
-  padding: 14px;
+  margin: 10px 12px 6px;
+  padding: 10px;
   border: 1px solid #7c3aed;
   border-radius: 12px;
   background: linear-gradient(135deg, #f5f3ff, #ffffff);
@@ -1098,13 +1098,110 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.ecommerce-pos-draft-banner__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ecommerce-pos-draft-banner__header .ecommerce-pos-draft-banner__link {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 5px 7px;
+  text-decoration: none;
+  font-size: 0.74rem;
 }
 
 .ecommerce-pos-draft-banner dl {
   display: grid;
   gap: 6px;
   margin: 0;
+}
+
+.ecommerce-pos-draft-banner__essentials {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 9px !important;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, #7c3aed 18%, transparent);
+}
+
+.ecommerce-pos-draft-banner__essentials > div {
+  display: grid !important;
+  gap: 2px !important;
+}
+
+.ecommerce-pos-draft-banner__essentials > div:last-child {
+  text-align: right;
+}
+
+.ecommerce-pos-draft-banner__essentials dt {
+  font-size: 0.7rem;
+}
+
+.ecommerce-pos-draft-banner__essentials dd {
+  font-size: 0.8rem;
+}
+
+.ecommerce-pos-draft-banner__details {
+  margin-top: 8px;
+  border-top: 1px solid color-mix(in srgb, #7c3aed 16%, transparent);
+}
+
+.ecommerce-pos-draft-banner__details > summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  color: #6b21a8;
+  font-size: 0.76rem;
+  font-weight: 750;
+  list-style: none;
+}
+
+.ecommerce-pos-draft-banner__details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ecommerce-pos-draft-banner__details > summary::before {
+  content: '+';
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #c4b5fd;
+  border-radius: 50%;
+}
+
+.ecommerce-pos-draft-banner__details[open] > summary::before {
+  content: '−';
+}
+
+.ecommerce-pos-draft-banner__details > summary > span {
+  margin-right: auto;
+}
+
+.ecommerce-pos-draft-banner__details > summary > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #166534;
+  font-size: 0.74rem;
+}
+
+.ecommerce-pos-draft-banner__status-list {
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, #7c3aed 12%, transparent);
+}
+
+.pos-order-container--ecommerce .order-list {
+  padding-top: 2px;
 }
 
 .ecommerce-pos-draft-banner dl div {

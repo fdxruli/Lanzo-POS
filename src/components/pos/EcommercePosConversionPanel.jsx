@@ -233,24 +233,30 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
 
   return (
     <section className="ecommerce-conversion-panel" aria-label="Conversión del pedido online">
-      <div className="ecommerce-conversion-panel__status-grid">
-        <div>
-          <span className="ecommerce-conversion-panel__label">Estado del pedido</span>
-          <strong>Preparado</strong>
+      <details className="ecommerce-conversion-panel__details">
+        <summary>
+          <span>Estado del cobro</span>
+          <strong>{checkoutEnabled ? 'Listo para cobrar' : 'Revisión necesaria'}</strong>
+        </summary>
+        <div className="ecommerce-conversion-panel__status-grid">
+          <div>
+            <span className="ecommerce-conversion-panel__label">Pedido</span>
+            <strong>Preparado</strong>
+          </div>
+          <div>
+            <span className="ecommerce-conversion-panel__label">Inventario</span>
+            <strong>{getInventoryCopy(order)}</strong>
+          </div>
+          <div>
+            <span className="ecommerce-conversion-panel__label">Conversión</span>
+            <strong>{isStarting ? 'Iniciando cobro…' : STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
+          </div>
+          <div>
+            <span className="ecommerce-conversion-panel__label">Operación</span>
+            <strong>{getOperationalStatusCopy(order)}</strong>
+          </div>
         </div>
-        <div>
-          <span className="ecommerce-conversion-panel__label">Estado del inventario</span>
-          <strong>{getInventoryCopy(order)}</strong>
-        </div>
-        <div>
-          <span className="ecommerce-conversion-panel__label">Estado de conversión</span>
-          <strong>{isStarting ? 'Iniciando cobro…' : STATUS_COPY[conversionStatus] || 'Revisión necesaria'}</strong>
-        </div>
-        <div>
-          <span className="ecommerce-conversion-panel__label">Estado operativo</span>
-          <strong>{getOperationalStatusCopy(order)}</strong>
-        </div>
-      </div>
+      </details>
 
       {blockedMessage && !isConfirmationPending && (
         <p className="ecommerce-conversion-panel__message" role="status">

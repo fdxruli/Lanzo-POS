@@ -387,7 +387,7 @@ export default function OrderSummary({
 
   return (
     <div
-      className={`pos-order-container${isMobileModal ? ' pos-order-container--mobile' : ''}${showRestaurantActions ? ' pos-order-container--restaurant' : ''}${isEditMode && showRestaurantActions ? ' pos-order-container--editing' : ''}`}
+      className={`pos-order-container${isMobileModal ? ' pos-order-container--mobile' : ''}${showRestaurantActions ? ' pos-order-container--restaurant' : ''}${isEditMode && showRestaurantActions ? ' pos-order-container--editing' : ''}${isEcommerceDraft ? ' pos-order-container--ecommerce' : ''}`}
     >
       <header className="summary-header">
         <div className="summary-header-copy">
@@ -655,7 +655,7 @@ export default function OrderSummary({
 
       </div>
 
-      {showRestaurantActions && order.length > 0 && isDiscountModalOpen && (
+      {!isEcommerceDraft && order.length > 0 && isDiscountModalOpen && (
         <div
           className="order-discount-modal"
           role="dialog"
@@ -676,35 +676,34 @@ export default function OrderSummary({
               </button>
             </header>
 
-            <OrderDiscountPanel compact restaurant embedded defaultExpanded />
+            <OrderDiscountPanel
+              compact
+              restaurant={showRestaurantActions}
+              embedded
+              defaultExpanded
+            />
           </div>
         </div>
       )}
 
       {order.length > 0 && (
           <footer className="order-checkout">
+            {!isEcommerceDraft && (
+              <div className="order-discount-trigger-row">
+                <OrderDiscountPanel
+                  compact
+                  restaurant={showRestaurantActions}
+                  triggerOnly
+                  onOpen={() => setIsDiscountModalOpen(true)}
+                />
+              </div>
+            )}
             <div className="order-total">
               <div className="order-total-copy">
                 <span>Total</span>
-                {showRestaurantActions && (
-                  <div className="order-discount-mobile-slot">
-                    <OrderDiscountPanel
-                      compact
-                      restaurant
-                      triggerOnly
-                      onOpen={() => setIsDiscountModalOpen(true)}
-                    />
-                  </div>
-                )}
               </div>
               <span className="total-price">${total.toFixed(2)}</span>
             </div>
-
-            {showRestaurantActions && (
-              <div className="order-discount-desktop-slot">
-                <OrderDiscountPanel compact restaurant embedded />
-              </div>
-            )}
 
             <div className={`order-actions${showRestaurantActions ? ' order-actions--restaurant' : ''}`}>
               <button
