@@ -4,7 +4,10 @@ import {
   createStoreOgHandler,
   renderStoreOgImage,
 } from '../../api/og/store.js';
-import { buildStoreOgCardModel } from '../../api/_storeOgCard.js';
+import {
+  StoreOgCard,
+  buildStoreOgCardModel,
+} from '../../api/_storeOgCard.js';
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -46,6 +49,7 @@ const farmaciaGaryResult = {
   siteVersionNumber: 12,
 };
 const ONE_PIXEL_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3jgAAAABJRU5ErkJggg==';
+const TWO_PIXEL_WEBP = 'data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAAAwAgCdASoCAAIAAMASJaACdLoB+AH4AARoAAD++iGX/3easNN39a3/9aOfron+tHP/WVgA';
 
 function readPngDimensions(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -53,6 +57,15 @@ function readPngDimensions(bytes) {
     width: view.getUint32(16),
     height: view.getUint32(20),
   };
+}
+
+function collectImageElements(node, result = []) {
+  if (!node || typeof node !== 'object') return result;
+  if (node.type === 'img') result.push(node);
+  const children = node.props?.children;
+  const childList = Array.isArray(children) ? children : [children];
+  childList.forEach((child) => collectImageElements(child, result));
+  return result;
 }
 
 afterEach(() => {
@@ -71,6 +84,14 @@ describe('render real con @vercel/og ImageResponse', () => {
     [
       'tarjeta con nombre y tema',
       buildStoreOgCardModel({ result: personalizedResult }),
+    ],
+    [
+      'tarjeta con portada PNG y logo WebP embebidos',
+      buildStoreOgCardModel({
+        result: personalizedResult,
+        logoImage: TWO_PIXEL_WEBP,
+        coverImage: ONE_PIXEL_PNG,
+      }),
     ],
     [
       'fallback de tienda inexistente',
@@ -103,11 +124,35 @@ describe('render real con @vercel/og ImageResponse', () => {
     expect(JSON.stringify(model)).not.toMatch(/https?:\/\/|data:font|fontFamily|Arial|Georgia/iu);
   }, 30_000);
 
-  it('materializa un PNG real del handler para Farmacia Gary antes de responder', async () => {
+  it('declara dimensiones intrínsecas para portada y logo', () => {
+    const model = buildStoreOgCardModel({
+      result: personalizedResult,
+      logoImage: TWO_PIXEL_WEBP,
+      coverImage: ONE_PIXEL_PNG,
+    });
+    const images = collectImageElements(StoreOgCard({ model }));
+
+    expect(images).toHaveLength(2);
+    expect(images).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        props: expect.objectContaining({ width: 112, height: 112 }),
+      }),
+      expect.objectContaining({
+        props: expect.objectContaining({ width: 1200, height: 630 }),
+      }),
+    ]));
+  });
+
+  it('materializa Farmacia Gary con logo y portada sin degradar a identidad textual', async () => {
+    const logger = { warn: vi.fn() };
+    const imageLoader = vi.fn()
+      .mockResolvedValueOnce(TWO_PIXEL_WEBP)
+      .mockResolvedValueOnce(ONE_PIXEL_PNG);
     const handler = createStoreOgHandler({
       portalClient: { getPortalBySlug: vi.fn(async () => farmaciaGaryResult) },
-      imageLoader: vi.fn(async () => ONE_PIXEL_PNG),
+      imageLoader,
       ImageResponseImpl: ImageResponse,
+      logger,
     });
     const response = await handler(new Request(
       'https://tienda.lanzo.test/api/og/store?slug=farmaciagary',
@@ -118,5 +163,7 @@ describe('render real con @vercel/og ImageResponse', () => {
     expect(response.headers.get('content-type')).toBe('image/png');
     expect(bytes.byteLength).toBeGreaterThan(1_000);
     expect(Array.from(bytes.slice(0, PNG_SIGNATURE.length))).toEqual(PNG_SIGNATURE);
+    expect(imageLoader).toHaveBeenCalledTimes(2);
+    expect(logger.warn).not.toHaveBeenCalled();
   }, 30_000);
 });
