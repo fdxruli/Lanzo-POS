@@ -4382,6 +4382,37 @@ En esta minifase no se genero artifact, no se creo la quinta preview, no se
 modificaron produccion, Supabase ni variables Vercel. La certificacion final
 queda bloqueada hasta una ejecucion posterior del artifact y la quinta preview.
 
+## ECOM.PUBLIC.SOCIAL.PREVIEW.1.9.1
+
+### Non-forgeable recovery ancestry verification
+
+El commit `e0bae2fa96eeb3b14ea5a668670733520c536b5f` resolvio el checkout
+superficial de CI, pero dejo la ancestry como evidencia declarativa mediante
+`headRelationship`, `headAncestryVerified` y
+`minimumCorrectedHeadRelationship`. Esos campos por si solos eran falsificables
+dentro de un plan y no constituian prueba Git.
+
+La correccion restaura el comportamiento operacional no falsificable:
+
+```text
+git merge-base --is-ancestor c92c5eabb20fdc83bda325adeeb8815799e79de8 <candidate-head>
+```
+
+`createPreviewDeploymentPlanValidator` inyecta el verifier solamente para las
+pruebas. El validador exportado de produccion usa por defecto el comando Git,
+sin `git fetch` ni acceso de red. La recuperacion requiere a la vez la evidencia
+declarativa saneada y que el verifier retorne exactamente `true`; una respuesta
+falsa, objeto Git ausente o error produce
+`RECOVERY_HEAD_BEFORE_MINIMUM` sin exponer rutas, comandos, variables ni
+secretos.
+
+Las pruebas usan un verifier inyectado, por lo que el checkout superficial de
+CI no altera la semantica operacional. El HEAD actual fue comprobado como dos
+commits descendiente de `c92c5eabb20fdc83bda325adeeb8815799e79de8`.
+
+No se genero artifact, no se creo quinta preview y no cambiaron produccion ni
+Supabase.
+
 ## ECOM.PUBLIC.SOCIAL.PREVIEW.1.8.9 - Fourth preview failed certification
 
 The fourth preview is preserved as failed evidence and must not be promoted,

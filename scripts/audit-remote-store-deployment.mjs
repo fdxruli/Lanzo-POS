@@ -6,6 +6,7 @@
  *     --base-url https://<preview>.vercel.app --slug <public-test-slug>
  */
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -299,7 +300,22 @@ function requireRecovery(condition, code) {
   if (!condition) throw recoveryError(code);
 }
 
-function validateControlledFifthPreviewRecovery(plan) {
+export function verifyGitAncestry({ minimumHead, candidateHead } = {}) {
+  if (!/^[a-f0-9]{40}$/u.test(minimumHead || '') || !/^[a-f0-9]{40}$/u.test(candidateHead || '')) {
+    return false;
+  }
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', minimumHead, candidateHead], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validateControlledFifthPreviewRecovery(plan, ancestryVerifier) {
   const {
     projectName,
     deploymentType,
@@ -382,6 +398,16 @@ function validateControlledFifthPreviewRecovery(plan) {
       && minimumCorrectedHeadRelationship === 'equal-or-validated-descendant',
     'RECOVERY_ANCESTRY_UNVERIFIED',
   );
+  let ancestryVerified = false;
+  try {
+    ancestryVerified = ancestryVerifier({
+      minimumHead: MINIMUM_CORRECTED_HEAD,
+      candidateHead: head,
+    }) === true;
+  } catch {
+    throw recoveryError('RECOVERY_HEAD_BEFORE_MINIMUM');
+  }
+  requireRecovery(ancestryVerified, 'RECOVERY_HEAD_BEFORE_MINIMUM');
   requireRecovery(ogAsyncStreamMaterializationCorrected === true, 'RECOVERY_OG_CORRECTION_UNVERIFIED');
   requireRecovery(publicReadTransientRetryCorrected === true, 'RECOVERY_PUBLIC_READ_CORRECTION_UNVERIFIED');
   requireRecovery(ciWorkflowConclusion === 'success', 'RECOVERY_CI_NOT_SUCCESS');
@@ -431,7 +457,11 @@ function validateControlledFifthPreviewRecovery(plan) {
   });
 }
 
-export function validatePreviewDeploymentPlan(plan = {}) {
+export function createPreviewDeploymentPlanValidator({ ancestryVerifier = verifyGitAncestry } = {}) {
+  if (typeof ancestryVerifier !== 'function') {
+    throw new TypeError('Ancestry verifier must be a function.');
+  }
+  return function validatePreviewDeploymentPlan(plan = {}) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
     throw new TypeError('Preview deployment plan evidence must be an object.');
   }
@@ -475,7 +505,7 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     commandArgs,
   } = plan;
   if (deploymentPolicy === CONTROLLED_FIFTH_PREVIEW_RECOVERY) {
-    return validateControlledFifthPreviewRecovery(plan);
+    return validateControlledFifthPreviewRecovery(plan, ancestryVerifier);
   }
   if (projectName !== 'lanzo-store') throw new Error('The deployment project must be lanzo-store.');
   if (deploymentType !== 'preview' || production !== false) {
@@ -777,7 +807,10 @@ export function validatePreviewDeploymentPlan(plan = {}) {
     command: 'vercel deploy --prebuilt --yes',
     production: false,
   });
+  };
 }
+
+export const validatePreviewDeploymentPlan = createPreviewDeploymentPlanValidator();
 
 export function parseAuditArguments(argv = process.argv.slice(2)) {
   const allowed = new Set([

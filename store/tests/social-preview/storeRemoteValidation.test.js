@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   auditRemoteStoreDeployment,
+  createPreviewDeploymentPlanValidator,
   inspectPng,
   inspectSecurityMarkers,
   inspectSocialHtml,
@@ -283,9 +284,13 @@ function controlledFifthRecoveryPlan(overrides = {}) {
   };
 }
 
-function expectRecoveryRejection(plan, code) {
+function controlledRecoveryValidator(ancestryVerifier = () => true) {
+  return createPreviewDeploymentPlanValidator({ ancestryVerifier });
+}
+
+function expectRecoveryRejection(plan, code, validator = controlledRecoveryValidator()) {
   try {
-    validatePreviewDeploymentPlan(plan);
+    validator(plan);
   } catch (error) {
     expect(error.code).toBe(code);
     expect(error.message).not.toContain(fourthPreviewDeploymentId);
@@ -582,7 +587,7 @@ describe('validación remota saneada de lanzo-store', () => {
   it('authorizes the controlled fifth-preview recovery without exposing deployment evidence', () => {
     const plan = controlledFifthRecoveryPlan();
     const historyBefore = JSON.stringify(plan.previousPreviews);
-    const evidence = validatePreviewDeploymentPlan(plan);
+    const evidence = controlledRecoveryValidator()(plan);
     expect(evidence).toEqual(expect.objectContaining({
       status: 'PASS',
       deploymentPolicy: 'controlled-fifth-preview-recovery',
@@ -610,10 +615,50 @@ describe('validación remota saneada de lanzo-store', () => {
     expect(JSON.stringify(evidence)).not.toContain(fourthPreviewDeploymentId);
   });
 
+  it('requires a non-forgeable ancestry verifier exactly once for the corrected HEAD', () => {
+    const plan = controlledFifthRecoveryPlan();
+    const before = JSON.stringify(plan);
+    const ancestryVerifier = vi.fn(() => true);
+    const validator = controlledRecoveryValidator(ancestryVerifier);
+    expect(validator(plan).status).toBe('PASS');
+    expect(ancestryVerifier).toHaveBeenCalledTimes(1);
+    expect(ancestryVerifier).toHaveBeenCalledWith({
+      minimumHead: correctedHead,
+      candidateHead: correctedHead,
+    });
+    expect(JSON.stringify(plan)).toBe(before);
+  });
+
+  it.each([
+    ['false', controlledFifthRecoveryPlan(), () => false],
+    ['throws', controlledFifthRecoveryPlan(), () => { throw new Error('private command and secret'); }],
+    ['older declared HEAD', controlledFifthRecoveryPlan({
+      head: 'ac10be8677e50cf6c6ec708c58bf0ee1ceec14fd',
+    }), () => false],
+    ['unrelated declared HEAD', controlledFifthRecoveryPlan({ head: '9'.repeat(40) }), () => false],
+  ])('rejects falsified recovery ancestry when the verifier %s', (_label, plan, ancestryVerifier) => {
+    expectRecoveryRejection(
+      plan,
+      'RECOVERY_HEAD_BEFORE_MINIMUM',
+      controlledRecoveryValidator(ancestryVerifier),
+    );
+  });
+
+  it.each([
+    ['headAncestryVerified false', { headAncestryVerified: false }],
+    ['headRelationship invalid', { headRelationship: 'direct-descendant' }],
+    ['minimum relationship invalid', { minimumCorrectedHeadRelationship: 'not-descendant' }],
+  ])('rejects missing declared recovery ancestry even when the verifier returns true: %s', (_label, override) => {
+    expectRecoveryRejection(
+      controlledFifthRecoveryPlan(override),
+      'RECOVERY_ANCESTRY_UNVERIFIED',
+      controlledRecoveryValidator(() => true),
+    );
+  });
+
   it.each([
     ['fourth preview HEAD', { head: fourthPreviewHead }, 'RECOVERY_FOURTH_HEAD_REUSED'],
-    ['HEAD before the corrected minimum', {
-      head: 'ac10be8677e50cf6c6ec708c58bf0ee1ceec14fd',
+    ['invalid declared minimum relationship', {
       minimumCorrectedHeadRelationship: 'not-descendant',
     }, 'RECOVERY_ANCESTRY_UNVERIFIED'],
     ['unverified ancestry', { headAncestryVerified: false }, 'RECOVERY_ANCESTRY_UNVERIFIED'],
