@@ -75,11 +75,12 @@ function waitForWaitingWorker(registration, windowTarget, timeoutMs) {
   return new Promise((resolve) => {
     let installingWorker = registration.installing || null;
     let settled = false;
+    let timeoutId = null;
 
     const cleanup = () => {
       registration.removeEventListener?.('updatefound', handleUpdateFound);
       installingWorker?.removeEventListener?.('statechange', handleStateChange);
-      windowTarget?.clearTimeout?.(timeoutId);
+      if (timeoutId !== null) windowTarget?.clearTimeout?.(timeoutId);
     };
 
     const finish = (worker) => {
@@ -110,7 +111,9 @@ function waitForWaitingWorker(registration, windowTarget, timeoutMs) {
     registration.addEventListener('updatefound', handleUpdateFound);
     watchInstallingWorker();
 
-    const timeoutId = windowTarget?.setTimeout?.(() => finish(registration.waiting), timeoutMs);
+    if (!settled) {
+      timeoutId = windowTarget?.setTimeout?.(() => finish(registration.waiting), timeoutMs) ?? null;
+    }
   });
 }
 
@@ -121,10 +124,11 @@ function activateWaitingWorker({ serviceWorker, waitingWorker, windowTarget, tim
 
   return new Promise((resolve) => {
     let settled = false;
+    let timeoutId = null;
 
     const cleanup = () => {
       serviceWorker.removeEventListener?.('controllerchange', handleControllerChange);
-      windowTarget?.clearTimeout?.(timeoutId);
+      if (timeoutId !== null) windowTarget?.clearTimeout?.(timeoutId);
     };
 
     const finish = (activated) => {
@@ -136,7 +140,7 @@ function activateWaitingWorker({ serviceWorker, waitingWorker, windowTarget, tim
 
     const handleControllerChange = () => finish(true);
     serviceWorker.addEventListener('controllerchange', handleControllerChange);
-    const timeoutId = windowTarget?.setTimeout?.(() => finish(false), timeoutMs);
+    timeoutId = windowTarget?.setTimeout?.(() => finish(false), timeoutMs) ?? null;
     waitingWorker.postMessage({ type: 'SKIP_WAITING' });
   });
 }
