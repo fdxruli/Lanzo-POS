@@ -13,6 +13,8 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'logIcon.svg',
   'assets/index-*.{js,css}',
   'assets/App-*.{js,css}',
+  'assets/databaseRuntime-*.js',
+  'assets/PosApplicationBootstrap-*.{js,css}',
   'assets/vendor_react-*.js',
   'assets/vendor_icons-*.js',
   'assets/vendor_supabase-*.js',

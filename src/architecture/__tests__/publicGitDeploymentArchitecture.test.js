@@ -112,7 +112,11 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
       readProjectFile('vercel.json'),
       readProjectFile('vite.config.js')
     ]);
-    expect(JSON.parse(adminConfig).rewrites).toContainEqual({ source: '/(.*)', destination: '/index.html' });
+    const fallback = JSON.parse(adminConfig).rewrites
+      .find(({ destination }) => destination === '/index.html');
+    expect(fallback?.source).toContain('(?!assets/');
+    expect(fallback?.source).toContain('sw\\.js$');
+    expect(fallback?.source).toContain('workbox-');
     expect(packageJson.scripts.build).toBe('vite build');
     expect(viteConfig).toMatch(/VitePWA|vite-plugin-pwa/);
     expect(viteConfig).not.toMatch(/dist-store|store[\\/]dist/);

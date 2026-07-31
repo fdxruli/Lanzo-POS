@@ -1,12 +1,18 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import AdminStartupRecoveryScreen from './components/common/AdminStartupRecoveryScreen';
 import { publicStoreRoutes } from './router/publicStoreRoutes';
 import { isPublicStorePath } from './router/isPublicStorePath';
 import { preparePublicStoreDocument } from './router/preparePublicStoreDocument';
 import { installAdminPwaDocument } from './pwa/adminPwaDocument';
 import { startAdminInstallPromptCapture } from './pwa/adminInstallPrompt';
 import { startAdminServiceWorker } from './pwa/adminServiceWorker';
+import {
+  completeAdminStartupRecovery,
+  isRecoverableAdminStartupError,
+  recoverAdminStartup,
+} from './pwa/adminStartupRecovery';
 import { updateExistingAdminWorkerOnPublicRoute } from './pwa/publicRouteWorkerUpdate';
 import './index.css';
 import './styles/design-tokens.css';
@@ -19,12 +25,22 @@ import './styles/ui-shell.css';
 import './styles/ui-tabs.css';
 
 const rootElement = document.getElementById('root');
+let startupRecoveryRoot = null;
 
 function renderPublicStore() {
   const router = createBrowserRouter(publicStoreRoutes);
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
       <RouterProvider router={router} />
+    </React.StrictMode>
+  );
+}
+
+function renderStartupRecoveryScreen({ mode, onRetry }) {
+  if (!startupRecoveryRoot) startupRecoveryRoot = ReactDOM.createRoot(rootElement);
+  startupRecoveryRoot.render(
+    <React.StrictMode>
+      <AdminStartupRecoveryScreen mode={mode} onRetry={onRetry} />
     </React.StrictMode>
   );
 }
@@ -47,6 +63,36 @@ async function renderPosApplication() {
   );
 }
 
+async function handlePosStartupFailure(error) {
+  console.error('No se pudo iniciar Lanzo POS.', error);
+  const recoverableVersionError = isRecoverableAdminStartupError(error);
+
+  const retryRecovery = async () => {
+    renderStartupRecoveryScreen({ mode: 'recovering' });
+    try {
+      await recoverAdminStartup({ error, force: true });
+    } catch (recoveryError) {
+      console.error('No se pudo recuperar la versión instalada de Lanzo POS.', recoveryError);
+      renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });
+    }
+  };
+
+  if (!recoverableVersionError) {
+    renderStartupRecoveryScreen({ mode: 'startupError', onRetry: retryRecovery });
+    return;
+  }
+
+  renderStartupRecoveryScreen({ mode: 'recovering' });
+  try {
+    const recovery = await recoverAdminStartup({ error });
+    if (recovery.status === 'reloading') return;
+  } catch (recoveryError) {
+    console.error('Falló la recuperación automática de Lanzo POS.', recoveryError);
+  }
+
+  renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });
+}
+
 if (isPublicStorePath(window.location.pathname)) {
   preparePublicStoreDocument();
   updateExistingAdminWorkerOnPublicRoute();
@@ -59,18 +105,7 @@ if (isPublicStorePath(window.location.pathname)) {
   if (!import.meta.env.DEV) {
     startAdminServiceWorker();
   }
-  renderPosApplication().catch((error) => {
-    console.error('No se pudo iniciar Lanzo POS.', error);
-    ReactDOM.createRoot(rootElement).render(
-      <main className="public-store-shell public-store-shell--centered" role="alert">
-        <section className="public-store-state public-store-state--card">
-          <h1>No se pudo iniciar Lanzo POS</h1>
-          <p>Recarga la página para intentarlo nuevamente.</p>
-          <button type="button" className="ui-button ui-button--primary" onClick={() => window.location.reload()}>
-            Recargar
-          </button>
-        </section>
-      </main>
-    );
-  });
+  renderPosApplication()
+    .then(() => completeAdminStartupRecovery())
+    .catch(handlePosStartupFailure);
 }

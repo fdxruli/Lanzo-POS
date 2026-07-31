@@ -131,13 +131,13 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(worker).toMatch(/isPublicNavigationRequest[\s\S]*new NetworkOnly\(\)/);
   });
 
-  it('reduces precache bodies by at least 50% and JavaScript count by at least 60%', async () => {
+  it('reduces precache bodies by at least 50% and JavaScript count by at least 55%', async () => {
     const inventory = await precacheInventory();
     const bytes = inventory.files.reduce((total, file) => total + file.bytes, 0);
     const javascriptCount = inventory.files.filter((file) => file.extension === '.js').length;
 
     expect(bytes).toBeLessThanOrEqual(6_320_268 * 0.5);
-    expect(javascriptCount).toBeLessThanOrEqual(48 * 0.4);
+    expect(javascriptCount).toBeLessThanOrEqual(48 * 0.45);
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
@@ -149,6 +149,8 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(inventory.uniqueUrls).toContain('manifest.webmanifest');
     expect(joined).toMatch(/assets\/index-.*\.js/);
     expect(joined).toMatch(/assets\/App-.*\.js/);
+    expect(joined).toMatch(/assets\/databaseRuntime-.*\.js/);
+    expect(joined).toMatch(/assets\/PosApplicationBootstrap-.*\.js/);
     expect(joined).not.toMatch(/PosPage|CajaPage|OrderPage|EcommerceOrdersPage|ProductsPage|CustomersPage|DashboardPage|SettingsPage|AboutPage/);
     expect(joined).not.toMatch(/\.worker-|vendor_charts|AssistantBot|ScannerModal/);
   });

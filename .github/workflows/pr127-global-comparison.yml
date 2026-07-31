@@ -94,6 +94,13 @@ jobs:
             return normalized;
           };
 
+          const normalizeAssertionName = (assertionName) => String(
+            assertionName || 'unknown test'
+          )
+            .replace(/\b\d+(?:\.\d+)?%/g, '<percentage>')
+            .replace(/\s+/g, ' ')
+            .trim();
+
           const normalizeFailures = (report, source) => {
             if (!report) return [`__${source}_RUNNER__:missing_json_report`];
             const failures = new Set();
@@ -102,7 +109,9 @@ jobs:
               const assertions = file.assertionResults || [];
               for (const assertion of assertions) {
                 if (assertion.status === 'failed') {
-                  const name = assertion.fullName || assertion.title || 'unknown test';
+                  const name = normalizeAssertionName(
+                    assertion.fullName || assertion.title || 'unknown test'
+                  );
                   failures.add(`${fileName}::${name}`);
                 }
               }

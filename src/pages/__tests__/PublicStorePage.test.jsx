@@ -478,11 +478,19 @@ describe('PublicStorePage', () => {
     Object.defineProperty(restore, 'persisted', { value: true });
     fireEvent(window, restore);
     fireEvent.focus(window);
+
+    await waitFor(() => {
+      expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
+      expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
+    });
     await new Promise((resolve) => window.setTimeout(resolve, 100));
 
     expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
     expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
-    pendingCatalog.resolve({ ...catalogResult, catalogRevision: 7 });
+    await act(async () => {
+      pendingCatalog.resolve({ ...catalogResult, catalogRevision: 7 });
+      await pendingCatalog.promise;
+    });
   });
 
   it('shows the same generic state for an unavailable portal', async () => {
