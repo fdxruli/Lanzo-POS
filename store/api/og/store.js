@@ -132,9 +132,12 @@ export function buildStoreOgRenderAttempts({
     }));
   };
 
-  addAttempt('logo_and_cover', logoImage, coverImage);
-  if (coverImage) addAttempt('cover_only', null, coverImage);
-  if (logoImage) addAttempt('logo_only', logoImage, null);
+  const primaryAttempt = logoImage && coverImage
+    ? 'logo_and_cover'
+    : (coverImage ? 'cover_only' : (logoImage ? 'logo_only' : 'branding_only'));
+  addAttempt(primaryAttempt, logoImage, coverImage);
+  if (logoImage && coverImage) addAttempt('cover_only', null, coverImage);
+  if (logoImage && coverImage) addAttempt('logo_only', logoImage, null);
   addAttempt('branding_only', null, null);
 
   return Object.freeze(attempts);
