@@ -57,6 +57,15 @@ const forbiddenSecretPatterns = Object.freeze({
 
 const textExtensions = new Set(['.css', '.html', '.js', '.json', '.svg', '.txt', '.webmanifest']);
 
+function isAuthorizedAdminSpaFallback(rule = {}) {
+  const source = String(rule.source || '');
+  return rule.destination === '/index.html'
+    && source.startsWith('/((?!assets/')
+    && source.includes('sw\\.js$')
+    && source.includes('workbox-')
+    && source.includes('manifest\\.webmanifest$');
+}
+
 async function pathExists(filePath) {
   try {
     await stat(filePath);
@@ -202,8 +211,8 @@ async function main() {
   if (Array.isArray(config.redirects) && config.redirects.length > 0) {
     throw new Error('Administrative redirects are not authorized for CUTOVER.1.');
   }
-  if (!config.rewrites?.some((rule) => rule.source === '/(.*)' && rule.destination === '/index.html')) {
-    throw new Error('The administrative SPA fallback rewrite is missing.');
+  if (!config.rewrites?.some(isAuthorizedAdminSpaFallback)) {
+    throw new Error('The asset-safe administrative SPA fallback rewrite is missing.');
   }
 
   const baselineRootLink = await pathExists(rootVercelDirectory);
