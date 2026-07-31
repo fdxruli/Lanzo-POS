@@ -596,7 +596,11 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
       readFile(path.join(projectRoot, 'scripts', 'audit-vercel-build-output.mjs'), 'utf8'),
     ]);
     const adminConfig = JSON.parse(adminConfigSource);
-    expect(adminConfig.rewrites).toContainEqual({ source: '/(.*)', destination: '/index.html' });
+    expect(adminConfig.rewrites).not.toContainEqual({ source: '/(.*)', destination: '/index.html' });
+    expect(adminConfig.rewrites).toContainEqual({
+      source: '/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|manifest\\.webmanifest$|registerSW\\.js$|pwa-192x192\\.png$|pwa-512x512\\.png$|logIcon\\.svg$).*)',
+      destination: '/index.html',
+    });
     expect(outputAudit).toContain('adminPwaPresent');
     expect(outputAudit).toContain("paths.includes('manifest.webmanifest')");
     expect(outputAudit).toContain("paths.includes('sw.js')");
