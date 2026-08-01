@@ -41,7 +41,7 @@ export function subscribeAdminServiceWorker(listener) {
 }
 
 function clearActivationTimer() {
-  if (!activationTimeout || !windowRef) return;
+  if (activationTimeout == null || !windowRef) return;
   windowRef.clearTimeout(activationTimeout);
   activationTimeout = null;
 }
@@ -226,6 +226,7 @@ export function activateAdminServiceWorkerUpdate() {
       rejectCurrentActivation(new Error('La activación del Service Worker agotó el tiempo de espera.'));
     }, ACTIVATION_TIMEOUT_MS);
   });
+  const pendingActivation = activationPromise;
 
   if (!skipWaitingSent) {
     try {
@@ -236,7 +237,7 @@ export function activateAdminServiceWorkerUpdate() {
     }
   }
 
-  return activationPromise;
+  return pendingActivation;
 }
 
 export function resetAdminServiceWorkerForTests() {
