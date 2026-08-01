@@ -30,6 +30,31 @@ const normalizeProductModifiersForStorage = (modifiers) => {
   return normalized.length > 0 ? normalized : [];
 };
 
+const resolveProductImageUrl = (product = {}) => {
+  const candidates = [product.imageUrl, product.image_url, product.image];
+  const value = candidates.find((candidate) => /^https?:\/\//i.test(text(candidate)));
+  return optionalText(value);
+};
+
+const resolveProductImageRef = (product = {}) => {
+  const candidates = [product.imageRef, product.image_ref, product.image];
+  const value = candidates.find((candidate) => (
+    typeof candidate === 'string'
+    && text(candidate)
+    && !/^https?:\/\//i.test(text(candidate))
+  ));
+  return optionalText(value);
+};
+
+const buildProductImageMetadata = (product = {}, imageUrl, imageRef) => ({
+  ...(product.metadata || {}),
+  phase: PRODUCT_CLOUD_PHASE,
+  images_cloud: Boolean(imageUrl),
+  image_strategy: imageUrl
+    ? 'cloud_public_url'
+    : (imageRef ? 'local_reference_only' : 'none')
+});
+
 /**
  * Canonical representation for complex product fields in IndexedDB.
  *
@@ -92,53 +117,54 @@ export const cloudCategoryToLocal = (category = {}, existing = null, overrides =
   };
 };
 
-export const productToCloudPayload = (product = {}) => ({
-  id: product.id,
-  category_id: optionalText(product.categoryId ?? product.category_id),
-  name: text(product.name),
-  name_key: normalizeNameKey(product.name),
-  description: optionalText(product.description),
-  barcode: optionalText(product.barcode),
-  barcode_key: normalizeBarcodeKey(product.barcode_normalized || product.barcode),
-  sku: optionalText(product.sku),
-  sku_key: normalizeSkuKey(product.sku_normalized || product.sku),
-  image_ref: optionalText(product.imageRef || product.image),
-  image_url: optionalText(product.imageUrl),
-  location: optionalText(product.location),
-  price: toNumber(product.price),
-  cost: toNumber(product.cost),
-  stock: toNumber(product.stock),
-  committed_stock: toNumber(product.committedStock ?? product.committed_stock),
-  min_stock: product.minStock ?? product.min_stock ?? null,
-  max_stock: product.maxStock ?? product.max_stock ?? null,
-  track_stock: product.trackStock !== false,
-  is_active: product.isActive !== false,
-  product_type: product.productType || product.product_type || 'sellable',
-  sale_type: product.saleType || product.sale_type || 'unit',
-  bulk_data: product.bulkData ?? product.bulk_data ?? null,
-  conversion_factor: product.conversionFactor ?? product.conversion_factor ?? null,
-  batch_management: product.batchManagement ?? product.batch_management ?? null,
-  recipe: product.recipe ?? null,
-  modifiers: normalizeProductModifiersForStorage(product.modifiers),
-  wholesale_tiers: product.wholesaleTiers ?? product.wholesale_tiers ?? null,
-  prescription_type: optionalText(product.prescriptionType ?? product.prescription_type),
-  active_substance: optionalText(product.activeSubstance ?? product.active_substance ?? product.sustancia),
-  laboratory: optionalText(product.laboratory ?? product.laboratorio),
-  requires_prescription: product.requiresPrescription ?? product.requires_prescription ?? null,
-  presentation: optionalText(product.presentation),
-  expiration_mode: product.expirationMode || product.expiration_mode || 'NONE',
-  shelf_life_value: product.shelfLifeValue ?? product.shelf_life_value ?? null,
-  shelf_life_unit: product.shelfLifeUnit ?? product.shelf_life_unit ?? null,
-  low_stock_alert_status: product.lowStockAlertStatus ?? product.low_stock_alert_status ?? null,
-  active_stock_status: toNumber(product.activeStockStatus ?? product.active_stock_status),
-  created_at: product.createdAt || product.created_at || nowIso(),
-  updated_at: product.updatedAt || product.updated_at || nowIso(),
-  metadata: {
-    ...(product.metadata || {}),
-    phase: PRODUCT_CLOUD_PHASE,
-    image_strategy: 'local_reference_only'
-  }
-});
+export const productToCloudPayload = (product = {}) => {
+  const imageUrl = resolveProductImageUrl(product);
+  const imageRef = resolveProductImageRef(product);
+
+  return {
+    id: product.id,
+    category_id: optionalText(product.categoryId ?? product.category_id),
+    name: text(product.name),
+    name_key: normalizeNameKey(product.name),
+    description: optionalText(product.description),
+    barcode: optionalText(product.barcode),
+    barcode_key: normalizeBarcodeKey(product.barcode_normalized || product.barcode),
+    sku: optionalText(product.sku),
+    sku_key: normalizeSkuKey(product.sku_normalized || product.sku),
+    image_ref: imageRef,
+    image_url: imageUrl,
+    location: optionalText(product.location),
+    price: toNumber(product.price),
+    cost: toNumber(product.cost),
+    stock: toNumber(product.stock),
+    committed_stock: toNumber(product.committedStock ?? product.committed_stock),
+    min_stock: product.minStock ?? product.min_stock ?? null,
+    max_stock: product.maxStock ?? product.max_stock ?? null,
+    track_stock: product.trackStock !== false,
+    is_active: product.isActive !== false,
+    product_type: product.productType || product.product_type || 'sellable',
+    sale_type: product.saleType || product.sale_type || 'unit',
+    bulk_data: product.bulkData ?? product.bulk_data ?? null,
+    conversion_factor: product.conversionFactor ?? product.conversion_factor ?? null,
+    batch_management: product.batchManagement ?? product.batch_management ?? null,
+    recipe: product.recipe ?? null,
+    modifiers: normalizeProductModifiersForStorage(product.modifiers),
+    wholesale_tiers: product.wholesaleTiers ?? product.wholesale_tiers ?? null,
+    prescription_type: optionalText(product.prescriptionType ?? product.prescription_type),
+    active_substance: optionalText(product.activeSubstance ?? product.active_substance ?? product.sustancia),
+    laboratory: optionalText(product.laboratory ?? product.laboratorio),
+    requires_prescription: product.requiresPrescription ?? product.requires_prescription ?? null,
+    presentation: optionalText(product.presentation),
+    expiration_mode: product.expirationMode || product.expiration_mode || 'NONE',
+    shelf_life_value: product.shelfLifeValue ?? product.shelf_life_value ?? null,
+    shelf_life_unit: product.shelfLifeUnit ?? product.shelf_life_unit ?? null,
+    low_stock_alert_status: product.lowStockAlertStatus ?? product.low_stock_alert_status ?? null,
+    active_stock_status: toNumber(product.activeStockStatus ?? product.active_stock_status),
+    created_at: product.createdAt || product.created_at || nowIso(),
+    updated_at: product.updatedAt || product.updated_at || nowIso(),
+    metadata: buildProductImageMetadata(product, imageUrl, imageRef)
+  };
+};
 
 export const cloudProductToLocal = (product = {}, existing = null, overrides = {}) => {
   const deletedAt = pick(product, 'deleted_at', 'deletedAt', existing?.deletedAt || null);
@@ -177,7 +203,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     minStock: product.min_stock ?? product.minStock ?? null,
     maxStock: product.max_stock ?? product.maxStock ?? null,
     trackStock: product.track_stock ?? product.trackStock ?? true,
-    isActive: deletedAt ? false : (product.is_active ?? product.isActive ?? true),
+    isActive: deletedAt ? false : (product.is_active ?? product.isActive ?? existing?.isActive ?? true),
     productType: product.product_type || product.productType || 'sellable',
     saleType: product.sale_type || product.saleType || 'unit',
     ...complexFields,
