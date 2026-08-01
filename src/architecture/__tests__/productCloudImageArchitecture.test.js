@@ -18,40 +18,48 @@ describe('product cloud image architecture', () => {
     expect(commonHook).toMatch(/image:\s*imageData,[\s\S]*imageUploadSource/);
   });
 
-  it('uploads the original source before persisting only the product payload', async () => {
+  it('routes product saves through the reusable cloud image preparation service', async () => {
     const page = await readProjectFile('src/pages/ProductsPage.jsx');
-    const uploadIndex = page.indexOf('await uploadProductImage(selectedImage, licenseKey)');
+    const prepareIndex = page.indexOf('await prepareProductImageForCloud({');
     const saveIndex = page.indexOf('await productRepository.saveProduct(productPayload');
 
-    expect(page).toContain("from '../services/storage/imageUploadService'");
-    expect(page).toContain('isCloudProductsSyncEnabled(licenseDetails)');
-    expect(page).toContain('productData?.imageUploadSource || productData?.image');
-    expect(page).toContain('delete productPayload.imageUploadSource');
-    expect(page).toContain('imageUrl: uploadedImage.publicUrl');
-    expect(page).toContain('...(productToEdit?.metadata || {})');
-    expect(page).toContain('images_cloud: true');
-    expect(page).toContain("image_strategy: 'cloud_public_url'");
-    expect(uploadIndex).toBeGreaterThan(0);
-    expect(saveIndex).toBeGreaterThan(uploadIndex);
+    expect(page).toContain("from '../services/products/productImageMigrationService'");
+    expect(page).toContain('cloudEnabled: cloudProductImagesEnabled');
+    expect(page).toContain('const productPayload = imagePreparation.productPayload');
+    expect(prepareIndex).toBeGreaterThan(0);
+    expect(saveIndex).toBeGreaterThan(prepareIndex);
   });
 
-  it('preserves the previous public URL when an edit does not select another file', async () => {
-    const page = await readProjectFile('src/pages/ProductsPage.jsx');
-
-    expect(page).toMatch(/const existingImageUrl = productPayload\.imageUrl[\s\S]*productToEdit\.imageUrl/);
-    expect(page).toMatch(/const existingImageRef = productPayload\.imageRef[\s\S]*productToEdit\.imageRef/);
-    expect(page).toContain('imageUrl: existingImageUrl');
-    expect(page).toContain('imageRef: existingImageRef');
-  });
-
-  it('maps the public URL through POS sync and ecommerce catalog projection', async () => {
-    const [mapper, catalogSync] = await Promise.all([
-      readProjectFile('src/services/products/productMapper.js'),
-      readProjectFile('src/services/ecommerce/ecommerceCatalogSyncServiceBase.js')
+  it('automatically migrates legacy img-* blobs from IndexedDB in bounded batches', async () => {
+    const [page, migrationService] = await Promise.all([
+      readProjectFile('src/pages/ProductsPage.jsx'),
+      readProjectFile('src/services/products/productImageMigrationService.js')
     ]);
 
-    expect(mapper).toMatch(/image_url:\s*optionalText\(product\.imageUrl\)/);
-    expect(mapper).toMatch(/imageUrl:\s*product\.image_url\s*\|\|\s*product\.imageUrl/);
+    expect(page).toContain('migrateLegacyProductImages({');
+    expect(page).toContain('limit: 25');
+    expect(migrationService).toContain('db.table(STORES.IMAGES).get(imageRef)');
+    expect(migrationService).toContain('db.table(STORES.MENU)');
+    expect(migrationService).toContain("migrationSource = uploadSource ? 'indexeddb_legacy_blob' : null");
+    expect(migrationService).toContain('requiresReselection: Boolean(existingImageRef)');
+    expect(migrationService).toContain('await saveProduct(prepared.productPayload, product)');
+    expect(migrationService).toContain('summary.hasMore = candidatePool.length > safeLimit');
+  });
+
+  it('preserves public URLs and derives truthful cloud image metadata in POS sync', async () => {
+    const mapper = await readProjectFile('src/services/products/productMapper.js');
+
+    expect(mapper).toContain('const imageUrl = resolveProductImageUrl(product)');
+    expect(mapper).toContain('const imageRef = resolveProductImageRef(product)');
+    expect(mapper).toContain('image_url: imageUrl');
+    expect(mapper).toContain('image_ref: imageRef');
+    expect(mapper).toContain("? 'cloud_public_url'");
+    expect(mapper).toContain("(imageRef ? 'local_reference_only' : 'none')");
+  });
+
+  it('projects the public URL into the ecommerce catalog', async () => {
+    const catalogSync = await readProjectFile('src/services/ecommerce/ecommerceCatalogSyncServiceBase.js');
+
     expect(catalogSync).toMatch(/product\.imageUrl\s*\|\|\s*product\.image_url\s*\|\|\s*product\.image/);
     expect(catalogSync).toContain('fields.image = getPublicImage(localProduct)');
   });
