@@ -1,6 +1,6 @@
 const WEBP_MIME_TYPE = 'image/webp';
 
-const BRANDING_WEBP_PROFILES = Object.freeze({
+const IMAGE_WEBP_PROFILES = Object.freeze({
   'business-logo': Object.freeze({
     maxWidth: 1024,
     maxHeight: 1024,
@@ -10,6 +10,16 @@ const BRANDING_WEBP_PROFILES = Object.freeze({
     maxWidth: 1920,
     maxHeight: 1080,
     quality: 0.84
+  }),
+  'product-image': Object.freeze({
+    maxWidth: 1280,
+    maxHeight: 1280,
+    quality: 0.8
+  }),
+  'restaurant-item-image': Object.freeze({
+    maxWidth: 1280,
+    maxHeight: 1280,
+    quality: 0.8
   })
 });
 
@@ -20,7 +30,7 @@ const CONVERTIBLE_MIME_TYPES = new Set([
 ]);
 
 function getProfile(purpose) {
-  return BRANDING_WEBP_PROFILES[String(purpose || '').trim().toLowerCase()] || null;
+  return IMAGE_WEBP_PROFILES[String(purpose || '').trim().toLowerCase()] || null;
 }
 
 function webpFilename(filename = 'imagen') {
