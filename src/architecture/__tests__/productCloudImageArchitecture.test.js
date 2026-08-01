@@ -16,7 +16,9 @@ describe('product cloud image architecture', () => {
     expect(page).toContain("from '../services/storage/imageUploadService'");
     expect(page).toContain('isCloudProductsSyncEnabled(licenseDetails)');
     expect(page).toContain('imageUrl: uploadedImage.publicUrl');
+    expect(page).toContain('...(productToEdit?.metadata || {})');
     expect(page).toContain('images_cloud: true');
+    expect(page).toContain("image_strategy: 'cloud_public_url'");
     expect(uploadIndex).toBeGreaterThan(0);
     expect(saveIndex).toBeGreaterThan(uploadIndex);
   });
