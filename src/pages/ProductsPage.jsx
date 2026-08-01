@@ -15,6 +15,11 @@ import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
 import { productRepository } from '../services/products/productRepository';
+import { uploadProductImage } from '../services/storage/imageUploadService';
+import {
+    getLicenseKeyFromDetails,
+    isCloudProductsSyncEnabled
+} from '../services/sync/syncConstants';
 import { normalizeBusinessTypes } from '../utils/businessType';
 import './ProductsPage.css';
 import Logger from '../services/Logger';
@@ -22,6 +27,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
+const isBrowserFile = (value) => typeof File !== 'undefined' && value instanceof File;
 
 export default function ProductsPage() {
     const [showDailyPrice, setShowDailyPrice] = useState(false);
@@ -29,6 +35,11 @@ export default function ProductsPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const features = useFeatureConfig();
     const companyProfile = useAppStore(state => state.companyProfile);
+    const licenseDetails = useAppStore(state => state.licenseDetails);
+    const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+    const cloudProductImagesEnabled = Boolean(
+        licenseKey && isCloudProductsSyncEnabled(licenseDetails)
+    );
     const businessTypes = companyProfile?.business_type;
     const hasRestaurantProductSettings = useMemo(() => (
         normalizeBusinessTypes(businessTypes || []).includes('food_service')
@@ -204,7 +215,56 @@ export default function ProductsPage() {
     const handleSaveProduct = async (productData, productToEdit) => {
         setIsLoading(true);
         try {
-            const result = await productRepository.saveProduct(productData, { existingProduct: productToEdit });
+            let productPayload = productData;
+            const selectedImage = productData?.image;
+
+            if (cloudProductImagesEnabled && isBrowserFile(selectedImage)) {
+                try {
+                    const uploadedImage = await uploadProductImage(selectedImage, licenseKey);
+                    productPayload = {
+                        ...productData,
+                        imageUrl: uploadedImage.publicUrl,
+                        metadata: {
+                            ...(productData.metadata || {}),
+                            images_cloud: true,
+                            product_image_storage: {
+                                bucket: uploadedImage.bucket,
+                                path: uploadedImage.path,
+                                mime_type: uploadedImage.mimeType,
+                                optimized: uploadedImage.optimized,
+                                original_size_bytes: uploadedImage.originalSizeBytes,
+                                uploaded_size_bytes: uploadedImage.uploadedSizeBytes,
+                                uploaded_at: new Date().toISOString()
+                            }
+                        }
+                    };
+                } catch (error) {
+                    Logger.error('Error subiendo imagen pública del producto:', error);
+                    showMessageModal(
+                        error?.message || 'No se pudo subir la imagen del producto. Revisa tu conexión e intenta nuevamente.'
+                    );
+                    return false;
+                }
+            } else if (productToEdit) {
+                const existingImageUrl = productData.imageUrl
+                    || productToEdit.imageUrl
+                    || productToEdit.image_url
+                    || null;
+                const existingImageRef = productData.imageRef
+                    || productToEdit.imageRef
+                    || productToEdit.image_ref
+                    || null;
+
+                if (existingImageUrl || existingImageRef) {
+                    productPayload = {
+                        ...productData,
+                        imageUrl: existingImageUrl,
+                        imageRef: existingImageRef
+                    };
+                }
+            }
+
+            const result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
 
             if (result?.success) {
                 await refreshData();
@@ -222,12 +282,12 @@ export default function ProductsPage() {
                 setEditingProduct(null);
                 broadcastDBChange({
                     action: productToEdit ? 'product-updated' : 'product-created',
-                    productId: result.productId || productData.id || productToEdit?.id,
+                    productId: result.productId || productPayload.id || productToEdit?.id,
                     timestamp: Date.now()
                 });
 
                 runWithoutBlocking(() => {
-                    if (productData.productType === 'ingredient') handleTabChange('ingredients');
+                    if (productPayload.productType === 'ingredient') handleTabChange('ingredients');
                     else handleTabChange('view-products');
                 });
 
