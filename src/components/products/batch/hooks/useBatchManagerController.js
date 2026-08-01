@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDebounce } from '../../../../hooks/useDebounce';
-import { useProductStore } from '../../../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../../../store/useInventoryCatalogStore';
 import {
   executeBatchWithPaymentSafe,
   executeProductionBatchSafe,
@@ -198,7 +198,7 @@ export function useBatchManagerController({
         }
 
         setSelectedProductSnapshot(updatedProduct);
-        await useProductStore.getState().loadInitialProducts();
+        await useInventoryCatalogStore.getState().loadInitialProducts();
       }
 
       let saveBatchResult;

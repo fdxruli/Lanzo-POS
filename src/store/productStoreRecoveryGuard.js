@@ -3,7 +3,7 @@ import {
   isDatabaseRecoveryPending,
   subscribeDatabaseRecoveryState
 } from '../services/db/databaseRecoveryState';
-import { useProductStore } from './useProductStore';
+import { useInventoryCatalogStore } from './useInventoryCatalogStore';
 
 let installed = false;
 let unsubscribe = null;
@@ -12,11 +12,11 @@ export const installProductStoreRecoveryGuard = () => {
   if (installed) return unsubscribe || (() => {});
   installed = true;
 
-  const originalInvalidate = useProductStore.getState().invalidateAndReset;
+  const originalInvalidate = useInventoryCatalogStore.getState().invalidateAndReset;
 
   const guardedInvalidate = (...args) => {
     if (isDatabaseRecoveryPending()) {
-      useProductStore.setState({
+      useInventoryCatalogStore.setState({
         isInvalidating: false,
         isLoading: false
       });
@@ -27,11 +27,11 @@ export const installProductStoreRecoveryGuard = () => {
   };
 
   Object.defineProperty(guardedInvalidate, '__lanzoRecoveryGuard', { value: true });
-  useProductStore.setState({ invalidateAndReset: guardedInvalidate });
+  useInventoryCatalogStore.setState({ invalidateAndReset: guardedInvalidate });
 
   unsubscribe = subscribeDatabaseRecoveryState((state) => {
     if (state.status === 'recovery_required' || state.status === 'failed' || state.status === 'migrating') {
-      useProductStore.setState({
+      useInventoryCatalogStore.setState({
         isInvalidating: false,
         isLoading: false
       });

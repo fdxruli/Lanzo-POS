@@ -4,7 +4,7 @@ import { saveDataSafe, STORES, updateProductSafe } from '../../services/database
 import { generateID, showConfirmModal, showMessageModal, roundCurrency } from '../../services/utils';
 // --- CAMBIO: Usamos el store correcto (Estadísticas) ---
 import { useStatsStore } from '../../store/useStatsStore';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useAppStore } from '../../store/useAppStore';
 import { Trash2, AlertCircle, PackageX, ShieldAlert, Gift, Flame, XCircle, AlertTriangle, X, CheckCircle, Leaf, Droplet } from 'lucide-react';
@@ -37,7 +37,7 @@ export default function WasteModal({ show, onClose, product, onConfirm }) {
     const [quantity, setQuantity] = useState('');
     const [reason, setReason] = useState('caducado'); // caducado, dañado, etc.
     const [notes, setNotes] = useState('');
-    const menu = useProductStore(state => state.menu);
+    const menu = useInventoryCatalogStore(state => state.menu);
     // --- CAMBIO: Usamos el hook del store de estadísticas ---
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
     const registerWasteRecord = useSalesStore(state => state.registerWasteRecord);

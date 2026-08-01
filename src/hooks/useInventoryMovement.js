@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useProductStore } from '../store/useProductStore';
+import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
 import {
   loadBatchesForProduct as loadBatchesForProductService,
   removeProductBatch as removeProductBatchService,
@@ -8,7 +8,7 @@ import {
 } from '../services/inventoryMovement';
 
 export function useInventoryMovement() {
-  const refreshProducts = useProductStore((state) => state.loadInitialProducts);
+  const refreshProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
 
   const scanProductFast = useCallback(
     async (barcode) => scanProductFastService(barcode),

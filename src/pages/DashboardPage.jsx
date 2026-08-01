@@ -7,7 +7,7 @@ import Logger from '../services/Logger';
 import { useStatsStore } from '../store/useStatsStore';
 import { useSalesStore } from '../store/useSalesStore';
 import { useRecycleBinStore } from '../store/useRecycleBinStore';
-import { useProductStore } from '../store/useProductStore';
+import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
 import { useAppStore } from '../store/useAppStore';
 
 // --- COMPONENTES ---
@@ -118,7 +118,7 @@ export default function DashboardPage() {
   const isWasteLoading = useSalesStore((state) => state.isWasteLoading);
 
   // 3. PRODUCTOS
-  const menu = useProductStore((state) => state.menu);
+  const menu = useInventoryCatalogStore((state) => state.menu);
   const analyticsSales = reportingData.sales;
   const analyticsWasteLogs = reportingData.wasteLogs;
   const analyticsMenu = reportingData.isLoading ? menu : reportingData.menu;

@@ -3,7 +3,7 @@ import { getProductAlerts } from '../../services/utils';
 import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { searchProductsInDB } from '../../services/database';
 import { getAvailableStock, getCommittedStock } from '../../services/db/utils';
 import WasteModal from './WasteModal';
@@ -39,10 +39,10 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   const features = useFeatureConfig();
 
   // Acciones del Store (solo paginacion/cache)
-  const fetchPage = useProductStore((state) => state.fetchPage);
-  const refreshData = useProductStore((state) => state.loadInitialProducts);
-  const hasMore = useProductStore((state) => state.hasMore);
-  const isGlobalLoading = useProductStore((state) => state.isLoading);
+  const fetchPage = useInventoryCatalogStore((state) => state.fetchPage);
+  const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
+  const hasMore = useInventoryCatalogStore((state) => state.hasMore);
+  const isGlobalLoading = useInventoryCatalogStore((state) => state.isLoading);
 
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedTerm = useDebounce(searchTerm, 300);
@@ -52,20 +52,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   const [productForWaste, setProductForWaste] = useState(null);
 
   // LEER DE LA BD CENTRAL: Estado para el filtro desplegable de activos/inactivos
-  const statusFilter = useProductStore((state) => state.filters.status || 'active');
-  const setFilters = useProductStore((state) => state.setFilters);
+  const statusFilter = useInventoryCatalogStore((state) => state.filters.status || 'active');
+  const setFilters = useInventoryCatalogStore((state) => state.setFilters);
 
   const categoryMap = useMemo(() => {
     return new Map(categories.map(cat => [cat.id, cat.name]));
   }, [categories]);
-
-  // Limpieza: Asegurar que al salir del inventario el filtro quede en "Solo Activos"
-  // para no contaminar el menú del Punto de Venta.
-  useEffect(() => {
-    return () => {
-      setFilters({ status: 'active' });
-    };
-  }, [setFilters]);
 
   useEffect(() => {
     let isActive = true;

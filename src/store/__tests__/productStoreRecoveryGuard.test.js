@@ -11,8 +11,8 @@ const productStoreMock = vi.hoisted(() => ({
   setState: vi.fn((patch) => Object.assign(productState, patch))
 }));
 
-vi.mock('../useProductStore', () => ({
-  useProductStore: productStoreMock
+vi.mock('../useInventoryCatalogStore', () => ({
+  useInventoryCatalogStore: productStoreMock
 }));
 
 import {

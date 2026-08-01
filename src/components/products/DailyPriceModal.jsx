@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { loadData, saveBulkSafe, STORES } from '../../services/database';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 // 1. IMPORTAR STORE PARA OBTENER CATEGORÍAS
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import Logger from '../../services/Logger';
 import './DailyPriceModal.css';
@@ -13,7 +13,7 @@ export default function DailyPriceModal({ show, onClose, products, onRefresh }) 
 
     // 2. NUEVO ESTADO PARA CATEGORÍA
     const [selectedCategory, setSelectedCategory] = useState('all');
-    const categories = useProductStore(state => state.categories);
+    const categories = useInventoryCatalogStore(state => state.categories);
 
     const handleDismiss = useCallback(() => {
         onClose();

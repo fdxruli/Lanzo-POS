@@ -8,7 +8,8 @@ import CategoryManager from '../components/products/CategoryManager';
 import IngredientManager from '../components/products/IngredientManager';
 import VariantInventoryView from '../components/products/VarianteInvetoryView';
 import PreparationStationsSettings from '../components/settings/PreparationStationsSettings';
-import { useProductStore, broadcastDBChange } from '../store/useProductStore';
+import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
+import { broadcastDBChange } from '../services/products/productCatalogEvents';
 import { useStatsStore } from '../store/useStatsStore';
 import BatchManager from '../components/products/BatchManager';
 import { useFeatureConfig } from '../hooks/useFeatureConfig';
@@ -63,12 +64,12 @@ export default function ProductsPage() {
     })();
 
     const adjustInventoryValue = useStatsStore(state => state.adjustInventoryValue);
-    const categories = useProductStore((state) => state.categories);
-    const products = useProductStore((state) => state.menu);
-    const filters = useProductStore((state) => state.filters);
-    const setFilters = useProductStore((state) => state.setFilters);
-    const refreshData = useProductStore((state) => state.loadInitialProducts);
-    const refreshCategories = useProductStore((state) => state.refreshCategories);
+    const categories = useInventoryCatalogStore((state) => state.categories);
+    const products = useInventoryCatalogStore((state) => state.menu);
+    const filters = useInventoryCatalogStore((state) => state.filters);
+    const setFilters = useInventoryCatalogStore((state) => state.setFilters);
+    const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
+    const refreshCategories = useInventoryCatalogStore((state) => state.refreshCategories);
 
     const [editingProduct, setEditingProduct] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -88,9 +89,8 @@ export default function ProductsPage() {
     });
 
     useEffect(() => {
-        setFilters({ categoryId: null, outOfStockOnly: false, expiredOnly: false });
         refreshData();
-    }, [refreshData, setFilters]);
+    }, [refreshData]);
 
     useEffect(() => {
         if (!cloudProductImagesEnabled || !licenseKey || products.length === 0) return undefined;

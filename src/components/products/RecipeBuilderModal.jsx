@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-// --- CAMBIO: Usamos useProductStore en lugar de useDashboardStore ---
-import { useProductStore } from '../../store/useProductStore';
+// --- CAMBIO: Usamos useInventoryCatalogStore en lugar de useDashboardStore ---
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { roundCurrency, showMessageModal } from '../../services/utils';
 import './RecipeBuilderModal.css';
 
@@ -8,7 +8,7 @@ export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSa
 
   // 1. OBTENER MENÚ DEL STORE CORRECTO
   // 'menu' contiene los productos con el Stock y Costo ya calculados.
-  const menu = useProductStore((state) => state.menu);
+  const menu = useInventoryCatalogStore((state) => state.menu);
 
   // 2. FILTRAR INGREDIENTES
   // Filtramos sobre 'menu' para obtener solo los insumos activos
