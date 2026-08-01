@@ -7,6 +7,7 @@ import { useProductStore } from '../../store/useProductStore';
 import { searchProductsInDB } from '../../services/database';
 import { getAvailableStock, getCommittedStock } from '../../services/db/utils';
 import WasteModal from './WasteModal';
+import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
 import './ProductList.css';
 
 // --- ICONOS SVG REUTILIZABLES ---
@@ -196,6 +197,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             const isActive = item.isActive !== false;
             const availableStock = getAvailableStock(item);
             const committedStock = getCommittedStock(item);
+            const productImageSource = item.imageUrl || item.image_url || item.image;
 
             // Alertas
             const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
@@ -227,7 +229,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                 {/* 1. Cabecera e Imagen */}
                 <div className="complex-header">
                   <div className="img-area">
-                    <LazyImage src={item.image} alt={item.name} />
+                    <LazyImage src={productImageSource} alt={item.name} />
                   </div>
 
                   <div className="title-area">
@@ -238,6 +240,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                       <span className="ui-badge ui-badge--neutral category-badge">{categoryName}</span>
                       {features.hasSKU && item.sku && <span className="ui-badge ui-badge--info sku-badge">SKU: {item.sku}</span>}
                     </div>
+                    <ProductCloudSyncIndicators product={item} />
                   </div>
 
                   <div className="actions-area">

@@ -232,16 +232,18 @@ Deno.serve(async (req: Request) => {
     return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
   }
 
-  if (licenseValidation.data?.device_role === 'staff' && !validation.staffSessionToken) {
-    await writeAudit(supabase, body, {
-      status: 'rejected',
-      code: 'STORAGE_UPLOAD_NOT_ALLOWED',
-      metadata: { reason: 'STAFF_SESSION_REQUIRED' }
-    });
-    return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
-  }
+  const deviceRole = cleanText(licenseValidation.data?.device_role || '').toLowerCase();
 
-  if (validation.staffSessionToken) {
+  if (deviceRole === 'staff') {
+    if (!validation.staffSessionToken) {
+      await writeAudit(supabase, body, {
+        status: 'rejected',
+        code: 'STORAGE_UPLOAD_NOT_ALLOWED',
+        metadata: { reason: 'STAFF_SESSION_REQUIRED', device_role: deviceRole }
+      });
+      return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
+    }
+
     const staffValidation = await supabase.rpc('verify_staff_session', {
       p_license_key: validation.licenseKey,
       p_device_fingerprint: validation.deviceFingerprint,
@@ -252,7 +254,10 @@ Deno.serve(async (req: Request) => {
       await writeAudit(supabase, body, {
         status: 'rejected',
         code: 'STORAGE_UPLOAD_NOT_ALLOWED',
-        metadata: { reason: staffValidation.data?.code || staffValidation.error?.code || null }
+        metadata: {
+          reason: staffValidation.data?.code || staffValidation.error?.code || null,
+          device_role: deviceRole
+        }
       });
       return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
     }
@@ -276,7 +281,11 @@ Deno.serve(async (req: Request) => {
   await writeAudit(supabase, body, {
     status: 'authorized',
     objectPath,
-    metadata: { signed_upload: true, path_contract: `${PUBLIC_PREFIX}/{license_hash}/{purpose}/{uuid}.${validation.extension}` }
+    metadata: {
+      signed_upload: true,
+      device_role: deviceRole || null,
+      path_contract: `${PUBLIC_PREFIX}/{license_hash}/{purpose}/{uuid}.${validation.extension}`
+    }
   });
 
   return jsonResponse(200, {
