@@ -9,7 +9,6 @@ import { installAdminPwaDocument } from './pwa/adminPwaDocument';
 import { startAdminInstallPromptCapture } from './pwa/adminInstallPrompt';
 import { startAdminServiceWorker } from './pwa/adminServiceWorker';
 import {
-  completeAdminStartupRecovery,
   isRecoverableAdminStartupError,
   recoverAdminStartup,
 } from './pwa/adminStartupRecovery';
@@ -105,7 +104,5 @@ if (isPublicStorePath(window.location.pathname)) {
   if (!import.meta.env.DEV) {
     startAdminServiceWorker();
   }
-  renderPosApplication()
-    .then(() => completeAdminStartupRecovery())
-    .catch(handlePosStartupFailure);
+  renderPosApplication().catch(handlePosStartupFailure);
 }

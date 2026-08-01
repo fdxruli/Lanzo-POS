@@ -55,6 +55,17 @@ function createWindowTarget() {
   };
 }
 
+function createRestrictedStorageWindowTarget() {
+  const windowTarget = createWindowTarget();
+  Object.defineProperty(windowTarget, 'sessionStorage', {
+    configurable: true,
+    get() {
+      throw new DOMException('Storage is restricted', 'SecurityError');
+    },
+  });
+  return windowTarget;
+}
+
 function createCacheStorage(cacheNames = []) {
   return {
     keys: vi.fn().mockResolvedValue(cacheNames),
@@ -179,6 +190,54 @@ describe('administrative startup version recovery', () => {
       windowTarget,
       cacheStorage,
     });
+    const second = await recoverAdminStartup({
+      error: chunkError,
+      navigatorTarget: { serviceWorker },
+      windowTarget,
+      cacheStorage,
+    });
+
+    expect(first.status).toBe('reloading');
+    expect(second).toEqual({ status: 'already-attempted' });
+    expect(windowTarget.location.replace).toHaveBeenCalledOnce();
+  });
+
+  it('still performs recovery when reading sessionStorage throws', async () => {
+    const serviceWorker = {
+      getRegistration: vi.fn().mockResolvedValue(null),
+      getRegistrations: vi.fn().mockResolvedValue([]),
+    };
+    const windowTarget = createRestrictedStorageWindowTarget();
+    const cacheStorage = createCacheStorage(['lanzo-admin-static-v1']);
+
+    const result = await recoverAdminStartup({
+      error: chunkError,
+      navigatorTarget: { serviceWorker },
+      windowTarget,
+      cacheStorage,
+    });
+
+    expect(result.status).toBe('reloading');
+    expect(cacheStorage.delete).toHaveBeenCalledWith('lanzo-admin-static-v1');
+    expect(windowTarget.location.replace).toHaveBeenCalledOnce();
+  });
+
+  it('uses the recovery query as the one-shot guard when storage is unavailable', async () => {
+    const serviceWorker = {
+      getRegistration: vi.fn().mockResolvedValue(null),
+      getRegistrations: vi.fn().mockResolvedValue([]),
+    };
+    const windowTarget = createRestrictedStorageWindowTarget();
+    const cacheStorage = createCacheStorage([]);
+
+    const first = await recoverAdminStartup({
+      error: chunkError,
+      navigatorTarget: { serviceWorker },
+      windowTarget,
+      cacheStorage,
+    });
+    windowTarget.location.href = first.url;
+
     const second = await recoverAdminStartup({
       error: chunkError,
       navigatorTarget: { serviceWorker },

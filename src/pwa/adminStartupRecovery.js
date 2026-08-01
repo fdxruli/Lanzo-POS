@@ -16,6 +16,14 @@ const RECOVERABLE_ERROR_PATTERNS = Object.freeze([
 
 const LANZO_CACHE_NAME_PATTERN = /^(?:workbox-precache|lanzo-admin-(?:static|media)-v\d+$)/;
 
+function getSessionStorage(windowTarget) {
+  try {
+    return windowTarget?.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
 function safeStorageRead(storage, key) {
   try {
     return storage?.getItem?.(key) || '';
@@ -27,8 +35,9 @@ function safeStorageRead(storage, key) {
 function safeStorageWrite(storage, key, value) {
   try {
     storage?.setItem?.(key, value);
+    return true;
   } catch {
-    // Recovery must remain available when sessionStorage is restricted.
+    return false;
   }
 }
 
@@ -38,6 +47,19 @@ function safeStorageRemove(storage, key) {
   } catch {
     // Recovery completion must not fail because storage is restricted.
   }
+}
+
+function getRecoveryQueryValue(windowTarget) {
+  try {
+    return new URL(windowTarget?.location?.href || '').searchParams.get(RECOVERY_QUERY_PARAM) || '';
+  } catch {
+    return '';
+  }
+}
+
+function hasRecoveryQueryForCurrentBuild(windowTarget) {
+  const recoveryValue = getRecoveryQueryValue(windowTarget);
+  return recoveryValue === BUILD_ID || recoveryValue.startsWith(`${BUILD_ID}-`);
 }
 
 function collectErrorText(error) {
@@ -224,8 +246,9 @@ export async function recoverAdminStartup({
   if (!windowTarget?.location?.replace) return { status: 'unavailable' };
   if (!force && !isRecoverableAdminStartupError(error)) return { status: 'not-recoverable' };
 
-  const storage = windowTarget.sessionStorage;
-  if (!force && safeStorageRead(storage, RECOVERY_ATTEMPT_KEY) === BUILD_ID) {
+  const storage = getSessionStorage(windowTarget);
+  const attemptedInStorage = safeStorageRead(storage, RECOVERY_ATTEMPT_KEY) === BUILD_ID;
+  if (!force && (attemptedInStorage || hasRecoveryQueryForCurrentBuild(windowTarget))) {
     return { status: 'already-attempted' };
   }
   safeStorageWrite(storage, RECOVERY_ATTEMPT_KEY, BUILD_ID);
@@ -285,7 +308,7 @@ export async function recoverAdminStartup({
 
 export function completeAdminStartupRecovery({ windowTarget = globalThis.window } = {}) {
   if (!windowTarget) return;
-  safeStorageRemove(windowTarget.sessionStorage, RECOVERY_ATTEMPT_KEY);
+  safeStorageRemove(getSessionStorage(windowTarget), RECOVERY_ATTEMPT_KEY);
 
   try {
     const currentUrl = new URL(windowTarget.location.href);
@@ -302,5 +325,5 @@ export function completeAdminStartupRecovery({ windowTarget = globalThis.window 
 }
 
 export function resetAdminStartupRecoveryForTests({ windowTarget = globalThis.window } = {}) {
-  safeStorageRemove(windowTarget?.sessionStorage, RECOVERY_ATTEMPT_KEY);
+  safeStorageRemove(getSessionStorage(windowTarget), RECOVERY_ATTEMPT_KEY);
 }
