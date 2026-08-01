@@ -79,6 +79,8 @@ export function usePos() {
             hasMoreCatalogProducts: search.hasMore,
             isLoadingInitialCatalog: search.isLoadingInitial,
             isLoadingNextCatalogPage: search.isLoadingNextPage,
+            activeCatalogViewKey: search.activeViewKey,
+            catalogScrollPosition: search.savedScrollPosition,
             activeTablesCount: tablesCount.activeTablesCount,
             kitchenRejectedOpenCount: tablesCount.kitchenRejectedOpenCount,
             toastMsg: pos.toastMsg,
@@ -95,7 +97,8 @@ export function usePos() {
             closeMobileCart: mobileCart.closeCart,
             setSearchTerm: search.setSearchTerm,
             handleSelectCategory: search.handleSelectCategory,
-            loadNextCatalogPage: search.loadNextPage
+            loadNextCatalogPage: search.loadNextPage,
+            saveCatalogScrollPosition: search.saveScrollPosition
         },
 
         actions: {

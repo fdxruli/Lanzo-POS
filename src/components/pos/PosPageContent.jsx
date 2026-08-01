@@ -127,6 +127,9 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         isLoadingInitial={data.isLoadingInitialCatalog}
                         isLoadingNextPage={data.isLoadingNextCatalogPage}
                         onLoadNextPage={ui.loadNextCatalogPage}
+                        activeViewKey={data.activeCatalogViewKey}
+                        savedScrollPosition={data.catalogScrollPosition}
+                        onScrollPositionChange={ui.saveCatalogScrollPosition}
                     />
                     <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}${isEcommerceDraft ? ' pos-summary-stack--ecommerce' : ''}`}>
                         <OrderSummary

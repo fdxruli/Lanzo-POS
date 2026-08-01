@@ -12,6 +12,7 @@ const productStoreMock = vi.hoisted(() => ({
 }));
 const posState = vi.hoisted(() => ({
   invalidateAndReset: vi.fn(),
+  reset: vi.fn(),
   isInvalidating: true,
   isLoading: true
 }));
@@ -43,6 +44,7 @@ beforeEach(() => {
   productState.isInvalidating = true;
   productState.isLoading = true;
   posState.invalidateAndReset = vi.fn();
+  posState.reset = vi.fn();
   posState.isInvalidating = true;
   posState.isLoading = true;
   clearDatabaseRecoveryState();
@@ -74,6 +76,7 @@ describe('ProductStore recovery guard', () => {
     expect(productState.isLoading).toBe(false);
     expect(posState.isInvalidating).toBe(false);
     expect(posState.isLoading).toBe(false);
+    expect(posState.reset).toHaveBeenCalledTimes(1);
 
     clearDatabaseRecoveryState();
     guarded('manual-retry-after-recovery');

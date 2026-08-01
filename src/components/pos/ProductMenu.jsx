@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
@@ -119,7 +119,10 @@ export default function ProductMenu({
   hasMore,
   isLoadingInitial,
   isLoadingNextPage,
-  onLoadNextPage
+  onLoadNextPage,
+  activeViewKey,
+  savedScrollPosition,
+  onScrollPositionChange
 }) {
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -143,6 +146,14 @@ export default function ProductMenu({
 
   const scrollContainerRef = useRef(null);
   const loadMoreSentinelRef = useRef(null);
+  const wasIntersectingRef = useRef(false);
+  const observerArmedRef = useRef(true);
+  const loadRequestInProgressRef = useRef(false);
+  const manualLoadInProgressRef = useRef(false);
+  const hasMoreRef = useRef(hasMore);
+  const isLoadingNextPageRef = useRef(isLoadingNextPage);
+  const searchActiveRef = useRef(Boolean(searchTerm.trim()));
+  const onLoadNextPageRef = useRef(onLoadNextPage);
 
   const cloudSalesInventoryEnabled = useMemo(
     () => isCloudSalesInventoryEnabled(licenseDetails),
@@ -207,33 +218,83 @@ export default function ProductMenu({
     return true;
   }, [loadBatchesForProduct, strictExpiryStatusByProductId]);
 
-  // --- EFECTO: Resetear scroll al cambiar filtros ---
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0;
-    }
-  }, [selectedCategoryId, searchTerm]);
+  hasMoreRef.current = hasMore;
+  isLoadingNextPageRef.current = isLoadingNextPage;
+  searchActiveRef.current = Boolean(searchTerm.trim());
+  onLoadNextPageRef.current = onLoadNextPage;
 
-  const canLoadMore = Boolean(hasMore && !isLoadingNextPage && !searchTerm.trim());
-  const requestNextPage = useCallback(() => {
-    if (canLoadMore) void onLoadNextPage?.();
-  }, [canLoadMore, onLoadNextPage]);
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+    const targetPosition = searchTerm.trim() ? 0 : Math.max(0, Number(savedScrollPosition) || 0);
+    const restore = () => {
+      const maximumPosition = Math.max(0, container.scrollHeight - container.clientHeight);
+      container.scrollTop = Math.min(targetPosition, maximumPosition);
+    };
+    const frame = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(restore)
+      : null;
+    if (frame === null) restore();
+    return () => {
+      if (frame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+    };
+  }, [activeViewKey, savedScrollPosition, searchTerm]);
+
+  useEffect(() => {
+    wasIntersectingRef.current = false;
+    observerArmedRef.current = true;
+    loadRequestInProgressRef.current = false;
+    manualLoadInProgressRef.current = false;
+  }, [activeViewKey]);
+
+  const requestNextPage = useCallback(async (source) => {
+    if (
+      loadRequestInProgressRef.current
+      || isLoadingNextPageRef.current
+      || !hasMoreRef.current
+      || searchActiveRef.current
+    ) return false;
+
+    loadRequestInProgressRef.current = true;
+    if (source === 'manual') {
+      manualLoadInProgressRef.current = true;
+      observerArmedRef.current = false;
+      wasIntersectingRef.current = true;
+    }
+    try {
+      return await onLoadNextPageRef.current?.();
+    } finally {
+      loadRequestInProgressRef.current = false;
+      manualLoadInProgressRef.current = false;
+    }
+  }, []);
+
+  const visibleProducts = products;
+  const observerEnabled = Boolean(hasMore && !searchTerm.trim() && visibleProducts.length !== 0);
 
   useEffect(() => {
     const sentinel = loadMoreSentinelRef.current;
     const root = scrollContainerRef.current;
-    if (!sentinel || !root || !canLoadMore || typeof IntersectionObserver === 'undefined') {
+    if (!sentinel || !root || !observerEnabled || typeof IntersectionObserver === 'undefined') {
       return undefined;
     }
 
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) requestNextPage();
+      const isIntersecting = entries.some((entry) => entry.isIntersecting);
+      if (!isIntersecting) {
+        wasIntersectingRef.current = false;
+        observerArmedRef.current = true;
+        return;
+      }
+      if (wasIntersectingRef.current) return;
+      wasIntersectingRef.current = true;
+      if (!observerArmedRef.current || manualLoadInProgressRef.current) return;
+      observerArmedRef.current = false;
+      void requestNextPage('observer');
     }, { root, rootMargin: '300px 0px', threshold: 0.01 });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [canLoadMore, requestNextPage]);
-
-  const visibleProducts = products;
+  }, [observerEnabled, activeViewKey, requestNextPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -431,8 +492,13 @@ export default function ProductMenu({
 
   // --- HANDLERS DE CATEGORÍAS Y BÚSQUEDA ---
   const handleCategoryClick = useCallback((categoryId) => {
+    onScrollPositionChange?.(scrollContainerRef.current?.scrollTop || 0);
     onSelectCategory?.(categoryId);
-  }, [onSelectCategory]);
+  }, [onScrollPositionChange, onSelectCategory]);
+
+  const handleCatalogScroll = useCallback(() => {
+    onScrollPositionChange?.(scrollContainerRef.current?.scrollTop || 0);
+  }, [onScrollPositionChange]);
 
   const handleSearchChange = useCallback((e) => {
     onSearchChange?.(e.target.value);
@@ -525,6 +591,7 @@ export default function ProductMenu({
       <div
         className="pos-menu-scroll"
         ref={scrollContainerRef}
+        onScroll={handleCatalogScroll}
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Productos disponibles">
 
@@ -585,11 +652,12 @@ export default function ProductMenu({
             </div>
           )}
 
-          {canLoadMore && visibleProducts.length > 0 && (
+          {!searchTerm.trim() && hasMore && visibleProducts.length > 0 && (
             <button
               type="button"
               className="pos-load-more-button"
-              onClick={requestNextPage}
+              onClick={() => void requestNextPage('manual')}
+              disabled={isLoadingNextPage}
             >
               Cargar más productos
             </button>

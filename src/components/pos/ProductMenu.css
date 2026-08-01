@@ -537,6 +537,11 @@
   background: var(--primary-color);
 }
 
+.pos-load-more-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 [data-theme="dark"] .product-badge--rx,
 [data-theme="dark"] .product-badge--modifier {
   color: #ddd6fe;

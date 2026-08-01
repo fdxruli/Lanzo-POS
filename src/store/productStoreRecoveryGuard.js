@@ -34,6 +34,7 @@ export const installProductStoreRecoveryGuard = () => {
       for (const catalogStore of catalogStores) {
         catalogStore.setState({ isInvalidating: false, isLoading: false });
       }
+      usePosCatalogStore.getState().reset?.();
     }
   });
 
