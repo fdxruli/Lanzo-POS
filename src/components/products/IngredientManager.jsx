@@ -1,6 +1,7 @@
 import { useId, useReducer } from 'react';
 import { Boxes, DollarSign, Layers3, Package, Pencil, Save, Scale, Trash2, X } from 'lucide-react';
 import { showConfirmModal } from '../../services/utils';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import './IngredientManager.css';
 
 const getIngredientUnit = (ingredient) => ingredient.bulkData?.purchase?.unit || (ingredient.saleType === 'unit' ? 'pza' : 'kg');
@@ -34,6 +35,9 @@ function formReducer(state, action) {
 export default function IngredientManager({ ingredients, onSave, onDelete, onManageBatches }) {
     const fieldId = useId();
     const [formState, dispatchForm] = useReducer(formReducer, initialFormState);
+    const hasMore = useInventoryCatalogStore((state) => state.hasMore);
+    const isLoadingNextPage = useInventoryCatalogStore((state) => state.isLoadingNextPage);
+    const loadNextPage = useInventoryCatalogStore((state) => state.loadNextPage);
     const { name, cost, stock, unit, editingId } = formState;
 
     const sortedIngredients = ingredients.toSorted((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
@@ -290,6 +294,19 @@ export default function IngredientManager({ ingredients, onSave, onDelete, onMan
                     )}
                 </div>
             </div>
+
+            {hasMore && (
+                <div className="ingredient-pagination-actions">
+                    <button
+                        type="button"
+                        className="ui-button ui-button--secondary"
+                        onClick={loadNextPage}
+                        disabled={isLoadingNextPage}
+                    >
+                        {isLoadingNextPage ? 'Cargando...' : 'Cargar más insumos'}
+                    </button>
+                </div>
+            )}
         </section>
     );
 }

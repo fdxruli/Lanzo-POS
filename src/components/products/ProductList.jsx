@@ -5,6 +5,7 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { searchProductsInDB } from '../../services/database';
+import { isInventoryCatalogEligible } from '../../services/products/productCatalogQueryService';
 import { getAvailableStock, getCommittedStock } from '../../services/db/utils';
 import WasteModal from './WasteModal';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
@@ -80,7 +81,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
       try {
         const results = await searchProductsInDB(term, statusFilter);
         if (isActive) {
-          setSearchResults(results);
+          setSearchResults(results.filter((product) => (
+            isInventoryCatalogEligible(product, {
+              status: statusFilter,
+              productType: 'sellable'
+            })
+          )));
         }
       } catch (error) {
         console.error('Error buscando productos en ProductList:', error);
@@ -124,7 +130,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
     return margin.toFixed(1);
   };
 
-  if ((isLoading && products.length === 0) || (isSearchMode && isSearching && displayProducts.length === 0)) {
+  if (((isLoading || isGlobalLoading) && products.length === 0) || (isSearchMode && isSearching && displayProducts.length === 0)) {
     return (
       <div className="ui-loading-state loader-container">
         <div className="ui-spinner spinner"></div>
