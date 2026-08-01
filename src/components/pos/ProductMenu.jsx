@@ -37,6 +37,8 @@ const PRODUCT_CARD_SHELL_STYLE = {
   minWidth: 0
 };
 
+const CATALOG_SCROLL_INTENT_THRESHOLD_PX = 2;
+
 const PRODUCT_SYNC_BADGE_BASE_STYLE = {
   position: 'absolute',
   top: 6,
@@ -146,10 +148,16 @@ export default function ProductMenu({
 
   const scrollContainerRef = useRef(null);
   const loadMoreSentinelRef = useRef(null);
-  const wasIntersectingRef = useRef(false);
-  const observerArmedRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
+  const hasUserScrolledDownRef = useRef(false);
+  const scrollDirectionRef = useRef('idle');
+  const observerWasIntersectingRef = useRef(false);
+  const loadTriggeredForCurrentEntryRef = useRef(false);
   const loadRequestInProgressRef = useRef(false);
   const manualLoadInProgressRef = useRef(false);
+  const manualLoadLockRef = useRef(false);
+  const manualExitObservedRef = useRef(false);
+  const isRestoringScrollRef = useRef(false);
   const hasMoreRef = useRef(hasMore);
   const isLoadingNextPageRef = useRef(isLoadingNextPage);
   const searchActiveRef = useRef(Boolean(searchTerm.trim()));
@@ -227,9 +235,18 @@ export default function ProductMenu({
     const container = scrollContainerRef.current;
     if (!container) return undefined;
     const targetPosition = searchTerm.trim() ? 0 : Math.max(0, Number(savedScrollPosition) || 0);
+    isRestoringScrollRef.current = true;
+    let releaseFrame = null;
     const restore = () => {
       const maximumPosition = Math.max(0, container.scrollHeight - container.clientHeight);
       container.scrollTop = Math.min(targetPosition, maximumPosition);
+      lastScrollTopRef.current = container.scrollTop;
+      releaseFrame = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame(() => {
+          isRestoringScrollRef.current = false;
+        })
+        : null;
+      if (releaseFrame === null) isRestoringScrollRef.current = false;
     };
     const frame = typeof requestAnimationFrame === 'function'
       ? requestAnimationFrame(restore)
@@ -237,14 +254,22 @@ export default function ProductMenu({
     if (frame === null) restore();
     return () => {
       if (frame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      if (releaseFrame !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(releaseFrame);
+      }
     };
   }, [activeViewKey, savedScrollPosition, searchTerm]);
 
-  useEffect(() => {
-    wasIntersectingRef.current = false;
-    observerArmedRef.current = true;
+  useLayoutEffect(() => {
+    lastScrollTopRef.current = scrollContainerRef.current?.scrollTop || 0;
+    hasUserScrolledDownRef.current = false;
+    scrollDirectionRef.current = 'idle';
+    observerWasIntersectingRef.current = false;
+    loadTriggeredForCurrentEntryRef.current = false;
     loadRequestInProgressRef.current = false;
     manualLoadInProgressRef.current = false;
+    manualLoadLockRef.current = false;
+    manualExitObservedRef.current = false;
   }, [activeViewKey]);
 
   const requestNextPage = useCallback(async (source) => {
@@ -258,8 +283,11 @@ export default function ProductMenu({
     loadRequestInProgressRef.current = true;
     if (source === 'manual') {
       manualLoadInProgressRef.current = true;
-      observerArmedRef.current = false;
-      wasIntersectingRef.current = true;
+      manualLoadLockRef.current = true;
+      manualExitObservedRef.current = !observerWasIntersectingRef.current;
+      loadTriggeredForCurrentEntryRef.current = true;
+      hasUserScrolledDownRef.current = false;
+      scrollDirectionRef.current = 'idle';
     }
     try {
       return await onLoadNextPageRef.current?.();
@@ -282,14 +310,24 @@ export default function ProductMenu({
     const observer = new IntersectionObserver((entries) => {
       const isIntersecting = entries.some((entry) => entry.isIntersecting);
       if (!isIntersecting) {
-        wasIntersectingRef.current = false;
-        observerArmedRef.current = true;
+        observerWasIntersectingRef.current = false;
+        loadTriggeredForCurrentEntryRef.current = false;
+        hasUserScrolledDownRef.current = false;
+        scrollDirectionRef.current = 'idle';
+        if (manualLoadLockRef.current) manualExitObservedRef.current = true;
         return;
       }
-      if (wasIntersectingRef.current) return;
-      wasIntersectingRef.current = true;
-      if (!observerArmedRef.current || manualLoadInProgressRef.current) return;
-      observerArmedRef.current = false;
+      if (observerWasIntersectingRef.current) return;
+      observerWasIntersectingRef.current = true;
+      if (
+        manualLoadLockRef.current
+        || manualLoadInProgressRef.current
+        || loadTriggeredForCurrentEntryRef.current
+        || !hasUserScrolledDownRef.current
+        || scrollDirectionRef.current !== 'down'
+      ) return;
+      loadTriggeredForCurrentEntryRef.current = true;
+      hasUserScrolledDownRef.current = false;
       void requestNextPage('observer');
     }, { root, rootMargin: '300px 0px', threshold: 0.01 });
     observer.observe(sentinel);
@@ -497,8 +535,46 @@ export default function ProductMenu({
   }, [onScrollPositionChange, onSelectCategory]);
 
   const handleCatalogScroll = useCallback(() => {
-    onScrollPositionChange?.(scrollContainerRef.current?.scrollTop || 0);
-  }, [onScrollPositionChange]);
+    const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
+    onScrollPositionChange?.(currentScrollTop);
+
+    const previousScrollTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = currentScrollTop;
+    if (isRestoringScrollRef.current) return;
+
+    const delta = currentScrollTop - previousScrollTop;
+    if (delta > CATALOG_SCROLL_INTENT_THRESHOLD_PX) {
+      scrollDirectionRef.current = 'down';
+      hasUserScrolledDownRef.current = true;
+
+      if (
+        manualLoadLockRef.current
+        && manualExitObservedRef.current
+        && !observerWasIntersectingRef.current
+      ) {
+        manualLoadLockRef.current = false;
+        manualExitObservedRef.current = false;
+        loadTriggeredForCurrentEntryRef.current = false;
+      }
+
+      if (
+        observerWasIntersectingRef.current
+        && !manualLoadLockRef.current
+        && !manualLoadInProgressRef.current
+        && !loadTriggeredForCurrentEntryRef.current
+      ) {
+        loadTriggeredForCurrentEntryRef.current = true;
+        hasUserScrolledDownRef.current = false;
+        void requestNextPage('observer');
+      }
+      return;
+    }
+
+    if (delta < -CATALOG_SCROLL_INTENT_THRESHOLD_PX) {
+      scrollDirectionRef.current = 'up';
+      hasUserScrolledDownRef.current = false;
+    }
+  }, [onScrollPositionChange, requestNextPage]);
 
   const handleSearchChange = useCallback((e) => {
     onSearchChange?.(e.target.value);
