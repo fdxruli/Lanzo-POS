@@ -117,6 +117,42 @@ function buildUploadError(code, fallback) {
   return error;
 }
 
+async function readFunctionErrorPayload(error) {
+  const response = error?.context;
+  if (!response || typeof response.json !== 'function') return null;
+
+  try {
+    const readableResponse = typeof response.clone === 'function' ? response.clone() : response;
+    return await readableResponse.json();
+  } catch {
+    return null;
+  }
+}
+
+function getFunctionErrorStatus(error) {
+  const status = Number(error?.context?.status ?? error?.status ?? error?.statusCode);
+  return Number.isFinite(status) ? status : null;
+}
+
+async function invokeUploadAuthorization(body) {
+  let result = await supabaseClient.functions.invoke(AUTHORIZE_FUNCTION, { body });
+
+  if (result.error && body.staff_session_token && getFunctionErrorStatus(result.error) === 403) {
+    const rejection = await readFunctionErrorPayload(result.error);
+    Logger.warn('[Storage] Sesión residual rechazada; reintentando autorización sin sesión de actor.', {
+      code: rejection?.code || null
+    });
+    result = await supabaseClient.functions.invoke(AUTHORIZE_FUNCTION, {
+      body: {
+        ...body,
+        staff_session_token: null
+      }
+    });
+  }
+
+  return result;
+}
+
 async function prepareUploadFile(file, purpose, imageOptimizer) {
   try {
     const candidate = await imageOptimizer({ file, purpose });
@@ -172,25 +208,30 @@ export async function uploadImageFile({
     throw buildUploadError(uploadValidation.code);
   }
 
-  const { data: authorization, error: authorizationError } = await supabaseClient.functions.invoke(
-    AUTHORIZE_FUNCTION,
-    {
-      body: {
-        license_key: licenseKey,
-        device_fingerprint: deviceFingerprint,
-        security_token: securityToken,
-        staff_session_token: staffSessionToken || null,
-        purpose: normalizedPurpose,
-        filename: uploadFile.name,
-        mime_type: uploadFile.type,
-        size_bytes: uploadFile.size
-      }
-    }
-  );
+  const authorizationResult = await invokeUploadAuthorization({
+    license_key: licenseKey,
+    device_fingerprint: deviceFingerprint,
+    security_token: securityToken,
+    staff_session_token: staffSessionToken || null,
+    purpose: normalizedPurpose,
+    filename: uploadFile.name,
+    mime_type: uploadFile.type,
+    size_bytes: uploadFile.size
+  });
+  const authorization = authorizationResult.data;
+  const authorizationError = authorizationResult.error;
 
   if (authorizationError) {
-    Logger.warn('[Storage] Error autorizando upload de imagen:', authorizationError);
-    throw buildUploadError('STORAGE_UPLOAD_FAILED');
+    const rejection = await readFunctionErrorPayload(authorizationError);
+    Logger.warn('[Storage] Error autorizando upload de imagen:', {
+      status: getFunctionErrorStatus(authorizationError),
+      code: rejection?.code || null,
+      message: rejection?.message || authorizationError?.message || null
+    });
+    throw buildUploadError(
+      rejection?.code || 'STORAGE_UPLOAD_FAILED',
+      rejection?.message
+    );
   }
 
   if (!authorization?.success) {
