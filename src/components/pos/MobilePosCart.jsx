@@ -35,6 +35,7 @@ export default function MobilePosCart(props) {
                         <EcommercePosConversionPanel
                             order={currentOrder}
                             onCheckout={props.onOpenPayment}
+                            onDraftRemoved={props.onClose}
                         />
                     )}
                 </div>
