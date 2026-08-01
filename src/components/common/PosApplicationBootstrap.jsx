@@ -3,6 +3,11 @@ import DatabaseRecoveryGate from './DatabaseRecoveryGate';
 import Logger from '../../services/Logger';
 import { cleanupDevelopmentServiceWorkers as defaultCleanupDevelopmentServiceWorkers } from '../../services/devServiceWorkerCleanup';
 import {
+  completeAdminStartupRecovery,
+  isRecoverableAdminStartupError,
+  recoverAdminStartup
+} from '../../pwa/adminStartupRecovery';
+import {
   DATABASE_RECOVERY_STATUS,
   getDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
@@ -153,22 +158,30 @@ export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) 
   });
 };
 
-const ReadyRuntimeLoading = ({ error }) => (
+const ReadyRuntimeLoading = ({ error, isRecovering, onRetry }) => (
   <main className="app-boot-recovery" role={error ? 'alert' : 'status'} aria-live="polite">
     <section className="app-boot-recovery__card">
-      <h1>{error ? 'No se pudo cargar Lanzo POS' : 'Preparando Lanzo POS...'}</h1>
+      <h1>
+        {isRecovering
+          ? 'Actualizando Lanzo POS...'
+          : error
+            ? 'No se pudo cargar Lanzo POS'
+            : 'Preparando Lanzo POS...'}
+      </h1>
       <p>
-        {error
-          ? 'La base local está lista, pero el shell administrativo no pudo cargarse. Recarga para intentarlo nuevamente.'
-          : 'La base local está lista. Estamos cargando el entorno administrativo.'}
+        {isRecovering
+          ? 'Estamos reemplazando los archivos anteriores por la versión más reciente.'
+          : error
+            ? 'La base local está lista, pero los archivos administrativos no pudieron cargarse. Actualiza para recuperar el sistema.'
+            : 'La base local está lista. Estamos cargando el entorno administrativo.'}
       </p>
-      {error && (
+      {error && !isRecovering && (
         <button
           type="button"
           className="ui-button ui-button--primary"
-          onClick={() => window.location.reload()}
+          onClick={onRetry}
         >
-          Recargar
+          Actualizar Lanzo POS
         </button>
       )}
     </section>
@@ -178,11 +191,14 @@ const ReadyRuntimeLoading = ({ error }) => (
 export default function PosApplicationBootstrap({
   databaseRuntime,
   cleanupDevelopmentServiceWorkers = defaultCleanupDevelopmentServiceWorkers,
-  loadReadyRuntime = loadPosReadyRuntime
+  loadReadyRuntime = loadPosReadyRuntime,
+  recoverStartup = recoverAdminStartup,
+  completeStartupRecovery = completeAdminStartupRecovery
 }) {
   const recovery = useDatabaseRecoveryState();
   const [ReadyApplication, setReadyApplication] = useState(null);
   const [readyRuntimeError, setReadyRuntimeError] = useState(null);
+  const [isRecoveringRuntime, setIsRecoveringRuntime] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -209,25 +225,68 @@ export default function PosApplicationBootstrap({
     activatePosReadyRuntime(loadReadyRuntime)
       .then((runtime) => {
         if (!active) return;
+        completeStartupRecovery();
         setReadyApplication(() => runtime.ReadyApplication);
         setReadyRuntimeError(null);
+        setIsRecoveringRuntime(false);
       })
-      .catch((error) => {
+      .catch(async (error) => {
         if (!active) return;
         Logger.error('[Boot] No se pudo cargar el runtime administrativo después de READY.', error);
         setReadyRuntimeError(error);
+
+        if (!isRecoverableAdminStartupError(error)) return;
+
+        setIsRecoveringRuntime(true);
+        try {
+          const result = await recoverStartup({ error });
+          if (!active) return;
+          if (result?.status !== 'reloading') setIsRecoveringRuntime(false);
+        } catch (recoveryError) {
+          if (!active) return;
+          Logger.error('[Boot] Falló la recuperación del runtime administrativo.', recoveryError);
+          setIsRecoveringRuntime(false);
+        }
       });
 
     return () => {
       active = false;
     };
-  }, [ReadyApplication, loadReadyRuntime, recovery.status]);
+  }, [
+    ReadyApplication,
+    completeStartupRecovery,
+    loadReadyRuntime,
+    recoverStartup,
+    recovery.status
+  ]);
+
+  const retryReadyRuntimeRecovery = async () => {
+    if (!readyRuntimeError || isRecoveringRuntime) return;
+
+    setIsRecoveringRuntime(true);
+    try {
+      const result = await recoverStartup({
+        error: readyRuntimeError,
+        force: true
+      });
+      if (result?.status !== 'reloading') setIsRecoveringRuntime(false);
+    } catch (recoveryError) {
+      Logger.error('[Boot] No se pudo forzar la recuperación del runtime administrativo.', recoveryError);
+      setIsRecoveringRuntime(false);
+    }
+  };
 
   return (
     <DatabaseRecoveryGate>
       {ReadyApplication
         ? <ReadyApplication />
-        : <ReadyRuntimeLoading error={readyRuntimeError} />}
+        : (
+          <ReadyRuntimeLoading
+            error={readyRuntimeError}
+            isRecovering={isRecoveringRuntime}
+            onRetry={retryReadyRuntimeRecovery}
+          />
+        )}
     </DatabaseRecoveryGate>
   );
 }
