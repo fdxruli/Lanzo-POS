@@ -11,8 +11,12 @@ let activationPromise = null;
 let resolveActivation = null;
 let rejectActivation = null;
 let activationTimeout = null;
+let activationWorker = null;
+let controllerAtActivationStart = null;
 let skipWaitingSent = false;
-let controllerChangeHandled = false;
+let currentController = null;
+let activatedUpdateObserved = false;
+let reloadRequested = false;
 let navigatorRef = null;
 let windowRef = null;
 
@@ -36,8 +40,50 @@ export function subscribeAdminServiceWorker(listener) {
   return () => listeners.delete(listener);
 }
 
+function clearActivationTimer() {
+  if (!activationTimeout || !windowRef) return;
+  windowRef.clearTimeout(activationTimeout);
+  activationTimeout = null;
+}
+
+function resolveCurrentActivation() {
+  const resolve = resolveActivation;
+  clearActivationTimer();
+  activationPromise = null;
+  activationWorker = null;
+  controllerAtActivationStart = null;
+  resolveActivation = null;
+  rejectActivation = null;
+  resolve?.(true);
+}
+
+function rejectCurrentActivation(error) {
+  const reject = rejectActivation;
+  clearActivationTimer();
+  activationPromise = null;
+  activationWorker = null;
+  controllerAtActivationStart = null;
+  resolveActivation = null;
+  rejectActivation = null;
+  skipWaitingSent = false;
+  reject?.(error);
+}
+
+function reloadOnce() {
+  if (reloadRequested || !windowRef?.location?.reload) return;
+  reloadRequested = true;
+  windowRef.location.reload();
+}
+
+function workerHasActivated(worker) {
+  return worker?.state === 'activated'
+    || (Boolean(worker) && registration?.active === worker);
+}
+
 function watchInstallingWorker(worker) {
   if (!worker) return;
+  skipWaitingSent = false;
+  activatedUpdateObserved = false;
   publish({ installing: true });
 
   const handleStateChange = () => {
@@ -50,9 +96,11 @@ function watchInstallingWorker(worker) {
         active: !isUpdate && Boolean(registration.active),
       });
     } else if (worker.state === 'activated') {
-      publish({ installing: false, active: true });
+      if (waitingWorker === worker) waitingWorker = null;
+      publish({ installing: false, waiting: false, active: true, error: false });
     } else if (worker.state === 'redundant') {
-      publish({ installing: false });
+      if (waitingWorker === worker) waitingWorker = null;
+      publish({ installing: false, waiting: Boolean(registration?.waiting) });
     }
   };
 
@@ -60,17 +108,23 @@ function watchInstallingWorker(worker) {
 }
 
 function handleControllerChange() {
-  if (!skipWaitingSent || controllerChangeHandled) return;
-  controllerChangeHandled = true;
+  const previousController = currentController;
+  currentController = navigatorRef?.serviceWorker?.controller || null;
+  const isUpdate = Boolean(previousController) || skipWaitingSent || Boolean(waitingWorker);
+
   waitingWorker = null;
-  publish({ waiting: false, active: true });
+  publish({
+    installing: false,
+    waiting: false,
+    active: Boolean(currentController || registration?.active),
+    error: false,
+  });
 
-  if (activationTimeout) windowRef.clearTimeout(activationTimeout);
-  resolveActivation?.(true);
-  resolveActivation = null;
-  rejectActivation = null;
+  if (!isUpdate) return;
 
-  windowRef.location.reload();
+  activatedUpdateObserved = true;
+  resolveCurrentActivation();
+  reloadOnce();
 }
 
 export function startAdminServiceWorker({
@@ -80,6 +134,7 @@ export function startAdminServiceWorker({
   if (startPromise) return startPromise;
   navigatorRef = navigatorTarget;
   windowRef = windowTarget;
+  currentController = navigatorRef.serviceWorker?.controller || null;
 
   if (!navigatorRef.serviceWorker?.register) {
     publish({ error: true });
@@ -98,7 +153,7 @@ export function startAdminServiceWorker({
     publish({
       registered: true,
       waiting: Boolean(waitingWorker),
-      active: Boolean(registration.active),
+      active: Boolean(registration.active || currentController),
       error: false,
     });
 
@@ -121,24 +176,64 @@ export function startAdminServiceWorker({
 
 export function activateAdminServiceWorkerUpdate() {
   if (activationPromise) return activationPromise;
-  waitingWorker = registration?.waiting || waitingWorker;
 
-  if (!waitingWorker) return Promise.reject(new Error('No hay un Service Worker en espera.'));
+  const registeredWaitingWorker = registration?.waiting || null;
+  if (registeredWaitingWorker) waitingWorker = registeredWaitingWorker;
 
+  const candidateWorker = waitingWorker;
+  const controllerNow = navigatorRef?.serviceWorker?.controller || null;
+  const activationAlreadyCompleted = activatedUpdateObserved
+    || workerHasActivated(candidateWorker)
+    || (
+      Boolean(currentController)
+      && Boolean(controllerNow)
+      && currentController !== controllerNow
+    );
+
+  if (!candidateWorker || candidateWorker.state === 'activated') {
+    if (activationAlreadyCompleted) {
+      waitingWorker = null;
+      publish({ waiting: false, active: true, error: false });
+      reloadOnce();
+      return Promise.resolve(true);
+    }
+    return Promise.reject(new Error('No hay un Service Worker en espera.'));
+  }
+
+  activationWorker = candidateWorker;
+  controllerAtActivationStart = controllerNow;
   activationPromise = new Promise((resolve, reject) => {
     resolveActivation = resolve;
     rejectActivation = reject;
     activationTimeout = windowRef.setTimeout(() => {
-      rejectActivation?.(new Error('La activación del Service Worker agotó el tiempo de espera.'));
-      resolveActivation = null;
-      rejectActivation = null;
-      activationPromise = null;
+      const controllerAfterTimeout = navigatorRef?.serviceWorker?.controller || null;
+      const activationCompleted = workerHasActivated(activationWorker)
+        || (
+          Boolean(controllerAtActivationStart)
+          && Boolean(controllerAfterTimeout)
+          && controllerAtActivationStart !== controllerAfterTimeout
+        );
+
+      if (activationCompleted) {
+        activatedUpdateObserved = true;
+        waitingWorker = null;
+        publish({ waiting: false, active: true, error: false });
+        resolveCurrentActivation();
+        reloadOnce();
+        return;
+      }
+
+      rejectCurrentActivation(new Error('La activación del Service Worker agotó el tiempo de espera.'));
     }, ACTIVATION_TIMEOUT_MS);
   });
 
   if (!skipWaitingSent) {
-    skipWaitingSent = true;
-    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    try {
+      skipWaitingSent = true;
+      candidateWorker.postMessage({ type: 'SKIP_WAITING' });
+    } catch (error) {
+      rejectCurrentActivation(error);
+    }
   }
 
   return activationPromise;
@@ -146,7 +241,7 @@ export function activateAdminServiceWorkerUpdate() {
 
 export function resetAdminServiceWorkerForTests() {
   if (updateInterval && windowRef) windowRef.clearInterval(updateInterval);
-  if (activationTimeout && windowRef) windowRef.clearTimeout(activationTimeout);
+  clearActivationTimer();
   navigatorRef?.serviceWorker?.removeEventListener?.('controllerchange', handleControllerChange);
   listeners.clear();
   registration = null;
@@ -157,8 +252,12 @@ export function resetAdminServiceWorkerForTests() {
   resolveActivation = null;
   rejectActivation = null;
   activationTimeout = null;
+  activationWorker = null;
+  controllerAtActivationStart = null;
   skipWaitingSent = false;
-  controllerChangeHandled = false;
+  currentController = null;
+  activatedUpdateObserved = false;
+  reloadRequested = false;
   navigatorRef = null;
   windowRef = null;
   state = { registered: false, installing: false, waiting: false, active: false, error: false };
