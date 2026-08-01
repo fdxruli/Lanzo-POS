@@ -4,6 +4,14 @@ import './ProductCloudSyncIndicators.css';
 const asText = (value) => String(value ?? '').trim();
 const isHttpUrl = (value) => /^https?:\/\//i.test(asText(value));
 const isLocalImageRef = (value) => asText(value).startsWith('img-');
+const isSupabaseStorageImage = (value, metadata = {}) => {
+  const url = asText(value);
+  const storage = metadata?.product_image_storage || {};
+  return (
+    /\/storage\/v1\/object\/public\/images\//i.test(url)
+    || (storage.bucket === 'images' && asText(storage.path).startsWith('public_uploads/'))
+  );
+};
 
 export const resolveProductImageCloudSyncBadge = (product = {}) => {
   const metadata = product?.metadata || {};
@@ -19,11 +27,19 @@ export const resolveProductImageCloudSyncBadge = (product = {}) => {
     };
   }
 
-  if (imageUrl) {
+  if (imageUrl && isSupabaseStorageImage(imageUrl, metadata)) {
     return {
       status: 'synced',
-      label: 'Imagen: Pública',
-      title: 'La URL pública de la imagen está guardada en Supabase.'
+      label: 'Imagen: Supabase',
+      title: 'La imagen está almacenada en el bucket público de Supabase.'
+    };
+  }
+
+  if (imageUrl) {
+    return {
+      status: 'external',
+      label: 'Imagen: Externa',
+      title: 'El producto usa una imagen pública externa; todavía no está almacenada en Supabase.'
     };
   }
 
@@ -31,7 +47,7 @@ export const resolveProductImageCloudSyncBadge = (product = {}) => {
     return {
       status: 'pending',
       label: 'Imagen: Pendiente',
-      title: 'La imagen existe en este dispositivo, pero todavía no tiene una URL pública en Supabase.'
+      title: 'La imagen existe en este dispositivo, pero todavía no está almacenada en Supabase.'
     };
   }
 
