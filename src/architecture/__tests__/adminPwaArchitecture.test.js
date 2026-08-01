@@ -3,6 +3,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { extractReferencedStartupAssets } from '../../../scripts/admin-startup-precache-audit.mjs';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
@@ -107,15 +108,22 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(html).not.toMatch(/rel=["']manifest|beforeinstallprompt|appinstalled|serviceWorker/i);
   });
 
-  it('keeps scope / without unconditional activation or clientsClaim', async () => {
-    const [registration, worker] = await Promise.all([
+  it('keeps prompt activation while limiting forced takeover to one completed bridge', async () => {
+    const [registration, worker, bridge] = await Promise.all([
       readProjectFile('src/pwa/adminServiceWorker.js'),
       readProjectFile('src/pwa/sw.js'),
+      readProjectFile('src/pwa/adminUpgradeBridge.js'),
     ]);
 
     expect(registration).toMatch(/scope:\s*['"]\/['"]/);
-    expect(worker).not.toMatch(/clientsClaim\s*\(/);
     expect(worker).toMatch(/event\.data\?\.type !== 'SKIP_WAITING'[\s\S]*self\.skipWaiting\(\)/);
+    expect(worker).toContain('requestAdminUpgradeBridgeInstall');
+    expect(worker).toContain('activateAdminUpgradeBridge');
+    expect(bridge).toContain("lanzo-admin-upgrade-bridge-v1");
+    expect(bridge).toMatch(/registration\?\.active/);
+    expect(bridge).toContain("reason: 'already-completed'");
+    expect(bridge).toContain('await clients.claim()');
+    expect(bridge).toContain('PUBLIC_NAVIGATION_DENYLIST');
   });
 
   it('uses anchored public, api, and auth exclusions plus explicit NetworkOnly', async () => {
@@ -141,7 +149,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
-  it('precache includes the minimum shell and excludes lazy pages, workers, and charts', async () => {
+  it('precache includes the minimum shell and every second-stage recovery dependency', async () => {
     const inventory = await precacheInventory();
     const joined = inventory.uniqueUrls.join('\n');
 
@@ -151,8 +159,28 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(joined).toMatch(/assets\/App-.*\.js/);
     expect(joined).toMatch(/assets\/databaseRuntime-.*\.js/);
     expect(joined).toMatch(/assets\/PosApplicationBootstrap-.*\.js/);
+    expect(joined).toMatch(/assets\/useMessageStore-.*\.js/);
+    expect(joined).toMatch(/assets\/useProductStore-.*\.js/);
+    expect(joined).toMatch(/assets\/productStoreRecoveryGuard-.*\.js/);
+    expect(joined).toMatch(/assets\/DevConsole-.*\.js/);
+    expect(joined).toMatch(/assets\/DevConsole-.*\.css/);
     expect(joined).not.toMatch(/PosPage|CajaPage|OrderPage|EcommerceOrdersPage|ProductsPage|CustomersPage|DashboardPage|SettingsPage|AboutPage/);
     expect(joined).not.toMatch(/\.worker-|vendor_charts|AssistantBot|ScannerModal/);
+  });
+
+  it('precache contains every generated JavaScript and CSS dependency of the startup bootstrap', async () => {
+    const assetNames = await readdir(path.join(projectRoot, 'dist', 'assets'));
+    const bootstrapAssets = assetNames.filter((filename) => /^PosApplicationBootstrap-[^.]+\.js$/.test(filename));
+    expect(bootstrapAssets).toHaveLength(1);
+
+    const bootstrapSource = await readProjectFile(`dist/assets/${bootstrapAssets[0]}`);
+    const referencedAssets = extractReferencedStartupAssets(bootstrapSource);
+    const inventory = await precacheInventory();
+    const precached = new Set(inventory.uniqueUrls);
+    const missing = referencedAssets.filter((asset) => !precached.has(asset));
+
+    expect(referencedAssets.length).toBeGreaterThan(0);
+    expect(missing).toEqual([]);
   });
 
   it('defines bounded versioned runtime caches and status-200-only writes', async () => {
