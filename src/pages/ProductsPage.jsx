@@ -112,7 +112,7 @@ export default function ProductsPage() {
             const summary = await migrateLegacyProductImages({
                 licenseKey,
                 cloudEnabled: cloudProductImagesEnabled,
-                limit: 100,
+                limit: 25,
                 saveProduct: (payload, existingProduct) => productRepository.saveProduct(
                     payload,
                     { existingProduct }
@@ -121,7 +121,7 @@ export default function ProductsPage() {
 
             if (cancelled) return;
 
-            if (summary.failed === 0 && typeof sessionStorage !== 'undefined') {
+            if (summary.failed === 0 && !summary.hasMore && typeof sessionStorage !== 'undefined') {
                 sessionStorage.setItem(sessionKey, 'completed');
             }
 
@@ -129,7 +129,7 @@ export default function ProductsPage() {
                 await refreshData();
             }
 
-            if (summary.migrated > 0 || summary.missingLocalBlob > 0 || summary.failed > 0) {
+            if (summary.migrated > 0 || summary.missingLocalBlob > 0 || summary.failed > 0 || summary.hasMore) {
                 const messages = [];
                 if (summary.migrated > 0) {
                     messages.push(`Se publicaron automáticamente ${summary.migrated} imagen(es) antiguas en la tienda en línea.`);
@@ -142,6 +142,9 @@ export default function ProductsPage() {
                 }
                 if (summary.failed > 0) {
                     messages.push(`${summary.failed} imagen(es) no pudieron migrarse y se reintentarán en una próxima sesión.`);
+                }
+                if (summary.hasMore) {
+                    messages.push('Quedan más imágenes antiguas pendientes; se continuará automáticamente en una próxima sesión para respetar los límites de seguridad de Storage.');
                 }
 
                 showMessageModal(messages.join('\n\n'), null, {
