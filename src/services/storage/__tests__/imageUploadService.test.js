@@ -32,7 +32,8 @@ vi.mock('../../Logger', () => ({
 
 import {
   IMAGE_UPLOAD_PURPOSES,
-  uploadImageFile
+  uploadImageFile,
+  uploadProductImage
 } from '../imageUploadService';
 
 class TestFile extends Blob {
@@ -42,6 +43,27 @@ class TestFile extends Blob {
     this.lastModified = options.lastModified || 0;
   }
 }
+
+const authorizeUpload = ({
+  purpose = 'business-cover',
+  filename = 'id.webp',
+  maxSizeBytes = 5 * 1024 * 1024
+} = {}) => {
+  const path = `public_uploads/hash/${purpose}/${filename}`;
+  mocks.invoke.mockResolvedValue({
+    data: {
+      success: true,
+      bucket: 'images',
+      path,
+      public_url_path: path,
+      token: 'signed-token',
+      mime_type: filename.endsWith('.webp') ? 'image/webp' : 'image/png',
+      max_size_bytes: maxSizeBytes
+    },
+    error: null
+  });
+  return path;
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,7 +78,7 @@ beforeEach(() => {
   });
   mocks.uploadToSignedUrl.mockResolvedValue({ error: null });
   mocks.getPublicUrl.mockReturnValue({
-    data: { publicUrl: 'https://storage.test/public_uploads/branding.webp' }
+    data: { publicUrl: 'https://storage.test/public_uploads/image.webp' }
   });
 });
 
@@ -64,7 +86,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('imageUploadService branding normalization', () => {
+describe('imageUploadService image normalization', () => {
   it('autoriza y sube el WebP optimizado en lugar del PNG original', async () => {
     const original = new TestFile(['original-png'], 'portada.png', {
       type: 'image/png',
@@ -75,17 +97,9 @@ describe('imageUploadService branding normalization', () => {
       lastModified: 100
     });
     const imageOptimizer = vi.fn(async () => optimized);
-    mocks.invoke.mockResolvedValue({
-      data: {
-        success: true,
-        bucket: 'images',
-        path: 'public_uploads/hash/business-cover/id.webp',
-        public_url_path: 'public_uploads/hash/business-cover/id.webp',
-        token: 'signed-token',
-        mime_type: 'image/webp',
-        max_size_bytes: 5 * 1024 * 1024
-      },
-      error: null
+    const path = authorizeUpload({
+      purpose: 'business-cover',
+      filename: 'id.webp'
     });
 
     const result = await uploadImageFile({
@@ -108,7 +122,7 @@ describe('imageUploadService branding normalization', () => {
       })
     });
     expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
-      'public_uploads/hash/business-cover/id.webp',
+      path,
       'signed-token',
       optimized,
       {
@@ -120,8 +134,103 @@ describe('imageUploadService branding normalization', () => {
     expect(result).toEqual(expect.objectContaining({
       mimeType: 'image/webp',
       purpose: 'business-cover',
-      optimized: true
+      optimized: true,
+      originalSizeBytes: original.size,
+      uploadedSizeBytes: optimized.size
     }));
+  });
+
+  it('acepta una foto original mayor a 4 MB cuando el WebP final cumple el límite', async () => {
+    const original = new TestFile(
+      [new Uint8Array(5 * 1024 * 1024)],
+      'electrolit-fresa.jpg',
+      { type: 'image/jpeg', lastModified: 200 }
+    );
+    const optimized = new TestFile(
+      [new Uint8Array(320 * 1024)],
+      'electrolit-fresa.webp',
+      { type: 'image/webp', lastModified: 200 }
+    );
+    const imageOptimizer = vi.fn(async () => optimized);
+    const path = authorizeUpload({
+      purpose: 'product-image',
+      filename: 'product.webp',
+      maxSizeBytes: 4 * 1024 * 1024
+    });
+
+    const result = await uploadImageFile({
+      file: original,
+      licenseKey: 'license-fixture',
+      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
+      imageOptimizer
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith('authorize-image-upload', {
+      body: expect.objectContaining({
+        purpose: 'product-image',
+        filename: 'electrolit-fresa.webp',
+        mime_type: 'image/webp',
+        size_bytes: optimized.size
+      })
+    });
+    expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
+      path,
+      'signed-token',
+      optimized,
+      expect.objectContaining({ contentType: 'image/webp' })
+    );
+    expect(result).toEqual(expect.objectContaining({
+      publicUrl: 'https://storage.test/public_uploads/image.webp',
+      purpose: 'product-image',
+      optimized: true,
+      originalSizeBytes: original.size,
+      uploadedSizeBytes: optimized.size
+    }));
+  });
+
+  it('rechaza el producto si después de optimizar todavía supera 4 MB', async () => {
+    const original = new TestFile(
+      [new Uint8Array(5 * 1024 * 1024)],
+      'producto.jpg',
+      { type: 'image/jpeg' }
+    );
+    const stillTooLarge = new TestFile(
+      [new Uint8Array(4 * 1024 * 1024 + 1)],
+      'producto.webp',
+      { type: 'image/webp' }
+    );
+
+    await expect(uploadImageFile({
+      file: original,
+      licenseKey: 'license-fixture',
+      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
+      imageOptimizer: vi.fn(async () => stillTooLarge)
+    })).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' });
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('usa product-image al invocar el helper específico de productos', async () => {
+    const webp = new TestFile(['small-webp'], 'producto.webp', {
+      type: 'image/webp'
+    });
+    authorizeUpload({
+      purpose: 'product-image',
+      filename: 'product.webp',
+      maxSizeBytes: 4 * 1024 * 1024
+    });
+
+    const result = await uploadProductImage(webp, 'license-fixture');
+
+    expect(mocks.invoke).toHaveBeenCalledWith('authorize-image-upload', {
+      body: expect.objectContaining({
+        purpose: 'product-image',
+        filename: 'producto.webp',
+        mime_type: 'image/webp'
+      })
+    });
+    expect(result.purpose).toBe('product-image');
   });
 
   it('conserva el archivo original cuando la optimización no está disponible', async () => {
@@ -131,17 +240,9 @@ describe('imageUploadService branding normalization', () => {
     const imageOptimizer = vi.fn(async () => {
       throw new Error('canvas unavailable');
     });
-    mocks.invoke.mockResolvedValue({
-      data: {
-        success: true,
-        bucket: 'images',
-        path: 'public_uploads/hash/business-cover/id.png',
-        public_url_path: 'public_uploads/hash/business-cover/id.png',
-        token: 'signed-token',
-        mime_type: 'image/png',
-        max_size_bytes: 5 * 1024 * 1024
-      },
-      error: null
+    const path = authorizeUpload({
+      purpose: 'business-cover',
+      filename: 'id.png'
     });
 
     const result = await uploadImageFile({
@@ -158,14 +259,29 @@ describe('imageUploadService branding normalization', () => {
       })
     });
     expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
-      'public_uploads/hash/business-cover/id.png',
+      path,
       'signed-token',
       original,
       expect.objectContaining({ contentType: 'image/png' })
     );
     expect(result.optimized).toBe(false);
     expect(mocks.warn).toHaveBeenCalledWith(
-      '[Storage] No se pudo optimizar la imagen de marca; se usará el archivo original.'
+      '[Storage] No se pudo optimizar la imagen; se usará el archivo original.'
     );
+  });
+
+  it('falla si Storage no devuelve una URL pública', async () => {
+    const source = new TestFile(['source'], 'producto.webp', {
+      type: 'image/webp'
+    });
+    authorizeUpload({
+      purpose: 'product-image',
+      filename: 'product.webp',
+      maxSizeBytes: 4 * 1024 * 1024
+    });
+    mocks.getPublicUrl.mockReturnValue({ data: { publicUrl: null } });
+
+    await expect(uploadProductImage(source, 'license-fixture'))
+      .rejects.toMatchObject({ code: 'STORAGE_UPLOAD_FAILED' });
   });
 });
