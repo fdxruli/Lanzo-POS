@@ -1,0 +1,29 @@
+/*
+ * Product photos can be portrait, landscape or square. Keep the media box
+ * predictable so the source aspect ratio never changes the card height.
+ */
+.ecommerce-site-surface .public-product-card__image.public-safe-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  object-position: center;
+  background: var(--ui-bg-muted);
+}
+
+.ecommerce-site-surface .ecommerce-site-renderer .public-catalog.public-catalog--view-grid .public-product-card__image.public-safe-image {
+  height: auto;
+  min-height: 7.5rem;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  padding: 0.35rem;
+}
+
+.ecommerce-site-surface .ecommerce-site-renderer .public-catalog.public-catalog--view-list .public-product-card__image.public-safe-image {
+  align-self: center;
+  height: 7.5rem;
+  min-height: 7.5rem;
+  max-height: 7.5rem;
+  aspect-ratio: auto;
+  object-fit: contain;
+  padding: 0.35rem;
+}
