@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { CheckCircle2, CreditCard, LoaderCircle, RefreshCw, ReceiptText, ShieldAlert } from 'lucide-react';
+import {
+  CheckCircle2,
+  CreditCard,
+  LoaderCircle,
+  RefreshCw,
+  ReceiptText,
+  ShieldAlert,
+  XCircle
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getEcommerceCheckoutInitiation } from '../../hooks/pos/ecommerceCheckoutInitiationSingleFlight';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
@@ -14,6 +22,7 @@ import {
   recoverEcommercePosConversion,
   retryEcommerceConversionConfirmation
 } from '../../services/ecommerce/ecommercePosConversionService';
+import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { useAppStore } from '../../store/useAppStore';
 
 const BUSY_STATUSES = new Set([
@@ -65,8 +74,54 @@ const getOperationalStatusCopy = (order = {}) => (
   OPERATIONAL_STATUS_COPY[order.ecommerceOperationalStatus] || 'Pedido aceptado'
 );
 
+const hasVerifiedRemoteState = (order = {}) => Boolean(order.ecommerceRemoteStateVerifiedAt);
+
+const hasLostRemoteClaim = (order = {}) => {
+  if (!hasVerifiedRemoteState(order)) return false;
+  if (['none', 'released'].includes(order.ecommerceRemoteDraftStatus)) return true;
+  return order.ecommerceRemoteClaimOwned === false || order.ecommerceRemoteClaimValid === false;
+};
+
+const getDraftExitState = ({
+  order = {},
+  isBusy = false,
+  isCheckingRemote = false,
+  isConfirmationPending = false
+} = {}) => {
+  const claimLost = hasLostRemoteClaim(order);
+  const hasCreatedSale = Boolean(
+    order.ecommerceRemoteConvertedSaleId
+    || order.ecommerceConvertedSaleId
+    || order.ecommerceConversionStatus === ECOMMERCE_CONVERSION_STATUS.COMPLETED
+  );
+  const checkoutOwned = hasLiveCheckoutOwnership(order, order.id);
+  const actionBlocked = Boolean(
+    isBusy
+    || isCheckingRemote
+    || isConfirmationPending
+    || hasCreatedSale
+    || checkoutOwned
+  );
+
+  return {
+    claimLost,
+    canRemoveLocal: claimLost && !actionBlocked,
+    canRelease: Boolean(
+      !claimLost
+      && !actionBlocked
+      && order.ecommerceDraftStatus === 'prepared'
+      && order.ecommerceRemoteClaimOwned === true
+      && order.ecommerceRemoteClaimValid === true
+      && order.ecommerceRemoteConversionStatus === 'idle'
+    )
+  };
+};
+
 const getBlockedMessage = (order = {}, isCheckingRemote = false) => {
   if (isCheckingRemote) return 'Comprobando contrato remoto y propiedad del pedido…';
+  if (hasLostRemoteClaim(order)) {
+    return 'Este pedido fue liberado desde otro dispositivo. Retira la copia local para continuar usando el Punto de Venta.';
+  }
   if (order.ecommerceInventoryStatus !== 'ready') {
     return order.ecommerceInventoryError?.message || 'Resuelve el inventario antes de cobrar.';
   }
@@ -89,11 +144,12 @@ const getBlockedMessage = (order = {}, isCheckingRemote = false) => {
   return order.ecommerceCheckoutGateMessage || order.ecommerceConversionError?.message || null;
 };
 
-export default function EcommercePosConversionPanel({ order, onCheckout }) {
+export default function EcommercePosConversionPanel({ order, onCheckout, onDraftRemoved }) {
   const navigate = useNavigate();
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const [isCheckingRemote, setIsCheckingRemote] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [draftAction, setDraftAction] = useState(null);
   const checkSequenceRef = useRef(0);
   const orderId = order?.id || null;
 
@@ -131,6 +187,8 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     if (result.success === false) {
       useActiveOrders.getState().updateOrder(orderId, {
         ecommerceRemoteContractVersion: result.remoteContractVersion || 0,
+        ecommerceRemoteDraftStatus: null,
+        ecommerceRemoteStateVerifiedAt: null,
         ecommerceRemoteClaimOwned: false,
         ecommerceRemoteClaimValid: false,
         ecommerceRemoteConversionStatus: 'unknown',
@@ -145,6 +203,9 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
 
     useActiveOrders.getState().updateOrder(orderId, {
       ecommerceRemoteContractVersion: result.remoteContractVersion || 0,
+      ecommerceRemoteOrderStatus: result.orderStatus || null,
+      ecommerceRemoteDraftStatus: result.draftStatus || null,
+      ecommerceRemoteStateVerifiedAt: new Date().toISOString(),
       ecommerceRemoteClaimOwned: result.claimOwned === true,
       ecommerceRemoteClaimValid: result.claimValid === true,
       ecommerceRemoteConversionStatus: result.conversionStatus || 'idle',
@@ -203,6 +264,25 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     };
   }, [orderId, order?.origin, order?.ecommerceInventoryResolvedAt, order?.ecommerceInventoryStatus, verifyRemoteState]);
 
+  useEffect(() => {
+    if (!orderId || order?.origin !== 'ecommerce') return undefined;
+
+    const revalidateOnResume = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const liveOrder = useActiveOrders.getState().activeOrders.get(orderId);
+      if (!liveOrder || liveOrder.origin !== 'ecommerce') return;
+      if (hasLiveCheckoutOwnership(liveOrder, orderId)) return;
+      void verifyRemoteState();
+    };
+
+    window.addEventListener('focus', revalidateOnResume);
+    document.addEventListener('visibilitychange', revalidateOnResume);
+    return () => {
+      window.removeEventListener('focus', revalidateOnResume);
+      document.removeEventListener('visibilitychange', revalidateOnResume);
+    };
+  }, [orderId, order?.origin, verifyRemoteState]);
+
   const checkoutEnabled = useMemo(() => (
     order?.ecommerceDraftStatus === 'prepared'
     && order?.ecommerceInventoryStatus === 'ready'
@@ -217,6 +297,12 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     && !isCheckingRemote
   ), [isBusy, isCheckingRemote, isConfirmationPending, order]);
 
+  const draftExitState = useMemo(() => getDraftExitState({
+    order,
+    isBusy,
+    isCheckingRemote,
+    isConfirmationPending
+  }), [isBusy, isCheckingRemote, isConfirmationPending, order]);
   const blockedMessage = getBlockedMessage(order, isCheckingRemote);
 
   const handleRetryConfirmation = async () => {
@@ -229,6 +315,89 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
     }
   };
 
+  const handleReleaseDraft = async () => {
+    if (!draftExitState.canRelease || draftAction || !orderId) return;
+    const confirmed = await showConfirmModal(
+      'El pedido seguirá aceptado en la bandeja y podrá prepararse nuevamente. No se registrará ninguna venta.',
+      {
+        title: 'Liberar pedido del Punto de Venta',
+        type: 'warning',
+        confirmButtonText: 'Liberar del POS',
+        cancelButtonText: 'Volver'
+      }
+    );
+    if (!confirmed) return;
+
+    const liveOrder = useActiveOrders.getState().activeOrders.get(orderId);
+    if (!liveOrder || liveOrder.origin !== 'ecommerce') return;
+    if (hasLiveCheckoutOwnership(liveOrder, orderId)) {
+      showMessageModal('Cierra el cobro activo antes de liberar este pedido.', null, { type: 'warning' });
+      return;
+    }
+
+    setDraftAction('release');
+    try {
+      const result = await useActiveOrders.getState().releaseEcommerceDraft(orderId, 'released_from_pos_panel');
+      if (result?.success === false) {
+        const refreshed = await verifyRemoteState();
+        if (
+          refreshed?.success === true
+          && (
+            ['none', 'released'].includes(refreshed.draftStatus)
+            || refreshed.claimOwned === false
+            || refreshed.claimValid === false
+          )
+        ) {
+          showMessageModal(
+            'El pedido ya fue liberado desde otro dispositivo. Retira la copia local para continuar.',
+            null,
+            { type: 'warning' }
+          );
+          return;
+        }
+        showMessageModal(result.message || 'No se pudo liberar el pedido. Intenta nuevamente.', null, { type: 'error' });
+        return;
+      }
+
+      onDraftRemoved?.();
+      showMessageModal('Pedido liberado del Punto de Venta. Continúa aceptado en la bandeja.', null, { type: 'success' });
+    } finally {
+      setDraftAction(null);
+    }
+  };
+
+  const handleRemoveLocalDraft = async () => {
+    if (!draftExitState.canRemoveLocal || draftAction || !orderId) return;
+    const confirmed = await showConfirmModal(
+      'La reserva ya fue liberada en otro dispositivo. Esta acción solo retirará la copia local y no cambiará el pedido online.',
+      {
+        title: 'Retirar copia local',
+        type: 'warning',
+        confirmButtonText: 'Retirar de este dispositivo',
+        cancelButtonText: 'Volver'
+      }
+    );
+    if (!confirmed) return;
+
+    setDraftAction('remove');
+    try {
+      const result = useActiveOrders.getState().removeEcommerceDraftLocal(orderId);
+      if (result?.success === false) {
+        showMessageModal('No se pudo retirar la copia local del pedido.', null, { type: 'error' });
+        return;
+      }
+
+      onDraftRemoved?.();
+      showMessageModal(
+        'Copia local retirada. El pedido sigue disponible en la bandeja para prepararlo nuevamente.',
+        null,
+        { type: 'success' }
+      );
+    } finally {
+      setDraftAction(null);
+    }
+  };
+
   if (!order || order.origin !== 'ecommerce') return null;
 
   return (
@@ -236,12 +405,16 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
       <details className="ecommerce-conversion-panel__details">
         <summary>
           <span>Estado del cobro</span>
-          <strong>{checkoutEnabled ? 'Listo para cobrar' : 'Revisión necesaria'}</strong>
+          <strong>
+            {draftExitState.claimLost
+              ? 'Liberado en otro dispositivo'
+              : (checkoutEnabled ? 'Listo para cobrar' : 'Revisión necesaria')}
+          </strong>
         </summary>
         <div className="ecommerce-conversion-panel__status-grid">
           <div>
             <span className="ecommerce-conversion-panel__label">Pedido</span>
-            <strong>Preparado</strong>
+            <strong>{draftExitState.claimLost ? 'Copia local' : 'Preparado'}</strong>
           </div>
           <div>
             <span className="ecommerce-conversion-panel__label">Inventario</span>
@@ -258,14 +431,45 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
         </div>
       </details>
 
-      {blockedMessage && !isConfirmationPending && (
+      {blockedMessage && !isConfirmationPending && !draftExitState.claimLost && (
         <p className="ecommerce-conversion-panel__message" role="status">
           <ShieldAlert size={17} aria-hidden="true" />
           <span>{blockedMessage}</span>
         </p>
       )}
 
-      {isConfirmationPending ? (
+      {draftExitState.claimLost ? (
+        <div className="ecommerce-conversion-panel__stale" role="alert">
+          <p>
+            <ShieldAlert size={18} aria-hidden="true" />
+            <span>
+              Este pedido fue liberado desde otro dispositivo. La copia que ves ya no puede cobrarse ni liberar la reserva remota.
+            </span>
+          </p>
+          <div className="ecommerce-conversion-panel__actions">
+            <button
+              type="button"
+              className="ecommerce-conversion-panel__button ecommerce-conversion-panel__button--danger"
+              onClick={handleRemoveLocalDraft}
+              disabled={!draftExitState.canRemoveLocal || Boolean(draftAction)}
+            >
+              {draftAction === 'remove'
+                ? <LoaderCircle className="ecommerce-conversion-panel__spinner" size={18} aria-hidden="true" />
+                : <XCircle size={18} aria-hidden="true" />}
+              <span>{draftAction === 'remove' ? 'Retirando…' : 'Retirar de este dispositivo'}</span>
+            </button>
+            <button
+              type="button"
+              className="ecommerce-conversion-panel__button"
+              onClick={() => navigate(`/pedidos-online?order=${order.ecommerceOrderId}`)}
+              disabled={Boolean(draftAction)}
+            >
+              <RefreshCw size={18} aria-hidden="true" />
+              <span>Ver pedido en bandeja</span>
+            </button>
+          </div>
+        </div>
+      ) : isConfirmationPending ? (
         <div className="ecommerce-conversion-panel__pending" role="status">
           <p>
             <ReceiptText size={18} aria-hidden="true" />
@@ -314,21 +518,36 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
           )}
         </div>
       ) : (
-        <button
-          type="button"
-          className="ecommerce-conversion-panel__checkout"
-          onClick={onCheckout}
-          disabled={!checkoutEnabled}
-        >
-          {isBusy || isCheckingRemote
-            ? <LoaderCircle className="ecommerce-conversion-panel__spinner" size={20} aria-hidden="true" />
-            : <CreditCard size={20} aria-hidden="true" />}
-          <span>
-            {isStarting
-              ? 'Iniciando cobro…'
-              : (isBusy || isCheckingRemote ? STATUS_COPY[conversionStatus] || 'Comprobando…' : 'Cobrar pedido')}
-          </span>
-        </button>
+        <div className="ecommerce-conversion-panel__actions ecommerce-conversion-panel__actions--checkout">
+          <button
+            type="button"
+            className="ecommerce-conversion-panel__checkout"
+            onClick={onCheckout}
+            disabled={!checkoutEnabled}
+          >
+            {isBusy || isCheckingRemote
+              ? <LoaderCircle className="ecommerce-conversion-panel__spinner" size={20} aria-hidden="true" />
+              : <CreditCard size={20} aria-hidden="true" />}
+            <span>
+              {isStarting
+                ? 'Iniciando cobro…'
+                : (isBusy || isCheckingRemote ? STATUS_COPY[conversionStatus] || 'Comprobando…' : 'Cobrar pedido')}
+            </span>
+          </button>
+          {draftExitState.canRelease && (
+            <button
+              type="button"
+              className="ecommerce-conversion-panel__button ecommerce-conversion-panel__button--danger"
+              onClick={handleReleaseDraft}
+              disabled={Boolean(draftAction)}
+            >
+              {draftAction === 'release'
+                ? <LoaderCircle className="ecommerce-conversion-panel__spinner" size={18} aria-hidden="true" />
+                : <XCircle size={18} aria-hidden="true" />}
+              <span>{draftAction === 'release' ? 'Liberando…' : 'Liberar del Punto de Venta'}</span>
+            </button>
+          )}
+        </div>
       )}
     </section>
   );
@@ -336,7 +555,8 @@ export default function EcommercePosConversionPanel({ order, onCheckout }) {
 
 EcommercePosConversionPanel.propTypes = {
   order: PropTypes.object,
-  onCheckout: PropTypes.func.isRequired
+  onCheckout: PropTypes.func.isRequired,
+  onDraftRemoved: PropTypes.func
 };
 
 export const ecommercePosConversionPanelInternals = Object.freeze({
@@ -344,5 +564,7 @@ export const ecommercePosConversionPanelInternals = Object.freeze({
   CONFIRMATION_STATUSES,
   STATUS_COPY,
   getInventoryCopy,
-  getBlockedMessage
+  getBlockedMessage,
+  getDraftExitState,
+  hasLostRemoteClaim
 });
