@@ -26,9 +26,11 @@ import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
 import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
+import {
+  prepareAdminLazyRoute,
+  recoverAdminLazyRoute,
+} from './pwa/adminLazyRouteRecovery';
 
-const MAX_RETRIES = 3;
-const GLOBAL_COOLDOWN_MS = 5000;
 const APP_BOOT_TIMEOUT_MS = 15_000;
 
 const resetAppShellCache = async () => {
@@ -41,43 +43,29 @@ const resetAppShellCache = async () => {
   }
 };
 
-const reloadAfterLazyFailure = async (componentKey) => {
-  window.sessionStorage.removeItem(componentKey);
-  window.sessionStorage.removeItem('lazy_retry_last_time');
-  await resetAppShellCache();
-  window.location.reload();
-};
-
-const lazyRetry = (importFn, componentName = 'Component') => {
-  const componentKey = `lazy_retry_${componentName}`;
-
-  return lazy(async () => {
+const lazyRetry = (importFn, componentName = 'Component') => (
+  lazy(async () => {
     try {
-      const component = await importFn();
-      window.sessionStorage.removeItem(componentKey);
-      return component;
+      await prepareAdminLazyRoute();
+      return await importFn();
     } catch (error) {
       Logger.error(`Error cargando módulo ${componentName}:`, error);
 
-      const currentRetries = parseInt(window.sessionStorage.getItem(componentKey) || '0', 10);
-      const lastReload = parseInt(window.sessionStorage.getItem('lazy_retry_last_time') || '0', 10);
-      const now = Date.now();
-      const inCooldown = (now - lastReload) < GLOBAL_COOLDOWN_MS;
+      let recoveryResult = null;
+      try {
+        recoveryResult = await recoverAdminLazyRoute({ error });
+      } catch (recoveryError) {
+        Logger.error(`Falló la recuperación automática de ${componentName}:`, recoveryError);
+      }
 
-      if (!navigator.onLine) {
-        Logger.warn(`Sin conexión a internet. Omitiendo recarga automática para ${componentName}.`);
-      } else if (inCooldown) {
-        Logger.warn(`En cooldown global de recargas. Omitiendo recarga para ${componentName}.`);
-      } else if (currentRetries < MAX_RETRIES) {
-        window.sessionStorage.setItem(componentKey, (currentRetries + 1).toString());
-        window.sessionStorage.setItem('lazy_retry_last_time', now.toString());
-        Logger.warn(`Reintentando carga limpia de ${componentName} (${currentRetries + 1}/${MAX_RETRIES})...`);
-        resetAppShellCache().finally(() => window.location.reload());
+      if (recoveryResult?.status === 'reloading') {
         return new Promise(() => {});
       }
 
-      Logger.error(`Máximo de reintentos, sin conexión o en cooldown para ${componentName}. Mostrando UI de error.`);
-      window.sessionStorage.removeItem(componentKey);
+      const offline = recoveryResult?.status === 'offline' || navigator.onLine === false;
+      Logger.error(`No se pudo recuperar automáticamente ${componentName}. Mostrando UI de actualización.`, {
+        status: recoveryResult?.status || 'error'
+      });
 
       return {
         default: () => (
@@ -94,23 +82,35 @@ const lazyRetry = (importFn, componentName = 'Component') => {
             <h3>Error de carga del módulo</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-              {!navigator.onLine
-                ? 'Parece que no tienes conexión a internet.'
-                : 'Puede haber una versión anterior guardada en caché. Presiona Reintentar para limpiar caché y cargar la versión nueva.'}
+              {offline
+                ? 'No hay conexión a internet. Reconéctate y vuelve a intentarlo.'
+                : 'Lanzo POS detectó archivos de una versión anterior. Actualiza para cargar la versión publicada sin borrar tus datos locales.'}
             </p>
             <button
               className="btn btn-primary"
               style={{ marginTop: '1rem' }}
-              onClick={() => reloadAfterLazyFailure(componentKey)}
+              onClick={() => {
+                recoverAdminLazyRoute({ error, force: true })
+                  .then((result) => {
+                    if (result?.status !== 'reloading') {
+                      Logger.error(`No se pudo forzar la recuperación de ${componentName}.`, {
+                        status: result?.status || 'error'
+                      });
+                    }
+                  })
+                  .catch((recoveryError) => {
+                    Logger.error(`Falló la recuperación manual de ${componentName}:`, recoveryError);
+                  });
+              }}
             >
-              Reintentar
+              Actualizar Lanzo POS
             </button>
           </div>
         )
       };
     }
-  });
-};
+  })
+);
 
 const PosPage = lazyRetry(() => import('./pages/PosPage'), 'PosPage');
 const CajaPage = lazyRetry(() => import('./pages/CajaPage'), 'CajaPage');
@@ -146,7 +146,11 @@ const AppBootRecovery = () => (
       <p>
         La aplicación no pudo completar su inicialización. Tus datos locales no se han eliminado.
       </p>
-      <button type="button" className="btn btn-primary" onClick={() => window.location.reload()}>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={() => resetAppShellCache().finally(() => window.location.reload())}
+      >
         Recargar aplicación
       </button>
     </section>
