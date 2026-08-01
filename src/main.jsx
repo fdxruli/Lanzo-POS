@@ -8,6 +8,7 @@ import { preparePublicStoreDocument } from './router/preparePublicStoreDocument'
 import { installAdminPwaDocument } from './pwa/adminPwaDocument';
 import { startAdminInstallPromptCapture } from './pwa/adminInstallPrompt';
 import { startAdminServiceWorker } from './pwa/adminServiceWorker';
+import { startAdminServiceWorkerUpdateMonitor } from './pwa/adminServiceWorkerUpdateMonitor';
 import {
   isRecoverableAdminStartupError,
   recoverAdminStartup,
@@ -103,6 +104,7 @@ if (isPublicStorePath(window.location.pathname)) {
   startAdminInstallPromptCapture();
   if (!import.meta.env.DEV) {
     startAdminServiceWorker();
+    startAdminServiceWorkerUpdateMonitor();
   }
   renderPosApplication().catch(handlePosStartupFailure);
 }
