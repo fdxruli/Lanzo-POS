@@ -225,8 +225,10 @@ export default function ProductsPage() {
                         ...productData,
                         imageUrl: uploadedImage.publicUrl,
                         metadata: {
+                            ...(productToEdit?.metadata || {}),
                             ...(productData.metadata || {}),
                             images_cloud: true,
+                            image_strategy: 'cloud_public_url',
                             product_image_storage: {
                                 bucket: uploadedImage.bucket,
                                 path: uploadedImage.path,
