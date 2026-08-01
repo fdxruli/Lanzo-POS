@@ -31,7 +31,7 @@ class FakeEventTarget {
 
 function createHarness({ controlled = false } = {}) {
   const serviceWorker = new FakeEventTarget();
-  serviceWorker.controller = controlled ? {} : null;
+  serviceWorker.controller = controlled ? { scriptURL: '/sw-old.js' } : null;
   const registration = new FakeEventTarget();
   registration.active = { scriptURL: '/sw.js' };
   registration.installing = null;
@@ -105,17 +105,61 @@ describe('administrative Service Worker coordinator', () => {
     expect(waiting.postMessage).toHaveBeenCalledOnce();
     expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
 
+    harness.serviceWorker.controller = { scriptURL: '/sw-new.js' };
+    harness.registration.waiting = null;
+    harness.registration.active = harness.serviceWorker.controller;
     harness.serviceWorker.dispatch('controllerchange');
     harness.serviceWorker.dispatch('controllerchange');
 
     await expect(activation).resolves.toBe(true);
     expect(harness.windowTarget.location.reload).toHaveBeenCalledOnce();
+    expect(getAdminServiceWorkerState().waiting).toBe(false);
   });
 
-  it('does not reload for a controller change that was not user-confirmed', async () => {
+  it('accepts an automatic update controllerchange before the user presses the banner', async () => {
+    const harness = createHarness({ controlled: true });
+    const waiting = { state: 'installed', postMessage: vi.fn() };
+    harness.registration.waiting = waiting;
+    await startAdminServiceWorker(harness);
+
+    const nextController = { scriptURL: '/sw-bridge.js' };
+    waiting.state = 'activated';
+    harness.registration.waiting = null;
+    harness.registration.active = nextController;
+    harness.serviceWorker.controller = nextController;
+    harness.serviceWorker.dispatch('controllerchange');
+
+    expect(getAdminServiceWorkerState()).toMatchObject({
+      waiting: false,
+      active: true,
+      error: false,
+    });
+    expect(harness.windowTarget.location.reload).toHaveBeenCalledOnce();
+    expect(waiting.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('recovers a stale banner whose referenced worker already activated', async () => {
+    const harness = createHarness({ controlled: true });
+    const waiting = { state: 'installed', postMessage: vi.fn() };
+    harness.registration.waiting = waiting;
+    await startAdminServiceWorker(harness);
+
+    waiting.state = 'activated';
+    harness.registration.waiting = null;
+    harness.registration.active = waiting;
+
+    await expect(activateAdminServiceWorkerUpdate()).resolves.toBe(true);
+    expect(waiting.postMessage).not.toHaveBeenCalled();
+    expect(harness.windowTarget.location.reload).toHaveBeenCalledOnce();
+    expect(getAdminServiceWorkerState().waiting).toBe(false);
+  });
+
+  it('does not reload for the first controller assigned on a fresh installation', async () => {
     const harness = createHarness();
     await startAdminServiceWorker(harness);
 
+    harness.serviceWorker.controller = { scriptURL: '/sw-first.js' };
+    harness.registration.active = harness.serviceWorker.controller;
     harness.serviceWorker.dispatch('controllerchange');
 
     expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
