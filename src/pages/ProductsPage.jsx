@@ -215,18 +215,19 @@ export default function ProductsPage() {
     const handleSaveProduct = async (productData, productToEdit) => {
         setIsLoading(true);
         try {
-            let productPayload = productData;
-            const selectedImage = productData?.image;
+            let productPayload = { ...productData };
+            const selectedImage = productData?.imageUploadSource || productData?.image;
+            delete productPayload.imageUploadSource;
 
             if (cloudProductImagesEnabled && isBrowserFile(selectedImage)) {
                 try {
                     const uploadedImage = await uploadProductImage(selectedImage, licenseKey);
                     productPayload = {
-                        ...productData,
+                        ...productPayload,
                         imageUrl: uploadedImage.publicUrl,
                         metadata: {
                             ...(productToEdit?.metadata || {}),
-                            ...(productData.metadata || {}),
+                            ...(productPayload.metadata || {}),
                             images_cloud: true,
                             image_strategy: 'cloud_public_url',
                             product_image_storage: {
@@ -248,18 +249,18 @@ export default function ProductsPage() {
                     return false;
                 }
             } else if (productToEdit) {
-                const existingImageUrl = productData.imageUrl
+                const existingImageUrl = productPayload.imageUrl
                     || productToEdit.imageUrl
                     || productToEdit.image_url
                     || null;
-                const existingImageRef = productData.imageRef
+                const existingImageRef = productPayload.imageRef
                     || productToEdit.imageRef
                     || productToEdit.image_ref
                     || null;
 
                 if (existingImageUrl || existingImageRef) {
                     productPayload = {
-                        ...productData,
+                        ...productPayload,
                         imageUrl: existingImageUrl,
                         imageRef: existingImageRef
                     };
