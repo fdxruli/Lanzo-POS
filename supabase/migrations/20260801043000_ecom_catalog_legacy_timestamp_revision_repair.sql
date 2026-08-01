@@ -113,3 +113,17 @@ $function$;
 comment on function private.ecommerce_source_revision_decision(
   text, numeric, text, text, text, numeric, text, text
 ) is 'Compara revisiones del catálogo. Mantiene conflictos estrictos para versiones normales y permite reconciliar valores legacy con forma de epoch-millisecond cuando cambia su proyección.';
+
+-- Repair only public products that explicitly inherit their image from the POS
+-- source. Manual ecommerce images are never overwritten.
+update public.ecommerce_published_products pp
+set image_url = p.image_url,
+    updated_at = now()
+from public.pos_products p
+where p.license_id = pp.license_id
+  and p.id = pp.local_product_ref
+  and pp.deleted_at is null
+  and p.deleted_at is null
+  and pp.sync_config->>'image' = 'source'
+  and p.image_url ~* '^https?://'
+  and pp.image_url is distinct from p.image_url;
