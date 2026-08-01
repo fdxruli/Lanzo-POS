@@ -115,7 +115,11 @@ export default function ProductMenu({
   onSearchChange,
   onOpenScanner,
   showOutofStockCategory,
-  showExpiredCategory
+  showExpiredCategory,
+  hasMore,
+  isLoadingInitial,
+  isLoadingNextPage,
+  onLoadNextPage
 }) {
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -137,9 +141,8 @@ export default function ProductMenu({
 
   const { loadBatchesForProduct } = useInventoryMovement();
 
-  // --- INFINITE SCROLL ---
-  const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
+  const loadMoreSentinelRef = useRef(null);
 
   const cloudSalesInventoryEnabled = useMemo(
     () => isCloudSalesInventoryEnabled(licenseDetails),
@@ -204,34 +207,33 @@ export default function ProductMenu({
     return true;
   }, [loadBatchesForProduct, strictExpiryStatusByProductId]);
 
-  // --- EFECTO: Resetear displayLimit cuando cambian filtros de búsqueda ---
-  // Reemplaza el anti-patrón de mutación de estado durante renderizado
-  useEffect(() => {
-    setDisplayLimit(50);
-  }, [selectedCategoryId, searchTerm, products]);
-
   // --- EFECTO: Resetear scroll al cambiar filtros ---
   useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
-  }, [selectedCategoryId, searchTerm, products]);
+  }, [selectedCategoryId, searchTerm]);
 
-  const handleScroll = () => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    if (scrollTop + clientHeight >= scrollHeight - 300) {
-      setDisplayLimit(prev => {
-        if (prev >= products.length) return prev;
-        return prev + 50;
-      });
+  const canLoadMore = Boolean(hasMore && !isLoadingNextPage && !searchTerm.trim());
+  const requestNextPage = useCallback(() => {
+    if (canLoadMore) void onLoadNextPage?.();
+  }, [canLoadMore, onLoadNextPage]);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    const root = scrollContainerRef.current;
+    if (!sentinel || !root || !canLoadMore || typeof IntersectionObserver === 'undefined') {
+      return undefined;
     }
-  };
 
-  const visibleProducts = useMemo(() => {
-    return products.slice(0, displayLimit);
-  }, [products, displayLimit]);
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) requestNextPage();
+    }, { root, rootMargin: '300px 0px', threshold: 0.01 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [canLoadMore, requestNextPage]);
+
+  const visibleProducts = products;
 
   useEffect(() => {
     let cancelled = false;
@@ -523,11 +525,14 @@ export default function ProductMenu({
       <div
         className="pos-menu-scroll"
         ref={scrollContainerRef}
-        onScroll={handleScroll}
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Productos disponibles">
 
-          {visibleProducts.length === 0 ? (
+          {isLoadingInitial && visibleProducts.length === 0 ? (
+            <div className="pos-products-loading" role="status">
+              Cargando productos...
+            </div>
+          ) : visibleProducts.length === 0 ? (
             (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
               <div className="menu-empty-state">
                 <PackageSearch size={38} aria-hidden="true" />
@@ -570,10 +575,24 @@ export default function ProductMenu({
             })
           )}
 
-          {visibleProducts.length < products.length && visibleProducts.length > 0 && (
+          {!searchTerm.trim() && hasMore && visibleProducts.length > 0 && (
+            <div ref={loadMoreSentinelRef} className="pos-load-more-sentinel" aria-hidden="true" />
+          )}
+
+          {isLoadingNextPage && visibleProducts.length > 0 && (
             <div className="pos-products-loading" role="status">
               Cargando más productos...
             </div>
+          )}
+
+          {canLoadMore && visibleProducts.length > 0 && (
+            <button
+              type="button"
+              className="pos-load-more-button"
+              onClick={requestNextPage}
+            >
+              Cargar más productos
+            </button>
           )}
         </div>
       </div>

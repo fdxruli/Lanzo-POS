@@ -3,6 +3,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queryMocks = vi.hoisted(() => ({
+  POS_CATALOG_PAGE_SIZE: 50,
+  comparePosCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
   loadCatalogCategories: vi.fn(),
   queryInventoryCatalogPage: vi.fn(),
   queryPosCatalogPage: vi.fn(),
@@ -54,10 +56,16 @@ const resetPos = (overrides = {}) => {
     categoryId: null,
     outOfStockOnly: false,
     expiredOnly: false,
+    pageSize: 50,
+    nextCursor: null,
     cursorStack: [null],
     currentPageIndex: 0,
     hasMore: true,
     isLoading: false,
+    isLoadingInitial: false,
+    isLoadingNextPage: false,
+    isRefreshing: false,
+    requestVersion: 0,
     isInvalidating: false,
     initialized: false,
     ...overrides

@@ -38,7 +38,11 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     const categoryId = usePosCatalogStore((state) => state.categoryId);
     const outOfStockOnly = usePosCatalogStore((state) => state.outOfStockOnly);
     const expiredOnly = usePosCatalogStore((state) => state.expiredOnly);
+    const hasMore = usePosCatalogStore((state) => state.hasMore);
+    const isLoadingInitial = usePosCatalogStore((state) => state.isLoadingInitial);
+    const isLoadingNextPage = usePosCatalogStore((state) => state.isLoadingNextPage);
     const setFilters = usePosCatalogStore((state) => state.setFilters);
+    const loadNextPage = usePosCatalogStore((state) => state.loadNextPage);
     const refreshData = usePosCatalogStore((state) => state.refreshCatalog);
     const checkHasOutOfStockProducts = usePosCatalogStore((state) => state.checkHasOutOfStockProducts);
     const checkHasExpiredProducts = usePosCatalogStore((state) => state.checkHasExpiredProducts);
@@ -199,6 +203,10 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         handleSelectCategory,
         hasOutOfStockItems,
         hasExpiredItems,
+        hasMore,
+        isLoadingInitial,
+        isLoadingNextPage,
+        loadNextPage,
         refreshOutOfStock,
         refreshData
     };

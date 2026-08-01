@@ -123,6 +123,10 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                         onOpenScanner={() => ui.openModal('scanner')}
                         showOutofStockCategory={data.hasOutOfStockItems}
                         showExpiredCategory={data.hasExpiredItems}
+                        hasMore={data.hasMoreCatalogProducts}
+                        isLoadingInitial={data.isLoadingInitialCatalog}
+                        isLoadingNextPage={data.isLoadingNextCatalogPage}
+                        onLoadNextPage={ui.loadNextCatalogPage}
                     />
                     <div className={`pos-summary-stack${features.hasTables ? ' pos-summary-stack--restaurant' : ''}${isEcommerceDraft ? ' pos-summary-stack--ecommerce' : ''}`}>
                         <OrderSummary

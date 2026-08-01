@@ -76,6 +76,9 @@ export function usePos() {
             searchTerm: search.searchTerm,
             hasOutOfStockItems: search.hasOutOfStockItems,
             hasExpiredItems: search.hasExpiredItems,
+            hasMoreCatalogProducts: search.hasMore,
+            isLoadingInitialCatalog: search.isLoadingInitial,
+            isLoadingNextCatalogPage: search.isLoadingNextPage,
             activeTablesCount: tablesCount.activeTablesCount,
             kitchenRejectedOpenCount: tablesCount.kitchenRejectedOpenCount,
             toastMsg: pos.toastMsg,
@@ -91,7 +94,8 @@ export function usePos() {
             openMobileCart: mobileCart.openCart,
             closeMobileCart: mobileCart.closeCart,
             setSearchTerm: search.setSearchTerm,
-            handleSelectCategory: search.handleSelectCategory
+            handleSelectCategory: search.handleSelectCategory,
+            loadNextCatalogPage: search.loadNextPage
         },
 
         actions: {
