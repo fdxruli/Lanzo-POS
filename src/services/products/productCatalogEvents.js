@@ -24,7 +24,6 @@ const notifySubscribers = (source, detail = null) => {
     }
   }
 };
-
 const markAsAway = () => {
   if (!lastAwayAt) lastAwayAt = Date.now();
 };
@@ -145,4 +144,3 @@ export const resetProductCatalogEventsForTests = () => {
   uninstallInfrastructure();
   lastNotificationAt = 0;
 };
-

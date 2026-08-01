@@ -1,6 +1,5 @@
-import { db, STORES } from '../database';
+import { db, loadDataPaginated, STORES } from '../database';
 import { categoriesRepository } from '../db/general';
-import { productLocalRepository } from './productLocalRepository';
 import {
   checkHasExpiredProductsForPosMenu,
   isOutOfStockForPosMenu
@@ -25,7 +24,7 @@ export const loadCatalogCategories = async () => {
 
 export const queryInventoryCatalogPage = async (options = {}) => {
   const { productType = null, ...queryOptions } = options;
-  const result = await productLocalRepository.listProductsPage({
+  const result = await loadDataPaginated(STORES.MENU, {
     limit: 50,
     timeIndex: 'createdAt',
     status: 'active',
@@ -42,7 +41,7 @@ export const queryInventoryCatalogPage = async (options = {}) => {
 };
 
 export const queryPosCatalogPage = async (options = {}) => {
-  const result = await productLocalRepository.listProductsPage({
+  const result = await loadDataPaginated(STORES.MENU, {
     limit: 50,
     timeIndex: 'createdAt',
     ...options,

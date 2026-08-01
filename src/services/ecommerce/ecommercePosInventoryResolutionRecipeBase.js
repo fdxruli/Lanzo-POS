@@ -1,5 +1,5 @@
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { db as defaultDb, STORES as DEFAULT_STORES } from '../db/dexie';
 import { validateStockBeforeSale } from '../sales/stockValidation';
 import {
@@ -27,7 +27,7 @@ const getActiveOrdersState = (deps = {}) => {
   return useActiveOrders.getState();
 };
 
-const getProducts = (deps = {}) => asArray(deps.products || useProductStore.getState().menu);
+const getProducts = (deps = {}) => asArray(deps.products || usePosCatalogStore.getState().items);
 
 const updateOrder = ({ orderId, patch, deps = {} }) => {
   const state = getActiveOrdersState(deps);

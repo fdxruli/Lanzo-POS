@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ activeState: null, productState: { menu: [] }, table: vi.fn() }));
+const mocks = vi.hoisted(() => ({ activeState: null, productState: { items: [] }, table: vi.fn() }));
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: { getState: () => mocks.activeState } }));
-vi.mock('../../../store/useProductStore', () => ({ useProductStore: { getState: () => mocks.productState } }));
+vi.mock('../../../store/usePosCatalogStore', () => ({ usePosCatalogStore: { getState: () => mocks.productState } }));
 vi.mock('../../db/dexie', () => ({
   db: { table: mocks.table },
   STORES: { MENU: 'menu', PRODUCT_BATCHES: 'product_batches' }
@@ -85,7 +85,7 @@ const deps = (state, products, extra = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   resetEcommerceInventoryResolutionAttemptsForTests();
-  mocks.productState = { menu: [] };
+  mocks.productState = { items: [] };
   mocks.activeState = activeState(order([]));
 });
 

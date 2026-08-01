@@ -17,8 +17,11 @@ vi.mock('../../../store/useAppStore', () => ({
   )
 }));
 
-vi.mock('../../../store/useProductStore', () => ({
-  useProductStore: { getState: () => ({ menu: [] }) },
+vi.mock('../../../store/usePosCatalogStore', () => ({
+  usePosCatalogStore: { getState: () => ({ items: [] }) }
+}));
+
+vi.mock('../../../services/products/productCatalogEvents', () => ({
   broadcastDBChange: mocks.broadcastDBChange
 }));
 

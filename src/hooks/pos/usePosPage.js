@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { selectCurrentOrder, selectCurrentOrderCustomer, selectCurrentOrderItems, selectCurrentOrderTableData, useActiveOrders } from './useActiveOrders';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
 import { orderTotals } from '../../services/sales/orderTotals';
@@ -24,7 +24,7 @@ export function usePosPage() {
     const [toastMsg, setToastMsg] = useState(null);
 
     useEffect(() => {
-        const cleanup = useProductStore.getState().initialize();
+        const cleanup = usePosCatalogStore.getState().initialize();
         return cleanup;
     }, []);
 

@@ -9,7 +9,7 @@ import {
 const bootstrapSource = `
   const map = [
     "assets/App-current.js",
-    "assets/useProductStore-current.js",
+    "assets/useInventoryCatalogStore-current.js",
     "assets/productStoreRecoveryGuard-current.js",
     "assets/DevConsole-current.css",
     "assets/logo-current.png"
@@ -23,7 +23,7 @@ describe('administrative startup precache audit', () => {
       'assets/App-current.js',
       'assets/DevConsole-current.css',
       'assets/productStoreRecoveryGuard-current.js',
-      'assets/useProductStore-current.js',
+      'assets/useInventoryCatalogStore-current.js',
     ]);
   });
 
@@ -31,11 +31,11 @@ describe('administrative startup precache audit', () => {
     expect(extractPrecachedAssetUrls(`
       precacheAndRoute([
         {"revision":null,"url":"assets/App-current.js"},
-        {revision:null,url:"assets/useProductStore-current.js"}
+        {revision:null,url:"assets/useInventoryCatalogStore-current.js"}
       ]);
     `)).toEqual([
       'assets/App-current.js',
-      'assets/useProductStore-current.js',
+      'assets/useInventoryCatalogStore-current.js',
     ]);
   });
 
@@ -52,7 +52,7 @@ describe('administrative startup precache audit', () => {
 
     expect(missing).toEqual([
       'assets/productStoreRecoveryGuard-current.js',
-      'assets/useProductStore-current.js',
+      'assets/useInventoryCatalogStore-current.js',
     ]);
   });
 });

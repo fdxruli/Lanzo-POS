@@ -1,7 +1,7 @@
 // src/hooks/usePosSearch.js
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDebounce } from '../useDebounce';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { db, searchProductsInDB, STORES } from '../../services/database';
 import {
     CAT_DYNAMIC_EXPIRED,
@@ -33,13 +33,15 @@ import Logger from '../../services/Logger';
  * }}
  */
 export function usePosSearch({ debounceMs = 300 } = {}) {
-    const menu = useProductStore((state) => state.menu);
-    const categories = useProductStore((state) => state.categories);
-    const activeFilters = useProductStore((state) => state.filters);
-    const setFilters = useProductStore((state) => state.setFilters);
-    const refreshData = useProductStore((state) => state.loadInitialProducts);
-    const checkHasOutOfStockProducts = useProductStore((state) => state.checkHasOutOfStockProducts);
-    const checkHasExpiredProducts = useProductStore((state) => state.checkHasExpiredProducts);
+    const menu = usePosCatalogStore((state) => state.items);
+    const categories = usePosCatalogStore((state) => state.categories);
+    const categoryId = usePosCatalogStore((state) => state.categoryId);
+    const outOfStockOnly = usePosCatalogStore((state) => state.outOfStockOnly);
+    const expiredOnly = usePosCatalogStore((state) => state.expiredOnly);
+    const setFilters = usePosCatalogStore((state) => state.setFilters);
+    const refreshData = usePosCatalogStore((state) => state.refreshCatalog);
+    const checkHasOutOfStockProducts = usePosCatalogStore((state) => state.checkHasOutOfStockProducts);
+    const checkHasExpiredProducts = usePosCatalogStore((state) => state.checkHasExpiredProducts);
 
     const [searchTerm, setSearchTerm] = useState('');
     const debouncedSearchTerm = useDebounce(searchTerm, debounceMs);
@@ -56,23 +58,23 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
             if (item?.productType === 'ingredient') return false;
 
             const matchesCategory =
-                (activeFilters.categoryId === null || activeFilters.categoryId === undefined) ||
-                item.categoryId === activeFilters.categoryId;
+                (categoryId === null || categoryId === undefined) ||
+                item.categoryId === categoryId;
 
             const isOutOfStock = isOutOfStockForPosMenu(item);
             const isExpired = expiredProductIds.has(item.id) || isExpiredForPosMenu(item);
 
-            if (activeFilters.outOfStockOnly) {
+            if (outOfStockOnly) {
                 return matchesCategory && isOutOfStock;
             }
 
-            if (activeFilters.expiredOnly) {
+            if (expiredOnly) {
                 return matchesCategory && !isOutOfStock && isExpired;
             }
 
             return matchesCategory && !isOutOfStock && !isExpired;
         });
-    }, [activeFilters.categoryId, activeFilters.outOfStockOnly, activeFilters.expiredOnly]);
+    }, [categoryId, outOfStockOnly, expiredOnly]);
 
     useEffect(() => {
         let isActive = true;
@@ -148,13 +150,13 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
     }, [assignedCategoryIds, categories]);
 
     useEffect(() => {
-        const selectedCategoryId = activeFilters.categoryId;
+        const selectedCategoryId = categoryId;
         if (!assignedCategoryIds || !selectedCategoryId || isDynamicPosCategory(selectedCategoryId)) return;
 
         if (!assignedCategoryIds.has(String(selectedCategoryId).trim())) {
             setFilters({ categoryId: null });
         }
-    }, [activeFilters.categoryId, assignedCategoryIds, setFilters]);
+    }, [categoryId, assignedCategoryIds, setFilters]);
 
     useEffect(() => {
         const initialize = async () => {
@@ -172,11 +174,11 @@ export function usePosSearch({ debounceMs = 300 } = {}) {
         setFilters({ categoryId });
     }, [setFilters]);
 
-    const activeCategoryId = activeFilters.outOfStockOnly
+    const activeCategoryId = outOfStockOnly
         ? CAT_DYNAMIC_OUT_OF_STOCK
-        : activeFilters.expiredOnly
+        : expiredOnly
             ? CAT_DYNAMIC_EXPIRED
-            : activeFilters.categoryId;
+            : categoryId;
 
     const refreshOutOfStock = useCallback(async () => {
         await refreshData();

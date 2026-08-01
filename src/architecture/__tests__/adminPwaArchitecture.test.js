@@ -171,7 +171,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(joined).toMatch(/assets\/databaseRuntime-.*\.js/);
     expect(joined).toMatch(/assets\/PosApplicationBootstrap-.*\.js/);
     expect(joined).toMatch(/assets\/useMessageStore-.*\.js/);
-    expect(joined).toMatch(/assets\/useProductStore-.*\.js/);
+    expect(joined).toMatch(/assets\/useInventoryCatalogStore-.*\.js/);
     expect(joined).toMatch(/assets\/productStoreRecoveryGuard-.*\.js/);
     expect(joined).toMatch(/assets\/DevConsole-.*\.js/);
     expect(joined).toMatch(/assets\/DevConsole-.*\.css/);

@@ -25,7 +25,7 @@ vi.mock('../../../store/useAppStore', () => ({
   )
 }));
 
-vi.mock('../../../store/useProductStore', () => ({
+vi.mock('../../../services/products/productCatalogEvents', () => ({
   broadcastDBChange: mocks.broadcastDBChange
 }));
 

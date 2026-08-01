@@ -22,7 +22,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/vendor_utils-*.js',
   'assets/useAppStore-*.js',
   'assets/useMessageStore-*.js',
-  'assets/useProductStore-*.js',
+  'assets/useInventoryCatalogStore-*.js',
   'assets/Logger-*.js',
   'assets/ErrorBoundary-*.{js,css}',
   'assets/storageManager-*.js',
