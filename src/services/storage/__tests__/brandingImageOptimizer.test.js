@@ -34,7 +34,7 @@ function createRasterHarness({ width, height, outputType = 'image/webp' }) {
 }
 
 describe('brandingImageOptimizer', () => {
-  it('define perfiles acotados para logo y portada', () => {
+  it('define perfiles acotados para marca y productos', () => {
     expect(brandingWebpProfileFor('business-logo')).toEqual({
       maxWidth: 1024,
       maxHeight: 1024,
@@ -45,7 +45,16 @@ describe('brandingImageOptimizer', () => {
       maxHeight: 1080,
       quality: 0.84
     });
-    expect(brandingWebpProfileFor('product-image')).toBeNull();
+    expect(brandingWebpProfileFor('product-image')).toEqual({
+      maxWidth: 1280,
+      maxHeight: 1280,
+      quality: 0.8
+    });
+    expect(brandingWebpProfileFor('restaurant-item-image')).toEqual({
+      maxWidth: 1280,
+      maxHeight: 1280,
+      quality: 0.8
+    });
   });
 
   it('convierte y reduce una portada a WebP sin deformarla', async () => {
@@ -102,9 +111,12 @@ describe('brandingImageOptimizer', () => {
     expect(harness.canvas.getContext).toHaveBeenCalledWith('2d', { alpha: true });
   });
 
-  it('no procesa imágenes fuera de los dos propósitos de marca', async () => {
-    const harness = createRasterHarness({ width: 2000, height: 2000 });
-    const source = new TestFile(['source'], 'producto.png', { type: 'image/png' });
+  it('convierte una fotografía de producto a WebP y limita su lado mayor', async () => {
+    const harness = createRasterHarness({ width: 3024, height: 4032 });
+    const source = new TestFile(['source'], 'electrolit-fresa.jpg', {
+      type: 'image/jpeg',
+      lastModified: 456
+    });
 
     const result = await optimizeBrandingImageToWebp({
       file: source,
@@ -114,8 +126,16 @@ describe('brandingImageOptimizer', () => {
       FileImpl: TestFile
     });
 
-    expect(result).toBe(source);
-    expect(harness.createImageBitmapImpl).not.toHaveBeenCalled();
+    expect(result.name).toBe('electrolit-fresa.webp');
+    expect(result.type).toBe('image/webp');
+    expect(result.lastModified).toBe(456);
+    expect(harness.canvas.width).toBe(960);
+    expect(harness.canvas.height).toBe(1280);
+    expect(harness.canvas.toBlob).toHaveBeenCalledWith(
+      expect.any(Function),
+      'image/webp',
+      0.8
+    );
   });
 
   it('usa el archivo original cuando el navegador no produce WebP', async () => {
