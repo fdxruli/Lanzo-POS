@@ -203,7 +203,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     minStock: product.min_stock ?? product.minStock ?? null,
     maxStock: product.max_stock ?? product.maxStock ?? null,
     trackStock: product.track_stock ?? product.trackStock ?? true,
-    isActive: deletedAt ? false : (product.is_active ?? product.isActive ?? existing?.isActive ?? true),
+    isActive: deletedAt ? false : (product.is_active ?? product.isActive ?? true),
     productType: product.product_type || product.productType || 'sellable',
     saleType: product.sale_type || product.saleType || 'unit',
     ...complexFields,
