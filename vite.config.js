@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import packageJson from './package.json';
+import { createAdminStartupPrecacheAuditPlugin } from './scripts/admin-startup-precache-audit.mjs';
 import { serializeAdminManifest } from './src/pwa/adminManifest';
 
 const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
@@ -20,6 +21,8 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/vendor_supabase-*.js',
   'assets/vendor_utils-*.js',
   'assets/useAppStore-*.js',
+  'assets/useMessageStore-*.js',
+  'assets/useProductStore-*.js',
   'assets/Logger-*.js',
   'assets/ErrorBoundary-*.{js,css}',
   'assets/storageManager-*.js',
@@ -28,8 +31,10 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/posSyncBootstrapAutoCoordinator-*.js',
   'assets/customerCreditSyncHandler-*.js',
   'assets/cashSyncHandler-*.js',
+  'assets/productStoreRecoveryGuard-*.js',
   'assets/devServiceWorkerCleanup-*.js',
   'assets/devConsoleCapture-*.js',
+  'assets/DevConsole-*.{js,css}',
   'assets/mobileZoomGuard-*.js',
 ]);
 
@@ -78,7 +83,8 @@ export default defineConfig(() => ({
       injectManifest: {
         globPatterns: ADMIN_SHELL_GLOB_PATTERNS,
       },
-    })
+    }),
+    createAdminStartupPrecacheAuditPlugin(),
   ],
 
   test: {
