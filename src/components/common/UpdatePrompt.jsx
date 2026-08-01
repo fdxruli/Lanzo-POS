@@ -8,6 +8,24 @@ import {
 } from '../../pwa/adminServiceWorker';
 import './UpdatePrompt.css';
 
+const DISMISSED_KEY = 'lanzo_update_dismissed';
+
+const readDismissedState = () => {
+  try {
+    return window.sessionStorage.getItem(DISMISSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const persistDismissedState = () => {
+  try {
+    window.sessionStorage.setItem(DISMISSED_KEY, 'true');
+  } catch {
+    // El prompt puede cerrarse aunque el almacenamiento de sesión esté restringido.
+  }
+};
+
 const UpdatePrompt = () => {
   const showUpdateModal = useAppStore((state) => state.showUpdateModal);
   const isUpdating = useAppStore((state) => state.isUpdating);
@@ -26,7 +44,12 @@ const UpdatePrompt = () => {
 
   useEffect(() => {
     const applyWorkerState = (workerState) => {
-      if (workerState.waiting) setUpdateAvailable(true);
+      if (workerState.waiting) {
+        setUpdateAvailable(true);
+      } else if (workerState.registered && workerState.active && !workerState.installing) {
+        setUpdateAvailable(false);
+      }
+
       if (workerState.error) console.error('No se pudo inicializar la actualización PWA.');
     };
 
@@ -34,11 +57,10 @@ const UpdatePrompt = () => {
     return subscribeAdminServiceWorker(applyWorkerState);
   }, [setUpdateAvailable]);
 
-  // Verificamos si el usuario ya descartó el banner en esta sesión
-  const isDismissed = sessionStorage.getItem('lanzo_update_dismissed') === 'true';
+  const isDismissed = readDismissedState();
 
   const handleClose = () => {
-    sessionStorage.setItem('lanzo_update_dismissed', 'true');
+    persistDismissedState();
     closeUpdateModal();
   };
 
