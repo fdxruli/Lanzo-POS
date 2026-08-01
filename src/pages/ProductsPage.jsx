@@ -1,5 +1,5 @@
 // src/pages/ProductsPage.jsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import ProductForm from '../components/products/ProductForm';
 import ProductList from '../components/products/ProductList';
@@ -15,7 +15,10 @@ import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import DailyPriceModal from '../components/products/DailyPriceModal';
 import { useAppStore } from '../store/useAppStore';
 import { productRepository } from '../services/products/productRepository';
-import { uploadProductImage } from '../services/storage/imageUploadService';
+import {
+    migrateLegacyProductImages,
+    prepareProductImageForCloud
+} from '../services/products/productImageMigrationService';
 import {
     getLicenseKeyFromDetails,
     isCloudProductsSyncEnabled
@@ -27,7 +30,16 @@ import { useSearchParams } from 'react-router-dom';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
 
 const PRODUCT_FORM_EXIT_MESSAGE = 'Estás editando o creando un producto. Si sales ahora, los datos no guardados se perderán. ¿Seguro que quieres salir?';
-const isBrowserFile = (value) => typeof File !== 'undefined' && value instanceof File;
+const PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX = 'lanzo:product-image-migration:';
+const getProductImageMigrationSessionKey = (value) => {
+    let hash = 2166136261;
+    const input = String(value || '');
+    for (let index = 0; index < input.length; index += 1) {
+        hash ^= input.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return `${PRODUCT_IMAGE_MIGRATION_SESSION_PREFIX}${(hash >>> 0).toString(36)}`;
+};
 
 export default function ProductsPage() {
     const [showDailyPrice, setShowDailyPrice] = useState(false);
@@ -63,6 +75,7 @@ export default function ProductsPage() {
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
     const [, setShowDataTransfer] = useState(false);
+    const legacyImageMigrationRef = useRef({ licenseKey: null, running: false });
 
     const isProductFormActive = activeTab === 'add-product';
     const { runWithoutBlocking } = useNavigationGuard({
@@ -78,6 +91,82 @@ export default function ProductsPage() {
         setFilters({ categoryId: null, outOfStockOnly: false, expiredOnly: false });
         refreshData();
     }, [refreshData, setFilters]);
+
+    useEffect(() => {
+        if (!cloudProductImagesEnabled || !licenseKey || products.length === 0) return undefined;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return undefined;
+
+        const sessionKey = getProductImageMigrationSessionKey(licenseKey);
+        const alreadyCompleted = typeof sessionStorage !== 'undefined'
+            && sessionStorage.getItem(sessionKey) === 'completed';
+        const migrationState = legacyImageMigrationRef.current;
+
+        if (alreadyCompleted || migrationState.running || migrationState.licenseKey === licenseKey) {
+            return undefined;
+        }
+
+        legacyImageMigrationRef.current = { licenseKey, running: true };
+        let cancelled = false;
+
+        const runMigration = async () => {
+            const summary = await migrateLegacyProductImages({
+                licenseKey,
+                cloudEnabled: cloudProductImagesEnabled,
+                limit: 25,
+                saveProduct: (payload, existingProduct) => productRepository.saveProduct(
+                    payload,
+                    { existingProduct }
+                )
+            });
+
+            if (cancelled) return;
+
+            if (summary.failed === 0 && !summary.hasMore && typeof sessionStorage !== 'undefined') {
+                sessionStorage.setItem(sessionKey, 'completed');
+            }
+
+            if (summary.migrated > 0) {
+                await refreshData();
+            }
+
+            if (summary.migrated > 0 || summary.missingLocalBlob > 0 || summary.failed > 0 || summary.hasMore) {
+                const messages = [];
+                if (summary.migrated > 0) {
+                    messages.push(`Se publicaron automáticamente ${summary.migrated} imagen(es) antiguas en la tienda en línea.`);
+                }
+                if (summary.missingLocalBlob > 0) {
+                    const sampleNames = summary.missingProductNames.slice(0, 3).join(', ');
+                    messages.push(
+                        `${summary.missingLocalBlob} imagen(es) ya no están guardadas en este dispositivo${sampleNames ? ` (${sampleNames})` : ''}. Edita esos productos y vuelve a seleccionar la fotografía.`
+                    );
+                }
+                if (summary.failed > 0) {
+                    messages.push(`${summary.failed} imagen(es) no pudieron migrarse y se reintentarán en una próxima sesión.`);
+                }
+                if (summary.hasMore) {
+                    messages.push('Quedan más imágenes antiguas pendientes; se continuará automáticamente en una próxima sesión para respetar los límites de seguridad de Storage.');
+                }
+
+                showMessageModal(messages.join('\n\n'), null, {
+                    type: summary.missingLocalBlob > 0 || summary.failed > 0 ? 'warning' : 'success'
+                });
+            }
+        };
+
+        runMigration()
+            .catch((error) => {
+                Logger.warn('[Products] Migración de imágenes antiguas no completada:', error);
+            })
+            .finally(() => {
+                if (legacyImageMigrationRef.current.licenseKey === licenseKey) {
+                    legacyImageMigrationRef.current.running = false;
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [cloudProductImagesEnabled, licenseKey, products.length, refreshData]);
 
     useEffect(() => {
         const currentTabParam = searchParams.get('tab');
@@ -215,58 +304,23 @@ export default function ProductsPage() {
     const handleSaveProduct = async (productData, productToEdit) => {
         setIsLoading(true);
         try {
-            let productPayload = { ...productData };
-            const selectedImage = productData?.imageUploadSource || productData?.image;
-            delete productPayload.imageUploadSource;
-
-            if (cloudProductImagesEnabled && isBrowserFile(selectedImage)) {
-                try {
-                    const uploadedImage = await uploadProductImage(selectedImage, licenseKey);
-                    productPayload = {
-                        ...productPayload,
-                        imageUrl: uploadedImage.publicUrl,
-                        metadata: {
-                            ...(productToEdit?.metadata || {}),
-                            ...(productPayload.metadata || {}),
-                            images_cloud: true,
-                            image_strategy: 'cloud_public_url',
-                            product_image_storage: {
-                                bucket: uploadedImage.bucket,
-                                path: uploadedImage.path,
-                                mime_type: uploadedImage.mimeType,
-                                optimized: uploadedImage.optimized,
-                                original_size_bytes: uploadedImage.originalSizeBytes,
-                                uploaded_size_bytes: uploadedImage.uploadedSizeBytes,
-                                uploaded_at: new Date().toISOString()
-                            }
-                        }
-                    };
-                } catch (error) {
-                    Logger.error('Error subiendo imagen pública del producto:', error);
-                    showMessageModal(
-                        error?.message || 'No se pudo subir la imagen del producto. Revisa tu conexión e intenta nuevamente.'
-                    );
-                    return false;
-                }
-            } else if (productToEdit) {
-                const existingImageUrl = productPayload.imageUrl
-                    || productToEdit.imageUrl
-                    || productToEdit.image_url
-                    || null;
-                const existingImageRef = productPayload.imageRef
-                    || productToEdit.imageRef
-                    || productToEdit.image_ref
-                    || null;
-
-                if (existingImageUrl || existingImageRef) {
-                    productPayload = {
-                        ...productPayload,
-                        imageUrl: existingImageUrl,
-                        imageRef: existingImageRef
-                    };
-                }
+            let imagePreparation;
+            try {
+                imagePreparation = await prepareProductImageForCloud({
+                    productData,
+                    existingProduct: productToEdit,
+                    licenseKey,
+                    cloudEnabled: cloudProductImagesEnabled
+                });
+            } catch (error) {
+                Logger.error('Error subiendo imagen pública del producto:', error);
+                showMessageModal(
+                    error?.message || 'No se pudo subir la imagen del producto. Revisa tu conexión e intenta nuevamente.'
+                );
+                return false;
             }
 
+            const productPayload = imagePreparation.productPayload;
             const result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
 
             if (result?.success) {
@@ -276,11 +330,17 @@ export default function ProductsPage() {
                 const valueDifference = Number(result.inventoryValue || 0);
                 if (valueDifference > 0) await adjustInventoryValue(valueDifference);
 
-                showMessageModal(
-                    result.pending
-                        ? 'Producto guardado localmente. Se sincronizará al volver internet.'
-                        : (productToEdit ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!')
-                );
+                let successMessage = result.pending
+                    ? 'Producto guardado localmente. Se sincronizará al volver internet.'
+                    : (productToEdit ? '¡Actualizado exitosamente!' : '¡Producto creado exitosamente!');
+
+                if (imagePreparation.requiresReselection) {
+                    successMessage += '\n\nLa fotografía anterior no está guardada en este dispositivo. Vuelve a seleccionarla para publicarla en la tienda en línea.';
+                }
+
+                showMessageModal(successMessage, null, {
+                    type: imagePreparation.requiresReselection ? 'warning' : 'success'
+                });
 
                 setEditingProduct(null);
                 broadcastDBChange({
