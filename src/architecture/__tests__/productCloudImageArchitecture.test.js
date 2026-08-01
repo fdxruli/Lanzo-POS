@@ -8,13 +8,25 @@ const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
 
 describe('product cloud image architecture', () => {
-  it('uploads a selected product file before persisting the product cloud payload', async () => {
+  it('keeps a lightweight local thumbnail and a transient original upload source', async () => {
+    const commonHook = await readProjectFile('src/hooks/useProductCommon.js');
+
+    expect(commonHook).toContain('const [imageUploadSource, setImageUploadSource] = useState(null)');
+    expect(commonHook).toContain('const compressedFile = await compressImage(file)');
+    expect(commonHook).toContain('setImageData(compressedFile)');
+    expect(commonHook).toContain('setImageUploadSource(file)');
+    expect(commonHook).toMatch(/image:\s*imageData,[\s\S]*imageUploadSource/);
+  });
+
+  it('uploads the original source before persisting only the product payload', async () => {
     const page = await readProjectFile('src/pages/ProductsPage.jsx');
     const uploadIndex = page.indexOf('await uploadProductImage(selectedImage, licenseKey)');
     const saveIndex = page.indexOf('await productRepository.saveProduct(productPayload');
 
     expect(page).toContain("from '../services/storage/imageUploadService'");
     expect(page).toContain('isCloudProductsSyncEnabled(licenseDetails)');
+    expect(page).toContain('productData?.imageUploadSource || productData?.image');
+    expect(page).toContain('delete productPayload.imageUploadSource');
     expect(page).toContain('imageUrl: uploadedImage.publicUrl');
     expect(page).toContain('...(productToEdit?.metadata || {})');
     expect(page).toContain('images_cloud: true');
@@ -26,8 +38,8 @@ describe('product cloud image architecture', () => {
   it('preserves the previous public URL when an edit does not select another file', async () => {
     const page = await readProjectFile('src/pages/ProductsPage.jsx');
 
-    expect(page).toMatch(/const existingImageUrl = productData\.imageUrl[\s\S]*productToEdit\.imageUrl/);
-    expect(page).toMatch(/const existingImageRef = productData\.imageRef[\s\S]*productToEdit\.imageRef/);
+    expect(page).toMatch(/const existingImageUrl = productPayload\.imageUrl[\s\S]*productToEdit\.imageUrl/);
+    expect(page).toMatch(/const existingImageRef = productPayload\.imageRef[\s\S]*productToEdit\.imageRef/);
     expect(page).toContain('imageUrl: existingImageUrl');
     expect(page).toContain('imageRef: existingImageRef');
   });
