@@ -89,7 +89,6 @@ const lazyRetry = (importFn, componentName = 'Component') => (
             <button
               className="btn btn-primary"
               style={{ marginTop: '1rem' }}
-              disabled={offline}
               onClick={() => {
                 recoverAdminLazyRoute({ error, force: true })
                   .then((result) => {
