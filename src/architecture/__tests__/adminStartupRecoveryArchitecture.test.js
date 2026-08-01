@@ -15,9 +15,10 @@ describe('administrative startup version recovery architecture', () => {
     expect(config).toContain("'assets/PosApplicationBootstrap-*.{js,css}'");
   });
 
-  it('detects stale dynamic imports and attempts a one-shot recovery before showing a manual action', async () => {
-    const [main, recovery] = await Promise.all([
+  it('detects stale imports in both startup phases and keeps the manual action on the same recovery path', async () => {
+    const [main, bootstrap, recovery] = await Promise.all([
       readProjectFile('src/main.jsx'),
+      readProjectFile('src/components/common/PosApplicationBootstrap.jsx'),
       readProjectFile('src/pwa/adminStartupRecovery.js'),
     ]);
 
@@ -25,8 +26,17 @@ describe('administrative startup version recovery architecture', () => {
     expect(main).toContain("renderStartupRecoveryScreen({ mode: 'recovering' })");
     expect(main).toContain('recoverAdminStartup({ error })');
     expect(main).toContain('recoverAdminStartup({ error, force: true })');
-    expect(main).toContain('completeAdminStartupRecovery()');
+    expect(main).not.toContain('completeAdminStartupRecovery()');
+
+    expect(bootstrap).toContain('isRecoverableAdminStartupError(error)');
+    expect(bootstrap).toContain('const result = await recoverStartup({ error })');
+    expect(bootstrap).toContain('force: true');
+    expect(bootstrap).toContain('completeStartupRecovery();');
+    expect(bootstrap).not.toContain('window.location.reload()');
+
     expect(recovery).toContain("const RECOVERY_ATTEMPT_KEY = 'lanzo:admin-startup-recovery:v1'");
+    expect(recovery).toContain('function getSessionStorage(windowTarget)');
+    expect(recovery).toContain('hasRecoveryQueryForCurrentBuild(windowTarget)');
     expect(recovery).toMatch(/Failed to fetch dynamically imported module/);
     expect(recovery).toMatch(/SKIP_WAITING/);
     expect(recovery).toMatch(/__lanzo_recovery/);
