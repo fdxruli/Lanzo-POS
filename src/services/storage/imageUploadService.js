@@ -10,6 +10,7 @@ import { optimizeBrandingImageToWebp } from './brandingImageOptimizer';
 
 const IMAGE_BUCKET = 'images';
 const AUTHORIZE_FUNCTION = 'authorize-image-upload';
+const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export const IMAGE_UPLOAD_PURPOSES = Object.freeze({
   BUSINESS_LOGO: 'business-logo',
@@ -86,7 +87,7 @@ function getFileExtension(filename = '') {
   return parts.length > 1 ? parts.pop().toLowerCase() : '';
 }
 
-function validateClientSideImage(file, purpose) {
+function validateClientSideImage(file, purpose, { enforcePurposeLimit = true } = {}) {
   if (!(file instanceof File)) {
     return { valid: false, code: 'INVALID_IMAGE_TYPE' };
   }
@@ -98,8 +99,12 @@ function validateClientSideImage(file, purpose) {
     return { valid: false, code: 'INVALID_IMAGE_TYPE' };
   }
 
+  if (typeof file.size === 'number' && file.size > MAX_SOURCE_IMAGE_BYTES) {
+    return { valid: false, code: 'IMAGE_TOO_LARGE', maxSize: MAX_SOURCE_IMAGE_BYTES };
+  }
+
   const maxSize = MAX_SIZE_BY_PURPOSE[purpose] || MAX_SIZE_BY_PURPOSE[IMAGE_UPLOAD_PURPOSES.MISC];
-  if (typeof file.size === 'number' && file.size > maxSize) {
+  if (enforcePurposeLimit && typeof file.size === 'number' && file.size > maxSize) {
     return { valid: false, code: 'IMAGE_TOO_LARGE', maxSize };
   }
 
@@ -120,7 +125,7 @@ async function prepareUploadFile(file, purpose, imageOptimizer) {
       ? { file: candidate, validation: candidateValidation }
       : { file, validation: validateClientSideImage(file, purpose) };
   } catch {
-    Logger.warn('[Storage] No se pudo optimizar la imagen de marca; se usará el archivo original.');
+    Logger.warn('[Storage] No se pudo optimizar la imagen; se usará el archivo original.');
     return { file, validation: validateClientSideImage(file, purpose) };
   }
 }
@@ -132,10 +137,12 @@ export async function uploadImageFile({
   imageOptimizer = optimizeBrandingImageToWebp
 }) {
   const normalizedPurpose = normalizePurpose(purpose);
-  const localValidation = validateClientSideImage(file, normalizedPurpose);
+  const sourceValidation = validateClientSideImage(file, normalizedPurpose, {
+    enforcePurposeLimit: false
+  });
 
-  if (!localValidation.valid) {
-    throw buildUploadError(localValidation.code);
+  if (!sourceValidation.valid) {
+    throw buildUploadError(sourceValidation.code);
   }
 
   const isOnline = await checkInternetConnection();
@@ -160,6 +167,10 @@ export async function uploadImageFile({
   const prepared = await prepareUploadFile(file, normalizedPurpose, imageOptimizer);
   const uploadFile = prepared.file;
   const uploadValidation = prepared.validation;
+
+  if (!uploadValidation.valid) {
+    throw buildUploadError(uploadValidation.code);
+  }
 
   const { data: authorization, error: authorizationError } = await supabaseClient.functions.invoke(
     AUTHORIZE_FUNCTION,
@@ -218,14 +229,22 @@ export async function uploadImageFile({
     .from(authorization.bucket)
     .getPublicUrl(authorization.public_url_path || authorization.path);
 
+  const publicUrl = publicUrlData?.publicUrl || null;
+  if (!publicUrl) {
+    Logger.warn('[Storage] No se pudo resolver la URL pública de la imagen.');
+    throw buildUploadError('STORAGE_UPLOAD_FAILED');
+  }
+
   return {
     bucket: authorization.bucket,
     path: authorization.path,
-    publicUrl: publicUrlData?.publicUrl || null,
+    publicUrl,
     maxSizeBytes: authorization.max_size_bytes || uploadValidation.maxSize,
     mimeType: authorization.mime_type || uploadFile.type,
     purpose: normalizedPurpose,
-    optimized: uploadFile !== file
+    optimized: uploadFile !== file,
+    originalSizeBytes: file.size,
+    uploadedSizeBytes: uploadFile.size
   };
 }
 
@@ -234,5 +253,13 @@ export async function uploadBusinessLogo(file, licenseKey) {
     file,
     licenseKey,
     purpose: IMAGE_UPLOAD_PURPOSES.BUSINESS_LOGO
+  });
+}
+
+export async function uploadProductImage(file, licenseKey) {
+  return uploadImageFile({
+    file,
+    licenseKey,
+    purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE
   });
 }

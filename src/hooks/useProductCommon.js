@@ -10,6 +10,7 @@ export function useProductCommon(initialData, config = {}) {
     const [description, setDescription] = useState(initialData?.description || '');
     const [imagePreview, setImagePreview] = useState(initialData?.image || defaultPlaceholder);
     const [imageData, setImageData] = useState(initialData?.image || null);
+    const [imageUploadSource, setImageUploadSource] = useState(null);
     const [categoryId, setCategoryId] = useState(initialData?.categoryId || '');
     const [storageLocation, setStorageLocation] = useState(initialData?.location || '');
     
@@ -49,11 +50,14 @@ export function useProductCommon(initialData, config = {}) {
         if (file) {
             setIsImageProcessing(true);
             try {
+                // IndexedDB conserva un thumbnail pequeño; Storage recibe la fuente original
+                // y aplica su propio perfil WebP para la tienda pública.
                 const compressedFile = await compressImage(file);
                 if (imagePreview && imagePreview.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
                 const newUrl = URL.createObjectURL(compressedFile);
                 setImagePreview(newUrl);
                 setImageData(compressedFile);
+                setImageUploadSource(file);
             } catch {
                 showMessageModal("Error al procesar imagen", null, { type: 'error' });
             } finally {
@@ -75,6 +79,7 @@ export function useProductCommon(initialData, config = {}) {
             if (apiResult.product.image) {
                 setImagePreview(apiResult.product.image);
                 setImageData(apiResult.product.image);
+                setImageUploadSource(null);
             }
             showMessageModal('¡Producto encontrado!');
         } else {
@@ -126,6 +131,7 @@ export function useProductCommon(initialData, config = {}) {
             description: description.trim(),
             categoryId,
             image: imageData,
+            imageUploadSource,
             location: storageLocation.trim(),
             trackStock: doesTrackStock,
             price: parseFloat(price) || 0,
@@ -170,6 +176,7 @@ export function useProductCommon(initialData, config = {}) {
         description, setDescription,
         imagePreview, setImagePreview,
         imageData, setImageData,
+        imageUploadSource, setImageUploadSource,
         categoryId, setCategoryId,
         storageLocation, setStorageLocation,
         expirationMode, setExpirationMode,
