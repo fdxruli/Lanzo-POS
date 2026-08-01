@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const databaseMocks = vi.hoisted(() => ({
   loadDataPaginated: vi.fn(),
   softDeleteWithCascadeSafe: vi.fn(),
-  db: {},
+  tableToArray: vi.fn(),
+  db: {
+    table: vi.fn(() => ({
+      toArray: (...args) => databaseMocks.tableToArray(...args)
+    }))
+  },
   STORES: { MENU: 'menu', DELETED_MENU: 'deleted_menu' }
 }));
 
@@ -65,9 +70,26 @@ beforeEach(() => {
   vi.clearAllMocks();
   recoveryMocks.pending = false;
   databaseMocks.loadDataPaginated.mockResolvedValue({ data: [], nextCursor: null });
+  databaseMocks.tableToArray.mockResolvedValue([]);
   useProductStore.setState({
+    items: [],
     menu: [],
     categories: [],
+    filters: {
+      categoryId: null,
+      status: 'active',
+      productType: 'sellable',
+      outOfStockOnly: false,
+      expiredOnly: false
+    },
+    pageSize: 50,
+    nextCursor: null,
+    loadedPageCount: 1,
+    requestVersion: 0,
+    initialized: true,
+    isLoadingInitial: false,
+    isLoadingNextPage: false,
+    isRefreshing: false,
     isLoading: false,
     isInvalidating: false,
     cursorStack: [null],
@@ -99,7 +121,7 @@ describe('ProductStore structural recovery ownership', () => {
     expect(useProductStore.getState().isInvalidating).toBe(false);
     expect(useProductStore.getState().isLoading).toBe(false);
     expect(categoryMocks.getActiveCategories).toHaveBeenCalledTimes(1);
-    expect(databaseMocks.loadDataPaginated).not.toHaveBeenCalled();
+    expect(databaseMocks.db.table).not.toHaveBeenCalled();
     expect(recoveryMocks.reportStructuralDatabaseErrorOnce).toHaveBeenCalledTimes(1);
     expect(loggerMocks.debug).not.toHaveBeenCalledWith('[ProductStore] Invalidation complete');
   });
@@ -113,7 +135,7 @@ describe('ProductStore structural recovery ownership', () => {
     window.dispatchEvent(new CustomEvent('lanzo:products-sync-updated', { detail: { id: 1 } }));
 
     expect(categoryMocks.getActiveCategories).not.toHaveBeenCalled();
-    expect(databaseMocks.loadDataPaginated).not.toHaveBeenCalled();
+    expect(databaseMocks.db.table).not.toHaveBeenCalled();
     expect(useProductStore.getState().isInvalidating).toBe(false);
     expect(useProductStore.getState().isLoading).toBe(false);
   });
@@ -126,7 +148,7 @@ describe('ProductStore structural recovery ownership', () => {
     await useProductStore.getState().invalidateAndReset();
 
     expect(categoryMocks.getActiveCategories).toHaveBeenCalledTimes(1);
-    expect(databaseMocks.loadDataPaginated).toHaveBeenCalledTimes(1);
+    expect(databaseMocks.db.table).toHaveBeenCalledTimes(1);
     expect(useProductStore.getState().isInvalidating).toBe(false);
   });
 });

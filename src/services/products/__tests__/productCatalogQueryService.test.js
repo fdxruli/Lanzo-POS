@@ -59,6 +59,8 @@ vi.mock('../productMenuEligibility', () => ({
 }));
 
 import {
+  INVENTORY_CATALOG_PAGE_SIZE,
+  isInventoryCatalogEligible,
   isPosCatalogEligible,
   POS_CATALOG_PAGE_SIZE,
   queryInventoryCatalogPage,
@@ -86,20 +88,112 @@ beforeEach(() => {
 
 describe('product catalog IndexedDB queries', () => {
   it('keeps administrative status filters and product types in inventory', async () => {
-    mocks.loadDataPaginated.mockResolvedValue({
-      data: [
-        product(1, { id: 'inactive-sellable', isActive: false }),
-        product(2, { id: 'inactive-ingredient', productType: 'ingredient', isActive: false })
-      ],
-      nextCursor: null
-    });
+    mocks.records = [
+      product(1, { id: 'inactive-sellable', isActive: false }),
+      product(2, { id: 'inactive-ingredient', productType: 'ingredient', isActive: false })
+    ];
 
     const result = await queryInventoryCatalogPage({ status: 'inactive', productType: 'ingredient' });
-    expect(mocks.loadDataPaginated).toHaveBeenCalledWith(
-      'menu',
-      expect.objectContaining({ status: 'inactive' })
-    );
     expect(result.data.map(({ id }) => id)).toEqual(['inactive-ingredient']);
+  });
+
+  it('fills inventory pages with eligible sellable products before limiting raw records', async () => {
+    const sellable = Array.from({ length: 52 }, (_, index) => product(index, {
+      id: `sellable-${String(index).padStart(3, '0')}`
+    }));
+    const ingredients = Array.from({ length: 28 }, (_, index) => product(100 + index, {
+      id: `ingredient-${String(index).padStart(3, '0')}`,
+      productType: 'ingredient'
+    }));
+    mocks.records = [...sellable, ...ingredients];
+
+    const first = await queryInventoryCatalogPage({ productType: 'sellable' });
+    const second = await queryInventoryCatalogPage({
+      productType: 'sellable',
+      cursor: first.nextCursor
+    });
+
+    expect(first.data).toHaveLength(INVENTORY_CATALOG_PAGE_SIZE);
+    expect(first.requestedLimit).toBe(51);
+    expect(first.hasMore).toBe(true);
+    expect(second.data).toHaveLength(2);
+    expect(second.hasMore).toBe(false);
+    expect([...first.data, ...second.data].every((item) => (
+      isInventoryCatalogEligible(item, { productType: 'sellable' })
+    ))).toBe(true);
+  });
+
+  it('excludes deleted products and fills a selected inventory category', async () => {
+    const otherCategory = Array.from({ length: 70 }, (_, index) => product(200 + index, {
+      id: `other-${index}`,
+      categoryId: 'other'
+    }));
+    const selectedCategory = Array.from({ length: 55 }, (_, index) => product(index, {
+      id: `selected-${index}`,
+      categoryId: 'selected'
+    }));
+    const deleted = Array.from({ length: 15 }, (_, index) => product(400 + index, {
+      id: `deleted-${index}`,
+      categoryId: 'selected',
+      deletedAt: '2026-01-02T00:00:00.000Z'
+    }));
+    mocks.records = [...otherCategory, ...deleted, ...selectedCategory];
+
+    const result = await queryInventoryCatalogPage({
+      categoryId: 'selected',
+      productType: 'sellable'
+    });
+
+    expect(result.data).toHaveLength(50);
+    expect(result.hasMore).toBe(true);
+    expect(result.data.every((item) => item.categoryId === 'selected' && !item.deletedAt)).toBe(true);
+  });
+
+  it('paginates inventory deterministically when all createdAt values are equal', async () => {
+    mocks.records = Array.from({ length: 75 }, (_, index) => product(index, {
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }));
+    const first = await queryInventoryCatalogPage({ productType: 'sellable' });
+    const second = await queryInventoryCatalogPage({
+      productType: 'sellable',
+      cursor: first.nextCursor
+    });
+    const ids = [...first.data, ...second.data].map(({ id }) => id);
+
+    expect(ids).toHaveLength(75);
+    expect(new Set(ids).size).toBe(75);
+    expect(ids).toEqual([...ids].sort().reverse());
+  });
+
+  it.each([
+    [0, 0, false],
+    [12, 12, false],
+    [50, 50, false],
+    [51, 50, true],
+    [120, 50, true]
+  ])('computes inventory hasMore exactly for %i eligible records', async (count, length, hasMore) => {
+    mocks.records = Array.from({ length: count }, (_, index) => product(index));
+    const result = await queryInventoryCatalogPage({ productType: 'sellable' });
+    expect(result.data).toHaveLength(length);
+    expect(result.hasMore).toBe(hasMore);
+  });
+
+  it('keeps the ingredient inventory view independent', async () => {
+    mocks.records = [
+      ...Array.from({ length: 60 }, (_, index) => product(index)),
+      ...Array.from({ length: 53 }, (_, index) => product(100 + index, {
+        id: `ingredient-${index}`,
+        productType: 'ingredient'
+      }))
+    ];
+    const first = await queryInventoryCatalogPage({ productType: 'ingredient' });
+    const second = await queryInventoryCatalogPage({
+      productType: 'ingredient',
+      cursor: first.nextCursor
+    });
+    expect(first.data).toHaveLength(50);
+    expect(second.data).toHaveLength(3);
+    expect([...first.data, ...second.data].every((item) => item.productType === 'ingredient')).toBe(true);
   });
 
   it('loads 50 eligible products, requests 51, and exposes a stable cursor', async () => {
