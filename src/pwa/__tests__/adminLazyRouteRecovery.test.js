@@ -20,6 +20,7 @@ describe('administrative lazy route recovery', () => {
 
     const first = recoverAdminLazyRoute({ error: staleChunkError, recoverStartup });
     const second = recoverAdminLazyRoute({ error: staleChunkError, recoverStartup });
+    await Promise.resolve();
 
     expect(first).toBe(second);
     expect(recoverStartup).toHaveBeenCalledOnce();
