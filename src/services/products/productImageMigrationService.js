@@ -1,7 +1,7 @@
 import { db, STORES } from '../db/dexie';
 import { uploadProductImage } from '../storage/imageUploadService';
 
-const DEFAULT_MIGRATION_LIMIT = 50;
+const DEFAULT_MIGRATION_LIMIT = 25;
 const LOCAL_IMAGE_PREFIX = 'img-';
 
 const asText = (value) => String(value ?? '').trim();
@@ -66,9 +66,13 @@ export const getLocalProductImageBlob = async (imageRef) => {
   return record?.blob || null;
 };
 
-export const listLegacyProductImageCandidates = async ({ limit = DEFAULT_MIGRATION_LIMIT } = {}) => {
+export const listLegacyProductImageCandidates = async ({
+  limit = DEFAULT_MIGRATION_LIMIT,
+  includeOverflow = false
+} = {}) => {
   await ensureDatabaseOpen();
   const safeLimit = Math.max(1, Math.min(Number(limit) || DEFAULT_MIGRATION_LIMIT, 200));
+  const queryLimit = includeOverflow ? safeLimit + 1 : safeLimit;
 
   return db.table(STORES.MENU)
     .filter((product) => (
@@ -77,7 +81,7 @@ export const listLegacyProductImageCandidates = async ({ limit = DEFAULT_MIGRATI
       && !getProductPublicImageUrl(product)
       && Boolean(getProductLocalImageRef(product))
     ))
-    .limit(safeLimit)
+    .limit(queryLimit)
     .toArray();
 };
 
@@ -197,7 +201,8 @@ export const migrateLegacyProductImages = async ({
     failed: 0,
     skipped: 0,
     missingProductNames: [],
-    failures: []
+    failures: [],
+    hasMore: false
   };
 
   if (!cloudEnabled || !licenseKey || typeof saveProduct !== 'function') {
@@ -205,12 +210,15 @@ export const migrateLegacyProductImages = async ({
     return summary;
   }
 
-  const candidates = Array.isArray(products)
+  const safeLimit = Math.max(1, Math.min(Number(limit) || DEFAULT_MIGRATION_LIMIT, 200));
+  const candidatePool = Array.isArray(products)
     ? products.filter((product) => (
         !getProductPublicImageUrl(product)
         && Boolean(getProductLocalImageRef(product))
-      )).slice(0, limit)
-    : await listLegacyProductImageCandidates({ limit });
+      ))
+    : await listLegacyProductImageCandidates({ limit: safeLimit, includeOverflow: true });
+  summary.hasMore = candidatePool.length > safeLimit;
+  const candidates = candidatePool.slice(0, safeLimit);
 
   for (const product of candidates) {
     summary.attempted += 1;
