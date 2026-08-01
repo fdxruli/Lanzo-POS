@@ -1,7 +1,8 @@
 // src/hooks/useCheckoutFlow.js
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { broadcastDBChange, useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
+import { broadcastDBChange } from '../../services/products/productCatalogEvents';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { processSale } from '../../services/salesService';
 import Logger from '../../services/Logger';
@@ -131,7 +132,7 @@ export function useCheckoutFlow({
                 order,
                 paymentData,
                 total,
-                allProducts: useProductStore.getState().menu || [],
+                allProducts: usePosCatalogStore.getState().items || [],
                 features,
                 companyName,
                 tempPrescriptionData: null, // Se pasa desde el componente padre

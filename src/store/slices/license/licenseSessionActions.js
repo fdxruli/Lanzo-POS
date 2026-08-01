@@ -1,6 +1,7 @@
 // src/store/slices/license/licenseSessionActions.js
 
 import Logger from '../../../services/Logger';
+import { notifyPosCatalogSessionReset } from '../../../services/products/posCatalogSessionEvents';
 
 import {
   clearLicenseSecurityCache,
@@ -34,6 +35,7 @@ export const createLicenseSessionActions = ({
     await get().stopLicenseSync();
     await clearStaffSessionCache();
     await clearLocalLicenseSession();
+    notifyPosCatalogSessionReset();
 
     set({
       appStatus: 'license_change_required',
@@ -71,6 +73,7 @@ export const createLicenseSessionActions = ({
 
   confirmLicenseChangeRequired: async () => {
     await clearLocalLicenseSession();
+    notifyPosCatalogSessionReset();
 
     set({
       appStatus: 'unauthenticated',
@@ -101,6 +104,7 @@ export const createLicenseSessionActions = ({
     await get().stopLicenseSync();
 
     await clearLocalLicenseSession();
+    notifyPosCatalogSessionReset();
 
     set({
       appStatus: 'unauthenticated',

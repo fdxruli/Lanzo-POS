@@ -10,7 +10,7 @@ import EcommercePublishedStockAlertRuntime from '../ecommerce/EcommercePublished
 import EcommerceCatalogSyncRuntime from '../ecommerce/EcommerceCatalogSyncRuntime';
 import { useStatsStore } from '../../store/useStatsStore';
 import { useSalesStore } from '../../store/useSalesStore';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
 import { GLOBAL_ALERT } from '../../config/botContext';
@@ -21,7 +21,7 @@ const AssistantBot = lazy(() => import('../common/AssistantBot'));
 
 function Layout() {
   const loadStats = useStatsStore((state) => state.loadStats);
-  const loadProducts = useProductStore((state) => state.loadInitialProducts);
+  const loadProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const loadSales = useSalesStore((state) => state.loadRecentSales);
   const reconcileOrphanedOrders = useActiveOrders((state) => state.reconcileOrphanedOrders);
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);

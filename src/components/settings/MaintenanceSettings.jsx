@@ -14,7 +14,7 @@ import { useStatsStore } from '../../store/useStatsStore';
 import { archiveOldData } from '../../services/database';
 import Logger from '../../services/Logger';
 import DataTransferModal from '../products/DataTransferModal';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { maintenanceTools } from '../../services/db';
 import { evaluator } from '../../services/BackupRiskEvaluator';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
@@ -98,7 +98,7 @@ function MaintenanceToolCard({
 
 export default function MaintenanceSettings() {
   const loadStats = useStatsStore((state) => state.loadStats);
-  const loadInitialProducts = useProductStore((state) => state.loadInitialProducts);
+  const loadInitialProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const [showDataTransfer, setShowDataTransfer] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 

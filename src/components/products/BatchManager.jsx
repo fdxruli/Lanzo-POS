@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import BatchProductSearch from './batch/BatchProductSearch';
 import BatchTable from './batch/BatchTable';
@@ -12,8 +12,8 @@ import {
 import './BatchManager.css';
 
 export default function BatchManager({ selectedProductId, onProductSelect }) {
-  const menu = useProductStore((state) => state.menu);
-  const refreshData = useProductStore((state) => state.loadInitialProducts);
+  const menu = useInventoryCatalogStore((state) => state.menu);
+  const refreshData = useInventoryCatalogStore((state) => state.loadInitialProducts);
 
   const selectedProductFromMenu = useMemo(
     () => menu.find((product) => product.id === selectedProductId),

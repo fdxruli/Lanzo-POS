@@ -12,7 +12,7 @@ import {
   Store,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { useProductStore } from '../store/useProductStore';
+import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
 import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
@@ -189,7 +189,7 @@ Build: ${APP_BUILD_DATE_LABEL}`;
 };
 
 export default function AboutPage() {
-  const productCount = useProductStore(state => state.menu?.length || 0);
+  const productCount = useInventoryCatalogStore(state => state.menu?.length || 0);
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const companyProfile = useAppStore(state => state.companyProfile);
   const [contactModal, setContactModal] = useState(EMPTY_CONTACT_MODAL);

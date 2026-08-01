@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   activeState: null,
   appState: {},
-  productState: { menu: [] },
+  productState: { items: [] },
   revalidate: vi.fn(),
   getBatchOptions: vi.fn(),
   selectBatch: vi.fn()
@@ -24,8 +24,8 @@ vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector(mocks.appState)
 }));
 
-vi.mock('../../../store/useProductStore', () => ({
-  useProductStore: (selector) => selector(mocks.productState)
+vi.mock('../../../store/usePosCatalogStore', () => ({
+  usePosCatalogStore: (selector) => selector(mocks.productState)
 }));
 
 vi.mock('../../../services/db/dexie', () => ({
@@ -97,7 +97,7 @@ const installOrder = (order) => {
 beforeEach(() => {
   vi.clearAllMocks();
   installOrder(buildOrder());
-  mocks.productState = { menu: [] };
+  mocks.productState = { items: [] };
   mocks.revalidate.mockResolvedValue({ success: true });
   mocks.getBatchOptions.mockResolvedValue({ success: true, options: [] });
   mocks.selectBatch.mockResolvedValue({ success: true });

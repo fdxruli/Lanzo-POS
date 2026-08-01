@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useAppStore } from '../../store/useAppStore';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { db, STORES } from '../../services/db/dexie';
 import {
   ECOMMERCE_INVENTORY_READ_FAILED,
@@ -58,7 +58,7 @@ export default function EcommercePosDraftBanner({ order, warnings = [], onOpenDe
   const storedOrder = useActiveOrders((state) => (
     order?.id ? state.activeOrders.get(order.id) || null : null
   ));
-  const products = useProductStore((state) => state.menu);
+  const products = usePosCatalogStore((state) => state.items);
   const canResolveInventory = useAppStore((state) => canPrepareEcommercePosDraft(state));
   const effectiveOrder = storedOrder || order;
   const storedOrderId = storedOrder?.id || null;

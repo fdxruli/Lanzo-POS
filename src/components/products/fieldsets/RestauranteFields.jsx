@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useProductStore } from '../../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../../store/useInventoryCatalogStore';
 import { usePreparationStations } from '../../../hooks/restaurant/usePreparationStations';
 import {
   getModifierOptionLabel,
@@ -67,7 +67,7 @@ export default function RestauranteFields({
   const selectedStation = hasSelectedStation ? (printStation || 'kitchen') : 'kitchen';
   const showInactiveStationNotice = inactivePreparationStationNotice || (!hasSelectedStation && (printStation || 'kitchen') !== 'kitchen');
 
-  const menu = useProductStore(state => state.menu);
+  const menu = useInventoryCatalogStore(state => state.menu);
   const ingredientList = useMemo(() => (
     (menu || []).filter(p => p.productType === 'ingredient' && p.isActive !== false)
   ), [menu]);

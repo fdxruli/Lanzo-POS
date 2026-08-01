@@ -7,7 +7,7 @@ import {
     selectCurrentOrderTableData,
     useActiveOrders
 } from './useActiveOrders';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { useCaja } from '../useCaja';
 import { useInventoryMovement } from '../useInventoryMovement';
 import { showMessageModal } from '../../services/utils';
@@ -50,7 +50,7 @@ export function usePosPage() {
     // REACTIVIDAD: Inicializar listeners reactivos del ProductStore
     // ──────────────────────────────────────────────────────────────
     useEffect(() => {
-        const cleanup = useProductStore.getState().initialize();
+        const cleanup = usePosCatalogStore.getState().initialize();
         return cleanup;
     }, []);
 

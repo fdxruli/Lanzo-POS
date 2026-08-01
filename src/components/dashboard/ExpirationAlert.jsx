@@ -1,7 +1,7 @@
 import React from 'react';
 import { useExpirationAlert } from '../../hooks/useExpirationAlert';
 import { useAppStore } from '../../store/useAppStore';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import {
   AlertTriangle,
   PackageMinus,
@@ -186,7 +186,7 @@ export default function ExpirationAlert() {
 
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const canAccess = useAppStore((state) => state.canAccess);
-  const refreshProducts = useProductStore((state) => state.loadInitialProducts);
+  const refreshProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const licenseKey = React.useMemo(() => getLicenseKeyFromDetails(licenseDetails), [licenseDetails]);
 
   const [regularizationDraft, setRegularizationDraft] = React.useState(null);

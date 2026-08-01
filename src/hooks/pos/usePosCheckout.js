@@ -1,7 +1,7 @@
 // src/hooks/pos/usePosCheckout.js
 import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { broadcastDBChange } from '../../store/useProductStore';
+import { broadcastDBChange } from '../../services/products/productCatalogEvents';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';

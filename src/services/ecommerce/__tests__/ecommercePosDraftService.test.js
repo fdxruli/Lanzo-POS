@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   appState: null,
-  productState: { menu: [] },
+  productState: { items: [] },
   activeState: null,
   getOrder: vi.fn(),
   claim: vi.fn(),
@@ -19,8 +19,8 @@ vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: () => mocks.appState }
 }));
 
-vi.mock('../../../store/useProductStore', () => ({
-  useProductStore: { getState: () => mocks.productState }
+vi.mock('../../../store/usePosCatalogStore', () => ({
+  usePosCatalogStore: { getState: () => mocks.productState }
 }));
 
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
@@ -97,7 +97,7 @@ beforeEach(() => {
     currentDeviceRole: 'staff',
     currentStaffUser: { id: 'staff-1', permissions: { ecommerce: true, pos: true } }
   };
-  mocks.productState = { menu: [localProduct()] };
+  mocks.productState = { items: [localProduct()] };
   mocks.activeState = {
     activeOrders: new Map(),
     upsertEcommerceDraft: mocks.upsert,
@@ -304,7 +304,7 @@ describe('ecommercePosDraftService', () => {
   });
 
   it('releases the claim and never writes a partial draft when a product is missing', async () => {
-    mocks.productState.menu = [];
+    mocks.productState.items = [];
     const result = await prepareEcommerceOrderPosDraft({ order: baseOrder() });
 
     expect(result.code).toBe('ECOMMERCE_POS_DRAFT_PRODUCT_MISSING');

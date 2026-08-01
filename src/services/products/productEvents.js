@@ -1,21 +1,25 @@
-import Logger from '../Logger';
-import { useProductStore } from '../../store/useProductStore';
 import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { PRODUCT_SYNC_EVENT } from './productConstants';
 
 export const notifyProductsChanged = (detail = {}) => {
   if (typeof window === 'undefined') return;
 
-  window.dispatchEvent(new CustomEvent(PRODUCT_SYNC_EVENT, { detail }));
-  dispatchTickerInventoryAlert(detail.productIds || [], {
-    reason: detail.source || 'products-changed'
+  const productIds = Array.from(new Set([
+    ...(Array.isArray(detail.productIds) ? detail.productIds : []),
+    ...(detail.productId ? [detail.productId] : [])
+  ].filter(Boolean)));
+  const catalogEvent = {
+    ...detail,
+    source: detail.source || PRODUCT_SYNC_EVENT,
+    operation: detail.operation || null,
+    productId: detail.productId || productIds[0] || null,
+    productIds,
+    timestamp: Number(detail.timestamp) || Date.now()
+  };
+  window.dispatchEvent(new CustomEvent(PRODUCT_SYNC_EVENT, { detail: catalogEvent }));
+  dispatchTickerInventoryAlert(catalogEvent.productIds, {
+    reason: catalogEvent.source || 'products-changed'
   });
-
-  try {
-    useProductStore.getState().invalidateAndReset();
-  } catch (error) {
-    Logger.warn('[Products/Sync] No se pudo invalidar product store:', error);
-  }
 };
 
 export default notifyProductsChanged;

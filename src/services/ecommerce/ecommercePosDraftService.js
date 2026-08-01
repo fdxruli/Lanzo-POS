@@ -1,5 +1,5 @@
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import {
   mapEcommerceOrderToPosDraft as mapBaseEcommerceOrderToPosDraft,
   prepareEcommerceOrderPosDraft as prepareBaseEcommerceOrderPosDraft
@@ -60,7 +60,7 @@ const decoratePreparedDraftInStore = (draftId) => {
   const current = state.activeOrders?.get?.(draftId) || null;
   if (!current) return null;
 
-  const decorated = decorateEcommercePosDraft(current, useProductStore.getState().menu);
+  const decorated = decorateEcommercePosDraft(current, usePosCatalogStore.getState().items);
   if (decorated !== current) {
     if (typeof state.updateOrder === 'function') {
       state.updateOrder(draftId, { items: decorated.items });

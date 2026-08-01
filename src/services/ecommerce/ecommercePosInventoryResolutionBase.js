@@ -1,5 +1,5 @@
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { db as defaultDb, STORES as DEFAULT_STORES } from '../db/dexie';
 import { getAvailableStock } from '../db/utils';
 import {
@@ -607,7 +607,7 @@ export const resolveEcommerceDraftInventory = async ({ order, now = new Date(), 
     ? await deps.loadProductsForOrder(order)
     : await loadProductsForOrder({
       order,
-      products: deps.products || useProductStore.getState().menu,
+      products: deps.products || usePosCatalogStore.getState().items,
       db,
       STORES
     });
@@ -877,7 +877,7 @@ const loadOrderInventoryInputs = async ({ order, deps = {} }) => {
     ? await deps.loadProductsForOrder(order)
     : await loadProductsForOrder({
       order,
-      products: deps.products || useProductStore.getState().menu,
+      products: deps.products || usePosCatalogStore.getState().items,
       db,
       STORES
     });

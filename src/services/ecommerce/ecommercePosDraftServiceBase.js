@@ -1,6 +1,6 @@
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useAppStore } from '../../store/useAppStore';
-import { useProductStore } from '../../store/useProductStore';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import {
   claimEcommerceOrderPosDraft,
   confirmEcommerceOrderPosDraft,
@@ -380,7 +380,7 @@ async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
 
   const mapped = mapEcommerceOrderToPosDraft({
     order: remoteOrder,
-    products: useProductStore.getState().menu,
+    products: usePosCatalogStore.getState().items,
     licenseIdentity,
     claimToken
   });

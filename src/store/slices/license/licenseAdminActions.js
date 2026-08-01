@@ -1,3 +1,4 @@
+import { notifyPosCatalogSessionReset } from '../../../services/products/posCatalogSessionEvents';
 import {
   activateLicense,
   adminLoginOnDevice,
@@ -274,6 +275,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     const licenseKey = get().licenseDetails?.license_key || get().adminLoginLicenseKey;
     await get().stopLicenseSync();
     await adminLogoutSession(licenseKey);
+    notifyPosCatalogSessionReset();
     set({
       appStatus: 'admin_login_required',
       currentAdminUser: null,

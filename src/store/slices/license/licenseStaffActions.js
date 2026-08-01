@@ -1,5 +1,6 @@
 // src/store/slices/license/licenseStaffActions.js
 
+import { notifyPosCatalogSessionReset } from '../../../services/products/posCatalogSessionEvents';
 import {
   clearStaffSessionCache,
   clearAdminSessionCache,
@@ -159,6 +160,7 @@ export const createLicenseStaffActions = ({
 
     await get().stopLicenseSync();
     await staffLogoutSession(licenseKey);
+    notifyPosCatalogSessionReset();
 
     set({
       appStatus: 'staff_login_required',

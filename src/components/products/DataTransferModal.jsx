@@ -1,6 +1,6 @@
 // src/components/products/DataTransferModal.jsx
 import React, { useCallback, useState } from 'react';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
@@ -25,7 +25,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
     return null;
   })();
 
-  const categories = useProductStore(state => state.categories);
+  const categories = useInventoryCatalogStore(state => state.categories);
 
   const handleClose = useCallback(() => {
     if (isLoading) return;

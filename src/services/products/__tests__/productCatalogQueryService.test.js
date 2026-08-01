@@ -1,0 +1,191 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  records: [],
+  limits: [],
+  getActiveCategories: vi.fn(),
+  get: vi.fn(),
+  checkExpired: vi.fn(),
+  expiredIds: new Set(),
+  loadDataPaginated: vi.fn()
+}));
+
+const makeCollection = (source) => ({
+  reverse() {
+    return makeCollection([...source].reverse());
+  },
+  filter(predicate) {
+    return makeCollection(source.filter(predicate));
+  },
+  limit(value) {
+    mocks.limits.push(value);
+    return makeCollection(source.slice(0, value));
+  },
+  toArray: async () => [...source]
+});
+
+const table = {
+  orderBy: () => makeCollection([...mocks.records].sort((left, right) => (
+    String(left.createdAt).localeCompare(String(right.createdAt))
+    || String(left.id).localeCompare(String(right.id))
+  ))),
+  where: () => ({
+    belowOrEqual: (value) => makeCollection(mocks.records
+      .filter((product) => String(product.createdAt) <= value)
+      .sort((left, right) => (
+        String(left.createdAt).localeCompare(String(right.createdAt))
+        || String(left.id).localeCompare(String(right.id))
+      )))
+  }),
+  get: (...args) => mocks.get(...args),
+  toArray: async () => [...mocks.records]
+};
+
+vi.mock('../../db/general', () => ({
+  categoriesRepository: { getActiveCategories: mocks.getActiveCategories }
+}));
+vi.mock('../../database', () => ({
+  db: { table: () => table },
+  STORES: { MENU: 'menu' },
+  loadDataPaginated: mocks.loadDataPaginated
+}));
+vi.mock('../productMenuEligibility', () => ({
+  checkHasExpiredProductsForPosMenu: mocks.checkExpired,
+  isOutOfStockForPosMenu: (product) => Number(product.stock) <= 0,
+  isExpiredForPosMenu: (product) => product.expired === true,
+  resolveExpiredProductIdsForPosMenu: vi.fn(async (products) => new Set(
+    products.filter((product) => mocks.expiredIds.has(product.id)).map((product) => product.id)
+  ))
+}));
+
+import {
+  isPosCatalogEligible,
+  POS_CATALOG_PAGE_SIZE,
+  queryInventoryCatalogPage,
+  queryPosCatalogPage,
+  queryPosCatalogProductById
+} from '../productCatalogQueryService';
+
+const product = (number, overrides = {}) => ({
+  id: `product-${String(number).padStart(3, '0')}`,
+  name: `Product ${number}`,
+  createdAt: `2026-01-01T00:${String(number).padStart(2, '0')}:00.000Z`,
+  categoryId: 'general',
+  productType: 'sellable',
+  isActive: true,
+  stock: 10,
+  ...overrides
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.records = [];
+  mocks.limits = [];
+  mocks.expiredIds = new Set();
+});
+
+describe('product catalog IndexedDB queries', () => {
+  it('keeps administrative status filters and product types in inventory', async () => {
+    mocks.loadDataPaginated.mockResolvedValue({
+      data: [
+        product(1, { id: 'inactive-sellable', isActive: false }),
+        product(2, { id: 'inactive-ingredient', productType: 'ingredient', isActive: false })
+      ],
+      nextCursor: null
+    });
+
+    const result = await queryInventoryCatalogPage({ status: 'inactive', productType: 'ingredient' });
+    expect(mocks.loadDataPaginated).toHaveBeenCalledWith(
+      'menu',
+      expect.objectContaining({ status: 'inactive' })
+    );
+    expect(result.data.map(({ id }) => id)).toEqual(['inactive-ingredient']);
+  });
+
+  it('loads 50 eligible products, requests 51, and exposes a stable cursor', async () => {
+    mocks.records = Array.from({ length: 60 }, (_, index) => product(index));
+
+    const result = await queryPosCatalogPage();
+
+    expect(result.data).toHaveLength(POS_CATALOG_PAGE_SIZE);
+    expect(result.requestedLimit).toBe(51);
+    expect(mocks.limits[0]).toBe(51);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toEqual({
+      sortValue: result.data[49].createdAt,
+      id: result.data[49].id
+    });
+  });
+
+  it('filters inactive, deleted, ingredients, stock and category before filling the page', async () => {
+    const excluded = Array.from({ length: 30 }, (_, index) => product(100 + index, {
+      id: `excluded-${index}`,
+      ...(index % 4 === 0 ? { isActive: false } : {}),
+      ...(index % 4 === 1 ? { deletedAt: '2026-01-01' } : {}),
+      ...(index % 4 === 2 ? { productType: 'ingredient' } : {}),
+      ...(index % 4 === 3 ? { stock: 0 } : {})
+    }));
+    mocks.records = [...excluded, ...Array.from({ length: 55 }, (_, index) => product(index))];
+
+    const result = await queryPosCatalogPage({ categoryId: 'general' });
+
+    expect(result.data).toHaveLength(50);
+    expect(result.data.every((item) => isPosCatalogEligible(item) && item.stock > 0)).toBe(true);
+  });
+
+  it('returns 35 and stops when the total is smaller than the page', async () => {
+    mocks.records = Array.from({ length: 35 }, (_, index) => product(index));
+    const result = await queryPosCatalogPage();
+    expect(result.data).toHaveLength(35);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it('does not invent a third page when the total is an exact multiple', async () => {
+    mocks.records = Array.from({ length: 100 }, (_, index) => product(index));
+    const first = await queryPosCatalogPage();
+    const second = await queryPosCatalogPage({ cursor: first.nextCursor });
+
+    expect(first.data).toHaveLength(50);
+    expect(first.hasMore).toBe(true);
+    expect(second.data).toHaveLength(50);
+    expect(second.hasMore).toBe(false);
+    expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.data, ...second.data].map(({ id }) => id)).size).toBe(100);
+  });
+
+  it('uses id as the tie breaker when createdAt values are equal', async () => {
+    mocks.records = Array.from({ length: 75 }, (_, index) => product(index, {
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }));
+    const first = await queryPosCatalogPage();
+    const second = await queryPosCatalogPage({ cursor: first.nextCursor });
+    const ids = [...first.data, ...second.data].map(({ id }) => id);
+
+    expect(ids).toHaveLength(75);
+    expect(new Set(ids).size).toBe(75);
+    expect(ids).toEqual([...ids].sort().reverse());
+  });
+
+  it('paginates dynamic out-of-stock and expired views independently', async () => {
+    mocks.records = Array.from({ length: 120 }, (_, index) => product(index, {
+      stock: index % 2 === 0 ? 0 : 10,
+      expired: index % 2 === 1
+    }));
+    const out = await queryPosCatalogPage({ outOfStockOnly: true });
+    const expired = await queryPosCatalogPage({ expiredOnly: true });
+
+    expect(out.data).toHaveLength(50);
+    expect(out.data.every((item) => item.stock === 0)).toBe(true);
+    expect(expired.data).toHaveLength(50);
+    expect(expired.data.every((item) => item.stock > 0 && item.expired)).toBe(true);
+  });
+
+  it('reads one current IndexedDB product and applies the active POS view', async () => {
+    mocks.get.mockResolvedValue(product(1, { id: 'product-1', categoryId: 'drinks' }));
+    await expect(queryPosCatalogProductById('product-1', { categoryId: 'drinks' }))
+      .resolves.toMatchObject({ id: 'product-1' });
+    await expect(queryPosCatalogProductById('product-1', { categoryId: 'food' }))
+      .resolves.toBeNull();
+  });
+});

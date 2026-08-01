@@ -1,15 +1,13 @@
 import { useCallback } from 'react';
-import { useProductStore } from '../store/useProductStore';
 import {
   loadBatchesForProduct as loadBatchesForProductService,
   removeProductBatch as removeProductBatchService,
   scanProductFast as scanProductFastService,
   updateProductBatch as updateProductBatchService
 } from '../services/inventoryMovement';
+import { notifyProductsChanged } from '../services/products/productEvents';
 
 export function useInventoryMovement() {
-  const refreshProducts = useProductStore((state) => state.loadInitialProducts);
-
   const scanProductFast = useCallback(
     async (barcode) => scanProductFastService(barcode),
     []
@@ -22,15 +20,15 @@ export function useInventoryMovement() {
 
   const updateProductBatch = useCallback(async (productId, batchId, patch) => {
     const result = await updateProductBatchService(productId, batchId, patch);
-    await refreshProducts();
+    notifyProductsChanged({ source: 'inventoryMovement.updateProductBatch', productIds: [productId] });
     return result;
-  }, [refreshProducts]);
+  }, []);
 
   const removeProductBatch = useCallback(async (productId, batchId) => {
     const result = await removeProductBatchService(productId, batchId);
-    await refreshProducts();
+    notifyProductsChanged({ source: 'inventoryMovement.removeProductBatch', productIds: [productId] });
     return result;
-  }, [refreshProducts]);
+  }, []);
 
   return {
     scanProductFast,
@@ -39,4 +37,3 @@ export function useInventoryMovement() {
     removeProductBatch
   };
 }
-

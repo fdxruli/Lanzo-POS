@@ -10,9 +10,22 @@ const productStoreMock = vi.hoisted(() => ({
   getState: vi.fn(() => productState),
   setState: vi.fn((patch) => Object.assign(productState, patch))
 }));
+const posState = vi.hoisted(() => ({
+  invalidateAndReset: vi.fn(),
+  reset: vi.fn(),
+  isInvalidating: true,
+  isLoading: true
+}));
+const posStoreMock = vi.hoisted(() => ({
+  getState: vi.fn(() => posState),
+  setState: vi.fn((patch) => Object.assign(posState, patch))
+}));
 
-vi.mock('../useProductStore', () => ({
-  useProductStore: productStoreMock
+vi.mock('../useInventoryCatalogStore', () => ({
+  useInventoryCatalogStore: productStoreMock
+}));
+vi.mock('../usePosCatalogStore', () => ({
+  usePosCatalogStore: posStoreMock
 }));
 
 import {
@@ -30,6 +43,10 @@ beforeEach(() => {
   productState.invalidateAndReset = originalInvalidate;
   productState.isInvalidating = true;
   productState.isLoading = true;
+  posState.invalidateAndReset = vi.fn();
+  posState.reset = vi.fn();
+  posState.isInvalidating = true;
+  posState.isLoading = true;
   clearDatabaseRecoveryState();
   resetProductStoreRecoveryGuardForTests();
 });
@@ -57,6 +74,9 @@ describe('ProductStore recovery guard', () => {
     expect(originalInvalidate).not.toHaveBeenCalled();
     expect(productState.isInvalidating).toBe(false);
     expect(productState.isLoading).toBe(false);
+    expect(posState.isInvalidating).toBe(false);
+    expect(posState.isLoading).toBe(false);
+    expect(posState.reset).toHaveBeenCalledTimes(1);
 
     clearDatabaseRecoveryState();
     guarded('manual-retry-after-recovery');

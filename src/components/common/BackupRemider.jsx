@@ -16,7 +16,7 @@ import {
   BACKUP_WARNING_BLOB_PERF,
   downloadBackupSmart,
 } from '../../services/dataTransfer';
-import { useProductStore } from '../../store/useProductStore';
+import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useAppStore } from '../../store/useAppStore';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import Logger from '../../services/Logger';
@@ -32,7 +32,7 @@ export default function BackupReminder() {
   const [daysSince, setDaysSince] = useState(0);
   const [urgencyLevel, setUrgencyLevel] = useState('normal'); // 'normal' | 'urgent'
 
-  const products         = useProductStore((state) => state.menu);
+  const products         = useInventoryCatalogStore((state) => state.menu);
   const isBackupLoading  = useAppStore((state) => state.isBackupLoading);
   const setBackupLoading = useAppStore((state) => state.setBackupLoading);
 

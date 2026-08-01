@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
@@ -36,6 +36,8 @@ const PRODUCT_CARD_SHELL_STYLE = {
   position: 'relative',
   minWidth: 0
 };
+
+const CATALOG_SCROLL_INTENT_THRESHOLD_PX = 2;
 
 const PRODUCT_SYNC_BADGE_BASE_STYLE = {
   position: 'absolute',
@@ -115,7 +117,14 @@ export default function ProductMenu({
   onSearchChange,
   onOpenScanner,
   showOutofStockCategory,
-  showExpiredCategory
+  showExpiredCategory,
+  hasMore,
+  isLoadingInitial,
+  isLoadingNextPage,
+  onLoadNextPage,
+  activeViewKey,
+  savedScrollPosition,
+  onScrollPositionChange
 }) {
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -137,9 +146,22 @@ export default function ProductMenu({
 
   const { loadBatchesForProduct } = useInventoryMovement();
 
-  // --- INFINITE SCROLL ---
-  const [displayLimit, setDisplayLimit] = useState(50);
   const scrollContainerRef = useRef(null);
+  const loadMoreSentinelRef = useRef(null);
+  const lastScrollTopRef = useRef(0);
+  const hasUserScrolledDownRef = useRef(false);
+  const scrollDirectionRef = useRef('idle');
+  const observerWasIntersectingRef = useRef(false);
+  const loadTriggeredForCurrentEntryRef = useRef(false);
+  const loadRequestInProgressRef = useRef(false);
+  const manualLoadInProgressRef = useRef(false);
+  const manualLoadLockRef = useRef(false);
+  const manualExitObservedRef = useRef(false);
+  const isRestoringScrollRef = useRef(false);
+  const hasMoreRef = useRef(hasMore);
+  const isLoadingNextPageRef = useRef(isLoadingNextPage);
+  const searchActiveRef = useRef(Boolean(searchTerm.trim()));
+  const onLoadNextPageRef = useRef(onLoadNextPage);
 
   const cloudSalesInventoryEnabled = useMemo(
     () => isCloudSalesInventoryEnabled(licenseDetails),
@@ -204,34 +226,113 @@ export default function ProductMenu({
     return true;
   }, [loadBatchesForProduct, strictExpiryStatusByProductId]);
 
-  // --- EFECTO: Resetear displayLimit cuando cambian filtros de búsqueda ---
-  // Reemplaza el anti-patrón de mutación de estado durante renderizado
-  useEffect(() => {
-    setDisplayLimit(50);
-  }, [selectedCategoryId, searchTerm, products]);
+  hasMoreRef.current = hasMore;
+  isLoadingNextPageRef.current = isLoadingNextPage;
+  searchActiveRef.current = Boolean(searchTerm.trim());
+  onLoadNextPageRef.current = onLoadNextPage;
 
-  // --- EFECTO: Resetear scroll al cambiar filtros ---
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 0;
-    }
-  }, [selectedCategoryId, searchTerm, products]);
-
-  const handleScroll = () => {
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container) return;
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    if (scrollTop + clientHeight >= scrollHeight - 300) {
-      setDisplayLimit(prev => {
-        if (prev >= products.length) return prev;
-        return prev + 50;
-      });
-    }
-  };
+    if (!container) return undefined;
+    const targetPosition = searchTerm.trim() ? 0 : Math.max(0, Number(savedScrollPosition) || 0);
+    isRestoringScrollRef.current = true;
+    let releaseFrame = null;
+    const restore = () => {
+      const maximumPosition = Math.max(0, container.scrollHeight - container.clientHeight);
+      container.scrollTop = Math.min(targetPosition, maximumPosition);
+      lastScrollTopRef.current = container.scrollTop;
+      releaseFrame = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame(() => {
+          isRestoringScrollRef.current = false;
+        })
+        : null;
+      if (releaseFrame === null) isRestoringScrollRef.current = false;
+    };
+    const frame = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(restore)
+      : null;
+    if (frame === null) restore();
+    return () => {
+      if (frame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      if (releaseFrame !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(releaseFrame);
+      }
+    };
+  }, [activeViewKey, savedScrollPosition, searchTerm]);
 
-  const visibleProducts = useMemo(() => {
-    return products.slice(0, displayLimit);
-  }, [products, displayLimit]);
+  useLayoutEffect(() => {
+    lastScrollTopRef.current = scrollContainerRef.current?.scrollTop || 0;
+    hasUserScrolledDownRef.current = false;
+    scrollDirectionRef.current = 'idle';
+    observerWasIntersectingRef.current = false;
+    loadTriggeredForCurrentEntryRef.current = false;
+    loadRequestInProgressRef.current = false;
+    manualLoadInProgressRef.current = false;
+    manualLoadLockRef.current = false;
+    manualExitObservedRef.current = false;
+  }, [activeViewKey]);
+
+  const requestNextPage = useCallback(async (source) => {
+    if (
+      loadRequestInProgressRef.current
+      || isLoadingNextPageRef.current
+      || !hasMoreRef.current
+      || searchActiveRef.current
+    ) return false;
+
+    loadRequestInProgressRef.current = true;
+    if (source === 'manual') {
+      manualLoadInProgressRef.current = true;
+      manualLoadLockRef.current = true;
+      manualExitObservedRef.current = !observerWasIntersectingRef.current;
+      loadTriggeredForCurrentEntryRef.current = true;
+      hasUserScrolledDownRef.current = false;
+      scrollDirectionRef.current = 'idle';
+    }
+    try {
+      return await onLoadNextPageRef.current?.();
+    } finally {
+      loadRequestInProgressRef.current = false;
+      manualLoadInProgressRef.current = false;
+    }
+  }, []);
+
+  const visibleProducts = products;
+  const observerEnabled = Boolean(hasMore && !searchTerm.trim() && visibleProducts.length !== 0);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    const root = scrollContainerRef.current;
+    if (!sentinel || !root || !observerEnabled || typeof IntersectionObserver === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      const isIntersecting = entries.some((entry) => entry.isIntersecting);
+      if (!isIntersecting) {
+        observerWasIntersectingRef.current = false;
+        loadTriggeredForCurrentEntryRef.current = false;
+        hasUserScrolledDownRef.current = false;
+        scrollDirectionRef.current = 'idle';
+        if (manualLoadLockRef.current) manualExitObservedRef.current = true;
+        return;
+      }
+      if (observerWasIntersectingRef.current) return;
+      observerWasIntersectingRef.current = true;
+      if (
+        manualLoadLockRef.current
+        || manualLoadInProgressRef.current
+        || loadTriggeredForCurrentEntryRef.current
+        || !hasUserScrolledDownRef.current
+        || scrollDirectionRef.current !== 'down'
+      ) return;
+      loadTriggeredForCurrentEntryRef.current = true;
+      hasUserScrolledDownRef.current = false;
+      void requestNextPage('observer');
+    }, { root, rootMargin: '300px 0px', threshold: 0.01 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [observerEnabled, activeViewKey, requestNextPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -429,8 +530,51 @@ export default function ProductMenu({
 
   // --- HANDLERS DE CATEGORÍAS Y BÚSQUEDA ---
   const handleCategoryClick = useCallback((categoryId) => {
+    onScrollPositionChange?.(scrollContainerRef.current?.scrollTop || 0);
     onSelectCategory?.(categoryId);
-  }, [onSelectCategory]);
+  }, [onScrollPositionChange, onSelectCategory]);
+
+  const handleCatalogScroll = useCallback(() => {
+    const currentScrollTop = scrollContainerRef.current?.scrollTop || 0;
+    onScrollPositionChange?.(currentScrollTop);
+
+    const previousScrollTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = currentScrollTop;
+    if (isRestoringScrollRef.current) return;
+
+    const delta = currentScrollTop - previousScrollTop;
+    if (delta > CATALOG_SCROLL_INTENT_THRESHOLD_PX) {
+      scrollDirectionRef.current = 'down';
+      hasUserScrolledDownRef.current = true;
+
+      if (
+        manualLoadLockRef.current
+        && manualExitObservedRef.current
+        && !observerWasIntersectingRef.current
+      ) {
+        manualLoadLockRef.current = false;
+        manualExitObservedRef.current = false;
+        loadTriggeredForCurrentEntryRef.current = false;
+      }
+
+      if (
+        observerWasIntersectingRef.current
+        && !manualLoadLockRef.current
+        && !manualLoadInProgressRef.current
+        && !loadTriggeredForCurrentEntryRef.current
+      ) {
+        loadTriggeredForCurrentEntryRef.current = true;
+        hasUserScrolledDownRef.current = false;
+        void requestNextPage('observer');
+      }
+      return;
+    }
+
+    if (delta < -CATALOG_SCROLL_INTENT_THRESHOLD_PX) {
+      scrollDirectionRef.current = 'up';
+      hasUserScrolledDownRef.current = false;
+    }
+  }, [onScrollPositionChange, requestNextPage]);
 
   const handleSearchChange = useCallback((e) => {
     onSearchChange?.(e.target.value);
@@ -523,11 +667,15 @@ export default function ProductMenu({
       <div
         className="pos-menu-scroll"
         ref={scrollContainerRef}
-        onScroll={handleScroll}
+        onScroll={handleCatalogScroll}
       >
         <div id="menu-items" className="menu-items-grid" aria-label="Productos disponibles">
 
-          {visibleProducts.length === 0 ? (
+          {isLoadingInitial && visibleProducts.length === 0 ? (
+            <div className="pos-products-loading" role="status">
+              Cargando productos...
+            </div>
+          ) : visibleProducts.length === 0 ? (
             (products.length === 0 && !searchTerm && !selectedCategoryId) ? (
               <div className="menu-empty-state">
                 <PackageSearch size={38} aria-hidden="true" />
@@ -570,10 +718,25 @@ export default function ProductMenu({
             })
           )}
 
-          {visibleProducts.length < products.length && visibleProducts.length > 0 && (
+          {!searchTerm.trim() && hasMore && visibleProducts.length > 0 && (
+            <div ref={loadMoreSentinelRef} className="pos-load-more-sentinel" aria-hidden="true" />
+          )}
+
+          {isLoadingNextPage && visibleProducts.length > 0 && (
             <div className="pos-products-loading" role="status">
               Cargando más productos...
             </div>
+          )}
+
+          {!searchTerm.trim() && hasMore && visibleProducts.length > 0 && (
+            <button
+              type="button"
+              className="pos-load-more-button"
+              onClick={() => void requestNextPage('manual')}
+              disabled={isLoadingNextPage}
+            >
+              Cargar más productos
+            </button>
           )}
         </div>
       </div>
