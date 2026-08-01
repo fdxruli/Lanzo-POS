@@ -132,9 +132,19 @@ const normalizeCloudFailure = (response, fallback = 'PRODUCT_CLOUD_ERROR') => (
   productConflictService.normalizeFailure(response, fallback)
 );
 
-const applyResponseAndNotify = async (response, source) => {
+const applyResponseAndNotify = async (response, event) => {
   await productLocalRepository.applyCloudCatalog(response);
-  notifyProductsChanged({ source });
+  notifyProductsChanged(event);
+};
+
+const notifyProductMutation = ({ productId, operation, source }) => {
+  notifyProductsChanged({
+    productId,
+    productIds: productId ? [productId] : [],
+    operation,
+    source,
+    timestamp: Date.now()
+  });
 };
 
 export const productRepository = {
@@ -205,7 +215,10 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'CATEGORY_SYNC_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.saveCategory');
+      await applyResponseAndNotify(response, {
+        operation: 'updated',
+        source: 'productRepository.saveCategory'
+      });
       return response.category || category;
     } catch (error) {
       Logger.warn('[Products] Upsert category cloud fallo:', error);
@@ -268,7 +281,10 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'CATEGORY_DELETE_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.deleteCategory');
+      await applyResponseAndNotify(response, {
+        operation: 'deleted',
+        source: 'productRepository.deleteCategory'
+      });
       pullCatalogChanges(mode.licenseKey).catch(() => {});
       return { success: true, response };
     } catch (error) {
@@ -284,8 +300,21 @@ export const productRepository = {
     const prepared = await productLocalRepository.prepareProduct(productData, existingProduct);
     const mode = getMode();
 
+    const operation = prepared.editing ? 'updated' : 'created';
+
     if (!mode.cloudEnabled) {
-      return productLocalRepository.savePreparedProductLocal(prepared, { syncStatus: PRODUCT_SYNC_STATUS.LOCAL });
+      const result = await productLocalRepository.savePreparedProductLocal(
+        prepared,
+        { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
+      );
+      if (result?.success) {
+        notifyProductMutation({
+          productId: prepared.productId,
+          operation,
+          source: 'productRepository.saveProduct.local'
+        });
+      }
+      return result;
     }
 
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
@@ -311,7 +340,11 @@ export const productRepository = {
         payload,
         idempotencyKey
       });
-      notifyProductsChanged({ source: 'productRepository.saveProduct.pending' });
+      notifyProductMutation({
+        productId: prepared.productId,
+        operation,
+        source: 'productRepository.saveProduct.pending'
+      });
       return { ...result, pending: true, message };
     };
 
@@ -337,7 +370,12 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'PRODUCT_SYNC_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.saveProduct');
+      await applyResponseAndNotify(response, {
+        productId: prepared.productId,
+        productIds: [prepared.productId],
+        operation,
+        source: 'productRepository.saveProduct'
+      });
       return { success: true, productId: prepared.productId, inventoryValue: prepared.inventoryValue, response };
     } catch (error) {
       Logger.warn('[Products] Upsert product cloud fallo:', error);
@@ -356,7 +394,15 @@ export const productRepository = {
     const mode = getMode();
 
     if (!mode.cloudEnabled) {
-      return productLocalRepository.deleteProductLocal(product || productId);
+      const result = await productLocalRepository.deleteProductLocal(product || productId);
+      if (result?.success) {
+        notifyProductMutation({
+          productId,
+          operation: 'deleted',
+          source: 'productRepository.deleteProduct.local'
+        });
+      }
+      return result;
     }
 
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
@@ -378,7 +424,11 @@ export const productRepository = {
         payload,
         idempotencyKey
       });
-      notifyProductsChanged({ source: 'productRepository.deleteProduct.pending' });
+      notifyProductMutation({
+        productId,
+        operation: 'deleted',
+        source: 'productRepository.deleteProduct.pending'
+      });
       return { success: true, pending: true, message };
     };
 
@@ -403,7 +453,12 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'PRODUCT_DELETE_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.deleteProduct');
+      await applyResponseAndNotify(response, {
+        productId,
+        productIds: [productId],
+        operation: 'deleted',
+        source: 'productRepository.deleteProduct'
+      });
       return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Delete product cloud fallo:', error);
@@ -422,8 +477,18 @@ export const productRepository = {
     const isActive = isActiveOverride === undefined ? !(product?.isActive !== false) : Boolean(isActiveOverride);
     const mode = getMode();
 
+    const operation = isActive ? 'activated' : 'deactivated';
+
     if (!mode.cloudEnabled) {
-      return productLocalRepository.toggleProductStatusLocal(product || productId, isActive);
+      const result = await productLocalRepository.toggleProductStatusLocal(product || productId, isActive);
+      if (result?.success) {
+        notifyProductMutation({
+          productId,
+          operation,
+          source: 'productRepository.toggleProductStatus.local'
+        });
+      }
+      return result;
     }
 
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
@@ -449,7 +514,11 @@ export const productRepository = {
         payload,
         idempotencyKey
       });
-      notifyProductsChanged({ source: 'productRepository.toggleProductStatus.pending' });
+      notifyProductMutation({
+        productId,
+        operation,
+        source: 'productRepository.toggleProductStatus.pending'
+      });
       return { success: true, pending: true, message };
     };
 
@@ -475,7 +544,12 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'PRODUCT_TOGGLE_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.toggleProductStatus');
+      await applyResponseAndNotify(response, {
+        productId,
+        productIds: [productId],
+        operation,
+        source: 'productRepository.toggleProductStatus'
+      });
       return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Toggle product cloud fallo:', error);
@@ -490,7 +564,18 @@ export const productRepository = {
     const mode = getMode();
 
     if (!mode.cloudEnabled) {
-      return productLocalRepository.saveBatchLocal(batchData, { syncStatus: PRODUCT_SYNC_STATUS.LOCAL });
+      const result = await productLocalRepository.saveBatchLocal(
+        batchData,
+        { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
+      );
+      if (result?.success) {
+        notifyProductMutation({
+          productId: batchData.productId,
+          operation: 'updated',
+          source: 'productRepository.saveBatch.local'
+        });
+      }
+      return result;
     }
 
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
@@ -513,7 +598,11 @@ export const productRepository = {
         payload,
         idempotencyKey
       });
-      notifyProductsChanged({ source: 'productRepository.saveBatch.pending' });
+      notifyProductMutation({
+        productId: batchData.productId,
+        operation: 'updated',
+        source: 'productRepository.saveBatch.pending'
+      });
       return { ...local, pending: true, message };
     };
 
@@ -538,7 +627,12 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'BATCH_SYNC_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.saveBatch');
+      await applyResponseAndNotify(response, {
+        productId: batchData.productId,
+        productIds: batchData.productId ? [batchData.productId] : [],
+        operation: 'updated',
+        source: 'productRepository.saveBatch'
+      });
       return local;
     } catch (error) {
       Logger.warn('[Products] Upsert batch cloud fallo:', error);
@@ -557,7 +651,18 @@ export const productRepository = {
     const mode = getMode();
 
     if (!mode.cloudEnabled) {
-      return productLocalRepository.deleteBatchLocal(batch || { id: batchId }, { syncStatus: PRODUCT_SYNC_STATUS.LOCAL });
+      const result = await productLocalRepository.deleteBatchLocal(
+        batch || { id: batchId },
+        { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
+      );
+      if (result?.success) {
+        notifyProductMutation({
+          productId: batch?.productId || batch?.product_id || null,
+          operation: 'updated',
+          source: 'productRepository.deleteBatch.local'
+        });
+      }
+      return result;
     }
 
     const idempotencyKey = options.idempotencyKey || makeIdempotencyKey({
@@ -579,7 +684,11 @@ export const productRepository = {
         payload,
         idempotencyKey
       });
-      notifyProductsChanged({ source: 'productRepository.deleteBatch.pending' });
+      notifyProductMutation({
+        productId: batch?.productId || batch?.product_id || null,
+        operation: 'updated',
+        source: 'productRepository.deleteBatch.pending'
+      });
       return { success: true, pending: true, message };
     };
 
@@ -604,7 +713,12 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'BATCH_DELETE_FAILED');
       }
 
-      await applyResponseAndNotify(response, 'productRepository.deleteBatch');
+      await applyResponseAndNotify(response, {
+        productId: batch?.productId || batch?.product_id || null,
+        productIds: [batch?.productId || batch?.product_id].filter(Boolean),
+        operation: 'updated',
+        source: 'productRepository.deleteBatch'
+      });
       return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Delete batch cloud fallo:', error);

@@ -56,6 +56,7 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
   let sinceChangeSeq = Number(await syncMetaService.getMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, 0, { licenseKey })) || 0;
   let hasMore = true;
   let applied = 0;
+  const changedProductIds = new Set();
 
   while (hasMore) {
     const response = await productCloudRepository.pullCatalogChanges({
@@ -70,6 +71,13 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
 
     const counts = await productLocalRepository.applyCloudCatalog(response);
     applied += counts.categories + counts.products + counts.batches;
+    for (const product of [...(response.products || []), ...(response.product ? [response.product] : [])]) {
+      if (product?.id) changedProductIds.add(product.id);
+    }
+    for (const batch of [...(response.batches || []), ...(response.batch ? [response.batch] : [])]) {
+      const productId = batch?.product_id || batch?.productId;
+      if (productId) changedProductIds.add(productId);
+    }
 
     if (counts.rejected?.length > 0) {
       const rejected = counts.rejected[0];
@@ -94,7 +102,15 @@ export const pullCatalogChanges = async (licenseKeyOverride = null) => {
     }
   }
 
-  if (applied > 0) notifyProductsChanged({ source: 'productSyncHandler.pullCatalogChanges', applied });
+  if (applied > 0) {
+    notifyProductsChanged({
+      source: 'productSyncHandler.pullCatalogChanges',
+      operation: 'synced',
+      productIds: [...changedProductIds],
+      applied,
+      timestamp: Date.now()
+    });
+  }
   return { success: true, applied, latestChangeSeq: sinceChangeSeq };
 };
 
@@ -239,7 +255,20 @@ export const productSyncHandler = {
       await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey });
     }
 
-    notifyProductsChanged({ source: 'productSyncHandler.pushOperation' });
+    const changedProductId = operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
+      ? (payload.productId || payload.product?.id || operation.entityId)
+      : (
+        operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH
+          ? (payload.batch?.product_id || payload.batch?.productId || response?.batch?.product_id || response?.batch?.productId)
+          : null
+      );
+    notifyProductsChanged({
+      source: 'productSyncHandler.pushOperation',
+      operation: 'synced',
+      productId: changedProductId,
+      productIds: changedProductId ? [changedProductId] : [],
+      timestamp: Date.now()
+    });
     return response;
   }
 };

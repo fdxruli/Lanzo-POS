@@ -6,6 +6,7 @@ const queryMocks = vi.hoisted(() => ({
   loadCatalogCategories: vi.fn(),
   queryInventoryCatalogPage: vi.fn(),
   queryPosCatalogPage: vi.fn(),
+  queryPosCatalogProductById: vi.fn(),
   checkPosOutOfStockProducts: vi.fn(),
   checkPosExpiredProducts: vi.fn()
 }));
@@ -74,6 +75,7 @@ beforeEach(() => {
   queryMocks.loadCatalogCategories.mockResolvedValue([]);
   queryMocks.queryInventoryCatalogPage.mockResolvedValue({ data: [], nextCursor: null });
   queryMocks.queryPosCatalogPage.mockResolvedValue({ data: [], nextCursor: null });
+  queryMocks.queryPosCatalogProductById.mockResolvedValue(null);
   queryMocks.checkPosOutOfStockProducts.mockResolvedValue(false);
   queryMocks.checkPosExpiredProducts.mockResolvedValue(false);
 });

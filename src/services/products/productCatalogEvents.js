@@ -14,11 +14,52 @@ let lastNotificationAt = 0;
 
 const listeners = {};
 
+const OPERATION_ALIASES = new Map([
+  ['product-created', 'created'],
+  ['product-updated', 'updated'],
+  ['product-activated', 'activated'],
+  ['product-deactivated', 'deactivated'],
+  ['product-deleted', 'deleted']
+]);
+
+const normalizeOperation = (metadata = {}) => {
+  const explicitOperation = metadata.operation || metadata.action || null;
+  if (explicitOperation === 'product-status-changed') {
+    return metadata.isActive === false ? 'deactivated' : 'activated';
+  }
+  if (OPERATION_ALIASES.has(explicitOperation)) return OPERATION_ALIASES.get(explicitOperation);
+  if (explicitOperation) return explicitOperation;
+
+  const source = String(metadata.source || '');
+  if (source.includes('SyncHandler') || source.includes('MigrationService')) return 'synced';
+  return null;
+};
+
+export const normalizeProductCatalogEvent = (source, detail = null) => {
+  const metadata = detail?.metadata && typeof detail.metadata === 'object'
+    ? detail.metadata
+    : (detail && typeof detail === 'object' ? detail : {});
+  const productIds = Array.from(new Set([
+    ...(Array.isArray(metadata.productIds) ? metadata.productIds : []),
+    ...(metadata.productId ? [metadata.productId] : [])
+  ].filter(Boolean)));
+
+  return {
+    source: metadata.source || source,
+    operation: normalizeOperation(metadata),
+    productId: metadata.productId || productIds[0] || null,
+    productIds,
+    timestamp: Number(metadata.timestamp || detail?.timestamp) || Date.now(),
+    detail
+  };
+};
+
 const notifySubscribers = (source, detail = null) => {
   lastNotificationAt = Date.now();
+  const catalogEvent = normalizeProductCatalogEvent(source, detail);
   for (const subscriber of [...subscribers]) {
     try {
-      subscriber({ source, detail });
+      subscriber(catalogEvent);
     } catch (error) {
       Logger.warn('[ProductCatalogEvents] Un suscriptor no pudo procesar el cambio:', error);
     }
@@ -41,12 +82,39 @@ const notifyWakeUp = (source, force = false) => {
   notifySubscribers(source, { timeAway });
 };
 
+const postBroadcastPayload = (payload) => {
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+  try {
+    if (broadcastChannel) {
+      broadcastChannel.postMessage(payload);
+      return;
+    }
+    const temporaryChannel = new BroadcastChannel(CHANNEL_NAME);
+    temporaryChannel.postMessage(payload);
+    setTimeout(() => temporaryChannel.close(), 0);
+  } catch (error) {
+    Logger.warn('[ProductCatalogEvents] No se pudo emitir el cambio:', error);
+  }
+};
+
 const installInfrastructure = () => {
   if (infrastructureInstalled || typeof window === 'undefined') return;
   infrastructureInstalled = true;
 
   listeners.productsSync = (event) => {
     notifySubscribers(PRODUCT_SYNC_EVENT, event.detail);
+    const catalogEvent = normalizeProductCatalogEvent(PRODUCT_SYNC_EVENT, event.detail);
+    postBroadcastPayload({
+      type: 'db-changed',
+      timestamp: catalogEvent.timestamp,
+      metadata: {
+        productId: catalogEvent.productId,
+        productIds: catalogEvent.productIds,
+        operation: catalogEvent.operation,
+        source: catalogEvent.source,
+        timestamp: catalogEvent.timestamp
+      }
+    });
   };
   listeners.visibility = () => {
     if (document.visibilityState === 'hidden') markAsAway();
@@ -115,22 +183,15 @@ export const subscribeProductCatalogEvents = (subscriber) => {
   };
 };
 
-export const broadcastDBChange = (metadata = {}) => {
-  const payload = { type: 'db-changed', timestamp: Date.now(), metadata };
-  notifySubscribers('broadcastDBChange', payload);
+export const broadcastDBChange = (metadata = {}, options = {}) => {
+  const payload = {
+    type: 'db-changed',
+    timestamp: Number(metadata.timestamp) || Date.now(),
+    metadata
+  };
+  if (options.notifyLocal !== false) notifySubscribers('broadcastDBChange', payload);
 
-  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
-  try {
-    if (broadcastChannel) {
-      broadcastChannel.postMessage(payload);
-      return;
-    }
-    const temporaryChannel = new BroadcastChannel(CHANNEL_NAME);
-    temporaryChannel.postMessage(payload);
-    setTimeout(() => temporaryChannel.close(), 0);
-  } catch (error) {
-    Logger.warn('[ProductCatalogEvents] No se pudo emitir el cambio:', error);
-  }
+  postBroadcastPayload(payload);
 };
 
 export const getProductCatalogEventsDiagnostics = () => ({

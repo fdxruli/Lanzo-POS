@@ -2,7 +2,9 @@ import { db, loadDataPaginated, STORES } from '../database';
 import { categoriesRepository } from '../db/general';
 import {
   checkHasExpiredProductsForPosMenu,
-  isOutOfStockForPosMenu
+  isExpiredForPosMenu,
+  isOutOfStockForPosMenu,
+  resolveExpiredProductIdsForPosMenu,
 } from './productMenuEligibility';
 
 const sortCategories = (categories = []) => [...categories]
@@ -52,6 +54,35 @@ export const queryPosCatalogPage = async (options = {}) => {
     ...result,
     data: (result?.data || []).filter(isPosCatalogEligible)
   };
+};
+
+export const isProductVisibleInPosCatalog = async (product, options = {}) => {
+  if (!isPosCatalogEligible(product)) return false;
+
+  const categoryId = options.categoryId ?? null;
+  const productCategoryId = product.categoryId ?? product.category_id ?? null;
+  if (categoryId !== null && categoryId !== undefined && productCategoryId !== categoryId) {
+    return false;
+  }
+
+  if (options.outOfStockOnly && !isOutOfStockForPosMenu(product)) return false;
+
+  if (options.expiredOnly) {
+    if (isOutOfStockForPosMenu(product)) return false;
+    const expiredProductIds = await resolveExpiredProductIdsForPosMenu(
+      [product],
+      { db, STORES }
+    );
+    if (!expiredProductIds.has(product.id) && !isExpiredForPosMenu(product)) return false;
+  }
+
+  return true;
+};
+
+export const queryPosCatalogProductById = async (productId, options = {}) => {
+  if (!productId) return null;
+  const product = await db.table(STORES.MENU).get(productId);
+  return await isProductVisibleInPosCatalog(product, options) ? product : null;
 };
 
 export const checkPosOutOfStockProducts = async () => {

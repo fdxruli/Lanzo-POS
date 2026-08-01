@@ -9,6 +9,7 @@ import {
   checkPosExpiredProducts,
   checkPosOutOfStockProducts,
   loadCatalogCategories,
+  queryPosCatalogProductById,
   queryPosCatalogPage
 } from '../services/products/productCatalogQueryService';
 import { subscribeProductCatalogEvents } from '../services/products/productCatalogEvents';
@@ -23,6 +24,8 @@ let lastInvalidationTime = 0;
 let pendingInvalidation = false;
 let unsubscribeCatalogEvents = null;
 let initializationRefs = 0;
+let catalogReconciliationGeneration = 0;
+const productReconciliationVersions = new Map();
 
 const resetInvalidationState = (set) => {
   pendingInvalidation = false;
@@ -34,6 +37,13 @@ const handleStructuralError = (error, set, context) => {
   resetInvalidationState(set);
   reportStructuralDatabaseErrorOnce(error, context);
   return true;
+};
+
+const drainPendingInvalidation = (get) => {
+  if (!pendingInvalidation || get().isInvalidating || get().isLoading) return;
+  pendingInvalidation = false;
+  lastInvalidationTime = 0;
+  void Promise.resolve().then(() => get().invalidateAndReset());
 };
 
 export const usePosCatalogStore = create((set, get) => ({
@@ -52,11 +62,25 @@ export const usePosCatalogStore = create((set, get) => ({
   initialize: () => {
     initializationRefs += 1;
     if (!unsubscribeCatalogEvents) {
-      unsubscribeCatalogEvents = subscribeProductCatalogEvents(() => {
+      unsubscribeCatalogEvents = subscribeProductCatalogEvents((event) => {
+        const productIds = Array.from(new Set([
+          ...(Array.isArray(event?.productIds) ? event.productIds : []),
+          ...(event?.productId ? [event.productId] : [])
+        ].filter(Boolean)));
+
+        if (productIds.length > 0) {
+          void Promise.all(productIds.map((productId) => (
+            get().reconcileProductById(productId, event)
+          )));
+          return;
+        }
         void get().invalidateAndReset();
       });
     }
-    if (!get().initialized && !get().isLoading) void get().loadInitialProducts();
+    if (initializationRefs === 1 && !get().isLoading) {
+      if (get().initialized) void get().refreshCurrentView();
+      else void get().loadInitialProducts();
+    }
 
     let active = true;
     return () => {
@@ -120,9 +144,10 @@ export const usePosCatalogStore = create((set, get) => ({
 
   setCategoryId: (categoryId) => get().setFilters({ categoryId }),
 
-  fetchPage: async (direction = 'current') => {
+  fetchPage: async (direction = 'current', reconciliationRetry = 0) => {
     const state = get();
     if (state.isLoading || isDatabaseRecoveryPending()) return false;
+    const reconciliationGeneration = catalogReconciliationGeneration;
 
     let targetPageIndex = state.currentPageIndex;
     if (direction === 'next' && state.hasMore) targetPageIndex += 1;
@@ -137,6 +162,13 @@ export const usePosCatalogStore = create((set, get) => ({
         outOfStockOnly: state.outOfStockOnly,
         expiredOnly: state.expiredOnly
       });
+      if (reconciliationGeneration !== catalogReconciliationGeneration) {
+        set({ isLoading: false });
+        if (reconciliationRetry < 2) {
+          return get().fetchPage(direction, reconciliationRetry + 1);
+        }
+        return false;
+      }
       const cursorStack = [...state.cursorStack];
       if (nextCursor) cursorStack[targetPageIndex + 1] = nextCursor;
       set({
@@ -147,11 +179,13 @@ export const usePosCatalogStore = create((set, get) => ({
         isLoading: false,
         initialized: true
       });
+      drainPendingInvalidation(get);
       return true;
     } catch (error) {
       if (!handleStructuralError(error, set, 'pos-catalog-fetch-page')) {
         Logger.error('[PosCatalogStore] Error cargando página:', error);
         set({ isLoading: false });
+        drainPendingInvalidation(get);
       }
       return false;
     }
@@ -189,13 +223,75 @@ export const usePosCatalogStore = create((set, get) => ({
   },
 
   refreshCatalog: () => get().loadInitialProducts(),
+  refreshCurrentView: async () => {
+    if (get().isLoading || isDatabaseRecoveryPending()) return false;
+    try {
+      await get().refreshCategories();
+      return get().fetchPage('current');
+    } catch (error) {
+      if (!handleStructuralError(error, set, 'pos-catalog-refresh-current-view')) {
+        Logger.error('[PosCatalogStore] Error refrescando vista actual:', error);
+      }
+      return false;
+    }
+  },
   checkHasOutOfStockProducts: () => checkPosOutOfStockProducts(),
   checkHasExpiredProducts: () => checkPosExpiredProducts(),
+
+  reconcileProductById: async (productId) => {
+    if (!productId || isDatabaseRecoveryPending()) return false;
+
+    const version = (productReconciliationVersions.get(productId) || 0) + 1;
+    productReconciliationVersions.set(productId, version);
+    catalogReconciliationGeneration += 1;
+    const view = {
+      categoryId: get().categoryId,
+      outOfStockOnly: get().outOfStockOnly,
+      expiredOnly: get().expiredOnly
+    };
+
+    try {
+      const product = await queryPosCatalogProductById(productId, view);
+      if (productReconciliationVersions.get(productId) !== version) return false;
+
+      const current = get();
+      if (
+        current.categoryId !== view.categoryId
+        || current.outOfStockOnly !== view.outOfStockOnly
+        || current.expiredOnly !== view.expiredOnly
+      ) return false;
+
+      set((state) => {
+        const existingIndex = state.items.findIndex((item) => item?.id === productId);
+        const itemsWithoutProduct = state.items.filter((item) => item?.id !== productId);
+        if (!product) return { items: itemsWithoutProduct };
+
+        if (existingIndex < 0) return { items: [...itemsWithoutProduct, product] };
+        const nextItems = [...itemsWithoutProduct];
+        nextItems.splice(Math.min(existingIndex, nextItems.length), 0, product);
+        return { items: nextItems };
+      });
+      return true;
+    } catch (error) {
+      if (!handleStructuralError(error, set, 'pos-catalog-reconcile-product')) {
+        Logger.error('[PosCatalogStore] Error reconciliando producto:', error);
+      }
+      return false;
+    } finally {
+      if (productReconciliationVersions.get(productId) === version) {
+        productReconciliationVersions.delete(productId);
+      }
+    }
+  },
 
   invalidateAndReset: () => {
     const now = Date.now();
     if (isDatabaseRecoveryPending()) {
       resetInvalidationState(set);
+      return Promise.resolve(false);
+    }
+    if (get().isLoading) {
+      pendingInvalidation = true;
       return Promise.resolve(false);
     }
     if (now - lastInvalidationTime < BURST_DEDUPE_MS) return Promise.resolve(false);
@@ -205,16 +301,10 @@ export const usePosCatalogStore = create((set, get) => ({
     }
 
     lastInvalidationTime = now;
-    set({
-      isInvalidating: true,
-      cursorStack: [null],
-      currentPageIndex: 0,
-      hasMore: true
-    });
+    set({ isInvalidating: true });
 
     let structuralFailure = false;
-    return get().refreshCategories()
-      .then(() => get().fetchPage('current'))
+    return get().refreshCurrentView()
       .catch((error) => {
         structuralFailure = handleStructuralError(error, set, 'pos-catalog-invalidation');
         if (!structuralFailure) Logger.error('[PosCatalogStore] Error invalidando:', error);

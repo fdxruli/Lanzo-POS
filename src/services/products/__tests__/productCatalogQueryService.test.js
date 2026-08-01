@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   loadDataPaginated: vi.fn(),
   getActiveCategories: vi.fn(),
+  get: vi.fn(),
   table: vi.fn(),
   checkExpired: vi.fn()
 }));
@@ -22,12 +23,14 @@ vi.mock('../productMenuEligibility', () => ({
 
 import {
   isPosCatalogEligible,
+  queryPosCatalogProductById,
   queryInventoryCatalogPage,
   queryPosCatalogPage
 } from '../productCatalogQueryService';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.table.mockReturnValue({ get: mocks.get });
 });
 
 describe('product catalog IndexedDB queries', () => {
@@ -68,5 +71,32 @@ describe('product catalog IndexedDB queries', () => {
     );
     expect(result.data.map((product) => product.id)).toEqual(['sellable']);
     expect(isPosCatalogEligible({ id: 'ingredient', productType: 'ingredient' })).toBe(false);
+  });
+
+  it('reads one current IndexedDB product and applies the active POS view', async () => {
+    mocks.get.mockResolvedValue({
+      id: 'product-1',
+      name: 'Updated',
+      categoryId: 'drinks',
+      productType: 'sellable',
+      isActive: true
+    });
+
+    await expect(queryPosCatalogProductById('product-1', { categoryId: 'drinks' }))
+      .resolves.toMatchObject({ name: 'Updated' });
+    await expect(queryPosCatalogProductById('product-1', { categoryId: 'food' }))
+      .resolves.toBeNull();
+  });
+
+  it('returns null for an inactive or ingredient product during directed reconciliation', async () => {
+    mocks.get.mockResolvedValueOnce({
+      id: 'product-1', productType: 'sellable', isActive: false
+    });
+    await expect(queryPosCatalogProductById('product-1')).resolves.toBeNull();
+
+    mocks.get.mockResolvedValueOnce({
+      id: 'product-1', productType: 'ingredient', isActive: true
+    });
+    await expect(queryPosCatalogProductById('product-1')).resolves.toBeNull();
   });
 });

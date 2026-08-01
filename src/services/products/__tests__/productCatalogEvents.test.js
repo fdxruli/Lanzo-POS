@@ -61,15 +61,59 @@ describe('product catalog event infrastructure', () => {
     });
 
     window.dispatchEvent(new CustomEvent('lanzo:products-sync-updated', {
-      detail: { productIds: ['product-1'] }
+      detail: {
+        productId: 'product-1',
+        productIds: ['product-1'],
+        operation: 'updated',
+        source: 'productRepository.saveProduct',
+        timestamp: 123
+      }
     }));
     expect(first).toHaveBeenCalledTimes(1);
     expect(second).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenLastCalledWith(expect.objectContaining({
+      productId: 'product-1',
+      productIds: ['product-1'],
+      operation: 'updated',
+      source: 'productRepository.saveProduct',
+      timestamp: 123
+    }));
 
-    broadcastDBChange({ action: 'product-updated' });
+    broadcastDBChange({
+      action: 'product-updated',
+      productId: 'product-1',
+      source: 'ProductsPage',
+      timestamp: 456
+    });
     expect(first).toHaveBeenCalledTimes(2);
     expect(second).toHaveBeenCalledTimes(2);
-    expect(channelMocks.instances[0].postMessage).toHaveBeenCalledTimes(1);
+    expect(channelMocks.instances[0].postMessage).toHaveBeenCalledTimes(2);
+    expect(second).toHaveBeenLastCalledWith(expect.objectContaining({
+      productId: 'product-1',
+      operation: 'updated',
+      source: 'ProductsPage',
+      timestamp: 456
+    }));
+
+    for (const listener of channelMocks.instances[0].listeners) {
+      listener({
+        data: {
+          type: 'db-changed',
+          timestamp: 789,
+          metadata: {
+            productId: 'product-2',
+            operation: 'synced',
+            source: 'productSyncHandler.pullCatalogChanges',
+            timestamp: 789
+          }
+        }
+      });
+    }
+    expect(first).toHaveBeenLastCalledWith(expect.objectContaining({
+      productId: 'product-2',
+      operation: 'synced',
+      timestamp: 789
+    }));
 
     unsubscribeFirst();
     unsubscribeSecond();
