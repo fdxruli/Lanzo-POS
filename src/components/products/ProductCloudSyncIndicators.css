@@ -1,0 +1,63 @@
+.product-cloud-sync-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.product-cloud-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.product-cloud-sync-badge__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.product-cloud-sync-badge--synced {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.11);
+  border-color: rgba(16, 185, 129, 0.24);
+}
+
+.product-cloud-sync-badge--pending {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.26);
+}
+
+.product-cloud-sync-badge--error {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.11);
+  border-color: rgba(239, 68, 68, 0.24);
+}
+
+.product-cloud-sync-badge--unsynced,
+.product-cloud-sync-badge--empty {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.1);
+  border-color: rgba(100, 116, 139, 0.2);
+}
+
+@media (max-width: 520px) {
+  .product-cloud-sync-indicators {
+    width: 100%;
+  }
+
+  .product-cloud-sync-badge {
+    font-size: 0.65rem;
+  }
+}
