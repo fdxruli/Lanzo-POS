@@ -3,7 +3,6 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { extractReferencedStartupAssets } from '../../../scripts/admin-startup-precache-audit.mjs';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
@@ -46,6 +45,18 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(config).toMatch(/manifest:\s*false/);
     expect(config).toContain("fileName: 'manifest.webmanifest'");
     expect(config).toMatch(/strategies:\s*'injectManifest'/);
+  });
+
+  it('fails the production build when the generated startup closure is not completely precached', async () => {
+    const [config, audit] = await Promise.all([
+      readProjectFile('vite.config.js'),
+      readProjectFile('scripts/admin-startup-precache-audit.mjs'),
+    ]);
+
+    expect(config).toContain('createAdminStartupPrecacheAuditPlugin()');
+    expect(audit).toContain('findMissingStartupPrecacheAssets');
+    expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
+    expect(audit).toMatch(/async closeBundle\(\)[\s\S]*auditAdminStartupPrecache/);
   });
 
   it('starts install and worker infrastructure only in the administrative branch', async () => {
@@ -149,7 +160,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
-  it('precache includes the minimum shell and every second-stage recovery dependency', async () => {
+  it('precache includes the minimum shell and excludes lazy pages, workers, and charts', async () => {
     const inventory = await precacheInventory();
     const joined = inventory.uniqueUrls.join('\n');
 
@@ -166,21 +177,6 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(joined).toMatch(/assets\/DevConsole-.*\.css/);
     expect(joined).not.toMatch(/PosPage|CajaPage|OrderPage|EcommerceOrdersPage|ProductsPage|CustomersPage|DashboardPage|SettingsPage|AboutPage/);
     expect(joined).not.toMatch(/\.worker-|vendor_charts|AssistantBot|ScannerModal/);
-  });
-
-  it('precache contains every generated JavaScript and CSS dependency of the startup bootstrap', async () => {
-    const assetNames = await readdir(path.join(projectRoot, 'dist', 'assets'));
-    const bootstrapAssets = assetNames.filter((filename) => /^PosApplicationBootstrap-[^.]+\.js$/.test(filename));
-    expect(bootstrapAssets).toHaveLength(1);
-
-    const bootstrapSource = await readProjectFile(`dist/assets/${bootstrapAssets[0]}`);
-    const referencedAssets = extractReferencedStartupAssets(bootstrapSource);
-    const inventory = await precacheInventory();
-    const precached = new Set(inventory.uniqueUrls);
-    const missing = referencedAssets.filter((asset) => !precached.has(asset));
-
-    expect(referencedAssets.length).toBeGreaterThan(0);
-    expect(missing).toEqual([]);
   });
 
   it('defines bounded versioned runtime caches and status-200-only writes', async () => {
