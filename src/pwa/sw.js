@@ -10,7 +10,15 @@ import {
   isAdminMediaRequest,
   isAdminStaticRequest,
 } from './adminRuntimeCache';
+import {
+  activateAdminUpgradeBridge,
+  requestAdminUpgradeBridgeInstall,
+} from './adminUpgradeBridge';
 import { PUBLIC_NAVIGATION_DENYLIST, isPublicNavigationRequest } from './publicNavigationPolicy';
+
+const WORKER_BUILD_ID = import.meta.env.VITE_BUILD_COMMIT
+  || import.meta.env.VITE_APP_VERSION
+  || 'unknown';
 
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
@@ -62,8 +70,30 @@ registerRoute(new NavigationRoute(
   { denylist: PUBLIC_NAVIGATION_DENYLIST },
 ));
 
+self.addEventListener('install', (event) => {
+  event.waitUntil(requestAdminUpgradeBridgeInstall({
+    registration: self.registration,
+    cacheStorage: self.caches,
+    origin: self.location.origin,
+    buildId: WORKER_BUILD_ID,
+    skipWaiting: () => self.skipWaiting(),
+  }).catch((error) => {
+    console.warn('[PWA] No se pudo preparar el puente de actualización.', error);
+  }));
+});
+
 self.addEventListener('activate', (event) => {
-  event.waitUntil(cleanupObsoleteAdminRuntimeCaches(self.caches));
+  event.waitUntil(Promise.all([
+    cleanupObsoleteAdminRuntimeCaches(self.caches),
+    activateAdminUpgradeBridge({
+      clients: self.clients,
+      cacheStorage: self.caches,
+      origin: self.location.origin,
+      buildId: WORKER_BUILD_ID,
+    }).catch((error) => {
+      console.warn('[PWA] No se pudo completar el puente de actualización.', error);
+    }),
+  ]));
 });
 
 let skipWaitingRequested = false;

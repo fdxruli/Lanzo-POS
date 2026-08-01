@@ -47,6 +47,18 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(config).toMatch(/strategies:\s*'injectManifest'/);
   });
 
+  it('fails the production build when the generated startup closure is not completely precached', async () => {
+    const [config, audit] = await Promise.all([
+      readProjectFile('vite.config.js'),
+      readProjectFile('scripts/admin-startup-precache-audit.mjs'),
+    ]);
+
+    expect(config).toContain('createAdminStartupPrecacheAuditPlugin()');
+    expect(audit).toContain('findMissingStartupPrecacheAssets');
+    expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
+    expect(audit).toMatch(/async closeBundle\(\)[\s\S]*auditAdminStartupPrecache/);
+  });
+
   it('starts install and worker infrastructure only in the administrative branch', async () => {
     const main = await readProjectFile('src/main.jsx');
     const publicStart = main.indexOf('if (isPublicStorePath');
@@ -107,15 +119,22 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(html).not.toMatch(/rel=["']manifest|beforeinstallprompt|appinstalled|serviceWorker/i);
   });
 
-  it('keeps scope / without unconditional activation or clientsClaim', async () => {
-    const [registration, worker] = await Promise.all([
+  it('keeps prompt activation while limiting forced takeover to one completed bridge', async () => {
+    const [registration, worker, bridge] = await Promise.all([
       readProjectFile('src/pwa/adminServiceWorker.js'),
       readProjectFile('src/pwa/sw.js'),
+      readProjectFile('src/pwa/adminUpgradeBridge.js'),
     ]);
 
     expect(registration).toMatch(/scope:\s*['"]\/['"]/);
-    expect(worker).not.toMatch(/clientsClaim\s*\(/);
     expect(worker).toMatch(/event\.data\?\.type !== 'SKIP_WAITING'[\s\S]*self\.skipWaiting\(\)/);
+    expect(worker).toContain('requestAdminUpgradeBridgeInstall');
+    expect(worker).toContain('activateAdminUpgradeBridge');
+    expect(bridge).toContain("lanzo-admin-upgrade-bridge-v1");
+    expect(bridge).toMatch(/registration\?\.active/);
+    expect(bridge).toContain("reason: 'already-completed'");
+    expect(bridge).toContain('await clients.claim()');
+    expect(bridge).toContain('PUBLIC_NAVIGATION_DENYLIST');
   });
 
   it('uses anchored public, api, and auth exclusions plus explicit NetworkOnly', async () => {
@@ -151,6 +170,11 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(joined).toMatch(/assets\/App-.*\.js/);
     expect(joined).toMatch(/assets\/databaseRuntime-.*\.js/);
     expect(joined).toMatch(/assets\/PosApplicationBootstrap-.*\.js/);
+    expect(joined).toMatch(/assets\/useMessageStore-.*\.js/);
+    expect(joined).toMatch(/assets\/useProductStore-.*\.js/);
+    expect(joined).toMatch(/assets\/productStoreRecoveryGuard-.*\.js/);
+    expect(joined).toMatch(/assets\/DevConsole-.*\.js/);
+    expect(joined).toMatch(/assets\/DevConsole-.*\.css/);
     expect(joined).not.toMatch(/PosPage|CajaPage|OrderPage|EcommerceOrdersPage|ProductsPage|CustomersPage|DashboardPage|SettingsPage|AboutPage/);
     expect(joined).not.toMatch(/\.worker-|vendor_charts|AssistantBot|ScannerModal/);
   });
