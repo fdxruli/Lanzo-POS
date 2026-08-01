@@ -10,9 +10,7 @@
   background: var(--ui-bg-muted);
 }
 
-.ecommerce-site-surface .ecommerce-site-renderer
-  .public-catalog.public-catalog--view-grid
-  .public-product-card__image.public-safe-image {
+.ecommerce-site-surface .ecommerce-site-renderer .public-catalog.public-catalog--view-grid .public-product-card__image.public-safe-image {
   height: auto;
   min-height: 7.5rem;
   aspect-ratio: 4 / 3;
@@ -20,9 +18,7 @@
   padding: 0.35rem;
 }
 
-.ecommerce-site-surface .ecommerce-site-renderer
-  .public-catalog.public-catalog--view-list
-  .public-product-card__image.public-safe-image {
+.ecommerce-site-surface .ecommerce-site-renderer .public-catalog.public-catalog--view-list .public-product-card__image.public-safe-image {
   align-self: center;
   height: 7.5rem;
   min-height: 7.5rem;
