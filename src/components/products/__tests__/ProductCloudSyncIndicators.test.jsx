@@ -12,11 +12,11 @@ const syncedProduct = {
 };
 
 describe('product cloud sync indicators', () => {
-  it('reports product and public image as independently synchronized', () => {
+  it('reports product and Supabase image as independently synchronized', () => {
     const product = {
       ...syncedProduct,
       imageRef: 'img-1785550192912',
-      imageUrl: 'https://project.supabase.co/storage/v1/object/public/images/product.webp'
+      imageUrl: 'https://project.supabase.co/storage/v1/object/public/images/public_uploads/product.webp'
     };
 
     expect(resolveProductCloudSyncBadge(product)).toMatchObject({
@@ -25,7 +25,20 @@ describe('product cloud sync indicators', () => {
     });
     expect(resolveProductImageCloudSyncBadge(product)).toMatchObject({
       status: 'synced',
-      label: 'Imagen: Pública'
+      label: 'Imagen: Supabase'
+    });
+  });
+
+  it('does not confuse a public external URL with a Supabase Storage upload', () => {
+    const product = {
+      ...syncedProduct,
+      imageUrl: 'https://images.openfoodfacts.org/images/products/electrolit.jpg'
+    };
+
+    expect(resolveProductCloudSyncBadge(product).status).toBe('synced');
+    expect(resolveProductImageCloudSyncBadge(product)).toMatchObject({
+      status: 'external',
+      label: 'Imagen: Externa'
     });
   });
 
