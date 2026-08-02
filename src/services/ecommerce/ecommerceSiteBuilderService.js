@@ -45,19 +45,19 @@ export const createEcommerceSiteBuilderService = ({
     }
   };
   return {
-    getSiteBuilderState: () => call('ecommerce_admin_get_site_builder', {}, 'No se pudo cargar el constructor del sitio.'),
+    getSiteBuilderState: () => call('ecommerce_admin_get_site_builder_v2', {}, 'No se pudo cargar el constructor del sitio.'),
     saveSiteDraft: ({ expectedRevision, document }) => {
       const validation = validateEcommerceSiteDocument(document);
       if (!validation.valid) return Promise.resolve(failure({ code: validation.code }, 'No se pudo guardar el borrador del sitio.'));
-      return call('ecommerce_admin_save_site_draft', { p_expected_revision: expectedRevision, p_document: validation.document }, 'No se pudo guardar el borrador del sitio.');
+      return call('ecommerce_admin_save_site_draft_v2', { p_expected_revision: expectedRevision, p_document: validation.document }, 'No se pudo guardar el borrador del sitio.');
     },
-    publishSiteDraft: () => call('ecommerce_admin_publish_site', {}, 'No se pudo publicar el sitio.'),
+    publishSiteDraft: () => call('ecommerce_admin_publish_site_v2', {}, 'No se pudo publicar el sitio.'),
     listSiteVersions: ({ limit = 20, offset = 0 } = {}) => call(
-      'ecommerce_admin_list_site_versions',
+      'ecommerce_admin_list_site_versions_v2',
       { p_limit: Math.min(50, Math.max(1, Math.floor(Number(limit) || 20))), p_offset: Math.max(0, Math.floor(Number(offset) || 0)) },
       'No se pudo cargar el historial del sitio.'
     ).then(normalizeVersionHistory),
-    restoreSiteVersion: (versionId) => call('ecommerce_admin_restore_site_version', { p_version_id: versionId }, 'No se pudo restaurar la versión del sitio.')
+    restoreSiteVersion: (versionId) => call('ecommerce_admin_restore_site_version_v2', { p_version_id: versionId }, 'No se pudo restaurar la versión del sitio.')
   };
 };
 

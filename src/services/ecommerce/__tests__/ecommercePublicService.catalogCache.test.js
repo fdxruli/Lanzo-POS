@@ -64,7 +64,7 @@ afterEach(async () => {
 describe('ecommercePublicService catalog cache', () => {
   it('uses one portal rpc and zero catalog rpcs on the second visit with the same revision', async () => {
     const rpc = vi.fn(async (name) => {
-      if (name === 'ecommerce_get_portal_by_slug') return { data: portalResponse(7), error: null };
+      if (name === 'ecommerce_get_portal_by_slug_v2') return { data: portalResponse(7), error: null };
       if (name === 'ecommerce_get_catalog') return { data: catalogResponse(7), error: null };
       throw new Error(`Unexpected RPC ${name}`);
     });
@@ -85,14 +85,14 @@ describe('ecommercePublicService catalog cache', () => {
 
     expect(firstCatalog.source).toBe('network');
     expect(secondCatalog.source).toBe('cache');
-    expect(rpc.mock.calls.filter(([name]) => name === 'ecommerce_get_portal_by_slug')).toHaveLength(2);
+    expect(rpc.mock.calls.filter(([name]) => name === 'ecommerce_get_portal_by_slug_v2')).toHaveLength(2);
     expect(rpc.mock.calls.filter(([name]) => name === 'ecommerce_get_catalog')).toHaveLength(1);
   });
 
   it('never reuses a previous revision and sends the expected revision to the rpc', async () => {
     let revision = 2;
     const rpc = vi.fn(async (name, params) => {
-      if (name === 'ecommerce_get_portal_by_slug') return { data: portalResponse(revision), error: null };
+      if (name === 'ecommerce_get_portal_by_slug_v2') return { data: portalResponse(revision), error: null };
       if (name === 'ecommerce_get_catalog') {
         return { data: catalogResponse(params.p_catalog_revision, params.p_offset), error: null };
       }
@@ -128,7 +128,7 @@ describe('ecommercePublicService catalog cache', () => {
     let online = true;
     const rpc = vi.fn(async (name) => {
       if (!online) return { data: null, error: { code: 'NETWORK', message: 'private detail' } };
-      if (name === 'ecommerce_get_portal_by_slug') return { data: portalResponse(5), error: null };
+      if (name === 'ecommerce_get_portal_by_slug_v2') return { data: portalResponse(5), error: null };
       return { data: catalogResponse(5), error: null };
     });
     const { database, service } = createService(rpc, 'public-service-offline');
@@ -158,7 +158,7 @@ describe('ecommercePublicService catalog cache', () => {
   it('uses network-first even when the requested revision is cached', async () => {
     let productName = 'Guardado';
     const rpc = vi.fn(async (name) => {
-      if (name === 'ecommerce_get_portal_by_slug') return { data: portalResponse(9), error: null };
+      if (name === 'ecommerce_get_portal_by_slug_v2') return { data: portalResponse(9), error: null };
       return {
         data: {
           ...catalogResponse(9),

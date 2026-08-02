@@ -87,7 +87,7 @@ describe('ecommercePublicService', () => {
     expect(portal.portal.addressPostalCode).toBe('30000');
     expect(portal.features).toMatchObject({ orderInbox: true, whatsappCheckout: true });
     expect(catalog.items[0]).toMatchObject({ price: 50, currency: 'MXN' });
-    expect(rpc).toHaveBeenNthCalledWith(1, 'ecommerce_get_portal_by_slug', { p_slug: 'mi-negocio' });
+    expect(rpc).toHaveBeenNthCalledWith(1, 'ecommerce_get_portal_by_slug_v2', { p_slug: 'mi-negocio' });
     expect(rpc).toHaveBeenNthCalledWith(2, 'ecommerce_get_catalog', {
       p_slug: 'mi-negocio',
       p_limit: 100,
