@@ -467,7 +467,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByRole('button', { name: 'Guardar diseño' })).toBeInTheDocument();
   });
 
-  it('keeps replacement images out of an existing Free portal payload', async () => {
+  it('saves an HTTPS replacement logo for an existing Free portal without a cover', async () => {
     renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
@@ -476,22 +476,43 @@ describe('EcommercePortalSettings image intent payloads', () => {
 
     await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
     const payload = saveEcommercePortal.mock.calls[0][0];
+    expect(payload).toMatchObject({ logoUrl: 'https://cdn.example/logo-new.png' });
+    expect(payload).not.toHaveProperty('coverImageUrl');
+  });
+
+  it('clears the logo for an existing Free portal without a cover', async () => {
+    renderExistingFreePortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear test logo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    const payload = saveEcommercePortal.mock.calls[0][0];
+    expect(payload).toMatchObject({ logoUrl: null });
+    expect(payload).not.toHaveProperty('coverImageUrl');
+  });
+
+  it('preserves Free portal branding when no logo change is requested', async () => {
+    renderExistingFreePortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    const payload = saveEcommercePortal.mock.calls[0][0];
     expect(payload).not.toHaveProperty('logoUrl');
     expect(payload).not.toHaveProperty('coverImageUrl');
   });
 
-  it('never transports a blob URL from the Free presentation editor', async () => {
+  it('blocks a blob URL from the Free presentation editor before calling the RPC', async () => {
     renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
     fireEvent.click(screen.getByRole('button', { name: 'Set invalid test image' }));
     fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
 
-    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
-    const payload = saveEcommercePortal.mock.calls[0][0];
-    expect(JSON.stringify(payload)).not.toContain('blob:');
-    expect(payload).not.toHaveProperty('logoUrl');
-    expect(payload).not.toHaveProperty('coverImageUrl');
+    expect(saveEcommercePortal).not.toHaveBeenCalled();
   });
 
   it('uses the profile logo only when creating a new portal', async () => {

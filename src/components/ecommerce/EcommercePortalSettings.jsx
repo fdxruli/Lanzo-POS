@@ -70,7 +70,7 @@ const numberOr = (value, fallback = 0) => {
 
 const publicUrl = (value) => {
   const text = typeof value === 'string' ? value.trim() : '';
-  return /^https?:\/\//i.test(text) ? text : '';
+  return /^https:\/\//i.test(text) ? text : '';
 };
 
 const IMAGE_INTENT_PRESERVE = 'preserve';
@@ -468,23 +468,25 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     };
     const logo = customization.logo || { value: customization.logoUrl, intent: IMAGE_INTENT_PRESERVE };
     const cover = customization.cover || { value: customization.coverImageUrl, intent: IMAGE_INTENT_PRESERVE };
+    const canPersistLogoThroughPortal = !portal || !isPro;
+    const canPersistCoverThroughPortal = !portal && isPro;
 
-    if (!portal && logo.intent === IMAGE_INTENT_SET) {
+    if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
       const logoUrl = publicUrl(logo.value);
       if (!logoUrl) return toast.error('El logo seleccionado no tiene una URL pública válida. Intenta subirlo nuevamente.');
       payload.logoUrl = logoUrl;
-    } else if (!portal && logo.intent === IMAGE_INTENT_CLEAR) {
+    } else if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_CLEAR) {
       payload.logoUrl = null;
     } else if (!portal) {
       const initialLogo = publicUrl(candidate.logoUrl);
       if (initialLogo) payload.logoUrl = initialLogo;
     }
 
-    if (!portal && isPro && cover.intent === IMAGE_INTENT_SET) {
+    if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
       const coverImageUrl = publicUrl(cover.value);
       if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
       payload.coverImageUrl = coverImageUrl;
-    } else if (!portal && isPro && cover.intent === IMAGE_INTENT_CLEAR) {
+    } else if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
       payload.coverImageUrl = null;
     }
 
