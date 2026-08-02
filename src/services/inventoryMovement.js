@@ -7,9 +7,14 @@ import {
   searchProductBySKU,
   STORES
 } from './database';
-import { productsRepository } from './db/products';
 import { getAvailableStock, getCommittedStock } from './db/utils';
 import Logger from './Logger';
+import {
+  BATCH_MANAGER_PAGE_SIZE,
+  queryBatchManagerPage,
+  queryBatchManagerSnapshot,
+  queryBatchManagerSummary
+} from './products/batchManagerQueries';
 
 const parseDate = (value) => {
   if (!value) return null;
@@ -23,10 +28,32 @@ const sortByFifo = (a, b) => {
   return aCreatedAt - bCreatedAt;
 };
 
-export const loadBatchesForManager = async (productId) => {
-  if (!productId) return { batches: [], inventoryValue: 0 };
-  return await productsRepository.getBatchesForManagerUI(productId);
+export const loadBatchesForManager = async (productId, options = {}) => {
+  if (!productId) {
+    return {
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+      requestedLimit: options.pageSize || BATCH_MANAGER_PAGE_SIZE,
+      summary: {
+        totalRecords: 0,
+        activeRecords: 0,
+        archivedRecords: 0,
+        totalPhysicalStock: 0,
+        totalAvailableStock: 0,
+        totalCommittedStock: 0,
+        inventoryValue: 0
+      }
+    };
+  }
+  return await queryBatchManagerSnapshot({ productId, status: 'all', ...options });
 };
+
+export const loadNextBatchManagerPage = async (productId, options = {}) => (
+  queryBatchManagerPage({ productId, status: 'all', ...options })
+);
+
+export const loadBatchManagerSummary = queryBatchManagerSummary;
 
 export const sortBatchesByStrategy = (batches = [], strategy = 'fifo') => {
   const normalizedStrategy = String(strategy || 'fifo').toLowerCase();
