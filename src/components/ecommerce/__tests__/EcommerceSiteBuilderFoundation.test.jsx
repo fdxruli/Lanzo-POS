@@ -22,6 +22,7 @@ const builder = (overrides = {}) => ({
   ...overrides
 });
 const portal = { id: 'portal-1', name: 'Tienda', slug: 'tienda', templateCode: 'classic', pickupEnabled: true, deliveryEnabled: false };
+const densityChoice = (label) => screen.getByRole('button', { name: label, exact: true });
 const deferred = () => {
   let resolve;
   const promise = new Promise((next) => { resolve = next; });
@@ -54,7 +55,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.getSiteBuilderState.mockResolvedValue(builder({ hasUnpublishedChanges: true }));
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Borrador sin publicar');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
     expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
     expect(mocks.saveSiteDraft).not.toHaveBeenCalled();
@@ -66,7 +67,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
   it('saves exactly the working document and revision, without publishing, then marks it clean', async () => {
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Guardar borrador'));
     await waitFor(() => expect(mocks.saveSiteDraft).toHaveBeenCalledTimes(1));
     expect(mocks.saveSiteDraft).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4, document: expect.objectContaining({ global: expect.objectContaining({ density: 'compact' }) }) }));
@@ -79,7 +80,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.saveSiteDraft.mockResolvedValue({ success: false, code: 'ECOMMERCE_SITE_DRAFT_CONFLICT', message: 'El borrador cambió.' });
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Guardar borrador'));
     await screen.findByText('El borrador cambió en otro dispositivo.');
     expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
@@ -87,12 +88,11 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
   });
 
-  it('blocks publication with local changes and publishes once after saving', async () => {
+  it('disables publication with local changes and publishes once after saving', async () => {
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Publicar');
-    fireEvent.click(screen.getByText('Compacta'));
-    fireEvent.click(screen.getByText('Publicar'));
-    expect(mocks.error).toHaveBeenCalledWith('Guarda el borrador antes de publicarlo.');
+    fireEvent.click(densityChoice('Compacta'));
+    expect(screen.getByText('Publicar')).toBeDisabled();
     expect(mocks.publishSiteDraft).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('Guardar borrador'));
     await waitFor(() => expect(screen.queryByText('Cambios sin guardar')).toBeNull());
@@ -116,7 +116,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.getSiteBuilderState.mockResolvedValueOnce(builder()).mockResolvedValueOnce(builder({ draft: { document: restored, revision: 5 } }));
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Restaurar v1');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Restaurar v1'));
     await waitFor(() => expect(window.confirm).toHaveBeenCalled());
     expect(mocks.restoreSiteVersion).toHaveBeenCalledWith('version-1');
@@ -132,7 +132,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     const before = screen.getByTestId('preview').textContent;
     fireEvent.click(screen.getByText('Móvil'));
     expect(screen.getByTestId('preview').textContent).toBe(before);
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     expect(add).toHaveBeenCalledWith('beforeunload', expect.any(Function));
     fireEvent.click(screen.getByText('Restablecer diseño base'));
     expect(mocks.saveSiteDraft).not.toHaveBeenCalled();
@@ -142,17 +142,17 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(remove).toHaveBeenCalledWith('beforeunload', expect.any(Function));
   });
 
-  it('preserves local changes across template and branding updates, then resets with the latest template', async () => {
+  it('preserves local changes across portal projection updates and resets the document template locally', async () => {
     const { rerender } = render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase' }} />);
     rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase', logoUrl: 'logo-new.png', theme: { primaryColor: '#112233' } }} />);
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
     expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
     fireEvent.click(screen.getByText('Restablecer diseño base'));
-    expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"showcase"');
+    expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"default"');
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
   });
 
