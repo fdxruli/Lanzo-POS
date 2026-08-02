@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { useInventoryCatalogStore } from '../../../../store/useInventoryCatalogStore';
 import {
@@ -10,7 +10,11 @@ import {
 } from '../../../../services/database';
 import { productRepository } from '../../../../services/products/productRepository';
 import { showMessageModal } from '../../../../services/utils';
-import { loadBatchesForManager } from '../../../../services/inventoryMovement';
+import {
+  loadBatchesForManager,
+  loadNextBatchManagerPage
+} from '../../../../services/inventoryMovement';
+import { BATCH_MANAGER_PAGE_SIZE } from '../../../../services/products/batchManagerQueries';
 import { useStatsStore } from '../../../../store/useStatsStore';
 import Logger from '../../../../services/Logger';
 import { showInputPromptModal } from '../../../common/InputPromptModal';
@@ -31,14 +35,31 @@ export function useBatchManagerController({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [batchToEdit, setBatchToEdit] = useState(null);
   const [localBatches, setLocalBatches] = useState([]);
-  const [isLoadingBatches, setIsLoadingBatches] = useState(false);
+  const [isLoadingInitial, setIsLoadingInitial] = useState(false);
+  const [isLoadingNextPage, setIsLoadingNextPage] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [batchSummary, setBatchSummary] = useState({
+    totalRecords: 0,
+    activeRecords: 0,
+    archivedRecords: 0,
+    totalPhysicalStock: 0,
+    totalAvailableStock: 0,
+    totalCommittedStock: 0,
+    inventoryValue: 0
+  });
+  const requestVersionRef = useRef(0);
+  const selectedProductIdRef = useRef(selectedProductId);
+  const initialRequestRef = useRef(null);
+  const nextPageRequestRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [selectedProductSnapshot, setSelectedProductSnapshot] = useState(null);
   const adjustInventoryValue = useStatsStore((state) => state.adjustInventoryValue);
-  const [inventoryValue, setInventoryValue] = useState(0);
+  selectedProductIdRef.current = selectedProductId;
 
   const resolvedSelectedProduct = useMemo(() => {
     if (!selectedProductId) return null;
@@ -80,7 +101,7 @@ export function useBatchManagerController({
   useEffect(() => {
     if (resolvedSelectedProduct) setSearchTerm(resolvedSelectedProduct.name);
     else setSearchTerm('');
-  }, [resolvedSelectedProduct?.id, resolvedSelectedProduct?.name]);
+  }, [resolvedSelectedProduct]);
 
   useEffect(() => {
     let isActive = true;
@@ -115,34 +136,141 @@ export function useBatchManagerController({
     };
   }, [debouncedSearchTerm, resolvedSelectedProduct?.name]);
 
-  const fetchBatches = useCallback(async () => {
+  const resetBatchView = useCallback(() => {
+    setLocalBatches([]);
+    setNextCursor(null);
+    setHasMore(false);
+    setBatchSummary({
+      totalRecords: 0,
+      activeRecords: 0,
+      archivedRecords: 0,
+      totalPhysicalStock: 0,
+      totalAvailableStock: 0,
+      totalCommittedStock: 0,
+      inventoryValue: 0
+    });
+  }, []);
+
+  const fetchBatches = useCallback(async ({ refresh = false } = {}) => {
     if (!selectedProductId) {
-      setLocalBatches([]);
-      setInventoryValue(0);
+      requestVersionRef.current += 1;
+      resetBatchView();
       return;
     }
 
-    setIsLoadingBatches(true);
-    try {
-      const data = await loadBatchesForManager(selectedProductId);
-      setLocalBatches(data.batches);
-      setInventoryValue(data.inventoryValue);
-    } catch (error) {
-      Logger.error('Error cargando lotes:', error);
-      setLocalBatches([]);
-      setInventoryValue(0);
-    } finally {
-      setIsLoadingBatches(false);
+    if (initialRequestRef.current?.productId === selectedProductId) {
+      return initialRequestRef.current.promise;
     }
-  }, [selectedProductId]);
+
+    const productId = selectedProductId;
+    const requestVersion = ++requestVersionRef.current;
+    nextPageRequestRef.current = null;
+    setIsLoadingNextPage(false);
+    if (refresh) setIsRefreshing(true);
+    else setIsLoadingInitial(true);
+
+    const request = (async () => {
+      try {
+        const data = await loadBatchesForManager(productId, {
+          pageSize: BATCH_MANAGER_PAGE_SIZE
+        });
+        if (
+          requestVersion !== requestVersionRef.current
+          || selectedProductIdRef.current !== productId
+        ) return;
+
+        setLocalBatches(data.items);
+        setNextCursor(data.nextCursor);
+        setHasMore(data.hasMore);
+        setBatchSummary(data.summary);
+      } catch (error) {
+        if (
+          requestVersion !== requestVersionRef.current
+          || selectedProductIdRef.current !== productId
+        ) return;
+        Logger.error('Error cargando lotes:', error);
+        resetBatchView();
+      } finally {
+        if (
+          requestVersion === requestVersionRef.current
+          && selectedProductIdRef.current === productId
+        ) {
+          setIsLoadingInitial(false);
+          setIsRefreshing(false);
+        }
+      }
+    })();
+
+    initialRequestRef.current = { productId, promise: request };
+    request.finally(() => {
+      if (initialRequestRef.current?.promise === request) initialRequestRef.current = null;
+    });
+    return request;
+  }, [resetBatchView, selectedProductId]);
+
+  const loadMoreBatches = useCallback(async () => {
+    if (!selectedProductId || !hasMore || !nextCursor || nextPageRequestRef.current) return;
+
+    const productId = selectedProductId;
+    const cursor = nextCursor;
+    const requestVersion = requestVersionRef.current;
+    setIsLoadingNextPage(true);
+
+    const request = (async () => {
+      try {
+        const page = await loadNextBatchManagerPage(productId, {
+          cursor,
+          pageSize: BATCH_MANAGER_PAGE_SIZE
+        });
+        if (
+          requestVersion !== requestVersionRef.current
+          || selectedProductIdRef.current !== productId
+        ) return;
+
+        setLocalBatches((current) => {
+          const byId = new Map(current.map((batch) => [String(batch.id), batch]));
+          page.items.forEach((batch) => byId.set(String(batch.id), batch));
+          return Array.from(byId.values());
+        });
+        setNextCursor(page.nextCursor);
+        setHasMore(page.hasMore);
+      } catch (error) {
+        if (
+          requestVersion === requestVersionRef.current
+          && selectedProductIdRef.current === productId
+        ) Logger.error('Error cargando más lotes:', error);
+      } finally {
+        if (
+          requestVersion === requestVersionRef.current
+          && selectedProductIdRef.current === productId
+        ) setIsLoadingNextPage(false);
+      }
+    })();
+
+    nextPageRequestRef.current = request;
+    request.finally(() => {
+      if (nextPageRequestRef.current === request) nextPageRequestRef.current = null;
+    });
+    return request;
+  }, [hasMore, nextCursor, selectedProductId]);
 
   useEffect(() => {
+    requestVersionRef.current += 1;
+    initialRequestRef.current = null;
+    nextPageRequestRef.current = null;
+    setIsLoadingInitial(Boolean(selectedProductId));
+    setIsLoadingNextPage(false);
+    setIsRefreshing(false);
+    resetBatchView();
     fetchBatches();
-  }, [fetchBatches]);
+    return () => {
+      requestVersionRef.current += 1;
+    };
+  }, [fetchBatches, resetBatchView, selectedProductId]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && selectedProductId) fetchBatches();
+      if (document.visibilityState === 'visible' && selectedProductId) fetchBatches({ refresh: true });
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -150,7 +278,9 @@ export function useBatchManagerController({
   }, [fetchBatches, selectedProductId]);
 
   const productBatches = localBatches;
-  const totalStock = resolvedSelectedProduct?.stock || 0;
+  const totalStock = batchSummary.totalPhysicalStock;
+  const inventoryValue = batchSummary.inventoryValue;
+  const isLoadingBatches = isLoadingInitial || isLoadingNextPage || isRefreshing;
 
   const handleSelectProduct = useCallback((product) => {
     setSearchTerm(product.name);
@@ -221,7 +351,7 @@ export function useBatchManagerController({
         throw saveBatchResult?.error || new Error(saveBatchResult?.message || 'No se pudo guardar el lote.');
       }
 
-      await fetchBatches();
+      await fetchBatches({ refresh: true });
       await refreshData();
       showMessageModal(
         isNewProduction
@@ -288,7 +418,7 @@ export function useBatchManagerController({
         if (valueDifference !== 0) await adjustInventoryValue(valueDifference);
       }
 
-      await fetchBatches();
+      await fetchBatches({ refresh: true });
       await refreshData();
 
       showMessageModal(
@@ -313,6 +443,16 @@ export function useBatchManagerController({
     totalStock,
     inventoryValue,
     isLoadingBatches,
+    isLoadingInitial,
+    isLoadingNextPage,
+    isRefreshing,
+    nextCursor,
+    hasMore,
+    loadedCount: productBatches.length,
+    totalCount: batchSummary.totalRecords,
+    activeCount: batchSummary.activeRecords,
+    archivedCount: batchSummary.archivedRecords,
+    requestVersion: requestVersionRef.current,
     setSearchTerm,
     setShowSuggestions,
     setBatchToEdit,
@@ -322,6 +462,7 @@ export function useBatchManagerController({
     handleDeleteBatch,
     openNewBatchModal,
     closeModal,
-    refreshBatches: fetchBatches
+    refreshBatches: () => fetchBatches({ refresh: true }),
+    loadMoreBatches
   };
 }

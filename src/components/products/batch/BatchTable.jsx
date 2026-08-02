@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   Edit2, 
   Archive, 
@@ -10,6 +9,7 @@ import {
 } from 'lucide-react';
 import { getBatchTableColumns } from './utils/tableColumns';
 import { getAvailableStock, getCommittedStock } from '../../../services/db/utils';
+import { getBatchManagerStatus } from '../../../services/products/batchManagerQueries';
 
 const formatDate = (isoDate) => (isoDate ? new Date(isoDate).toLocaleDateString() : '-');
 
@@ -19,7 +19,14 @@ export default function BatchTable({
   totalStock,
   inventoryValue,
   isLoadingBatches,
+  isLoadingInitial,
+  isLoadingNextPage,
+  isRefreshing,
+  loadedCount,
+  totalCount,
+  hasMore,
   onRefresh,
+  onLoadMore,
   onOpenNew,
   onEditBatch,
   onDeleteBatch
@@ -27,6 +34,7 @@ export default function BatchTable({
   const columns = getBatchTableColumns(features);
 
   const renderCell = (batch, columnKey) => {
+    const isArchived = getBatchManagerStatus(batch) === 'archived';
     if (columnKey === 'primary') {
       if (features.hasVariants) {
         return (
@@ -80,20 +88,20 @@ export default function BatchTable({
           <button
             type="button"
             className="btn-action edit"
-            title={batch.isArchived ? "No se puede editar un lote archivado" : "Editar información"}
+            title={isArchived ? "No se puede editar un lote archivado" : "Editar información"}
             onClick={() => onEditBatch(batch)}
-            disabled={batch.isArchived}
-            style={{ opacity: batch.isArchived ? 0.4 : 1, cursor: batch.isArchived ? 'not-allowed' : 'pointer' }}
+            disabled={isArchived}
+            style={{ opacity: isArchived ? 0.4 : 1, cursor: isArchived ? 'not-allowed' : 'pointer' }}
           >
             <Edit2 size={16} />
           </button>
           <button
             type="button"
             className="btn-action archive"
-            title={batch.isArchived ? "Este lote ya está archivado" : "Archivar"}
+            title={isArchived ? "Este lote ya está archivado" : "Archivar"}
             onClick={() => onDeleteBatch(batch)}
-            disabled={batch.isArchived}
-            style={{ opacity: batch.isArchived ? 0.4 : 1, cursor: batch.isArchived ? 'not-allowed' : 'pointer' }}
+            disabled={isArchived}
+            style={{ opacity: isArchived ? 0.4 : 1, cursor: isArchived ? 'not-allowed' : 'pointer' }}
           >
             <Archive size={16} />
           </button>
@@ -113,7 +121,8 @@ export default function BatchTable({
           <div className="stat-icon variants"><Layers size={22} /></div>
           <div className="stat-info">
             <span className="stat-label">Registros / Variantes</span>
-            <span className="stat-value">{productBatches.length}</span>
+            <span className="stat-value">{loadedCount} de {totalCount}</span>
+            <span className="stat-detail">Mostrados / totales</span>
           </div>
         </div>
         <div className="batch-stat-card">
@@ -140,11 +149,11 @@ export default function BatchTable({
             type="button"
             className="btn btn-secondary btn-with-icon"
             onClick={onRefresh}
-            disabled={isLoadingBatches}
+            disabled={isLoadingInitial || isRefreshing}
             title="Actualizar stock desde la base de datos"
           >
-            <RefreshCw size={16} className={isLoadingBatches ? 'icon-spin' : ''} />
-            <span>{isLoadingBatches ? 'Actualizando...' : 'Actualizar'}</span>
+            <RefreshCw size={16} className={(isLoadingInitial || isRefreshing) ? 'icon-spin' : ''} />
+            <span>{(isLoadingInitial || isRefreshing) ? 'Actualizando...' : 'Actualizar'}</span>
           </button>
 
           <button
@@ -169,7 +178,10 @@ export default function BatchTable({
           </thead>
           <tbody>
             {productBatches.map((batch) => (
-              <tr key={batch.id} className={!batch.isActive ? 'inactive-batch' : ''}>
+              <tr
+                key={batch.id}
+                className={getBatchManagerStatus(batch) === 'archived' ? 'inactive-batch' : ''}
+              >
                 {columns.map((column) => (
                   <td key={`${batch.id}-${column.key}`}>
                     {renderCell(batch, column.key)}
@@ -187,6 +199,20 @@ export default function BatchTable({
           </tbody>
         </table>
       </div>
+      {hasMore && (
+        <div className="batch-load-more-container">
+          <button
+            type="button"
+            className="btn btn-secondary btn-with-icon batch-load-more"
+            onClick={onLoadMore}
+            disabled={isLoadingBatches}
+            aria-busy={isLoadingNextPage}
+          >
+            <RefreshCw size={16} className={isLoadingNextPage ? 'icon-spin' : ''} />
+            <span>{isLoadingNextPage ? 'Cargando lotes...' : 'Cargar más lotes'}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
