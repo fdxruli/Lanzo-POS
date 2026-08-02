@@ -1,4 +1,6 @@
 .ecom-admin-page { display: grid; gap: 16px; min-width: 0; }
+.ecom-design-workspace, .ecom-design-structure { display: grid; gap: 16px; min-width: 0; }
+.ecom-design-structure > .ecom-admin-card-heading { margin: 8px 2px -2px; }
 .ecom-admin-hero, .ecom-admin-card-heading, .ecom-admin-badges, .ecom-admin-link-box,
 .ecom-admin-status-actions, .ecom-admin-empty-card, .ecom-admin-customization,
 .ecom-admin-form-actions, .ecom-admin-product, .ecom-admin-product > div > div,

@@ -35,7 +35,10 @@ vi.mock('../EcommerceProductPublishModal', () => ({
 
 vi.mock('../EcommercePortalCustomizationPanel', () => ({
   default: ({ onChange }) => (
-    <div>
+    <fieldset>
+      <legend>Identidad visual</legend>
+      <span>Plantilla</span><span>Color principal</span><span>Color secundario</span>
+      <span>Esquinas</span><span>Tipografía</span><span>Logo</span><span>Portada</span>
       <button type="button" onClick={() => onChange({
         templateCode: 'showcase', theme: {}, valid: true,
         logo: { value: null, intent: 'clear' },
@@ -51,12 +54,17 @@ vi.mock('../EcommercePortalCustomizationPanel', () => ({
         logo: { value: 'blob:preview', intent: 'set' },
         cover: { value: null, intent: 'clear' }
       })}>Set invalid test image</button>
-    </div>
+      <button type="button" onClick={() => onChange({
+        templateCode: 'compact', theme: { primaryColor: '#112233', fontStyle: 'editorial' }, valid: true,
+        logo: { value: 'blob:logo-preview', intent: 'preserve' },
+        cover: { value: 'blob:cover-preview', intent: 'preserve' }
+      })}>Set local branding preview</button>
+    </fieldset>
   )
 }));
 
 vi.mock('../EcommerceSiteBuilderFoundation', () => ({
-  default: () => <div>Editor visual del borrador</div>
+  default: ({ portal }) => <output data-testid="builder-preview">Editor visual del borrador {JSON.stringify(portal)}</output>
 }));
 
 const successfulPortalResponse = {
@@ -282,7 +290,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Crear tienda' }));
   };
 
-  it('keeps the basic Free editor out of an existing Pro portal', async () => {
+  it('shows the recovered Pro branding editor separately from the site builder', async () => {
     renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
@@ -294,9 +302,64 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.queryByText('Editor visual del borrador')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
 
-    expect(screen.getByText('Editor visual del borrador')).not.toBeNull();
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('Editor visual del borrador');
+    expect(screen.getByRole('heading', { name: 'Identidad visual' })).not.toBeNull();
+    expect(screen.getByText('Color principal')).not.toBeNull();
+    expect(screen.getByText('Color secundario')).not.toBeNull();
+    expect(screen.getByText('Tipografía')).not.toBeNull();
+    expect(screen.getByText('Esquinas')).not.toBeNull();
+    expect(screen.getByText('Logo')).not.toBeNull();
+    expect(screen.getByText('Portada')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Guardar identidad visual' })).not.toBeNull();
     expect(screen.queryByText('Presentación de tu tienda')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Clear test logo' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Clear test logo' })).not.toBeNull();
+  });
+
+  it('previews Pro branding locally and saves it without losing portal fields', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set local branding preview' }));
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('"templateCode":"compact"');
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('"primaryColor":"#112233"');
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('"logoUrl":"blob:logo-preview"');
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('"coverImageUrl":"blob:cover-preview"');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set test images' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar identidad visual' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
+      name: existingPortal.name,
+      slug: existingPortal.slug,
+      whatsappPhone: existingPortal.whatsappPhone,
+      contactEmail: existingPortal.contactEmail,
+      addressStreet: existingPortal.addressStreet,
+      addressNeighborhood: existingPortal.addressNeighborhood,
+      addressMunicipality: existingPortal.addressMunicipality,
+      addressState: existingPortal.addressState,
+      addressPostalCode: existingPortal.addressPostalCode,
+      pickupEnabled: existingPortal.pickupEnabled,
+      deliveryEnabled: existingPortal.deliveryEnabled,
+      minOrderTotal: existingPortal.minOrderTotal,
+      templateCode: 'showcase',
+      logoUrl: 'https://cdn.example/logo-new.png',
+      coverImageUrl: 'https://cdn.example/cover-new.png'
+    });
+  });
+
+  it('keeps unsaved Pro branding in the preview when saving fails', async () => {
+    renderExistingProPortal();
+    saveEcommercePortal.mockResolvedValueOnce({ success: false, message: 'No se pudo guardar' });
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set local branding preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar identidad visual' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('"templateCode":"compact"');
+    expect(screen.getByTestId('builder-preview')).toHaveTextContent('"logoUrl":"blob:logo-preview"');
   });
 
   it('opens on business information and keeps the catalog one tap away', async () => {
