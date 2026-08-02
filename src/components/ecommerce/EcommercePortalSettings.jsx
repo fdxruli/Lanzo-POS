@@ -457,7 +457,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     return null;
   };
 
-  const savePortal = async (candidate, successMessage, { validate = true } = {}) => {
+  const savePortal = async (
+    candidate,
+    successMessage,
+    { validate = true, syncFormOnSuccess = true } = {}
+  ) => {
     const validationError = validate ? validatePortal(candidate) : null;
     if (validationError) return toast.error(validationError);
 
@@ -519,7 +523,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPortal(nextPortal);
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
-    setForm(portalForm(nextPortal, companyProfile));
+    if (syncFormOnSuccess) setForm(portalForm(nextPortal, companyProfile));
     setCustomization(portalCustomization(nextPortal));
     reconcileStockProducts?.({ portal: nextPortal, publishedProducts: products });
     await evaluateStock({
@@ -548,7 +552,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     return savePortal(
       portalForm(portal, companyProfile),
       'Identidad visual guardada.',
-      { validate: false }
+      { validate: false, syncFormOnSuccess: false }
     );
   };
 

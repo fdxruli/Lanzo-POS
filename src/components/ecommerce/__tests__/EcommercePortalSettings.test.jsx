@@ -362,6 +362,40 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByTestId('builder-preview')).toHaveTextContent('"logoUrl":"blob:logo-preview"');
   });
 
+  it('does not send or discard pending Information changes when Pro branding saves', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByDisplayValue('contacto@example.com'), {
+      target: { value: 'pendiente@example.com' }
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Set test images' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar identidad visual' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
+      contactEmail: existingPortal.contactEmail,
+      logoUrl: 'https://cdn.example/logo-new.png',
+      coverImageUrl: 'https://cdn.example/cover-new.png'
+    });
+    expect(saveEcommercePortal.mock.calls[0][0].contactEmail).not.toBe('pendiente@example.com');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Información' }));
+    expect(screen.getByDisplayValue('pendiente@example.com')).not.toBeNull();
+  });
+
+  it('preserves existing Pro logo and cover by omitting both image fields', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar identidad visual' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    const payload = saveEcommercePortal.mock.calls[0][0];
+    expect(payload).not.toHaveProperty('logoUrl');
+    expect(payload).not.toHaveProperty('coverImageUrl');
+  });
+
   it('opens on business information and keeps the catalog one tap away', async () => {
     renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
