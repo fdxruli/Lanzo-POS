@@ -28,6 +28,7 @@ import {
   normalizeEcommercePortalTemplate,
   normalizeEcommercePortalTheme
 } from '../utils/ecommercePortalTheme';
+import { normalizeEcommerceSiteDocument } from '../utils/ecommerceSiteDocument';
 import { preparePublicStoreDocument } from '../router/preparePublicStoreDocument';
 import { resetPublicDocumentScroll } from '../utils/publicDocumentScroll';
 import '../components/ecommerce/public/PublicCheckout.css';
@@ -112,8 +113,11 @@ function PublicStorePage() {
   const [checkoutOpening, setCheckoutOpening] = useState(false);
 
   const portal = portalResult?.portal || null;
-  const portalTheme = useMemo(() => normalizeEcommercePortalTheme(portal?.theme), [portal?.theme]);
-  const portalTemplate = useMemo(() => normalizeEcommercePortalTemplate(portal?.templateCode), [portal?.templateCode]);
+  const publicSiteDocument = useMemo(() => normalizeEcommerceSiteDocument(portalResult?.site?.document, {
+    templateCode: portal?.templateCode, theme: portal?.theme, logoUrl: portal?.logoUrl, coverImageUrl: portal?.coverImageUrl
+  }), [portal?.coverImageUrl, portal?.logoUrl, portal?.templateCode, portal?.theme, portalResult?.site?.document]);
+  const portalTheme = useMemo(() => normalizeEcommercePortalTheme(publicSiteDocument.global.appearance.theme), [publicSiteDocument]);
+  const portalTemplate = useMemo(() => normalizeEcommercePortalTemplate(publicSiteDocument.global.appearance.templateCode), [publicSiteDocument]);
   const portalThemeStyle = useMemo(() => buildEcommercePortalThemeStyle(portalTheme), [portalTheme]);
   const features = portalResult?.features || {};
   const availability = useMemo(() => resolveAvailability(portalResult), [portalResult]);
@@ -909,7 +913,7 @@ function PublicStorePage() {
       style={portalThemeStyle}
     >
       <EcommerceSiteRenderer
-        siteDocument={portalResult?.site?.document}
+        siteDocument={publicSiteDocument}
         siteDocumentMode={portalResult?.site?.documentMode}
         portal={portal}
         products={products}

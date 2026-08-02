@@ -14,12 +14,16 @@ import {
   validateEcommerceSiteDocument
 } from '../../utils/ecommerceSiteDocument';
 import {
+  changeDocumentTemplate,
   moveSection,
   resetDocumentToPreset,
+  setDocumentBranding,
+  setDocumentTheme,
   setCatalogVisibility,
   setGlobalDensity,
   setSectionLayout
 } from '../../utils/ecommerceSiteBuilderDocument';
+import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
 import EcommerceSiteBuilderControls from './site-builder/EcommerceSiteBuilderControls';
 import EcommerceSiteBuilderHistory from './site-builder/EcommerceSiteBuilderHistory';
 import EcommerceSiteBuilderPreview from './site-builder/EcommerceSiteBuilderPreview';
@@ -28,7 +32,7 @@ import EcommerceSiteBuilderStatus from './site-builder/EcommerceSiteBuilderStatu
 const PAGE_SIZE = 20;
 const clone = (value) => structuredClone(value);
 
-export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
+export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseKey }) {
   const [remoteState, setRemoteState] = useState(null);
   const [savedDocument, setSavedDocument] = useState(null);
   const [workingDocument, setWorkingDocument] = useState(null);
@@ -41,6 +45,8 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
   const [restoringVersionId, setRestoringVersionId] = useState(null);
   const [previewViewport, setPreviewViewport] = useState('desktop');
   const [conflict, setConflict] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [temporaryBranding, setTemporaryBranding] = useState(null);
   const operationRef = useRef(null);
   const templateCodeRef = useRef(portal?.templateCode);
   const loadedPortalIdentityRef = useRef(undefined);
@@ -54,19 +60,43 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
   const documentValidation = useMemo(() => (
     workingDocument ? validateEcommerceSiteDocument(workingDocument) : { valid: false }
   ), [workingDocument]);
-  const busy = loading || saving || publishing || Boolean(restoringVersionId);
+  const busy = loading || saving || publishing || Boolean(restoringVersionId) || uploading;
+  const changeAppearance = useCallback((next) => setWorkingDocument((current) => {
+    const isTemporary = (value) => typeof value === 'string' && value.startsWith('blob:');
+    if (isTemporary(next.logoUrl) || isTemporary(next.coverImageUrl)) {
+      setTemporaryBranding({ logoUrl: next.logoUrl, coverImageUrl: next.coverImageUrl });
+      return current;
+    }
+    setTemporaryBranding(null);
+    const currentAppearance = current.global.appearance;
+    if (
+      next.templateCode === currentAppearance.templateCode
+      && JSON.stringify(next.theme || {}) === JSON.stringify(currentAppearance.theme)
+      && (next.logoUrl ?? null) === currentAppearance.branding.logoUrl
+      && (next.coverImageUrl ?? null) === currentAppearance.branding.coverImageUrl
+    ) return current;
+    let result = current;
+    if (next.templateCode !== currentAppearance.templateCode) result = changeDocumentTemplate(result, next.templateCode);
+    result = setDocumentTheme(result, next.theme || {});
+    return setDocumentBranding(result, { logoUrl: next.logoUrl ?? null, coverImageUrl: next.coverImageUrl ?? null });
+  }), []);
 
   useEffect(() => { templateCodeRef.current = portal?.templateCode; }, [portal?.templateCode]);
   useEffect(() => { hasLocalChangesRef.current = hasLocalChanges; }, [hasLocalChanges]);
 
   const applyRemoteState = useCallback((result) => {
-    const document = migrateEcommerceSiteDocument(result?.draft?.document, { templateCode: templateCodeRef.current });
+    const document = migrateEcommerceSiteDocument(result?.draft?.document, {
+      templateCode: result?.portal?.templateCode || templateCodeRef.current,
+      theme: result?.portal?.theme || portal?.theme,
+      logoUrl: result?.portal?.logoUrl || portal?.logoUrl,
+      coverImageUrl: result?.portal?.coverImageUrl || portal?.coverImageUrl
+    });
     const canonical = clone(document);
     setRemoteState(result);
     setSavedDocument(canonical);
     setWorkingDocument(clone(canonical));
     setConflict(false);
-  }, []);
+  }, [portal?.coverImageUrl, portal?.logoUrl, portal?.theme]);
 
   const applyHistory = useCallback((history) => {
     setVersions(Array.isArray(history.versions) ? history.versions : []);
@@ -204,7 +234,9 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
       const builder = await getSiteBuilderState();
       if (builder.success) {
         applyRemoteState(builder);
-        toast.success('La versión se restauró como borrador. Revísala y publícala cuando esté lista.');
+        toast.success(result.legacyStructureRestored
+          ? 'Se restauró una estructura heredada con tu identidad visual actual. Revísala y publícala cuando esté lista.'
+          : 'La versión se restauró como borrador. Revísala y publícala cuando esté lista.');
       } else {
         toast.error('La versión se restauró como borrador, pero no se pudo actualizar el panel. Pulsa Actualizar.');
       }
@@ -243,7 +275,14 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
   };
   const reset = () => {
     if (hasLocalChanges && !window.confirm('Se reemplazarán tus cambios locales por el diseño base. ¿Deseas continuar?')) return;
-    setWorkingDocument(resetDocumentToPreset(workingDocument, templateCodeRef.current));
+    setWorkingDocument(resetDocumentToPreset(workingDocument, workingDocument.global.appearance.templateCode));
+  };
+  const previewPortal = {
+    ...portal,
+    templateCode: workingDocument.global.appearance.templateCode,
+    theme: workingDocument.global.appearance.theme,
+    logoUrl: temporaryBranding?.logoUrl || workingDocument.global.appearance.branding.logoUrl,
+    coverImageUrl: temporaryBranding?.coverImageUrl || workingDocument.global.appearance.branding.coverImageUrl
   };
 
   return (
@@ -251,8 +290,9 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal }) {
       <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Constructor del sitio</span><h2 id="site-builder-title">Editor visual del borrador</h2></div><button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button></div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
       {conflict ? <div className="ecom-builder-conflict"><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div> : null}
-      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /><EcommerceSiteBuilderPreview document={workingDocument} viewport={previewViewport} onViewport={setPreviewViewport} portal={portal} /></div>
-      <div className="ecom-builder-actions"><span>Revisión del borrador: <strong>{remoteState?.draft?.revision ?? '—'}</strong></span><button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button><button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar'}</button></div>
+      <EcommercePortalCustomizationPanel isPro portal={previewPortal} licenseKey={licenseKey} disabled={loading || saving || publishing || Boolean(restoringVersionId)} onChange={changeAppearance} onBusyChange={setUploading} />
+      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /><EcommerceSiteBuilderPreview document={workingDocument} viewport={previewViewport} onViewport={setPreviewViewport} portal={previewPortal} /></div>
+      <div className="ecom-builder-actions"><span>Revisión del borrador: <strong>{remoteState?.draft?.revision ?? '—'}</strong></span><button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button><button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar'}</button></div>
       <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} disabled={saving || publishing} onRestore={restore} onLoadMore={loadMoreVersions} />
     </section>
   );

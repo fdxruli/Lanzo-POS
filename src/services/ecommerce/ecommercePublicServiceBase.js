@@ -265,11 +265,14 @@ function normalizePortalResult(data) {
     catalogRevision: asRevision(data.catalogRevision),
     cachePolicy: normalizeCachePolicy(data.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY),
     site: {
-      schemaVersion: 1,
+      schemaVersion: Number(rawSite.schemaVersion) === 2 ? 2 : 1,
       versionId: asText(rawSite.versionId),
       versionNumber: siteVersionNumber,
       documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
-      document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: normalizedPortal.templateCode })
+      document: normalizeEcommerceSiteDocument(rawSite.document, {
+        templateCode: normalizedPortal.templateCode, theme: normalizedPortal.theme,
+        logoUrl: normalizedPortal.logoUrl, coverImageUrl: normalizedPortal.coverImageUrl
+      })
     }
   };
 }

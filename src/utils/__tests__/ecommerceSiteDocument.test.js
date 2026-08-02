@@ -14,9 +14,9 @@ describe('ecommerce site document', () => {
   });
 
   it.each([
-    ['unsupported schema', (doc) => ({ ...doc, schemaVersion: 2 }), 'ECOMMERCE_SITE_SCHEMA_UNSUPPORTED'],
+    ['unsupported schema', (doc) => ({ ...doc, schemaVersion: 3 }), 'ECOMMERCE_SITE_SCHEMA_UNSUPPORTED'],
     ['root is not an object', () => [], 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
-    ['global missing', (doc) => ({ sections: doc.sections, schemaVersion: 1 }), 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
+    ['global missing', (doc) => ({ sections: doc.sections, schemaVersion: 2 }), 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
     ['sections is not an array', (doc) => ({ ...doc, sections: {} }), 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
     ['more than thirty sections', (doc) => ({ ...doc, sections: Array.from({ length: 31 }, (_, index) => ({ ...doc.sections[index % 3], id: `header-${index}` })) }), 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
     ['duplicate id', (doc) => ({ ...doc, sections: [...doc.sections, { ...doc.sections[0] }] }), 'ECOMMERCE_SITE_DUPLICATE_SECTION'],
@@ -29,7 +29,9 @@ describe('ecommerce site document', () => {
     ['missing catalog', (doc) => ({ ...doc, sections: doc.sections.filter((section) => section.type !== 'catalog') }), 'ECOMMERCE_SITE_REQUIRED_SECTION_MISSING'],
     ['two headers', (doc) => ({ ...doc, sections: [...doc.sections, { ...doc.sections[0], id: 'header-alt' }] }), 'ECOMMERCE_SITE_REQUIRED_SECTION_MISSING'],
     ['disabled required section', (doc) => ({ ...doc, sections: [{ ...doc.sections[0], enabled: false }, ...doc.sections.slice(1)] }), 'ECOMMERCE_SITE_REQUIRED_SECTION_MISSING'],
-    ['unsafe style', (doc) => ({ ...doc, sections: [{ ...doc.sections[0], style: { css: 'body{}' } }, ...doc.sections.slice(1)] }), 'ECOMMERCE_SITE_SECTION_INVALID']
+    ['unknown appearance key', (doc) => ({ ...doc, global: { ...doc.global, appearance: { ...doc.global.appearance, css: 'body{}' } } }), 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
+    ['http logo URL', (doc) => ({ ...doc, global: { ...doc.global, appearance: { ...doc.global.appearance, branding: { ...doc.global.appearance.branding, logoUrl: 'http://example.com/logo.png' } } } }), 'ECOMMERCE_SITE_DOCUMENT_INVALID'],
+    ['blob cover URL', (doc) => ({ ...doc, global: { ...doc.global, appearance: { ...doc.global.appearance, branding: { ...doc.global.appearance.branding, coverImageUrl: 'blob:preview' } } } }), 'ECOMMERCE_SITE_DOCUMENT_INVALID']
   ])('rejects %s', (_name, mutate, code) => {
     expect(validateEcommerceSiteDocument(mutate(createDefaultEcommerceSiteDocument()))).toMatchObject({ valid: false, code });
   });
@@ -46,6 +48,20 @@ describe('ecommerce site document', () => {
     const document = createDefaultEcommerceSiteDocument();
     expect(buildEcommerceSiteDocumentChecksum(document)).toBe(buildEcommerceSiteDocumentChecksum(JSON.parse(JSON.stringify(document))));
     expect(normalizeEcommerceSiteDocument({ __proto__: { polluted: true } }).sections).toHaveLength(3);
-    expect(migrateEcommerceSiteDocument({ schemaVersion: 99 }).schemaVersion).toBe(1);
+    expect(migrateEcommerceSiteDocument({ schemaVersion: 99 }).schemaVersion).toBe(2);
+  });
+
+  it('migrates valid v1 structure while incorporating the current identity', () => {
+    const v1 = { schemaVersion: 1, global: { themeSource: 'portal', contentWidth: 'standard', density: 'compact' }, sections: createDefaultEcommerceSiteDocument().sections };
+    const migrated = migrateEcommerceSiteDocument(v1, { templateCode: 'showcase', logoUrl: 'https://example.com/logo.png' });
+    expect(migrated).toMatchObject({ schemaVersion: 2, global: { density: 'compact', appearance: { templateCode: 'showcase', branding: { logoUrl: 'https://example.com/logo.png' } } } });
+    expect(validateEcommerceSiteDocument(migrated).valid).toBe(true);
+  });
+
+  it('includes all identity and structure fields in the checksum', () => {
+    const document = createDefaultEcommerceSiteDocument();
+    const checksum = buildEcommerceSiteDocumentChecksum(document);
+    expect(buildEcommerceSiteDocumentChecksum({ ...document, global: { ...document.global, appearance: { ...document.global.appearance, theme: { ...document.global.appearance.theme, primaryColor: '#111111' } } } })).not.toBe(checksum);
+    expect(buildEcommerceSiteDocumentChecksum({ ...document, global: { ...document.global, appearance: { ...document.global.appearance, branding: { ...document.global.appearance.branding, logoUrl: 'https://example.com/logo.png' } } } })).not.toBe(checksum);
   });
 });

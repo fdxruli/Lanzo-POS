@@ -215,11 +215,14 @@ const sanitizePortalResult = (result) => {
     features: sanitizePublicFeatures(source.features), catalogRevision,
     cachePolicy: normalizeCachePolicy(source.cachePolicy),
     site: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       versionId: trimText(rawSite.versionId, 80),
       versionNumber: siteVersionNumber,
       documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
-      document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: portal.templateCode })
+      document: normalizeEcommerceSiteDocument(rawSite.document, {
+        templateCode: portal.templateCode, theme: portal.theme,
+        logoUrl: portal.logoUrl, coverImageUrl: portal.coverImageUrl
+      })
     }
   };
 };

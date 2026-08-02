@@ -12,7 +12,7 @@ export default function EcommerceSiteBuilderPreview({ document, viewport, onView
     () => buildEcommerceSiteBuilderPreviewCatalog(),
     []
   );
-  const themeStyle = useMemo(() => buildEcommercePortalThemeStyle(portal?.theme), [portal?.theme]);
+  const themeStyle = useMemo(() => buildEcommercePortalThemeStyle(document?.global?.appearance?.theme), [document]);
   const catalogProps = useMemo(() => ({
     products: previewCatalog.products,
     filteredProducts: previewCatalog.products,

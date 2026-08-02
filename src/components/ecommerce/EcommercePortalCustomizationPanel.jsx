@@ -51,7 +51,7 @@ export default function EcommercePortalCustomizationPanel({
     setTheme(normalizeEcommercePortalTheme(portal?.theme));
     setLogo(preservedImage(portal?.logoUrl || initialLogoUrl));
     setCover(preservedImage(portal?.coverImageUrl));
-  }, [initialLogoUrl, portal]);
+  }, [initialLogoUrl, portal?.coverImageUrl, portal?.logoUrl, portal?.templateCode, portal?.theme]);
   useEffect(() => () => urls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
