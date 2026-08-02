@@ -24,9 +24,7 @@ import {
 } from '../utils/ecommerceAvailability';
 import { buildMinimalConfiguredOrderItem } from '../utils/ecommerceConfiguredProduct';
 import {
-  buildEcommercePortalThemeStyle,
-  normalizeEcommercePortalTemplate,
-  normalizeEcommercePortalTheme
+  normalizeEcommercePortalTemplate
 } from '../utils/ecommercePortalTheme';
 import { normalizeEcommerceSiteDocument } from '../utils/ecommerceSiteDocument';
 import { preparePublicStoreDocument } from '../router/preparePublicStoreDocument';
@@ -116,9 +114,7 @@ function PublicStorePage() {
   const publicSiteDocument = useMemo(() => normalizeEcommerceSiteDocument(portalResult?.site?.document, {
     templateCode: portal?.templateCode, theme: portal?.theme, logoUrl: portal?.logoUrl, coverImageUrl: portal?.coverImageUrl
   }), [portal?.coverImageUrl, portal?.logoUrl, portal?.templateCode, portal?.theme, portalResult?.site?.document]);
-  const portalTheme = useMemo(() => normalizeEcommercePortalTheme(publicSiteDocument.global.appearance.theme), [publicSiteDocument]);
   const portalTemplate = useMemo(() => normalizeEcommercePortalTemplate(publicSiteDocument.global.appearance.templateCode), [publicSiteDocument]);
-  const portalThemeStyle = useMemo(() => buildEcommercePortalThemeStyle(portalTheme), [portalTheme]);
   const features = portalResult?.features || {};
   const availability = useMemo(() => resolveAvailability(portalResult), [portalResult]);
   const catalogExhausted = catalogReady && pagination.hasMore === false;
@@ -910,7 +906,6 @@ function PublicStorePage() {
       data-catalog-revision={catalogRevision || undefined}
       data-site-version={portalResult?.site?.versionNumber || undefined}
       data-template-code={portalTemplate}
-      style={portalThemeStyle}
     >
       <EcommerceSiteRenderer
         siteDocument={publicSiteDocument}
@@ -964,7 +959,7 @@ function PublicStorePage() {
         ) : null}
 
         </>}
-      />
+      >
 
       {portalResult?.legacyFooter === true ? (
         <div className="public-store-footer__inner">
@@ -1034,6 +1029,7 @@ function PublicStorePage() {
         onContinue={continueShopping}
         acceptingOrders={availability?.acceptingOrders === true}
       />
+      </EcommerceSiteRenderer>
     </main>
   );
 }

@@ -29,7 +29,8 @@ describe('EcommerceSiteBuilderPreview', () => {
     expect(container.querySelector('[data-site-section="catalog"][data-site-layout="grid"]')).toBeTruthy();
     expect(container.querySelector('.ecom-builder-preview-inert')).toHaveClass('ecommerce-site-surface');
     expect(container.querySelector('.public-store-shell')).toBeNull();
-    const surface = container.querySelector('.ecommerce-site-surface');
+    const surface = container.querySelector('.ecommerce-site-renderer');
+    expect(surface).toHaveAttribute('data-site-template', 'classic');
     expect(surface.style.getPropertyValue('--store-primary')).toBe('#0284c7');
     expect(surface.style.getPropertyValue('--store-secondary')).toBe('#0369a1');
     expect(surface.style.getPropertyValue('--store-radius-card')).toBe('1rem');
@@ -68,5 +69,22 @@ describe('EcommerceSiteBuilderPreview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Móvil' }));
     expect(onViewport).toHaveBeenCalledWith('mobile');
     expect(document).toEqual(createDefaultEcommerceSiteDocument());
+  });
+
+  it('updates renderer attributes and tokens immediately from local visual changes', () => {
+    const document = createDefaultEcommerceSiteDocument();
+    document.global.appearance.templateCode = 'compact';
+    document.global.appearance.theme = {
+      primaryColor: '#111827', secondaryColor: '#facc15', cornerStyle: 'square', fontStyle: 'editorial'
+    };
+    document.global.density = 'compact';
+    const { container } = renderPreview({ document });
+    const renderer = container.querySelector('.ecommerce-site-renderer');
+    expect(renderer).toHaveAttribute('data-site-template', 'compact');
+    expect(renderer).toHaveAttribute('data-site-density', 'compact');
+    expect(renderer.style.getPropertyValue('--store-primary')).toBe('#111827');
+    expect(renderer.style.getPropertyValue('--store-secondary')).toBe('#facc15');
+    expect(renderer.style.getPropertyValue('--store-radius-card')).toBe('0');
+    expect(renderer.style.getPropertyValue('--store-font-heading')).toContain('Georgia');
   });
 });
