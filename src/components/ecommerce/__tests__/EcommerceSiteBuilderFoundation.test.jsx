@@ -6,7 +6,7 @@ import EcommerceSiteBuilderFoundation from '../EcommerceSiteBuilderFoundation';
 
 const mocks = vi.hoisted(() => ({
   getSiteBuilderState: vi.fn(), listSiteVersions: vi.fn(), saveSiteDraft: vi.fn(),
-  publishSiteDraft: vi.fn(), restoreSiteVersion: vi.fn(), error: vi.fn(), success: vi.fn()
+  publishSiteDraft: vi.fn(), restoreSiteVersion: vi.fn(), deleteSiteVersion: vi.fn(), error: vi.fn(), success: vi.fn()
 }));
 
 vi.mock('../../../services/ecommerce/ecommerceSiteBuilderService', () => mocks);
@@ -22,6 +22,7 @@ const builder = (overrides = {}) => ({
   ...overrides
 });
 const portal = { id: 'portal-1', name: 'Tienda', slug: 'tienda', templateCode: 'classic', pickupEnabled: true, deliveryEnabled: false };
+const densityChoice = (label) => screen.getByRole('button', { name: label, exact: true });
 const deferred = () => {
   let resolve;
   const promise = new Promise((next) => { resolve = next; });
@@ -37,6 +38,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.saveSiteDraft.mockImplementation(({ document: next }) => Promise.resolve({ success: true, draft: { document: next, revision: 5, documentMode: 'custom' } }));
     mocks.publishSiteDraft.mockResolvedValue({ success: true, idempotent: false });
     mocks.restoreSiteVersion.mockResolvedValue({ success: true });
+    mocks.deleteSiteVersion.mockResolvedValue({ success: true });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -54,7 +56,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.getSiteBuilderState.mockResolvedValue(builder({ hasUnpublishedChanges: true }));
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Borrador sin publicar');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
     expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
     expect(mocks.saveSiteDraft).not.toHaveBeenCalled();
@@ -63,10 +65,26 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(screen.getByText('Borrador sin publicar')).toBeTruthy();
   });
 
+  it('keeps a hydrated non-default appearance stable', async () => {
+    const remoteDocument = createDefaultEcommerceSiteDocument({
+      templateCode: 'showcase',
+      theme: { primaryColor: '#112233', secondaryColor: '#445566', cornerStyle: 'soft', fontStyle: 'editorial' },
+      logoUrl: 'https://cdn.example/logo.png',
+      coverImageUrl: 'https://cdn.example/cover.png'
+    });
+    mocks.getSiteBuilderState.mockResolvedValue(builder({ draft: { document: remoteDocument, revision: 4, documentMode: 'custom' } }));
+
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+
+    await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('"templateCode":"showcase"'));
+    expect(screen.getByTestId('preview')).toHaveTextContent('"logoUrl":"https://cdn.example/logo.png"');
+    expect(screen.getByText('Guardar borrador')).toBeDisabled();
+  });
+
   it('saves exactly the working document and revision, without publishing, then marks it clean', async () => {
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Guardar borrador'));
     await waitFor(() => expect(mocks.saveSiteDraft).toHaveBeenCalledTimes(1));
     expect(mocks.saveSiteDraft).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4, document: expect.objectContaining({ global: expect.objectContaining({ density: 'compact' }) }) }));
@@ -79,7 +97,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.saveSiteDraft.mockResolvedValue({ success: false, code: 'ECOMMERCE_SITE_DRAFT_CONFLICT', message: 'El borrador cambió.' });
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Guardar borrador'));
     await screen.findByText('El borrador cambió en otro dispositivo.');
     expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
@@ -87,12 +105,11 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
   });
 
-  it('blocks publication with local changes and publishes once after saving', async () => {
+  it('disables publication with local changes and publishes once after saving', async () => {
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Publicar');
-    fireEvent.click(screen.getByText('Compacta'));
-    fireEvent.click(screen.getByText('Publicar'));
-    expect(mocks.error).toHaveBeenCalledWith('Guarda el borrador antes de publicarlo.');
+    fireEvent.click(densityChoice('Compacta'));
+    expect(screen.getByText('Publicar')).toBeDisabled();
     expect(mocks.publishSiteDraft).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('Guardar borrador'));
     await waitFor(() => expect(screen.queryByText('Cambios sin guardar')).toBeNull());
@@ -116,12 +133,30 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.getSiteBuilderState.mockResolvedValueOnce(builder()).mockResolvedValueOnce(builder({ draft: { document: restored, revision: 5 } }));
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Restaurar v1');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Restaurar v1'));
     await waitFor(() => expect(window.confirm).toHaveBeenCalled());
     expect(mocks.restoreSiteVersion).toHaveBeenCalledWith('version-1');
     await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"compact"'));
     expect(mocks.publishSiteDraft).not.toHaveBeenCalled();
+  });
+
+  it('permanently deletes only a non-current historical version and refreshes the list', async () => {
+    mocks.listSiteVersions.mockResolvedValueOnce({
+      success: true,
+      versions: [
+        { id: 'version-2', versionNumber: 2, createdAt: '2026-07-22T12:00:00Z', documentMode: 'custom' },
+        { id: 'version-1', versionNumber: 1, createdAt: '2026-07-21T12:00:00Z', documentMode: 'default' }
+      ],
+      hasMore: false
+    }).mockResolvedValue({ success: true, versions: [{ id: 'version-1', versionNumber: 1 }], hasMore: false });
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    await screen.findByText('Eliminar');
+    fireEvent.click(screen.getByText('Eliminar'));
+    await waitFor(() => expect(mocks.deleteSiteVersion).toHaveBeenCalledWith('version-2'));
+    expect(mocks.listSiteVersions).toHaveBeenLastCalledWith({ limit: 20, offset: 0 });
+    expect(screen.queryByText('Eliminar')).toBeNull();
+    expect(mocks.success).toHaveBeenCalledWith('Versión 2 eliminada.');
   });
 
   it('uses real offsets, keeps viewport out of the document, resets locally, and manages beforeunload', async () => {
@@ -132,7 +167,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     const before = screen.getByTestId('preview').textContent;
     fireEvent.click(screen.getByText('Móvil'));
     expect(screen.getByTestId('preview').textContent).toBe(before);
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     expect(add).toHaveBeenCalledWith('beforeunload', expect.any(Function));
     fireEvent.click(screen.getByText('Restablecer diseño base'));
     expect(mocks.saveSiteDraft).not.toHaveBeenCalled();
@@ -142,17 +177,17 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(remove).toHaveBeenCalledWith('beforeunload', expect.any(Function));
   });
 
-  it('preserves local changes across template and branding updates, then resets with the latest template', async () => {
+  it('preserves local changes across portal projection updates and resets the document template locally', async () => {
     const { rerender } = render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
-    fireEvent.click(screen.getByText('Compacta'));
+    fireEvent.click(densityChoice('Compacta'));
     rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase' }} />);
     rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase', logoUrl: 'logo-new.png', theme: { primaryColor: '#112233' } }} />);
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
     expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
     fireEvent.click(screen.getByText('Restablecer diseño base'));
-    expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"showcase"');
+    expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"default"');
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
   });
 

@@ -111,6 +111,21 @@ describe('brandingImageOptimizer', () => {
     expect(harness.canvas.getContext).toHaveBeenCalledWith('2d', { alpha: true });
   });
 
+  it('normaliza el nombre del logo para la ruta segura de Storage', async () => {
+    const harness = createRasterHarness({ width: 320, height: 320 });
+    const source = new TestFile(['source'], 'Logo del Niño..final (2).PNG', { type: 'image/png' });
+
+    const result = await optimizeBrandingImageToWebp({
+      file: source,
+      purpose: 'business-logo',
+      createImageBitmapImpl: harness.createImageBitmapImpl,
+      documentImpl: harness.documentImpl,
+      FileImpl: TestFile
+    });
+
+    expect(result.name).toBe('logo-del-nino-final-2.webp');
+  });
+
   it('convierte una fotografía de producto a WebP y limita su lado mayor', async () => {
     const harness = createRasterHarness({ width: 3024, height: 4032 });
     const source = new TestFile(['source'], 'electrolit-fresa.jpg', {

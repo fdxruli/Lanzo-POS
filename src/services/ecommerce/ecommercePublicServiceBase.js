@@ -249,6 +249,7 @@ function normalizePortalResult(data) {
     settings: asObject(portal.settings)
   };
   const rawSite = asObject(data.site);
+  const siteSchemaVersion = Number(rawSite.schemaVersion) === 1 ? 1 : 2;
   const siteVersionNumber = asRevision(rawSite.versionNumber);
   return {
     portal: normalizedPortal,
@@ -265,11 +266,14 @@ function normalizePortalResult(data) {
     catalogRevision: asRevision(data.catalogRevision),
     cachePolicy: normalizeCachePolicy(data.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY),
     site: {
-      schemaVersion: 1,
+      schemaVersion: siteSchemaVersion,
       versionId: asText(rawSite.versionId),
       versionNumber: siteVersionNumber,
       documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
-      document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: normalizedPortal.templateCode })
+      document: siteSchemaVersion === 1 ? rawSite.document : normalizeEcommerceSiteDocument(rawSite.document, {
+        templateCode: normalizedPortal.templateCode, theme: normalizedPortal.theme,
+        logoUrl: normalizedPortal.logoUrl, coverImageUrl: normalizedPortal.coverImageUrl
+      })
     }
   };
 }
@@ -508,6 +512,7 @@ export function createEcommercePublicService(
     configurationCache = ecommercePublicConfigurationCache,
     publicReadRetryDelayMs = PUBLIC_READ_RETRY_DELAY_MS,
     publicReadRetryDelay = waitForPublicReadRetry,
+    publicPortalRpcName = 'ecommerce_get_portal_by_slug_v2',
   } = {}
 ) {
   return {
@@ -520,7 +525,7 @@ export function createEcommercePublicService(
         );
       }
       try {
-        const data = await executePublicReadRpc(client, 'ecommerce_get_portal_by_slug', {
+        const data = await executePublicReadRpc(client, publicPortalRpcName, {
           p_slug: normalizedSlug
         }, { retryDelayMs: publicReadRetryDelayMs, retryDelay: publicReadRetryDelay });
         const result = normalizePortalResult(data);

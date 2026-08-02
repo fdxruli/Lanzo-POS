@@ -43,7 +43,6 @@ import EcommerceCatalogSyncPanel, {
 import EcommerceBusinessInformationPanel from './EcommerceBusinessInformationPanel';
 import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
 import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
-import EcommercePortalBrandingEditor from './EcommercePortalBrandingEditor';
 import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
 import EcommerceSiteBuilderFoundation from './EcommerceSiteBuilderFoundation';
 import './EcommercePortalSettings.css';
@@ -71,7 +70,7 @@ const numberOr = (value, fallback = 0) => {
 
 const publicUrl = (value) => {
   const text = typeof value === 'string' ? value.trim() : '';
-  return /^https?:\/\//i.test(text) ? text : '';
+  return /^https:\/\//i.test(text) ? text : '';
 };
 
 const IMAGE_INTENT_PRESERVE = 'preserve';
@@ -91,12 +90,6 @@ const portalCustomization = (portal) => ({
   cover: { value: publicUrl(portal?.coverImageUrl) || null, intent: IMAGE_INTENT_PRESERVE },
   valid: true
 });
-
-const previewImageUrl = (image, fallback) => {
-  if (image?.intent === IMAGE_INTENT_CLEAR) return null;
-  const value = typeof image?.value === 'string' ? image.value.trim() : '';
-  return /^(?:https?:|blob:)/i.test(value) ? value : fallback;
-};
 
 const portalForm = (portal, profile) => ({
   name: portal?.name || profile?.name || '',
@@ -280,16 +273,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     : (features.maxPublishedProducts || 10);
   const limitReached = !isPro && publishedCount >= maxProducts;
   const showBasicPortalEditor = !isPro;
-  const previewPortal = useMemo(() => {
-    if (!portal || !isPro) return portal;
-    return {
-      ...portal,
-      templateCode: customization.templateCode || portal.templateCode,
-      theme: customization.theme || portal.theme,
-      logoUrl: previewImageUrl(customization.logo, portal.logoUrl),
-      coverImageUrl: previewImageUrl(customization.cover, portal.coverImageUrl)
-    };
-  }, [customization.cover, customization.logo, customization.templateCode, customization.theme, isPro, portal]);
   const publicationRequirements = {
     whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
     street: form.addressStreet.trim().length > 0,
@@ -481,29 +464,29 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       minOrderTotal: numberOr(candidate.minOrderTotal, 0),
       status: candidate.status,
       slug: candidate.slug.trim() || null,
-      templateCode: isPro ? customization.templateCode : 'classic',
-      theme: isPro ? customization.theme : {},
       metadata: { source: 'admin_ui' }
     };
     const logo = customization.logo || { value: customization.logoUrl, intent: IMAGE_INTENT_PRESERVE };
     const cover = customization.cover || { value: customization.coverImageUrl, intent: IMAGE_INTENT_PRESERVE };
+    const canPersistLogoThroughPortal = !portal || !isPro;
+    const canPersistCoverThroughPortal = !portal && isPro;
 
-    if (logo.intent === IMAGE_INTENT_SET) {
+    if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
       const logoUrl = publicUrl(logo.value);
       if (!logoUrl) return toast.error('El logo seleccionado no tiene una URL pública válida. Intenta subirlo nuevamente.');
       payload.logoUrl = logoUrl;
-    } else if (logo.intent === IMAGE_INTENT_CLEAR) {
+    } else if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_CLEAR) {
       payload.logoUrl = null;
     } else if (!portal) {
       const initialLogo = publicUrl(candidate.logoUrl);
       if (initialLogo) payload.logoUrl = initialLogo;
     }
 
-    if (isPro && cover.intent === IMAGE_INTENT_SET) {
+    if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
       const coverImageUrl = publicUrl(cover.value);
       if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
       payload.coverImageUrl = coverImageUrl;
-    } else if (isPro && cover.intent === IMAGE_INTENT_CLEAR) {
+    } else if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
       payload.coverImageUrl = null;
     }
 
@@ -524,7 +507,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
     if (syncFormOnSuccess) setForm(portalForm(nextPortal, companyProfile));
-    setCustomization(portalCustomization(nextPortal));
+    if (!portal || !isPro) setCustomization(portalCustomization(nextPortal));
     reconcileStockProducts?.({ portal: nextPortal, publishedProducts: products });
     await evaluateStock({
       nextPortal,
@@ -540,19 +523,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     await savePortal(
       form,
       portal ? 'Portal actualizado correctamente.' : 'Portal online creado correctamente.'
-    );
-  };
-
-  const saveBranding = async () => {
-    if (!portal) return false;
-    if (customization.valid === false) {
-      toast.error('Corrige los colores antes de guardar la identidad visual.');
-      return false;
-    }
-    return savePortal(
-      portalForm(portal, companyProfile),
-      'Identidad visual guardada.',
-      { validate: false, syncFormOnSuccess: false }
     );
   };
 
@@ -837,30 +807,13 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             <div className="ecom-design-workspace">
               <div className="ecom-admin-workspace-header">
                 <div>
-                  <span className="ecom-admin-eyebrow">Diseño de la tienda</span>
-                  <h2>Diseño de la tienda</h2>
-                  <p>Define la identidad de tu tienda y la estructura que verán tus clientes.</p>
+                  <span className="ecom-admin-eyebrow">Tienda en línea</span>
+                  <h2>Diseña y publica tu tienda</h2>
+                  <p>Define la identidad, organiza las secciones y publica los cambios para tus clientes.</p>
                 </div>
               </div>
-              <EcommercePortalBrandingEditor
-                portal={portal}
-                licenseKey={licenseKey}
-                customization={customization}
-                saving={savingPortal}
-                uploading={customizationBusy}
-                onCustomizationChange={handleCustomizationChange}
-                onUploadingChange={setCustomizationBusy}
-                onSave={saveBranding}
-              />
-              <section className="ecom-design-structure" aria-labelledby="ecom-design-structure-title">
-                <div className="ecom-admin-card-heading">
-                  <div>
-                    <span className="ecom-admin-eyebrow">Estructura de la tienda</span>
-                    <h2 id="ecom-design-structure-title">Estructura de la tienda</h2>
-                    <p>Densidad, secciones, vista previa, borrador y publicación.</p>
-                  </div>
-                </div>
-                <EcommerceSiteBuilderFoundation isPro portal={previewPortal} />
+              <section className="ecom-design-structure" aria-label="Editor de la tienda">
+                <EcommerceSiteBuilderFoundation isPro portal={portal} licenseKey={licenseKey} />
               </section>
             </div>
           ) : <EcommerceSiteBuilderFoundation isPro={false} portal={portal} />}

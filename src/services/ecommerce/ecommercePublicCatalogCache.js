@@ -210,16 +210,24 @@ const sanitizePortalResult = (result) => {
   if (!portal || !catalogRevision) return null;
   const rawSite = isRecord(source.site) ? source.site : {};
   const siteVersionNumber = asRevision(rawSite.versionNumber);
+  const siteSchemaVersion = Number(rawSite.schemaVersion) === 1 ? 1 : 2;
+  const siteDocument = siteSchemaVersion === 1
+    ? cloneJson(rawSite.document)
+    : normalizeEcommerceSiteDocument(rawSite.document, {
+      templateCode: portal.templateCode, theme: portal.theme,
+      logoUrl: portal.logoUrl, coverImageUrl: portal.coverImageUrl
+    });
+  if (!siteDocument) return null;
   return {
     portal, hours: sanitizePublicHours(source.hours), availability: sanitizePublicAvailability(source.availability),
     features: sanitizePublicFeatures(source.features), catalogRevision,
     cachePolicy: normalizeCachePolicy(source.cachePolicy),
     site: {
-      schemaVersion: 1,
+      schemaVersion: siteSchemaVersion,
       versionId: trimText(rawSite.versionId, 80),
       versionNumber: siteVersionNumber,
       documentMode: rawSite.documentMode === 'custom' ? 'custom' : 'default',
-      document: normalizeEcommerceSiteDocument(rawSite.document, { templateCode: portal.templateCode })
+      document: siteDocument
     }
   };
 };

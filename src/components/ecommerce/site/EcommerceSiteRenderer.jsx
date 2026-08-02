@@ -24,8 +24,16 @@ export default function EcommerceSiteRenderer({
   catalogChrome = null
 }) {
   const document = normalizeEcommerceSiteDocument(siteDocument, {
-    templateCode: portal?.templateCode
+    templateCode: portal?.templateCode, theme: portal?.theme,
+    logoUrl: portal?.logoUrl, coverImageUrl: portal?.coverImageUrl
   });
+  const renderedPortal = {
+    ...portal,
+    templateCode: document.global.appearance.templateCode,
+    theme: document.global.appearance.theme,
+    logoUrl: document.global.appearance.branding.logoUrl,
+    coverImageUrl: document.global.appearance.branding.coverImageUrl
+  };
   const renderMode = ['public', 'preview', 'editor'].includes(mode) ? mode : 'public';
   const documentMode = siteDocumentMode === 'custom' ? 'custom' : 'default';
 
@@ -43,7 +51,7 @@ export default function EcommerceSiteRenderer({
           <Section
             key={section.id}
             section={section}
-            portal={portal}
+            portal={renderedPortal}
             products={products}
             categories={categories}
             hours={hours}
@@ -59,7 +67,7 @@ export default function EcommerceSiteRenderer({
   );
 }
 
-export const getRenderableEcommerceSiteDocument = (document, portal) => normalizeEcommerceSiteDocument(
-  document,
-  { templateCode: portal?.templateCode }
-);
+export const getRenderableEcommerceSiteDocument = (document, portal) => normalizeEcommerceSiteDocument(document, {
+  templateCode: portal?.templateCode, theme: portal?.theme,
+  logoUrl: portal?.logoUrl, coverImageUrl: portal?.coverImageUrl
+});

@@ -57,6 +57,17 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
     expect(lastChange(changes).cover).toEqual({ value: portal.coverImageUrl, intent: 'preserve' });
   });
 
+  it('does not report default appearance before hydrating portal values', async () => {
+    renderPanel();
+
+    await waitFor(() => expect(changes).toHaveLength(1));
+    expect(changes[0]).toMatchObject({
+      templateCode: portal.templateCode,
+      logo: { value: portal.logoUrl, intent: 'preserve' },
+      cover: { value: portal.coverImageUrl, intent: 'preserve' }
+    });
+  });
+
   it('marks a successfully uploaded HTTPS logo as set', async () => {
     uploadImageFile.mockResolvedValue({ publicUrl: 'https://cdn.example/logo-after.png' });
     renderPanel();

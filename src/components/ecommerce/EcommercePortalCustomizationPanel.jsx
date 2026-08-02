@@ -45,13 +45,15 @@ export default function EcommercePortalCustomizationPanel({
   const [cover, setCover] = useState(() => preservedImage(null));
   const [busy, setBusy] = useState(false);
   const urls = useRef(new Set());
+  const hydratingFromPortal = useRef(true);
 
   useEffect(() => {
+    hydratingFromPortal.current = true;
     setTemplateCode(normalizeEcommercePortalTemplate(portal?.templateCode));
     setTheme(normalizeEcommercePortalTheme(portal?.theme));
     setLogo(preservedImage(portal?.logoUrl || initialLogoUrl));
     setCover(preservedImage(portal?.coverImageUrl));
-  }, [initialLogoUrl, portal]);
+  }, [initialLogoUrl, portal?.coverImageUrl, portal?.logoUrl, portal?.templateCode, portal?.theme]);
   useEffect(() => () => urls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
 
@@ -61,6 +63,10 @@ export default function EcommercePortalCustomizationPanel({
   const previewStyle = useMemo(() => buildEcommercePortalThemeStyle(normalizedTheme), [normalizedTheme]);
 
   useEffect(() => {
+    if (hydratingFromPortal.current) {
+      hydratingFromPortal.current = false;
+      return;
+    }
     onChange?.({
       templateCode: isPro ? normalizeEcommercePortalTemplate(templateCode) : 'classic',
       theme: isPro ? normalizedTheme : {},

@@ -440,6 +440,7 @@
 .ecom-builder-version-list { display: grid; gap: .65rem; }
 .ecom-builder-version-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border: 1px solid var(--border-color); border-radius: 10px; }
 .ecom-builder-version-list article > div { display: grid; gap: .2rem; }
+.ecom-builder-version-actions { display: flex !important; flex-wrap: wrap; gap: .55rem; }
 .ecom-builder-version-list small, .ecom-builder-version-list span { color: var(--text-light); }
 
 @media (max-width: 900px) {
