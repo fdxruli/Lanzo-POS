@@ -1181,45 +1181,6 @@ export const productsRepository = {
         }
     },
 
-    async getBatchesForManagerUI(productId, historyLimit = 30) {
-        try {
-            // 1. Obtener todos los lotes usando el índice primario seguro
-            const allProductBatches = await db.table(STORES.PRODUCT_BATCHES)
-                .where('productId').equals(productId)
-                .toArray();
-
-            // 2. Filtrar en memoria (evita el error de IDBKeyRange con booleanos)
-            const activeBatches = allProductBatches.filter(b => b.isActive === true);
-
-            // 3. Obtener el historial limitado, manejando fechas inválidas que pasarías por alto
-            const archivedBatches = allProductBatches
-                .filter(b => b.isActive === false)
-                .sort((a, b) => {
-                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return dateB - dateA;
-                })
-                .slice(0, historyLimit);
-
-            // 4. Calcular valor real
-            const inventoryValue = activeBatches.reduce((sum, batch) =>
-                sum + ((Number(batch.cost) || 0) * (Number(batch.stock) || 0)), 0
-            );
-
-            // 5. Devolver consolidado y ordenar con seguridad contra nulos
-            return {
-                batches: [...activeBatches, ...archivedBatches].sort((a, b) => {
-                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return dateB - dateA;
-                }),
-                inventoryValue
-            };
-        } catch (error) {
-            throw handleDexieError(error, 'Get Batches For Manager UI');
-        }
-    },
-
         /**
      * Guarda un lote de producción y descuenta atómicamente la materia prima (Ingredientes).
      */

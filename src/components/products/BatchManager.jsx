@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import BatchProductSearch from './batch/BatchProductSearch';
@@ -67,7 +67,14 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
           totalStock={controller.totalStock}
           inventoryValue={controller.inventoryValue}
           isLoadingBatches={controller.isLoadingBatches}
+          isLoadingInitial={controller.isLoadingInitial}
+          isLoadingNextPage={controller.isLoadingNextPage}
+          isRefreshing={controller.isRefreshing}
+          loadedCount={controller.loadedCount}
+          totalCount={controller.totalCount}
+          hasMore={controller.hasMore}
           onRefresh={controller.refreshBatches}
+          onLoadMore={controller.loadMoreBatches}
           onOpenNew={controller.openNewBatchModal}
           onEditBatch={controller.handleEditBatch}
           onDeleteBatch={controller.handleDeleteBatch}
