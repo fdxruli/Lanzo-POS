@@ -64,6 +64,22 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(screen.getByText('Borrador sin publicar')).toBeTruthy();
   });
 
+  it('keeps a hydrated non-default appearance stable', async () => {
+    const remoteDocument = createDefaultEcommerceSiteDocument({
+      templateCode: 'showcase',
+      theme: { primaryColor: '#112233', secondaryColor: '#445566', cornerStyle: 'soft', fontStyle: 'editorial' },
+      logoUrl: 'https://cdn.example/logo.png',
+      coverImageUrl: 'https://cdn.example/cover.png'
+    });
+    mocks.getSiteBuilderState.mockResolvedValue(builder({ draft: { document: remoteDocument, revision: 4, documentMode: 'custom' } }));
+
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+
+    await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('"templateCode":"showcase"'));
+    expect(screen.getByTestId('preview')).toHaveTextContent('"logoUrl":"https://cdn.example/logo.png"');
+    expect(screen.getByText('Guardar borrador')).toBeDisabled();
+  });
+
   it('saves exactly the working document and revision, without publishing, then marks it clean', async () => {
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Guardar borrador');
