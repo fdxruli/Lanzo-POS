@@ -375,7 +375,7 @@ Lanzo-POS separa responsabilidades entre cliente y servidor:
 - los artefactos públicos tienen auditorías para evitar incluir archivos privados o secretos;
 - la PWA implementa recuperación de actualizaciones sin borrar deliberadamente los datos operativos de IndexedDB.
 
-Estas medidas reducen riesgos, pero no constituyen una garantía de seguridad absoluta. Todavía falta publicar `SECURITY.md` y un proceso formal de reporte responsable; ese trabajo pertenece a una fase posterior.
+Estas medidas reducen riesgos, pero no constituyen una garantía de seguridad absoluta. Para comunicar vulnerabilidades de forma responsable, consulta la [política de seguridad](SECURITY.md). El proyecto no promete un SLA ni afirma que exista un programa de recompensas.
 
 No publiques en issues, documentación o ejemplos:
 
@@ -417,22 +417,24 @@ Antes de considerar una contribución:
 4. documenta pruebas, migraciones e impacto operativo;
 5. no asumas todavía un acuerdo de contribución o una licencia OSS implícita.
 
-Una fase posterior agregará `CONTRIBUTING.md`, criterios de revisión, convenciones y el proceso formal para contribuciones.
+Consulta la [guía preliminar de contribución](CONTRIBUTING.md) para conocer el flujo de trabajo, las reglas de procedencia y la responsabilidad sobre contenido asistido por inteligencia artificial. Esta guía no concede permisos jurídicos: `AGPL-3.0-only` todavía no está vigente y el DCO aún no se exige automáticamente.
+
+## Documentación del proyecto
+
+- [Política de seguridad](SECURITY.md)
+- [Guía preliminar de contribución](CONTRIBUTING.md)
+- [Política preliminar de marca](TRADEMARK_POLICY.md)
+- [Auditoría de preparación OSS](docs/OSS-AUDIT.md)
+- [Hoja de ruta de transición OSS](docs/OSS-ROADMAP.md)
+- [Estado actual del autohospedaje](docs/SELF-HOSTING-STATUS.md)
+
+Estos documentos preparan la transición del proyecto, pero no sustituyen una licencia de software ni declaran que `AGPL-3.0-only` ya esté vigente.
 
 ## Roadmap general
 
-Las prioridades generales para la transición OSS son:
+La transición open source se gestiona por fases en la [hoja de ruta OSS](docs/OSS-ROADMAP.md). Las prioridades inmediatas son completar el escaneo local del historial, sanear datos operativos, verificar dependencias y activos, certificar el autohospedaje y, únicamente después, adoptar formalmente la licencia seleccionada.
 
-1. completar la auditoría de propiedad intelectual, dependencias y datos sensibles;
-2. aplicar formalmente la licencia seleccionada;
-3. publicar políticas de seguridad, contribución y marcas;
-4. separar y documentar con precisión configuración pública y secretos;
-5. preparar una guía reproducible de autohospedaje;
-6. estabilizar el baseline de pruebas y los requisitos de CI;
-7. documentar arquitectura, migraciones, operación y actualización;
-8. mejorar la portabilidad sin romper Lanzo Local ni el servicio administrado Lanzo Nube.
-
-Este roadmap expresa dirección técnica y documental, no fechas ni compromisos comerciales.
+La hoja de ruta expresa dirección técnica y documental, no fechas ni compromisos comerciales.
 
 ## Autohospedaje y documentación pendiente
 
@@ -440,7 +442,7 @@ El repositorio contiene componentes importantes de la arquitectura, incluida la 
 
 - el flujo oficial utiliza infraestructura administrada;
 - la instalación completa todavía no está documentada de extremo a extremo;
-- no existe aún una guía `SELF-HOSTING.md`;
+- existe un [documento de estado del autohospedaje](docs/SELF-HOSTING-STATUS.md), pero todavía no una guía completa y certificada de instalación;
 - no se promete una instalación sencilla o certificada;
 - Docker no debe considerarse soportado mientras no exista una implementación y documentación verificadas;
 - despliegues, dominios, Storage, RLS, secretos y operaciones cloud requieren configuración propia.
