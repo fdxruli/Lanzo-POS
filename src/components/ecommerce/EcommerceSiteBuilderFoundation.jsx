@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, Save, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
+  deleteSiteVersion,
   getSiteBuilderState,
   listSiteVersions,
   publishSiteDraft,
@@ -43,6 +44,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   const [publishing, setPublishing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [restoringVersionId, setRestoringVersionId] = useState(null);
+  const [deletingVersionId, setDeletingVersionId] = useState(null);
   const [previewViewport, setPreviewViewport] = useState('desktop');
   const [conflict, setConflict] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -73,7 +75,7 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
     logoUrl: temporaryBranding?.logoUrl ?? builderPortal.logoUrl,
     coverImageUrl: temporaryBranding?.coverImageUrl ?? builderPortal.coverImageUrl
   }), [builderPortal, temporaryBranding]);
-  const busy = loading || saving || publishing || Boolean(restoringVersionId) || uploading;
+  const busy = loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId) || uploading;
   const changeAppearance = useCallback((next) => {
     const isTemporary = (value) => typeof value === 'string' && value.startsWith('blob:');
     if (isTemporary(next.logoUrl) || isTemporary(next.coverImageUrl)) {
@@ -292,15 +294,36 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
     if (hasLocalChanges && !window.confirm('Se reemplazarán tus cambios locales por el diseño base. ¿Deseas continuar?')) return;
     setWorkingDocument(resetDocumentToPreset(workingDocument, workingDocument.global.appearance.templateCode));
   };
+
+  const deleteVersion = async (version) => {
+    if (operationRef.current || version?.id === remoteState?.published?.versionId) return;
+    if (!window.confirm(`Eliminar definitivamente la versión ${version.versionNumber}? Esta acción no se puede deshacer.`)) return;
+    operationRef.current = `delete:${version.id}`;
+    setDeletingVersionId(version.id);
+    try {
+      const result = await deleteSiteVersion(version.id);
+      if (!result.success) {
+        toast.error(result.message);
+        return;
+      }
+      const history = await listSiteVersions({ limit: PAGE_SIZE, offset: 0 });
+      if (history.success) applyHistory(history);
+      else setVersions((current) => current.filter((item) => item.id !== version.id));
+      toast.success(`Versión ${version.versionNumber} eliminada.`);
+    } finally {
+      operationRef.current = null;
+      setDeletingVersionId(null);
+    }
+  };
   return (
     <section className="ui-card ecom-builder-shell" aria-labelledby="site-builder-title">
       <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Constructor del sitio</span><h2 id="site-builder-title">Editor visual del borrador</h2></div><button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button></div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
       {conflict ? <div className="ecom-builder-conflict"><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div> : null}
-      <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey} disabled={loading || saving || publishing || Boolean(restoringVersionId)} onChange={changeAppearance} onBusyChange={setUploading} />
+      <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey} disabled={loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId)} onChange={changeAppearance} onBusyChange={setUploading} />
       <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /><EcommerceSiteBuilderPreview document={workingDocument} viewport={previewViewport} onViewport={setPreviewViewport} portal={previewPortal} /></div>
       <div className="ecom-builder-actions"><span>Revisión del borrador: <strong>{remoteState?.draft?.revision ?? '—'}</strong></span><button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button><button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar'}</button></div>
-      <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} disabled={saving || publishing} onRestore={restore} onLoadMore={loadMoreVersions} />
+      <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} deletingVersionId={deletingVersionId} disabled={saving || publishing || uploading} onRestore={restore} onDelete={deleteVersion} onLoadMore={loadMoreVersions} />
     </section>
   );
 }

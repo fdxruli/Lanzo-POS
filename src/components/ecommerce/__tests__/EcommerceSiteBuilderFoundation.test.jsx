@@ -6,7 +6,7 @@ import EcommerceSiteBuilderFoundation from '../EcommerceSiteBuilderFoundation';
 
 const mocks = vi.hoisted(() => ({
   getSiteBuilderState: vi.fn(), listSiteVersions: vi.fn(), saveSiteDraft: vi.fn(),
-  publishSiteDraft: vi.fn(), restoreSiteVersion: vi.fn(), error: vi.fn(), success: vi.fn()
+  publishSiteDraft: vi.fn(), restoreSiteVersion: vi.fn(), deleteSiteVersion: vi.fn(), error: vi.fn(), success: vi.fn()
 }));
 
 vi.mock('../../../services/ecommerce/ecommerceSiteBuilderService', () => mocks);
@@ -38,6 +38,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     mocks.saveSiteDraft.mockImplementation(({ document: next }) => Promise.resolve({ success: true, draft: { document: next, revision: 5, documentMode: 'custom' } }));
     mocks.publishSiteDraft.mockResolvedValue({ success: true, idempotent: false });
     mocks.restoreSiteVersion.mockResolvedValue({ success: true });
+    mocks.deleteSiteVersion.mockResolvedValue({ success: true });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
@@ -138,6 +139,24 @@ describe('EcommerceSiteBuilderFoundation', () => {
     expect(mocks.restoreSiteVersion).toHaveBeenCalledWith('version-1');
     await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"compact"'));
     expect(mocks.publishSiteDraft).not.toHaveBeenCalled();
+  });
+
+  it('permanently deletes only a non-current historical version and refreshes the list', async () => {
+    mocks.listSiteVersions.mockResolvedValueOnce({
+      success: true,
+      versions: [
+        { id: 'version-2', versionNumber: 2, createdAt: '2026-07-22T12:00:00Z', documentMode: 'custom' },
+        { id: 'version-1', versionNumber: 1, createdAt: '2026-07-21T12:00:00Z', documentMode: 'default' }
+      ],
+      hasMore: false
+    }).mockResolvedValue({ success: true, versions: [{ id: 'version-1', versionNumber: 1 }], hasMore: false });
+    render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
+    await screen.findByText('Eliminar');
+    fireEvent.click(screen.getByText('Eliminar'));
+    await waitFor(() => expect(mocks.deleteSiteVersion).toHaveBeenCalledWith('version-2'));
+    expect(mocks.listSiteVersions).toHaveBeenLastCalledWith({ limit: 20, offset: 0 });
+    expect(screen.queryByText('Eliminar')).toBeNull();
+    expect(mocks.success).toHaveBeenCalledWith('Versión 2 eliminada.');
   });
 
   it('uses real offsets, keeps viewport out of the document, resets locally, and manages beforeunload', async () => {

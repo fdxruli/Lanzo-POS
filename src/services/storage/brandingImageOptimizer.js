@@ -35,7 +35,14 @@ function getProfile(purpose) {
 
 function webpFilename(filename = 'imagen') {
   const cleanName = String(filename || 'imagen').trim() || 'imagen';
-  const baseName = cleanName.replace(/\.[a-z0-9]+$/iu, '') || 'imagen';
+  const baseName = cleanName
+    .replace(/\.[a-z0-9]+$/iu, '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 120) || 'imagen';
   return `${baseName}.webp`;
 }
 

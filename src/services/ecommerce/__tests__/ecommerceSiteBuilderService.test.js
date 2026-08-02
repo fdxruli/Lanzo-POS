@@ -29,8 +29,10 @@ describe('ecommerceSiteBuilderService', () => {
     expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_publish_site_v2', context);
     await service.restoreSiteVersion('version-id');
     expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_restore_site_version_v2', { ...context, p_version_id: 'version-id' });
+    await service.deleteSiteVersion('version-id');
+    expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_delete_site_version_v2', { ...context, p_version_id: 'version-id' });
     await service.getSiteBuilderState();
     expect(rpc).toHaveBeenLastCalledWith('ecommerce_admin_get_site_builder_v2', context);
-    expect(rpc).toHaveBeenCalledTimes(4);
+    expect(rpc).toHaveBeenCalledTimes(5);
   });
 });

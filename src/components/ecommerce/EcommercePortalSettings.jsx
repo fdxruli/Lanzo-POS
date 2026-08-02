@@ -807,19 +807,12 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             <div className="ecom-design-workspace">
               <div className="ecom-admin-workspace-header">
                 <div>
-                  <span className="ecom-admin-eyebrow">Diseño de la tienda</span>
-                  <h2>Diseño de la tienda</h2>
-                  <p>Define la identidad de tu tienda y la estructura que verán tus clientes.</p>
+                  <span className="ecom-admin-eyebrow">Tienda en línea</span>
+                  <h2>Diseña y publica tu tienda</h2>
+                  <p>Define la identidad, organiza las secciones y publica los cambios para tus clientes.</p>
                 </div>
               </div>
-              <section className="ecom-design-structure" aria-labelledby="ecom-design-structure-title">
-                <div className="ecom-admin-card-heading">
-                  <div>
-                    <span className="ecom-admin-eyebrow">Estructura de la tienda</span>
-                    <h2 id="ecom-design-structure-title">Estructura de la tienda</h2>
-                    <p>Densidad, secciones, vista previa, borrador y publicación.</p>
-                  </div>
-                </div>
+              <section className="ecom-design-structure" aria-label="Editor de la tienda">
                 <EcommerceSiteBuilderFoundation isPro portal={portal} licenseKey={licenseKey} />
               </section>
             </div>

@@ -11,6 +11,8 @@ const SAFE_MESSAGES = {
   ECOMMERCE_SITE_DUPLICATE_SECTION: 'El sitio contiene secciones duplicadas.',
   ECOMMERCE_SITE_DRAFT_CONFLICT: 'El borrador cambió en otro dispositivo. Recarga para continuar.',
   ECOMMERCE_SITE_VERSION_NOT_FOUND: 'La versión solicitada ya no está disponible.',
+  ECOMMERCE_SITE_PUBLISHED_VERSION_PROTECTED: 'No puedes eliminar la versión publicada actualmente.',
+  ECOMMERCE_SITE_VERSION_REFERENCED: 'No puedes eliminar una versión usada para restaurar otra versión.',
   ECOMMERCE_SITE_ACCESS_DENIED: 'Tu plan o permisos no permiten usar el constructor del sitio.',
   ECOMMERCE_SITE_PUBLISH_FAILED: 'No se pudo publicar el sitio. Intenta nuevamente.',
   ECOMMERCE_SITE_SAVE_FAILED: 'No se pudo guardar el borrador del sitio. Intenta nuevamente.'
@@ -57,7 +59,8 @@ export const createEcommerceSiteBuilderService = ({
       { p_limit: Math.min(50, Math.max(1, Math.floor(Number(limit) || 20))), p_offset: Math.max(0, Math.floor(Number(offset) || 0)) },
       'No se pudo cargar el historial del sitio.'
     ).then(normalizeVersionHistory),
-    restoreSiteVersion: (versionId) => call('ecommerce_admin_restore_site_version_v2', { p_version_id: versionId }, 'No se pudo restaurar la versión del sitio.')
+    restoreSiteVersion: (versionId) => call('ecommerce_admin_restore_site_version_v2', { p_version_id: versionId }, 'No se pudo restaurar la versión del sitio.'),
+    deleteSiteVersion: (versionId) => call('ecommerce_admin_delete_site_version_v2', { p_version_id: versionId }, 'No se pudo eliminar la versión del sitio.')
   };
 };
 
@@ -67,3 +70,4 @@ export const saveSiteDraft = service.saveSiteDraft;
 export const publishSiteDraft = service.publishSiteDraft;
 export const listSiteVersions = service.listSiteVersions;
 export const restoreSiteVersion = service.restoreSiteVersion;
+export const deleteSiteVersion = service.deleteSiteVersion;
