@@ -114,15 +114,15 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPreviewStyles).not.toContain('min-height: 100dvh');
   });
 
-  it('bridges token aliases through the scoped renderer authority', () => {
-    const rendererRule = normalizedPublicStyles.match(/\.ecommerce-site-surface \.ecommerce-site-renderer \{(.*?)\}/)?.[1] || '';
-    expect(rendererRule).toContain('--ui-color-primary: var(--store-primary)');
-    expect(rendererRule).toContain('--ui-color-primary-hover: var(--store-primary-hover)');
-    expect(rendererRule).toContain('--ui-color-secondary: var(--store-secondary)');
-    expect(rendererRule).toContain('--ui-bg-surface: var(--store-surface)');
-    expect(rendererRule).toContain('font-family: var(--store-font-body)');
-    expect(rendererRule).toContain('background: radial-gradient');
-    expect(rendererRule).toContain('color: var(--store-text)');
+  it('bridges token aliases through the shared visual surface', () => {
+    const surfaceRule = normalizedPublicStyles.match(/\.ecommerce-site-surface \.ecommerce-site-visual-surface \{(.*?)\}/)?.[1] || '';
+    expect(surfaceRule).toContain('--ui-color-primary: var(--store-primary)');
+    expect(surfaceRule).toContain('--ui-color-primary-hover: var(--store-primary-hover)');
+    expect(surfaceRule).toContain('--ui-color-secondary: var(--store-secondary)');
+    expect(surfaceRule).toContain('--ui-bg-surface: var(--store-surface)');
+    expect(surfaceRule).toContain('font-family: var(--store-font-body)');
+    expect(surfaceRule).toContain('background: radial-gradient');
+    expect(surfaceRule).toContain('color: var(--store-text)');
     expect(normalizedPublicStyles).not.toMatch(/:root\s*\{[^}]*--store-/);
   });
 

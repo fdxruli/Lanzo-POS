@@ -3,6 +3,8 @@ import {
   buildEcommercePortalThemeStyle,
   buildEcommerceSiteDesignStyle,
   contrastRatio,
+  deriveAccessibleBrandTextColor,
+  deriveAccessibleFocusColor,
   hexToRgb,
   mixEcommercePortalColors,
   normalizeEcommercePortalTemplate,
@@ -56,7 +58,7 @@ describe('ecommercePortalTheme', () => {
       '--store-primary', '--store-primary-hover', '--store-primary-active', '--store-primary-soft',
       '--store-secondary', '--store-secondary-hover', '--store-secondary-soft', '--store-on-primary', '--store-on-secondary',
       '--store-page-bg', '--store-surface', '--store-surface-elevated', '--store-surface-muted', '--store-surface-brand-soft',
-      '--store-text', '--store-text-strong', '--store-text-muted', '--store-text-brand', '--store-border', '--store-border-strong', '--store-focus-ring',
+      '--store-text', '--store-text-strong', '--store-text-muted', '--store-text-brand', '--store-text-secondary', '--store-border', '--store-border-strong', '--store-focus-ring',
       '--store-font-body', '--store-font-heading', '--store-font-family', '--store-radius-card', '--store-radius-button', '--store-radius-media', '--store-radius-panel',
       '--store-shadow-card', '--store-shadow-elevated', '--store-shadow-floating', '--store-content-max', '--store-page-padding', '--store-section-gap', '--store-grid-gap', '--store-card-padding', '--store-header-cover-height'
     ];
@@ -79,5 +81,22 @@ describe('ecommercePortalTheme', () => {
     expect(showcase['--store-section-gap']).not.toBe(classic['--store-section-gap']);
     expect(compact['--store-header-cover-height']).not.toBe(classic['--store-header-cover-height']);
     expect(compact['--store-card-padding']).not.toBe(classic['--store-card-padding']);
+  });
+
+  it('keeps brand text, secondary text, focus and buttons accessible for light, dark and saturated colors', () => {
+    ['#ffffff', '#facc15', '#0284c7', '#111827', '#ef4444', '#22c55e'].forEach((color) => {
+      const style = buildEcommerceSiteDesignStyle({ theme: { primaryColor: color, secondaryColor: color } });
+      expect(contrastRatio(style['--store-text-brand'], style['--store-surface'])).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(style['--store-text-secondary'], style['--store-surface'])).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(style['--store-focus-ring'], style['--store-surface'])).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(style['--store-focus-ring'], style['--store-page-bg'])).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(style['--store-on-primary'], style['--store-primary'])).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(style['--store-on-secondary'], style['--store-secondary'])).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+
+  it('returns safe deterministic fallbacks for malformed accessible colour inputs', () => {
+    expect(deriveAccessibleBrandTextColor({ color: null, background: 'bad', minimumContrast: 'invalid' })).toMatch(/^#[0-9a-f]{6}$/);
+    expect(deriveAccessibleFocusColor({ color: '', surfaces: [null, 'invalid'], minimumContrast: NaN })).toMatch(/^#[0-9a-f]{6}$/);
   });
 });

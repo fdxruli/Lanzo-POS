@@ -26,8 +26,8 @@ body.public-store-body {
   min-width: 0;
 }
 
-/* The renderer is the only token authority. Variables stay scoped to the storefront. */
-.ecommerce-site-surface .ecommerce-site-renderer {
+/* The shared visual surface is the only token authority and stays scoped to ecommerce. */
+.ecommerce-site-surface .ecommerce-site-visual-surface {
   --ui-color-primary: var(--store-primary);
   --ui-color-primary-hover: var(--store-primary-hover);
   --ui-color-secondary: var(--store-secondary);
@@ -61,11 +61,16 @@ body.public-store-body {
   color: var(--store-text);
 }
 
-.ecommerce-site-surface .ecommerce-site-renderer h1,
-.ecommerce-site-surface .ecommerce-site-renderer h2,
-.ecommerce-site-surface .ecommerce-site-renderer h3,
-.ecommerce-site-surface .ecommerce-site-renderer h4 {
+.ecommerce-site-surface .ecommerce-site-visual-surface h1,
+.ecommerce-site-surface .ecommerce-site-visual-surface h2,
+.ecommerce-site-surface .ecommerce-site-visual-surface h3,
+.ecommerce-site-surface .ecommerce-site-visual-surface h4 {
   font-family: var(--store-font-heading);
+}
+
+.ecommerce-site-surface .ecommerce-site-visual-surface[data-site-mode="editor"],
+.ecommerce-site-surface .ecommerce-site-visual-surface[data-site-mode="preview"] {
+  min-height: 0;
 }
 
 .public-store-shell {
@@ -395,7 +400,7 @@ body.public-store-body {
   align-items: center;
   justify-self: end;
   gap: 0.25rem;
-  color: var(--ui-color-primary);
+  color: var(--store-text-brand, #0369a1);
   font-size: 0.78rem;
   font-weight: 800;
   text-decoration: none;
@@ -403,7 +408,7 @@ body.public-store-body {
 }
 
 .public-store-footer__cta:hover {
-  color: var(--ui-color-primary-hover);
+  color: var(--store-text-brand, #0369a1);
   text-decoration: underline;
 }
 
@@ -743,7 +748,7 @@ body.public-store-body {
 
 .ecommerce-site-surface .ecommerce-site-renderer[data-site-template="showcase"] .public-product-card__category,
 .ecommerce-site-surface .ecommerce-site-renderer[data-site-template="showcase"] .public-store-section-kicker {
-  color: var(--store-secondary);
+  color: var(--store-text-secondary);
 }
 
 .ecommerce-site-surface .ecommerce-site-renderer[data-site-template="compact"] .public-store-header__content {

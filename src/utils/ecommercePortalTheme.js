@@ -107,6 +107,39 @@ export const selectAccessibleTextColor = (background) => {
     ? WHITE : DEFAULT_DARK_TEXT;
 };
 
+export const deriveAccessibleBrandTextColor = ({
+  color,
+  background,
+  minimumContrast = 4.5
+} = {}) => {
+  const safeColor = normalizeEcommercePortalColor(color);
+  const safeBackground = normalizeEcommercePortalColor(background, '#ffffff');
+  const minimum = Number.isFinite(Number(minimumContrast)) ? Math.max(1, Number(minimumContrast)) : 4.5;
+  if (contrastRatio(safeColor, safeBackground) >= minimum) return safeColor;
+  for (let step = 1; step <= 24; step += 1) {
+    const candidate = mixEcommercePortalColors(safeColor, '#000000', step / 24);
+    if (contrastRatio(candidate, safeBackground) >= minimum) return candidate;
+  }
+  return '#000000';
+};
+
+export const deriveAccessibleFocusColor = ({
+  color,
+  surfaces = [],
+  minimumContrast = 3
+} = {}) => {
+  const safeColor = normalizeEcommercePortalColor(color);
+  const safeSurfaces = (Array.isArray(surfaces) ? surfaces : [])
+    .map((surface) => normalizeEcommercePortalColor(surface, '#ffffff'));
+  const targets = safeSurfaces.length ? safeSurfaces : ['#ffffff'];
+  const minimum = Number.isFinite(Number(minimumContrast)) ? Math.max(1, Number(minimumContrast)) : 3;
+  for (let step = 0; step <= 24; step += 1) {
+    const candidate = mixEcommercePortalColors(safeColor, '#000000', step / 24);
+    if (targets.every((surface) => contrastRatio(candidate, surface) >= minimum)) return candidate;
+  }
+  return '#000000';
+};
+
 export const getEcommercePortalThemeDefaults = () => ({ ...DEFAULT_THEME });
 
 export const normalizeEcommercePortalTemplate = (value) => (
@@ -139,6 +172,9 @@ export const buildEcommerceSiteDesignStyle = ({ theme, templateCode, density, co
   const compact = normalizedDensity === 'compact';
   const primary = normalizedTheme.primaryColor;
   const secondary = normalizedTheme.secondaryColor;
+  const pageBackground = normalizedTemplate === 'showcase'
+    ? mixEcommercePortalColors(secondary, '#ffffff', 0.96) : profile.page;
+  const surface = profile.surface;
 
   return {
     '--store-primary': primary,
@@ -150,18 +186,22 @@ export const buildEcommerceSiteDesignStyle = ({ theme, templateCode, density, co
     '--store-secondary-soft': mixEcommercePortalColors(secondary, '#ffffff', 0.9),
     '--store-on-primary': selectAccessibleTextColor(primary),
     '--store-on-secondary': selectAccessibleTextColor(secondary),
-    '--store-page-bg': normalizedTemplate === 'showcase' ? mixEcommercePortalColors(secondary, '#ffffff', 0.96) : profile.page,
-    '--store-surface': profile.surface,
+    '--store-page-bg': pageBackground,
+    '--store-surface': surface,
     '--store-surface-elevated': '#ffffff',
     '--store-surface-muted': profile.muted,
     '--store-surface-brand-soft': mixEcommercePortalColors(primary, '#ffffff', normalizedTemplate === 'showcase' ? 0.85 : 0.92),
     '--store-text': '#334155',
     '--store-text-strong': '#0f172a',
     '--store-text-muted': '#64748b',
-    '--store-text-brand': primary,
+    '--store-text-brand': deriveAccessibleBrandTextColor({ color: primary, background: surface }),
+    '--store-text-secondary': deriveAccessibleBrandTextColor({ color: secondary, background: surface }),
     '--store-border': '#e2e8f0',
     '--store-border-strong': mixEcommercePortalColors(primary, '#0f172a', 0.34),
-    '--store-focus-ring': mixEcommercePortalColors(primary, '#ffffff', 0.48),
+    '--store-focus-ring': deriveAccessibleFocusColor({
+      color: primary,
+      surfaces: [surface, pageBackground]
+    }),
     '--store-font-body': fonts.body,
     '--store-font-heading': fonts.heading,
     '--store-font-family': fonts.body,

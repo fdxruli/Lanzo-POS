@@ -40,6 +40,7 @@ describe('EcommerceSiteBuilderPreview', () => {
     );
     expect(container.querySelector('.ecom-builder-preview-inert')).toHaveAttribute('inert');
     expect(container.querySelector('.ecommerce-site-renderer')).toBeTruthy();
+    expect(container.querySelector('.ecommerce-site-renderer')).toHaveClass('ecommerce-site-visual-surface');
     fireEvent.click(screen.getByRole('button', { name: 'Agregar Producto de muestra' }));
     expect(dispatch).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog')).toBeNull();
