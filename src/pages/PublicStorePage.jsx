@@ -3,6 +3,7 @@ import { ArrowUpRight } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import LogoMark from '../components/common/LogoMark';
 import EcommerceSiteRenderer from '../components/ecommerce/site/EcommerceSiteRenderer';
+import EcommerceSiteVisualSurface from '../components/ecommerce/site/EcommerceSiteVisualSurface';
 import PublicCartDrawer, { PublicMobileCartBar } from '../components/ecommerce/public/PublicCartDrawer';
 import PublicCheckoutDialog from '../components/ecommerce/public/PublicCheckoutDialog';
 import PublicStoreState from '../components/ecommerce/public/PublicStoreState';
@@ -24,11 +25,12 @@ import {
 } from '../utils/ecommerceAvailability';
 import { buildMinimalConfiguredOrderItem } from '../utils/ecommerceConfiguredProduct';
 import {
-  buildEcommercePortalThemeStyle,
-  normalizeEcommercePortalTemplate,
-  normalizeEcommercePortalTheme
+  normalizeEcommercePortalTemplate
 } from '../utils/ecommercePortalTheme';
-import { normalizeEcommerceSiteDocument } from '../utils/ecommerceSiteDocument';
+import {
+  createDefaultEcommerceSiteDocument,
+  normalizeEcommerceSiteDocument
+} from '../utils/ecommerceSiteDocument';
 import { preparePublicStoreDocument } from '../router/preparePublicStoreDocument';
 import { resetPublicDocumentScroll } from '../utils/publicDocumentScroll';
 import '../components/ecommerce/public/PublicCheckout.css';
@@ -113,12 +115,11 @@ function PublicStorePage() {
   const [checkoutOpening, setCheckoutOpening] = useState(false);
 
   const portal = portalResult?.portal || null;
+  const neutralSiteDocument = useMemo(() => createDefaultEcommerceSiteDocument(), []);
   const publicSiteDocument = useMemo(() => normalizeEcommerceSiteDocument(portalResult?.site?.document, {
     templateCode: portal?.templateCode, theme: portal?.theme, logoUrl: portal?.logoUrl, coverImageUrl: portal?.coverImageUrl
   }), [portal?.coverImageUrl, portal?.logoUrl, portal?.templateCode, portal?.theme, portalResult?.site?.document]);
-  const portalTheme = useMemo(() => normalizeEcommercePortalTheme(publicSiteDocument.global.appearance.theme), [publicSiteDocument]);
   const portalTemplate = useMemo(() => normalizeEcommercePortalTemplate(publicSiteDocument.global.appearance.templateCode), [publicSiteDocument]);
-  const portalThemeStyle = useMemo(() => buildEcommercePortalThemeStyle(portalTheme), [portalTheme]);
   const features = portalResult?.features || {};
   const availability = useMemo(() => resolveAvailability(portalResult), [portalResult]);
   const catalogExhausted = catalogReady && pagination.hasMore === false;
@@ -868,11 +869,13 @@ function PublicStorePage() {
   if (storeStatus === 'loading') {
     return (
       <main className="public-store-shell ecommerce-site-surface public-store-shell--centered">
-        <PublicStoreState
-          type="loading"
-          title="Cargando tienda..."
-          description="Estamos preparando el catálogo."
-        />
+        <EcommerceSiteVisualSurface siteDocument={neutralSiteDocument} mode="public">
+          <PublicStoreState
+            type="loading"
+            title="Cargando tienda..."
+            description="Estamos preparando el catálogo."
+          />
+        </EcommerceSiteVisualSurface>
       </main>
     );
   }
@@ -880,11 +883,13 @@ function PublicStorePage() {
   if (storeStatus === 'unavailable') {
     return (
       <main className="public-store-shell ecommerce-site-surface public-store-shell--centered">
-        <PublicStoreState
-          type="unavailable"
-          title="Esta tienda no está disponible"
-          description="El enlace puede ser incorrecto o el negocio puede haber pausado temporalmente su portal."
-        />
+        <EcommerceSiteVisualSurface siteDocument={neutralSiteDocument} mode="public">
+          <PublicStoreState
+            type="unavailable"
+            title="Esta tienda no está disponible"
+            description="El enlace puede ser incorrecto o el negocio puede haber pausado temporalmente su portal."
+          />
+        </EcommerceSiteVisualSurface>
       </main>
     );
   }
@@ -892,13 +897,15 @@ function PublicStorePage() {
   if (storeStatus === 'error' || !portal) {
     return (
       <main className="public-store-shell ecommerce-site-surface public-store-shell--centered">
-        <PublicStoreState
-          type="error"
-          title="No se pudo cargar la tienda"
-          description="Revisa tu conexión e intenta nuevamente."
-          actionLabel="Reintentar"
-          onAction={() => setStoreReloadKey((current) => current + 1)}
-        />
+        <EcommerceSiteVisualSurface siteDocument={neutralSiteDocument} mode="public">
+          <PublicStoreState
+            type="error"
+            title="No se pudo cargar la tienda"
+            description="Revisa tu conexión e intenta nuevamente."
+            actionLabel="Reintentar"
+            onAction={() => setStoreReloadKey((current) => current + 1)}
+          />
+        </EcommerceSiteVisualSurface>
       </main>
     );
   }
@@ -910,7 +917,6 @@ function PublicStorePage() {
       data-catalog-revision={catalogRevision || undefined}
       data-site-version={portalResult?.site?.versionNumber || undefined}
       data-template-code={portalTemplate}
-      style={portalThemeStyle}
     >
       <EcommerceSiteRenderer
         siteDocument={publicSiteDocument}
@@ -964,7 +970,7 @@ function PublicStorePage() {
         ) : null}
 
         </>}
-      />
+      >
 
       {portalResult?.legacyFooter === true ? (
         <div className="public-store-footer__inner">
@@ -1034,6 +1040,7 @@ function PublicStorePage() {
         onContinue={continueShopping}
         acceptingOrders={availability?.acceptingOrders === true}
       />
+      </EcommerceSiteRenderer>
     </main>
   );
 }

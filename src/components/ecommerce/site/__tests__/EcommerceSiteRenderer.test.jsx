@@ -55,6 +55,9 @@ describe('EcommerceSiteRenderer', () => {
       'ecommerce-site-renderer--density-compact'
     );
     expect(document.querySelector('[data-site-density="compact"]')).toBeTruthy();
+    expect(document.querySelector('[data-site-template="classic"]')).toBeTruthy();
+    expect(document.querySelector('[data-site-content-width="standard"]')).toBeTruthy();
+    expect(document.querySelector('[data-site-mode="public"]')).toHaveStyle({ '--store-primary': '#0284c7' });
   });
 
   it('treats documentMode as metadata and does not replace a published default document', () => {
@@ -143,6 +146,20 @@ describe('EcommerceSiteRenderer', () => {
     );
     expect(document.querySelector('[data-site-density="compact"]')).toBeTruthy();
     expect(document.querySelector('[data-site-section="catalog"][data-site-layout="compact"]')).toBeTruthy();
+  });
+
+  it('uses the same derived profile for preview and public render modes without global styles', () => {
+    const siteDocument = createDefaultEcommerceSiteDocument({
+      templateCode: 'showcase',
+      theme: { primaryColor: '#111827', secondaryColor: '#facc15', cornerStyle: 'soft', fontStyle: 'rounded' }
+    });
+    const { rerender } = renderSite({ siteDocument, mode: 'public' });
+    const publicRenderer = document.querySelector('.ecommerce-site-renderer');
+    const publicTokens = publicRenderer.getAttribute('style');
+    rerender(<EcommerceSiteRenderer {...commonProps} siteDocument={siteDocument} mode="preview" />);
+    const previewRenderer = document.querySelector('.ecommerce-site-renderer');
+    expect(previewRenderer.getAttribute('style')).toBe(publicTokens);
+    expect(document.documentElement.style.getPropertyValue('--store-primary')).toBe('');
   });
 
   it('applies showSearch and showCategories from the delivered document', () => {

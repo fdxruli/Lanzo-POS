@@ -114,6 +114,37 @@ describe('PublicStorePage', () => {
     cleanup();
   });
 
+  it('keeps loading inside the shared visual surface with neutral tokens', () => {
+    const request = deferred();
+    serviceMocks.getPublicPortalBySlug.mockReturnValue(request.promise);
+    renderPage();
+    expect(screen.getByRole('heading', { name: 'Cargando tienda...' })).toBeInTheDocument();
+    const surface = document.querySelector('.ecommerce-site-visual-surface');
+    expect(surface).toHaveAttribute('data-site-template', 'classic');
+    expect(surface.style.getPropertyValue('--store-page-bg')).toBeTruthy();
+    expect(surface.style.getPropertyValue('--store-surface')).toBe('#ffffff');
+    expect(surface.style.getPropertyValue('--store-text-muted')).toBe('#64748b');
+  });
+
+  it('keeps unavailable and error states inside the shared visual surface', async () => {
+    serviceMocks.getPublicPortalBySlug.mockRejectedValueOnce(new EcommercePublicError(
+      'ECOMMERCE_PORTAL_NOT_FOUND', 'No encontrada'
+    ));
+    const { unmount } = renderPage();
+    expect(await screen.findByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
+    expect(document.querySelector('.ecommerce-site-visual-surface')).toHaveStyle({
+      '--store-surface': '#ffffff'
+    });
+    unmount();
+
+    serviceMocks.getPublicPortalBySlug.mockRejectedValueOnce(new Error('offline'));
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'No se pudo cargar la tienda' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+    expect(document.querySelector('.ecommerce-site-visual-surface').style
+      .getPropertyValue('--store-focus-ring')).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
   it('loads the public portal and catalog without POS shell elements', async () => {
     renderPage();
 
@@ -127,6 +158,9 @@ describe('PublicStorePage', () => {
     expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
     expect(screen.queryByText('WelcomeModal')).not.toBeInTheDocument();
     expect(screen.queryByText(/licencia/i)).not.toBeInTheDocument();
+    expect(document.querySelector('.ecommerce-site-renderer')).toHaveClass('ecommerce-site-visual-surface');
+    expect(document.querySelector('.ecommerce-site-renderer').style
+      .getPropertyValue('--store-surface')).toBe('#ffffff');
   });
 
   it('restores a persisted product from the second catalog page with its current price', async () => {

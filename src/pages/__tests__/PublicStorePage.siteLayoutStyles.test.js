@@ -20,17 +20,16 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPublicStyles).toContain(
       '.ecommerce-site-renderer[data-site-density="compact"] {'
     );
-    expect(normalizedPublicStyles).toContain('--site-content-padding-start: 1.25rem');
-    expect(normalizedPublicStyles).toContain('--site-content-padding-start: 0.75rem');
-    expect(normalizedPublicStyles).toContain('--site-card-padding: 1rem');
-    expect(normalizedPublicStyles).toContain('--site-card-padding: 0.7rem');
+    expect(normalizedPublicStyles).toContain('--site-content-padding-start: var(--store-page-padding)');
+    expect(normalizedPublicStyles).toContain('--site-card-padding: var(--store-card-padding)');
+    expect(normalizedPublicStyles).toContain('--site-catalog-gap: var(--store-grid-gap)');
   });
 
   it('defines distinct public header layouts from the versioned section attribute', () => {
     expect(normalizedPublicStyles).toContain(
       '[data-site-section="header"][data-site-layout="default"] .public-store-header__cover-wrap'
     );
-    expect(normalizedPublicStyles).toContain('height: clamp(12rem, 36cqi, 23rem)');
+    expect(normalizedPublicStyles).toContain('height: var(--store-header-cover-height)');
     expect(normalizedPublicStyles).toContain(
       '[data-site-section="header"][data-site-layout="showcase"] .public-store-header__cover-wrap'
     );
@@ -63,6 +62,15 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPreviewStyles).not.toMatch(/is-mobile.*public-catalog__grid/);
     expect(normalizedPublicStyles).not.toMatch(/data-template-code=.*public-catalog__grid/);
     expect(normalizedPublicStyles).not.toMatch(/data-template-code=.*public-store-header/);
+  });
+
+  it('defines a visual treatment for every supported template', () => {
+    ['classic', 'showcase', 'compact'].forEach((template) => {
+      expect(normalizedPublicStyles).toContain(`[data-site-template="${template}"]`);
+    });
+    expect(normalizedPublicStyles).toContain('box-shadow: var(--store-shadow-elevated)');
+    expect(normalizedPublicStyles).toContain('height: var(--store-header-cover-height)');
+    expect(normalizedPublicStyles).toContain('outline: 3px solid var(--store-focus-ring, #7dd3fc)');
   });
 
   it('scopes every shared renderer rule to the neutral site surface', () => {
@@ -106,20 +114,19 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPreviewStyles).not.toContain('min-height: 100dvh');
   });
 
-  it('bridges portal theme variables through the neutral visual surface', () => {
-    const surfaceRule = normalizedPublicStyles.match(/\.ecommerce-site-surface \{(.*?)\}/)?.[1] || '';
-    expect(surfaceRule).toContain('--ui-color-primary: var(--store-primary, #0284c7)');
-    expect(surfaceRule).toContain('--ui-color-primary-hover: var(--store-primary-hover, #0369a1)');
-    expect(surfaceRule).toContain('--ui-color-secondary: var(--store-secondary, #0369a1)');
-    expect(surfaceRule).toContain('font-family: var(--store-font-family, system-ui, sans-serif)');
+  it('bridges token aliases through the shared visual surface', () => {
+    const surfaceRule = normalizedPublicStyles.match(/\.ecommerce-site-surface \.ecommerce-site-visual-surface \{(.*?)\}/)?.[1] || '';
+    expect(surfaceRule).toContain('--ui-color-primary: var(--store-primary)');
+    expect(surfaceRule).toContain('--ui-color-primary-hover: var(--store-primary-hover)');
+    expect(surfaceRule).toContain('--ui-color-secondary: var(--store-secondary)');
+    expect(surfaceRule).toContain('--ui-bg-surface: var(--store-surface)');
+    expect(surfaceRule).toContain('font-family: var(--store-font-body)');
     expect(surfaceRule).toContain('background: radial-gradient');
-    expect(surfaceRule).toContain('color: var(--ui-text)');
-    expect(surfaceRule).not.toContain('min-height: 100vh');
-    expect(surfaceRule).not.toContain('min-height: 100dvh');
-    expect(surfaceRule).not.toContain('padding-bottom: calc(6.5rem');
+    expect(surfaceRule).toContain('color: var(--store-text)');
+    expect(normalizedPublicStyles).not.toMatch(/:root\s*\{[^}]*--store-/);
   });
 
-  it('shares themed product and control visuals without exposing checkout chrome', () => {
+  it('shares themed product, cart and checkout visuals', () => {
     expect(normalizedPublicStyles).toContain(
       '.ecommerce-site-surface .ui-button--primary, .ecommerce-site-surface .public-product-card__add'
     );
@@ -132,15 +139,9 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPublicStyles).toContain(
       'color: var(--store-on-primary, #fff)'
     );
-    expect(normalizedPublicStyles).toContain(
-      '.ecommerce-site-surface .public-product-card, .public-store-shell .public-cart-drawer'
-    );
-    expect(normalizedPublicStyles).not.toContain(
-      '.ecommerce-site-surface .public-cart-drawer'
-    );
-    expect(normalizedPublicStyles).not.toContain(
-      '.ecommerce-site-surface .public-checkout-dialog'
-    );
+    expect(normalizedPublicStyles).toContain('.public-store-shell .public-cart-drawer');
+    expect(normalizedPublicStyles).toContain('.public-store-shell .public-checkout-dialog');
+    expect(normalizedPublicStyles).toContain('background: var(--ui-bg-surface)');
   });
 
   it('shares box sizing and inherited control fonts without preview-only theme rules', () => {
