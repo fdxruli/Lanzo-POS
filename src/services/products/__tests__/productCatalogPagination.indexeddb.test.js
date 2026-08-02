@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const STORES = { MENU: 'menu', PRODUCT_BATCHES: 'product_batches' };
 let isolatedDb;
 let queryPosCatalogPage;
+let queryInventoryCatalogPage;
 
 const makeProduct = (index) => ({
   id: `real-idb-product-${String(index).padStart(3, '0')}`,
@@ -31,6 +32,19 @@ beforeAll(async () => {
   await isolatedDb.table(STORES.MENU).bulkPut(
     Array.from({ length: 125 }, (_, index) => makeProduct(index))
   );
+  await isolatedDb.table(STORES.MENU).bulkPut([
+    ...Array.from({ length: 52 }, (_, index) => ({
+      ...makeProduct(300 + index),
+      id: `inventory-sellable-${String(index).padStart(3, '0')}`,
+      categoryId: 'inventory-mixed'
+    })),
+    ...Array.from({ length: 28 }, (_, index) => ({
+      ...makeProduct(400 + index),
+      id: `inventory-ingredient-${String(index).padStart(3, '0')}`,
+      categoryId: 'inventory-mixed',
+      productType: 'ingredient'
+    }))
+  ]);
 
   vi.doMock('../../database', () => ({
     db: isolatedDb,
@@ -40,7 +54,7 @@ beforeAll(async () => {
   vi.doMock('../../db/general', () => ({
     categoriesRepository: { getActiveCategories: vi.fn(async () => []) }
   }));
-  ({ queryPosCatalogPage } = await import('../productCatalogQueryService'));
+  ({ queryInventoryCatalogPage, queryPosCatalogPage } = await import('../productCatalogQueryService'));
 });
 
 afterAll(async () => {
@@ -75,5 +89,25 @@ describe('POS pagination against real IndexedDB collections', () => {
     expect(visited.slice(0, 75).map(({ id }) => id)).toEqual(
       [...visited.slice(0, 75).map(({ id }) => id)].sort().reverse()
     );
+  });
+});
+
+describe('Inventory pagination against real IndexedDB collections', () => {
+  it('returns 50 + 2 sellable products without letting 28 ingredients consume the page', async () => {
+    const first = await queryInventoryCatalogPage({
+      categoryId: 'inventory-mixed',
+      productType: 'sellable'
+    });
+    const second = await queryInventoryCatalogPage({
+      categoryId: 'inventory-mixed',
+      productType: 'sellable',
+      cursor: first.nextCursor
+    });
+
+    expect(first.data).toHaveLength(50);
+    expect(first.hasMore).toBe(true);
+    expect(second.data).toHaveLength(2);
+    expect(second.hasMore).toBe(false);
+    expect(new Set([...first.data, ...second.data].map(({ id }) => id)).size).toBe(52);
   });
 });

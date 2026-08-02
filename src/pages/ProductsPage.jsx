@@ -90,7 +90,16 @@ export default function ProductsPage() {
 
     useEffect(() => {
         refreshData();
-    }, [refreshData]);
+    }, [licenseKey, refreshData]);
+
+    useEffect(() => {
+        const productType = activeTab === 'ingredients'
+            ? 'ingredient'
+            : (activeTab === 'view-products' ? 'sellable' : null);
+        if (productType && filters.productType !== productType) {
+            setFilters({ productType });
+        }
+    }, [activeTab, filters.productType, setFilters]);
 
     useEffect(() => {
         if (!cloudProductImagesEnabled || !licenseKey || products.length === 0) return undefined;
@@ -209,8 +218,8 @@ export default function ProductsPage() {
         else setSearchParams({ tab: paramValue });
     };
 
-    const productsForSale = products.filter(p => p.productType === 'sellable' || !p.productType);
-    const ingredientsOnly = products.filter(p => p.productType === 'ingredient');
+    const productsForSale = products;
+    const ingredientsOnly = products;
 
     const handleActionableError = (errorResult) => {
         const error = errorResult?.error || errorResult;

@@ -1,4 +1,4 @@
-import { db, loadDataPaginated, STORES } from '../database';
+import { db, STORES } from '../database';
 import { categoriesRepository } from '../db/general';
 import {
   checkHasExpiredProductsForPosMenu,
@@ -8,6 +8,7 @@ import {
 } from './productMenuEligibility';
 
 export const POS_CATALOG_PAGE_SIZE = 50;
+export const INVENTORY_CATALOG_PAGE_SIZE = 50;
 
 const getPosCatalogSortValue = (product) => String(product?.createdAt || '');
 const getPosCatalogId = (product) => String(product?.id || '');
@@ -23,6 +24,29 @@ const createPosCatalogCursor = (product) => product ? ({
   sortValue: getPosCatalogSortValue(product),
   id: getPosCatalogId(product)
 }) : null;
+
+const getInventoryCatalogSortValue = (product) => String(product?.createdAt || '');
+const getInventoryCatalogId = (product) => String(product?.id || '');
+
+export const compareInventoryCatalogProducts = (left, right) => {
+  const sortComparison = getInventoryCatalogSortValue(right)
+    .localeCompare(getInventoryCatalogSortValue(left));
+  if (sortComparison !== 0) return sortComparison;
+  return getInventoryCatalogId(right).localeCompare(getInventoryCatalogId(left));
+};
+
+const createInventoryCatalogCursor = (product) => product ? ({
+  createdAt: getInventoryCatalogSortValue(product),
+  id: getInventoryCatalogId(product)
+}) : null;
+
+const isAfterInventoryCatalogCursor = (product, cursor) => {
+  if (!cursor) return true;
+  const createdAt = getInventoryCatalogSortValue(product);
+  if (createdAt < cursor.createdAt) return true;
+  if (createdAt > cursor.createdAt) return false;
+  return getInventoryCatalogId(product) < cursor.id;
+};
 
 const isAfterPosCatalogCursor = (product, cursor) => {
   if (!cursor) return true;
@@ -49,22 +73,96 @@ export const loadCatalogCategories = async () => {
   return sortCategories(categories || []);
 };
 
+const getInventoryProductType = (product) => (
+  product?.productType ?? product?.product_type ?? null
+);
+
+const matchesInventoryStatus = (product, status) => {
+  const isActive = product?.isActive !== false;
+  if (status === 'inactive') return !isActive;
+  if (status === 'all') return true;
+  return isActive;
+};
+
+export const isInventoryCatalogEligible = (product, options = {}) => {
+  if (!product?.id || product.deletedAt || product.deletedTimestamp) return false;
+  if (!matchesInventoryStatus(product, options.status || 'active')) return false;
+
+  const requestedType = options.productType ?? null;
+  const productType = getInventoryProductType(product);
+  if (requestedType === 'sellable' && productType !== null && productType !== 'sellable') {
+    return false;
+  }
+  if (requestedType && requestedType !== 'sellable' && productType !== requestedType) {
+    return false;
+  }
+
+  const categoryId = options.categoryId ?? null;
+  const productCategoryId = product.categoryId ?? product.category_id ?? null;
+  if (categoryId !== null && productCategoryId !== categoryId) return false;
+
+  if (options.outOfStockOnly && !isOutOfStockForPosMenu(product)) return false;
+  return true;
+};
+
 export const queryInventoryCatalogPage = async (options = {}) => {
-  const { productType = null, ...queryOptions } = options;
-  const result = await loadDataPaginated(STORES.MENU, {
-    limit: 50,
-    timeIndex: 'createdAt',
-    status: 'active',
-    ...queryOptions
-  });
+  const pageSize = Number.isInteger(options.pageSize) && options.pageSize > 0
+    ? options.pageSize
+    : INVENTORY_CATALOG_PAGE_SIZE;
+  const requestedCursor = options.cursor?.createdAt !== undefined && options.cursor?.id
+    ? {
+      createdAt: String(options.cursor.createdAt || ''),
+      id: String(options.cursor.id)
+    }
+    : null;
+
+  const allProducts = await db.table(STORES.MENU).toArray();
+  let eligible = allProducts.filter((product) => (
+    isAfterInventoryCatalogCursor(product, requestedCursor)
+    && isInventoryCatalogEligible(product, options)
+  ));
+
+  if (options.expiredOnly) {
+    const expiredProductIds = await resolveExpiredProductIdsForPosMenu(
+      eligible,
+      { db, STORES }
+    );
+    eligible = eligible.filter((product) => (
+      !isOutOfStockForPosMenu(product)
+      && (expiredProductIds.has(product.id) || isExpiredForPosMenu(product))
+    ));
+  }
+
+  const requestedLimit = pageSize + 1;
+  const pageCandidates = eligible
+    .sort(compareInventoryCatalogProducts)
+    .slice(0, requestedLimit);
+  const hasMore = pageCandidates.length > pageSize;
+  const data = pageCandidates.slice(0, pageSize);
+
   return {
-    ...result,
-    data: productType
-      ? (result?.data || []).filter((product) => (
-        (product.productType || product.product_type || null) === productType
-      ))
-      : (result?.data || [])
+    data,
+    items: data,
+    hasMore,
+    nextCursor: hasMore ? createInventoryCatalogCursor(data[data.length - 1]) : null,
+    requestedLimit
   };
+};
+
+export const queryInventoryCatalogProductById = async (productId, options = {}) => {
+  if (!productId) return null;
+  const product = await db.table(STORES.MENU).get(productId);
+  if (!isInventoryCatalogEligible(product, options)) return null;
+  if (!options.expiredOnly) return product;
+
+  const expiredProductIds = await resolveExpiredProductIdsForPosMenu(
+    [product],
+    { db, STORES }
+  );
+  return !isOutOfStockForPosMenu(product)
+    && (expiredProductIds.has(product.id) || isExpiredForPosMenu(product))
+    ? product
+    : null;
 };
 
 export const queryPosCatalogPage = async (options = {}) => {

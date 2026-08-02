@@ -3,10 +3,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const queryMocks = vi.hoisted(() => ({
+  INVENTORY_CATALOG_PAGE_SIZE: 50,
+  compareInventoryCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
   POS_CATALOG_PAGE_SIZE: 50,
   comparePosCatalogProducts: (left, right) => String(right.id).localeCompare(String(left.id)),
   loadCatalogCategories: vi.fn(),
   queryInventoryCatalogPage: vi.fn(),
+  queryInventoryCatalogProductById: vi.fn(),
   queryPosCatalogPage: vi.fn(),
   queryPosCatalogProductById: vi.fn(),
   checkPosOutOfStockProducts: vi.fn(),
@@ -82,6 +85,7 @@ beforeEach(() => {
   usePosCatalogStore.setState(posInitialState());
   queryMocks.loadCatalogCategories.mockResolvedValue([]);
   queryMocks.queryInventoryCatalogPage.mockResolvedValue({ data: [], nextCursor: null });
+  queryMocks.queryInventoryCatalogProductById.mockResolvedValue(null);
   queryMocks.queryPosCatalogPage.mockResolvedValue({ data: [], nextCursor: null });
   queryMocks.queryPosCatalogProductById.mockResolvedValue(null);
   queryMocks.checkPosOutOfStockProducts.mockResolvedValue(false);
