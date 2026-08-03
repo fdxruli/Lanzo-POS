@@ -2,123 +2,139 @@
 
 ## Propósito y estado
 
-Este documento registra dependencias y contenido de terceros identificados en
-el inventario OSS.1.4, con fecha **2026-08-03** y base
-`0315e20b0b57038d7a747c9cfd2920e17537159c`.
+Este documento registra avisos y obligaciones de las dependencias que pueden
+llegar al runtime o a una función distribuida de Lanzo-POS. La evidencia de
+esta revisión está en [`docs/OSS-DEPENDENCY-EVIDENCE.md`](docs/OSS-DEPENDENCY-EVIDENCE.md)
+y el inventario SPDX en [`docs/sbom.spdx.json`](docs/sbom.spdx.json).
 
-Lanzo-POS **todavía no tiene una `LICENSE` OSS vigente**. AGPL-3.0-only es una
-licencia prevista, no adoptada. Este documento no es una certificación jurídica
-ni sustituye la revisión de los textos completos de licencia antes de una
-distribución formal.
+Base verificada: `origin/main` en `81400b41a8788aac1c5c46cb0c0c9ad707524cfa`.
+La instalación reproducible se hizo con `npm ci --include=optional`, sin
+modificar manifests ni dependencias. `package.json` no declara una licencia
+OSS adoptada para Lanzo-POS; AGPL-3.0-only sigue siendo una propuesta y no se
+crea una `LICENSE` en esta tarea.
 
-La fuente primaria local para versiones, integridad, origen de tarball y
-licencias declaradas es `package-lock.json`. `npm ci` no terminó en el entorno
-de esta auditoría; por tanto, las rutas `node_modules/...` se indican como
-rutas esperadas y su contenido LICENSE/NOTICE queda **no verificado**.
+Este documento no es una certificación jurídica. Cuando se indica
+**sin conflicto evidente identificado**, significa solamente que la evidencia
+local no demostró un conflicto; no sustituye la revisión del titular.
 
-## Runtime distribuido
+## Decisión de esta revisión
 
-| Paquete | Versión | Licencia declarada | Proyecto de origen | Verificación local | Obligación/nota |
-| --- | ---: | --- | --- | --- | --- |
-| `@fingerprintjs/fingerprintjs` | 5.0.1 | MIT | [fingerprintjs/fingerprintjs](https://github.com/fingerprintjs/fingerprintjs) | `node_modules/@fingerprintjs/fingerprintjs/LICENSE*` — no verificado | Conservar licencia y aviso |
-| `@google/genai` | 1.50.1 | Apache-2.0 | [googleapis/js-genai](https://github.com/googleapis/js-genai) | `node_modules/@google/genai/LICENSE*` — no verificado | Conservar licencia y `NOTICE` si el paquete lo incluye |
-| `@react-oauth/google` | 0.13.5 | MIT | [MomenSherif/react-oauth](https://github.com/MomenSherif/react-oauth) | `node_modules/@react-oauth/google/LICENSE*` — no verificado | Conservar aviso |
-| `@supabase/supabase-js` | 2.86.0 | MIT | [supabase/supabase-js](https://github.com/supabase/supabase-js) | `node_modules/@supabase/supabase-js/LICENSE*` — no verificado | Conservar aviso |
-| `@vercel/og` | 0.11.1 | MPL-2.0 | Proyecto Vercel OG; repository no informado en el metadato exacto revisado | `node_modules/@vercel/og/LICENSE*`, `NOTICE*`, font assets — no verificado | **REVIEW REQUIRED**; revisar aviso, fuente y font incluido |
-| `@zxing/library` | 0.21.3 | MIT | [zxing-js/library](https://github.com/zxing-js/library) | `node_modules/@zxing/library/LICENSE*` — no verificado | Conservar aviso |
-| `big.js` | 7.0.1 | MIT | [MikeMcl/big.js](https://github.com/MikeMcl/big.js) | `node_modules/big.js/LICENSE*` — no verificado | Conservar aviso |
-| `dexie` | 4.4.3 | Apache-2.0 | [dexie/Dexie.js](https://github.com/dexie/Dexie.js) | `node_modules/dexie/LICENSE*` — no verificado | Conservar licencia/`NOTICE` si existe |
-| `dexie-export-import` | 4.4.0 | Apache-2.0 | [dexie/Dexie.js](https://github.com/dexie/Dexie.js) | `node_modules/dexie-export-import/LICENSE*` — no verificado | Conservar licencia/`NOTICE` si existe |
-| `dexie-react-hooks` | 4.2.0 | Apache-2.0 | [dexie/Dexie.js](https://github.com/dexie/Dexie.js) | `node_modules/dexie-react-hooks/LICENSE*` — no verificado | Conservar licencia/`NOTICE` si existe |
-| `es-toolkit` | 1.46.0 | MIT | [toss/es-toolkit](https://github.com/toss/es-toolkit) | `node_modules/es-toolkit/LICENSE*` — no verificado | Conservar aviso |
-| `lucide-react` | 0.553.0 | ISC | [lucide-icons/lucide](https://github.com/lucide-icons/lucide) | `node_modules/lucide-react/LICENSE*` — no verificado | Conservar aviso/atribución |
-| `react` | 19.2.0 | MIT | [facebook/react](https://github.com/facebook/react) | `node_modules/react/LICENSE*` — no verificado | Conservar aviso |
-| `react-dom` | 19.2.0 | MIT | [facebook/react](https://github.com/facebook/react) | `node_modules/react-dom/LICENSE*` — no verificado | Conservar aviso |
-| `react-hot-toast` | 2.6.0 | MIT | [timolins/react-hot-toast](https://github.com/timolins/react-hot-toast) | `node_modules/react-hot-toast/LICENSE*` — no verificado | Conservar aviso |
-| `react-router-dom` | 7.13.0 | MIT | [remix-run/react-router](https://github.com/remix-run/react-router) | `node_modules/react-router-dom/LICENSE*` — no verificado | Conservar aviso |
-| `react-virtualized-auto-sizer` | 1.0.26 | MIT | [bvaughn/react-virtualized-auto-sizer](https://github.com/bvaughn/react-virtualized-auto-sizer) | `node_modules/react-virtualized-auto-sizer/LICENSE*` — no verificado | Conservar aviso |
-| `react-window` | 2.2.3 | MIT | [bvaughn/react-window](https://github.com/bvaughn/react-window) | `node_modules/react-window/LICENSE*` — no verificado | Conservar aviso |
-| `react-zxing` | 2.1.0 | MIT | [adamalfredsson/react-zxing](https://github.com/adamalfredsson/react-zxing) | `node_modules/react-zxing/LICENSE*` — no verificado | Conservar aviso |
-| `recharts` | 3.8.1 | MIT | [recharts/recharts](https://github.com/recharts/recharts) | `node_modules/recharts/LICENSE*` — no verificado | Conservar aviso |
-| `sharp` | 0.34.5 | Apache-2.0 | [lovell/sharp](https://github.com/lovell/sharp) | `node_modules/sharp/LICENSE*`, `NOTICE*` — no verificado | **REVIEW REQUIRED** por libvips LGPL y binarios opcionales |
-| `zod` | 4.1.13 | MIT | [colinhacks/zod](https://github.com/colinhacks/zod) | `node_modules/zod/LICENSE*` — no verificado | Conservar aviso |
-| `zustand` | 5.0.8 | MIT | [pmndrs/zustand](https://github.com/pmndrs/zustand) | `node_modules/zustand/LICENSE*` — no verificado | Conservar aviso |
+**DEPENDENCY NO-GO para cerrar formalmente el bloque de dependencias.**
 
-### Runtime generado de la tienda
+La razón es material y acotada: los LICENSE reales de `@vercel/og` y `satori`
+contienen el aviso Exhibit B de MPL-2.0, `@resvg/resvg-wasm` declara MPL-2.0
+pero no trae un LICENSE/COPYING/NOTICE independiente, y la fuente incluida en
+`@vercel/og` no tiene un aviso de licencia separado. La cadena Windows de
+`sharp` también requiere distribuir correctamente el aviso compuesto del
+binario precompilado y sus componentes LGPL.
 
-La función `store/api/og/store.js` importa `@vercel/og` y la función de
-normalización `store/api/_safePublicImage.js` importa `sharp`. El script de
-preparación restringe explícitamente la clausura permitida a
-`@vercel/og`, `react` y `sharp` para esa función. Estos paquetes deben aparecer
-en los avisos del material distribuido de la función, incluso si el bundle se
-genera fuera de Git.
+No se afirma que exista incompatibilidad jurídica definitiva. Los elementos
+anteriores quedan como **BLOCKER/REVIEW REQUIRED** antes de una distribución
+formal. OSS.1.4 completo continúa **BLOCKED** además por la procedencia de
+logos, iconos y otros activos, que pertenece a OSS.1.4B.
 
-## Build y herramientas
+## 1. Runtime distribuido
 
-| Paquete | Versión | Licencia | Uso | Verificación local |
-| --- | ---: | --- | --- | --- |
-| `@eslint/js` | 9.39.3 | MIT | lint | `node_modules/@eslint/js/LICENSE*` — no verificado |
-| `@testing-library/jest-dom` | 6.9.1 | MIT | test | `node_modules/@testing-library/jest-dom/LICENSE*` — no verificado |
-| `@testing-library/react` | 16.3.2 | MIT | test | `node_modules/@testing-library/react/LICENSE*` — no verificado |
-| `@testing-library/user-event` | 14.6.1 | MIT | test | `node_modules/@testing-library/user-event/LICENSE*` — no verificado |
-| `@types/react` | 19.2.4 | MIT | tipos | `node_modules/@types/react/LICENSE*` — no verificado |
-| `@types/react-dom` | 19.2.3 | MIT | tipos | `node_modules/@types/react-dom/LICENSE*` — no verificado |
-| `@vitejs/plugin-react` | 5.1.1 | MIT | build | `node_modules/@vitejs/plugin-react/LICENSE*` — no verificado |
-| `eslint` | 9.39.3 | MIT | lint | `node_modules/eslint/LICENSE*` — no verificado |
-| `eslint-plugin-react` | 7.37.5 | MIT | lint | `node_modules/eslint-plugin-react/LICENSE*` — no verificado |
-| `eslint-plugin-react-hooks` | 7.0.1 | MIT | lint | `node_modules/eslint-plugin-react-hooks/LICENSE*` — no verificado |
-| `eslint-plugin-react-refresh` | 0.4.24 | MIT | lint | `node_modules/eslint-plugin-react-refresh/LICENSE*` — no verificado |
-| `fake-indexeddb` | 6.2.5 | Apache-2.0 | test | `node_modules/fake-indexeddb/LICENSE*` — no verificado |
-| `globals` | 16.5.0 | MIT | lint | `node_modules/globals/LICENSE*` — no verificado |
-| `jsdom` | 28.1.0 | MIT | test | `node_modules/jsdom/LICENSE*` — no verificado |
-| `vite` | 7.2.2 | MIT | build/dev | `node_modules/vite/LICENSE*` — no verificado |
-| `vite-plugin-pwa` | 1.2.0 | MIT | PWA/Workbox build | `node_modules/vite-plugin-pwa/LICENSE*` — no verificado |
-| `vitest` | 4.0.14 | MIT | test | `node_modules/vitest/LICENSE*` — no verificado |
+Las funciones de la tienda importan `@vercel/og` y `sharp`; por tanto la
+clausura material incluye sus dependencias transitivas aunque el bundle se
+genere fuera de Git. Los demás paquetes runtime directos permanecen
+inventariados por `package-lock.json` y el SBOM; sus avisos deben acompañar
+cualquier entrega si sus archivos entran en el artefacto.
 
-Estas herramientas no se identificaron como parte del runtime público por sí
-solas. Los bundles generados deben auditarse cuando se produzcan, porque un
-build puede incorporar subdependencias o assets adicionales.
+| Paquete y versión | Licencia declarada | Evidencia local verificada | Obligación/estado |
+| --- | --- | --- | --- |
+| `@vercel/og@0.11.1` | MPL-2.0 | `node_modules/@vercel/og/LICENSE` (MPL completo, SHA-256 `1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5`); no hay NOTICE | Conservar LICENSE y avisos; Exhibit B presente; **BLOCKER/REVIEW REQUIRED** |
+| `satori@0.25.0` | MPL-2.0 | `node_modules/satori/LICENSE` (mismo texto/hash MPL que OG); no hay NOTICE | Dependencia de OG; conservar LICENSE; Exhibit B presente; **BLOCKER/REVIEW REQUIRED** |
+| `@resvg/resvg-wasm@2.4.0` | MPL-2.0 | `node_modules/@resvg/resvg-wasm/package.json`; README enlaza MPLv2.0 y atribuye `Copyright (c) 2021-present, yisibl`; no hay LICENSE/COPYING/NOTICE | Obtener/conservar el texto y aviso requerido del paquete antes de distribuir; **REVIEW REQUIRED** |
+| `sharp@0.34.5` | Apache-2.0 | `node_modules/sharp/LICENSE` (Apache-2.0 completo, SHA-256 `73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68`); no hay NOTICE | Conservar LICENSE y avisos Apache; revisar la clausura binaria; **REVIEW REQUIRED** |
 
-## Componentes transitivos materiales
+Los paquetes runtime directos adicionales y sus expresiones declaradas en el
+lockfile son: `@fingerprintjs/fingerprintjs@5.0.1` (MIT), `@google/genai@1.50.1`
+(Apache-2.0), `@react-oauth/google@0.13.5` (MIT), `@supabase/supabase-js@2.86.0`
+(MIT), `@zxing/library@0.21.3` (MIT), `big.js@7.0.1` (MIT), `dexie@4.4.3`
+(Apache-2.0), `dexie-export-import@4.4.0` (Apache-2.0),
+`dexie-react-hooks@4.2.0` (Apache-2.0), `es-toolkit@1.46.0` (MIT),
+`lucide-react@0.553.0` (ISC), `react@19.2.0` (MIT), `react-dom@19.2.0` (MIT),
+`react-hot-toast@2.6.0` (MIT), `react-router-dom@7.13.0` (MIT),
+`react-virtualized-auto-sizer@1.0.26` (MIT), `react-window@2.2.3` (MIT),
+`react-zxing@2.1.0` (MIT), `recharts@3.8.1` (MIT), `zod@4.1.13` (MIT) y
+`zustand@5.0.8` (MIT). Sus LICENSE/NOTICE individuales no se copiaron de
+forma indiscriminada en este documento; deben conservarse desde los tarballs
+exactos cuando formen parte de la entrega.
 
-| Componente | Versión | Licencia | Alcance | Tratamiento |
-| --- | ---: | --- | --- | --- |
-| `satori` | 0.25.0 | MPL-2.0 | cadena de `@vercel/og` | Mantener aviso/licencia; revisar modificaciones y fuentes |
-| `@resvg/resvg-wasm` | 2.4.0 | MPL-2.0 | cadena de `@vercel/og` | Mantener aviso/licencia; revisar bundle |
-| `@img/sharp-libvips-*` | 1.2.4 | LGPL-3.0-or-later | binarios opcionales de `sharp` | Verificar plataforma seleccionada y obligaciones de distribución |
-| `@img/sharp-*` | 0.34.5 | Apache-2.0 con expresiones Apache/LGPL en algunas variantes | adaptadores nativos opcionales | Conservar avisos de `sharp`/libvips |
-| `caniuse-lite` | 1.0.30001754 | CC-BY-4.0 | datos de browserslist/build | Atribución separada del código |
-| `argparse` | 2.0.1 | Python-2.0 | tooling transitivo | Conservar licencia si se distribuye el tooling |
-| `glob`, `minimatch`, `jackspeak`, `package-json-from-dist`, `path-scurry`, `lru-cache` | versiones del lockfile | BlueOak-1.0.0 | build/test | Conservar texto/aviso exacto |
-| `@zxing/text-encoding` | 0.9.0 | `(Unlicense OR Apache-2.0)` | cadena ZXing | Mantener expresión dual |
-| `json-schema` | 0.4.0 | `(AFL-2.1 OR BSD-3-Clause)` | tooling | Mantener expresión dual |
-| `type-fest` | 0.16.0 | `(MIT OR CC0-1.0)` | tooling | Mantener expresión dual |
-| `victory-vendor` | 37.3.6 | `MIT AND ISC` | cadena Recharts | Mantener ambas licencias |
+## 2. Cadena OG: MPL-2.0, Resvg y fuentes
 
-No se copian aquí cientos de textos completos. Antes del primer release OSS se
-deben generar los avisos a partir de los tarballs exactos y comprobar cada
-`LICENSE`, `COPYING` y `NOTICE` real.
+`@vercel/og@0.11.1` depende exactamente de `satori@0.25.0` y
+`@resvg/resvg-wasm@2.4.0`. Los LICENSE de OG y Satori contienen literalmente
+la sección **Exhibit B — “Incompatible With Secondary Licenses”** y el aviso
+de que el Source Code Form es incompatible con Secondary Licenses. El uso
+observado es desde `node_modules`, sin modificaciones locales de esos archivos
+por Lanzo; no se encontró ningún archivo equivalente rastreado en el repo.
 
-## Activos y contenido
+El paquete OG instala `dist/Geist-Regular.ttf` (125,956 bytes; SHA-256
+`bde046ddd9f20be35b0bd56cc79eb752b967fb6661a3fe76cb067bb09f871d76`). No trae
+LICENSE/NOTICE separado para esa fuente. Además, el README instalado afirma que
+la fuente incluida por defecto es Noto Sans, mientras el archivo instalado se
+llama `Geist-Regular.ttf`. La identidad, licencia y procedencia de esa fuente
+quedan **REVIEW REQUIRED**; no se debe tratar como un activo de marca autorizado
+por la licencia del código MPL.
 
-Los 9 archivos de marca rastreados están inventariados en
-[`docs/OSS-ASSET-PROVENANCE.md`](docs/OSS-ASSET-PROVENANCE.md). Su estado no es
-una licencia de terceros: no se demostró autoría o permiso suficiente para
-clasificarlos como `VERIFIED FIRST-PARTY`.
+Al distribuir la función OG se deben conservar los textos completos de MPL y
+los avisos aplicables del bundle. Este PR registra las rutas y hashes, pero no
+vende ni versiona `node_modules` ni copia cientos de licencias completas.
 
-Las imágenes de productos, logos de negocios, portadas y otros recursos
-remotos llegan desde datos de usuario o almacenamiento público. Que una URL
-sea pública no concede automáticamente permiso de reutilización. La política
-de contenido deberá exigir derechos del uploader.
+## 3. Cadena sharp/libvips
 
-## SBOM
+En el entorno de verificación Windows `win32/x64`, `require('sharp')` cargó:
 
-No existe `docs/sbom.spdx.json`. `npm sbom --sbom-format=spdx` fue intentado,
-pero falló con `ESBOMPROBLEMS` debido al árbol `node_modules` parcial después
-de los intentos de `npm ci`. No se creó un SBOM manual fingiendo completitud.
+- `sharp@0.34.5`, declarado Apache-2.0;
+- libvips `8.17.3`;
+- `@img/sharp-win32-x64@0.34.5`, opcional y realmente instalado;
+- `lib/libvips-42.dll`, `lib/libvips-cpp-8.17.3.dll` y
+  `lib/sharp-win32-x64.node`.
 
-## Próximo paso
+`@img/sharp-win32-x64` declara `Apache-2.0 AND LGPL-3.0-or-later`. Su
+LICENSE local contiene el texto Apache-2.0, mientras su README enumera
+`libvips` y varias bibliotecas bajo LGPLv3 y explica que se usa la cláusula de
+"any later version" de LGPLv2/LGPLv2.1. No se instaló un paquete separado
+`@img/sharp-libvips-win32-x64`; en esta plataforma libvips está dentro del
+paquete Windows seleccionado. Los paquetes `@img/sharp-libvips-*` de otras
+plataformas aparecen como opcionales en el lockfile, pero no son el binario
+seleccionado en esta instalación.
 
-Este documento es un inventario preliminar para revisión humana. No activa
-AGPL-3.0-only, no crea `LICENSE` y no sustituye la decisión del titular sobre
-marca, avisos y distribución de funciones generadas.
+No se debe mezclar la licencia upstream que el README describe para libvips
+con la declaración npm `LGPL-3.0-or-later` sin conservar ambas evidencias. La
+entrega del bundle o función debe incluir el README/LICENSE aplicable y el
+expediente de fuentes/correspondencia exigible para el componente LGPL.
+
+## 4. Build y desarrollo
+
+Las herramientas de `devDependencies` (`vite`, `vitest`, ESLint, Testing
+Library, JSDOM, plugin PWA y sus transitivas) están en el SBOM. No se
+identifican por sí solas como runtime público. Si un build copia una
+transitiva, un source map, Workbox o un asset al artefacto distribuido, sus
+avisos deben incorporarse al mismo expediente. No se ejecutó build ni prueba
+de interfaz en esta tarea.
+
+## 5. Datos y licencias de contenido
+
+El SBOM y el lockfile también contienen expresiones que no deben normalizarse
+a MIT: `caniuse-lite` (CC-BY-4.0), `argparse` (Python-2.0), BlueOak-1.0.0,
+`(AFL-2.1 OR BSD-3-Clause)`, `(Unlicense OR Apache-2.0)`, `(MIT OR CC0-1.0)` y
+`MIT AND ISC`. Deben conservarse sus operadores y atribuciones exactos si
+entran en un artefacto distribuido.
+
+## 6. Activos de marca pendientes de OSS.1.4B
+
+Los activos rastreados siguen inventariados en
+[`docs/OSS-ASSET-PROVENANCE.md`](docs/OSS-ASSET-PROVENANCE.md). Esta tarea no
+resuelve autoría, permiso, licencia o procedencia de logos, iconos, portadas,
+fuentes de marca ni imágenes de producto. Que una URL sea pública no prueba
+permiso de reutilización.
+
+## 7. Requisito de entrega
+
+Antes de un release, el responsable debe adjuntar los LICENSE/COPYING/NOTICE
+completos de los componentes materiales, el aviso de la fuente incluida y la
+explicación de distribución de los binarios de sharp/libvips. Esta revisión no
+crea `LICENSE`, no modifica dependencias y no autoriza despliegues.
