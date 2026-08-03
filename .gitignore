@@ -12,3 +12,8 @@ store/generated/storeHtmlTemplate.js
 *.temp
 .tmp/social-preview-1.7-evidence.json
 .tmp/social-preview-1.8-release-readiness.json
+
+# Local operational backups
+src/RESPALDO_LANZO_*.jsonl
+RESPALDO_LANZO_*.jsonl
+/dist/
