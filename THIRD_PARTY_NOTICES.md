@@ -1,140 +1,149 @@
 # Lanzo-POS — avisos de terceros
 
-## Propósito y estado
+## Propósito y decisión revisada
 
-Este documento registra avisos y obligaciones de las dependencias que pueden
-llegar al runtime o a una función distribuida de Lanzo-POS. La evidencia de
-esta revisión está en [`docs/OSS-DEPENDENCY-EVIDENCE.md`](docs/OSS-DEPENDENCY-EVIDENCE.md)
-y el inventario SPDX en [`docs/sbom.spdx.json`](docs/sbom.spdx.json).
+Esta revisión corrige OSS.1.4A.1 sobre la base de
+`4aa73e3ef2fb0e4aced3f9bb920e433a7987de92`, sin cambiar dependencias ni
+código.
 
-Base verificada: `origin/main` en `81400b41a8788aac1c5c46cb0c0c9ad707524cfa`.
-La instalación reproducible se hizo con `npm ci --include=optional`, sin
-modificar manifests ni dependencias. `package.json` no declara una licencia
-OSS adoptada para Lanzo-POS; AGPL-3.0-only sigue siendo una propuesta y no se
-crea una `LICENSE` en esta tarea.
+**DEPENDENCY CONDITIONAL GO.** La inspección no encontró un aviso Exhibit B
+aplicado a los archivos distribuidos de `@vercel/og` o `satori`. El texto que
+había causado el NO-GO aparece solamente dentro de la copia estándar completa
+de MPL-2.0. Resvg queda trazado al commit upstream exacto y su defecto de
+empaquetado se puede cubrir con este expediente de avisos. Persisten dos
+revisiones: coincidencia exacta del hash de la fuente incluida y paquete real
+seleccionado por Vercel.
 
-Este documento no es una certificación jurídica. Cuando se indica
-**sin conflicto evidente identificado**, significa solamente que la evidencia
-local no demostró un conflicto; no sustituye la revisión del titular.
+OSS.1.4 completo continúa **BLOCKED** por la procedencia de los activos propios
+de Lanzo, que pertenece a OSS.1.4B. Esta clasificación no es una opinión
+jurídica absoluta.
 
-## Decisión de esta revisión
+## 1. Cadena OG y MPL-2.0
 
-**DEPENDENCY NO-GO para cerrar formalmente el bloque de dependencias.**
+| Paquete | Versión | Evidencia del tarball instalado | Estado MPL |
+| --- | ---: | --- | --- |
+| `@vercel/og` | 0.11.1 | Tarball npm exacto: 13 archivos, `sha1=985d0350aa57e41985e6d3aae2dff25d2c95cd46`; solo `LICENSE` contiene Exhibit B (3 coincidencias; frase de incompatibilidad: 1). Código, mapas, `package.json`, README y assets: 0 coincidencias. | **MPL STANDARD — no Exhibit B aplicado** |
+| `satori` | 0.25.0 | Tarball npm exacto: 20 archivos, `sha1=6d08254afbd4e010cb01a78628ec0101f1e14fa6`; solo `LICENSE` contiene Exhibit B (3 coincidencias; frase de incompatibilidad: 1). Los cuatro `.LEGAL.txt` solo registran CSSesc; código, mapas y metadata: 0 coincidencias. | **MPL STANDARD — no Exhibit B aplicado** |
+| `@resvg/resvg-wasm` | 2.4.0 | Tarball exacto de 7 archivos, sin `LICENSE`, `COPYING` ni `NOTICE`; `README.md` enlaza MPLv2.0 y atribuye `Copyright (c) 2021-present, yisibl`. | **MPL STATUS NOT VERIFIED en el tarball; upstream MPL estándar** |
 
-La razón es material y acotada: los LICENSE reales de `@vercel/og` y `satori`
-contienen el aviso Exhibit B de MPL-2.0, `@resvg/resvg-wasm` declara MPL-2.0
-pero no trae un LICENSE/COPYING/NOTICE independiente, y la fuente incluida en
-`@vercel/og` no tiene un aviso de licencia separado. La cadena Windows de
-`sharp` también requiere distribuir correctamente el aviso compuesto del
-binario precompilado y sus componentes LGPL.
+La búsqueda incluyó `package.json`, LICENSE/COPYING/NOTICE, README, archivos
+JavaScript/TypeScript/mapas, `.LEGAL.txt`, encabezados SPDX y encabezados de
+licencia. En los tres paquetes: `MPL-2.0-no-copyleft-exception` = 0 y
+`MPL-1.1` = 0. No se encontró una declaración explícita de incompatibilidad ni
+fragmentos MPL copiados por Lanzo.
 
-No se afirma que exista incompatibilidad jurídica definitiva. Los elementos
-anteriores quedan como **BLOCKER/REVIEW REQUIRED** antes de una distribución
-formal. OSS.1.4 completo continúa **BLOCKED** además por la procedencia de
-logos, iconos y otros activos, que pertenece a OSS.1.4B.
+La conclusión correcta distingue el caso A —Exhibit B como parte del texto
+estándar de MPL— del caso B —aviso adjunto al Covered Software—. La evidencia
+local solo demuestra A para OG y Satori; no se infiere B desde A.
 
-## 1. Runtime distribuido
+Al distribuir la función OG se debe conservar el LICENSE MPL completo y los
+avisos de los artefactos que realmente entren en el bundle. Los LICENSE reales
+de OG y Satori tienen SHA-256
+`1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5`.
 
-Las funciones de la tienda importan `@vercel/og` y `sharp`; por tanto la
-clausura material incluye sus dependencias transitivas aunque el bundle se
-genere fuera de Git. Los demás paquetes runtime directos permanecen
-inventariados por `package-lock.json` y el SBOM; sus avisos deben acompañar
-cualquier entrega si sus archivos entran en el artefacto.
+## 2. Geist-Regular.ttf
 
-| Paquete y versión | Licencia declarada | Evidencia local verificada | Obligación/estado |
-| --- | --- | --- | --- |
-| `@vercel/og@0.11.1` | MPL-2.0 | `node_modules/@vercel/og/LICENSE` (MPL completo, SHA-256 `1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5`); no hay NOTICE | Conservar LICENSE y avisos; Exhibit B presente; **BLOCKER/REVIEW REQUIRED** |
-| `satori@0.25.0` | MPL-2.0 | `node_modules/satori/LICENSE` (mismo texto/hash MPL que OG); no hay NOTICE | Dependencia de OG; conservar LICENSE; Exhibit B presente; **BLOCKER/REVIEW REQUIRED** |
-| `@resvg/resvg-wasm@2.4.0` | MPL-2.0 | `node_modules/@resvg/resvg-wasm/package.json`; README enlaza MPLv2.0 y atribuye `Copyright (c) 2021-present, yisibl`; no hay LICENSE/COPYING/NOTICE | Obtener/conservar el texto y aviso requerido del paquete antes de distribuir; **REVIEW REQUIRED** |
-| `sharp@0.34.5` | Apache-2.0 | `node_modules/sharp/LICENSE` (Apache-2.0 completo, SHA-256 `73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68`); no hay NOTICE | Conservar LICENSE y avisos Apache; revisar la clausura binaria; **REVIEW REQUIRED** |
+Ruta instalada: `node_modules/@vercel/og/dist/Geist-Regular.ttf`.
 
-Los paquetes runtime directos adicionales y sus expresiones declaradas en el
-lockfile son: `@fingerprintjs/fingerprintjs@5.0.1` (MIT), `@google/genai@1.50.1`
-(Apache-2.0), `@react-oauth/google@0.13.5` (MIT), `@supabase/supabase-js@2.86.0`
-(MIT), `@zxing/library@0.21.3` (MIT), `big.js@7.0.1` (MIT), `dexie@4.4.3`
-(Apache-2.0), `dexie-export-import@4.4.0` (Apache-2.0),
-`dexie-react-hooks@4.2.0` (Apache-2.0), `es-toolkit@1.46.0` (MIT),
-`lucide-react@0.553.0` (ISC), `react@19.2.0` (MIT), `react-dom@19.2.0` (MIT),
-`react-hot-toast@2.6.0` (MIT), `react-router-dom@7.13.0` (MIT),
-`react-virtualized-auto-sizer@1.0.26` (MIT), `react-window@2.2.3` (MIT),
-`react-zxing@2.1.0` (MIT), `recharts@3.8.1` (MIT), `zod@4.1.13` (MIT) y
-`zustand@5.0.8` (MIT). Sus LICENSE/NOTICE individuales no se copiaron de
-forma indiscriminada en este documento; deben conservarse desde los tarballs
-exactos cuando formen parte de la entrega.
+| Dato | Resultado |
+| --- | --- |
+| Tamaño | 125,956 bytes |
+| SHA-256 | `bde046ddd9f20be35b0bd56cc79eb752b967fb6661a3fe76cb067bb09f871d76` |
+| Nombre interno | `Geist`, estilo `Regular`, nombre PostScript `Geist-Regular` |
+| Copyright interno | `Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git)` |
+| Versión interna | `Version 1.800; ttfautohint (v1.8.4.16-eb64)` |
+| Licencia interna | OFL-1.1, con enlace a `https://openfontlicense.org` |
+| Modificación local Lanzo | No hay archivo rastreado ni parche local; el archivo proviene del tarball exacto de OG |
 
-## 2. Cadena OG: MPL-2.0, Resvg y fuentes
+El proyecto oficial [vercel/geist-font](https://github.com/vercel/geist-font)
+publica sus fuentes bajo OFL-1.1 y su
+[LICENSE.txt](https://github.com/vercel/geist-font/blob/main/LICENSE.txt) exige
+conservar copyright y licencia al redistribuirlas. La licencia incluye la
+restricción general de Reserved Font Names, pero el texto inspeccionado no
+enumera nombres reservados concretos.
 
-`@vercel/og@0.11.1` depende exactamente de `satori@0.25.0` y
-`@resvg/resvg-wasm@2.4.0`. Los LICENSE de OG y Satori contienen literalmente
-la sección **Exhibit B — “Incompatible With Secondary Licenses”** y el aviso
-de que el Source Code Form es incompatible con Secondary Licenses. El uso
-observado es desde `node_modules`, sin modificaciones locales de esos archivos
-por Lanzo; no se encontró ningún archivo equivalente rastreado en el repo.
+La coincidencia exacta no quedó demostrada: el `Geist-Regular.ttf` del head
+oficial `10dc7658f13c38a474cde201bb09a4617267545b` mide 126,048 bytes y tiene
+SHA-256 `85a1c6b18a6b0a06dfe9fd4f6d6a5d4979f74ec861eaef4bc7868b5492b8a117`.
+También se compararon versiones npm `geist` 1.6.0-beta.2, 1.6.0-beta.3,
+1.6.0-beta.4, 1.6.0-beta.5, 1.7.0, 1.7.1 y 1.7.2; ninguna coincide con el
+hash instalado. Por eso el estado es **OFL-1.1 indicada por metadata interna;
+REVIEW REQUIRED para procedencia exacta**, no `VERIFIED THIRD-PARTY`.
 
-El paquete OG instala `dist/Geist-Regular.ttf` (125,956 bytes; SHA-256
-`bde046ddd9f20be35b0bd56cc79eb752b967fb6661a3fe76cb067bb09f871d76`). No trae
-LICENSE/NOTICE separado para esa fuente. Además, el README instalado afirma que
-la fuente incluida por defecto es Noto Sans, mientras el archivo instalado se
-llama `Geist-Regular.ttf`. La identidad, licencia y procedencia de esa fuente
-quedan **REVIEW REQUIRED**; no se debe tratar como un activo de marca autorizado
-por la licencia del código MPL.
+Si el bundle distribuye la fuente, debe conservar el copyright de The Geist
+Project Authors y el texto completo de OFL-1.1. No se relicencia bajo AGPL.
 
-Al distribuir la función OG se deben conservar los textos completos de MPL y
-los avisos aplicables del bundle. Este PR registra las rutas y hashes, pero no
-vende ni versiona `node_modules` ni copia cientos de licencias completas.
+## 3. Resvg: origen y aviso
 
-## 3. Cadena sharp/libvips
+`@resvg/resvg-wasm@2.4.0` tiene en el lockfile:
 
-En el entorno de verificación Windows `win32/x64`, `require('sharp')` cargó:
+- `resolved`: `https://registry.npmjs.org/@resvg/resvg-wasm/-/resvg-wasm-2.4.0.tgz`;
+- `integrity`: `sha512-C7c51Nn4yTxXFKvgh2txJFNweaVcfUPQxwEUFw4aWsCmfiBDJsTSwviIF8EcwjQ6k8bPyMWCl1vw4BdxE569Cg==`;
+- `gitHead`: `30ac8d830d44802df7e967569c92edabbbcec017`;
+- repositorio declarado: `github.com/yisibl/resvg-js`, actualmente redirigido a
+  [`thx/resvg-js`](https://github.com/thx/resvg-js/tree/30ac8d830d44802df7e967569c92edabbbcec017).
 
-- `sharp@0.34.5`, declarado Apache-2.0;
-- libvips `8.17.3`;
-- `@img/sharp-win32-x64@0.34.5`, opcional y realmente instalado;
-- `lib/libvips-42.dll`, `lib/libvips-cpp-8.17.3.dll` y
-  `lib/sharp-win32-x64.node`.
+El tarball npm descargado tiene SHA-1
+`e01164b9a267c822e1ff797daa2fb91b663ea6f0` y SHA-512 igual al `integrity` del
+lockfile. Sus siete archivos coinciden byte a byte con `node_modules`. El
+commit upstream contiene un `LICENSE` MPL-2.0 de 16,724 bytes, SHA-256
+`4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1`, aunque
+el `files`/tarball npm no lo incluye. El README upstream identifica el
+proyecto y la licencia MPLv2.0.
 
-`@img/sharp-win32-x64` declara `Apache-2.0 AND LGPL-3.0-or-later`. Su
-LICENSE local contiene el texto Apache-2.0, mientras su README enumera
-`libvips` y varias bibliotecas bajo LGPLv3 y explica que se usa la cláusula de
-"any later version" de LGPLv2/LGPLv2.1. No se instaló un paquete separado
-`@img/sharp-libvips-win32-x64`; en esta plataforma libvips está dentro del
-paquete Windows seleccionado. Los paquetes `@img/sharp-libvips-*` de otras
-plataformas aparecen como opcionales en el lockfile, pero no son el binario
-seleccionado en esta instalación.
+Esto es un defecto de empaquetado, no ausencia de trazabilidad. El aviso de
+Resvg debe acompañar la entrega: atribución `Copyright (c) 2021-present,
+yisibl`, MPL-2.0 completo y referencia al commit upstream anterior. Estado:
+**PASS WITH NOTICE**, con revisión de que el artefacto final conserve el texto.
 
-No se debe mezclar la licencia upstream que el README describe para libvips
-con la declaración npm `LGPL-3.0-or-later` sin conservar ambas evidencias. La
-entrega del bundle o función debe incluir el README/LICENSE aplicable y el
-expediente de fuentes/correspondencia exigible para el componente LGPL.
+## 4. sharp/libvips por plataforma
 
-## 4. Build y desarrollo
+La instalación local Windows verificó `sharp@0.34.5`, libvips `8.17.3` y
+`@img/sharp-win32-x64@0.34.5`, con los archivos:
 
-Las herramientas de `devDependencies` (`vite`, `vitest`, ESLint, Testing
-Library, JSDOM, plugin PWA y sus transitivas) están en el SBOM. No se
-identifican por sí solas como runtime público. Si un build copia una
-transitiva, un source map, Workbox o un asset al artefacto distribuido, sus
-avisos deben incorporarse al mismo expediente. No se ejecutó build ni prueba
-de interfaz en esta tarea.
+```text
+lib/libvips-42.dll
+lib/libvips-cpp-8.17.3.dll
+lib/sharp-win32-x64.node
+```
 
-## 5. Datos y licencias de contenido
+`@img/sharp-win32-x64` declara `Apache-2.0 AND LGPL-3.0-or-later`; su README
+enumera libvips y otras bibliotecas LGPLv3. Los paquetes Linux
+`@img/sharp-linux-x64@0.34.5` y `@img/sharp-libvips-linux-x64@1.2.4` existen
+en el lockfile como opcionales, pero no fueron seleccionados ni instalados en
+esta captura.
 
-El SBOM y el lockfile también contienen expresiones que no deben normalizarse
-a MIT: `caniuse-lite` (CC-BY-4.0), `argparse` (Python-2.0), BlueOak-1.0.0,
-`(AFL-2.1 OR BSD-3-Clause)`, `(Unlicense OR Apache-2.0)`, `(MIT OR CC0-1.0)` y
-`MIT AND ISC`. Deben conservarse sus operadores y atribuciones exactos si
-entran en un artefacto distribuido.
+Esto solo es evidencia local Windows. `store/vercel.json` define `npm ci` y
+`npm run build:store:vercel`, pero no fija una plataforma/arquitectura de
+binario. No hay `.vercel/output/functions` ni un artefacto de función Vercel
+accesible en el checkout; los reportes existentes marcan el Build Output real
+como no ejecutado. Estado obligatorio: **VERCEL RUNTIME PACKAGE NOT VERIFIED**.
 
-## 6. Activos de marca pendientes de OSS.1.4B
+No se afirma que Vercel distribuya el paquete Windows ni que use Linux x64.
+Cuando exista un Build Output verificable, habrá que registrar el paquete
+`@img/sharp-*`, `@img/sharp-libvips-*`, OS, arquitectura, libc, LICENSE/NOTICE y
+forma de inclusión. Mientras tanto, las obligaciones documentadas son
+conservar avisos, identificar libvips, permitir reemplazo/relink cuando
+corresponda y no imponer restricciones incompatibles con LGPL.
 
-Los activos rastreados siguen inventariados en
-[`docs/OSS-ASSET-PROVENANCE.md`](docs/OSS-ASSET-PROVENANCE.md). Esta tarea no
-resuelve autoría, permiso, licencia o procedencia de logos, iconos, portadas,
-fuentes de marca ni imágenes de producto. Que una URL sea pública no prueba
-permiso de reutilización.
+## 5. Estructura técnica de combinación
 
-## 7. Requisito de entrega
+- `store/api/og/store.js` hace `import('@vercel/og')` dinámico y no importa
+  Satori ni Resvg directamente.
+- `store/api/_safePublicImage.js` importa `sharp` para normalizar imágenes.
+- `scripts/build-store-vercel.mjs` permite la clausura externa aprobada
+  `@vercel/og`, `react` y `sharp`, y comprueba que OG y sharp estén en la
+  función esperada.
+- El tarball de OG contiene JavaScript compilado, mapas, WASM y la fuente; el
+  de Satori contiene JavaScript compilado, mapas, WASM y `.LEGAL.txt`. No se
+  encontraron fragmentos MPL en el código de Lanzo ni archivos fuente MPL
+  modificados por Lanzo.
+- `scripts/audit-vercel-build-output.mjs` puede inspeccionar funciones, pero no
+  se ejecutó contra un Build Output Vercel existente en esta tarea. No se
+  presenta el bundle final como verificado.
 
-Antes de un release, el responsable debe adjuntar los LICENSE/COPYING/NOTICE
-completos de los componentes materiales, el aviso de la fuente incluida y la
-explicación de distribución de los binarios de sharp/libvips. Esta revisión no
-crea `LICENSE`, no modifica dependencias y no autoriza despliegues.
+## 6. Activos de Lanzo
+
+La procedencia de logos, iconos, portadas, imágenes de producto y demás activos
+propios sigue pendiente en `docs/OSS-ASSET-PROVENANCE.md`. Esta tarea no los
+resuelve.
