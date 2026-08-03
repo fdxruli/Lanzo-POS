@@ -49,7 +49,7 @@ Comando intentado:
 ```bash
 GIT_TERMINAL_PROMPT=0 git clone \
   https://github.com/fdxruli/Lanzo-POS.git \
-  /tmp/lanzo-pos-pr88-validation
+  <temp-dir>/lanzo-pos-pr88-validation
 ```
 
 Resultado real:
@@ -104,7 +104,7 @@ También se confirmaron las suites específicas agregadas o modificadas por el P
 ## ESLint específico
 
 ```text
-xargs npx eslint < /tmp/pr88-eslint-files.txt: NO EJECUTADO
+xargs npx eslint < <temp-dir>/pr88-eslint-files.txt: NO EJECUTADO
 clasificación: INDETERMINADO — no existe checkout ejecutable
 ```
 
@@ -247,7 +247,7 @@ Estado del PR: DRAFT
 ## Bloqueante exacto
 
 ```text
-Comando bloqueante: git clone https://github.com/fdxruli/Lanzo-POS.git /tmp/lanzo-pos-pr88-validation
+Comando bloqueante: git clone https://github.com/fdxruli/Lanzo-POS.git <temp-dir>/lanzo-pos-pr88-validation
 Fallo: Could not resolve host: github.com
 Clasificación: INDETERMINADO — limitación del entorno de validación
 Corrección aplicada al código: NO

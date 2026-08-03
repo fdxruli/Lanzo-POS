@@ -2,7 +2,7 @@
 
 Estado de la fase: **INCOMPLETA**.
 
-Motivo de no cierre: la copia local en C:\dev\Lanzo-POS-main no contiene un directorio .git. No fue posible registrar HEAD, rama ni estado del árbol de trabajo, tres datos obligatorios para declarar completa la fase. La auditoría estática, el build, el inventario de precache, la prueba local y el contrato futuro sí quedaron documentados.
+Motivo de no cierre: la copia local en `<repo-root>` no contiene un directorio .git. No fue posible registrar HEAD, rama ni estado del árbol de trabajo, tres datos obligatorios para declarar completa la fase. La auditoría estática, el build, el inventario de precache, la prueba local y el contrato futuro sí quedaron documentados.
 
 ## 1. Resumen ejecutivo
 
@@ -40,7 +40,7 @@ Medición inicial: 2026-07-13T17:52:42-06:00, zona America/Mexico_City.
 
 | Dato | Valor |
 | --- | --- |
-| Directorio | C:\dev\Lanzo-POS-main |
+| Directorio | `<repo-root>` |
 | Rama local | No disponible: no existe .git |
 | HEAD local | No disponible: no existe .git |
 | git status --short | No disponible: no es un repositorio Git |
@@ -55,8 +55,7 @@ La ausencia de .git fue comprobada antes del análisis. No se ejecutó ningún c
 Archivos de diagnóstico creados:
 
 - docs/reports/ECOM.PUBLIC.ARCH.0.md
-- docs/reports/ecom-public-arch-0/browser-clean-store.png
-- docs/reports/ecom-public-arch-0/browser-landing.png
+- Capturas de navegador generadas localmente (no versionadas)
 - scripts/audit-public-delivery.mjs
 - scripts/audit-public-browser.mjs
 

@@ -32,13 +32,13 @@ const personalizedResult = {
   siteVersionNumber: 1,
 };
 
-const farmaciaGaryResult = {
+const demoStoreResult = {
   status: 'ok',
   portal: {
-    slug: 'farmaciagary',
-    name: 'Farmacia Gary',
-    headline: 'Medicamentos y cuidado para toda la familia',
-    description: 'Compra productos de farmacia con entrega local.',
+    slug: 'demo-store',
+    name: 'Negocio de Ejemplo',
+    headline: 'Productos seleccionados para tu día',
+    description: 'Compra productos de ejemplo con entrega local.',
     theme: {
       primaryColor: '#166534',
       secondaryColor: '#bef264',
@@ -176,20 +176,20 @@ describe('render real con @vercel/og ImageResponse', () => {
     ]));
   });
 
-  it('materializa Farmacia Gary con logo y portada sin degradar a identidad textual', async () => {
+  it('materializa una tienda de ejemplo con logo y portada sin degradar a identidad textual', async () => {
     const logoImage = await normalizedWebpLogo();
     const logger = { warn: vi.fn() };
     const imageLoader = vi.fn()
       .mockResolvedValueOnce(logoImage)
       .mockResolvedValueOnce(ONE_PIXEL_PNG);
     const handler = createStoreOgHandler({
-      portalClient: { getPortalBySlug: vi.fn(async () => farmaciaGaryResult) },
+      portalClient: { getPortalBySlug: vi.fn(async () => demoStoreResult) },
       imageLoader,
       ImageResponseImpl: ImageResponse,
       logger,
     });
     const response = await handler(new Request(
-      'https://tienda.lanzo.test/api/og/store?slug=farmaciagary',
+      'https://tienda.lanzo.test/api/og/store?slug=demo-store',
     ));
     const bytes = new Uint8Array(await response.arrayBuffer());
 

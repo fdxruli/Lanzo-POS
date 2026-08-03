@@ -2,7 +2,7 @@
 
 Fecha: 2026-07-16 (America/Mexico_City)  
 Repositorio: `fdxruli/Lanzo-POS`  
-Proyecto Supabase: `odlrhijtfyavryeqivaa`  
+Proyecto Supabase: `<supabase-project-ref>`
 Rama: `agent/ecom-modifier-configuration-reseal`  
 Estado: **MIGRACIÓN APLICADA Y VERIFICADA — PR PENDIENTE DE MERGE**
 
@@ -14,7 +14,7 @@ Se corrigió el bloqueo:
 ECOMMERCE_CATALOG_SOURCE_CONFLICT
 ```
 
-que aparecía al sincronizar un lote de ocho productos en la revisión de catálogo `58` del portal de desarrollo `farmaciagary`.
+que aparecía al sincronizar un lote de ocho productos en la revisión de catálogo `58` de un portal de desarrollo de ejemplo.
 
 El valor `count: 8` correspondía al tamaño del lote. La causa real estaba limitada a cuatro productos configurables con modificadores de restaurante.
 
@@ -57,14 +57,14 @@ El predicado compensatorio encontró exactamente cuatro filas:
 
 | Producto | Referencia local | Revisión |
 |---|---|---:|
-| Hamburguesa de pollo | `prod_rest_hamburguesa_pollo` | `version:1` |
-| Papas a la francesa | `prod_rest_papas_francesa` | `version:1` |
-| Quesadilla de queso | `prod_rest_quesadilla_queso` | `version:1` |
-| Taco al pastor | `prod_rest_taco_pastor` | `version:2` |
+| Producto de Ejemplo 1 | `fixture-product-1` | `version:1` |
+| Producto de Ejemplo 2 | `fixture-product-2` | `version:1` |
+| Producto de Ejemplo 3 | `fixture-product-3` | `version:1` |
+| Producto de Ejemplo 4 | `fixture-product-4` | `version:2` |
 
 Condiciones requeridas:
 
-- portal activo con slug `farmaciagary`;
+- portal activo con slug `demo-store`;
 - producto publicado activo;
 - `configuration_type = 'configurable'`;
 - `has_option_groups = true`;

@@ -678,7 +678,7 @@ incompatible con React 19. El `package-lock.json` se regeneró de forma coherent
 con:
 
 ```text
-npm --cache /tmp/lanzo-npm-cache install \
+npm --cache <temp-dir>/lanzo-npm-cache install \
   --package-lock-only \
   --ignore-scripts \
   --no-audit \
@@ -1752,7 +1752,7 @@ agregar dependencia `vercel@58.1.0`.
 Primera ejecución:
 
 ```text
-/tmp/lanzo-vercel-58 build --prod --yes --local-config ./vercel.json
+<temp-dir>/lanzo-vercel-58 build --prod --yes --local-config ./vercel.json
 ```
 
 Llegó a Vercel CLI, pero falló al intentar crear caché/configuración global bajo
@@ -2568,7 +2568,7 @@ La ejecución focal confirmó las suites de packaging e integración; la ejecuci
 completa de `store/tests/social-preview` fue iniciada, pero la sesión local la
 interrumpió antes de emitir su resumen final. Se reintentaron también
 `npm run build:store:vercel` y `npm run deploy:store:prepare` con
-`TEMP=TMP=C:\dev\lanzo-gate-tmp`; ambos procesos alcanzaron respectivamente
+`TEMP=TMP=<temp-dir>/lanzo-gate-tmp`; ambos procesos alcanzaron respectivamente
 Vite y el preparador, pero la sesión local terminó antes de que Vite o el gate
 produjeran resultado, Build Output o diagnóstico final. `store/dist` se restauró
 desde `HEAD` tras el intento de build. No hay evidencia suficiente para declarar
@@ -3881,8 +3881,8 @@ Vercel reportó el proyecto `lanzo-store`, source `cli`, estado `READY` y
 dinámicas respondieron HTTP 500:
 
 ```text
-GET /tienda/farmaciagary                 = 500 FUNCTION_INVOCATION_FAILED
-GET /api/og/store?slug=farmaciagary     = 500 FUNCTION_INVOCATION_FAILED
+GET /tienda/demo-store                   = 500 FUNCTION_INVOCATION_FAILED
+GET /api/og/store?slug=demo-store        = 500 FUNCTION_INVOCATION_FAILED
 ```
 
 El error runtime confirmado fue:
@@ -4141,7 +4141,7 @@ store/api/package.json
 Sin embargo, la petición dinámica continuó fallando de forma controlada:
 
 ```text
-GET /tienda/farmaciagary                 = 500
+GET /tienda/demo-store                   = 500
 body                                     = Store page temporarily unavailable.
 Cache-Control                            = no-store
 ```
@@ -4239,7 +4239,7 @@ bloquea toda salida externa y usa variables ficticias.
 Para `store-page` se ejecuta:
 
 ```text
-GET https://preview.invalid/api/store-page?slug=farmaciagary
+GET https://preview.invalid/api/store-page?slug=demo-store
 ```
 
 El smoke exige carga e interfaz válidas, terminación de la petición, status
@@ -4430,7 +4430,7 @@ public client visual load = FAIL
 production = unchanged
 ```
 
-`GET /api/og/store?slug=farmaciagary` returned HTTP 200 with an empty body and
+`GET /api/og/store?slug=demo-store` returned HTTP 200 with an empty body and
 an invalid PNG signature. Runtime logs identified the asynchronous Satori
 stream failure (`TypeError: u2 is not iterable`). The handler now consumes and
 validates the stream before returning `image/png`, falling back to a second,
@@ -4464,7 +4464,7 @@ SHA-256 = 3c212866b1c49c3cf983d8f0d35a374c5effd99dc38ae1c3d6f3c0b0085f7a41
 La certificación fue `FAILED_CERTIFICATION` y `evidencePass=false`. La preview
 se preserva, no se elimina, reutiliza, promueve ni recibe alias.
 
-`GET /tienda/farmaciagary` respondió HTML 200 con metadata social correcta,
+`GET /tienda/demo-store` respondió HTML 200 con metadata social correcta,
 pero el cliente público mostró:
 
 ```text
@@ -4478,7 +4478,7 @@ usó los marcadores ficticios `invalid-for-local-build`, `supabase.invalid`,
 server-side era correcto mientras el cliente React no podía inicializar su
 cliente Supabase ni cargar el catálogo.
 
-En paralelo, `GET /api/og/store?slug=farmaciagary` respondió HTTP 500 con
+En paralelo, `GET /api/og/store?slug=demo-store` respondió HTTP 500 con
 `FUNCTION_INVOCATION_FAILED`. El log saneado confirmó `ERR_REQUIRE_ESM`: el
 handler CommonJS generado convirtió el import estático de `@vercel/og` en
 `require()`, aunque el paquete efectivo es ESM.
