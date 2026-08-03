@@ -1,6 +1,6 @@
 # FASE ECOM.PUBLIC.DEPLOY.1.1 — Corregir la canonicalización de rutas del despliegue público
 
-> **Cierre operativo — 14 de julio de 2026:** la copia fuente completa estuvo disponible posteriormente en `C:\dev\Lanzo-POS-main`. Se ejecutaron todas las validaciones, el deployment adicional autorizado y la auditoría remota con resultado **COMPLETA**. Las secciones 1–37 se conservan como historial de la entrega inicialmente bloqueada; las secciones 38–50 registran el cierre que las sustituye operativamente.
+> **Cierre operativo — 14 de julio de 2026:** la copia fuente completa estuvo disponible posteriormente en `<repo-root>`. Se ejecutaron todas las validaciones, el deployment adicional autorizado y la auditoría remota con resultado **COMPLETA**. Las secciones 1–37 se conservan como historial de la entrega inicialmente bloqueada; las secciones 38–50 registran el cierre que las sustituye operativamente.
 
 ## 1. Resumen ejecutivo
 
@@ -122,7 +122,7 @@ Sin solicitudes nuevas, escrituras ni pedidos.
 
 ## 26. Aislamiento
 
-El trabajo se realizó en un directorio aislado de artefactos. No se asumió acceso a `C:\dev\Lanzo-POS-main`.
+El trabajo se realizó en un directorio aislado de artefactos. No se asumió acceso a `<repo-root>`.
 
 ## 27. Proyecto administrativo intacto
 
@@ -188,7 +188,7 @@ La corrección está preparada localmente, pero DEPLOY.1.1 permanece **BLOQUEADA
 
 ## 38. Reanudación en el proyecto completo
 
-Se reanudó la mini-fase en `C:\dev\Lanzo-POS-main` sin rediseñar la solución ni reemplazar los archivos recibidos. Existían `vercel.store.json`, los dos scripts, el test de arquitectura y este reporte. `vercel.store.json` contenía `"trailingSlash": false`. La raíz no contenía `.git` ni `.vercel`.
+Se reanudó la mini-fase en `<repo-root>` sin rediseñar la solución ni reemplazar los archivos recibidos. Existían `vercel.store.json`, los dos scripts, el test de arquitectura y este reporte. `vercel.store.json` contenía `"trailingSlash": false`. La raíz no contenía `.git` ni `.vercel`.
 
 Se inventariaron antes y después los archivos protegidos. Sus SHA-256 permanecieron idénticos:
 

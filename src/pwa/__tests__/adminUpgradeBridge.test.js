@@ -73,7 +73,7 @@ describe('administrative one-time upgrade bridge', () => {
       claim: vi.fn().mockResolvedValue(undefined),
       matchAll: vi.fn().mockResolvedValue([
         { url: `${origin}/pedidos-online`, navigate: adminNavigate },
-        { url: `${origin}/tienda/farmaciagary`, navigate: publicNavigate },
+        { url: `${origin}/tienda/demo-store`, navigate: publicNavigate },
         { url: `${origin}/auth/callback`, navigate: authNavigate },
         { url: 'https://example.com/', navigate: externalNavigate },
       ]),

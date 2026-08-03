@@ -28,7 +28,7 @@ PR [#128](https://github.com/fdxruli/Lanzo-POS/pull/128), creado abierto y
 
 ## 5. Auditoría inicial de Supabase
 
-Proyecto: `odlrhijtfyavryeqivaa`, PostgreSQL 17.6.1.
+Proyecto: `<supabase-project-ref>`, PostgreSQL 17.6.1.
 
 Antes del backfill se cuantificó:
 
@@ -42,8 +42,8 @@ Antes del backfill se cuantificó:
 | Perfiles con rubro en `NULL` | 1 |
 | Representaciones portal/perfil no reconciliadas | 3 |
 
-Los cuatro incompatibles correspondían al caso observado de Farmacia Gary:
-Hamburguesa de pollo, Papas a la francesa, Quesadilla de queso y Taco al pastor.
+Los cuatro incompatibles correspondían a un caso de portal de ejemplo:
+Producto de Ejemplo 1, Producto de Ejemplo 2, Producto de Ejemplo 3 y Producto de Ejemplo 4.
 La identificación fue por reglas generales y relación entre perfil, portal,
 producto y configuración; no se codificó el slug, nombre ni ID.
 
@@ -133,7 +133,7 @@ El backfill fue conservador:
 
 Resultado verificado: 14 publicaciones en revisión, 0 publicaciones con mayoreo
 activo y 0 niveles públicos preexistentes. Las cuatro publicaciones incompatibles
-de Farmacia Gary dejaron de aparecer en el catálogo; sus cuatro fuentes con
+del portal de ejemplo dejaron de aparecer en el catálogo; sus cuatro fuentes con
 modificadores permanecen intactas.
 
 ## 12. Comportamiento Free
@@ -339,7 +339,7 @@ PR #128 abierto, draft, no fusionado y sin auto-merge.
   `20260725190000_ecom_business_capabilities_wholesale_1_blockers_fix.sql`.
 - Registro remoto Supabase:
   `20260725131157_ecom_business_capabilities_wholesale_1_blockers_fix`.
-- Aplicada al proyecto `odlrhijtfyavryeqivaa`.
+- Aplicada al proyecto `<supabase-project-ref>`.
 - No se editaron las migraciones aplicadas `20260725030000` ni `20260725040000`.
 - La tabla de tiers permanece con RLS y deny-all por ausencia de políticas y DML
   revocado. El advisor mantiene el aviso informativo
@@ -427,7 +427,7 @@ confirmado de esta corrección y no se relajó.
    referencia al padre (`v_product.id`) y mantiene el escritor idempotente.
 
 Migraciones nuevas, aplicadas exclusivamente mediante la herramienta conectada
-de Supabase y registradas en `odlrhijtfyavryeqivaa`:
+de Supabase y registradas en `<supabase-project-ref>`:
 
 - `20260725200000_ecom_business_capabilities_wholesale_1_signed_adjustments_fix.sql`
   → versión remota `20260725140305`.

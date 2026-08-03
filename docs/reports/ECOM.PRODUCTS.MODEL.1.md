@@ -573,7 +573,7 @@ Estas comprobaciones no sustituyen Vitest, ESLint ni build.
 Se intentó crear un checkout local:
 
 ```text
-git clone --branch fase-ecom-products-model-1 --single-branch https://github.com/fdxruli/Lanzo-POS.git /tmp/Lanzo-POS
+git clone --branch fase-ecom-products-model-1 --single-branch https://github.com/fdxruli/Lanzo-POS.git <temp-dir>/Lanzo-POS
 ```
 
 Resultado real:

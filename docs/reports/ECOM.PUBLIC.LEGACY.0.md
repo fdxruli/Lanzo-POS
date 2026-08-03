@@ -2,7 +2,7 @@
 
 **Fecha de auditoría:** 2026-07-14
 
-**Workspace:** `C:\dev\Lanzo-POS-main`
+**Workspace:** `<repo-root>`
 
 **Estado de la fase:** COMPLETA
 

@@ -1,6 +1,6 @@
 ## 1. Resumen ejecutivo
 
-ECOM.PUBLIC.ARCH.2 queda **COMPLETA** en la copia local `C:\dev\Lanzo-POS-main`. La paridad funcional de las rutas públicas quedó demostrada contra `dist` y `dist-store` con fixtures sintéticos, Chrome DevTools Protocol (CDP), red externa bloqueada y todas las RPC públicas interceptadas antes de la red.
+ECOM.PUBLIC.ARCH.2 queda **COMPLETA** en la copia local `<repo-root>`. La paridad funcional de las rutas públicas quedó demostrada contra `dist` y `dist-store` con fixtures sintéticos, Chrome DevTools Protocol (CDP), red externa bloqueada y todas las RPC públicas interceptadas antes de la red.
 
 Los siete fallos heredados quedaron resueltos. La batería pública dirigida terminó con 16 archivos y 102/102 tests PASS, sin `.skip`, `.todo` ni tests pendientes. Ambos builds pasan, el build público conserva exactamente las métricas de ARCH.1 y la auditoría final registra cero assets 404, cero errores de consola, cero excepciones, cero recursos administrativos solicitados y cero pedidos reales.
 
@@ -31,7 +31,7 @@ La línea base se registró el 13 de julio de 2026 a las 19:50:15, zona `Central
 
 | Señal inicial | Resultado |
 |---|---:|
-| Directorio | `C:\dev\Lanzo-POS-main` |
+| Directorio | `<repo-root>` |
 | `.git` | Ausente |
 | Node | v22.12.0 |
 | npm | 10.9.0 |

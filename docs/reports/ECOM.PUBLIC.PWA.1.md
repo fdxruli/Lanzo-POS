@@ -16,7 +16,7 @@ La validación cubrió builds, auditoría estática, 102 tests públicos preexis
 
 ## 3. Restricciones cumplidas
 
-- Se trabajó únicamente en `C:\dev\Lanzo-POS-main`.
+- Se trabajó únicamente en `<repo-root>`.
 - No existía `.git` al inicio y no se creó; no se ejecutaron comandos Git o GitHub.
 - No se ejecutó Vercel, no se modificó `vercel.json`, no hubo deploy, dominio, redirect, rewrite ni variable remota.
 - No se modificó ni contactó Supabase; las auditorías bloquearon DNS externo. No hubo SQL, RPC de escritura ni pedidos reales.
@@ -27,11 +27,11 @@ La validación cubrió builds, auditoría estática, 102 tests públicos preexis
 
 ## 4. Estado inicial
 
-La línea base se capturó antes de editar y se congeló fuera del repositorio en `C:\Users\pituf\AppData\Local\Temp\lanzo-pwa1-baseline-20260713-223630\dist`.
+La línea base se capturó antes de editar y se congeló fuera del repositorio en `<temp-dir>/lanzo-pwa1-baseline/dist`.
 
 | Dato | Línea base |
 |---|---|
-| Directorio | `C:\dev\Lanzo-POS-main` |
+| Directorio | `<repo-root>` |
 | `.git` | Ausente |
 | Fecha local | 2026-07-13 22:36:30 -06:00 |
 | Zona | America/Mexico_City / Central Standard Time (Mexico) |

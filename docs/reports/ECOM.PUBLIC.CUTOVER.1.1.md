@@ -48,11 +48,11 @@ DEPLOY.1.1 validó el paquete estático y su configuración como archivos. CUTOV
 
 ## 11. Cwd anterior
 
-El proceso anterior fue iniciado desde `C:\dev\Lanzo-POS-main` y trató el temporal sólo como valor de `--cwd`. La ambigüedad entre directorio de invocación y directorio de archivos permitió consumir la config administrativa.
+El proceso anterior fue iniciado desde `<repo-root>` y trató el temporal sólo como valor de `--cwd`. La ambigüedad entre directorio de invocación y directorio de archivos permitió consumir la config administrativa.
 
 ## 12. Config anterior consumida
 
-- Config administrativa consumida: `C:\dev\Lanzo-POS-main\vercel.json`.
+- Config administrativa consumida: `<repo-root>/vercel.json`.
 - SHA-256: `8fb3d88d201d13fb1a51b895a5ff91e31d9fa3129ca098dfb7e9fe1b8204094b`.
 - Config pública que debió consumirse: `vercel.store.json`.
 - SHA-256: `af10cb4007e18489b62aaaddd54be41f3bd165bd39a27d0b2abbc6ae61fb610c`.
@@ -69,8 +69,8 @@ Para admin se añadió una derivación temporal determinista con `"framework": n
 
 ## 15. Estructura temporal nueva
 
-- Store: `C:\Users\pituf\AppData\Local\Temp\lanzo-store-cutover-1-1-U3wCLq`.
-- Admin: `C:\Users\pituf\AppData\Local\Temp\lanzo-pos-cutover-1-1-JIjTbT`.
+- Store: `<temp-dir>/lanzo-store-cutover-1-1`.
+- Admin: `<temp-dir>/lanzo-pos-cutover-1-1`.
 - Cada raíz contenía directamente `vercel.json`, archivos estáticos y después `.vercel/output`.
 - Los manifests SHA-256 fueron hermanos de las raíces.
 - Todas las raíces/manifests creados por la fase se eliminaron al cierre.

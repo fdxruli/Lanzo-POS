@@ -17,3 +17,7 @@ store/generated/storeHtmlTemplate.js
 src/RESPALDO_LANZO_*.jsonl
 RESPALDO_LANZO_*.jsonl
 /dist/
+
+# Local visual captures and browser evidence
+/artifacts/*.png
+docs/reports/ecom-public-arch-0/*.png

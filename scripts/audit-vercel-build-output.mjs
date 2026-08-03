@@ -764,8 +764,8 @@ try {
     code: 'HANDLER_INTERFACE_NOT_INVOKABLE',
   });
   const requestUrl = route === '/api/store-page'
-    ? 'https://preview.invalid/api/store-page?slug=farmaciagary'
-    : 'https://preview.invalid/api/og/store?slug=farmaciagary';
+    ? 'https://preview.invalid/api/store-page?slug=demo-store'
+    : 'https://preview.invalid/api/og/store?slug=demo-store';
   const response = await invoke(candidate, new Request(requestUrl, { method: 'GET' }));
   if (!response || typeof response.status !== 'number' || typeof response.arrayBuffer !== 'function') {
     throw Object.assign(new TypeError('HANDLER_RESPONSE_NOT_RESPONSE_LIKE'), {

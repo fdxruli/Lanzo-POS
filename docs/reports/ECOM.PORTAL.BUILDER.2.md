@@ -8,7 +8,7 @@ Se implementó un editor visual Pro para el documento v1 existente. La edición 
 
 - HEAD inicial de `main`: `afab7e530d09d5247985c68c85de7f0c14ca0ccd` (merge de PR #123).
 - Rama: `fase-ecom-portal-builder-2`.
-- Worktree aislado: `C:\dev\Lanzo-POS-builder2`; el checkout principal tenía 17 commits locales y dos archivos Supabase sin seguimiento, que no se modificaron.
+- Worktree aislado: `<repo-root>`; el checkout principal tenía 17 commits locales y dos archivos Supabase sin seguimiento, que no se modificaron.
 - Merge-base inicial: `afab7e530d09d5247985c68c85de7f0c14ca0ccd`.
 
 ## 3. Alcance y arquitectura reutilizada
