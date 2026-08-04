@@ -117,3 +117,14 @@ se documentan por separado:
 - [Declaración de procedencia de activos](docs/OSS-ASSET-DECLARATION.md)
 - [Inventario y conclusión de procedencia](docs/OSS-ASSET-PROVENANCE.md)
 - [Política preliminar de marca](TRADEMARK_POLICY.md)
+
+## Autohospedaje
+
+La reproducibilidad está documentada con sus límites actuales:
+
+- [Guía de autohospedaje](docs/SELF-HOSTING.md)
+- [Matriz de componentes](docs/SELF-HOSTING-MATRIX.md)
+- [Evidencia de validación](docs/SELF-HOSTING-VALIDATION.md)
+
+Estado OSS.1.5: `SELF-HOSTING BLOCKED`. OSS.1.4 continúa `NO-GO` y OSS.2
+permanece bloqueado.
