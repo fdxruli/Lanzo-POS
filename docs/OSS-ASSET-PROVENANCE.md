@@ -50,9 +50,9 @@ commits visibles y sin correos privados.
 
 | Ruta | Formato; bytes; dimensiones | SHA-256 | Git blob SHA | Incorporación / último cambio en `origin/main` | Consumo y estado | Familia; procedencia; distribución |
 | --- | --- | --- | --- | --- | --- | --- |
-| `icono/icono.png` | PNG; 1,450,285; 1024×1024 | `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c` | `3ed6f593705cb0a36d56569c2fc176ab9433be59` | Alta `339243ee` / último `339243ee`; 2025-09-04; `fdxruli` | Sin consumidor de código; `TRACKED BUT UNUSED` | Identidad oficial; `AI-ASSISTED — PROVIDER VERIFIED` por metadata C2PA limitada; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
-| `public/icono.png` | PNG; 1,450,285; 1024×1024 | `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c` | `3ed6f593705cb0a36d56569c2fc176ab9433be59` | Alta de ruta `9fdd43e` / último `9fdd43e`; 2025-11-13; `fdxruli`; contenido relacionado desde `339243ee` | Sin consumidor de código; `TRACKED BUT UNUSED`; duplicado exacto | Identidad oficial; `AI-ASSISTED — PROVIDER VERIFIED` por bytes compartidos; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
-| `icono/icono-web.png` | PNG; 1,382,145; 1024×1024 | `f18a142863439b8a147d335f2232c23edabc2b1cde4b42b4ff959020378b5ef5` | `4a632cb5bbc4bee9d0be4442ae44bb2adb759659` | Alta `339243ee` / último `339243ee`; 2025-09-04; `fdxruli` | Sin consumidor de código; `TRACKED BUT UNUSED` | Identidad oficial; `AI-ASSISTED — PROVIDER VERIFIED` por metadata C2PA limitada; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
+| `icono/icono.png` | PNG; 1,450,285; 1024×1024 | `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c` | `3ed6f593705cb0a36d56569c2fc176ab9433be59` | Alta `339243ee` / último `339243ee`; 2025-09-04; `fdxruli` | Sin consumidor de código; `TRACKED BUT UNUSED` | Identidad oficial; `AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA`; firma/cadena de confianza no verificadas; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
+| `public/icono.png` | PNG; 1,450,285; 1024×1024 | `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c` | `3ed6f593705cb0a36d56569c2fc176ab9433be59` | Alta de ruta `9fdd43e` / último `9fdd43e`; 2025-11-13; `fdxruli`; contenido relacionado desde `339243ee` | Sin consumidor de código; `TRACKED BUT UNUSED`; duplicado exacto | Identidad oficial; `AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA` por bytes compartidos; firma/cadena de confianza no verificadas; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
+| `icono/icono-web.png` | PNG; 1,382,145; 1024×1024 | `f18a142863439b8a147d335f2232c23edabc2b1cde4b42b4ff959020378b5ef5` | `4a632cb5bbc4bee9d0be4442ae44bb2adb759659` | Alta `339243ee` / último `339243ee`; 2025-09-04; `fdxruli` | Sin consumidor de código; `TRACKED BUT UNUSED` | Identidad oficial; `AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA`; firma/cadena de confianza no verificadas; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
 | `public/icono-web.png` | PNG; 4,411; 192×192 | `85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673` | `06d18d0fd869d74311c5e11f65eeb51406f2ecb9` | Alta de ruta `9fdd43e` / último `21ede67`; 2026-01-21; `fdxruli`; reemplazó 1,382,145 bytes | Sin consumidor exacto; `TRACKED BUT UNUSED`; duplicado exacto de PWA 192 | PWA; `UNKNOWN`; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
 | `public/pwa-192x192.png` | PNG; 4,411; 192×192 | `85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673` | `06d18d0fd869d74311c5e11f65eeb51406f2ecb9` | Alta y último `21ede67`; 2026-01-21; `fdxruli` | `src/pwa/adminManifest.js`, `adminPwaDocument.js`, prueba y precache; `ACTIVE PWA ASSET` | PWA; `UNKNOWN`; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
 | `public/pwa-512x512.png` | PNG; 17,575; 512×512 | `b8dfbddccca477b9ca8125ab3f9a9f790e8f8040fb5a1f3480509680217f2460` | `717cf15f0cc9117847f2266adab77ad0a3dd0f0c` | Alta y último `21ede67`; 2026-01-21; `fdxruli` | Manifest y precache; `ACTIVE PWA ASSET` | PWA; `UNKNOWN`; variante/derivado no demostrado; `TRADEMARK-RESERVED`; `REDISTRIBUTION NOT CLEARED` |
@@ -97,9 +97,9 @@ convertir esa probabilidad en `VERIFIED FIRST-PARTY`.
 Los dos PNG de 1024×1024 tienen un chunk `caBX` con contenido C2PA legible. No
 presentan chunks `tEXt`, `iTXt` o `zTXt`; la metadata relevante está en el bloque
 C2PA. Los tres PNG de PWA sólo presentan `IHDR`, `IDAT` e `IEND`, sin metadata
-de editor legible. La evidencia C2PA identifica proveedor/modelo declarado,
-pero no se realizó validación independiente de firma o cadena de confianza y
-no se infiere licencia ni autoría.
+de editor legible. La evidencia C2PA contiene una declaración de
+proveedor/modelo, pero no se realizó validación independiente de firma,
+autenticidad o cadena de confianza y no se infiere licencia ni autoría.
 
 ### Inspección SVG actual
 
@@ -180,7 +180,7 @@ de runtime, no archivos distribuidos por estas rutas.
 | --- | --- |
 | `VERIFIED FIRST-PARTY` | Ninguna; Git y la incorporación del mantenedor no prueban autoría material |
 | `MAINTAINER-ATTESTED` | Declaración de identidad y decisión de conservación; no es el estado exclusivo de procedencia de un archivo |
-| `AI-ASSISTED — PROVIDER VERIFIED` | PNG 1024×1024 y su duplicado exacto, limitado a la declaración C2PA embebida |
+| `AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA` | PNG 1024×1024 y su duplicado exacto; sólo refleja una declaración embebida, sin firma o cadena de confianza verificadas |
 | `AI-ASSISTED — PROVIDER UNKNOWN` | `public/log.svg`, `public/logIcon.svg` |
 | `VERIFIED THIRD-PARTY` | Ninguna |
 | `DERIVATIVE — SOURCE VERIFIED` | Ninguna |
