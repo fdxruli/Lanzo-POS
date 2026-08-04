@@ -1,249 +1,139 @@
 # Autohospedaje de Lanzo-POS
 
-## 1. Estado y alcance
+## Estado
 
-Estado de OSS.1.5: `BLOCKED`.
+Estado global de OSS.1.5: `BLOCKED`.
 
-Decisión: **SELF-HOSTING BLOCKED**.
+Estado de OSS.1.5.1: `BLOCKED` por disponibilidad de infraestructura local.
+La configuración local ya existe y es reconocida por Supabase CLI, pero el
+daemon de Docker no respondió en la validación del 2026-08-04. Por ello no se
+declara iniciado ni validado ningún servicio de Supabase.
 
-El Nivel 0 (instalación de dependencias y builds) fue reproducido en un
-worktree temporal. El flujo completo no puede certificarse: el repositorio no
-contiene `supabase/config.toml`, una migración obtiene SQL desde un recurso
-externo en tiempo de ejecución, el daemon de Docker no estuvo disponible y la
-función `lanzo-ai-agent` invocada por el cliente no está versionada.
+Esta tarea resuelve únicamente la ausencia de `supabase/config.toml`. No
+corrige la migración que descarga SQL externo, no añade `lanzo-ai-agent`, no
+valida flujos end-to-end, no resuelve OSS.1.4 y no activa AGPL.
 
-Esta guía describe lo que sí fue verificado y separa los pasos no verificados.
-No activa AGPL, no crea `LICENSE`, no resuelve OSS.1.4 y no incorpora el PR
-#171.
+## Configuración local
 
-## 2. Advertencia de madurez
+La configuración versionada está en `supabase/config.toml` y usa el
+identificador local `lanzo-pos-local`. Fue generada a partir de una referencia
+creada con Supabase CLI `2.51.0` y reducida a valores locales seguros.
 
-No uses este resultado como certificación de una instalación productiva. La
-instalación reproducible de los artefactos frontend es parcial; la nube,
-Storage, Auth, RLS, RPC, Realtime, Edge Functions y recuperación no fueron
-validados de extremo a extremo.
+| Componente | Configuración local | Estado en esta validación |
+| --- | --- | --- |
+| API | `http://127.0.0.1:54321` | BLOCKED: Docker |
+| PostgreSQL | `127.0.0.1:54322` | BLOCKED: Docker |
+| Shadow database | `127.0.0.1:54320` | NOT VERIFIED |
+| Studio | `http://127.0.0.1:54323` | BLOCKED: Docker |
+| Inbucket | `http://127.0.0.1:54324` | BLOCKED: Docker |
+| Auth | habilitado dentro del API local | BLOCKED: Docker |
+| Storage | habilitado, límite `50MiB` | BLOCKED: Docker |
+| Realtime | habilitado | BLOCKED: Docker |
+| Edge Runtime | habilitado, inspector `8083` | BLOCKED: Docker |
+| Analytics | deshabilitado | NOT REQUIRED |
 
-## 3. Arquitectura observada
+La URL de Auth es `http://127.0.0.1:4173` y el origen adicional permitido es
+`http://127.0.0.1:4174`. No se habilitaron proveedores OAuth, SMTP, SMS,
+CAPTCHA, S3, IA, pagos ni webhooks externos.
 
-- **Administración:** Vite + React desde `src/main.jsx`, con PWA `injectManifest`
-  y persistencia local basada en IndexedDB/Dexie.
-- **Tienda pública:** `store/`, con build independiente, cliente público de
-  Supabase y dos handlers serverless: `/api/store-page` y `/api/og/store`.
-- **Backend:** 215 migraciones SQL bajo `supabase/migrations/`, 34 pruebas SQL
-  y una Edge Function bajo `supabase/functions/authorize-image-upload/`.
-- **Servicios:** Supabase JS para Auth, Postgres/RPC, Realtime y Storage;
-  `@vercel/og` y `sharp` para Open Graph/imágenes; Google Drive como integración
-  opcional de respaldos locales.
+No se añadió `seed.sql`: `db.seed.enabled = false` y `sql_paths = []` porque
+este repositorio no contiene un seed sintético autorizado para esta tarea.
 
-## 4. Modos de operación
+## Requisitos
 
-### Nivel 0 — instalación y build
+- Supabase CLI compatible con el formato de `supabase/config.toml`.
+- Docker Desktop operativo y daemon Linux accesible mediante `docker info`.
+- Un clon o worktree limpio para cualquier prueba de runtime.
+- Copiar `.env.example` sólo si se necesita configurar el frontend local;
+  nunca copiar `.env` ni credenciales reales.
 
-`VERIFIED WITH NOTES`.
+La validación de esta tarea encontró Windows 10 Home Single Language x64,
+Supabase CLI `2.51.0` y Docker CLI `28.3.2`. El daemon no estuvo disponible.
 
-En el commit probado, `npm ci`, `npm ls --all`, `npm run build`,
-`npm run build:store` y `npm run build:store:vercel` terminaron correctamente.
-La instalación tardó aproximadamente 330 segundos y produjo advertencias de
-Node 24, scripts opcionales no aprobados y vulnerabilidades reportadas por npm.
-No se modificó el lockfile.
+## Procedimiento local seguro
 
-### Nivel 1 — Lanzo Local
-
-`BLOCKED`.
-
-Aunque el código usa IndexedDB y tiene rutas locales, `src/App.jsx` aborta si
-faltan `VITE_SUPABASE_URL` o `VITE_SUPABASE_PUBLISHABLE_KEY`. Por tanto, no se
-demostró un modo funcional sin backend configurado. El shell PWA sí llegó a la
-pantalla de recuperación y mostró el error de configuración; eso no equivale
-a validar creación de negocio, producto, venta, reinicio u operación offline.
-
-### Nivel 2 — Supabase local
-
-`BLOCKED`.
-
-Supabase CLI estaba instalado, pero `docker info` no respondió y el repositorio
-no contiene `supabase/config.toml`. No se ejecutaron `supabase start`,
-`supabase db reset`, `supabase status` destructivo ni `supabase link`/`supabase
-db push`.
-
-Además, `supabase/migrations/20260715190958_ecom_products_model_1.sql` crea
-temporalmente la extensión `http` y descarga otra migración desde un recurso
-externo fijado por hash. Eso impide afirmar que una base vacía puede migrarse
-sin red, sin una fuente local adicional y sin configuración de Supabase.
-
-### Nivel 3 — flujo cloud aislado
-
-`NOT VERIFIED`.
-
-No se creó tenant, identidad, dispositivo, catálogo, pedido, tracking ni
-conversión POS en una infraestructura aislada. La tienda puede compilarse,
-pero no se probó una consulta por slug ficticio contra una base aislada.
-
-### Nivel 4 — operación y recuperación
-
-`NOT VERIFIED`.
-
-El código contiene exportación/importación local y una integración opcional con
-Google Drive, pero no se ejecutó un respaldo y restauración de PostgreSQL,
-Auth, Storage, secretos, dominios ni despliegues. No uses la palabra
-“certificado” para esos procedimientos.
-
-## 5. Requisitos
-
-Verificados en esta revisión:
-
-- Windows x64.
-- Git disponible.
-- Node `v24.18.1` y npm `11.16.0`.
-- Supabase CLI `2.51.0`.
-- Docker CLI `28.3.2`, con daemon no disponible durante la prueba.
-- Un navegador compatible; el navegador de validación reportó Chrome 150 en
-  Windows 10/11.
-
-Para una instalación comunitaria se requiere además un proyecto Supabase
-aislado, Docker operativo para Supabase local o una plataforma equivalente,
-un dominio propio si se publican superficies web y proveedores externos sólo
-para las funciones que se activen.
-
-## 6. Clonación e instalación
-
-El siguiente procedimiento fue ejecutado en un worktree temporal, sin
-`node_modules`, `dist`, `store/dist`, `.vercel`, `.supabase` ni archivos `.env`.
+Los comandos de CLI y Docker siguientes forman el procedimiento reproducible.
+`supabase --version`, el parseo TOML y la inspección estática fueron
+verificados. `docker info`, `supabase start` y el resto del runtime quedaron
+bloqueados o sin ejecutar por la indisponibilidad del daemon; se indica en la
+matriz y en `docs/SELF-HOSTING-VALIDATION.md`.
 
 ```powershell
-git clone <repositorio-comunitario> Lanzo-POS
+git clone <repositorio> Lanzo-POS
 cd Lanzo-POS
-npm ci
-npm ls --all
+supabase --version
+docker info
+supabase start
+supabase status
+supabase db reset --local
+supabase stop
 ```
 
-El clon y las rutas anteriores son una receta; sólo `npm ci` y `npm ls --all`
-fueron ejecutados en OSS.1.5. No uses `npm install`, `npm update` ni `npm audit
-fix` para cambiar el resultado.
+Antes de iniciar, confirmar que el entorno aislado no contiene `.supabase`,
+`.env`, `.env.local`, `.vercel`, credenciales, contenedores ni volúmenes de
+otra prueba. No versionar `.supabase`.
 
-## 7. Variables de entorno
+Para detener una prueba que sí haya iniciado, ejecutar `supabase stop` desde
+el mismo worktree. No usar comandos destructivos globales de Docker y no
+eliminar contenedores o volúmenes ajenos al proyecto.
 
-Usa `.env.example` como contrato público. Los nombres verificados del cliente
-son:
+## Variables de entorno
 
-- Supabase público: `VITE_SUPABASE_URL` y
-  `VITE_SUPABASE_PUBLISHABLE_KEY`.
-- Orígenes: `VITE_ADMIN_APP_ORIGIN`, `VITE_PUBLIC_STORE_ORIGIN` y
-  `PUBLIC_STORE_ORIGINS` para handlers de la tienda.
-- Integraciones opcionales: `VITE_GOOGLE_CLIENT_ID`, `VITE_SUPPORT_EMAIL`,
-  `VITE_AI_EDGE_FUNCTION` y `VITE_AI_PROVIDER`.
-- Flags: `VITE_ENABLE_LICENSE_REALTIME`,
-  `VITE_ENABLE_CLOUD_SALE_CANCELLATIONS`,
-  `VITE_ENABLE_CLOUD_CASHIER_SALES` y `VITE_CLOUD_REQUEST_DEBUG`.
-- Build: `VITE_APP_VERSION`, `VITE_BUILD_DATE` y `VITE_BUILD_COMMIT`.
-- Compatibilidad de firma local: `VITE_LICENSE_SALT`; se incorpora al bundle y
-  no debe tratarse como un secreto de servidor.
+`.env.example` ya está alineado con esta configuración:
 
-La única función Edge presente requiere `SUPABASE_URL` y
-`SUPABASE_SERVICE_ROLE_KEY`; están en
-`supabase/functions/.env.example`. Nunca expongas la segunda como `VITE_*`.
-`AI_API_KEY` y `OPENAI_API_KEY` aparecen en mensajes del cliente, pero no hay
-una función `lanzo-ai-agent` versionada que permita validar su contrato.
+- `VITE_SUPABASE_URL=http://127.0.0.1:54321`
+- `VITE_SUPABASE_PUBLISHABLE_KEY=not-a-real-local-publishable-key`
+- `VITE_ADMIN_APP_ORIGIN=http://127.0.0.1:4173`
+- `VITE_PUBLIC_STORE_ORIGIN=http://127.0.0.1:4174`
+- `PUBLIC_STORE_ORIGINS=http://127.0.0.1:4174`
 
-## 8. Lanzo Local, IndexedDB y PWA
+No se modificó `.env.example` y no se deben copiar claves generadas por
+`supabase start` a documentación o control de versiones. La Edge Function
+`authorize-image-upload` usa los marcadores sintéticos de
+`supabase/functions/.env.example`; `SUPABASE_SERVICE_ROLE_KEY` nunca debe
+entrar al frontend.
 
-La persistencia local usa IndexedDB/Dexie y el build administrativo genera
-Service Worker y manifest. Sin embargo, el guard de `App.jsx` exige las dos
-variables públicas de Supabase antes de presentar la aplicación administrativa.
-No se verificaron creación de negocio ficticio, producto, venta, reinicio del
-navegador ni offline funcional. La pantalla de recuperación visual se observó;
-el smoke no fue un PASS funcional.
+## Migraciones y alcance de la prueba
 
-## 9. Supabase, migraciones, RLS, RPC, Auth y Realtime
+El repositorio contiene 215 migraciones SQL, 34 pruebas SQL y una Edge Function
+versionada: `authorize-image-upload`.
 
-El árbol contiene migraciones para tablas, índices, funciones SQL, políticas
-RLS, Storage y publicaciones Realtime. El inventario está en la matriz.
+La primera migración que debe investigarse después de obtener Docker operativo
+es `supabase/migrations/20260715190958_ecom_products_model_1.sql`. Crea
+temporalmente la extensión `http` y descarga desde GitHub la migración
+`20260715190000_ecom_products_model_1.sql`, comprobando después un SHA-256.
+Ese comportamiento no es hermético y queda fuera de OSS.1.5.1.
 
-No existe `supabase/config.toml` y no se pudo iniciar Docker, por lo que no se
-confirmaron orden de aplicación, extensiones, tablas, grants, RLS, RPC, Auth,
-Storage, Realtime, seeds ni `supabase db reset` en una base vacía. La migración
-que descarga SQL externo es un bloqueante independiente y debe corregirse en
-una tarea posterior antes de prometer autohospedaje.
+Cuando Docker esté disponible, `supabase db reset --local` debe ejecutarse sin
+`--linked`, sin `--db-url` externo y sin reparar migraciones. Si alcanza esa
+migración y falla únicamente por la descarga o su hash, registrar `PASS WITH
+NOTES` para OSS.1.5.1 y abrir OSS.1.5.2. No descargar el SQL manualmente, no
+saltar la migración y no editarla en esta rama.
 
-## 10. Edge Functions
+La función `lanzo-ai-agent` es invocada por el cliente pero no está versionada;
+su incorporación queda fuera de esta tarea. Auth, RLS, RPC, Storage,
+Realtime, Edge Runtime, backup, restore y E2E tampoco quedan certificados por
+la creación de esta configuración.
 
-Está versionada `authorize-image-upload`. Valida tipo, tamaño, propósito,
-licencia y dispositivo; usa los RPC `enforce_pos_rpc_rate_limit_v2`,
-`verify_device_license_unified` y `verify_staff_session`, y crea URLs firmadas
-para el bucket `images`. Su ejecución local no fue verificada.
+## Prohibiciones de seguridad
 
-El cliente también invoca `lanzo-ai-agent` desde `src/services/aiService.js` y
-`src/services/aiAgentUsageService.js`, pero no existe esa carpeta bajo
-`supabase/functions/`. La IA no es autohospedable desde este commit sin añadir
-una implementación y documentar sus secretos/proveedor.
+Durante la validación local no ejecutar `supabase link`, `supabase db push`,
+`supabase migration repair --linked`, `supabase functions deploy`,
+`supabase projects create`, `vercel deploy` ni `vercel --prod`. No iniciar
+sesión en servicios externos ni usar proyectos, dominios, datos, claves o
+secretos oficiales.
 
-## 11. Aplicación administrativa y tienda pública
+## Referencias de validación
 
-El build de administración produjo `dist` y el build de tienda produjo
-`dist-store`. `build:store:vercel` generó un staging en `store/dist`, validó
-plantilla, activos y las rutas `/api/og/store` y `/api/store-page`, sin llamar
-al CLI de Vercel ni desplegar.
+- Resultado detallado y evidencia redactada:
+  `docs/SELF-HOSTING-VALIDATION.md`.
+- Matriz de componentes:
+  `docs/SELF-HOSTING-MATRIX.md`.
+- Estado global y handoff:
+  `docs/SELF-HOSTING-STATUS.md`.
+- Secuencia del roadmap:
+  `docs/OSS-ROADMAP.md`.
 
-Esto demuestra empaquetado, no una tienda pública operativa. Slug, catálogo,
-checkout, tracking, recepción administrativa y conversión POS requieren
-Supabase, RPC, RLS y datos ficticios; no se validaron.
-
-La ruta Open Graph depende de `@vercel/og` y la cadena de imágenes depende de
-Storage público y `sharp`. La neutralidad completa de plataforma no está
-demostrada: el staging sigue el contrato de Vercel y sus handlers serverless,
-aunque la lógica puede adaptarse a otro runtime Node compatible.
-
-## 12. Storage, imágenes, Auth y servicios opcionales
-
-- **Storage:** bucket `images`, prefijo `public_uploads` y Edge Function de
-  autorización; runtime no verificado.
-- **Auth:** consumido por Supabase JS/RPC; no verificado en una instancia nueva.
-- **Realtime:** hay código cliente y referencias a `supabase_realtime`; no
-  verificado.
-- **Google Drive:** opcional; requiere `VITE_GOOGLE_CLIENT_ID` y consentimiento
-  de Drive con alcance de archivos. No se usó una cuenta real.
-- **IA:** opcional en concepto, pero bloqueada en este árbol por la función
-  faltante y por el proveedor externo que requeriría.
-
-## 13. Actualización
-
-Proceso esperado, no certificado en OSS.1.5:
-
-1. Respaldar PostgreSQL, Storage, configuración y datos locales.
-2. Obtener un commit/tag y revisar cambios de migración.
-3. Ejecutar `npm ci` y regenerar ambos builds.
-4. Aplicar migraciones en una instancia aislada antes de producción.
-5. Desplegar las funciones presentes y revisar secretos.
-6. Actualizar los handlers web y validar rutas, PWA, Auth, Storage y Realtime.
-7. Si una migración es destructiva, restaurar el respaldo; no se asume un
-   rollback SQL automático.
-
-Los pasos 1, 4–7 no fueron ejecutados. El rollback de migraciones no está
-demostrado.
-
-## 14. Respaldo y restauración
-
-La aplicación incluye mecanismos de exportación/importación local y un
-adaptador opcional de Google Drive. Eso no respalda PostgreSQL, Auth, Storage,
-Edge Function secrets, dominios ni metadatos de despliegue. No se ejecutó una
-restauración completa, por lo que su estado es `NOT VERIFIED`.
-
-## 15. Seguridad y diagnóstico
-
-- Usa únicamente claves publicables y proyectos aislados.
-- Mantén `SUPABASE_SERVICE_ROLE_KEY` fuera del frontend y fuera de los logs.
-- No ejecutes `supabase link`, `supabase db push`, `vercel link`, `vercel deploy`
-  ni `vercel --prod` durante una validación local.
-- Ante pantalla de recuperación, revisa primero que existan las dos variables
-  públicas de Supabase y que no sean una service role.
-- Ante fallo de migración, verifica `supabase/config.toml`, Docker y la
-  dependencia externa de `20260715190958_ecom_products_model_1.sql`.
-- Ante fallo de imágenes, verifica la función `authorize-image-upload`, sus
-  dos secretos, los RPC requeridos y el bucket `images`.
-
-## 16. Estado de certificación
-
-**SELF-HOSTING BLOCKED.** Hay un perfil frontend reproducible, pero faltan
-configuración y validación de backend, existe una migración no hermética y falta
-una función Edge invocada por el producto. OSS.1.4 continúa `NO-GO`; OSS.1.5 no
-desbloquea OSS.2 ni activa AGPL.
+**SELF-HOSTING BLOCKED.** Esta configuración elimina el primer bloqueo de
+configuración, pero el daemon de Docker y la migración externa siguen
+impidiendo declarar Lanzo-POS autohospedable.
