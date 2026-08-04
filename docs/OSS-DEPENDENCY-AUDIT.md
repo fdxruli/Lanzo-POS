@@ -134,3 +134,20 @@ OSS.1.4B.
   de Vercel; hasta entonces, `VERCEL RUNTIME PACKAGE NOT VERIFIED`.
 - **BLOCKER global OSS.1.4:** procedencia/licencia de activos propios de Lanzo,
   fuera de esta tarea y pendiente de OSS.1.4B.
+
+## 9. Actualización OSS.1.4B — conclusión de activos
+
+La revisión de activos gráficos se completó sobre `origin/main` en el commit
+`19f4087bf23b2920154fb72bd6417a4509508ac0`. La declaración del mantenedor
+selecciona la Opción 3 y los PNG materiales de identidad permanecen
+`UNKNOWN`; los SVG con IA permanecen `REVIEW REQUIRED` por proveedor y
+términos históricos no documentados.
+
+- Conclusión de dependencias: **DEPENDENCY CONDITIONAL GO**; esta conclusión no
+  cambia en OSS.1.4B.
+- Conclusión de activos: **ASSET NO-GO**.
+- Conclusión global OSS.1.4: **BLOCKED — NO-GO**.
+- La evidencia completa está en
+  [`docs/OSS-ASSET-PROVENANCE.md`](OSS-ASSET-PROVENANCE.md) y la política de
+  marca en [`TRADEMARK_POLICY.md`](../TRADEMARK_POLICY.md).
+- AGPL continúa sin activarse y no se crea `LICENSE`.

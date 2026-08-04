@@ -1,208 +1,182 @@
-# OSS.1.4 — Procedencia de activos e identidad
+# OSS.1.4B — Procedencia de activos e identidad
 
 Fecha del inventario: 2026-08-03. Repositorio: `fdxruli/Lanzo-POS`.
-Base auditada: `origin/main` en `0315e20b0b57038d7a747c9cfd2920e17537159c`.
+Base auditada: `origin/main` en
+`19f4087bf23b2920154fb72bd6417a4509508ac0`.
 
-## 1. Resumen
+## 1. Resumen y decisión
 
-Se localizaron **9 archivos binarios/vectoriales rastreados**, agrupables en
-**7 familias**: seis PNG de marca/PWA y tres SVG de identidad/assistant. No se
-encontraron fuentes, audio, vídeo, PDF, GIF, JPG, WebP, ICO, AVIF ni archivos
-de fuente tipográfica rastreados.
+Se inspeccionaron **9 archivos binarios/vectoriales rastreados**. La evidencia
+los separa en **6 familias de identidad**: icono cuadrado, wordmark PNG,
+iconos PWA/L-mark, wordmark SVG, marca SVG e icono del asistente.
 
-Resultado: **BLOCKED — la procedencia de los activos materiales de marca no
-está demostrada**. No se eliminaron ni reemplazaron activos.
+Resultado de activos: **ASSET NO-GO**.
+Resultado global: **OSS.1.4 BLOCKED — NO-GO**.
 
-Los archivos tienen historial Git y varios fueron añadidos por el mantenedor
-visible `fdxruli`, pero “Add files via upload” no demuestra autoría, licencia,
-permiso de uso ni ausencia de elementos derivados. Por esa razón no se afirma
-que sean de propiedad de una sola persona.
+La declaración del mantenedor selecciona la **Opción 3**: no puede demostrar
+razonablemente la procedencia completa de uno o más activos. Los PNG de marca
+materiales permanecen `UNKNOWN`; los SVG generados con IA permanecen
+`REVIEW REQUIRED` porque no se conoce el proveedor ni los términos históricos.
+No se identificó una copia deliberada ni una licencia incompatible, pero la
+ausencia de esa evidencia no permite activar la futura licencia de código.
 
-## 2. Metodología
+No se eliminaron, reemplazaron ni rediseñaron activos.
 
-Se inspeccionaron rutas rastreadas con extensiones de imagen, hashes SHA-256,
-dimensiones PNG, contenido SVG, referencias desde `src/`/`public/`, `.gitignore`,
-historial de alta, nombres de marca y recursos remotos. También se revisaron
-los SVG inline de `src/components/common/` y la iconografía importada desde
-`lucide-react`.
+## 2. Metodología y alcance técnico
 
-No se incorporaron capturas ni archivos binarios nuevos. Los hashes solo sirven
-para distinguir archivos y no prueban titularidad.
+Se utilizaron `git ls-files`, `git log --follow`, `git hash-object`,
+`Get-FileHash -Algorithm SHA256`, dimensiones PNG con `System.Drawing`,
+comparación visual local, `git grep` e inspección textual de los tres SVG.
+También se revisaron las rutas de consumo en `src/`, `store/`, `index.html` y
+`vite.config.js`.
 
-## 3. Rutas inspeccionadas
+Los hashes distinguen archivos y los commits prueban incorporación al historial;
+ninguno prueba por sí solo titularidad, licencia o permiso de redistribución.
 
-- `public/**`
-- `icono/**`
-- `src/components/common/Logo.jsx`
-- `src/components/common/LogoMark.jsx`
-- SVG inline en componentes de producto, scanner y UI
-- referencias de assets en `src/**`, `store/**` y configuraciones de build
-- `.gitignore`, historial Git y reportes OSS anteriores
+## 3. Inventario técnico
 
-## 4. Inventario por familia
-
-| Familia | Archivos | Formato/dimensiones | SHA-256 | Propósito | Procedencia/estado |
+| Familia | Archivos | Tamaño y dimensiones | SHA-256 | Incorporación histórica | Consumo rastreado |
 | --- | --- | --- | --- | --- | --- |
-| Icono cuadrado fuente | `icono/icono.png`, `public/icono.png` | PNG 1024×1024; ambos idénticos | `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c` | icono de marca | Alta en `339243ee`; autor Git `fdxruli`; permiso/licencia no demostrados — **UNKNOWN / REVIEW REQUIRED** |
-| Wordmark/imagen fuente | `icono/icono-web.png` | PNG 1024×1024 | `f18a142863439b8a147d335f2232c23edabc2b1cde4b42b4ff959020378b5ef5` | imagen de identidad para web | Alta en `339243ee`; autoría material y permiso no demostrados — **UNKNOWN / REVIEW REQUIRED** |
-| Icono web/PWA pequeño | `public/icono-web.png`, `public/pwa-192x192.png` | PNG 192×192; ambos idénticos | `85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673` | favicon/icono PWA | Alta en `339243ee` y `21ede67a`; licencia/permiso no demostrados — **UNKNOWN / REVIEW REQUIRED** |
-| Icono PWA grande | `public/pwa-512x512.png` | PNG 512×512 | `b8dfbddccca477b9ca8125ab3f9a9f790e8f8040fb5a1f3480509680217f2460` | icono PWA | Alta en `21ede67a`; licencia/permiso no demostrados — **UNKNOWN / REVIEW REQUIRED** |
-| Wordmark vectorial | `public/log.svg` | SVG 320×80; texto `LANZO` | `3cc39f6eff3148fbeb418eb3ff18397e537067ebf8a172e2324782609f1c1ae2` | logo horizontal | Alta en `1d599ed0`; sin cabecera de licencia; **REVIEW REQUIRED** |
-| Marca vectorial | `public/logIcon.svg` | SVG 120×120 | `fd0e93e021a8d91d0272753f295d48862fef2c8c9bff91a8e6b90ddab313c98a` | logo/mark | Alta en `1d599ed0`; sin cabecera de licencia; **REVIEW REQUIRED** |
-| Icono del assistant | `public/boticon.svg` | SVG 120×120 | `93bf10b60605088cfbd4f35fe23b82f4d9f387fa604f72f5fff54931debea1c4` | icono de bot | Alta en `a1e50593`; el comentario del archivo dice que conserva rasgos del logo original; derivación y permiso no demostrados — **REVIEW REQUIRED** |
+| Icono cuadrado | `icono/icono.png`; `public/icono.png` | PNG 1,450,285 bytes; 1024×1024 | Ambos `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c` | `339243ee` (2025-09-04); `public/icono.png` también aparece en `9fdd43e` (2025-11-13); autor visible `fdxruli` | No se encontró referencia de código rastreada al nombre de archivo |
+| Wordmark PNG | `icono/icono-web.png` | PNG 1,382,145 bytes; 1024×1024 | `f18a142863439b8a147d335f2232c23edabc2b1cde4b42b4ff959020378b5ef5` | `339243ee` (2025-09-04); autor visible `fdxruli` | No se encontró referencia de código rastreada al nombre de archivo |
+| Iconos PWA/L-mark | `public/icono-web.png`; `public/pwa-192x192.png`; `public/pwa-512x512.png` | Dos PNG de 4,411 bytes y 192×192; uno de 17,575 bytes y 512×512 | 192×192: `85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673`; 512×512: `b8dfbddccca477b9ca8125ab3f9a9f790e8f8040fb5a1f3480509680217f2460` | `public/icono-web.png`: `339243ee`, `9fdd43e`, `21ede67`; PWA: `21ede67` (2026-01-21); autor visible `fdxruli` | `pwa-192x192.png` y `pwa-512x512.png` en `src/pwa/adminManifest.js`, `src/pwa/adminPwaDocument.js`, pruebas y `vite.config.js` |
+| Wordmark SVG | `public/log.svg` | SVG 476 bytes; 320×80 | `3cc39f6eff3148fbeb418eb3ff18397e537067ebf8a172e2324782609f1c1ae2` | `1d599ed0` (2025-11-21); autor visible `fdxruli` | No se encontró consumo de código directo |
+| Marca SVG | `public/logIcon.svg` | SVG 338 bytes; 120×120 | `fd0e93e021a8d91d0272753f295d48862fef2c8c9bff91a8e6b90ddab313c98a` | `1d599ed0` (2025-11-21); autor visible `fdxruli` | `index.html`, `src/components/common/WelcomeModal.jsx`, `store/index.html`, `vite.config.js` |
+| Icono del asistente | `public/boticon.svg` | SVG 1,026 bytes; 120×120 | `93bf10b60605088cfbd4f35fe23b82f4d9f387fa604f72f5fff54931debea1c4` | `a1e50593` (2026-02-08); autor visible `fdxruli` | `src/components/common/AssistantBot.jsx` |
+
+## 4. Duplicados, derivados y contradicciones
+
+### Duplicados confirmados
+
+- `icono/icono.png` y `public/icono.png` son idénticos byte a byte:
+  Git blob `3ed6f593705cb0a36d56569c2fc176ab9433be59`, SHA-256
+  `6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c`.
+- `public/icono-web.png` y `public/pwa-192x192.png` son idénticos byte a
+  byte: Git blob `06d18d0fd869d74311c5e11f65eeb51406f2ecb9`, SHA-256
+  `85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673`.
+
+No se confirmó ningún otro duplicado byte a byte.
+
+### Derivados confirmados o limitados
+
+- La pareja de `icono/*.png` tiene una relación de duplicado confirmada, pero
+  el historial no prueba cuál fue el archivo de diseño original.
+- La pareja de 192×192 tiene una relación de duplicado confirmada.
+- `public/pwa-512x512.png` comparte visualmente el motivo geométrico L con los
+  PNG de 192×192, pero no se pudo reproducir la exportación ni probar que sea
+  un redimensionado de un archivo concreto.
+- `public/logIcon.svg` comparte el motivo geométrico L y colores con la familia
+  PWA, pero su contenido demuestra una recreación vectorial, no una conversión
+  directa desde un PNG.
+- `public/boticon.svg` declara y comenta una derivación del logo original, pero
+  no hay evidencia técnica de una conversión de archivo ni permiso separado.
+
+### Contradicción técnica registrada
+
+La declaración describe los PWA como variantes de la identidad principal. La
+inspección visual muestra que `icono/icono.png` es una composición de fondo
+amarillo con caja registradora y texto `Lanzo Negocio`, mientras que
+`public/icono-web.png`, `public/pwa-192x192.png`, `public/pwa-512x512.png` y los
+SVG `logIcon` usan un motivo geométrico L sobre fondo oscuro. `icono/icono-web.png`
+es otra imagen de fondo amarillo con el wordmark `Lanzo`. Por eso no se afirma
+una única fuente canónica para las nueve rutas.
+
+La declaración de uso de IA para los tres SVG coincide con la ausencia de
+metadatos de proveedor en sus contenidos, pero no permite verificar el
+proveedor, términos históricos ni el expediente de revisión humana.
+
+## 5. Inspección de SVG y tipografías
+
+- `public/log.svg` es autocontenido: contiene un rectángulo, dos paths, un
+  elemento `<text>` con `font-family="sans-serif"` y un círculo. El texto no
+  está convertido a curvas. No hay `metadata`, `image`, `href`, enlaces,
+  `data:` URI, namespace de editor o fuente externa identificada.
+- `public/logIcon.svg` es autocontenido y usa únicamente formas geométricas y
+  colores; no contiene texto, fuente, imagen embebida ni enlace externo.
+- `public/boticon.svg` es autocontenido y contiene comentarios que describen
+  un estilo derivado del logo original; no contiene imágenes, fuentes,
+  enlaces, `data:` URI ni referencias a otro archivo. Los comentarios no son
+  prueba independiente de procedencia.
+
+## 6. Clasificación por familia
+
+`TRADEMARK-RESERVED` se aplica al alcance de todas las familias de identidad y
+no sustituye la clasificación de procedencia.
+
+### Fuente canónica y derivados
+
+| Familia | Fuente canónica probable | Derivados o relación | Origen/herramienta declarado | Tercero implicado |
+| --- | --- | --- | --- | --- |
+| Icono cuadrado | No verificada; `icono/icono.png` es el candidato de inventario | `public/icono.png` es duplicado byte a byte | Creado por `fdxruli`; herramienta y proceso no documentados | Ninguno identificado; no descartado por completo |
+| Wordmark PNG | No verificada; `icono/icono-web.png` es el único archivo de esa variante | No confirmado | Relacionado con el logo principal; autor y herramienta no documentados | Ninguno identificado; no descartado por completo |
+| Iconos PWA/L-mark | No verificada; no se puede escoger entre los archivos PWA como fuente de diseño | `public/icono-web.png` y `public/pwa-192x192.png` son duplicados; `pwa-512x512` es una variante sin exportación reproducida | Variantes declaradas; fuente y herramienta no documentadas | Ninguno identificado |
+| Wordmark SVG | `public/log.svg` solo como archivo vectorial autónomo; no se probó una fuente anterior | No confirmado | Generado con IA; proveedor desconocido | Ninguno identificado en el SVG |
+| Marca SVG | `public/logIcon.svg` solo como archivo vectorial autónomo; no se probó conversión desde PNG | Relación visual con PWA, no conversión demostrada | Generado con IA bajo dirección del mantenedor; proveedor desconocido | Ninguno identificado en el SVG |
+| Icono del asistente | `public/boticon.svg` como archivo autónomo | Derivación del logo original declarada y comentada, sin conversión técnica probada | Generado/modificado con IA; proveedor desconocido | Ninguno identificado deliberadamente |
+
+| Familia | Procedencia | Alcance | Riesgo | Acción |
+| --- | --- | --- | --- | --- |
+| Icono cuadrado (`icono/icono.png`, `public/icono.png`) | `UNKNOWN` | `TRADEMARK-RESERVED` | Material de marca; declaración de autoría sin expediente de creación o permiso independiente | Mantener intacto en esta tarea; obtener evidencia adicional o reemplazar antes de activar OSS |
+| Wordmark PNG (`icono/icono-web.png`) | `UNKNOWN` | `TRADEMARK-RESERVED` | Autor, herramienta y posibles elementos externos no reconstruibles | Mantener intacto; evidencia adicional o reemplazo posterior |
+| Iconos PWA/L-mark | `UNKNOWN` | `TRADEMARK-RESERVED` | Fuente y exportación no documentadas; relación con el icono cuadrado no demostrada | Mantener intactos; confirmar fuente/licencia o reemplazar posteriormente |
+| Wordmark SVG (`public/log.svg`) | `REVIEW REQUIRED` — uso de IA declarado, proveedor y términos desconocidos | `TRADEMARK-RESERVED` | Texto genérico no externo, pero procedencia y términos de IA no verificables | Conservar; revisar proveedor/términos o sustituir en `OSS.1.4B-R` |
+| Marca SVG (`public/logIcon.svg`) | `REVIEW REQUIRED` — uso de IA declarado, conversión no demostrada | `TRADEMARK-RESERVED` | Derivación visual probable, pero sin fuente ni términos documentados | Conservar; revisar procedencia o sustituir posteriormente |
+| Icono del asistente (`public/boticon.svg`) | `REVIEW REQUIRED` — derivación y uso de IA declarados, proveedor desconocido | `TRADEMARK-RESERVED` | Similaridad con identidad propia declarada; no se descarta similitud accidental | Conservar; confirmar expediente o sustituir posteriormente |
 
 ### Estado agregado
 
-| Estado | Familias | Archivos |
-| --- | ---: | ---: |
-| VERIFIED FIRST-PARTY | 0 | 0 |
-| VERIFIED THIRD-PARTY | 0 | 0 |
-| GENERATED rastreado | 0 | 0 |
-| UNKNOWN / REVIEW REQUIRED | 7 | 9 |
-| BLOCKER | 0 por evidencia de licencia incompatible; el cierre de procedencia sí queda bloqueado | 0 |
+| Estado | Familias | Archivos | Observación |
+| --- | ---: | ---: | --- |
+| `VERIFIED FIRST-PARTY` | 0 | 0 | La declaración no demuestra creación desde cero ni permiso suficiente |
+| `AI-ASSISTED / HUMAN-REVIEWED` | 0 confirmado | 0 | Hay uso de IA declarado, pero no un expediente separado de revisión humana y términos |
+| `VERIFIED THIRD-PARTY` | 0 | 0 | No se identificó una fuente de tercero con licencia y recurso exactos |
+| `DERIVATIVE — PERMISSION VERIFIED` | 0 | 0 | No hay permiso documentado para ninguna derivación |
+| `REVIEW REQUIRED` | 3 | 3 | Los tres SVG tienen declaración de IA/derivación, sin proveedor o términos verificables |
+| `UNKNOWN` | 3 | 6 | PNG de marca/PWA sin fuente de diseño demostrable |
+| `BLOCKER` | 3 familias materiales | 6 | El estado `UNKNOWN` bloquea la transición OSS; no se demostró copia o licencia incompatible |
+| `REPLACEMENT REQUIRED` | 0 por ahora | 0 | La sustitución se recomienda, pero no se ejecuta ni se ordena como cambio de esta tarea |
 
-## 5. Logos y marca
+## 7. Nombre, identidad y Entre Alas
 
-El árbol contiene las identidades `Lanzo`, `Lanzo-POS` y `Entre Alas`:
+El nombre `Lanzo` fue declarado como elegido por el mantenedor y no tomado
+deliberadamente de otro producto, empresa o proyecto. `README.md` declara que
+el proyecto fue iniciado y patrocinado gracias a la dark kitchen `Entre Alas`.
+La declaración de esta tarea autoriza mencionar públicamente a Entre Alas como
+origen operativo y patrocinador inicial, pero no prueba registro marcario,
+titularidad ni autorización indefinida sobre elementos visuales.
 
-- `Lanzo` y `Lanzo-POS` aparecen en el README, UI, manifiestos y SVG.
-- `README.md` dice que el proyecto fue iniciado y patrocinado por la dark
-  kitchen `Entre Alas`.
-- `docs/OSS-SANITIZATION.md` confirma que la referencia pública a `Entre Alas`
-  se conservó deliberadamente durante OSS.1.3.
-- El repositorio no contiene `TRADEMARK_POLICY.md`; por tanto no pudo
-  comprobarse una política formal desde el árbol actual.
-- No se encontró evidencia local para declarar que `Lanzo` o `Entre Alas` sean
-  marcas registradas. Esta auditoría no hace esa afirmación.
+La política separada está en [`TRADEMARK_POLICY.md`](../TRADEMARK_POLICY.md).
+No existe evidencia local para afirmar que `Lanzo` o `Lanzo-POS` estén
+registrados. Los forks deben cambiar nombre, logos, iconos y apariencia oficial.
 
-La futura licencia de código no debe interpretarse como licencia de nombre,
-logo, marca, materiales promocionales ni apariencia distintiva. Un fork puede
-necesitar reemplazar estos elementos o pedir autorización para conservarlos.
+## 8. Relación con terceros y avisos
 
-## 6. Iconos PWA
+No se encontró material visual externo concreto, plantilla, biblioteca de
+iconos, imagen embebida o fuente externa en los nueve archivos. No se añade
+ningún logo propio como dependencia de terceros. La ausencia de una fuente
+identificada no convierte automáticamente los activos en `VERIFIED FIRST-PARTY`.
 
-`public/pwa-192x192.png` duplica byte a byte a `public/icono-web.png` y
-`public/pwa-512x512.png` es una variante separada. Son activos de identidad,
-no activos generados demostrablemente por una herramienta reproducible. La
-configuración PWA los consume desde `public/`; no se identificó una licencia o
-fuente de diseño en el repositorio.
+La declaración completa está en
+[`docs/OSS-ASSET-DECLARATION.md`](OSS-ASSET-DECLARATION.md) y los avisos
+existentes de dependencias se mantienen separados en
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
-## 7. Imágenes y capturas
+## 9. Limitaciones y acción de salida
 
-No hay capturas rastreadas después del saneamiento OSS.1.3. No se localizaron
-JPG, WebP, GIF, AVIF ni imágenes de demostración adicionales. Los PNG
-enumerados arriba son de marca, no fixtures visuales de negocio.
+La declaración del mantenedor es evidencia de primera parte y no sustituye
+derechos de terceros. No se publican prompts privados, nombres legales,
+domicilios, RFC, teléfonos, correos privados, cuentas privadas ni datos de
+clientes. No se realizó una búsqueda marcaria exhaustiva ni se consultaron
+términos históricos de un proveedor no identificado.
 
-Las pruebas usan URLs y `data:image/*` pequeños como fixtures de validación de
-seguridad/render. No son archivos binarios rastreados ni se clasifican como
-activos de producto; deben seguir siendo datos sintéticos.
+La decisión permitida por la evidencia actual es:
 
-## 8. Fuentes
+- **ASSET NO-GO**: seis archivos PNG de identidad permanecen `UNKNOWN` y tres
+  familias SVG permanecen `REVIEW REQUIRED`;
+- **OSS.1.4 BLOCKED — NO-GO**: la conclusión de dependencias sigue siendo
+  `DEPENDENCY CONDITIONAL GO`, pero los activos materiales no cumplen el
+  umbral de `ASSET CONDITIONAL GO`;
+- no se activa AGPL, no se crea `LICENSE` y no se reemplazan activos.
 
-No se encontraron `.woff`, `.woff2`, `.ttf` ni `.otf` rastreados. El código de
-OG puede incorporar fuentes del paquete `@vercel/og` en un bundle generado; ese
-recurso pertenece al inventario de dependencias y avisos, no a este inventario
-de archivos del repositorio. Debe verificarse el aviso del font antes de
-distribuir la función.
-
-## 9. Activos de pruebas
-
-Las pruebas contienen URLs de dominios `.example`, `.invalid`, placeholders,
-logos/covers sintéticos y data URIs de uno o pocos píxeles. Se clasifican como
-fixtures deterministas y no como activos de terceros reutilizables. No se
-encontró evidencia de que correspondan a material real de un cliente.
-
-## 10. Recursos remotos
-
-El producto consume recursos aportados en runtime, que no quedan demostrados
-por este inventario de archivos:
-
-- logos, portadas e imágenes de productos desde almacenamiento público de
-  Supabase;
-- imágenes públicas de catálogo, incluido el flujo de Open Food Facts;
-- placeholders remotos de `placehold.co`;
-- sonido remoto de notificación de Google en `LocalKitchenMonitor`;
-- enlaces sociales y WhatsApp.
-
-El código valida parte de las URLs remotas y limita algunos orígenes/rutas,
-pero esa validación técnica no concede derechos de autor ni marca. La futura
-política de contenido deberá exigir que quien sube un recurso tenga permiso.
-
-## 11. Código o recursos generados
-
-No hay bundles, `dist`, `store/generated`, Workbox, source maps ni archivos
-minificados rastreados. `scripts/generate-store-html-template.mjs` genera
-`store/generated/storeHtmlTemplate.js`, excluido por `.gitignore`, a partir de
-un build. Es regenerable y no debe auditarse como si fuera un archivo fuente
-de primera parte sin revisar los paquetes que incorpora.
-
-Los SVG inline en `Logo.jsx`, `LogoMark.jsx` y algunos componentes son código
-de UI que dibuja iconografía; no tienen expediente de licencia separado. La
-iconografía importada desde `lucide-react` se clasifica como tercero según su
-licencia ISC declarada en el lockfile, aunque su archivo local de licencia no
-pudo verificarse en esta ejecución.
-
-## 12. Procedencia de contribuciones
-
-La historia alcanzable muestra seis identidades de autor públicas o técnicas:
-
-- `fdxruli`;
-- `google-labs-jules[bot]`;
-- `github-actions[bot]`;
-- `Codex`;
-- `Cursor Agent`;
-- una identidad de coautoría indicada como `rulisebastian8009` en un trailer.
-
-El `git shortlog -sne --all` mostró además correos de sistema y una dirección
-Gmail en metadatos históricos; no se reproduce ninguna dirección privada aquí.
-Se detectó un trailer `Co-authored-by:` y no se detectaron trailers
-`Signed-off-by:` en la búsqueda realizada. La presencia de agentes o bots no
-prueba por sí sola autoría, cesión de derechos ni revisión humana.
-
-El proyecto tiene 6 commits atribuidos a `Codex`, 1 a `Cursor Agent`, 11 a
-`google-labs-jules[bot]` y 4 a `github-actions[bot]` en el historial alcanzable.
-Eso permite documentar uso de herramientas, pero no permite afirmar que todo
-el código sea generado por IA ni que un proveedor de IA garantice derechos
-sobre materiales de terceros.
-
-## 13. Uso de IA
-
-La evidencia histórica permite clasificar parte del historial como **AI-assisted
-and human-reviewed / provenance not verified**. No se revisaron prompts
-privados ni se publican datos operativos. La clasificación no sustituye la
-confirmación del mantenedor sobre qué cambios fueron revisados y qué material
-externo pudo haberse adaptado.
-
-## 14. Elementos no verificados
-
-Quedan sin evidencia suficiente:
-
-1. Autor o titular original de las siete familias gráficas.
-2. Permiso para usar el texto, geometría y colores de `Lanzo`/`Entre Alas`.
-3. Si `boticon.svg` deriva de un diseño anterior y bajo qué permiso.
-4. Licencia de cualquier material de marca que pudo haberse cargado mediante
-   “Add files via upload”.
-5. Avisos de las fuentes embebidas en paquetes de generación OG.
-6. Expediente individual de contribuciones de agentes/bots y coautorías.
-
-## 15. Acciones recomendadas
-
-- Confirmar por escrito autoría/permiso de cada familia o reemplazarla en una
-  tarea separada; no hacerlo dentro de OSS.1.4.
-- Añadir una política de marca separada y mantener nombres/logos fuera del
-  alcance de la licencia de código.
-- Inventariar los avisos de `@vercel/og`, fuentes, `sharp` y libvips desde un
-  `npm ci` limpio.
-- Registrar la procedencia de imágenes aportadas por usuarios en la política
-  de contenido, sin asumir que una URL pública es una licencia.
-- Mantener el historial sin reescritura y tratar el riesgo histórico en su
-  tarea independiente.
-
-## 16. Decisión de salida
-
-**NO-GO — BLOCKED.**
-
-La licencia futura del código puede seguir siendo AGPL-3.0-only como propuesta,
-pero no debe activarse mientras la identidad gráfica material y los avisos de
-los recursos generados no tengan evidencia suficiente. No se crea `LICENSE`,
-no se cambia `package.json` y no se eliminan activos en esta fase.
+El siguiente paso seguro es obtener documentación adicional de origen/permiso
+o realizar una sustitución separada como `OSS.1.4B-R`.
