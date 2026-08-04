@@ -2,105 +2,119 @@
 
 Fecha: 2026-08-04 (America/Mexico_City)
 
-Commit probado: `0decbc4124fed4e8cda4e807a9a400f7257e3084`.
+Commit base validado: `b1dd23d6b3a435f3f19b6c43b47a760e99bbdcc7`.
 
-Rama de trabajo: `chore/oss-self-hosting-reproducibility`.
+Rama: `chore/oss-supabase-local-foundation`.
+
+PR #172: `MERGED`, `merged_at=2026-08-04T15:33:14Z`, merge commit
+`b1dd23d6b3a435f3f19b6c43b47a760e99bbdcc7`, ancestro confirmado de
+`origin/main`.
+
+Decisión de OSS.1.5.1: `BLOCKED`.
 
 ## Entorno
 
 | Elemento | Resultado |
 | --- | --- |
-| Sistema operativo | Windows 10/11, x64; el navegador reportó Windows 10/11 |
-| Git | disponible; worktree temporal limpio |
-| Node | `v24.18.1` |
-| npm | `11.16.0` |
+| Sistema operativo | Microsoft Windows 10 Home Single Language 10.0.19045 |
+| Arquitectura | X64 / AMD64 |
+| Git | disponible |
+| Worktree de Git | limpio antes de editar; rama dedicada desde `origin/main` |
 | Supabase CLI | `2.51.0` |
-| Docker CLI | `28.3.2` |
-| Docker daemon | `docker info` excedió 20 s; no disponible para la prueba |
-| Navegador | Chrome 150 reportado por el navegador aislado |
-| Perfil del navegador | pestaña aislada del navegador de validación; no se usó perfil personal |
+| Docker CLI | `28.3.2`, contexto `desktop-linux` |
+| Docker daemon | `BLOCKED`: `docker info` no pudo abrir `dockerDesktopLinuxEngine` |
+| Entorno de runtime aislado | no iniciado: la compuerta Docker falló antes de `supabase start` |
+| Configuración local | `supabase/config.toml`, project ID `lanzo-pos-local` |
 
-No se copiaron `node_modules`, `dist`, `store/dist`, `.vercel`, `.supabase` ni
-archivos `.env` al worktree temporal.
+El workspace compartido contiene estado local previo (`.env`, `.vercel`,
+`node_modules` y artefactos de build), por lo que no se usó para iniciar
+contenedores ni aplicar migraciones. La validación de runtime quedó detenida
+antes de crear estado `.supabase`, contenedores o volúmenes.
 
-## Comandos y resultados
+## Precondiciones Git
 
-| Comando | Resultado | Tiempo aproximado |
-| --- | --- | ---: |
-| `npm ci` | PASS, código 0; 703 paquetes añadidos | 330.1 s |
-| `npm ls --all` | PASS, código 0; opcionales de plataforma omitidos | 14.6 s |
-| `npm run build` | PASS; `dist`, 83 archivos | 184.9 s |
-| `npm run build:store` | PASS; `dist-store`, 10 archivos | 48.5 s |
-| `npm run build:store:vercel` | PASS; staging `store/dist`, 11 archivos | 58.3 s |
-| `npm run test:ci -- --reporter=dot` | TIMEOUT a los 600 s, sin resumen; no verificado | 600 s |
-| `npx vitest run store/tests/social-preview src/pwa src/services/backup src/config --reporter=dot` | TIMEOUT a los 300 s, sin resumen; no verificado | 300 s |
-| `docker info` | TIMEOUT a los 20 s | 20 s |
-| `supabase start` | NO EJECUTADO: Docker no disponible y falta `supabase/config.toml` | — |
-| `supabase db reset` | NO EJECUTADO por la misma compuerta de seguridad | — |
-| `supabase link` / `supabase db push` | NO EJECUTADO; prohibido en esta validación | — |
-| `vercel link` / `vercel deploy` / `vercel --prod` | NO EJECUTADO; prohibido en esta validación | — |
+| Comprobación | Resultado |
+| --- | --- |
+| `git fetch origin --prune` | PASS |
+| Estado de PR #172 consultado en GitHub | PASS: merged |
+| Merge commit de PR #172 | `b1dd23d6b3a435f3f19b6c43b47a760e99bbdcc7` |
+| `git merge-base --is-ancestor <merge> origin/main` | PASS |
+| `git status --short` antes de editar | vacío |
+| Base exacta | `HEAD = origin/main = b1dd23d6b3a435f3f19b6c43b47a760e99bbdcc7` |
+| Rama creada | `chore/oss-supabase-local-foundation` |
 
-Advertencias relevantes de `npm ci`: `react-zxing@2.1.0` declara Node 18/20/22,
-se omitieron scripts opcionales de `esbuild`, `protobufjs` y `sharp`, y npm
-reportó vulnerabilidades existentes. No se ejecutó ningún comando de reparación
-ni se cambió el lockfile.
+## Configuración estática
 
-## Inventario estático
+| Comprobación | Resultado |
+| --- | --- |
+| `supabase --version` | PASS: `2.51.0` |
+| `supabase init --workdir <temporal> --yes` | PASS; referencia generada y luego eliminada |
+| Parseo TOML con `tomllib` | PASS |
+| `supabase status` reconoce el project ID | PARTIAL: llegó a inspección del contenedor `supabase_db_lanzo-pos-local` y falló al conectar con Docker |
+| Rutas absolutas | PASS: no encontradas |
+| Project refs o enlaces remotos | PASS: no encontrados |
+| URLs productivas | PASS: no encontradas |
+| secretos, tokens o passwords | PASS: no encontrados |
+| migraciones referenciadas | PASS: `supabase/migrations` existe |
+| seeds referenciados | PASS: no se referencia ningún archivo; seeds desactivados |
 
-- 215 migraciones SQL; nombres con timestamp válidos y sin timestamps duplicados.
-- 34 pruebas SQL.
-- 23 archivos de migración contienen `CREATE TABLE`; 41 contienen índices;
-  172 reemplazan funciones SQL; 23 habilitan RLS.
-- Hay referencias a Storage, `supabase_realtime`, `realtime.send` y extensiones
-  de Postgres.
-- `supabase/config.toml` está ausente.
-- Sólo está versionada la función
-  `supabase/functions/authorize-image-upload/index.ts`.
-- El cliente invoca `authorize-image-upload` y `lanzo-ai-agent`; la segunda no
-  existe en el árbol.
-- `20260715190958_ecom_products_model_1.sql` obtiene SQL externo con la
-  extensión `http` y falla explícitamente si la respuesta o el hash no
-  coinciden. No se ejecutó para no confundir análisis estático con un resultado
-  de base vacía.
+La referencia temporal de la CLI generó también ajustes de VS Code fuera del
+repositorio; no se copiaron. Sólo se incorporó la estructura necesaria en
+`supabase/config.toml`.
 
-## Variables
+## Comandos de runtime
 
-Las referencias públicas verificadas están en `.env.example`. La función de
-Storage requiere `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`, documentadas con
-marcadores no funcionales en `supabase/functions/.env.example`. No se imprimió
-ningún secreto, token, project ref ni valor de producción.
-
-## Smoke local
-
-Vite respondió HTTP 200 en el puerto local. El navegador aislado cargó el shell
-PWA y posteriormente mostró la pantalla de recuperación con el error:
-“Faltan las variables de entorno de Supabase”. Se observaron errores de consola
-correspondientes al `ErrorBoundary`. Esto demuestra el guard de configuración,
-no la operación local. No se declararon PASS para IndexedDB, creación de
-negocio/producto/venta, reinicio, offline o Service Worker recuperado.
-
-No se creó ni se usó una cuenta, usuario, pedido, bucket, dominio, clave o
-proyecto real.
-
-## Artefactos y limpieza
-
-Los builds se generaron sólo en el worktree temporal. Después de cada build el
-estado Git fue limpio y `package-lock.json` no cambió. No se rastrearon
-`node_modules`, `dist`, `dist-store`, `store/dist`, `.vercel`, `.supabase`,
-logs, capturas, dumps ni archivos `.env` reales.
-
-## Niveles alcanzados
-
-| Nivel | Estado | Evidencia |
+| Comando | Resultado | Evidencia |
 | --- | --- | --- |
-| 0 | VERIFIED WITH NOTES | instalación y tres rutas de build |
-| 1 | BLOCKED | guard de Supabase; no flujo local funcional demostrado |
-| 2 | BLOCKED | Docker daemon ausente y `config.toml` faltante |
-| 3 | NOT VERIFIED | no hubo backend aislado ni flujo E2E |
-| 4 | NOT VERIFIED | no se ejecutó respaldo/restauración/actualización |
+| `docker --version` | PASS | Docker CLI `28.3.2` |
+| `docker info` | BLOCKED | no existe el pipe `dockerDesktopLinuxEngine` |
+| `supabase start` | NO EJECUTADO | la tarea exige Docker accesible antes de iniciar |
+| `supabase status` | BLOCKED | no pudo inspeccionar contenedores por el daemon ausente |
+| `supabase db reset` | NO EJECUTADO | no hay stack local; no se usó URL externa |
+| `supabase stop` | NO EJECUTADO | no se inició ningún stack de esta prueba |
+| `supabase link` / `supabase db push` | NO EJECUTADO | prohibidos por alcance |
+| `supabase functions deploy` | NO EJECUTADO | prohibido por alcance |
+| `vercel deploy` / `vercel --prod` | NO EJECUTADO | prohibidos por alcance |
 
-## Conclusión
+No se imprimieron claves locales, tokens, passwords, project refs oficiales ni
+valores completos de `.env`.
 
-**SELF-HOSTING BLOCKED.** La evidencia permite repetir el frontend y el
-empaquetado de tienda, pero no permite instalar y operar de forma reproducible
-el sistema completo. OSS.1.4 sigue `NO-GO`; OSS.2 permanece bloqueado.
+## Inventario del repositorio
+
+- 215 migraciones SQL, ordenadas por timestamp.
+- 34 pruebas SQL.
+- Una Edge Function versionada:
+  `supabase/functions/authorize-image-upload/index.ts`.
+- `lanzo-ai-agent` no está versionada y no fue añadida.
+- La migración `20260715190958_ecom_products_model_1.sql` descarga SQL externo
+  mediante `extensions.http_get`, valida un hash y debe ser el primer handoff
+  de OSS.1.5.2.
+
+No se ejecutaron migraciones; por tanto no hay primera migración aplicada,
+última migración aplicada ni primera migración fallida. El error externo queda
+confirmado por inspección estática, no por un `db reset` local.
+
+## Servicios y clasificación
+
+| Servicio | Configurado | Verificación de endpoint |
+| --- | --- | --- |
+| PostgreSQL | sí, puerto `54322` | BLOCKED |
+| API | sí, puerto `54321` | BLOCKED |
+| Auth | sí | BLOCKED |
+| Storage | sí | BLOCKED |
+| Realtime | sí | BLOCKED |
+| Studio | sí, puerto `54323` | BLOCKED |
+| Inbucket | sí, puerto `54324` | BLOCKED |
+| Edge Runtime | sí, inspector `8083` | BLOCKED |
+| Analytics | no, intencionalmente desactivado | NOT REQUIRED |
+
+## Resultado y limitaciones
+
+`supabase/config.toml` elimina el bloqueo de reconocimiento/configuración y
+queda listo para una prueba aislada cuando Docker esté disponible. OSS.1.5.1
+no puede pasar a `PASS WITH NOTES` porque no se ejecutaron `start`, `status` y
+`db reset`.
+
+El estado global OSS.1.5 permanece `BLOCKED`. OSS.2 permanece `BLOCKED`, OSS.1.4
+no cambia y AGPL no fue activada. No se modificaron migraciones, funciones,
+código productivo, dependencias, manifiestos, lockfiles ni `.env.example`.
