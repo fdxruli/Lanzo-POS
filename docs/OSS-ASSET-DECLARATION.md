@@ -209,3 +209,133 @@ copyright garantizado o ausencia absoluta de similitudes con terceros.
 
 Esta firma identifica la declaración pública del mantenedor; no es una firma
 criptográfica ni una certificación independiente.
+
+## OSS.1.4.2 — Límite de la declaración vigente
+
+La reauditoría sobre `origin/main` en
+`6c5144d7e9327bcc3f9ec78adfc66776dc0d304e` no modifica la **OPCIÓN 3** ni
+añade respuestas en nombre del mantenedor. La evidencia técnica confirmó
+duplicados, historial, consumidores y metadata C2PA declarativa, pero no
+confirmó autoría material, términos del proveedor, titularidad ni permiso de
+redistribución.
+
+Por tanto, `MAINTAINER-ATTESTED` sigue siendo una declaración de primera parte,
+no `VERIFIED FIRST-PARTY`. Las seis familias permanecen pendientes de
+evidencia concreta del mantenedor según
+[`OSS-ASSET-EVIDENCE-REQUEST.md`](OSS-ASSET-EVIDENCE-REQUEST.md). La decisión
+de conservar los activos actuales permanece vigente y no autoriza su copia,
+modificación o redistribución bajo una licencia OSS.
+
+## OSS.1.4.3 — Declaración final del mantenedor — 2026-08-04
+
+Esta sección registra la declaración final recibida para las seis familias. Se
+mantiene como evidencia de primera parte y no como `VERIFIED FIRST-PARTY`.
+
+### A. Icono cuadrado
+
+Para `icono/icono.png` y `public/icono.png`, el mantenedor declara que el
+concepto fue creado por él y que el proceso comenzó con bocetos propios hechos
+con cuaderno y lápiz. Claude fue utilizado como herramienta de asistencia o
+generación. No se conserva un archivo fuente editable independiente. La
+referencia a `public/log.svg` y `public/logIcon.svg` es un recuerdo sobre
+activos relacionados, no prueba de que sean la fuente técnica de los PNG.
+No se identifica otro diseñador, titular o tercero que deba autorizarlo. No
+se concede redistribución ni modificación general; el uso queda reservado a la
+identidad oficial de Lanzo-POS.
+
+Clasificación: `MAINTAINER-ATTESTED`; `AI-ASSISTED`; `OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`; `NO REDISTRIBUTION GRANT`; `NO MODIFICATION GRANT`; `TRADEMARK-RESERVED`; `SOURCE FILE NOT PRESERVED`.
+
+### B. Wordmark PNG
+
+Para `icono/icono-web.png`, fue generado o trabajado mediante Claude bajo
+dirección del mantenedor. Claude se registra como herramienta o proveedor de
+generación, no como un recurso visual de tercero incorporado al archivo. No se
+identifica deliberadamente una plantilla, logo o imagen concreta de tercero y
+no se conserva una fuente editable distinta del archivo actual. No se
+identifica otro titular o diseñador. No se concede redistribución ni
+modificación general; el uso queda reservado a la identidad oficial.
+
+Clasificación: `MAINTAINER-ATTESTED`; `AI-ASSISTED — TOOL DECLARED BY MAINTAINER`; `OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`; `NO REDISTRIBUTION GRANT`; `NO MODIFICATION GRANT`; `TRADEMARK-RESERVED`; `EDITABLE SOURCE NOT PRESERVED`.
+
+La evidencia C2PA se conserva separadamente como
+`AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA`; no equivale a
+`PROVIDER VERIFIED`.
+
+### C. Familia PWA
+
+Para `public/icono-web.png`, `public/pwa-192x192.png` y
+`public/pwa-512x512.png`, el mantenedor no recuerda el proceso exacto de
+exportación. Los archivos fueron obtenidos o preparados mediante una
+herramienta web cuya identidad no se conoce con certeza. Los archivos actuales
+son la única evidencia conservada; no existe fuente editable ni cadena de
+exportación preservada. No se afirma que 512×512 genere determinísticamente
+192×192. No se identifica otro titular o diseñador. No se concede
+redistribución ni modificación general; el uso queda reservado a la identidad
+oficial y al PWA oficial de Lanzo.
+
+Clasificación: `MAINTAINER-ATTESTED`; `TOOL UNKNOWN`; `EXPORT CHAIN NOT REPRODUCIBLE`; `OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`; `NO REDISTRIBUTION GRANT`; `NO MODIFICATION GRANT`; `TRADEMARK-RESERVED`.
+
+### D. Wordmark SVG
+
+Para `public/log.svg`, fue generado con Claude bajo dirección del mantenedor y
+el concepto se relaciona con bocetos propios de cuaderno. No se conserva
+prompt, archivo editable ni historial de generación publicable. No se
+identifica deliberadamente una plantilla, logo o elemento visual de tercero.
+Los términos históricos de Claude no están disponibles dentro de las fuentes
+autorizadas. No se identifica otro titular o diseñador. No se concede
+redistribución ni modificación general; se conserva como wordmark oficial de
+Lanzo.
+
+Clasificación: `MAINTAINER-ATTESTED`; `AI-ASSISTED — PROVIDER DECLARED BY MAINTAINER`; `PROVIDER TERMS NOT AVAILABLE FROM AUTHORIZED EVIDENCE`; `OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`; `NO REDISTRIBUTION GRANT`; `NO MODIFICATION GRANT`; `TRADEMARK-RESERVED`.
+
+No se afirma que Claude cedió derechos ni que sus términos históricos permitan
+o prohíban usos específicos.
+
+### E. Marca SVG
+
+Para `public/logIcon.svg`, fue generado con Claude bajo dirección del
+mantenedor y está relacionado con la identidad visual de Lanzo. La relación
+con los PNG es conceptual o visual; no se afirma una conversión técnica
+demostrada. No se conserva una fuente editable diferente del SVG actual. No se
+identifica deliberadamente un elemento visual concreto de tercero y los
+términos históricos del proveedor no están disponibles. No se identifica otro
+titular o diseñador. No se concede redistribución ni modificación general; se
+conserva exclusivamente como marca oficial de Lanzo.
+
+Clasificación: `MAINTAINER-ATTESTED`; `AI-ASSISTED — PROVIDER DECLARED BY MAINTAINER`; `RELATION TO BRAND DECLARED — TECHNICAL DERIVATION NOT PROVEN`; `PROVIDER TERMS NOT AVAILABLE FROM AUTHORIZED EVIDENCE`; `OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`; `NO REDISTRIBUTION GRANT`; `NO MODIFICATION GRANT`; `TRADEMARK-RESERVED`.
+
+### F. Icono del asistente
+
+Para `public/boticon.svg`, fue generado con Claude bajo dirección del
+mantenedor y deriva conceptualmente del icono oficial de Lanzo. No se utilizó
+deliberadamente otro bot, personaje, marca o biblioteca de iconos concreta. No
+se conserva la fuente editable ni una conversión técnica demostrable. No se
+identifica otro titular o diseñador. No se concede redistribución ni
+modificación general; el uso queda reservado al asistente oficial de
+Lanzo-POS.
+
+Clasificación: `MAINTAINER-ATTESTED`; `AI-ASSISTED — PROVIDER DECLARED BY MAINTAINER`; `DERIVATIVE — OWN BRAND SOURCE DECLARED`; `TECHNICAL DERIVATION NOT PROVEN`; `OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`; `NO REDISTRIBUTION GRANT`; `NO MODIFICATION GRANT`; `TRADEMARK-RESERVED`.
+
+No se conserva `DERIVATIVE — SOURCE UNKNOWN` como única conclusión, pero no se
+promueve a `DERIVATIVE — PERMISSION VERIFIED`.
+
+### Claude, C2PA y límites de la declaración
+
+Claude se registra únicamente como herramienta o proveedor declarado por el
+mantenedor, como evidencia de primera parte no verificada de manera
+independiente. No se registra como material visual de tercero identificado,
+titular de los activos ni fuente automática de una licencia. No se consultan
+los términos históricos de Claude en Internet y no se afirma que Anthropic sea
+titular, que Claude conceda copyright o transfiera derechos, ni que sus
+términos históricos permitan o prohíban la redistribución.
+
+La metadata C2PA de los PNG conserva la clasificación
+`AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA`. La firma C2PA está presente,
+pero no fue verificada; tampoco se verificó la cadena de confianza. Esto no se
+presenta como `PROVIDER VERIFIED`.
+
+### Resultado OSS.1.4.3
+
+**MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE**.
+
+Las seis familias quedan en `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` y los nueve activos en `RESTRICTED OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`. No se marca ninguna familia como `VERIFIED FIRST-PARTY`, `VERIFIED THIRD-PARTY`, `DISTRIBUTION CLEARED` u `OPEN ASSET LICENSE`. La separación técnica de una futura entrega queda para OSS.1.4.4.

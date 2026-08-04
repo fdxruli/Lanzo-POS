@@ -1,6 +1,6 @@
 # Política preliminar de marca de Lanzo-POS
 
-Estado: preliminar para OSS.1.4B
+Estado: preliminar; actualizado para OSS.1.4.3
 
 Fecha: 2026-08-03
 
@@ -89,3 +89,20 @@ Esta política puede actualizarse cuando exista evidencia nueva de procedencia,
 permiso o registro. Una actualización no debe convertir una incertidumbre
 histórica en una afirmación de certeza ni presentar la política como prueba de
 derechos de terceros.
+
+## 8. OSS.1.4.3 — Identidad oficial restringida
+
+La declaración final del mantenedor confirma el alcance reservado de los
+activos actuales de Lanzo-POS: nombre Lanzo, logos, iconos, wordmark, iconos
+PWA, `boticon` y la apariencia oficial. No se concede permiso general para usar
+la marca ni permiso general para redistribuir o modificar los activos.
+
+Los activos permanecen en el repositorio oficial actual, pero la futura
+licencia del código no los incluirá automáticamente. Los forks y derivados
+deberán adoptar identidad propia antes de distribuirse y no podrán presentarse
+como Lanzo-POS oficial. La referencia técnica de alcance es
+[`BRAND_ASSETS.md`](BRAND_ASSETS.md); OSS.1.4.4 implementará y validará el
+límite de release.
+
+Esta política no afirma registro marcario, derechos exclusivos mundiales,
+aprobación jurídica ni ausencia absoluta de derechos de terceros.

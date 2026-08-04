@@ -116,6 +116,7 @@ se documentan por separado:
 
 - [Declaración de procedencia de activos](docs/OSS-ASSET-DECLARATION.md)
 - [Inventario y conclusión de procedencia](docs/OSS-ASSET-PROVENANCE.md)
+- [Activos oficiales restringidos](BRAND_ASSETS.md)
 - [Política preliminar de marca](TRADEMARK_POLICY.md)
 
 ## Autohospedaje
