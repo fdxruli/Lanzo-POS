@@ -209,3 +209,19 @@ copyright garantizado o ausencia absoluta de similitudes con terceros.
 
 Esta firma identifica la declaración pública del mantenedor; no es una firma
 criptográfica ni una certificación independiente.
+
+## OSS.1.4.2 — Límite de la declaración vigente
+
+La reauditoría sobre `origin/main` en
+`6c5144d7e9327bcc3f9ec78adfc66776dc0d304e` no modifica la **OPCIÓN 3** ni
+añade respuestas en nombre del mantenedor. La evidencia técnica confirmó
+duplicados, historial, consumidores y metadata C2PA declarativa, pero no
+confirmó autoría material, términos del proveedor, titularidad ni permiso de
+redistribución.
+
+Por tanto, `MAINTAINER-ATTESTED` sigue siendo una declaración de primera parte,
+no `VERIFIED FIRST-PARTY`. Las seis familias permanecen pendientes de
+evidencia concreta del mantenedor según
+[`OSS-ASSET-EVIDENCE-REQUEST.md`](OSS-ASSET-EVIDENCE-REQUEST.md). La decisión
+de conservar los activos actuales permanece vigente y no autoriza su copia,
+modificación o redistribución bajo una licencia OSS.

@@ -168,3 +168,24 @@ de primera parte y sus limitaciones están en
 marca está en [`TRADEMARK_POLICY.md`](TRADEMARK_POLICY.md). La conclusión de
 activos permanece **ASSET NO-GO**, por lo que OSS.1.4 global permanece
 **BLOCKED — NO-GO**.
+
+## 8. Handoff OSS.1.4.2 sobre activos de identidad
+
+La resolución local del inventario confirmó dos estructuras `caBX` C2PA únicas
+en tres rutas PNG. Sus assertions declaran `GPT-4o`, `OpenAI API`, `ChatGPT`,
+`c2pa-rs 0.51.1` y `trainedAlgorithmicMedia`; también contienen una assertion
+de firma y certificados reconocibles, pero no se verificaron firma ni cadena de
+confianza. Esto es **AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA**, no
+`VERIFIED PROVIDER`, `VERIFIED AUTHOR` ni `VERIFIED THIRD-PARTY`.
+
+Para los PNG con proveedor declarado, y para los tres SVG cuyo proveedor no se
+recuerda, los términos históricos no están disponibles en las fuentes
+autorizadas: **PROVIDER TERMS NOT AVAILABLE FROM AUTHORIZED EVIDENCE**. La
+metadata no identifica un recurso visual de tercero ni concede una licencia de
+redistribución. Los SVG son autocontenidos y no incorporan fuentes, imágenes ni
+enlaces externos reconocibles; `public/boticon.svg` conserva una derivación
+declarada con fuente desconocida.
+
+Resultado de activos: **REDISTRIBUTION NOT CLEARED** para las nueve rutas.
+Consultar [`docs/OSS-ASSET-PROVENANCE.md`](docs/OSS-ASSET-PROVENANCE.md) y el
+cuestionario [`docs/OSS-ASSET-EVIDENCE-REQUEST.md`](docs/OSS-ASSET-EVIDENCE-REQUEST.md).

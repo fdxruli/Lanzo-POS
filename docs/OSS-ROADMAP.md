@@ -4,7 +4,8 @@ Actualización: 2026-08-04.
 
 | Tarea | Estado | Alcance |
 | --- | --- | --- |
-| OSS.1.4 | `BLOCKED — NO-GO` | OSS.1.4.1 `PROVENANCE RECONCILED WITH NOTES`; activos `ASSET NO-GO` / `ASSET REVIEW REQUIRED`; handoff a OSS.1.4.2. |
+| OSS.1.4 | `BLOCKED — NO-GO` | OSS.1.4.1 `PROVENANCE RECONCILED WITH NOTES` y OSS.1.4.2 `ASSET EVIDENCE EXHAUSTED WITH NOTES`; activos `ASSET NO-GO` / `ASSET REVIEW REQUIRED`. |
+| OSS.1.4.2 | `ASSET EVIDENCE EXHAUSTED WITH NOTES` | Evidencia de código, Git y GitHub agotada para seis familias; no hay grant de redistribución, fuente editable ni términos autorizados suficientes. |
 | OSS.1.5 | `BLOCKED` | El autohospedaje completo aún no es reproducible; runtime, E2E y backup/restore siguen pendientes. |
 | OSS.1.5.1 | `PASS WITH NOTES` | PR #173 integrado y configuración local creada; Docker daemon no disponible para validar runtime. |
 | OSS.1.5.2 | `PASS WITH NOTES` | Migración ecommerce hermética, con SQL local equivalente; falta reset sobre una base vacía. |
@@ -16,10 +17,15 @@ Actualización: 2026-08-04.
 ## Handoff de OSS.1.4
 
 OSS.1.4.1 reconcilió el inventario, los hashes, el historial y el consumo sin
-alterar activos. OSS.1.4.2 debe obtener las fuentes, exportaciones, términos y
-permisos concretos de las familias `UNKNOWN` y `REVIEW REQUIRED`, o decidir una
-sustitución separada por familia. La conservación actual no desbloquea OSS.1.4
-ni concede derechos de redistribución sobre la identidad.
+alterar activos. OSS.1.4.2 agotó las fuentes autorizadas y dejó una decisión
+concreta por familia: las seis requieren evidencia del mantenedor antes de
+definir una licencia separada, excluirlas de un release o sustituirlas. La
+conservación actual no desbloquea OSS.1.4 ni concede derechos de
+redistribución sobre la identidad.
+
+El cuestionario concreto está en
+[`docs/OSS-ASSET-EVIDENCE-REQUEST.md`](OSS-ASSET-EVIDENCE-REQUEST.md). No se
+modificaron activos, consumidores, dependencias, `LICENSE` ni AGPL.
 
 ## Contexto conservado
 
