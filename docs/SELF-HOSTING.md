@@ -81,15 +81,30 @@ RPC fijadas en el código. No añade SDK ni dependencias.
 La separación frontend/backend es obligatoria: las variables de Supabase
 server-side no deben entrar en `.env` del frontend ni en variables `VITE_*`.
 
-## RPC y limitación heredada
+## RPC y modelo de periodos IA
 
-La secuencia final inspeccionada usa `get_ai_agent_usage`,
-`begin_ai_agent_analysis` y `complete_ai_agent_analysis`. La versión más
-reciente de `get_ai_agent_usage` usa periodo/licencia y referencia
-`ai_agent_usage.period_id`, pero ninguna migración versionada inspeccionada
-añade esa columna. Esta inconsistencia no se modifica en OSS.1.5.3 porque la
-tarea prohíbe cambiar migraciones; debe resolverse antes de declarar runtime
-E2E o autohospedaje completo.
+La secuencia final usa `get_ai_agent_usage`, `begin_ai_agent_analysis` y
+`complete_ai_agent_analysis`. OSS.1.5.4 versiona el contrato que faltaba:
+`license_periods`, `ensure_current_license_period` y
+`ai_agent_usage.period_id` existen antes de la primera migración que los usa.
+
+El modelo vigente es C, híbrido de compatibilidad: para los registros nuevos
+rige el límite por periodo, contado por `license_id + period_id`, con
+`reserved` y `completed`; los registros `failed` no consumen el límite. Los
+usos nuevos reciben el periodo vigente durante la reserva. `period_type` conserva los valores observados
+`trial`, `basic_paid`, `pro_paid` y `admin_grant`; FREE lifetime permanece como
+`trial`, activo, sin `ends_at` y con límite IA cero.
+
+La migración `20260621000000_oss_bootstrap_license_period_schema.sql` es una
+`OSS bootstrap compatibility migration`. No se encontró una migración
+histórica exacta que restaurar. Los usos históricos con una única coincidencia
+temporal se rellenan; los ambiguos o sin coincidencia conservan `period_id`
+nullable y quedan marcados en `metadata`. La FK compuesta evita asociar un uso
+con un periodo de otra licencia.
+
+Resultado OSS.1.5.4: `SCHEMA RECONCILED WITH NOTES`. El contrato, orden,
+seguridad y pruebas focalizadas quedaron versionados, pero no se ejecutó
+PostgreSQL runtime ni la cadena completa de migraciones.
 
 ## Procedimiento local seguro
 
@@ -108,6 +123,6 @@ Este procedimiento no fue ejecutado en OSS.1.5.3. No se debe usar `supabase
 link`, `supabase db push`, `supabase migration repair --linked`,
 `supabase functions deploy`, un proyecto remoto ni un proveedor real.
 
-**SELF-HOSTING BLOCKED.** La configuración, las migraciones relevantes y la
-función están versionadas, pero el runtime, la base vacía, E2E, backup/restore
-y la inconsistencia `period_id` siguen pendientes.
+**SELF-HOSTING BLOCKED.** La configuración, el esquema de periodos y la
+función están versionados, pero el runtime PostgreSQL, la base vacía, E2E y
+backup/restore siguen pendientes. OSS.1.5 no debe marcarse `VERIFIED` todavía.
