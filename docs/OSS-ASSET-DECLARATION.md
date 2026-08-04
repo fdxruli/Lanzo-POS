@@ -43,13 +43,14 @@ familia) conservan los mismos bytes cuando corresponde. El bloque contiene
 declaraciones de `GPT-4o`, `OpenAI API`, `ChatGPT`, `c2pa-rs 0.51.1` y
 `trainedAlgorithmicMedia`.
 
-Este hallazgo permite registrar **AI-ASSISTED — PROVIDER VERIFIED** en el
-sentido limitado de que el proveedor está explícitamente declarado dentro de
-la metadata del archivo. No se validó de forma independiente la cadena de
-confianza o firma C2PA y el hallazgo no prueba autoría, copyright, términos
-históricos ni permiso de redistribución. La declaración histórica de que la
-herramienta original no estaba documentada se conserva como tal; este hallazgo
-es evidencia técnica posterior, no una declaración nueva del mantenedor.
+Este hallazgo permite registrar **AI-ASSISTED — PROVIDER DECLARED IN C2PA
+METADATA** únicamente en el sentido de que el archivo contiene una declaración
+embebida que nombra proveedor y modelo. No se validó de forma independiente la
+firma, la cadena de confianza o la autenticidad de esa declaración C2PA, y el
+hallazgo no prueba autoría, copyright, términos históricos ni permiso de
+redistribución. La declaración histórica de que la herramienta original no
+estaba documentada se conserva como tal; este hallazgo es evidencia técnica
+posterior, no una declaración nueva del mantenedor.
 
 ## Alcance
 
