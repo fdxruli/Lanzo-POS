@@ -1,4 +1,4 @@
-# OSS.1.4B — Declaración de procedencia de activos
+# OSS.1.4B / OSS.1.4B-R — Declaración de procedencia de activos
 
 ## Propósito
 
@@ -9,10 +9,39 @@ mantiene separada de la política de marca: describir el alcance reservado de
 una marca no demuestra quién creó un archivo ni qué permiso existe para
 redistribuirlo.
 
-Fecha de la declaración: 2026-08-03
+Fecha de la declaración histórica: 2026-08-03
 
 Repositorio: `fdxruli/Lanzo-POS`
-Commit base auditado: `19f4087bf23b2920154fb72bd6417a4509508ac0` (`origin/main`)
+Commit base de la declaración histórica: `19f4087bf23b2920154fb72bd6417a4509508ac0` (`origin/main`)
+
+## OSS.1.4B-R — estado vigente
+
+Esta sección registra el reemplazo ejecutado después del merge del PR #170.
+La base actual es `origin/main` en
+`0decbc4124fed4e8cda4e807a9a400f7257e3084`, merge commit de #170.
+
+- Los activos históricos fueron retirados o reemplazados del árbol actual y
+  están declarados `SUPERSEDED / REMOVED FROM CURRENT TREE`.
+- Las tres fuentes SVG nuevas son `AI-ASSISTED / PROJECT-GENERATED`, sin
+  fuente de terceros identificada y `TRADEMARK-RESERVED`.
+- Los seis derivados públicos se generan desde esas fuentes con
+  `scripts/generate-brand-assets.mjs`; el modo `--check` es reproducible.
+- La clasificación vigente es: activos UNKNOWN actuales `0`, REVIEW REQUIRED
+  actuales `0` salvo aprobación visual, BLOCKER actuales `0`.
+- La asistencia de Codex está documentada y la revisión del mantenedor sigue
+  pendiente antes del merge.
+- Esta conclusión no es una búsqueda marcaria mundial, dictamen legal,
+  garantía de copyright exclusivo ni afirmación de autoría humana exclusiva.
+
+La declaración histórica de Opción 3 que sigue siendo cierta para los archivos
+anteriores no se elimina. Esos archivos no forman parte del conjunto actual y
+su nota de sustitución está en `brand/LEGACY-ASSET-NOTICE.md`.
+
+## Registro histórico previo a OSS.1.4B-R
+
+El alcance, las declaraciones y las conclusiones de las secciones siguientes
+describen exclusivamente el inventario anterior al reemplazo. No deben leerse
+como una descripción del conjunto actual de archivos.
 
 ## Alcance
 

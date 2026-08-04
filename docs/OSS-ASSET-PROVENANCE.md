@@ -1,8 +1,37 @@
-# OSS.1.4B — Procedencia de activos e identidad
+# OSS.1.4B / OSS.1.4B-R — Procedencia de activos e identidad
 
 Fecha del inventario: 2026-08-03. Repositorio: `fdxruli/Lanzo-POS`.
-Base auditada: `origin/main` en
+Base histórica auditada: `origin/main` en
 `19f4087bf23b2920154fb72bd6417a4509508ac0`.
+
+## OSS.1.4B-R — inventario vigente
+
+La base vigente es `origin/main` en
+`0decbc4124fed4e8cda4e807a9a400f7257e3084`, merge commit del PR #170. Esta
+sección describe el árbol actual después del reemplazo y prevalece sobre el
+registro histórico que sigue.
+
+| Grupo vigente | Estado de procedencia | Alcance | Cantidad |
+| --- | --- | --- | ---: |
+| Fuentes SVG canónicas en `brand/` | `AI-ASSISTED / PROJECT-GENERATED`; `NO THIRD-PARTY SOURCE IDENTIFIED` | `TRADEMARK-RESERVED` | 3 |
+| PNG y SVG públicos derivados | `GENERATED FROM PROJECT SOURCE` | `TRADEMARK-RESERVED` | 6 |
+| Activos anteriores | `SUPERSEDED / REMOVED FROM CURRENT TREE` | No forman parte del conjunto actual | 9 rutas históricas |
+
+Matriz final del árbol actual: UNKNOWN `0`, REVIEW REQUIRED `0` salvo
+aprobación visual del mantenedor, BLOCKER `0`. Los archivos eliminados o
+reemplazados y sus hashes están en `brand/LEGACY-ASSET-NOTICE.md`; no se
+reescribió el historial.
+
+El proceso reproducible está en `scripts/generate-brand-assets.mjs` y el
+manifiesto con hashes en `brand/brand-assets.manifest.json`. Los tres SVG
+canónicos se clasifican como asistidos por IA y generados dentro del proyecto;
+los derivados no se presentan como `VERIFIED FIRST-PARTY`.
+
+## Registro histórico previo a OSS.1.4B-R
+
+Las secciones siguientes conservan la auditoría anterior para documentar por
+qué los activos legacy fueron reemplazados. Sus estados `UNKNOWN`,
+`REVIEW REQUIRED` y `BLOCKER` se refieren al árbol histórico, no al actual.
 
 ## 1. Resumen y decisión
 
@@ -178,5 +207,15 @@ La decisión permitida por la evidencia actual es:
   umbral de `ASSET CONDITIONAL GO`;
 - no se activa AGPL, no se crea `LICENSE` y no se reemplazan activos.
 
-El siguiente paso seguro es obtener documentación adicional de origen/permiso
-o realizar una sustitución separada como `OSS.1.4B-R`.
+El siguiente paso histórico era obtener documentación adicional de
+origen/permiso o realizar una sustitución separada como `OSS.1.4B-R`.
+
+## Cierre vigente de OSS.1.4B-R
+
+La sustitución ya está implementada: los activos actuales desconocidos son
+`0`, los blockers actuales son `0` y todos los derivados corresponden a las
+tres fuentes canónicas verificadas por `brand:check`. La decisión de activos
+es **ASSET CONDITIONAL GO** y OSS.1.4 queda **COMPLETE — CONDITIONAL GO**,
+condicionado a la aprobación visual del mantenedor antes del merge. Las
+dependencias conservan **DEPENDENCY CONDITIONAL GO**. AGPL sigue prevista,
+no vigente, y no se creó `LICENSE`.

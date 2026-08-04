@@ -68,7 +68,7 @@ body:has(.public-lanzo-landing) {
   box-shadow: var(--ui-shadow-sm);
 }
 
-.public-lanzo-brand__mark svg {
+.public-lanzo-brand__mark img {
   width: 1.75rem;
   height: 1.75rem;
 }
@@ -210,7 +210,7 @@ body:has(.public-lanzo-landing) {
   backdrop-filter: blur(10px);
 }
 
-.public-lanzo-hero__visual-mark svg {
+.public-lanzo-hero__visual-mark img {
   width: 5.5rem;
   height: 5.5rem;
 }

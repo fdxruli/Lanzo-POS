@@ -150,11 +150,6 @@ body.public-store-body {
 }
 
 .public-store-header__cover.public-safe-image--fallback {
-  /* The second stroke of LogoMark uses --brand-accent-hover. Keep both
-     strokes high-contrast against the darker hero fallback. */
-  --brand-accent: #f8fafc;
-  --brand-accent-hover: #cbd5e1;
-  color: rgba(255, 255, 255, 0.86);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--ui-color-primary) 86%, #111827), var(--ui-color-secondary));
 }
@@ -382,7 +377,7 @@ body.public-store-body {
   background: var(--ui-bg-muted);
 }
 
-.public-store-footer__mark svg {
+.public-store-footer__mark img {
   width: 1.45rem;
   height: 1.45rem;
 }

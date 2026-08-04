@@ -150,7 +150,19 @@ resuelve.
 
 ## 7. Activos gráficos de identidad
 
-La auditoría de OSS.1.4B no identificó una fuente visual de tercero, plantilla,
+### Estado vigente OSS.1.4B-R
+
+La identidad nueva fue generada dentro del proyecto con asistencia de Codex,
+sin fuentes externas, plantillas, fuentes, imágenes ni bibliotecas de iconos.
+Los activos permanecen `TRADEMARK-RESERVED`; su procedencia está en
+[`brand/BRAND-PROVENANCE.md`](brand/BRAND-PROVENANCE.md). No se añaden como
+componentes de terceros ni se alteran los avisos de dependencias verificados.
+
+La conclusión `ASSET CONDITIONAL GO` y el estado global
+`OSS.1.4 COMPLETE — CONDITIONAL GO` dependen de `brand:check` y de la
+aprobación visual del mantenedor antes del merge.
+
+La auditoría histórica de OSS.1.4B no identificó una fuente visual de tercero, plantilla,
 biblioteca de iconos, imagen embebida ni fuente externa concreta en los nueve
 activos gráficos rastreados. Los SVG son autocontenidos; `public/log.svg` usa la
 familia genérica `sans-serif` y no incorpora una fuente. Los tres SVG tienen

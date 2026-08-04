@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-08-03",
+  "sourceCommit": "0decbc4124fed4e8cda4e807a9a400f7257e3084",
+  "colors": {
+    "lanzoNavy": "#14213D",
+    "lanzoBlue": "#2563EB",
+    "lanzoMint": "#2DD4BF",
+    "lanzoCloud": "#F8FAFC",
+    "lanzoSlate": "#334155"
+  },
+  "canonicalAssets": [
+    "brand/lanzo-mark.svg",
+    "brand/lanzo-wordmark.svg",
+    "brand/lanzo-assistant.svg"
+  ],
+  "derivedAssets": [
+    "public/icono-web.png",
+    "public/pwa-192x192.png",
+    "public/pwa-512x512.png",
+    "public/log.svg",
+    "public/logIcon.svg",
+    "public/boticon.svg"
+  ],
+  "safeArea": {
+    "mark": "At least 20% around the central figure",
+    "pwa": "At least 20% around the central figure"
+  },
+  "supportedBackgrounds": [
+    "Lanzo Navy #14213D",
+    "Lanzo Cloud #F8FAFC",
+    "Lanzo Slate #334155"
+  ],
+  "trademarkStatus": "TRADEMARK-RESERVED",
+  "provenanceStatus": "AI-ASSISTED / PROJECT-GENERATED; NO THIRD-PARTY SOURCE IDENTIFIED"
+}

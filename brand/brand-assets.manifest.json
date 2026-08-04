@@ -1,0 +1,147 @@
+{
+  "version": "1.0.0",
+  "generatedAt": "2026-08-03",
+  "sourceCommit": "0decbc4124fed4e8cda4e807a9a400f7257e3084",
+  "canonicalAssets": [
+    {
+      "path": "brand/lanzo-mark.svg",
+      "format": "SVG",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "sha256": "7f795d23ae677e12474c7d54bea440f30843229437f3f0827e16cab628dd9a69",
+      "role": "square favicon, PWA and maskable mark"
+    },
+    {
+      "path": "brand/lanzo-wordmark.svg",
+      "format": "SVG",
+      "dimensions": {
+        "width": 360,
+        "height": 96
+      },
+      "sha256": "aeb2b9ea67d7d34cc47ff22888a3f0547e973413dfb78ddda9a9c79a88454e48",
+      "role": "horizontal Lanzo wordmark"
+    },
+    {
+      "path": "brand/lanzo-assistant.svg",
+      "format": "SVG",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "sha256": "7b0e2ade7d87e17386914a84482e29f58afe9276de1b60103b569daf98dcb81f",
+      "role": "abstract assistant mark"
+    }
+  ],
+  "derivedAssets": [
+    {
+      "canonicalSource": "brand/lanzo-mark.svg",
+      "sourceSha256": "7f795d23ae677e12474c7d54bea440f30843229437f3f0827e16cab628dd9a69",
+      "path": "public/icono-web.png",
+      "dimensions": {
+        "width": 192,
+        "height": 192
+      },
+      "format": "PNG",
+      "sha256": "a4912ced146ec234eb78cea531d7e4f0c28c33ca9fdf3dd89173eb1dfc74a091",
+      "generationVersion": "1.0.0",
+      "generatedAt": "2026-08-03",
+      "sharpVersion": "0.34.5",
+      "process": "sharp: rasterize canonical mark at 192x192 with deterministic PNG settings"
+    },
+    {
+      "canonicalSource": "brand/lanzo-mark.svg",
+      "sourceSha256": "7f795d23ae677e12474c7d54bea440f30843229437f3f0827e16cab628dd9a69",
+      "path": "public/pwa-192x192.png",
+      "dimensions": {
+        "width": 192,
+        "height": 192
+      },
+      "format": "PNG",
+      "sha256": "a4912ced146ec234eb78cea531d7e4f0c28c33ca9fdf3dd89173eb1dfc74a091",
+      "generationVersion": "1.0.0",
+      "generatedAt": "2026-08-03",
+      "sharpVersion": "0.34.5",
+      "process": "sharp: rasterize canonical mark at 192x192 with deterministic PNG settings"
+    },
+    {
+      "canonicalSource": "brand/lanzo-mark.svg",
+      "sourceSha256": "7f795d23ae677e12474c7d54bea440f30843229437f3f0827e16cab628dd9a69",
+      "path": "public/pwa-512x512.png",
+      "dimensions": {
+        "width": 512,
+        "height": 512
+      },
+      "format": "PNG",
+      "sha256": "70d6adbe8fedd786804020c18d5e7dcec8819403b44f72fde19ce084d3817eea",
+      "generationVersion": "1.0.0",
+      "generatedAt": "2026-08-03",
+      "sharpVersion": "0.34.5",
+      "process": "sharp: rasterize canonical mark at 512x512 with deterministic PNG settings"
+    },
+    {
+      "canonicalSource": "brand/lanzo-wordmark.svg",
+      "sourceSha256": "aeb2b9ea67d7d34cc47ff22888a3f0547e973413dfb78ddda9a9c79a88454e48",
+      "path": "public/log.svg",
+      "dimensions": {
+        "width": 360,
+        "height": 96
+      },
+      "format": "SVG",
+      "sha256": "aeb2b9ea67d7d34cc47ff22888a3f0547e973413dfb78ddda9a9c79a88454e48",
+      "generationVersion": "1.0.0",
+      "generatedAt": "2026-08-03",
+      "sharpVersion": "0.34.5",
+      "process": "byte-identical copy of canonical wordmark source"
+    },
+    {
+      "canonicalSource": "brand/lanzo-mark.svg",
+      "sourceSha256": "7f795d23ae677e12474c7d54bea440f30843229437f3f0827e16cab628dd9a69",
+      "path": "public/logIcon.svg",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "format": "SVG",
+      "sha256": "7f795d23ae677e12474c7d54bea440f30843229437f3f0827e16cab628dd9a69",
+      "generationVersion": "1.0.0",
+      "generatedAt": "2026-08-03",
+      "sharpVersion": "0.34.5",
+      "process": "byte-identical copy of canonical mark source"
+    },
+    {
+      "canonicalSource": "brand/lanzo-assistant.svg",
+      "sourceSha256": "7b0e2ade7d87e17386914a84482e29f58afe9276de1b60103b569daf98dcb81f",
+      "path": "public/boticon.svg",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "format": "SVG",
+      "sha256": "7b0e2ade7d87e17386914a84482e29f58afe9276de1b60103b569daf98dcb81f",
+      "generationVersion": "1.0.0",
+      "generatedAt": "2026-08-03",
+      "sharpVersion": "0.34.5",
+      "process": "byte-identical copy of canonical assistant source"
+    }
+  ],
+  "safeArea": {
+    "mark": "At least 20% around the central figure",
+    "pwa": "At least 20% around the central figure"
+  },
+  "supportedBackgrounds": [
+    "Lanzo Navy #14213D",
+    "Lanzo Cloud #F8FAFC",
+    "Lanzo Slate #334155"
+  ],
+  "trademarkStatus": "TRADEMARK-RESERVED",
+  "provenanceStatus": "AI-ASSISTED / PROJECT-GENERATED; NO THIRD-PARTY SOURCE IDENTIFIED",
+  "process": {
+    "generator": "scripts/generate-brand-assets.mjs",
+    "deterministic": true,
+    "sharpVersion": "0.34.5",
+    "sourceRule": "All PNG variants are rasterized from canonical SVG sources.",
+    "svgRule": "Public SVG variants are byte-identical copies of canonical SVG sources."
+  }
+}

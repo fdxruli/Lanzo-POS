@@ -75,22 +75,9 @@
   display: block;
   width: auto;
   height: 50px;
-}
-
-.about-grid .about-logo > rect {
-  fill: transparent;
-}
-
-.about-grid .about-logo text {
-  fill: #fff;
-}
-
-.about-grid .about-logo text tspan:first-of-type {
-  fill: rgba(255, 255, 255, 0.62);
-}
-
-.about-grid .about-logo text tspan:last-of-type {
-  fill: #8ee9f6;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .about-grid .about-eyebrow {

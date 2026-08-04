@@ -1,6 +1,6 @@
 # Política preliminar de marca de Lanzo-POS
 
-Estado: preliminar para OSS.1.4B
+Estado: preliminar para OSS.1.4B-R; revisión visual pendiente
 
 Fecha: 2026-08-03
 
@@ -24,6 +24,19 @@ sobre:
 Estos elementos se consideran `TRADEMARK-RESERVED` para fines de esta auditoría,
 sin que esa clasificación pruebe titularidad registral ni resuelva la
 procedencia histórica de cada archivo.
+
+La identidad vigente está documentada en [`brand/BRAND-PROVENANCE.md`](brand/BRAND-PROVENANCE.md)
+y sus fuentes canónicas son:
+
+- [`brand/lanzo-mark.svg`](brand/lanzo-mark.svg)
+- [`brand/lanzo-wordmark.svg`](brand/lanzo-wordmark.svg)
+- [`brand/lanzo-assistant.svg`](brand/lanzo-assistant.svg)
+
+Los derivados públicos y sus hashes están en
+[`brand/brand-assets.manifest.json`](brand/brand-assets.manifest.json). Los
+activos anteriores fueron reemplazados o eliminados del árbol actual y están
+marcados como `SUPERSEDED — NOT PART OF THE CURRENT BRAND ASSET SET` en
+[`brand/LEGACY-ASSET-NOTICE.md`](brand/LEGACY-ASSET-NOTICE.md).
 
 ## 2. Usos nominativos permitidos
 
@@ -61,8 +74,9 @@ Los forks que distribuyan una versión modificada deben:
 4. conservar una atribución nominativa clara al proyecto original cuando sea
    necesario para explicar la procedencia del fork.
 
-La sustitución de activos no se ejecuta en OSS.1.4B; cualquier reemplazo se
-registra como tarea posterior `OSS.1.4B-R`.
+La sustitución de activos de OSS.1.4B-R ya está ejecutada en el árbol actual.
+La revisión y aprobación visual definitiva del mantenedor sigue pendiente
+antes del merge.
 
 ## 5. Relación con la licencia de código
 

@@ -643,7 +643,7 @@
       0 8px 18px -16px color-mix(in srgb, var(--brand-accent) 70%, transparent);
   }
 
-  .sidebar-brand-mark svg {
+  .sidebar-brand-mark img {
     width: 29px;
     height: 29px;
   }

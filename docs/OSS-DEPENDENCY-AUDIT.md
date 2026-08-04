@@ -135,7 +135,10 @@ OSS.1.4B.
 - **BLOCKER global OSS.1.4:** procedencia/licencia de activos propios de Lanzo,
   fuera de esta tarea y pendiente de OSS.1.4B.
 
-## 9. Actualización OSS.1.4B — conclusión de activos
+## 9. Registro histórico de OSS.1.4B — conclusión de activos
+
+Las conclusiones que siguen describen el estado anterior al reemplazo de
+OSS.1.4B-R y se conservan como evidencia histórica.
 
 La revisión de activos gráficos se completó sobre `origin/main` en el commit
 `19f4087bf23b2920154fb72bd6417a4509508ac0`. La declaración del mantenedor
@@ -151,3 +154,12 @@ términos históricos no documentados.
   [`docs/OSS-ASSET-PROVENANCE.md`](OSS-ASSET-PROVENANCE.md) y la política de
   marca en [`TRADEMARK_POLICY.md`](../TRADEMARK_POLICY.md).
 - AGPL continúa sin activarse y no se crea `LICENSE`.
+
+## 10. Cierre vigente después de OSS.1.4B-R
+
+El PR #170 está fusionado y `origin/main` vigente es
+`0decbc4124fed4e8cda4e807a9a400f7257e3084`. La conclusión de dependencias no
+cambia: **DEPENDENCY CONDITIONAL GO**. La sustitución de identidad completó
+la parte de activos: **ASSET CONDITIONAL GO** y **OSS.1.4 COMPLETE —
+CONDITIONAL GO**, condicionado a la aprobación visual del mantenedor antes del
+merge. AGPL sigue prevista, no vigente; no se creó `LICENSE`.
