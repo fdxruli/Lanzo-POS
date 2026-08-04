@@ -108,3 +108,12 @@ unauthenticated: No se encontró licencia. Muestra <WelcomeModal /> para activar
 setup_required: Licencia válida, pero el perfil del negocio no está configurado. Muestra <SetupModal />.
 
 ready: Licencia y perfil listos. Muestra el <Layout /> principal con la aplicación.
+
+## Procedencia y marca
+
+La procedencia de los activos gráficos y el alcance reservado de la identidad
+se documentan por separado:
+
+- [Declaración de procedencia de activos](docs/OSS-ASSET-DECLARATION.md)
+- [Inventario y conclusión de procedencia](docs/OSS-ASSET-PROVENANCE.md)
+- [Política preliminar de marca](TRADEMARK_POLICY.md)

@@ -147,3 +147,19 @@ corresponda y no imponer restricciones incompatibles con LGPL.
 La procedencia de logos, iconos, portadas, imágenes de producto y demás activos
 propios sigue pendiente en `docs/OSS-ASSET-PROVENANCE.md`. Esta tarea no los
 resuelve.
+
+## 7. Activos gráficos de identidad
+
+La auditoría de OSS.1.4B no identificó una fuente visual de tercero, plantilla,
+biblioteca de iconos, imagen embebida ni fuente externa concreta en los nueve
+activos gráficos rastreados. Los SVG son autocontenidos; `public/log.svg` usa la
+familia genérica `sans-serif` y no incorpora una fuente. Los tres SVG tienen
+uso de IA declarado, pero el proveedor y los términos históricos no están
+documentados.
+
+No se añaden los logos o iconos propios como avisos de terceros. La declaración
+de primera parte y sus limitaciones están en
+[`docs/OSS-ASSET-DECLARATION.md`](docs/OSS-ASSET-DECLARATION.md); el alcance de
+marca está en [`TRADEMARK_POLICY.md`](TRADEMARK_POLICY.md). La conclusión de
+activos permanece **ASSET NO-GO**, por lo que OSS.1.4 global permanece
+**BLOCKED — NO-GO**.
