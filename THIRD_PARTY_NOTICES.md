@@ -157,6 +157,11 @@ familia genérica `sans-serif` y no incorpora una fuente. Los tres SVG tienen
 uso de IA declarado, pero el proveedor y los términos históricos no están
 documentados.
 
+**NO SPECIFIC THIRD-PARTY ASSET IDENTIFIED.** La referencia a `GPT-4o`,
+`OpenAI API` y `ChatGPT` encontrada dentro de metadata C2PA de dos PNG identifica
+una declaración de procedencia embebida; no identifica un recurso visual de
+tercero, una licencia de activo ni una autorización de redistribución.
+
 No se añaden los logos o iconos propios como avisos de terceros. La declaración
 de primera parte y sus limitaciones están en
 [`docs/OSS-ASSET-DECLARATION.md`](docs/OSS-ASSET-DECLARATION.md); el alcance de
