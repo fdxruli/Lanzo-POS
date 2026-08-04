@@ -4,23 +4,27 @@
 
 Estado global de OSS.1.5: `BLOCKED`.
 
-Estado de OSS.1.5.1: `PASS WITH NOTES` por la integración de PR #173; la
-configuración local existe y es reconocida por Supabase CLI, pero el daemon de
-Docker no respondió en la validación del 2026-08-04.
+Estado de OSS.1.5.1: `PASS WITH NOTES`. La configuración local está
+versionada en `supabase/config.toml`, pero Docker no estuvo disponible para
+validar el runtime.
 
 Estado de OSS.1.5.2: `PASS WITH NOTES`. La migración del modelo de productos
-ya no descarga SQL, no depende de GitHub ni requiere la extensión PostgreSQL
-`http`; el SQL funcional está versionado localmente y fue comprobado por hash
-y comparación exacta.
+es hermética, no descarga SQL, no depende de GitHub ni requiere la extensión
+PostgreSQL `http`; el SQL funcional fue comprobado por hash y comparación
+exacta.
 
-Esta tarea no valida una base vacía ni los flujos end-to-end, no añade
-`lanzo-ai-agent`, no resuelve OSS.1.4 y no activa AGPL.
+Estado de OSS.1.5.3: `VERSIONED WITH NOTES`. La Edge Function
+`supabase/functions/lanzo-ai-agent` está versionada con las operaciones que el
+frontend ya invoca, pruebas mock ejecutadas con Deno y sin servicios reales.
+No se usaron Supabase remoto, proveedor real, Docker ni despliegue.
+
+El runtime completo, E2E, backup/restore, ejecución integral de migraciones y
+OSS.1.4 continúan fuera de esta validación. AGPL no está activada.
 
 ## Configuración local
 
-La configuración versionada está en `supabase/config.toml` y usa el
-identificador local `lanzo-pos-local`. Fue generada a partir de una referencia
-creada con Supabase CLI `2.51.0` y reducida a valores locales seguros.
+La configuración está en `supabase/config.toml` y usa el identificador local
+`lanzo-pos-local`.
 
 | Componente | Configuración local | Estado en esta validación |
 | --- | --- | --- |
@@ -28,42 +32,70 @@ creada con Supabase CLI `2.51.0` y reducida a valores locales seguros.
 | PostgreSQL | `127.0.0.1:54322` | BLOCKED: Docker |
 | Shadow database | `127.0.0.1:54320` | NOT VERIFIED |
 | Studio | `http://127.0.0.1:54323` | BLOCKED: Docker |
-| Inbucket | `http://127.0.0.1:54324` | BLOCKED: Docker |
 | Auth | habilitado dentro del API local | BLOCKED: Docker |
 | Storage | habilitado, límite `50MiB` | BLOCKED: Docker |
 | Realtime | habilitado | BLOCKED: Docker |
-| Edge Runtime | habilitado, inspector `8083` | BLOCKED: Docker |
+| Edge Runtime | habilitado | NOT VERIFIED: sin despliegue |
 | Analytics | deshabilitado | NOT REQUIRED |
 
-La URL de Auth es `http://127.0.0.1:4173` y el origen adicional permitido es
-`http://127.0.0.1:4174`. No se habilitaron proveedores OAuth, SMTP, SMS,
-CAPTCHA, S3, IA, pagos ni webhooks externos.
+No se habilitaron proveedores OAuth, SMTP, SMS, CAPTCHA, S3, IA, pagos ni
+webhooks externos en la configuración local.
 
-No se añadió `seed.sql`: `db.seed.enabled = false` y `sql_paths = []` porque
-este repositorio no contiene un seed sintético autorizado para esta tarea.
+## Edge Function `lanzo-ai-agent`
 
-## Requisitos
+La función está en `supabase/functions/lanzo-ai-agent/index.ts` y conserva el
+contrato de `src/services/aiService.js`:
 
-- Supabase CLI compatible con el formato de `supabase/config.toml`.
-- Docker Desktop operativo y daemon Linux accesible mediante `docker info`.
-- Un clon o worktree limpio para cualquier prueba de runtime.
-- Copiar `.env.example` sólo si se necesita configurar el frontend local;
-  nunca copiar `.env` ni credenciales reales.
+- `POST { action: "usage", auth }` llama únicamente a
+  `get_ai_agent_usage` y funciona sin variables del proveedor de IA.
+- El análisis valida auth, prompts, agent type, opciones y configuración antes
+  de llamar a `begin_ai_agent_analysis`.
+- La reserva precede al proveedor y se finaliza exactamente una vez como
+  `completed` o `failed` mediante `complete_ai_agent_analysis`.
+- `AI_API_URL` debe ser un endpoint HTTP completo de `/responses` o
+  `/chat/completions`; los endpoints desconocidos se rechazan.
+- `AI_API_KEY` tiene prioridad y `OPENAI_API_KEY` sólo es fallback.
+- Los tokens de licencia/dispositivo/staff, prompts, respuestas y claves no se
+  envían al proveedor ni se registran.
 
-La validación de esta tarea encontró Windows 10 Home Single Language x64,
-Supabase CLI `2.51.0` y Docker CLI `28.3.2`. El daemon no estuvo disponible.
+Límites documentados: body de 256 KiB; prompt de sistema de 32.000
+caracteres; prompt de usuario de 96.000; total de prompts de 128.000;
+`temperature` de 0 a 2; `maxTokens` de 1 a 4.096; timeout de 55 segundos y
+respuesta del proveedor de 512 KiB.
+
+La implementación usa un cliente RPC server-side mínimo sobre `fetch`, con
+`persistSession: false` y `autoRefreshToken: false`, y sólo permite las tres
+RPC fijadas en el código. No añade SDK ni dependencias.
+
+## Variables de entorno
+
+`supabase/functions/.env.example` contiene únicamente marcadores sintéticos:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `AI_API_KEY`
+- `OPENAI_API_KEY` como fallback compatible
+- `AI_API_URL` como endpoint HTTP completo
+- `AI_MODEL`
+
+La separación frontend/backend es obligatoria: las variables de Supabase
+server-side no deben entrar en `.env` del frontend ni en variables `VITE_*`.
+
+## RPC y limitación heredada
+
+La secuencia final inspeccionada usa `get_ai_agent_usage`,
+`begin_ai_agent_analysis` y `complete_ai_agent_analysis`. La versión más
+reciente de `get_ai_agent_usage` usa periodo/licencia y referencia
+`ai_agent_usage.period_id`, pero ninguna migración versionada inspeccionada
+añade esa columna. Esta inconsistencia no se modifica en OSS.1.5.3 porque la
+tarea prohíbe cambiar migraciones; debe resolverse antes de declarar runtime
+E2E o autohospedaje completo.
 
 ## Procedimiento local seguro
 
-Los comandos de CLI y Docker siguientes forman el procedimiento reproducible.
-`supabase --version`, el parseo TOML y la inspección estática fueron
-verificados. `docker info`, `supabase start` y el resto del runtime quedaron
-bloqueados o sin ejecutar por la indisponibilidad del daemon; se indica en la
-matriz y en `docs/SELF-HOSTING-VALIDATION.md`.
+Cuando exista un entorno aislado autorizado, el procedimiento es:
 
 ```powershell
-git clone <repositorio> Lanzo-POS
-cd Lanzo-POS
 supabase --version
 docker info
 supabase start
@@ -72,70 +104,10 @@ supabase db reset --local
 supabase stop
 ```
 
-Antes de iniciar, confirmar que el entorno aislado no contiene `.supabase`,
-`.env`, `.env.local`, `.vercel`, credenciales, contenedores ni volúmenes de
-otra prueba. No versionar `.supabase`.
+Este procedimiento no fue ejecutado en OSS.1.5.3. No se debe usar `supabase
+link`, `supabase db push`, `supabase migration repair --linked`,
+`supabase functions deploy`, un proyecto remoto ni un proveedor real.
 
-Para detener una prueba que sí haya iniciado, ejecutar `supabase stop` desde
-el mismo worktree. No usar comandos destructivos globales de Docker y no
-eliminar contenedores o volúmenes ajenos al proyecto.
-
-## Variables de entorno
-
-`.env.example` ya está alineado con esta configuración:
-
-- `VITE_SUPABASE_URL=http://127.0.0.1:54321`
-- `VITE_SUPABASE_PUBLISHABLE_KEY=not-a-real-local-publishable-key`
-- `VITE_ADMIN_APP_ORIGIN=http://127.0.0.1:4173`
-- `VITE_PUBLIC_STORE_ORIGIN=http://127.0.0.1:4174`
-- `PUBLIC_STORE_ORIGINS=http://127.0.0.1:4174`
-
-No se modificó `.env.example` y no se deben copiar claves generadas por
-`supabase start` a documentación o control de versiones. La Edge Function
-`authorize-image-upload` usa los marcadores sintéticos de
-`supabase/functions/.env.example`; `SUPABASE_SERVICE_ROLE_KEY` nunca debe
-entrar al frontend.
-
-## Migraciones y alcance de la prueba
-
-El repositorio contiene 215 migraciones SQL, 34 pruebas SQL y una Edge Function
-versionada: `authorize-image-upload`.
-
-La migración `supabase/migrations/20260715190958_ecom_products_model_1.sql`
-es ahora hermética: contiene localmente el SQL funcional de
-`20260715190000_ecom_products_model_1.sql`, recuperado del commit fijado y
-verificado con SHA-256 y comparación funcional. No crea la extensión `http`, no
-usa `extensions.http_get` ni ejecuta SQL dinámico descargado.
-
-Cuando Docker esté disponible, `supabase db reset --local` debe ejecutarse sin
-`--linked`, sin `--db-url` externo y sin reparar migraciones. Esa ejecución
-integral sobre una base vacía continúa pendiente; no se declara como realizada
-por OSS.1.5.2.
-
-La función `lanzo-ai-agent` es invocada por el cliente pero no está versionada;
-su incorporación queda fuera de esta tarea. Auth, RLS, RPC, Storage,
-Realtime, Edge Runtime, backup, restore y E2E tampoco quedan certificados por
-la creación de esta configuración.
-
-## Prohibiciones de seguridad
-
-Durante la validación local no ejecutar `supabase link`, `supabase db push`,
-`supabase migration repair --linked`, `supabase functions deploy`,
-`supabase projects create`, `vercel deploy` ni `vercel --prod`. No iniciar
-sesión en servicios externos ni usar proyectos, dominios, datos, claves o
-secretos oficiales.
-
-## Referencias de validación
-
-- Resultado detallado y evidencia redactada:
-  `docs/SELF-HOSTING-VALIDATION.md`.
-- Matriz de componentes:
-  `docs/SELF-HOSTING-MATRIX.md`.
-- Estado global y handoff:
-  `docs/SELF-HOSTING-STATUS.md`.
-- Secuencia del roadmap:
-  `docs/OSS-ROADMAP.md`.
-
-**SELF-HOSTING BLOCKED.** La configuración local y esta migración ya están
-preparadas para autohospedaje, pero el daemon de Docker, la ejecución integral
-de migraciones, `lanzo-ai-agent`, E2E y backup/restore siguen pendientes.
+**SELF-HOSTING BLOCKED.** La configuración, las migraciones relevantes y la
+función están versionadas, pero el runtime, la base vacía, E2E, backup/restore
+y la inconsistencia `period_id` siguen pendientes.

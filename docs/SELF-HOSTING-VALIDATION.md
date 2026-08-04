@@ -2,143 +2,117 @@
 
 Fecha: 2026-08-04 (America/Mexico_City)
 
-Commit base validado: `5b40515131c7aab805a10f392595923cedc708b1`.
-
-Rama: `fix/oss-hermetic-ecommerce-migration`.
-
-PR #173: `MERGED`, `merged_at=2026-08-04T16:15:01Z`, merge commit
-`5b40515131c7aab805a10f392595923cedc708b1`, ancestro confirmado de
-`origin/main`. Su SHA final integrado fue `938fba91e2e6413629f286d7a41496486c14028a`.
-
-Decisión de OSS.1.5.1: `PASS WITH NOTES`.
-Decisión de OSS.1.5.2: `PASS WITH NOTES`.
-
-## Entorno
+## Base y GitHub
 
 | Elemento | Resultado |
 | --- | --- |
-| Sistema operativo | Microsoft Windows 10 Home Single Language 10.0.19045 |
-| Arquitectura | X64 / AMD64 |
-| Git | disponible |
-| Worktree de Git | limpio antes de editar; rama dedicada desde `origin/main` |
-| Supabase CLI | `2.51.0` |
-| Docker CLI | `28.3.2`, contexto `desktop-linux` |
-| Docker daemon | `BLOCKED`: `docker info` no pudo abrir `dockerDesktopLinuxEngine` |
-| Entorno de runtime aislado | no iniciado: la compuerta Docker falló antes de `supabase start` |
-| Configuración local | `supabase/config.toml`, project ID `lanzo-pos-local` |
+| Repositorio | `fdxruli/Lanzo-POS` |
+| PR #174 | `MERGED` |
+| `merged_at` | `2026-08-04T16:37:04Z` |
+| Head SHA del PR #174 | `c393b2d8052aae9be5d42d399e1d76e5957dbb4d` |
+| Merge commit del PR #174 | `5736eb6cd3ba36361530164655351a601a595f57` |
+| SHA actual de `origin/main` | `5736eb6cd3ba36361530164655351a601a595f57` |
+| Ancestro confirmado | `git merge-base --is-ancestor 5736eb6c... origin/main` PASS |
+| Worktree antes de editar | limpio |
+| HEAD inicial de la rama | `5736eb6cd3ba36361530164655351a601a595f57` |
+| Rama | `feat/oss-version-lanzo-ai-agent` |
+| HEAD final | commit único de esta rama: `feat(oss): version Lanzo AI edge function` |
 
-El workspace compartido contiene estado local previo (`.env`, `.vercel`,
-`node_modules` y artefactos de build), por lo que no se usó para iniciar
-contenedores ni aplicar migraciones. La validación de runtime quedó detenida
-antes de crear estado `.supabase`, contenedores o volúmenes.
+`git fetch origin --prune`, `git switch main` y `git pull --ff-only origin main`
+se ejecutaron antes de crear la rama. `HEAD` y `origin/main` coincidieron antes
+de editar.
 
-## Precondiciones Git
+## Evidencia de contrato
 
-| Comprobación | Resultado |
+La auditoría inspeccionó completamente los servicios y componentes IA usados
+por el frontend, incluyendo `src/services/aiService.js`,
+`src/services/aiAgentUsageService.js`, `src/utils/aiPromptBuilder.js`,
+`src/utils/buildAgentPayload.js`, `src/agents/**`,
+`src/components/dashboard/AIAgentDashboard.jsx` y
+`src/hooks/dashboard/useAgentPreview.js`.
+
+El frontend invoca `lanzo-ai-agent` por defecto y envía camelCase:
+`auth.licenseKey`, `auth.deviceFingerprint`, `auth.deviceSecurityToken`,
+`auth.staffSessionToken`, `agentType`, `systemPrompt`, `userPrompt` y
+`options.temperature`/`options.maxTokens`.
+
+No se encontró una implementación histórica de la Edge Function. El historial
+contiene únicamente los cambios del frontend que enrutan a la función:
+
+- `6214f432 feat(ai): route agents through Supabase Edge Function`.
+- `120e2a0f feat(ai): add AI agent usage service`.
+- `d38b6a21 perf: cache AI agent usage checks`.
+
+## RPC finales inspeccionadas
+
+| RPC | Firma final usada | Retorno/semántica | Permisos/rate limit |
+| --- | --- | --- | --- |
+| `get_ai_agent_usage` | `(text, text, text, text default null)` | JSONB de licencia, dispositivo, staff, periodo y uso | wrapper público final con `AI_USAGE`, 30/600 s, bloqueo 300 s |
+| `begin_ai_agent_analysis` | `(text, text, text, text default null, text default 'unknown', jsonb default '{}')` | JSONB; valida licencia/dispositivo/staff, reserva y devuelve `usage_id` | RPC interna protegida; la Edge Function la llama server-side |
+| `complete_ai_agent_analysis` | `(uuid, boolean, integer default null, integer default null, integer default null, text default null, jsonb default '{}')` | JSONB; cambia a `completed` o `failed` | RPC interna protegida; la Edge Function la llama server-side |
+
+Las migraciones finales de `get_ai_agent_usage` delegan en la versión de
+periodos y cuentan `reserved`/`completed` por `period_id`. La auditoría detectó
+que `ai_agent_usage.period_id` no aparece en ninguna migración versionada; no se
+inventó una migración ni se corrigió en esta tarea.
+
+## Implementación OSS.1.5.3
+
+Archivos creados:
+
+- `supabase/functions/lanzo-ai-agent/index.ts`
+- `supabase/functions/lanzo-ai-agent/contract.ts`
+- `supabase/functions/lanzo-ai-agent/provider.ts`
+- `supabase/functions/lanzo-ai-agent/index.test.ts`
+- `supabase/functions/lanzo-ai-agent/README.md`
+
+Características verificadas por inspección y mocks:
+
+- CORS `OPTIONS` y método `POST`.
+- Validación de JSON, content type, body, auth, prompts, agent type y opciones.
+- `usage` no requiere `AI_API_KEY`, `AI_API_URL` ni `AI_MODEL`.
+- Análisis sin configuración no llama a `begin`.
+- Reserva antes del proveedor y una única finalización por reserva.
+- Finalización `failed` en error HTTP, timeout, JSON inválido o respuesta vacía.
+- Adaptadores explícitos para `/responses` y `/chat/completions`.
+- `AI_API_KEY` tiene prioridad sobre `OPENAI_API_KEY`.
+- No se aceptan URLs, headers, RPCs ni secretos desde el request.
+- No hay reintentos automáticos.
+
+## Pruebas ejecutadas
+
+| Herramienta | Resultado |
 | --- | --- |
-| `git fetch origin --prune` | PASS |
-| Estado de PR #173 consultado en GitHub | PASS: merged |
-| Merge commit de PR #173 | `5b40515131c7aab805a10f392595923cedc708b1` |
-| SHA final integrado de PR #173 | `938fba91e2e6413629f286d7a41496486c14028a` |
-| `git merge-base --is-ancestor <merge> origin/main` | PASS |
-| `git status --short` antes de editar | vacío |
-| Base exacta | `HEAD = origin/main = 5b40515131c7aab805a10f392595923cedc708b1` |
-| Rama creada | `fix/oss-hermetic-ecommerce-migration` |
+| Deno | `2.5.1` disponible |
+| `deno check supabase/functions/lanzo-ai-agent/index.ts` | PASS |
+| `deno test supabase/functions/lanzo-ai-agent/index.test.ts` | PASS: 36 tests, 0 fallos |
+| `npm test -- --run src/agents/__tests__/agentToolRegistry.test.js` | PASS: 3 tests, 0 fallos |
+| Proveedor real | NO UTILIZADO |
+| Supabase remoto | NO UTILIZADO |
+| Docker | NO UTILIZADO |
+| `supabase start` / `db reset` | NO EJECUTADOS |
+| `supabase functions deploy` | NO EJECUTADO |
 
-## Configuración estática
-
-| Comprobación | Resultado |
-| --- | --- |
-| `supabase --version` | PASS: `2.51.0` |
-| `supabase init --workdir <temporal> --yes` | PASS; referencia generada y luego eliminada |
-| Parseo TOML con `tomllib` | PASS |
-| `supabase status` reconoce el project ID | PARTIAL: llegó a inspección del contenedor `supabase_db_lanzo-pos-local` y falló al conectar con Docker |
-| Rutas absolutas | PASS: no encontradas |
-| Project refs o enlaces remotos | PASS: no encontrados |
-| URLs productivas | PASS: no encontradas |
-| secretos, tokens o passwords | PASS: no encontrados |
-| migraciones referenciadas | PASS: `supabase/migrations` existe |
-| seeds referenciados | PASS: no se referencia ningún archivo; seeds desactivados |
-
-La referencia temporal de la CLI generó también ajustes de VS Code fuera del
-repositorio; no se copiaron. Sólo se incorporó la estructura necesaria en
-`supabase/config.toml`.
-
-## Validación OSS.1.5.2
-
-| Comprobación | Resultado |
-| --- | --- |
-| Commit fuente | `ba92582c45f88582e01294137b65411efe80b642` |
-| Ruta fuente | `supabase/migrations/20260715190000_ecom_products_model_1.sql` |
-| Blob SHA fuente | `79d0a049efd63c00fa9ebcf7799e2576d2823f43` |
-| SHA-256 esperado | `1d434996aa3dd79c7e98a2857f475fa4a6c760aed081df877cb238d161205091` |
-| SHA-256 obtenido | `1d434996aa3dd79c7e98a2857f475fa4a6c760aed081df877cb238d161205091` |
-| Coincidencia de hash | `PASS` |
-| Coincidencia funcional | `PASS`: 1,310 líneas fuente y 1,310 líneas embebidas |
-| Búsqueda en la migración objetivo | `PASS`: sin `http_get`, URL de GitHub, `http_response`, SQL dinámico ni extensión `http` |
-| Búsqueda en todas las migraciones | 11 URLs legítimas de WhatsApp/configuración; ninguna descarga o ejecución remota |
-| SQL dinámico descargado | `PASS`: eliminado |
-| Base vacía PostgreSQL | `NOT VERIFIED`: no se utilizó Docker ni se ejecutó `db reset` |
-
-La parte funcional embebida se comparó byte a byte contra el blob extraído del
-commit fijado, excluyendo únicamente el encabezado de procedencia añadido.
-
-## Comandos de runtime
-
-| Comando | Resultado | Evidencia |
-| --- | --- | --- |
-| `docker --version` | PASS | Docker CLI `28.3.2` |
-| `docker info` | BLOCKED | no existe el pipe `dockerDesktopLinuxEngine` |
-| `supabase start` | NO EJECUTADO | la tarea exige Docker accesible antes de iniciar |
-| `supabase status` | BLOCKED | no pudo inspeccionar contenedores por el daemon ausente |
-| `supabase db reset` | NO EJECUTADO | no hay stack local; no se usó URL externa |
-| `supabase stop` | NO EJECUTADO | no se inició ningún stack de esta prueba |
-| `supabase link` / `supabase db push` | NO EJECUTADO | prohibidos por alcance |
-| `supabase functions deploy` | NO EJECUTADO | prohibido por alcance |
-| `vercel deploy` / `vercel --prod` | NO EJECUTADO | prohibidos por alcance |
-
-No se imprimieron claves locales, tokens, passwords, project refs oficiales ni
-valores completos de `.env`.
-
-## Inventario del repositorio
-
-- 215 migraciones SQL, ordenadas por timestamp.
-- 34 pruebas SQL.
-- Una Edge Function versionada:
-  `supabase/functions/authorize-image-upload/index.ts`.
-- `lanzo-ai-agent` no está versionada y no fue añadida.
-- La migración `20260715190958_ecom_products_model_1.sql` es hermética y contiene
-  localmente el SQL canónico; la equivalencia fue verificada por SHA-256 y
-  comparación funcional.
-
-No se ejecutaron migraciones; por tanto no hay primera migración aplicada,
-última migración aplicada ni primera migración fallida. La hermeticidad y la
-equivalencia funcional quedan confirmadas por inspección estática, no por un
-`db reset` local.
-
-## Servicios y clasificación
-
-| Servicio | Configurado | Verificación de endpoint |
-| --- | --- | --- |
-| PostgreSQL | sí, puerto `54322` | BLOCKED |
-| API | sí, puerto `54321` | BLOCKED |
-| Auth | sí | BLOCKED |
-| Storage | sí | BLOCKED |
-| Realtime | sí | BLOCKED |
-| Studio | sí, puerto `54323` | BLOCKED |
-| Inbucket | sí, puerto `54324` | BLOCKED |
-| Edge Runtime | sí, inspector `8083` | BLOCKED |
-| Analytics | no, intencionalmente desactivado | NOT REQUIRED |
+Los mocks inyectan RPC, fetch, entorno, reloj y request ID. No contienen
+credenciales, tokens ni respuestas reales.
 
 ## Resultado y limitaciones
 
-`supabase/config.toml` elimina el bloqueo de reconocimiento/configuración y la
-migración de productos ya no depende de red. OSS.1.5.1 y OSS.1.5.2 quedan en
-`PASS WITH NOTES` porque no se ejecutaron `start`, `status` y `db reset` sobre
-una base vacía.
+Resultado OSS.1.5.3: `VERSIONED WITH NOTES`.
 
-El estado global OSS.1.5 permanece `BLOCKED`. OSS.2 permanece `BLOCKED`, OSS.1.4
-no cambia y AGPL no fue activada. `lanzo-ai-agent`, E2E, backup/restore y la
-ejecución integral de migraciones siguen pendientes. No se modificaron otras
-migraciones, funciones, código productivo, dependencias, manifiestos,
-lockfiles ni `.env.example`.
+La función está versionada y el contrato frontend está cubierto por pruebas
+locales sin servicios reales. No se declara `VERSIONED` porque no hubo runtime
+Supabase ni proveedor real, y porque la migración final de consulta referencia
+una columna `period_id` ausente del historial de migraciones versionado.
+
+OSS.1.5 permanece `BLOCKED` hasta completar runtime/E2E, base vacía,
+backup/restore y la revisión de `period_id`. OSS.1.4 mantiene su estado; OSS.2
+permanece `BLOCKED`; AGPL no fue activada y no se creó `LICENSE`.
+
+## Alcance negativo comprobado
+
+No se modificaron migraciones, `supabase/config.toml`,
+`authorize-image-upload`, frontend, `store`, `public`, manifiestos,
+lockfiles, `.github`, `vercel.json`, `LICENSE` ni activos de marca. No se
+reescribió historial, no se usaron secretos, no se accedió a producción y no
+se desplegó la función.
