@@ -4,14 +4,17 @@
 
 Estado global de OSS.1.5: `BLOCKED`.
 
-Estado de OSS.1.5.1: `BLOCKED` por disponibilidad de infraestructura local.
-La configuración local ya existe y es reconocida por Supabase CLI, pero el
-daemon de Docker no respondió en la validación del 2026-08-04. Por ello no se
-declara iniciado ni validado ningún servicio de Supabase.
+Estado de OSS.1.5.1: `PASS WITH NOTES` por la integración de PR #173; la
+configuración local existe y es reconocida por Supabase CLI, pero el daemon de
+Docker no respondió en la validación del 2026-08-04.
 
-Esta tarea resuelve únicamente la ausencia de `supabase/config.toml`. No
-corrige la migración que descarga SQL externo, no añade `lanzo-ai-agent`, no
-valida flujos end-to-end, no resuelve OSS.1.4 y no activa AGPL.
+Estado de OSS.1.5.2: `PASS WITH NOTES`. La migración del modelo de productos
+ya no descarga SQL, no depende de GitHub ni requiere la extensión PostgreSQL
+`http`; el SQL funcional está versionado localmente y fue comprobado por hash
+y comparación exacta.
+
+Esta tarea no valida una base vacía ni los flujos end-to-end, no añade
+`lanzo-ai-agent`, no resuelve OSS.1.4 y no activa AGPL.
 
 ## Configuración local
 
@@ -98,17 +101,16 @@ entrar al frontend.
 El repositorio contiene 215 migraciones SQL, 34 pruebas SQL y una Edge Function
 versionada: `authorize-image-upload`.
 
-La primera migración que debe investigarse después de obtener Docker operativo
-es `supabase/migrations/20260715190958_ecom_products_model_1.sql`. Crea
-temporalmente la extensión `http` y descarga desde GitHub la migración
-`20260715190000_ecom_products_model_1.sql`, comprobando después un SHA-256.
-Ese comportamiento no es hermético y queda fuera de OSS.1.5.1.
+La migración `supabase/migrations/20260715190958_ecom_products_model_1.sql`
+es ahora hermética: contiene localmente el SQL funcional de
+`20260715190000_ecom_products_model_1.sql`, recuperado del commit fijado y
+verificado con SHA-256 y comparación funcional. No crea la extensión `http`, no
+usa `extensions.http_get` ni ejecuta SQL dinámico descargado.
 
 Cuando Docker esté disponible, `supabase db reset --local` debe ejecutarse sin
-`--linked`, sin `--db-url` externo y sin reparar migraciones. Si alcanza esa
-migración y falla únicamente por la descarga o su hash, registrar `PASS WITH
-NOTES` para OSS.1.5.1 y abrir OSS.1.5.2. No descargar el SQL manualmente, no
-saltar la migración y no editarla en esta rama.
+`--linked`, sin `--db-url` externo y sin reparar migraciones. Esa ejecución
+integral sobre una base vacía continúa pendiente; no se declara como realizada
+por OSS.1.5.2.
 
 La función `lanzo-ai-agent` es invocada por el cliente pero no está versionada;
 su incorporación queda fuera de esta tarea. Auth, RLS, RPC, Storage,
@@ -134,6 +136,6 @@ secretos oficiales.
 - Secuencia del roadmap:
   `docs/OSS-ROADMAP.md`.
 
-**SELF-HOSTING BLOCKED.** Esta configuración elimina el primer bloqueo de
-configuración, pero el daemon de Docker y la migración externa siguen
-impidiendo declarar Lanzo-POS autohospedable.
+**SELF-HOSTING BLOCKED.** La configuración local y esta migración ya están
+preparadas para autohospedaje, pero el daemon de Docker, la ejecución integral
+de migraciones, `lanzo-ai-agent`, E2E y backup/restore siguen pendientes.
