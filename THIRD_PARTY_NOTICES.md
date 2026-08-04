@@ -189,3 +189,23 @@ declarada con fuente desconocida.
 Resultado de activos: **REDISTRIBUTION NOT CLEARED** para las nueve rutas.
 Consultar [`docs/OSS-ASSET-PROVENANCE.md`](docs/OSS-ASSET-PROVENANCE.md) y el
 cuestionario [`docs/OSS-ASSET-EVIDENCE-REQUEST.md`](docs/OSS-ASSET-EVIDENCE-REQUEST.md).
+
+## 9. OSS.1.4.3 — Declaración de identidad oficial restringida
+
+La declaración final del mantenedor registra que Claude fue una herramienta de
+asistencia o generación bajo su dirección para las familias declaradas. Claude
+no se registra como un activo visual de tercero, titular de los archivos ni
+fuente automática de una licencia. No se identificó deliberadamente un recurso
+visual concreto de tercero y no se añade un aviso de licencia visual de
+tercero. Los términos históricos del proveedor no se verificaron dentro de las
+fuentes autorizadas.
+
+Se conserva la conclusión **NO SPECIFIC THIRD-PARTY ASSET IDENTIFIED**. La
+metadata C2PA de los PNG que nombra un proveedor se mantiene como
+**AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA**; la firma y la cadena de
+confianza no se presentan como verificadas.
+
+Los nueve activos de identidad permanecen fuera del alcance automático de una
+futura licencia del código y con `NO REDISTRIBUTION GRANT` y
+`NO MODIFICATION GRANT`. Esta aclaración no modifica los avisos de
+dependencias ni constituye un aviso de terceros para Claude.

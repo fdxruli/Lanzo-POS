@@ -627,3 +627,92 @@ C2PA remotos ni generadores de imágenes.
 
 No se modificaron activos, código productivo, dependencias, manifests
 productivos, `supabase/`, `vercel.json`, `.github/`, `LICENSE` ni el historial.
+
+## OSS.1.4.3 — Declaración del mantenedor y alcance restringido
+
+Fecha de registro: 2026-08-04. Esta sección actualiza el estado agregado de las
+seis familias sin borrar ni alterar el inventario, hashes, C2PA, historial,
+limitaciones ni la matriz de OSS.1.4.2.
+
+**Resultado OSS.1.4.3: `MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE`.**
+
+**Estado de activos: `RESTRICTED OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`.**
+
+| Familia | Rutas | Declaración normalizada | Estado vigente |
+| --- | --- | --- | --- |
+| Icono cuadrado | `icono/icono.png`, `public/icono.png` | Concepto del mantenedor; bocetos propios de cuaderno y lápiz; Claude como asistencia/generación; fuente editable no preservada; no se identifica otro titular. | `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` |
+| Wordmark PNG | `icono/icono-web.png` | Generado o trabajado con Claude bajo dirección del mantenedor; sin plantilla o recurso visual concreto de tercero identificado; fuente editable no preservada. | `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` |
+| Familia PWA | `public/icono-web.png`, `public/pwa-192x192.png`, `public/pwa-512x512.png` | Herramienta web no recordada con certeza; sólo se conservan los archivos; no existe cadena reproducible ni fuente editable. | `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` |
+| Wordmark SVG | `public/log.svg` | Generado con Claude bajo dirección del mantenedor y relacionado con bocetos propios; sin prompt, fuente editable ni términos históricos disponibles. | `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` |
+| Marca SVG | `public/logIcon.svg` | Generado con Claude bajo dirección del mantenedor; relación conceptual con la marca, sin conversión técnica demostrada ni fuente editable. | `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` |
+| Icono del asistente | `public/boticon.svg` | Generado con Claude; deriva conceptualmente del icono oficial de Lanzo; no hay fuente editable ni derivación técnica demostrable. | `MAINTAINER EVIDENCE RECEIVED — RESTRICTED OFFICIAL IDENTITY` |
+
+Todas las familias conservan además `MAINTAINER-ATTESTED`, `NO REDISTRIBUTION
+GRANT`, `NO MODIFICATION GRANT`, `TRADEMARK-RESERVED` y
+`RELEASE BOUNDARY REQUIRED`. Ninguna se clasifica
+como `VERIFIED FIRST-PARTY`, `VERIFIED THIRD-PARTY`, `DISTRIBUTION CLEARED`,
+`OPEN ASSET LICENSE` o `ASSET GO`.
+
+### Alcance excluido de la futura licencia del código
+
+Una futura licencia del código, si posteriormente se adopta, no cubrirá
+automáticamente las nueve rutas restringidas ni futuras copias exactas,
+adaptaciones oficiales de la identidad, versiones oficiales del wordmark,
+iconos PWA oficiales, iconos oficiales del asistente o material promocional
+que incorpore sustancialmente esta identidad.
+
+La exclusión no se extiende al código fuente, componentes genéricos, estilos
+genéricos, funcionalidades, estructuras de base de datos, APIs,
+documentación técnica que no incorpore los activos ni contenido creado por
+usuarios. No se declara todavía una licencia concreta para el código, no se
+crea `LICENSE` y no se declara AGPL vigente.
+
+### Límite de distribución
+
+Los activos permanecen en el repositorio oficial actual para el funcionamiento
+y la identidad de producción. Su presencia no constituye un grant general.
+Los futuros artefactos OSS deberán definir un límite técnico explícito; los
+forks y redistribuciones deberán utilizar identidad propia y no presentarse
+como Lanzo-POS oficial. OSS.1.4.3 no elimina, reemplaza ni altera archivos. La
+implementación y verificación del límite queda para **OSS.1.4.4 — Implementar y
+validar el límite técnico de distribución de los activos oficiales restringidos
+sin cambiar la identidad de producción**.
+
+### Consumo actual
+
+Activos consumidos por la aplicación actual: `public/pwa-192x192.png`,
+`public/pwa-512x512.png`, `public/logIcon.svg` y `public/boticon.svg`.
+
+Activos sin consumo productivo rastreado: `icono/icono.png`,
+`public/icono.png`, `icono/icono-web.png`, `public/icono-web.png` y
+`public/log.svg`. Esta distinción no altera su condición de identidad oficial
+restringida ni autoriza su redistribución.
+
+### Tratamiento de Claude y C2PA
+
+Claude se registra como herramienta o proveedor declarado por el mantenedor,
+evidencia de primera parte no verificada independientemente. No se registra
+como material visual de tercero, titular de los activos ni fuente automática
+de licencia. No se consultan términos históricos de Claude en Internet y no se
+afirma que Anthropic o Claude concedan copyright, transfieran derechos o
+permitan o prohíban la redistribución.
+
+Para los PNG con metadata C2PA se conserva exactamente
+`AI-ASSISTED — PROVIDER DECLARED IN C2PA METADATA`. La firma está presente pero
+no verificada y la cadena de confianza tampoco fue verificada; no se sustituye
+por una clasificación de proveedor verificado.
+
+### Estado global posterior a OSS.1.4.3
+
+- Dependencias: `DEPENDENCY CONDITIONAL GO`.
+- Evidencia de activos: `EXHAUSTED AND MAINTAINER DECLARATION RECEIVED`.
+- Activos: `RESTRICTED OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`.
+- OSS.1.4: `BLOCKED — NO-GO (RELEASE BOUNDARY PENDING)`.
+- OSS.1.5: sin cambios.
+- OSS.2: `BLOCKED`.
+- `LICENSE`: no creada.
+- AGPL: prevista, no vigente.
+
+OSS.1.4 no pasa a `GO`: todavía falta implementar y verificar el límite
+técnico de distribución. Este expediente documental no resuelve por sí solo el
+empaquetado ni la redistribución futura.

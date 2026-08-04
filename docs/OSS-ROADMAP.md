@@ -4,8 +4,10 @@ Actualización: 2026-08-04.
 
 | Tarea | Estado | Alcance |
 | --- | --- | --- |
-| OSS.1.4 | `BLOCKED — NO-GO` | OSS.1.4.1 `PROVENANCE RECONCILED WITH NOTES` y OSS.1.4.2 `ASSET EVIDENCE EXHAUSTED WITH NOTES`; activos `ASSET NO-GO` / `ASSET REVIEW REQUIRED`. |
+| OSS.1.4 | `BLOCKED — NO-GO (RELEASE BOUNDARY PENDING)` | OSS.1.4.1 `PROVENANCE RECONCILED WITH NOTES`, OSS.1.4.2 `ASSET EVIDENCE EXHAUSTED WITH NOTES` y OSS.1.4.3 `MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE`; activos `RESTRICTED OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`. |
 | OSS.1.4.2 | `ASSET EVIDENCE EXHAUSTED WITH NOTES` | Evidencia de código, Git y GitHub agotada para seis familias; no hay grant de redistribución, fuente editable ni términos autorizados suficientes. |
+| OSS.1.4.3 | `MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE` | Declaración final recibida para seis familias; los nueve activos permanecen como identidad oficial restringida y fuera del alcance automático de una futura licencia OSS del código. |
+| OSS.1.4.4 | `PENDING` | Implementar y validar el límite técnico de distribución sin cambiar la identidad de producción. |
 | OSS.1.5 | `BLOCKED` | El autohospedaje completo aún no es reproducible; runtime, E2E y backup/restore siguen pendientes. |
 | OSS.1.5.1 | `PASS WITH NOTES` | PR #173 integrado y configuración local creada; Docker daemon no disponible para validar runtime. |
 | OSS.1.5.2 | `PASS WITH NOTES` | Migración ecommerce hermética, con SQL local equivalente; falta reset sobre una base vacía. |
@@ -17,11 +19,11 @@ Actualización: 2026-08-04.
 ## Handoff de OSS.1.4
 
 OSS.1.4.1 reconcilió el inventario, los hashes, el historial y el consumo sin
-alterar activos. OSS.1.4.2 agotó las fuentes autorizadas y dejó una decisión
-concreta por familia: las seis requieren evidencia del mantenedor antes de
-definir una licencia separada, excluirlas de un release o sustituirlas. La
-conservación actual no desbloquea OSS.1.4 ni concede derechos de
-redistribución sobre la identidad.
+alterar activos. OSS.1.4.2 agotó las fuentes autorizadas y OSS.1.4.3 registró la
+declaración final del mantenedor: las seis familias son identidad oficial
+restringida, fuera del alcance automático de una futura licencia OSS del
+código, sin grant general de redistribución o modificación. La conservación
+actual no desbloquea OSS.1.4.
 
 El cuestionario concreto está en
 [`docs/OSS-ASSET-EVIDENCE-REQUEST.md`](OSS-ASSET-EVIDENCE-REQUEST.md). No se
@@ -55,8 +57,9 @@ encontró una migración histórica exacta que restaurar.
 
 ## Siguiente tarea
 
-OSS.1.5.5: ejecutar, en un entorno aislado autorizado, el runtime de Edge
-Functions, el reset desde cero, las pruebas E2E y el flujo de backup/restore,
-incluyendo una instalación existente con backfill ambiguo. OSS.1.5 no debe
-marcarse `VERIFIED` hasta completar esas comprobaciones; OSS.2 permanece
-bloqueado.
+OSS.1.4.4 — implementar y validar el límite técnico de distribución de los
+activos oficiales restringidos sin cambiar la identidad de producción. Deberá
+decidir qué archivos entran en una entrega OSS, qué placeholders se usan en
+forks, cómo se mantiene producción intacta y cómo se validan manifests, PWA,
+favicon y asistente. OSS.1.5.5 sigue pendiente dentro de su propia fase; OSS.2
+permanece bloqueado.
