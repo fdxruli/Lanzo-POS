@@ -18,10 +18,10 @@ VERIFIED`, `BLOCKED`, `NOT REQUIRED`.
 | Inbucket | habilitado en `54324` | BLOCKED | comprobar correo local |
 | Edge Runtime | habilitado; `authorize-image-upload` versionada | BLOCKED | iniciar runtime y revisar función |
 | Analytics | deshabilitado intencionalmente | NOT REQUIRED | no necesario para OSS.1.5.1 |
-| Migraciones | 215 encontradas, no ejecutadas | BLOCKED | `supabase db reset --local` |
+| Migraciones | 215 encontradas; migración ecommerce hermética, hash y equivalencia verificados; no ejecutadas | VERIFIED WITH NOTES | reset aislado desde cero |
 | Reset local | no ejecutado; no hubo stack | BLOCKED | ejecutar sólo con Docker local |
 | `lanzo-ai-agent` | no existe en `supabase/functions` | BLOCKED | tarea posterior, fuera de OSS.1.5.1 |
-| Migración externa | `20260715190958_ecom_products_model_1.sql` descarga SQL | BLOCKED | OSS.1.5.2; no modificar aquí |
+| Migración externa | `20260715190958_ecom_products_model_1.sql` versionada localmente; no usa GitHub, red ni extensión `http` | VERIFIED WITH NOTES | validar reset aislado |
 | E2E, backup y restore | fuera del alcance de esta tarea | NOT VERIFIED | tareas posteriores |
 
 La configuración local no contiene project refs oficiales, URLs de producción,
