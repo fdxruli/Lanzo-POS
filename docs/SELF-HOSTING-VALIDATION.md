@@ -52,9 +52,9 @@ contiene únicamente los cambios del frontend que enrutan a la función:
 | `complete_ai_agent_analysis` | `(uuid, boolean, integer default null, integer default null, integer default null, text default null, jsonb default '{}')` | JSONB; cambia a `completed` o `failed` | RPC interna protegida; la Edge Function la llama server-side |
 
 Las migraciones finales de `get_ai_agent_usage` delegan en la versión de
-periodos y cuentan `reserved`/`completed` por `period_id`. La auditoría detectó
-que `ai_agent_usage.period_id` no aparece en ninguna migración versionada; no se
-inventó una migración ni se corrigió en esta tarea.
+periodos y cuentan `reserved`/`completed` por `period_id`. La auditoría de
+OSS.1.5.3 detectó que la columna no aparecía en el historial; OSS.1.5.4 la
+versiona junto con `license_periods` y la función de periodo actual.
 
 ## Implementación OSS.1.5.3
 
@@ -101,12 +101,12 @@ credenciales, tokens ni respuestas reales.
 Resultado OSS.1.5.3: `VERSIONED WITH NOTES`.
 
 La función está versionada y el contrato frontend está cubierto por pruebas
-locales sin servicios reales. No se declara `VERSIONED` porque no hubo runtime
-Supabase ni proveedor real, y porque la migración final de consulta referencia
-una columna `period_id` ausente del historial de migraciones versionado.
+locales sin servicios reales. No se declara `VERIFIED` porque no hubo runtime
+Supabase ni proveedor real; la inconsistencia histórica de `period_id` queda
+resuelta por OSS.1.5.4.
 
-OSS.1.5 permanece `BLOCKED` hasta completar runtime/E2E, base vacía,
-backup/restore y la revisión de `period_id`. OSS.1.4 mantiene su estado; OSS.2
+OSS.1.5 permanece `BLOCKED` hasta completar runtime/E2E, base vacía y
+backup/restore. OSS.1.4 mantiene su estado; OSS.2
 permanece `BLOCKED`; AGPL no fue activada y no se creó `LICENSE`.
 
 ## Alcance negativo comprobado
@@ -116,3 +116,98 @@ No se modificaron migraciones, `supabase/config.toml`,
 lockfiles, `.github`, `vercel.json`, `LICENSE` ni activos de marca. No se
 reescribió historial, no se usaron secretos, no se accedió a producción y no
 se desplegó la función.
+
+## OSS.1.5.4 — reconciliación del esquema de periodos IA
+
+### Precondiciones y base
+
+| Elemento | Resultado |
+| --- | --- |
+| PR #175 | `MERGED` |
+| Head SHA de #175 | `968df9d0042d17c813e5ae1e27b254900941d5ae` |
+| `merged_at` | `2026-08-04T17:42:33Z` |
+| Merge commit de #175 | `7c807c07c9dd54d5959c4935d75adc17a7067da3` |
+| SHA actual de `origin/main` | `7c807c07c9dd54d5959c4935d75adc17a7067da3` |
+| Ancestro confirmado | `git merge-base --is-ancestor 7c807c07... origin/main` PASS |
+| HEAD inicial | `7c807c07c9dd54d5959c4935d75adc17a7067da3` |
+| Rama | `fix/oss-ai-agent-period-schema` |
+| Worktree antes de editar | limpio |
+
+Se ejecutaron `git fetch origin --prune`, `git switch main` y
+`git pull --ff-only origin main`; `HEAD` y `origin/main` coincidieron antes de
+crear la rama de trabajo.
+
+### Evidencia cronológica y matriz de objetos
+
+| Objeto | Primera referencia | Primera creación | Última definición | Estado antes de OSS.1.5.4 |
+| --- | --- | --- | --- | --- |
+| `public.ai_agent_usage` | `20260619204242_create_ai_agent_usage_table.sql` | `20260619204242_create_ai_agent_usage_table.sql` | tabla + índices de IA | CREATED BEFORE USE |
+| `ai_agent_usage.period_id` | `20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql:11` | ninguna | ninguna | REFERENCED BUT NOT CREATED |
+| `public.license_periods` | `20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql:109` | ninguna | ninguna | REFERENCED BUT NOT CREATED |
+| `public.ensure_current_license_period` | `20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql:104` | ninguna | ninguna | REFERENCED BUT NOT CREATED |
+| `public.get_ai_agent_usage` | `20260620062018_add_ai_agent_usage_lookup_rpc.sql` | `20260620062018_add_ai_agent_usage_lookup_rpc.sql` | `20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql` | CREATED BEFORE USE |
+| `public.begin_ai_agent_analysis` | `20260619204304_create_ai_agent_usage_rpcs.sql` | `20260619204304_create_ai_agent_usage_rpcs.sql` | `20260620080954_fix_ai_agent_begin_for_update_nullable_join.sql` | CREATED BEFORE USE |
+| `public.complete_ai_agent_analysis` | `20260619204304_create_ai_agent_usage_rpcs.sql` | `20260619204304_create_ai_agent_usage_rpcs.sql` | misma migración | CREATED BEFORE USE |
+| `idx_ai_agent_usage_license_period_status` | `20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql:10` | misma migración | misma migración | CREATED AFTER USE |
+
+La inspección de `git log --all`, ramas remotas, reflog y
+`git fsck --no-reflogs --unreachable` no encontró un blob o commit histórico
+que cree `license_periods`, `period_id` o `ensure_current_license_period`.
+Resultado: `HISTORICAL MIGRATION NOT FOUND`.
+
+El orden anterior no era válido: el índice del 24 de junio referenciaba una
+columna inexistente y la RPC final referenciaba una tabla y una función que no
+estaban creadas. El orden nuevo es válido por la migración
+`20260621000000_oss_bootstrap_license_period_schema.sql`, situada después de
+las RPC antiguas de reserva y antes de la primera dependencia del 24 de junio.
+
+### Modelo y estrategia
+
+Se eligió el `MODELO C — HÍBRIDO DE COMPATIBILIDAD`, sustentado por la RPC
+final, el conteo por `period_id`, los snapshots de plan y las migraciones FREE/admin que
+cierran el periodo activo e insertan uno nuevo. `period_type` conserva los
+valores verificables `trial`, `basic_paid`, `pro_paid` y `admin_grant`.
+
+La estrategia elegida es `BOOTSTRAP COMPATIBILITY MIGRATION`: no existe una
+fuente histórica exacta para restaurar, y una migración posterior no podía
+arreglar el índice inválido durante un reset desde cero.
+
+Contrato final:
+
+- `license_periods.id` es `uuid`; `license_id` referencia `licenses` con
+  `ON DELETE CASCADE`; `plan_id` referencia `plans` con `ON DELETE RESTRICT`.
+- La tabla conserva snapshots, `period_type`, `status`, `starts_at`,
+  `ends_at`, `closed_at`, `ai_agent_limit`, `metadata` y `created_at`.
+- Sólo puede existir un periodo `active` por licencia mediante índice único
+  parcial. FREE lifetime usa `trial`, `ends_at = NULL` y `ai_agent_limit = 0`.
+- `ai_agent_usage.period_id` es `uuid NULL` por compatibilidad histórica y
+  participa en la FK compuesta `(period_id, license_id)` con `ON DELETE RESTRICT`.
+  Esto impide referencias cruzadas entre licencias.
+- Los usos nuevos reciben el periodo actual en BEGIN. GET cuenta sólo
+  `reserved` y `completed` del periodo actual; COMPLETE no modifica
+  `period_id`.
+- El backfill asigna sólo una coincidencia temporal inequívoca. Los casos sin
+  coincidencia o ambiguos no se borran ni se reasignan arbitrariamente: quedan
+  nullable y se marcan en `metadata`.
+
+### Seguridad y validación
+
+`license_periods` conserva RLS, políticas de denegación directa y revokes para
+`PUBLIC`, `anon` y `authenticated`. `ensure_current_license_period` usa
+`SECURITY DEFINER`, `search_path = ''`, nombres calificados, lock de la fila de
+licencia e idempotencia. BEGIN y COMPLETE quedan reservadas a `service_role`;
+GET conserva el grant público protegido por su validación de dispositivo/staff.
+
+Se añadió `supabase/tests/ai_agent_period_schema_test.sql` con casos de orden,
+FK compuesta, periodo activo, FREE lifetime, límite positivo/cero/alcanzado,
+reserva, conteo por periodo, FAILED, RESERVED, COMPLETE, backfill nullable,
+licencias cruzadas, staff session, device token y RLS/grants. La prueba SQL no
+se ejecutó porque no hay `psql` ni PostgreSQL aislado disponible.
+
+Resultado OSS.1.5.4: `SCHEMA RECONCILED WITH NOTES`. No se ejecutó PostgreSQL
+runtime, reset completo, E2E, backup/restore ni despliegue.
+
+El handoff exacto a OSS.1.5.5 es ejecutar esa cadena en un entorno aislado y
+validar una instalación existente con registros históricos ambiguos. OSS.1.5
+continúa pendiente de validación integral; OSS.2 permanece `BLOCKED`; AGPL no
+fue activada.
