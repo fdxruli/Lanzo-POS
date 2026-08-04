@@ -14,6 +14,43 @@ Fecha de la declaración: 2026-08-03
 Repositorio: `fdxruli/Lanzo-POS`
 Commit base auditado: `19f4087bf23b2920154fb72bd6417a4509508ac0` (`origin/main`)
 
+## Decisión actual de conservación
+
+Esta sección registra la decisión vigente para OSS.1.4.1, separada de la
+declaración histórica y de sus límites probatorios:
+
+- Se conservan íntegramente los nueve activos visuales actuales.
+- No se reemplazan ni rediseñan logos, iconos, PNG o SVG.
+- No se incorpora contenido del PR #171 ni se interpreta su cierre como permiso
+  para reutilizar su implementación.
+- `public/log.svg`, `public/logIcon.svg`, `public/boticon.svg` y los PNG
+  actuales permanecen en sus rutas y bytes actuales.
+- La conservación expresa intención de mantenimiento; no demuestra por sí sola
+  autoría, procedencia, licencia ni permiso de redistribución.
+- Las lagunas documentales se entregan a OSS.1.4.2 y no se resuelven
+  sustituyendo activos en esta tarea.
+
+La selección histórica **OPCIÓN 3** no se modifica ni se promueve a una opción
+más favorable. La decisión de conservar es una instrucción de mantenimiento,
+no una nueva declaración de creación o cesión de derechos.
+
+## Hallazgo técnico de OSS.1.4.1 sobre PNG
+
+La inspección binaria actual encontró un bloque PNG no estándar `caBX` con
+marcas legibles de C2PA en `icono/icono.png` y `icono/icono-web.png`. Sus
+duplicados exactos (`public/icono.png` y ninguna otra ruta exacta de la
+familia) conservan los mismos bytes cuando corresponde. El bloque contiene
+declaraciones de `GPT-4o`, `OpenAI API`, `ChatGPT`, `c2pa-rs 0.51.1` y
+`trainedAlgorithmicMedia`.
+
+Este hallazgo permite registrar **AI-ASSISTED — PROVIDER VERIFIED** en el
+sentido limitado de que el proveedor está explícitamente declarado dentro de
+la metadata del archivo. No se validó de forma independiente la cadena de
+confianza o firma C2PA y el hallazgo no prueba autoría, copyright, términos
+históricos ni permiso de redistribución. La declaración histórica de que la
+herramienta original no estaba documentada se conserva como tal; este hallazgo
+es evidencia técnica posterior, no una declaración nueva del mantenedor.
+
 ## Alcance
 
 Se revisaron estos nueve archivos rastreados:
@@ -133,17 +170,21 @@ activos inspeccionados.
 
 ## Material externo y uso de IA
 
-No se identificó dentro de los nueve archivos una imagen embebida, `data:` URI,
-enlace externo, biblioteca de iconos, plantilla, nombre de proveedor de diseño
-o tipografía externa concreta. `public/log.svg` usa la familia genérica
-`sans-serif`; no contiene un archivo de fuente ni una licencia de fuente
-embebida. El contenido autocontenido del SVG no demuestra por sí solo la
-procedencia del diseño que produjo sus formas.
+En el contenido SVG de los tres archivos no se identificó una imagen embebida,
+`data:` URI, enlace externo, biblioteca de iconos, plantilla, nombre de
+proveedor de diseño o tipografía externa concreta. `public/log.svg` usa la
+familia genérica `sans-serif`; no contiene un archivo de fuente ni una licencia
+de fuente embebida. La auditoría PNG de OSS.1.4.1 sí encontró metadata C2PA con
+un proveedor/modelo declarado en los dos PNG de 1024×1024; esa metadata no es
+una imagen embebida ni prueba autoría o permiso. El contenido autocontenido del
+SVG no demuestra por sí solo la procedencia del diseño que produjo sus formas.
 
 El mantenedor declara uso de IA para `public/log.svg`, `public/logIcon.svg` y
-`public/boticon.svg`, pero no recuerda el proveedor. Por tanto no pueden
-verificarse los términos de uso comercial o redistribución aplicables en la
-fecha de creación. La declaración tampoco afirma autoría exclusiva,
+`public/boticon.svg`, pero no recuerda el proveedor de esos SVG. Por tanto no
+pueden verificarse los términos de uso comercial o redistribución aplicables en
+la fecha de creación. La metadata C2PA de los PNG identifica un proveedor
+declarado, pero no sustituye la revisión de términos ni una validación de firma.
+La declaración tampoco afirma autoría exclusiva,
 copyright garantizado o ausencia absoluta de similitudes con terceros.
 
 ## Limitaciones
