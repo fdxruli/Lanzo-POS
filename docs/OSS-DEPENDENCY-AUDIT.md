@@ -4,6 +4,12 @@ Fecha: 2026-08-03. Repositorio: `fdxruli/Lanzo-POS`.
 Base: `4aa73e3ef2fb0e4aced3f9bb920e433a7987de92` sobre la rama existente
 `chore/oss-dependency-evidence`.
 
+> **Vigencia:** este documento conserva la evidencia de la fase de dependencias
+> previa a OSS.1.4-R. La conclusión vigente de cierre es
+> `DEPENDENCY CONDITIONAL GO`; el estado global y las condiciones actuales están
+> en [`docs/OSS-1-4-FINAL-AUDIT.md`](OSS-1-4-FINAL-AUDIT.md). Las referencias
+> históricas a `BLOCKED` o `NO-GO` no sustituyen ese cierre.
+
 ## 1. Conclusión revisada
 
 La conclusión anterior era **DEPENDENCY NO-GO** porque trataba la presencia

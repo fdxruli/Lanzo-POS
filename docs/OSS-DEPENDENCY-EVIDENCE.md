@@ -3,6 +3,12 @@
 Base: `4aa73e3ef2fb0e4aced3f9bb920e433a7987de92`. Rama autorizada:
 `chore/oss-dependency-evidence`. PR: #169.
 
+> **Vigencia:** este documento registra evidencia histórica de la fase de
+> dependencias previa a OSS.1.4-R. La conclusión vigente es
+> `DEPENDENCY CONDITIONAL GO`; consultar [`docs/OSS-1-4-FINAL-AUDIT.md`](OSS-1-4-FINAL-AUDIT.md)
+> para el cierre consolidado. Las notas de `NO-GO` o `OSS.1.4B` aquí descritas
+> no sustituyen el resultado final.
+
 ## Instalación y tarballs exactos
 
 La instalación previa permanece válida: `npm ci --include=optional` exit 0,

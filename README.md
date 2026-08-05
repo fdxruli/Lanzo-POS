@@ -127,8 +127,10 @@ La reproducibilidad está documentada con sus límites actuales:
 - [Matriz de componentes](docs/SELF-HOSTING-MATRIX.md)
 - [Evidencia de validación](docs/SELF-HOSTING-VALIDATION.md)
 
-Estado OSS.1.5: `SELF-HOSTING BLOCKED`. OSS.1.4 continúa `NO-GO` y OSS.2
-permanece bloqueado.
+Estado OSS.1.4: `FINAL — CONDITIONAL GO`. Estado OSS.1.5: `SELF-HOSTING
+BLOCKED`. OSS.2 permanece bloqueado.
+
+- [Auditoría final OSS.1.4](docs/OSS-1-4-FINAL-AUDIT.md)
 
 ## Límite de entrega OSS
 

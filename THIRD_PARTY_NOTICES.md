@@ -1,5 +1,10 @@
 # Lanzo-POS — avisos de terceros
 
+> **Vigencia:** las conclusiones históricas de bloqueo de OSS.1.4 que aparecen
+> en este registro corresponden a la fase previa a OSS.1.4-R. La conclusión
+> vigente de dependencias es `DEPENDENCY CONDITIONAL GO`; el cierre consolidado
+> está en [`docs/OSS-1-4-FINAL-AUDIT.md`](docs/OSS-1-4-FINAL-AUDIT.md).
+
 ## Propósito y decisión revisada
 
 Esta revisión corrige OSS.1.4A.1 sobre la base de
