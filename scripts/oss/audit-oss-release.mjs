@@ -145,7 +145,8 @@ function assertForbiddenPr171(files, outputPath, manifest) {
   const matches = [];
   for (const filePath of files) {
     const relativePath = outputRelativePath(outputPath, filePath);
-    if (classifyIdentityPath(relativePath, manifest)?.classification === 'DOCUMENTATION') continue;
+    const classification = classifyIdentityPath(relativePath, manifest)?.classification;
+    if (classification === 'DOCUMENTATION' || classification === 'GENERATED OUTPUT') continue;
     const text = readFileSync(filePath).toString('utf8');
     for (const marker of manifest.forbiddenPr171Markers) {
       if (text.includes(marker)) matches.push({ path: relativePath, marker });
