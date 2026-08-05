@@ -1,5 +1,24 @@
 # OSS.1.5.5 Runtime Validation
 
+## Classification
+
+- `OSS.1.5.5 — FAIL WITH DOCUMENTED LIMITATION`.
+- Self-hosting: `FRESH INSTALL NOT CURRENTLY SUPPORTED`.
+- Existing hosted deployment: `NOT INVALIDATED`.
+- Cause: `FOUNDATIONAL SCHEMA PREDATES VERSIONED MIGRATION HISTORY`.
+
+La primera migración versionada, `20260614224210_harden_public_tables_and_pos_rpcs.sql`,
+presupone un esquema fundacional histórico que ya existía en el proyecto
+Supabase original y que no está representado por migraciones anteriores en
+este repositorio. El intento remoto aislado conserva la evidencia de ese
+supuesto y no autoriza a reconstruir el baseline dentro de esta tarea.
+
+Esta conclusión no afirma que producción esté dañada, que Lanzo no funcione ni
+que las migraciones incrementales sean inútiles. El proyecto Supabase actual
+puede seguir funcionando y las migraciones incrementales continúan siendo
+útiles para instalaciones existentes; lo que no está soportado actualmente es
+una instalación limpia desde una base vacía.
+
 ## Environment
 
 - Tipo: proyecto Supabase remoto desechable y aislado.
@@ -83,6 +102,15 @@ El fallo no dejó migraciones aplicadas ni fixtures sintéticos.
 - `supabase db push`: no ejecutado.
 - Resultado: `NOT EXECUTED — blocked by demonstrated migration failure`.
 
+## Existing hosted deployment
+
+`EXISTING HOSTED DEPLOYMENT NOT INVALIDATED`.
+
+La validación sólo ejecutó el intento autorizado sobre el proyecto remoto
+aislado. No se enlazó producción para operaciones de base de datos ni se
+ejecutaron cambios sobre un despliegue alojado existente. El fallo de
+instalación limpia no demuestra que el proyecto Supabase actual esté dañado.
+
 ## Schema
 
 No se ejecutaron las assertions estructurales porque el historial no llegó a
@@ -127,24 +155,39 @@ No ejecutado. `ensure_current_license_period`, `get_ai_agent_usage`,
 
 ## Result
 
-`OSS.1.5.5 — FAIL`
+`OSS.1.5.5 — FAIL WITH DOCUMENTED LIMITATION`
 
 Motivo: el historial completo no puede instalarse desde cero en PostgreSQL
-real porque la primera migración referencia `public.plans` antes de que exista,
-y ninguna migración local crea esa tabla.
+real porque la primera migración versionada referencia `public.plans` antes de
+que exista, y ninguna migración local anterior crea esa tabla. El esquema
+fundacional histórico precede al historial de migraciones versionadas.
 
 ## Limitations
 
 - No fue posible validar esquema, backfill, RPC, RLS, grants, idempotencia ni estados parciales después del fallo inicial.
-- No se realizó una corrección silenciosa ni se modificaron migraciones, funciones o código productivo.
-- El proyecto aislado permanece utilizable como entorno de reproducción, pero no debe recibir tráfico ni datos reales.
+- No se realizó una corrección silenciosa, no se reconstruyó el esquema fundacional y no se modificaron migraciones, funciones o código productivo.
+- No se repitió el reset remoto ni se ejecutaron pruebas adicionales.
+- El proyecto aislado permanece como evidencia del intento de reproducción y no debe recibir tráfico ni datos reales.
+- El repositorio no debe presentarse actualmente como self-hostable desde cero.
 
-## Handoff
+## Migration history conclusion
 
-`OSS.1.5.5-FIX — corregir exclusivamente el defecto runtime reproducido`.
+- El proyecto Supabase actual puede seguir funcionando.
+- Las migraciones incrementales continúan siendo útiles para instalaciones existentes.
+- Una instalación limpia desde una base vacía no está soportada actualmente.
+- Reconstruir el baseline histórico queda fuera del alcance inmediato.
+- No es obligatorio reconstruir el baseline antes de licenciar el código.
 
-La corrección debe resolver primero la dependencia base de `public.plans` sin
-alterar producción. Después deberá repetirse OSS.1.5.5 desde el reset limpio.
+## Roadmap disposition
+
+`SELF-HOSTING.FOUNDATION — FUTURE, NON-BLOCKING FOR LICENSE`.
+
+Esta tarea futura deberá reconstruir y validar un baseline fundacional completo
+para instalaciones nuevas. Queda diferida y no bloquea el trabajo de OSS.2
+sobre alcance de licencia, exclusión de activos oficiales, creación de
+`LICENSE`, notices y documentación de limitaciones de self-hosting.
+
+OSS.1.5 permanece `BLOCKED WITH DOCUMENTED LIMITATION`.
 
 ## Scope evidence
 
