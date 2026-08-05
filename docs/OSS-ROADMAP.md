@@ -5,7 +5,7 @@ descrito en [`OSS-RELEASE-BOUNDARY.md`](OSS-RELEASE-BOUNDARY.md). La futura
 licencia deberá excluir expresamente los activos oficiales; esta tarea no crea
 `LICENSE` ni activa AGPL.
 
-Actualización: 2026-08-04.
+Actualización: 2026-08-05.
 
 ## Estado vigente tras OSS.1.4-R
 
@@ -21,12 +21,14 @@ reporte canónico de cierre.
 | OSS.1.4.2 | `ASSET EVIDENCE EXHAUSTED WITH NOTES` | Evidencia de código, Git y GitHub agotada para seis familias; no hay grant de redistribución, fuente editable ni términos autorizados suficientes. |
 | OSS.1.4.3 | `MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE` | Declaración final recibida para seis familias; los nueve activos permanecen como identidad oficial restringida y fuera del alcance automático de una futura licencia OSS del código. |
 | OSS.1.4.4 | `COMPLETED WITH NOTES` | Límite técnico source-only implementado y validado; no cambia la identidad de producción ni crea `LICENSE` o AGPL. |
-| OSS.1.5 | `BLOCKED` | El autohospedaje completo aún no es reproducible; runtime, E2E y backup/restore siguen pendientes. |
+| OSS.1.5 | `BLOCKED WITH DOCUMENTED LIMITATION` | La instalación limpia desde una base vacía no está soportada actualmente porque el esquema fundacional histórico precede al historial de migraciones versionadas; la limitación no invalida el despliegue alojado existente. |
 | OSS.1.5.1 | `PASS WITH NOTES` | PR #173 integrado y configuración local creada; Docker daemon no disponible para validar runtime. |
 | OSS.1.5.2 | `PASS WITH NOTES` | Migración ecommerce hermética, con SQL local equivalente; falta reset sobre una base vacía. |
 | OSS.1.5.3 | `VERSIONED WITH NOTES` | Edge Function `lanzo-ai-agent` versionada, contrato frontend preservado, proveedor configurable, reserva/finalización segura y 36 tests Deno mock. |
 | OSS.1.5.4 | `SCHEMA RECONCILED WITH NOTES` | Bootstrap reproducible de periodos IA, `period_id`, RPC por periodo, backfill conservador y validación estática; runtime PostgreSQL pendiente. |
-| OSS.2 | `BLOCKED` | No se desbloquea por esta tarea. |
+| OSS.1.5.5 | `FAIL WITH DOCUMENTED LIMITATION` | La validación remota aislada reprodujo que la primera migración versionada referencia `public.plans` antes de que exista. No se tocaron migraciones ni producción; el despliegue alojado existente no queda invalidado. Véase [`OSS-1.5.5-RUNTIME-VALIDATION.md`](OSS-1.5.5-RUNTIME-VALIDATION.md). |
+| `SELF-HOSTING.FOUNDATION` | `FUTURE — NON-BLOCKING FOR LICENSE` | Reconstruir y validar un baseline fundacional completo para instalaciones nuevas. Queda fuera del alcance inmediato. |
+| OSS.2 | `CAN CONTINUE WITH DOCUMENTED LIMITATION` | Puede continuar con definición de alcance de licencia, exclusión de activos oficiales, creación de `LICENSE`, notices y documentación de las limitaciones de self-hosting. |
 | AGPL | no activada | No se adopta ni se declara vigente en esta tarea. |
 
 ## Handoff de OSS.1.4
@@ -69,8 +71,20 @@ un proveedor real. OSS.1.5.4 resolvió la referencia de `period_id` mediante una
 migración de compatibilidad situada antes de la primera dependencia; no se
 encontró una migración histórica exacta que restaurar.
 
-## Siguiente tarea
+## Limitación fundacional documentada
 
-OSS.1.5.5 — continuar únicamente después de disponer de un entorno Supabase
-aislado y autorizado. OSS.1.5.6 no debe iniciarse antes de cerrar esa
-dependencia, y OSS.2 permanece bloqueado mientras OSS.1.5 siga bloqueado.
+La primera migración versionada es
+`20260614224210_harden_public_tables_and_pos_rpcs.sql`. Presupone un esquema
+fundacional histórico que ya existía en el proyecto Supabase original y que no
+está representado por migraciones anteriores en este repositorio. Por ello:
+
+- el proyecto Supabase actual puede seguir funcionando;
+- las migraciones incrementales siguen siendo útiles para instalaciones existentes;
+- una instalación limpia desde una base vacía no está soportada actualmente;
+- el repositorio no debe presentarse como self-hostable desde cero;
+- no se reconstruirá el baseline histórico dentro de OSS.1.5.5.
+
+La reconstrucción y validación de ese baseline queda registrada como
+`SELF-HOSTING.FOUNDATION`, tarea futura no bloqueante para la licencia. OSS.1.5
+permanece `BLOCKED WITH DOCUMENTED LIMITATION`, mientras OSS.2 puede continuar
+con el alcance de licencia y la documentación asociada.
