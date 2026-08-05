@@ -13,6 +13,9 @@ store/generated/storeHtmlTemplate.js
 .tmp/social-preview-1.7-evidence.json
 .tmp/social-preview-1.8-release-readiness.json
 
+# Deterministic OSS source exports and validation runs
+.oss-release/
+
 # Local operational backups
 src/RESPALDO_LANZO_*.jsonl
 RESPALDO_LANZO_*.jsonl

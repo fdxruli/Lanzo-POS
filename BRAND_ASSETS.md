@@ -67,6 +67,11 @@ o una discusión pública disponible allí.
 
 ## Limitations
 
+El lÃ­mite tÃ©cnico de entrega candidata estÃ¡ documentado en
+[`docs/OSS-RELEASE-BOUNDARY.md`](docs/OSS-RELEASE-BOUNDARY.md). La presencia de
+los activos aquÃ­ descritos en el repositorio oficial no implica su inclusiÃ³n
+en una entrega candidata.
+
 Este documento registra una decisión del mantenedor y el alcance documental
 de OSS.1.4.3. No es una opinión jurídica independiente y no resuelve por sí
 solo el empaquetado, el release o la redistribución futura. La aplicación

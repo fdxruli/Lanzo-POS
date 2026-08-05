@@ -1,0 +1,177 @@
+{
+  "schemaVersion": "1.0.0",
+  "policy": "RESTRICTED OFFICIAL IDENTITY - SOURCE-ONLY OSS RELEASE BOUNDARY",
+  "baseCommit": "b7c3f2be384d76c9cbb1a2b352aba383de78d718",
+  "outputRoot": ".oss-release/lanzo-pos-oss",
+  "processVersion": "1.0.0",
+  "sourcePolicy": {
+    "copy": "git-ls-files-only",
+    "officialRepositoryIdentity": "unchanged",
+    "licenseCreated": false,
+    "agplActivated": false,
+    "externalSources": false,
+    "deployment": false
+  },
+  "restrictedAssets": [
+    {
+      "path": "icono/icono.png",
+      "sha256": "6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c",
+      "action": "omit",
+      "reason": "Official square identity asset has no required production consumer in the OSS source export.",
+      "requiredConsumer": null,
+      "replacementType": null
+    },
+    {
+      "path": "public/icono.png",
+      "sha256": "6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c",
+      "action": "omit",
+      "reason": "Official square identity asset has no required production consumer in the OSS source export.",
+      "requiredConsumer": null,
+      "replacementType": null
+    },
+    {
+      "path": "icono/icono-web.png",
+      "sha256": "f18a142863439b8a147d335f2232c23edabc2b1cde4b42b4ff959020378b5ef5",
+      "action": "omit",
+      "reason": "Official wordmark asset is not required by the administrative or store source builds.",
+      "requiredConsumer": null,
+      "replacementType": null
+    },
+    {
+      "path": "public/icono-web.png",
+      "sha256": "85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673",
+      "action": "omit",
+      "reason": "Official wordmark asset has no required production consumer in the OSS source export.",
+      "requiredConsumer": null,
+      "replacementType": null
+    },
+    {
+      "path": "public/pwa-192x192.png",
+      "sha256": "85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673",
+      "action": "replace",
+      "reason": "Administrative PWA and apple-touch-icon require a same-path neutral asset.",
+      "requiredConsumer": "src/pwa/adminManifest.js; src/pwa/adminPwaDocument.js",
+      "replacementType": "deterministic-neutral-png-192x192"
+    },
+    {
+      "path": "public/pwa-512x512.png",
+      "sha256": "b8dfbddccca477b9ca8125ab3f9a9f790e8f8040fb5a1f3480509680217f2460",
+      "action": "replace",
+      "reason": "Administrative PWA maskable icon requires a same-path neutral asset.",
+      "requiredConsumer": "src/pwa/adminManifest.js",
+      "replacementType": "deterministic-neutral-png-512x512"
+    },
+    {
+      "path": "public/log.svg",
+      "sha256": "3cc39f6eff3148fbeb418eb3ff18397e537067ebf8a172e2324782609f1c1ae2",
+      "action": "omit",
+      "reason": "Official wordmark is not required by the current administrative or store source entrypoints.",
+      "requiredConsumer": null,
+      "replacementType": null
+    },
+    {
+      "path": "public/logIcon.svg",
+      "sha256": "fd0e93e021a8d91d0272753f295d48862fef2c8c9bff91a8e6b90ddab313c98a",
+      "action": "replace",
+      "reason": "Administrative and store favicons require a same-path neutral SVG.",
+      "requiredConsumer": "index.html; store/index.html",
+      "replacementType": "deterministic-neutral-svg"
+    },
+    {
+      "path": "public/boticon.svg",
+      "sha256": "93bf10b60605088cfbd4f35fe23b82f4d9f387fa604f72f5fff54931debea1c4",
+      "action": "replace",
+      "reason": "AssistantBot requires a same-path neutral SVG.",
+      "requiredConsumer": "src/components/common/AssistantBot.jsx",
+      "replacementType": "deterministic-neutral-svg"
+    }
+  ],
+  "requiredConsumers": [
+    { "path": "src/pwa/adminManifest.js", "kind": "OFFICIAL BUILD CONSUMER", "references": ["/pwa-192x192.png", "/pwa-512x512.png"] },
+    { "path": "src/pwa/adminPwaDocument.js", "kind": "OFFICIAL BUILD CONSUMER", "references": ["/pwa-192x192.png"] },
+    { "path": "index.html", "kind": "OFFICIAL BUILD CONSUMER", "references": ["/logIcon.svg"] },
+    { "path": "store/index.html", "kind": "EXPORT BUILD CONSUMER", "references": ["../public/logIcon.svg"] },
+    { "path": "vite.config.js", "kind": "OFFICIAL BUILD CONSUMER", "references": ["pwa-192x192.png", "pwa-512x512.png", "logIcon.svg"] },
+    { "path": "src/components/common/AssistantBot.jsx", "kind": "OFFICIAL BUILD CONSUMER", "references": ["/boticon.svg"] }
+  ],
+  "replacementPolicy": {
+    "classification": "NEUTRAL EXPORT PLACEHOLDER - NOT OFFICIAL BRAND",
+    "allowedPaths": ["public/pwa-192x192.png", "public/pwa-512x512.png", "public/logIcon.svg", "public/boticon.svg"],
+    "svgLabels": { "logIcon": "POS", "boticon": "AI", "pwa": "POS" },
+    "fontFamily": "system-ui, sans-serif",
+    "palette": { "background": "#F4F5F7", "foreground": "#273142", "accent": "#607D8B" },
+    "metadata": "none",
+    "externalSources": false
+  },
+  "identityTransformRules": {
+    "scope": "runtime source text only; documentation, tests, tooling and compatibility identifiers remain classified separately",
+    "rules": [
+      { "textExpected": "Tienda en línea | Lanzo", "replacement": "Online Store", "mode": "literal" },
+      { "textExpected": "Tienda no disponible | Lanzo", "replacement": "Store unavailable", "mode": "literal" },
+      { "textExpected": "Vista previa de Lanzo Tienda", "replacement": "Online Store preview", "mode": "literal" },
+      { "textExpected": "Esta tienda no está disponible. Consulta otras tiendas creadas con Lanzo.", "replacement": "This store is unavailable. Browse other stores.", "mode": "literal" },
+      { "textExpected": "Consulta productos y realiza tu pedido con Lanzo.", "replacement": "Browse products and place your order.", "mode": "literal" },
+      { "textExpected": "Impulsado por Lanzo", "replacement": "Powered by POS", "mode": "literal" },
+      { "textExpected": "Tienda creada con Lanzo", "replacement": "Store created with POS", "mode": "literal" },
+      { "textExpected": "Conoce Lanzo", "replacement": "Learn more about POS", "mode": "literal" },
+      { "textExpected": "Hola equipo de Lanzo", "replacement": "Hello support team", "mode": "literal" },
+      { "textExpected": "LANZO-XXXX-XXXX-XXXX", "replacement": "POS-XXXX-XXXX-XXXX", "mode": "literal" },
+      { "textExpected": "Lanzo Básico Legacy", "replacement": "Legacy plan", "mode": "word" },
+      { "textExpected": "Lanzo POS System", "replacement": "Unbranded POS System", "mode": "word" },
+      { "textExpected": "Lanzo POS", "replacement": "Unbranded POS", "mode": "word" },
+      { "textExpected": "Lanzo Nube", "replacement": "Cloud plan", "mode": "word" },
+      { "textExpected": "Lanzo Local", "replacement": "Local plan", "mode": "word" },
+      { "textExpected": "Lanzo Bot", "replacement": "Assistant", "mode": "word" },
+      { "textExpected": "Lanzo Tienda", "replacement": "Online Store", "mode": "word" },
+      { "textExpected": "Lanzo", "replacement": "POS", "mode": "word" },
+      { "textExpected": "LANZO", "replacement": "POS", "mode": "word" }
+    ],
+    "runtimeRoots": ["index.html", "store/index.html", "src", "store/api"],
+    "excludedPathPatterns": ["**/__tests__/**", "**/tests/**", "**/*.test.*", "**/*.spec.*", "**/*.md", "**/*.sql", "scripts/**", "docs/**"]
+  },
+  "identityAllowlist": [
+    { "pathPattern": "README.md", "classification": "DOCUMENTATION", "reason": "Repository overview retains historical attribution." },
+    { "pathPattern": "*.md", "classification": "DOCUMENTATION", "reason": "Root documentation is not runtime identity." },
+    { "pathPattern": "*.txt", "classification": "DOCUMENTATION", "reason": "Root historical evidence text is not runtime identity." },
+    { "pathPattern": "package.json", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Package name is a package-manager compatibility identifier." },
+    { "pathPattern": "package-lock.json", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Lockfile package name is a package-manager compatibility identifier." },
+    { "pathPattern": "OSS_RELEASE_BOUNDARY.json", "classification": "POLICY/LEGAL REFERENCE", "reason": "Generated audit metadata records the restricted baseline by design." },
+    { "pathPattern": "REBRANDING_REQUIRED.md", "classification": "POLICY/LEGAL REFERENCE", "reason": "Generated notice explicitly warns against presenting the candidate as official." },
+    { "pathPattern": "bump-version.js", "classification": "GENERATED OUTPUT", "reason": "Version tooling output is not runtime identity." },
+    { "pathPattern": "store/index.html", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Social head markers remain parser compatibility identifiers; title is transformed." },
+    { "pathPattern": "docs/**", "classification": "DOCUMENTATION", "reason": "Historical OSS and trademark records are retained verbatim." },
+    { "pathPattern": "**/*.md", "classification": "DOCUMENTATION", "reason": "Documentation and policy attribution are not runtime identity." },
+    { "pathPattern": "**/*.txt", "classification": "DOCUMENTATION", "reason": "Historical evidence text is not runtime identity." },
+    { "pathPattern": "**/__tests__/**", "classification": "TEST ONLY", "reason": "Tests preserve official compatibility fixtures and assertions." },
+    { "pathPattern": "**/tests/**", "classification": "TEST ONLY", "reason": "Tests preserve official compatibility fixtures and assertions." },
+    { "pathPattern": "**/*.test.*", "classification": "TEST ONLY", "reason": "Tests are not copied into a runtime build." },
+    { "pathPattern": "**/*.spec.*", "classification": "TEST ONLY", "reason": "Tests are not copied into a runtime build." },
+    { "pathPattern": "scripts/**", "classification": "GENERATED OUTPUT", "reason": "Tooling identifiers are not visible product identity." },
+    { "pathPattern": "src/config/dbConfig.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "IndexedDB database name must remain compatible with existing data." },
+    { "pathPattern": "src/config/publicOrigins.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Official origin is a routing compatibility value, not a release label." },
+    { "pathPattern": "src/hooks/useSingleInstance.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "BroadcastChannel name is a local compatibility key." },
+    { "pathPattern": "src/pwa/adminStartupRecovery.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Worker and cache identifiers are required for safe upgrade recovery." },
+    { "pathPattern": "src/router/publicStoreRoutes.jsx", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Component symbol preserves source module compatibility." },
+    { "pathPattern": "src/pages/PublicLanzoLandingPage.jsx", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Module and CSS symbols are compatibility identifiers; visible strings are transformed." },
+    { "pathPattern": "src/services/db/**", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Database class and migration identifiers remain compatible; visible messages are transformed." },
+    { "pathPattern": "src/services/backup/**", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Backup magic and prefixes are file-format compatibility identifiers." },
+    { "pathPattern": "src/services/customers/customerMapper.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Persisted source field is a compatibility identifier." },
+    { "pathPattern": "src/services/devConsoleCapture.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Developer diagnostics keys are compatibility identifiers." },
+    { "pathPattern": "src/services/googleDriveService.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Drive app properties and backup keys are compatibility identifiers; visible copy is transformed." },
+    { "pathPattern": "src/store/slices/license/**", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "License and storage keys are compatibility identifiers; visible copy is transformed." },
+    { "pathPattern": "store/api/_storeHtmlTemplate.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Social head markers are parser compatibility identifiers." },
+    { "pathPattern": "supabase/config.toml", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Local project identifier is configuration compatibility data." },
+    { "pathPattern": "supabase/migrations/**", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Database migration identifiers and historical SQL remain unchanged." },
+    { "pathPattern": ".env.example", "classification": "DOCUMENTATION", "reason": "Example environment names are non-secret documentation." },
+    { "pathPattern": ".gitignore", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Ignore patterns are repository tooling identifiers." }
+  ],
+  "forbiddenPr171Markers": [
+    "72590fd200be6200e44cf64c14ef38204526d4bf",
+    "REJECTED PR #171 CONTENT"
+  ],
+  "allowlistRules": [
+    "Historical documentation may mention official identity and the rejected PR without becoming runtime output.",
+    "Compatibility identifiers may remain only when their path is explicitly allowlisted above.",
+    "No unknown runtime-visible identity reference is allowed."
+  ]
+}

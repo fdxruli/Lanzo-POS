@@ -1,5 +1,10 @@
 # Roadmap OSS
 
+OSS.1.4.4 está implementado condicionalmente mediante el pipeline source-only
+descrito en [`OSS-RELEASE-BOUNDARY.md`](OSS-RELEASE-BOUNDARY.md). La futura
+licencia deberá excluir expresamente los activos oficiales; esta tarea no crea
+`LICENSE` ni activa AGPL.
+
 Actualización: 2026-08-04.
 
 | Tarea | Estado | Alcance |
