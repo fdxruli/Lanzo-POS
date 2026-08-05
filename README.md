@@ -129,3 +129,10 @@ La reproducibilidad está documentada con sus límites actuales:
 
 Estado OSS.1.5: `SELF-HOSTING BLOCKED`. OSS.1.4 continúa `NO-GO` y OSS.2
 permanece bloqueado.
+
+## Límite de entrega OSS
+
+La guía de la entrega candidata source-only está en
+[`docs/OSS-RELEASE-BOUNDARY.md`](docs/OSS-RELEASE-BOUNDARY.md). El repositorio
+oficial conserva su identidad y sus activos; la entrega candidata se genera
+únicamente mediante el pipeline documentado.

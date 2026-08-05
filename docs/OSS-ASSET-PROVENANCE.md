@@ -395,6 +395,11 @@ existentes de dependencias se mantienen separados en
 
 ## 9. Limitaciones y acción de salida
 
+La implementación del límite técnico de la siguiente fase está documentada en
+[`docs/OSS-RELEASE-BOUNDARY.md`](OSS-RELEASE-BOUNDARY.md). Este enlace no
+modifica las conclusiones históricas ni concede permisos sobre los activos
+restringidos.
+
 La declaración del mantenedor es evidencia de primera parte y no sustituye
 derechos de terceros. No se publican prompts privados, nombres legales,
 domicilios, RFC, teléfonos, correos privados, cuentas privadas ni datos de
