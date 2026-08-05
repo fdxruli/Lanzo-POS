@@ -7,12 +7,20 @@ licencia deberá excluir expresamente los activos oficiales; esta tarea no crea
 
 Actualización: 2026-08-04.
 
+## Estado vigente tras OSS.1.4-R
+
+El cierre de OSS.1.4 está documentado en
+[`docs/OSS-1-4-FINAL-AUDIT.md`](OSS-1-4-FINAL-AUDIT.md) y queda en
+`FINAL — CONDITIONAL GO`. La fila de OSS.1.4 y las notas de bloqueo que siguen
+se conservan como contexto histórico previo a OSS.1.4-R; no sustituyen el
+reporte canónico de cierre.
+
 | Tarea | Estado | Alcance |
 | --- | --- | --- |
-| OSS.1.4 | `BLOCKED — NO-GO (RELEASE BOUNDARY PENDING)` | OSS.1.4.1 `PROVENANCE RECONCILED WITH NOTES`, OSS.1.4.2 `ASSET EVIDENCE EXHAUSTED WITH NOTES` y OSS.1.4.3 `MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE`; activos `RESTRICTED OFFICIAL IDENTITY — OSS LICENSE EXCLUDED`. |
+| OSS.1.4 | `FINAL — CONDITIONAL GO` | OSS.1.4-R consolidó la integración en `main`, verificó el límite técnico de distribución y dejó los activos oficiales fuera del paquete; las condiciones de dependencias quedan registradas en el informe final. |
 | OSS.1.4.2 | `ASSET EVIDENCE EXHAUSTED WITH NOTES` | Evidencia de código, Git y GitHub agotada para seis familias; no hay grant de redistribución, fuente editable ni términos autorizados suficientes. |
 | OSS.1.4.3 | `MAINTAINER DECLARATION RECORDED WITH RESTRICTED ASSET SCOPE` | Declaración final recibida para seis familias; los nueve activos permanecen como identidad oficial restringida y fuera del alcance automático de una futura licencia OSS del código. |
-| OSS.1.4.4 | `PENDING` | Implementar y validar el límite técnico de distribución sin cambiar la identidad de producción. |
+| OSS.1.4.4 | `COMPLETED WITH NOTES` | Límite técnico source-only implementado y validado; no cambia la identidad de producción ni crea `LICENSE` o AGPL. |
 | OSS.1.5 | `BLOCKED` | El autohospedaje completo aún no es reproducible; runtime, E2E y backup/restore siguen pendientes. |
 | OSS.1.5.1 | `PASS WITH NOTES` | PR #173 integrado y configuración local creada; Docker daemon no disponible para validar runtime. |
 | OSS.1.5.2 | `PASS WITH NOTES` | Migración ecommerce hermética, con SQL local equivalente; falta reset sobre una base vacía. |
@@ -28,7 +36,8 @@ alterar activos. OSS.1.4.2 agotó las fuentes autorizadas y OSS.1.4.3 registró 
 declaración final del mantenedor: las seis familias son identidad oficial
 restringida, fuera del alcance automático de una futura licencia OSS del
 código, sin grant general de redistribución o modificación. La conservación
-actual no desbloquea OSS.1.4.
+actual fue cerrado por OSS.1.4-R con resultado condicional; las condiciones
+residuales y el alcance restringido están en el reporte final.
 
 El cuestionario concreto está en
 [`docs/OSS-ASSET-EVIDENCE-REQUEST.md`](OSS-ASSET-EVIDENCE-REQUEST.md). No se
@@ -62,9 +71,6 @@ encontró una migración histórica exacta que restaurar.
 
 ## Siguiente tarea
 
-OSS.1.4.4 — implementar y validar el límite técnico de distribución de los
-activos oficiales restringidos sin cambiar la identidad de producción. Deberá
-decidir qué archivos entran en una entrega OSS, qué placeholders se usan en
-forks, cómo se mantiene producción intacta y cómo se validan manifests, PWA,
-favicon y asistente. OSS.1.5.5 sigue pendiente dentro de su propia fase; OSS.2
-permanece bloqueado.
+OSS.1.5.5 — continuar únicamente después de disponer de un entorno Supabase
+aislado y autorizado. OSS.1.5.6 no debe iniciarse antes de cerrar esa
+dependencia, y OSS.2 permanece bloqueado mientras OSS.1.5 siga bloqueado.

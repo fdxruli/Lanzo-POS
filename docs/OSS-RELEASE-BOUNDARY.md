@@ -26,12 +26,15 @@ npm run oss:release:prepare
 npm run oss:release:audit -- --output-root .oss-release/lanzo-pos-oss
 ```
 
-The administrative candidate build uses the existing Vite installation from the
-repository while keeping its output outside the source candidate:
+The administrative and store candidate builds use the existing Vite
+installation from the repository and run from the prepared source candidate so
+their outputs remain outside that candidate:
 
 ```text
-node node_modules/vite/bin/vite.js build --config vite.config.js --outDir ..\admin-build --emptyOutDir
-node node_modules/vite/bin/vite.js build --config vite.store.config.js --outDir ..\store-build --emptyOutDir
+Push-Location .oss-release/lanzo-pos-oss
+node ..\..\node_modules/vite/bin/vite.js build --config vite.config.js --outDir ..\admin-build --emptyOutDir
+node ..\..\node_modules/vite/bin/vite.js build --config vite.store.config.js --outDir ..\..\store-build --emptyOutDir
+Pop-Location
 npm run oss:release:verify -- --output-root .oss-release/lanzo-pos-oss --admin-build .oss-release/admin-build --store-build .oss-release/store-build
 ```
 
