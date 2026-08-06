@@ -1,0 +1,2 @@
+import ProductExpirationFields from '../components/ProductExpirationFields';
+export default function GeneralProductFields({ values, errors, onFieldChange, onExpirationMode }) { return <><div className="product-form-v2__field"><label htmlFor="product-v2-general-unit">Unidad de venta</label><input id="product-v2-general-unit" value={values.unit} onChange={(event) => onFieldChange('unit', event.target.value)} /></div><ProductExpirationFields values={values} errors={errors} onExpirationMode={onExpirationMode} onFieldChange={onFieldChange} /></>; }
