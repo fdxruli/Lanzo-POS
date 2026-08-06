@@ -28,7 +28,7 @@ const normalizeBusinessTypes = (businessType) => {
     rawTypes = businessType.filter(Boolean);
   } else if (typeof businessType === 'string') {
     rawTypes = businessType
-      .replace(/[{}"]/g, '')
+      .replace(/[{}\"]/g, '')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
@@ -124,10 +124,17 @@ export const createProfileSlice = (set, get) => ({
       reason = 'manual'
     } = options || {};
 
+    const stateAtLoad = get();
+    const isAuthenticatedStaffTransition =
+      stateAtLoad.currentDeviceRole === 'staff' &&
+      Boolean(stateAtLoad.currentStaffUser) &&
+      stateAtLoad.appStatus === 'staff_login_required';
     const generation = ++_profileLoadGeneration;
-    const shouldForceRemote = Boolean(forceRemote || refreshProfile);
+    const shouldForceRemote = Boolean(
+      forceRemote || refreshProfile || isAuthenticatedStaffTransition
+    );
     const cacheMeta = getLastProfileLoadMeta(licenseKey);
-    const currentProfile = get().companyProfile;
+    const currentProfile = stateAtLoad.companyProfile;
 
     let companyData = null;
     let profileMissingRemotely = false;

@@ -15,9 +15,11 @@ import {
 import {
   buildLicensePlanBlockInfo
 } from './licenseGuards';
+import { invalidateProfileRefreshMetadata } from './profileRefreshCache';
 
 const clearLocalLicenseSession = async () => {
   clearLicenseFromStorage();
+  invalidateProfileRefreshMetadata();
   await clearLicenseSecurityCache();
 };
 
