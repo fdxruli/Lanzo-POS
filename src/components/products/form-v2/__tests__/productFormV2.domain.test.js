@@ -71,4 +71,10 @@ describe('Product Form V2 payload', () => {
     expect(payload.stock).toBe(7);
     expect(payload.unmappedField).toBe('keep');
   });
+
+  it('uses the canonical pharmacy FEFO value and records explicit image removal', () => {
+    const payload = buildProductFormPayload(base({ imageRemoved: true }), { activeRubro: 'farmacia', productToEdit: { id: 'p1', image: 'img-old' } });
+    expect(payload.batchManagement.selectionStrategy).toBe('fefo');
+    expect(payload).toMatchObject({ image: null, imageRemoved: true });
+  });
 });

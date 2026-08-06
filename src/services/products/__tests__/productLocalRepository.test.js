@@ -90,4 +90,21 @@ describe('productLocalRepository.prepareProduct', () => {
       alertType: null
     });
   });
+
+  it('reuses stable variant batch IDs while editing instead of generating duplicates', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const existing = { id: 'shirt-1', name: 'Playera', createdAt: '2026-01-01T00:00:00.000Z', stock: 4 };
+    const prepared = await productLocalRepository.prepareProduct({
+      ...existing,
+      price: 30,
+      cost: 12,
+      trackStock: true,
+      stock: 4,
+      quickVariants: [{ id: 'batch-shirt-blue-m', talla: 'M', color: 'Azul', stock: 4, cost: 12, price: 30 }]
+    }, existing);
+
+    expect(prepared.editing).toBe(true);
+    expect(prepared.batches).toHaveLength(1);
+    expect(prepared.batches[0].id).toBe('batch-shirt-blue-m');
+  });
 });
