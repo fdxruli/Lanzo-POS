@@ -84,8 +84,21 @@ export const createLicenseRealtimeActions = ({
         deviceFingerprint,
         realtimeTopic,
         {
-          onLicenseChanged: async (_newLicenseData) => {
-            Logger.log('[Realtime] Cambio en licencia detectado');
+          onLicenseChanged: async (event = {}) => {
+            Logger.log(`[Realtime] Cambio remoto detectado: ${event.type || 'unknown'}`);
+
+            if (event.type === 'BUSINESS_PROFILE_UPDATED') {
+              const licenseKey = get().licenseDetails?.license_key;
+              if (!licenseKey) return;
+
+              await get()._loadProfile(licenseKey, {
+                forceRemote: true,
+                refreshProfile: true,
+                reason: 'realtime_business_profile_updated'
+              });
+              return;
+            }
+
             await get().runLicenseSyncCheck('realtime_event');
           },
 
@@ -276,7 +289,6 @@ export const createLicenseRealtimeActions = ({
     set({ _isRecoveringRealtime: true });
 
     try {
-
       lastRealtimeRecoveryAt = now;
       if (wasLongOffline) {
         lastRealtimeLongValidationAt = now;

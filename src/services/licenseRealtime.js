@@ -30,7 +30,8 @@ const LICENSE_WIDE_EVENTS = new Set([
   'LICENSE_SUSPENDED',
   'SUBSCRIPTION_UPDATED',
   'PLAN_CHANGED',
-  'LICENSE_RENEWED'
+  'LICENSE_RENEWED',
+  'BUSINESS_PROFILE_UPDATED'
 ]);
 
 const DEVICE_EVENTS = new Set([
@@ -85,7 +86,7 @@ const reportRealtimeFallbackOnce = (callbacks = {}, message, metadata = {}) => {
 /**
  * Inicia la escucha segura en tiempo real.
  * Usa Broadcast privado con un topic opaco por dispositivo. El evento recibido
- * no es autoridad; solo dispara verifySessionIntegrity() desde el store.
+ * no es autoridad; solo dispara una lectura remota autoritativa desde el store.
  */
 export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopic, callbacks = {}) => {
   if (!supabaseClient) {
@@ -149,7 +150,9 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
       if (LICENSE_WIDE_EVENTS.has(eventType)) {
         callbacks.onLicenseChanged?.({
           source: 'realtime_event',
-          type: eventType
+          type: eventType,
+          triggeredAt: event.triggered_at || null,
+          metadata: event.metadata || {}
         });
         return;
       }

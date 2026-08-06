@@ -52,6 +52,31 @@ const getElapsedSince = (timestamp, now = Date.now()) => (
   timestamp > 0 ? Math.max(0, now - timestamp) : 0
 );
 
+const shouldForceProfileRefresh = (mode, reason) => (
+  reason === 'start' ||
+  reason === 'online' ||
+  reason === 'realtime_safety_interval' ||
+  reason === 'realtime_reconnected_long' ||
+  mode === 'hybrid_polling'
+);
+
+const refreshBusinessProfileForSync = async (get, licenseKey, mode, reason) => {
+  const loadProfile = get()._loadProfile;
+  if (typeof loadProfile !== 'function') return;
+
+  const forceRemote = shouldForceProfileRefresh(mode, reason);
+
+  try {
+    await loadProfile(licenseKey, {
+      forceRemote,
+      refreshProfile: forceRemote,
+      reason: `license_sync_${reason}`
+    });
+  } catch (error) {
+    Logger.warn('[LicenseSync] No se pudo refrescar el perfil del negocio:', error);
+  }
+};
+
 const restartLicenseSyncTimer = (get, mode) => {
   if (licenseSyncTimer) {
     clearInterval(licenseSyncTimer);
@@ -90,6 +115,16 @@ export const createLicenseSyncActions = ({
     }
 
     const syncMode = state.licenseSyncMode || getLicenseSyncMode(state.licenseDetails);
+
+    // El perfil del negocio tiene su propio ciclo de frescura. Se consulta antes
+    // de aplicar el TTL de la licencia para que un cambio de rubro no quede
+    // bloqueado por una validación de licencia todavía vigente.
+    await refreshBusinessProfileForSync(
+      get,
+      state.licenseDetails.license_key,
+      syncMode,
+      reason
+    );
 
     if (shouldSkipRemoteValidationForPlan({
       licenseDetails: state.licenseDetails,
