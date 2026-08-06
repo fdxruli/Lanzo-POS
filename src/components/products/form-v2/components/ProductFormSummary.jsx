@@ -1,0 +1,1 @@
+export default function ProductFormSummary({ errors }) { if (!errors.globalErrors?.length) return null; return <div className="product-form-v2__error-summary" role="alert" tabIndex="-1"><strong>No se puede guardar todavía.</strong><span>{errors.globalErrors[0]}</span></div>; }
