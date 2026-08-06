@@ -148,7 +148,7 @@ export const productLocalRepository = {
     if (productData.image instanceof File) {
       image = `img-${Date.now()}`;
       await saveImageToDB(image, productData.image);
-    } else if (!productData.image && hydratedExisting?.image) {
+    } else if (!productData.image && !productData.imageRemoved && hydratedExisting?.image) {
       image = hydratedExisting.image;
     }
 
@@ -164,6 +164,7 @@ export const productLocalRepository = {
     };
 
     delete product.quickVariants;
+    delete product.imageRemoved;
 
     if (!editing) {
       Object.assign(product, {
@@ -218,8 +219,9 @@ export const productLocalRepository = {
 
     for (const variant of variants) {
       if ((variant.talla || variant.color) && (toNumber(variant.stock) > 0 || variant.sku)) {
+        const hasStableBatchId = typeof variant.id === 'string' && variant.id.length > 0;
         batches.push({
-          id: generateID('batch'),
+          id: hasStableBatchId ? variant.id : generateID('batch'),
           productId,
           stock: toNumber(variant.stock),
           cost: toNumber(variant.cost, cost),
@@ -228,7 +230,7 @@ export const productLocalRepository = {
           attributes: { talla: variant.talla || '', color: variant.color || '' },
           isActive: true,
           status: 'active',
-          createdAt: nowIso(),
+          createdAt: hasStableBatchId ? (variant.createdAt || undefined) : nowIso(),
           notes: 'Ingreso rapido (Modo Asistido)',
           trackStock: true,
           expiryDate: variant.expiryDate || productData.expiryDate || null,

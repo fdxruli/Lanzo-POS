@@ -72,6 +72,7 @@ export default function ProductsPage() {
     const refreshCategories = useInventoryCatalogStore((state) => state.refreshCategories);
 
     const [editingProduct, setEditingProduct] = useState(null);
+    const [isProductFormDirty, setIsProductFormDirty] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [showCategoryModal, setShowCategoryModal] = useState(false);
     const [selectedBatchProductId, setSelectedBatchProductId] = useState(null);
@@ -80,12 +81,15 @@ export default function ProductsPage() {
 
     const isProductFormActive = activeTab === 'add-product';
     const { runWithoutBlocking } = useNavigationGuard({
-        enabled: isProductFormActive,
+        enabled: isProductFormActive && isProductFormDirty,
         title: '¿Salir del formulario?',
         message: PRODUCT_FORM_EXIT_MESSAGE,
         confirmButtonText: 'Sí, salir',
         cancelButtonText: 'Continuar editando',
-        onDiscard: () => setEditingProduct(null)
+        onDiscard: () => {
+            setEditingProduct(null);
+            setIsProductFormDirty(false);
+        }
     });
 
     useEffect(() => {
@@ -310,7 +314,7 @@ export default function ProductsPage() {
         }
     };
 
-    const handleSaveProduct = async (productData, productToEdit) => {
+    const handleSaveProduct = async (productData, productToEdit, options = {}) => {
         setIsLoading(true);
         try {
             let imagePreparation;
@@ -347,17 +351,23 @@ export default function ProductsPage() {
                     successMessage += '\n\nLa fotografía anterior no está guardada en este dispositivo. Vuelve a seleccionarla para publicarla en la tienda en línea.';
                 }
 
-                showMessageModal(successMessage, null, {
-                    type: imagePreparation.requiresReselection ? 'warning' : 'success'
-                });
+                const keepFormOpen = options.intent === 'save_and_add_another' || options.keepFormOpen;
+                if (!keepFormOpen) {
+                    showMessageModal(successMessage, null, {
+                        type: imagePreparation.requiresReselection ? 'warning' : 'success'
+                    });
+                }
 
-                setEditingProduct(null);
                 broadcastDBChange({
                     action: productToEdit ? 'product-updated' : 'product-created',
                     productId: result.productId || productPayload.id || productToEdit?.id,
                     timestamp: Date.now()
                 });
 
+                if (keepFormOpen) return { success: true, pending: result.pending, message: successMessage };
+
+                setEditingProduct(null);
+                setIsProductFormDirty(false);
                 runWithoutBlocking(() => {
                     if (productPayload.productType === 'ingredient') handleTabChange('ingredients');
                     else handleTabChange('view-products');
@@ -518,6 +528,7 @@ export default function ProductsPage() {
                 <ProductForm
                     onSave={handleSaveProduct}
                     onCancel={() => handleTabChange('view-products')}
+                    onDirtyChange={setIsProductFormDirty}
                     productToEdit={editingProduct}
                     categories={categories}
                     onOpenCategoryManager={() => setShowCategoryModal(true)}

@@ -11,7 +11,8 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
     ...(productToEdit || {}),
     id: productToEdit?.id || values.id,
     name: String(values.name || '').trim(), barcode: String(values.barcode || '').trim(), categoryId: values.categoryId || '', description: String(values.description || '').trim(),
-    image: values.image || null, imageUploadSource: values.imageUploadSource || null,
+    image: values.image || (values.imageRemoved ? null : (productToEdit?.image || null)), imageUploadSource: values.imageUploadSource || null,
+    imageRemoved: Boolean(values.imageRemoved),
     price: toNumber(values.price), cost: toNumber(values.cost), trackStock, stock,
     minStock: trackStock && values.minStock !== '' ? toNumber(values.minStock) : null,
     maxStock: trackStock && values.maxStock !== '' ? toNumber(values.maxStock) : null,
@@ -22,7 +23,7 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
     rubroContext: activeRubro, productType: values.restaurantType === 'ingredient' ? 'ingredient' : 'sellable', restaurantType: values.restaurantType,
     recipe: values.restaurantType === 'dish' ? values.recipe : [], modifiers: values.restaurantType === 'dish' ? values.modifiers : []
   };
-  if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) Object.assign(payload, { activeSubstance: String(values.activeSubstance || '').trim().toUpperCase(), laboratory: String(values.laboratory || '').trim(), presentation: String(values.presentation || '').trim(), prescriptionType: values.prescriptionType, requiresPrescription: Boolean(values.requiresPrescription), batchManagement: { enabled: trackStock, selectionStrategy: 'feFo' } });
+  if (activeRubro === CANONICAL_BUSINESS_TYPES.FARMACIA) Object.assign(payload, { activeSubstance: String(values.activeSubstance || '').trim().toUpperCase(), laboratory: String(values.laboratory || '').trim(), presentation: String(values.presentation || '').trim(), prescriptionType: values.prescriptionType, requiresPrescription: Boolean(values.requiresPrescription), batchManagement: { enabled: trackStock, selectionStrategy: 'fefo' } });
   if (activeRubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE) Object.assign(payload, { prepTime: values.prepTime === '' ? null : toNumber(values.prepTime), printStation: values.printStation || 'kitchen' });
   if (isEditing) payload.updatedAt = new Date().toISOString();
   return payload;

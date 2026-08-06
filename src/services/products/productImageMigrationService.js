@@ -118,6 +118,13 @@ export const prepareProductImageForCloud = async ({
   const productPayload = { ...productData };
   delete productPayload.imageUploadSource;
 
+  if (productData?.imageRemoved) {
+    return {
+      productPayload: { ...productPayload, image: null, imageUrl: null, imageRef: null },
+      status: 'removed', uploaded: false, requiresReselection: false
+    };
+  }
+
   if (!hasSelectedFile) {
     if (existingImageUrl) productPayload.imageUrl = existingImageUrl;
     if (existingImageRef) productPayload.imageRef = existingImageRef;
