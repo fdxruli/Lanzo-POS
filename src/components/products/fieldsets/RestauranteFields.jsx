@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { useInventoryCatalogStore } from '../../../store/useInventoryCatalogStore';
+import { useMemo, useState } from 'react';
+import { useAvailableIngredients } from '../../../hooks/products/useAvailableIngredients';
+import { getIngredientDefaultUnit } from '../../../utils/ingredientConfiguration';
 import { usePreparationStations } from '../../../hooks/restaurant/usePreparationStations';
 import {
   getModifierOptionLabel,
@@ -17,16 +18,6 @@ const EMPTY_OPTION_DRAFT = {
   ingredientId: '',
   ingredientQuantity: '',
   ingredientUnit: 'pza'
-};
-
-const getIngredientDefaultUnit = (ingredient) => {
-  if (!ingredient) return 'pza';
-  return ingredient.unit
-    || ingredient.bulkData?.purchase?.unit
-    || ingredient.bulkData?.unit
-    || ingredient.measurementUnit
-    || ingredient.saleUnit
-    || 'pza';
 };
 
 const asInteger = (value, fallback = 0) => {
@@ -67,10 +58,7 @@ export default function RestauranteFields({
   const selectedStation = hasSelectedStation ? (printStation || 'kitchen') : 'kitchen';
   const showInactiveStationNotice = inactivePreparationStationNotice || (!hasSelectedStation && (printStation || 'kitchen') !== 'kitchen');
 
-  const menu = useInventoryCatalogStore(state => state.menu);
-  const ingredientList = useMemo(() => (
-    (menu || []).filter(p => p.productType === 'ingredient' && p.isActive !== false)
-  ), [menu]);
+  const { ingredients: ingredientList, isLoading: ingredientsLoading, error: ingredientsError, refresh: refreshIngredients } = useAvailableIngredients();
 
   const unitOptions = useMemo(() => {
     const ingredientUnits = ingredientList.map(getIngredientDefaultUnit).filter(Boolean);
@@ -469,6 +457,8 @@ export default function RestauranteFields({
                             </option>
                           ))}
                         </select>
+                        {ingredientsLoading && <small className="product-form-help">Cargando insumos...</small>}
+                        {ingredientsError && <button type="button" className="product-form-link" onClick={refreshIngredients}>Reintentar insumos</button>}
 
                         {draft.ingredientId && (
                           <>

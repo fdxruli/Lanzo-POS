@@ -105,6 +105,21 @@ export const isInventoryCatalogEligible = (product, options = {}) => {
   return true;
 };
 
+export const isActiveIngredientForConfiguration = (product) => (
+  Boolean(product?.id)
+  && product.isActive !== false
+  && !product.deletedAt
+  && !product.deletedTimestamp
+  && getInventoryProductType(product) === 'ingredient'
+);
+
+export const queryActiveIngredientsForConfiguration = async () => {
+  const products = await db.table(STORES.MENU).toArray();
+  return products
+    .filter(isActiveIngredientForConfiguration)
+    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'es'));
+};
+
 export const queryInventoryCatalogPage = async (options = {}) => {
   const pageSize = Number.isInteger(options.pageSize) && options.pageSize > 0
     ? options.pageSize

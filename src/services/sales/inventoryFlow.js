@@ -1,5 +1,6 @@
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../db/utils';
 import { withUnifiedTimestamp, parseDateStrict, isBatchExpiredForSale } from '../../utils/dateUtils';
+import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const TABLE_RESERVATION_SOURCE = 'table';
 const EPSILON = 0.00001;
@@ -27,7 +28,8 @@ const getProductMap = async ({ itemsToProcess, allProducts = [], db, STORES }) =
 
         if (hasRecipe(product)) {
             product.recipe.forEach((ingredient) => {
-                if (ingredient?.ingredientId) ingredientIds.add(ingredient.ingredientId);
+                const ingredientId = getRecipeIngredientId(ingredient);
+                if (ingredientId) ingredientIds.add(ingredientId);
             });
         }
 
@@ -98,7 +100,7 @@ const buildIngredientRequirements = (orderItem, product) => {
 
     if (hasRecipe(product)) {
         product.recipe.forEach((ingredient) => {
-            addRequirement(ingredient.ingredientId, normalizeStock((ingredient.quantity || 0) * quantityToDeduct));
+            addRequirement(getRecipeIngredientId(ingredient), normalizeStock((ingredient.quantity || 0) * quantityToDeduct));
         });
     } else if (product?.trackStock !== false) {
         addRequirement(getRealProductId(orderItem), quantityToDeduct);
@@ -271,7 +273,8 @@ export const loadRelevantBatches = async ({
 
         if (hasRecipe(product)) {
             product.recipe.forEach((component) => {
-                if (component?.ingredientId) uniqueProductIds.add(component.ingredientId);
+                const ingredientId = getRecipeIngredientId(component);
+                if (ingredientId) uniqueProductIds.add(ingredientId);
             });
 
             if (Array.isArray(orderItem?.selectedModifiers)) {

@@ -15,6 +15,7 @@ import Logger from '../Logger';
 import { collectBatchRestorations, restoreBatchStock } from '../sales/batchRestoration';
 import { searchProductsInTable } from './productSearch';
 import { calculateShelfLifeTargetDate } from '../../utils/expirationPolicy';
+import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const validateInitialBatchForProduct = (batch, product) => {
     if (!batch?.id) {
@@ -1196,7 +1197,7 @@ export const productsRepository = {
                     let remainingQty = requiredQty;
 
                     const batches = await db.table(STORES.PRODUCT_BATCHES)
-                        .where('productId').equals(item.ingredientId)
+                        .where('productId').equals(getRecipeIngredientId(item))
                         .toArray();
 
                     // Filtrar activos y ordenar del más viejo al más nuevo
@@ -1220,7 +1221,7 @@ export const productsRepository = {
 
                     // Si se agota el inventario del ingrediente antes de cubrir la receta
                     if (remainingQty > 0.0001) {
-                        const ingrediente = await db.table(STORES.MENU).get(item.ingredientId);
+                        const ingrediente = await db.table(STORES.MENU).get(getRecipeIngredientId(item));
                         throw new DatabaseError(
                             DB_ERROR_CODES.CONSTRAINT_VIOLATION,
                             `Stock insuficiente para producir. Faltan ${remainingQty.toFixed(2)} unidades del ingrediente: ${ingrediente?.name || 'Desconocido'}.`

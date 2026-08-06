@@ -9,9 +9,10 @@ export function validateProductForm(values, { activeRubro, isEditing = false } =
   const price = toNumber(values.price);
   const minStock = toNumber(values.minStock);
   const maxStock = toNumber(values.maxStock);
+  const isIngredient = values.productType === 'ingredient' || values.restaurantType === 'ingredient';
 
   if (!String(values.name || '').trim()) fieldErrors.name = 'El nombre es obligatorio.';
-  if (price <= 0) fieldErrors.price = 'El precio de venta debe ser mayor que cero.';
+  if (!isIngredient && price <= 0) fieldErrors.price = 'El precio de venta debe ser mayor que cero.';
   if (cost < 0) fieldErrors.cost = 'El costo no puede ser negativo.';
   if (values.trackStock && stock < 0) fieldErrors.stock = 'La existencia inicial no puede ser negativa.';
   if (values.trackStock && minStock < 0) fieldErrors.minStock = 'El stock mínimo no puede ser negativo.';
@@ -43,7 +44,7 @@ export function validateProductForm(values, { activeRubro, isEditing = false } =
       seen.add(key);
     });
   }
-  if (values.restaurantType === 'dish' && values.recipe.length > 0 && !values.recipe.every((item) => item?.productId && toNumber(item.quantity) > 0)) fieldErrors.recipe = 'La receta contiene ingredientes incompletos.';
+  if (values.restaurantType === 'dish' && values.recipe.length > 0 && !values.recipe.every((item) => (item?.ingredientId || item?.productId) && toNumber(item.quantity) > 0)) fieldErrors.recipe = 'La receta contiene ingredientes incompletos.';
   if (Object.keys(fieldErrors).length > 0) globalErrors.push('Revisa los campos marcados antes de guardar.');
   return { fieldErrors, globalErrors };
 }

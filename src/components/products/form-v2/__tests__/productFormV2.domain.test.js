@@ -72,9 +72,32 @@ describe('Product Form V2 payload', () => {
     expect(payload.unmappedField).toBe('keep');
   });
 
+  it.each([
+    ['ingredient', 'ingredient', 0, false],
+    ['ingredient', 'ingredient', '', false],
+    ['dish', 'sellable', 0, true],
+    ['drink', 'sellable', 0, true],
+    ['ready', 'sellable', 0, true]
+  ])('handles sale-price validation for %s', (restaurantType, productType, price, expectsPriceError) => {
+    const result = validateProductForm(base({ restaurantType, productType, price }));
+    expect(Boolean(result.fieldErrors.price)).toBe(expectsPriceError);
+  });
+
+  it('accepts recipe entries with canonical or legacy ingredient identifiers', () => {
+    expect(validateProductForm(base({ restaurantType: 'dish', recipe: [{ ingredientId: 'ingredient-1', quantity: 1 }] })).fieldErrors.recipe).toBeUndefined();
+    expect(validateProductForm(base({ restaurantType: 'dish', recipe: [{ productId: 'ingredient-1', quantity: 1 }] })).fieldErrors.recipe).toBeUndefined();
+    expect(validateProductForm(base({ restaurantType: 'dish', recipe: [{ quantity: 1 }] })).fieldErrors.recipe).toBeTruthy();
+    expect(validateProductForm(base({ restaurantType: 'dish', recipe: [{ ingredientId: 'ingredient-1', quantity: 0 }] })).fieldErrors.recipe).toBeTruthy();
+  });
+
   it('uses the canonical pharmacy FEFO value and records explicit image removal', () => {
     const payload = buildProductFormPayload(base({ imageRemoved: true }), { activeRubro: 'farmacia', productToEdit: { id: 'p1', image: 'img-old' } });
     expect(payload.batchManagement.selectionStrategy).toBe('fefo');
     expect(payload).toMatchObject({ image: null, imageRemoved: true });
+  });
+
+  it('normalizes ingredients to a zero sale price while preserving cost and stock', () => {
+    const payload = buildProductFormPayload(base({ restaurantType: 'ingredient', productType: 'sellable', price: 99, cost: 18, stock: 7 }), { activeRubro: 'food_service' });
+    expect(payload).toMatchObject({ restaurantType: 'ingredient', productType: 'ingredient', price: 0, cost: 18, stock: 7 });
   });
 });
