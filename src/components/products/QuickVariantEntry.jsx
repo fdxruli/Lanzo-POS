@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { showConfirmModal } from '../../services/utils';
 import './QuickVariantEntry.css';
 
@@ -11,6 +11,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
   });
 
   const [quickColor, setQuickColor] = useState('');
+  const lastReportedRowsRef = useRef(null);
 
   // RASTREO DE LOTES ACTIVOS: { 'key-del-boton': [id1, id2, id3] }
   const [activeBatches, setActiveBatches] = useState({});
@@ -18,9 +19,8 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
   const [showAllCategories, setShowAllCategories] = useState(false);
 
   useEffect(() => {
-    if (initialData && initialData.length > 0) {
-      setRows(initialData);
-    }
+    if (!initialData?.length || initialData === lastReportedRowsRef.current) return;
+    setRows((currentRows) => (currentRows === initialData ? currentRows : initialData));
   }, [initialData]);
 
   // --- ANÁLISIS EN TIEMPO REAL (DUPLICADOS) ---
@@ -44,6 +44,9 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
 
   // Sincronización
   useEffect(() => {
+    // A changed callback identity must not be treated as changed variant data.
+    if (lastReportedRowsRef.current === rows) return;
+    lastReportedRowsRef.current = rows;
     onVariantsChange(rows);
   }, [rows, onVariantsChange]);
 
