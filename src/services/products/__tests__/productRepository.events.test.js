@@ -151,6 +151,30 @@ describe('productRepository directed catalog events', () => {
     }));
   });
 
+  it('updates only the apparel batch delta and never sends existing batches as initial batches', async () => {
+    mocks.cloudEnabled = true;
+    mocks.prepareProduct.mockResolvedValue({
+      ...preparedProduct(true),
+      batches: [{ id: 'legacy-batch' }],
+      apparelVariantDelta: {
+        unchanged: [{ id: 'batch-g' }],
+        updated: [{ id: 'batch-m', sku: 'SKU-B', cost: 12, price: 30, existingBatch: { id: 'batch-m', serverVersion: 1, stock: 4 } }],
+        created: [{ id: 'batch-ch', talla: 'CH', color: 'Negro', stock: 2, cost: 12, price: 30 }],
+        removed: [{ id: 'batch-l', serverVersion: 2 }]
+      }
+    });
+    const saveBatch = vi.spyOn(productRepository, 'saveBatch').mockResolvedValue({ success: true });
+    const deleteBatch = vi.spyOn(productRepository, 'deleteBatch').mockResolvedValue({ success: true });
+
+    await productRepository.saveProduct({ name: 'Edited' }, { existingProduct: { id: 'product-1' } });
+
+    expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({ initialBatches: [] }));
+    expect(saveBatch).toHaveBeenCalledTimes(2);
+    expect(saveBatch).toHaveBeenNthCalledWith(1, expect.objectContaining({ id: 'batch-m', sku: 'SKU-B', stock: 4 }), expect.objectContaining({ expectedVersion: 1 }));
+    expect(saveBatch).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'batch-ch' }), expect.objectContaining({ expectedVersion: null }));
+    expect(deleteBatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'batch-l' }), expect.objectContaining({ expectedVersion: 2 }));
+  });
+
   it('emits deleted, activated and deactivated operations for local mutations', async () => {
     const current = { id: 'product-1', isActive: true };
     await productRepository.deleteProduct(current);

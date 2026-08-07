@@ -72,6 +72,11 @@ describe('Product Form V2 payload', () => {
     expect(payload.unmappedField).toBe('keep');
   });
 
+  it('normalizes legacy ingredient units and resolves missing unit ingredients as pieces', () => {
+    expect(getProductFormDefaults({ activeRubro: 'food_service', productToEdit: { id: 'ing-gr', productType: 'ingredient', unit: 'gr' } })).toMatchObject({ restaurantType: 'ingredient', unit: 'g', saleType: 'bulk' });
+    expect(getProductFormDefaults({ activeRubro: 'food_service', productToEdit: { id: 'ing-pza', productType: 'ingredient', saleType: 'unit' } })).toMatchObject({ restaurantType: 'ingredient', unit: 'pza', saleType: 'unit' });
+  });
+
   it.each([
     ['ingredient', 'ingredient', 0, false],
     ['ingredient', 'ingredient', '', false],
@@ -99,5 +104,20 @@ describe('Product Form V2 payload', () => {
   it('normalizes ingredients to a zero sale price while preserving cost and stock', () => {
     const payload = buildProductFormPayload(base({ restaurantType: 'ingredient', productType: 'sellable', price: 99, cost: 18, stock: 7 }), { activeRubro: 'food_service' });
     expect(payload).toMatchObject({ restaurantType: 'ingredient', productType: 'ingredient', price: 0, cost: 18, stock: 7 });
+  });
+
+  it.each([['kg', 'bulk'], ['pza', 'unit']])('persists ingredient %s with coherent unit, sale type, and bulk data', (unit, saleType) => {
+    const payload = buildProductFormPayload(base({ restaurantType: 'ingredient', unit, saleType: 'unit', price: 99 }), { activeRubro: 'food_service' });
+    expect(payload).toMatchObject({ productType: 'ingredient', price: 0, unit, saleType });
+    if (saleType === 'bulk') expect(payload.bulkData?.purchase?.unit).toBe(unit);
+  });
+
+  it('updates only the legacy bulk purchase unit and preserves it for piece edits', () => {
+    const legacyBulkData = { purchase: { unit: 'kilo', supplier: 'Proveedor' }, batches: [{ id: 'lot-1' }] };
+    const bulkPayload = buildProductFormPayload(base({ restaurantType: 'ingredient', unit: 'g', saleType: 'unit', bulkData: legacyBulkData }), { activeRubro: 'food_service' });
+    expect(bulkPayload.bulkData).toEqual({ purchase: { unit: 'g', supplier: 'Proveedor' }, batches: [{ id: 'lot-1' }] });
+
+    const piecePayload = buildProductFormPayload(base({ restaurantType: 'ingredient', unit: 'pza', saleType: 'bulk' }), { activeRubro: 'food_service', productToEdit: { id: 'piece-1', bulkData: legacyBulkData } });
+    expect(piecePayload.bulkData).toEqual(legacyBulkData);
   });
 });

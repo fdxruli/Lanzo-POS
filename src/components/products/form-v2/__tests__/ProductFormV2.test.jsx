@@ -53,4 +53,43 @@ describe('ProductFormV2', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     resolveSave(true);
   });
+
+  it('uses canonical unit options for restaurant ingredients instead of free text', () => {
+    renderForm({ activeRubroContext: 'food_service' });
+    fireEvent.click(screen.getByRole('button', { name: /Preparaci.n y venta/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Insumo' }));
+
+    const unit = screen.getByLabelText('Unidad');
+    expect(unit.tagName).toBe('SELECT');
+    expect(Array.from(unit.options).map((option) => option.text)).toEqual([
+      'Pieza / unidad', 'Kilogramo (kg)', 'Gramo (g)', 'Litro (L)', 'Mililitro (ml)'
+    ]);
+    fireEvent.change(unit, { target: { value: 'kg' } });
+    expect(unit).toHaveValue('kg');
+  });
+
+  it('keeps apparel variant inputs editable after variants are enabled', () => {
+    renderForm({ activeRubroContext: 'apparel', features: { hasVariants: true } });
+    fireEvent.click(screen.getByRole('button', { name: /Tallas, colores y variantes/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /producto tiene variantes/i }));
+
+    const color = screen.getByPlaceholderText('Color');
+    const size = screen.getByPlaceholderText('Talla');
+    const stock = screen.getByPlaceholderText('0');
+    fireEvent.change(color, { target: { value: 'neg' } });
+    fireEvent.change(size, { target: { value: 'M' } });
+    fireEvent.change(stock, { target: { value: '3' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Agregar variante manual/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Agregar variante manual/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Agregar variante manual/i }));
+    const colors = screen.getAllByPlaceholderText('Color');
+    fireEvent.change(colors[3], { target: { value: 'azul' } });
+
+    expect(color).toHaveValue('neg');
+    expect(size).toHaveValue('M');
+    expect(stock).toHaveValue(3);
+    expect(colors).toHaveLength(4);
+    expect(colors[3]).toHaveValue('azul');
+  });
 });

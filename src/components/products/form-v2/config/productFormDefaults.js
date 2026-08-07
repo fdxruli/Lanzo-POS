@@ -1,4 +1,5 @@
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
+import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { getProductRubroConfig, normalizeProductRubro } from './productRubroConfig';
 
 const asDateInput = (value) => (value ? String(value).split('T')[0] : '');
@@ -6,9 +7,18 @@ const asDateInput = (value) => (value ? String(value).split('T')[0] : '');
 export function getProductFormDefaults({ activeRubro, capabilities = {}, productToEdit = null } = {}) {
   const rubro = normalizeProductRubro(activeRubro);
   const config = getProductRubroConfig(rubro);
-  const restaurantType = productToEdit?.restaurantType || (rubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE ? 'dish' : 'ready');
-  const defaultTrackStock = rubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE && restaurantType === 'dish' ? false : true;
   const source = productToEdit || {};
+  const restaurantType = source.restaurantType || (source.productType === 'ingredient' ? 'ingredient' : (rubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE ? 'dish' : 'ready'));
+  const isIngredient = restaurantType === 'ingredient';
+  const defaultTrackStock = rubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE && restaurantType === 'dish' ? false : true;
+  const legacyIngredientUnit = [
+    source.unit,
+    source.bulkData?.purchase?.unit,
+    source.bulkData?.unit,
+    source.measurementUnit,
+    source.saleUnit
+  ].find((value) => String(value ?? '').trim());
+  const ingredientUnit = normalizeIngredientUnit(legacyIngredientUnit || (source.saleType === 'unit' ? 'pza' : 'kg'));
   const expirationMode = source.expirationMode || (config.strictExpiry && capabilities.hasExpiry !== false ? 'STRICT' : 'NONE');
 
   return {
@@ -20,7 +30,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     trackStock: source.trackStock ?? defaultTrackStock,
     stock: productToEdit ? (source.stock ?? 0) : 0,
     minStock: source.minStock ?? '', maxStock: source.maxStock ?? '', supplier: source.supplier || '', location: source.location || '',
-    saleType: source.saleType || config.defaultSaleType, unit: source.unit || (rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA ? 'kg' : 'pza'),
+    saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (source.saleType || config.defaultSaleType), unit: isIngredient ? ingredientUnit : (source.unit || (rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA ? 'kg' : 'pza')),
     conversionFactor: source.conversionFactor || { enabled: false, purchaseUnit: '', factor: '' },
     expirationMode, shelfLifeValue: source.shelfLifeValue ?? '', shelfLifeUnit: source.shelfLifeUnit || 'days',
     expiryDate: asDateInput(source.expiryDate), manufacturerBatchId: source.manufacturerBatchId || '',

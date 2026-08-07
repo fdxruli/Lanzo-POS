@@ -91,7 +91,7 @@ describe('productLocalRepository.prepareProduct', () => {
     });
   });
 
-  it('reuses stable variant batch IDs while editing instead of generating duplicates', async () => {
+  it('keeps existing apparel variants out of initial batches while editing', async () => {
     const { productLocalRepository } = await import('../productLocalRepository');
     const existing = { id: 'shirt-1', name: 'Playera', createdAt: '2026-01-01T00:00:00.000Z', stock: 4 };
     const prepared = await productLocalRepository.prepareProduct({
@@ -104,7 +104,6 @@ describe('productLocalRepository.prepareProduct', () => {
     }, existing);
 
     expect(prepared.editing).toBe(true);
-    expect(prepared.batches).toHaveLength(1);
-    expect(prepared.batches[0].id).toBe('batch-shirt-blue-m');
+    expect(prepared.batches).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getProductFormDefaults } from '../config/productFormDefaults';
 import { normalizeProductRubro } from '../config/productRubroConfig';
 import { buildProductFormPayload } from '../domain/buildProductFormPayload';
+import { buildApparelVariantDelta } from '../domain/buildApparelVariantDelta';
 import { toNumber } from '../domain/productFormNormalization';
 import { validateProductForm } from '../domain/validateProductForm';
 import { compressImage, generateID } from '../../../../services/utils';
@@ -26,8 +27,10 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const [isSaving, setIsSaving] = useState(false);
   const blobUrlRef = useRef(null);
   const initialValuesRef = useRef(comparableValues(values));
+  const originalApparelBatchesRef = useRef([]);
 
   useEffect(() => {
+    originalApparelBatchesRef.current = [];
     if (!productToEdit?.id || normalizedRubro !== 'apparel') return undefined;
     let cancelled = false;
     queryBatchesByProductIdAndActive(productToEdit.id)
@@ -37,10 +40,15 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
           .filter((batch) => batch.attributes?.talla || batch.attributes?.color)
           .map((batch) => ({
             id: batch.id,
+            serverVersion: batch.serverVersion,
             createdAt: batch.createdAt,
+            syncStatus: batch.syncStatus,
+            lastSyncedAt: batch.lastSyncedAt,
+            isExistingVariant: true,
             talla: batch.attributes?.talla || '', color: batch.attributes?.color || '', sku: batch.sku || '',
             stock: batch.stock ?? 0, cost: batch.cost ?? productCost ?? 0, price: batch.price ?? productPrice ?? 0
           }));
+        originalApparelBatchesRef.current = quickVariants.map((variant) => ({ ...variant }));
         if (!quickVariants.length) return;
         setValues((previous) => {
           const next = { ...previous, hasVariants: true, quickVariants };
@@ -74,7 +82,13 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
     // the original file so prepareProductImageForCloud can preserve its contract.
     setFields({ image: compressed, imagePreview: blobUrlRef.current, imageUploadSource: file, imageRemoved: false });
   }, [setFields]);
-  const payload = useMemo(() => buildProductFormPayload(values, { activeRubro: normalizedRubro, productToEdit }), [values, normalizedRubro, productToEdit]);
+  const payload = useMemo(() => {
+    const next = buildProductFormPayload(values, { activeRubro: normalizedRubro, productToEdit });
+    if (normalizedRubro === 'apparel' && productToEdit?.id) {
+      next.apparelVariantDelta = buildApparelVariantDelta(originalApparelBatchesRef.current, next.quickVariants);
+    }
+    return next;
+  }, [values, normalizedRubro, productToEdit]);
   const isDirty = comparableValues(values) !== initialValuesRef.current;
   const markClean = useCallback((nextValues) => { initialValuesRef.current = comparableValues(nextValues); }, []);
   const submit = useCallback(async ({ resetAfterSave = false } = {}) => {

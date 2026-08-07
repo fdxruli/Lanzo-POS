@@ -1,13 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { showConfirmModal } from '../../services/utils';
+import { generateID, showConfirmModal } from '../../services/utils';
 import './QuickVariantEntry.css';
+
+const emptyVariant = (baseCost, basePrice) => ({ id: generateID('batch'), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice });
 
 export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChange, initialData = [] }) {
   const [rows, setRows] = useState(() => {
     if (initialData && initialData.length > 0) {
       return initialData;
     }
-    return [{ id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }];
+    return [emptyVariant(baseCost, basePrice)];
   });
 
   const [quickColor, setQuickColor] = useState('');
@@ -63,7 +65,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
       const newRows = prev.filter(r => r.id !== id);
       // Si borramos todo manual, dejamos una fila vacía para no romper la UI
       if (newRows.length === 0) {
-        return [{ id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }];
+        return [emptyVariant(baseCost, basePrice)];
       }
       return newRows;
     });
@@ -74,7 +76,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
     const defaultColor = lastRow ? lastRow.color : '';
     setRows(prev => [
       ...prev,
-      { id: Date.now() + Math.random(), talla: '', color: defaultColor, sku: '', stock: '', cost: baseCost, price: basePrice }
+      { ...emptyVariant(baseCost, basePrice), color: defaultColor }
     ]);
   };
 
@@ -88,7 +90,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
         const remaining = prev.filter(row => !idsToRemove.includes(row.id));
         // Si nos quedamos sin filas, restaurar la fila vacía inicial
         if (remaining.length === 0) {
-          return [{ id: Date.now(), talla: '', color: '', sku: '', stock: '', cost: baseCost, price: basePrice }];
+          return [emptyVariant(baseCost, basePrice)];
         }
         return remaining;
       });
@@ -102,8 +104,8 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
 
     } else {
       // Si no está activo, lo agregamos
-      const newRows = sizesArray.map((size, index) => ({
-        id: Date.now() + index + Math.random(),
+      const newRows = sizesArray.map((size) => ({
+        id: generateID('batch'),
         talla: size,
         color: quickColor || '',
         sku: '',
@@ -311,6 +313,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                       value={row.stock}
                       min="0"
                       onChange={(e) => updateRow(row.id, 'stock', e.target.value)}
+                      readOnly={Boolean(row.isExistingVariant)}
                       style={{ textAlign: 'center', fontWeight: 'bold', color: row.stock > 0 ? 'var(--ui-text-success)' : 'var(--ui-text-muted)' }}
                     />
                   </td>

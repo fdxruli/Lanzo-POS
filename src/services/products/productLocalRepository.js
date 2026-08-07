@@ -164,6 +164,7 @@ export const productLocalRepository = {
     };
 
     delete product.quickVariants;
+    delete product.apparelVariantDelta;
     delete product.imageRemoved;
 
     if (!editing) {
@@ -178,6 +179,7 @@ export const productLocalRepository = {
     const price = toNumber(productData.price);
     const stock = toNumber(productData.stock);
     const variants = Array.isArray(productData.quickVariants) ? productData.quickVariants : [];
+    const apparelVariantDelta = productData.apparelVariantDelta || null;
     const recipe = productData.productType === 'sellable' && Array.isArray(productData.recipe) && productData.recipe.length > 0;
     const batches = [];
 
@@ -217,8 +219,9 @@ export const productLocalRepository = {
       });
     }
 
-    for (const variant of variants) {
-      if ((variant.talla || variant.color) && (toNumber(variant.stock) > 0 || variant.sku)) {
+    if (!editing) {
+      for (const variant of variants) {
+        if (variant.talla && variant.color) {
         const hasStableBatchId = typeof variant.id === 'string' && variant.id.length > 0;
         batches.push({
           id: hasStableBatchId ? variant.id : generateID('batch'),
@@ -238,6 +241,7 @@ export const productLocalRepository = {
           alertType: variant.alertType || productData.alertType || null,
           manufacturerBatchId: variant.manufacturerBatchId || productData.manufacturerBatchId || null
         });
+        }
       }
     }
 
@@ -245,6 +249,7 @@ export const productLocalRepository = {
       productId,
       product: editing ? { ...hydratedExisting, ...product } : product,
       batches,
+      apparelVariantDelta,
       editing,
       inventoryValue: batches.reduce((sum, batch) => sum + toNumber(batch.stock) * toNumber(batch.cost), 0)
     };
@@ -257,13 +262,7 @@ export const productLocalRepository = {
 
     if (prepared.editing) {
       result = await updateProductSafe(prepared.productId, product);
-      if (result?.success) {
-        await applySyncFields(STORES.MENU, prepared.productId, sync);
-        for (const batch of batches) {
-          const batchResult = await saveBatchAndSyncProductSafe(batch);
-          if (batchResult?.success) await applySyncFields(STORES.PRODUCT_BATCHES, batch.id, sync);
-        }
-      }
+      if (result?.success) await applySyncFields(STORES.MENU, prepared.productId, sync);
     } else {
       result = await createProductWithInitialInventorySafe(product, batches);
       if (result?.success || result?.productId) {

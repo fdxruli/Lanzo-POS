@@ -147,6 +147,54 @@ const notifyProductMutation = ({ productId, operation, source }) => {
   });
 };
 
+const saveApparelVariantDelta = async (prepared) => {
+  const delta = prepared.apparelVariantDelta;
+  if (!prepared.editing || !delta) return { success: true };
+
+  const productId = prepared.productId;
+  for (const variant of delta.updated || []) {
+    const existingBatch = variant.existingBatch;
+    const result = await productRepository.saveBatch({
+      ...existingBatch,
+      productId,
+      id: existingBatch.id,
+      stock: existingBatch.stock,
+      cost: variant.cost,
+      price: variant.price,
+      sku: variant.sku || null,
+      attributes: { talla: variant.talla || '', color: variant.color || '' }
+    }, { existingBatch, expectedVersion: existingBatch.serverVersion });
+    if (!result?.success) return result;
+  }
+
+  for (const variant of delta.created || []) {
+    const result = await productRepository.saveBatch({
+      id: variant.id,
+      productId,
+      stock: Number(variant.stock) || 0,
+      cost: Number(variant.cost) || 0,
+      price: Number(variant.price) || 0,
+      sku: variant.sku || null,
+      attributes: { talla: variant.talla || '', color: variant.color || '' },
+      isActive: true,
+      status: 'active',
+      trackStock: true,
+      createdAt: variant.createdAt || nowIso(),
+      notes: 'Ingreso rapido (Modo Asistido)'
+    }, { expectedVersion: null });
+    if (!result?.success) return result;
+  }
+
+  for (const existingBatch of delta.removed || []) {
+    const result = await productRepository.deleteBatch(existingBatch, {
+      expectedVersion: existingBatch.serverVersion
+    });
+    if (!result?.success) return result;
+  }
+
+  return { success: true };
+};
+
 export const productRepository = {
   async listProductsPage(options = {}) {
     return productLocalRepository.listProductsPage(options);
@@ -308,6 +356,8 @@ export const productRepository = {
         { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
       );
       if (result?.success) {
+        const variants = await saveApparelVariantDelta(prepared);
+        if (!variants?.success) return variants;
         notifyProductMutation({
           productId: prepared.productId,
           operation,
@@ -325,7 +375,7 @@ export const productRepository = {
     const expectedVersion = options.expectedVersion ?? (prepared.editing ? prepared.product?.serverVersion || null : null);
     const payload = {
       product: productToCloudPayload(prepared.product),
-      initialBatches: prepared.batches.map(batchToCloudPayload),
+      initialBatches: prepared.editing ? [] : prepared.batches.map(batchToCloudPayload),
       expectedVersion
     };
 
@@ -345,6 +395,8 @@ export const productRepository = {
         operation,
         source: 'productRepository.saveProduct.pending'
       });
+      const variants = await saveApparelVariantDelta(prepared);
+      if (!variants?.success) return variants;
       return { ...result, pending: true, message };
     };
 
@@ -376,6 +428,14 @@ export const productRepository = {
         operation,
         source: 'productRepository.saveProduct'
       });
+      const variants = await saveApparelVariantDelta(prepared);
+      if (!variants?.success) {
+        return {
+          ...variants,
+          partial: true,
+          message: variants.message || 'El producto se guardó, pero no se pudieron sincronizar todas sus variantes. Conservamos tus cambios para que puedas recuperarlos.'
+        };
+      }
       return { success: true, productId: prepared.productId, inventoryValue: prepared.inventoryValue, response };
     } catch (error) {
       Logger.warn('[Products] Upsert product cloud fallo:', error);
@@ -633,7 +693,7 @@ export const productRepository = {
         operation: 'updated',
         source: 'productRepository.saveBatch'
       });
-      return local;
+      return { ...local, response };
     } catch (error) {
       Logger.warn('[Products] Upsert batch cloud fallo:', error);
       if (isRetryableCloudError(error)) {

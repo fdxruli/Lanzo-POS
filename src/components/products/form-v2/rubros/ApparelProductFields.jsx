@@ -14,7 +14,7 @@ export default function ApparelProductFields({ values, errors, onFieldChange }) 
       <input type="checkbox" checked={values.hasVariants} onChange={(event) => onFieldChange('hasVariants', event.target.checked)} /> ¿El producto tiene variantes?
     </label>
     {values.hasVariants ? <>
-      <p className="product-form-v2__help">La existencia total se calcula desde las combinaciones activas.</p>
+      <p className="product-form-v2__help">La existencia total se calcula desde las combinaciones activas. Para variantes existentes, ajusta existencias desde inventario o lotes.</p>
       <QuickVariantEntry basePrice={values.price} baseCost={values.cost} initialData={values.quickVariants} onVariantsChange={handleVariantsChange} />
       {errors.quickVariants && <small className="product-form-v2__error">{errors.quickVariants}</small>}
     </> : <p className="product-form-v2__help">Mantén un producto simple con una existencia general.</p>}
