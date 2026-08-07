@@ -153,6 +153,7 @@ const saveApparelVariantDelta = async (prepared) => {
 
   const productId = prepared.productId;
   const applied = { updated: [], created: [], removed: [] };
+  let latestProduct = null;
   for (const variant of delta.updated || []) {
     const existingBatch = variant.existingBatch;
     const result = await productRepository.saveBatch({
@@ -165,7 +166,8 @@ const saveApparelVariantDelta = async (prepared) => {
       sku: variant.sku || null,
       attributes: { talla: variant.talla || '', color: variant.color || '' }
     }, { existingBatch, expectedVersion: existingBatch.serverVersion });
-    if (!result?.success) return { ...result, appliedVariants: applied };
+    if (!result?.success) return { ...result, appliedVariants: applied, latestProduct };
+    latestProduct = result?.response?.product || latestProduct;
     applied.updated.push({ variant, result });
   }
 
@@ -184,7 +186,8 @@ const saveApparelVariantDelta = async (prepared) => {
       createdAt: variant.createdAt || nowIso(),
       notes: 'Ingreso rapido (Modo Asistido)'
     }, { expectedVersion: null });
-    if (!result?.success) return { ...result, appliedVariants: applied };
+    if (!result?.success) return { ...result, appliedVariants: applied, latestProduct };
+    latestProduct = result?.response?.product || latestProduct;
     applied.created.push({ variant, result });
   }
 
@@ -192,11 +195,12 @@ const saveApparelVariantDelta = async (prepared) => {
     const result = await productRepository.deleteBatch(existingBatch, {
       expectedVersion: existingBatch.serverVersion
     });
-    if (!result?.success) return { ...result, appliedVariants: applied };
+    if (!result?.success) return { ...result, appliedVariants: applied, latestProduct };
+    latestProduct = result?.response?.product || latestProduct;
     applied.removed.push({ variant: existingBatch, result });
   }
 
-  return { success: true, appliedVariants: applied };
+  return { success: true, appliedVariants: applied, latestProduct };
 };
 
 export const productRepository = {
@@ -437,7 +441,7 @@ export const productRepository = {
         return {
           ...variants,
           partial: true,
-          productRebase: response.product || prepared.product,
+          productRebase: variants.latestProduct || response.product || prepared.product,
           message: variants.message || 'El producto se guardó, pero no se pudieron sincronizar todas sus variantes. Conservamos tus cambios para que puedas recuperarlos.'
         };
       }

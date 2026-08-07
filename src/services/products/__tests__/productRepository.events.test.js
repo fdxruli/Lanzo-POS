@@ -93,7 +93,14 @@ const preparedProduct = (editing = false) => ({
   inventoryValue: 0
 });
 
+const apparelPreparedProduct = ({ serverVersion = 10, updated = [], created = [], removed = [] } = {}) => ({
+  ...preparedProduct(true),
+  product: { id: 'product-1', name: 'Product', serverVersion },
+  apparelVariantDelta: { unchanged: [], updated, created, removed }
+});
+
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   mocks.cloudEnabled = false;
   mocks.prepareProduct.mockResolvedValue(preparedProduct(false));
@@ -175,33 +182,96 @@ describe('productRepository directed catalog events', () => {
     expect(deleteBatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'batch-l' }), expect.objectContaining({ expectedVersion: 2 }));
   });
 
-  it('returns cloud-confirmed apparel operations when a later variant fails', async () => {
+  it('rebases the parent from the latest confirmed apparel batch and retries with that version', async () => {
     mocks.cloudEnabled = true;
-    mocks.prepareProduct.mockResolvedValue({
-      ...preparedProduct(true),
-      apparelVariantDelta: {
-        unchanged: [],
-        updated: [
-          { id: 'batch-a', talla: 'M', color: 'Negro', sku: 'SKU-A2', cost: 10, price: 20, existingBatch: { id: 'batch-a', serverVersion: 1, stock: 4 } },
-          { id: 'batch-b', talla: 'G', color: 'Negro', sku: 'SKU-B2', cost: 10, price: 20, existingBatch: { id: 'batch-b', serverVersion: 1, stock: 5 } }
-        ],
-        created: [],
-        removed: []
-      }
-    });
+    const batchA = { id: 'batch-a', talla: 'M', color: 'Negro', sku: 'SKU-A2', cost: 10, price: 20, existingBatch: { id: 'batch-a', serverVersion: 1, stock: 4 } };
+    const batchB = { id: 'batch-b', talla: 'G', color: 'Negro', sku: 'SKU-B2', cost: 10, price: 20, existingBatch: { id: 'batch-b', serverVersion: 1, stock: 5 } };
+    mocks.prepareProduct
+      .mockResolvedValueOnce(apparelPreparedProduct({ serverVersion: 10, updated: [batchA, batchB] }))
+      .mockResolvedValueOnce(apparelPreparedProduct({ serverVersion: 12, updated: [batchB] }));
+    mocks.upsertProduct
+      .mockResolvedValueOnce({ success: true, product: { id: 'product-1', serverVersion: 11 } })
+      .mockResolvedValueOnce({ success: true, product: { id: 'product-1', serverVersion: 13 } });
     const saveBatch = vi.spyOn(productRepository, 'saveBatch')
-      .mockResolvedValueOnce({ success: true, response: { batch: { id: 'batch-a', server_version: 2 } } })
+      .mockResolvedValueOnce({ success: true, response: { batch: { id: 'batch-a', server_version: 2 }, product: { id: 'product-1', serverVersion: 12 } } })
+      .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' })
+      .mockResolvedValueOnce({ success: true, response: { batch: { id: 'batch-b', server_version: 2 }, product: { id: 'product-1', serverVersion: 13 } } });
+
+    const result = await productRepository.saveProduct({ name: 'Edited' }, { existingProduct: { id: 'product-1' } });
+
+    expect(result).toMatchObject({ partial: true, success: false, productRebase: { id: 'product-1', serverVersion: 12 } });
+    expect(result.appliedVariants.updated).toHaveLength(1);
+    expect(result.appliedVariants.updated[0]).toMatchObject({
+      variant: { id: 'batch-a', sku: 'SKU-A2' },
+      result: { response: { batch: { server_version: 2 }, product: { serverVersion: 12 } } }
+    });
+    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({ expectedVersion: 10 }));
+
+    await productRepository.saveProduct({ name: 'Edited again' }, { existingProduct: { id: 'product-1', serverVersion: 12 } });
+
+    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({ expectedVersion: 12 }));
+    expect(saveBatch.mock.calls.map(([batch]) => batch.id)).toEqual(['batch-a', 'batch-b', 'batch-b']);
+  });
+
+  it('uses the last successful batch response when several updates precede a failure', async () => {
+    mocks.cloudEnabled = true;
+    const variants = ['a', 'b', 'c'].map((id) => ({ id: `batch-${id}`, talla: id.toUpperCase(), color: 'Negro', sku: `SKU-${id}`, cost: 10, price: 20, existingBatch: { id: `batch-${id}`, serverVersion: 1, stock: 1 } }));
+    mocks.prepareProduct.mockResolvedValue(apparelPreparedProduct({ updated: variants }));
+    const saveBatch = vi.spyOn(productRepository, 'saveBatch')
+      .mockResolvedValueOnce({ success: true, response: { product: { id: 'product-1', serverVersion: 12 } } })
+      .mockResolvedValueOnce({ success: true, response: { product: { id: 'product-1', serverVersion: 13 } } })
       .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' });
 
     const result = await productRepository.saveProduct({ name: 'Edited' }, { existingProduct: { id: 'product-1' } });
 
-    expect(result).toMatchObject({ partial: true, success: false, productRebase: { id: 'product-1' } });
-    expect(result.appliedVariants.updated).toHaveLength(1);
-    expect(result.appliedVariants.updated[0]).toMatchObject({
-      variant: { id: 'batch-a', sku: 'SKU-A2' },
-      result: { response: { batch: { server_version: 2 } } }
-    });
-    expect(saveBatch).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ partial: true, productRebase: { serverVersion: 13 } });
+    expect(saveBatch).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses an updated batch parent rebase when a created batch fails', async () => {
+    mocks.cloudEnabled = true;
+    const updated = { id: 'batch-a', talla: 'M', color: 'Negro', sku: 'SKU-A2', cost: 10, price: 20, existingBatch: { id: 'batch-a', serverVersion: 1, stock: 1 } };
+    const created = { id: 'batch-b', talla: 'G', color: 'Negro', sku: 'SKU-B', cost: 10, price: 20 };
+    mocks.prepareProduct.mockResolvedValue(apparelPreparedProduct({ updated: [updated], created: [created] }));
+    const saveBatch = vi.spyOn(productRepository, 'saveBatch')
+      .mockResolvedValueOnce({ success: true, response: { product: { id: 'product-1', serverVersion: 12 } } })
+      .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' });
+
+    const result = await productRepository.saveProduct({ name: 'Edited' }, { existingProduct: { id: 'product-1' } });
+
+    expect(result).toMatchObject({ partial: true, productRebase: { serverVersion: 12 } });
+    expect(result.appliedVariants).toMatchObject({ updated: [{ variant: { id: 'batch-a' } }], created: [] });
+    expect(saveBatch.mock.calls.map(([batch]) => batch.id)).toEqual(['batch-a', 'batch-b']);
+  });
+
+  it('uses the latest product returned by an update when a deletion later fails', async () => {
+    mocks.cloudEnabled = true;
+    const updated = { id: 'batch-b', talla: 'G', color: 'Negro', sku: 'SKU-B2', cost: 10, price: 20, existingBatch: { id: 'batch-b', serverVersion: 1, stock: 1 } };
+    const removed = { id: 'batch-a', serverVersion: 1 };
+    mocks.prepareProduct.mockResolvedValue(apparelPreparedProduct({ updated: [updated], removed: [removed] }));
+    vi.spyOn(productRepository, 'saveBatch').mockResolvedValue({ success: true, response: { product: { id: 'product-1', serverVersion: 12 } } });
+    const deleteBatch = vi.spyOn(productRepository, 'deleteBatch').mockResolvedValue({ success: false, code: 'VERSION_CONFLICT' });
+
+    const result = await productRepository.saveProduct({ name: 'Edited' }, { existingProduct: { id: 'product-1' } });
+
+    expect(result).toMatchObject({ partial: true, productRebase: { serverVersion: 12 } });
+    expect(deleteBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the product returned by a successful deletion before a later deletion fails', async () => {
+    mocks.cloudEnabled = true;
+    const removedA = { id: 'batch-a', serverVersion: 1 };
+    const removedB = { id: 'batch-b', serverVersion: 1 };
+    mocks.prepareProduct.mockResolvedValue(apparelPreparedProduct({ removed: [removedA, removedB] }));
+    const deleteBatch = vi.spyOn(productRepository, 'deleteBatch')
+      .mockResolvedValueOnce({ success: true, response: { product: { id: 'product-1', serverVersion: 12 } } })
+      .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT' });
+
+    const result = await productRepository.saveProduct({ name: 'Edited' }, { existingProduct: { id: 'product-1' } });
+
+    expect(result).toMatchObject({ partial: true, productRebase: { serverVersion: 12 } });
+    expect(result.appliedVariants.removed).toMatchObject([{ variant: { id: 'batch-a' } }]);
+    expect(deleteBatch).toHaveBeenCalledTimes(2);
   });
 
   it('emits deleted, activated and deactivated operations for local mutations', async () => {

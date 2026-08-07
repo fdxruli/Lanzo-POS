@@ -54,6 +54,31 @@ describe('ProductFormV2', () => {
     resolveSave(true);
   });
 
+  it('uses the latest batch-confirmed parent version on an apparel partial-save retry', async () => {
+    const onSave = vi.fn()
+      .mockResolvedValueOnce({
+        partial: true,
+        productRebase: { id: 'product-1', serverVersion: 12 },
+        appliedVariants: { updated: [], created: [], removed: [] }
+      })
+      .mockResolvedValueOnce({ success: true });
+    renderForm({
+      activeRubroContext: 'apparel',
+      features: { hasVariants: true },
+      productToEdit: { id: 'product-1', name: 'Camisa', cost: 10, price: 20, serverVersion: 10 },
+      onSave
+    });
+
+    const saveButton = screen.getByRole('button', { name: /Guardar producto/i });
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][1]).toMatchObject({ serverVersion: 10 });
+
+    fireEvent.click(saveButton);
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    expect(onSave.mock.calls[1][1]).toMatchObject({ id: 'product-1', serverVersion: 12 });
+  });
+
   it('uses canonical unit options for restaurant ingredients instead of free text', () => {
     renderForm({ activeRubroContext: 'food_service' });
     fireEvent.click(screen.getByRole('button', { name: /Preparaci.n y venta/i }));
