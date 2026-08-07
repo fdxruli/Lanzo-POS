@@ -336,6 +336,11 @@ export default function ProductsPage() {
             const productPayload = imagePreparation.productPayload;
             const result = await productRepository.saveProduct(productPayload, { existingProduct: productToEdit });
 
+            if (result?.partial) {
+                handleActionableError(result);
+                return result;
+            }
+
             if (result?.success) {
                 await refreshData();
                 await refreshCategories();

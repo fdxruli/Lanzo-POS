@@ -19,6 +19,52 @@ const sameVariant = (original, next) => {
   return Object.keys(left).every((key) => left[key] === right[key]);
 };
 
+const responseBatch = (applied = {}) => (
+  applied.batch
+  || applied.result?.response?.batch
+  || applied.result?.response?.batches?.find((batch) => batch?.id === applied.variant?.id)
+  || null
+);
+
+const serverVersion = (batch = {}) => {
+  const value = batch.serverVersion ?? batch.server_version;
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+};
+
+/** Rebuilds the form baseline from cloud-confirmed apparel operations. */
+export function rebaseApparelVariantSnapshot(originalBatches = [], nextVariants = [], applied = {}) {
+  const rebased = new Map(
+    originalBatches.filter((batch) => batch?.id).map((batch) => [batch.id, { ...batch }])
+  );
+  const nextById = new Map(
+    nextVariants.filter((variant) => variant?.id).map((variant) => [variant.id, variant])
+  );
+
+  for (const removed of applied.removed || []) rebased.delete(removed.variant?.id || removed.id);
+
+  for (const operation of ['updated', 'created']) {
+    for (const appliedVariant of applied[operation] || []) {
+      const batch = responseBatch(appliedVariant);
+      const variant = nextById.get(batch?.id || appliedVariant.variant?.id) || appliedVariant.variant;
+      const version = serverVersion(batch);
+      if (!variant?.id || version === null) continue;
+
+      rebased.set(variant.id, {
+        ...variant,
+        serverVersion: version,
+        createdAt: batch?.createdAt || batch?.created_at || variant.createdAt,
+        talla: batch?.attributes?.talla ?? variant.talla ?? '',
+        color: batch?.attributes?.color ?? variant.color ?? '',
+        sku: batch?.sku ?? variant.sku ?? '',
+        cost: batch?.cost ?? variant.cost,
+        price: batch?.price ?? variant.price
+      });
+    }
+  }
+
+  return [...rebased.values()];
+}
+
 /** Catalog edits do not change inventory for an existing apparel batch. */
 export function buildApparelVariantDelta(originalBatches = [], nextVariants = []) {
   const originalsById = new Map(

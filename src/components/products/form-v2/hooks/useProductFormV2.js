@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getProductFormDefaults } from '../config/productFormDefaults';
 import { normalizeProductRubro } from '../config/productRubroConfig';
 import { buildProductFormPayload } from '../domain/buildProductFormPayload';
-import { buildApparelVariantDelta } from '../domain/buildApparelVariantDelta';
+import { buildApparelVariantDelta, rebaseApparelVariantSnapshot } from '../domain/buildApparelVariantDelta';
 import { toNumber } from '../domain/productFormNormalization';
 import { validateProductForm } from '../domain/validateProductForm';
 import { compressImage, generateID } from '../../../../services/utils';
@@ -25,9 +25,14 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   const [values, setValues] = useState(getDefaults);
   const [errors, setErrors] = useState({ fieldErrors: {}, globalErrors: [] });
   const [isSaving, setIsSaving] = useState(false);
+  const [rebasedProduct, setRebasedProduct] = useState(null);
   const blobUrlRef = useRef(null);
   const initialValuesRef = useRef(comparableValues(values));
   const originalApparelBatchesRef = useRef([]);
+
+  useEffect(() => { setRebasedProduct(null); }, [productToEdit?.id]);
+
+  const effectiveProductToEdit = rebasedProduct || productToEdit;
 
   useEffect(() => {
     originalApparelBatchesRef.current = [];
@@ -83,12 +88,12 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
     setFields({ image: compressed, imagePreview: blobUrlRef.current, imageUploadSource: file, imageRemoved: false });
   }, [setFields]);
   const payload = useMemo(() => {
-    const next = buildProductFormPayload(values, { activeRubro: normalizedRubro, productToEdit });
-    if (normalizedRubro === 'apparel' && productToEdit?.id) {
+    const next = buildProductFormPayload(values, { activeRubro: normalizedRubro, productToEdit: effectiveProductToEdit });
+    if (normalizedRubro === 'apparel' && effectiveProductToEdit?.id) {
       next.apparelVariantDelta = buildApparelVariantDelta(originalApparelBatchesRef.current, next.quickVariants);
     }
     return next;
-  }, [values, normalizedRubro, productToEdit]);
+  }, [values, normalizedRubro, effectiveProductToEdit]);
   const isDirty = comparableValues(values) !== initialValuesRef.current;
   const markClean = useCallback((nextValues) => { initialValuesRef.current = comparableValues(nextValues); }, []);
   const submit = useCallback(async ({ resetAfterSave = false } = {}) => {
@@ -99,7 +104,20 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
     setIsSaving(true);
     try {
       const options = { intent: resetAfterSave ? 'save_and_add_another' : 'save', keepFormOpen: resetAfterSave, source: 'product-form-v2' };
-      const result = await onSave?.(payload, productToEdit || { id: payload.id, isNew: true }, options);
+      const result = await onSave?.(payload, effectiveProductToEdit || { id: payload.id, isNew: true }, options);
+      if (result?.partial) {
+        originalApparelBatchesRef.current = rebaseApparelVariantSnapshot(
+          originalApparelBatchesRef.current,
+          values.quickVariants,
+          result.appliedVariants
+        );
+        const cloudProduct = result.productRebase || {};
+        const cloudVersion = cloudProduct.serverVersion ?? cloudProduct.server_version;
+        if (cloudVersion !== null && cloudVersion !== undefined) {
+          setRebasedProduct({ ...effectiveProductToEdit, serverVersion: cloudVersion });
+        }
+        return result;
+      }
       if (result !== false && resetAfterSave && !productToEdit) {
         const next = getDefaults();
         setValues(next);
@@ -110,6 +128,6 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       }
       return result;
     } finally { setIsSaving(false); }
-  }, [getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
+  }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
   return { values, errors, isSaving, isDirty, setField, setFields, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }

@@ -152,6 +152,7 @@ const saveApparelVariantDelta = async (prepared) => {
   if (!prepared.editing || !delta) return { success: true };
 
   const productId = prepared.productId;
+  const applied = { updated: [], created: [], removed: [] };
   for (const variant of delta.updated || []) {
     const existingBatch = variant.existingBatch;
     const result = await productRepository.saveBatch({
@@ -164,7 +165,8 @@ const saveApparelVariantDelta = async (prepared) => {
       sku: variant.sku || null,
       attributes: { talla: variant.talla || '', color: variant.color || '' }
     }, { existingBatch, expectedVersion: existingBatch.serverVersion });
-    if (!result?.success) return result;
+    if (!result?.success) return { ...result, appliedVariants: applied };
+    applied.updated.push({ variant, result });
   }
 
   for (const variant of delta.created || []) {
@@ -182,17 +184,19 @@ const saveApparelVariantDelta = async (prepared) => {
       createdAt: variant.createdAt || nowIso(),
       notes: 'Ingreso rapido (Modo Asistido)'
     }, { expectedVersion: null });
-    if (!result?.success) return result;
+    if (!result?.success) return { ...result, appliedVariants: applied };
+    applied.created.push({ variant, result });
   }
 
   for (const existingBatch of delta.removed || []) {
     const result = await productRepository.deleteBatch(existingBatch, {
       expectedVersion: existingBatch.serverVersion
     });
-    if (!result?.success) return result;
+    if (!result?.success) return { ...result, appliedVariants: applied };
+    applied.removed.push({ variant: existingBatch, result });
   }
 
-  return { success: true };
+  return { success: true, appliedVariants: applied };
 };
 
 export const productRepository = {
@@ -433,6 +437,7 @@ export const productRepository = {
         return {
           ...variants,
           partial: true,
+          productRebase: response.product || prepared.product,
           message: variants.message || 'El producto se guardó, pero no se pudieron sincronizar todas sus variantes. Conservamos tus cambios para que puedas recuperarlos.'
         };
       }

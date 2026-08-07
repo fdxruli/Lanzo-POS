@@ -31,4 +31,4 @@ Los productos nuevos obtienen un ID al abrir el formulario, por lo que un reinte
 | Farmacia | Datos farmacéuticos, lote/caducidad de entrada inicial y estrategia canónica `fefo`. |
 | Restaurante | Platillo, bebida, producto listo e insumo; receta, modificadores y estaciones reutilizan los componentes existentes. |
 
-No se realizan migraciones de Supabase ni despliegues manuales. La retirada de legacy, una acción independiente de reposición y la expansión visual de mayoreo quedan para fases posteriores.
+Existe un único hardening de Supabase para apparel: el RPC rechaza `initialBatches` durante una edición, separando la creación de lotes iniciales de las ediciones de variantes. La retirada de legacy, una acción independiente de reposición y la expansión visual de mayoreo quedan para fases posteriores.
