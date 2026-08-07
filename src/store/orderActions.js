@@ -16,9 +16,15 @@ import {
   compareOrderVersions,
   getNextPersistedOrderVersion
 } from '../services/orders/orderVersioning';
+import { isCommercialVariantProduct } from '../services/products/commercialVariants';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
+
+const toFiniteNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 const getSellableItems = (order = []) => (
   (order || []).filter((item) => Number(item?.quantity) > 0)
@@ -289,16 +295,23 @@ export const createOrderActions = (set, get) => ({
             validBatch = sortedBatches[0];
           }
 
+          const isCommercialVariant = isCommercialVariantProduct({
+            ...product,
+            activeBatches: validBatch ? [validBatch] : product.activeBatches
+          });
+          const salePrice = isCommercialVariant
+            ? toFiniteNumber(validBatch?.price)
+            : toFiniteNumber(product.price);
           const productToAdd = validBatch
             ? {
                 ...product,
                 batchId: validBatch.id,
-                price: validBatch.price,
+                price: salePrice,
                 cost: validBatch.cost,
                 stock: getAvailableStock(validBatch),
-                isVariant: true,
+                isVariant: isCommercialVariant,
                 skuDetected: validBatch.sku || product.sku,
-                originalPrice: validBatch.price
+                originalPrice: salePrice
               }
             : { ...product };
 

@@ -141,9 +141,6 @@ const buildResolvedProduct = ({
     stock = getAvailableStock(batch);
     resolvedBatchId = batch.id;
   } else if (product.batchManagement?.enabled && batch) {
-    const batchPrice = parseStrictPrice(batch.price);
-    finalPrice = batchPrice !== null ? batchPrice : finalPrice;
-    
     const batchCost = parseStrictPrice(batch.cost);
     finalCost = batchCost !== null ? batchCost : finalCost;
 
@@ -181,7 +178,7 @@ const resolveBarcodeInTransaction = async (code) => {
     return null;
   }
 
-  if (match.isVariant) {
+  if (match.batch) {
     return buildResolvedProduct(match);
   }
 
