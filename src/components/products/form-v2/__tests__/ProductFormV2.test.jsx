@@ -3,6 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ProductFormV2 from '../ProductFormV2';
 
+vi.mock('../../../../services/database', () => ({
+  queryBatchesByProductIdAndActive: vi.fn(async () => [])
+}));
+
 const renderForm = (props = {}) => render(<ProductFormV2 activeRubroContext="abarrotes" categories={[]} features={{ hasExpiry: true }} onSave={() => true} onCancel={() => {}} {...props} />);
 
 afterEach(cleanup);
@@ -116,5 +120,24 @@ describe('ProductFormV2', () => {
     expect(stock).toHaveValue(3);
     expect(colors).toHaveLength(4);
     expect(colors[3]).toHaveValue('azul');
+  });
+
+  it('shows batch summary instead of initial batch inputs when editing a medicine', () => {
+    const onOpenBatches = vi.fn();
+    const product = {
+      id: 'med-1', name: 'Medicamento', price: 20, cost: 12, stock: 10,
+      rubroContext: 'farmacia', expirationMode: 'STRICT', activeSubstance: 'PARACETAMOL',
+      laboratory: 'Laboratorio', presentation: 'Caja', prescriptionType: 'otc', requiresPrescription: false
+    };
+    renderForm({ activeRubroContext: 'farmacia', productToEdit: product, onOpenBatches });
+
+    fireEvent.click(screen.getByRole('button', { name: /Datos farmac/i }));
+
+    expect(screen.getByLabelText(/Inventario por lotes/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Fecha de caducidad inicial/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Lote del fabricante/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Esta configuración se aplicará/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Registrar lote/i }));
+    expect(onOpenBatches).toHaveBeenCalledWith(product);
   });
 });

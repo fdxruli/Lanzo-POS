@@ -27,6 +27,7 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
     saleType, unit: ingredientUnit, supplier: String(values.supplier || '').trim(), location: String(values.location || '').trim(),
     conversionFactor: values.conversionFactor?.enabled ? { enabled: true, purchaseUnit: values.conversionFactor.purchaseUnit?.trim() || '', factor: toNumber(values.conversionFactor.factor) } : { enabled: false, purchaseUnit: '', factor: '' },
     ...expiration,
+    hasVariants: activeRubro === CANONICAL_BUSINESS_TYPES.APPAREL ? hasVariants : Boolean(productToEdit?.hasVariants),
     quickVariants: hasVariants ? values.quickVariants.filter((variant) => variant.talla && variant.color).map((variant) => ({ ...variant, stock: toNumber(variant.stock), cost: toNumber(variant.cost, toNumber(values.cost)), price: toNumber(variant.price, toNumber(values.price)) })) : [],
     rubroContext: activeRubro, productType: isIngredient ? 'ingredient' : 'sellable', restaurantType: values.restaurantType,
     recipe: values.restaurantType === 'dish' ? values.recipe : [], modifiers: values.restaurantType === 'dish' ? values.modifiers : []

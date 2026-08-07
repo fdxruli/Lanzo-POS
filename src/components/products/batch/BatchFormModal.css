@@ -403,3 +403,19 @@
     transition: none;
   }
 }
+
+.batch-product-price {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ui-text-strong);
+}
+
+.batch-product-price span,
+.batch-product-price small {
+  color: var(--ui-text-muted);
+}
+
+.batch-product-price strong {
+  font-size: 1.1rem;
+}

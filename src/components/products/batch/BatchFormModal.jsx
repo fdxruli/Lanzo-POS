@@ -17,6 +17,7 @@ import FruteriaBatchFields from './fieldsets/FruteriaBatchFields';
 import RestaurantBatchFields from './fieldsets/RestaurantBatchFields';
 import { getBatchStockInputProps } from './utils/batchStockInput';
 import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
+import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
 function RubroFieldset(props) {
@@ -69,6 +70,7 @@ export default function BatchFormModal({
   const idPrefix = `batch-${String(isEditing ? batchToEdit?.id : product?.id || 'new').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const payFromCajaId = `${idPrefix}-pay-from-caja`;
   const stockInputProps = getBatchStockInputProps(product, rubroGroup, features);
+  const isCommercialVariant = isCommercialVariantProduct(product);
 
   return (
     <div className="ui-modal ui-modal--high batch-form-modal-overlay" role="dialog" aria-modal="true" aria-label={isEditing ? 'Editar lote' : 'Registrar lote'}>
@@ -78,8 +80,8 @@ export default function BatchFormModal({
         <div className="batch-modal-header">
           <div className="batch-modal-header-info">
             <h2>
-              {features.hasVariants ? <Tag size={24} className="text-primary" /> : <Package size={24} className="text-primary" />}
-              {isEditing ? 'Editar' : 'Registrar'} {features.hasVariants ? 'Variante' : 'Lote'}
+              {isCommercialVariant ? <Tag size={24} className="text-primary" /> : <Package size={24} className="text-primary" />}
+              {isEditing ? 'Editar' : 'Registrar'} {isCommercialVariant ? 'Variante' : 'Lote'}
             </h2>
             <p className="batch-modal-subtitle">
               Producto: <strong>{product.name}</strong>
@@ -113,7 +115,7 @@ export default function BatchFormModal({
               <div className="col-span-full price-cost-group">
                 <div className="form-group field-with-icon batch-form-field--compact">
                   <label htmlFor={`${idPrefix}-cost`}>
-                    <DollarSign size={16} /> Costo Unitario
+                    <DollarSign size={16} /> {isCommercialVariant ? 'Costo unitario' : 'Costo de este lote'}
                   </label>
                   <input
                     id={`${idPrefix}-cost`}
@@ -125,7 +127,7 @@ export default function BatchFormModal({
                     placeholder="0.00"
                   />
                 </div>
-                <div className="form-group field-with-icon batch-form-field--compact">
+                {isCommercialVariant ? <div className="form-group field-with-icon batch-form-field--compact">
                   <label htmlFor={`${idPrefix}-price`}>
                     <Tag size={16} /> Precio de Venta
                   </label>
@@ -138,10 +140,10 @@ export default function BatchFormModal({
                     className="form-input"
                     placeholder="0.00"
                   />
-                </div>
+                </div> : <div className="batch-product-price" aria-label="Precio de venta del producto"><span>Precio de venta del producto</span><strong>${Number(product?.price || 0).toFixed(2)}</strong><small>El precio de venta se cambia desde “Editar producto”.</small></div>}
 
                 {/* CHECKBOX ACTUALIZAR PRECIO GLOBAL */}
-                {!features.hasVariants && !isEditing && (
+                {formValues.updateGlobalPrice && !features.hasVariants && !isEditing && (
                   <div className="col-span-full batch-update-price-row">
                     <input
                       type="checkbox"

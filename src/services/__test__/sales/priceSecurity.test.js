@@ -45,6 +45,36 @@ describe('normalizeAndValidatePricing', () => {
         expect(deps.Logger.warn).toHaveBeenCalledOnce();
     });
 
+    it('usa product.price y conserva batch.cost para un lote fisico', async () => {
+        const items = [{ id: 'med-1', name: 'Medicamento', quantity: 1, price: 20, batchId: 'batch-1' }];
+        const product = {
+            id: 'med-1', price: 20, cost: 8, rubroContext: 'farmacia', batchManagement: { enabled: true },
+            activeBatches: [{ id: 'batch-1', price: 25, cost: 12, stock: 10, isActive: true }]
+        };
+        const deps = depsFor(product);
+        deps.queryBatchesByProductIdAndActive.mockResolvedValue(product.activeBatches);
+        deps.calculatePricingDetails.mockImplementation((source, quantity) => ({ unitPrice: source.price, exactTotal: source.price * quantity }));
+
+        await run(items, 20, deps);
+
+        expect(items[0]).toMatchObject({ price: 20, cost: 12 });
+    });
+
+    it('conserva batch.price y batch.cost para una variante comercial', async () => {
+        const items = [{ id: 'shirt-1', name: 'Playera', quantity: 1, price: 220, batchId: 'variant-m' }];
+        const product = {
+            id: 'shirt-1', price: 200, cost: 80, hasVariants: true, rubroContext: 'apparel', batchManagement: { enabled: true },
+            activeBatches: [{ id: 'variant-m', price: 220, cost: 100, stock: 4, isActive: true, attributes: { talla: 'M', color: 'Negro' } }]
+        };
+        const deps = depsFor(product);
+        deps.queryBatchesByProductIdAndActive.mockResolvedValue(product.activeBatches);
+        deps.calculatePricingDetails.mockImplementation((source, quantity) => ({ unitPrice: source.price, exactTotal: source.price * quantity }));
+
+        await run(items, 220, deps);
+
+        expect(items[0]).toMatchObject({ price: 220, cost: 100 });
+    });
+
     it('usa precio de catalogo para el modificador seleccionado', async () => {
         const items = [{ id: 'burger-1', name: 'Hamburguesa', quantity: 2, price: 90, selectedModifiers: [{ name: 'Extra queso', price: 999 }] }];
         const deps = depsFor(burger([{ name: 'Extra queso', price: 10 }]), { unitPrice: 80, exactTotal: 160 });

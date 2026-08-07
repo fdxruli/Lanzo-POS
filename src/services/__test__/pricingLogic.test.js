@@ -31,9 +31,10 @@ describe('Lógica de Precios (Pricing Logic)', () => {
   });
 
   // --- CASO 3: LOTES FIFO (EL MÁS COMPLEJO) ---
-  it('Debe calcular precio promedio ponderado con lotes FIFO', () => {
+  it('Debe conservar el precio de una variante comercial', () => {
     const product = {
       price: 20, // Precio base (fallback)
+      hasVariants: true,
       batchManagement: { enabled: true },
       activeBatches: [
         { id: 1, price: 10, stock: 5, createdAt: '2023-01-01' }, // Lote Viejo (Barato)
@@ -54,6 +55,17 @@ describe('Lógica de Precios (Pricing Logic)', () => {
     // Costo total = 50 + 200 + 100 = 350
     // Precio unitario = 350 / 20 = 17.5
     expect(calculateCompositePrice(product, 20)).toBe(17.5);
+  });
+
+  it('usa product.price para lotes fisicos aunque el lote tenga precio legacy', () => {
+    const product = {
+      price: 50,
+      rubroContext: 'farmacia',
+      batchManagement: { enabled: true },
+      activeBatches: [{ id: 1, price: 45, cost: 20, stock: 10, createdAt: '2023-01-01' }]
+    };
+
+    expect(calculateCompositePrice(product, 1)).toBe(50);
   });
 
   // --- CASO 4: INTERACCIÓN MAYOREO + LOTES ---

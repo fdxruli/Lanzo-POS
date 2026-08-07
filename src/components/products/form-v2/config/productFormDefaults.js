@@ -34,7 +34,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     conversionFactor: source.conversionFactor || { enabled: false, purchaseUnit: '', factor: '' },
     expirationMode, shelfLifeValue: source.shelfLifeValue ?? '', shelfLifeUnit: source.shelfLifeUnit || 'days',
     expiryDate: asDateInput(source.expiryDate), manufacturerBatchId: source.manufacturerBatchId || '',
-    hasVariants: Boolean(source.quickVariants?.length), quickVariants: source.quickVariants || [],
+    hasVariants: Boolean(source.hasVariants || source.quickVariants?.length), quickVariants: source.quickVariants || [],
     activeSubstance: source.activeSubstance || '', laboratory: source.laboratory || '', presentation: source.presentation || '',
     prescriptionType: source.prescriptionType || 'otc', requiresPrescription: Boolean(source.requiresPrescription),
     restaurantType, productType: source.productType || (restaurantType === 'ingredient' ? 'ingredient' : 'sellable'),

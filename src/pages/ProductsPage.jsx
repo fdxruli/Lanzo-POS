@@ -537,6 +537,7 @@ export default function ProductsPage() {
                     productToEdit={editingProduct}
                     categories={categories}
                     onOpenCategoryManager={() => setShowCategoryModal(true)}
+                    onOpenBatches={(product) => handleManageBatches(product.id)}
                 />
             )}
 
