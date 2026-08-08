@@ -10,10 +10,20 @@ import {
 import { getBatchTableColumns } from './utils/tableColumns';
 import { getAvailableStock, getCommittedStock } from '../../../services/db/utils';
 import { getBatchManagerStatus } from '../../../services/products/batchManagerQueries';
+import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
 
 const formatDate = (isoDate) => (isoDate ? new Date(isoDate).toLocaleDateString() : '-');
 
+export function getDisplayedBatchSalePrice(product = {}, batch = {}) {
+  if (isCommercialVariantProduct({ ...product, activeBatches: [batch] })) {
+    return Number(batch.price || 0);
+  }
+
+  return Number(product.price || 0);
+}
+
 export default function BatchTable({
+  product,
   features,
   productBatches,
   totalStock,
@@ -31,7 +41,11 @@ export default function BatchTable({
   onEditBatch,
   onDeleteBatch
 }) {
-  const columns = getBatchTableColumns(features);
+  const isCommercialVariant = isCommercialVariantProduct({
+    ...product,
+    activeBatches: product?.activeBatches?.length ? product.activeBatches : productBatches
+  });
+  const columns = getBatchTableColumns(features, { isCommercialVariant });
 
   const renderCell = (batch, columnKey) => {
     const isArchived = getBatchManagerStatus(batch) === 'archived';
@@ -56,7 +70,7 @@ export default function BatchTable({
     }
 
     if (columnKey === 'price') {
-      return <strong className="batch-price-text">${Number(batch.price || 0).toFixed(2)}</strong>;
+      return <strong className="batch-price-text">${getDisplayedBatchSalePrice(product, batch).toFixed(2)}</strong>;
     }
 
     if (columnKey === 'location') {
