@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
   loadNextBatchManagerPage: vi.fn(),
   loadData: vi.fn(),
   searchProductsInDB: vi.fn(),
-  refreshData: vi.fn()
+  refreshData: vi.fn(),
+  saveBatch: vi.fn()
 }));
 
 vi.mock('../../../../hooks/useDebounce', () => ({ useDebounce: (value) => value }));
@@ -27,9 +28,16 @@ vi.mock('../../../../services/database', () => ({
 vi.mock('../../../../services/products/productRepository', () => ({
   productRepository: {
     saveProduct: vi.fn(),
-    saveBatch: vi.fn(),
+    saveBatch: mocks.saveBatch,
     deleteBatch: vi.fn()
   }
+}));
+vi.mock('../../../../services/products/productMapper', () => ({
+  cloudProductToLocal: (product, existing) => ({
+    ...existing,
+    ...product,
+    serverVersion: product.serverVersion ?? product.server_version ?? existing?.serverVersion
+  })
 }));
 vi.mock('../../../../services/utils', () => ({ showMessageModal: vi.fn() }));
 vi.mock('../../../../services/inventoryMovement', () => ({
@@ -176,5 +184,28 @@ describe('useBatchManagerController pagination', () => {
       await second;
     });
     expect(result.current.productBatches).toHaveLength(2);
+  });
+
+  it('usa el producto autoritativo de la respuesta al guardar un lote', async () => {
+    mocks.loadBatchesForManager.mockResolvedValue(snapshot('batch-1'));
+    mocks.saveBatch.mockResolvedValue({
+      success: true,
+      response: {
+        batch: { id: 'batch-1', price: 24.5 },
+        product: { id: 'product-a', price: 24.5, serverVersion: 12 }
+      }
+    });
+    const { result } = renderController();
+    await waitFor(() => expect(result.current.selectedProduct.id).toBe('product-a'));
+
+    let saveResult;
+    await act(async () => {
+      saveResult = await result.current.handleSaveBatch({
+        id: 'batch-1', productId: 'product-a', price: 24.5, stock: 2, cost: 15, updateGlobalPrice: true
+      });
+    });
+
+    expect(saveResult.success).toBe(true);
+    expect(result.current.selectedProduct).toMatchObject({ price: 24.5, serverVersion: 12 });
   });
 });

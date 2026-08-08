@@ -1,4 +1,6 @@
-export const RESTAURANT_MODIFIER_UNITS = ['pza', 'kg', 'g', 'lt', 'ml'];
+import { INGREDIENT_UNITS, normalizeIngredientUnit } from './ingredientConfiguration';
+
+export const RESTAURANT_MODIFIER_UNITS = INGREDIENT_UNITS.map((unit) => unit.value);
 
 export const RESTAURANT_MODIFIER_SELECTION_TYPES = Object.freeze({
   SINGLE: 'single',
@@ -56,8 +58,9 @@ export const normalizeModifierOption = (option = {}, { optionIndex = 0 } = {}) =
   const ingredientQuantity = toPositiveNumberOrNull(
     hasExplicitIngredientQuantity ? explicitIngredientQuantity : legacyQuantity
   );
+  const rawIngredientUnit = text(option.ingredientUnit ?? option.ingredient_unit ?? option.unit ?? option.measurementUnit);
   const ingredientUnit = ingredientId
-    ? (text(option.ingredientUnit ?? option.ingredient_unit ?? option.unit ?? option.measurementUnit) || null)
+    ? (rawIngredientUnit ? normalizeIngredientUnit(rawIngredientUnit) : null)
     : null;
   const tracksInventory = Boolean(ingredientId && ingredientQuantity > 0);
   const isLegacyIncomplete = Boolean(ingredientId && !tracksInventory);

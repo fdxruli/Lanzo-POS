@@ -322,6 +322,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.order-item-sale-mode {
+  margin-top: 3px;
+  color: var(--text-light);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .order-item-kitchen-tags {
   display: flex;
   flex-wrap: wrap;

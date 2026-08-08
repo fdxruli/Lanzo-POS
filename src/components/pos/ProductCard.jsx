@@ -15,6 +15,7 @@ import { LogoMark } from '../common/Logo';
 import { getProductAlerts } from '../../services/utils';
 import { getAvailableStock } from '../../services/db/utils';
 import { STRICT_EXPIRY_NO_CURRENT_BATCH_LABEL } from '../../services/products/strictExpirySaleGuards';
+import { resolveProductSaleUnitLabel } from '../../utils/productUnitConfiguration';
 import './ProductCardStrictExpiry.css';
 
 /**
@@ -241,7 +242,7 @@ const ProductCard = memo(function ProductCard({
   );
 
   const unit = product?.saleType === 'bulk'
-    ? ` ${product?.bulkData?.purchase?.unit || 'kg'}`
+    ? ` ${resolveProductSaleUnitLabel(product)}`
     : '';
   const expiryDate = useMemo(() => formatExpiryDate(product?.expiryDate), [product?.expiryDate]);
   const hasProductImage = typeof product?.image === 'string'
@@ -390,7 +391,7 @@ const ProductCard = memo(function ProductCard({
           </span>
           {product?.saleType === 'bulk' && (
             <span className="product-card__unit">
-              / {product?.bulkData?.purchase?.unit || 'kg'}
+              / {resolveProductSaleUnitLabel(product)}
             </span>
           )}
         </div>

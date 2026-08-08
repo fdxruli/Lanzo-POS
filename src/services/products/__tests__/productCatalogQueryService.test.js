@@ -64,6 +64,7 @@ import {
   isPosCatalogEligible,
   POS_CATALOG_PAGE_SIZE,
   queryInventoryCatalogPage,
+  queryActiveIngredientsForConfiguration,
   queryPosCatalogPage,
   queryPosCatalogProductById
 } from '../productCatalogQueryService';
@@ -194,6 +195,20 @@ describe('product catalog IndexedDB queries', () => {
     expect(first.data).toHaveLength(50);
     expect(second.data).toHaveLength(3);
     expect([...first.data, ...second.data].every((item) => item.productType === 'ingredient')).toBe(true);
+  });
+
+  it('returns every active ingredient for configuration independently of catalog pages', async () => {
+    mocks.records = [
+      product(1, { id: 'ingredient-z', name: 'Zanahoria', productType: 'ingredient', stock: 0 }),
+      product(2, { id: 'ingredient-a', name: 'Aceite', productType: null, product_type: 'ingredient', stock: 12 }),
+      product(3, { id: 'sellable', productType: 'sellable' }),
+      product(4, { id: 'inactive', productType: 'ingredient', isActive: false }),
+      product(5, { id: 'deleted', productType: 'ingredient', deletedAt: '2026-01-02' })
+    ];
+
+    const result = await queryActiveIngredientsForConfiguration();
+    expect(result.map((item) => item.id)).toEqual(['ingredient-a', 'ingredient-z']);
+    expect(result[1]).toMatchObject({ stock: 0, productType: 'ingredient' });
   });
 
   it('loads 50 eligible products, requests 51, and exposes a stable cursor', async () => {

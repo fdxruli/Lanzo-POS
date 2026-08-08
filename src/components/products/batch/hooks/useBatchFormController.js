@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStatsStore } from '../../../../store/useStatsStore';
 import { useCaja } from '../../../../hooks/useCaja';
-import { showMessageModal } from '../../../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../../../services/utils';
 import { buildBatchPayload } from '../utils/buildBatchPayload';
 import { validateBatchInput } from '../utils/validateBatchInput';
 import { productsRepository } from '../../../../services/db/products';
+import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
 
 const DEFAULT_FORM_VALUES = {
   cost: '',
@@ -42,19 +43,30 @@ export function useBatchFormController({
   onClose,
   onSave,
   features,
-  rubroGroup,
   menu
 }) {
   const [formValues, setFormValues] = useState(DEFAULT_FORM_VALUES);
+  const [isProductPriceEditing, setIsProductPriceEditing] = useState(false);
   const firstInputRef = useRef(null);
   const tallaInputRef = useRef(null);
-  const { cajaActual, calcularTotalTeorico } = useCaja();
+  const { cajaActual } = useCaja();
   const adjustInventoryValue = useStatsStore((state) => state.adjustInventoryValue);
   const isEditing = Boolean(batchToEdit);
+  const isCommercialVariant = isCommercialVariantProduct(product);
 
   const setFieldValue = useCallback((field, value) => {
     setFormValues((prev) => ({ ...prev, [field]: value }));
   }, []);
+
+  const startProductPriceEditing = useCallback(() => {
+    setFieldValue('price', product?.price ?? '');
+    setIsProductPriceEditing(true);
+  }, [product?.price, setFieldValue]);
+
+  const cancelProductPriceEditing = useCallback(() => {
+    setFieldValue('price', product?.price ?? '');
+    setIsProductPriceEditing(false);
+  }, [product?.price, setFieldValue]);
 
   const buildCreateDefaults = useCallback(() => {
     let initialCost = product?.cost || '';
@@ -76,12 +88,11 @@ export function useBatchFormController({
     return {
       ...DEFAULT_FORM_VALUES,
       cost: initialCost,
-      price: product?.price || '',
+      price: product?.price ?? '',
       expiryDate: showExpiry ? '' : ''
     };
-  }, [features, menu, product, rubroGroup]);
+  }, [features, menu, product]);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!product) return;
 
@@ -90,7 +101,7 @@ export function useBatchFormController({
       setFormValues({
         ...DEFAULT_FORM_VALUES,
         cost: batchToEdit?.cost ?? '',
-        price: batchToEdit?.price ?? '',
+        price: isCommercialVariant ? (batchToEdit?.price ?? '') : (product?.price ?? ''),
         stock: batchToEdit?.stock ?? '',
         notes: batchToEdit?.notes || '',
         expiryDate: batchToEdit?.expiryDate 
@@ -107,12 +118,13 @@ export function useBatchFormController({
         manufacturerBatchId: batchToEdit?.manufacturerBatchId || '',
         pao: attrs.pao || ''
       });
+      setIsProductPriceEditing(false);
       return;
     }
 
     setFormValues(buildCreateDefaults());
-  }, [batchToEdit, buildCreateDefaults, isEditing, product]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+    setIsProductPriceEditing(false);
+  }, [batchToEdit, buildCreateDefaults, isCommercialVariant, isEditing, product]);
 
   const generateAutoSku = useCallback(() => {
     const currentSku = String(formValues.sku || '').trim();
@@ -143,6 +155,23 @@ export function useBatchFormController({
 
     const { nStock, nCost } = validation.parsed;
     const totalCosto = nCost * nStock;
+    const currentProductPrice = Number(product?.price ?? 0);
+    const requestedPrice = Number(formValues.price);
+    const hasProductPriceChange = !isCommercialVariant
+      && isProductPriceEditing
+      && requestedPrice !== currentProductPrice;
+
+    if (hasProductPriceChange && requestedPrice < nCost) {
+      const confirmed = await showConfirmModal(
+        `El nuevo precio de venta ($${requestedPrice.toFixed(2)}) es menor que el costo de este lote ($${nCost.toFixed(2)}).\n\nEsto podría generar una venta con pérdida.\n\n¿Deseas guardar este precio de todas formas?`,
+        {
+          title: 'Precio menor al costo',
+          confirmButtonText: 'Guardar de todas formas',
+          cancelButtonText: 'Revisar precio'
+        }
+      );
+      if (!confirmed) return false;
+    }
 
     let paymentInfo = null;
 
@@ -185,7 +214,8 @@ export function useBatchFormController({
       values: formValues,
       parsed: validation.parsed,
       features,
-      finalSku
+      finalSku,
+      isProductPriceEditing
     });
 
     // 4. EJECUCIÓN UNIFICADA (Pasando isEditing para distinguir edición vs producción nueva)
@@ -216,6 +246,7 @@ export function useBatchFormController({
       attribute1: '',
       sku: ''
     }));
+    setIsProductPriceEditing(false);
 
     showMessageModal(
       features?.hasVariants
@@ -244,6 +275,8 @@ export function useBatchFormController({
     formValues,
     generateAutoSku,
     isEditing,
+    isCommercialVariant,
+    isProductPriceEditing,
     onClose,
     onSave,
     product
@@ -255,6 +288,9 @@ export function useBatchFormController({
     firstInputRef,
     tallaInputRef,
     setFieldValue,
+    isProductPriceEditing,
+    startProductPriceEditing,
+    cancelProductPriceEditing,
     handleProcessSave
   };
 }

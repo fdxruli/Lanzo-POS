@@ -62,6 +62,7 @@ export default function BatchManager({ selectedProductId, onProductSelect }) {
 
       {selectedProduct && (
         <BatchTable
+          product={selectedProduct}
           features={features}
           productBatches={controller.productBatches}
           totalStock={controller.totalStock}

@@ -4,6 +4,7 @@ import {
 } from './constants';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { calculateDiscountedTotals } from './discounts';
+import { isCommercialVariantProduct } from '../products/commercialVariants';
 
 const toNumber = (value) => {
     const parsed = Number(value);
@@ -139,7 +140,7 @@ const resolveAuthoritativePricing = (dbProduct, item, calculatePricingDetails) =
         throw new Error(`SEGURIDAD: El lote/variante "${item.batchId}" del producto "${item.name}" no existe o no esta activo.`);
     }
 
-    const batchBackedProduct = {
+    const batchBackedProduct = isCommercialVariantProduct(dbProduct) ? {
         ...dbProduct,
         price: toNumber(selectedBatch.price),
         originalPrice: toNumber(selectedBatch.price),
@@ -147,7 +148,7 @@ const resolveAuthoritativePricing = (dbProduct, item, calculatePricingDetails) =
         isVariant: true,
         batchId: selectedBatch.id,
         activeBatches: [selectedBatch]
-    };
+    } : dbProduct;
 
     return {
         ...calculatePricingDetails(batchBackedProduct, item.quantity),

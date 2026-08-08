@@ -2,9 +2,19 @@ import { CANONICAL_BUSINESS_TYPES, normalizeBusinessType } from '../../../../uti
 
 export const PRODUCT_RUBRO_CONFIG = {
   [CANONICAL_BUSINESS_TYPES.ABARROTES]: {
-    label: 'Abarrotes', detailTitle: 'Forma de venta y abastecimiento', supports: { alerts: true, expiry: true, conversion: true, variants: false }, defaultSaleType: 'unit'
+    label: 'Abarrotes', detailTitle: 'Forma de venta y abastecimiento', supports: { alerts: true, expiry: true, conversion: true, variants: false }, defaultSaleType: 'unit',
+    productTypeOptions: [
+      { value: 'unit', label: 'Unidad', description: 'Vendes una pieza o unidad.' },
+      { value: 'bulk', label: 'A granel', description: 'Vendes por peso, volumen o medida.' },
+      { value: 'fractioned', label: 'Fraccionado', description: 'Compras una presentación y vendes unidades menores.' }
+    ]
   },
   [CANONICAL_BUSINESS_TYPES.HARDWARE]: {
+    productTypeOptions: [
+      { value: 'unit', label: 'Por pieza', description: 'Vendes una pieza o unidad completa.' },
+      { value: 'bulk', label: 'Por medida o peso', description: 'Vendes por metro, peso, volumen u otra medida.' },
+      { value: 'fractioned', label: 'Fraccionado', description: 'Compras una presentación y vendes unidades menores.' }
+    ],
     label: 'Ferretería', detailTitle: 'Medidas, venta y abastecimiento', supports: { alerts: true, expiry: true, conversion: true, variants: false }, defaultSaleType: 'unit'
   },
   [CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA]: {
@@ -17,7 +27,13 @@ export const PRODUCT_RUBRO_CONFIG = {
     label: 'Farmacia', detailTitle: 'Datos farmacéuticos', supports: { alerts: false, expiry: true, conversion: false, variants: false }, defaultSaleType: 'unit', strictExpiry: true
   },
   [CANONICAL_BUSINESS_TYPES.FOOD_SERVICE]: {
-    label: 'Restaurante', detailTitle: 'Preparación y venta', supports: { alerts: false, expiry: true, conversion: false, variants: false }, defaultSaleType: 'unit'
+    label: 'Restaurante', detailTitle: 'Preparación y venta', supports: { alerts: false, expiry: true, conversion: false, variants: false }, defaultSaleType: 'unit',
+    productTypeOptions: [
+      { value: 'dish', label: 'Platillo', description: 'Se prepara y puede llevar receta.' },
+      { value: 'drink', label: 'Bebida', description: 'Producto listo para vender.' },
+      { value: 'ready', label: 'Producto listo', description: 'Se vende sin preparación.' },
+      { value: 'ingredient', label: 'Insumo', description: 'Material para inventario y recetas.' }
+    ]
   },
   [CANONICAL_BUSINESS_TYPES.OTRO]: {
     label: 'General', detailTitle: 'Detalles del producto', supports: { alerts: false, expiry: true, conversion: false, variants: false }, defaultSaleType: 'unit'

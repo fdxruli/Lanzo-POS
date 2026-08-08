@@ -189,4 +189,22 @@ describe('OrderSummary ecommerce discount slots', () => {
 
     expect(screen.getAllByText('Descuentos').length).toBeGreaterThan(0);
   });
+
+  it('shows commercial sale units for unit, bulk, and fractioned cart lines', () => {
+    setOrder(undefined);
+    const order = mocks.activeState.activeOrders.get('active-order');
+    order.items = [
+      { id: 'unit', lineId: 'unit', name: 'Unidad', quantity: 2, price: 18, saleType: 'unit', unit: 'pza' },
+      { id: 'bulk', lineId: 'bulk', name: 'Granel', quantity: 0.5, price: 40, saleType: 'bulk', unit: 'kg', bulkData: { purchase: { unit: 'caja' } } },
+      { id: 'fractioned', lineId: 'fractioned', name: 'Fraccionado', quantity: 3, price: 15, saleType: 'unit', unit: 'pza', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } }
+    ];
+
+    render(<OrderSummary {...props} />);
+
+    expect(screen.getByText('2 pza × $18.00/pza')).toBeInTheDocument();
+    expect(screen.getByText('0.500 kg × $40.00/kg')).toBeInTheDocument();
+    expect(screen.getByText('3 pza × $15.00/pza')).toBeInTheDocument();
+    expect(screen.getByText('Fraccionado · Venta por pza')).toBeInTheDocument();
+    expect(screen.queryByText(/c\/u/i)).not.toBeInTheDocument();
+  });
 });

@@ -1,3 +1,34 @@
+import ProductBatchSummary from '../components/ProductBatchSummary';
 import ProductExpirationFields from '../components/ProductExpirationFields';
-const saleTypes = [{ value: 'unit', label: 'Unidad' }, { value: 'bulk', label: 'A granel' }, { value: 'fractioned', label: 'Fraccionado' }];
-export default function GroceryProductFields({ values, errors, onFieldChange, onExpirationMode }) { return <><div className="product-form-v2__segmented" role="group" aria-label="Forma de venta">{saleTypes.map((type) => <button key={type.value} type="button" className={values.saleType === type.value ? 'is-active' : ''} onClick={() => onFieldChange('saleType', type.value)}>{type.label}</button>)}</div><div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-unit">Unidad de venta</label><input id="product-v2-unit" value={values.unit} onChange={(event) => onFieldChange('unit', event.target.value)} /></div><div className="product-form-v2__field"><label htmlFor="product-v2-supplier">Proveedor</label><input id="product-v2-supplier" value={values.supplier} onChange={(event) => onFieldChange('supplier', event.target.value)} /></div></div>{values.saleType === 'fractioned' && <div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-purchase-unit">Unidad de compra</label><input id="product-v2-purchase-unit" value={values.conversionFactor.purchaseUnit} onChange={(event) => onFieldChange('conversionFactor', { enabled: true, purchaseUnit: event.target.value, factor: values.conversionFactor.factor })} aria-invalid={Boolean(errors.purchaseUnit)} /></div><div className="product-form-v2__field"><label htmlFor="product-v2-factor">Contenido por compra</label><input id="product-v2-factor" type="number" min="1" value={values.conversionFactor.factor} onChange={(event) => onFieldChange('conversionFactor', { ...values.conversionFactor, enabled: true, factor: event.target.value })} aria-invalid={Boolean(errors.conversionFactor)} /></div></div>}<ProductExpirationFields values={values} errors={errors} onExpirationMode={onExpirationMode} onFieldChange={onFieldChange} /></>; }
+
+export default function GroceryProductFields({
+  values,
+  errors,
+  onFieldChange,
+  onExpirationMode,
+  isEditing = false,
+  productId,
+  onOpenBatches,
+  onBatchSummary,
+  features = {},
+  onOpenWholesale
+}) {
+  const tierCount = values.wholesaleTiers?.length || 0;
+
+  return <>
+    <div className="product-form-v2__field-grid">
+      <div className="product-form-v2__field">
+        <label htmlFor="product-v2-supplier">Proveedor</label>
+        <input id="product-v2-supplier" value={values.supplier} onChange={(event) => onFieldChange('supplier', event.target.value)} />
+      </div>
+    </div>
+    {features.hasWholesale && values.saleMode !== 'bulk' && <section className="product-form-v2__subsection" aria-label="Precios de mayoreo">
+      <div className="product-form-v2__field-grid">
+        <div><strong>Precios de mayoreo</strong><p className="product-form-v2__hint">{tierCount ? `${tierCount} nivel${tierCount === 1 ? '' : 'es'} configurado${tierCount === 1 ? '' : 's'}` : 'Sin niveles configurados'}</p></div>
+        <div><button type="button" className="ui-button ui-button--secondary ui-button--sm" onClick={onOpenWholesale}>Configurar mayoreo</button></div>
+      </div>
+    </section>}
+    {isEditing && productId && <ProductBatchSummary productId={productId} onOpenBatches={onOpenBatches} onSummary={onBatchSummary} />}
+    <ProductExpirationFields values={values} errors={errors} onExpirationMode={onExpirationMode} onFieldChange={onFieldChange} isEditing={isEditing} />
+  </>;
+}

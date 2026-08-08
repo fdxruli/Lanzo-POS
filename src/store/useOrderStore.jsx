@@ -14,9 +14,15 @@ import {
   shouldCreateSeparateCartLine
 } from '../utils/cartLineIdentity';
 import { useActiveOrders } from '../hooks/pos/useActiveOrders';
+import { isCommercialVariantProduct } from '../services/products/commercialVariants';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
+
+const toFiniteNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
 const getSellableItems = (order = []) => (
   (order || []).filter((item) => Number(item?.quantity) > 0)
@@ -297,6 +303,13 @@ export const useOrderStore = create((set, get) => {
                 }
 
                 if (validBatch) {
+                  const isCommercialVariant = isCommercialVariantProduct({
+                    ...product,
+                    activeBatches: [validBatch]
+                  });
+                  const salePrice = isCommercialVariant
+                    ? toFiniteNumber(validBatch.price)
+                    : toFiniteNumber(product.price);
                   useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
                     const order = prevOrder || [];
                     const itemIndex = order.findIndex(
@@ -308,10 +321,11 @@ export const useOrderStore = create((set, get) => {
                       updatedOrder[itemIndex] = {
                         ...updatedOrder[itemIndex],
                         batchId: validBatch.id,
-                        price: validBatch.price,
+                        price: salePrice,
+                        originalPrice: salePrice,
                         cost: validBatch.cost,
                         stock: getAvailableStock(validBatch),
-                        isVariant: true,
+                        isVariant: isCommercialVariant,
                         skuDetected: validBatch.sku || product.sku
                       };
                       return updatedOrder;
@@ -471,7 +485,7 @@ export const useOrderStore = create((set, get) => {
           return { success: false, action: null, item: null };
         }
 
-        let result = { success: false, action: null, item: null };
+        const result = { success: false, action: null, item: null };
 
         useActiveOrders.getState().updateCurrentOrderItems((prevOrder) => {
           const order = prevOrder || [];

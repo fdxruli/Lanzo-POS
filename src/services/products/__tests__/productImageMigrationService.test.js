@@ -1,91 +1,48 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import {
-  migrateLegacyProductImages,
-  prepareProductImageForCloud
-} from '../productImageMigrationService';
 
-const uploadResult = {
-  bucket: 'images',
-  path: 'public_uploads/license/product-image/test.webp',
-  publicUrl: 'https://project.supabase.co/storage/v1/object/public/images/public_uploads/license/product-image/test.webp',
-  mimeType: 'image/webp',
-  optimized: true,
-  originalSizeBytes: 1200,
-  uploadedSizeBytes: 500
-};
+vi.mock('../../db/dexie', () => ({ db: { isOpen: () => true }, STORES: { IMAGES: 'images', MENU: 'menu' } }));
+vi.mock('../../storage/imageUploadService', () => ({ uploadProductImage: vi.fn() }));
 
-describe('productImageMigrationService', () => {
-  it('recovers an img-* blob from IndexedDB and converts it into a public image URL', async () => {
-    const getLocalImage = vi.fn().mockResolvedValue(new Blob(['legacy-image'], { type: 'image/jpeg' }));
-    const uploadImage = vi.fn().mockResolvedValue(uploadResult);
+import { prepareProductImageForCloud } from '../productImageMigrationService';
 
-    const result = await prepareProductImageForCloud({
-      productData: {
-        id: 'product-1',
-        name: 'Electrolit Fresa',
-        image: 'img-1785550192912'
-      },
-      existingProduct: {
-        id: 'product-1',
-        imageRef: 'img-1785550192912',
-        metadata: { phase: 'fase2_products_catalog' }
-      },
-      licenseKey: 'LANZO-PRO',
-      cloudEnabled: true,
-      getLocalImage,
-      uploadImage
+describe('prepareProductImageForCloud', () => {
+  it('uses the original selected file for cloud publication while retaining the processed local image', async () => {
+    const original = new File(['source'], 'source.png', { type: 'image/png' });
+    const compressed = new Blob(['compressed'], { type: 'image/webp' });
+    const uploadImage = vi.fn().mockResolvedValue({
+      publicUrl: 'https://cdn.example.test/product.png', bucket: 'products', path: 'product.png', mimeType: 'image/png', optimized: true, originalSizeBytes: 6, uploadedSizeBytes: 4
     });
 
-    expect(getLocalImage).toHaveBeenCalledWith('img-1785550192912');
-    expect(uploadImage).toHaveBeenCalledTimes(1);
-    expect(uploadImage.mock.calls[0][0]).toBeInstanceOf(File);
-    expect(uploadImage.mock.calls[0][0].name).toBe('img-1785550192912.jpg');
-    expect(result.uploaded).toBe(true);
-    expect(result.productPayload.imageRef).toBe('img-1785550192912');
-    expect(result.productPayload.imageUrl).toBe(uploadResult.publicUrl);
-    expect(result.productPayload.metadata.images_cloud).toBe(true);
-    expect(result.productPayload.metadata.image_strategy).toBe('cloud_public_url');
-    expect(result.productPayload.metadata.image_migration_source).toBe('indexeddb_legacy_blob');
+    const result = await prepareProductImageForCloud({
+      productData: { image: compressed, imageUploadSource: original }, licenseKey: 'license', cloudEnabled: true, uploadImage
+    });
+
+    expect(uploadImage).toHaveBeenCalledWith(original, 'license');
+    expect(result.productPayload.image).toBe(compressed);
+    expect(result.productPayload.imageUploadSource).toBeUndefined();
+    expect(result.productPayload.imageUrl).toBe('https://cdn.example.test/product.png');
   });
 
-  it('returns a reselection warning when the legacy blob is no longer on this device', async () => {
+  it('preserves existing public media without uploading it again', async () => {
     const uploadImage = vi.fn();
-
     const result = await prepareProductImageForCloud({
-      productData: { id: 'product-2', image: 'img-missing' },
-      existingProduct: { id: 'product-2', imageRef: 'img-missing' },
-      licenseKey: 'LANZO-PRO',
-      cloudEnabled: true,
-      getLocalImage: vi.fn().mockResolvedValue(null),
-      uploadImage
+      productData: { name: 'Producto' }, existingProduct: { imageUrl: 'https://cdn.example.test/existing.png', imageRef: 'img-existing' }, licenseKey: 'license', cloudEnabled: true, uploadImage
     });
 
-    expect(result.uploaded).toBe(false);
-    expect(result.requiresReselection).toBe(true);
-    expect(result.missingImageRef).toBe('img-missing');
+    expect(result.status).toBe('already_public');
+    expect(result.productPayload).toMatchObject({ imageUrl: 'https://cdn.example.test/existing.png', imageRef: 'img-existing' });
     expect(uploadImage).not.toHaveBeenCalled();
   });
 
-  it('migrates multiple legacy products sequentially and persists each public URL', async () => {
-    const saveProduct = vi.fn().mockResolvedValue({ success: true });
-    const uploadImage = vi.fn().mockResolvedValue(uploadResult);
-
-    const summary = await migrateLegacyProductImages({
-      products: [
-        { id: 'p1', name: 'Uno', image: 'img-one' },
-        { id: 'p2', name: 'Dos', imageRef: 'img-two' }
-      ],
-      licenseKey: 'LANZO-PRO',
-      cloudEnabled: true,
-      getLocalImage: vi.fn().mockResolvedValue(new Blob(['legacy'], { type: 'image/png' })),
-      uploadImage,
-      saveProduct
+  it('treats image removal as explicit and never uploads the previous image', async () => {
+    const uploadImage = vi.fn();
+    const result = await prepareProductImageForCloud({
+      productData: { imageRemoved: true, image: new File(['new'], 'new.png', { type: 'image/png' }) }, existingProduct: { imageUrl: 'https://cdn.example.test/existing.png', imageRef: 'img-existing' }, licenseKey: 'license', cloudEnabled: true, uploadImage
     });
 
-    expect(summary).toMatchObject({ attempted: 2, migrated: 2, missingLocalBlob: 0, failed: 0 });
-    expect(saveProduct).toHaveBeenCalledTimes(2);
-    expect(saveProduct.mock.calls[0][0].imageUrl).toBe(uploadResult.publicUrl);
-    expect(saveProduct.mock.calls[1][0].metadata.image_strategy).toBe('cloud_public_url');
+    expect(result.status).toBe('removed');
+    expect(result.productPayload).toMatchObject({ image: null, imageUrl: null, imageRef: null });
+    expect(uploadImage).not.toHaveBeenCalled();
   });
 });

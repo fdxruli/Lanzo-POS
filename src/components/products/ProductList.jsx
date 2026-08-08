@@ -4,9 +4,12 @@ import LazyImage from '../common/LazyImage';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
-import { searchProductsInDB } from '../../services/database';
+import { queryBatchesByProductIdsAndActive, searchProductsInDB } from '../../services/database';
 import { isInventoryCatalogEligible } from '../../services/products/productCatalogQueryService';
 import { getAvailableStock, getCommittedStock } from '../../services/db/utils';
+import { extractCalendarDate } from '../../utils/dateUtils';
+import { formatShelfLife, getProductBatchSummaryMap, getProductCardExpiryState } from '../../services/products/productBatchSummary';
+import { resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import WasteModal from './WasteModal';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
 import './ProductList.css';
@@ -36,6 +39,13 @@ const Icons = {
   )
 };
 
+const formatDate = (value) => {
+  const calendarDate = extractCalendarDate(value);
+  if (!calendarDate) return null;
+  const [year, month, day] = calendarDate.split('-');
+  return `${day}/${month}/${year}`;
+};
+
 export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice }) {
   const features = useFeatureConfig();
 
@@ -51,6 +61,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   const [isSearching, setIsSearching] = useState(false);
   const [showWaste, setShowWaste] = useState(false);
   const [productForWaste, setProductForWaste] = useState(null);
+  const [batchSummaries, setBatchSummaries] = useState(() => new Map());
 
   // LEER DE LA BD CENTRAL: Estado para el filtro desplegable de activos/inactivos
   const statusFilter = useInventoryCatalogStore((state) => state.filters.status || 'active');
@@ -109,6 +120,15 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
   const isSearchMode = debouncedTerm.trim().length > 0;
   const displayProducts = isSearchMode ? searchResults : products;
+  const visibleProductIds = useMemo(() => displayProducts.map((product) => product.id).filter(Boolean), [displayProducts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queryBatchesByProductIdsAndActive(visibleProductIds)
+      .then((batches) => { if (!cancelled) setBatchSummaries(getProductBatchSummaryMap(batches)); })
+      .catch(() => { if (!cancelled) setBatchSummaries(new Map()); });
+    return () => { cancelled = true; };
+  }, [visibleProductIds]);
 
   const handleOpenWaste = (product) => {
     setProductForWaste(product);
@@ -198,15 +218,18 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             const productImageSource = item.imageUrl || item.image_url || item.image;
 
             // Alertas
-            const { isLowStock, isNearingExpiry, expiryDays } = getProductAlerts(item);
+            const { isLowStock } = getProductAlerts(item);
+            const batchSummary = batchSummaries.get(item.id);
+            const expiry = getProductCardExpiryState(item, batchSummary);
+            const shelfLife = item.expirationMode === 'SHELF_LIFE'
+              ? formatShelfLife(item.shelfLifeValue, item.shelfLifeUnit)
+              : null;
             const isTracked = item.trackStock !== false && (
               item.trackStock === true || item.batchManagement?.enabled === true
             );
 
             // Unidad de medida
-            const unitLabel = features.hasBulk
-              ? (item.bulkData?.purchase?.unit || (item.saleType === 'bulk' ? 'kg' : 'pza'))
-              : 'pza';
+            const unitLabel = resolveProductSaleUnit(item);
 
             const margin = calculateMargin(item.price, item.cost);
 
@@ -218,7 +241,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
             // Clases dinámicas
             let borderClass = '';
-            if (features.hasExpiry && isNearingExpiry) borderClass = 'border-critical';
+            if (features.hasExpiry && (expiry.isNearingExpiry || expiry.isExpired)) borderClass = 'border-critical';
             else if (isLowStock) borderClass = 'border-warning';
 
             return (
@@ -262,11 +285,11 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                 </div>
 
                 {/* 2. Banner de Alertas (Solo si existen) */}
-                {(features.hasExpiry && isNearingExpiry) || (isLowStock && isTracked) ? (
+                {(features.hasExpiry && (expiry.isNearingExpiry || expiry.isExpired)) || (isLowStock && isTracked) ? (
                   <div className="alert-section-wrapper">
-                    {features.hasExpiry && isNearingExpiry && (
+                    {features.hasExpiry && (expiry.isNearingExpiry || expiry.isExpired) && (
                       <div className="ui-alert ui-alert--danger alert-banner alert-red">
-                        📅 Caduca: {expiryDays === 0 ? 'HOY' : `${expiryDays} días`}
+                        {expiry.isExpired ? 'Caducado' : (expiry.daysUntilExpiry === 0 ? 'Caduca hoy' : `Caduca en ${expiry.daysUntilExpiry} días`)}
                       </div>
                     )}
                     {isLowStock && isTracked && (
@@ -342,6 +365,12 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                       )}
                     </div>
                   )}
+                  {expiry.expiryDate && <div className="rubro-section logistics">
+                    <div className="detail-item"><span className="label">Próxima caducidad:</span><span className="value">{formatDate(expiry.expiryDate)}</span></div>
+                    {shelfLife && <div className="detail-item"><span className="label">Vida útil:</span><span className="value">{shelfLife}</span></div>}
+                    {shelfLife && batchSummary?.nearestAlertTargetDate && <div className="detail-item"><span className="label">Consumo recomendado:</span><span className="value">{formatDate(batchSummary.nearestAlertTargetDate)}</span></div>}
+                  </div>}
+                  {!expiry.expiryDate && shelfLife && <div className="rubro-section logistics"><div className="detail-item"><span className="label">Vida útil:</span><span className="value">{shelfLife}</span></div></div>}
                 </div>
 
                 {/* 5. Footer con Switch de Estado y Acciones Secundarias */}

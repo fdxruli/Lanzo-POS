@@ -1,248 +1,109 @@
-import React, { useState, useEffect, useMemo } from 'react';
-// --- CAMBIO: Usamos useInventoryCatalogStore en lugar de useDashboardStore ---
-import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
+import { useEffect, useMemo, useState } from 'react';
+import { useAvailableIngredients } from '../../hooks/products/useAvailableIngredients';
+import { getIngredientDefaultUnit, getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 import { roundCurrency, showMessageModal } from '../../services/utils';
 import './RecipeBuilderModal.css';
 
+const toMoney = (value) => Number(value || 0).toFixed(2);
+
 export default function RecipeBuilderModal({ show, onClose, existingRecipe, onSave, productName }) {
-
-  // 1. OBTENER MENÚ DEL STORE CORRECTO
-  // 'menu' contiene los productos con el Stock y Costo ya calculados.
-  const menu = useInventoryCatalogStore((state) => state.menu);
-
-  // 2. FILTRAR INGREDIENTES
-  // Filtramos sobre 'menu' para obtener solo los insumos activos
-  const availableIngredients = useMemo(() => {
-    return menu.filter(p => p.productType === 'ingredient' && p.isActive !== false);
-  }, [menu]);
-
-  // Estado local de la receta
+  const { ingredients, isLoading, error, refresh } = useAvailableIngredients({ enabled: show });
+  const ingredientsById = useMemo(() => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient])), [ingredients]);
   const [recipeItems, setRecipeItems] = useState([]);
-
-  // Estado del formulario de ingreso
   const [selectedIngredientId, setSelectedIngredientId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('');
   const [useSmallUnit, setUseSmallUnit] = useState(false);
 
-  // Cargar receta existente al abrir
-  useEffect(() => {
-    if (show) {
-      setRecipeItems(existingRecipe || []);
-      resetInput();
-    }
-  }, [show, existingRecipe]);
-
   const resetInput = () => {
     setSelectedIngredientId('');
     setQuantity('');
     setUnit('');
+    setUseSmallUnit(false);
   };
 
-  const handleIngredientSelect = (e) => {
-    const id = e.target.value;
+  useEffect(() => {
+    if (!show) return;
+    setRecipeItems(existingRecipe || []);
+    resetInput();
+  }, [show, existingRecipe]);
+
+  const handleIngredientSelect = (event) => {
+    const id = event.target.value;
     setSelectedIngredientId(id);
     setUseSmallUnit(false);
-
-    const ingredient = availableIngredients.find(i => i.id === id);
-    if (ingredient) {
-      const baseUnit = ingredient.unit || 'bulk'
-        ? (ingredient.bulkData?.purchase?.unit || 'kg')
-        : 'pza';
-      setUnit(baseUnit);
-    } else {
-      setUnit('');
-    }
+    setUnit(id ? getIngredientDefaultUnit(ingredientsById.get(id)) : '');
   };
 
   const handleAdd = () => {
-    if (!selectedIngredientId || !quantity || parseFloat(quantity) <= 0) {
+    if (!selectedIngredientId || Number(quantity) <= 0) {
       showMessageModal('Selecciona un ingrediente y una cantidad válida.', null, { type: 'warning' });
       return;
     }
-
-    const ingredient = availableIngredients.find(i => i.id === selectedIngredientId);
+    const ingredient = ingredientsById.get(selectedIngredientId);
     if (!ingredient) return;
-
-    if (recipeItems.some(item => item.ingredientId === selectedIngredientId)) {
+    if (recipeItems.some((item) => getRecipeIngredientId(item) === selectedIngredientId)) {
       showMessageModal('Este ingrediente ya está en la receta. Elimínalo para editarlo.', null, { type: 'warning' });
       return;
     }
-
-    // Usamos el costo actual del ingrediente (que viene del lote activo en 'menu')
-    const currentCost = ingredient.cost || 0;
-
-    let finalQuantity = parseFloat(quantity);
-    const finalUnit = unit;
-    const contMultiplier = finalQuantity;
-
-    if (useSmallUnit) {
-      // Convertir a unidad pequeña según bulkData
-      finalQuantity = finalQuantity / 1000;
-    }
-
-    const newItem = {
+    const enteredQuantity = Number(quantity);
+    const finalQuantity = useSmallUnit ? enteredQuantity / 1000 : enteredQuantity;
+    setRecipeItems((items) => [...items, {
       ingredientId: ingredient.id,
       name: ingredient.name,
       quantity: finalQuantity,
-      unit: unit,
-      estimatedCost: roundCurrency(currentCost * parseFloat(quantity))
-    };
-
-    setRecipeItems([...recipeItems, newItem]);
+      unit,
+      estimatedCost: roundCurrency(Number(ingredient.cost || 0) * finalQuantity)
+    }]);
     resetInput();
   };
 
-  const handleRemove = (id) => {
-    setRecipeItems(recipeItems.filter(item => item.ingredientId !== id));
-  };
-
-  const handleSave = () => {
-    onSave(recipeItems);
-    onClose();
-  };
-
-  // Calcular costo teórico total visual
   const totalEstimatedCost = recipeItems.reduce((sum, item) => {
-    // Buscamos en 'menu' para tener el costo actualizado al momento
-    const ing = menu.find(p => p.id === item.ingredientId);
-    const unitCost = ing?.cost || 0;
-    return sum + roundCurrency(unitCost * item.quantity);
+    const ingredient = ingredientsById.get(getRecipeIngredientId(item));
+    return sum + (ingredient
+      ? roundCurrency(Number(ingredient.cost || 0) * Number(item.quantity || 0))
+      : Number(item.estimatedCost || 0));
   }, 0);
 
   if (!show) return null;
 
-  return (
-    <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
-      <div className="modal-content recipe-modal">
-        <h2 className="modal-title">Construir receta</h2>
-        <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo producto'}</strong></p>
+  return <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
+    <div className="modal-content recipe-modal">
+      <h2 className="modal-title">Construir receta</h2>
+      <p className="modal-subtitle">Producto: <strong>{productName || 'Nuevo producto'}</strong></p>
 
-        {availableIngredients.length === 0 ? (
-          <div className="warning-box">
-            No tienes productos marcados como "Ingrediente" o no se han cargado los lotes. <br />
-            Asegúrate de haber creado insumos y haber registrado su stock inicial.
-          </div>
-        ) : (
-          <div className="recipe-input-group">
-            <div className="form-group" style={{ flex: 2 }}>
-              <label>Ingrediente</label>
-              <select
-                className="form-input"
-                value={selectedIngredientId}
-                onChange={handleIngredientSelect}
-              >
-                <option value="">-- Seleccionar --</option>
-                {availableIngredients.map(ing => (
-                  <option key={ing.id} value={ing.id}>
-                    {ing.name} (Stock: {ing.stock || 0} | ${ing.cost?.toFixed(2)})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ flex: 1 }}>
-              <label>
-                Cantidad
-                {/* Label dinámico para guiar al usuario */}
-                {useSmallUnit ? <small className="recipe-unit-helper"> (en {unit === 'kg' ? 'gramos' : 'mililitros'})</small> : ''}
-              </label>
-              <input
-                type="number"
-                className="form-input"
-                placeholder="0.00"
-                step={useSmallUnit ? "1" : "0.001"} // Pasos enteros para gramos, decimales para kilos
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group" style={{ flex: 0.8, display: 'flex', flexDirection: 'column' }}>
-              <label>Unidad</label>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <input
-                  type="text"
-                  className="form-input recipe-unit-input"
-                  value={unit}
-                  disabled // BLOQUEADO: No dejar editar manualmente para evitar errores
-                />
-
-                {/* Solo mostramos el convertidor si es KG o LT */}
-                {(unit === 'kg' || unit === 'lt') && (
-                  <label className="toggle-switch recipe-small-unit-toggle">
-                    <input
-                      type="checkbox"
-                      checked={useSmallUnit}
-                      onChange={(e) => setUseSmallUnit(e.target.checked)}
-                      style={{ marginRight: '4px' }}
-                    />
-                    <span>Usar {unit === 'kg' ? 'gr' : 'ml'}</span>
-                  </label>
-                )}
-              </div>
-            </div>
-
-            <button type="button" className="btn btn-add-ing" onClick={handleAdd}>+</button>
-          </div>
-        )}
-
-        <div className="recipe-list-container">
-          <table className="recipe-table">
-            <thead>
-              <tr>
-                <th>Ingrediente</th>
-                <th>Cantidad</th>
-                <th>Costo Est.</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recipeItems.length === 0 ? (
-                <tr>
-                  <td colSpan="4" className="recipe-empty-cell">
-                    Sin ingredientes asignados
-                  </td>
-                </tr>
-              ) : (
-                recipeItems.map((item, idx) => {
-                  // VERIFICACIÓN: ¿Existe el ingrediente en el menú actual?
-                  const originalIngredient = menu.find(p => p.id === item.ingredientId);
-                  const isMissing = !originalIngredient;
-
-                  return (
-                    <tr key={idx} className={isMissing ? 'recipe-row-missing' : ''}>
-                      <td>
-                        {item.name}
-                        {isMissing && <span className="recipe-missing-label">Insumo eliminado</span>}
-                      </td>
-                      <td>{item.quantity} {item.unit}</td>
-                      <td>
-                        {/* Si falta el insumo, el costo estimado no se puede calcular con precisión actualizada */}
-                        ${(isMissing ? (item.estimatedCost || 0) : (originalIngredient.cost * item.quantity)).toFixed(2)}
-                      </td>
-                      <td>
-                        <button className="btn-icon-remove" onClick={() => handleRemove(item.ingredientId)} aria-label="Eliminar ingrediente">×</button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {isLoading ? <div className="warning-box">Cargando insumos...</div> : error ? <div className="warning-box">No se pudieron cargar los insumos. Intenta nuevamente. <button type="button" className="btn btn-secondary" onClick={refresh}>Reintentar</button></div> : ingredients.length === 0 ? <div className="warning-box">No hay insumos activos disponibles. Crea un insumo para comenzar una receta.</div> : <div className="recipe-input-group">
+        <div className="form-group" style={{ flex: 2 }}>
+          <label>Ingrediente</label>
+          <select className="form-input" value={selectedIngredientId} onChange={handleIngredientSelect}>
+            <option value="">-- Seleccionar --</option>
+            {ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.id}>{ingredient.name} — Stock: {ingredient.stock ?? 0} — Costo: ${toMoney(ingredient.cost)}</option>)}
+          </select>
         </div>
-
-        <div className="recipe-footer">
-          <div className="recipe-total">
-            Costo teórico total: <span>${totalEstimatedCost.toFixed(2)}</span>
-          </div>
-          <div className="recipe-actions">
-            <button className="btn btn-cancel" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-save" onClick={handleSave}>Guardar receta</button>
+        <div className="form-group" style={{ flex: 1 }}>
+          <label>Cantidad {useSmallUnit && <small className="recipe-unit-helper">(en {unit === 'kg' ? 'gramos' : 'mililitros'})</small>}</label>
+          <input type="number" className="form-input" placeholder="0.00" min="0" step={useSmallUnit ? '1' : '0.001'} value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+        </div>
+        <div className="form-group" style={{ flex: 0.8, display: 'flex', flexDirection: 'column' }}>
+          <label>Unidad</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <input type="text" className="form-input recipe-unit-input" value={unit} disabled />
+            {(unit === 'kg' || unit === 'lt') && <label className="toggle-switch recipe-small-unit-toggle"><input type="checkbox" checked={useSmallUnit} onChange={(event) => setUseSmallUnit(event.target.checked)} style={{ marginRight: '4px' }} /><span>Usar {unit === 'kg' ? 'gr' : 'ml'}</span></label>}
           </div>
         </div>
+        <button type="button" className="btn btn-add-ing" onClick={handleAdd}>+</button>
+      </div>}
 
-      </div>
+      <div className="recipe-list-container"><table className="recipe-table"><thead><tr><th>Ingrediente</th><th>Cantidad</th><th>Costo Est.</th><th>Acción</th></tr></thead><tbody>
+        {recipeItems.length === 0 ? <tr><td colSpan="4" className="recipe-empty-cell">Sin ingredientes asignados</td></tr> : recipeItems.map((item, index) => {
+          const ingredientId = getRecipeIngredientId(item);
+          const ingredient = ingredientsById.get(ingredientId);
+          const isMissing = !ingredient;
+          const estimatedCost = ingredient ? Number(ingredient.cost || 0) * Number(item.quantity || 0) : Number(item.estimatedCost || 0);
+          return <tr key={ingredientId || index} className={isMissing ? 'recipe-row-missing' : ''}><td>{item.name}{isMissing && <span className="recipe-missing-label">Insumo eliminado</span>}</td><td>{item.quantity} {item.unit}</td><td>${toMoney(estimatedCost)}</td><td><button type="button" className="btn-icon-remove" onClick={() => setRecipeItems((items) => items.filter((candidate) => getRecipeIngredientId(candidate) !== ingredientId))} aria-label="Eliminar ingrediente">×</button></td></tr>;
+        })}
+      </tbody></table></div>
+      <div className="recipe-footer"><div className="recipe-total">Costo teórico total: <span>${toMoney(totalEstimatedCost)}</span></div><div className="recipe-actions"><button type="button" className="btn btn-cancel" onClick={onClose}>Cancelar</button><button type="button" className="btn btn-save" onClick={() => { onSave(recipeItems); onClose(); }}>Guardar receta</button></div></div>
     </div>
-  );
+  </div>;
 }

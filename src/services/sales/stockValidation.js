@@ -1,4 +1,5 @@
 import { getAvailableStock } from '../db/utils';
+import { getRecipeIngredientId } from '../../utils/ingredientConfiguration';
 
 const hasRecipe = (product) => Array.isArray(product?.recipe) && product.recipe.length > 0;
 const shouldTrackDirectStock = (product) => Boolean(product?.trackStock);
@@ -36,7 +37,7 @@ const buildRequirementsForItem = (item, productDef) => {
 
     if (hasRecipe(productDef)) {
         productDef.recipe.forEach((ing) => {
-            addRequirement(itemRequirements, ing.ingredientId, (ing.quantity || 0) * quantityToDeduct);
+            addRequirement(itemRequirements, getRecipeIngredientId(ing), (ing.quantity || 0) * quantityToDeduct);
         });
     } else if (shouldTrackDirectStock(productDef)) {
         addRequirement(itemRequirements, getRealProductId(item), quantityToDeduct);
