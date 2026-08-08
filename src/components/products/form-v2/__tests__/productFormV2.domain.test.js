@@ -90,9 +90,9 @@ describe('Product Form V2 payload', () => {
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: payload })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
   });
 
-  it('persists hardware measurement sales with the canonical mt unit', () => {
-    const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit: 'mt' }), { activeRubro: 'hardware' });
-    expect(payload).toMatchObject({ rubroContext: 'hardware', saleType: 'bulk', unit: 'mt', bulkData: { sale: { unit: 'mt' } } });
+  it.each(['mt', 'cm'])('persists hardware %s measurement sales as bulk with the canonical unit', (unit) => {
+    const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit }), { activeRubro: 'hardware' });
+    expect(payload).toMatchObject({ rubroContext: 'hardware', saleType: 'bulk', unit, bulkData: { sale: { unit } } });
   });
 
   it('preserves hardware fractioned conversion data and deactivates it when returning to unit sales', () => {

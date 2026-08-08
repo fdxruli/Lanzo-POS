@@ -505,11 +505,12 @@ export default function OrderSummary({
               const modifierLabels = formatSelectedModifiersForDisplay(item.selectedModifiers);
               const quantity = item.quantity || 1;
               const lineTotal = item.price * quantity;
-              const isUnitSale = item.saleType === 'unit' || !item.saleType;
               const quantityInputProps = getOrderQuantityInputProps(item);
+              const usesDirectQuantityInput = item.saleType === 'bulk' || quantityInputProps.step !== '1';
+              const isUnitSale = !usesDirectQuantityInput;
               const saleUnit = resolveProductSaleUnit(item);
               const saleUnitLabel = getProductUnitShortLabel(saleUnit);
-              const displayQuantity = item.saleType === 'bulk' ? Number(quantity).toFixed(3) : quantity;
+              const displayQuantity = usesDirectQuantityInput ? Number(quantity).toFixed(3) : quantity;
               const isFractioned = item.conversionFactor?.enabled === true;
 
               return (
