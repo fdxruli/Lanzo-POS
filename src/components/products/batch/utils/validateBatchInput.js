@@ -21,11 +21,15 @@
  * @returns {{ valid: false, message: string } | { valid: true, parsed: { nStock: number, nCost: number, nPrice: number } }}
  */
 export function validateBatchInput(values, product = {}) {
-  const nStock = Number.parseFloat(values.stock);
-  const nCost = Number.parseFloat(values.cost);
-  const nPrice = Number.parseFloat(values.price);
+  const parseNumericValue = (value) => {
+    if (typeof value === 'string' && !value.trim()) return Number.NaN;
+    return Number(value);
+  };
+  const nStock = parseNumericValue(values.stock);
+  const nCost = parseNumericValue(values.cost);
+  const nPrice = parseNumericValue(values.price);
 
-  if (Number.isNaN(nStock) || Number.isNaN(nCost) || Number.isNaN(nPrice)) {
+  if (!Number.isFinite(nStock) || !Number.isFinite(nCost) || !Number.isFinite(nPrice)) {
     return { valid: false, message: 'Por favor, ingresa valores numericos validos.' };
   }
 

@@ -1,5 +1,6 @@
 import { generateID } from '../../../../services/utils';
 import { calculateShelfLifeTargetDate } from '../../../../utils/expirationPolicy';
+import { isCommercialVariantProduct } from '../../../../services/products/commercialVariants';
 
 /**
  * @param {Object} params
@@ -9,6 +10,7 @@ import { calculateShelfLifeTargetDate } from '../../../../utils/expirationPolicy
  * @param {{ nStock: number, nCost: number, nPrice: number }} params.parsed
  * @param {{ hasVariants?: boolean }} params.features
  * @param {string | null} params.finalSku
+ * @param {boolean} params.isProductPriceEditing
  * @returns {Object}
  */
 export function buildBatchPayload({
@@ -17,10 +19,16 @@ export function buildBatchPayload({
   values,
   parsed,
   features,
-  finalSku
+  finalSku,
+  isProductPriceEditing = false
 }) {
   const isEditing = Boolean(batchToEdit);
   const { nStock, nCost, nPrice } = parsed;
+  const isCommercialVariant = isCommercialVariantProduct(product);
+  const currentProductPrice = Number(product?.price ?? 0);
+  const hasProductPriceChange = !isCommercialVariant
+    && isProductPriceEditing
+    && nPrice !== currentProductPrice;
 
   const explicitExpiryDate = values.expiryDate
     ? new Date(values.expiryDate).toISOString()
@@ -68,6 +76,6 @@ export function buildBatchPayload({
       }
       : values.pao ? { pao: values.pao } : null,
     location: values.location || '',
-    updateGlobalPrice: features?.hasVariants ? false : Boolean(values.updateGlobalPrice)
+    updateGlobalPrice: hasProductPriceChange
   };
 }

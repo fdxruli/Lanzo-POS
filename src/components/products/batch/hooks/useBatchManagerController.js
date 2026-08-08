@@ -18,6 +18,7 @@ import { BATCH_MANAGER_PAGE_SIZE } from '../../../../services/products/batchMana
 import { useStatsStore } from '../../../../store/useStatsStore';
 import Logger from '../../../../services/Logger';
 import { showInputPromptModal } from '../../../common/InputPromptModal';
+import { cloudProductToLocal } from '../../../../services/products/productMapper';
 
 /**
  * @param {Object} params
@@ -63,8 +64,8 @@ export function useBatchManagerController({
 
   const resolvedSelectedProduct = useMemo(() => {
     if (!selectedProductId) return null;
-    if (selectedProduct?.id === selectedProductId) return selectedProduct;
     if (selectedProductSnapshot?.id === selectedProductId) return selectedProductSnapshot;
+    if (selectedProduct?.id === selectedProductId) return selectedProduct;
     return null;
   }, [selectedProduct, selectedProductId, selectedProductSnapshot]);
 
@@ -349,6 +350,17 @@ export function useBatchManagerController({
 
       if (!saveBatchResult?.success) {
         throw saveBatchResult?.error || new Error(saveBatchResult?.message || 'No se pudo guardar el lote.');
+      }
+
+      const authoritativeProduct = saveBatchResult?.response?.product;
+      if (authoritativeProduct?.id === resolvedSelectedProduct.id) {
+        setSelectedProductSnapshot(cloudProductToLocal(authoritativeProduct, resolvedSelectedProduct));
+      } else if (batchData.updateGlobalPrice) {
+        // Free/local and offline saves apply the same parent-price intent transactionally.
+        setSelectedProductSnapshot((current) => ({
+          ...(current || resolvedSelectedProduct),
+          price: batchData.price
+        }));
       }
 
       await fetchBatches({ refresh: true });

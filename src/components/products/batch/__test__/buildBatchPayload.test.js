@@ -6,6 +6,48 @@ describe('buildBatchPayload', () => {
     vi.useRealTimers();
   });
 
+  it('mantiene el precio padre al crear un lote físico sin abrir el editor', () => {
+    const payload = buildBatchPayload({
+      batchToEdit: null,
+      product: { id: 'prod-physical', price: 22.98 },
+      values: { notes: '', expiryDate: '', attribute1: '', attribute2: '', location: '' },
+      parsed: { nStock: 20, nCost: 15, nPrice: 22.98 },
+      features: { hasVariants: false },
+      finalSku: null,
+      isProductPriceEditing: false
+    });
+
+    expect(payload).toMatchObject({ price: 22.98, updateGlobalPrice: false });
+  });
+
+  it('actualiza el precio padre solo cuando el editor físico solicita un precio distinto', () => {
+    const payload = buildBatchPayload({
+      batchToEdit: null,
+      product: { id: 'prod-physical', price: 22.98 },
+      values: { notes: '', expiryDate: '', attribute1: '', attribute2: '', location: '' },
+      parsed: { nStock: 20, nCost: 15, nPrice: 24.5 },
+      features: { hasVariants: false },
+      finalSku: null,
+      isProductPriceEditing: true
+    });
+
+    expect(payload).toMatchObject({ price: 24.5, updateGlobalPrice: true });
+  });
+
+  it('nunca solicita actualizar el precio padre para una variante comercial', () => {
+    const payload = buildBatchPayload({
+      batchToEdit: { id: 'batch-variant', createdAt: '2026-01-01T00:00:00.000Z' },
+      product: { id: 'prod-apparel', price: 200, hasVariants: true, rubroContext: 'apparel' },
+      values: { notes: '', expiryDate: '', attribute1: 'M', attribute2: 'Negro', location: '' },
+      parsed: { nStock: 2, nCost: 100, nPrice: 220 },
+      features: { hasVariants: true },
+      finalSku: null,
+      isProductPriceEditing: true
+    });
+
+    expect(payload).toMatchObject({ price: 220, updateGlobalPrice: false });
+  });
+
   it('crea payload con variantes para lote nuevo', () => {
     const payload = buildBatchPayload({
       batchToEdit: null,
