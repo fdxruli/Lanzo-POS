@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { getProductFormDefaults } from '../config/productFormDefaults';
 import { buildProductFormPayload } from '../domain/buildProductFormPayload';
 import { validateProductForm } from '../domain/validateProductForm';
+import { calculateFractionedUnitCost, calculateSaleMargin } from '../domain/fractionedPricing';
+import { validateWholesaleCondition } from '../../../../services/pricingLogic';
 
 const base = (overrides = {}) => ({ name: 'Producto', price: 20, cost: 10, trackStock: true, stock: 3, minStock: '', maxStock: '', saleType: 'unit', unit: 'pza', conversionFactor: { enabled: false, purchaseUnit: '', factor: '' }, expirationMode: 'NONE', shelfLifeValue: '', shelfLifeUnit: 'days', expiryDate: '', manufacturerBatchId: '', hasVariants: false, quickVariants: [], restaurantType: 'ready', recipe: [], modifiers: [], ...overrides });
 
@@ -26,6 +28,13 @@ describe('Product Form V2 defaults', () => {
   it('hydrates fractioned products as a UI mode while accepting legacy cloud values', () => {
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'unit', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } } })).toMatchObject({ saleMode: 'fractioned', saleType: 'unit' });
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } } })).toMatchObject({ saleMode: 'fractioned', saleType: 'unit' });
+  });
+
+  it('keeps legacy fractioned cost as unit cost and does not infer a purchase cost', () => {
+    const defaults = getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: {
+      saleType: 'unit', cost: 10, conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 }
+    } });
+    expect(defaults).toMatchObject({ saleMode: 'fractioned', cost: 10, conversionFactor: { purchaseUnit: 'caja', factor: 12, purchaseCost: '' } });
   });
 });
 
@@ -59,11 +68,16 @@ describe('Product Form V2 payload', () => {
     expect(payload).toMatchObject({ trackStock: false, stock: 0, expirationMode: 'NONE', expiryDate: null });
   });
 
-  it('preserves new-product initial stock and fractioned conversion', () => {
-    const payload = buildProductFormPayload(base({ stock: 24, saleMode: 'fractioned', unit: 'pza', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 24 } }), { activeRubro: 'abarrotes' });
+  it('preserves new-product initial stock and stores fractioned purchase data with unit cost authority', () => {
+    const payload = buildProductFormPayload(base({ stock: 24, saleMode: 'fractioned', unit: 'pza', price: 15, conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12, purchaseCost: 120 } }), { activeRubro: 'abarrotes' });
     expect(payload.stock).toBe(24);
     expect(payload.saleType).toBe('unit');
-    expect(payload.conversionFactor).toEqual({ enabled: true, purchaseUnit: 'caja', factor: 24 });
+    expect(payload.cost).toBe(10);
+    expect(payload.price).toBe(15);
+    expect(payload.conversionFactor).toEqual({ enabled: true, purchaseUnit: 'caja', factor: 12, purchaseCost: 120 });
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: payload })).toMatchObject({
+      saleMode: 'fractioned', cost: 10, price: 15, conversionFactor: { purchaseUnit: 'caja', factor: 12, purchaseCost: 120 }
+    });
   });
 
   it('persists bulk kg in bulkData.sale and keeps the canonical value through defaults', () => {
@@ -73,11 +87,24 @@ describe('Product Form V2 payload', () => {
   });
 
   it('requires a purchase unit and a factor greater than one for fractioned sales', () => {
-    const invalid = validateProductForm(base({ saleMode: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 1 } }));
-    expect(invalid.fieldErrors.conversionFactor).toMatch(/mayor que 1/i);
-    const valid = validateProductForm(base({ saleMode: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } }));
+    const invalid = validateProductForm(base({ saleMode: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 1, purchaseCost: 0 } }));
+    expect(invalid.fieldErrors.conversionFactor).toMatch(/contiene/i);
+    expect(invalid.fieldErrors.purchaseCost).toMatch(/cuesta/i);
+    const valid = validateProductForm(base({ saleMode: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12, purchaseCost: 120 } }));
     expect(valid.fieldErrors.conversionFactor).toBeUndefined();
     expect(valid.fieldErrors.purchaseUnit).toBeUndefined();
+    expect(valid.fieldErrors.purchaseCost).toBeUndefined();
+  });
+
+  it('calculates fractioned cost and margin from the sellable unit, never from the purchase presentation', () => {
+    expect(calculateFractionedUnitCost({ purchaseCost: 120, factor: 12 })).toBe(10);
+    expect(calculateSaleMargin({ cost: 10, price: 15 })).toBeCloseTo(33.333, 2);
+  });
+
+  it('uses the calculated product cost when validating fractioned wholesale tiers', () => {
+    const product = buildProductFormPayload(base({ saleMode: 'fractioned', price: 15, conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12, purchaseCost: 120 }, wholesaleTiers: [{ min: 6, price: 12 }] }), { activeRubro: 'abarrotes' });
+    expect(product.cost).toBe(10);
+    expect(validateWholesaleCondition(product, 6)).toMatchObject({ status: 'ok' });
   });
 
   it('normalizes shelf life and strict produce expiry as mutually exclusive', () => {

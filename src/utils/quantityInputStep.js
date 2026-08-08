@@ -1,3 +1,5 @@
+import { resolveProductSaleUnit } from './productUnitConfiguration';
+
 const UNIT_STEP_BY_UNIT = {
   kg: '0.001',
   kilo: '0.001',
@@ -32,13 +34,7 @@ export const getQuantityStepByUnit = (unit) => (
   UNIT_STEP_BY_UNIT[normalizeQuantityUnit(unit)] || '1'
 );
 
-export const getOrderItemUnit = (item = {}) => (
-  item?.bulkData?.purchase?.unit ||
-  item?.unit ||
-  item?.purchaseUnit ||
-  item?.stockUnit ||
-  (item?.saleType === 'bulk' ? 'kg' : 'pza')
-);
+export const getOrderItemUnit = (item = {}) => resolveProductSaleUnit(item);
 
 export const getOrderQuantityInputProps = (item = {}) => {
   const unit = getOrderItemUnit(item);

@@ -21,30 +21,57 @@ describe('ProductFormV2', () => {
     expect(screen.getByLabelText(/Nombre del producto/i)).toBeInTheDocument();
   });
 
-  it('opens and closes compact accordions with ARIA state', () => {
+  it('places grocery classification before the core product fields and avoids a duplicate lower selector', () => {
     renderForm();
+    const selector = screen.getByRole('radiogroup', { name: /qué estás agregando/i });
+    expect(selector).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Unidad/i })).toHaveAttribute('aria-checked', 'true');
+    expect(selector.compareDocumentPosition(screen.getByLabelText(/Nombre del producto/i)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const specific = screen.getByRole('button', { name: /Forma de venta y abastecimiento/i });
     expect(specific).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(specific);
     expect(specific).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('group', { name: /Forma de venta/i })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Forma de venta/i })).not.toBeInTheDocument();
   });
 
   it('uses canonical sale and purchase unit selects and restores the compact wholesale action', () => {
     renderForm({ features: { hasExpiry: true, hasWholesale: true } });
-    fireEvent.click(screen.getByRole('button', { name: /Forma de venta y abastecimiento/i }));
 
     const saleUnit = screen.getByLabelText(/Unidad de venta/i);
     expect(saleUnit.tagName).toBe('SELECT');
     expect(saleUnit).toHaveValue('pza');
-    fireEvent.click(screen.getByRole('button', { name: 'A granel' }));
+    fireEvent.click(screen.getByRole('radio', { name: /A granel/i }));
     expect(saleUnit).toHaveValue('kg');
-    fireEvent.click(screen.getByRole('button', { name: 'Fraccionado' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Fraccionado/i }));
 
     const purchaseUnit = screen.getByLabelText(/Unidad de compra/i);
     expect(purchaseUnit.tagName).toBe('SELECT');
     expect(Array.from(purchaseUnit.options).map((option) => option.value)).toContain('caja');
+    fireEvent.click(screen.getByRole('button', { name: /Forma de venta y abastecimiento/i }));
     expect(screen.getByRole('button', { name: /Configurar mayoreo/i })).toBeInTheDocument();
+  });
+
+  it('calculates and saves the fractioned unit cost from purchase cost and content', async () => {
+    const onSave = vi.fn(() => true);
+    renderForm({ onSave });
+
+    fireEvent.click(screen.getByRole('radio', { name: /Fraccionado/i }));
+    fireEvent.change(screen.getByLabelText(/Unidad de compra/i), { target: { value: 'caja' } });
+    fireEvent.change(screen.getByLabelText(/Contenido por caja/i), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText(/Costo de la caja/i), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta por pieza/i), { target: { value: '15' } });
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Galletas' } });
+
+    await waitFor(() => expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0));
+    expect(screen.getByText(/Ganancia estimada: \$5.00 por pieza/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      cost: 10,
+      price: 15,
+      conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12, purchaseCost: 120 }
+    });
   });
 
   it('passes the V2 save-and-add-another intent and keeps the form open', async () => {
@@ -102,8 +129,9 @@ describe('ProductFormV2', () => {
 
   it('uses canonical unit options for restaurant ingredients instead of free text', () => {
     renderForm({ activeRubroContext: 'food_service' });
+    expect(screen.getByRole('radiogroup', { name: /qué estás agregando/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: /Insumo/i }));
     fireEvent.click(screen.getByRole('button', { name: /Preparaci.n y venta/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Insumo' }));
 
     const unit = screen.getByLabelText('Unidad');
     expect(unit.tagName).toBe('SELECT');

@@ -4,7 +4,9 @@ import { normalizeProductRubro } from '../config/productRubroConfig';
 import { buildProductFormPayload } from '../domain/buildProductFormPayload';
 import { buildApparelVariantDelta, rebaseApparelVariantSnapshot } from '../domain/buildApparelVariantDelta';
 import { toNumber } from '../domain/productFormNormalization';
+import { calculateFractionedUnitCost, calculateSaleMargin } from '../domain/fractionedPricing';
 import { validateProductForm } from '../domain/validateProductForm';
+import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { compressImage, generateID } from '../../../../services/utils';
 import { queryBatchesByProductIdAndActive } from '../../../../services/database';
 
@@ -73,13 +75,27 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
     const currentUnit = previous.unit || 'pza';
     const unit = nextSaleMode === 'bulk' && currentUnit === 'pza'
       ? 'kg'
-      : (nextSaleMode === 'unit' && previous.saleMode === 'bulk' ? 'pza' : currentUnit);
+      : ((nextSaleMode === 'unit' || nextSaleMode === 'fractioned') && previous.saleMode === 'bulk' ? 'pza' : currentUnit);
     return {
       ...previous,
       saleMode: nextSaleMode,
       saleType: nextSaleMode === 'bulk' ? 'bulk' : 'unit',
       unit,
       conversionFactor: { ...previous.conversionFactor, enabled: nextSaleMode === 'fractioned' }
+    };
+  }), []);
+  const setRestaurantType = useCallback((restaurantType) => setValues((previous) => {
+    const isIngredient = restaurantType === 'ingredient';
+    const ingredientUnit = normalizeIngredientUnit(previous.unit);
+    return {
+      ...previous,
+      restaurantType,
+      productType: isIngredient ? 'ingredient' : 'sellable',
+      price: isIngredient ? 0 : previous.price,
+      margin: isIngredient ? '' : previous.margin,
+      unit: isIngredient ? ingredientUnit : previous.unit,
+      saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : previous.saleType,
+      trackStock: restaurantType === 'dish' ? false : (isIngredient ? true : previous.trackStock)
     };
   }), []);
   const setBatchSummary = useCallback((batchSummary) => setValues((previous) => ({
@@ -89,6 +105,19 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   })), []);
   const setExpirationMode = useCallback((expirationMode) => setValues((previous) => ({ ...previous, expirationMode, ...(expirationMode === 'NONE' ? { expiryDate: '', shelfLifeValue: '', shelfLifeUnit: 'days', manufacturerBatchId: '' } : expirationMode === 'STRICT' ? { shelfLifeValue: '', shelfLifeUnit: 'days' } : { expiryDate: '', manufacturerBatchId: '' }) })), []);
   const setTrackStock = useCallback((trackStock) => setValues((previous) => ({ ...previous, trackStock, ...(trackStock ? {} : { expirationMode: 'NONE', expiryDate: '', shelfLifeValue: '', manufacturerBatchId: '' }) })), []);
+  useEffect(() => {
+    const purchaseCost = values.conversionFactor?.purchaseCost;
+    const factor = values.conversionFactor?.factor;
+    if (values.saleMode !== 'fractioned') return;
+    const unitCost = calculateFractionedUnitCost({ purchaseCost, factor });
+    if (unitCost <= 0) return;
+    setValues((previous) => {
+      const margin = calculateSaleMargin({ cost: unitCost, price: previous.price });
+      const nextMargin = margin > 0 ? margin.toFixed(1) : '';
+      if (toNumber(previous.cost) === unitCost && previous.margin === nextMargin) return previous;
+      return { ...previous, cost: unitCost, margin: nextMargin };
+    });
+  }, [values.conversionFactor?.factor, values.conversionFactor?.purchaseCost, values.price, values.saleMode]);
   const changeRubro = useCallback((nextRubro) => { const defaults = getProductFormDefaults({ activeRubro: nextRubro, capabilities, productToEdit }); setValues((previous) => ({ ...defaults, ...previous, rubroContext: normalizeProductRubro(nextRubro), saleType: defaults.saleType, restaurantType: defaults.restaurantType, trackStock: productToEdit ? previous.trackStock : defaults.trackStock })); }, [capabilities, productToEdit]);
   const changeCost = useCallback((cost) => setValues((previous) => { const price = toNumber(previous.price); const parsedCost = toNumber(cost); return { ...previous, cost, margin: parsedCost > 0 && price > 0 ? (((price - parsedCost) / price) * 100).toFixed(1) : '' }; }), []);
   const changePrice = useCallback((price) => setValues((previous) => { const parsedPrice = toNumber(price); const cost = toNumber(previous.cost); return { ...previous, price, margin: cost > 0 && parsedPrice > 0 ? (((parsedPrice - cost) / parsedPrice) * 100).toFixed(1) : '' }; }), []);
@@ -148,5 +177,5 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       return result;
     } finally { setIsSaving(false); }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
-  return { values, errors, isSaving, isDirty, setField, setFields, setSaleMode, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
+  return { values, errors, isSaving, isDirty, setField, setFields, setSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }

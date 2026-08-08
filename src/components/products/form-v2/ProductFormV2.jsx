@@ -3,11 +3,13 @@ import { PackagePlus } from 'lucide-react';
 import ScannerModal from '../../scanner/ScannerModal';
 import RecipeBuilderModal from '../RecipeBuilderModal';
 import WholesaleManagerModal from '../WholesaleManagerModal';
-import { normalizeBusinessTypes } from '../../../utils/businessType';
+import { CANONICAL_BUSINESS_TYPES, normalizeBusinessTypes } from '../../../utils/businessType';
 import { useFeatureConfig } from '../../../hooks/useFeatureConfig';
 import { getProductRubroConfig, normalizeProductRubro } from './config/productRubroConfig';
 import { useProductFormV2 } from './hooks/useProductFormV2';
 import ProductCoreFields from './components/ProductCoreFields';
+import ProductTypeSelector from './components/ProductTypeSelector';
+import GrocerySaleSetupFields from './components/GrocerySaleSetupFields';
 import ProductInventoryFields from './components/ProductInventoryFields';
 import ProductDetailsAccordion from './components/ProductDetailsAccordion';
 import ProductFormAccordion from './components/ProductFormAccordion';
@@ -23,7 +25,7 @@ import GeneralProductFields from './rubros/GeneralProductFields';
 import './ProductFormV2.css';
 
 const RUBRO_FIELDS = { abarrotes: GroceryProductFields, hardware: HardwareProductFields, 'verduleria/fruteria': ProduceProductFields, apparel: ApparelProductFields, farmacia: PharmacyProductFields, food_service: RestaurantProductFields, otro: GeneralProductFields };
-const ERROR_ACCORDIONS = { maxStock: 'alerts', location: 'alerts', categoryId: 'details', description: 'details', expiryDate: 'specific', shelfLifeValue: 'specific', manufacturerBatchId: 'specific', quickVariants: 'specific', recipe: 'specific', expirationMode: 'specific', conversionFactor: 'specific', purchaseUnit: 'specific' };
+const ERROR_ACCORDIONS = { maxStock: 'alerts', location: 'alerts', categoryId: 'details', description: 'details', expiryDate: 'specific', shelfLifeValue: 'specific', manufacturerBatchId: 'specific', quickVariants: 'specific', recipe: 'specific', expirationMode: 'specific', conversionFactor: 'specific', purchaseUnit: 'specific', purchaseCost: 'specific' };
 
 export default function ProductFormV2({ onSave, onCancel, onDirtyChange, productToEdit, categories = [], activeRubroContext, businessTypes, features: suppliedFeatures, onOpenCategoryManager, onOpenBatches }) {
   const rubros = useMemo(() => normalizeBusinessTypes(businessTypes || activeRubroContext || productToEdit?.rubroContext), [activeRubroContext, businessTypes, productToEdit?.rubroContext]);
@@ -39,6 +41,10 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
   const config = getProductRubroConfig(activeRubro);
   const RubroFields = RUBRO_FIELDS[activeRubro] || GeneralProductFields;
   const isEditing = Boolean(productToEdit?.id);
+  const isGrocery = activeRubro === CANONICAL_BUSINESS_TYPES.ABARROTES;
+  const isRestaurant = activeRubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE;
+  const classificationValue = isRestaurant ? form.values.restaurantType : form.values.saleMode;
+  const selectClassification = isRestaurant ? form.setRestaurantType : form.setSaleMode;
   const switchRubro = (rubro) => {
     if (isEditing) return;
     const normalized = normalizeProductRubro(rubro);
@@ -68,6 +74,8 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     {!isEditing && rubros.length > 1 && <div className="product-form-v2__rubros" aria-label="Rubro del producto">{rubros.map((rubro) => <button type="button" key={rubro} className={activeRubro === rubro ? 'is-active' : ''} onClick={() => switchRubro(rubro)}>{getProductRubroConfig(rubro).label}</button>)}</div>}
     {saveAnotherNotice && <p className="product-form-v2__success" role="status">{saveAnotherNotice}</p>}
     <ProductFormSummary errors={form.errors} />
+    <ProductTypeSelector options={config.productTypeOptions} value={classificationValue} onChange={selectClassification} disabled={isEditing && isRestaurant} />
+    {isGrocery && <GrocerySaleSetupFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} />}
     <ProductCoreFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={(field, value) => { setSaveAnotherNotice(''); form.setField(field, value); }} onCostChange={form.changeCost} onPriceChange={form.changePrice} onMarginChange={form.changeMargin} onScan={() => setIsScannerOpen(true)} isIngredient={form.values.productType === 'ingredient' || form.values.restaurantType === 'ingredient'} />
     <ProductInventoryFields values={form.values} errors={form.errors.fieldErrors} isEditing={isEditing} onTrackStock={form.setTrackStock} onFieldChange={form.setField} />
     <ProductFormAccordion id="product-v2-details" title="Imagen y organización" description="Fotografía, categoría y descripción." summary={form.values.categoryId ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'details'} onToggle={() => setOpenAccordion(openAccordion === 'details' ? null : 'details')}><ProductDetailsAccordion values={form.values} categories={categories} onFieldChange={form.setField} onImageChange={form.setImage} onOpenCategoryManager={onOpenCategoryManager} /></ProductFormAccordion>

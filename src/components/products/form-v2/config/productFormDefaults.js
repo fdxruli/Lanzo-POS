@@ -40,8 +40,8 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (saleMode === 'bulk' ? 'bulk' : 'unit'),
     unit: isIngredient ? ingredientUnit : normalizeProductUnit(productUnit || (rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA ? 'kg' : 'pza')),
     conversionFactor: source.conversionFactor
-      ? { ...source.conversionFactor, enabled: saleMode === 'fractioned', purchaseUnit: normalizePurchaseUnit(source.conversionFactor.purchaseUnit) }
-      : { enabled: false, purchaseUnit: '', factor: '' },
+      ? { ...source.conversionFactor, enabled: saleMode === 'fractioned', purchaseUnit: normalizePurchaseUnit(source.conversionFactor.purchaseUnit), purchaseCost: source.conversionFactor.purchaseCost ?? '' }
+      : { enabled: false, purchaseUnit: '', factor: '', purchaseCost: '' },
     expirationMode, shelfLifeValue: source.shelfLifeValue ?? '', shelfLifeUnit: source.shelfLifeUnit || 'days',
     expiryDate: asDateInput(source.expiryDate), manufacturerBatchId: source.manufacturerBatchId || '',
     hasVariants: Boolean(source.hasVariants || source.quickVariants?.length), quickVariants: source.quickVariants || [],

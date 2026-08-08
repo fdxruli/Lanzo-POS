@@ -71,6 +71,27 @@ export const isCanonicalPurchaseUnit = (value) => (
   PURCHASE_UNITS.some((unit) => unit.value === value)
 );
 
+const SALE_UNIT_TEXT = Object.freeze({
+  pza: { name: 'pieza', short: 'pza' },
+  kg: { name: 'kilogramo', short: 'kg' },
+  g: { name: 'gramo', short: 'g' },
+  lt: { name: 'litro', short: 'L' },
+  ml: { name: 'mililitro', short: 'ml' },
+  mt: { name: 'metro', short: 'm' },
+  cm: { name: 'centímetro', short: 'cm' },
+  ft: { name: 'pie', short: 'ft' },
+  in: { name: 'pulgada', short: 'in' },
+  gal: { name: 'galón', short: 'gal' }
+});
+
+export const getProductUnitName = (unit) => (
+  SALE_UNIT_TEXT[normalizeProductUnit(unit)]?.name || String(unit || 'unidad').trim().toLowerCase()
+);
+
+export const getProductUnitShortLabel = (unit) => (
+  SALE_UNIT_TEXT[normalizeProductUnit(unit)]?.short || String(unit || 'pza').trim()
+);
+
 export const resolveProductSaleUnit = (product = {}) => {
   const sourceUnit = [
     product.unit,
@@ -86,3 +107,7 @@ export const resolveProductSaleUnit = (product = {}) => {
 
   return normalizeProductUnit(sourceUnit || (product.saleType === 'bulk' || product.sale_type === 'bulk' ? 'kg' : 'pza'));
 };
+
+export const resolveProductSaleUnitLabel = (product = {}) => (
+  getProductUnitShortLabel(resolveProductSaleUnit(product))
+);

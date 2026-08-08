@@ -3,6 +3,7 @@ import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../
 import { normalizeProductUnit, normalizePurchaseUnit } from '../../../../utils/productUnitConfiguration';
 import { normalizeWholesaleTiers } from '../../forms/retail/retailFormUtils';
 import { normalizeExpirationFields, toNumber } from './productFormNormalization';
+import { calculateFractionedUnitCost } from './fractionedPricing';
 
 export function buildProductFormPayload(values, { activeRubro, productToEdit = null } = {}) {
   const isEditing = Boolean(productToEdit?.id);
@@ -28,7 +29,8 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
       ...values.conversionFactor,
       enabled: true,
       purchaseUnit: normalizePurchaseUnit(values.conversionFactor?.purchaseUnit),
-      factor: toNumber(values.conversionFactor?.factor)
+      factor: toNumber(values.conversionFactor?.factor),
+      purchaseCost: toNumber(values.conversionFactor?.purchaseCost)
     }
     : {
       ...values.conversionFactor,
@@ -37,6 +39,9 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
       factor: values.conversionFactor?.factor ?? ''
     };
   const hasVariants = values.hasVariants && values.quickVariants.some((variant) => variant.talla && variant.color);
+  const unitCost = saleMode === 'fractioned'
+    ? calculateFractionedUnitCost({ purchaseCost: conversionFactor.purchaseCost, factor: conversionFactor.factor })
+    : toNumber(values.cost);
   const trackStock = Boolean(values.trackStock) && !(activeRubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE && values.restaurantType === 'dish');
   const expiration = trackStock ? normalizeExpirationFields(values) : normalizeExpirationFields({ expirationMode: 'NONE' });
   const stock = isEditing ? (productToEdit.stock ?? 0) : (trackStock && !hasVariants ? toNumber(values.stock) : 0);
@@ -46,7 +51,7 @@ export function buildProductFormPayload(values, { activeRubro, productToEdit = n
     name: String(values.name || '').trim(), barcode: String(values.barcode || '').trim(), categoryId: values.categoryId || '', description: String(values.description || '').trim(),
     image: values.image || (values.imageRemoved ? null : (productToEdit?.image || null)), imageUploadSource: values.imageUploadSource || null,
     imageRemoved: Boolean(values.imageRemoved),
-    price: isIngredient ? 0 : toNumber(values.price), cost: toNumber(values.cost), trackStock, stock,
+    price: isIngredient ? 0 : toNumber(values.price), cost: unitCost, trackStock, stock,
     minStock: trackStock && values.minStock !== '' ? toNumber(values.minStock) : null,
     maxStock: trackStock && values.maxStock !== '' ? toNumber(values.maxStock) : null,
     saleType, unit: ingredientUnit, supplier, metadata, location: String(values.location || '').trim(),

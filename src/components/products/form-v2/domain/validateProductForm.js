@@ -19,9 +19,9 @@ export function validateProductForm(values, { activeRubro, isEditing = false } =
   if (values.trackStock && maxStock < 0) fieldErrors.maxStock = 'El stock máximo no puede ser negativo.';
   if (values.trackStock && values.minStock !== '' && values.maxStock !== '' && maxStock < minStock) fieldErrors.maxStock = 'El máximo no puede ser menor que el mínimo.';
   if (values.saleMode === 'fractioned' || values.conversionFactor?.enabled) {
-    const conversionMessage = 'Indica una unidad de compra y un contenido mayor que 1.';
-    if (!String(values.conversionFactor?.purchaseUnit || '').trim()) fieldErrors.purchaseUnit = conversionMessage;
-    if (toNumber(values.conversionFactor?.factor) <= 1) fieldErrors.conversionFactor = conversionMessage;
+    if (!String(values.conversionFactor?.purchaseUnit || '').trim()) fieldErrors.purchaseUnit = 'Selecciona la unidad en la que compras el producto.';
+    if (toNumber(values.conversionFactor?.factor) <= 1) fieldErrors.conversionFactor = 'Indica cuántas unidades contiene la presentación de compra.';
+    if (toNumber(values.conversionFactor?.purchaseCost) <= 0) fieldErrors.purchaseCost = 'Indica cuánto te cuesta la presentación de compra.';
   }
   if (values.expirationMode === 'STRICT') {
     if (values.shelfLifeValue) fieldErrors.expirationMode = 'La fecha concreta y la vida útil no pueden coexistir.';
