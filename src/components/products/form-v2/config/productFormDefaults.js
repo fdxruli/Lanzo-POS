@@ -1,5 +1,6 @@
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
+import { normalizeProductUnit, normalizePurchaseUnit, resolveProductSaleUnit } from '../../../../utils/productUnitConfiguration';
 import { getProductRubroConfig, normalizeProductRubro } from './productRubroConfig';
 
 const asDateInput = (value) => (value ? String(value).split('T')[0] : '');
@@ -10,6 +11,10 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
   const source = productToEdit || {};
   const restaurantType = source.restaurantType || (source.productType === 'ingredient' ? 'ingredient' : (rubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE ? 'dish' : 'ready'));
   const isIngredient = restaurantType === 'ingredient';
+  const persistedSaleType = source.saleType || config.defaultSaleType;
+  const saleMode = persistedSaleType === 'bulk'
+    ? 'bulk'
+    : (persistedSaleType === 'fractioned' || source.conversionFactor?.enabled === true ? 'fractioned' : 'unit');
   const defaultTrackStock = rubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE && restaurantType === 'dish' ? false : true;
   const legacyIngredientUnit = [
     source.unit,
@@ -19,6 +24,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     source.saleUnit
   ].find((value) => String(value ?? '').trim());
   const ingredientUnit = normalizeIngredientUnit(legacyIngredientUnit || (source.saleType === 'unit' ? 'pza' : 'kg'));
+  const productUnit = resolveProductSaleUnit({ ...source, saleType: persistedSaleType });
   const expirationMode = source.expirationMode || (config.strictExpiry && capabilities.hasExpiry !== false ? 'STRICT' : 'NONE');
 
   return {
@@ -29,9 +35,13 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     cost: source.cost ?? '', price: source.price ?? '', margin: '',
     trackStock: source.trackStock ?? defaultTrackStock,
     stock: productToEdit ? (source.stock ?? 0) : 0,
-    minStock: source.minStock ?? '', maxStock: source.maxStock ?? '', supplier: source.supplier || '', location: source.location || '',
-    saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (source.saleType || config.defaultSaleType), unit: isIngredient ? ingredientUnit : (source.unit || (rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA ? 'kg' : 'pza')),
-    conversionFactor: source.conversionFactor || { enabled: false, purchaseUnit: '', factor: '' },
+    minStock: source.minStock ?? '', maxStock: source.maxStock ?? '', supplier: source.metadata?.primary_supplier ?? source.supplier ?? '', location: source.location || '',
+    saleMode: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : saleMode,
+    saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (saleMode === 'bulk' ? 'bulk' : 'unit'),
+    unit: isIngredient ? ingredientUnit : normalizeProductUnit(productUnit || (rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA ? 'kg' : 'pza')),
+    conversionFactor: source.conversionFactor
+      ? { ...source.conversionFactor, enabled: saleMode === 'fractioned', purchaseUnit: normalizePurchaseUnit(source.conversionFactor.purchaseUnit) }
+      : { enabled: false, purchaseUnit: '', factor: '' },
     expirationMode, shelfLifeValue: source.shelfLifeValue ?? '', shelfLifeUnit: source.shelfLifeUnit || 'days',
     expiryDate: asDateInput(source.expiryDate), manufacturerBatchId: source.manufacturerBatchId || '',
     hasVariants: Boolean(source.hasVariants || source.quickVariants?.length), quickVariants: source.quickVariants || [],
@@ -39,6 +49,7 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     prescriptionType: source.prescriptionType || 'otc', requiresPrescription: Boolean(source.requiresPrescription),
     restaurantType, productType: source.productType || (restaurantType === 'ingredient' ? 'ingredient' : 'sellable'),
     recipe: source.recipe || [], modifiers: source.modifiers || [], prepTime: source.prepTime ?? '', printStation: source.printStation || 'kitchen',
+    wholesaleTiers: source.wholesaleTiers || [], batchSummary: null,
     rubroContext: rubro
   };
 }

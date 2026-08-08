@@ -30,6 +30,23 @@ describe('ProductFormV2', () => {
     expect(screen.getByRole('group', { name: /Forma de venta/i })).toBeInTheDocument();
   });
 
+  it('uses canonical sale and purchase unit selects and restores the compact wholesale action', () => {
+    renderForm({ features: { hasExpiry: true, hasWholesale: true } });
+    fireEvent.click(screen.getByRole('button', { name: /Forma de venta y abastecimiento/i }));
+
+    const saleUnit = screen.getByLabelText(/Unidad de venta/i);
+    expect(saleUnit.tagName).toBe('SELECT');
+    expect(saleUnit).toHaveValue('pza');
+    fireEvent.click(screen.getByRole('button', { name: 'A granel' }));
+    expect(saleUnit).toHaveValue('kg');
+    fireEvent.click(screen.getByRole('button', { name: 'Fraccionado' }));
+
+    const purchaseUnit = screen.getByLabelText(/Unidad de compra/i);
+    expect(purchaseUnit.tagName).toBe('SELECT');
+    expect(Array.from(purchaseUnit.options).map((option) => option.value)).toContain('caja');
+    expect(screen.getByRole('button', { name: /Configurar mayoreo/i })).toBeInTheDocument();
+  });
+
   it('passes the V2 save-and-add-another intent and keeps the form open', async () => {
     const onSave = vi.fn(() => ({ success: true, message: 'Guardado sin navegar.' }));
     renderForm({ onSave });

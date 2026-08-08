@@ -91,6 +91,16 @@ describe('productLocalRepository.prepareProduct', () => {
     });
   });
 
+  it('preserves the default supplier in the initial batch traceability', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const prepared = await productLocalRepository.prepareProduct({
+      id: 'supplier-product', name: 'Arroz', price: 20, cost: 10, stock: 4,
+      trackStock: true, expirationMode: 'NONE', supplier: 'Distribuidora Centro'
+    });
+
+    expect(prepared.batches[0].supplier).toBe('Distribuidora Centro');
+  });
+
   it('keeps existing apparel variants out of initial batches while editing', async () => {
     const { productLocalRepository } = await import('../productLocalRepository');
     const existing = { id: 'shirt-1', name: 'Playera', createdAt: '2026-01-01T00:00:00.000Z', stock: 4 };

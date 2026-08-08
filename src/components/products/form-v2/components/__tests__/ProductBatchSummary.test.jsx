@@ -12,16 +12,16 @@ describe('getProductBatchSummary', () => {
       { id: 'archived', isActive: true, status: 'archived', expiryDate: '2026-08-08' }
     ], now);
 
-    expect(result).toEqual({ activeBatchCount: 3, nextExpiryDate: '2026-09-20' });
+    expect(result).toMatchObject({ activeBatchCount: 3, nextExpiryDate: '2026-09-20', nearestExpiryDate: '2026-09-20' });
   });
 
   it('no inventa una fecha cuando los lotes activos no la tienen', () => {
     expect(getProductBatchSummary([{ id: 'a', isActive: true }, { id: 'b', isActive: true, expiryDate: 'invalida' }], now))
-      .toEqual({ activeBatchCount: 2, nextExpiryDate: null });
+      .toMatchObject({ activeBatchCount: 2, nextExpiryDate: null, nearestExpiryDate: null });
   });
 
   it('reporta que no hay lotes activos', () => {
     expect(getProductBatchSummary([{ id: 'inactive', isActive: false, expiryDate: '2026-10-15' }], now))
-      .toEqual({ activeBatchCount: 0, nextExpiryDate: null });
+      .toMatchObject({ activeBatchCount: 0, nextExpiryDate: null, nearestExpiryDate: null });
   });
 });

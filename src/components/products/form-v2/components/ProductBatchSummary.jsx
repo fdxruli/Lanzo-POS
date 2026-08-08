@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getBatchExpiryStatus, extractCalendarDate } from '../../../../utils/dateUtils';
-import { getBatchExpiryValue, isBatchActiveForFefo } from '../../../../services/products/fefoUtils';
+import { extractCalendarDate } from '../../../../utils/dateUtils';
 import { queryBatchesByProductIdAndActive } from '../../../../services/database';
+import { getProductBatchSummary } from '../../../../services/products/productBatchSummary';
+import { EXPIRY_DAYS_THRESHOLD } from '../../../../services/db/utils';
 
 const formatDate = (value) => {
   const calendarDate = extractCalendarDate(value);
@@ -10,17 +11,9 @@ const formatDate = (value) => {
   return `${day}/${month}/${year}`;
 };
 
-export const getProductBatchSummary = (batches = [], now = new Date()) => {
-  const activeBatches = (Array.isArray(batches) ? batches : []).filter(isBatchActiveForFefo);
-  const nextExpiryDate = activeBatches
-    .map(getBatchExpiryValue)
-    .filter((value) => ['valid', 'expires_today'].includes(getBatchExpiryStatus(value, now)))
-    .sort((left, right) => extractCalendarDate(left).localeCompare(extractCalendarDate(right)))[0] || null;
+export { getProductBatchSummary } from '../../../../services/products/productBatchSummary';
 
-  return { activeBatchCount: activeBatches.length, nextExpiryDate };
-};
-
-export default function ProductBatchSummary({ productId, onOpenBatches }) {
+export default function ProductBatchSummary({ productId, onOpenBatches, onSummary }) {
   const [batches, setBatches] = useState([]);
 
   useEffect(() => {
@@ -32,10 +25,13 @@ export default function ProductBatchSummary({ productId, onOpenBatches }) {
     return () => { cancelled = true; };
   }, [productId]);
 
-  const { activeBatchCount, nextExpiryDate } = useMemo(() => getProductBatchSummary(batches), [batches]);
+  const summary = useMemo(() => getProductBatchSummary(batches), [batches]);
+  const { activeBatchCount, nearestExpiryDate, manufacturerBatchId, daysUntilExpiry, expiryStatus } = summary;
+  const isNearingExpiry = ['valid', 'expires_today'].includes(expiryStatus) && daysUntilExpiry <= EXPIRY_DAYS_THRESHOLD;
+  useEffect(() => { onSummary?.(summary); }, [onSummary, summary]);
   const countLabel = activeBatchCount === 0
     ? 'Sin lotes activos'
     : `${activeBatchCount} lote${activeBatchCount === 1 ? '' : 's'} activo${activeBatchCount === 1 ? '' : 's'}`;
 
-  return <section className="product-batch-summary" aria-label="Inventario por lotes"><div><h4>Inventario por lotes</h4><p>{countLabel}</p>{activeBatchCount > 0 && <p>{nextExpiryDate ? `Próxima caducidad: ${formatDate(nextExpiryDate)}` : 'Sin fecha de caducidad'}</p>}</div><button type="button" className="product-batch-summary__action" onClick={onOpenBatches}>{activeBatchCount === 0 ? 'Registrar lote' : 'Ver lotes'}</button></section>;
+  return <section className="product-batch-summary" aria-label="Inventario por lotes"><div><h4>Inventario actual</h4><p>{countLabel}</p>{activeBatchCount > 0 && <>{nearestExpiryDate ? <p>Próxima caducidad: {formatDate(nearestExpiryDate)}</p> : <p>Sin fecha de caducidad</p>}{manufacturerBatchId && <p>Lote: {manufacturerBatchId}</p>}{isNearingExpiry && <p className="product-form-v2__error">⚠ Caducidad próxima. Este lote caduca en {daysUntilExpiry} día{daysUntilExpiry === 1 ? '' : 's'}.</p>}<small className="product-form-v2__hint">La fecha pertenece al lote existente. Para modificarla, utiliza “Lotes”.</small></>}</div><button type="button" className="product-batch-summary__action" onClick={onOpenBatches}>{activeBatchCount === 0 ? 'Registrar lote' : 'Ver lotes'}</button></section>;
 }

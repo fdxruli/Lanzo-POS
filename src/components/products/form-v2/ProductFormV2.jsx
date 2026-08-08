@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { PackagePlus } from 'lucide-react';
 import ScannerModal from '../../scanner/ScannerModal';
 import RecipeBuilderModal from '../RecipeBuilderModal';
+import WholesaleManagerModal from '../WholesaleManagerModal';
 import { normalizeBusinessTypes } from '../../../utils/businessType';
 import { useFeatureConfig } from '../../../hooks/useFeatureConfig';
 import { getProductRubroConfig, normalizeProductRubro } from './config/productRubroConfig';
@@ -33,6 +34,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
   const [openAccordion, setOpenAccordion] = useState('details');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isRecipeModalOpen, setIsRecipeModalOpen] = useState(false);
+  const [isWholesaleModalOpen, setIsWholesaleModalOpen] = useState(false);
   const [saveAnotherNotice, setSaveAnotherNotice] = useState('');
   const config = getProductRubroConfig(activeRubro);
   const RubroFields = RUBRO_FIELDS[activeRubro] || GeneralProductFields;
@@ -70,9 +72,10 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     <ProductInventoryFields values={form.values} errors={form.errors.fieldErrors} isEditing={isEditing} onTrackStock={form.setTrackStock} onFieldChange={form.setField} />
     <ProductFormAccordion id="product-v2-details" title="Imagen y organización" description="Fotografía, categoría y descripción." summary={form.values.categoryId ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'details'} onToggle={() => setOpenAccordion(openAccordion === 'details' ? null : 'details')}><ProductDetailsAccordion values={form.values} categories={categories} onFieldChange={form.setField} onImageChange={form.setImage} onOpenCategoryManager={onOpenCategoryManager} /></ProductFormAccordion>
     {form.values.trackStock && config.supports.alerts && <ProductFormAccordion id="product-v2-alerts" title="Alertas y almacenamiento" description="Existencias máximas, ubicación y proveedor." summary={form.values.location || form.values.maxStock !== '' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'alerts'} onToggle={() => setOpenAccordion(openAccordion === 'alerts' ? null : 'alerts')}><div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-max-stock">Stock máximo</label><input id="product-v2-max-stock" type="number" min="0" value={form.values.maxStock} onChange={(event) => form.setField('maxStock', event.target.value)} aria-invalid={Boolean(form.errors.fieldErrors.maxStock)} />{form.errors.fieldErrors.maxStock && <small className="product-form-v2__error">{form.errors.fieldErrors.maxStock}</small>}</div><div className="product-form-v2__field"><label htmlFor="product-v2-location">Ubicación</label><input id="product-v2-location" value={form.values.location} onChange={(event) => form.setField('location', event.target.value)} /></div></div></ProductFormAccordion>}
-    <ProductFormAccordion id="product-v2-specific" title={config.detailTitle} description={`Configuración específica para ${config.label.toLowerCase()}.`} summary={form.values.hasVariants ? 'Variantes' : form.values.expirationMode !== 'NONE' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'specific'} onToggle={() => setOpenAccordion(openAccordion === 'specific' ? null : 'specific')}><RubroFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} onTrackStock={form.setTrackStock} onExpirationMode={form.setExpirationMode} onManageRecipe={() => setIsRecipeModalOpen(true)} isEditing={isEditing} productId={productToEdit?.id} onOpenBatches={() => onOpenBatches?.(productToEdit)} /></ProductFormAccordion>
+    <ProductFormAccordion id="product-v2-specific" title={config.detailTitle} description={`Configuración específica para ${config.label.toLowerCase()}.`} summary={form.values.hasVariants ? 'Variantes' : form.values.expirationMode !== 'NONE' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'specific'} onToggle={() => setOpenAccordion(openAccordion === 'specific' ? null : 'specific')}><RubroFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} onSaleMode={form.setSaleMode} onTrackStock={form.setTrackStock} onExpirationMode={form.setExpirationMode} onManageRecipe={() => setIsRecipeModalOpen(true)} isEditing={isEditing} productId={productToEdit?.id} onOpenBatches={() => onOpenBatches?.(productToEdit)} onBatchSummary={form.setBatchSummary} features={features} onOpenWholesale={() => setIsWholesaleModalOpen(true)} /></ProductFormAccordion>
     <ProductFormActions isSaving={form.isSaving} onCancel={onCancel} onSave={() => form.submit()} onSaveAndAddAnother={saveAndAddAnother} />
     <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={(barcode) => { form.setField('barcode', barcode); setIsScannerOpen(false); }} />
     <RecipeBuilderModal show={isRecipeModalOpen} onClose={() => setIsRecipeModalOpen(false)} existingRecipe={form.values.recipe} onSave={(recipe) => form.setField('recipe', recipe)} productName={form.values.name} />
+    <WholesaleManagerModal show={isWholesaleModalOpen} onClose={() => setIsWholesaleModalOpen(false)} tiers={form.values.wholesaleTiers} onSave={(wholesaleTiers) => form.setField('wholesaleTiers', wholesaleTiers)} basePrice={Number.parseFloat(form.values.price)} />
   </form>;
 }

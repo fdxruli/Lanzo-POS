@@ -68,6 +68,25 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
   useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
   const setField = useCallback((field, value) => setValues((previous) => ({ ...previous, [field]: value })), []);
   const setFields = useCallback((next) => setValues((previous) => ({ ...previous, ...next })), []);
+  const setSaleMode = useCallback((saleMode) => setValues((previous) => {
+    const nextSaleMode = saleMode === 'bulk' ? 'bulk' : (saleMode === 'fractioned' ? 'fractioned' : 'unit');
+    const currentUnit = previous.unit || 'pza';
+    const unit = nextSaleMode === 'bulk' && currentUnit === 'pza'
+      ? 'kg'
+      : (nextSaleMode === 'unit' && previous.saleMode === 'bulk' ? 'pza' : currentUnit);
+    return {
+      ...previous,
+      saleMode: nextSaleMode,
+      saleType: nextSaleMode === 'bulk' ? 'bulk' : 'unit',
+      unit,
+      conversionFactor: { ...previous.conversionFactor, enabled: nextSaleMode === 'fractioned' }
+    };
+  }), []);
+  const setBatchSummary = useCallback((batchSummary) => setValues((previous) => ({
+    ...previous,
+    batchSummary,
+    supplier: previous.supplier || batchSummary?.supplier || ''
+  })), []);
   const setExpirationMode = useCallback((expirationMode) => setValues((previous) => ({ ...previous, expirationMode, ...(expirationMode === 'NONE' ? { expiryDate: '', shelfLifeValue: '', shelfLifeUnit: 'days', manufacturerBatchId: '' } : expirationMode === 'STRICT' ? { shelfLifeValue: '', shelfLifeUnit: 'days' } : { expiryDate: '', manufacturerBatchId: '' }) })), []);
   const setTrackStock = useCallback((trackStock) => setValues((previous) => ({ ...previous, trackStock, ...(trackStock ? {} : { expirationMode: 'NONE', expiryDate: '', shelfLifeValue: '', manufacturerBatchId: '' }) })), []);
   const changeRubro = useCallback((nextRubro) => { const defaults = getProductFormDefaults({ activeRubro: nextRubro, capabilities, productToEdit }); setValues((previous) => ({ ...defaults, ...previous, rubroContext: normalizeProductRubro(nextRubro), saleType: defaults.saleType, restaurantType: defaults.restaurantType, trackStock: productToEdit ? previous.trackStock : defaults.trackStock })); }, [capabilities, productToEdit]);
@@ -129,5 +148,5 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       return result;
     } finally { setIsSaving(false); }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
-  return { values, errors, isSaving, isDirty, setField, setFields, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
+  return { values, errors, isSaving, isDirty, setField, setFields, setSaleMode, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }

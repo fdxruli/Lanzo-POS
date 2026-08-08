@@ -15,6 +15,18 @@ describe('Product Form V2 defaults', () => {
   it('defaults a restaurant dish to no direct stock', () => {
     expect(getProductFormDefaults({ activeRubro: 'food_service' }).trackStock).toBe(false);
   });
+
+  it('hydrates canonical and legacy grocery sale units without turning bulk into pieces', () => {
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'bulk', bulkData: { sale: { unit: 'kg' } } } })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'bulk', unit: 'kilo' } }).unit).toBe('kg');
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { unit: 'pieza' } }).unit).toBe('pza');
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { unit: 'gr' } }).unit).toBe('g');
+  });
+
+  it('hydrates fractioned products as a UI mode while accepting legacy cloud values', () => {
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'unit', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } } })).toMatchObject({ saleMode: 'fractioned', saleType: 'unit' });
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } } })).toMatchObject({ saleMode: 'fractioned', saleType: 'unit' });
+  });
 });
 
 describe('Product Form V2 validation', () => {
@@ -48,9 +60,24 @@ describe('Product Form V2 payload', () => {
   });
 
   it('preserves new-product initial stock and fractioned conversion', () => {
-    const payload = buildProductFormPayload(base({ stock: 24, saleType: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 24 } }), { activeRubro: 'abarrotes' });
+    const payload = buildProductFormPayload(base({ stock: 24, saleMode: 'fractioned', unit: 'pza', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 24 } }), { activeRubro: 'abarrotes' });
     expect(payload.stock).toBe(24);
+    expect(payload.saleType).toBe('unit');
     expect(payload.conversionFactor).toEqual({ enabled: true, purchaseUnit: 'caja', factor: 24 });
+  });
+
+  it('persists bulk kg in bulkData.sale and keeps the canonical value through defaults', () => {
+    const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit: 'kg' }), { activeRubro: 'abarrotes' });
+    expect(payload).toMatchObject({ saleType: 'bulk', unit: 'kg', bulkData: { sale: { unit: 'kg' } } });
+    expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: payload })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+  });
+
+  it('requires a purchase unit and a factor greater than one for fractioned sales', () => {
+    const invalid = validateProductForm(base({ saleMode: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 1 } }));
+    expect(invalid.fieldErrors.conversionFactor).toMatch(/mayor que 1/i);
+    const valid = validateProductForm(base({ saleMode: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } }));
+    expect(valid.fieldErrors.conversionFactor).toBeUndefined();
+    expect(valid.fieldErrors.purchaseUnit).toBeUndefined();
   });
 
   it('normalizes shelf life and strict produce expiry as mutually exclusive', () => {
@@ -70,6 +97,12 @@ describe('Product Form V2 payload', () => {
     const payload = buildProductFormPayload(base({ stock: 99 }), { activeRubro: 'hardware', productToEdit: { id: 'p1', stock: 7, unmappedField: 'keep' } });
     expect(payload.stock).toBe(7);
     expect(payload.unmappedField).toBe('keep');
+  });
+
+  it('preserves existing wholesale tiers while editing unrelated fields', () => {
+    const productToEdit = { id: 'p-tier', stock: 7, wholesaleTiers: [{ min: 6, price: 15 }] };
+    const payload = buildProductFormPayload(base({ name: 'Nombre editado', wholesaleTiers: productToEdit.wholesaleTiers }), { activeRubro: 'abarrotes', productToEdit });
+    expect(payload.wholesaleTiers).toEqual([{ min: 6, price: 15 }]);
   });
 
   it('normalizes legacy ingredient units and resolves missing unit ingredients as pieces', () => {

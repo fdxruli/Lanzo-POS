@@ -1,29 +1,11 @@
-export const INGREDIENT_UNITS = [
-  { value: 'pza', label: 'Pieza / unidad' },
-  { value: 'kg', label: 'Kilogramo (kg)' },
-  { value: 'g', label: 'Gramo (g)' },
-  { value: 'lt', label: 'Litro (L)' },
-  { value: 'ml', label: 'Mililitro (ml)' }
-];
+import { PRODUCT_SALE_UNITS, normalizeProductUnit } from './productUnitConfiguration';
 
-const LEGACY_INGREDIENT_UNITS = {
-  pza: 'pza', pieza: 'pza', piezas: 'pza', unidad: 'pza', unidades: 'pza',
-  kg: 'kg', kilo: 'kg', kilos: 'kg', kilogramo: 'kg', kilogramos: 'kg',
-  g: 'g', gr: 'g', gramo: 'g', gramos: 'g',
-  l: 'lt', lt: 'lt', litro: 'lt', litros: 'lt',
-  ml: 'ml', mililitro: 'ml', mililitros: 'ml'
-};
-
-const normalizeUnitKey = (value) => String(value ?? '')
-  .trim()
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '');
+export const INGREDIENT_UNITS = PRODUCT_SALE_UNITS.filter(({ value }) => (
+  ['pza', 'kg', 'g', 'lt', 'ml'].includes(value)
+));
 
 export const normalizeIngredientUnit = (value) => {
-  const key = normalizeUnitKey(value);
-  if (!key) return 'pza';
-  return LEGACY_INGREDIENT_UNITS[key] || String(value).trim();
+  return normalizeProductUnit(value) || 'pza';
 };
 
 export const getSaleTypeForIngredientUnit = (unit) => (

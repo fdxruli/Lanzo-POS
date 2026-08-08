@@ -214,6 +214,7 @@ export const productLocalRepository = {
           ? (productData.expirationMode === 'SHELF_LIFE' ? 'VIDA_UTIL_ESTIMADA' : 'CADUCIDAD_LEGAL')
           : null,
         manufacturerBatchId: productData.manufacturerBatchId || null,
+        supplier: productData.supplier || null,
         sku: null,
         attributes: null
       });
