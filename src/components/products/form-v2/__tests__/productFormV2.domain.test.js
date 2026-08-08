@@ -25,6 +25,10 @@ describe('Product Form V2 defaults', () => {
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { unit: 'gr' } }).unit).toBe('g');
   });
 
+  it('hydrates legacy hardware measurement units with the canonical sale mode and unit', () => {
+    expect(getProductFormDefaults({ activeRubro: 'hardware', productToEdit: { saleType: 'bulk', unit: 'm' } })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'mt' });
+  });
+
   it('hydrates fractioned products as a UI mode while accepting legacy cloud values', () => {
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'unit', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } } })).toMatchObject({ saleMode: 'fractioned', saleType: 'unit' });
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: { saleType: 'fractioned', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } } })).toMatchObject({ saleMode: 'fractioned', saleType: 'unit' });
@@ -84,6 +88,20 @@ describe('Product Form V2 payload', () => {
     const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit: 'kg' }), { activeRubro: 'abarrotes' });
     expect(payload).toMatchObject({ saleType: 'bulk', unit: 'kg', bulkData: { sale: { unit: 'kg' } } });
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: payload })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+  });
+
+  it('persists hardware measurement sales with the canonical mt unit', () => {
+    const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit: 'mt' }), { activeRubro: 'hardware' });
+    expect(payload).toMatchObject({ rubroContext: 'hardware', saleType: 'bulk', unit: 'mt', bulkData: { sale: { unit: 'mt' } } });
+  });
+
+  it('preserves hardware fractioned conversion data and deactivates it when returning to unit sales', () => {
+    const fractioned = buildProductFormPayload(base({ saleMode: 'fractioned', unit: 'pza', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 100, purchaseCost: 250 } }), { activeRubro: 'hardware' });
+    expect(fractioned).toMatchObject({ saleType: 'unit', unit: 'pza', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 100, purchaseCost: 250 } });
+
+    const unit = buildProductFormPayload(base({ saleMode: 'unit', unit: 'pza', conversionFactor: fractioned.conversionFactor }), { activeRubro: 'hardware' });
+    expect(unit).toMatchObject({ saleType: 'unit', unit: 'pza', conversionFactor: { enabled: false, purchaseUnit: 'caja', factor: 100 } });
+    expect(unit.conversionFactor.enabled).toBe(false);
   });
 
   it('requires a purchase unit and a factor greater than one for fractioned sales', () => {

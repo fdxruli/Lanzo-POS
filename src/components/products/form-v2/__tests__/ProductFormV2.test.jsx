@@ -51,6 +51,32 @@ describe('ProductFormV2', () => {
     expect(screen.getByRole('button', { name: /Configurar mayoreo/i })).toBeInTheDocument();
   });
 
+  it('exposes hardware sale modes, canonical measure units, and conversion setup', () => {
+    renderForm({ activeRubroContext: 'hardware' });
+
+    const selector = screen.getByRole('radiogroup');
+    expect(screen.getByRole('radio', { name: /Por pieza/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /Por medida o peso/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Fraccionado/i })).toBeInTheDocument();
+
+    const saleUnit = screen.getByLabelText(/Unidad de venta/i);
+    expect(saleUnit).toHaveValue('pza');
+
+    fireEvent.click(screen.getByRole('radio', { name: /Por medida o peso/i }));
+    expect(Array.from(saleUnit.options).map((option) => option.value)).toEqual(['kg', 'g', 'lt', 'ml', 'mt', 'cm', 'ft', 'in', 'gal']);
+    expect(Array.from(saleUnit.options).find((option) => option.value === 'mt')).toHaveTextContent('Metro (m)');
+    expect(saleUnit).toHaveValue('kg');
+
+    fireEvent.click(screen.getByRole('radio', { name: /Fraccionado/i }));
+    expect(screen.getByRole('heading', { name: /lo compras/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Unidad de compra/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Por pieza/i }));
+    expect(screen.getByLabelText(/Unidad de venta/i)).toHaveValue('pza');
+    expect(screen.queryByLabelText(/Unidad de compra/i)).not.toBeInTheDocument();
+    expect(selector).toBeInTheDocument();
+  });
+
   it('calculates and saves the fractioned unit cost from purchase cost and content', async () => {
     const onSave = vi.fn(() => true);
     renderForm({ onSave });

@@ -10,6 +10,11 @@ export const PRODUCT_RUBRO_CONFIG = {
     ]
   },
   [CANONICAL_BUSINESS_TYPES.HARDWARE]: {
+    productTypeOptions: [
+      { value: 'unit', label: 'Por pieza', description: 'Vendes una pieza o unidad completa.' },
+      { value: 'bulk', label: 'Por medida o peso', description: 'Vendes por metro, peso, volumen u otra medida.' },
+      { value: 'fractioned', label: 'Fraccionado', description: 'Compras una presentación y vendes unidades menores.' }
+    ],
     label: 'Ferretería', detailTitle: 'Medidas, venta y abastecimiento', supports: { alerts: true, expiry: true, conversion: true, variants: false }, defaultSaleType: 'unit'
   },
   [CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA]: {
