@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -83,10 +83,6 @@ vi.mock('../../../services/utils', () => ({
 
 vi.mock('../../../utils/cartLineIdentity', () => ({
   getCartLineId: (item, index) => item.lineId || item.id || String(index)
-}));
-
-vi.mock('../../../utils/quantityInputStep', () => ({
-  getOrderQuantityInputProps: () => ({ step: '1', inputMode: 'numeric', unit: 'pz' })
 }));
 
 vi.mock('../../../utils/restaurantModifierDisplay', () => ({
@@ -206,5 +202,29 @@ describe('OrderSummary ecommerce discount slots', () => {
     expect(screen.getByText('3 pza × $15.00/pza')).toBeInTheDocument();
     expect(screen.getByText('Fraccionado · Venta por pza')).toBeInTheDocument();
     expect(screen.queryByText(/c\/u/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps a decimal bulk quantity when editing a measurement sale', () => {
+    setOrder(undefined);
+    const order = mocks.activeState.activeOrders.get('active-order');
+    order.items = [{
+      id: 'ft-product',
+      lineId: 'ft-line',
+      name: 'Manguera',
+      quantity: 1,
+      price: 12,
+      saleType: 'bulk',
+      unit: 'ft'
+    }];
+
+    render(<OrderSummary {...props} />);
+
+    const input = screen.getByRole('spinbutton', { name: 'Cantidad de Manguera' });
+    expect(input).toHaveAttribute('step', '0.001');
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+
+    fireEvent.change(input, { target: { value: '2.5' } });
+
+    expect(mocks.activeState.updateItemQuantity).toHaveBeenCalledWith('ft-line', 2.5);
   });
 });
