@@ -154,7 +154,7 @@ describe('buildBatchPayload', () => {
 
   it('calcula caducidad automatica de SHELF_LIFE desde hoy cuando no hay fecha manual', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-03-01T00:00:00.000Z'));
+    vi.setSystemTime(new Date(2026, 2, 1));
 
     const payload = buildBatchPayload({
       batchToEdit: null,
@@ -187,7 +187,7 @@ describe('buildBatchPayload', () => {
 
   it('calcula caducidad automatica de SHELF_LIFE con unidades en espanol', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-24T00:00:00.000Z'));
+    vi.setSystemTime(new Date(2026, 5, 24));
 
     const payload = buildBatchPayload({
       batchToEdit: null,
