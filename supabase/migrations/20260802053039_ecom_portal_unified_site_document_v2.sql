@@ -233,7 +233,7 @@ begin
   if v_version.id is not null then v_published := case when p_legacy then private.ecommerce_site_project_document_v2_to_v1(v_version.document) else v_version.document end; end if;
   return jsonb_build_object(
     'success', true,
-    'draft', jsonb_build_object('document', v_draft, 'revision', p_document.draft_revision, 'updatedAt', p_document.updated_at, 'documentMode', p_document.documen…29 tokens truncated… values (v_doc.portal_id, coalesce((select max(version_number) + 1 from public.ecommerce_site_versions where portal_id = v_doc.portal_id), 1), 2, v_doc.draft_document, v_checksum, v_doc.document_mode, 'publish', (p_auth->>'device_id')::uuid, nullif(p_auth->>'staff_user_id', '')::uuid)
+    'draft', jsonb_build_object('document', v_draft, 'revision', p_document.draft_revision, 'updatedAt', p_document.updated_at, 'documentMode', p_document.documenâ€¦29 tokens truncatedâ€¦ values (v_doc.portal_id, coalesce((select max(version_number) + 1 from public.ecommerce_site_versions where portal_id = v_doc.portal_id), 1), 2, v_doc.draft_document, v_checksum, v_doc.document_mode, 'publish', (p_auth->>'device_id')::uuid, nullif(p_auth->>'staff_user_id', '')::uuid)
   returning * into v_version;
   update public.ecommerce_site_documents set published_version_id = v_version.id, updated_at = now() where portal_id = v_doc.portal_id;
   update public.ecommerce_portals set template_code = v_doc.draft_document  #>>'{global,appearance,templateCode}', theme = v_doc.draft_document #>'{global,appearance,theme}', logo_url = nullif(v_doc.draft_document  #>>'{global,appearance,branding,logoUrl}', ''), cover_image_url = nullif(v_doc.draft_document  #>>'{global,appearance,branding,coverImageUrl}', '') where id = v_doc.portal_id;
