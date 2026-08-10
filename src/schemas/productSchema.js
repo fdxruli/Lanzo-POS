@@ -61,7 +61,7 @@ export const productSchema = z.object({
   wholesaleTiers: legacyArray(z.array(z.any())),
 
   // --- CORRECCIÓN FARMACIA ---
-  // Agregamos los campos exactos que envía PharmacyProductForm.jsx
+  // Campos farmacéuticos persistidos por el formulario canónico.
 
   // 1. Tipo de Prescripción (Vital para que no se resetee a OTC)
   prescriptionType: z.enum(['otc', 'antibiotic', 'controlled']).optional(),
