@@ -65,6 +65,8 @@ needed for an empty installation and no historical data claim can be made.
   `FF0386A936BF76BC27A62687EBD45FD9B963404962F37291424006B33B3033CC`.
 - Forward-baseline static contract test: **PASS** (2 tests).
 - OSS bootstrap runner test: **PASS** (5 tests).
+- Full OSS bootstrap reset: **BLOCKED** before executing migrations because
+  Docker Desktop's Linux engine is unavailable in this environment.
 - `supabase migration list --linked`: **PASS** — `REMOTE-ONLY = 0`; local-only
   consists exactly of `20260806061500` and
   `20260810092512_ecom_catalog_revision_forward_baseline`.
@@ -73,7 +75,7 @@ needed for an empty installation and no historical data claim can be made.
   `20260810092512_ecom_catalog_revision_forward_baseline.sql`.
 - `git diff --check`: **PASS**.
 
-**READY FOR MERGE.** The historical file has been archived byte-for-byte and
+**BLOCKED — LOCAL BOOTSTRAP ENVIRONMENT.** The historical file has been archived byte-for-byte and
 is no longer executable. The linked ledger has `REMOTE-ONLY = 0`; its only
 pending migrations are the already-audited `20260806061500` business-profile
 migration and the new forward baseline. `supabase db push --dry-run --linked`
