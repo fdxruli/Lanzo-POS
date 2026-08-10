@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ProductFormV2 from '../ProductFormV2';
+import { queryBatchesByProductIdAndActive } from '../../../../services/database';
 
 vi.mock('../../../../services/database', () => ({
   queryBatchesByProductIdAndActive: vi.fn(async () => [])
@@ -9,7 +10,11 @@ vi.mock('../../../../services/database', () => ({
 
 const renderForm = (props = {}) => render(<ProductFormV2 activeRubroContext="abarrotes" categories={[]} features={{ hasExpiry: true }} onSave={() => true} onCancel={() => {}} {...props} />);
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  queryBatchesByProductIdAndActive.mockReset();
+  queryBatchesByProductIdAndActive.mockResolvedValue([]);
+});
 
 describe('ProductFormV2', () => {
   it('renders main fields and hides only inventory fields when stock control is disabled', () => {
@@ -253,6 +258,60 @@ describe('ProductFormV2', () => {
     expect(stock).toHaveValue(3);
     expect(colors).toHaveLength(4);
     expect(colors[3]).toHaveValue('azul');
+  });
+
+  it('shows active produce inventory and opens the existing batch manager', async () => {
+    queryBatchesByProductIdAndActive.mockResolvedValue([{
+      id: 'produce-batch-1', productId: 'produce-1', isActive: true,
+      expiryDate: '2026-08-11T00:00:00.000Z', manufacturerBatchId: 'FRUTA-11'
+    }]);
+    const onOpenBatches = vi.fn();
+    const product = {
+      id: 'produce-1', name: 'Manzanas', price: 20, cost: 10, stock: 5,
+      rubroContext: 'verduleria/fruteria', expirationMode: 'STRICT', expiryDate: '2026-08-11'
+    };
+    renderForm({ activeRubroContext: 'verduleria/fruteria', productToEdit: product, onOpenBatches });
+
+    fireEvent.click(screen.getByRole('button', { name: /Duraci.n y conservaci.n/i }));
+
+    await waitFor(() => expect(screen.getByText('1 lote activo')).toBeInTheDocument());
+    expect(screen.getByLabelText(/Inventario por lotes/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pr.xima caducidad:/i)).toHaveTextContent('11/08/2026');
+    expect(screen.getByText(/Lote:/i)).toHaveTextContent('FRUTA-11');
+    expect(screen.queryByLabelText(/Fecha de caducidad inicial/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Ver lotes/i }));
+    expect(onOpenBatches).toHaveBeenCalledWith(product);
+  });
+
+  it('separates current produce batch expiry from the shelf-life default while editing', async () => {
+    queryBatchesByProductIdAndActive.mockResolvedValue([{
+      id: 'produce-batch-2', productId: 'produce-2', isActive: true,
+      expiryDate: '2026-08-11T00:00:00.000Z'
+    }]);
+    renderForm({
+      activeRubroContext: 'verduleria/fruteria',
+      productToEdit: {
+        id: 'produce-2', name: 'Peras', price: 20, cost: 10, stock: 5,
+        rubroContext: 'verduleria/fruteria', expirationMode: 'SHELF_LIFE',
+        shelfLifeValue: 7, shelfLifeUnit: 'days'
+      }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Duraci.n y conservaci.n/i }));
+
+    await waitFor(() => expect(screen.getByText(/Pr.xima caducidad:/i)).toHaveTextContent('11/08/2026'));
+    expect(screen.getByLabelText(/Vida .til promedio/i)).toHaveValue(7);
+    expect(screen.getByText(/La vida .til seleccionada se aplicar./i)).toBeInTheDocument();
+    expect(screen.getByText(/La fecha del inventario actual se administra desde/i)).toBeInTheDocument();
+  });
+
+  it('explains that produce expiration settings require stock tracking', () => {
+    renderForm({ activeRubroContext: 'verduleria/fruteria' });
+
+    fireEvent.click(screen.getByRole('button', { name: /Duraci.n y conservaci.n/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Controlar inventario/i }));
+
+    expect(screen.getByText(/La caducidad y vida .til est.n disponibles cuando controlas el inventario/i)).toBeInTheDocument();
   });
 
   it('shows batch summary instead of initial batch inputs when editing a medicine', () => {

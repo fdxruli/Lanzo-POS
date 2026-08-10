@@ -1,10 +1,17 @@
 const modes = [{ value: 'NONE', label: 'Sin control' }, { value: 'STRICT', label: 'Fecha' }, { value: 'SHELF_LIFE', label: 'Vida útil' }];
 
-export default function ProductExpirationFields({ values, errors, onExpirationMode, onFieldChange, isEditing = false }) {
-  if (!values.trackStock) return null;
+export default function ProductExpirationFields({ values, errors, onExpirationMode, onFieldChange, isEditing = false, showTrackStockHint = false }) {
+  if (!values.trackStock) return showTrackStockHint
+    ? <small className="product-form-v2__hint">La caducidad y vida útil están disponibles cuando controlas el inventario de este producto.</small>
+    : null;
+
+  const editingHint = values.expirationMode === 'SHELF_LIFE'
+    ? 'La vida útil seleccionada se aplicará a nuevas entradas de inventario. La fecha del inventario actual se administra desde “Lotes”.'
+    : 'Esta configuración se aplicará a nuevas entradas de inventario. Los lotes existentes se administran desde “Lotes”.';
+
   return <div className="product-form-v2__expiration"><span className="product-form-v2__legend">Caducidad</span><div className="product-form-v2__segmented" role="group" aria-label="Modo de caducidad">{modes.map((mode) => <button type="button" key={mode.value} className={values.expirationMode === mode.value ? 'is-active' : ''} onClick={() => onExpirationMode(mode.value)}>{mode.label}</button>)}</div>
     {values.expirationMode === 'STRICT' && !isEditing && <div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-expiry">Fecha de caducidad inicial</label><input id="product-v2-expiry" type="date" value={values.expiryDate} onChange={(event) => onFieldChange('expiryDate', event.target.value)} aria-invalid={Boolean(errors.expiryDate)} />{errors.expiryDate && <small className="product-form-v2__error">{errors.expiryDate}</small>}</div><div className="product-form-v2__field"><label htmlFor="product-v2-batch">Lote del fabricante</label><input id="product-v2-batch" value={values.manufacturerBatchId} onChange={(event) => onFieldChange('manufacturerBatchId', event.target.value)} aria-invalid={Boolean(errors.manufacturerBatchId)} />{errors.manufacturerBatchId && <small className="product-form-v2__error">{errors.manufacturerBatchId}</small>}</div></div>}
     {values.expirationMode === 'SHELF_LIFE' && <div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-shelf-life">Vida útil promedio</label><input id="product-v2-shelf-life" type="number" min="1" value={values.shelfLifeValue} onChange={(event) => onFieldChange('shelfLifeValue', event.target.value)} aria-invalid={Boolean(errors.shelfLifeValue)} />{errors.shelfLifeValue && <small className="product-form-v2__error">{errors.shelfLifeValue}</small>}</div><div className="product-form-v2__field"><label htmlFor="product-v2-shelf-unit">Unidad</label><select id="product-v2-shelf-unit" value={values.shelfLifeUnit} onChange={(event) => onFieldChange('shelfLifeUnit', event.target.value)}><option value="days">Días</option><option value="weeks">Semanas</option><option value="months">Meses</option></select></div></div>}
-    {isEditing && <small className="product-form-v2__hint">Esta configuración se aplicará a nuevas entradas de inventario. Los lotes existentes se administran desde “Lotes”.</small>}
+    {isEditing && <small className="product-form-v2__hint">{editingHint}</small>}
   </div>;
 }

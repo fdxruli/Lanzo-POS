@@ -26,6 +26,7 @@ vi.mock('../ProductCloudSyncIndicators', () => ({ default: () => null }));
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   queryBatchesByProductIdsAndActive.mockReset();
   queryBatchesByProductIdsAndActive.mockResolvedValue([]);
 });
@@ -44,7 +45,8 @@ describe('ProductList batch-backed grocery details', () => {
     await waitFor(() => expect(queryBatchesByProductIdsAndActive).toHaveBeenCalledWith(['rice']));
     await waitFor(() => expect(screen.getByText('Próxima caducidad:')).toBeInTheDocument());
     expect(screen.getAllByText('12/08/2026')).toHaveLength(2);
-    expect(screen.getByText('Caduca en 4 días')).toBeInTheDocument();
+    expect(screen.getByText(/Caduca en \d+ días/)).toBeInTheDocument();
+    expect(screen.getByText('Vida útil para nuevas entradas:')).toBeInTheDocument();
     expect(screen.getByText('4 semanas')).toBeInTheDocument();
     expect(screen.getByText('kg')).toBeInTheDocument();
   });

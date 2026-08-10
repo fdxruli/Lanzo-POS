@@ -367,7 +367,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   )}
                   {expiry.expiryDate && <div className="rubro-section logistics">
                     <div className="detail-item"><span className="label">Próxima caducidad:</span><span className="value">{formatDate(expiry.expiryDate)}</span></div>
-                    {shelfLife && <div className="detail-item"><span className="label">Vida útil:</span><span className="value">{shelfLife}</span></div>}
+                    {shelfLife && <div className="detail-item"><span className="label">Vida útil para nuevas entradas:</span><span className="value">{shelfLife}</span></div>}
                     {shelfLife && batchSummary?.nearestAlertTargetDate && <div className="detail-item"><span className="label">Consumo recomendado:</span><span className="value">{formatDate(batchSummary.nearestAlertTargetDate)}</span></div>}
                   </div>}
                   {!expiry.expiryDate && shelfLife && <div className="rubro-section logistics"><div className="detail-item"><span className="label">Vida útil:</span><span className="value">{shelfLife}</span></div></div>}
