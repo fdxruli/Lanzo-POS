@@ -30,7 +30,7 @@ Los productos nuevos reciben un ID al abrir el formulario, por lo que un reinten
 ## Legacy retirement completed
 
 - Fecha: 2026-08-10.
-- PR: pendiente de crear para `refactor/product-form-v2-legacy-retirement`.
+- PR: #187 (`refactor/product-form-v2-legacy-retirement`).
 - Retirado: selector de implementación, `ProductFormLegacy`, modos asistido/experto, wizards, formularios expertos, hooks, estilos y pruebas exclusivos de legacy.
 - Conservado: `CategorySelect`, `ProductImagePicker`, `QuickVariantEntry`, `RecipeBuilderModal`, `ScannerModal` y `RestauranteFields`, porque V2 continúa utilizándolos.
 - Tests: la cobertura de V2 mantiene los flujos de producto general, inventario, apparel, farmacia, restaurante, imágenes, lotes, variantes y caducidad.
