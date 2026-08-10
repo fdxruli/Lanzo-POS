@@ -241,6 +241,153 @@ for the missing evidence. The required command syntax was verified with CLI
 was not run. Consequently no before/after schema capture is applicable and no
 repair changed production definitions.
 
+## Provenance Recovery
+
+### Scope, safeguards, and result
+
+This is the finite, read-only recovery pass for
+20260801043000_ecom_catalog_legacy_timestamp_revision_repair. It searched
+external historical sources rather than inferring history from the current C/D
+rows. No production RPC, SQL write, migration command, restore, deployment,
+re-sync, configuration change, or row correction was performed.
+
+The recovery found direct evidence that the migration file and its surrounding
+application code existed, were tested, merged, and deployed. It found no
+DIRECT or STRONG_CIRCUMSTANTIAL evidence that either C or D ever stored its
+expected image URL, and no evidence identifying a later NULL writer. The
+result is therefore PROVENANCE_UNRECOVERABLE.
+
+### Sources searched
+
+| Source | Scope / retention | Evidence and relevance |
+| --- | --- | --- |
+| Local project copies | Known Lanzo-POS worktrees under C:\dev, project-local tests, reports, Codex-related project evidence, and matching migration/identifier/digest searches. | The target worktree is C:\dev\Lanzo-POS-ledger-reconcile at a0d5bf03fd87aed7238bd48fac464f39cb1f11ef. Other discovered worktrees were preserved. No SQL dump, ZIP, backup, historical payload, or log in the known project evidence paths contained C/D history. A bounded broad C:\dev content sweep exceeded 124 seconds, so this is not claimed as an exhaustive negative for unrelated personal directories; the known Lanzo-POS roots and Git object store were fully covered. |
+| Local Git, reachable and unreachable | git reflog --all, git rev-list --all, targeted -S/history searches, git fsck --full --no-reflogs --unreachable, and git fsck --lost-found in disposable C:\dev\Lanzo-POS-ledger-fsck-analysis-20260810. | No object contains a historical C/D URL or image state. The migration source blob is 9c286f17b07e22fb8552ed060239d38ab2369c59. The only matching unreachable blob was b68daf85641f696255f8bc63a2d64ebb10f9e7ed, a 14,183-byte copy of current Temporal Audit documentation, not a historical snapshot. |
+| GitHub commits, PRs, runs, logs, and artifacts | PRs/branches/runs from 2026-07-31 through 2026-08-04. Actions artifacts: 57 comparison artifacts retained about 14 days; 26 Pages artifacts expired after about one day; 117 focal artifacts expired after about seven days. | Commit 124f38ef30174581958a6ffad952467858190519 directly proves creation of the source file, not execution. Retained artifacts and workflow logs had no C/D image state, SQL dump, audit, or publication payload. |
+| Vercel metadata and logs | Deployment metadata for 2026-08-01 through 2026-08-03 was available. Runtime-log requests for the target window failed before results with 400 Bad Request {"name":"ExceedsBillingLimitError"}. | Deployment/build metadata proves code availability only. The relevant production builds invoked Vite, not a Supabase migration command. The runtime-log error is an access/billing limitation, not a negative-log result. |
+| Supabase physical backups | Read-only supabase backups list against odlrhijtfyavryeqivaa. | backups=[], physical_backup_data={}, pitr_enabled=false, walg_enabled=true. No downloadable physical backup and no PITR range are available; 2026-08-01 through 2026-08-03 are not covered. |
+| Audit and application logs | The existing catalog request table retains idempotency metadata/hash/response/created_at, not the projection or image_url; its sync RPC deletes records older than seven days. The connected Supabase log surface retains only the last 24 hours. | Target-date records cannot be reconstructed from this source as of the recovery date. The previously inspected license audit returned zero rows. No Vercel drain, Sentry, Datadog, New Relic, Checkly, or OpenTelemetry configuration is committed. |
+| Offline test data | Known test roots: supabase/tests, src/__tests__, and docs/reports. | No C/D identifier or expected digest occurred. The PWA/browser audit tooling uses ephemeral profiles, synthetic IndexedDB, loopback networking, and cleanup; no retained production test profile was found or opened. |
+
+### Local and Git object evidence
+
+The following local worktrees were found and left untouched: the active
+Product Form worktree at C:\dev\Lanzo-POS-Git, the two builder worktrees, and
+the target reconciliation worktree. Their presence is provenance for source
+code only; none contained a historical C/D row snapshot.
+
+Migration file creation is DIRECT source evidence:
+
+| Path / object | Timestamp | Hash | Source | Relevance |
+| --- | --- | --- | --- | --- |
+| supabase/migrations/20260801043000_ecom_catalog_legacy_timestamp_revision_repair.sql | 2026-08-01T04:44:46Z commit author time | commit 124f38ef30174581958a6ffad952467858190519; blob 9c286f17b07e22fb8552ed060239d38ab2369c59 | Reachable Git | Defines the intended backfill and decision function; it does not record production execution or C/D values. |
+| unreachable blob b68daf85641f696255f8bc63a2d64ebb10f9e7ed | Date not demonstrable because it is unreachable | 14,183 bytes | git fsck object store and lost-found | Current audit text containing already-known digests; no historical URL, image value, or row snapshot. |
+
+git fsck --full --no-reflogs --unreachable found 11 unreachable commits. Their
+trees were searched for the migration identifier, aliases, both projection
+identifiers, and both expected digests with no historical C/D result.
+git fsck --lost-found was run only in the disposable analysis clone so source
+worktrees and their refs stayed untouched; it materialized 21 commits and 50
+other objects. Its searches again yielded only blob b68daf... above.
+
+The related reachable code events were 3821c7b (legacy timestamp revision
+handling), 816ed091 (source-controlled image backfill), and 124f38ef (target
+migration). They are WEAK_CIRCUMSTANTIAL evidence that code capable of the
+behavior existed, not evidence of a row write.
+
+### GitHub evidence and artifacts
+
+PR #157 was created from 124f38ef and merged as 5d66c1ffd236a86c78fe331db671b29066d1fc7e
+at 2026-08-01T04:52:26Z. Its contemporary description makes an unverified
+claim that compatibility was applied in production and that a limited backfill
+updated a differently named product. It names neither C nor D, neither
+expected digest, and no supporting audit/log; it is WEAK_CIRCUMSTANTIAL only.
+
+The exact PR #157 Actions run 30684560640 completed successfully from
+04:45:43Z to 04:51:09Z. Its only job checked out code, ran Node comparison
+tests, and uploaded results. Searches of its workflow logs for the migration,
+C/D identifiers, expected digests, image_url, Supabase, and migration found no
+matches. The subsequent Pages run 30684761097 only built/deployed source; it
+listed the SQL file but had no db push, psql, repair, or database operation.
+
+The six retained, related comparison artifacts were downloaded into local
+analysis copies and scanned without changing their GitHub originals. They each
+contain comparison JSON/Markdown rather than a database dump, SQL snapshot, or
+publication payload.
+
+| Artifact | Created / expires UTC | Available | Contents | C/D provenance |
+| --- | --- | --- | --- | --- |
+| 8812555944, pr127-global-comparison-971b55... | 2026-08-01 03:24:33 / 2026-08-15 03:24:32 | Yes | global-comparison JSON/Markdown and global main/PR JSON | None |
+| 8813077340, pr127-global-comparison-96a89f... | 2026-08-01 04:12:00 / 2026-08-15 04:11:59 | Yes | same comparison/report shape | None |
+| 8813489578, pr127-global-comparison-124f38... | 2026-08-01 04:51:04 / 2026-08-15 04:51:03 | Yes | global-comparison JSON/Markdown; raw global main/PR JSON | None; official SHA-256 406a6a42948ea963283da95a74ca7acf137567ab737624c6aa91199b47aa0d84 |
+| 8813695052, pr127-global-comparison-3b57dd... | 2026-08-01 05:11:32 / 2026-08-15 05:11:31 | Yes | comparison/report JSON and Markdown | None |
+| 8827583968, pr127-global-comparison-a4f7a4... | 2026-08-02 03:01:46 / 2026-08-16 03:01:45 | Yes | comparison/report JSON and Markdown | None |
+| 8830574473, pr127-global-comparison-854cf9... | 2026-08-02 07:59:12 / 2026-08-16 07:59:12 | Yes | comparison/report JSON and Markdown | None |
+
+Each available artifact was searched for the migration number/name, both
+projection identifiers, both expected digests, ecommerce_published_products,
+and image_url. There were no matches. The expired Pages/focal artifact groups
+cannot be reconstituted from GitHub retention. PRs #158, #163, #164, and #174
+were also reviewed; their image/portal/other migration work does not record or
+write the two historical C/D image states.
+
+### Vercel and backup availability
+
+| Deployment time (UTC) | Event / source | Commit | C image state | D image state | Confidence |
+| --- | --- | --- | --- | --- | --- |
+| 2026-08-01T04:13:45.750Z | lanzo-store production deployment, legacy image-migration code | a697da1 | Unknown | Unknown | WEAK_CIRCUMSTANTIAL |
+| 2026-08-01T04:40:56Z | lanzo-pos preview, legacy timestamp recovery test | 118a1b3 | Unknown | Unknown | WEAK_CIRCUMSTANTIAL |
+| 2026-08-01T04:42:32Z | lanzo-pos preview, source-controlled image backfill | 816ed09 | Unknown | Unknown | WEAK_CIRCUMSTANTIAL |
+| 2026-08-01T04:44:57.948Z | lanzo-pos preview of target source | 124f38ef | Unknown | Unknown | DIRECT deployment metadata; not row provenance |
+| 2026-08-01T04:52:29Z | lanzo-pos and lanzo-store production deployment; retained build log shows Vite-only build | 5d66c1f, which contains 124f38ef | Unknown | Unknown | WEAK_CIRCUMSTANTIAL for a possible application write |
+| 2026-08-01T05:13:41Z | lanzo-pos production public-image sizing | f7bc26d | Unknown | Unknown | WEAK_CIRCUMSTANTIAL |
+| 2026-08-02T08:04:45Z / 22:33:52Z | production unified-site publishing / storefront design tokens | bb02da7 / 89aaa6f | Unknown | Unknown | WEAK_CIRCUMSTANTIAL; no catalog writer indicated |
+| 2026-08-03 | production security/docs deployments | c40f69e / 0315e20 / 81400b4 | Unknown | Unknown | NONE for image provenance |
+
+The target migration may have executed at an unknown time after its source was
+created, but there is no schema_migrations row or retained action log proving
+that event. Vercel build metadata proves deployment of frontend code, and its
+Vite-only command excludes a Vercel build-time migration command; neither fact
+proves what a user/client later wrote.
+
+Backup availability is conclusively NONE for this investigation: there is no
+daily physical backup in the returned list, PITR is disabled, and no range
+exists to inspect. No paid/destructive backup action was attempted or needed.
+
+### Reconstructed timeline and classification
+
+| Timestamp | Event | Source | Commit | Actor / writer | C image state | D image state | Confidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-08-01T04:44:46Z | Migration file created | Git / PR #157 | 124f38ef | Source commit author | Not recorded | Not recorded | DIRECT for source creation only |
+| 2026-08-01T04:45:43Z-04:51:09Z | Comparison CI completed and target artifact created | GitHub Actions 30684560640 / artifact 8813489578 | 124f38ef | CI test workflow | Not recorded | Not recorded | DIRECT negative artifact evidence |
+| 2026-08-01T04:52:26Z | PR #157 merged to main | GitHub | 5d66c1f | Merge actor | Not recorded | Not recorded | DIRECT merge evidence only |
+| 2026-08-01T04:52:29Z | Main code deployed to Vercel production | Vercel metadata/build log | 5d66c1f | Vercel build; no DB writer identified | Not recorded | Not recorded | WEAK_CIRCUMSTANTIAL |
+| 2026-08-01T04:53:18Z-04:55:35Z | POS revisions and catalog sync timestamps observed in the prior read-only snapshot | Production snapshot already recorded above | N/A | Unknown catalog flow | Target state not retained | Target state not retained | WEAK_CIRCUMSTANTIAL |
+| Unknown | Possible production execution of the missing-ledger migration | No retained ledger/action record | 124f38ef source only | Unknown | Unknown | Unknown | NONE |
+| 2026-08-02 to 2026-08-04 | Later portal/site and unrelated migration work | GitHub/Vercel review | bb02da7, 89aaa6f, later PRs | No C/D writer identified | Not recorded | Not recorded | NONE |
+| 2026-08-06 onward | Retained idempotent catalog requests for D do not write image_url | Prior production snapshot / documented request behavior | N/A | Idempotent sync branch | NULL is current-state evidence only | NULL is current-state evidence only | WEAK_CIRCUMSTANTIAL |
+| 2026-08-10 | Current production observation | Prior read-only snapshot | N/A | Unknown prior writer | NULL | NULL | DIRECT for current state only |
+
+### Projection conclusions
+
+| Projection | Expected digest | Historical states recovered | Conclusion |
+| --- | --- | --- | --- |
+| C / 3297bdee... | 6b5988c94d303bf53329d6287951ea01 | None | There is no proof that the expected URL was ever stored and no attributable transition to NULL. |
+| D / a8afb4db... | 796839d776a1d4822b2146eb21a02708 | None | There is no proof that the expected URL was ever stored and no attributable transition to NULL. |
+
+DIRECT evidence that C/D previously had the expected URL: NO.
+STRONG_CIRCUMSTANTIAL evidence: NO. The remaining evidence is code/deployment
+availability or unverified narrative and is WEAK_CIRCUMSTANTIAL at most.
+
+Final classification: PROVENANCE_UNRECOVERABLE.
+
+- Migration execution: not proven, not disproven, and not classified as partial.
+- Ledger repair: NOT SAFE.
+- Data correction: UNDETERMINED.
+- Required next task: SUPABASE.MIGRATION.LEDGER.BASELINE-RESET.1, a separate
+  design task to establish a new safe baseline without asserting this missing
+  migration was applied or changing C/D automatically.
+
 ## Bootstrap Resolution
 
 - Old location: `supabase/migrations/20260621000000_oss_bootstrap_license_period_schema.sql`
@@ -367,10 +514,12 @@ a database reset.
 
 ## Next step
 
-Keep PR #185 open and draft. Run
-SUPABASE.MIGRATION.LEDGER.PROVENANCE-RECOVERY.1 to seek retained deployment,
-backup, or external audit evidence for C and D before considering ledger repair
-or data correction. Once `20260801043000` is reconciled, re-run the linked
-migration list and dry run; only then should
-`20260806061500_business_profile_rubro_realtime_sync` be the sole deployable
-migration from reconciled `main`.
+Keep PR #185 open and draft. Provenance recovery is complete and classified
+PROVENANCE_UNRECOVERABLE; do not repeat the same finite source set without a
+new evidence source.
+
+The next task is SUPABASE.MIGRATION.LEDGER.BASELINE-RESET.1. It must design a
+new safe baseline without recording 20260801043000 as applied, changing C/D, or
+making any production mutation by default. The legitimately pending
+20260806061500_business_profile_rubro_realtime_sync remains separate and is
+not authorized for application by this recovery result.
