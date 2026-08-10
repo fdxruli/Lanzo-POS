@@ -3,7 +3,7 @@ import { getProductFormDefaults } from '../config/productFormDefaults';
 import { normalizeProductRubro } from '../config/productRubroConfig';
 import { buildProductFormPayload } from '../domain/buildProductFormPayload';
 import { buildApparelVariantDelta, rebaseApparelVariantSnapshot } from '../domain/buildApparelVariantDelta';
-import { toNumber } from '../domain/productFormNormalization';
+import { normalizeProduceSaleConfiguration, toNumber } from '../domain/productFormNormalization';
 import { calculateFractionedUnitCost, calculateSaleMargin } from '../domain/fractionedPricing';
 import { validateProductForm } from '../domain/validateProductForm';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
@@ -84,6 +84,11 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       conversionFactor: { ...previous.conversionFactor, enabled: nextSaleMode === 'fractioned' }
     };
   }), []);
+  const setProduceSaleMode = useCallback((saleMode) => setValues((previous) => ({
+    ...previous,
+    ...normalizeProduceSaleConfiguration({ saleMode, saleType: saleMode, unit: previous.unit }),
+    conversionFactor: { ...previous.conversionFactor, enabled: false }
+  })), []);
   const setRestaurantType = useCallback((restaurantType) => setValues((previous) => {
     const isIngredient = restaurantType === 'ingredient';
     const ingredientUnit = normalizeIngredientUnit(previous.unit);
@@ -118,7 +123,20 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       return { ...previous, cost: unitCost, margin: nextMargin };
     });
   }, [values.conversionFactor?.factor, values.conversionFactor?.purchaseCost, values.price, values.saleMode]);
-  const changeRubro = useCallback((nextRubro) => { const defaults = getProductFormDefaults({ activeRubro: nextRubro, capabilities, productToEdit }); setValues((previous) => ({ ...defaults, ...previous, rubroContext: normalizeProductRubro(nextRubro), saleType: defaults.saleType, restaurantType: defaults.restaurantType, trackStock: productToEdit ? previous.trackStock : defaults.trackStock })); }, [capabilities, productToEdit]);
+  const changeRubro = useCallback((nextRubro) => {
+    const nextNormalizedRubro = normalizeProductRubro(nextRubro);
+    const defaults = getProductFormDefaults({ activeRubro: nextNormalizedRubro, capabilities, productToEdit });
+    setValues((previous) => ({
+      ...defaults,
+      ...previous,
+      rubroContext: nextNormalizedRubro,
+      saleMode: nextNormalizedRubro === 'verduleria/fruteria' ? defaults.saleMode : previous.saleMode,
+      saleType: defaults.saleType,
+      unit: nextNormalizedRubro === 'verduleria/fruteria' ? defaults.unit : previous.unit,
+      restaurantType: defaults.restaurantType,
+      trackStock: productToEdit ? previous.trackStock : defaults.trackStock
+    }));
+  }, [capabilities, productToEdit]);
   const changeCost = useCallback((cost) => setValues((previous) => { const price = toNumber(previous.price); const parsedCost = toNumber(cost); return { ...previous, cost, margin: parsedCost > 0 && price > 0 ? (((price - parsedCost) / price) * 100).toFixed(1) : '' }; }), []);
   const changePrice = useCallback((price) => setValues((previous) => { const parsedPrice = toNumber(price); const cost = toNumber(previous.cost); return { ...previous, price, margin: cost > 0 && parsedPrice > 0 ? (((parsedPrice - cost) / parsedPrice) * 100).toFixed(1) : '' }; }), []);
   const changeMargin = useCallback((margin) => setValues((previous) => { const safeMargin = Math.min(toNumber(margin), 99.9); const cost = toNumber(previous.cost); return { ...previous, margin, price: cost > 0 ? (cost / (1 - safeMargin / 100)).toFixed(2) : previous.price }; }), []);
@@ -177,5 +195,5 @@ export function useProductFormV2({ activeRubro, capabilities, productToEdit, onS
       return result;
     } finally { setIsSaving(false); }
   }, [effectiveProductToEdit, getDefaults, isSaving, markClean, normalizedRubro, onSave, payload, productToEdit, values]);
-  return { values, errors, isSaving, isDirty, setField, setFields, setSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
+  return { values, errors, isSaving, isDirty, setField, setFields, setSaleMode, setProduceSaleMode, setRestaurantType, setBatchSummary, setTrackStock, setExpirationMode, changeRubro, changeCost, changePrice, changeMargin, setImage, payload, submit };
 }

@@ -77,6 +77,68 @@ describe('ProductFormV2', () => {
     expect(selector).toBeInTheDocument();
   });
 
+  it('places the produce sale mode before pricing and limits weight units to kg and g', () => {
+    renderForm({ activeRubroContext: 'verduleria/fruteria' });
+
+    const selector = screen.getByRole('radiogroup', { name: /vendes este producto/i });
+    const unit = screen.getByLabelText(/Unidad de venta/i);
+    expect(screen.getByRole('radio', { name: /Por peso/i })).toHaveAttribute('aria-checked', 'true');
+    expect(unit).toHaveValue('kg');
+    expect(Array.from(unit.options).map((option) => option.value)).toEqual(['kg', 'g']);
+    expect(selector.compareDocumentPosition(screen.getByLabelText(/Costo por kilogramo/i)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const specific = screen.getByRole('button', { name: /Duraci.n y conservaci.n/i });
+    fireEvent.click(specific);
+    expect(screen.getAllByRole('radio', { name: /Por peso/i })).toHaveLength(1);
+    expect(screen.getByRole('group', { name: /Modo de caducidad/i })).toBeInTheDocument();
+  });
+
+  it('keeps produce sale modes and units coherent while switching between piece and weight', async () => {
+    const onSave = vi.fn(() => true);
+    renderForm({ activeRubroContext: 'verduleria/fruteria', onSave });
+
+    fireEvent.click(screen.getByRole('radio', { name: /Por pieza/i }));
+    expect(screen.getByRole('radio', { name: /Por pieza/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByLabelText(/Unidad de venta/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Se venderá por pieza o unidad/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Precio de venta por pieza/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Por peso/i }));
+    const unit = screen.getByLabelText(/Unidad de venta/i);
+    expect(unit).toHaveValue('kg');
+    fireEvent.change(unit, { target: { value: 'g' } });
+    expect(unit).toHaveValue('g');
+
+    fireEvent.click(screen.getByRole('radio', { name: /Por pieza/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre del producto/i), { target: { value: 'Manzana' } });
+    fireEvent.change(screen.getByLabelText(/Precio de venta por pieza/i), { target: { value: '12' } });
+    fireEvent.click(screen.getByRole('button', { name: /Guardar producto/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0]).toMatchObject({ saleType: 'unit', unit: 'pza' });
+  });
+
+  it('hydrates existing produce products with their canonical sale mode and weight unit', () => {
+    renderForm({
+      activeRubroContext: 'verduleria/fruteria',
+      productToEdit: { id: 'produce-g', name: 'Uvas', cost: 15, price: 30, saleType: 'bulk', unit: 'g' }
+    });
+
+    expect(screen.getByRole('radio', { name: /Por peso/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByLabelText(/Unidad de venta/i)).toHaveValue('g');
+  });
+
+  it('normalizes existing produce unit sales to pieces', () => {
+    renderForm({
+      activeRubroContext: 'verduleria/fruteria',
+      productToEdit: { id: 'produce-unit', name: 'Aguacate', cost: 10, price: 20, saleType: 'unit', unit: 'kg' }
+    });
+
+    expect(screen.getByRole('radio', { name: /Por pieza/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByLabelText(/Unidad de venta/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Precio de venta por pieza/i)).toBeInTheDocument();
+  });
+
   it('calculates and saves the fractioned unit cost from purchase cost and content', async () => {
     const onSave = vi.fn(() => true);
     renderForm({ onSave });

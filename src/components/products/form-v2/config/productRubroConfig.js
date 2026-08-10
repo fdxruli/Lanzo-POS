@@ -18,7 +18,7 @@ export const PRODUCT_RUBRO_CONFIG = {
     label: 'Ferretería', detailTitle: 'Medidas, venta y abastecimiento', supports: { alerts: true, expiry: true, conversion: true, variants: false }, defaultSaleType: 'unit'
   },
   [CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA]: {
-    label: 'Verdulería y frutería', detailTitle: 'Venta y duración del producto', supports: { alerts: false, expiry: true, conversion: false, variants: false }, defaultSaleType: 'bulk'
+    label: 'Verdulería y frutería', detailTitle: 'Duración y conservación', supports: { alerts: false, expiry: true, conversion: false, variants: false }, defaultSaleType: 'bulk'
   },
   [CANONICAL_BUSINESS_TYPES.APPAREL]: {
     label: 'Ropa y accesorios', detailTitle: 'Tallas, colores y variantes', supports: { alerts: false, expiry: false, conversion: false, variants: true }, defaultSaleType: 'unit'

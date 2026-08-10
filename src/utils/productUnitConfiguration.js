@@ -15,6 +15,10 @@ export const BULK_SALE_UNITS = Object.freeze(
   PRODUCT_SALE_UNITS.filter(({ value }) => value !== 'pza')
 );
 
+export const PRODUCE_WEIGHT_SALE_UNITS = Object.freeze(
+  BULK_SALE_UNITS.filter(({ value }) => value === 'kg' || value === 'g')
+);
+
 export const PURCHASE_UNITS = Object.freeze([
   { value: 'caja', label: 'Caja' },
   { value: 'paquete', label: 'Paquete' },

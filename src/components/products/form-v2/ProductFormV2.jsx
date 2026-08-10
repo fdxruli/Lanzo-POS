@@ -10,6 +10,7 @@ import { useProductFormV2 } from './hooks/useProductFormV2';
 import ProductCoreFields from './components/ProductCoreFields';
 import ProductTypeSelector from './components/ProductTypeSelector';
 import GrocerySaleSetupFields from './components/GrocerySaleSetupFields';
+import ProduceSaleSetupFields from './components/ProduceSaleSetupFields';
 import ProductInventoryFields from './components/ProductInventoryFields';
 import ProductDetailsAccordion from './components/ProductDetailsAccordion';
 import ProductFormAccordion from './components/ProductFormAccordion';
@@ -43,6 +44,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
   const isEditing = Boolean(productToEdit?.id);
   const isGrocery = activeRubro === CANONICAL_BUSINESS_TYPES.ABARROTES;
   const supportsSaleSetup = isGrocery || activeRubro === CANONICAL_BUSINESS_TYPES.HARDWARE;
+  const isProduce = activeRubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA;
   const isRestaurant = activeRubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE;
   const classificationValue = isRestaurant ? form.values.restaurantType : form.values.saleMode;
   const selectClassification = isRestaurant ? form.setRestaurantType : form.setSaleMode;
@@ -77,7 +79,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     <ProductFormSummary errors={form.errors} />
     <ProductTypeSelector options={config.productTypeOptions} value={classificationValue} onChange={selectClassification} disabled={isEditing && isRestaurant} />
     {supportsSaleSetup && <GrocerySaleSetupFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} />}
-    <ProductCoreFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={(field, value) => { setSaveAnotherNotice(''); form.setField(field, value); }} onCostChange={form.changeCost} onPriceChange={form.changePrice} onMarginChange={form.changeMargin} onScan={() => setIsScannerOpen(true)} isIngredient={form.values.productType === 'ingredient' || form.values.restaurantType === 'ingredient'} />
+    <ProductCoreFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={(field, value) => { setSaveAnotherNotice(''); form.setField(field, value); }} onCostChange={form.changeCost} onPriceChange={form.changePrice} onMarginChange={form.changeMargin} onScan={() => setIsScannerOpen(true)} isIngredient={form.values.productType === 'ingredient' || form.values.restaurantType === 'ingredient'} saleSetup={isProduce ? <ProduceSaleSetupFields values={form.values} onFieldChange={form.setField} onSaleMode={form.setProduceSaleMode} /> : null} />
     <ProductInventoryFields values={form.values} errors={form.errors.fieldErrors} isEditing={isEditing} onTrackStock={form.setTrackStock} onFieldChange={form.setField} />
     <ProductFormAccordion id="product-v2-details" title="Imagen y organización" description="Fotografía, categoría y descripción." summary={form.values.categoryId ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'details'} onToggle={() => setOpenAccordion(openAccordion === 'details' ? null : 'details')}><ProductDetailsAccordion values={form.values} categories={categories} onFieldChange={form.setField} onImageChange={form.setImage} onOpenCategoryManager={onOpenCategoryManager} /></ProductFormAccordion>
     {form.values.trackStock && config.supports.alerts && <ProductFormAccordion id="product-v2-alerts" title="Alertas y almacenamiento" description="Existencias máximas, ubicación y proveedor." summary={form.values.location || form.values.maxStock !== '' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'alerts'} onToggle={() => setOpenAccordion(openAccordion === 'alerts' ? null : 'alerts')}><div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-max-stock">Stock máximo</label><input id="product-v2-max-stock" type="number" min="0" value={form.values.maxStock} onChange={(event) => form.setField('maxStock', event.target.value)} aria-invalid={Boolean(form.errors.fieldErrors.maxStock)} />{form.errors.fieldErrors.maxStock && <small className="product-form-v2__error">{form.errors.fieldErrors.maxStock}</small>}</div><div className="product-form-v2__field"><label htmlFor="product-v2-location">Ubicación</label><input id="product-v2-location" value={form.values.location} onChange={(event) => form.setField('location', event.target.value)} /></div></div></ProductFormAccordion>}

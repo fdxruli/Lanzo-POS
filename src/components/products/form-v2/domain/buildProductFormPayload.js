@@ -2,20 +2,26 @@ import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { normalizeProductUnit, normalizePurchaseUnit } from '../../../../utils/productUnitConfiguration';
 import { normalizeWholesaleTiers } from '../../forms/retail/retailFormUtils';
-import { normalizeExpirationFields, toNumber } from './productFormNormalization';
+import { normalizeExpirationFields, normalizeProduceSaleConfiguration, toNumber } from './productFormNormalization';
 import { calculateFractionedUnitCost } from './fractionedPricing';
 
 export function buildProductFormPayload(values, { activeRubro, productToEdit = null } = {}) {
   const isEditing = Boolean(productToEdit?.id);
   const isIngredient = values.restaurantType === 'ingredient';
+  const isProduce = activeRubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA;
   const requestedSaleMode = ['unit', 'bulk', 'fractioned'].includes(values.saleMode)
     ? values.saleMode
     : values.saleType;
-  const saleMode = requestedSaleMode === 'bulk' ? 'bulk' : (requestedSaleMode === 'fractioned' ? 'fractioned' : 'unit');
-  const ingredientUnit = isIngredient ? normalizeIngredientUnit(values.unit) : normalizeProductUnit(values.unit);
+  const produceSaleConfiguration = isProduce
+    ? normalizeProduceSaleConfiguration({ saleMode: requestedSaleMode, saleType: values.saleType, unit: values.unit })
+    : null;
+  const saleMode = produceSaleConfiguration?.saleMode || (requestedSaleMode === 'bulk' ? 'bulk' : (requestedSaleMode === 'fractioned' ? 'fractioned' : 'unit'));
+  const ingredientUnit = isIngredient
+    ? normalizeIngredientUnit(values.unit)
+    : (produceSaleConfiguration?.unit || normalizeProductUnit(values.unit));
   const saleType = isIngredient
     ? getSaleTypeForIngredientUnit(ingredientUnit)
-    : (saleMode === 'bulk' ? 'bulk' : 'unit');
+    : (produceSaleConfiguration?.saleType || (saleMode === 'bulk' ? 'bulk' : 'unit'));
   const sourceBulkData = values.bulkData || productToEdit?.bulkData;
   const bulkData = isIngredient && saleType === 'bulk'
     ? { ...sourceBulkData, purchase: { ...sourceBulkData?.purchase, unit: ingredientUnit } }

@@ -9,4 +9,8 @@ describe('productRubroConfig', () => {
       { value: 'fractioned', label: 'Fraccionado' }
     ]);
   });
+
+  it('keeps produce details focused on duration after sale mode moves into the primary flow', () => {
+    expect(getProductRubroConfig('verduleria/fruteria').detailTitle).toBe('Duración y conservación');
+  });
 });

@@ -4,6 +4,7 @@ import { buildProductFormPayload } from '../domain/buildProductFormPayload';
 import { validateProductForm } from '../domain/validateProductForm';
 import { calculateFractionedUnitCost, calculateSaleMargin } from '../domain/fractionedPricing';
 import { validateWholesaleCondition } from '../../../../services/pricingLogic';
+import { BULK_SALE_UNITS, PRODUCE_WEIGHT_SALE_UNITS } from '../../../../utils/productUnitConfiguration';
 
 const base = (overrides = {}) => ({ name: 'Producto', price: 20, cost: 10, trackStock: true, stock: 3, minStock: '', maxStock: '', saleType: 'unit', unit: 'pza', conversionFactor: { enabled: false, purchaseUnit: '', factor: '' }, expirationMode: 'NONE', shelfLifeValue: '', shelfLifeUnit: 'days', expiryDate: '', manufacturerBatchId: '', hasVariants: false, quickVariants: [], restaurantType: 'ready', recipe: [], modifiers: [], ...overrides });
 
@@ -27,6 +28,18 @@ describe('Product Form V2 defaults', () => {
 
   it('hydrates legacy hardware measurement units with the canonical sale mode and unit', () => {
     expect(getProductFormDefaults({ activeRubro: 'hardware', productToEdit: { saleType: 'bulk', unit: 'm' } })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'mt' });
+  });
+
+  it('uses a coherent default and canonical edit values for produce sale modes', () => {
+    expect(getProductFormDefaults({ activeRubro: 'verduleria/fruteria' })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+    expect(getProductFormDefaults({ activeRubro: 'verduleria/fruteria', productToEdit: { saleType: 'bulk', unit: 'g' } })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'g' });
+    expect(getProductFormDefaults({ activeRubro: 'verduleria/fruteria', productToEdit: { saleType: 'unit', unit: 'kg' } })).toMatchObject({ saleMode: 'unit', saleType: 'unit', unit: 'pza' });
+    expect(getProductFormDefaults({ activeRubro: 'verduleria/fruteria', productToEdit: { saleType: 'bulk', unit: 'mt' } })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+  });
+
+  it('keeps the global bulk catalog available to grocery and hardware while deriving produce-only units', () => {
+    expect(PRODUCE_WEIGHT_SALE_UNITS.map(({ value }) => value)).toEqual(['kg', 'g']);
+    expect(BULK_SALE_UNITS.map(({ value }) => value)).toEqual(expect.arrayContaining(['mt', 'cm', 'ft']));
   });
 
   it('hydrates fractioned products as a UI mode while accepting legacy cloud values', () => {
@@ -88,6 +101,17 @@ describe('Product Form V2 payload', () => {
     const payload = buildProductFormPayload(base({ saleMode: 'bulk', unit: 'kg' }), { activeRubro: 'abarrotes' });
     expect(payload).toMatchObject({ saleType: 'bulk', unit: 'kg', bulkData: { sale: { unit: 'kg' } } });
     expect(getProductFormDefaults({ activeRubro: 'abarrotes', productToEdit: payload })).toMatchObject({ saleMode: 'bulk', saleType: 'bulk', unit: 'kg' });
+  });
+
+  it('defensively serializes produce sale modes with coherent canonical units', () => {
+    const piece = buildProductFormPayload(base({ saleMode: 'unit', saleType: 'unit', unit: 'kg' }), { activeRubro: 'verduleria/fruteria' });
+    expect(piece).toMatchObject({ saleType: 'unit', unit: 'pza' });
+
+    const weight = buildProductFormPayload(base({ saleMode: 'bulk', saleType: 'unit', unit: 'pza' }), { activeRubro: 'verduleria/fruteria' });
+    expect(weight).toMatchObject({ saleType: 'bulk', unit: 'kg', bulkData: { sale: { unit: 'kg' } } });
+
+    const grams = buildProductFormPayload(base({ saleMode: 'bulk', saleType: 'bulk', unit: 'g' }), { activeRubro: 'verduleria/fruteria' });
+    expect(grams).toMatchObject({ saleType: 'bulk', unit: 'g', bulkData: { sale: { unit: 'g' } } });
   });
 
   it.each(['mt', 'cm'])('persists hardware %s measurement sales as bulk with the canonical unit', (unit) => {

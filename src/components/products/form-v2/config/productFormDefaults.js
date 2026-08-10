@@ -2,6 +2,7 @@ import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { normalizeProductUnit, normalizePurchaseUnit, resolveProductSaleUnit } from '../../../../utils/productUnitConfiguration';
 import { getProductRubroConfig, normalizeProductRubro } from './productRubroConfig';
+import { normalizeProduceSaleConfiguration } from '../domain/productFormNormalization';
 
 const asDateInput = (value) => (value ? String(value).split('T')[0] : '');
 
@@ -25,6 +26,9 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
   ].find((value) => String(value ?? '').trim());
   const ingredientUnit = normalizeIngredientUnit(legacyIngredientUnit || (source.saleType === 'unit' ? 'pza' : 'kg'));
   const productUnit = resolveProductSaleUnit({ ...source, saleType: persistedSaleType });
+  const produceSaleConfiguration = rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA
+    ? normalizeProduceSaleConfiguration({ saleMode, saleType: persistedSaleType, unit: productUnit })
+    : null;
   const expirationMode = source.expirationMode || (config.strictExpiry && capabilities.hasExpiry !== false ? 'STRICT' : 'NONE');
 
   return {
@@ -36,11 +40,11 @@ export function getProductFormDefaults({ activeRubro, capabilities = {}, product
     trackStock: source.trackStock ?? defaultTrackStock,
     stock: productToEdit ? (source.stock ?? 0) : 0,
     minStock: source.minStock ?? '', maxStock: source.maxStock ?? '', supplier: source.metadata?.primary_supplier ?? source.supplier ?? '', location: source.location || '',
-    saleMode: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : saleMode,
-    saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (saleMode === 'bulk' ? 'bulk' : 'unit'),
-    unit: isIngredient ? ingredientUnit : normalizeProductUnit(productUnit || (rubro === CANONICAL_BUSINESS_TYPES.VERDULERIA_FRUTERIA ? 'kg' : 'pza')),
+    saleMode: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (produceSaleConfiguration?.saleMode || saleMode),
+    saleType: isIngredient ? getSaleTypeForIngredientUnit(ingredientUnit) : (produceSaleConfiguration?.saleType || (saleMode === 'bulk' ? 'bulk' : 'unit')),
+    unit: isIngredient ? ingredientUnit : (produceSaleConfiguration?.unit || normalizeProductUnit(productUnit || 'pza')),
     conversionFactor: source.conversionFactor
-      ? { ...source.conversionFactor, enabled: saleMode === 'fractioned', purchaseUnit: normalizePurchaseUnit(source.conversionFactor.purchaseUnit), purchaseCost: source.conversionFactor.purchaseCost ?? '' }
+      ? { ...source.conversionFactor, enabled: produceSaleConfiguration ? false : saleMode === 'fractioned', purchaseUnit: normalizePurchaseUnit(source.conversionFactor.purchaseUnit), purchaseCost: source.conversionFactor.purchaseCost ?? '' }
       : { enabled: false, purchaseUnit: '', factor: '', purchaseCost: '' },
     expirationMode, shelfLifeValue: source.shelfLifeValue ?? '', shelfLifeUnit: source.shelfLifeUnit || 'days',
     expiryDate: asDateInput(source.expiryDate), manufacturerBatchId: source.manufacturerBatchId || '',
