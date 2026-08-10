@@ -459,11 +459,6 @@ export default function ProductsPage() {
     return (
         <>
             <main className="ui-page products-page" aria-label="Productos">
-            <div className="products-header products-header--legacy" hidden>
-                <div className="products-header__legacy-slot">
-                    {/* El botón de Frutería fue movido a ProductList */}
-                </div>
-            </div >
 
             <section className="ui-section products-tabs-section" aria-label="Secciones de productos">
             <div className="tabs-container products-tabs" id="product-tabs">

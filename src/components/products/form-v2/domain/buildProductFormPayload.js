@@ -1,7 +1,7 @@
 import { CANONICAL_BUSINESS_TYPES } from '../../../../utils/businessType';
 import { getSaleTypeForIngredientUnit, normalizeIngredientUnit } from '../../../../utils/ingredientConfiguration';
 import { normalizeProductUnit, normalizePurchaseUnit } from '../../../../utils/productUnitConfiguration';
-import { normalizeWholesaleTiers } from '../../forms/retail/retailFormUtils';
+import { normalizeWholesaleTiers } from './wholesaleTiers';
 import { normalizeExpirationFields, normalizeProduceSaleConfiguration, toNumber } from './productFormNormalization';
 import { calculateFractionedUnitCost } from './fractionedPricing';
 

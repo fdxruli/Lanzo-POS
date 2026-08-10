@@ -1,46 +1,37 @@
 # Product Form V2
 
-Product Form V2 es la implementación productiva predeterminada. `ProductForm.jsx` conserva el contrato usado por `ProductsPage` y decide internamente la implementación mediante `src/components/products/productFormImplementation.js`.
-
-## Activación y rollback
-
-`PRODUCT_FORM_IMPLEMENTATION` es la única autoridad de despliegue. Su valor normal es `v2`; cambiarlo a `legacy` devuelve temporalmente al formulario anterior, sin exponer controles, preferencias ni parámetros públicos. El formulario legacy vive en `src/components/products/legacy/ProductFormLegacy.jsx` y no debe eliminarse hasta PRODUCT.FORM.V2.3.
+Product Form V2 es la única implementación de alta y edición de productos. `ProductForm.jsx` conserva el contrato estable usado por `ProductsPage` y renderiza V2 directamente.
 
 ## Guardado e imágenes
 
-V2 llama `onSave(payload, existingProduct, options)`. `options` contiene `intent` (`save` o `save_and_add_another`), `keepFormOpen` y `source: 'product-form-v2'`. `ProductsPage` sigue preparando imágenes, guardando en `productRepository`, refrescando catálogo/categorías, emitiendo eventos y navegando después de un guardado ordinario.
+V2 llama `onSave(payload, existingProduct, options)`. `options` contiene `intent` (`save` o `save_and_add_another`), `keepFormOpen` y `source: 'product-form-v2'`. `ProductsPage` prepara imágenes, persiste mediante `productRepository`, actualiza catálogo y categorías, emite eventos y navega tras un guardado ordinario.
 
-Para una imagen nueva V2 conserva el archivo original en `imageUploadSource` para publicación cloud y usa la copia comprimida como `image` local. Las URLs `blob:` se revocan al reemplazar o desmontar. Una eliminación se expresa mediante `imageRemoved`, que evita conservar por accidente la imagen local o remota anterior.
+Las imágenes nuevas conservan el archivo original en `imageUploadSource` para publicación cloud y una copia comprimida como `image` local. Las URLs `blob:` se revocan al reemplazar o desmontar; `imageRemoved` evita conservar imágenes anteriores.
 
-`Guardar y agregar otro` utiliza la misma persistencia pero no navega ni abre un modal; V2 muestra una confirmación accesible, conserva el rubro, restablece defaults y enfoca el nombre. Los fallos no limpian los datos.
+`Guardar y agregar otro` usa la misma persistencia sin navegar, conserva el rubro, restaura valores por defecto y devuelve el foco al nombre. Los fallos no limpian los datos.
 
 ## Edición, inventario y estado sucio
 
-El formulario expone `isDirty` al contenedor. `ProductsPage` activa su guarda de navegación solo cuando el formulario está abierto y tiene cambios sin guardar. La edición muestra el stock como información y el payload conserva el valor existente; no crea lote inicial ni interpreta la edición como reposición.
+El formulario comunica `isDirty` al contenedor. `ProductsPage` activa la guarda de navegación únicamente si el formulario está abierto y hay cambios sin guardar. Al editar, el stock se muestra como información: la edición no crea lotes iniciales ni se interpreta como reposición.
 
-Los productos nuevos obtienen un ID al abrir el formulario, por lo que un reintento usa el mismo ID. El repositorio crea exactamente un lote inicial solo para una alta con existencia positiva, sin receta ni variantes.
+Los productos nuevos reciben un ID al abrir el formulario, por lo que un reintento usa el mismo ID. El repositorio crea un lote inicial solo en altas con existencia positiva, sin receta ni variantes.
 
 ## Rubros y paridad funcional
 
 | Rubro | Cobertura V2 |
 | --- | --- |
 | General | Nombre, precio, categoría opcional, imagen, inventario y caducidad. |
-| Abarrotes / ferretería | Unidad, granel/fraccionado, conversión, alertas y preservación de mayoreo existente. |
+| Abarrotes / ferretería | Unidad, granel/fraccionado, conversión, alertas y mayoreo existente. |
 | Frutería | Pieza/peso y caducidad estricta o vida útil mutuamente excluyentes. |
 | Apparel | Variantes con IDs de lote estables; el stock general no se duplica. |
-| Farmacia | Datos farmacéuticos, lote/caducidad de entrada inicial y estrategia canónica `fefo`. |
-| Restaurante | Platillo, bebida, producto listo e insumo; receta, modificadores y estaciones reutilizan los componentes existentes. |
+| Farmacia | Datos farmacéuticos, lote/caducidad de entrada inicial y estrategia `fefo`. |
+| Restaurante | Platillo, bebida, producto listo e insumo; receta, modificadores y estaciones reutilizan componentes compartidos. |
 
-Existe un único hardening de Supabase para apparel: el RPC rechaza `initialBatches` durante una edición, separando la creación de lotes iniciales de las ediciones de variantes. La retirada de legacy, una acción independiente de reposición y la expansión visual de mayoreo quedan para fases posteriores.
+## Legacy retirement completed
 
-## Post-merge stabilization
-
-Fecha: 2026-08-10. Base auditada: `919fd32b24a1259b3e90c56f123e4de4bc34bb0b` (merge de PR #184).
-
-La auditoría estática confirma que `ProductForm.jsx` mantiene V2 como implementación predeterminada y que `ProductFormLegacy`, el wizard y el adaptador de rollback permanecen disponibles. El flujo productivo conserva la preparación de imagen en `ProductsPage`, `productRepository.saveProduct`, `productLocalRepository.prepareProduct`, IndexedDB, el lote inicial para altas y el outbox/cloud existente.
-
-Se corrigió un defecto reproducible en el control de inventario: el switch y los campos de existencia estaban dentro del mismo `label`, por lo que un clic en existencia inicial, alerta o texto auxiliar podía alternar `trackStock`. El switch ahora tiene un único control y área de activación, con etiqueta accesible independiente. La regresión está cubierta en `ProductFormV2.test.jsx`.
-
-Las pruebas focales pasaron usando el pool `forks`: 75 pruebas en `form-v2` y 59 en repositorio local, repositorio cloud, imágenes, resúmenes y lotes. ESLint pasó para `ProductForm.jsx`, todo `form-v2` y los archivos modificados. El test de ledger de migraciones pasó y la migración `20260810161224_apparel_conflict_fix_initial_batches_create_only.sql` continúa presente; no se crearon ni aplicaron migraciones.
-
-La validación visual real, los smokes de navegador, el build y `react-doctor` quedaron bloqueados por el límite de ejecución local: Vite no inició ni terminó el build antes del timeout de 124 segundos y `npx -y react-doctor@latest` tampoco finalizó. No se puede declarar `PRODUCT.FORM.V2.2` completo hasta repetir esos pasos en un entorno donde Vite pueda completar y ejecutar los flujos con datos/licencia de prueba.
+- Fecha: 2026-08-10.
+- PR: #187 (`refactor/product-form-v2-legacy-retirement`).
+- Retirado: selector de implementación, `ProductFormLegacy`, modos asistido/experto, wizards, formularios expertos, hooks, estilos y pruebas exclusivos de legacy.
+- Conservado: `CategorySelect`, `ProductImagePicker`, `QuickVariantEntry`, `RecipeBuilderModal`, `ScannerModal` y `RestauranteFields`, porque V2 continúa utilizándolos.
+- Tests: la cobertura de V2 mantiene los flujos de producto general, inventario, apparel, farmacia, restaurante, imágenes, lotes, variantes y caducidad.
+- Base de datos: no se crearon ni aplicaron migraciones; no hubo cambios de esquema ni datos.

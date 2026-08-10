@@ -184,7 +184,7 @@ const saveApparelVariantDelta = async (prepared) => {
       status: 'active',
       trackStock: true,
       createdAt: variant.createdAt || nowIso(),
-      notes: 'Ingreso rapido (Modo Asistido)'
+      notes: 'Ingreso rapido'
     }, { expectedVersion: null });
     if (!result?.success) return { ...result, appliedVariants: applied, latestProduct };
     latestProduct = result?.response?.product || latestProduct;

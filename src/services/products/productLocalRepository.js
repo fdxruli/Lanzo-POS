@@ -235,7 +235,7 @@ export const productLocalRepository = {
           isActive: true,
           status: 'active',
           createdAt: hasStableBatchId ? (variant.createdAt || undefined) : nowIso(),
-          notes: 'Ingreso rapido (Modo Asistido)',
+          notes: 'Ingreso rapido',
           trackStock: true,
           expiryDate: variant.expiryDate || productData.expiryDate || null,
           alertTargetDate: variant.alertTargetDate || productData.alertTargetDate || null,
