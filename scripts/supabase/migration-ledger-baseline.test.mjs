@@ -9,10 +9,11 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const migrationsDir = join(repoRoot, 'supabase', 'migrations');
 const archiveDir = join(repoRoot, 'supabase', 'archive', 'unresolved-migrations');
 const historicalFile = '20260801043000_ecom_catalog_legacy_timestamp_revision_repair.sql';
-const historicalSha256 = 'ff0386a936bf76bc27a62687ebd45fd9b963404962f37291424006b33b3033cc';
+const historicalSha256 = 'a95243579b801d83efcabda4770ebabd0b155553cc16c853dda016f22f5c7023';
 
 function sha256(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+  const canonicalBytes = Buffer.from(readFileSync(path, 'utf8').replace(/\r\n/gu, '\n'), 'utf8');
+  return createHash('sha256').update(canonicalBytes).digest('hex');
 }
 
 test('archives the unresolved migration exactly once outside the executable ledger', () => {

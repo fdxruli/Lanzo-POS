@@ -26,8 +26,8 @@ unresolved historical version is neither recorded as applied nor reverted.
 
 The historical SQL was byte-preserved at
 `supabase/archive/unresolved-migrations/20260801043000_ecom_catalog_legacy_timestamp_revision_repair.sql`,
-outside executable migration discovery. Its SHA-256 is
-`FF0386A936BF76BC27A62687EBD45FD9B963404962F37291424006B33B3033CC`.
+outside executable migration discovery. Its canonical Git/LF SHA-256 is
+`A95243579B801D83EFCABDA4770EBABD0B155553CC16C853DDA016F22F5C7023`.
 The archive README marks it historical/non-executable and forbids ledger repair
 or DML re-execution.
 
@@ -61,8 +61,8 @@ needed for an empty installation and no historical data claim can be made.
 
 ## Current Status
 
-- Archive integrity: **PASS** — SHA-256
-  `FF0386A936BF76BC27A62687EBD45FD9B963404962F37291424006B33B3033CC`.
+- Archive integrity: **PASS** — canonical Git/LF SHA-256
+  `A95243579B801D83EFCABDA4770EBABD0B155553CC16C853DDA016F22F5C7023`.
 - Forward-baseline static contract test: **PASS** (2 tests).
 - OSS bootstrap runner test: **PASS** (5 tests).
 - Full OSS bootstrap reset: **BLOCKED** before executing migrations because
