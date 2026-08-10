@@ -1,6 +1,7 @@
 // src/services/pricingLogic.js
 import { roundCurrency } from './utils';
 import { Money } from '../utils/moneyMath';
+import { isCommercialVariantProduct } from './products/commercialVariants';
 
 const priceCache = new Map();
 
@@ -78,7 +79,7 @@ const calculatePricingDetailsLogic = (product, quantity) => {
   };
 
   // CASOS SIN LOTES FIFO
-  if (!product.batchManagement?.enabled || !product.activeBatches || product.activeBatches.length === 0 || (product.isVariant && product.batchId)) {
+  if (!product.batchManagement?.enabled || !product.activeBatches || product.activeBatches.length === 0 || (product.isVariant && product.batchId) || !isCommercialVariantProduct(product)) {
     return applyWholesale(Number(product.originalPrice ?? product.price));
   }
 

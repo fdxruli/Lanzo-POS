@@ -11,12 +11,20 @@ describe('quantityInputStep', () => {
     expect(getQuantityStepByUnit(' KG ')).toBe('0.001');
   });
 
-  it('usa precision de tres decimales para kg, litros y metros', () => {
+  it('usa precision de tres decimales para unidades de medida continuas', () => {
     expect(getQuantityStepByUnit('kg')).toBe('0.001');
     expect(getQuantityStepByUnit('lt')).toBe('0.001');
     expect(getQuantityStepByUnit('l')).toBe('0.001');
     expect(getQuantityStepByUnit('mt')).toBe('0.001');
     expect(getQuantityStepByUnit('metro')).toBe('0.001');
+    expect(getQuantityStepByUnit('cm')).toBe('0.001');
+    expect(getQuantityStepByUnit('ft')).toBe('0.001');
+    expect(getQuantityStepByUnit('in')).toBe('0.001');
+    expect(getQuantityStepByUnit('gal')).toBe('0.001');
+    expect(getQuantityStepByUnit('centimetro')).toBe('0.001');
+    expect(getQuantityStepByUnit('pie')).toBe('0.001');
+    expect(getQuantityStepByUnit('pulgada')).toBe('0.001');
+    expect(getQuantityStepByUnit('galon')).toBe('0.001');
   });
 
   it('usa enteros para gramos, mililitros y piezas', () => {
@@ -47,6 +55,19 @@ describe('quantityInputStep', () => {
       step: '1',
       inputMode: 'numeric',
       unit: 'ml'
+    });
+
+    ['cm', 'ft', 'in', 'gal'].forEach((unit) => {
+      expect(
+        getOrderQuantityInputProps({
+          saleType: 'bulk',
+          unit
+        })
+      ).toEqual({
+        step: '0.001',
+        inputMode: 'decimal',
+        unit
+      });
     });
   });
 });

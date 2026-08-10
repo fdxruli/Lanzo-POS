@@ -17,6 +17,7 @@ import FruteriaBatchFields from './fieldsets/FruteriaBatchFields';
 import RestaurantBatchFields from './fieldsets/RestaurantBatchFields';
 import { getBatchStockInputProps } from './utils/batchStockInput';
 import { useDismissibleHistoryLayer } from '../../../hooks/useDismissibleHistoryLayer';
+import { isCommercialVariantProduct } from '../../../services/products/commercialVariants';
 import './BatchFormModal.css'; // Asegúrate de importar los nuevos estilos
 
 function RubroFieldset(props) {
@@ -55,6 +56,9 @@ export default function BatchFormModal({
     firstInputRef,
     tallaInputRef,
     setFieldValue,
+    isProductPriceEditing,
+    startProductPriceEditing,
+    cancelProductPriceEditing,
     handleProcessSave
   } = useBatchFormController({
     product,
@@ -69,6 +73,12 @@ export default function BatchFormModal({
   const idPrefix = `batch-${String(isEditing ? batchToEdit?.id : product?.id || 'new').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const payFromCajaId = `${idPrefix}-pay-from-caja`;
   const stockInputProps = getBatchStockInputProps(product, rubroGroup, features);
+  const isCommercialVariant = isCommercialVariantProduct(product);
+  const currentProductPrice = Number(product?.price ?? 0);
+  const requestedProductPrice = Number(formValues.price);
+  const hasProductPriceChange = isProductPriceEditing
+    && Number.isFinite(requestedProductPrice)
+    && requestedProductPrice !== currentProductPrice;
 
   return (
     <div className="ui-modal ui-modal--high batch-form-modal-overlay" role="dialog" aria-modal="true" aria-label={isEditing ? 'Editar lote' : 'Registrar lote'}>
@@ -78,8 +88,8 @@ export default function BatchFormModal({
         <div className="batch-modal-header">
           <div className="batch-modal-header-info">
             <h2>
-              {features.hasVariants ? <Tag size={24} className="text-primary" /> : <Package size={24} className="text-primary" />}
-              {isEditing ? 'Editar' : 'Registrar'} {features.hasVariants ? 'Variante' : 'Lote'}
+              {isCommercialVariant ? <Tag size={24} className="text-primary" /> : <Package size={24} className="text-primary" />}
+              {isEditing ? 'Editar' : 'Registrar'} {isCommercialVariant ? 'Variante' : 'Lote'}
             </h2>
             <p className="batch-modal-subtitle">
               Producto: <strong>{product.name}</strong>
@@ -113,7 +123,7 @@ export default function BatchFormModal({
               <div className="col-span-full price-cost-group">
                 <div className="form-group field-with-icon batch-form-field--compact">
                   <label htmlFor={`${idPrefix}-cost`}>
-                    <DollarSign size={16} /> Costo Unitario
+                    <DollarSign size={16} /> {isCommercialVariant ? 'Costo unitario' : 'Costo de este lote'}
                   </label>
                   <input
                     id={`${idPrefix}-cost`}
@@ -125,7 +135,7 @@ export default function BatchFormModal({
                     placeholder="0.00"
                   />
                 </div>
-                <div className="form-group field-with-icon batch-form-field--compact">
+                {isCommercialVariant ? <div className="form-group field-with-icon batch-form-field--compact">
                   <label htmlFor={`${idPrefix}-price`}>
                     <Tag size={16} /> Precio de Venta
                   </label>
@@ -138,24 +148,46 @@ export default function BatchFormModal({
                     className="form-input"
                     placeholder="0.00"
                   />
-                </div>
-
-                {/* CHECKBOX ACTUALIZAR PRECIO GLOBAL */}
-                {!features.hasVariants && !isEditing && (
-                  <div className="col-span-full batch-update-price-row">
-                    <input
-                      type="checkbox"
-                      id={`${idPrefix}-update-price`}
-                      checked={formValues.updateGlobalPrice}
-                      onChange={(e) => setFieldValue('updateGlobalPrice', e.target.checked)}
-                      className="batch-update-price-checkbox"
-                    />
-                    <label
-                      htmlFor={`${idPrefix}-update-price`}
-                      className="batch-update-price-label"
-                    >
-                      Actualizar precio base del producto en el catálogo
-                    </label>
+                </div> : (
+                  <div className="batch-product-price" aria-label="Precio de venta del producto">
+                    <span>Precio de venta del producto</span>
+                    {!isProductPriceEditing ? (
+                      <div className="batch-product-price__summary">
+                        <strong>${currentProductPrice.toFixed(2)}</strong>
+                        <button type="button" className="batch-link-button" onClick={startProductPriceEditing}>
+                          Cambiar precio
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="batch-product-price__editor">
+                        <label htmlFor={`${idPrefix}-price`}>Nuevo precio de venta</label>
+                        <div className="batch-product-price__input">
+                          <span>$</span>
+                          <input
+                            id={`${idPrefix}-price`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={formValues.price}
+                            onChange={(event) => setFieldValue('price', event.target.value)}
+                            className="form-input"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <small>Precio actual: ${currentProductPrice.toFixed(2)}</small>
+                        {hasProductPriceChange && (
+                          <div className="batch-product-price__change">
+                            <strong>${currentProductPrice.toFixed(2)} → ${requestedProductPrice.toFixed(2)}</strong>
+                            <span>Este será el nuevo precio de venta del producto.</span>
+                          </div>
+                        )}
+                        <small>Este cambio actualizará el precio de venta del producto completo, no solamente este lote.</small>
+                        <button type="button" className="batch-link-button" onClick={cancelProductPriceEditing}>
+                          Cancelar cambio
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

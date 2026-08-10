@@ -46,14 +46,19 @@ const resolveProductImageRef = (product = {}) => {
   return optionalText(value);
 };
 
-const buildProductImageMetadata = (product = {}, imageUrl, imageRef) => ({
-  ...(product.metadata || {}),
-  phase: PRODUCT_CLOUD_PHASE,
-  images_cloud: Boolean(imageUrl),
-  image_strategy: imageUrl
-    ? 'cloud_public_url'
-    : (imageRef ? 'local_reference_only' : 'none')
-});
+const buildProductImageMetadata = (product = {}, imageUrl, imageRef) => {
+  const metadata = {
+    ...(product.metadata || {}),
+    phase: PRODUCT_CLOUD_PHASE,
+    images_cloud: Boolean(imageUrl),
+    image_strategy: imageUrl
+      ? 'cloud_public_url'
+      : (imageRef ? 'local_reference_only' : 'none')
+  };
+  const supplier = text(product.supplier);
+  if (supplier) metadata.primary_supplier = supplier;
+  return metadata;
+};
 
 /**
  * Canonical representation for complex product fields in IndexedDB.
@@ -179,6 +184,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
       : (existing?.modifiers ?? []),
     wholesaleTiers: resolveComplexField(product, existing, 'wholesale_tiers', 'wholesaleTiers')
   });
+  const metadata = product.metadata || existing?.metadata || {};
 
   return {
     ...existing,
@@ -196,6 +202,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     imageRef: product.image_ref || product.imageRef || null,
     imageUrl: product.image_url || product.imageUrl || null,
     location: product.location || '',
+    supplier: metadata.primary_supplier ?? existing?.supplier ?? '',
     price: toNumber(product.price),
     cost: toNumber(product.cost),
     stock: toNumber(product.stock),
@@ -226,7 +233,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     lastSyncedAt: overrides.lastSyncedAt || nowIso(),
     pendingOperationId: overrides.pendingOperationId ?? null,
     conflictReason: overrides.conflictReason ?? null,
-    metadata: product.metadata || existing?.metadata || {}
+    metadata
   };
 };
 

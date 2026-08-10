@@ -1,6 +1,7 @@
 import { db, STORES } from './db/dexie';
 import { getAvailableStock } from './db/utils';
 import Logger from './Logger';
+import { isCommercialVariantProduct } from './products/commercialVariants';
 
 const BULK_BATCH_THRESHOLD = 0.02;
 
@@ -53,7 +54,7 @@ const findProductMatchByCode = async (code) => {
         product,
         batch,
         batchId: batch.id,
-        isVariant: true,
+        isVariant: isCommercialVariantProduct({ ...product, activeBatches: [batch] }),
         skuDetected: batch.sku,
         variantName: buildVariantName(batch),
       };
@@ -140,9 +141,6 @@ const buildResolvedProduct = ({
     stock = getAvailableStock(batch);
     resolvedBatchId = batch.id;
   } else if (product.batchManagement?.enabled && batch) {
-    const batchPrice = parseStrictPrice(batch.price);
-    finalPrice = batchPrice !== null ? batchPrice : finalPrice;
-    
     const batchCost = parseStrictPrice(batch.cost);
     finalCost = batchCost !== null ? batchCost : finalCost;
 
@@ -180,7 +178,7 @@ const resolveBarcodeInTransaction = async (code) => {
     return null;
   }
 
-  if (match.isVariant) {
+  if (match.batch) {
     return buildResolvedProduct(match);
   }
 

@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { cloudProductToLocal, normalizeProductComplexFields } from '../../products/productMapper';
+import { cloudProductToLocal, normalizeProductComplexFields, productToCloudPayload } from '../../products/productMapper';
 
 describe('cloudProductToLocal modifiers', () => {
+  it('round-trips the default supplier through metadata without replacing other metadata', () => {
+    const cloud = productToCloudPayload({
+      id: 'prod_supplier', name: 'Frijol', supplier: 'Proveedor Norte',
+      metadata: { image_strategy: 'cloud_public_url', image_ref: 'keep' }
+    });
+
+    expect(cloud.metadata).toMatchObject({ primary_supplier: 'Proveedor Norte', image_ref: 'keep' });
+    expect(cloudProductToLocal({ id: 'prod_supplier', name: 'Frijol', metadata: cloud.metadata })).toMatchObject({
+      supplier: 'Proveedor Norte', metadata: expect.objectContaining({ primary_supplier: 'Proveedor Norte', image_ref: 'keep' })
+    });
+  });
+
   it('limpia modificadores locales cuando cloud manda modifiers null', () => {
     const result = cloudProductToLocal(
       { id: 'prod_1', name: 'Hamburguesa', modifiers: null },

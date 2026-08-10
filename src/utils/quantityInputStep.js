@@ -1,3 +1,5 @@
+import { resolveProductSaleUnit } from './productUnitConfiguration';
+
 const UNIT_STEP_BY_UNIT = {
   kg: '0.001',
   kilo: '0.001',
@@ -12,6 +14,18 @@ const UNIT_STEP_BY_UNIT = {
   m: '0.001',
   metro: '0.001',
   metros: '0.001',
+  cm: '0.001',
+  centimetro: '0.001',
+  centimetros: '0.001',
+  ft: '0.001',
+  pie: '0.001',
+  pies: '0.001',
+  in: '0.001',
+  pulgada: '0.001',
+  pulgadas: '0.001',
+  gal: '0.001',
+  galon: '0.001',
+  galones: '0.001',
   gr: '1',
   g: '1',
   gramo: '1',
@@ -32,13 +46,7 @@ export const getQuantityStepByUnit = (unit) => (
   UNIT_STEP_BY_UNIT[normalizeQuantityUnit(unit)] || '1'
 );
 
-export const getOrderItemUnit = (item = {}) => (
-  item?.bulkData?.purchase?.unit ||
-  item?.unit ||
-  item?.purchaseUnit ||
-  item?.stockUnit ||
-  (item?.saleType === 'bulk' ? 'kg' : 'pza')
-);
+export const getOrderItemUnit = (item = {}) => resolveProductSaleUnit(item);
 
 export const getOrderQuantityInputProps = (item = {}) => {
   const unit = getOrderItemUnit(item);

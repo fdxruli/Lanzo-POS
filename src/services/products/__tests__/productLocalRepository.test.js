@@ -41,7 +41,7 @@ describe('productLocalRepository.prepareProduct', () => {
 
   it('crea lote inicial SHELF_LIFE con expiryDate y alertTargetDate calculadas', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-24T00:00:00.000Z'));
+    vi.setSystemTime(new Date(2026, 5, 24, 12));
     const { productLocalRepository } = await import('../productLocalRepository');
 
     const prepared = await productLocalRepository.prepareProduct({
@@ -89,5 +89,56 @@ describe('productLocalRepository.prepareProduct', () => {
       alertTargetDate: null,
       alertType: null
     });
+  });
+
+  it('preserves the default supplier in the initial batch traceability', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const prepared = await productLocalRepository.prepareProduct({
+      id: 'supplier-product', name: 'Arroz', price: 20, cost: 10, stock: 4,
+      trackStock: true, expirationMode: 'NONE', supplier: 'Distribuidora Centro'
+    });
+
+    expect(prepared.batches[0].supplier).toBe('Distribuidora Centro');
+  });
+
+  it('keeps existing apparel variants out of initial batches while editing', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const existing = { id: 'shirt-1', name: 'Playera', createdAt: '2026-01-01T00:00:00.000Z', stock: 4 };
+    const prepared = await productLocalRepository.prepareProduct({
+      ...existing,
+      price: 30,
+      cost: 12,
+      trackStock: true,
+      stock: 4,
+      quickVariants: [{ id: 'batch-shirt-blue-m', talla: 'M', color: 'Azul', stock: 4, cost: 12, price: 30 }]
+    }, existing);
+
+    expect(prepared.editing).toBe(true);
+    expect(prepared.batches).toEqual([]);
+  });
+
+  it('changes product shelf-life defaults without recreating or overwriting existing batches', async () => {
+    const { productLocalRepository } = await import('../productLocalRepository');
+    const existing = {
+      id: 'produce-1', name: 'Manzanas', stock: 5, price: 20, cost: 10,
+      createdAt: '2026-08-01T00:00:00.000Z', expirationMode: 'STRICT',
+      expiryDate: '2026-08-11T00:00:00.000Z'
+    };
+
+    const prepared = await productLocalRepository.prepareProduct({
+      ...existing,
+      expirationMode: 'SHELF_LIFE',
+      expiryDate: null,
+      shelfLifeValue: 7,
+      shelfLifeUnit: 'days'
+    }, existing);
+
+    expect(prepared.product).toMatchObject({
+      expirationMode: 'SHELF_LIFE',
+      shelfLifeValue: 7,
+      shelfLifeUnit: 'days',
+      expiryDate: null
+    });
+    expect(prepared.batches).toEqual([]);
   });
 });

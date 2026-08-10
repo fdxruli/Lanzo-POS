@@ -2,15 +2,17 @@ import { useId, useReducer } from 'react';
 import { Boxes, DollarSign, Layers3, Package, Pencil, Save, Scale, Trash2, X } from 'lucide-react';
 import { showConfirmModal } from '../../services/utils';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
+import { getIngredientDefaultUnit, getSaleTypeForIngredientUnit, INGREDIENT_UNITS, normalizeIngredientUnit } from '../../utils/ingredientConfiguration';
 import './IngredientManager.css';
 
-const getIngredientUnit = (ingredient) => ingredient.bulkData?.purchase?.unit || (ingredient.saleType === 'unit' ? 'pza' : 'kg');
+const getIngredientUnit = (ingredient) => getIngredientDefaultUnit(ingredient);
 
 const initialFormState = {
     name: '',
     cost: '',
     stock: '',
     unit: 'kg',
+    bulkData: null,
     editingId: null
 };
 
@@ -23,7 +25,8 @@ function formReducer(state, action) {
                 ...initialFormState,
                 editingId: action.ingredient.id,
                 name: action.ingredient.name || '',
-                unit: getIngredientUnit(action.ingredient)
+                unit: getIngredientUnit(action.ingredient),
+                bulkData: action.ingredient.bulkData || null
             };
         case 'reset':
             return initialFormState;
@@ -38,7 +41,7 @@ export default function IngredientManager({ ingredients, onSave, onDelete, onMan
     const hasMore = useInventoryCatalogStore((state) => state.hasMore);
     const isLoadingNextPage = useInventoryCatalogStore((state) => state.isLoadingNextPage);
     const loadNextPage = useInventoryCatalogStore((state) => state.loadNextPage);
-    const { name, cost, stock, unit, editingId } = formState;
+    const { name, cost, stock, unit, bulkData, editingId } = formState;
 
     const sortedIngredients = ingredients.toSorted((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
     const stockedCount = ingredients.filter((ingredient) => Number(ingredient.stock || 0) > 0).length;
@@ -52,12 +55,15 @@ export default function IngredientManager({ ingredients, onSave, onDelete, onMan
         e.preventDefault();
         if (!name.trim()) return;
 
+        const canonicalUnit = normalizeIngredientUnit(unit);
+        const saleType = getSaleTypeForIngredientUnit(canonicalUnit);
         const ingredientData = {
             id: editingId,
             name: name.trim(),
             productType: 'ingredient',
-            saleType: unit === 'pza' ? 'unit' : 'bulk',
-            bulkData: { purchase: { unit } },
+            unit: canonicalUnit,
+            saleType,
+            ...(saleType === 'bulk' ? { bulkData: { ...bulkData, purchase: { ...bulkData?.purchase, unit: canonicalUnit } } } : {}),
             cost: parseFloat(cost) || 0,
             stock: parseFloat(stock) || 0,
             price: 0
@@ -161,11 +167,7 @@ export default function IngredientManager({ ingredients, onSave, onDelete, onMan
                                 onChange={(e) => dispatchForm({ type: 'field', name: 'unit', value: e.target.value })}
                                 aria-label="Unidad del insumo"
                             >
-                                <option value="kg">Kilogramos (kg)</option>
-                                <option value="lt">Litros (L)</option>
-                                <option value="gr">Gramos (gr)</option>
-                                <option value="ml">Mililitros (ml)</option>
-                                <option value="pza">Pieza / Unidad</option>
+                                {INGREDIENT_UNITS.map((ingredientUnit) => <option key={ingredientUnit.value} value={ingredientUnit.value}>{ingredientUnit.label}</option>)}
                             </select>
                         </div>
 

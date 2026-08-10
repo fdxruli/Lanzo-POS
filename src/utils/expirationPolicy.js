@@ -1,3 +1,5 @@
+import { parseStrictCalendarDate } from './dateUtils';
+
 const PERISHABLE_KEYWORDS = [
   'verduleria',
   'fruteria',
@@ -90,18 +92,33 @@ export const calculateShelfLifeTargetDate = ({
   const amount = Number(shelfLifeValue) || 0;
   if (amount <= 0) return null;
 
-  const date = baseDate ? new Date(baseDate) : new Date();
-  if (Number.isNaN(date.getTime())) {
-    date.setTime(Date.now());
-  }
+  const getCalendarDate = (value) => {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+    const date = value ? new Date(value) : new Date();
+    if (Number.isNaN(date.getTime())) return null;
+
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+  };
+
+  // Shelf life is a calendar policy. Normalize the local calendar day before
+  // adding units so serializing the result cannot move it to the next day.
+  const calendarDate = getCalendarDate(baseDate) || getCalendarDate(new Date());
+  const date = new Date(parseStrictCalendarDate(calendarDate));
 
   const normalizedUnit = normalizeExpirationPolicyText(shelfLifeUnit);
   if (['hour', 'hours', 'hora', 'horas'].includes(normalizedUnit)) {
-    date.setHours(date.getHours() + amount);
+    date.setUTCHours(date.getUTCHours() + amount);
+  } else if (['week', 'weeks', 'semana', 'semanas'].includes(normalizedUnit)) {
+    date.setUTCDate(date.getUTCDate() + (amount * 7));
   } else if (['month', 'months', 'mes', 'meses'].includes(normalizedUnit)) {
-    date.setMonth(date.getMonth() + amount);
+    date.setUTCMonth(date.getUTCMonth() + amount);
   } else {
-    date.setDate(date.getDate() + amount);
+    date.setUTCDate(date.getUTCDate() + amount);
   }
 
   return date.toISOString();

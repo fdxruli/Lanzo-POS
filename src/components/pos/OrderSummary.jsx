@@ -37,6 +37,7 @@ import {
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
+import { getProductUnitShortLabel, resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
@@ -504,8 +505,13 @@ export default function OrderSummary({
               const modifierLabels = formatSelectedModifiersForDisplay(item.selectedModifiers);
               const quantity = item.quantity || 1;
               const lineTotal = item.price * quantity;
-              const isUnitSale = item.saleType === 'unit' || !item.saleType;
               const quantityInputProps = getOrderQuantityInputProps(item);
+              const usesDirectQuantityInput = item.saleType === 'bulk' || quantityInputProps.step !== '1';
+              const isUnitSale = !usesDirectQuantityInput;
+              const saleUnit = resolveProductSaleUnit(item);
+              const saleUnitLabel = getProductUnitShortLabel(saleUnit);
+              const displayQuantity = usesDirectQuantityInput ? Number(quantity).toFixed(3) : quantity;
+              const isFractioned = item.conversionFactor?.enabled === true;
 
               return (
                 <div key={lineId} className={`${itemClasses}${isKitchenCancelled ? ' order-item--kitchen-cancelled' : ''}`}>
@@ -540,8 +546,9 @@ export default function OrderSummary({
                     )}
 
                     <div className="order-item-price">
-                      ${item.price.toFixed(2)} {isUnitSale ? 'c/u' : 'por unidad'}
+                      {displayQuantity} {saleUnitLabel} × ${item.price.toFixed(2)}/{saleUnitLabel}
                     </div>
+                    {isFractioned && <div className="order-item-sale-mode">Fraccionado · Venta por {saleUnitLabel}</div>}
 
                     {showRestaurantActions && (cloudItem || hasKitchenArea) && (
                       <div className="order-item-kitchen-tags" aria-label="Estado de cocina">

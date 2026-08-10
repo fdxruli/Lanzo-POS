@@ -680,6 +680,23 @@ export const queryBatchesByProductIdAndActive = async (productId, isActive = tru
 };
 
 /**
+ * Obtiene lotes activos para varios productos en una sola lectura IndexedDB.
+ * Las tarjetas de catálogo consumen este resultado agrupado, evitando una
+ * consulta por cada tarjeta visible.
+ */
+export const queryBatchesByProductIdsAndActive = async (productIds = [], isActive = true) => {
+    const ids = [...new Set((Array.isArray(productIds) ? productIds : []).filter(Boolean))];
+    if (ids.length === 0) return [];
+
+    const allBatches = await db.table(STORES.PRODUCT_BATCHES)
+        .where('productId')
+        .anyOf(ids)
+        .toArray();
+
+    return allBatches.filter((batch) => batch.isActive === isActive);
+};
+
+/**
  * Eliminación en cascada (Categoría -> Actualizar Productos)
  * PATRÓN UNIFICADO: Usa softDeleteWithCascade internamente para consistencia.
  */

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -85,10 +85,6 @@ vi.mock('../../../utils/cartLineIdentity', () => ({
   getCartLineId: (item, index) => item.lineId || item.id || String(index)
 }));
 
-vi.mock('../../../utils/quantityInputStep', () => ({
-  getOrderQuantityInputProps: () => ({ step: '1', inputMode: 'numeric', unit: 'pz' })
-}));
-
 vi.mock('../../../utils/restaurantModifierDisplay', () => ({
   formatSelectedModifiersForDisplay: () => []
 }));
@@ -150,6 +146,11 @@ const setOrder = (origin) => {
   };
 };
 
+const setOrderItems = (items) => {
+  setOrder(undefined);
+  mocks.activeState.activeOrders.get('active-order').items = items;
+};
+
 const props = {
   onOpenPayment: vi.fn(),
   onOpenSplit: vi.fn(),
@@ -188,5 +189,127 @@ describe('OrderSummary ecommerce discount slots', () => {
     render(<OrderSummary {...props} />);
 
     expect(screen.getAllByText('Descuentos').length).toBeGreaterThan(0);
+  });
+
+  it('shows commercial sale units for unit, bulk, and fractioned cart lines', () => {
+    setOrder(undefined);
+    const order = mocks.activeState.activeOrders.get('active-order');
+    order.items = [
+      { id: 'unit', lineId: 'unit', name: 'Unidad', quantity: 2, price: 18, saleType: 'unit', unit: 'pza' },
+      { id: 'bulk', lineId: 'bulk', name: 'Granel', quantity: 0.5, price: 40, saleType: 'bulk', unit: 'kg', bulkData: { purchase: { unit: 'caja' } } },
+      { id: 'fractioned', lineId: 'fractioned', name: 'Fraccionado', quantity: 3, price: 15, saleType: 'unit', unit: 'pza', conversionFactor: { enabled: true, purchaseUnit: 'caja', factor: 12 } }
+    ];
+
+    render(<OrderSummary {...props} />);
+
+    expect(screen.getByText('2 pza × $18.00/pza')).toBeInTheDocument();
+    expect(screen.getByText('0.500 kg × $40.00/kg')).toBeInTheDocument();
+    expect(screen.getByText('3 pza × $15.00/pza')).toBeInTheDocument();
+    expect(screen.getByText('Fraccionado · Venta por pza')).toBeInTheDocument();
+    expect(screen.queryByText(/c\/u/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps a decimal bulk quantity when editing a measurement sale', () => {
+    setOrderItems([{
+      id: 'ft-product',
+      lineId: 'ft-line',
+      name: 'Manguera',
+      quantity: 1,
+      price: 12,
+      saleType: 'bulk',
+      unit: 'ft'
+    }]);
+
+    render(<OrderSummary {...props} />);
+
+    const input = screen.getByRole('spinbutton', { name: 'Cantidad de Manguera' });
+    expect(input).toHaveAttribute('step', '0.001');
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+
+    fireEvent.change(input, { target: { value: '2.5' } });
+
+    expect(mocks.activeState.updateItemQuantity).toHaveBeenCalledWith('ft-line', 2.5);
+  });
+
+  it.each([
+    ['cm', 'Cadena', 'cm-line', '2.5', 2.5],
+    ['ft', 'Manguera legacy', 'ft-legacy-line', '2.5', 2.5],
+    ['in', 'Material', 'in-line', '1.25', 1.25]
+  ])('uses a decimal input for legacy unit %s measurement sales', (unit, name, lineId, value, expectedQuantity) => {
+    setOrderItems([{
+      id: `hardware-${unit}`,
+      lineId,
+      name,
+      quantity: 1,
+      price: 12,
+      saleType: 'unit',
+      unit
+    }]);
+
+    render(<OrderSummary {...props} />);
+
+    const input = screen.getByRole('spinbutton', { name: `Cantidad de ${name}` });
+    expect(input).toHaveAttribute('step', '0.001');
+    expect(input).toHaveAttribute('inputmode', 'decimal');
+    expect(screen.queryByRole('button', { name: `Agregar una unidad de ${name}` })).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value } });
+
+    expect(mocks.activeState.updateItemQuantity).toHaveBeenCalledWith(lineId, expectedQuantity);
+  });
+
+  it('keeps piece sales on integer increment and decrement controls', () => {
+    setOrderItems([{
+      id: 'piece-product',
+      lineId: 'piece-line',
+      name: 'Tornillo',
+      quantity: 1,
+      price: 3,
+      saleType: 'unit',
+      unit: 'pza'
+    }]);
+
+    render(<OrderSummary {...props} />);
+
+    expect(screen.queryByRole('spinbutton', { name: 'Cantidad de Tornillo' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar una unidad de Tornillo' }));
+
+    expect(mocks.activeState.updateItemQuantity).toHaveBeenCalledWith('piece-line', 2);
+  });
+
+  it.each(['g', 'ml'])('uses a direct integer input for bulk %s sales', (unit) => {
+    const name = `Venta ${unit}`;
+    setOrderItems([{
+      id: `bulk-${unit}`,
+      lineId: `bulk-${unit}-line`,
+      name,
+      quantity: 250,
+      price: 1,
+      saleType: 'bulk',
+      unit
+    }]);
+
+    render(<OrderSummary {...props} />);
+
+    const input = screen.getByRole('spinbutton', { name: `Cantidad de ${name}` });
+    expect(input).toHaveAttribute('step', '1');
+    expect(input).toHaveAttribute('inputmode', 'numeric');
+  });
+
+  it('displays the decimal measurement quantity and its unrounded line total', () => {
+    setOrderItems([{
+      id: 'ft-total',
+      lineId: 'ft-total-line',
+      name: 'Cable',
+      quantity: 2.5,
+      price: 12,
+      saleType: 'unit',
+      unit: 'ft'
+    }]);
+
+    render(<OrderSummary {...props} />);
+
+    expect(screen.getByText('2.500 ft × $12.00/ft')).toBeInTheDocument();
+    expect(screen.getByText('$30.00')).toBeInTheDocument();
   });
 });
