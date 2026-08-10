@@ -574,10 +574,10 @@ a database reset.
 
 ## Prior validation (superseded by baseline reset)
 
-- `node --test scripts/oss/reset-local-with-bootstrap.test.mjs`: **PASS**
+- `node --test scripts/oss/reset-local-with-bootstrap.node-test.mjs`: **PASS**
   (5 tests).
 - `node --test scripts/oss/release-boundary.test.mjs
-  scripts/oss/reset-local-with-bootstrap.test.mjs`: **PASS** (17 tests).
+  scripts/oss/reset-local-with-bootstrap.node-test.mjs`: **PASS** (17 tests).
 - `git diff --check` and `git diff --cached --check`: **PASS**.
 - Focused frontend compatibility tests could not start because this worktree had
   no `node_modules`; a locked `npm ci --ignore-scripts` timed out while fetching
