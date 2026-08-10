@@ -26,6 +26,19 @@ describe('ProductFormV2', () => {
     expect(screen.getByLabelText(/Nombre del producto/i)).toBeInTheDocument();
   });
 
+  it('does not toggle inventory tracking when interacting with inventory fields or helper copy', () => {
+    renderForm();
+    const trackStock = screen.getByRole('checkbox', { name: /Controlar inventario/i });
+
+    fireEvent.click(screen.getByLabelText(/Existencia inicial/i));
+    fireEvent.click(screen.getByLabelText(/Alerta de stock bajo/i));
+    fireEvent.click(screen.getByText(/Registra existencias y alertas/i));
+
+    expect(trackStock).toBeChecked();
+    fireEvent.click(trackStock);
+    expect(trackStock).not.toBeChecked();
+  });
+
   it('places grocery classification before the core product fields and avoids a duplicate lower selector', () => {
     renderForm();
     const selector = screen.getByRole('radiogroup', { name: /qué estás agregando/i });
