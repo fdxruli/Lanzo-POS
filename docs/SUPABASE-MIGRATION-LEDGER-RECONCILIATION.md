@@ -1,6 +1,6 @@
 # Supabase migration ledger reconciliation
 
-## Status
+## Prior task status (superseded by baseline reset)
 
 **BLOCKED** — the repository and production migration ledgers are linked and
 REMOTE-ONLY = 0, but the data portion of
@@ -10,6 +10,77 @@ NULL instead of their POS source URL. The exact writer and historical
 configuration state cannot be proven from retained evidence, so both are
 classified F — INSUFFICIENT_EVIDENCE. No production migration, DDL,
 customer-data mutation, or ledger repair was performed.
+
+## Baseline Reset Decision
+
+Provenance recovery for
+`20260801043000_ecom_catalog_legacy_timestamp_revision_repair.sql` is
+exhausted. Its historical execution is **UNKNOWN / UNRECOVERABLE**. No assertion
+is made about whether it fully executed.
+
+The current production data state is accepted as the forward baseline. This
+does not authorize a correction for projections C/D: their historical image
+state and configuration cannot be recovered, and changing them would be a data
+decision without sufficient evidence. `migration repair` is not used, so the
+unresolved historical version is neither recorded as applied nor reverted.
+
+The historical SQL was byte-preserved at
+`supabase/archive/unresolved-migrations/20260801043000_ecom_catalog_legacy_timestamp_revision_repair.sql`,
+outside executable migration discovery. Its SHA-256 is
+`FF0386A936BF76BC27A62687EBD45FD9B963404962F37291424006B33B3033CC`.
+The archive README marks it historical/non-executable and forbids ledger repair
+or DML re-execution.
+
+| Historical statement | Type | Current production equivalent | Needed for future reproducibility | Included in forward baseline |
+| --- | --- | --- | --- | --- |
+| `create or replace function private.ecommerce_source_revision_decision(...)` | DDL | Current production function definition, hash `f6e63dd70069f24db34e72d1c16f15f5a68d90f75d1d8f8654101699b1a98762` | Yes | Yes |
+| `comment on function private.ecommerce_source_revision_decision(...)` | COMMENT | Current production comment, hash `2e8a2ab8ab2bf6f6c8df3428d0eeab796efe5f6db3d7865a6e2e77090f06791c` | Yes | Yes |
+| Function owner and execute privileges | GRANT/REVOKE / ownership | Owner `postgres`; execute only for `postgres` and `service_role` | Yes | Yes |
+| `update public.ecommerce_published_products ...` | DML | No authoritative historical equivalent; C/D remain as-is | No | No |
+
+`20260810092512_ecom_catalog_revision_forward_baseline.sql` is a prospective,
+schema-only migration created with `supabase migration new`. It reproduces the
+current supported function contract (arguments, return type, `IMMUTABLE`,
+`SECURITY DEFINER`, empty `search_path`, owner, privileges, behavior and
+comment), and intentionally contains no historical image URLs, projection IDs,
+backfill, or DML. Applying it to current production is expected to leave the
+function definition semantically unchanged; only its future migration-history
+row would be new.
+
+Expected ledger after this reset:
+
+- Remote-only: `0`.
+- Historical `20260801043000`: archived and permanently outside the production
+  ledger.
+- Prospectively pending: `20260806061500_business_profile_rubro_realtime_sync`
+  and `20260810092512_ecom_catalog_revision_forward_baseline`.
+
+Fresh installations retain the schema object through the prospective baseline.
+They do not receive historical production data, because no initial data is
+needed for an empty installation and no historical data claim can be made.
+
+## Current Status
+
+- Archive integrity: **PASS** — SHA-256
+  `FF0386A936BF76BC27A62687EBD45FD9B963404962F37291424006B33B3033CC`.
+- Forward-baseline static contract test: **PASS** (2 tests).
+- OSS bootstrap runner test: **PASS** (5 tests).
+- `supabase migration list --linked`: **PASS** — `REMOTE-ONLY = 0`; local-only
+  consists exactly of `20260806061500` and
+  `20260810092512_ecom_catalog_revision_forward_baseline`.
+- `supabase db push --dry-run --linked`: **PASS** — would apply exactly
+  `20260806061500_business_profile_rubro_realtime_sync.sql` followed by
+  `20260810092512_ecom_catalog_revision_forward_baseline.sql`.
+- `git diff --check`: **PASS**.
+
+**READY FOR MERGE.** The historical file has been archived byte-for-byte and
+is no longer executable. The linked ledger has `REMOTE-ONLY = 0`; its only
+pending migrations are the already-audited `20260806061500` business-profile
+migration and the new forward baseline. `supabase db push --dry-run --linked`
+passed and reported exactly those two files. No migration was applied.
+
+Production was queried read-only only. No production DDL, DML, ledger repair,
+image change, ecommerce resynchronization, or C/D change was performed.
 
 ## Scope and authoritative snapshot
 
@@ -452,7 +523,7 @@ modified or applied.
 modify customer data. It also was not run locally because no local Supabase
 database is started.
 
-## Final Ledger
+## Prior final ledger (superseded by baseline reset)
 
 After the explicit OSS-bootstrap relocation:
 
@@ -470,7 +541,7 @@ After the explicit OSS-bootstrap relocation:
 linked migration list is operationally **PASS**, but the final ledger is
 **BLOCKED** because the first local-only item is not authorized for repair.
 
-## Dry Run
+## Prior dry run (superseded by baseline reset)
 
 Not run. The task explicitly permits `supabase db push --dry-run --linked` only
 after unresolved local-only migrations reach zero. Running it now would not
@@ -499,7 +570,7 @@ Apparel migration, Product Form V2 change, PR #184 change, or customer-data
 operation was performed. The OSS overlay runner was validated without invoking
 a database reset.
 
-## Validation
+## Prior validation (superseded by baseline reset)
 
 - `node --test scripts/oss/reset-local-with-bootstrap.test.mjs`: **PASS**
   (5 tests).
@@ -512,7 +583,7 @@ a database reset.
 - SQL migration tests require a disposable local PostgreSQL/Supabase instance;
   they were not run against production.
 
-## Next step
+## Prior next step (superseded by baseline reset)
 
 Keep PR #185 open and draft. Provenance recovery is complete and classified
 PROVENANCE_UNRECOVERABLE; do not repeat the same finite source set without a
