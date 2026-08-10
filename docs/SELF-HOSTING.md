@@ -155,3 +155,12 @@ remoto ni un proveedor real durante una validación aislada no autorizada.
 **SELF-HOSTING BLOCKED.** La configuración, el esquema de periodos y la
 función están versionados, pero el runtime PostgreSQL, la base vacía, E2E y
 backup/restore siguen pendientes. OSS.1.5 no debe marcarse `VERIFIED` todavía.
+
+### Addendum: OSS bootstrap overlay
+
+The period-schema compatibility SQL now lives outside the production migration
+ledger at `supabase/bootstrap/oss_bootstrap_license_period_schema.sql`. For an
+isolated OSS replay, use `npm run oss:db:reset-local`; it creates a disposable
+local overlay, inserts the bootstrap at its historical ordering point, and
+invokes only `supabase db reset --local`. The runner rejects remote/link/project
+arguments and must never be used against production.

@@ -194,3 +194,13 @@ OSS.1.5 permanece `BLOCKED WITH DOCUMENTED LIMITATION`.
 - Producción no fue enlazada para operaciones de base de datos ni modificada.
 - No se utilizó Docker, `supabase start`, `supabase db start`, PostgreSQL local, Vercel, deploy, API de OpenAI, Gemini ni Edge Functions.
 - No se creó `LICENSE`, no se activó AGPL y no se reescribió historial Git.
+
+## Addendum: bootstrap location reconciliation
+
+This historical runtime-validation record is not rewritten as a fresh-install
+pass. The period-schema bootstrap is now located at
+`supabase/bootstrap/oss_bootstrap_license_period_schema.sql`. The explicit
+`npm run oss:db:reset-local` runner creates a disposable local overlay and
+injects it at timestamp `20260621000000` only for an OSS/local reset; it rejects
+linked, remote, password, database URL, and project-ref arguments. Production
+execution remains **NO**.

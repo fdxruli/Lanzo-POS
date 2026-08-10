@@ -109,6 +109,17 @@ OSS.1.5 permanece `BLOCKED` hasta completar runtime/E2E, base vacía y
 backup/restore. OSS.1.4 mantiene su estado; OSS.2
 permanece `BLOCKED`; AGPL no fue activada y no se creó `LICENSE`.
 
+### Addendum: bootstrap location reconciliation
+
+The historical descriptions above remain evidence of the original OSS.1.5.4
+analysis. The compatibility SQL is now stored at
+`supabase/bootstrap/oss_bootstrap_license_period_schema.sql`, not in the
+production migration sequence. `npm run oss:db:reset-local` injects an
+ephemeral `20260621000000` copy into a disposable local overlay between the
+older AI RPC migrations and the first June 24 consumer. This preserves the
+fresh-install order without exposing the bootstrap to `migration list`,
+`db push`, or production.
+
 ## Alcance negativo comprobado
 
 No se modificaron migraciones, `supabase/config.toml`,
