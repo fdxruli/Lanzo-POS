@@ -162,6 +162,7 @@
     { "pathPattern": "store/api/_storeHtmlTemplate.js", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Social head markers are parser compatibility identifiers." },
     { "pathPattern": "supabase/config.toml", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Local project identifier is configuration compatibility data." },
     { "pathPattern": "supabase/migrations/**", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Database migration identifiers and historical SQL remain unchanged." },
+    { "pathPattern": "supabase/bootstrap/**", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "OSS-only bootstrap SQL remains unchanged outside the production migration ledger." },
     { "pathPattern": ".env.example", "classification": "DOCUMENTATION", "reason": "Example environment names are non-secret documentation." },
     { "pathPattern": ".gitignore", "classification": "INTERNAL COMPATIBILITY IDENTIFIER", "reason": "Ignore patterns are repository tooling identifiers." }
   ],
