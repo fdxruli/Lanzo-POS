@@ -32,3 +32,15 @@ Los productos nuevos obtienen un ID al abrir el formulario, por lo que un reinte
 | Restaurante | Platillo, bebida, producto listo e insumo; receta, modificadores y estaciones reutilizan los componentes existentes. |
 
 Existe un único hardening de Supabase para apparel: el RPC rechaza `initialBatches` durante una edición, separando la creación de lotes iniciales de las ediciones de variantes. La retirada de legacy, una acción independiente de reposición y la expansión visual de mayoreo quedan para fases posteriores.
+
+## Post-merge stabilization
+
+Fecha: 2026-08-10. Base auditada: `919fd32b24a1259b3e90c56f123e4de4bc34bb0b` (merge de PR #184).
+
+La auditoría estática confirma que `ProductForm.jsx` mantiene V2 como implementación predeterminada y que `ProductFormLegacy`, el wizard y el adaptador de rollback permanecen disponibles. El flujo productivo conserva la preparación de imagen en `ProductsPage`, `productRepository.saveProduct`, `productLocalRepository.prepareProduct`, IndexedDB, el lote inicial para altas y el outbox/cloud existente.
+
+Se corrigió un defecto reproducible en el control de inventario: el switch y los campos de existencia estaban dentro del mismo `label`, por lo que un clic en existencia inicial, alerta o texto auxiliar podía alternar `trackStock`. El switch ahora tiene un único control y área de activación, con etiqueta accesible independiente. La regresión está cubierta en `ProductFormV2.test.jsx`.
+
+Las pruebas focales pasaron usando el pool `forks`: 75 pruebas en `form-v2` y 59 en repositorio local, repositorio cloud, imágenes, resúmenes y lotes. ESLint pasó para `ProductForm.jsx`, todo `form-v2` y los archivos modificados. El test de ledger de migraciones pasó y la migración `20260810161224_apparel_conflict_fix_initial_batches_create_only.sql` continúa presente; no se crearon ni aplicaron migraciones.
+
+La validación visual real, los smokes de navegador, el build y `react-doctor` quedaron bloqueados por el límite de ejecución local: Vite no inició ni terminó el build antes del timeout de 124 segundos y `npx -y react-doctor@latest` tampoco finalizó. No se puede declarar `PRODUCT.FORM.V2.2` completo hasta repetir esos pasos en un entorno donde Vite pueda completar y ejecutar los flujos con datos/licencia de prueba.
