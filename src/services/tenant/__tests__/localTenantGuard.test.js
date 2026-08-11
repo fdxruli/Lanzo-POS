@@ -324,13 +324,30 @@ describe('LocalTenantGuard', () => {
     });
   });
 
-  it('reports a redacted, read-only diagnostic for an unresolved legacy database', async () => {
+  it('reports an anonymized, read-only topology for conflicting legacy ownership', async () => {
     const { database, guard } = await createDatabase();
-    await database.table('menu').put({ id: 'product-a', name: 'Producto A' });
-    await database.table('company').put({
-      id: 'company:TENANT-A',
-      license_key: 'TENANT-A'
+    await database.table('menu').put({ id: 'product-a', name: 'Producto A privado' });
+    await database.table('company').bulkPut([
+      { id: 'company:TOP-SECRET-A', license_key: 'TOP-SECRET-A', name: 'Farmacia privada A' },
+      { id: 'company:TOP-SECRET-C', license_key: 'TOP-SECRET-C', name: 'Farmacia privada C' },
+      { id: 'company:TOP-SECRET-MISMATCH', license_key: 'TOP-SECRET-OTHER', name: 'Conflicto' },
+      { id: 'company', name: 'Perfil legacy sin scope' }
+    ]);
+    await database.table('sync_meta').bulkPut([
+      { key: 'TOP-SECRET-A:pos_last_change_seq', value: 42 },
+      { key: 'TOP-SECRET-C:pos_sync_enabled', value: true },
+      { key: 'pos_sync_enabled', value: true }
+    ]);
+    await database.table('sync_outbox').put({
+      id: 'outbox-private-b',
+      licenseKey: 'TOP-SECRET-B',
+      status: 'pending',
+      payload: { customer: 'No exponer' }
     });
+    await database.table('sync_cache').bulkPut([
+      { key: 'devices_TOP-SECRET-D', value: [] },
+      { key: 'last_valid_license_state', value: { payload: { license_key: 'TOP-SECRET-E' } } }
+    ]);
 
     const nativeDatabase = database.backendDB();
     const nativeTransaction = nativeDatabase.transaction.bind(nativeDatabase);
@@ -347,31 +364,113 @@ describe('LocalTenantGuard', () => {
       bindings: await database.table(LOCAL_TENANT_BINDING_STORE).count()
     };
 
-    const diagnostic = await guard.inspectLocalTenantDiagnostic();
+    const diagnostic = await guard.inspectLocalTenantDiagnostic({ license_key: 'TOP-SECRET-A' });
 
     expect(diagnostic).toMatchObject({
-      diagnosticVersion: 1,
+      diagnosticVersion: 2,
       binding: { present: false },
       tenantOwnedData: true,
-      occupiedTenantOwnedStores: ['company', 'menu'],
-      ownershipSourceTypes: ['company_scoped'],
-      ownershipCandidateCount: 1,
-      quorumCount: 1,
+      ownershipSourceTypes: ['company_scoped', 'sync_meta', 'sync_outbox'],
+      ownershipCandidateCount: 3,
+      ownershipSourceTypeCount: 3,
       decision: 'LEGACY_UNRESOLVED',
-      reason: 'missing_legacy_ownership_quorum'
+      reason: 'conflicting_legacy_tenant_evidence',
+      companyRecords: {
+        total: 4,
+        scopedRecords: 3,
+        unscopedRecords: 1,
+        scopedCandidateCount: 2
+      },
+      syncMeta: { unscopedRecordCount: 1 },
+      auxiliaryCandidateCount: 4
     });
-    expect(diagnostic.recordCounts).toMatchObject({ company: 1, menu: 1 });
-    expect(JSON.stringify(diagnostic)).not.toContain('TENANT-A');
-    expect(JSON.stringify(diagnostic)).not.toContain('Producto A');
+    expect(diagnostic.recordCounts).toMatchObject({ company: 4, menu: 1, sync_outbox: 1, sync_meta: 3 });
+    expect(diagnostic.ownershipCandidates).toHaveLength(3);
+    expect(diagnostic.ownershipCandidates.filter((candidate) => candidate.matchesActiveLicense)).toHaveLength(1);
+    expect(diagnostic.ownershipCandidates.filter((candidate) => candidate.sourceTypeCount === 2)).toHaveLength(2);
+    expect(diagnostic.ownershipCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceTypes: ['company_scoped', 'sync_meta'],
+        sourceRecordCounts: { company_scoped: 1, sync_outbox: 0, sync_meta: 1 },
+        earliestEvidenceAt: null,
+        latestEvidenceAt: null
+      }),
+      expect.objectContaining({
+        sourceTypes: ['sync_outbox'],
+        sourceRecordCounts: { company_scoped: 0, sync_outbox: 1, sync_meta: 0 },
+        outboxRecordCount: 1
+      })
+    ]));
+    expect(diagnostic.auxiliaryCandidates).toHaveLength(4);
+    expect(diagnostic.auxiliaryCandidates.filter((candidate) => (
+      candidate.sourceTypes.some((source) => source.startsWith('sync_cache.'))
+    ))).toHaveLength(2);
+    const serialized = JSON.stringify(diagnostic);
+    for (const secret of [
+      'TOP-SECRET-A',
+      'TOP-SECRET-B',
+      'TOP-SECRET-C',
+      'TOP-SECRET-D',
+      'TOP-SECRET-E',
+      'Farmacia privada A',
+      'Producto A privado',
+      'No exponer',
+      'license-key-sha256'
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
     expect(transactionModes).toEqual(['readonly']);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(await database.table('menu').count()).toBe(countsBefore.menu);
     expect(await database.table('company').count()).toBe(countsBefore.company);
     expect(await database.table('sync_outbox').count()).toBe(countsBefore.outbox);
     expect(await database.table(LOCAL_TENANT_BINDING_STORE).count()).toBe(countsBefore.bindings);
-    expect(await database.table('company').get('company:TENANT-A')).toMatchObject({
-      license_key: 'TENANT-A'
+    expect(await database.table('company').get('company:TOP-SECRET-A')).toMatchObject({
+      license_key: 'TOP-SECRET-A'
     });
+  });
+
+  it('reports no active match and safe chronology for a candidate with all ownership sources', async () => {
+    const { database, guard } = await createDatabase();
+    await database.table('menu').put({ id: 'product-a' });
+    await database.table('company').put({
+      id: 'company:TOPOLOGY-A',
+      license_key: 'TOPOLOGY-A',
+      createdAt: '2026-01-01T00:00:00.000Z'
+    });
+    await database.table('sync_meta').put({
+      key: 'TOPOLOGY-A:pos_last_change_seq',
+      value: 42,
+      updatedAt: '2026-01-02T00:00:00.000Z'
+    });
+    await database.table('sync_outbox').put({
+      id: 'topology-outbox-a',
+      licenseKey: 'TOPOLOGY-A',
+      status: 'completed',
+      createdAt: '2026-01-03T00:00:00.000Z'
+    });
+
+    const diagnostic = await guard.inspectLocalTenantDiagnostic({ license_key: 'TOPOLOGY-NONE' });
+
+    expect(diagnostic.ownershipCandidates).toEqual([
+      expect.objectContaining({
+        matchesActiveLicense: false,
+        sourceTypes: ['company_scoped', 'sync_outbox', 'sync_meta'],
+        sourceTypeCount: 3,
+        companyScopedRecordCount: 1,
+        outboxRecordCount: 1,
+        scopedSyncMetaRecordCount: 1,
+        earliestEvidenceAt: '2026-01-02T00:00:00.000Z',
+        latestEvidenceAt: '2026-01-03T00:00:00.000Z'
+      })
+    ]);
+    expect(JSON.stringify(diagnostic)).not.toContain('TOPOLOGY-A');
+    expect(JSON.stringify(diagnostic)).not.toContain('TOPOLOGY-NONE');
+
+    const idOnlyDiagnostic = await guard.inspectLocalTenantDiagnostic({
+      license_id: 'stable-license-id-without-key'
+    });
+    expect(idOnlyDiagnostic.ownershipCandidates[0].matchesActiveLicense).toBe('unknown');
   });
 
   it('fails closed when browser business storage cannot be inspected', async () => {

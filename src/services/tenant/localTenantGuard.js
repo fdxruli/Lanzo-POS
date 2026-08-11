@@ -281,24 +281,90 @@ const collectRecordEvidence = (collector, record, source) => {
   addEvidence(collector, record?.details?.licenseKey, source);
 };
 
+const collectRecordEvidenceKeys = (record) => {
+  const collector = { keys: new Set(), sources: new Set() };
+  collectRecordEvidence(collector, record, 'record');
+  return collector.keys;
+};
+
+const createCandidateTopology = () => new Map();
+
+const getTopologyCandidate = (topology, value) => {
+  const normalized = normalizeLicenseKey(value);
+  if (!normalized || normalized.toLowerCase() === 'legacy') return null;
+  if (!topology.has(normalized)) {
+    topology.set(normalized, {
+      auxiliarySourceTypes: new Set(),
+      ownershipSourceRecordCounts: {
+        company_scoped: 0,
+        sync_outbox: 0,
+        sync_meta: 0
+      },
+      timestamps: []
+    });
+  }
+  return topology.get(normalized);
+};
+
+const collectTrustedRecordTimestamps = (record, fields) => (
+  fields
+    .map((field) => record?.[field])
+    .filter((value) => (
+      typeof value === 'string' &&
+      /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+      Number.isFinite(Date.parse(value))
+    ))
+    .map((value) => new Date(value).toISOString())
+);
+
+const addTopologyAuxiliaryEvidence = (topology, value, source) => {
+  const candidate = getTopologyCandidate(topology, value);
+  if (candidate) candidate.auxiliarySourceTypes.add(source);
+};
+
+const addTopologyOwnershipEvidence = (topology, value, source, record, timestampFields = []) => {
+  const candidate = getTopologyCandidate(topology, value);
+  if (!candidate) return;
+  candidate.ownershipSourceRecordCounts[source] += 1;
+  candidate.timestamps.push(...collectTrustedRecordTimestamps(record, timestampFields));
+};
+
+const addRecordTopologyEvidence = (topology, record, source) => {
+  for (const value of collectRecordEvidenceKeys(record)) {
+    addTopologyAuxiliaryEvidence(topology, value, source);
+  }
+};
+
 const collectEvidence = (recordsByStore) => {
   const collector = { keys: new Set(), sources: new Set() };
   const ownershipCollector = { keys: new Set(), sources: new Set() };
+  const topology = createCandidateTopology();
+  let companyScopedRecords = 0;
+  let companyUnscopedRecords = 0;
+  let unscopedSyncMetaRecordCount = 0;
 
   for (const record of recordsByStore.company || []) {
     const recordOwnership = { keys: new Set(), sources: new Set() };
     collectRecordEvidence(collector, record, 'company.license_key');
     collectRecordEvidence(recordOwnership, record, 'company.license_key');
-    if (typeof record?.id === 'string' && record.id.startsWith('company:')) {
+    addRecordTopologyEvidence(topology, record, 'company.license_key');
+    const isScopedCompany = typeof record?.id === 'string' && record.id.startsWith('company:');
+    if (isScopedCompany) {
+      companyScopedRecords += 1;
       addEvidence(collector, record.id.slice('company:'.length), 'company.scoped_id');
       addEvidence(recordOwnership, record.id.slice('company:'.length), 'company.scoped_id');
+      addTopologyAuxiliaryEvidence(topology, record.id.slice('company:'.length), 'company.scoped_id');
+    } else {
+      companyUnscopedRecords += 1;
     }
 
     // A mutable company profile cannot claim a whole legacy database by
     // itself. A scoped record that agrees internally is one durable source in
     // the legacy quorum and still needs corroboration from another channel.
-    if (recordOwnership.keys.size === 1 && typeof record?.id === 'string' && record.id.startsWith('company:')) {
-      addEvidence(ownershipCollector, [...recordOwnership.keys][0], 'company_scoped');
+    if (recordOwnership.keys.size === 1 && isScopedCompany) {
+      const candidate = [...recordOwnership.keys][0];
+      addEvidence(ownershipCollector, candidate, 'company_scoped');
+      addTopologyOwnershipEvidence(topology, candidate, 'company_scoped', record);
     }
   }
 
@@ -306,13 +372,23 @@ const collectEvidence = (recordsByStore) => {
     collectRecordEvidence(collector, record, 'sync_outbox.licenseKey');
     addEvidence(collector, record?.metadata?.licenseKey, 'sync_outbox.metadata');
     addEvidence(collector, record?.metadata?.license_key, 'sync_outbox.metadata');
+    addRecordTopologyEvidence(topology, record, 'sync_outbox.licenseKey');
+    addRecordTopologyEvidence(topology, record?.metadata, 'sync_outbox.metadata');
 
     const recordOwnership = { keys: new Set(), sources: new Set() };
     collectRecordEvidence(recordOwnership, record, 'sync_outbox.licenseKey');
     addEvidence(recordOwnership, record?.metadata?.licenseKey, 'sync_outbox.metadata');
     addEvidence(recordOwnership, record?.metadata?.license_key, 'sync_outbox.metadata');
     if (recordOwnership.keys.size === 1) {
-      addEvidence(ownershipCollector, [...recordOwnership.keys][0], 'sync_outbox');
+      const candidate = [...recordOwnership.keys][0];
+      addEvidence(ownershipCollector, candidate, 'sync_outbox');
+      addTopologyOwnershipEvidence(
+        topology,
+        candidate,
+        'sync_outbox',
+        record,
+        ['createdAt', 'updatedAt']
+      );
     }
   }
 
@@ -323,8 +399,19 @@ const collectEvidence = (recordsByStore) => {
       const scopedLicenseKey = key.slice(0, -(suffix.length + 1));
       addEvidence(collector, scopedLicenseKey, 'sync_meta.scoped_key');
       addEvidence(ownershipCollector, scopedLicenseKey, 'sync_meta');
+      addTopologyAuxiliaryEvidence(topology, scopedLicenseKey, 'sync_meta.scoped_key');
+      addTopologyOwnershipEvidence(
+        topology,
+        scopedLicenseKey,
+        'sync_meta',
+        record,
+        ['updatedAt']
+      );
+    } else {
+      unscopedSyncMetaRecordCount += 1;
     }
     collectRecordEvidence(collector, record, 'sync_meta.record');
+    addRecordTopologyEvidence(topology, record, 'sync_meta.record');
   }
 
   for (const record of recordsByStore.sync_cache || []) {
@@ -332,9 +419,15 @@ const collectEvidence = (recordsByStore) => {
     collectRecordEvidence(collector, record?.value, 'sync_cache.value');
     collectRecordEvidence(collector, record?.value?.payload, 'sync_cache.validated_payload');
     collectRecordEvidence(collector, record?.value?.payload?.details, 'sync_cache.validated_payload');
+    addRecordTopologyEvidence(topology, record, 'sync_cache.record');
+    addRecordTopologyEvidence(topology, record?.value, 'sync_cache.value');
+    addRecordTopologyEvidence(topology, record?.value?.payload, 'sync_cache.validated_payload');
+    addRecordTopologyEvidence(topology, record?.value?.payload?.details, 'sync_cache.validated_payload');
 
     if (typeof record?.key === 'string' && record.key.startsWith('devices_')) {
-      addEvidence(collector, record.key.slice('devices_'.length), 'sync_cache.devices_key');
+      const candidate = record.key.slice('devices_'.length);
+      addEvidence(collector, candidate, 'sync_cache.devices_key');
+      addTopologyAuxiliaryEvidence(topology, candidate, 'sync_cache.devices_key');
     }
   }
 
@@ -342,6 +435,16 @@ const collectEvidence = (recordsByStore) => {
     ...collector,
     ownershipKeys: ownershipCollector.keys,
     ownershipSources: ownershipCollector.sources,
+    topology,
+    companyTopology: {
+      total: (recordsByStore.company || []).length,
+      scopedRecords: companyScopedRecords,
+      unscopedRecords: companyUnscopedRecords,
+      scopedCandidateCount: [...topology.values()].filter(
+        (candidate) => candidate.ownershipSourceRecordCounts.company_scoped > 0
+      ).length
+    },
+    unscopedSyncMetaRecordCount,
     ownershipEvidenceComplete:
       ownershipCollector.keys.size === 1 &&
       ownershipCollector.sources.size >= LEGACY_OWNERSHIP_QUORUM_SIZE
@@ -394,6 +497,9 @@ const buildSnapshot = ({ binding, storeResults, browserStorageSnapshot }) => {
     evidenceSources: [...evidence.sources].sort(),
     ownershipEvidenceKeys: [...evidence.ownershipKeys].sort(),
     ownershipEvidenceSources: [...evidence.ownershipSources].sort(),
+    candidateTopology: evidence.topology,
+    companyTopology: evidence.companyTopology,
+    unscopedSyncMetaRecordCount: evidence.unscopedSyncMetaRecordCount,
     ownershipEvidenceComplete: evidence.ownershipEvidenceComplete,
     unscopedLegacyStores
   };
@@ -606,11 +712,70 @@ const diagnosticDecision = (snapshot) => {
   return { decision: 'LEGACY_QUORUM_READY', reason: 'ownership_quorum_complete' };
 };
 
+const activeLicenseMatch = async (candidateKey, activeIdentity, resolveIdentity) => {
+  if (!activeIdentity) return 'unknown';
+  const activeKeyAliases = activeIdentity.aliases.filter(
+    (alias) => alias.startsWith('license-key-sha256:')
+  );
+  if (activeKeyAliases.length === 0) return 'unknown';
+
+  try {
+    const candidateIdentity = await resolveIdentity({ license_key: candidateKey });
+    return candidateIdentity.aliases.some((alias) => activeKeyAliases.includes(alias));
+  } catch {
+    return 'unknown';
+  }
+};
+
+const candidateChronology = (timestamps) => {
+  const sorted = [...new Set(timestamps)].sort();
+  return {
+    earliestEvidenceAt: sorted[0] || null,
+    latestEvidenceAt: sorted.at(-1) || null
+  };
+};
+
 // This diagnostic deliberately exposes categories and counts only. It is safe
 // to copy from a blocked browser without disclosing a license, business data,
 // credentials, tokens, or a tenant binding identity.
-const buildLocalTenantDiagnostic = (snapshot, nativeDatabase, dexieVersion) => ({
-  diagnosticVersion: 1,
+const buildLocalTenantDiagnostic = async (
+  snapshot,
+  nativeDatabase,
+  dexieVersion,
+  activeIdentity,
+  resolveIdentity
+) => {
+  const candidateKeys = [...snapshot.candidateTopology.keys()].sort();
+  const labels = new Map(candidateKeys.map((key, index) => [key, `candidate-${index + 1}`]));
+  const ownershipCandidates = await Promise.all(
+    snapshot.ownershipEvidenceKeys.map(async (key) => {
+      const candidate = snapshot.candidateTopology.get(key);
+      const sourceRecordCounts = { ...candidate.ownershipSourceRecordCounts };
+      return {
+        label: labels.get(key),
+        matchesActiveLicense: await activeLicenseMatch(key, activeIdentity, resolveIdentity),
+        sourceTypes: Object.entries(sourceRecordCounts)
+          .filter(([, count]) => count > 0)
+          .map(([source]) => source),
+        sourceRecordCounts,
+        sourceTypeCount: Object.values(sourceRecordCounts).filter((count) => count > 0).length,
+        companyScopedRecordCount: sourceRecordCounts.company_scoped,
+        outboxRecordCount: sourceRecordCounts.sync_outbox,
+        scopedSyncMetaRecordCount: sourceRecordCounts.sync_meta,
+        ...candidateChronology(candidate.timestamps)
+      };
+    })
+  );
+  const ownershipCandidateKeys = new Set(snapshot.ownershipEvidenceKeys);
+  const auxiliaryCandidates = candidateKeys
+    .filter((key) => !ownershipCandidateKeys.has(key))
+    .map((key) => ({
+      label: labels.get(key),
+      sourceTypes: [...snapshot.candidateTopology.get(key).auxiliarySourceTypes].sort()
+    }));
+
+  return {
+  diagnosticVersion: 2,
   database: {
     nativeVersion: Number.isFinite(nativeDatabase?.version) ? nativeDatabase.version : null,
     dexieVersion: Number.isFinite(dexieVersion) ? dexieVersion : null
@@ -631,9 +796,17 @@ const buildLocalTenantDiagnostic = (snapshot, nativeDatabase, dexieVersion) => (
   ownershipSourceTypes: [...snapshot.ownershipEvidenceSources],
   ownershipCandidateCount: snapshot.ownershipEvidenceKeys.length,
   ownershipSourcesAgree: snapshot.ownershipEvidenceKeys.length <= 1,
-  quorumCount: snapshot.ownershipEvidenceSources.length,
+  ownershipSourceTypeCount: snapshot.ownershipEvidenceSources.length,
+  ownershipCandidates,
+  companyRecords: snapshot.companyTopology,
+  syncMeta: {
+    unscopedRecordCount: snapshot.unscopedSyncMetaRecordCount
+  },
+  auxiliaryCandidateCount: auxiliaryCandidates.length,
+  auxiliaryCandidates,
   ...diagnosticDecision(snapshot)
-});
+  };
+};
 
 const createBlockedError = (code, snapshot, reason) => new LocalTenantAccessError(code, {
   reason,
@@ -661,6 +834,7 @@ export const createLocalTenantGuard = ({
 } = {}) => {
   const activeSyncLeases = new Map();
   let nextSyncLeaseId = 1;
+  let lastAttemptedTenantIdentity = null;
   const resolveIdentity = (source) => resolveActiveTenantIdentity(source, cryptoProvider);
   const blockForLocalTenantError = (error) => {
     if (!isLocalTenantAccessError(error)) return;
@@ -688,14 +862,23 @@ export const createLocalTenantGuard = ({
     return publicInspection(snapshot);
   };
 
-  const inspectLocalTenantDiagnostic = async () => {
+  const inspectLocalTenantDiagnostic = async (activeSource = null) => {
     const nativeDatabase = await getNativeDatabase();
     const snapshot = await readNativeSnapshot(
       nativeDatabase,
       browserStorage,
       tenantSessionStorage
     );
-    return buildLocalTenantDiagnostic(snapshot, nativeDatabase, database.verno);
+    const activeIdentity = activeSource
+      ? await resolveIdentity(activeSource)
+      : lastAttemptedTenantIdentity;
+    return buildLocalTenantDiagnostic(
+      snapshot,
+      nativeDatabase,
+      database.verno,
+      activeIdentity,
+      resolveIdentity
+    );
   };
 
   const getLocalTenantBinding = async () => {
@@ -717,6 +900,7 @@ export const createLocalTenantGuard = ({
 
   const assertLocalTenantAccess = async (source, { reason = 'license_validation' } = {}) => {
     const activeIdentity = await resolveIdentity(source);
+    lastAttemptedTenantIdentity = activeIdentity;
     const alreadyGranted = controller.isGrantedFor(activeIdentity);
 
     if (
@@ -889,6 +1073,7 @@ export const createLocalTenantGuard = ({
     lock: (reason = 'no_active_license') => controller.lock(reason),
     reset: () => {
       activeSyncLeases.clear();
+      lastAttemptedTenantIdentity = null;
       return controller.reset();
     },
     getState: () => controller.getState(),
