@@ -22,10 +22,12 @@ classifies records. It does **not** recover, copy, activate, delete, rewrite
 or bind data. It does not start sync, drain outbox, make RPC calls or mutate
 localStorage.
 
-The only adapter supplied by this phase exposes `readSnapshot()` and uses a
-Dexie `r` transaction. It inventories every physical IndexedDB store and the
-configured tenant-owned localStorage keys through `getItem()` only. It has no
-mutation, sync or network operation.
+The only adapter supplied by this phase exposes `readSnapshot()` and uses the
+existing native IndexedDB connection in a `readonly` transaction. It
+inventories every physical object store, including one not declared by the
+Recovery registry, and the canonical tenant-owned localStorage/sessionStorage
+keys. Dynamic localStorage prefixes use `length`, `key(index)` and `getItem()`
+only. It has no mutation, sync or network operation.
 
 Plan lifecycle available now:
 
@@ -71,18 +73,26 @@ action. In particular:
 
 ## Snapshot fingerprint
 
-The plan includes `sha256:<digest>` for stale-plan detection. The digest is
+The plan includes a source-only `sourceSnapshotFingerprint` as
+`sha256:<digest>` for stale-plan detection. The digest is
 deterministic over sorted store names, primary/relationship identifiers,
 record presence, selected status/timestamp metadata, relevant localStorage
-key presence and anonymized provenance tokens. Changing evidence that affects
+and sessionStorage key/value digest tokens and anonymized provenance tokens.
+Changing evidence that affects
 active/foreign classification, provenance tier or direct-reference eligibility
-therefore changes the fingerprint. It excludes raw license values, payloads,
-business names, personal data, tokens, cache contents and conflict contents.
-Identifiers only exist as digest input; the plan exposes opaque row
-references, not raw record IDs.
+therefore changes the fingerprint. The plan excludes raw license values,
+payloads, business names, personal data, tokens, cache contents and conflict
+contents.
+Browser-storage values and tenant aliases exist only as digest input; the plan
+exposes opaque row references and final digests, never their raw contents or
+raw tenant identifiers.
 
-Any future copy phase must re-inspect the vault and require an identical
-fingerprint before acting.
+The separate `recoveryContextFingerprint` is domain-separated and combines the
+source fingerprint with the normalized active tenant aliases. It exposes only
+its final digest: it is not a standalone tenant hash. Any future copy or
+activation phase must re-resolve the authenticated tenant and require both
+fingerprints to be unchanged. A matching vault with a changed context fails
+closed with `RECOVERY_TENANT_CONTEXT_CHANGED`.
 
 An already-bound source returns `RECOVERY_SOURCE_ALREADY_BOUND` and is not
 eligible for future copying. Unknown physical stores are inventoried with a

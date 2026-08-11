@@ -2,6 +2,8 @@ import { DB_NAME } from '../../config/dbConfig';
 import { resolveActiveTenantIdentity } from './localTenantGuard';
 import {
   LEGACY_RECOVERY_LOCAL_STORAGE_POLICY,
+  LEGACY_RECOVERY_LOCAL_STORAGE_PREFIX_POLICY,
+  LEGACY_RECOVERY_SESSION_STORAGE_POLICY,
   RECOVERY_DESTINATION_ACTION,
   RECOVERY_PLAN_STATUS,
   RECOVERY_PLAN_VERSION,
@@ -29,6 +31,8 @@ const DIRECT_ENTITY_STORE = Object.freeze({
   cash_session: 'cajas',
   cash_movement: 'movimientos_caja'
 });
+
+const RECOVERY_CONTEXT_FINGERPRINT_DOMAIN = 'lanzo-local-recovery-context-v1';
 
 const asText = (value) => (typeof value === 'string' ? value.trim() : '');
 const stableEntries = (object = {}) => Object.keys(object).sort().map((key) => [key, object[key]]);
@@ -104,7 +108,19 @@ const fingerprintToken = async (value, cryptoProvider) => (
   (await digest(value, cryptoProvider)).slice(0, 32)
 );
 
-const fingerprintProjection = async (recordsByStore, localStorage = {}, cryptoProvider) => {
+const storageFingerprintProjection = async (storage = {}, cryptoProvider) => (
+  Promise.all(stableEntries(storage).map(async ([key, value]) => ({
+    key,
+    valueToken: await fingerprintToken({ browserStorageValue: value }, cryptoProvider)
+  })))
+);
+
+const fingerprintProjection = async (
+  recordsByStore,
+  localStorage = {},
+  sessionStorage = {},
+  cryptoProvider
+) => {
   const stores = {};
   for (const [storeName, records] of stableEntries(recordsByStore)) {
     const storePolicy = getLegacyRecoveryStorePolicy(storeName);
@@ -124,10 +140,8 @@ const fingerprintProjection = async (recordsByStore, localStorage = {}, cryptoPr
   }
   return {
     stores,
-    localStorage: Object.keys(localStorage || {}).sort().map((key) => ({
-      key,
-      present: Boolean(localStorage[key])
-    }))
+    localStorage: await storageFingerprintProjection(localStorage, cryptoProvider),
+    sessionStorage: await storageFingerprintProjection(sessionStorage, cryptoProvider)
   };
 };
 
@@ -177,8 +191,17 @@ const createClassificationBuckets = () => Object.fromEntries(
   Object.values(RECOVERY_ROW_CLASSIFICATION).map((classification) => [classification, []])
 );
 
-const addPlanRow = async ({ buckets, storeSummaries, storeName, record, classification, tier = RECOVERY_PROVENANCE_TIER.D, cryptoProvider }) => {
-  const policy = getLegacyRecoveryStorePolicy(storeName);
+const addPlanRow = async ({
+  buckets,
+  storeSummaries,
+  storeName,
+  record,
+  classification,
+  tier = RECOVERY_PROVENANCE_TIER.D,
+  cryptoProvider,
+  policyOverride = null
+}) => {
+  const policy = policyOverride || getLegacyRecoveryStorePolicy(storeName);
   const reference = await recordRef(storeName, record?.[policy.primaryKey], cryptoProvider);
   const row = { ref: reference, store: storeName, tier, destinationAction: policy.destinationAction };
   buckets[classification].push(row);
@@ -229,42 +252,85 @@ const getBusinessRowClassification = ({ storeName, record, directReferences, pro
 };
 
 /**
- * The adapter exposes exactly one operation.  Its transaction mode is fixed
- * to Dexie's readonly mode; it has no handle for mutations, sync or RPC.
+ * The adapter exposes exactly one operation. Its native transaction mode is
+ * fixed to readonly; it has no handle for mutations, sync or RPC.
  */
-const readConfiguredLocalStorage = (browserStorage) => {
-  if (!browserStorage) return {};
-  if (typeof browserStorage.getItem !== 'function') throw new Error('RECOVERY_READONLY_STORAGE_REQUIRED');
-  return Object.fromEntries(Object.keys(LEGACY_RECOVERY_LOCAL_STORAGE_POLICY).map((key) => [
-    key,
-    browserStorage.getItem(key) !== null
+const readStorageValue = (storage, key) => {
+  const value = storage.getItem(key);
+  return value === null ? undefined : value;
+};
+
+const readConfiguredBrowserStorage = ({ storage, exactPolicy, prefixPolicy = {} }) => {
+  if (!storage) return {};
+  if (typeof storage.getItem !== 'function') throw new Error('RECOVERY_READONLY_STORAGE_REQUIRED');
+  const values = {};
+  for (const key of Object.keys(exactPolicy)) {
+    const value = readStorageValue(storage, key);
+    if (value !== undefined) values[key] = value;
+  }
+
+  if (Object.keys(prefixPolicy).length === 0) return values;
+  if (typeof storage.key !== 'function' || !Number.isInteger(storage.length)) {
+    throw new Error('RECOVERY_READONLY_STORAGE_ENUMERATION_REQUIRED');
+  }
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (typeof key !== 'string' || !Object.keys(prefixPolicy).some((prefix) => key.startsWith(prefix))) continue;
+    const value = readStorageValue(storage, key);
+    if (value !== undefined) values[key] = value;
+  }
+  return values;
+};
+
+const requestToPromise = (request) => new Promise((resolve, reject) => {
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error || new Error('RECOVERY_NATIVE_READ_FAILED'));
+});
+
+const readPhysicalObjectStoreSnapshot = (nativeDatabase) => {
+  const storeNames = Array.from(nativeDatabase?.objectStoreNames || []).sort();
+  if (storeNames.length === 0) return Promise.resolve({});
+  const transaction = nativeDatabase.transaction(storeNames, 'readonly');
+  const completed = new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('RECOVERY_NATIVE_READ_FAILED'));
+    transaction.onabort = () => reject(transaction.error || new Error('RECOVERY_NATIVE_READ_ABORTED'));
+  });
+  const records = Promise.all(storeNames.map(async (storeName) => [
+    storeName,
+    await requestToPromise(transaction.objectStore(storeName).getAll())
   ]));
+  return Promise.all([records, completed]).then(([entries]) => Object.fromEntries(entries));
 };
 
 export const createReadOnlyLegacyInspectionAdapter = ({
   database,
   sourceDatabase = DB_NAME,
-  browserStorage = null
+  browserStorage = null,
+  sessionStorage = null
 } = {}) => {
-  if (!database?.table || !database?.transaction) throw new Error('RECOVERY_READONLY_DATABASE_REQUIRED');
+  if (!database?.backendDB) throw new Error('RECOVERY_READONLY_DATABASE_REQUIRED');
   return Object.freeze({
     async readSnapshot() {
-      const available = new Set(database.tables?.map((table) => table.name) || []);
-      // Every physical store participates. Known infrastructure remains in the
-      // vault; an unknown store makes any future copy plan fail closed.
-      const storeNames = [...available].sort();
-      const tables = storeNames.map((name) => database.table(name));
-      const recordsByStore = await database.transaction('r', tables, async () => {
-        const entries = await Promise.all(storeNames.map(async (storeName) => [
-          storeName,
-          await database.table(storeName).toArray()
-        ]));
-        return Object.fromEntries(entries);
-      });
+      const nativeDatabase = database.backendDB();
+      if (!nativeDatabase?.objectStoreNames) throw new Error('RECOVERY_NATIVE_INSPECTION_REQUIRED');
+      // This native readonly transaction inventories stores that Dexie does
+      // not declare too; physical unknowns are therefore fail-closed.
+      const recordsByStore = await readPhysicalObjectStoreSnapshot(nativeDatabase);
+      const localStorage = browserStorage?.localStorage ?? browserStorage;
+      const tenantSessionStorage = sessionStorage ?? browserStorage?.sessionStorage ?? null;
       return {
         sourceDatabase,
         recordsByStore,
-        localStorage: readConfiguredLocalStorage(browserStorage)
+        localStorage: readConfiguredBrowserStorage({
+          storage: localStorage,
+          exactPolicy: LEGACY_RECOVERY_LOCAL_STORAGE_POLICY,
+          prefixPolicy: LEGACY_RECOVERY_LOCAL_STORAGE_PREFIX_POLICY
+        }),
+        sessionStorage: readConfiguredBrowserStorage({
+          storage: tenantSessionStorage,
+          exactPolicy: LEGACY_RECOVERY_SESSION_STORAGE_POLICY
+        })
       };
     }
   });
@@ -282,9 +348,19 @@ export const buildLegacyRecoveryPlan = async ({
     Array.isArray(records) ? [...records].sort((left, right) => String(left?.[getLegacyRecoveryStorePolicy(storeName).primaryKey]).localeCompare(String(right?.[getLegacyRecoveryStorePolicy(storeName).primaryKey]))) : []
   ]));
   const fingerprint = await digest(
-    await fingerprintProjection(recordsByStore, snapshot.localStorage, cryptoProvider),
+    await fingerprintProjection(
+      recordsByStore,
+      snapshot.localStorage,
+      snapshot.sessionStorage,
+      cryptoProvider
+    ),
     cryptoProvider
   );
+  const recoveryContextFingerprint = await digest({
+    domain: RECOVERY_CONTEXT_FINGERPRINT_DOMAIN,
+    sourceSnapshotFingerprint: fingerprint,
+    activeTenantAliases: [...activeIdentity.aliases].sort()
+  }, cryptoProvider);
   const evidenceByRecord = new Map();
   const activeOutboxEvidence = new Set();
   let foreignCandidateCount = 0;
@@ -336,19 +412,39 @@ export const buildLegacyRecoveryPlan = async ({
     }
   }
 
-  for (const [key, storagePolicy] of stableEntries(LEGACY_RECOVERY_LOCAL_STORAGE_POLICY)) {
-    if (!snapshot.localStorage?.[key]) continue;
-    const row = { [storagePolicy.primaryKey]: key };
-    await addPlanRow({
-      buckets,
-      storeSummaries,
-      storeName: `localStorage:${key}`,
-      record: row,
-      classification: storagePolicy.classification,
-      tier: RECOVERY_PROVENANCE_TIER.D,
-      cryptoProvider
-    });
-  }
+  const addBrowserStorageRows = async (storageName, storage, exactPolicy, prefixPolicy = {}) => {
+    const policiesByKey = new Map(stableEntries(exactPolicy));
+    for (const [prefix, policy] of stableEntries(prefixPolicy)) {
+      for (const key of Object.keys(storage || {}).filter((item) => item.startsWith(prefix))) {
+        policiesByKey.set(key, policy);
+      }
+    }
+    for (const [key, storagePolicy] of [...policiesByKey.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+      if (storage?.[key] === undefined || storage?.[key] === null || storage?.[key] === false) continue;
+      const row = { [storagePolicy.primaryKey]: key };
+      await addPlanRow({
+        buckets,
+        storeSummaries,
+        storeName: `${storageName}:${key}`,
+        record: row,
+        classification: storagePolicy.classification,
+        tier: RECOVERY_PROVENANCE_TIER.D,
+        cryptoProvider,
+        policyOverride: storagePolicy
+      });
+    }
+  };
+  await addBrowserStorageRows(
+    'localStorage',
+    snapshot.localStorage,
+    LEGACY_RECOVERY_LOCAL_STORAGE_POLICY,
+    LEGACY_RECOVERY_LOCAL_STORAGE_PREFIX_POLICY
+  );
+  await addBrowserStorageRows(
+    'sessionStorage',
+    snapshot.sessionStorage,
+    LEGACY_RECOVERY_SESSION_STORAGE_POLICY
+  );
 
   const counts = Object.fromEntries(Object.entries(buckets).map(([key, rows]) => [key, rows.length]));
   const unknownStores = Object.keys(recordsByStore)
@@ -368,6 +464,7 @@ export const buildLegacyRecoveryPlan = async ({
     version: RECOVERY_PLAN_VERSION,
     sourceDatabase: { name: snapshot.sourceDatabase || DB_NAME, role: 'legacy_vault' },
     sourceSnapshotFingerprint: `sha256:${fingerprint}`,
+    recoveryContextFingerprint: `sha256:${recoveryContextFingerprint}`,
     activeTenantAuthority: { type: activeIdentity.authority, aliasesAvailable: activeIdentity.aliases.length },
     status: RECOVERY_PLAN_STATUS.PLAN_CREATED,
     createdFromSnapshot: true,

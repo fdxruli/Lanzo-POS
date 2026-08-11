@@ -2,6 +2,12 @@
  * Recovery.1 is intentionally a policy and planning layer only.  It never
  * makes a legacy database operational and it never grants access to a row.
  */
+import {
+  TENANT_OWNED_LOCAL_STORAGE_KEYS,
+  TENANT_OWNED_LOCAL_STORAGE_PREFIXES,
+  TENANT_OWNED_SESSION_STORAGE_KEYS
+} from './localTenantPolicy';
+
 export const RECOVERY_PLAN_VERSION = 1;
 
 export const RECOVERY_PLAN_STATUS = Object.freeze({
@@ -164,32 +170,32 @@ export const UNKNOWN_LEGACY_RECOVERY_STORE_POLICY = Object.freeze(policy('id', {
   destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT
 }));
 
-export const LEGACY_RECOVERY_LOCAL_STORAGE_POLICY = Object.freeze({
-  'lanzo-active-orders-storage': Object.freeze({
-    scope: 'tenant_owned',
-    primaryKey: 'localStorage key',
-    destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT,
-    classification: RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS
-  }),
-  'lanzo-cart-storage': Object.freeze({
-    scope: 'tenant_owned',
-    primaryKey: 'localStorage key',
-    destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT,
-    classification: RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS
-  }),
-  'lanzo-inventory-storage': Object.freeze({
-    scope: 'tenant_owned',
-    primaryKey: 'localStorage key',
-    destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT,
-    classification: RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS
-  }),
-  'lanzo:restaurant-order-close-pending:v1': Object.freeze({
-    scope: 'tenant_owned',
-    primaryKey: 'localStorage key',
-    destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT,
-    classification: RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS
-  })
+// Recovery deliberately derives its browser-storage inventory from the
+// canonical #189 classification. It cannot retain a weaker duplicate list.
+const tenantOwnedBrowserStoragePolicy = () => Object.freeze({
+  scope: 'tenant_owned',
+  primaryKey: 'key',
+  destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT,
+  classification: RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS
 });
+
+export const LEGACY_RECOVERY_LOCAL_STORAGE_POLICY = Object.freeze(
+  Object.fromEntries([...TENANT_OWNED_LOCAL_STORAGE_KEYS]
+    .sort()
+    .map((key) => [key, tenantOwnedBrowserStoragePolicy()]))
+);
+
+export const LEGACY_RECOVERY_LOCAL_STORAGE_PREFIX_POLICY = Object.freeze(
+  Object.fromEntries([...TENANT_OWNED_LOCAL_STORAGE_PREFIXES]
+    .sort()
+    .map((prefix) => [prefix, tenantOwnedBrowserStoragePolicy()]))
+);
+
+export const LEGACY_RECOVERY_SESSION_STORAGE_POLICY = Object.freeze(
+  Object.fromEntries([...TENANT_OWNED_SESSION_STORAGE_KEYS]
+    .sort()
+    .map((key) => [key, tenantOwnedBrowserStoragePolicy()]))
+);
 
 export const isKnownLegacyRecoveryStore = (storeName) => Boolean(
   LEGACY_RECOVERY_STORE_POLICY[storeName]

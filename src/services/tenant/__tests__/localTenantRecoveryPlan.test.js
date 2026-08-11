@@ -45,6 +45,42 @@ const createDatabase = async () => {
   return database;
 };
 
+const createReadOnlyStorage = (entries) => {
+  const values = new Map(entries);
+  return {
+    get length() {
+      return values.size;
+    },
+    key: vi.fn((index) => [...values.keys()][index] ?? null),
+    getItem: vi.fn((key) => values.has(key) ? values.get(key) : null),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn()
+  };
+};
+
+const createPhysicalUnmodeledStore = async (database) => {
+  const name = database.name;
+  const version = database.backendDB().version;
+  database.close();
+  const nativeDatabase = await new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, version + 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('physical_unmodeled_store', { keyPath: 'id' });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise((resolve, reject) => {
+    const transaction = nativeDatabase.transaction(['physical_unmodeled_store'], 'readwrite');
+    transaction.objectStore('physical_unmodeled_store').put({ id: 'physical-row' });
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+  return nativeDatabase;
+};
+
 const farmaciaGarySnapshot = () => ({
   sourceDatabase: 'LanzoDB1',
   recordsByStore: {
@@ -262,7 +298,39 @@ describe('local tenant recovery plan', () => {
 
     expect(planA.evidence.activeCandidateHasTierA).toBe(true);
     expect(planB.evidence.activeCandidateHasTierA).toBe(false);
+    expect(planA.sourceSnapshotFingerprint).toBe(planB.sourceSnapshotFingerprint);
+    expect(planA.recoveryContextFingerprint).not.toBe(planB.recoveryContextFingerprint);
     expect(JSON.stringify(snapshot)).toBe(before);
+  });
+
+  it('binds the opaque recovery context to the active tenant without changing a FREE vault fingerprint', async () => {
+    const snapshot = {
+      sourceDatabase: 'LanzoDB1',
+      recordsByStore: {
+        menu: [{ id: 'free-product' }],
+        customers: [{ id: 'free-customer' }]
+      },
+      localStorage: {}
+    };
+    const tenantA = await buildLegacyRecoveryPlan({
+      snapshot,
+      activeTenantSource: { license_key: 'FREE-A' }
+    });
+    const tenantARepeat = await buildLegacyRecoveryPlan({
+      snapshot,
+      activeTenantSource: { license_key: 'FREE-A' }
+    });
+    const tenantB = await buildLegacyRecoveryPlan({
+      snapshot,
+      activeTenantSource: { license_key: 'FREE-B' }
+    });
+
+    expect(tenantA.sourceSnapshotFingerprint).toBe(tenantB.sourceSnapshotFingerprint);
+    expect(tenantA.recoveryContextFingerprint).not.toBe(tenantB.recoveryContextFingerprint);
+    expect(tenantA.sourceSnapshotFingerprint).toBe(tenantARepeat.sourceSnapshotFingerprint);
+    expect(tenantA.recoveryContextFingerprint).toBe(tenantARepeat.recoveryContextFingerprint);
+    expect(JSON.stringify(tenantA)).not.toContain('FREE-A');
+    expect(JSON.stringify(tenantB)).not.toContain('FREE-B');
   });
 
   it('uses only readonly IndexedDB access and produces a deterministic immutable plan', async () => {
@@ -271,7 +339,7 @@ describe('local tenant recovery plan', () => {
     await database.table('sync_outbox').put({
       id: 'outbox-a', licenseKey: 'ACTIVE-A', entityType: 'product', entityId: 'product-a'
     });
-    const transaction = vi.spyOn(database, 'transaction');
+    const nativeTransaction = vi.spyOn(database.backendDB(), 'transaction');
     const writes = ['put', 'update', 'delete', 'clear'].map((method) => (
       vi.spyOn(database.table('menu'), method)
     ));
@@ -293,7 +361,7 @@ describe('local tenant recovery plan', () => {
       activeTenantSource: { license_key: 'ACTIVE-A' }
     });
 
-    expect(transaction.mock.calls.every(([mode]) => mode === 'r')).toBe(true);
+    expect(nativeTransaction.mock.calls.every(([, mode]) => mode === 'readonly')).toBe(true);
     expect([...writes, ...outboxWrites, ...bindingWrites].every((spy) => spy.mock.calls.length === 0)).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
     expect(first).toEqual(second);
@@ -306,24 +374,60 @@ describe('local tenant recovery plan', () => {
 
   it('inventories configured localStorage through read-only methods only', async () => {
     const database = await createDatabase();
-    const browserStorage = {
-      getItem: vi.fn((key) => key === 'lanzo-active-orders-storage' ? '{"state":"legacy"}' : null),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-      clear: vi.fn()
-    };
-    const adapter = createReadOnlyLegacyInspectionAdapter({ database, browserStorage });
+    const browserStorage = createReadOnlyStorage([
+      ['lanzo-active-orders-storage', '{"state":"legacy"}'],
+      ['ignored_expirations_ttl', '{"legacy":true}'],
+      ['lanzo_cash_opening_policy', '{"opened":true}'],
+      ['lanzo-cart-storage-corrupted-123', '{"corrupt":true}']
+    ]);
+    const sessionStorage = createReadOnlyStorage([
+      ['lanzo_drive_session:v1', '{"legacy":true}']
+    ]);
+    const adapter = createReadOnlyLegacyInspectionAdapter({ database, browserStorage, sessionStorage });
     const snapshot = await adapter.readSnapshot();
     const plan = await buildLegacyRecoveryPlan({
       snapshot,
       activeTenantSource: { license_key: 'ACTIVE-A' }
     });
 
-    expect(browserStorage.getItem).toHaveBeenCalledTimes(4);
+    expect(browserStorage.getItem).toHaveBeenCalledWith('ignored_expirations_ttl');
+    expect(browserStorage.getItem).toHaveBeenCalledWith('lanzo_cash_opening_policy');
+    expect(browserStorage.getItem).toHaveBeenCalledWith('lanzo-cart-storage-corrupted-123');
+    expect(sessionStorage.getItem).toHaveBeenCalledWith('lanzo_drive_session:v1');
+    expect(browserStorage.key).toHaveBeenCalled();
     expect(browserStorage.setItem).not.toHaveBeenCalled();
     expect(browserStorage.removeItem).not.toHaveBeenCalled();
     expect(browserStorage.clear).not.toHaveBeenCalled();
+    expect(sessionStorage.setItem).not.toHaveBeenCalled();
+    expect(sessionStorage.removeItem).not.toHaveBeenCalled();
+    expect(sessionStorage.clear).not.toHaveBeenCalled();
     expect(plan.storeSummaries['localStorage:lanzo-active-orders-storage']).toMatchObject({ total: 1 });
+    expect(plan.storeSummaries['localStorage:ignored_expirations_ttl']).toMatchObject({ total: 1 });
+    expect(plan.storeSummaries['localStorage:lanzo_cash_opening_policy']).toMatchObject({ total: 1 });
+    expect(plan.storeSummaries['localStorage:lanzo-cart-storage-corrupted-123']).toMatchObject({ total: 1 });
+    expect(plan.storeSummaries['sessionStorage:lanzo_drive_session:v1']).toMatchObject({ total: 1 });
+    expect(JSON.stringify(plan)).not.toContain('{"corrupt":true}');
+  });
+
+  it('fingerprints browser-storage payload changes without exposing their contents', async () => {
+    const snapshot = {
+      sourceDatabase: 'LanzoDB1',
+      recordsByStore: {},
+      localStorage: { ignored_expirations_ttl: '{"revision":1}' },
+      sessionStorage: { 'lanzo_drive_session:v1': '{"revision":1}' }
+    };
+    const changed = await buildLegacyRecoveryPlan({
+      snapshot: {
+        ...snapshot,
+        localStorage: { ignored_expirations_ttl: '{"revision":2}' }
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const original = await buildLegacyRecoveryPlan({ snapshot, activeTenantSource: { license_key: 'ACTIVE-A' } });
+
+    expect(original.sourceSnapshotFingerprint).not.toBe(changed.sourceSnapshotFingerprint);
+    expect(JSON.stringify(original)).not.toContain('{"revision":1}');
+    expect(JSON.stringify(changed)).not.toContain('{"revision":2}');
   });
 
   it('blocks future copy planning for an already-bound vault while preserving infrastructure', async () => {
@@ -376,5 +480,24 @@ describe('local tenant recovery plan', () => {
     expect(snapshot.recordsByStore.__lanzo_sales_backup_v30).toHaveLength(1);
     expect(snapshot.recordsByStore.__lanzo_db_recovery).toHaveLength(1);
     expect(snapshot.recordsByStore.unknown_legacy_store).toHaveLength(1);
+  });
+
+  it('fails closed for a physical object store absent from Dexie and the Recovery registry', async () => {
+    const database = await createDatabase();
+    const nativeDatabase = await createPhysicalUnmodeledStore(database);
+    const nativeTransaction = vi.spyOn(nativeDatabase, 'transaction');
+    const adapter = createReadOnlyLegacyInspectionAdapter({
+      database: { backendDB: () => nativeDatabase }
+    });
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({
+      adapter,
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(plan.unknownStores).toContain('physical_unmodeled_store');
+    expect(plan.warnings).toContain('UNKNOWN_STORE_PRESENT');
+    expect(plan.executableForFutureCopy).toBe(false);
+    expect(nativeTransaction.mock.calls.every(([, mode]) => mode === 'readonly')).toBe(true);
+    nativeDatabase.close();
   });
 });
