@@ -577,6 +577,64 @@ const publicInspection = (snapshot) => ({
     : null
 });
 
+const diagnosticDecision = (snapshot) => {
+  if (snapshot.binding) {
+    return { decision: 'BOUND', reason: 'binding_present' };
+  }
+
+  if (!snapshot.hasTenantOwnedData) {
+    return { decision: 'EMPTY_DATABASE', reason: 'no_tenant_owned_data' };
+  }
+
+  if (snapshot.evidenceKeys.length > 1 || snapshot.ownershipEvidenceKeys.length > 1) {
+    return {
+      decision: 'LEGACY_UNRESOLVED',
+      reason: 'conflicting_legacy_tenant_evidence'
+    };
+  }
+
+  if (
+    snapshot.ownershipEvidenceKeys.length !== 1 ||
+    snapshot.ownershipEvidenceComplete !== true
+  ) {
+    return {
+      decision: 'LEGACY_UNRESOLVED',
+      reason: 'missing_legacy_ownership_quorum'
+    };
+  }
+
+  return { decision: 'LEGACY_QUORUM_READY', reason: 'ownership_quorum_complete' };
+};
+
+// This diagnostic deliberately exposes categories and counts only. It is safe
+// to copy from a blocked browser without disclosing a license, business data,
+// credentials, tokens, or a tenant binding identity.
+const buildLocalTenantDiagnostic = (snapshot, nativeDatabase, dexieVersion) => ({
+  diagnosticVersion: 1,
+  database: {
+    nativeVersion: Number.isFinite(nativeDatabase?.version) ? nativeDatabase.version : null,
+    dexieVersion: Number.isFinite(dexieVersion) ? dexieVersion : null
+  },
+  binding: snapshot.binding
+    ? {
+      present: true,
+      authority: snapshot.binding.authority || null,
+      bindingVersion: snapshot.binding.bindingVersion || null,
+      source: snapshot.binding.source || null
+    }
+    : { present: false },
+  tenantOwnedData: snapshot.hasTenantOwnedData,
+  occupiedTenantOwnedStores: [...snapshot.occupiedStores],
+  recordCounts: { ...snapshot.counts },
+  evidenceSourceTypes: [...snapshot.evidenceSources],
+  evidenceCandidateCount: snapshot.evidenceKeys.length,
+  ownershipSourceTypes: [...snapshot.ownershipEvidenceSources],
+  ownershipCandidateCount: snapshot.ownershipEvidenceKeys.length,
+  ownershipSourcesAgree: snapshot.ownershipEvidenceKeys.length <= 1,
+  quorumCount: snapshot.ownershipEvidenceSources.length,
+  ...diagnosticDecision(snapshot)
+});
+
 const createBlockedError = (code, snapshot, reason) => new LocalTenantAccessError(code, {
   reason,
   hasTenantOwnedData: snapshot.hasTenantOwnedData,
@@ -628,6 +686,16 @@ export const createLocalTenantGuard = ({
       tenantSessionStorage
     );
     return publicInspection(snapshot);
+  };
+
+  const inspectLocalTenantDiagnostic = async () => {
+    const nativeDatabase = await getNativeDatabase();
+    const snapshot = await readNativeSnapshot(
+      nativeDatabase,
+      browserStorage,
+      tenantSessionStorage
+    );
+    return buildLocalTenantDiagnostic(snapshot, nativeDatabase, database.verno);
   };
 
   const getLocalTenantBinding = async () => {
@@ -827,6 +895,7 @@ export const createLocalTenantGuard = ({
     resolveActiveTenantIdentity: resolveIdentity,
     getLocalTenantBinding,
     inspectTenantOwnedLocalData,
+    inspectLocalTenantDiagnostic,
     canSafelyRebindEmptyDatabase: async () => {
       const snapshot = await inspectTenantOwnedLocalData();
       return !snapshot.binding && !snapshot.hasTenantOwnedData;
@@ -845,6 +914,7 @@ export const lockLocalTenantAccess = defaultGuard.lock;
 export const getLocalTenantGuardState = defaultGuard.getState;
 export const getLocalTenantBinding = defaultGuard.getLocalTenantBinding;
 export const inspectTenantOwnedLocalData = defaultGuard.inspectTenantOwnedLocalData;
+export const inspectLocalTenantDiagnostic = defaultGuard.inspectLocalTenantDiagnostic;
 export const canSafelyRebindEmptyDatabase = defaultGuard.canSafelyRebindEmptyDatabase;
 export const assertLocalTenantAccess = defaultGuard.assertLocalTenantAccess;
 export const assertLocalTenantSyncAccess = defaultGuard.assertLocalTenantSyncAccess;

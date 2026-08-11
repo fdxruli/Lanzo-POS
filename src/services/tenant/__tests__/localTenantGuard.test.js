@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createLocalTenantGuard,
   resolveActiveTenantIdentity
@@ -321,6 +321,56 @@ describe('LocalTenantGuard', () => {
       details: {
         occupiedStores: ['localStorage:lanzo:restaurant-order-close-pending:v1']
       }
+    });
+  });
+
+  it('reports a redacted, read-only diagnostic for an unresolved legacy database', async () => {
+    const { database, guard } = await createDatabase();
+    await database.table('menu').put({ id: 'product-a', name: 'Producto A' });
+    await database.table('company').put({
+      id: 'company:TENANT-A',
+      license_key: 'TENANT-A'
+    });
+
+    const nativeDatabase = database.backendDB();
+    const nativeTransaction = nativeDatabase.transaction.bind(nativeDatabase);
+    const transactionModes = [];
+    vi.spyOn(nativeDatabase, 'transaction').mockImplementation((...args) => {
+      transactionModes.push(args[1]);
+      return nativeTransaction(...args);
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const countsBefore = {
+      menu: await database.table('menu').count(),
+      company: await database.table('company').count(),
+      outbox: await database.table('sync_outbox').count(),
+      bindings: await database.table(LOCAL_TENANT_BINDING_STORE).count()
+    };
+
+    const diagnostic = await guard.inspectLocalTenantDiagnostic();
+
+    expect(diagnostic).toMatchObject({
+      diagnosticVersion: 1,
+      binding: { present: false },
+      tenantOwnedData: true,
+      occupiedTenantOwnedStores: ['company', 'menu'],
+      ownershipSourceTypes: ['company_scoped'],
+      ownershipCandidateCount: 1,
+      quorumCount: 1,
+      decision: 'LEGACY_UNRESOLVED',
+      reason: 'missing_legacy_ownership_quorum'
+    });
+    expect(diagnostic.recordCounts).toMatchObject({ company: 1, menu: 1 });
+    expect(JSON.stringify(diagnostic)).not.toContain('TENANT-A');
+    expect(JSON.stringify(diagnostic)).not.toContain('Producto A');
+    expect(transactionModes).toEqual(['readonly']);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await database.table('menu').count()).toBe(countsBefore.menu);
+    expect(await database.table('company').count()).toBe(countsBefore.company);
+    expect(await database.table('sync_outbox').count()).toBe(countsBefore.outbox);
+    expect(await database.table(LOCAL_TENANT_BINDING_STORE).count()).toBe(countsBefore.bindings);
+    expect(await database.table('company').get('company:TENANT-A')).toMatchObject({
+      license_key: 'TENANT-A'
     });
   });
 

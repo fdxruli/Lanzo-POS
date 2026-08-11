@@ -53,3 +53,21 @@
 .local-tenant-block__card button {
   margin-top: 1.25rem;
 }
+
+.local-tenant-block__diagnostic-status {
+  font-size: 0.9rem;
+}
+
+.local-tenant-block__diagnostic {
+  max-height: 16rem;
+  overflow: auto;
+  margin: 1rem 0 0;
+  padding: 0.875rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--text-color, #0f172a) 6%, transparent);
+  color: var(--text-color, #0f172a);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  text-align: left;
+  white-space: pre-wrap;
+}

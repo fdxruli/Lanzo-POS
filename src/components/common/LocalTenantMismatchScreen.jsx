@@ -1,14 +1,35 @@
+import { useState } from 'react';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import { inspectLocalTenantDiagnostic } from '../../services/tenant/localTenantGuard';
 import './LocalTenantMismatchScreen.css';
 
 export default function LocalTenantMismatchScreen() {
   const isolation = useAppStore((state) => state.localTenantIsolation);
   const leaveLocalTenantMismatch = useAppStore((state) => state.leaveLocalTenantMismatch);
+  const [diagnosticStatus, setDiagnosticStatus] = useState(null);
+  const [diagnosticText, setDiagnosticText] = useState('');
   const isOwnershipUnresolved = [
     'LOCAL_TENANT_LEGACY_UNRESOLVED',
     'LOCAL_TENANT_STORAGE_INSPECTION_FAILED'
   ].includes(isolation?.code);
+
+  const copyTechnicalDiagnostic = async () => {
+    try {
+      const diagnostic = await inspectLocalTenantDiagnostic();
+      const serialized = JSON.stringify(diagnostic, null, 2);
+      setDiagnosticText(serialized);
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(serialized);
+        setDiagnosticStatus('Copiado. Compártelo con soporte sin editarlo.');
+      } else {
+        setDiagnosticStatus('Copia el diagnóstico mostrado para soporte.');
+      }
+    } catch {
+      setDiagnosticStatus('No se pudo leer el diagnóstico técnico. No se modificó ningún dato.');
+    }
+  };
 
   return (
     <main className="local-tenant-block" role="alert" aria-live="assertive">
@@ -31,6 +52,23 @@ export default function LocalTenantMismatchScreen() {
             ? 'No se borró ningún dato. Usa un perfil de navegador nuevo para esta licencia o solicita una recuperación asistida.'
             : 'No se borró ningún dato. Puedes volver a iniciar sesión con la licencia anterior o usar otro perfil de navegador.'}
         </p>
+        {isOwnershipUnresolved && (
+          <>
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={copyTechnicalDiagnostic}
+            >
+              Copiar diagnóstico técnico
+            </button>
+            {diagnosticStatus && <p className="local-tenant-block__diagnostic-status">{diagnosticStatus}</p>}
+            {diagnosticText && (
+              <pre className="local-tenant-block__diagnostic" aria-label="Diagnóstico técnico redactado">
+                {diagnosticText}
+              </pre>
+            )}
+          </>
+        )}
         <button
           type="button"
           className="ui-button ui-button--primary"
