@@ -1,5 +1,46 @@
 -- PRODUCT.INVENTORY.ENTRY.2 — canonical additive inventory entry.
 -- No tables, columns or movement types are introduced by this migration.
+-- The existing movement source contract is extended only with inventory_entry.
+
+do $
+declare
+  v_constraint_definition text;
+begin
+  select pg_get_constraintdef(constraint_row.oid)
+    into v_constraint_definition
+  from pg_constraint constraint_row
+  join pg_class relation_row on relation_row.oid = constraint_row.conrelid
+  join pg_namespace schema_row on schema_row.oid = relation_row.relnamespace
+  where schema_row.nspname = 'public'
+    and relation_row.relname = 'pos_inventory_movements'
+    and constraint_row.conname = 'pos_inventory_movements_source_check';
+
+  if v_constraint_definition is null then
+    raise exception 'Expected public.pos_inventory_movements constraint % is missing',
+      'pos_inventory_movements_source_check';
+  end if;
+
+  if v_constraint_definition <> $expected$
+CHECK ((source = ANY (ARRAY['sale'::text, 'sale_cancellation'::text, 'adjustment'::text, 'migration'::text, 'manual'::text])))
+$expected$ then
+    raise exception 'Unexpected pos_inventory_movements source contract: %', v_constraint_definition;
+  end if;
+end;
+$;
+
+alter table public.pos_inventory_movements
+  drop constraint pos_inventory_movements_source_check;
+
+alter table public.pos_inventory_movements
+  add constraint pos_inventory_movements_source_check
+  check (source = any (array[
+    'sale',
+    'sale_cancellation',
+    'adjustment',
+    'migration',
+    'manual',
+    'inventory_entry'
+  ]::text[]));
 
 create or replace function public.pos_add_inventory_entry(
   p_license_key text,
