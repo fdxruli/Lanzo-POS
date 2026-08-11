@@ -2,7 +2,7 @@
 -- No tables, columns or movement types are introduced by this migration.
 -- The existing movement source contract is extended only with inventory_entry.
 
-do $
+do $$
 declare
   v_constraint_definition text;
 begin
@@ -26,7 +26,7 @@ $expected$ then
     raise exception 'Unexpected pos_inventory_movements source contract: %', v_constraint_definition;
   end if;
 end;
-$;
+$$;
 
 alter table public.pos_inventory_movements
   drop constraint pos_inventory_movements_source_check;
