@@ -21,7 +21,7 @@ import {
 const BINDING_VERSION = 1;
 const MAX_SNAPSHOT_RETRIES = 3;
 const EVIDENCE_STORES = new Set(['company', 'sync_outbox', 'sync_meta', 'sync_cache']);
-const LEGACY_AUTO_ADOPTION_STORES = new Set(['company']);
+const LEGACY_OWNERSHIP_QUORUM_SIZE = 2;
 const NULL_TOMBSTONE_SYNC_CACHE_KEYS = new Set([
   'device_security_token',
   'staff_session_token',
@@ -284,31 +284,46 @@ const collectRecordEvidence = (collector, record, source) => {
 const collectEvidence = (recordsByStore) => {
   const collector = { keys: new Set(), sources: new Set() };
   const ownershipCollector = { keys: new Set(), sources: new Set() };
-  let ownershipEvidenceComplete = (recordsByStore.company || []).length > 0;
 
   for (const record of recordsByStore.company || []) {
     const recordOwnership = { keys: new Set(), sources: new Set() };
     collectRecordEvidence(collector, record, 'company.license_key');
-    collectRecordEvidence(ownershipCollector, record, 'company.license_key');
     collectRecordEvidence(recordOwnership, record, 'company.license_key');
     if (typeof record?.id === 'string' && record.id.startsWith('company:')) {
       addEvidence(collector, record.id.slice('company:'.length), 'company.scoped_id');
-      addEvidence(ownershipCollector, record.id.slice('company:'.length), 'company.scoped_id');
       addEvidence(recordOwnership, record.id.slice('company:'.length), 'company.scoped_id');
     }
-    if (recordOwnership.keys.size !== 1) ownershipEvidenceComplete = false;
+
+    // A mutable company profile cannot claim a whole legacy database by
+    // itself. A scoped record that agrees internally is one durable source in
+    // the legacy quorum and still needs corroboration from another channel.
+    if (recordOwnership.keys.size === 1 && typeof record?.id === 'string' && record.id.startsWith('company:')) {
+      addEvidence(ownershipCollector, [...recordOwnership.keys][0], 'company_scoped');
+    }
   }
 
   for (const record of recordsByStore.sync_outbox || []) {
     collectRecordEvidence(collector, record, 'sync_outbox.licenseKey');
     addEvidence(collector, record?.metadata?.licenseKey, 'sync_outbox.metadata');
     addEvidence(collector, record?.metadata?.license_key, 'sync_outbox.metadata');
+
+    const recordOwnership = { keys: new Set(), sources: new Set() };
+    collectRecordEvidence(recordOwnership, record, 'sync_outbox.licenseKey');
+    addEvidence(recordOwnership, record?.metadata?.licenseKey, 'sync_outbox.metadata');
+    addEvidence(recordOwnership, record?.metadata?.license_key, 'sync_outbox.metadata');
+    if (recordOwnership.keys.size === 1) {
+      addEvidence(ownershipCollector, [...recordOwnership.keys][0], 'sync_outbox');
+    }
   }
 
   for (const record of recordsByStore.sync_meta || []) {
     const key = typeof record?.key === 'string' ? record.key : '';
     const suffix = SYNC_META_SUFFIXES.find((item) => key.endsWith(`:${item}`));
-    if (suffix) addEvidence(collector, key.slice(0, -(suffix.length + 1)), 'sync_meta.scoped_key');
+    if (suffix) {
+      const scopedLicenseKey = key.slice(0, -(suffix.length + 1));
+      addEvidence(collector, scopedLicenseKey, 'sync_meta.scoped_key');
+      addEvidence(ownershipCollector, scopedLicenseKey, 'sync_meta');
+    }
     collectRecordEvidence(collector, record, 'sync_meta.record');
   }
 
@@ -327,7 +342,9 @@ const collectEvidence = (recordsByStore) => {
     ...collector,
     ownershipKeys: ownershipCollector.keys,
     ownershipSources: ownershipCollector.sources,
-    ownershipEvidenceComplete
+    ownershipEvidenceComplete:
+      ownershipCollector.keys.size === 1 &&
+      ownershipCollector.sources.size >= LEGACY_OWNERSHIP_QUORUM_SIZE
   };
 };
 
@@ -362,9 +379,11 @@ const buildSnapshot = ({ binding, storeResults, browserStorageSnapshot }) => {
     .filter(([, count]) => count > 0)
     .map(([storeName]) => storeName)
     .sort();
-  const unscopedLegacyStores = occupiedStores.filter(
-    (storeName) => !LEGACY_AUTO_ADOPTION_STORES.has(storeName)
-  );
+  // Legacy versions intentionally stored business rows without a tenant
+  // column. Their presence is diagnostic only: once a durable ownership
+  // quorum proves the same tenant, the rows must be preserved and adopted as
+  // they are rather than making the original owner unrecoverable.
+  const unscopedLegacyStores = occupiedStores.filter((storeName) => storeName !== 'company');
 
   return {
     binding: normalizeBinding(binding),
@@ -455,6 +474,7 @@ const comparableSnapshot = (snapshot) => JSON.stringify({
   counts: snapshot?.counts || {},
   evidenceKeys: snapshot?.evidenceKeys || [],
   ownershipEvidenceKeys: snapshot?.ownershipEvidenceKeys || [],
+  ownershipEvidenceSources: snapshot?.ownershipEvidenceSources || [],
   ownershipEvidenceComplete: snapshot?.ownershipEvidenceComplete === true,
   unscopedLegacyStores: snapshot?.unscopedLegacyStores || []
 });
@@ -685,16 +705,13 @@ export const createLocalTenantGuard = ({
           snapshot.ownershipEvidenceKeys.length !== 1
           || snapshot.evidenceKeys.length !== 1
           || snapshot.ownershipEvidenceComplete !== true
-          || snapshot.unscopedLegacyStores.length > 0
         ) {
           const error = createBlockedError(
             LOCAL_TENANT_ERROR_CODES.LEGACY_UNRESOLVED,
             snapshot,
             snapshot.evidenceKeys.length > 1
               ? 'conflicting_legacy_tenant_evidence'
-              : snapshot.unscopedLegacyStores.length > 0
-                ? 'unverifiable_legacy_tenant_data'
-                : 'missing_legacy_tenant_evidence'
+              : 'missing_legacy_ownership_quorum'
           );
           controller.block(error, LOCAL_TENANT_STATUS.LEGACY_UNRESOLVED);
           throw error;

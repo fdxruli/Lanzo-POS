@@ -57,18 +57,49 @@ fail-closed incluso si alguien intenta llamarlas antes de inicializar el guard.
 - Binding A e intento B: se bloquea antes de profile, catálogo, Layout,
   backups o sync, incluso si la base está vacía. El binding es deliberadamente
   sticky en fase 1 para eliminar carreras entre pestañas y escritores tardíos.
-- Base legacy con datos no etiquetados (productos, ventas, clientes, lotes,
-  cachés de navegador, etc.): se bloquea. Un `company` mutable o una clave de
-  sync no pueden atribuir de forma inequívoca filas globales ya contaminadas.
-- El backfill legacy automático queda limitado al caso estrecho donde todos
-  los registros ocupados son perfiles `company` con la misma licencia
-  explícita y no existe ninguna store/caché no atribuible ni evidencia en
-  conflicto. Cualquier duda produce `LOCAL_TENANT_LEGACY_UNRESOLVED`.
+- Base legacy con datos no etiquetados: las filas sin scope son normales en
+  versiones anteriores y no se reescriben. Se pueden adoptar una sola vez
+  únicamente si existe un quórum de procedencia durable, internamente
+  consistente, que identifica al mismo tenant.
+- Evidencia conflictiva, insuficiente o no inspeccionable produce
+  `LOCAL_TENANT_LEGACY_UNRESOLVED`. Una licencia recién escrita, el nombre del
+  negocio, correo, rubro o la identidad física del dispositivo no pueden
+  reclamar datos legacy.
 - Si no se puede inspeccionar el almacenamiento del navegador, se bloquea; un
   fallo de enumeración nunca equivale a una base vacía.
 
 Las evidencias se comparan por identidad criptográfica y no se exponen en el
 estado de UI ni en logs públicos.
+
+## Recuperación de propietario legacy
+
+Una base sin `local_tenant_binding` puede contener `menu`, ventas, clientes,
+lotes, caja, outbox y cachés que fueron creados antes de que Lanzo tuviera una
+dimensión de tenant. Esas filas no etiquetadas son datos de negocio válidos,
+no una prueba de que el propietario sea desconocido.
+
+El guard usa la siguiente jerarquía antes de crear el binding atómico:
+
+- **Fuerte:** al menos dos canales durables e independientes coinciden en una
+  sola licencia: un perfil scopeado `company:<licencia>` que concuerda con su
+  licencia, una operación histórica de `sync_outbox` con `licenseKey`, o una
+  clave scopeada de `sync_meta`.
+- **De apoyo:** el paquete local `lanzo_license`, cachés validadas y sesiones
+  históricas solo pueden corroborar; no reclaman una base por sí solos. Su
+  firma es cliente-local y logout puede eliminarlo.
+- **Rechazada:** nombre comercial, correo, rubro, producto, una fila `company`
+  mutable, fingerprint de dispositivo y un valor introducido en el login actual.
+
+Si el quórum identifica a Tenant A y el login activo es A, Lanzo crea
+`local_tenant_binding` en la misma transacción que vuelve a verificar el
+snapshot. No modifica filas de negocio, no limpia stores y el binding queda
+sticky. Si el quórum identifica A y se intenta B, el binding se registra para
+A y B recibe `LOCAL_TENANT_MISMATCH`; A puede volver sin pérdida de datos.
+
+Evidencia de A y B, o una sola fuente durable, sigue siendo
+`LOCAL_TENANT_LEGACY_UNRESOLVED` sin binding. Una instalación FREE puede
+recuperarse offline solamente si conserva ese quórum durable local; si no lo
+conserva, requiere recuperación asistida no destructiva.
 
 ## Clasificación de tablas
 
@@ -210,6 +241,9 @@ Usar un perfil de navegador creado para QA, nunca datos reales del incidente:
 5. Volver al login y autenticar Tenant A.
 6. Confirmar que `TENANT-A-PRODUCT` y las colas de A siguen intactas.
 7. Repetir mismo tenant offline y los cambios Admin -> Staff -> Admin.
+8. Para una base legacy sin binding pero con negocio histórico, intentar
+   primero Tenant B (debe bloquearse) y luego Tenant A (debe crear el binding
+   y recuperar sus datos sin limpieza).
 
 ## Limitación conocida y fase futura
 

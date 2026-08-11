@@ -61,6 +61,29 @@ const createDatabase = async ({
   };
 };
 
+const seedLegacyBusiness = async (database, tenant = 'TENANT-A') => {
+  await Promise.all([
+    database.table('menu').put({ id: 'product-a', name: 'Producto A' }),
+    database.table('product_batches').put({ id: 'batch-a', productId: 'product-a' }),
+    database.table('customers').put({ id: 'customer-a', name: 'Cliente A' }),
+    database.table('sales').put({ id: 'sale-a', total: 100 }),
+    database.table('company').put({
+      id: `company:${tenant}`,
+      license_key: tenant,
+      name: 'Negocio histórico'
+    }),
+    database.table('sync_outbox').put({
+      id: 'pending-a',
+      licenseKey: tenant,
+      status: 'pending'
+    }),
+    database.table('sync_meta').put({
+      key: `${tenant}:pos_last_change_seq`,
+      value: 42
+    })
+  ]);
+};
+
 afterEach(async () => {
   await Promise.all(databases.splice(0).map(async (database) => {
     const name = database.name;
@@ -338,13 +361,13 @@ describe('LocalTenantGuard', () => {
     });
   });
 
-  it('backfills a legacy database only from unambiguous durable evidence', async () => {
-    const { database, guard } = await createDatabase();
-    await database.table('company').put({
-      id: 'company:TENANT-A',
-      license_key: 'TENANT-A',
-      name: 'Synthetic A'
-    });
+  it('backfills a complete legacy business for its historical owner after blocking another tenant', async () => {
+    const browserStorage = createMemoryStorage();
+    const { database, guard } = await createDatabase({ browserStorage });
+    await seedLegacyBusiness(database);
+    browserStorage.setItem('lanzo:restaurant-order-close-pending:v1', JSON.stringify([
+      { localOrderId: 'legacy-order-a' }
+    ]));
     guard.initialize();
 
     await expect(
@@ -355,41 +378,44 @@ describe('LocalTenantGuard', () => {
       guard.assertLocalTenantAccess({ license_key: 'TENANT-A' })
     ).resolves.toMatchObject({ status: 'pass' });
     expect((await guard.getLocalTenantBinding()).source).toBe('legacy_internal_evidence');
+    await expect(database.table('menu').get('product-a')).resolves.toBeTruthy();
+    await expect(database.table('product_batches').get('batch-a')).resolves.toBeTruthy();
+    await expect(database.table('customers').get('customer-a')).resolves.toBeTruthy();
+    await expect(database.table('sales').get('sale-a')).resolves.toBeTruthy();
+    await expect(database.table('sync_outbox').get('pending-a')).resolves.toMatchObject({
+      licenseKey: 'TENANT-A',
+      status: 'pending'
+    });
+    expect(browserStorage.getItem('lanzo:restaurant-order-close-pending:v1')).toContain('legacy-order-a');
+
+    guard.lock('logout');
+    await expect(
+      guard.assertLocalTenantAccess({ license_key: 'TENANT-B' })
+    ).rejects.toMatchObject({ code: 'LOCAL_TENANT_MISMATCH' });
+    await expect(
+      guard.assertLocalTenantAccess({ license_key: 'TENANT-A' })
+    ).resolves.toMatchObject({ status: 'pass' });
   });
 
   it.each([
     ['sync_cache', { key: 'admin_session_token', value: 'synthetic-token' }],
     ['sync_outbox', { id: 'legacy-operation', status: 'pending' }],
     ['sync_meta', { key: 'pos_sync_enabled', value: true }]
-  ])('does not adopt a legacy company when %s remains unscoped', async (storeName, record) => {
+  ])('preserves normal unscoped %s rows when durable legacy ownership has a quorum', async (storeName, record) => {
     const { database, guard } = await createDatabase();
-    await database.table('company').put({
-      id: 'company:TENANT-A',
-      license_key: 'TENANT-A',
-      name: 'Synthetic A'
-    });
+    await seedLegacyBusiness(database);
     await database.table(storeName).put(record);
     guard.initialize();
 
     await expect(
       guard.assertLocalTenantAccess({ license_key: 'TENANT-A' })
-    ).rejects.toMatchObject({
-      code: 'LOCAL_TENANT_LEGACY_UNRESOLVED',
-      details: {
-        reason: 'unverifiable_legacy_tenant_data',
-        unscopedLegacyStores: [storeName]
-      }
-    });
-    expect(await guard.getLocalTenantBinding()).toBeNull();
+    ).resolves.toMatchObject({ status: 'legacy_backfilled' });
+    expect(await database.table(storeName).get(record.id || record.key)).toBeTruthy();
   });
 
-  it('ignores only allowlisted device cache rows during narrow legacy adoption', async () => {
+  it('allows an offline legacy owner when the durable local ownership quorum matches', async () => {
     const { database, guard } = await createDatabase();
-    await database.table('company').put({
-      id: 'company:TENANT-A',
-      license_key: 'TENANT-A',
-      name: 'Synthetic A'
-    });
+    await seedLegacyBusiness(database);
     await database.table('sync_cache').bulkPut([
       { key: 'lanzo_device_id', value: 'synthetic-device' },
       { key: 'lanzo_license_attempts', value: { count: 2 } }
@@ -423,7 +449,7 @@ describe('LocalTenantGuard', () => {
       guard.assertLocalTenantAccess({ license_key: 'TENANT-B' })
     ).rejects.toMatchObject({
       code: 'LOCAL_TENANT_LEGACY_UNRESOLVED',
-      details: { reason: 'unverifiable_legacy_tenant_data' }
+      details: { reason: 'missing_legacy_ownership_quorum' }
     });
     expect(await guard.getLocalTenantBinding()).toBeNull();
   });
@@ -441,7 +467,7 @@ describe('LocalTenantGuard', () => {
       guard.assertLocalTenantAccess({ license_key: 'TENANT-B' })
     ).rejects.toMatchObject({
       code: 'LOCAL_TENANT_LEGACY_UNRESOLVED',
-      details: { reason: 'unverifiable_legacy_tenant_data' }
+      details: { reason: 'missing_legacy_ownership_quorum' }
     });
     expect(await guard.getLocalTenantBinding()).toBeNull();
     guard.reset();
@@ -484,10 +510,11 @@ describe('LocalTenantGuard', () => {
 
   it('treats conflicting legacy evidence as unresolved', async () => {
     const { database, guard } = await createDatabase();
-    await database.table('company').bulkPut([
-      { id: 'company:TENANT-A', license_key: 'TENANT-A' },
-      { id: 'company:TENANT-B', license_key: 'TENANT-B' }
-    ]);
+    await seedLegacyBusiness(database, 'TENANT-A');
+    await database.table('sync_meta').put({
+      key: 'TENANT-B:pos_last_change_seq',
+      value: 17
+    });
     guard.initialize();
 
     await expect(
