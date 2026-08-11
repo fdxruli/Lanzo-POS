@@ -20,9 +20,7 @@ begin
       'pos_inventory_movements_source_check';
   end if;
 
-  if v_constraint_definition <> $expected$
-CHECK ((source = ANY (ARRAY['sale'::text, 'sale_cancellation'::text, 'adjustment'::text, 'migration'::text, 'manual'::text])))
-$expected$ then
+  if v_constraint_definition <> $expected$CHECK ((source = ANY (ARRAY['sale'::text, 'sale_cancellation'::text, 'adjustment'::text, 'migration'::text, 'manual'::text])))$expected$ then
     raise exception 'Unexpected pos_inventory_movements source contract: %', v_constraint_definition;
   end if;
 end;
