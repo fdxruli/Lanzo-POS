@@ -180,6 +180,20 @@ El timeout de configuración observado durante el incidente se registra como
 hallazgo independiente; no se atribuye al binding y no se modifica en este
 cambio.
 
+## Recuperación y versión nativa de IndexedDB
+
+`DB_UNSUPPORTED_NATIVE_VERSION` no representa un mismatch de tenant. El
+preflight lo emite antes del runtime de licencia cuando la versión nativa de
+`LanzoDB1` es mayor que la versión que conoce el cliente actual. En ese caso
+no es seguro hacer downgrade, reconstruir la base ni borrar datos: se mantiene
+el bloqueo fail-closed y se requiere abrirla con un cliente compatible o hacer
+una revisión asistida.
+
+La fase de aislamiento añade la versión Dexie 31 (versión nativa 310) solo
+para crear `local_tenant_binding`. No crea una base con una versión nativa
+posterior ni debilita el preflight. Los workers de respaldo, migración y
+estadísticas validan el binding antes de acceder a contenido tenant-owned.
+
 Los workers de estadísticas y migración también reciben únicamente aliases
 hasheados, comparan el binding antes de leer/escribir datos tenant-owned y se
 cancelan o descartan sus resultados cuando el guard deja de estar concedido.
