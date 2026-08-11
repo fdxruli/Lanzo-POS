@@ -20,6 +20,7 @@ import {
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
+import { markInventoryEntrySynced } from '../inventory/inventoryEntryService';
 
 let registered = false;
 
@@ -195,6 +196,12 @@ export const productSyncHandler = {
           expectedVersion,
           idempotencyKey
         });
+    } else if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY) {
+      response = await productCloudRepository.addInventoryEntry({
+        licenseKey,
+        entry: payload.entry,
+        idempotencyKey
+      });
     } else if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) {
       response = op === SYNC_OPERATIONS.DELETE
         ? await productCloudRepository.deleteProductBatch({
@@ -250,6 +257,10 @@ export const productSyncHandler = {
 
     await productLocalRepository.applyCloudCatalog(response);
 
+    if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY) {
+      await markInventoryEntrySynced(idempotencyKey, response);
+    }
+
     const latestChangeSeq = normalizeChangeSeq(response, 0);
     if (latestChangeSeq > 0) {
       await syncMetaService.setMeta(PRODUCT_CATALOG_LAST_SEQ_KEY, latestChangeSeq, { licenseKey });
@@ -280,6 +291,7 @@ export const registerProductSyncHandler = () => {
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.PRODUCT_BATCH, productSyncHandler);
   posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_MOVEMENT, productSyncHandler);
+  posSyncOrchestrator.registerEntitySyncHandler(SYNC_ENTITY_TYPES.INVENTORY_ENTRY, productSyncHandler);
   registered = true;
   Logger.log('[Products/Sync] Handler de catalogo registrado. Incluye movimientos de inventario para Fase 6C.');
   return true;

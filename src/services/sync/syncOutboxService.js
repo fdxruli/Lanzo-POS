@@ -7,6 +7,35 @@ import { OUTBOX_STATUS, POS_SYNC_STORES, RETRY_CONFIG, SYNC_LIMITS } from './syn
 
 const nowIso = () => new Date().toISOString();
 
+export const buildSyncOutboxRecord = ({
+  licenseKey,
+  entityType,
+  operation,
+  entityId,
+  payload = null,
+  idempotencyKey = null,
+  metadata = null,
+  createdAt = nowIso()
+}) => {
+  const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId });
+  return {
+    id: resolvedIdempotencyKey,
+    licenseKey: licenseKey || null,
+    entityType,
+    operation,
+    entityId: entityId || null,
+    payload,
+    status: OUTBOX_STATUS.PENDING,
+    idempotencyKey: resolvedIdempotencyKey,
+    attempts: 0,
+    lastError: null,
+    metadata,
+    createdAt,
+    updatedAt: createdAt,
+    nextRetryAt: null
+  };
+};
+
 const ensureOpen = async () => {
   if (!db.isOpen()) {
     await db.open();
@@ -34,24 +63,7 @@ export const syncOutboxService = {
   }) {
     await ensureOpen();
 
-    const createdAt = nowIso();
-    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId });
-    const row = {
-      id: resolvedIdempotencyKey,
-      licenseKey: licenseKey || null,
-      entityType,
-      operation,
-      entityId: entityId || null,
-      payload,
-      status: OUTBOX_STATUS.PENDING,
-      idempotencyKey: resolvedIdempotencyKey,
-      attempts: 0,
-      lastError: null,
-      metadata,
-      createdAt,
-      updatedAt: createdAt,
-      nextRetryAt: null
-    };
+    const row = buildSyncOutboxRecord({ licenseKey, entityType, operation, entityId, payload, idempotencyKey, metadata });
 
     await db.table(POS_SYNC_STORES.OUTBOX).put(row);
     return row;
