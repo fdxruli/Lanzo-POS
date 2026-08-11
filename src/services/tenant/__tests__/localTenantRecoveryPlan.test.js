@@ -34,7 +34,11 @@ const createDatabase = async () => {
     sync_conflicts: 'id',
     sync_cache: 'key',
     company: 'id',
-    local_tenant_binding: 'key'
+    local_tenant_binding: 'key',
+    __lanzo_sales_backup_v30: 'legacyKey',
+    __lanzo_deleted_sales_backup_v30: 'legacyKey',
+    __lanzo_db_recovery: 'key',
+    unknown_legacy_store: 'id'
   });
   await database.open();
   databases.push(database);
@@ -105,6 +109,7 @@ describe('local tenant recovery plan', () => {
     expect(plan.quarantined.some((row) => row.store === 'sync_outbox')).toBe(true);
     expect(plan.provenDirect.every((row) => row.store === 'sync_outbox')).toBe(true);
     expect(plan.warnings).toContain('WHOLE_DATABASE_BINDING_FORBIDDEN');
+    expect(summarizeLegacyRecoveryPlan(plan).automaticallyRecoverableCount).toBe(0);
     expect(JSON.stringify(plan)).not.toContain('ACTIVE-C');
     expect(JSON.stringify(plan)).not.toContain('FOREIGN-A');
   });
@@ -118,6 +123,7 @@ describe('local tenant recovery plan', () => {
 
     expect(outbox).toMatchObject({ destinationAction: 'QUARANTINE', tier: 'TIER_A' });
     expect(plan.storeSummaries.sync_outbox.destinationAction).toBe('QUARANTINE');
+    expect(summarizeLegacyRecoveryPlan(plan).automaticallyRecoverableCount).toBe(0);
   });
 
   it('creates a non-destructive plan for FREE/offline legacy data with no tenant marker', async () => {
@@ -180,6 +186,68 @@ describe('local tenant recovery plan', () => {
     expect(plan.warnings).toContain('ASSISTED_RECOVERY_REQUIRED');
   });
 
+  it('never promotes a contradictory outbox record or its entity reference', async () => {
+    const plan = await buildLegacyRecoveryPlan({
+      snapshot: {
+        sourceDatabase: 'LanzoDB1',
+        recordsByStore: {
+          menu: [{ id: 'product-a' }],
+          sync_outbox: [{
+            id: 'contradictory',
+            licenseKey: 'ACTIVE-A',
+            metadata: { licenseKey: 'FOREIGN-B' },
+            entityType: 'product',
+            entityId: 'product-a'
+          }]
+        },
+        localStorage: {}
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(plan.evidence.activeTierARecordCount).toBe(0);
+    expect(plan.provenDirect).toHaveLength(0);
+    expect(plan.foreign).toHaveLength(1);
+    expect(plan.ambiguous.some((row) => row.store === 'menu')).toBe(true);
+  });
+
+  it('fingerprints privacy-preserving ownership evidence that changes classification', async () => {
+    const snapshot = {
+      sourceDatabase: 'LanzoDB1',
+      recordsByStore: {
+        sync_outbox: [{ id: 'same-row', licenseKey: 'ACTIVE-A', entityType: 'product', entityId: 'product-a' }],
+        company: [{ id: 'company:ACTIVE-A', license_key: 'ACTIVE-A' }]
+      },
+      localStorage: {}
+    };
+    const activePlan = await buildLegacyRecoveryPlan({ snapshot, activeTenantSource: { license_key: 'ACTIVE-A' } });
+    const foreignPlan = await buildLegacyRecoveryPlan({
+      snapshot: {
+        ...snapshot,
+        recordsByStore: {
+          ...snapshot.recordsByStore,
+          sync_outbox: [{ ...snapshot.recordsByStore.sync_outbox[0], licenseKey: 'FOREIGN-B' }]
+        }
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const companyConflictPlan = await buildLegacyRecoveryPlan({
+      snapshot: {
+        ...snapshot,
+        recordsByStore: {
+          ...snapshot.recordsByStore,
+          company: [{ id: 'company:ACTIVE-A', license_key: 'FOREIGN-B' }]
+        }
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(activePlan.sourceSnapshotFingerprint).not.toBe(foreignPlan.sourceSnapshotFingerprint);
+    expect(activePlan.sourceSnapshotFingerprint).not.toBe(companyConflictPlan.sourceSnapshotFingerprint);
+    expect(JSON.stringify(activePlan)).not.toContain('ACTIVE-A');
+    expect(JSON.stringify(foreignPlan)).not.toContain('FOREIGN-B');
+  });
+
   it('creates separate plans across tenant switches without changing the source snapshot', async () => {
     const snapshot = farmaciaGarySnapshot();
     const before = JSON.stringify(snapshot);
@@ -234,5 +302,79 @@ describe('local tenant recovery plan', () => {
     await expect(database.table('menu').count()).resolves.toBe(1);
     await expect(database.table('sync_outbox').count()).resolves.toBe(1);
     await expect(database.table('local_tenant_binding').count()).resolves.toBe(0);
+  });
+
+  it('inventories configured localStorage through read-only methods only', async () => {
+    const database = await createDatabase();
+    const browserStorage = {
+      getItem: vi.fn((key) => key === 'lanzo-active-orders-storage' ? '{"state":"legacy"}' : null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn()
+    };
+    const adapter = createReadOnlyLegacyInspectionAdapter({ database, browserStorage });
+    const snapshot = await adapter.readSnapshot();
+    const plan = await buildLegacyRecoveryPlan({
+      snapshot,
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(browserStorage.getItem).toHaveBeenCalledTimes(4);
+    expect(browserStorage.setItem).not.toHaveBeenCalled();
+    expect(browserStorage.removeItem).not.toHaveBeenCalled();
+    expect(browserStorage.clear).not.toHaveBeenCalled();
+    expect(plan.storeSummaries['localStorage:lanzo-active-orders-storage']).toMatchObject({ total: 1 });
+  });
+
+  it('blocks future copy planning for an already-bound vault while preserving infrastructure', async () => {
+    const plan = await buildLegacyRecoveryPlan({
+      snapshot: {
+        sourceDatabase: 'LanzoDB1',
+        recordsByStore: {
+          local_tenant_binding: [{ key: 'primary', tenantIdentity: 'opaque-binding' }],
+          __lanzo_sales_backup_v30: [{ legacyKey: 'sale-1' }],
+          __lanzo_deleted_sales_backup_v30: [{ legacyKey: 'sale-2' }],
+          __lanzo_db_recovery: [{ key: 'metadata' }]
+        },
+        localStorage: {}
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(plan.preconditionFailure).toBe('RECOVERY_SOURCE_ALREADY_BOUND');
+    expect(plan.executableForFutureCopy).toBe(false);
+    expect(plan.warnings).toContain('RECOVERY_SOURCE_ALREADY_BOUND');
+    expect(plan.storeSummaries.__lanzo_sales_backup_v30.destinationAction).toBe('PRESERVE_VAULT');
+  });
+
+  it('fails closed for unknown IndexedDB stores instead of assigning a copy policy', async () => {
+    const plan = await buildLegacyRecoveryPlan({
+      snapshot: {
+        sourceDatabase: 'LanzoDB1',
+        recordsByStore: { unknown_legacy_store: [{ id: 'unknown-row' }] },
+        localStorage: {}
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(plan.unknownStores).toEqual(['unknown_legacy_store']);
+    expect(plan.executableForFutureCopy).toBe(false);
+    expect(plan.warnings).toContain('UNKNOWN_STORE_PRESENT');
+    expect(plan.storeSummaries.unknown_legacy_store).toMatchObject({
+      destinationAction: 'PRESERVE_VAULT',
+      classifications: { AMBIGUOUS: 1 }
+    });
+  });
+
+  it('inventories physical infrastructure and unknown stores from the real adapter', async () => {
+    const database = await createDatabase();
+    await database.table('__lanzo_sales_backup_v30').put({ legacyKey: 'backup-sale' });
+    await database.table('__lanzo_db_recovery').put({ key: 'recovery-meta' });
+    await database.table('unknown_legacy_store').put({ id: 'unknown-row' });
+    const snapshot = await createReadOnlyLegacyInspectionAdapter({ database }).readSnapshot();
+
+    expect(snapshot.recordsByStore.__lanzo_sales_backup_v30).toHaveLength(1);
+    expect(snapshot.recordsByStore.__lanzo_db_recovery).toHaveLength(1);
+    expect(snapshot.recordsByStore.unknown_legacy_store).toHaveLength(1);
   });
 });

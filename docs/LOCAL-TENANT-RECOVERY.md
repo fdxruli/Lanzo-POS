@@ -23,7 +23,9 @@ or bind data. It does not start sync, drain outbox, make RPC calls or mutate
 localStorage.
 
 The only adapter supplied by this phase exposes `readSnapshot()` and uses a
-Dexie `r` transaction. It has no mutation, sync or network operation.
+Dexie `r` transaction. It inventories every physical IndexedDB store and the
+configured tenant-owned localStorage keys through `getItem()` only. It has no
+mutation, sync or network operation.
 
 Plan lifecycle available now:
 
@@ -55,7 +57,10 @@ for store primary keys, relationships, proof capabilities and destination
 action. In particular:
 
 - `sync_outbox` is Tier-A evidence but remains quarantined in the vault;
-  it is never destination operational work.
+  it is never destination operational work. It can prove an entity only when
+  its tenant evidence has exactly one effective candidate, that candidate
+  matches the active tenant, and no `license_key`, `licenseKey` or metadata
+  value contradicts it.
 - `sync_meta`, `company`, conflicts and mixed caches stay in the vault.
 - stats are recomputed from future recovered records.
 - sequence state is never copied to a new operational database.
@@ -68,13 +73,21 @@ action. In particular:
 
 The plan includes `sha256:<digest>` for stale-plan detection. The digest is
 deterministic over sorted store names, primary/relationship identifiers,
-record presence, selected status/timestamp metadata and relevant localStorage
-key presence. It excludes license values, payloads, business names, personal
-data, tokens, cache contents and conflict contents. Identifiers only exist as
-digest input; the plan exposes opaque row references, not raw record IDs.
+record presence, selected status/timestamp metadata, relevant localStorage
+key presence and anonymized provenance tokens. Changing evidence that affects
+active/foreign classification, provenance tier or direct-reference eligibility
+therefore changes the fingerprint. It excludes raw license values, payloads,
+business names, personal data, tokens, cache contents and conflict contents.
+Identifiers only exist as digest input; the plan exposes opaque row
+references, not raw record IDs.
 
 Any future copy phase must re-inspect the vault and require an identical
 fingerprint before acting.
+
+An already-bound source returns `RECOVERY_SOURCE_ALREADY_BOUND` and is not
+eligible for future copying. Unknown physical stores are inventoried with a
+safe `PRESERVE_VAULT` policy, emit `UNKNOWN_STORE_PRESENT` and also make a
+future copy plan non-executable until the registry is explicitly extended.
 
 ## Cloud and offline boundary
 

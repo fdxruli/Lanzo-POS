@@ -2,13 +2,13 @@ import { DB_NAME } from '../../config/dbConfig';
 import { resolveActiveTenantIdentity } from './localTenantGuard';
 import {
   LEGACY_RECOVERY_LOCAL_STORAGE_POLICY,
-  LEGACY_RECOVERY_STORE_POLICY,
   RECOVERY_DESTINATION_ACTION,
   RECOVERY_PLAN_STATUS,
   RECOVERY_PLAN_VERSION,
   RECOVERY_PROVENANCE_TIER,
   RECOVERY_ROW_CLASSIFICATION,
-  getLegacyRecoveryStorePolicy
+  getLegacyRecoveryStorePolicy,
+  isKnownLegacyRecoveryStore
 } from './localTenantRecoveryPolicy';
 
 const SYNC_META_SUFFIXES = [
@@ -100,21 +100,27 @@ const hasCloudMarker = (record) => Boolean(
   record?.cloudUpdatedAt
 );
 
-const fingerprintProjection = (recordsByStore, localStorage = {}) => {
+const fingerprintToken = async (value, cryptoProvider) => (
+  (await digest(value, cryptoProvider)).slice(0, 32)
+);
+
+const fingerprintProjection = async (recordsByStore, localStorage = {}, cryptoProvider) => {
   const stores = {};
   for (const [storeName, records] of stableEntries(recordsByStore)) {
     const storePolicy = getLegacyRecoveryStorePolicy(storeName);
-    stores[storeName] = (Array.isArray(records) ? records : []).map((record) => ({
-      primaryKey: record?.[storePolicy.primaryKey] ?? null,
-      relationshipValues: storePolicy.relationshipFields
+    stores[storeName] = (await Promise.all((Array.isArray(records) ? records : []).map(async (record) => ({
+      primaryKeyToken: await fingerprintToken({ primaryKey: record?.[storePolicy.primaryKey] ?? null }, cryptoProvider),
+      relationshipTokens: await Promise.all(storePolicy.relationshipFields
         .filter((field) => !field.includes('[]'))
-        .map((field) => [field, record?.[field] ?? null]),
+        .map(async (field) => [field, await fingerprintToken(record?.[field] ?? null, cryptoProvider)])),
+      ownershipEvidenceTokens: (await Promise.all(recordTenantValues(storeName, record).map(async (evidence) => ({
+        tier: evidence.tier,
+        token: await fingerprintToken({ tenantEvidence: evidence.value }, cryptoProvider)
+      })))).sort((left, right) => `${left.tier}:${left.token}`.localeCompare(`${right.tier}:${right.token}`)),
       cloudMarker: hasCloudMarker(record),
-      // The fingerprint deliberately excludes license values, payloads,
-      // names, personal data, tokens, caches and conflict contents.
       status: record?.status ?? null,
       timestamp: record?.updatedAt ?? record?.createdAt ?? record?.timestamp ?? null
-    })).sort((left, right) => String(left.primaryKey).localeCompare(String(right.primaryKey)));
+    })))).sort((left, right) => left.primaryKeyToken.localeCompare(right.primaryKeyToken));
   }
   return {
     stores,
@@ -130,9 +136,33 @@ const tenantMatch = async (values, activeIdentity, cryptoProvider) => {
   const matches = [];
   for (const evidence of values) {
     const alias = await tenantAlias(evidence.value, cryptoProvider);
-    matches.push({ ...evidence, matchesActive: activeAliases.has(alias) });
+    matches.push({ ...evidence, alias, matchesActive: activeAliases.has(alias) });
   }
   return matches;
+};
+
+const uniqueTenantCandidates = (matches = []) => new Map(
+  matches.map((match) => [match.alias, match])
+);
+
+const isUnambiguousActiveTierAOutbox = (matches = []) => {
+  const candidates = uniqueTenantCandidates(matches);
+  if (candidates.size !== 1) return false;
+  const [candidate] = candidates.values();
+  return candidate.matchesActive && matches.some((match) => (
+    match.matchesActive && match.tier === RECOVERY_PROVENANCE_TIER.A
+  ));
+};
+
+const classifyOutboxRow = (matches = []) => {
+  const candidates = uniqueTenantCandidates(matches);
+  if (candidates.size === 0) return RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS;
+  if (candidates.size > 1 || [...candidates.values()].some((candidate) => !candidate.matchesActive)) {
+    return RECOVERY_ROW_CLASSIFICATION.FOREIGN;
+  }
+  return isUnambiguousActiveTierAOutbox(matches)
+    ? RECOVERY_ROW_CLASSIFICATION.PROVEN_DIRECT
+    : RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS;
 };
 
 const classifyMetadataRow = ({ storeName, matches }) => {
@@ -202,12 +232,27 @@ const getBusinessRowClassification = ({ storeName, record, directReferences, pro
  * The adapter exposes exactly one operation.  Its transaction mode is fixed
  * to Dexie's readonly mode; it has no handle for mutations, sync or RPC.
  */
-export const createReadOnlyLegacyInspectionAdapter = ({ database, sourceDatabase = DB_NAME } = {}) => {
+const readConfiguredLocalStorage = (browserStorage) => {
+  if (!browserStorage) return {};
+  if (typeof browserStorage.getItem !== 'function') throw new Error('RECOVERY_READONLY_STORAGE_REQUIRED');
+  return Object.fromEntries(Object.keys(LEGACY_RECOVERY_LOCAL_STORAGE_POLICY).map((key) => [
+    key,
+    browserStorage.getItem(key) !== null
+  ]));
+};
+
+export const createReadOnlyLegacyInspectionAdapter = ({
+  database,
+  sourceDatabase = DB_NAME,
+  browserStorage = null
+} = {}) => {
   if (!database?.table || !database?.transaction) throw new Error('RECOVERY_READONLY_DATABASE_REQUIRED');
   return Object.freeze({
     async readSnapshot() {
       const available = new Set(database.tables?.map((table) => table.name) || []);
-      const storeNames = Object.keys(LEGACY_RECOVERY_STORE_POLICY).filter((name) => available.has(name));
+      // Every physical store participates. Known infrastructure remains in the
+      // vault; an unknown store makes any future copy plan fail closed.
+      const storeNames = [...available].sort();
       const tables = storeNames.map((name) => database.table(name));
       const recordsByStore = await database.transaction('r', tables, async () => {
         const entries = await Promise.all(storeNames.map(async (storeName) => [
@@ -216,7 +261,11 @@ export const createReadOnlyLegacyInspectionAdapter = ({ database, sourceDatabase
         ]));
         return Object.fromEntries(entries);
       });
-      return { sourceDatabase, recordsByStore, localStorage: {} };
+      return {
+        sourceDatabase,
+        recordsByStore,
+        localStorage: readConfiguredLocalStorage(browserStorage)
+      };
     }
   });
 };
@@ -232,7 +281,10 @@ export const buildLegacyRecoveryPlan = async ({
     storeName,
     Array.isArray(records) ? [...records].sort((left, right) => String(left?.[getLegacyRecoveryStorePolicy(storeName).primaryKey]).localeCompare(String(right?.[getLegacyRecoveryStorePolicy(storeName).primaryKey]))) : []
   ]));
-  const fingerprint = await digest(fingerprintProjection(recordsByStore, snapshot.localStorage), cryptoProvider);
+  const fingerprint = await digest(
+    await fingerprintProjection(recordsByStore, snapshot.localStorage, cryptoProvider),
+    cryptoProvider
+  );
   const evidenceByRecord = new Map();
   const activeOutboxEvidence = new Set();
   let foreignCandidateCount = 0;
@@ -243,7 +295,7 @@ export const buildLegacyRecoveryPlan = async ({
     for (const record of records) {
       const matches = await tenantMatch(recordTenantValues(storeName, record), activeIdentity, cryptoProvider);
       evidenceByRecord.set(record, matches);
-      if (storeName === 'sync_outbox' && matches.some((item) => item.matchesActive && item.tier === RECOVERY_PROVENANCE_TIER.A)) {
+      if (storeName === 'sync_outbox' && isUnambiguousActiveTierAOutbox(matches)) {
         activeOutboxEvidence.add(record);
         activeTierACount += 1;
       }
@@ -266,11 +318,7 @@ export const buildLegacyRecoveryPlan = async ({
       let classification;
       let tier = RECOVERY_PROVENANCE_TIER.D;
       if (storeName === 'sync_outbox') {
-        classification = matches.some((item) => !item.matchesActive)
-          ? RECOVERY_ROW_CLASSIFICATION.FOREIGN
-          : matches.some((item) => item.matchesActive && item.tier === RECOVERY_PROVENANCE_TIER.A)
-            ? RECOVERY_ROW_CLASSIFICATION.PROVEN_DIRECT
-            : RECOVERY_ROW_CLASSIFICATION.AMBIGUOUS;
+        classification = classifyOutboxRow(matches);
         tier = RECOVERY_PROVENANCE_TIER.A;
       } else if (['company', 'sync_meta', 'sync_cache', 'sync_conflicts'].includes(storeName)) {
         classification = classifyMetadataRow({ storeName, matches });
@@ -303,11 +351,17 @@ export const buildLegacyRecoveryPlan = async ({
   }
 
   const counts = Object.fromEntries(Object.entries(buckets).map(([key, rows]) => [key, rows.length]));
+  const unknownStores = Object.keys(recordsByStore)
+    .filter((storeName) => !isKnownLegacyRecoveryStore(storeName))
+    .sort();
+  const boundSource = (recordsByStore.local_tenant_binding || []).some((record) => Boolean(record));
   const warnings = [
     ...(activeTierACount === 0 ? ['ASSISTED_RECOVERY_REQUIRED'] : []),
     ...(counts.AMBIGUOUS > 0 ? ['UNSCOPED_ROWS_QUARANTINED'] : []),
     ...(counts.FOREIGN > 0 ? ['FOREIGN_METADATA_PRESERVED'] : []),
-    ...(activeTierACount > 0 ? ['WHOLE_DATABASE_BINDING_FORBIDDEN'] : [])
+    ...(activeTierACount > 0 ? ['WHOLE_DATABASE_BINDING_FORBIDDEN'] : []),
+    ...(unknownStores.length > 0 ? ['UNKNOWN_STORE_PRESENT'] : []),
+    ...(boundSource ? ['RECOVERY_SOURCE_ALREADY_BOUND'] : [])
   ].sort();
 
   return deepFreeze({
@@ -317,6 +371,9 @@ export const buildLegacyRecoveryPlan = async ({
     activeTenantAuthority: { type: activeIdentity.authority, aliasesAvailable: activeIdentity.aliases.length },
     status: RECOVERY_PLAN_STATUS.PLAN_CREATED,
     createdFromSnapshot: true,
+    executableForFutureCopy: !boundSource && unknownStores.length === 0,
+    preconditionFailure: boundSource ? 'RECOVERY_SOURCE_ALREADY_BOUND' : null,
+    unknownStores,
     evidence: {
       activeTierARecordCount: activeTierACount,
       activeCandidateHasTierA: activeTierACount > 0,
@@ -352,8 +409,10 @@ export const inspectLegacyVaultAndBuildRecoveryPlan = async ({ adapter, activeTe
 export const summarizeLegacyRecoveryPlan = (plan) => {
   const businessRows = ['menu', 'sales', 'customers']
     .reduce((total, storeName) => total + Number(plan?.storeSummaries?.[storeName]?.total || 0), 0);
-  const recoverable = Number(plan?.classifications?.PROVEN_DIRECT || 0) +
-    Number(plan?.classifications?.PROVEN_RELATIONAL || 0);
+  const recoverable = [
+    ...(plan?.provenDirect || []),
+    ...(plan?.provenRelational || [])
+  ].filter((row) => row.destinationAction === RECOVERY_DESTINATION_ACTION.COPY_IF_PROVEN).length;
   const ambiguous = Number(plan?.classifications?.AMBIGUOUS || 0) +
     Number(plan?.classifications?.CLOUD_RECONCILABLE || 0);
   return deepFreeze({

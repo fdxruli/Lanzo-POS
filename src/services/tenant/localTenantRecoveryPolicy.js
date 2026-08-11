@@ -54,6 +54,11 @@ const policy = (primaryKey, options = {}) => Object.freeze({
   ...options
 });
 
+const vaultOnlyPolicy = (primaryKey) => policy(primaryKey, {
+  scope: 'recovery_infrastructure',
+  destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT
+});
+
 /**
  * This is the sole registry for future recovery phases.  "copy" always means
  * copy to a future tenant-specific destination, never alter LanzoDB1.
@@ -143,8 +148,21 @@ export const LEGACY_RECOVERY_STORE_POLICY = Object.freeze({
   deleted_categories: policy('id', { destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT }),
   processed_sales_log: policy('id', { destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT }),
   theme: policy('id', { destinationAction: RECOVERY_DESTINATION_ACTION.IGNORE_OPERATIONALLY }),
-  corrupted_states: policy('id', { destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT })
+  corrupted_states: policy('id', { destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT }),
+
+  // Infrastructure is explicitly inventoried. It is never copied to a
+  // future tenant database and unknown stores never inherit a permissive
+  // business-store policy.
+  __lanzo_sales_backup_v30: vaultOnlyPolicy('legacyKey'),
+  __lanzo_deleted_sales_backup_v30: vaultOnlyPolicy('legacyKey'),
+  __lanzo_db_recovery: vaultOnlyPolicy('key'),
+  local_tenant_binding: vaultOnlyPolicy('key')
 });
+
+export const UNKNOWN_LEGACY_RECOVERY_STORE_POLICY = Object.freeze(policy('id', {
+  scope: 'unknown',
+  destinationAction: RECOVERY_DESTINATION_ACTION.PRESERVE_VAULT
+}));
 
 export const LEGACY_RECOVERY_LOCAL_STORAGE_POLICY = Object.freeze({
   'lanzo-active-orders-storage': Object.freeze({
@@ -173,6 +191,10 @@ export const LEGACY_RECOVERY_LOCAL_STORAGE_POLICY = Object.freeze({
   })
 });
 
+export const isKnownLegacyRecoveryStore = (storeName) => Boolean(
+  LEGACY_RECOVERY_STORE_POLICY[storeName]
+);
+
 export const getLegacyRecoveryStorePolicy = (storeName) => (
-  LEGACY_RECOVERY_STORE_POLICY[storeName] || policy('id')
+  LEGACY_RECOVERY_STORE_POLICY[storeName] || UNKNOWN_LEGACY_RECOVERY_STORE_POLICY
 );
