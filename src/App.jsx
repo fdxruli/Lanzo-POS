@@ -12,6 +12,7 @@ import AdminLoginModal from './components/common/AdminLoginModal';
 import AdminEnrollmentModal from './components/common/AdminEnrollmentModal';
 import LicenseAccessChooser from './components/common/LicenseAccessChooser';
 import LicenseChangeRequiredModal from './components/common/LicenseChangeRequiredModal';
+import LocalTenantMismatchScreen from './components/common/LocalTenantMismatchScreen';
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
@@ -318,6 +319,13 @@ function App() {
       return (
         <ErrorBoundary>
           <LicenseChangeRequiredModal />
+        </ErrorBoundary>
+      );
+
+    case 'local_tenant_mismatch':
+      return (
+        <ErrorBoundary>
+          <LocalTenantMismatchScreen />
         </ErrorBoundary>
       );
 

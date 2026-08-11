@@ -174,6 +174,10 @@ export const createUISlice = (set, get) => ({
 
   cashOpeningPolicy: getCashOpeningPolicy(),
 
+  refreshTenantUiPreferences: () => {
+    set({ cashOpeningPolicy: getCashOpeningPolicy() });
+  },
+
   setCashOpeningPolicy: (policy) => {
     const requestedPolicy = isCloudCashSyncEnabled(get().licenseDetails)
       ? CASH_OPENING_POLICY.MANUAL

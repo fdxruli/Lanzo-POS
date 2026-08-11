@@ -7,6 +7,7 @@ import {
   reportStructuralDatabaseErrorOnce
 } from '../db/databaseRecoveryState';
 import Logger from '../Logger';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { POS_SYNC_STORES, SYNC_META_KEYS, SYNC_STATUS } from './syncConstants';
 
 const nowIso = () => new Date().toISOString();
@@ -29,6 +30,7 @@ const ensureOpen = async () => {
 };
 
 const handleError = (error, operation) => {
+  if (isLocalTenantAccessError(error)) throw error;
   if (isStructuralDatabaseError(error)) {
     reportStructuralDatabaseErrorOnce(error, `pos-sync-meta:${operation}`);
     return false;

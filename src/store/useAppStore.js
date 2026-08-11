@@ -6,13 +6,43 @@ import { createPWASlice } from './slices/createPWASlice';
 import { createDriveSlice } from './slices/createDriveSlice';
 import { createNotificationSlice } from './slices/createNotificationSlice';
 import { createEcommercePublishedStockAlertSlice } from './slices/createEcommercePublishedStockAlertSlice';
+import { localTenantAccessController } from '../services/tenant/localTenantPolicy';
+import { isUnsafeTenantStatePatch } from './tenantSafeState';
 
-export const useAppStore = create((...a) => ({
-  ...createUISlice(...a),
-  ...createLicenseSlice(...a),
-  ...createProfileSlice(...a),
-  ...createPWASlice(...a),
-  ...createDriveSlice(...a),
-  ...createNotificationSlice(...a),
-  ...createEcommercePublishedStockAlertSlice(...a)
-}));
+export const useAppStore = create((set, get, store) => {
+  const tenantSafeSet = (partial, replace) => {
+    const patch = typeof partial === 'function' ? partial(get()) : partial;
+    if (!patch || isUnsafeTenantStatePatch(
+      patch,
+      localTenantAccessController.getState(),
+      get()
+    )) return undefined;
+    return set(patch, replace);
+  };
+  const args = [tenantSafeSet, get, store];
+
+  return {
+    ...createUISlice(...args),
+    ...createLicenseSlice(...args),
+    ...createProfileSlice(...args),
+    ...createPWASlice(...args),
+    ...createDriveSlice(...args),
+    ...createNotificationSlice(...args),
+    ...createEcommercePublishedStockAlertSlice(...args)
+  };
+});
+
+// Zustand exposes a public setState that bypasses the creator's `set` wrapper.
+// Lazy-installed slices and tests use that API, so it must enforce the same
+// tenant boundary as every slice-local mutation.
+const setAppStateUnsafe = useAppStore.setState;
+useAppStore.setState = (partial, replace) => {
+  const currentState = useAppStore.getState();
+  const patch = typeof partial === 'function' ? partial(currentState) : partial;
+  if (!patch || isUnsafeTenantStatePatch(
+    patch,
+    localTenantAccessController.getState(),
+    currentState
+  )) return undefined;
+  return setAppStateUnsafe(patch, replace);
+};

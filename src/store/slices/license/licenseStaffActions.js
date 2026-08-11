@@ -16,6 +16,13 @@ import {
 import {
   getStaffLoginMessage
 } from './licenseGuards';
+import {
+  assertLocalTenantAccess,
+  initializeLocalTenantGuard,
+  isLocalTenantAccessError,
+  lockLocalTenantAccess
+} from '../../../services/tenant/localTenantGuard';
+import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
 export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => (
   // The persisted role is authoritative.  A leftover staff token must never
@@ -86,11 +93,40 @@ export const createLicenseStaffActions = ({
       return { success: false, message: 'No hay licencia para iniciar sesion staff.' };
     }
 
-    const result = await staffLoginOnDevice({
-      licenseKey,
-      username,
-      password
-    });
+    try {
+      initializeLocalTenantGuard('staff_login');
+      await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'staff_login' });
+    } catch (error) {
+      if (!isLocalTenantAccessError(error)) throw error;
+      enterLocalTenantIsolationFailure(set, error);
+      return {
+        success: false,
+        localTenantMismatch: true,
+        code: error.code,
+        message: error.message
+      };
+    }
+    let result;
+    try {
+      result = await staffLoginOnDevice({
+        licenseKey,
+        username,
+        password,
+        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
+          tenantSource,
+          { reason: 'staff_login_before_local_persistence' }
+        )
+      });
+    } catch (error) {
+      if (!isLocalTenantAccessError(error)) throw error;
+      enterLocalTenantIsolationFailure(set, error);
+      return {
+        success: false,
+        localTenantMismatch: true,
+        code: error.code,
+        message: error.message
+      };
+    }
 
     if (!result.success) {
       const isStaffAlreadyInUse = result.code === 'STAFF_ALREADY_IN_USE';
@@ -126,7 +162,6 @@ export const createLicenseStaffActions = ({
         active_device_activated_at: result.active_device_activated_at || null
       };
     }
-
     const licenseDataToSave = {
       ...state.licenseDetails,
       ...result.details,
@@ -135,7 +170,18 @@ export const createLicenseStaffActions = ({
       device_role: 'staff',
       staff_user: result.staff_user || result.details?.staff_user || null
     };
-
+    try {
+      await assertLocalTenantAccess(licenseDataToSave, { reason: 'staff_login_response' });
+    } catch (error) {
+      if (!isLocalTenantAccessError(error)) throw error;
+      enterLocalTenantIsolationFailure(set, error);
+      return {
+        success: false,
+        localTenantMismatch: true,
+        code: error.code,
+        message: error.message
+      };
+    }
     // Keep the persisted actor role and both token caches in lockstep even
     // when the RPC adapter is replaced or mocked by an embedding host.
     await clearAdminSessionCache();
@@ -143,29 +189,48 @@ export const createLicenseStaffActions = ({
 
     set({
       licenseDetails: licenseDataToSave,
+      _isLoggingOut: false,
       currentDeviceRole: 'staff',
       currentStaffUser: licenseDataToSave.staff_user,
       staffLoginLicenseKey: licenseKey,
       staffLoginMessage: null,
-      staffLoginError: null
+      staffLoginError: null,
+      localTenantIsolation: null
     });
 
     await get()._loadProfile(licenseKey);
 
     return { success: true };
   },
-
   logoutStaff: async () => {
     const licenseKey = get().licenseDetails?.license_key || get().staffLoginLicenseKey;
-
-    await get().stopLicenseSync();
-    await staffLogoutSession(licenseKey);
-    notifyPosCatalogSessionReset();
-
+    get()._invalidateProfileLoads?.();
+    get().resetEcommerceOrdersState?.();
+    get().lockDriveSession?.();
     set({
       appStatus: 'staff_login_required',
+      _isLoggingOut: true,
       currentDeviceRole: 'staff',
       currentStaffUser: null,
+      cashOpeningPolicy: 'manual',
+      staffLoginLicenseKey: licenseKey || null,
+      staffLoginMessage: 'Cerrando sesion staff...',
+      staffLoginError: null
+    });
+    notifyPosCatalogSessionReset();
+    try {
+      await get().stopLicenseSync();
+      await staffLogoutSession(licenseKey);
+    } finally {
+      lockLocalTenantAccess('staff_actor_logged_out');
+      get().lockDriveSession?.();
+    }
+    set({
+      appStatus: 'staff_login_required',
+      _isLoggingOut: true,
+      currentDeviceRole: 'staff',
+      currentStaffUser: null,
+      cashOpeningPolicy: 'manual',
       staffLoginLicenseKey: licenseKey || null,
       staffLoginMessage: 'Sesion staff cerrada.',
       staffLoginError: null

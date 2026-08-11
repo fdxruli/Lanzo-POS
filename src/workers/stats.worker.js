@@ -2,6 +2,11 @@ import Dexie from 'dexie';
 import { DB_NAME } from '../config/dbConfig.js';
 import Logger from '../services/Logger.js';
 import { Money } from '../utils/moneyMath.js';
+import {
+  LOCAL_TENANT_BINDING_KEY,
+  LOCAL_TENANT_BINDING_STORE,
+  areLocalTenantAliasesCompatible
+} from '../services/tenant/localTenantPolicy.js';
 
 const CHUNK_SIZE = 1000;
 let activeDB = null;
@@ -21,9 +26,25 @@ const getDB = async () => {
   return activeDB;
 };
 
+const requireMatchingTenantBinding = async (db, tenantAliases) => {
+  if (!Array.isArray(tenantAliases) || tenantAliases.length === 0) {
+    throw new Error('LOCAL_TENANT_WORKER_IDENTITY_MISSING');
+  }
+  if (!db.tables.some((table) => table.name === LOCAL_TENANT_BINDING_STORE)) {
+    throw new Error('LOCAL_TENANT_WORKER_BINDING_MISSING');
+  }
+
+  const binding = await db.table(LOCAL_TENANT_BINDING_STORE).get(LOCAL_TENANT_BINDING_KEY);
+  const boundAliases = binding?.tenantAliases || [binding?.tenantIdentity].filter(Boolean);
+  if (!areLocalTenantAliasesCompatible(boundAliases, tenantAliases)) {
+    throw new Error('LOCAL_TENANT_WORKER_MISMATCH');
+  }
+};
+
 // --- 2. CÁLCULO OPTIMIZADO (CHUNKS + TIMEOUT) ---
-const calculateInventoryValue = async () => {
+const calculateInventoryValue = async (tenantAliases) => {
   const db = await getDB();
+  await requireMatchingTenantBinding(db, tenantAliases);
 
   // Inicialización estricta con el motor financiero
   let inventoryValue = Money.init(0);
@@ -97,7 +118,7 @@ self.onmessage = async (e) => {
   try {
     switch (e.data.type) {
       case 'CALCULATE_STATS': {
-        const result = await calculateInventoryValue();
+        const result = await calculateInventoryValue(e.data.tenantAliases);
         self.postMessage({
           success: true,
           type: 'STATS_RESULT',

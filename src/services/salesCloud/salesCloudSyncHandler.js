@@ -12,6 +12,7 @@ import {
 } from '../sync/syncConstants';
 import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { salesCloudShadowService } from './salesCloudShadowService';
 
 const SALES_LAST_CHANGE_SEQ_KEY = 'sales_cloud_base_last_change_seq';
@@ -80,13 +81,14 @@ export const salesCloudSyncHandler = {
       if (applied > 0) notifySalesCloudChanged();
       return { success: true, applied, latestChangeSeq };
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[SalesCloud/Sync] Inicio fallo sin bloquear app:', error);
       return { success: false, error };
     }
   },
 
-  async onEvents(events = []) {
-    const licenseKey = getRuntimeLicenseKey();
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+    const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
     if (events.length > 0 && !hasSalesEvents(events)) return { applied: 0, skipped: true };
 

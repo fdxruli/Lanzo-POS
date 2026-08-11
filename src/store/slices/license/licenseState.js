@@ -24,7 +24,9 @@ export const createLicenseInitialState = () => ({
   staffLoginMessage: null,
   staffLoginError: null,
   licensePlanBlockInfo: null,
+  localTenantIsolation: null,
 
   _isInitializing: false,
+  _isLoggingOut: false,
   pendingTermsUpdate: null
 });

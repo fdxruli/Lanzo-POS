@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { customerCreditRepository } from '../customerCreditRepository';
 import { db, STORES } from '../dexie';

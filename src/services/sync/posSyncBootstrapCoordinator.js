@@ -14,6 +14,10 @@ import {
   POS_BOOTSTRAP_RESOURCES,
   POS_DEFERRED_SNAPSHOT_DELAY_MS
 } from './syncConstants';
+import {
+  assertLocalTenantSyncAccess,
+  runWithLocalTenantSyncLease
+} from '../tenant/localTenantGuard';
 
 const RESOURCE_DELAY = Object.freeze({
   [POS_BOOTSTRAP_RESOURCES.PRODUCTS]: POS_DEFERRED_SNAPSHOT_DELAY_MS.PRODUCTS,
@@ -229,6 +233,11 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
     return { skipped: true, reason: 'not_ready_or_offline' };
   }
 
+  await assertLocalTenantSyncAccess(
+    { license_key: licenseKey },
+    { reason: `deferred_snapshot_${normalizedResource}` }
+  );
+
   if (shouldSkipCompletedSnapshot(normalizedResource, licenseKey, force)) {
     devLog('deferred snapshot skipped', { resource: normalizedResource, reason: 'already_completed' });
     return { skipped: true, reason: 'already_completed' };
@@ -236,30 +245,33 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
 
   devLog('deferred snapshot start', { resource: normalizedResource, reason });
 
-  let result;
-  switch (normalizedResource) {
-    case POS_BOOTSTRAP_RESOURCES.PRODUCTS:
-      result = await productSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
-      break;
-    case POS_BOOTSTRAP_RESOURCES.CUSTOMERS:
-      result = await customerSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
-      break;
-    case POS_BOOTSTRAP_RESOURCES.CASH:
-      result = await cashSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
-      break;
-    case POS_BOOTSTRAP_RESOURCES.CREDIT:
-      result = await customerCreditSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
-      break;
-    case POS_BOOTSTRAP_RESOURCES.SALES:
-      result = await salesCloudSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
-      break;
-    case POS_BOOTSTRAP_RESOURCES.REPORTS:
-      result = { skipped: true, reason: 'reports_load_on_repository_demand' };
-      break;
-    default:
-      result = { skipped: true, reason: 'no_snapshot_for_resource' };
-      break;
-  }
+  const result = await runWithLocalTenantSyncLease(
+    { license_key: licenseKey },
+    { reason: `deferred_snapshot_handler_${normalizedResource}` },
+    async () => {
+      switch (normalizedResource) {
+        case POS_BOOTSTRAP_RESOURCES.PRODUCTS:
+          return productSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
+        case POS_BOOTSTRAP_RESOURCES.CUSTOMERS:
+          return customerSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
+        case POS_BOOTSTRAP_RESOURCES.CASH:
+          return cashSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
+        case POS_BOOTSTRAP_RESOURCES.CREDIT:
+          return customerCreditSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
+        case POS_BOOTSTRAP_RESOURCES.SALES:
+          return salesCloudSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
+        case POS_BOOTSTRAP_RESOURCES.REPORTS:
+          return { skipped: true, reason: 'reports_load_on_repository_demand' };
+        default:
+          return { skipped: true, reason: 'no_snapshot_for_resource' };
+      }
+    }
+  );
+
+  await assertLocalTenantSyncAccess(
+    { license_key: licenseKey },
+    { reason: `deferred_snapshot_commit_${normalizedResource}` }
+  );
 
   if (result?.success !== false && !result?.blocked) {
     markSnapshotCompleted(normalizedResource, licenseKey);
@@ -367,6 +379,11 @@ export const startPosCloudBootstrap = async ({
     await posSyncOrchestrator.stop({ preserveStatus: false });
     return { started: false, status: 'disabled', reason: 'cloud_pos_sync_off' };
   }
+
+  await assertLocalTenantSyncAccess(
+    { ...context.licenseDetails, license_key: context.licenseKey },
+    { reason: `pos_cloud_bootstrap_${reason}` }
+  );
 
   const signature = buildBootstrapSignature(context);
 

@@ -11,6 +11,23 @@ import {
   rebuildDailyStatsCacheFromSales
 } from '../services/sales/financialStats';
 import { getFinancialQuality } from '../services/sales/financialPolicy';
+import {
+  LOCAL_TENANT_STATUS,
+  areLocalTenantAliasesCompatible,
+  canAccessTenantOwnedRuntimeCache,
+  localTenantAccessController
+} from '../services/tenant/localTenantPolicy';
+
+const createEmptyStats = () => ({
+  totalRevenue: 0,
+  totalItemsSold: 0,
+  totalNetProfit: 0,
+  totalOrders: 0,
+  inventoryValue: null,
+  hasMissingCosts: false
+});
+
+const activeStatsWorkers = new Set();
 
 async function getInventoryValueOptimized(db) {
   const productCostMap = await buildProductCostMap(db, STORES);
@@ -80,15 +97,14 @@ async function persistDailyStatsForSale(sale, productCostMap) {
   return saleDayStat;
 }
 
-export const useStatsStore = create((set, get) => ({
-  stats: {
-    totalRevenue: 0,
-    totalItemsSold: 0,
-    totalNetProfit: 0,
-    totalOrders: 0,
-    inventoryValue: null,
-    hasMissingCosts: false
-  },
+export const useStatsStore = create((unsafeSet, get) => {
+  const set = (...args) => {
+    if (!canAccessTenantOwnedRuntimeCache()) return;
+    unsafeSet(...args);
+  };
+
+  return ({
+  stats: createEmptyStats(),
   isLoading: false,
 
   forceRecalculate: async () => {
@@ -132,32 +148,45 @@ export const useStatsStore = create((set, get) => ({
   },
 
   loadStats: async (forceRebuild = false) => {
+    const tenantState = localTenantAccessController.getState();
+    if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) return;
+    const tenantAliases = [...tenantState.identities];
     set({ isLoading: true });
 
     try {
       const workerPromise = new Promise((resolve) => {
         const worker = new StatsWorker();
+        let settled = false;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          activeStatsWorkers.delete(cancel);
+          worker.terminate();
+          resolve(value);
+        };
+        const cancel = () => finish(null);
+        activeStatsWorkers.add(cancel);
 
         worker.onmessage = (event) => {
           const { success, type, payload, error } = event.data;
           if (success && type === 'STATS_RESULT') {
-            resolve(payload.inventoryValue);
-            worker.terminate();
+            const currentTenant = localTenantAccessController.getState();
+            const stillAuthorized = currentTenant.status === LOCAL_TENANT_STATUS.GRANTED
+              && areLocalTenantAliasesCompatible(currentTenant.identities, tenantAliases);
+            finish(stillAuthorized ? payload.inventoryValue : null);
             return;
           }
 
           Logger.error('Worker reporto un error:', error);
-          resolve(null);
-          worker.terminate();
+          finish(null);
         };
 
         worker.onerror = (error) => {
-          worker.terminate();
           Logger.error('Worker fallo al iniciar:', error);
-          resolve(null);
+          finish(null);
         };
 
-        worker.postMessage({ type: 'CALCULATE_STATS' });
+        worker.postMessage({ type: 'CALCULATE_STATS', tenantAliases });
       });
 
       const db = await initDB();
@@ -265,4 +294,17 @@ export const useStatsStore = create((set, get) => ({
       Logger.error('Error updating stats:', error);
     }
   }
-}));
+  });
+});
+
+const setStatsStateUnsafe = useStatsStore.setState;
+useStatsStore.setState = (...args) => {
+  if (!canAccessTenantOwnedRuntimeCache()) return;
+  return setStatsStateUnsafe(...args);
+};
+
+localTenantAccessController.subscribe((tenantState) => {
+  if (!tenantState.enabled || tenantState.status === LOCAL_TENANT_STATUS.GRANTED) return;
+  for (const cancel of [...activeStatsWorkers]) cancel();
+  setStatsStateUnsafe({ stats: createEmptyStats(), isLoading: false });
+});

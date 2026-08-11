@@ -14,6 +14,13 @@ const runtimeMocks = vi.hoisted(() => ({ ensureLocalDatabaseReady: vi.fn() }));
 vi.mock('../../../../services/supabase', () => supabaseMocks);
 vi.mock('../../../../services/licenseStorage', () => storageMocks);
 vi.mock('../../../../services/db/databaseRuntime', () => runtimeMocks);
+vi.mock('../../../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  initializeLocalTenantGuard: vi.fn(),
+  isLocalTenantAccessError: vi.fn(() => false),
+  lockLocalTenantAccess: vi.fn()
+}));
 
 import { createLicenseAdminActions } from '../licenseAdminActions';
 import { clearDatabaseRecoveryState } from '../../../../services/db/databaseRecoveryState';
@@ -111,11 +118,11 @@ describe('admin session local recovery', () => {
 
     expect(result).toMatchObject({ success: true, remoteAuthenticated: true });
     expect(supabaseMocks.adminLoginOnDevice).toHaveBeenCalledTimes(1);
-    expect(supabaseMocks.adminLoginOnDevice).toHaveBeenCalledWith({
+    expect(supabaseMocks.adminLoginOnDevice).toHaveBeenCalledWith(expect.objectContaining({
       licenseKey: 'LIC-B',
       username: 'owner-b',
       password: 'secret-b'
-    });
+    }));
     expect(state.currentAdminUser).toEqual({ id: 'admin-LIC-B' });
     expect(state.pendingAdminSessionResult).toBeNull();
   });

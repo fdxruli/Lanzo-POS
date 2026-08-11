@@ -4,7 +4,7 @@ import Logger from '../../../services/Logger';
 import { notifyPosCatalogSessionReset } from '../../../services/products/posCatalogSessionEvents';
 
 import {
-  clearLicenseSecurityCache,
+  clearAdminSessionCache,
   clearStaffSessionCache
 } from '../../../services/supabase';
 
@@ -16,11 +16,28 @@ import {
   buildLicensePlanBlockInfo
 } from './licenseGuards';
 import { invalidateProfileRefreshMetadata } from './profileRefreshCache';
+import {
+  getLocalTenantGuardState,
+  lockLocalTenantAccess
+} from '../../../services/tenant/localTenantGuard';
 
 const clearLocalLicenseSession = async () => {
   clearLicenseFromStorage();
   invalidateProfileRefreshMetadata();
-  await clearLicenseSecurityCache();
+  // Preserve device validation + last-valid offline state. Logout revokes
+  // actor sessions only; the sticky tenant must remain usable offline.
+  try {
+    if (getLocalTenantGuardState().status === 'granted') {
+      await Promise.all([
+        clearAdminSessionCache(),
+        clearStaffSessionCache()
+      ]);
+    }
+  } catch (error) {
+    Logger.warn('[LicenseSession] No se pudieron limpiar todos los tokens de actor:', error);
+  } finally {
+    lockLocalTenantAccess('license_session_cleared');
+  }
 };
 
 export const createLicenseSessionActions = ({
@@ -33,6 +50,8 @@ export const createLicenseSessionActions = ({
     const blockInfo = buildLicensePlanBlockInfo(validation, sourceLicense);
 
     Logger.warn('[LicensePlan] Licencia bloqueada por cambio de plan:', blockInfo);
+
+    get()._invalidateProfileLoads?.();
 
     await get().stopLicenseSync();
     await clearStaffSessionCache();
@@ -74,7 +93,9 @@ export const createLicenseSessionActions = ({
   },
 
   confirmLicenseChangeRequired: async () => {
+    get()._invalidateProfileLoads?.();
     await clearLocalLicenseSession();
+    get().lockDriveSession?.();
     notifyPosCatalogSessionReset();
 
     set({
@@ -103,17 +124,32 @@ export const createLicenseSessionActions = ({
   },
 
   logout: async () => {
+    // Remove tenant-owned UI synchronously. The compatible A session remains
+    // authorized only long enough to revoke its own actor credentials.
+    get()._invalidateProfileLoads?.();
+    get().resetEcommerceOrdersState?.();
+    set({
+      appStatus: 'loading',
+      _isLoggingOut: true,
+      companyProfile: null,
+      profileImportCandidate: null,
+      cashOpeningPolicy: 'manual'
+    });
+    get().lockDriveSession?.();
+    notifyPosCatalogSessionReset();
     await get().stopLicenseSync();
 
     await clearLocalLicenseSession();
-    notifyPosCatalogSessionReset();
+    get().lockDriveSession?.();
 
     set({
       appStatus: 'unauthenticated',
+      _isLoggingOut: false,
       licenseDetails: null,
       licensePlanBlockInfo: null,
       companyProfile: null,
       profileImportCandidate: null,
+      cashOpeningPolicy: 'manual',
       licenseStatus: 'active',
       gracePeriodEnds: null,
       currentDeviceRole: null,
@@ -137,6 +173,43 @@ export const createLicenseSessionActions = ({
       _isLicenseSyncChecking: false,
       serverHealth: 'ok',
       serverMessage: null
+    });
+  },
+
+  leaveLocalTenantMismatch: async () => {
+    // A mismatch must never clear sync_cache: those credentials and recovery
+    // records belong to the database's original tenant, not the attempted one.
+    get()._invalidateProfileLoads?.();
+    get().resetEcommerceOrdersState?.();
+    await get().stopLicenseSync();
+    get().lockDriveSession?.();
+    clearLicenseFromStorage();
+    invalidateProfileRefreshMetadata();
+    lockLocalTenantAccess('mismatch_dismissed');
+    notifyPosCatalogSessionReset();
+
+    set({
+      appStatus: 'unauthenticated',
+      _isLoggingOut: false,
+      licenseDetails: null,
+      companyProfile: null,
+      profileImportCandidate: null,
+      cashOpeningPolicy: 'manual',
+      licenseStatus: 'active',
+      gracePeriodEnds: null,
+      currentDeviceRole: null,
+      currentAdminUser: null,
+      currentStaffUser: null,
+      adminLoginLicenseKey: null,
+      staffLoginLicenseKey: null,
+      pendingAdminSessionResult: null,
+      localTenantIsolation: null,
+      pendingTermsUpdate: null,
+      realtimeSubscription: null,
+      licenseSyncActive: false,
+      licenseSyncMode: 'idle',
+      licenseSyncLicenseKey: null,
+      _isLicenseSyncChecking: false
     });
   }
 });

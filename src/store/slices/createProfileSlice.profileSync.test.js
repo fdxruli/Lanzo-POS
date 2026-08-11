@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getBusinessProfile: vi.fn(),
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
   loadData: vi.fn(),
   saveBusinessProfile: vi.fn(),
   saveData: vi.fn(async () => undefined)
@@ -21,6 +22,11 @@ vi.mock('../../services/supabase', () => ({
 vi.mock('../../services/storage/imageUploadService', () => ({
   IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'business-logo' },
   uploadImageFile: vi.fn()
+}));
+
+vi.mock('../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantSyncAccess: mocks.assertLocalTenantSyncAccess,
+  isLocalTenantAccessError: (error) => String(error?.code || '').startsWith('LOCAL_TENANT_')
 }));
 
 import { createProfileSlice } from './createProfileSlice';
@@ -44,6 +50,7 @@ describe('profile refresh during authenticated staff transition', () => {
     vi.unstubAllGlobals();
     vi.stubGlobal('navigator', { onLine: true });
     vi.stubGlobal('localStorage', createStorage());
+    mocks.assertLocalTenantSyncAccess.mockResolvedValue({ status: 'pass' });
 
     localStorage.setItem(PROFILE_LAST_LOAD_KEY, String(Date.now()));
     localStorage.setItem(PROFILE_LAST_LICENSE_KEY, 'LANZO-PRO');
@@ -86,5 +93,44 @@ describe('profile refresh during authenticated staff transition', () => {
     expect(mocks.getBusinessProfile).toHaveBeenCalledWith('LANZO-PRO');
     expect(profile.business_type).toEqual(['hardware']);
     expect(state.companyProfile.business_type).toEqual(['hardware']);
+  });
+
+  it('rejects a remote profile for another tenant before caching or rendering it', async () => {
+    const tenantError = Object.assign(new Error('tenant mismatch'), {
+      code: 'LOCAL_TENANT_SYNC_BLOCKED'
+    });
+    mocks.assertLocalTenantSyncAccess.mockImplementation(async (identity) => {
+      const licenseKey = identity?.license_key || identity?.licenseKey;
+      if (licenseKey === 'LANZO-OTHER') throw tenantError;
+      return { status: 'pass' };
+    });
+    mocks.getBusinessProfile.mockResolvedValueOnce({
+      success: true,
+      data: {
+        license_key: 'LANZO-OTHER',
+        business_name: 'Negocio ajeno',
+        business_type: ['restaurant']
+      }
+    });
+
+    const originalProfile = {
+      license_key: 'LANZO-PRO',
+      name: 'Negocio',
+      business_type: ['abarrotes']
+    };
+    const state = {
+      appStatus: 'staff_login_required',
+      currentDeviceRole: 'staff',
+      currentStaffUser: { id: 'staff-id' },
+      companyProfile: originalProfile
+    };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    const get = () => state;
+    Object.assign(state, createProfileSlice(set, get));
+    state.companyProfile = originalProfile;
+
+    await expect(state._loadProfile('LANZO-PRO', { forceRemote: true })).rejects.toBe(tenantError);
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(state.companyProfile).toBe(originalProfile);
   });
 });
