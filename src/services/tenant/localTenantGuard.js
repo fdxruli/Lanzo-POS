@@ -940,8 +940,8 @@ export const createLocalTenantGuard = ({
       }
 
       if (snapshot.binding && bindingMatchesIdentity(snapshot.binding, activeIdentity)) {
-        if (!alreadyGranted) controller.grant(activeIdentity, 'same_tenant');
         if (database === defaultDatabase) await markTenantRuntimeReady();
+        if (!alreadyGranted) controller.grant(activeIdentity, 'same_tenant');
         return { status: 'pass', binding: snapshot.binding, inspection: publicInspection(snapshot) };
       }
 
@@ -1006,8 +1006,8 @@ export const createLocalTenantGuard = ({
           throw error;
         }
 
-        controller.grant(activeIdentity, bindingSource);
         if (database === defaultDatabase) await markTenantRuntimeReady();
+        controller.grant(activeIdentity, bindingSource);
         return {
           status: bindingSource === 'legacy_internal_evidence'
             ? 'legacy_backfilled'

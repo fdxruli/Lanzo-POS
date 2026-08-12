@@ -4,11 +4,12 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
 import { localTenantAccessController } from '../../tenant/localTenantPolicy';
-import { getTenantStorageState } from '../../tenant/tenantScopedStorage';
+import { getTenantStorageState, registerTenantStorageHydrator } from '../../tenant/tenantScopedStorage';
 import {
   closeTenantRuntime,
   db,
   getActiveTenantRuntime,
+  markTenantRuntimeReady,
   openTenantRuntime,
   resolveTenantRuntimeDirectory
 } from '../tenantRuntimeRouter';
@@ -94,5 +95,24 @@ describe('tenant runtime router', () => {
     expect(localTenantAccessController.getState().status).toBe('locked');
     expect(getTenantStorageState()).toMatchObject({ ready: false });
     expect(() => stale.count()).toThrow('TENANT_RUNTIME_NOT_READY');
+  });
+
+  it('fails closed when a tenant storage hydrator throws and preserves its payload', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `HYDRATION-FAIL-${crypto.randomUUID()}` });
+    localTenantAccessController.enable('test');
+    await openTenantRuntime(identity);
+    const opaqueId = getActiveTenantRuntime().opaqueId;
+    const key = `lanzo:t:${opaqueId}:failure-payload`;
+    localStorage.setItem(key, 'preserve-me');
+    const unregister = registerTenantStorageHydrator(async () => { throw new Error('hydrator failed'); });
+    try {
+      await expect(markTenantRuntimeReady()).rejects.toThrow('hydrator failed');
+      expect(localTenantAccessController.getState().status).not.toBe('granted');
+      expect(getTenantStorageState()).toMatchObject({ ready: false, writesSuspended: true });
+      expect(localStorage.getItem(key)).toBe('preserve-me');
+      expect(() => db.table('menu').count()).toThrow('TENANT_RUNTIME_NOT_READY');
+    } finally {
+      unregister();
+    }
   });
 });

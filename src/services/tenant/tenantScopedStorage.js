@@ -11,13 +11,13 @@ export const setActiveTenantStorageNamespace = (opaqueId) => {
   if (!/^t_[a-f0-9]{32}$/.test(String(opaqueId || ''))) throw new Error('TENANT_STORAGE_NAMESPACE_INVALID');
   activeNamespace = opaqueId;
   ready = false;
+  writesSuspended = true;
   for (const listener of listeners) listener({ type: 'namespace', opaqueId });
 };
 
 export const markTenantStorageReady = () => {
   if (!activeNamespace) throw new Error('TENANT_STORAGE_NAMESPACE_MISSING');
   ready = true;
-  writesSuspended = false;
   for (const listener of listeners) listener({ type: 'ready', opaqueId: activeNamespace });
 };
 export const registerTenantStorageHydrator = (hydrate) => { hydrators.add(hydrate); return () => hydrators.delete(hydrate); };
@@ -61,6 +61,10 @@ export const removeTenantStorageItem = (logicalKey) => {
 // persisted immediately by its middleware and can overwrite a valid payload
 // before explicit rehydration reads it.
 export const suspendTenantStorageWrites = () => { writesSuspended = true; };
+export const resumeTenantStorageWrites = () => {
+  if (!activeNamespace || !ready) throw new Error('TENANT_STORAGE_NOT_READY');
+  writesSuspended = false;
+};
 
 // Zustand receives logical names only; legacy unscoped keys are never read.
 export const tenantScopedZustandStorage = {

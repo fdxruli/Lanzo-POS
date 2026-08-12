@@ -5,6 +5,7 @@ import {
   getTenantStorageItem,
   markTenantStorageReady,
   removeTenantStorageItem,
+  resumeTenantStorageWrites,
   setActiveTenantStorageNamespace,
   setTenantStorageItem
 } from '../tenantScopedStorage';
@@ -16,6 +17,7 @@ describe('tenantScopedStorage', () => {
     localStorage.setItem('lanzo-active-orders-storage', '{"tenant":"legacy-A"}');
     setActiveTenantStorageNamespace('t_0123456789abcdef0123456789abcdef');
     markTenantStorageReady();
+    resumeTenantStorageWrites();
     expect(getTenantStorageItem('lanzo-active-orders-storage')).toBeNull();
     setTenantStorageItem('lanzo-active-orders-storage', '{"tenant":"B"}');
     expect(localStorage.getItem('lanzo-active-orders-storage')).toBe('{"tenant":"legacy-A"}');
@@ -26,15 +28,18 @@ describe('tenantScopedStorage', () => {
     setActiveTenantStorageNamespace('t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     expect(getTenantStorageItem('cart')).toBeNull();
     markTenantStorageReady();
+    resumeTenantStorageWrites();
     setTenantStorageItem('cart', 'A');
     clearActiveTenantStorageNamespace();
     setActiveTenantStorageNamespace('t_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
     markTenantStorageReady();
+    resumeTenantStorageWrites();
     expect(getTenantStorageItem('cart')).toBeNull();
     setTenantStorageItem('cart', 'B');
     clearActiveTenantStorageNamespace();
     setActiveTenantStorageNamespace('t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     markTenantStorageReady();
+    resumeTenantStorageWrites();
     expect(getTenantStorageItem('cart')).toBe('A');
   });
 
@@ -44,9 +49,26 @@ describe('tenantScopedStorage', () => {
     Object.defineProperty(window, 'localStorage', { configurable: true, value: throwing });
     setActiveTenantStorageNamespace('t_cccccccccccccccccccccccccccccccc');
     markTenantStorageReady();
+    resumeTenantStorageWrites();
     expect(getTenantStorageItem('cart')).toBeNull();
     expect(() => setTenantStorageItem('cart', 'C')).not.toThrow();
     expect(() => removeTenantStorageItem('cart')).not.toThrow();
     Object.defineProperty(window, 'localStorage', original);
+  });
+
+  it('keeps writes suspended while readable, resumes explicitly, and locks them again', () => {
+    const opaqueId = 't_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const key = `lanzo:t:${opaqueId}:post-ready-test`;
+    setActiveTenantStorageNamespace(opaqueId);
+    markTenantStorageReady();
+    expect(getTenantStorageItem('post-ready-test')).toBeNull();
+    setTenantStorageItem('post-ready-test', 'blocked');
+    expect(localStorage.getItem(key)).toBeNull();
+    resumeTenantStorageWrites();
+    setTenantStorageItem('post-ready-test', 'A');
+    expect(localStorage.getItem(key)).toBe('A');
+    clearActiveTenantStorageNamespace();
+    setTenantStorageItem('post-ready-test', 'B');
+    expect(localStorage.getItem(key)).toBe('A');
   });
 });

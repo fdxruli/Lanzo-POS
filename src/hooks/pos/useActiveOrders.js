@@ -1182,7 +1182,7 @@ useActiveOrders.setState = (...args) => {
 };
 
 localTenantAccessController.subscribe((tenantState) => {
-  if (!tenantState.enabled) return;
+  if (!tenantState.enabled || tenantState.status === 'granted') return;
 
   // Keep all serialized state intact; only the isolated tenant runtime may
   // explicitly hydrate it after its DB and storage namespace are ready.

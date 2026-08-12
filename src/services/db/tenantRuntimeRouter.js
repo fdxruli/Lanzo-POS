@@ -1,7 +1,7 @@
 import Dexie from 'dexie';
 import { createOperationalLanzoDatabase } from './dexie';
 import { areLocalTenantAliasesCompatible, localTenantAccessController } from '../tenant/localTenantPolicy';
-import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
+import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
 
 const DIRECTORY_DB = 'LanzoTenantDirectory';
 const DIRECTORY_STORE = 'tenants';
@@ -98,5 +98,20 @@ export const openTenantRuntime = async (identity) => {
   return active;
 };
 
-export const markTenantRuntimeReady = async () => { markTenantStorageReady(); await hydrateTenantStorageConsumers(); };
+export const markTenantRuntimeReady = async () => {
+  // Storage becomes readable first, but stays write-suspended until every
+  // tenant-owned consumer has read its payload. This prevents a reset by one
+  // Zustand consumer from overwriting another payload during hydration.
+  markTenantStorageReady();
+  try {
+    await hydrateTenantStorageConsumers();
+    resumeTenantStorageWrites();
+  } catch (error) {
+    // A partially hydrated tenant is never usable. Preserve its physical DB
+    // and storage payload, lock access, then leave no active runtime handle.
+    localTenantAccessController.lock('tenant_storage_hydration_failed');
+    closeTenantRuntime();
+    throw error;
+  }
+};
 export const closeTenantRuntime = () => { suspendTenantStorageWrites(); if (active?.database) active.database.close(); active = null; generation += 1; clearActiveTenantStorageNamespace(); };
