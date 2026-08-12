@@ -186,7 +186,7 @@ describe('local tenant recovery plan', () => {
     });
   });
 
-  it('distinguishes exact direct and relational proof without claiming unrelated rows', async () => {
+  it('keeps current business rows ambiguous when the only proof is a historical outbox reference', async () => {
     const plan = await buildLegacyRecoveryPlan({
       snapshot: {
         sourceDatabase: 'LanzoDB1',
@@ -203,9 +203,13 @@ describe('local tenant recovery plan', () => {
       activeTenantSource: { license_key: 'PROVEN-A' }
     });
 
-    expect(plan.classifications.PROVEN_DIRECT).toBe(2);
-    expect(plan.classifications.PROVEN_RELATIONAL).toBe(1);
-    expect(plan.classifications.AMBIGUOUS).toBe(2);
+    expect(plan.classifications.PROVEN_DIRECT).toBe(1);
+    expect(plan.provenDirect).toHaveLength(1);
+    expect(plan.provenDirect[0]).toMatchObject({ store: 'sync_outbox', destinationAction: 'QUARANTINE' });
+    expect(plan.classifications.PROVEN_RELATIONAL).toBe(0);
+    expect(plan.ambiguous.some((row) => row.store === 'menu')).toBe(true);
+    expect(plan.ambiguous.some((row) => row.store === 'product_batches')).toBe(true);
+    expect(summarizeLegacyRecoveryPlan(plan).automaticallyRecoverableCount).toBe(0);
   });
 
   it('does not let Tenant B or mutable localStorage promote Tenant A rows', async () => {
@@ -284,6 +288,86 @@ describe('local tenant recovery plan', () => {
     expect(JSON.stringify(foreignPlan)).not.toContain('FOREIGN-B');
   });
 
+  it('fingerprints complete business rows, nested values and source structure without exposing them', async () => {
+    const snapshot = {
+      sourceDatabase: 'LanzoDB1',
+      sourceMetadata: {
+        sourceDatabaseName: 'LanzoDB1',
+        nativeDatabaseName: 'LanzoDB1',
+        nativeDatabaseVersion: 30,
+        objectStores: [{ name: 'menu', keyPath: 'id' }]
+      },
+      recordsByStore: {
+        menu: [{ id: 'p1', name: 'A', price: 10, stock: 20, payload: { nested: ['one'] } }]
+      },
+      localStorage: {}
+    };
+    const build = (nextSnapshot = snapshot) => buildLegacyRecoveryPlan({
+      snapshot: nextSnapshot,
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const original = await build();
+    const same = await build();
+    const changedName = await build({
+      ...snapshot,
+      recordsByStore: { menu: [{ ...snapshot.recordsByStore.menu[0], name: 'B' }] }
+    });
+    const changedPriceStock = await build({
+      ...snapshot,
+      recordsByStore: { menu: [{ ...snapshot.recordsByStore.menu[0], price: 999, stock: 0 }] }
+    });
+    const changedNested = await build({
+      ...snapshot,
+      recordsByStore: { menu: [{ ...snapshot.recordsByStore.menu[0], payload: { nested: ['two'] } }] }
+    });
+    const changedStructure = await build({
+      ...snapshot,
+      sourceMetadata: { ...snapshot.sourceMetadata, nativeDatabaseVersion: 31 }
+    });
+
+    expect(original.sourceSnapshotFingerprint).toBe(same.sourceSnapshotFingerprint);
+    expect(original.sourceSnapshotFingerprint).not.toBe(changedName.sourceSnapshotFingerprint);
+    expect(original.sourceSnapshotFingerprint).not.toBe(changedPriceStock.sourceSnapshotFingerprint);
+    expect(original.sourceSnapshotFingerprint).not.toBe(changedNested.sourceSnapshotFingerprint);
+    expect(original.sourceSnapshotFingerprint).not.toBe(changedStructure.sourceSnapshotFingerprint);
+    expect(JSON.stringify(original)).not.toContain('"name":"A"');
+    expect(JSON.stringify(original)).not.toContain('"price":10');
+  });
+
+  it('fingerprints binary structured-clone values deterministically and fails closed for unsupported values', async () => {
+    const createSnapshot = (bytes) => ({
+      sourceDatabase: 'LanzoDB1',
+      recordsByStore: {
+        menu: [{
+          id: 'binary-product',
+          bytes: new Uint8Array(bytes),
+          buffer: new Uint8Array(bytes).buffer,
+          attachment: new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' })
+        }]
+      },
+      localStorage: {}
+    });
+    const original = await buildLegacyRecoveryPlan({
+      snapshot: createSnapshot([1, 2, 3]),
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const same = await buildLegacyRecoveryPlan({
+      snapshot: createSnapshot([1, 2, 3]),
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const changed = await buildLegacyRecoveryPlan({
+      snapshot: createSnapshot([1, 2, 4]),
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(original.sourceSnapshotFingerprint).toBe(same.sourceSnapshotFingerprint);
+    expect(original.sourceSnapshotFingerprint).not.toBe(changed.sourceSnapshotFingerprint);
+    await expect(buildLegacyRecoveryPlan({
+      snapshot: { sourceDatabase: 'LanzoDB1', recordsByStore: { menu: [{ id: 'unsupported', value: new Map() }] } },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    })).rejects.toMatchObject({ code: 'RECOVERY_SNAPSHOT_VALUE_UNSUPPORTED' });
+  });
+
   it('creates separate plans across tenant switches without changing the source snapshot', async () => {
     const snapshot = farmaciaGarySnapshot();
     const before = JSON.stringify(snapshot);
@@ -351,7 +435,11 @@ describe('local tenant recovery plan', () => {
     ));
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
-    const adapter = createReadOnlyLegacyInspectionAdapter({ database, sourceDatabase: 'LanzoDB1' });
+    const adapter = createReadOnlyLegacyInspectionAdapter({
+      database,
+      sourceDatabase: 'LanzoDB1',
+      allowStorageNotApplicable: true
+    });
     const first = await inspectLegacyVaultAndBuildRecoveryPlan({
       adapter,
       activeTenantSource: { license_key: 'ACTIVE-A' }
@@ -407,6 +495,42 @@ describe('local tenant recovery plan', () => {
     expect(plan.storeSummaries['localStorage:lanzo-cart-storage-corrupted-123']).toMatchObject({ total: 1 });
     expect(plan.storeSummaries['sessionStorage:lanzo_drive_session:v1']).toMatchObject({ total: 1 });
     expect(JSON.stringify(plan)).not.toContain('{"corrupt":true}');
+  });
+
+  it('uses canonical browser storage by default and fails closed when it cannot inspect it', async () => {
+    const database = await createDatabase();
+    const localStorage = createReadOnlyStorage([['ignored_expirations_ttl', '{"legacy":true}']]);
+    const sessionStorage = createReadOnlyStorage([['lanzo_drive_session:v1', '{"legacy":true}']]);
+    vi.stubGlobal('window', { localStorage, sessionStorage });
+    const snapshot = await createReadOnlyLegacyInspectionAdapter({ database }).readSnapshot();
+
+    expect(snapshot.browserStorageInspection).toEqual({ status: 'COMPLETE' });
+    expect(snapshot.localStorage.ignored_expirations_ttl).toBe('{"legacy":true}');
+    expect(snapshot.sessionStorage['lanzo_drive_session:v1']).toBe('{"legacy":true}');
+    expect(localStorage.setItem).not.toHaveBeenCalled();
+    expect(sessionStorage.setItem).not.toHaveBeenCalled();
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        get localStorage() { throw new Error('denied'); },
+        sessionStorage
+      }
+    });
+    await expect(createReadOnlyLegacyInspectionAdapter({ database }).readSnapshot())
+      .rejects.toMatchObject({ code: 'RECOVERY_STORAGE_INSPECTION_FAILED' });
+  });
+
+  it('requires explicit non-browser storage non-applicability instead of treating omission as empty', async () => {
+    const database = await createDatabase();
+    await expect(createReadOnlyLegacyInspectionAdapter({ database }).readSnapshot())
+      .rejects.toMatchObject({ code: 'RECOVERY_STORAGE_INSPECTION_REQUIRED' });
+    const snapshot = await createReadOnlyLegacyInspectionAdapter({
+      database,
+      allowStorageNotApplicable: true
+    }).readSnapshot();
+
+    expect(snapshot.browserStorageInspection).toEqual({ status: 'NOT_APPLICABLE' });
   });
 
   it('fingerprints browser-storage payload changes without exposing their contents', async () => {
@@ -475,7 +599,10 @@ describe('local tenant recovery plan', () => {
     await database.table('__lanzo_sales_backup_v30').put({ legacyKey: 'backup-sale' });
     await database.table('__lanzo_db_recovery').put({ key: 'recovery-meta' });
     await database.table('unknown_legacy_store').put({ id: 'unknown-row' });
-    const snapshot = await createReadOnlyLegacyInspectionAdapter({ database }).readSnapshot();
+    const snapshot = await createReadOnlyLegacyInspectionAdapter({
+      database,
+      allowStorageNotApplicable: true
+    }).readSnapshot();
 
     expect(snapshot.recordsByStore.__lanzo_sales_backup_v30).toHaveLength(1);
     expect(snapshot.recordsByStore.__lanzo_db_recovery).toHaveLength(1);
@@ -487,7 +614,8 @@ describe('local tenant recovery plan', () => {
     const nativeDatabase = await createPhysicalUnmodeledStore(database);
     const nativeTransaction = vi.spyOn(nativeDatabase, 'transaction');
     const adapter = createReadOnlyLegacyInspectionAdapter({
-      database: { backendDB: () => nativeDatabase }
+      database: { backendDB: () => nativeDatabase },
+      allowStorageNotApplicable: true
     });
     const plan = await inspectLegacyVaultAndBuildRecoveryPlan({
       adapter,

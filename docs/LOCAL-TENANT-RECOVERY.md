@@ -16,11 +16,11 @@ proves ownership of every unscoped legacy row.
 
 ## RECOVERY.1
 
-RECOVERY.1 creates a deterministic, redacted `RecoveryPlan`. It inspects an
-injected read-only adapter, resolves the active tenant identity in memory and
+RECOVERY.1 creates a deterministic, redacted `RecoveryPlan`. It inspects a
+read-only adapter, resolves the active tenant identity in memory and
 classifies records. It does **not** recover, copy, activate, delete, rewrite
 or bind data. It does not start sync, drain outbox, make RPC calls or mutate
-localStorage.
+localStorage/sessionStorage.
 
 The only adapter supplied by this phase exposes `readSnapshot()` and uses the
 existing native IndexedDB connection in a `readonly` transaction. It
@@ -28,6 +28,12 @@ inventories every physical object store, including one not declared by the
 Recovery registry, and the canonical tenant-owned localStorage/sessionStorage
 keys. Dynamic localStorage prefixes use `length`, `key(index)` and `getItem()`
 only. It has no mutation, sync or network operation.
+
+In a browser, localStorage and sessionStorage inspection is mandatory. The
+adapter reads the canonical browser sources automatically when they were not
+injected. Unavailable or denied storage fails closed with a storage-inspection
+error; omission is never treated as empty browser state. Non-browser callers
+must explicitly opt into `NOT_APPLICABLE` for tests or tooling.
 
 Plan lifecycle available now:
 
@@ -59,10 +65,11 @@ for store primary keys, relationships, proof capabilities and destination
 action. In particular:
 
 - `sync_outbox` is Tier-A evidence but remains quarantined in the vault;
-  it is never destination operational work. It can prove an entity only when
-  its tenant evidence has exactly one effective candidate, that candidate
-  matches the active tenant, and no `license_key`, `licenseKey` or metadata
-  value contradicts it.
+  it is never destination operational work. An unambiguous record proves only
+  that historical outbox mutation, never that a current business row with the
+  same `entityId` still belongs to that tenant. It therefore cannot promote a
+  current product, customer, sale, batch, category or cash row to
+  `PROVEN_DIRECT` or start relational propagation.
 - `sync_meta`, `company`, conflicts and mixed caches stay in the vault.
 - stats are recomputed from future recovered records.
 - sequence state is never copied to a new operational database.
@@ -75,12 +82,16 @@ action. In particular:
 
 The plan includes a source-only `sourceSnapshotFingerprint` as
 `sha256:<digest>` for stale-plan detection. The digest is
-deterministic over sorted store names, primary/relationship identifiers,
-record presence, selected status/timestamp metadata, relevant localStorage
-and sessionStorage key/value digest tokens and anonymized provenance tokens.
-Changing evidence that affects
-active/foreign classification, provenance tier or direct-reference eligibility
-therefore changes the fingerprint. The plan excludes raw license values,
+deterministic over source database identity, native version, physical object
+store names/key paths, and every complete physical record. Each record is
+canonicalized and contributes an internal domain-separated SHA-256 content
+token; its raw value and per-row token are never exposed. The canonicalizer
+supports primitives, arrays, sorted plain objects, Date, Blob, ArrayBuffer and
+typed arrays. Unsupported structured-clone values fail closed with
+`RECOVERY_SNAPSHOT_VALUE_UNSUPPORTED`, rather than being silently reduced.
+Relevant localStorage/sessionStorage values contribute only internal digest
+tokens. Any material content, browser-state or source-structure change
+therefore invalidates the fingerprint. The plan excludes raw license values,
 payloads, business names, personal data, tokens, cache contents and conflict
 contents.
 Browser-storage values and tenant aliases exist only as digest input; the plan
