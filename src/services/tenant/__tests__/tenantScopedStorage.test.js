@@ -4,6 +4,7 @@ import {
   clearActiveTenantStorageNamespace,
   getTenantStorageItem,
   markTenantStorageReady,
+  removeTenantStorageItem,
   setActiveTenantStorageNamespace,
   setTenantStorageItem
 } from '../tenantScopedStorage';
@@ -35,5 +36,17 @@ describe('tenantScopedStorage', () => {
     setActiveTenantStorageNamespace('t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     markTenantStorageReady();
     expect(getTenantStorageItem('cart')).toBe('A');
+  });
+
+  it('fails closed when browser storage throws without clearing another tenant payload', () => {
+    const original = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    const throwing = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); }, removeItem: () => { throw new Error('denied'); } };
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: throwing });
+    setActiveTenantStorageNamespace('t_cccccccccccccccccccccccccccccccc');
+    markTenantStorageReady();
+    expect(getTenantStorageItem('cart')).toBeNull();
+    expect(() => setTenantStorageItem('cart', 'C')).not.toThrow();
+    expect(() => removeTenantStorageItem('cart')).not.toThrow();
+    Object.defineProperty(window, 'localStorage', original);
   });
 });

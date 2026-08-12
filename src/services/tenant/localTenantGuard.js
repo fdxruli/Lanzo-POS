@@ -1,6 +1,6 @@
 import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
-import { getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
+import { closeTenantRuntime, getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
 import {
   DEVICE_SCOPED_SYNC_CACHE_KEYS,
   LOCAL_TENANT_BINDING_KEY,
@@ -915,11 +915,15 @@ export const createLocalTenantGuard = ({
       throw error;
     }
 
-    // Do not replace the active physical DB while an incompatible tenant may
-    // still commit under an acquired sync lease.
-    if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
-
-    if (!alreadyGranted) controller.enable(reason);
+    // Freeze the previous tenant before its physical database can be
+    // replaced. This ordering also makes the brief B-open/B-binding window
+    // fail closed through the runtime dbcore middleware.
+    if (!alreadyGranted) {
+      controller.lock('tenant_transition');
+      if (database === defaultDatabase) closeTenantRuntime();
+      controller.enable(reason);
+      if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
+    }
     const nativeDatabase = await getNativeDatabase();
 
     for (let attempt = 0; attempt < MAX_SNAPSHOT_RETRIES; attempt += 1) {

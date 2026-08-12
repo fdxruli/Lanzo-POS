@@ -20,7 +20,7 @@ import {
   canAccessTenantOwnedRuntimeCache,
   localTenantAccessController
 } from '../../services/tenant/localTenantPolicy';
-import { tenantScopedZustandStorage, registerTenantStorageHydrator } from '../../services/tenant/tenantScopedStorage';
+import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -1186,6 +1186,7 @@ localTenantAccessController.subscribe((tenantState) => {
 
   // Keep all serialized state intact; only the isolated tenant runtime may
   // explicitly hydrate it after its DB and storage namespace are ready.
+  suspendTenantStorageWrites();
   setActiveOrdersStateUnsafe({
     activeOrders: new Map(),
     currentOrderId: null,
@@ -1196,6 +1197,7 @@ localTenantAccessController.subscribe((tenantState) => {
 });
 
 export const resetAndHydrateActiveOrdersForTenant = async () => {
+  suspendTenantStorageWrites();
   setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false });
   await useActiveOrders.persist.rehydrate();
 };

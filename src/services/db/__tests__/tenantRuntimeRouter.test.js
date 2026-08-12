@@ -1,16 +1,20 @@
 /* @vitest-environment jsdom */
 import 'fake-indexeddb/auto';
+import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
+import { localTenantAccessController } from '../../tenant/localTenantPolicy';
+import { getTenantStorageState } from '../../tenant/tenantScopedStorage';
 import {
   closeTenantRuntime,
   db,
   getActiveTenantRuntime,
-  openTenantRuntime
+  openTenantRuntime,
+  resolveTenantRuntimeDirectory
 } from '../tenantRuntimeRouter';
 
 describe('tenant runtime router', () => {
-  afterEach(() => closeTenantRuntime());
+  afterEach(() => { closeTenantRuntime(); localTenantAccessController.reset(); });
 
   it('reopens A, isolates B, and rejects a stale A table handle', async () => {
     const a = await resolveActiveTenantIdentity({ license_key: 'FREE-A' });
@@ -26,5 +30,69 @@ describe('tenant runtime router', () => {
     await openTenantRuntime(a);
     expect(getActiveTenantRuntime().databaseName).toBe(aName);
     expect(await db.table('menu').get('a-product')).toMatchObject({ name: 'A' });
+  });
+
+  it('preserves alias-type compatibility and never mutates the directory on conflicts', async () => {
+    const suffix = crypto.randomUUID();
+    const a = { aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K1-${suffix}`] };
+    const sameByKey = { aliases: [`license-key-sha256:K1-${suffix}`] };
+    const conflictLicense = { aliases: [`license-id:L2-${suffix}`, `license-key-sha256:K1-${suffix}`] };
+    const conflictKey = { aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K3-${suffix}`] };
+    const directory = new Dexie('LanzoTenantDirectory');
+    directory.version(1).stores({ tenants: 'opaqueId, *aliases' });
+    await directory.open();
+
+    const first = await resolveTenantRuntimeDirectory(a);
+    expect(await resolveTenantRuntimeDirectory(sameByKey)).toBe(first);
+    const before = await directory.table('tenants').toArray();
+    await expect(resolveTenantRuntimeDirectory(conflictLicense)).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_ALIAS_CONFLICT' });
+    await expect(resolveTenantRuntimeDirectory(conflictKey)).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_ALIAS_CONFLICT' });
+    expect(await directory.table('tenants').toArray()).toEqual(before);
+    directory.close();
+  });
+
+  it('enriches a key-only or id-only directory entry only through its matching alias type', async () => {
+    const suffix = crypto.randomUUID();
+    const byKey = await resolveTenantRuntimeDirectory({ aliases: [`license-key-sha256:K1-${suffix}`] });
+    expect(await resolveTenantRuntimeDirectory({ aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K1-${suffix}`] })).toBe(byKey);
+    const byId = await resolveTenantRuntimeDirectory({ aliases: [`license-id:L2-${suffix}`] });
+    expect(await resolveTenantRuntimeDirectory({ aliases: [`license-id:L2-${suffix}`, `license-key-sha256:K2-${suffix}`] })).toBe(byId);
+  });
+
+  it('fails closed if aliases resolve to more than one destination', async () => {
+    const suffix = crypto.randomUUID();
+    await resolveTenantRuntimeDirectory({ aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K1-${suffix}`] });
+    await resolveTenantRuntimeDirectory({ aliases: [`license-id:L2-${suffix}`, `license-key-sha256:K2-${suffix}`] });
+    await expect(resolveTenantRuntimeDirectory({ aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K2-${suffix}`] })).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_AMBIGUOUS' });
+  });
+
+  it('blocks B writes after its physical DB opens and before B receives a grant', async () => {
+    const a = await resolveActiveTenantIdentity({ license_key: `LEASE-A-${crypto.randomUUID()}` });
+    const b = await resolveActiveTenantIdentity({ license_key: `LEASE-B-${crypto.randomUUID()}` });
+    localTenantAccessController.enable('test');
+    await openTenantRuntime(a);
+    localTenantAccessController.grant(a, 'A');
+    await db.table('menu').put({ id: 'a', name: 'A' });
+
+    localTenantAccessController.lock('transition');
+    await openTenantRuntime(b);
+    await expect(db.table('menu').put({ id: 'b', name: 'B' })).rejects.toMatchObject({ code: 'LOCAL_TENANT_ACCESS_REQUIRED' });
+    localTenantAccessController.grant(b, 'B');
+    await expect(db.table('menu').put({ id: 'b', name: 'B' })).resolves.toBe('b');
+  });
+
+  it('locks a stale tab through the storage-event fallback without invalidating same-tenant messages', async () => {
+    const a = await resolveActiveTenantIdentity({ license_key: `TAB-A-${crypto.randomUUID()}` });
+    localTenantAccessController.enable('test');
+    await openTenantRuntime(a);
+    localTenantAccessController.grant(a, 'A');
+    const stale = db.table('menu');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'lanzo:tenant-runtime-context:v1', newValue: JSON.stringify({ opaqueId: getActiveTenantRuntime().opaqueId }) }));
+    expect(getActiveTenantRuntime()).not.toBeNull();
+    window.dispatchEvent(new StorageEvent('storage', { key: 'lanzo:tenant-runtime-context:v1', newValue: JSON.stringify({ opaqueId: 't_ffffffffffffffffffffffffffffffff' }) }));
+    expect(getActiveTenantRuntime()).toBeNull();
+    expect(localTenantAccessController.getState().status).toBe('locked');
+    expect(getTenantStorageState()).toMatchObject({ ready: false });
+    expect(() => stale.count()).toThrow('TENANT_RUNTIME_NOT_READY');
   });
 });
