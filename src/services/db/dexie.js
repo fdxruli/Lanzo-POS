@@ -6,6 +6,9 @@ import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
 import Logger from '../Logger';
 import { getLowStockAlertStatus } from './utils';
 import { buildProductSearchFields } from './productSearchIndex';
+import { installLocalTenantDbMiddleware } from '../tenant/localTenantPolicy';
+import { registerCanonicalDexieExtensions } from './databaseSchema';
+import { db as runtimeDb } from './tenantRuntimeRouter';
 // Nota: Dexie maneja el versionado de forma interna y más limpia,
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -42,9 +45,9 @@ export const STORES = {
   CORRUPTED_STATES: 'corrupted_states'
 };
 
-class LanzoDatabase extends Dexie {
-  constructor() {
-    super(DB_NAME);
+export class LanzoDatabase extends Dexie {
+  constructor(databaseName = DB_NAME) {
+    super(databaseName);
     this.version(1).stores({
       // --- Inventario y Productos ---
       [STORES.MENU]: 'id, barcode, name_lower, categoryId', // Índices simples
@@ -545,143 +548,41 @@ class LanzoDatabase extends Dexie {
     }
   }
 
-// Instancia Singleton
-export const db = new LanzoDatabase();
-
-db.table(STORES.CUSTOMERS).hook('creating', (_primaryKey, customer) => {
-  customer.debtCents = normalizeCustomerDebtCents(customer.debt || 0);
-});
-
-db.table(STORES.CUSTOMERS).hook('updating', (mods, _primaryKey, customer) => {
-  if (!Object.prototype.hasOwnProperty.call(mods, 'debt')) {
-    return undefined;
-  }
-
-  return {
-    debtCents: normalizeCustomerDebtCents(mods.debt ?? customer?.debt ?? 0)
-  };
-});
-
-db.table(STORES.MOVIMIENTOS_CAJA).hook('creating', (_primaryKey, movement) => {
-  movement.cash_session_id = movement.cash_session_id || movement.caja_id;
-});
-
-db.table(STORES.MOVIMIENTOS_CAJA).hook('updating', (mods, _primaryKey, movement) => {
-  if (Object.prototype.hasOwnProperty.call(mods, 'cash_session_id')) {
-    return undefined;
-  }
-
-  const cashSessionId = mods.caja_id || movement?.cash_session_id || movement?.caja_id;
-  return cashSessionId ? { cash_session_id: cashSessionId } : undefined;
-});
-
-// ============================================================
-// HOOKS DE MOTOR INVARIANTE - FASE 1
-// Garantizan coherencia estructural en el motor de base de datos
-// ============================================================
-
 /**
- * Hook 'creating' para productos: Establece activeStockStatus inicial
- * Convierte booleanos problemáticos a enteros (1/0) para índices robustos
+ * Creates only the canonical schema declaration set for an explicitly named
+ * database. Operational tenant middleware and write hooks intentionally stay
+ * attached to the production singleton below.
  */
-db.table(STORES.MENU).hook('creating', function (primKey, obj, transaction) {
-  // Garantiza que el insert inicial sea coherente
-  const isActive = obj.isActive !== false;
-  const hasStock = Number(obj.stock) > 0;
-  obj.activeStockStatus = (isActive && hasStock) ? 1 : 0;
-  obj.lowStockAlertStatus = getLowStockAlertStatus(obj);
-  Object.assign(obj, buildProductSearchFields(obj));
-});
+export const createCanonicalLanzoDatabase = (databaseName) => (
+  registerCanonicalDexieExtensions(new LanzoDatabase(databaseName), STORES)
+);
 
-/**
- * Hook 'updating' para productos: Mantiene activeStockStatus sincronizado
- * Se ejecuta automáticamente en cada update, asegurando consistencia
- *
- * MOTOR INVARIANTE V4.1: Guardias de seguridad activas
- * - Sobrescribe CUALQUIER intento de mutar activeStockStatus manualmente
- * - Calcula siempre el valor derivado de isActive + stock
- */
-db.table(STORES.MENU).hook('updating', function (modifications, primKey, obj, transaction) {
-  // Fusiona el objeto actual con las modificaciones pendientes para evaluar estado final
-  const nextState = { ...obj, ...modifications };
-  const isActive = nextState.isActive !== false;
-  const hasStock = Number(nextState.stock) > 0;
-  const nextStatus = (isActive && hasStock) ? 1 : 0;
+const operationalDatabases = new WeakSet();
+export const installLanzoOperationalHooks = (database) => {
+  if (operationalDatabases.has(database)) return database;
+  database.table(STORES.CUSTOMERS).hook('creating', (_key, row) => { row.debtCents = normalizeCustomerDebtCents(row.debt || 0); });
+  database.table(STORES.CUSTOMERS).hook('updating', (mods, _key, row) => Object.prototype.hasOwnProperty.call(mods, 'debt') ? { debtCents: normalizeCustomerDebtCents(mods.debt ?? row?.debt ?? 0) } : undefined);
+  database.table(STORES.MOVIMIENTOS_CAJA).hook('creating', (_key, row) => { row.cash_session_id = row.cash_session_id || row.caja_id; });
+  database.table(STORES.MOVIMIENTOS_CAJA).hook('updating', (mods, _key, row) => Object.prototype.hasOwnProperty.call(mods, 'cash_session_id') ? undefined : ((mods.caja_id || row?.cash_session_id || row?.caja_id) ? { cash_session_id: mods.caja_id || row?.cash_session_id || row?.caja_id } : undefined));
+  database.table(STORES.MENU).hook('creating', (_key, row) => { const active = row.isActive !== false && Number(row.stock) > 0; row.activeStockStatus = active ? 1 : 0; row.lowStockAlertStatus = getLowStockAlertStatus(row); Object.assign(row, buildProductSearchFields(row)); });
+  database.table(STORES.MENU).hook('updating', (mods, key, row) => { const next = { ...row, ...mods }; const status = next.isActive !== false && Number(next.stock) > 0 ? 1 : 0; mods.activeStockStatus = status; mods.lowStockAlertStatus = getLowStockAlertStatus(next); Object.assign(mods, buildProductSearchFields(next)); return mods; });
+  database.table(STORES.PRODUCT_BATCHES).hook('creating', (_key, row) => { const active = row.isActive !== false && Number(row.stock) > 0; row.activeStockStatus = active ? 1 : 0; if (row.status === undefined || row.status === null) row.status = row.isActive !== false ? 'active' : 'inactive'; if (row.expiryDate && !row.alertTargetDate) row.alertTargetDate = row.expiryDate; });
+  database.table(STORES.PRODUCT_BATCHES).hook('updating', (mods, key, row) => { const next = { ...row, ...mods }; const status = next.isActive !== false && Number(next.stock) > 0 ? 1 : 0; mods.activeStockStatus = status; if (mods.isActive !== undefined && mods.status === undefined) mods.status = mods.isActive ? 'active' : 'inactive'; if (mods.expiryDate !== undefined && mods.alertTargetDate === undefined) mods.alertTargetDate = mods.expiryDate; return mods; });
+  operationalDatabases.add(database); return database;
+};
+export const createOperationalLanzoDatabase = (databaseName) => installLanzoOperationalHooks(installLocalTenantDbMiddleware(createCanonicalLanzoDatabase(databaseName)));
 
-  // GUARDIA DE SEGURIDAD: Si alguien intenta mutar activeStockStatus manualmente desde fuera,
-  // sobrescribirlo con el valor calculado (prevenir inconsistencias)
-  if (Object.prototype.hasOwnProperty.call(modifications, 'activeStockStatus') && modifications.activeStockStatus !== nextStatus) {
-    console.warn(`[HOOK GUARD MENU] Intento de setear activeStockStatus=${modifications.activeStockStatus} ignorado para ${primKey}. Calculado=${nextStatus}`);
-    modifications.activeStockStatus = nextStatus;
-  }
-
-  // Si el estado derivado cambia o no está presente, inyéctalo en las modificaciones
-  if (nextState.activeStockStatus !== nextStatus) {
-    modifications.activeStockStatus = nextStatus;
-  }
-
-  modifications.lowStockAlertStatus = getLowStockAlertStatus(nextState);
-  Object.assign(modifications, buildProductSearchFields(nextState));
-  return modifications;
-});
-
-/**
- * Hook 'creating' para lotes: Establece activeStockStatus inicial
- */
-db.table(STORES.PRODUCT_BATCHES).hook('creating', function (primKey, obj, transaction) {
-  const isActive = obj.isActive !== false;
-  const hasStock = Number(obj.stock) > 0;
-  obj.activeStockStatus = (isActive && hasStock) ? 1 : 0;
-
-  // Normalizar campo status para índices (evita booleanos en índices compuestos)
-  if (obj.status === undefined || obj.status === null) {
-    obj.status = isActive ? 'active' : 'inactive';
-  }
-
-  if (obj.expiryDate && !obj.alertTargetDate) {
-    obj.alertTargetDate = obj.expiryDate;
-  }
-});
-
-/**
- * Hook 'updating' para lotes: Mantiene activeStockStatus sincronizado
- *
- * MOTOR INVARIANTE V4.1: Guardias de seguridad activas
- * - Sobrescribe CUALQUIER intento de mutar activeStockStatus manualmente
- * - Calcula siempre el valor derivado de isActive + stock
- */
-db.table(STORES.PRODUCT_BATCHES).hook('updating', function (modifications, primKey, obj, transaction) {
-  const nextState = { ...obj, ...modifications };
-  const isActive = nextState.isActive !== false;
-  const hasStock = Number(nextState.stock) > 0;
-  const nextStatus = (isActive && hasStock) ? 1 : 0;
-
-  // GUARDIA DE SEGURIDAD: Si alguien intenta mutar activeStockStatus manualmente desde fuera
-  if (Object.prototype.hasOwnProperty.call(modifications, 'activeStockStatus') && modifications.activeStockStatus !== nextStatus) {
-    console.warn(`[HOOK GUARD BATCH] Intento de setear activeStockStatus=${modifications.activeStockStatus} ignorado para ${primKey}. Calculado=${nextStatus}`);
-    modifications.activeStockStatus = nextStatus;
-  }
-  // Actualizar activeStockStatus si cambió (solo si no fue interceptado por la guardia)
-  else if (nextState.activeStockStatus !== nextStatus) {
-    modifications.activeStockStatus = nextStatus;
-  }
-
-  // Sincronizar status string si cambia isActive
-  if (modifications.isActive !== undefined && modifications.status === undefined) {
-    modifications.status = modifications.isActive ? 'active' : 'inactive';
-  }
-
-  if (modifications.expiryDate !== undefined && modifications.alertTargetDate === undefined) {
-    modifications.alertTargetDate = modifications.expiryDate;
-  }
-
-  return modifications;
-});
+// LanzoDB1 remains a legacy vault. Runtime business imports are routed through
+// the active tenant authority and cannot open this legacy handle.
+const legacyVault = new LanzoDatabase();
+installLocalTenantDbMiddleware(legacyVault);
+installLanzoOperationalHooks(legacyVault);
+export const db = runtimeDb;
 
 // Variable de control para evitar múltiples invocaciones si Dexie emite el evento en ráfaga
 let isMigrationBlockHandled = false;
 
-db.on('blocked', () => {
+legacyVault.on('blocked', () => {
   Logger.error('Migración bloqueada por conexiones antiguas activas.');
 
   if (isMigrationBlockHandled) return;
@@ -741,6 +642,3 @@ function injectRawDOMFallback(message) {
 
   document.body.appendChild(overlay);
 }
-
-// Exportar clase por si se necesita instanciar para tests
-export { LanzoDatabase };

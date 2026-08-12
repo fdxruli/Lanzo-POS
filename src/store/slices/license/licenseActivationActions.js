@@ -18,8 +18,15 @@ import {
     getStaffLoginMessage
 } from './licenseGuards';
 import { clearPendingAdminSessionIfLicenseChanged } from './pendingAdminSession';
+import {
+    assertLocalTenantAccess,
+    initializeLocalTenantGuard,
+    isLocalTenantAccessError
+} from '../../../services/tenant/localTenantGuard';
+import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
 const completeValidLicenseSession = async (set, get, licenseData, profileOptions) => {
+    await assertLocalTenantAccess(licenseData, { reason: profileOptions?.reason || 'activation_complete' });
     await saveLicenseToStorage(licenseData);
 
     set({
@@ -28,7 +35,8 @@ const completeValidLicenseSession = async (set, get, licenseData, profileOptions
         currentDeviceRole: licenseData.device_role || 'admin',
         currentStaffUser: licenseData.device_role === 'staff'
             ? licenseData.staff_user || null
-            : null
+            : null,
+        localTenantIsolation: null
     });
 
     await get()._loadProfile(licenseData.license_key, profileOptions);
@@ -40,9 +48,30 @@ export const createLicenseActivationActions = ({
     hasStaffValidationContext
 }) => ({
     handleLogin: async (licenseKey) => {
+        initializeLocalTenantGuard('license_login');
         clearPendingAdminSessionIfLicenseChanged(set, get, licenseKey, 'activate_different_license');
         try {
-            const result = await activateLicense(licenseKey);
+            const result = await activateLicense(licenseKey, {
+                beforeLocalPersistence: (resolvedDetails = {}) => assertLocalTenantAccess(
+                    { ...resolvedDetails, license_key: resolvedDetails.license_key || licenseKey },
+                    { reason: 'license_activation' }
+                )
+            });
+
+            const confirmsTenant = Boolean(
+                result.valid ||
+                result.staff_login_required ||
+                result.access_choice_required ||
+                result.admin_enrollment_required ||
+                isLicensePlanBlockFailure(result)
+            );
+
+            if (confirmsTenant) {
+                await assertLocalTenantAccess(
+                    { ...(result.details || {}), license_key: result.details?.license_key || licenseKey },
+                    { reason: 'license_activation_response' }
+                );
+            }
 
             if (result.valid) {
                 const licenseDataToSave = {
@@ -188,6 +217,10 @@ export const createLicenseActivationActions = ({
                 !result.valid &&
                 (errorMsg.includes('limit') || errorMsg.includes('active') || errorMsg.includes('device'))
             ) {
+                await assertLocalTenantAccess(
+                    { ...(result.details || {}), license_key: licenseKey },
+                    { reason: 'license_recovery_validation' }
+                );
                 Logger.log('Dispositivo ya registrado. Intentando recuperar sesión...');
 
                 const revalidate = await revalidateLicense(licenseKey);
@@ -212,6 +245,16 @@ export const createLicenseActivationActions = ({
                 message: result.message || 'Licencia no válida'
             };
         } catch (error) {
+            if (isLocalTenantAccessError(error)) {
+                enterLocalTenantIsolationFailure(set, error);
+                return {
+                    success: false,
+                    localTenantMismatch: true,
+                    code: error.code,
+                    message: error.message
+                };
+            }
+
             Logger.error('Error en login:', error);
 
             return {
@@ -222,11 +265,19 @@ export const createLicenseActivationActions = ({
     },
 
     handleFreeTrial: async () => {
+        initializeLocalTenantGuard('free_trial');
         try {
-            const result = await createFreeTrial();
+            const result = await createFreeTrial({
+                beforeLocalPersistence: (resolvedDetails = {}) => assertLocalTenantAccess(
+                    resolvedDetails,
+                    { reason: 'free_trial_creation' }
+                )
+            });
 
             if (result.success) {
                 const rawData = result.details || result;
+
+                await assertLocalTenantAccess(rawData, { reason: 'free_trial_response' });
 
                 const licenseDataToSave = {
                     ...rawData,
@@ -240,7 +291,8 @@ export const createLicenseActivationActions = ({
                 set({
                     pendingAdminSessionResult: null,
                     licenseDetails: licenseDataToSave,
-                    appStatus: 'setup_required'
+                    appStatus: 'setup_required',
+                    localTenantIsolation: null
                 });
 
                 return { success: true };
@@ -251,6 +303,16 @@ export const createLicenseActivationActions = ({
                 message: result.error || 'No se pudo crear la licencia Lanzo Local.'
             };
         } catch (error) {
+            if (isLocalTenantAccessError(error)) {
+                enterLocalTenantIsolationFailure(set, error);
+                return {
+                    success: false,
+                    localTenantMismatch: true,
+                    code: error.code,
+                    message: error.message
+                };
+            }
+
             return {
                 success: false,
                 message: error.message

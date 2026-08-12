@@ -52,7 +52,7 @@ describe('databaseRuntime native activity guard', () => {
     const factory = { open: vi.fn(() => request) };
     const opening = openNativeDatabase({
       factory,
-      name: 'LanzoDB1',
+      name: 'LanzoDB_t_runtime_activity_test',
       openTimeoutMs: 5
     });
 
@@ -64,7 +64,7 @@ describe('databaseRuntime native activity guard', () => {
       hasActiveNativeRequest: true,
       hasTimedOutNativeRequest: true,
       nativeOperations: [{
-        key: 'LanzoDB1:current',
+        key: 'LanzoDB_t_runtime_activity_test:current',
         state: 'timed_out_waiting_native_settlement'
       }]
     });
@@ -75,7 +75,7 @@ describe('databaseRuntime native activity guard', () => {
     const factory = { open: vi.fn(() => request) };
     const opening = openNativeDatabase({
       factory,
-      name: 'LanzoDB1',
+      name: 'LanzoDB_t_runtime_activity_test',
       openTimeoutMs: 5
     });
     await expect(opening).rejects.toMatchObject({ code: 'DB_OPEN_TIMEOUT' });

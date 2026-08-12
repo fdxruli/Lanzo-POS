@@ -15,6 +15,12 @@ vi.mock('../../../utils/businessType', () => ({
   CANONICAL_BUSINESS_TYPES: { FOOD_SERVICE: 'food_service' }
 }));
 
+vi.mock('../../tenant/localTenantGuard', () => ({
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  isLocalTenantAccessError: (error) => String(error?.code || '').startsWith('LOCAL_TENANT_'),
+  runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
+}));
+
 import {
   buildRestaurantSplitCheckoutCloseIdempotencyKey,
   buildSplitCheckoutClosePayload,
@@ -144,6 +150,7 @@ describe('restaurantOrderCheckoutClose split bill support', () => {
     const pending = readPending();
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
+      licenseKey: 'lic-1',
       localOrderId: 'sale-open-1',
       idempotencyKey: 'restaurant:checkout-close:split:sale-open-1:spl-1',
       paymentSummary: expect.objectContaining({ source: 'split_bill' })
@@ -172,7 +179,11 @@ describe('restaurantOrderCheckoutClose split bill support', () => {
 
   it('retries pending split close without losing paymentSummary', async () => {
     const payload = buildSplitCheckoutClosePayload({ localOrderId: 'sale-open-1', splitResult });
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ ...payload, retryCount: 0 }]));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{
+      ...payload,
+      licenseKey: 'lic-1',
+      retryCount: 0
+    }]));
 
     const response = await retryPendingRestaurantCloudOrderCloses({
       licenseDetails,
@@ -191,5 +202,40 @@ describe('restaurantOrderCheckoutClose split bill support', () => {
       })
     }));
     expect(readPending()).toEqual([]);
+  });
+
+  it('leaves legacy unscoped pending closes untouched', async () => {
+    const payload = buildSplitCheckoutClosePayload({ localOrderId: 'sale-open-1', splitResult });
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{ ...payload, retryCount: 0 }]));
+
+    await expect(retryPendingRestaurantCloudOrderCloses({
+      licenseDetails,
+      features,
+      maxRetries: 1
+    })).resolves.toMatchObject({ success: true, closed: 0, failed: 0, total: 0 });
+
+    expect(restaurantOrdersRepository.closeRestaurantOrderAfterCheckout).not.toHaveBeenCalled();
+    expect(readPending()).toEqual([{ ...payload, retryCount: 0 }]);
+  });
+
+  it('does not evict legacy rows when adding a new tenant-scoped retry', async () => {
+    const legacyRows = Array.from({ length: 51 }, (_, index) => ({
+      localOrderId: `legacy-${index}`,
+      retryCount: 0
+    }));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(legacyRows));
+    setOnline(false);
+
+    await closeRestaurantCloudOrderAfterSuccessfulSplitPayment({
+      localOrderId: 'sale-open-1',
+      splitResult,
+      licenseDetails,
+      features
+    });
+
+    const pending = readPending();
+    expect(pending).toHaveLength(52);
+    expect(pending.slice(0, 51)).toEqual(legacyRows);
+    expect(pending[51]).toMatchObject({ licenseKey: 'lic-1' });
   });
 });

@@ -16,12 +16,19 @@ import {
   SYNC_LIMITS,
   SYNC_STATUS
 } from './syncConstants';
+import {
+  assertLocalTenantSyncAccess,
+  isLocalTenantAccessError,
+  runWithLocalTenantSyncLease
+} from '../tenant/localTenantGuard';
 
 const entityHandlers = new Map();
 
 const runtime = {
   started: false,
   startInProgress: false,
+  startAttempt: 0,
+  generation: 0,
   licenseKey: null,
   status: SYNC_STATUS.DISABLED,
   pullInProgress: false,
@@ -40,9 +47,35 @@ const runtime = {
 
 const isBrowserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
-const setRuntimeStatus = async (status, { licenseKey = runtime.licenseKey, reason = null } = {}) => {
+const isRuntimeGenerationCurrent = (generation, licenseKey = runtime.licenseKey) => (
+  runtime.generation === generation && runtime.licenseKey === licenseKey
+);
+
+const applyRuntimeStatus = async (
+  status,
+  { licenseKey = runtime.licenseKey, reason = null, generation = null } = {}
+) => {
+  if (generation !== null && generation !== undefined && !isRuntimeGenerationCurrent(generation, licenseKey)) return false;
+  if (licenseKey) {
+    await assertLocalTenantSyncAccess(
+      { license_key: licenseKey },
+      { reason: `pos_sync_status_${status}` }
+    );
+  }
+
+  if (generation !== null && generation !== undefined && !isRuntimeGenerationCurrent(generation, licenseKey)) return false;
+
   runtime.status = status;
+
+  // An unauthenticated stop has no tenant namespace in which metadata can be
+  // written. Keeping this state in memory avoids creating ambiguous legacy rows.
+  if (!licenseKey) {
+    if (reason) Logger.log(`[PosSync] Estado ${status}: ${reason}`);
+    return;
+  }
+
   await syncMetaService.setRealtimeStatus(status, licenseKey);
+  if (generation !== null && generation !== undefined && !isRuntimeGenerationCurrent(generation, licenseKey)) return false;
 
   if (status === SYNC_STATUS.DISABLED) {
     await syncMetaService.setSyncEnabled(false, licenseKey);
@@ -50,9 +83,20 @@ const setRuntimeStatus = async (status, { licenseKey = runtime.licenseKey, reaso
     await syncMetaService.setSyncEnabled(true, licenseKey);
   }
 
+  if (generation !== null && generation !== undefined && !isRuntimeGenerationCurrent(generation, licenseKey)) return false;
+
   if (reason) {
     Logger.log(`[PosSync] Estado ${status}: ${reason}`);
   }
+  return true;
+};
+
+let runtimeStatusQueue = Promise.resolve();
+const setRuntimeStatus = (status, options = {}) => {
+  const update = () => applyRuntimeStatus(status, options);
+  const pending = runtimeStatusQueue.then(update, update);
+  runtimeStatusQueue = pending.catch(() => undefined);
+  return pending;
 };
 
 const clearRealtimePullTimer = () => {
@@ -69,9 +113,13 @@ const clearRealtimePullTimer = () => {
 };
 
 const stopRealtimeChannel = async () => {
-  await stopPosRealtimeListener(runtime.realtimeChannel);
+  const channelToStop = runtime.realtimeChannel;
   runtime.realtimeChannel = null;
   runtime.realtimeTopic = null;
+  if (!channelToStop) {
+    return;
+  }
+  await stopPosRealtimeListener(channelToStop);
 };
 
 const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
@@ -79,14 +127,19 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
     if (!handler?.onStart) continue;
 
     try {
-      await handler.onStart({ licenseDetails, licenseKey, reason });
+      await runWithLocalTenantSyncLease(
+        { license_key: licenseKey },
+        { reason: `pos_sync_start_handler_${entityType}` },
+        () => handler.onStart({ licenseDetails, licenseKey, reason })
+      );
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn(`[PosSync] Handler ${entityType} fallo en onStart:`, error);
     }
   }
 };
 
-const dispatchPulledEvents = async (events = []) => {
+const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey) => {
   if (!Array.isArray(events) || events.length === 0) return;
 
   const grouped = events.reduce((acc, event) => {
@@ -101,8 +154,13 @@ const dispatchPulledEvents = async (events = []) => {
     if (!handler?.onEvents) continue;
 
     try {
-      await handler.onEvents(entityEvents, { licenseKey: runtime.licenseKey });
+      await runWithLocalTenantSyncLease(
+        { license_key: licenseKey },
+        { reason: `pos_sync_event_handler_${entityType}` },
+        () => handler.onEvents(entityEvents, { licenseKey })
+      );
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
     }
   }
@@ -156,20 +214,6 @@ export const posSyncOrchestrator = {
     const licenseKey = getLicenseKeyFromDetails(licenseDetails);
     const posTopic = buildPosRealtimeTopic(licenseDetails);
 
-    if (!licenseKey || !isCloudPosSyncEnabled(licenseDetails)) {
-      await this.stop({ preserveStatus: false });
-      runtime.licenseKey = licenseKey;
-      await setRuntimeStatus(SYNC_STATUS.DISABLED, {
-        licenseKey,
-        reason: 'cloud_pos_sync_off'
-      });
-
-      return {
-        started: false,
-        status: SYNC_STATUS.DISABLED
-      };
-    }
-
     if (runtime.startInProgress) {
       Logger.log(`[PosSync] Start ya en curso; se omite ${reason}.`);
 
@@ -181,40 +225,85 @@ export const posSyncOrchestrator = {
       };
     }
 
-    if (
-      runtime.started &&
-      runtime.licenseKey === licenseKey &&
-      runtime.realtimeChannel &&
-      runtime.realtimeTopic === posTopic
-    ) {
-      attachOnlineListener();
-
-      return {
-        started: true,
-        status: runtime.status,
-        skipped: true,
-        reason: 'already_started'
-      };
-    }
-
     runtime.startInProgress = true;
+    const startAttempt = ++runtime.startAttempt;
+    let startGeneration = null;
 
     try {
+      if (licenseKey) {
+        await assertLocalTenantSyncAccess(licenseDetails, { reason: `pos_sync_start_${reason}` });
+        if (runtime.startAttempt !== startAttempt || !runtime.startInProgress) {
+          return { started: false, status: runtime.status, stale: true };
+        }
+      }
+
+      if (!licenseKey || !isCloudPosSyncEnabled(licenseDetails)) {
+        await this.stop({ preserveStatus: true });
+        const disabledAttempt = startAttempt + 1;
+        if (runtime.startAttempt !== disabledAttempt || runtime.started) {
+          return { started: runtime.started, status: runtime.status, stale: true };
+        }
+
+        const disabledGeneration = runtime.generation;
+        runtime.licenseKey = licenseKey;
+        await setRuntimeStatus(SYNC_STATUS.DISABLED, {
+          licenseKey,
+          generation: disabledGeneration,
+          reason: 'cloud_pos_sync_off'
+        });
+
+        if (runtime.generation !== disabledGeneration || runtime.started) {
+          return { started: runtime.started, status: runtime.status, stale: true };
+        }
+
+        return {
+          started: false,
+          status: SYNC_STATUS.DISABLED
+        };
+      }
+
+      if (
+        runtime.started &&
+        runtime.licenseKey === licenseKey &&
+        runtime.realtimeChannel &&
+        runtime.realtimeTopic === posTopic
+      ) {
+        attachOnlineListener();
+
+        return {
+          started: true,
+          status: runtime.status,
+          skipped: true,
+          reason: 'already_started'
+        };
+      }
+
+      startGeneration = ++runtime.generation;
       if (runtime.started && (runtime.licenseKey !== licenseKey || runtime.realtimeTopic !== posTopic)) {
         await stopRealtimeChannel();
+        if (runtime.generation !== startGeneration) return { started: false, status: runtime.status };
       }
 
       runtime.started = true;
       runtime.licenseKey = licenseKey;
 
       attachOnlineListener();
-      await syncOutboxService.resetStuckProcessing(SYNC_LIMITS.STUCK_PROCESSING_MS);
+      await syncOutboxService.resetStuckProcessing(
+        SYNC_LIMITS.STUCK_PROCESSING_MS,
+        { licenseKey }
+      );
+      if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
 
       if (!isBrowserOnline()) {
         await setRuntimeStatus(SYNC_STATUS.OFFLINE, {
           licenseKey,
+          generation: startGeneration,
           reason: 'offline_on_start'
         });
+
+        if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
+          return { started: false, status: runtime.status, stale: true };
+        }
 
         return {
           started: true,
@@ -222,24 +311,32 @@ export const posSyncOrchestrator = {
         };
       }
 
-      await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason });
+      await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason, generation: startGeneration });
       await runEntityStartHooks({ licenseDetails, licenseKey, reason });
+      if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
 
       if (shouldDeferPosBootstrapStartHook(reason)) {
         Logger.log('[PosSync] Pull/outbox inicial omitido: el bootstrap inteligente lo agenda con jitter.');
       } else {
         await this.pullIncremental('start');
         await this.processOutbox('start');
+        if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
+          return { started: false, status: runtime.status };
+        }
       }
 
       if (posTopic) {
         if (!runtime.realtimeChannel || runtime.realtimeTopic !== posTopic) {
           await stopRealtimeChannel();
+          if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
+            return { started: false, status: runtime.status };
+          }
 
           runtime.realtimeChannel = startPosRealtimeListener({
             posTopic,
             callbacks: {
               onPosChangeAvailable: ({ eventType, entity, changeSeq } = {}) => {
+                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) return;
                 Logger.log('[POS Sync] Realtime avisó cambios; programando pull incremental.', {
                   eventType,
                   entity,
@@ -251,12 +348,17 @@ export const posSyncOrchestrator = {
                 });
               },
               onStatusChange: ({ status, reason: statusReason }) => {
+                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) return;
                 setRuntimeStatus(status, {
                   licenseKey,
+                  generation: startGeneration,
                   reason: statusReason
-                }).catch(() => {});
+                }).catch((error) => {
+                  Logger.warn('[PosSync] Cambio de estado realtime bloqueado:', error);
+                });
               },
               onConnectionRestored: () => {
+                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) return;
                 this.schedulePullIncremental('realtime_restored').catch((error) => {
                   Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
                 });
@@ -269,23 +371,49 @@ export const posSyncOrchestrator = {
       } else {
         await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
           licenseKey,
+          generation: startGeneration,
           reason: 'missing_pos_topic'
         });
+        if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) {
+          return { started: false, status: runtime.status, stale: true };
+        }
       }
 
       return {
         started: true,
         status: runtime.status
       };
+    } catch (error) {
+      if (startGeneration !== null && isRuntimeGenerationCurrent(startGeneration, licenseKey)) {
+        clearRealtimePullTimer();
+        runtime.started = false;
+        runtime.pullInProgress = false;
+        runtime.pendingPull = false;
+        runtime.outboxInProgress = false;
+        runtime.lastPullReason = null;
+        detachOnlineListener();
+
+        try {
+          await stopRealtimeChannel();
+        } catch (stopError) {
+          Logger.warn('[PosSync] Fallo limpiando un start incompleto:', stopError);
+        }
+
+        if (isRuntimeGenerationCurrent(startGeneration, licenseKey)) {
+          runtime.licenseKey = null;
+          runtime.status = SYNC_STATUS.DISABLED;
+        }
+      }
+      throw error;
     } finally {
-      runtime.startInProgress = false;
+      if (runtime.startAttempt === startAttempt) runtime.startInProgress = false;
     }
   },
 
   async stop({ preserveStatus = false } = {}) {
+    runtime.startAttempt += 1;
+    const stopGeneration = ++runtime.generation;
     clearRealtimePullTimer();
-    await stopRealtimeChannel();
-
     runtime.started = false;
     runtime.startInProgress = false;
     runtime.pullInProgress = false;
@@ -294,11 +422,22 @@ export const posSyncOrchestrator = {
     runtime.lastPullReason = null;
     detachOnlineListener();
 
+    await stopRealtimeChannel();
+    if (runtime.generation !== stopGeneration) return;
+
     if (!preserveStatus) {
-      await setRuntimeStatus(SYNC_STATUS.DISABLED, {
-        licenseKey: runtime.licenseKey,
-        reason: 'stopped'
-      });
+      runtime.status = SYNC_STATUS.DISABLED;
+      try {
+        await setRuntimeStatus(SYNC_STATUS.DISABLED, {
+          licenseKey: runtime.licenseKey,
+          generation: stopGeneration,
+          reason: 'stopped'
+        });
+      } catch (error) {
+        // Mismatch/logout must still tear down the in-memory channel after the
+        // guard locks. In that state tenant metadata is intentionally immutable.
+        if (!isLocalTenantAccessError(error)) throw error;
+      }
     }
   },
 
@@ -360,10 +499,21 @@ export const posSyncOrchestrator = {
 
   async pullIncremental(reason = 'manual') {
     if (!runtime.started || !runtime.licenseKey) return null;
+    const operationLicenseKey = runtime.licenseKey;
+    const operationGeneration = runtime.generation;
+
+    await assertLocalTenantSyncAccess(
+      { license_key: operationLicenseKey },
+      { reason: `pos_sync_pull_${reason}` }
+    );
+    if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+      return null;
+    }
 
     if (!isBrowserOnline()) {
       await setRuntimeStatus(SYNC_STATUS.OFFLINE, {
-        licenseKey: runtime.licenseKey,
+        licenseKey: operationLicenseKey,
+        generation: operationGeneration,
         reason: 'offline_pull_skip'
       });
 
@@ -386,18 +536,35 @@ export const posSyncOrchestrator = {
     runtime.lastPullStartedAt = Date.now();
 
     try {
-      let sinceChangeSeq = await syncMetaService.getLastChangeSeq(runtime.licenseKey);
+      let sinceChangeSeq = await syncMetaService.getLastChangeSeq(operationLicenseKey);
+      if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+        return null;
+      }
       let latestResponse = null;
       let totalEvents = 0;
       let hasMore = true;
 
       while (hasMore) {
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return null;
+        }
+        await assertLocalTenantSyncAccess(
+          { license_key: operationLicenseKey },
+          { reason: `pos_sync_pull_rpc_${reason}` }
+        );
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return null;
+        }
         const batchSinceChangeSeq = Number(sinceChangeSeq) || 0;
         const response = await posSyncClient.pullSyncEvents({
-          licenseKey: runtime.licenseKey,
+          licenseKey: operationLicenseKey,
           sinceChangeSeq: batchSinceChangeSeq,
           limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
         });
+
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return null;
+        }
 
         latestResponse = response;
 
@@ -407,7 +574,8 @@ export const posSyncOrchestrator = {
             : SYNC_STATUS.DEGRADED;
 
           await setRuntimeStatus(nextStatus, {
-            licenseKey: runtime.licenseKey,
+            licenseKey: operationLicenseKey,
+            generation: operationGeneration,
             reason: response.code || 'pull_not_success'
           });
           return response;
@@ -415,12 +583,29 @@ export const posSyncOrchestrator = {
 
         const pulledEvents = Array.isArray(response.events) ? response.events : [];
         totalEvents += pulledEvents.length;
-        await dispatchPulledEvents(pulledEvents);
+        await assertLocalTenantSyncAccess(
+          { license_key: operationLicenseKey },
+          { reason: `pos_sync_pull_apply_${reason}` }
+        );
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return null;
+        }
+        await dispatchPulledEvents(pulledEvents, operationLicenseKey);
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return null;
+        }
+        await assertLocalTenantSyncAccess(
+          { license_key: operationLicenseKey },
+          { reason: `pos_sync_pull_cursor_${reason}` }
+        );
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return null;
+        }
 
         const latestChangeSeq = Number(response.latestChangeSeq ?? batchSinceChangeSeq) || batchSinceChangeSeq;
         if (latestChangeSeq > batchSinceChangeSeq) {
           sinceChangeSeq = latestChangeSeq;
-          await syncMetaService.setLastChangeSeq(latestChangeSeq, runtime.licenseKey);
+          await syncMetaService.setLastChangeSeq(latestChangeSeq, operationLicenseKey);
         }
 
         hasMore = Boolean(response.hasMore);
@@ -430,11 +615,19 @@ export const posSyncOrchestrator = {
         }
       }
 
-      await syncMetaService.setLastPullAt(runtime.licenseKey);
-      await syncMetaService.setLastPullError(null, runtime.licenseKey);
+      await assertLocalTenantSyncAccess(
+        { license_key: operationLicenseKey },
+        { reason: `pos_sync_pull_commit_${reason}` }
+      );
+      if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+        return null;
+      }
+      await syncMetaService.setLastPullAt(operationLicenseKey);
+      await syncMetaService.setLastPullError(null, operationLicenseKey);
 
       await setRuntimeStatus(SYNC_STATUS.ONLINE, {
-        licenseKey: runtime.licenseKey,
+        licenseKey: operationLicenseKey,
+        generation: operationGeneration,
         reason: `pull_${reason}`
       });
 
@@ -444,25 +637,33 @@ export const posSyncOrchestrator = {
         latestChangeSeq: Number(sinceChangeSeq) || 0
       };
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[PosSync] Pull incremental fallo:', error);
-      await syncMetaService.setLastPullError(error, runtime.licenseKey);
+      await assertLocalTenantSyncAccess(
+        { license_key: operationLicenseKey },
+        { reason: `pos_sync_pull_error_${reason}` }
+      );
+      await syncMetaService.setLastPullError(error, operationLicenseKey);
 
       await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
-        licenseKey: runtime.licenseKey,
+        licenseKey: operationLicenseKey,
+        generation: operationGeneration,
         reason: 'pull_error'
       });
 
       return null;
     } finally {
-      runtime.pullInProgress = false;
-      runtime.lastPullFinishedAt = Date.now();
+      if (isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) {
+        runtime.pullInProgress = false;
+        runtime.lastPullFinishedAt = Date.now();
 
-      const pendingReason = runtime.pendingPull ? runtime.lastPullReason || 'pending' : null;
-      runtime.pendingPull = false;
+        const pendingReason = runtime.pendingPull ? runtime.lastPullReason || 'pending' : null;
+        runtime.pendingPull = false;
 
-      if (pendingReason && runtime.started && runtime.licenseKey && isBrowserOnline()) {
-        Logger.log('[POS Sync] Ejecutando pull incremental pendiente al terminar el actual.');
-        await this.pullIncremental(`pending_after_${pendingReason}`);
+        if (pendingReason && runtime.started && runtime.licenseKey && isBrowserOnline()) {
+          Logger.log('[POS Sync] Ejecutando pull incremental pendiente al terminar el actual.');
+          await this.pullIncremental(`pending_after_${pendingReason}`);
+        }
       }
     }
   },
@@ -470,6 +671,16 @@ export const posSyncOrchestrator = {
   async processOutbox(reason = 'manual') {
     if (!runtime.started || !runtime.licenseKey || !isBrowserOnline()) {
       return { processed: 0 };
+    }
+    const operationLicenseKey = runtime.licenseKey;
+    const operationGeneration = runtime.generation;
+
+    await assertLocalTenantSyncAccess(
+      { license_key: operationLicenseKey },
+      { reason: `pos_sync_outbox_${reason}` }
+    );
+    if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+      return { processed: 0, skipped: true, reason: 'runtime_changed' };
     }
 
     if (runtime.outboxInProgress) {
@@ -486,13 +697,26 @@ export const posSyncOrchestrator = {
 
     try {
       const pending = await syncOutboxService.getPendingOperations({
-        licenseKey: runtime.licenseKey,
+        licenseKey: operationLicenseKey,
         limit: SYNC_LIMITS.DEFAULT_OUTBOX_LIMIT
       });
+      if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+        return { processed: 0, skipped: true, reason: 'runtime_changed' };
+      }
 
       let processed = 0;
 
       for (const operation of pending) {
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return { processed, skipped: true, reason: 'runtime_changed' };
+        }
+        await assertLocalTenantSyncAccess(
+          { license_key: operationLicenseKey },
+          { reason: `pos_sync_outbox_operation_${reason}` }
+        );
+        if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+          return { processed, skipped: true, reason: 'runtime_changed' };
+        }
         const handler = entityHandlers.get(operation.entityType);
 
         if (!handler?.pushOperation) {
@@ -501,25 +725,45 @@ export const posSyncOrchestrator = {
         }
 
         try {
-          await syncOutboxService.markProcessing(operation.id);
-          const result = await handler.pushOperation(operation);
+          await syncOutboxService.markProcessing(operation.id, {
+            licenseKey: operationLicenseKey
+          });
+          const result = await runWithLocalTenantSyncLease(
+            { license_key: operationLicenseKey },
+            { reason: `pos_sync_outbox_handler_${operation.entityType}` },
+            () => handler.pushOperation(operation)
+          );
+
+          if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
+            return { processed, skipped: true, reason: 'runtime_changed' };
+          }
 
           if (result?.conflict) {
-            await syncOutboxService.markConflict(operation.id, result.conflict);
+            await syncOutboxService.markConflict(operation.id, result.conflict, {
+              licenseKey: operationLicenseKey
+            });
           } else {
-            await syncOutboxService.markSynced(operation.id, result || null);
+            await syncOutboxService.markSynced(operation.id, result || null, {
+              licenseKey: operationLicenseKey
+            });
           }
 
           processed += 1;
         } catch (error) {
+          if (isLocalTenantAccessError(error)) throw error;
           Logger.warn(`[PosSync] Outbox ${operation.entityType}/${operation.operation} fallo (${reason}):`, error);
-          await syncOutboxService.markFailed(operation.id, error, { retry: true });
+          await syncOutboxService.markFailed(operation.id, error, {
+            retry: true,
+            licenseKey: operationLicenseKey
+          });
         }
       }
 
       return { processed };
     } finally {
-      runtime.outboxInProgress = false;
+      if (isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) {
+        runtime.outboxInProgress = false;
+      }
     }
   },
 

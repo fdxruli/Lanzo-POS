@@ -8,15 +8,18 @@
  * 4. Consistencia de Índices: Consultas por [categoryId+activeStockStatus] funcionan
  */
 
+import 'fake-indexeddb/auto';
+
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db, STORES } from '../dexie';
 import { productsRepository } from '../products';
 import { saveDataSafe, processBatchDeductions } from '../index';
+import { closeTestTenantRuntime, openTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
 describe('Motor Invariante V4.1', () => {
   // Limpiar la base de datos antes de cada test
   beforeEach(async () => {
-    await db.open();
+    await openTestTenantRuntime();
     // Limpiar tablas de test
     await db.table(STORES.MENU).clear();
     await db.table(STORES.PRODUCT_BATCHES).clear();
@@ -25,7 +28,7 @@ describe('Motor Invariante V4.1', () => {
   });
 
   afterEach(async () => {
-    // No cerramos aquí para mantener el contexto entre tests relacionados
+    closeTestTenantRuntime();
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

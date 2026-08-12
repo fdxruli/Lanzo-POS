@@ -5,8 +5,13 @@ import {
   getActorSessionToken
 } from '../supabase';
 import { SYNC_LIMITS } from './syncConstants';
+import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
 
 export const buildPosSyncAuthContext = async ({ licenseKey, deviceRole = null }) => {
+  await assertLocalTenantSyncAccess(
+    { license_key: licenseKey },
+    { reason: 'pos_sync_auth_context' }
+  );
   const deviceFingerprint = await getStableDeviceId();
   const securityToken = await getDeviceSecurityToken();
   // El argumento historico p_staff_session_token transporta la sesion del actor:

@@ -4,6 +4,12 @@ import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { safeLocalStorageSet, checkInternetConnection } from './utils';
 import { loadData, saveData, STORES } from './database';
 import Logger from "./Logger";
+import {
+    assertLocalTenantAccess,
+    assertLocalTenantSyncAccess,
+    isLocalTenantAccessError,
+    runWithLocalTenantSyncLease
+} from './tenant/localTenantGuard';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -14,11 +20,27 @@ export const supabaseClient = (supabaseUrl && supabaseKey)
     ? createClient(supabaseUrl, supabaseKey)
     : null;
 
+const runAuthenticatedLocalPersistence = async ({
+    tenantSource,
+    reason,
+    beforeLocalPersistence = null,
+    operation
+}) => {
+    if (beforeLocalPersistence) {
+        await beforeLocalPersistence(tenantSource);
+    } else {
+        await assertLocalTenantAccess(tenantSource, { reason: `${reason}_binding` });
+    }
+
+    return runWithLocalTenantSyncLease(tenantSource, { reason }, operation);
+};
+
 async function getSecureCredentials() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, 'device_security_token');
         return record ? record.value : null;
-    } catch {
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         return null;
     }
 }
@@ -34,6 +56,7 @@ async function setSecureCredentials(newToken) {
             value: newToken
         });
     } catch (e) {
+        if (isLocalTenantAccessError(e)) throw e;
         Logger.warn("No se pudo guardar el token de seguridad:", e);
     }
 }
@@ -48,7 +71,8 @@ export async function getStaffSessionToken() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY);
         return record ? record.value : null;
-    } catch {
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         return null;
     }
 }
@@ -66,6 +90,7 @@ export async function setStaffSessionCredentials(sessionToken, sessionId = null)
             })
         ]);
     } catch (e) {
+        if (isLocalTenantAccessError(e)) throw e;
         Logger.warn("No se pudo guardar la sesion staff:", e);
     }
 }
@@ -83,7 +108,8 @@ export async function getAdminSessionToken() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, ADMIN_SESSION_TOKEN_KEY);
         return record?.value || null;
-    } catch {
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         return null;
     }
 }
@@ -110,7 +136,8 @@ export async function hasValidOfflineAdminSession() {
         if (!cache?.validatedAt) return false;
         if (cache.expiresAt && Date.parse(cache.expiresAt) <= Date.now()) return false;
         return Date.now() - cache.validatedAt <= 24 * 60 * 60 * 1000;
-    } catch {
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         return false;
     }
 }
@@ -300,7 +327,8 @@ async function getUntamperedTime() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, 'security_monotonic_clock');
         if (record && record.value) lastSeen = record.value;
-    } catch {
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         Logger.warn("No se pudo leer el reloj de seguridad.");
     }
 
@@ -321,7 +349,8 @@ async function getUntamperedTime() {
     // Actualizamos el reloj al tiempo más reciente
     try {
         await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now });
-    } catch {
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         // Best effort: the online validation result remains authoritative.
     }
 
@@ -384,7 +413,7 @@ async function resetRateLimit() {
 
 // --- Funciones Principales ---
 
-export const activateLicense = async function (licenseKey) {
+export const activateLicense = async function (licenseKey, options = {}) {
     try {
         const isOnline = await checkInternetConnection();
         if (!isOnline) {
@@ -413,8 +442,11 @@ export const activateLicense = async function (licenseKey) {
         if (error) throw error;
 
         if (data?.success) {
-            resetRateLimit();
-            safeLocalStorageSet('fp', deviceFingerprint);
+            const details = {
+                ...data.details,
+                device_role: data.device_role || data.details?.device_role || 'admin',
+                staff_user: data.staff_user || data.details?.staff_user || null
+            };
 
             const initialToken =
                 data.device_security_token ||
@@ -423,17 +455,20 @@ export const activateLicense = async function (licenseKey) {
                 data.details?.token ||
                 data.details?.device_security_token;
 
-            if (initialToken) {
-                await setSecureCredentials(initialToken);
-            } else {
-                Logger.warn("Advertencia: El servidor no devolvio token inicial tras activar.");
-            }
-
-            const details = {
-                ...data.details,
-                device_role: data.device_role || data.details?.device_role || 'admin',
-                staff_user: data.staff_user || data.details?.staff_user || null
-            };
+            await runAuthenticatedLocalPersistence({
+                tenantSource: details,
+                reason: 'license_activation_credentials',
+                beforeLocalPersistence: options.beforeLocalPersistence,
+                operation: async () => {
+                    resetRateLimit();
+                    safeLocalStorageSet('fp', deviceFingerprint);
+                    if (initialToken) {
+                        await setSecureCredentials(initialToken);
+                    } else {
+                        Logger.warn("Advertencia: El servidor no devolvio token inicial tras activar.");
+                    }
+                }
+            });
 
             return { valid: true, message: data.message, details };
         }
@@ -483,6 +518,7 @@ export const activateLicense = async function (licenseKey) {
             details: data?.details || data || null
         };
     } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
 
         if (!isRateLimit) {
@@ -525,12 +561,6 @@ export const activateLicenseLegacy = async function (licenseKey) {
         if (error) throw error;
 
         if (data && data.success) {
-            resetRateLimit();
-            safeLocalStorageSet('fp', deviceFingerprint);
-
-            // --- AGREGAR ESTO URGENTEMENTE ---
-            // Si tu RPC de activación devuelve el token, guárdalo YA.
-            // Si el token viene en data.device_security_token o data.details.token:
             const initialToken =
                 data.device_security_token ||
                 data.security_token ||
@@ -538,18 +568,25 @@ export const activateLicenseLegacy = async function (licenseKey) {
                 data.details?.token ||
                 data.details?.device_security_token;
 
-            if (initialToken) {
-                await setSecureCredentials(initialToken);
-            } else {
-                Logger.warn("⚠️ Advertencia: El servidor no devolvió un token inicial tras activar.");
-            }
-            // ---------------------------------
-
             const details = {
                 ...data.details,
                 device_role: data.device_role || data.details?.device_role || 'admin',
                 staff_user: data.staff_user || data.details?.staff_user || null
             };
+
+            await runAuthenticatedLocalPersistence({
+                tenantSource: details,
+                reason: 'legacy_license_activation_credentials',
+                operation: async () => {
+                    resetRateLimit();
+                    safeLocalStorageSet('fp', deviceFingerprint);
+                    if (initialToken) {
+                        await setSecureCredentials(initialToken);
+                    } else {
+                        Logger.warn("⚠️ Advertencia: El servidor no devolvió un token inicial tras activar.");
+                    }
+                }
+            });
 
             return { valid: true, message: data.message, details };
         } else {
@@ -559,6 +596,7 @@ export const activateLicenseLegacy = async function (licenseKey) {
         }
 
     } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
 
         if (!isRateLimit) {
@@ -577,7 +615,8 @@ export const activateLicenseLegacy = async function (licenseKey) {
 export const staffLoginOnDevice = async function ({
     licenseKey,
     username,
-    password
+    password,
+    beforeLocalPersistence = null
 }) {
     try {
         const isOnline = await checkInternetConnection();
@@ -623,6 +662,11 @@ export const staffLoginOnDevice = async function ({
             };
         }
 
+        const tenantSource = {
+            ...data,
+            license_key: data.details?.license_key || licenseKey
+        };
+
         const deviceToken =
             data.device_security_token ||
             data.details?.device_security_token ||
@@ -630,13 +674,19 @@ export const staffLoginOnDevice = async function ({
             data.details?.token ||
             null;
 
-        if (deviceToken) {
-            await setSecureCredentials(deviceToken);
-        }
-
-        await clearAdminSessionCache();
-        await setStaffSessionCredentials(data.staff_session_token, data.staff_session_id);
-        safeLocalStorageSet('fp', deviceFingerprint);
+        await runAuthenticatedLocalPersistence({
+            tenantSource,
+            reason: 'staff_login_credentials',
+            beforeLocalPersistence,
+            operation: async () => {
+                if (deviceToken) {
+                    await setSecureCredentials(deviceToken);
+                }
+                await clearAdminSessionCache();
+                await setStaffSessionCredentials(data.staff_session_token, data.staff_session_id);
+                safeLocalStorageSet('fp', deviceFingerprint);
+            }
+        });
 
         return {
             success: true,
@@ -649,6 +699,7 @@ export const staffLoginOnDevice = async function ({
             }
         };
     } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         Logger.error('Error iniciando sesion staff:', error);
         return {
             success: false,
@@ -735,21 +786,51 @@ export const staffLogoutSession = async function (licenseKey) {
     } catch (error) {
         Logger.warn('No se pudo cerrar sesion staff remotamente:', error?.message || error);
     } finally {
-        await clearStaffSessionCache();
+        if (licenseKey) {
+            await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'staff_logout_credentials' },
+                () => clearStaffSessionCache()
+            );
+        }
     }
 
     return { success: true };
 };
 
-let currentRevalidationPromise = null;
+const currentRevalidationPromises = new Map();
 
 export const revalidateLicense = async function (licenseKeyProp) {
-    if (currentRevalidationPromise) {
-        Logger.log('⏳ [Security] Revalidación en curso. Uniéndose a la petición existente para evitar colisiones.');
-        return currentRevalidationPromise;
+    let storedLicense = null;
+    try {
+        const serializedLicense = localStorage.getItem('lanzo_license');
+        if (serializedLicense) storedLicense = JSON.parse(serializedLicense)?.data;
+    } catch {
+        // Ignore malformed local license cache and continue with the explicit key.
     }
 
-    currentRevalidationPromise = (async () => {
+    const licenseKey = licenseKeyProp || storedLicense?.license_key;
+    if (!licenseKey) return { valid: false, reason: 'no_license_key' };
+    const storedLicenseForActiveTenant = (
+        String(storedLicense?.license_key || '').trim() === String(licenseKey).trim()
+    ) ? storedLicense : null;
+
+    const existingPromise = currentRevalidationPromises.get(licenseKey);
+    if (existingPromise) {
+        Logger.log('⏳ [Security] Revalidación en curso para la misma licencia.');
+        return existingPromise;
+    }
+
+    const currentRevalidationPromise = (async () => {
+        await assertLocalTenantSyncAccess(
+            { license_key: licenseKey },
+            { reason: 'license_revalidation' }
+        );
+
+        return runWithLocalTenantSyncLease(
+            { license_key: licenseKey },
+            { reason: 'license_revalidation' },
+            async () => {
         const timeoutMs = 8000;
         let timeoutId;
 
@@ -758,20 +839,6 @@ export const revalidateLicense = async function (licenseKeyProp) {
         });
 
         try {
-            let storedLicense = null;
-            try {
-                const ls = localStorage.getItem('lanzo_license');
-                if (ls) storedLicense = JSON.parse(ls)?.data;
-            } catch {
-                // Ignore malformed local license cache and continue with server validation.
-            }
-
-            const licenseKey = licenseKeyProp || storedLicense?.license_key;
-            if (!licenseKey) {
-                clearTimeout(timeoutId);
-                return { valid: false, reason: 'no_license_key' };
-            }
-
             const isOnline = await checkInternetConnection();
             if (!isOnline) {
                 throw new Error("OFFLINE_PRECHECK");
@@ -779,7 +846,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
             const deviceFingerprint = await getStableDeviceId();
 
-            const securityToken = await getSecurityTokenForValidation(storedLicense);
+            const securityToken = await getSecurityTokenForValidation(storedLicenseForActiveTenant);
 
             const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
                 p_license_key: licenseKey,
@@ -800,6 +867,22 @@ export const revalidateLicense = async function (licenseKeyProp) {
                     throw new Error('NETWORK_ERROR');
                 }
                 throw error;
+            }
+
+            const responseHasTenantIdentity = Boolean(
+                data?.license_key
+                || data?.licenseKey
+                || data?.license_id
+                || data?.licenseId
+                || data?.details?.license_key
+                || data?.details?.licenseKey
+                || data?.details?.license_id
+                || data?.details?.licenseId
+            );
+            if (responseHasTenantIdentity) {
+                await assertLocalTenantSyncAccess(data, {
+                    reason: 'license_revalidation_response_identity'
+                });
             }
 
             // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
@@ -829,6 +912,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                         value: currentRealTime
                     });
                 } catch (e) {
+                    if (isLocalTenantAccessError(e)) throw e;
                     Logger.warn("Fallo al sanar el reloj monotónico", e);
                 }
             }
@@ -848,6 +932,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
             return data;
 
         } catch (error) {
+            if (isLocalTenantAccessError(error)) throw error;
             // ... (Todo el bloque catch se queda IGUAL para mantener el modo offline) ...
             clearTimeout(timeoutId);
             Logger.warn('⚠️ Error validando licencia:', error.message);
@@ -869,7 +954,8 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 try {
                     const record = await loadData(STORES.SYNC_CACHE, 'last_valid_license_state');
                     if (record && record.value) storedState = record.value;
-                } catch {
+                } catch (error) {
+                    if (isLocalTenantAccessError(error)) throw error;
                     // Offline fallback can proceed without cached state.
                 }
 
@@ -886,6 +972,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 try {
                     now = await getUntamperedTime();
                 } catch (error) {
+                    if (isLocalTenantAccessError(error)) throw error;
                     if (error.message === "TIME_TAMPERING_DETECTED") {
                         // Bloqueo fulminante: Si detectamos trampa, destruimos la sesión offline
                         //await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
@@ -927,12 +1014,18 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 details: error?.message || String(error) || 'Error desconocido del servidor'
             };
         }
+            }
+        );
     })();
+
+    currentRevalidationPromises.set(licenseKey, currentRevalidationPromise);
 
     try {
         return await currentRevalidationPromise;
     } finally {
-        currentRevalidationPromise = null;
+        if (currentRevalidationPromises.get(licenseKey) === currentRevalidationPromise) {
+            currentRevalidationPromises.delete(licenseKey);
+        }
     }
 };
 
@@ -1115,7 +1208,7 @@ export const deactivateCurrentDevice = async (licenseKey) => {
     }
 };
 
-export const createFreeTrial = async function () {
+export const createFreeTrial = async function (options = {}) {
     try {
         await checkRateLimit();
 
@@ -1137,8 +1230,6 @@ export const createFreeTrial = async function () {
         if (error) throw error;
 
         if (data && data.success) {
-            safeLocalStorageSet('fp', deviceFingerprint);
-
             const licenseData = data.details || data;
             const securityToken =
                 data.device_security_token ||
@@ -1147,12 +1238,20 @@ export const createFreeTrial = async function () {
                 licenseData.token ||
                 null;
 
-            if (securityToken) {
-                await setSecureCredentials(securityToken);
-                Logger.log('🔐 Token inicial de trial guardado correctamente.');
-            } else {
-                Logger.warn('⚠️ Trial creado, pero el servidor no devolvió token de seguridad.');
-            }
+            await runAuthenticatedLocalPersistence({
+                tenantSource: licenseData,
+                reason: 'free_trial_credentials',
+                beforeLocalPersistence: options.beforeLocalPersistence,
+                operation: async () => {
+                    safeLocalStorageSet('fp', deviceFingerprint);
+                    if (securityToken) {
+                        await setSecureCredentials(securityToken);
+                        Logger.log('🔐 Token inicial de trial guardado correctamente.');
+                    } else {
+                        Logger.warn('⚠️ Trial creado, pero el servidor no devolvió token de seguridad.');
+                    }
+                }
+            });
 
             return { success: true, details: licenseData };
         } else {
@@ -1161,6 +1260,7 @@ export const createFreeTrial = async function () {
         }
 
     } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
         if (!isRateLimit) {
             Logger.error('❌ Error creando trial:', error);
@@ -1259,7 +1359,7 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
     }
 };
 
-const buildAdminSessionResult = async (data, licenseKey) => {
+const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistence = null } = {}) => {
     if (!data?.success) {
         return {
             success: false,
@@ -1269,24 +1369,36 @@ const buildAdminSessionResult = async (data, licenseKey) => {
         };
     }
 
-    const deviceToken = data.device_security_token || data.details?.security_token || null;
-    if (deviceToken) await setSecureCredentials(deviceToken);
-    await clearStaffSessionCache();
-    if (data.admin_session_token) {
-        await setAdminSessionCredentials(
-            data.admin_session_token,
-            data.admin_session_id,
-            data.admin_session_expires_at
-        );
-    } else {
-        const existingToken = await getAdminSessionToken();
-        if (existingToken) {
-            await setAdminSessionCredentials(existingToken, data.admin_session_id, data.expires_at);
-        }
-    }
+    const tenantSource = {
+        ...data,
+        license_key: data.details?.license_key || licenseKey
+    };
 
-    const fingerprint = await getStableDeviceId();
-    safeLocalStorageSet('fp', fingerprint);
+    const deviceToken = data.device_security_token || data.details?.security_token || null;
+    await runAuthenticatedLocalPersistence({
+        tenantSource,
+        reason: 'admin_session_credentials',
+        beforeLocalPersistence,
+        operation: async () => {
+            if (deviceToken) await setSecureCredentials(deviceToken);
+            await clearStaffSessionCache();
+            if (data.admin_session_token) {
+                await setAdminSessionCredentials(
+                    data.admin_session_token,
+                    data.admin_session_id,
+                    data.admin_session_expires_at
+                );
+            } else {
+                const existingToken = await getAdminSessionToken();
+                if (existingToken) {
+                    await setAdminSessionCredentials(existingToken, data.admin_session_id, data.expires_at);
+                }
+            }
+
+            const fingerprint = await getStableDeviceId();
+            safeLocalStorageSet('fp', fingerprint);
+        }
+    });
 
     return {
         success: true,
@@ -1302,7 +1414,13 @@ const buildAdminSessionResult = async (data, licenseKey) => {
     };
 };
 
-export const enrollAdminOwnerOnDevice = async ({ licenseKey, username, password, displayName }) => {
+export const enrollAdminOwnerOnDevice = async ({
+    licenseKey,
+    username,
+    password,
+    displayName,
+    beforeLocalPersistence = null
+}) => {
     try {
         if (!navigator.onLine) return { success: false, code: 'ONLINE_REQUIRED', message: 'Necesitas internet para crear la cuenta propietaria.' };
         const [deviceFingerprint, deviceSecurityToken] = await Promise.all([
@@ -1319,14 +1437,20 @@ export const enrollAdminOwnerOnDevice = async ({ licenseKey, username, password,
             p_display_name: displayName.trim()
         });
         if (error) throw error;
-        return buildAdminSessionResult(data, licenseKey);
+        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         Logger.error('Error registrando propietario admin:', error);
         return { success: false, code: error?.code || 'ADMIN_ENROLLMENT_ERROR', message: error?.message || 'No se pudo crear la cuenta propietaria.' };
     }
 };
 
-export const adminLoginOnDevice = async ({ licenseKey, username, password }) => {
+export const adminLoginOnDevice = async ({
+    licenseKey,
+    username,
+    password,
+    beforeLocalPersistence = null
+}) => {
     try {
         if (!navigator.onLine) return { success: false, code: 'ONLINE_REQUIRED', message: 'Necesitas internet para iniciar sesion administrativa.' };
         const deviceFingerprint = await getStableDeviceId();
@@ -1339,14 +1463,15 @@ export const adminLoginOnDevice = async ({ licenseKey, username, password }) => 
             p_device_info: { userAgent: navigator.userAgent, platform: navigator.platform }
         });
         if (error) throw error;
-        return buildAdminSessionResult(data, licenseKey);
+        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         Logger.error('Error iniciando sesion admin:', error);
         return { success: false, code: error?.code || 'ADMIN_LOGIN_ERROR', message: error?.message || 'No se pudo iniciar sesion administrativa.' };
     }
 };
 
-export const verifyAdminSession = async (licenseKey) => {
+export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = null } = {}) => {
     try {
         const [deviceFingerprint, deviceSecurityToken, adminSessionToken] = await Promise.all([
             getStableDeviceId(), getDeviceSecurityToken(), getAdminSessionToken()
@@ -1362,11 +1487,16 @@ export const verifyAdminSession = async (licenseKey) => {
         });
         if (error) throw error;
         if (!data?.success || data?.valid === false) {
-            await clearAdminSessionCache();
+            await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'invalid_admin_session_cleanup' },
+                () => clearAdminSessionCache()
+            );
             return { success: false, valid: false, code: data?.code || 'ADMIN_SESSION_INVALID', message: data?.message || 'La sesion administrativa ya no es valida.' };
         }
-        return buildAdminSessionResult(data, licenseKey);
+        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         return { success: false, valid: false, code: error?.code || 'ADMIN_SESSION_ERROR', message: error?.message || 'No se pudo verificar la sesion administrativa.' };
     }
 };
@@ -1385,7 +1515,13 @@ export const adminLogoutSession = async (licenseKey) => {
             });
         }
     } finally {
-        await clearAdminSessionCache();
+        if (licenseKey) {
+            await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'admin_logout_credentials' },
+                () => clearAdminSessionCache()
+            );
+        }
     }
     return { success: true };
 };

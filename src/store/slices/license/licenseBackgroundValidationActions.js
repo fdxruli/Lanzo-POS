@@ -39,12 +39,13 @@ export const createLicenseBackgroundValidationActions = ({
     try {
       const initialState = get();
 
-      if (initialState.appStatus === 'staff_login_required') {
-        Logger.log('[Background] Login staff requerido; se conserva la pantalla actual.');
+      if (initialState.appStatus !== 'ready') {
+        Logger.log('[Background] La sesión no está lista; se conserva la pantalla actual.');
         return;
       }
 
       const localLicenseBeforeValidation = await getLicenseFromStorage();
+      if (get().appStatus !== 'ready') return;
       const licenseDetails = initialState.licenseDetails || localLicenseBeforeValidation || {
         license_key: licenseKey
       };
@@ -90,6 +91,7 @@ export const createLicenseBackgroundValidationActions = ({
         validationPromise,
         timeoutPromise
       ]);
+      if (get().appStatus !== 'ready') return;
 
       if (!serverValidation?.valid && serverValidation?.valid !== false) {
         Logger.warn('[Background] Respuesta inválida del servidor; no se marca success.');
@@ -113,8 +115,8 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
-      if (get().appStatus === 'staff_login_required') {
-        Logger.log('[Background] Login staff requerido tras validar; no se fuerza salida.');
+      if (get().appStatus !== 'ready') {
+        Logger.log('[Background] La sesión cambió tras validar; no se fuerza salida.');
         return;
       }
 

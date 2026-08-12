@@ -24,6 +24,7 @@ const readyImportMocks = vi.hoisted(() => ({
 const runtimeMocks = vi.hoisted(() => ({
   isLocalDatabasePreparationActive: vi.fn(() => true),
   prepareLocalDatabase: vi.fn(),
+  ensureLocalDatabaseReady: vi.fn(),
   retryLocalDatabaseRecovery: vi.fn()
 }));
 

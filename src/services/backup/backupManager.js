@@ -14,12 +14,21 @@ import {
   saveBackupSettings
 } from './backupConfigDb';
 import { getBackupTableScope } from './backupScope';
+import { localTenantAccessController } from '../tenant/localTenantPolicy';
 
 export const BACKUP_STATUS_EVENT = 'lanzo_backup_manager_status';
 export const BACKUP_ABORT_REASON = 'ABORTED';
 export const BACKUP_WARNING_BLOB_PERF = 'BLOB_PERF_DEGRADED';
 export const BACKUP_PIN_SESSION_KEY = 'lanzo_backup_pin_session';
 export const BACKUP_KEY_SESSION_MARKER = 'lanzo_backup_key_session:v1';
+
+const requireBackupTenantAliases = () => {
+  const tenantState = localTenantAccessController.getState();
+  if (tenantState.status !== 'granted' || tenantState.identities.length === 0) {
+    throw new Error('BACKUP_TENANT_ACCESS_REQUIRED');
+  }
+  return [...tenantState.identities];
+};
 
 function clearLegacySessionPin() {
   try {
@@ -387,6 +396,7 @@ class BackupManager {
   }
 
   async backup({ reason = 'manual', manual = true, includeBlob = false } = {}) {
+    const tenantAliases = requireBackupTenantAliases();
     await this.initialize();
     if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
     if (!this.state.unlocked) throw new Error('BACKUP_SESSION_LOCKED');
@@ -422,7 +432,8 @@ class BackupManager {
       const result = await this.callWorker('backup', {
         directoryHandle,
         reason,
-        includeBlob
+        includeBlob,
+        tenantAliases
       });
       if (result.mode === 'DOWNLOAD') this.triggerDownload(result.blob, result.fileName);
       const completedAt = new Date().toISOString();
@@ -469,6 +480,7 @@ class BackupManager {
   }
 
   async restore(file, pin) {
+    const tenantAliases = requireBackupTenantAliases();
     if (!file) throw new Error('Selecciona un archivo de respaldo.');
     this.validatePin(pin);
     await this.backup({ reason: 'pre_restore', manual: true });
@@ -477,7 +489,7 @@ class BackupManager {
     this.emit();
     try {
       db.close();
-      const result = await this.callWorker('restore', { file, pin });
+      const result = await this.callWorker('restore', { file, pin, tenantAliases });
       return result;
     } catch (error) {
       await this.recordFailure(error, false);

@@ -21,6 +21,7 @@ import {
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { markInventoryEntrySynced } from '../inventory/inventoryEntryService';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 
 let registered = false;
 
@@ -152,6 +153,7 @@ export const productSyncHandler = {
 
       return { ...migrationResult, recovery };
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       const diagnostic = serializeProductCatalogSyncError(error, {
         operation: 'product_sync_on_start', licenseKey
       });

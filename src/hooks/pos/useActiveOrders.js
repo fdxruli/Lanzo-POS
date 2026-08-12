@@ -16,6 +16,11 @@ import {
   selectNewestOrder,
   touchOrderVersion
 } from '../../services/orders/orderVersioning';
+import {
+  canAccessTenantOwnedRuntimeCache,
+  localTenantAccessController
+} from '../../services/tenant/localTenantPolicy';
+import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -59,7 +64,13 @@ export const selectCurrentOrderTableData = (state) => (
  * Hook para gestionar múltiples órdenes simultáneas en el POS.
  */
 export const useActiveOrders = create(
-  persist((set, get) => ({
+  persist((unsafeSet, get) => {
+    const set = (...args) => {
+      if (!canAccessTenantOwnedRuntimeCache()) return;
+      unsafeSet(...args);
+    };
+
+    return ({
     activeOrders: new Map(),
     currentOrderId: null,
     isLoading: false,
@@ -1133,46 +1144,11 @@ export const useActiveOrders = create(
         total: current.total
       };
     }
-  }), {
+    });
+  }, {
     name: 'lanzo-active-orders-storage',
-    storage: createJSONStorage(() => ({
-      getItem: (name) => {
-        if (typeof window === 'undefined') return null;
-        try {
-          return window.localStorage.getItem(name);
-        } catch (e) {
-          console.error(`[safeActiveOrdersStorage] Error reading ${name}`, e);
-          return null;
-        }
-      },
-      setItem: (name, value) => {
-        if (typeof window === 'undefined') return;
-        try {
-          window.localStorage.setItem(name, value);
-        } catch {
-          console.warn(`[safeActiveOrdersStorage] Quota exceeded for ${name}. Cleaning up...`);
-          try {
-            for (let i = window.localStorage.length - 1; i >= 0; i--) {
-              const key = window.localStorage.key(i);
-              if (key && key.startsWith('lanzo-') && key !== name && key !== 'lanzo-cart-storage' && key !== 'lanzo-inventory-storage') {
-                window.localStorage.removeItem(key);
-              }
-            }
-            window.localStorage.setItem(name, value);
-          } catch (cleanupError) {
-            console.error(`[safeActiveOrdersStorage] Failed to save ${name} after cleanup`, cleanupError);
-          }
-        }
-      },
-      removeItem: (name) => {
-        if (typeof window === 'undefined') return;
-        try {
-          window.localStorage.removeItem(name);
-        } catch (e) {
-          console.error(`[safeActiveOrdersStorage] Error removing ${name}`, e);
-        }
-      }
-    })),
+    storage: createJSONStorage(() => tenantScopedZustandStorage),
+    skipHydration: true,
     partialize: (state) => ({
       activeOrders: Array.from(state.activeOrders.entries()),
       currentOrderId: state.currentOrderId
@@ -1198,5 +1174,33 @@ export const useActiveOrders = create(
     }
   })
 );
+
+const setActiveOrdersStateUnsafe = useActiveOrders.setState;
+useActiveOrders.setState = (...args) => {
+  if (!canAccessTenantOwnedRuntimeCache()) return;
+  return setActiveOrdersStateUnsafe(...args);
+};
+
+localTenantAccessController.subscribe((tenantState) => {
+  if (!tenantState.enabled || tenantState.status === 'granted') return;
+
+  // Keep all serialized state intact; only the isolated tenant runtime may
+  // explicitly hydrate it after its DB and storage namespace are ready.
+  suspendTenantStorageWrites();
+  setActiveOrdersStateUnsafe({
+    activeOrders: new Map(),
+    currentOrderId: null,
+    isLoading: false,
+    pendingInventoryResolutions: new Map(),
+    isCurrentOrderLocked: false
+  });
+});
+
+export const resetAndHydrateActiveOrdersForTenant = async () => {
+  suspendTenantStorageWrites();
+  setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false });
+  await useActiveOrders.persist.rehydrate();
+};
+registerTenantStorageHydrator(resetAndHydrateActiveOrdersForTenant);
 
 // --- SUSCRIPCIÓN GLOBAL (Flujo Unidireccional: SSOT -> View) ---

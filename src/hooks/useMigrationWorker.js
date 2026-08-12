@@ -9,6 +9,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Logger from '../services/Logger';
 import { DB_NAME } from '../config/dbConfig';
+import {
+    LOCAL_TENANT_STATUS,
+    localTenantAccessController
+} from '../services/tenant/localTenantPolicy';
+
+const DEFAULT_MIGRATION_STORES = ['menu', 'product_batches'];
 
 /**
  * Estado de la migración
@@ -42,13 +48,16 @@ import { DB_NAME } from '../config/dbConfig';
 export const useMigrationWorker = (options = {}) => {
     const {
         autoStart = false,
-        stores = ['menu', 'product_batches'],
+        stores = DEFAULT_MIGRATION_STORES,
         batchSize = 500,
         onComplete,
         onError
     } = options;
 
     const workerRef = useRef(null);
+    const isRunningRef = useRef(false);
+    const configRef = useRef({ stores, batchSize });
+    const callbacksRef = useRef({ onComplete, onError });
     
     const [state, setState] = useState({
         isRunning: false,
@@ -59,6 +68,46 @@ export const useMigrationWorker = (options = {}) => {
         error: null,
         duration: 0
     });
+
+    useEffect(() => {
+        configRef.current = { stores, batchSize };
+    }, [stores, batchSize]);
+
+    useEffect(() => {
+        callbacksRef.current = { onComplete, onError };
+    }, [onComplete, onError]);
+
+    const startMigration = useCallback(() => {
+        if (!workerRef.current || isRunningRef.current) return;
+        const tenantState = localTenantAccessController.getState();
+        if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) {
+            setState((previous) => ({
+                ...previous,
+                error: 'LOCAL_TENANT_ACCESS_REQUIRED'
+            }));
+            return;
+        }
+
+        isRunningRef.current = true;
+        setState(prev => ({
+            ...prev,
+            isRunning: true,
+            isComplete: false,
+            error: null,
+            totalProcessed: 0,
+            storeProgress: {}
+        }));
+
+        workerRef.current.postMessage({
+            type: 'START',
+            payload: {
+                dbName: DB_NAME,
+                tenantAliases: [...tenantState.identities],
+                stores: configRef.current.stores,
+                batchSize: configRef.current.batchSize
+            }
+        });
+    }, []);
 
     // Inicializar worker
     useEffect(() => {
@@ -111,6 +160,7 @@ export const useMigrationWorker = (options = {}) => {
                     break;
 
                 case 'COMPLETE':
+                    isRunningRef.current = false;
                     setState(prev => ({
                         ...prev,
                         isRunning: false,
@@ -118,20 +168,22 @@ export const useMigrationWorker = (options = {}) => {
                         duration: data.results?.duration || 0
                     }));
                     Logger.info('[MigrationWorker] Migración completada:', data.results);
-                    onComplete?.(data.results);
+                    callbacksRef.current.onComplete?.(data.results);
                     break;
 
                 case 'ERROR':
+                    isRunningRef.current = false;
                     setState(prev => ({
                         ...prev,
                         isRunning: false,
                         error: data.error
                     }));
                     Logger.error('[MigrationWorker] Error:', data.error);
-                    onError?.(data.error);
+                    callbacksRef.current.onError?.(data.error);
                     break;
 
                 case 'STOPPING':
+                    isRunningRef.current = false;
                     setState(prev => ({
                         ...prev,
                         isRunning: false
@@ -144,68 +196,53 @@ export const useMigrationWorker = (options = {}) => {
         };
 
         worker.onerror = (error) => {
+            isRunningRef.current = false;
             Logger.error('[MigrationWorker] Worker error:', error);
             setState(prev => ({
                 ...prev,
                 isRunning: false,
                 error: error.message
             }));
-            onError?.(error.message);
+            callbacksRef.current.onError?.(error.message);
         };
 
         workerRef.current = worker;
 
-        // Auto-start si está configurado
-        if (autoStart) {
-            startMigration();
-        }
+        const unsubscribeTenant = localTenantAccessController.subscribe((tenantState) => {
+            if (tenantState.enabled && tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) {
+                worker.postMessage({ type: 'STOP' });
+            }
+        });
 
         // Cleanup
         return () => {
+            unsubscribeTenant();
             if (workerRef.current) {
                 workerRef.current.terminate();
+                workerRef.current = null;
             }
+            isRunningRef.current = false;
         };
-    }, []);
+    }, [startMigration]);
 
-    /**
-     * Inicia la migración.
-     */
-    const startMigration = useCallback(() => {
-        if (!workerRef.current || state.isRunning) return;
-
-        setState(prev => ({
-            ...prev,
-            isRunning: true,
-            isComplete: false,
-            error: null,
-            totalProcessed: 0,
-            storeProgress: {}
-        }));
-
-        workerRef.current.postMessage({
-            type: 'START',
-            payload: {
-                dbName: DB_NAME,
-                stores,
-                batchSize
-            }
-        });
-    }, [state.isRunning, stores, batchSize]);
+    useEffect(() => {
+        if (autoStart) startMigration();
+    }, [autoStart, startMigration]);
 
     /**
      * Detiene la migración.
      */
     const stopMigration = useCallback(() => {
-        if (!workerRef.current || !state.isRunning) return;
+        if (!workerRef.current || !isRunningRef.current) return;
 
         workerRef.current.postMessage({ type: 'STOP' });
-    }, [state.isRunning]);
+    }, []);
 
     /**
      * Reinicia el estado de la migración.
      */
     const resetMigration = useCallback(() => {
+        isRunningRef.current = false;
         setState({
             isRunning: false,
             isComplete: false,

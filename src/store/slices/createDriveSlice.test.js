@@ -3,9 +3,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { create } from 'zustand';
 import { createDriveSlice, DRIVE_SESSION_KEY } from './createDriveSlice';
+import { localTenantAccessController } from '../../services/tenant/localTenantPolicy';
 
 describe('createDriveSlice', () => {
   beforeEach(() => {
+    localTenantAccessController.reset();
     sessionStorage.clear();
     localStorage.clear();
     vi.restoreAllMocks();
@@ -78,6 +80,30 @@ describe('createDriveSlice', () => {
     expect(store.getState().driveTokenExpiresAt).toBeNull();
     expect(store.getState().isDriveConnected).toBe(false);
     expect(store.getState().needsDriveReauth).toBe(needsDriveReauth);
+    expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBeNull();
+  });
+
+  it('locks the in-memory session without deleting the tenant-owned token', () => {
+    const store = create(createDriveSlice);
+    store.getState().connectDrive({ accessToken: 'tenant-a-token', expiresIn: 3600 });
+    const persisted = sessionStorage.getItem(DRIVE_SESSION_KEY);
+
+    store.getState().lockDriveSession();
+
+    expect(store.getState().driveAccessToken).toBeNull();
+    expect(store.getState().isDriveConnected).toBe(false);
+    expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBe(persisted);
+  });
+
+  it('rejects an OAuth callback while tenant access is locked', () => {
+    localTenantAccessController.enable('logout');
+    const store = create(createDriveSlice);
+
+    expect(store.getState().connectDrive({
+      accessToken: 'late-token-a',
+      expiresIn: 3600
+    })).toBe(false);
+    expect(store.getState().driveAccessToken).toBeNull();
     expect(sessionStorage.getItem(DRIVE_SESSION_KEY)).toBeNull();
   });
 

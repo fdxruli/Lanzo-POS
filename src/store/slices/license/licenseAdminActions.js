@@ -19,6 +19,13 @@ import {
 } from '../../../services/db/databaseRecoveryState';
 import Logger from '../../../services/Logger';
 import {
+  assertLocalTenantAccess,
+  initializeLocalTenantGuard,
+  isLocalTenantAccessError,
+  lockLocalTenantAccess
+} from '../../../services/tenant/localTenantGuard';
+import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
+import {
   clearPendingAdminSession,
   clearPendingAdminSessionIfLicenseChanged,
   createPendingAdminSession,
@@ -36,9 +43,11 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     admin_user: result.admin_user || null
   };
 
+  await assertLocalTenantAccess(licenseData, { reason });
   await saveLicenseToStorage(licenseData);
   set({
     licenseDetails: licenseData,
+    _isLoggingOut: false,
     currentDeviceRole: 'admin',
     currentAdminUser: result.admin_user || null,
     currentStaffUser: null,
@@ -46,6 +55,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     adminLoginMessage: null,
     adminLoginError: null,
     adminEnrollmentRequired: false,
+    localTenantIsolation: null,
     pendingAdminSessionResult: createPendingAdminSession({ licenseKey, result })
   });
 
@@ -151,8 +161,15 @@ export const createLicenseAdminActions = ({ set, get }) => ({
   },
 
   discoverAdminAccess: async (licenseKey) => {
+    initializeLocalTenantGuard('admin_access_discovery');
+    await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_access_discovery' });
     clearPendingAdminSessionIfLicenseChanged(set, get, licenseKey, 'discover_other_license');
-    const result = await activateLicense(licenseKey);
+    const result = await activateLicense(licenseKey, {
+      beforeLocalPersistence: (details = {}) => assertLocalTenantAccess(
+        { ...details, license_key: details.license_key || licenseKey },
+        { reason: 'admin_access_activation' }
+      )
+    });
     if (result.admin_enrollment_required) {
       set({
         appStatus: 'admin_enrollment_required',
@@ -184,6 +201,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       await saveLicenseToStorage(legacyLicense);
       set({
         licenseDetails: legacyLicense,
+        _isLoggingOut: false,
         currentDeviceRole: 'admin',
         currentAdminUser: legacyLicense.admin_user || null,
         currentStaffUser: null,
@@ -206,6 +224,8 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
 
     try {
+      initializeLocalTenantGuard('admin_login');
+      await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_login' });
       const pending = get().pendingAdminSessionResult;
       const pendingValidation = validatePendingAdminSession({
         pending,
@@ -217,7 +237,15 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       }
       if (pending) clearPendingAdminSession(set, pendingValidation.reason || 'pending_session_invalid');
 
-      const result = await adminLoginOnDevice({ licenseKey, username, password });
+      const result = await adminLoginOnDevice({
+        licenseKey,
+        username,
+        password,
+        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
+          tenantSource,
+          { reason: 'admin_login_before_local_persistence' }
+        )
+      });
       if (!result.success) {
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
@@ -225,6 +253,16 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       }
       return completeAdminSession(set, get, licenseKey, result, 'admin_login');
     } catch (error) {
+      if (isLocalTenantAccessError(error)) {
+        enterLocalTenantIsolationFailure(set, error);
+        return {
+          success: false,
+          localTenantMismatch: true,
+          code: error.code,
+          message: error.message
+        };
+      }
+
       const classification = classifyDatabaseError(error);
       if (classification.structural) {
         const recoveryError = createDatabaseRecoveryError({
@@ -255,7 +293,18 @@ export const createLicenseAdminActions = ({ set, get }) => ({
   handleAdminEnrollment: async ({ username, password, displayName }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
     try {
-      const result = await enrollAdminOwnerOnDevice({ licenseKey, username, password, displayName });
+      initializeLocalTenantGuard('admin_enrollment');
+      await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_enrollment' });
+      const result = await enrollAdminOwnerOnDevice({
+        licenseKey,
+        username,
+        password,
+        displayName,
+        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
+          tenantSource,
+          { reason: 'admin_enrollment_before_local_persistence' }
+        )
+      });
       if (!result.success) {
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
@@ -263,6 +312,16 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       }
       return completeAdminSession(set, get, licenseKey, result, 'admin_enrollment');
     } catch (error) {
+      if (isLocalTenantAccessError(error)) {
+        enterLocalTenantIsolationFailure(set, error);
+        return {
+          success: false,
+          localTenantMismatch: true,
+          code: error.code,
+          message: error.message
+        };
+      }
+
       return {
         success: false,
         code: error?.code || 'ADMIN_ENROLLMENT_FAILED',
@@ -273,12 +332,32 @@ export const createLicenseAdminActions = ({ set, get }) => ({
 
   logoutAdmin: async () => {
     const licenseKey = get().licenseDetails?.license_key || get().adminLoginLicenseKey;
-    await get().stopLicenseSync();
-    await adminLogoutSession(licenseKey);
-    notifyPosCatalogSessionReset();
+    get()._invalidateProfileLoads?.();
+    get().resetEcommerceOrdersState?.();
+    get().lockDriveSession?.();
     set({
       appStatus: 'admin_login_required',
+      _isLoggingOut: true,
       currentAdminUser: null,
+      cashOpeningPolicy: 'manual',
+      adminLoginLicenseKey: licenseKey || null,
+      adminLoginMessage: 'Cerrando sesion administrativa...',
+      adminLoginError: null,
+      pendingAdminSessionResult: null
+    });
+    notifyPosCatalogSessionReset();
+    try {
+      await get().stopLicenseSync();
+      await adminLogoutSession(licenseKey);
+    } finally {
+      lockLocalTenantAccess('admin_actor_logged_out');
+      get().lockDriveSession?.();
+    }
+    set({
+      appStatus: 'admin_login_required',
+      _isLoggingOut: true,
+      currentAdminUser: null,
+      cashOpeningPolicy: 'manual',
       adminLoginLicenseKey: licenseKey || null,
       adminLoginMessage: 'Sesion administrativa cerrada.',
       adminLoginError: null,

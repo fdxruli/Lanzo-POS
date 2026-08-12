@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
+import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { addInventoryEntry } from '../inventoryEntryService';
 
 const product = (overrides = {}) => ({
@@ -11,14 +12,11 @@ const product = (overrides = {}) => ({
 
 describe('inventoryEntryService', () => {
   beforeEach(async () => {
-    db.close();
-    await db.delete();
-    await db.open();
+    await openTestTenantRuntime();
   });
 
-  afterEach(async () => {
-    db.close();
-    await db.delete();
+  afterEach(() => {
+    closeTestTenantRuntime();
   });
 
   it('applies a non-batch delta once and writes one event and outbox row', async () => {

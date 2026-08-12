@@ -170,7 +170,8 @@ class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
-    localStorage.removeItem('lanzo-cart-storage');
+    // Legacy cart storage can belong to an offline business. It is preserved
+    // for future assisted recovery and is never the active tenant cart.
     sessionStorage.clear();
     this.setState({ hasError: false, error: null, errorInfo: null, crashTimestamp: null, copied: false, isRecoveryUpdating: false });
   }
@@ -178,7 +179,7 @@ class ErrorBoundary extends React.Component {
   handleGoToPos = () => {
     Logger.log('🧹 Iniciando recuperación quirúrgica. Purgando estado volátil...');
     try {
-      localStorage.removeItem('lanzo-cart-storage');
+      // Do not delete unscoped legacy tenant data during error recovery.
       sessionStorage.clear();
       // No tocamos 'lanzo_license', 'lanzo_device_id' ni 'lanzo_show_bot'
     } catch (e) {

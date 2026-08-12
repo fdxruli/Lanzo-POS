@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db, STORES } from '../dexie';
 import { layawayRepository } from '../layaways';
+import { closeTestTenantRuntime, openTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
 const baseLayaway = (id = 'layaway-1') => ({
   id,
@@ -13,13 +14,14 @@ const baseLayaway = (id = 'layaway-1') => ({
 });
 
 beforeEach(async () => {
-  await db.open();
+  await openTestTenantRuntime();
   await db.table(STORES.LAYAWAYS).clear();
   await db.table(STORES.SALES).clear();
   await db.table(STORES.DAILY_STATS).clear();
   await db.table(STORES.CAJAS).clear();
   await db.table(STORES.MOVIMIENTOS_CAJA).clear();
 });
+afterEach(() => closeTestTenantRuntime());
 
 describe('layaway cash consistency in Free', () => {
   it('registers the initial deposit and installment exactly once in one cash ledger', async () => {

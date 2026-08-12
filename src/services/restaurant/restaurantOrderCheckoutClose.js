@@ -1,6 +1,12 @@
 import { getLicenseKeyFromDetails, isRestaurantOrdersCloudEnabled } from '../sync/syncConstants';
 import { restaurantOrdersRepository } from './restaurantOrdersRepository';
 import { CANONICAL_BUSINESS_TYPES } from '../../utils/businessType';
+import {
+  assertLocalTenantSyncAccess,
+  isLocalTenantAccessError,
+  runWithLocalTenantSyncLease
+} from '../tenant/localTenantGuard';
+import { getTenantStorageItem, setTenantStorageItem } from '../tenant/tenantScopedStorage';
 
 const STORAGE_KEY = 'lanzo:restaurant-order-close-pending:v1';
 const MAX_RETRY_COUNT = 5;
@@ -15,7 +21,7 @@ const sumNumbers = (values = []) => values.reduce((sum, value) => sum + (numeric
 const readPending = () => {
   if (!canUseStorage()) return [];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]');
+    const parsed = JSON.parse(getTenantStorageItem(STORAGE_KEY) || '[]');
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -24,7 +30,9 @@ const readPending = () => {
 
 const writePending = (rows = []) => {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows.slice(-50)));
+  // Never evict another tenant's or a legacy unscoped recovery row merely
+  // because a different tenant adds a retry entry.
+  setTenantStorageItem(STORAGE_KEY, JSON.stringify(rows));
 };
 
 const getPendingRowKey = (payload = {}) => safe(payload.idempotencyKey || payload.localOrderId);
@@ -32,7 +40,9 @@ const getPendingRowKey = (payload = {}) => safe(payload.idempotencyKey || payloa
 const savePending = (payload, error = null) => {
   const rows = readPending();
   const key = getPendingRowKey(payload);
-  const existing = rows.find((row) => getPendingRowKey(row) === key) || {};
+  const existing = rows.find((row) => (
+    row.licenseKey === payload.licenseKey && getPendingRowKey(row) === key
+  )) || {};
   const next = {
     ...existing,
     ...payload,
@@ -40,14 +50,21 @@ const savePending = (payload, error = null) => {
     failedAt: new Date().toISOString(),
     lastError: error?.message || error?.code || String(error || 'REST_7_CLOSE_PENDING')
   };
-  writePending([...rows.filter((row) => getPendingRowKey(row) !== key), next]);
+  writePending([
+    ...rows.filter((row) => (
+      row.licenseKey !== payload.licenseKey || getPendingRowKey(row) !== key
+    )),
+    next
+  ]);
 };
 
-const clearPending = (localOrderIdOrKey) => {
+const clearPending = (localOrderIdOrKey, licenseKey) => {
   const key = safe(localOrderIdOrKey);
   writePending(readPending().filter((row) => (
-    safe(row.idempotencyKey) !== key &&
-    safe(row.localOrderId) !== key
+    row.licenseKey !== licenseKey || (
+      safe(row.idempotencyKey) !== key &&
+      safe(row.localOrderId) !== key
+    )
   )));
 };
 
@@ -158,31 +175,45 @@ export const buildSplitCheckoutClosePayload = ({ localOrderId, splitResult = {},
   };
 };
 
-const closeWithPayload = async ({ payload, licenseKey }) => {
-  if (!isOnline()) {
-    savePending(payload, new Error('OFFLINE'));
-    return { success: false, retryable: true, pendingSaved: true, code: 'RESTAURANT_CLOUD_CLOSE_OFFLINE' };
-  }
-
-  try {
-    const response = await restaurantOrdersRepository.closeRestaurantOrderAfterCheckout({ licenseKey, ...payload });
-    if (response?.success === false) {
-      savePending(payload, response);
-      return { ...response, retryable: true, pendingSaved: true };
+const closeWithPayload = async ({ payload, licenseKey }) => runWithLocalTenantSyncLease(
+  { license_key: licenseKey },
+  { reason: 'restaurant_checkout_close' },
+  async () => {
+    const scopedPayload = { ...payload, licenseKey };
+    if (!isOnline()) {
+      savePending(scopedPayload, new Error('OFFLINE'));
+      return { success: false, retryable: true, pendingSaved: true, code: 'RESTAURANT_CLOUD_CLOSE_OFFLINE' };
     }
-    clearPending(payload.idempotencyKey || payload.localOrderId);
-    return response;
-  } catch (error) {
-    savePending(payload, error);
-    return {
-      success: false,
-      retryable: true,
-      pendingSaved: true,
-      code: error?.code || 'RESTAURANT_CLOUD_CLOSE_FAILED',
-      message: error?.message || 'La venta se cobro, pero no se pudo cerrar cocina cloud.'
-    };
+
+    try {
+      const response = await restaurantOrdersRepository.closeRestaurantOrderAfterCheckout({ licenseKey, ...payload });
+      await assertLocalTenantSyncAccess(
+        { license_key: licenseKey },
+        { reason: 'restaurant_checkout_close_commit' }
+      );
+      if (response?.success === false) {
+        savePending(scopedPayload, response);
+        return { ...response, retryable: true, pendingSaved: true };
+      }
+      clearPending(payload.idempotencyKey || payload.localOrderId, licenseKey);
+      return response;
+    } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
+      await assertLocalTenantSyncAccess(
+        { license_key: licenseKey },
+        { reason: 'restaurant_checkout_close_retry_save' }
+      );
+      savePending(scopedPayload, error);
+      return {
+        success: false,
+        retryable: true,
+        pendingSaved: true,
+        code: error?.code || 'RESTAURANT_CLOUD_CLOSE_FAILED',
+        message: error?.message || 'La venta se cobro, pero no se pudo cerrar cocina cloud.'
+      };
+    }
   }
-};
+);
 
 export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
   const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
@@ -210,32 +241,51 @@ export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = 
   const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId: 'retry', features });
   if (!enabled || !isOnline()) return { success: true, skipped: true, reason };
 
-  const rows = readPending().slice(0, Math.max(1, Number(maxRetries) || 3));
-  let closed = 0;
-  let failed = 0;
+  return runWithLocalTenantSyncLease(
+    { license_key: licenseKey },
+    { reason: 'restaurant_checkout_retry' },
+    async () => {
+      // Legacy unscoped rows remain untouched until an explicit recovery can
+      // identify their owner. They are never reinterpreted under this tenant.
+      const rows = readPending()
+        .filter((row) => row.licenseKey === licenseKey)
+        .slice(0, Math.max(1, Number(maxRetries) || 3));
+      let closed = 0;
+      let failed = 0;
 
-  for (const row of rows) {
-    if (!row.localOrderId || Number(row.retryCount || 0) >= MAX_RETRY_COUNT) continue;
-    try {
-      const response = await restaurantOrdersRepository.closeRestaurantOrderAfterCheckout({
-        licenseKey,
-        localOrderId: row.localOrderId,
-        paidSaleId: row.paidSaleId || null,
-        paidSaleFolio: row.paidSaleFolio || null,
-        paidTotal: row.paidTotal ?? null,
-        paymentSummary: row.paymentSummary || {},
-        idempotencyKey: row.idempotencyKey
-      });
-      if (response?.success === false) throw new Error(response.message || response.code || 'RESTAURANT_CLOUD_CLOSE_RETRY_FAILED');
-      clearPending(row.idempotencyKey || row.localOrderId);
-      closed += 1;
-    } catch (error) {
-      failed += 1;
-      savePending({ ...row, retryCount: Number(row.retryCount || 0) + 1 }, error);
+      for (const row of rows) {
+        if (!row.localOrderId || Number(row.retryCount || 0) >= MAX_RETRY_COUNT) continue;
+        try {
+          const response = await restaurantOrdersRepository.closeRestaurantOrderAfterCheckout({
+            licenseKey,
+            localOrderId: row.localOrderId,
+            paidSaleId: row.paidSaleId || null,
+            paidSaleFolio: row.paidSaleFolio || null,
+            paidTotal: row.paidTotal ?? null,
+            paymentSummary: row.paymentSummary || {},
+            idempotencyKey: row.idempotencyKey
+          });
+          await assertLocalTenantSyncAccess(
+            { license_key: licenseKey },
+            { reason: 'restaurant_checkout_retry_commit' }
+          );
+          if (response?.success === false) throw new Error(response.message || response.code || 'RESTAURANT_CLOUD_CLOSE_RETRY_FAILED');
+          clearPending(row.idempotencyKey || row.localOrderId, licenseKey);
+          closed += 1;
+        } catch (error) {
+          if (isLocalTenantAccessError(error)) throw error;
+          await assertLocalTenantSyncAccess(
+            { license_key: licenseKey },
+            { reason: 'restaurant_checkout_retry_save' }
+          );
+          failed += 1;
+          savePending({ ...row, retryCount: Number(row.retryCount || 0) + 1 }, error);
+        }
+      }
+
+      return { success: failed === 0, closed, failed, total: rows.length };
     }
-  }
-
-  return { success: failed === 0, closed, failed, total: rows.length };
+  );
 };
 
 export default {

@@ -9,6 +9,7 @@ import {
 import {
     renewLicenseService
 } from '../../../services/licenseService';
+import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
 
 const LAST_ACTIVE_STORAGE_KEY = 'lanzo_last_active';
 const LAST_OFFLINE_STORAGE_KEY = 'lanzo_last_offline';
@@ -57,9 +58,8 @@ export const createLicenseMaintenanceActions = ({
 
         // Caso límite 1: No interrumpir la carga inicial ni ejecutar en pantallas sin autenticación.
         if (
-            state.appStatus === 'loading' ||
-            state._isInitializing ||
-            state.appStatus === 'unauthenticated'
+            state.appStatus !== 'ready' ||
+            state._isInitializing
         ) {
             return;
         }
@@ -123,7 +123,12 @@ export const createLicenseMaintenanceActions = ({
     },
 
     renewLicense: async () => {
-        const { licenseDetails } = get();
+        const {
+            licenseDetails,
+            appStatus: startingAppStatus,
+            currentAdminUser: startingAdminUser,
+            currentStaffUser: startingStaffUser
+        } = get();
 
         if (!licenseDetails?.license_key) {
             return {
@@ -134,12 +139,59 @@ export const createLicenseMaintenanceActions = ({
 
         Logger.log('Solicitando revisión de licencia...');
 
+        await assertLocalTenantSyncAccess(
+            licenseDetails,
+            { reason: 'license_renewal_start' }
+        );
+
         const result = await renewLicenseService(licenseDetails.license_key);
+
+        const currentState = get();
+        const sessionChanged = currentState.licenseDetails?.license_key !== licenseDetails.license_key
+            || currentState.appStatus !== startingAppStatus
+            || currentState.currentAdminUser !== startingAdminUser
+            || currentState.currentStaffUser !== startingStaffUser;
+
+        if (sessionChanged) {
+            return {
+                success: false,
+                code: 'LICENSE_SESSION_CHANGED',
+                message: 'La sesión cambió mientras se revisaba la licencia.'
+            };
+        }
+
+        await assertLocalTenantSyncAccess(
+            licenseDetails,
+            { reason: 'license_renewal_commit' }
+        );
 
         if (result.success) {
             Logger.log('Licencia revisada correctamente. Actualizando estado local...');
 
             const rpcDetails = result.licenseDetails || {};
+            const responseHasTenantIdentity = Boolean(
+                rpcDetails.license_key
+                || rpcDetails.licenseKey
+                || rpcDetails.license_id
+                || rpcDetails.licenseId
+                || rpcDetails.details?.license_key
+                || rpcDetails.details?.licenseKey
+                || rpcDetails.details?.license_id
+                || rpcDetails.details?.licenseId
+            );
+            if (responseHasTenantIdentity) {
+                await assertLocalTenantSyncAccess(rpcDetails, {
+                    reason: 'license_renewal_response_identity'
+                });
+            }
+            const responseLicenseKey = String(rpcDetails.license_key || '').trim();
+            if (responseLicenseKey && responseLicenseKey !== licenseDetails.license_key) {
+                return {
+                    success: false,
+                    code: 'LICENSE_IDENTITY_MISMATCH',
+                    message: 'La respuesta de renovación no corresponde a la licencia activa.'
+                };
+            }
             const hasExpiryPayload = Object.prototype.hasOwnProperty.call(rpcDetails, 'expires_at') ||
                 Object.prototype.hasOwnProperty.call(result, 'expiresAt') ||
                 Object.prototype.hasOwnProperty.call(result, 'newExpiry');
@@ -147,6 +199,7 @@ export const createLicenseMaintenanceActions = ({
             const updatedLicense = {
                 ...licenseDetails,
                 ...rpcDetails,
+                license_key: licenseDetails.license_key,
                 expires_at: hasExpiryPayload
                     ? (rpcDetails.expires_at ?? result.expiresAt ?? result.newExpiry ?? null)
                     : licenseDetails.expires_at,
@@ -162,14 +215,14 @@ export const createLicenseMaintenanceActions = ({
                 localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
             };
 
+            await saveLicenseToStorage(updatedLicense);
+
             set({
                 licenseDetails: updatedLicense,
                 licenseStatus: updatedLicense.status,
                 appStatus: 'ready',
                 gracePeriodEnds: null
             });
-
-            await saveLicenseToStorage(updatedLicense);
 
             return {
                 success: true,

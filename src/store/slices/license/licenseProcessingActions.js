@@ -27,6 +27,7 @@ import {
     hasAdminSessionToken,
     verifyAdminSession
 } from '../../../services/supabase';
+import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
 
 const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
     refreshProfile ||
@@ -42,6 +43,10 @@ export const createLicenseProcessingActions = ({
 }) => ({
     _processServerValidation: async (serverValidation, localLicense, options = {}) => {
         const { refreshProfile = false, reason = 'server_validation' } = options || {};
+        await assertLocalTenantSyncAccess(
+            { ...localLicense, ...serverValidation, license_key: serverValidation?.license_key || localLicense?.license_key },
+            { reason }
+        );
         const now = new Date();
         const derivedGracePeriodEnd = deriveGracePeriodEnd(serverValidation, localLicense);
         const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
@@ -203,7 +208,8 @@ export const createLicenseProcessingActions = ({
             currentDeviceRole: finalLicenseData.device_role || 'admin',
             currentStaffUser: finalLicenseData.device_role === 'staff'
                 ? finalLicenseData.staff_user || null
-                : null
+                : null,
+            localTenantIsolation: null
         });
 
         if (shouldLoadProfileForLicense(get(), finalLicenseData.license_key, refreshProfile)) {
@@ -218,6 +224,7 @@ export const createLicenseProcessingActions = ({
 
     _processOfflineMode: async (localLicense, options = {}) => {
         const { refreshProfile = false, reason = 'offline_mode' } = options || {};
+        await assertLocalTenantSyncAccess(localLicense, { reason });
         const now = new Date();
 
         if (!localLicense.localExpiry) {
@@ -295,7 +302,8 @@ export const createLicenseProcessingActions = ({
             currentDeviceRole: updatedLocalLicense.device_role || 'admin',
             currentStaffUser: updatedLocalLicense.device_role === 'staff'
                 ? updatedLocalLicense.staff_user || null
-                : null
+                : null,
+            localTenantIsolation: null
         });
 
         if (shouldLoadProfileForLicense(get(), updatedLocalLicense.license_key, refreshProfile)) {

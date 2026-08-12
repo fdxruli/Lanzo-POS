@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -93,7 +93,7 @@ vi.mock('../pages/SettingsPage', () => ({ default: () => <div /> }));
 vi.mock('../pages/AboutPage', () => ({ default: () => <div /> }));
 
 function renderApp() {
-  return render(
+  return renderToStaticMarkup(
     <MemoryRouter>
       <App />
     </MemoryRouter>
@@ -123,18 +123,43 @@ describe('App local backup runtime gating', () => {
   it('mounts BackupRuntime and BackupReminder for FREE/local licenses', () => {
     setReadyState({ features: { cloud_pos_sync: false } });
 
-    renderApp();
+    const markup = renderApp();
 
-    expect(screen.queryByTestId('backup-runtime')).not.toBeNull();
-    expect(screen.queryByTestId('backup-reminder')).not.toBeNull();
+    expect(markup).toContain('data-testid="backup-runtime"');
+    expect(markup).toContain('data-testid="backup-reminder"');
   });
 
   it('does not mount BackupRuntime or BackupReminder for PRO/cloud licenses', () => {
     setReadyState({ features: { cloud_pos_sync: true } });
 
-    renderApp();
+    const markup = renderApp();
 
-    expect(screen.queryByTestId('backup-runtime')).toBeNull();
-    expect(screen.queryByTestId('backup-reminder')).toBeNull();
+    expect(markup).not.toContain('data-testid="backup-runtime"');
+    expect(markup).not.toContain('data-testid="backup-reminder"');
+  });
+
+  it('renders the local tenant blocker without mounting any tenant-owned runtime', () => {
+    Object.assign(storeMock.appState, {
+      appStatus: 'local_tenant_mismatch',
+      initializeApp: vi.fn(),
+      pendingTermsUpdate: null,
+      startLicenseSync: vi.fn(),
+      stopLicenseSync: vi.fn(),
+      performSystemHealthCheck: vi.fn(),
+      licenseDetails: null,
+      localTenantIsolation: {
+        code: 'LOCAL_TENANT_MISMATCH',
+        hasTenantOwnedData: true
+      },
+      leaveLocalTenantMismatch: vi.fn()
+    });
+
+    const markup = renderApp();
+
+    expect(markup).toMatch(/Este navegador contiene datos de otra licencia/i);
+    expect(markup).not.toContain('data-testid="layout"');
+    expect(markup).not.toContain('data-testid="backup-runtime"');
+    expect(markup).not.toContain('data-testid="backup-reminder"');
+    expect(storeMock.appState.startLicenseSync).not.toHaveBeenCalled();
   });
 });
