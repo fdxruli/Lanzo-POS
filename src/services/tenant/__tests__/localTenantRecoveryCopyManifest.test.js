@@ -81,6 +81,49 @@ describe('deterministic recovery copy manifest', () => {
     })).rejects.toMatchObject({ code: 'RECOVERY_COPY_PLAN_POLICY_CHANGED' });
   });
 
+  it('deeply freezes manifest and projection data after hashing', async () => {
+    const manifest = await createRecoveryCopyManifest({
+      recoveryPlan: basePlan({
+        provenDirect: [row('ref-direct', 'menu', RECOVERY_DESTINATION_ACTION.COPY_IF_PROVEN)],
+        derivedRecompute: [row('ref-recompute', 'daily_stats', RECOVERY_DESTINATION_ACTION.RECOMPUTE)]
+      }),
+      destinationSchemaFingerprint: 'sha256:schema'
+    });
+    const fingerprint = manifest.manifestFingerprint;
+    expect(Object.isFrozen(manifest)).toBe(true);
+    expect(Object.isFrozen(manifest.copyItems)).toBe(true);
+    expect(Object.isFrozen(manifest.copyItems[0])).toBe(true);
+    expect(Object.isFrozen(manifest.copyItemsByStore)).toBe(true);
+    expect(Object.isFrozen(manifest.excludedCounts)).toBe(true);
+    expect(Object.isFrozen(manifest.recomputeSummary)).toBe(true);
+
+    expect(() => manifest.copyItems.push({ ref: 'later' })).toThrow();
+    expect(() => { manifest.copyItems[0].destinationAction = 'QUARANTINE'; }).toThrow();
+    expect(() => { manifest.copyItemsByStore.menu = 99; }).toThrow();
+    expect(() => { manifest.excludedCounts.any = 99; }).toThrow();
+    expect(() => { manifest.recomputeSummary.daily_stats = 99; }).toThrow();
+    expect(manifest.manifestFingerprint).toBe(fingerprint);
+  });
+
+  it('treats every primary ref duplicate as a collision while allowing only matching quarantine summaries', () => {
+    expect(() => createRecoveryPlanExecutionProjection(basePlan({
+      provenDirect: [
+        row('same-ref', 'menu', RECOVERY_DESTINATION_ACTION.COPY_IF_PROVEN),
+        row('same-ref', 'menu', RECOVERY_DESTINATION_ACTION.COPY_IF_PROVEN)
+      ]
+    }))).toThrow(expect.objectContaining({ code: 'RECOVERY_COPY_REF_COLLISION' }));
+
+    expect(createRecoveryPlanExecutionProjection(basePlan({
+      provenDirect: [row('summary-ref', 'sync_outbox', RECOVERY_DESTINATION_ACTION.QUARANTINE, 'TIER_A')],
+      quarantined: [row('summary-ref', 'sync_outbox', RECOVERY_DESTINATION_ACTION.QUARANTINE, 'TIER_A')]
+    }))).toHaveLength(1);
+
+    expect(() => createRecoveryPlanExecutionProjection(basePlan({
+      provenDirect: [row('bad-summary-ref', 'sync_outbox', RECOVERY_DESTINATION_ACTION.QUARANTINE, 'TIER_A')],
+      quarantined: [row('bad-summary-ref', 'menu', RECOVERY_DESTINATION_ACTION.QUARANTINE, 'TIER_A')]
+    }))).toThrow(expect.objectContaining({ code: 'RECOVERY_COPY_REF_COLLISION' }));
+  });
+
   it('keeps the projection strictly redacted', () => {
     const projection = createRecoveryPlanExecutionProjection(basePlan({
       provenDirect: [row('opaque-ref', 'menu', RECOVERY_DESTINATION_ACTION.COPY_IF_PROVEN)]

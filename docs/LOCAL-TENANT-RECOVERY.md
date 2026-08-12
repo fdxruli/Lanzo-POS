@@ -242,3 +242,23 @@ RECOVERY.2A and RECOVERY.2B refuse later manifest states without mutating the
 journal or destination. RECOVERY.2C does not create binding, write destination
 business data, initialize sync metadata, replay outbox, activate the POS
 runtime, perform cloud reconciliation or use network/RPC/Supabase.
+
+### RECOVERY.2C-R1 — durable manifest lock
+
+The first fully revalidated manifest is durably locked, using only its
+redacted fingerprint, version and count summaries, in the same control-plane
+transition to `COPY_MANIFEST_BUILDING`. Both `COPY_MANIFEST_BUILDING` and
+`COPY_MANIFEST_READY` therefore refer to one immutable manifest candidate.
+Every later resume rebuilds the manifest and requires an exact match with the
+lock before it can continue. A source, policy or execution-projection drift
+remains fail-closed across repeated retries; it cannot replace the prior
+candidate, including after `FAILED_RESUMABLE`. Failures before a lock exists
+remain safely retryable once their underlying readonly prerequisite is fixed.
+
+Manifest and execution-projection data are deeply immutable after hashing.
+Any duplicate opaque ref among primary provenance rows now fails closed even
+when its redacted fields happen to match. The intentionally repeated
+`quarantined` compatibility summary is ignored only when its store, action and
+tier exactly match its primary row; an incompatible summary ref is a collision.
+RECOVERY.2C-R1 still persists no copy rows, refs, source keys, tenant aliases
+or business payloads, and performs no business-data copy.

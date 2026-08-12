@@ -675,6 +675,32 @@ const copyManifestFailure = async ({ controlDatabase, journal, error }) => {
   });
 };
 
+const manifestLockMetadata = (manifest) => ({
+  copyManifestVersion: manifest.version,
+  copyManifestFingerprint: manifest.manifestFingerprint,
+  copyManifestItemCount: manifest.copyItemCount,
+  copyManifestStoreCounts: manifest.copyItemsByStore,
+  copyManifestExcludedCounts: manifest.excludedCounts,
+  copyManifestRecomputeSummary: manifest.recomputeSummary
+});
+
+const hasManifestLock = (journal) => Boolean(journal.copyManifestFingerprint);
+
+const assertManifestLockMatches = (journal, manifest) => {
+  if (!hasManifestLock(journal)) return;
+  const expected = manifestLockMetadata(manifest);
+  if (
+    journal.copyManifestVersion !== expected.copyManifestVersion ||
+    journal.copyManifestFingerprint !== expected.copyManifestFingerprint ||
+    journal.copyManifestItemCount !== expected.copyManifestItemCount ||
+    stableJson(journal.copyManifestStoreCounts) !== stableJson(expected.copyManifestStoreCounts) ||
+    stableJson(journal.copyManifestExcludedCounts) !== stableJson(expected.copyManifestExcludedCounts) ||
+    stableJson(journal.copyManifestRecomputeSummary) !== stableJson(expected.copyManifestRecomputeSummary)
+  ) {
+    throw controlError('RECOVERY_COPY_MANIFEST_CHANGED');
+  }
+};
+
 const verifyDestinationForCopyManifest = async ({ name, journal, cryptoProvider }) => {
   const expectedDescriptor = describeDeclaredCanonicalSchema();
   const expectedFingerprint = await fingerprintDestinationSchema(expectedDescriptor, cryptoProvider);
@@ -701,7 +727,8 @@ export const createOrResumeRecoveryCopyManifest = async ({
   recoveryPlan,
   activeTenantSource,
   sourceAdapter,
-  cryptoProvider = globalThis.crypto
+  cryptoProvider = globalThis.crypto,
+  createManifest = createRecoveryCopyManifest
 } = {}) => {
   if (!controlDatabase?.transaction) throw controlError('RECOVERY_CONTROL_DATABASE_REQUIRED');
   if (!sourceAdapter?.readSnapshot) throw controlError('RECOVERY_READONLY_ADAPTER_REQUIRED');
@@ -740,22 +767,16 @@ export const createOrResumeRecoveryCopyManifest = async ({
       activeTenantSource,
       cryptoProvider
     });
-    const manifest = await createRecoveryCopyManifest({
+    const manifest = await createManifest({
       recoveryPlan,
       revalidatedPlan,
       destinationSchemaFingerprint: destination.actualFingerprint,
       cryptoProvider
     });
 
+    assertManifestLockMatches(journal, manifest);
+
     if (journal.state === RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY) {
-      if (
-        journal.copyManifestFingerprint !== manifest.manifestFingerprint ||
-        journal.copyManifestVersion !== manifest.version ||
-        journal.copyManifestItemCount !== manifest.copyItemCount ||
-        stableJson(journal.copyManifestStoreCounts) !== stableJson(manifest.copyItemsByStore)
-      ) {
-        throw controlError('RECOVERY_COPY_MANIFEST_CHANGED');
-      }
       return Object.freeze({
         tenantDatabaseId: resolved.tenantDatabaseId,
         destinationDatabaseName: name,
@@ -770,6 +791,7 @@ export const createOrResumeRecoveryCopyManifest = async ({
         state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
         failureReason: null,
         failureStage: null,
+        ...manifestLockMetadata(manifest),
         checkpoints: { copyManifestBuildingAt: now() }
       });
     }
@@ -777,12 +799,7 @@ export const createOrResumeRecoveryCopyManifest = async ({
       state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY,
       failureReason: null,
       failureStage: null,
-      copyManifestVersion: manifest.version,
-      copyManifestFingerprint: manifest.manifestFingerprint,
-      copyManifestItemCount: manifest.copyItemCount,
-      copyManifestStoreCounts: manifest.copyItemsByStore,
-      copyManifestExcludedCounts: manifest.excludedCounts,
-      copyManifestRecomputeSummary: manifest.recomputeSummary,
+      ...manifestLockMetadata(manifest),
       destinationSchemaFingerprint: destination.actualFingerprint,
       checkpoints: { copyManifestReadyAt: now() }
     });

@@ -7,6 +7,11 @@ export const RECOVERY_COPY_MANIFEST_VERSION = 1;
 const COPY_MANIFEST_FINGERPRINT_DOMAIN = 'lanzo-local-recovery-copy-manifest-v1';
 
 const manifestError = (code, details = {}) => Object.assign(new Error(code), { code, details });
+const deepFreeze = (value) => {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  Object.values(value).forEach(deepFreeze);
+  return Object.freeze(value);
+};
 const bytesToHex = (value) => Array.from(new Uint8Array(value))
   .map((byte) => byte.toString(16).padStart(2, '0'))
   .join('');
@@ -20,7 +25,7 @@ const sha256 = async (value, cryptoProvider = globalThis.crypto) => {
   return bytesToHex(result);
 };
 
-const projectionRow = (row, classification) => ({
+const projectionRow = (row, classification) => Object.freeze({
   ref: row?.ref,
   store: row?.store,
   classification,
@@ -39,27 +44,41 @@ const PLAN_BUCKETS = Object.freeze([
 
 export const createRecoveryPlanExecutionProjection = (plan) => {
   if (!plan) throw manifestError('RECOVERY_PLAN_REQUIRED');
-  const rows = PLAN_BUCKETS.flatMap(([classification, property]) => (
+  const primaryRows = PLAN_BUCKETS.flatMap(([classification, property]) => (
     (plan[property] || []).map((row) => projectionRow(row, classification))
   ));
-  // `quarantined` is a compatibility summary which repeats primary buckets.
-  // Keep only summary-only rows in the execution projection.
-  const primaryRefs = new Set(rows.map((row) => row.ref));
-  rows.push(...(plan.quarantined || [])
-    .filter((row) => !primaryRefs.has(row.ref))
-    .map((row) => projectionRow(row, 'QUARANTINED')));
-  const seen = new Map();
+  const primaryByRef = new Map();
   const uniqueRows = [];
-  for (const row of rows) {
+  for (const row of primaryRows) {
     if (!row.ref || !row.store) throw manifestError('RECOVERY_COPY_REF_REQUIRED');
-    const previous = seen.get(row.ref);
-    // A duplicate inside a primary semantic bucket is ambiguous provenance.
-    if (previous && JSON.stringify(previous) === JSON.stringify(row)) continue;
-    if (previous) throw manifestError('RECOVERY_COPY_REF_COLLISION');
-    seen.set(row.ref, row);
+    // Two primary execution rows may be distinct physical records even when
+    // their redacted projection is identical. Never deduplicate that case.
+    if (primaryByRef.has(row.ref)) throw manifestError('RECOVERY_COPY_REF_COLLISION');
+    primaryByRef.set(row.ref, row);
     uniqueRows.push(row);
   }
-  return Object.freeze(stableSortRows(uniqueRows));
+  for (const summarySourceRow of plan.quarantined || []) {
+    const summaryRow = projectionRow(summarySourceRow, 'QUARANTINED');
+    if (!summaryRow.ref || !summaryRow.store) throw manifestError('RECOVERY_COPY_REF_REQUIRED');
+    const primaryRow = primaryByRef.get(summaryRow.ref);
+    if (primaryRow) {
+      // `quarantined` is a compatibility summary. It is only redundant when
+      // it describes exactly the same primary provenance row.
+      if (
+        primaryRow.store !== summaryRow.store ||
+        primaryRow.destinationAction !== summaryRow.destinationAction ||
+        primaryRow.tier !== summaryRow.tier
+      ) {
+        throw manifestError('RECOVERY_COPY_REF_COLLISION');
+      }
+      continue;
+    }
+    if (uniqueRows.some((row) => row.ref === summaryRow.ref)) {
+      throw manifestError('RECOVERY_COPY_REF_COLLISION');
+    }
+    uniqueRows.push(summaryRow);
+  }
+  return deepFreeze(stableSortRows(uniqueRows));
 };
 
 export const createRecoveryCopyManifest = async ({
@@ -118,7 +137,7 @@ export const createRecoveryCopyManifest = async ({
     projection
   }, cryptoProvider)}`;
 
-  return Object.freeze({
+  return deepFreeze({
     ...projection,
     status: 'COPY_MANIFEST_READY',
     copyItemCount: copyItems.length,

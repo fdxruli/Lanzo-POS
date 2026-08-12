@@ -6,6 +6,7 @@ import {
   createReadOnlyLegacyInspectionAdapter,
   inspectLegacyVaultAndBuildRecoveryPlan
 } from '../localTenantRecoveryPlan';
+import { createRecoveryCopyManifest } from '../localTenantRecoveryCopyManifest';
 import { createCanonicalLanzoDatabase } from '../../db/dexie';
 import {
   CURRENT_NATIVE_DATABASE_VERSION,
@@ -85,6 +86,23 @@ const prepareSchemaReady = async ({ controlDatabase, recoveryPlan, activeTenantS
     controlDatabase, recoveryPlan, activeTenantSource
   });
   return { reserved, schema };
+};
+
+const manifestLockMetadata = (manifest) => ({
+  copyManifestVersion: manifest.version,
+  copyManifestFingerprint: manifest.manifestFingerprint,
+  copyManifestItemCount: manifest.copyItemCount,
+  copyManifestStoreCounts: manifest.copyItemsByStore,
+  copyManifestExcludedCounts: manifest.excludedCounts,
+  copyManifestRecomputeSummary: manifest.recomputeSummary
+});
+
+const createDriftedManifest = async (options) => {
+  const manifest = await createRecoveryCopyManifest(options);
+  return {
+    ...manifest,
+    manifestFingerprint: `sha256:drift-${manifest.manifestFingerprint.slice('sha256:'.length)}`
+  };
 };
 
 const deleteNativeDatabase = (name) => new Promise((resolve, reject) => {
@@ -760,6 +778,95 @@ describe('tenant recovery control plane', () => {
     })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_READY_REQUIRED' });
 
     expect(await listRecoveryControlMetadata(controlDatabase)).toEqual(before);
+  });
+
+  it('keeps a ready manifest lock sticky across repeated policy drift retries', async () => {
+    const controlDatabase = createControlDatabase();
+    const activeTenantSource = { license_key: 'ACTIVE-A' };
+    const source = await createLegacySource();
+    const sourceAdapter = createSourceAdapter(source);
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({ adapter: sourceAdapter, activeTenantSource });
+    await prepareSchemaReady({ controlDatabase, recoveryPlan: plan, activeTenantSource });
+    const first = await createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    });
+    const lockedFingerprint = first.manifest.manifestFingerprint;
+
+    await expect(createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter, createManifest: createDriftedManifest
+    })).rejects.toMatchObject({ code: 'RECOVERY_COPY_MANIFEST_CHANGED' });
+    const afterFirst = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(afterFirst.copyManifestFingerprint).toBe(lockedFingerprint);
+    expect(afterFirst.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+
+    await expect(createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter, createManifest: createDriftedManifest
+    })).rejects.toMatchObject({ code: 'RECOVERY_COPY_MANIFEST_CHANGED' });
+    const afterSecond = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(afterSecond.copyManifestFingerprint).toBe(lockedFingerprint);
+    expect(afterSecond.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+  });
+
+  it('keeps a building manifest lock across crash resume, allowing only the original manifest', async () => {
+    const controlDatabase = createControlDatabase();
+    const activeTenantSource = { license_key: 'ACTIVE-A' };
+    const source = await createLegacySource();
+    const sourceAdapter = createSourceAdapter(source);
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({ adapter: sourceAdapter, activeTenantSource });
+    await prepareSchemaReady({ controlDatabase, recoveryPlan: plan, activeTenantSource });
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    const lockedManifest = await createRecoveryCopyManifest({
+      recoveryPlan: plan,
+      destinationSchemaFingerprint: journal.destinationSchemaFingerprint
+    });
+    await controlDatabase.table('recovery_run_journal').update(journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
+      ...manifestLockMetadata(lockedManifest),
+      checkpoints: { copyManifestBuildingAt: new Date().toISOString() }
+    });
+
+    await expect(createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter, createManifest: createDriftedManifest
+    })).rejects.toMatchObject({ code: 'RECOVERY_COPY_MANIFEST_CHANGED' });
+    const blocked = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(blocked.copyManifestFingerprint).toBe(lockedManifest.manifestFingerprint);
+    expect(blocked.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+
+    await controlDatabase.table('recovery_run_journal').update(journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
+      failureReason: null,
+      failureStage: null
+    });
+    const resumed = await createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    });
+    expect(resumed.journal.runId).toBe(journal.runId);
+    expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY);
+    expect(resumed.manifest.manifestFingerprint).toBe(lockedManifest.manifestFingerprint);
+  });
+
+  it('allows retry after a pre-lock readonly inspection failure', async () => {
+    const controlDatabase = createControlDatabase();
+    const activeTenantSource = { license_key: 'ACTIVE-A' };
+    const source = await createLegacySource();
+    const sourceAdapter = createSourceAdapter(source);
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({ adapter: sourceAdapter, activeTenantSource });
+    await prepareSchemaReady({ controlDatabase, recoveryPlan: plan, activeTenantSource });
+    const failingAdapter = {
+      readSnapshot: async () => { throw Object.assign(new Error('source read unavailable'), { code: 'SOURCE_READ_UNAVAILABLE' }); }
+    };
+
+    await expect(createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter: failingAdapter
+    })).rejects.toMatchObject({ code: 'SOURCE_READ_UNAVAILABLE' });
+    const failed = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(failed.copyManifestFingerprint).toBeUndefined();
+    expect(failed.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+
+    const resumed = await createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    });
+    expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY);
   });
 
   it('prevents RECOVERY.2A and RECOVERY.2B from regressing a manifest-ready journal', async () => {
