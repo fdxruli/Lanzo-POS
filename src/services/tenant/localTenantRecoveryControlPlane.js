@@ -1,4 +1,11 @@
 import Dexie from 'dexie';
+import {
+  createCanonicalLanzoDatabase
+} from '../db/dexie';
+import {
+  CURRENT_NATIVE_DATABASE_VERSION,
+  LOCAL_TENANT_BINDING_DEXIE_VERSION
+} from '../db/databaseSchema';
 import { resolveActiveTenantIdentity } from './localTenantGuard';
 import { areLocalTenantAliasesCompatible } from './localTenantPolicy';
 import { createRecoveryContextFingerprint } from './localTenantRecoveryPlan';
@@ -11,6 +18,8 @@ export const RECOVERY_JOURNAL_STATE = Object.freeze({
   CREATED: 'CREATED',
   DESTINATION_NAMESPACE_RESERVED: 'DESTINATION_NAMESPACE_RESERVED',
   DESTINATION_READY: 'DESTINATION_READY',
+  DESTINATION_SCHEMA_INSTALLING: 'DESTINATION_SCHEMA_INSTALLING',
+  DESTINATION_SCHEMA_READY: 'DESTINATION_SCHEMA_READY',
   FAILED_RESUMABLE: 'FAILED_RESUMABLE',
   CANCELLED: 'CANCELLED'
 });
@@ -19,6 +28,7 @@ const DIRECTORY_STORE = 'tenant_destination_directory';
 const ALIAS_STORE = 'tenant_destination_aliases';
 const JOURNAL_STORE = 'recovery_run_journal';
 const ALIAS_TOKEN_DOMAIN = 'lanzo-local-recovery-destination-alias-v1';
+const DESTINATION_SCHEMA_FINGERPRINT_DOMAIN = 'lanzo-local-recovery-destination-schema-v1';
 const ALIAS_TYPE = Object.freeze({
   LICENSE_ID: 'license_id',
   LICENSE_KEY_SHA256: 'license_key_sha256'
@@ -42,6 +52,101 @@ const digest = async (value, cryptoProvider = globalThis.crypto) => {
   );
   return bytesToHex(result);
 };
+
+const stableJson = (value) => JSON.stringify(value);
+
+const normalizeKeyPath = (keyPath) => (
+  Array.isArray(keyPath) ? [...keyPath] : keyPath ?? null
+);
+
+const normalizeNativeStore = (store) => ({
+  name: store.name,
+  primaryKey: {
+    keyPath: normalizeKeyPath(store.keyPath),
+    autoIncrement: store.autoIncrement === true
+  },
+  indexes: Array.from(store.indexNames).sort().map((name) => {
+    const index = store.index(name);
+    return {
+      name,
+      keyPath: normalizeKeyPath(index.keyPath),
+      unique: index.unique === true,
+      multiEntry: index.multiEntry === true
+    };
+  })
+});
+
+const requestResult = (request, code) => new Promise((resolve, reject) => {
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(controlError(code));
+});
+
+const inspectPhysicalDestinationSchema = async (name, { requireExisting = true } = {}) => {
+  if (requireExisting) await assertDestinationNamespaceExists(name);
+  const database = await openDestinationNamespace(name);
+  try {
+    const storeNames = Array.from(database.objectStoreNames).sort();
+    const stores = storeNames.map((storeName) => {
+      const transaction = database.transaction(storeName, 'readonly');
+      return normalizeNativeStore(transaction.objectStore(storeName));
+    });
+    const counts = {};
+    for (const storeName of storeNames) {
+      const transaction = database.transaction(storeName, 'readonly');
+      counts[storeName] = await requestResult(
+        transaction.objectStore(storeName).count(),
+        'RECOVERY_DESTINATION_SCHEMA_INSPECTION_FAILED'
+      );
+    }
+    return {
+      nativeVersion: database.version,
+      stores,
+      counts,
+      totalRows: Object.values(counts).reduce((total, count) => total + count, 0)
+    };
+  } finally {
+    database.close();
+  }
+};
+
+const describeDeclaredCanonicalSchema = () => {
+  const database = createCanonicalLanzoDatabase('__lanzo_recovery_schema_descriptor__');
+  try {
+    return {
+      dexieVersion: LOCAL_TENANT_BINDING_DEXIE_VERSION,
+      nativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
+      stores: database.tables.map((table) => ({
+        name: table.name,
+        primaryKey: {
+          keyPath: normalizeKeyPath(table.schema.primKey.keyPath),
+          autoIncrement: table.schema.primKey.auto === true
+        },
+        indexes: table.schema.indexes.map((index) => ({
+          name: index.name,
+          keyPath: normalizeKeyPath(index.keyPath),
+          unique: index.unique === true,
+          multiEntry: index.multi === true
+        })).sort((left, right) => left.name.localeCompare(right.name))
+      })).sort((left, right) => left.name.localeCompare(right.name))
+    };
+  } finally {
+    database.close();
+  }
+};
+
+export const describeCanonicalRecoveryDestinationSchema = () => (
+  Object.freeze(describeDeclaredCanonicalSchema())
+);
+
+const descriptorFromPhysicalInspection = (inspection) => ({
+  dexieVersion: LOCAL_TENANT_BINDING_DEXIE_VERSION,
+  nativeVersion: inspection.nativeVersion,
+  stores: inspection.stores
+});
+
+const fingerprintDestinationSchema = async (descriptor, cryptoProvider) => (
+  `sha256:${await digest({ domain: DESTINATION_SCHEMA_FINGERPRINT_DOMAIN, descriptor }, cryptoProvider)}`
+);
 
 const aliasToken = async (alias, cryptoProvider) => (
   `alias-token:${await digest([ALIAS_TOKEN_DOMAIN, alias], cryptoProvider)}`
@@ -251,6 +356,22 @@ const updateJournal = async (controlDatabase, runId, update) => {
   return next;
 };
 
+const findExistingRecoveryJournalForIdentity = async ({
+  controlDatabase,
+  identity,
+  cryptoProvider
+}) => {
+  const tokens = await typedAliasTokens(identity.aliases, cryptoProvider);
+  const aliases = await controlDatabase.table(ALIAS_STORE).where('aliasToken').anyOf(
+    tokens.map((entry) => entry.aliasToken)
+  ).toArray();
+  const destinations = [...new Set(aliases.map((entry) => entry.tenantDatabaseId))];
+  if (destinations.length !== 1) return null;
+  const journal = latestResumableJournal(await controlDatabase.table(JOURNAL_STORE)
+    .where('tenantDatabaseId').equals(destinations[0]).toArray());
+  return journal ? { tenantDatabaseId: destinations[0], journal } : null;
+};
+
 /**
  * RECOVERY.2A control-plane entry point. It has no legacy database argument
  * and therefore cannot obtain a write-capable LanzoDB1 handle or copy rows.
@@ -274,6 +395,15 @@ export const createOrResumeRecoveryInfrastructure = async ({
   if (currentContextFingerprint !== recoveryPlan.recoveryContextFingerprint) {
     throw controlError('RECOVERY_TENANT_CONTEXT_CHANGED');
   }
+  const existingBeforeReservation = await findExistingRecoveryJournalForIdentity({
+    controlDatabase, identity, cryptoProvider
+  });
+  if (
+    existingBeforeReservation?.journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING ||
+    existingBeforeReservation?.journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY
+  ) {
+    throw controlError('RECOVERY_DESTINATION_PHASE_ADVANCED');
+  }
   const reservation = await reserveDirectoryAndJournal({
     controlDatabase,
     identity,
@@ -284,6 +414,15 @@ export const createOrResumeRecoveryInfrastructure = async ({
   const name = destinationDatabaseName(reservation.tenantDatabaseId);
 
   if (reservation.resumed) assertJournalMatchesPlan(journal, recoveryPlan);
+
+  if (
+    journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING ||
+    journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY
+  ) {
+    // RECOVERY.2A owns only the empty v1 namespace. An advanced journal is
+    // intentionally left untouched for RECOVERY.2B to revalidate.
+    throw controlError('RECOVERY_DESTINATION_PHASE_ADVANCED');
+  }
 
   const wasReady = journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_READY;
   if (!wasReady) {
@@ -320,6 +459,194 @@ export const createOrResumeRecoveryInfrastructure = async ({
     journal,
     resumed: reservation.resumed
   });
+};
+
+const resolveExistingRecoveryJournal = async ({
+  controlDatabase,
+  identity,
+  recoveryPlan,
+  cryptoProvider
+}) => {
+  const aliasesTable = controlDatabase.table(ALIAS_STORE);
+  const directory = controlDatabase.table(DIRECTORY_STORE);
+  const journals = controlDatabase.table(JOURNAL_STORE);
+  const tokens = await typedAliasTokens(identity.aliases, cryptoProvider);
+  const existingAliases = await aliasesTable.where('aliasToken').anyOf(
+    tokens.map((entry) => entry.aliasToken)
+  ).toArray();
+  const destinations = [...new Set(existingAliases.map((entry) => entry.tenantDatabaseId))];
+  if (destinations.length !== 1) throw controlError('RECOVERY_DESTINATION_READY_REQUIRED');
+  const tenantDatabaseId = destinations[0];
+  const destinationAliases = await aliasesTable.where('tenantDatabaseId').equals(tenantDatabaseId).toArray();
+  if (!areTypedAliasTokensCompatible(destinationAliases, tokens)) {
+    throw controlError('RECOVERY_DESTINATION_ALIAS_INCOMPATIBLE');
+  }
+  if (!await directory.get(tenantDatabaseId)) throw controlError('RECOVERY_DESTINATION_DIRECTORY_MISSING');
+  const journal = latestResumableJournal(await journals.where('tenantDatabaseId').equals(tenantDatabaseId).toArray());
+  if (!journal) throw controlError('RECOVERY_DESTINATION_READY_REQUIRED');
+  assertJournalMatchesPlan(journal, recoveryPlan);
+  return { tenantDatabaseId, journal };
+};
+
+const isEmptyReservationInspection = (inspection) => (
+  inspection.nativeVersion === RECOVERY_DESTINATION_NAMESPACE_VERSION &&
+  inspection.stores.length === 0 &&
+  inspection.totalRows === 0
+);
+
+const installCanonicalDestinationSchema = async (name) => {
+  const destination = createCanonicalLanzoDatabase(name);
+  try {
+    await destination.open();
+  } finally {
+    destination.close();
+  }
+};
+
+const schemaFailure = async ({ controlDatabase, journal, error }) => {
+  await updateJournal(controlDatabase, journal.runId, {
+    state: RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE,
+    failureStage: 'DESTINATION_SCHEMA',
+    failureReason: error?.code || 'RECOVERY_DESTINATION_SCHEMA_FAILED',
+    checkpoints: { destinationSchemaFailureAt: now() }
+  });
+};
+
+const verifyCanonicalDestinationSchema = async ({
+  name,
+  expectedDescriptor,
+  expectedFingerprint,
+  persistedFingerprint = null,
+  requirePersistedFingerprint = false,
+  cryptoProvider
+}) => {
+  const inspection = await inspectPhysicalDestinationSchema(name, { requireExisting: true });
+  const actualDescriptor = descriptorFromPhysicalInspection(inspection);
+  const actualFingerprint = await fingerprintDestinationSchema(actualDescriptor, cryptoProvider);
+  if (requirePersistedFingerprint && !persistedFingerprint) {
+    throw controlError('RECOVERY_DESTINATION_SCHEMA_FINGERPRINT_MISSING');
+  }
+  if (persistedFingerprint && persistedFingerprint !== expectedFingerprint) {
+    throw controlError('RECOVERY_DESTINATION_SCHEMA_CODE_CHANGED');
+  }
+  if (
+    stableJson(actualDescriptor) !== stableJson(expectedDescriptor) ||
+    actualFingerprint !== expectedFingerprint ||
+    inspection.totalRows !== 0
+  ) {
+    throw controlError('RECOVERY_DESTINATION_SCHEMA_MISMATCH');
+  }
+  return { inspection, actualFingerprint };
+};
+
+/**
+ * RECOVERY.2B installs and verifies only the canonical destination schema.
+ * It never receives a LanzoDB1 handle and does not activate the destination.
+ */
+export const createOrResumeRecoveryDestinationSchema = async ({
+  controlDatabase,
+  recoveryPlan,
+  activeTenantSource,
+  cryptoProvider = globalThis.crypto,
+  installSchema = installCanonicalDestinationSchema
+} = {}) => {
+  if (!controlDatabase?.transaction) throw controlError('RECOVERY_CONTROL_DATABASE_REQUIRED');
+  requireEligibleRecoveryPlan(recoveryPlan);
+  await controlDatabase.open();
+  const identity = await resolveActiveTenantIdentity(activeTenantSource, cryptoProvider);
+  const currentContextFingerprint = await createRecoveryContextFingerprint({
+    sourceSnapshotFingerprint: recoveryPlan.sourceSnapshotFingerprint,
+    activeTenantAliases: identity.aliases,
+    cryptoProvider
+  });
+  if (currentContextFingerprint !== recoveryPlan.recoveryContextFingerprint) {
+    throw controlError('RECOVERY_TENANT_CONTEXT_CHANGED');
+  }
+
+  const resolved = await resolveExistingRecoveryJournal({
+    controlDatabase, identity, recoveryPlan, cryptoProvider
+  });
+  let journal = resolved.journal;
+  const name = destinationDatabaseName(resolved.tenantDatabaseId);
+  const expectedDescriptor = describeDeclaredCanonicalSchema();
+  const expectedFingerprint = await fingerprintDestinationSchema(expectedDescriptor, cryptoProvider);
+
+  if (journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY) {
+    try {
+      const verified = await verifyCanonicalDestinationSchema({
+        name,
+        expectedDescriptor,
+        expectedFingerprint,
+        persistedFingerprint: journal.destinationSchemaFingerprint,
+        requirePersistedFingerprint: true,
+        cryptoProvider
+      });
+      return Object.freeze({
+        tenantDatabaseId: resolved.tenantDatabaseId,
+        destinationDatabaseName: name,
+        journal: { ...journal, destinationSchemaFingerprint: verified.actualFingerprint },
+        resumed: true
+      });
+    } catch (error) {
+      await schemaFailure({ controlDatabase, journal, error });
+      throw error;
+    }
+  }
+
+  if (journal.state === RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE && journal.failureStage !== 'DESTINATION_SCHEMA') {
+    throw controlError('RECOVERY_DESTINATION_FAILURE_STAGE_NOT_RESUMABLE');
+  }
+  if (![
+    RECOVERY_JOURNAL_STATE.DESTINATION_READY,
+    RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING,
+    RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE
+  ].includes(journal.state)) {
+    throw controlError('RECOVERY_DESTINATION_READY_REQUIRED');
+  }
+
+  try {
+    const before = await inspectPhysicalDestinationSchema(name, { requireExisting: true });
+    const beforeDescriptor = descriptorFromPhysicalInspection(before);
+    const beforeFingerprint = await fingerprintDestinationSchema(beforeDescriptor, cryptoProvider);
+    const isCanonical = stableJson(beforeDescriptor) === stableJson(expectedDescriptor)
+      && beforeFingerprint === expectedFingerprint
+      && before.totalRows === 0;
+    if (!isCanonical && !isEmptyReservationInspection(before)) {
+      throw controlError('RECOVERY_DESTINATION_SCHEMA_MISMATCH');
+    }
+
+    if (journal.state !== RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING) {
+      journal = await updateJournal(controlDatabase, journal.runId, {
+        state: RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING,
+        failureReason: null,
+        failureStage: null,
+        checkpoints: { destinationSchemaInstallingAt: now() }
+      });
+    }
+
+    if (!isCanonical) await installSchema(name);
+    const verified = await verifyCanonicalDestinationSchema({
+      name, expectedDescriptor, expectedFingerprint, cryptoProvider
+    });
+    journal = await updateJournal(controlDatabase, journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY,
+      failureReason: null,
+      failureStage: null,
+      destinationSchemaFingerprint: verified.actualFingerprint,
+      destinationDexieVersion: LOCAL_TENANT_BINDING_DEXIE_VERSION,
+      destinationNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
+      checkpoints: { destinationSchemaReadyAt: now() }
+    });
+    return Object.freeze({
+      tenantDatabaseId: resolved.tenantDatabaseId,
+      destinationDatabaseName: name,
+      journal,
+      resumed: resolved.journal.state !== RECOVERY_JOURNAL_STATE.DESTINATION_READY
+    });
+  } catch (error) {
+    await schemaFailure({ controlDatabase, journal, error });
+    throw error;
+  }
 };
 
 export const listRecoveryControlMetadata = async (controlDatabase) => {

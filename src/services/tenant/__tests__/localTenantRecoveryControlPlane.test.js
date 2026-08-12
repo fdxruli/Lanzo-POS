@@ -3,10 +3,16 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildLegacyRecoveryPlan } from '../localTenantRecoveryPlan';
 import {
+  CURRENT_NATIVE_DATABASE_VERSION,
+  LOCAL_TENANT_BINDING_DEXIE_VERSION
+} from '../../db/databaseSchema';
+import {
   RECOVERY_DESTINATION_NAMESPACE_VERSION,
   RECOVERY_JOURNAL_STATE,
+  createOrResumeRecoveryDestinationSchema,
   createOrResumeRecoveryInfrastructure,
   createRecoveryControlDatabase,
+  describeCanonicalRecoveryDestinationSchema,
   listRecoveryControlMetadata
 } from '../localTenantRecoveryControlPlane';
 
@@ -51,6 +57,29 @@ const inspectDestination = (name) => new Promise((resolve, reject) => {
     const storeNames = Array.from(database.objectStoreNames);
     database.close();
     resolve(storeNames);
+  };
+  request.onerror = () => reject(request.error);
+});
+
+const inspectDestinationRows = (name) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name);
+  request.onsuccess = async () => {
+    const database = request.result;
+    try {
+      const counts = {};
+      for (const storeName of Array.from(database.objectStoreNames)) {
+        counts[storeName] = await new Promise((countResolve, countReject) => {
+          const count = database.transaction(storeName, 'readonly').objectStore(storeName).count();
+          count.onsuccess = () => countResolve(count.result);
+          count.onerror = () => countReject(count.error);
+        });
+      }
+      resolve({ version: database.version, counts });
+    } catch (error) {
+      reject(error);
+    } finally {
+      database.close();
+    }
   };
   request.onerror = () => reject(request.error);
 });
@@ -431,5 +460,137 @@ describe('tenant recovery control plane', () => {
     expect(sourceWrites.every((spy) => spy.mock.calls.length === 0)).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
     await expect(source.table('menu').count()).resolves.toBe(1);
+  });
+
+  it('installs the canonical schema from a v1 reservation with every destination store empty', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const reserved = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(reserved.destinationDatabaseName);
+
+    const installed = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const expected = describeCanonicalRecoveryDestinationSchema();
+    const destination = await inspectDestinationRows(reserved.destinationDatabaseName);
+
+    expect(installed.journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY);
+    expect(installed.journal.destinationDexieVersion).toBe(LOCAL_TENANT_BINDING_DEXIE_VERSION);
+    expect(installed.journal.destinationNativeVersion).toBe(CURRENT_NATIVE_DATABASE_VERSION);
+    expect(destination.version).toBe(CURRENT_NATIVE_DATABASE_VERSION);
+    expect(Object.keys(destination.counts).sort()).toEqual(expected.stores.map((store) => store.name));
+    expect(Object.values(destination.counts).every((count) => count === 0)).toBe(true);
+    expect(destination.counts.local_tenant_binding).toBe(0);
+    expect(destination.counts.sync_outbox).toBe(0);
+    expect(destination.counts.sync_meta).toBe(0);
+  });
+
+  it('revalidates an installed canonical destination idempotently without duplicate metadata', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const reserved = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(reserved.destinationDatabaseName);
+    const first = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const resumed = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const metadata = await listRecoveryControlMetadata(controlDatabase);
+
+    expect(resumed.tenantDatabaseId).toBe(first.tenantDatabaseId);
+    expect(resumed.journal.runId).toBe(first.journal.runId);
+    expect(resumed.journal.destinationSchemaFingerprint).toBe(first.journal.destinationSchemaFingerprint);
+    expect(metadata.directory).toHaveLength(1);
+    expect(metadata.journals).toHaveLength(1);
+  });
+
+  it('recovers a crash after the canonical physical commit using the same journal', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const reserved = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(reserved.destinationDatabaseName);
+    const installed = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    await controlDatabase.table('recovery_run_journal').update(installed.journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING,
+      destinationSchemaFingerprint: null,
+      updatedAt: new Date().toISOString()
+    });
+
+    const resumed = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    expect(resumed.journal.runId).toBe(installed.journal.runId);
+    expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY);
+  });
+
+  it('safely retries schema installation from a crash before the physical commit', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const reserved = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(reserved.destinationDatabaseName);
+    await controlDatabase.table('recovery_run_journal').update(reserved.journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING,
+      updatedAt: new Date().toISOString()
+    });
+
+    const retried = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    expect(retried.journal.runId).toBe(reserved.journal.runId);
+    expect(retried.journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY);
+    await expect(inspectDestinationRows(reserved.destinationDatabaseName)).resolves.toMatchObject({
+      version: CURRENT_NATIVE_DATABASE_VERSION
+    });
+  });
+
+  it('fails closed when a schema-ready destination is structurally tampered and preserves it', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const reserved = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(reserved.destinationDatabaseName);
+    await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    await openDestinationAtVersion(reserved.destinationDatabaseName, CURRENT_NATIVE_DATABASE_VERSION + 1,
+      (database) => database.createObjectStore('unexpected_store'));
+
+    await expect(createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_SCHEMA_MISMATCH' });
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(journal.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+    await expect(inspectDestination(reserved.destinationDatabaseName)).resolves.toContain('unexpected_store');
+  });
+
+  it('prevents the RECOVERY.2A entry point from regressing a schema-ready journal', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const reserved = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(reserved.destinationDatabaseName);
+    const installed = await createOrResumeRecoveryDestinationSchema({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    await expect(createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_PHASE_ADVANCED' });
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY);
+    expect(journal.runId).toBe(installed.journal.runId);
   });
 });
