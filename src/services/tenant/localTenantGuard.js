@@ -2,6 +2,10 @@ import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
 import { closeTenantRuntime, getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
 import {
+  inspectActiveTenantStorageSnapshot,
+  TenantScopedStorageInspectionError
+} from './tenantScopedStorage';
+import {
   DEVICE_SCOPED_SYNC_CACHE_KEYS,
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
@@ -239,6 +243,19 @@ const readTenantOwnedBrowserStorageSnapshot = (browserStorage) => {
   }
 
   return { counts, occupiedStores: occupiedStores.sort() };
+};
+
+const readActiveTenantBrowserStorageSnapshot = () => {
+  try {
+    return inspectActiveTenantStorageSnapshot();
+  } catch (error) {
+    if (!(error instanceof TenantScopedStorageInspectionError)) throw error;
+    throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.STORAGE_INSPECTION_FAILED, {
+      reason: error.code === 'TENANT_STORAGE_ACCESS_DENIED'
+        ? 'local_storage_access_denied'
+        : 'active_tenant_storage_inspection_failed'
+    });
+  }
 };
 
 const readTenantOwnedSessionStorageSnapshot = (sessionStorage) => {
@@ -511,7 +528,7 @@ const getNativeStoreNames = (nativeDatabase) => Array.from(nativeDatabase.object
 const queueSnapshotRequests = (
   transaction,
   storeNames,
-  browserStorage,
+  readBrowserStorageSnapshot,
   tenantSessionStorage
 ) => {
   const bindingRequest = storeNames.includes(LOCAL_TENANT_BINDING_STORE)
@@ -531,7 +548,7 @@ const queueSnapshotRequests = (
 
   return Promise.all([bindingRequest, Promise.all(storeRequests)])
     .then(([binding, storeResults]) => {
-      const localSnapshot = readTenantOwnedBrowserStorageSnapshot(browserStorage);
+      const localSnapshot = readBrowserStorageSnapshot();
       const sessionSnapshot = readTenantOwnedSessionStorageSnapshot(tenantSessionStorage);
       return buildSnapshot({
         binding,
@@ -549,7 +566,7 @@ const queueSnapshotRequests = (
 
 const readNativeSnapshot = (
   nativeDatabase,
-  browserStorage,
+  readBrowserStorageSnapshot,
   tenantSessionStorage
 ) => new Promise((resolve, reject) => {
   const storeNames = getNativeStoreNames(nativeDatabase);
@@ -560,7 +577,7 @@ const readNativeSnapshot = (
   transaction.onerror = () => reject(transaction.error || new Error('LOCAL_TENANT_INSPECTION_FAILED'));
   transaction.onabort = () => reject(transaction.error || new Error('LOCAL_TENANT_INSPECTION_ABORTED'));
 
-  queueSnapshotRequests(transaction, storeNames, browserStorage, tenantSessionStorage)
+  queueSnapshotRequests(transaction, storeNames, readBrowserStorageSnapshot, tenantSessionStorage)
     .then((value) => {
       snapshot = value;
     })
@@ -604,7 +621,7 @@ const commitBindingIfUnchanged = (
   nativeDatabase,
   expectedSnapshot,
   bindingRecord,
-  browserStorage,
+  readBrowserStorageSnapshot,
   tenantSessionStorage
 ) => (
   new Promise((resolve, reject) => {
@@ -621,7 +638,7 @@ const commitBindingIfUnchanged = (
       if (!rejected) reject(transaction.error || new Error('LOCAL_TENANT_BINDING_ABORTED'));
     };
 
-    queueSnapshotRequests(transaction, storeNames, browserStorage, tenantSessionStorage)
+    queueSnapshotRequests(transaction, storeNames, readBrowserStorageSnapshot, tenantSessionStorage)
       .then((currentSnapshot) => {
         if (comparableSnapshot(currentSnapshot) !== comparableSnapshot(expectedSnapshot)) {
           rejected = true;
@@ -826,6 +843,9 @@ export const createLocalTenantGuard = ({
   cryptoProvider = globalThis.crypto,
   browserStorage = getDefaultBrowserStorage(),
   tenantSessionStorage = getDefaultSessionStorage(),
+  activeTenantStorageInspector = database === defaultDatabase
+    ? readActiveTenantBrowserStorageSnapshot
+    : null,
   ensureReady = database === defaultDatabase
     ? ensureLocalDatabaseReady
     : async () => {
@@ -837,6 +857,13 @@ export const createLocalTenantGuard = ({
   let nextSyncLeaseId = 1;
   let lastAttemptedTenantIdentity = null;
   const resolveIdentity = (source) => resolveActiveTenantIdentity(source, cryptoProvider);
+  const readRuntimeBrowserStorageSnapshot = activeTenantStorageInspector || (() => (
+    readTenantOwnedBrowserStorageSnapshot(browserStorage)
+  ));
+  // Legacy inspection is deliberately diagnostic/recovery-only. The normal
+  // isolated runtime never invokes this reader for defaultGuard.
+  const readLegacyBrowserStorageSnapshot = () => readTenantOwnedBrowserStorageSnapshot(browserStorage);
+  const runtimeSessionStorage = activeTenantStorageInspector ? null : tenantSessionStorage;
   const blockForLocalTenantError = (error) => {
     if (!isLocalTenantAccessError(error)) return;
     controller.block(
@@ -857,8 +884,8 @@ export const createLocalTenantGuard = ({
   const inspectTenantOwnedLocalData = async () => {
     const snapshot = await readNativeSnapshot(
       await getNativeDatabase(),
-      browserStorage,
-      tenantSessionStorage
+      readRuntimeBrowserStorageSnapshot,
+      runtimeSessionStorage
     );
     return publicInspection(snapshot);
   };
@@ -867,7 +894,7 @@ export const createLocalTenantGuard = ({
     const nativeDatabase = await getNativeDatabase();
     const snapshot = await readNativeSnapshot(
       nativeDatabase,
-      browserStorage,
+      readLegacyBrowserStorageSnapshot,
       tenantSessionStorage
     );
     const activeIdentity = activeSource
@@ -885,8 +912,8 @@ export const createLocalTenantGuard = ({
   const getLocalTenantBinding = async () => {
     const snapshot = await readNativeSnapshot(
       await getNativeDatabase(),
-      browserStorage,
-      tenantSessionStorage
+      readRuntimeBrowserStorageSnapshot,
+      runtimeSessionStorage
     );
     return snapshot.binding
       ? {
@@ -931,8 +958,8 @@ export const createLocalTenantGuard = ({
       try {
         snapshot = await readNativeSnapshot(
           nativeDatabase,
-          browserStorage,
-          tenantSessionStorage
+          readRuntimeBrowserStorageSnapshot,
+          runtimeSessionStorage
         );
       } catch (error) {
         blockForLocalTenantError(error);
@@ -992,8 +1019,8 @@ export const createLocalTenantGuard = ({
           nativeDatabase,
           snapshot,
           bindingRecord,
-          browserStorage,
-          tenantSessionStorage
+          readRuntimeBrowserStorageSnapshot,
+          runtimeSessionStorage
         );
 
         if (!bindingMatchesIdentity(committed.binding, activeIdentity)) {
@@ -1024,8 +1051,8 @@ export const createLocalTenantGuard = ({
 
     const latest = await readNativeSnapshot(
       nativeDatabase,
-      browserStorage,
-      tenantSessionStorage
+      readRuntimeBrowserStorageSnapshot,
+      runtimeSessionStorage
     );
     const error = createBlockedError(
       LOCAL_TENANT_ERROR_CODES.SNAPSHOT_CHANGED,

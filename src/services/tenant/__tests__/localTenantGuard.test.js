@@ -10,6 +10,11 @@ import {
   createLocalTenantAccessController,
   installLocalTenantDbMiddleware
 } from '../localTenantPolicy';
+import {
+  clearActiveTenantStorageNamespace,
+  inspectActiveTenantStorageSnapshot,
+  setActiveTenantStorageNamespace
+} from '../tenantScopedStorage';
 
 const databases = [];
 
@@ -27,7 +32,8 @@ const createMemoryStorage = () => {
 
 const createDatabase = async ({
   browserStorage = null,
-  tenantSessionStorage = null
+  tenantSessionStorage = null,
+  activeTenantStorageInspector = null
 } = {}) => {
   const name = `lanzo-tenant-guard-${crypto.randomUUID()}`;
   const database = new Dexie(name);
@@ -56,7 +62,8 @@ const createDatabase = async ({
       database,
       controller,
       browserStorage,
-      tenantSessionStorage
+      tenantSessionStorage,
+      activeTenantStorageInspector
     })
   };
 };
@@ -85,6 +92,7 @@ const seedLegacyBusiness = async (database, tenant = 'TENANT-A') => {
 };
 
 afterEach(async () => {
+  clearActiveTenantStorageNamespace();
   await Promise.all(databases.splice(0).map(async (database) => {
     const name = database.name;
     database.close();
@@ -93,6 +101,48 @@ afterEach(async () => {
 });
 
 describe('LocalTenantGuard', () => {
+  it('binds A and B isolated databases without reading or adopting legacy unscoped storage', async () => {
+    const aOpaqueId = 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const bOpaqueId = 't_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const legacyKey = 'lanzo-active-orders-storage';
+    const legacyPayload = JSON.stringify({ state: { activeOrders: [['legacy', { id: 'legacy' }]] } });
+    const browserStorage = createMemoryStorage();
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: browserStorage } });
+    try {
+      browserStorage.setItem(legacyKey, legacyPayload);
+
+      setActiveTenantStorageNamespace(aOpaqueId);
+      const a = await createDatabase({ activeTenantStorageInspector: inspectActiveTenantStorageSnapshot });
+      a.guard.initialize();
+      await expect(a.guard.assertLocalTenantAccess({ license_key: 'TENANT-A' })).resolves.toMatchObject({ status: 'bound' });
+      const aBinding = await a.guard.getLocalTenantBinding();
+      const aScopedKey = `lanzo:t:${aOpaqueId}:active-orders`;
+      browserStorage.setItem(aScopedKey, 'A-payload');
+      expect(browserStorage.getItem(legacyKey)).toBe(legacyPayload);
+
+      clearActiveTenantStorageNamespace();
+      setActiveTenantStorageNamespace(bOpaqueId);
+      const b = await createDatabase({ activeTenantStorageInspector: inspectActiveTenantStorageSnapshot });
+      b.guard.initialize();
+      await expect(b.guard.assertLocalTenantAccess({ license_key: 'TENANT-B' })).resolves.toMatchObject({ status: 'bound' });
+      expect((await b.guard.inspectTenantOwnedLocalData()).occupiedStores).toEqual([]);
+      expect(await b.guard.getLocalTenantBinding()).not.toEqual(aBinding);
+      expect(browserStorage.getItem(legacyKey)).toBe(legacyPayload);
+      expect(browserStorage.getItem(`lanzo:t:${bOpaqueId}:active-orders`)).toBeNull();
+
+      clearActiveTenantStorageNamespace();
+      setActiveTenantStorageNamespace(aOpaqueId);
+      await expect(a.guard.assertLocalTenantAccess({ license_key: 'TENANT-A' })).resolves.toMatchObject({ status: 'pass' });
+      expect((await a.guard.inspectTenantOwnedLocalData()).occupiedStores).toEqual([`localStorage:${aScopedKey}`]);
+      expect(browserStorage.getItem(legacyKey)).toBe(legacyPayload);
+    } finally {
+      clearActiveTenantStorageNamespace();
+      if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+      else delete globalThis.window;
+    }
+  });
+
   it('keeps sync fail-closed until the production guard is initialized and granted', async () => {
     const { guard } = await createDatabase();
 

@@ -7,6 +7,50 @@ const hydrators = new Set();
 
 const physicalKey = (logicalKey) => activeNamespace ? `${PREFIX}${activeNamespace}:${logicalKey}` : null;
 
+export class TenantScopedStorageInspectionError extends Error {
+  constructor(code) {
+    super(code);
+    this.code = code;
+  }
+}
+
+// This is intentionally independent from READY. The local tenant guard needs
+// to inspect the physical namespace before it binds a freshly opened runtime,
+// while hydration and all writes must remain suspended.
+export const inspectActiveTenantStorageSnapshot = () => {
+  if (!activeNamespace) {
+    throw new TenantScopedStorageInspectionError('TENANT_STORAGE_NAMESPACE_MISSING');
+  }
+
+  let browserStorage;
+  try {
+    browserStorage = globalThis.window?.localStorage || null;
+  } catch {
+    throw new TenantScopedStorageInspectionError('TENANT_STORAGE_ACCESS_DENIED');
+  }
+  if (!browserStorage) return { counts: {}, occupiedStores: [] };
+
+  const prefix = `${PREFIX}${activeNamespace}:`;
+  const counts = {};
+  const occupiedStores = [];
+  try {
+    for (let index = 0; index < browserStorage.length; index += 1) {
+      const key = browserStorage.key(index);
+      // Do not read legacy keys or another tenant's namespace. Enumerating
+      // names is the minimum Storage API operation needed to find this prefix.
+      if (typeof key !== 'string' || !key.startsWith(prefix)) continue;
+      const rawValue = browserStorage.getItem(key);
+      if (typeof rawValue !== 'string' || rawValue.length === 0) continue;
+      const location = `localStorage:${key}`;
+      counts[location] = 1;
+      occupiedStores.push(location);
+    }
+  } catch {
+    throw new TenantScopedStorageInspectionError('TENANT_STORAGE_INSPECTION_FAILED');
+  }
+  return { counts, occupiedStores: occupiedStores.sort() };
+};
+
 export const setActiveTenantStorageNamespace = (opaqueId) => {
   if (!/^t_[a-f0-9]{32}$/.test(String(opaqueId || ''))) throw new Error('TENANT_STORAGE_NAMESPACE_INVALID');
   activeNamespace = opaqueId;

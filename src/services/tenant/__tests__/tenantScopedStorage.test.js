@@ -2,7 +2,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearActiveTenantStorageNamespace,
+  getTenantStorageState,
   getTenantStorageItem,
+  inspectActiveTenantStorageSnapshot,
   markTenantStorageReady,
   removeTenantStorageItem,
   resumeTenantStorageWrites,
@@ -41,6 +43,29 @@ describe('tenantScopedStorage', () => {
     markTenantStorageReady();
     resumeTenantStorageWrites();
     expect(getTenantStorageItem('cart')).toBe('A');
+  });
+
+  it('inspects only the active physical namespace before READY', () => {
+    const a = 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const b = 't_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const legacyKey = 'lanzo-active-orders-storage';
+    const aKey = `lanzo:t:${a}:active-orders`;
+    const bKey = `lanzo:t:${b}:active-orders`;
+    localStorage.setItem(legacyKey, 'legacy-payload');
+    localStorage.setItem(aKey, 'A-payload');
+    localStorage.setItem(bKey, 'B-payload');
+
+    setActiveTenantStorageNamespace(a);
+    expect(getTenantStorageState()).toMatchObject({ ready: false, writesSuspended: true });
+    expect(inspectActiveTenantStorageSnapshot()).toEqual({
+      counts: { [`localStorage:${aKey}`]: 1 },
+      occupiedStores: [`localStorage:${aKey}`]
+    });
+    expect(localStorage.getItem(legacyKey)).toBe('legacy-payload');
+    expect(localStorage.getItem(bKey)).toBe('B-payload');
+
+    clearActiveTenantStorageNamespace();
+    expect(() => inspectActiveTenantStorageSnapshot()).toThrow('TENANT_STORAGE_NAMESPACE_MISSING');
   });
 
   it('fails closed when browser storage throws without clearing another tenant payload', () => {
