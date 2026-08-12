@@ -180,3 +180,39 @@ control DB and empty destination namespace may write their own infrastructure
 metadata; LanzoDB1 remains read-only and untouched. RECOVERY.2A DOES NOT
 RECOVER BUSINESS DATA, copy rows, activate a destination, replay outbox, sync,
 call RPCs or reconcile cloud data.
+
+## RECOVERY.2B — canonical destination schema foundation
+
+RECOVERY.2B advances only an already-reserved RECOVERY.2A namespace from the
+empty native v1 shape to the current canonical Lanzo Dexie schema. It reuses
+the historical `LanzoDatabase` declarations and
+`registerCanonicalDexieExtensions()` through a named schema factory; it does
+not keep a second hand-written store/index registry. Production keeps its
+existing `LanzoDB1` singleton, middleware and write hooks. The named factory
+declares schema only and does not install those operational hooks on the
+destination.
+
+The durable journal moves forward only as:
+
+`DESTINATION_READY` → `DESTINATION_SCHEMA_INSTALLING` →
+`DESTINATION_SCHEMA_READY`.
+
+Before installation it rechecks the tenant, immutable RECOVERY.1 plan, source
+and context fingerprints, plus the physical v1/zero-store reservation. After
+installation it independently verifies the current canonical native version,
+the full physical store/index/key shape and that every store has zero rows.
+It persists only a domain-separated structural schema fingerprint, canonical
+Dexie/native versions and no tenant data.
+
+A `DESTINATION_SCHEMA_READY` journal is never authoritative by itself: every
+resume re-inspects the physical database and compares its descriptor with both
+the current code descriptor and persisted fingerprint. Code schema drift,
+unknown stores, index/key/version changes or any row fail closed without
+repair, deletion, clearing or activation. An interrupted installation resumes
+only when the destination is still either the original empty v1 reservation or
+the complete canonical empty schema. RECOVERY.2A refuses to regress an
+advanced RECOVERY.2B journal.
+
+RECOVERY.2B DOES NOT COPY BUSINESS DATA, create a tenant binding, write sync
+metadata/outbox records, activate the destination, redirect the POS runtime,
+or make network, Supabase, sync or RPC calls.

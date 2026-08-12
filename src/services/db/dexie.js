@@ -7,6 +7,7 @@ import Logger from '../Logger';
 import { getLowStockAlertStatus } from './utils';
 import { buildProductSearchFields } from './productSearchIndex';
 import { installLocalTenantDbMiddleware } from '../tenant/localTenantPolicy';
+import { registerCanonicalDexieExtensions } from './databaseSchema';
 // Nota: Dexie maneja el versionado de forma interna y más limpia,
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -43,9 +44,9 @@ export const STORES = {
   CORRUPTED_STATES: 'corrupted_states'
 };
 
-class LanzoDatabase extends Dexie {
-  constructor() {
-    super(DB_NAME);
+export class LanzoDatabase extends Dexie {
+  constructor(databaseName = DB_NAME) {
+    super(databaseName);
     this.version(1).stores({
       // --- Inventario y Productos ---
       [STORES.MENU]: 'id, barcode, name_lower, categoryId', // Índices simples
@@ -546,6 +547,15 @@ class LanzoDatabase extends Dexie {
     }
   }
 
+/**
+ * Creates only the canonical schema declaration set for an explicitly named
+ * database. Operational tenant middleware and write hooks intentionally stay
+ * attached to the production singleton below.
+ */
+export const createCanonicalLanzoDatabase = (databaseName) => (
+  registerCanonicalDexieExtensions(new LanzoDatabase(databaseName), STORES)
+);
+
 // Instancia Singleton
 export const db = new LanzoDatabase();
 installLocalTenantDbMiddleware(db);
@@ -743,6 +753,3 @@ function injectRawDOMFallback(message) {
 
   document.body.appendChild(overlay);
 }
-
-// Exportar clase por si se necesita instanciar para tests
-export { LanzoDatabase };

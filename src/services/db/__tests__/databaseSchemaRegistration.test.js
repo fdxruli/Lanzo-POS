@@ -8,6 +8,11 @@ import {
   RECOVERY_STORES,
   registerCanonicalDexieExtensions
 } from '../databaseSchema';
+import {
+  createCanonicalLanzoDatabase,
+  LanzoDatabase,
+  STORES
+} from '../dexie';
 
 const names = [];
 const stores = {
@@ -31,6 +36,35 @@ afterEach(async () => {
 });
 
 describe('canonical Dexie registration', () => {
+  it('reuses the production declarations for an explicitly named canonical database', async () => {
+    const productionStyleName = `lanzo-production-style-${crypto.randomUUID()}`;
+    const destinationName = `lanzo-destination-style-${crypto.randomUUID()}`;
+    names.push(productionStyleName, destinationName);
+
+    const productionStyle = new LanzoDatabase(productionStyleName);
+    registerCanonicalDexieExtensions(productionStyle, STORES);
+    const destination = createCanonicalLanzoDatabase(destinationName);
+    await productionStyle.open();
+    await destination.open();
+
+    const describe = (database) => database.tables.map((table) => ({
+      name: table.name,
+      primaryKey: table.schema.primKey.keyPath,
+      autoIncrement: table.schema.primKey.auto,
+      indexes: table.schema.indexes.map((index) => ({
+        name: index.name,
+        keyPath: index.keyPath,
+        unique: index.unique,
+        multiEntry: index.multi
+      })).sort((left, right) => left.name.localeCompare(right.name))
+    })).sort((left, right) => left.name.localeCompare(right.name));
+
+    expect(describe(destination)).toEqual(describe(productionStyle));
+    expect(destination.verno).toBe(productionStyle.verno);
+    productionStyle.close();
+    destination.close();
+  });
+
   it('produces the same declared schema regardless of registration order', async () => {
     const firstName = `lanzo-order-first-${crypto.randomUUID()}`;
     const secondName = `lanzo-order-second-${crypto.randomUUID()}`;
