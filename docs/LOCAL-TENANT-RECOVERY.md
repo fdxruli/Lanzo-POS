@@ -144,14 +144,21 @@ aliases, license keys, license IDs, business names or device identifiers.
 The stable logical `tenantDatabaseId` is random and opaque. The directory maps
 only domain-separated alias tokens to it, so a compatible key-only session may
 later enrich the same namespace with a license-ID token only when a durable
-alias already matches. Conflicting mappings fail closed; no business, device,
-company or similarity heuristic participates.
+alias already matches. Tokens retain only their alias class (`license_id` or
+`license_key_sha256`), so compatibility follows #189's per-class overlap rule:
+a shared key cannot attach a conflicting license ID, and a shared ID cannot
+attach a conflicting key. Incompatible or unclassified durable metadata fails
+closed without changing the directory. No business, device, company or
+similarity heuristic participates.
 
 The reserved destination is named `LanzoDB_t_<opaque-id>` and is deliberately
 empty in this phase. The current POS Dexie schema remains owned by the existing
 LanzoDB1 runtime, so RECOVERY.2A does not duplicate or refactor it. A later,
 separately reviewed schema-factory phase must establish canonical reuse before
-any tenant destination receives business stores or rows.
+any tenant destination receives business stores or rows. Opening an existing
+destination verifies that it has zero object stores. A nonempty namespace is
+preserved unchanged and marks its journal `FAILED_RESUMABLE`; RECOVERY.2A
+never deletes, upgrades or rewrites it.
 
 `RecoveryRunJournal` is mutable control metadata, distinct from the immutable
 RECOVERY.1 plan. Its states are `CREATED`, `DESTINATION_NAMESPACE_RESERVED`,

@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import { resolveActiveTenantIdentity } from './localTenantGuard';
+import { areLocalTenantAliasesCompatible } from './localTenantPolicy';
 import { createRecoveryContextFingerprint } from './localTenantRecoveryPlan';
 
 export const RECOVERY_CONTROL_DB_NAME = 'LanzoRecoveryControl';
@@ -17,6 +18,14 @@ const DIRECTORY_STORE = 'tenant_destination_directory';
 const ALIAS_STORE = 'tenant_destination_aliases';
 const JOURNAL_STORE = 'recovery_run_journal';
 const ALIAS_TOKEN_DOMAIN = 'lanzo-local-recovery-destination-alias-v1';
+const ALIAS_TYPE = Object.freeze({
+  LICENSE_ID: 'license_id',
+  LICENSE_KEY_SHA256: 'license_key_sha256'
+});
+const OPAQUE_ALIAS_PREFIX = Object.freeze({
+  [ALIAS_TYPE.LICENSE_ID]: 'license-id:',
+  [ALIAS_TYPE.LICENSE_KEY_SHA256]: 'license-key-sha256:'
+});
 
 const controlError = (code, details = {}) => Object.assign(new Error(code), { code, details });
 const now = () => new Date().toISOString();
@@ -37,6 +46,32 @@ const aliasToken = async (alias, cryptoProvider) => (
   `alias-token:${await digest([ALIAS_TOKEN_DOMAIN, alias], cryptoProvider)}`
 );
 
+const aliasTypeFor = (alias) => {
+  if (alias.startsWith('license-id:')) return ALIAS_TYPE.LICENSE_ID;
+  if (alias.startsWith('license-key-sha256:')) return ALIAS_TYPE.LICENSE_KEY_SHA256;
+  throw controlError('RECOVERY_DESTINATION_ALIAS_TYPE_UNSUPPORTED');
+};
+
+const typedAliasTokens = async (aliases, cryptoProvider) => Promise.all(
+  [...new Set(aliases)].sort().map(async (alias) => ({
+    aliasToken: await aliasToken(alias, cryptoProvider),
+    aliasType: aliasTypeFor(alias)
+  }))
+);
+
+const opaqueCompatibilityAliases = (entries) => entries.map((entry) => {
+  const prefix = OPAQUE_ALIAS_PREFIX[entry.aliasType];
+  if (!prefix || !entry.aliasToken) throw controlError('RECOVERY_DESTINATION_ALIAS_INCOMPATIBLE');
+  return `${prefix}${entry.aliasToken}`;
+});
+
+const areTypedAliasTokensCompatible = (existingEntries, incomingEntries) => (
+  areLocalTenantAliasesCompatible(
+    opaqueCompatibilityAliases(existingEntries),
+    opaqueCompatibilityAliases(incomingEntries)
+  )
+);
+
 const randomOpaqueId = (cryptoProvider = globalThis.crypto) => {
   if (typeof cryptoProvider?.randomUUID === 'function') return cryptoProvider.randomUUID().replaceAll('-', '');
   if (typeof cryptoProvider?.getRandomValues === 'function') {
@@ -52,6 +87,11 @@ export const createRecoveryControlDatabase = (name = RECOVERY_CONTROL_DB_NAME) =
   database.version(1).stores({
     [DIRECTORY_STORE]: 'tenantDatabaseId, createdAt',
     [ALIAS_STORE]: '&aliasToken, tenantDatabaseId',
+    [JOURNAL_STORE]: 'runId, tenantDatabaseId, state, updatedAt, [tenantDatabaseId+state]'
+  });
+  database.version(2).stores({
+    [DIRECTORY_STORE]: 'tenantDatabaseId, createdAt',
+    [ALIAS_STORE]: '&aliasToken, tenantDatabaseId, aliasType',
     [JOURNAL_STORE]: 'runId, tenantDatabaseId, state, updatedAt, [tenantDatabaseId+state]'
   });
   return database;
@@ -81,9 +121,15 @@ const ensureEmptyDestinationNamespace = async ({ name }) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(controlError('RECOVERY_DESTINATION_NAMESPACE_UNAVAILABLE'));
   });
-  // RECOVERY.2A reserves an empty namespace only: no object stores, data or
-  // schema are created here. A later isolated schema-factory phase owns that.
-  database.close();
+  try {
+    // RECOVERY.2A reserves an empty namespace only: no object stores, data or
+    // schema are created here. A later isolated schema-factory phase owns that.
+    if (database.objectStoreNames.length !== 0) {
+      throw controlError('RECOVERY_DESTINATION_NAMESPACE_NOT_EMPTY');
+    }
+  } finally {
+    database.close();
+  }
 };
 
 const latestResumableJournal = (journals) => (
@@ -102,19 +148,24 @@ const assertJournalMatchesPlan = (journal, recoveryPlan) => {
 };
 
 const reserveDirectoryAndJournal = async ({ controlDatabase, identity, recoveryPlan, cryptoProvider }) => {
-  const aliases = [...new Set(identity.aliases)].sort();
-  const tokens = await Promise.all(aliases.map((alias) => aliasToken(alias, cryptoProvider)));
+  const tokens = await typedAliasTokens(identity.aliases, cryptoProvider);
   const directory = controlDatabase.table(DIRECTORY_STORE);
   const aliasesTable = controlDatabase.table(ALIAS_STORE);
   const journals = controlDatabase.table(JOURNAL_STORE);
 
   return controlDatabase.transaction('rw', directory, aliasesTable, journals, async () => {
-    const existingAliases = await aliasesTable.where('aliasToken').anyOf(tokens).toArray();
+    const existingAliases = await aliasesTable.where('aliasToken').anyOf(tokens.map((entry) => entry.aliasToken)).toArray();
     const destinations = [...new Set(existingAliases.map((entry) => entry.tenantDatabaseId))];
     if (destinations.length > 1) throw controlError('RECOVERY_DESTINATION_ALIAS_CONFLICT');
 
     let tenantDatabaseId = destinations[0];
     let existingDirectory = tenantDatabaseId ? await directory.get(tenantDatabaseId) : null;
+    if (tenantDatabaseId) {
+      const destinationAliases = await aliasesTable.where('tenantDatabaseId').equals(tenantDatabaseId).toArray();
+      if (!areTypedAliasTokensCompatible(destinationAliases, tokens)) {
+        throw controlError('RECOVERY_DESTINATION_ALIAS_INCOMPATIBLE');
+      }
+    }
     if (!tenantDatabaseId) {
       // A random collision must not let a previously unknown tenant attach to
       // another tenant's namespace. The directory is the durable authority.
@@ -129,11 +180,18 @@ const reserveDirectoryAndJournal = async ({ controlDatabase, identity, recoveryP
     }
 
     for (const token of tokens) {
-      const existing = await aliasesTable.get(token);
+      const existing = await aliasesTable.get(token.aliasToken);
       if (existing && existing.tenantDatabaseId !== tenantDatabaseId) {
         throw controlError('RECOVERY_DESTINATION_ALIAS_CONFLICT');
       }
-      if (!existing) await aliasesTable.put({ aliasToken: token, tenantDatabaseId, createdAt: now() });
+      if (!existing) {
+        await aliasesTable.put({
+          aliasToken: token.aliasToken,
+          aliasType: token.aliasType,
+          tenantDatabaseId,
+          createdAt: now()
+        });
+      }
     }
 
     const existingJournal = latestResumableJournal(await journals.where('tenantDatabaseId').equals(tenantDatabaseId).toArray());

@@ -13,8 +13,8 @@ const controlDatabases = [];
 const destinationNames = [];
 const sourceDatabases = [];
 
-const createControlDatabase = () => {
-  const database = createRecoveryControlDatabase(`recovery-control-${crypto.randomUUID()}`);
+const createControlDatabase = (name = `recovery-control-${crypto.randomUUID()}`) => {
+  const database = createRecoveryControlDatabase(name);
   controlDatabases.push(database);
   return database;
 };
@@ -54,13 +54,26 @@ const inspectDestination = (name) => new Promise((resolve, reject) => {
   request.onerror = () => reject(request.error);
 });
 
+const createNonemptyDestination = (name) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name, 1);
+  request.onupgradeneeded = () => request.result.createObjectStore('unexpected_store');
+  request.onsuccess = () => {
+    request.result.close();
+    resolve();
+  };
+  request.onerror = () => reject(request.error);
+});
+
+const deterministicCrypto = (...ids) => ({
+  subtle: crypto.subtle,
+  randomUUID: () => ids.shift() || crypto.randomUUID()
+});
+
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(controlDatabases.splice(0).map(async (database) => {
-    const name = database.name;
-    database.close();
-    await Dexie.delete(name);
-  }));
+  const controlDatabaseNames = new Set(controlDatabases.map((database) => database.name));
+  controlDatabases.splice(0).forEach((database) => database.close());
+  await Promise.all([...controlDatabaseNames].map((name) => Dexie.delete(name)));
   await Promise.all(sourceDatabases.splice(0).map(async (database) => {
     const name = database.name;
     database.close();
@@ -91,6 +104,7 @@ describe('tenant recovery control plane', () => {
     expect(first.destinationDatabaseName).toMatch(/^LanzoDB_t_[a-f0-9]{32}$/);
     expect(first.journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_READY);
     expect(metadata.journals).toHaveLength(1);
+    expect(metadata.aliases[0].aliasType).toBe('license_key_sha256');
     expect(JSON.stringify(metadata)).not.toContain('FREE-OFFLINE-A');
     expect(JSON.stringify(metadata)).not.toContain('license-key-sha256');
     await expect(inspectDestination(first.destinationDatabaseName)).resolves.toEqual([]);
@@ -164,6 +178,54 @@ describe('tenant recovery control plane', () => {
     })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_ALIAS_CONFLICT' });
   });
 
+  it('rejects incompatible license-id or license-key enrichment without mutating the directory', async () => {
+    const controlDatabase = createControlDatabase();
+    const tenantAIdentity = { license_id: 'LICENSE-A', license_key: 'ACTIVE-A' };
+    const tenantAPlan = await createEligiblePlan({ activeTenantSource: tenantAIdentity });
+    const tenantA = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: tenantAPlan, activeTenantSource: tenantAIdentity
+    });
+    destinationNames.push(tenantA.destinationDatabaseName);
+    const before = await listRecoveryControlMetadata(controlDatabase);
+    const differentIdSameKey = { license_id: 'LICENSE-B', license_key: 'ACTIVE-A' };
+    const sameIdDifferentKey = { license_id: 'LICENSE-A', license_key: 'ACTIVE-B' };
+    const differentIdPlan = await createEligiblePlan({ activeTenantSource: differentIdSameKey });
+    const differentKeyPlan = await createEligiblePlan({ activeTenantSource: sameIdDifferentKey });
+
+    await expect(createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: differentIdPlan, activeTenantSource: differentIdSameKey
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_ALIAS_INCOMPATIBLE' });
+    await expect(createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: differentKeyPlan, activeTenantSource: sameIdDifferentKey
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_ALIAS_INCOMPATIBLE' });
+
+    expect(await listRecoveryControlMetadata(controlDatabase)).toEqual(before);
+  });
+
+  it('fails closed and preserves a destination namespace that is not empty', async () => {
+    const controlDatabase = createControlDatabase();
+    const tenantDatabaseId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const name = `LanzoDB_t_${tenantDatabaseId}`;
+    await createNonemptyDestination(name);
+    destinationNames.push(name);
+    const plan = await createEligiblePlan();
+
+    await expect(createOrResumeRecoveryInfrastructure({
+      controlDatabase,
+      recoveryPlan: plan,
+      activeTenantSource: { license_key: 'ACTIVE-A' },
+      cryptoProvider: deterministicCrypto(
+        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+      )
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_NAMESPACE_NOT_EMPTY' });
+
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(journal.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+    expect(journal.failureReason).toBe('RECOVERY_DESTINATION_NAMESPACE_NOT_EMPTY');
+    await expect(inspectDestination(name)).resolves.toEqual(['unexpected_store']);
+  });
+
   it('fails closed when a resumable journal sees a changed source or tenant context fingerprint', async () => {
     const controlDatabase = createControlDatabase();
     const original = await createEligiblePlan({ name: 'source-one' });
@@ -215,19 +277,23 @@ describe('tenant recovery control plane', () => {
     })).rejects.toMatchObject({ code: 'UNKNOWN_STORE_PRESENT' });
   });
 
-  it('uses a durable control-db uniqueness invariant for concurrent same-tenant reservation', async () => {
-    const controlDatabase = createControlDatabase();
+  it('uses a durable cross-connection uniqueness invariant for concurrent same-tenant reservation', async () => {
+    const sharedName = `recovery-control-${crypto.randomUUID()}`;
+    const controlA = createControlDatabase(sharedName);
+    const controlB = createControlDatabase(sharedName);
     const plan = await createEligiblePlan();
     const [left, right] = await Promise.all([
-      createOrResumeRecoveryInfrastructure({ controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' } }),
-      createOrResumeRecoveryInfrastructure({ controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' } })
+      createOrResumeRecoveryInfrastructure({ controlDatabase: controlA, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' } }),
+      createOrResumeRecoveryInfrastructure({ controlDatabase: controlB, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' } })
     ]);
     destinationNames.push(left.destinationDatabaseName);
-    const metadata = await listRecoveryControlMetadata(controlDatabase);
+    const verificationConnection = createControlDatabase(sharedName);
+    const metadata = await listRecoveryControlMetadata(verificationConnection);
 
     expect(left.tenantDatabaseId).toBe(right.tenantDatabaseId);
     expect(metadata.directory).toHaveLength(1);
     expect(metadata.journals).toHaveLength(1);
+    expect(metadata.aliases).toHaveLength(1);
   });
 
   it('resumes a durable CREATED journal after a simulated process stop without creating another destination', async () => {
