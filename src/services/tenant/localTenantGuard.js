@@ -1,5 +1,6 @@
 import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
+import { closeTenantRuntime, getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
 import {
   DEVICE_SCOPED_SYNC_CACHE_KEYS,
   LOCAL_TENANT_BINDING_KEY,
@@ -848,7 +849,7 @@ export const createLocalTenantGuard = ({
 
   const getNativeDatabase = async () => {
     await ensureReady();
-    const nativeDatabase = database.backendDB();
+    const nativeDatabase = (database === defaultDatabase ? getActiveTenantDatabase() : database).backendDB();
     if (!nativeDatabase) throw new Error('LOCAL_TENANT_DATABASE_NOT_OPEN');
     return nativeDatabase;
   };
@@ -914,7 +915,15 @@ export const createLocalTenantGuard = ({
       throw error;
     }
 
-    if (!alreadyGranted) controller.enable(reason);
+    // Freeze the previous tenant before its physical database can be
+    // replaced. This ordering also makes the brief B-open/B-binding window
+    // fail closed through the runtime dbcore middleware.
+    if (!alreadyGranted) {
+      controller.lock('tenant_transition');
+      if (database === defaultDatabase) closeTenantRuntime();
+      controller.enable(reason);
+      if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
+    }
     const nativeDatabase = await getNativeDatabase();
 
     for (let attempt = 0; attempt < MAX_SNAPSHOT_RETRIES; attempt += 1) {
@@ -931,6 +940,7 @@ export const createLocalTenantGuard = ({
       }
 
       if (snapshot.binding && bindingMatchesIdentity(snapshot.binding, activeIdentity)) {
+        if (database === defaultDatabase) await markTenantRuntimeReady();
         if (!alreadyGranted) controller.grant(activeIdentity, 'same_tenant');
         return { status: 'pass', binding: snapshot.binding, inspection: publicInspection(snapshot) };
       }
@@ -996,6 +1006,7 @@ export const createLocalTenantGuard = ({
           throw error;
         }
 
+        if (database === defaultDatabase) await markTenantRuntimeReady();
         controller.grant(activeIdentity, bindingSource);
         return {
           status: bindingSource === 'legacy_internal_evidence'

@@ -78,7 +78,6 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
         initializePromise = (async () => {
             try {
-                await prepareLocalDatabase({ force });
                 initializeLocalTenantGuard('application_bootstrap');
                 const localLicense = await getLicenseFromStorage();
 
@@ -93,6 +92,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 // precedes actor-token reads, profile loading, catalog startup
                 // and every sync coordinator.
                 await assertLocalTenantAccess(localLicense, { reason: 'stored_license_bootstrap' });
+                await prepareLocalDatabase({ force });
 
                 Logger.log('[AppStore] Carga rápida activada - Usando caché local');
 

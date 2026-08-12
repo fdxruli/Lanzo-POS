@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gateRuntimeMocks = vi.hoisted(() => ({
   isLocalDatabasePreparationActive: vi.fn(() => false),
+  ensureLocalDatabaseReady: vi.fn(),
   retryLocalDatabaseRecovery: vi.fn()
 }));
 
