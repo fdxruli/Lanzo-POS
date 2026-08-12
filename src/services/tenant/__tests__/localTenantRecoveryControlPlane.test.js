@@ -3,6 +3,7 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildLegacyRecoveryPlan } from '../localTenantRecoveryPlan';
 import {
+  RECOVERY_DESTINATION_NAMESPACE_VERSION,
   RECOVERY_JOURNAL_STATE,
   createOrResumeRecoveryInfrastructure,
   createRecoveryControlDatabase,
@@ -57,6 +58,16 @@ const inspectDestination = (name) => new Promise((resolve, reject) => {
 const createNonemptyDestination = (name) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, 1);
   request.onupgradeneeded = () => request.result.createObjectStore('unexpected_store');
+  request.onsuccess = () => {
+    request.result.close();
+    resolve();
+  };
+  request.onerror = () => reject(request.error);
+});
+
+const openDestinationAtVersion = (name, version, onUpgrade) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name, version);
+  request.onupgradeneeded = () => onUpgrade?.(request.result);
   request.onsuccess = () => {
     request.result.close();
     resolve();
@@ -226,6 +237,53 @@ describe('tenant recovery control plane', () => {
     await expect(inspectDestination(name)).resolves.toEqual(['unexpected_store']);
   });
 
+  it('revalidates a READY namespace and fails closed when it becomes nonempty', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const ready = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(ready.destinationDatabaseName);
+    await openDestinationAtVersion(
+      ready.destinationDatabaseName,
+      RECOVERY_DESTINATION_NAMESPACE_VERSION + 1,
+      (database) => database.createObjectStore('unexpected_store')
+    );
+
+    await expect(createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_NAMESPACE_VERSION_MISMATCH' });
+
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(journal.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+    expect(journal.failureReason).toBe('RECOVERY_DESTINATION_NAMESPACE_VERSION_MISMATCH');
+    await expect(inspectDestination(ready.destinationDatabaseName)).resolves.toEqual(['unexpected_store']);
+  });
+
+  it('rejects an empty destination namespace with the wrong native version', async () => {
+    const controlDatabase = createControlDatabase();
+    const tenantDatabaseId = 'cccccccccccccccccccccccccccccccc';
+    const name = `LanzoDB_t_${tenantDatabaseId}`;
+    await openDestinationAtVersion(name, RECOVERY_DESTINATION_NAMESPACE_VERSION + 1);
+    destinationNames.push(name);
+    const plan = await createEligiblePlan();
+
+    await expect(createOrResumeRecoveryInfrastructure({
+      controlDatabase,
+      recoveryPlan: plan,
+      activeTenantSource: { license_key: 'ACTIVE-A' },
+      cryptoProvider: deterministicCrypto(
+        'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        'dddddddd-dddd-dddd-dddd-dddddddddddd'
+      )
+    })).rejects.toMatchObject({ code: 'RECOVERY_DESTINATION_NAMESPACE_VERSION_MISMATCH' });
+
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    expect(journal.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+    expect(journal.failureReason).toBe('RECOVERY_DESTINATION_NAMESPACE_VERSION_MISMATCH');
+    await expect(inspectDestination(name)).resolves.toEqual([]);
+  });
+
   it('fails closed when a resumable journal sees a changed source or tenant context fingerprint', async () => {
     const controlDatabase = createControlDatabase();
     const original = await createEligiblePlan({ name: 'source-one' });
@@ -315,6 +373,26 @@ describe('tenant recovery control plane', () => {
 
     expect(resumed.resumed).toBe(true);
     expect(resumed.tenantDatabaseId).toBe(first.tenantDatabaseId);
+    expect(resumed.journal.runId).toBe(first.journal.runId);
+    expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_READY);
+    expect(metadata.directory).toHaveLength(1);
+    expect(metadata.journals).toHaveLength(1);
+  });
+
+  it('revalidates a valid READY namespace without creating duplicate metadata', async () => {
+    const controlDatabase = createControlDatabase();
+    const plan = await createEligiblePlan();
+    const first = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    destinationNames.push(first.destinationDatabaseName);
+    const resumed = await createOrResumeRecoveryInfrastructure({
+      controlDatabase, recoveryPlan: plan, activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const metadata = await listRecoveryControlMetadata(controlDatabase);
+
+    expect(resumed.tenantDatabaseId).toBe(first.tenantDatabaseId);
+    expect(resumed.destinationDatabaseName).toBe(first.destinationDatabaseName);
     expect(resumed.journal.runId).toBe(first.journal.runId);
     expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.DESTINATION_READY);
     expect(metadata.directory).toHaveLength(1);

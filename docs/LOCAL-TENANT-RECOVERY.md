@@ -160,6 +160,12 @@ destination verifies that it has zero object stores. A nonempty namespace is
 preserved unchanged and marks its journal `FAILED_RESUMABLE`; RECOVERY.2A
 never deletes, upgrades or rewrites it.
 
+Every resume re-inspects the physical destination before trusting a persisted
+`DESTINATION_READY` journal. The reservation shape is native IndexedDB version
+`1` with zero object stores. A missing, nonempty or version-mismatched
+destination fails closed and transitions the journal to `FAILED_RESUMABLE`;
+RECOVERY.2A never repairs or recreates it automatically on resume.
+
 `RecoveryRunJournal` is mutable control metadata, distinct from the immutable
 RECOVERY.1 plan. Its states are `CREATED`, `DESTINATION_NAMESPACE_RESERVED`,
 `DESTINATION_READY`, `FAILED_RESUMABLE` and `CANCELLED`. It persists opaque run

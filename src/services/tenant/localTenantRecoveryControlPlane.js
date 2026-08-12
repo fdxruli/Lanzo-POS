@@ -5,6 +5,7 @@ import { createRecoveryContextFingerprint } from './localTenantRecoveryPlan';
 
 export const RECOVERY_CONTROL_DB_NAME = 'LanzoRecoveryControl';
 export const RECOVERY_JOURNAL_VERSION = 1;
+export const RECOVERY_DESTINATION_NAMESPACE_VERSION = 1;
 
 export const RECOVERY_JOURNAL_STATE = Object.freeze({
   CREATED: 'CREATED',
@@ -114,16 +115,36 @@ const requireEligibleRecoveryPlan = (recoveryPlan) => {
   }
 };
 
-const ensureEmptyDestinationNamespace = async ({ name }) => {
+const openDestinationNamespace = async (name) => {
   if (!globalThis.indexedDB?.open) throw controlError('RECOVERY_DESTINATION_NAMESPACE_UNAVAILABLE');
-  const database = await new Promise((resolve, reject) => {
-    const request = globalThis.indexedDB.open(name, 1);
+  return new Promise((resolve, reject) => {
+    // Omitting a requested version lets an existing database reveal its real
+    // native version instead of forcing a versionchange during inspection.
+    const request = globalThis.indexedDB.open(name);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(controlError('RECOVERY_DESTINATION_NAMESPACE_UNAVAILABLE'));
   });
+};
+
+const assertDestinationNamespaceExists = async (name) => {
+  if (typeof globalThis.indexedDB?.databases !== 'function') {
+    throw controlError('RECOVERY_DESTINATION_NAMESPACE_INSPECTION_UNAVAILABLE');
+  }
+  const databases = await globalThis.indexedDB.databases();
+  if (!databases.some((database) => database.name === name)) {
+    throw controlError('RECOVERY_DESTINATION_NAMESPACE_MISSING');
+  }
+};
+
+const inspectOrReserveEmptyDestinationNamespace = async ({ name, requireExisting = false }) => {
+  if (requireExisting) await assertDestinationNamespaceExists(name);
+  const database = await openDestinationNamespace(name);
   try {
     // RECOVERY.2A reserves an empty namespace only: no object stores, data or
     // schema are created here. A later isolated schema-factory phase owns that.
+    if (database.version !== RECOVERY_DESTINATION_NAMESPACE_VERSION) {
+      throw controlError('RECOVERY_DESTINATION_NAMESPACE_VERSION_MISMATCH');
+    }
     if (database.objectStoreNames.length !== 0) {
       throw controlError('RECOVERY_DESTINATION_NAMESPACE_NOT_EMPTY');
     }
@@ -239,7 +260,7 @@ export const createOrResumeRecoveryInfrastructure = async ({
   recoveryPlan,
   activeTenantSource,
   cryptoProvider = globalThis.crypto,
-  destinationNamespaceFactory = ensureEmptyDestinationNamespace
+  destinationNamespaceFactory = inspectOrReserveEmptyDestinationNamespace
 } = {}) => {
   if (!controlDatabase?.transaction) throw controlError('RECOVERY_CONTROL_DATABASE_REQUIRED');
   requireEligibleRecoveryPlan(recoveryPlan);
@@ -264,21 +285,26 @@ export const createOrResumeRecoveryInfrastructure = async ({
 
   if (reservation.resumed) assertJournalMatchesPlan(journal, recoveryPlan);
 
-  if (journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_READY) {
-    return Object.freeze({ tenantDatabaseId: reservation.tenantDatabaseId, destinationDatabaseName: name, journal, resumed: true });
-  }
-
-  journal = await updateJournal(controlDatabase, journal.runId, {
-    state: RECOVERY_JOURNAL_STATE.DESTINATION_NAMESPACE_RESERVED,
-    failureReason: null,
-    checkpoints: { destinationNamespaceReservedAt: now() }
-  });
-  try {
-    await destinationNamespaceFactory({ name, tenantDatabaseId: reservation.tenantDatabaseId });
+  const wasReady = journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_READY;
+  if (!wasReady) {
     journal = await updateJournal(controlDatabase, journal.runId, {
-      state: RECOVERY_JOURNAL_STATE.DESTINATION_READY,
-      checkpoints: { destinationReadyAt: now() }
+      state: RECOVERY_JOURNAL_STATE.DESTINATION_NAMESPACE_RESERVED,
+      failureReason: null,
+      checkpoints: { destinationNamespaceReservedAt: now() }
     });
+  }
+  try {
+    await destinationNamespaceFactory({
+      name,
+      tenantDatabaseId: reservation.tenantDatabaseId,
+      requireExisting: wasReady
+    });
+    if (!wasReady) {
+      journal = await updateJournal(controlDatabase, journal.runId, {
+        state: RECOVERY_JOURNAL_STATE.DESTINATION_READY,
+        checkpoints: { destinationReadyAt: now() }
+      });
+    }
   } catch (error) {
     await updateJournal(controlDatabase, journal.runId, {
       state: RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE,
