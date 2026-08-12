@@ -1,5 +1,4 @@
 import Dexie from 'dexie';
-import { createOperationalLanzoDatabase } from './dexie';
 import { areLocalTenantAliasesCompatible, localTenantAccessController } from '../tenant/localTenantPolicy';
 import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
 
@@ -12,6 +11,17 @@ export class TenantRuntimeError extends Error { constructor(code) { super(code);
 export const isTenantRuntimeError = (error) => error instanceof TenantRuntimeError || String(error?.code || '').startsWith('TENANT_RUNTIME_');
 let active = null;
 let generation = 0;
+let tenantDatabaseFactory = null;
+
+// The router deliberately owns no dependency on dexie.js. Keeping the
+// operational database factory injected avoids evaluating the legacy-vault
+// module while the tenant runtime is being initialized.
+export const configureTenantRuntimeDatabaseFactory = (factory) => {
+  if (typeof factory !== 'function') {
+    throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_INVALID');
+  }
+  tenantDatabaseFactory = factory;
+};
 const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('lanzo-tenant-runtime-v1');
 const invalidateForForeignTenant = (opaqueId) => {
   if (!active?.opaqueId || opaqueId === active.opaqueId) return;
@@ -78,6 +88,9 @@ export const getActiveTenantDatabase = () => current().database;
 export const getActiveTenantRuntime = () => active && ({ opaqueId: active.opaqueId, databaseName: active.database.name, generation: active.generation });
 
 export const openTenantRuntime = async (identity) => {
+  if (!tenantDatabaseFactory) {
+    throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_NOT_CONFIGURED');
+  }
   const opaqueId = await resolveTenantRuntimeDirectory(identity);
   if (active?.opaqueId === opaqueId && active.database.isOpen()) return active;
   // Callers must lock the controller before switching tenants. Keep this
@@ -89,7 +102,7 @@ export const openTenantRuntime = async (identity) => {
     active.database.close();
   }
   clearActiveTenantStorageNamespace();
-  const database = createOperationalLanzoDatabase(`LanzoDB_t_${opaqueId}`);
+  const database = tenantDatabaseFactory(`LanzoDB_t_${opaqueId}`);
   await database.open();
   active = { opaqueId, database, generation: ++generation };
   setActiveTenantStorageNamespace(opaqueId);
