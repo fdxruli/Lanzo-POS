@@ -8,7 +8,11 @@ import {
 } from '../db/databaseSchema';
 import { resolveActiveTenantIdentity } from './localTenantGuard';
 import { areLocalTenantAliasesCompatible } from './localTenantPolicy';
-import { createRecoveryContextFingerprint } from './localTenantRecoveryPlan';
+import {
+  createRecoveryContextFingerprint,
+  inspectLegacyVaultAndBuildRecoveryPlan
+} from './localTenantRecoveryPlan';
+import { createRecoveryCopyManifest } from './localTenantRecoveryCopyManifest';
 
 export const RECOVERY_CONTROL_DB_NAME = 'LanzoRecoveryControl';
 export const RECOVERY_JOURNAL_VERSION = 1;
@@ -20,6 +24,8 @@ export const RECOVERY_JOURNAL_STATE = Object.freeze({
   DESTINATION_READY: 'DESTINATION_READY',
   DESTINATION_SCHEMA_INSTALLING: 'DESTINATION_SCHEMA_INSTALLING',
   DESTINATION_SCHEMA_READY: 'DESTINATION_SCHEMA_READY',
+  COPY_MANIFEST_BUILDING: 'COPY_MANIFEST_BUILDING',
+  COPY_MANIFEST_READY: 'COPY_MANIFEST_READY',
   FAILED_RESUMABLE: 'FAILED_RESUMABLE',
   CANCELLED: 'CANCELLED'
 });
@@ -29,6 +35,10 @@ const ALIAS_STORE = 'tenant_destination_aliases';
 const JOURNAL_STORE = 'recovery_run_journal';
 const ALIAS_TOKEN_DOMAIN = 'lanzo-local-recovery-destination-alias-v1';
 const DESTINATION_SCHEMA_FINGERPRINT_DOMAIN = 'lanzo-local-recovery-destination-schema-v1';
+const COPY_MANIFEST_STATES = new Set([
+  RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
+  RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY
+]);
 const ALIAS_TYPE = Object.freeze({
   LICENSE_ID: 'license_id',
   LICENSE_KEY_SHA256: 'license_key_sha256'
@@ -39,6 +49,11 @@ const OPAQUE_ALIAS_PREFIX = Object.freeze({
 });
 
 const controlError = (code, details = {}) => Object.assign(new Error(code), { code, details });
+const isForwardPhaseState = (state) => (
+  state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING ||
+  state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY ||
+  COPY_MANIFEST_STATES.has(state)
+);
 const now = () => new Date().toISOString();
 const bytesToHex = (value) => Array.from(new Uint8Array(value))
   .map((byte) => byte.toString(16).padStart(2, '0'))
@@ -399,8 +414,9 @@ export const createOrResumeRecoveryInfrastructure = async ({
     controlDatabase, identity, cryptoProvider
   });
   if (
-    existingBeforeReservation?.journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING ||
-    existingBeforeReservation?.journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY
+    isForwardPhaseState(existingBeforeReservation?.journal.state) ||
+    (existingBeforeReservation?.journal.state === RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE &&
+      existingBeforeReservation.journal.failureStage === 'COPY_MANIFEST')
   ) {
     throw controlError('RECOVERY_DESTINATION_PHASE_ADVANCED');
   }
@@ -415,10 +431,7 @@ export const createOrResumeRecoveryInfrastructure = async ({
 
   if (reservation.resumed) assertJournalMatchesPlan(journal, recoveryPlan);
 
-  if (
-    journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_INSTALLING ||
-    journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY
-  ) {
+  if (isForwardPhaseState(journal.state)) {
     // RECOVERY.2A owns only the empty v1 namespace. An advanced journal is
     // intentionally left untouched for RECOVERY.2B to revalidate.
     throw controlError('RECOVERY_DESTINATION_PHASE_ADVANCED');
@@ -571,6 +584,10 @@ export const createOrResumeRecoveryDestinationSchema = async ({
   const expectedDescriptor = describeDeclaredCanonicalSchema();
   const expectedFingerprint = await fingerprintDestinationSchema(expectedDescriptor, cryptoProvider);
 
+  if (COPY_MANIFEST_STATES.has(journal.state)) {
+    throw controlError('RECOVERY_DESTINATION_PHASE_ADVANCED');
+  }
+
   if (journal.state === RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY) {
     try {
       const verified = await verifyCanonicalDestinationSchema({
@@ -645,6 +662,139 @@ export const createOrResumeRecoveryDestinationSchema = async ({
     });
   } catch (error) {
     await schemaFailure({ controlDatabase, journal, error });
+    throw error;
+  }
+};
+
+const copyManifestFailure = async ({ controlDatabase, journal, error }) => {
+  await updateJournal(controlDatabase, journal.runId, {
+    state: RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE,
+    failureStage: 'COPY_MANIFEST',
+    failureReason: error?.code || 'RECOVERY_COPY_MANIFEST_FAILED',
+    checkpoints: { copyManifestFailureAt: now() }
+  });
+};
+
+const verifyDestinationForCopyManifest = async ({ name, journal, cryptoProvider }) => {
+  const expectedDescriptor = describeDeclaredCanonicalSchema();
+  const expectedFingerprint = await fingerprintDestinationSchema(expectedDescriptor, cryptoProvider);
+  if (!journal.destinationSchemaFingerprint) {
+    throw controlError('RECOVERY_DESTINATION_SCHEMA_FINGERPRINT_MISSING');
+  }
+  return verifyCanonicalDestinationSchema({
+    name,
+    expectedDescriptor,
+    expectedFingerprint,
+    persistedFingerprint: journal.destinationSchemaFingerprint,
+    requirePersistedFingerprint: true,
+    cryptoProvider
+  });
+};
+
+/**
+ * RECOVERY.2C produces only a deterministic, redacted manifest. The supplied
+ * adapter owns a native readonly source read; this control plane never accepts
+ * a source database write handle and never writes a destination business row.
+ */
+export const createOrResumeRecoveryCopyManifest = async ({
+  controlDatabase,
+  recoveryPlan,
+  activeTenantSource,
+  sourceAdapter,
+  cryptoProvider = globalThis.crypto
+} = {}) => {
+  if (!controlDatabase?.transaction) throw controlError('RECOVERY_CONTROL_DATABASE_REQUIRED');
+  if (!sourceAdapter?.readSnapshot) throw controlError('RECOVERY_READONLY_ADAPTER_REQUIRED');
+  requireEligibleRecoveryPlan(recoveryPlan);
+  await controlDatabase.open();
+  const identity = await resolveActiveTenantIdentity(activeTenantSource, cryptoProvider);
+  const currentContextFingerprint = await createRecoveryContextFingerprint({
+    sourceSnapshotFingerprint: recoveryPlan.sourceSnapshotFingerprint,
+    activeTenantAliases: identity.aliases,
+    cryptoProvider
+  });
+  if (currentContextFingerprint !== recoveryPlan.recoveryContextFingerprint) {
+    throw controlError('RECOVERY_TENANT_CONTEXT_CHANGED');
+  }
+  const resolved = await resolveExistingRecoveryJournal({
+    controlDatabase, identity, recoveryPlan, cryptoProvider
+  });
+  let journal = resolved.journal;
+  const name = destinationDatabaseName(resolved.tenantDatabaseId);
+  if (journal.state === RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE && journal.failureStage !== 'COPY_MANIFEST') {
+    throw controlError('RECOVERY_DESTINATION_FAILURE_STAGE_NOT_RESUMABLE');
+  }
+  if (![
+    RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY,
+    RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
+    RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY,
+    RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE
+  ].includes(journal.state)) {
+    throw controlError('RECOVERY_DESTINATION_SCHEMA_READY_REQUIRED');
+  }
+
+  try {
+    const destination = await verifyDestinationForCopyManifest({ name, journal, cryptoProvider });
+    const revalidatedPlan = await inspectLegacyVaultAndBuildRecoveryPlan({
+      adapter: sourceAdapter,
+      activeTenantSource,
+      cryptoProvider
+    });
+    const manifest = await createRecoveryCopyManifest({
+      recoveryPlan,
+      revalidatedPlan,
+      destinationSchemaFingerprint: destination.actualFingerprint,
+      cryptoProvider
+    });
+
+    if (journal.state === RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY) {
+      if (
+        journal.copyManifestFingerprint !== manifest.manifestFingerprint ||
+        journal.copyManifestVersion !== manifest.version ||
+        journal.copyManifestItemCount !== manifest.copyItemCount ||
+        stableJson(journal.copyManifestStoreCounts) !== stableJson(manifest.copyItemsByStore)
+      ) {
+        throw controlError('RECOVERY_COPY_MANIFEST_CHANGED');
+      }
+      return Object.freeze({
+        tenantDatabaseId: resolved.tenantDatabaseId,
+        destinationDatabaseName: name,
+        journal,
+        manifest,
+        resumed: true
+      });
+    }
+
+    if (journal.state !== RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING) {
+      journal = await updateJournal(controlDatabase, journal.runId, {
+        state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
+        failureReason: null,
+        failureStage: null,
+        checkpoints: { copyManifestBuildingAt: now() }
+      });
+    }
+    journal = await updateJournal(controlDatabase, journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY,
+      failureReason: null,
+      failureStage: null,
+      copyManifestVersion: manifest.version,
+      copyManifestFingerprint: manifest.manifestFingerprint,
+      copyManifestItemCount: manifest.copyItemCount,
+      copyManifestStoreCounts: manifest.copyItemsByStore,
+      copyManifestExcludedCounts: manifest.excludedCounts,
+      copyManifestRecomputeSummary: manifest.recomputeSummary,
+      destinationSchemaFingerprint: destination.actualFingerprint,
+      checkpoints: { copyManifestReadyAt: now() }
+    });
+    return Object.freeze({
+      tenantDatabaseId: resolved.tenantDatabaseId,
+      destinationDatabaseName: name,
+      journal,
+      manifest,
+      resumed: resolved.journal.state !== RECOVERY_JOURNAL_STATE.DESTINATION_SCHEMA_READY
+    });
+  } catch (error) {
+    await copyManifestFailure({ controlDatabase, journal, error });
     throw error;
   }
 };

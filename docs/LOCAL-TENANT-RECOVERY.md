@@ -216,3 +216,29 @@ advanced RECOVERY.2B journal.
 RECOVERY.2B DOES NOT COPY BUSINESS DATA, create a tenant binding, write sync
 metadata/outbox records, activate the destination, redirect the POS runtime,
 or make network, Supabase, sync or RPC calls.
+
+## RECOVERY.2C — deterministic copy manifest and execution precheck
+
+RECOVERY.2C does not copy a business row. It re-reads the legacy vault through
+the existing native readonly adapter, revalidates the immutable source and
+tenant-context fingerprints, revalidates the empty canonical destination, and
+creates an in-memory execution projection using only existing RecoveryPlan
+rows. A copy item requires both `PROVEN_DIRECT` or `PROVEN_RELATIONAL` and
+`COPY_IF_PROVEN`; this phase creates no ownership proof. Tier-A `sync_outbox`
+rows remain quarantined, and cloud-reconcilable, ambiguous, foreign, derived,
+operationally ignored and vault-only rows are never automatic copy items.
+
+The control journal advances only as `DESTINATION_SCHEMA_READY` →
+`COPY_MANIFEST_BUILDING` → `COPY_MANIFEST_READY`. It persists redacted
+fingerprints, counts and store summaries, never source keys, tenant aliases or
+business payloads. The manifest fingerprint is domain-separated and excludes
+timestamps and destination random identity. A zero-item manifest is valid and
+represents a successful fail-closed result for mixed historical topology.
+
+Every resume rebuilds and compares the projection against the supplied plan.
+Source/context drift, destination schema or row changes, policy-projection
+drift, opaque ref collision or a changed persisted manifest fail closed.
+RECOVERY.2A and RECOVERY.2B refuse later manifest states without mutating the
+journal or destination. RECOVERY.2C does not create binding, write destination
+business data, initialize sync metadata, replay outbox, activate the POS
+runtime, perform cloud reconciliation or use network/RPC/Supabase.
