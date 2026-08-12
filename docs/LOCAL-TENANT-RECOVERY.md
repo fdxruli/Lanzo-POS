@@ -133,3 +133,37 @@ ambiguous and require assisted recovery.
 - RECOVERY.6: crash, multi-tab, worker, service-worker and replay hardening.
 
 RECOVERY.1 DOES NOT RECOVER DATA.
+
+## RECOVERY.2A — destination control plane only
+
+RECOVERY.2A adds a separate `LanzoRecoveryControl` IndexedDB database. It
+contains only opaque destination-directory metadata, alias tokens and durable
+recovery journals; it stores no business rows, old outbox payloads, raw tenant
+aliases, license keys, license IDs, business names or device identifiers.
+
+The stable logical `tenantDatabaseId` is random and opaque. The directory maps
+only domain-separated alias tokens to it, so a compatible key-only session may
+later enrich the same namespace with a license-ID token only when a durable
+alias already matches. Conflicting mappings fail closed; no business, device,
+company or similarity heuristic participates.
+
+The reserved destination is named `LanzoDB_t_<opaque-id>` and is deliberately
+empty in this phase. The current POS Dexie schema remains owned by the existing
+LanzoDB1 runtime, so RECOVERY.2A does not duplicate or refactor it. A later,
+separately reviewed schema-factory phase must establish canonical reuse before
+any tenant destination receives business stores or rows.
+
+`RecoveryRunJournal` is mutable control metadata, distinct from the immutable
+RECOVERY.1 plan. Its states are `CREATED`, `DESTINATION_NAMESPACE_RESERVED`,
+`DESTINATION_READY`, `FAILED_RESUMABLE` and `CANCELLED`. It persists opaque run
+and tenant destination IDs, plan version and both fingerprints. Resume
+re-resolves the tenant and fails closed on
+`RECOVERY_SOURCE_SNAPSHOT_CHANGED` or `RECOVERY_TENANT_CONTEXT_CHANGED` rather
+than altering an old journal to match.
+
+RECOVERY.2A requires a current plan with COMPLETE browser-storage inspection,
+`executableForFutureCopy === true`, no bound source and no unknown store. The
+control DB and empty destination namespace may write their own infrastructure
+metadata; LanzoDB1 remains read-only and untouched. RECOVERY.2A DOES NOT
+RECOVER BUSINESS DATA, copy rows, activate a destination, replay outbox, sync,
+call RPCs or reconcile cloud data.

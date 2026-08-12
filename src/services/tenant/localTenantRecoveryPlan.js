@@ -131,6 +131,23 @@ const digest = async (
   return bytesToHex(result);
 };
 
+export const createRecoveryContextFingerprint = async ({
+  sourceSnapshotFingerprint,
+  activeTenantAliases,
+  cryptoProvider = globalThis.crypto
+} = {}) => {
+  const sourceFingerprint = String(sourceSnapshotFingerprint || '').replace(/^sha256:/, '');
+  if (!sourceFingerprint || !Array.isArray(activeTenantAliases) || activeTenantAliases.length === 0) {
+    throw recoveryError('RECOVERY_CONTEXT_FINGERPRINT_REQUIRED');
+  }
+  const fingerprint = await digest({
+    domain: RECOVERY_CONTEXT_FINGERPRINT_DOMAIN,
+    sourceSnapshotFingerprint: sourceFingerprint,
+    activeTenantAliases: [...new Set(activeTenantAliases)].sort()
+  }, cryptoProvider);
+  return `sha256:${fingerprint}`;
+};
+
 const tenantAlias = async (licenseKey, cryptoProvider = globalThis.crypto) => {
   if (!cryptoProvider?.subtle?.digest) throw new Error('RECOVERY_FINGERPRINT_UNAVAILABLE');
   const result = await cryptoProvider.subtle.digest('SHA-256', new TextEncoder().encode(licenseKey));
@@ -492,11 +509,11 @@ export const buildLegacyRecoveryPlan = async ({
     ),
     cryptoProvider
   );
-  const recoveryContextFingerprint = await digest({
-    domain: RECOVERY_CONTEXT_FINGERPRINT_DOMAIN,
+  const recoveryContextFingerprint = await createRecoveryContextFingerprint({
     sourceSnapshotFingerprint: fingerprint,
-    activeTenantAliases: [...activeIdentity.aliases].sort()
-  }, cryptoProvider);
+    activeTenantAliases: activeIdentity.aliases,
+    cryptoProvider
+  });
   const evidenceByRecord = new Map();
   let foreignCandidateCount = 0;
   const foreignCandidateTokens = new Set();
@@ -601,7 +618,7 @@ export const buildLegacyRecoveryPlan = async ({
     version: RECOVERY_PLAN_VERSION,
     sourceDatabase: { name: snapshot.sourceDatabase || DB_NAME, role: 'legacy_vault' },
     sourceSnapshotFingerprint: `sha256:${fingerprint}`,
-    recoveryContextFingerprint: `sha256:${recoveryContextFingerprint}`,
+    recoveryContextFingerprint,
     activeTenantAuthority: { type: activeIdentity.authority, aliasesAvailable: activeIdentity.aliases.length },
     browserStorageInspection,
     status: RECOVERY_PLAN_STATUS.PLAN_CREATED,
