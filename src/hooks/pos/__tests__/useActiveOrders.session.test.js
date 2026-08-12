@@ -40,6 +40,10 @@ vi.mock('../../../services/utils', () => ({
 
 vi.mock('../../../services/db/dexie', () => ({
   db: {
+    version: vi.fn(() => ({ stores: vi.fn() })),
+    open: vi.fn(async () => undefined),
+    isOpen: vi.fn(() => true),
+    on: vi.fn(),
     table: vi.fn(() => ({
       where: vi.fn(() => ({
         equals: vi.fn(() => ({
@@ -51,7 +55,23 @@ vi.mock('../../../services/db/dexie', () => ({
       update: vi.fn(async () => 0)
     }))
   },
-  STORES: { SALES: 'sales' }
+  STORES: { SALES: 'sales', DELETED_SALES: 'deleted_sales' }
+}));
+
+vi.mock('../../../services/database', () => ({
+  loadData: vi.fn(async () => null),
+  saveData: vi.fn(async () => undefined),
+  STORES: { COMPANY: 'company' }
+}));
+
+vi.mock('../../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  getLocalTenantGuardState: vi.fn(() => ({ enabled: false, status: 'disabled' })),
+  initializeLocalTenantGuard: vi.fn(),
+  isLocalTenantAccessError: vi.fn(() => false),
+  lockLocalTenantAccess: vi.fn(),
+  runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
 
 let useActiveOrders;

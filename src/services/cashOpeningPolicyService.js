@@ -1,4 +1,5 @@
 import { Money } from '../utils/moneyMath';
+import { canAccessTenantOwnedRuntimeCache } from './tenant/localTenantPolicy';
 
 export const CASH_OPENING_POLICY_KEY = 'lanzo_cash_opening_policy';
 export const CASH_OPENING_POLICY_EVENT = 'lanzo:cash-opening-policy-changed';
@@ -9,6 +10,8 @@ export const CASH_OPENING_POLICY = Object.freeze({
 });
 
 export function getCashOpeningPolicy() {
+  if (!canAccessTenantOwnedRuntimeCache()) return CASH_OPENING_POLICY.MANUAL;
+
   try {
     const stored = localStorage.getItem(CASH_OPENING_POLICY_KEY);
     return stored === CASH_OPENING_POLICY.AUTOMATIC
@@ -23,6 +26,8 @@ export function setCashOpeningPolicy(policy) {
   const normalized = policy === CASH_OPENING_POLICY.AUTOMATIC
     ? CASH_OPENING_POLICY.AUTOMATIC
     : CASH_OPENING_POLICY.MANUAL;
+
+  if (!canAccessTenantOwnedRuntimeCache()) return CASH_OPENING_POLICY.MANUAL;
 
   try {
     localStorage.setItem(CASH_OPENING_POLICY_KEY, normalized);

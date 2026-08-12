@@ -13,6 +13,10 @@ import {
   shouldSkipRemoteValidationAfterFailure,
   shouldSkipRemoteValidationForPlan
 } from './licenseValidationTimestamps';
+import {
+  assertLocalTenantSyncAccess,
+  isLocalTenantAccessError
+} from '../../../services/tenant/localTenantGuard';
 
 let licenseSyncTimer = null;
 let licenseSyncOnlineListener = null;
@@ -100,9 +104,7 @@ export const createLicenseSyncActions = ({
     const state = get();
 
     if (
-      state.appStatus === 'loading' ||
-      state.appStatus === 'unauthenticated' ||
-      state.appStatus === 'staff_login_required' ||
+      state.appStatus !== 'ready' ||
       state._isInitializing ||
       !state.licenseDetails?.license_key
     ) {
@@ -113,6 +115,20 @@ export const createLicenseSyncActions = ({
       Logger.warn(`[LicenseSync] Omitiendo revalidación (${reason}): sin conexión.`);
       return false;
     }
+
+    try {
+      await assertLocalTenantSyncAccess(state.licenseDetails, {
+        reason: `license_sync_check_${reason}`
+      });
+    } catch (error) {
+      if (isLocalTenantAccessError(error)) {
+        await get().stopLicenseSync();
+        return false;
+      }
+      throw error;
+    }
+
+    if (get().appStatus !== 'ready') return false;
 
     const syncMode = state.licenseSyncMode || getLicenseSyncMode(state.licenseDetails);
 
@@ -162,7 +178,7 @@ export const createLicenseSyncActions = ({
         allowLocalOnly: true
       });
 
-      if (get().appStatus === 'staff_login_required') {
+      if (get().appStatus !== 'ready') {
         return false;
       }
 
@@ -210,6 +226,10 @@ export const createLicenseSyncActions = ({
       Logger.warn('[LicenseSync] No hay licencia para sincronizar.');
       return;
     }
+
+    await assertLocalTenantSyncAccess(state.licenseDetails, {
+      reason: 'license_sync_start'
+    });
 
     if (state.licenseSyncActive && state.licenseSyncLicenseKey === licenseKey) {
       await get().refreshLicenseSyncMode('start_existing');

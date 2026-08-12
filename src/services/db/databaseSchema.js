@@ -1,11 +1,13 @@
 import { POS_SYNC_STORES } from '../sync/syncConstants';
+import { LOCAL_TENANT_BINDING_STORE } from '../tenant/localTenantPolicy';
 
 export const DEXIE_NATIVE_VERSION_MULTIPLIER = 10;
 export const LEGACY_NATIVE_DATABASE_VERSION = 110;
 export const POS_SYNC_DEXIE_VERSION = 24;
 export const PRIMARY_KEY_RECOVERY_DEXIE_VERSION = 30;
+export const LOCAL_TENANT_BINDING_DEXIE_VERSION = 31;
 export const CURRENT_NATIVE_DATABASE_VERSION =
-  PRIMARY_KEY_RECOVERY_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
+  LOCAL_TENANT_BINDING_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
 
 export const RECOVERY_STORES = Object.freeze({
   SALES_BACKUP: '__lanzo_sales_backup_v30',
@@ -44,6 +46,7 @@ export const SYNC_META_SCHEMA = 'key';
 export const SYNC_CONFLICTS_SCHEMA = 'id, entityType, entityId, status, createdAt';
 export const RECOVERY_BACKUP_SCHEMA = 'legacyKey, sourceKey, migratedId';
 export const RECOVERY_META_SCHEMA = 'key';
+export const LOCAL_TENANT_BINDING_SCHEMA = 'key';
 
 const registeredDatabases = new WeakSet();
 
@@ -71,6 +74,13 @@ export const registerCanonicalDexieExtensions = (db, stores) => {
     [RECOVERY_STORES.SALES_BACKUP]: RECOVERY_BACKUP_SCHEMA,
     [RECOVERY_STORES.DELETED_SALES_BACKUP]: RECOVERY_BACKUP_SCHEMA,
     [RECOVERY_STORES.META]: RECOVERY_META_SCHEMA
+  });
+
+  // Forward-only metadata addition. Binding is intentionally not backfilled in
+  // the upgrade: legacy ownership is resolved later by LocalTenantGuard using
+  // authenticated context plus durable evidence already inside the database.
+  db.version(LOCAL_TENANT_BINDING_DEXIE_VERSION).stores({
+    [LOCAL_TENANT_BINDING_STORE]: LOCAL_TENANT_BINDING_SCHEMA
   });
 
   registeredDatabases.add(db);

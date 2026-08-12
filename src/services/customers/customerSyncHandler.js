@@ -13,6 +13,7 @@ import {
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { customerMigrationService } from './customerMigrationService';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 
 const CUSTOMER_LAST_CHANGE_SEQ_KEY = 'customers_last_change_seq';
 const CONFLICT_CODES = new Set(['VERSION_CONFLICT', 'CUSTOMER_DELETED', 'DUPLICATE_PHONE']);
@@ -81,13 +82,14 @@ export const customerSyncHandler = {
       }
       return migrationResult;
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[Customers/Sync] Migracion inicial fallo sin bloquear app:', error);
       return { success: false, error };
     }
   },
 
-  async onEvents(events = []) {
-    const licenseKey = getRuntimeLicenseKey();
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+    const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
 
     const hasCustomerEvents = events.some((event) => (event.entity_type || event.entityType) === SYNC_ENTITY_TYPES.CUSTOMER);

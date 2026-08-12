@@ -4,6 +4,10 @@ import { DatabaseError, DB_ERROR_CODES } from './utils';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath'; // <-- OBLIGATORIO
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
+import {
+    LOCAL_TENANT_STATUS,
+    localTenantAccessController
+} from '../tenant/localTenantPolicy';
 
 const isCashPaymentMethod = (paymentMethod) => (
     ['efectivo', 'cash'].includes(String(paymentMethod || '').trim().toLowerCase())
@@ -394,13 +398,20 @@ export const customerCreditRepository = {
     }
 };
 
-// Enganchar el auto-heal al inicio de la base de datos sin bloquear el renderizado
-db.on('ready', () => {
+const scheduleTenantGrantedAutoHeal = (tenantState) => {
+    if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) return;
     // Usamos setTimeout para empujar la ejecución al final del event loop
     // asegurando que Dexie.js termine de abrir y React pueda renderizar.
     setTimeout(() => {
+        if (localTenantAccessController.getState().status !== LOCAL_TENANT_STATUS.GRANTED) return;
         customerCreditRepository.runGlobalAutoHealBackground().catch(err => {
             console.error("Error en hook de background auto-heal:", err);
         });
     }, 3000);
-});
+};
+
+// Los datos de crédito son tenant-owned: el auto-heal solo se agenda después
+// de que el guard concede acceso a una licencia compatible. También se evalúa
+// el estado actual para imports lazy posteriores al grant.
+localTenantAccessController.subscribe(scheduleTenantGrantedAutoHeal);
+scheduleTenantGrantedAutoHeal(localTenantAccessController.getState());

@@ -6,6 +6,11 @@
  */
 
 import { runChunkedMigration } from './migrationCore';
+import {
+  LOCAL_TENANT_BINDING_KEY,
+  LOCAL_TENANT_BINDING_STORE,
+  areLocalTenantAliasesCompatible
+} from '../services/tenant/localTenantPolicy';
 
 let isRunning = false;
 let shouldStop = false;
@@ -97,9 +102,34 @@ const openExistingDatabase = (dbName) => new Promise((resolve, reject) => {
   };
 });
 
+const requireMatchingTenantBinding = (database, tenantAliases) => new Promise((resolve, reject) => {
+  if (!Array.isArray(tenantAliases) || tenantAliases.length === 0) {
+    reject(new Error('LOCAL_TENANT_WORKER_IDENTITY_MISSING'));
+    return;
+  }
+  if (!database.objectStoreNames.contains(LOCAL_TENANT_BINDING_STORE)) {
+    reject(new Error('LOCAL_TENANT_WORKER_BINDING_MISSING'));
+    return;
+  }
+
+  const transaction = database.transaction([LOCAL_TENANT_BINDING_STORE], 'readonly');
+  const request = transaction.objectStore(LOCAL_TENANT_BINDING_STORE).get(LOCAL_TENANT_BINDING_KEY);
+  request.onerror = () => reject(request.error || new Error('LOCAL_TENANT_WORKER_BINDING_READ_FAILED'));
+  request.onsuccess = () => {
+    const binding = request.result;
+    const boundAliases = binding?.tenantAliases || [binding?.tenantIdentity].filter(Boolean);
+    if (!areLocalTenantAliasesCompatible(boundAliases, tenantAliases)) {
+      reject(new Error('LOCAL_TENANT_WORKER_MISMATCH'));
+      return;
+    }
+    resolve();
+  };
+});
+
 const runMigration = async (config) => {
   const {
     dbName,
+    tenantAliases,
     stores = ['menu', 'product_batches'],
     batchSize = 500,
     delayBetweenBatches = 10
@@ -110,6 +140,7 @@ const runMigration = async (config) => {
 
   try {
     activeDatabase = await openExistingDatabase(dbName);
+    await requireMatchingTenantBinding(activeDatabase, tenantAliases);
     const results = {
       totalProcessed: 0,
       stores: {},

@@ -21,6 +21,11 @@ vi.mock('./licenseValidationTimestamps', () => ({
   shouldSkipRemoteValidationForPlan: mocks.shouldSkipRemoteValidationForPlan
 }));
 
+vi.mock('../../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  isLocalTenantAccessError: vi.fn(() => false)
+}));
+
 import { createLicenseSyncActions } from './licenseSyncActions';
 
 const createState = ({ mode = 'hybrid_realtime' } = {}) => {

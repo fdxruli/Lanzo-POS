@@ -29,6 +29,14 @@ import {
     isLicensePlanBlockFailure,
     requiresAdminIdentity
 } from './licenseGuards';
+import {
+    assertLocalTenantAccess,
+    initializeLocalTenantGuard,
+  isLocalTenantAccessError,
+  lockLocalTenantAccess,
+  runWithLocalTenantSyncLease
+} from '../../../services/tenant/localTenantGuard';
+import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
 let initializePromise = null;
 let coordinatorState = 'idle';
@@ -71,13 +79,20 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
         initializePromise = (async () => {
             try {
                 await prepareLocalDatabase({ force });
+                initializeLocalTenantGuard('application_bootstrap');
                 const localLicense = await getLicenseFromStorage();
 
                 if (!localLicense?.license_key) {
+                    lockLocalTenantAccess('no_stored_license');
                     coordinatorState = 'ready';
                     set({ appStatus: 'unauthenticated' });
                     return { status: 'unauthenticated' };
                 }
+
+                // This is the first tenant-owned boundary. It intentionally
+                // precedes actor-token reads, profile loading, catalog startup
+                // and every sync coordinator.
+                await assertLocalTenantAccess(localLicense, { reason: 'stored_license_bootstrap' });
 
                 Logger.log('[AppStore] Carga rápida activada - Usando caché local');
 
@@ -131,7 +146,11 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         return { status: 'staff_login_required' };
                     }
 
-                    const staffSession = await verifyStaffSession(localLicense.license_key);
+                    const staffSession = await runWithLocalTenantSyncLease(
+                        localLicense,
+                        { reason: 'staff_session_restore' },
+                        () => verifyStaffSession(localLicense.license_key)
+                    );
                     if (!staffSession?.valid) {
                         const serverCheck = await revalidateLicense(localLicense.license_key);
                         if (isLicensePlanBlockFailure(serverCheck)) {
@@ -200,7 +219,12 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         return { status: get().appStatus };
                     }
 
-                    const adminSession = await verifyAdminSession(localLicense.license_key);
+                    const adminSession = await verifyAdminSession(localLicense.license_key, {
+                        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
+                            tenantSource,
+                            { reason: 'admin_session_restore_before_local_persistence' }
+                        )
+                    });
                     if (!adminSession.valid) {
                         await get()._requireAdminLogin(localLicense, adminSession);
                         coordinatorState = 'ready';
@@ -237,6 +261,15 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 coordinatorState = 'ready';
                 return { status: get().appStatus };
             } catch (criticalError) {
+                if (isLocalTenantAccessError(criticalError)) {
+                    coordinatorState = 'tenant_blocked';
+                    enterLocalTenantIsolationFailure(set, criticalError);
+                    return {
+                        status: 'local_tenant_mismatch',
+                        code: criticalError.code
+                    };
+                }
+
                 const classification = classifyDatabaseError(criticalError);
                 if (classification.structural) {
                     Logger.warn('[AppStore] Bootstrap pausado por recuperación local.', {

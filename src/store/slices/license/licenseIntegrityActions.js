@@ -24,6 +24,7 @@ import {
     markLastLicenseValidationAttempt,
     markLastLicenseValidationSuccess
 } from './licenseValidationTimestamps';
+import { isLocalTenantAccessError } from '../../../services/tenant/localTenantGuard';
 
 const normalizeOptions = (options = {}) => {
     if (typeof options === 'string') {
@@ -114,6 +115,14 @@ export const createLicenseIntegrityActions = ({
             markLastLicenseValidationAttempt(licenseDetails.license_key);
 
             const serverCheck = await revalidateLicense(licenseDetails.license_key);
+
+            if (
+                get().appStatus !== state.appStatus ||
+                get().licenseDetails?.license_key !== licenseDetails.license_key
+            ) {
+                Logger.log('[Integrity] La sesión cambió durante la validación; se descarta la respuesta.');
+                return false;
+            }
 
             if (!serverCheck?.valid && serverCheck?.valid !== false) {
                 Logger.warn('[Integrity] Respuesta inválida del servidor; no se marca validación exitosa.');
@@ -264,6 +273,7 @@ export const createLicenseIntegrityActions = ({
             await get().refreshLicenseSyncMode('integrity');
         } catch (error) {
             markLastLicenseValidationAttempt(licenseDetails.license_key);
+            if (isLocalTenantAccessError(error)) return false;
             Logger.warn('Verificación de integridad falló (red/server), manteniendo sesión:', error);
         }
 

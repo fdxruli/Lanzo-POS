@@ -23,6 +23,13 @@ vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks
 vi.mock('../../../services/db/databaseRuntime', () => ({
   ensureLocalDatabaseReady: mocks.ensureLocalDatabaseReady
 }));
+vi.mock('../../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  initializeLocalTenantGuard: vi.fn(),
+  isLocalTenantAccessError: vi.fn(() => false),
+  lockLocalTenantAccess: vi.fn()
+}));
 
 import { createLicenseAdminActions } from './licenseAdminActions';
 

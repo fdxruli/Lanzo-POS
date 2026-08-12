@@ -14,8 +14,17 @@ import {
   PROFILE_LAST_LOAD_KEY,
   PROFILE_REFRESH_TTL_MS
 } from './license/licenseConstants';
+import {
+  assertLocalTenantSyncAccess,
+  isLocalTenantAccessError
+} from '../../services/tenant/localTenantGuard';
 
 let _profileLoadGeneration = 0;
+let _profileSessionGeneration = 0;
+
+const isProfileLoadCurrent = (generation, sessionGeneration) => (
+  generation === _profileLoadGeneration && sessionGeneration === _profileSessionGeneration
+);
 
 const LEGACY_COMPANY_KEY = 'company';
 
@@ -28,7 +37,7 @@ const normalizeBusinessTypes = (businessType) => {
     rawTypes = businessType.filter(Boolean);
   } else if (typeof businessType === 'string') {
     rawTypes = businessType
-      .replace(/[{}\"]/g, '')
+      .replace(/[{}"]+/g, '')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
@@ -117,12 +126,25 @@ export const createProfileSlice = (set, get) => ({
   companyProfile: null,
   profileImportCandidate: null,
 
+  _invalidateProfileLoads: () => {
+    _profileSessionGeneration += 1;
+  },
+
   _loadProfile: async (licenseKey, options = {}) => {
     const {
       forceRemote = false,
       refreshProfile = false,
       reason = 'manual'
     } = options || {};
+    const sessionGeneration = _profileSessionGeneration;
+
+    await assertLocalTenantSyncAccess(
+      { license_key: licenseKey },
+      { reason: `profile_${reason}` }
+    );
+    if (sessionGeneration !== _profileSessionGeneration) return null;
+    get().refreshTenantUiPreferences?.();
+    get().refreshDriveSession?.();
 
     const stateAtLoad = get();
     const isAuthenticatedStaffTransition =
@@ -158,7 +180,7 @@ export const createProfileSlice = (set, get) => ({
     try {
       const cachedProfile = await loadData(STORES.COMPANY, getProfileCacheKey(licenseKey));
 
-      if (generation !== _profileLoadGeneration) {
+      if (!isProfileLoadCurrent(generation, sessionGeneration)) {
         Logger.log(`[Profile] Carga #${generation} descartada tras leer IndexedDB`);
         return null;
       }
@@ -173,6 +195,7 @@ export const createProfileSlice = (set, get) => ({
         }
       }
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[AppStore] Fallo carga perfil local:', error);
     }
 
@@ -181,16 +204,31 @@ export const createProfileSlice = (set, get) => ({
         Logger.log(`[Profile] Refrescando perfil remoto (${reason}).`);
         const profileResult = await getBusinessProfile(licenseKey);
 
-        if (generation !== _profileLoadGeneration) {
+        if (!isProfileLoadCurrent(generation, sessionGeneration)) {
           Logger.log(`[Profile] Carga #${generation} descartada`);
           return null;
         }
 
         if (profileResult?.success && profileResult.data) {
+          const responseIdentity = profileResult.data;
+          if (
+            responseIdentity.license_key
+            || responseIdentity.licenseKey
+            || responseIdentity.license_id
+            || responseIdentity.licenseId
+            || responseIdentity.details?.license_key
+            || responseIdentity.details?.licenseKey
+            || responseIdentity.details?.license_id
+            || responseIdentity.details?.licenseId
+          ) {
+            await assertLocalTenantSyncAccess(responseIdentity, {
+              reason: 'profile_remote_response_identity'
+            });
+          }
           companyData = buildCompanyData(profileResult.data, licenseKey);
           companyData = await saveProfileCache(licenseKey, companyData);
 
-          if (generation !== _profileLoadGeneration) {
+          if (!isProfileLoadCurrent(generation, sessionGeneration)) {
             Logger.log(`[Profile] Carga #${generation} descartada tras guardar local`);
             return null;
           }
@@ -201,6 +239,7 @@ export const createProfileSlice = (set, get) => ({
           profileMissingRemotely = true;
         }
       } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         Logger.warn('[AppStore] Fallo carga perfil online:', error);
       }
     }
@@ -209,7 +248,7 @@ export const createProfileSlice = (set, get) => ({
       try {
         const cachedProfile = await loadData(STORES.COMPANY, getProfileCacheKey(licenseKey));
 
-        if (generation !== _profileLoadGeneration) {
+        if (!isProfileLoadCurrent(generation, sessionGeneration)) {
           Logger.log(`[Profile] Carga #${generation} descartada tras leer IndexedDB`);
           return null;
         }
@@ -218,6 +257,7 @@ export const createProfileSlice = (set, get) => ({
           companyData = buildCompanyData(cachedProfile, licenseKey);
         }
       } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         Logger.warn('[AppStore] Fallo carga perfil local:', error);
       }
     }
@@ -235,8 +275,14 @@ export const createProfileSlice = (set, get) => ({
           );
         }
       } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
         Logger.warn('[AppStore] Fallo leyendo perfil legado:', error);
       }
+    }
+
+    if (!isProfileLoadCurrent(generation, sessionGeneration)) {
+      Logger.log(`[Profile] Carga #${generation} descartada antes de publicar estado`);
+      return null;
     }
 
     applyProfileState(set, get, companyData, profileImportCandidate);
@@ -246,6 +292,7 @@ export const createProfileSlice = (set, get) => ({
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
+    const sessionGeneration = _profileSessionGeneration;
 
     try {
       let logoUrl = setupData.logo_url || setupData.logo || null;
@@ -279,6 +326,8 @@ export const createProfileSlice = (set, get) => ({
         buildCompanyData(profileData, licenseKey)
       );
 
+      if (sessionGeneration !== _profileSessionGeneration) return null;
+
       set({
         companyProfile: companyData,
         profileImportCandidate: null,
@@ -293,6 +342,7 @@ export const createProfileSlice = (set, get) => ({
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
+    const sessionGeneration = _profileSessionGeneration;
 
     try {
       const nextCompanyData = { ...companyData };
@@ -321,6 +371,8 @@ export const createProfileSlice = (set, get) => ({
         licenseKey,
         buildCompanyData(nextCompanyData, licenseKey)
       );
+
+      if (sessionGeneration !== _profileSessionGeneration) return null;
 
       set({ companyProfile: scopedCompanyData });
     } catch (error) {

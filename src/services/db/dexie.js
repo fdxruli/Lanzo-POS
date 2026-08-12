@@ -6,6 +6,7 @@ import { getLegacyFinancialSaleStatus } from '../sales/financialStats';
 import Logger from '../Logger';
 import { getLowStockAlertStatus } from './utils';
 import { buildProductSearchFields } from './productSearchIndex';
+import { installLocalTenantDbMiddleware } from '../tenant/localTenantPolicy';
 // Nota: Dexie maneja el versionado de forma interna y más limpia,
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -547,6 +548,7 @@ class LanzoDatabase extends Dexie {
 
 // Instancia Singleton
 export const db = new LanzoDatabase();
+installLocalTenantDbMiddleware(db);
 
 db.table(STORES.CUSTOMERS).hook('creating', (_primaryKey, customer) => {
   customer.debtCents = normalizeCustomerDebtCents(customer.debt || 0);

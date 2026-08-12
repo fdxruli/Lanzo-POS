@@ -46,6 +46,14 @@ vi.mock('../../../services/db/databaseRuntime', () => ({
 vi.mock('../../../services/Logger', () => ({
   default: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }));
+vi.mock('../../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  initializeLocalTenantGuard: vi.fn(),
+  isLocalTenantAccessError: vi.fn(() => false),
+  lockLocalTenantAccess: vi.fn(),
+  runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
+}));
 
 import { createLicenseAdminActions } from './licenseAdminActions';
 import { createLicenseBootstrapActions } from './licenseBootstrapActions';
@@ -122,7 +130,10 @@ describe('canonical actor session transitions', () => {
     });
     await state.initializeApp();
     expect(mocks.prepareLocalDatabase).toHaveBeenCalled();
-    expect(mocks.verifyAdminSession).toHaveBeenCalledWith(state.licenseDetails.license_key);
+    expect(mocks.verifyAdminSession).toHaveBeenCalledWith(
+      state.licenseDetails.license_key,
+      expect.objectContaining({ beforeLocalPersistence: expect.any(Function) })
+    );
     expect(mocks.verifyStaffSession).not.toHaveBeenCalled();
     expect(state.appStatus).toBe('ready');
   });

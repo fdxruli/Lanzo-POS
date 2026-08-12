@@ -19,6 +19,14 @@ const supabaseMocks = vi.hoisted(() => ({
 vi.mock('../../../../services/db/databaseRuntime', () => runtimeMocks);
 vi.mock('../../../../services/licenseStorage', () => storageMocks);
 vi.mock('../../../../services/supabase', () => supabaseMocks);
+vi.mock('../../../../services/tenant/localTenantGuard', () => ({
+  assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
+  assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+  initializeLocalTenantGuard: vi.fn(),
+  isLocalTenantAccessError: vi.fn(() => false),
+  lockLocalTenantAccess: vi.fn(),
+  runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
+}));
 
 import { createLicenseBootstrapActions, getInitializeAppCoordinatorState } from '../licenseBootstrapActions';
 

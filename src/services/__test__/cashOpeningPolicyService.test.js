@@ -1,3 +1,5 @@
+/* @vitest-environment jsdom */
+
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CASH_OPENING_POLICY,
@@ -6,9 +8,11 @@ import {
   getCashOpeningPolicy,
   setCashOpeningPolicy
 } from '../cashOpeningPolicyService.js';
+import { localTenantAccessController } from '../tenant/localTenantPolicy.js';
 
 describe('cashOpeningPolicy', () => {
   beforeEach(() => {
+    localTenantAccessController.reset();
     localStorage.clear();
   });
 

@@ -20,6 +20,7 @@ import {
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 
 let registered = false;
 
@@ -151,6 +152,7 @@ export const productSyncHandler = {
 
       return { ...migrationResult, recovery };
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       const diagnostic = serializeProductCatalogSyncError(error, {
         operation: 'product_sync_on_start', licenseKey
       });

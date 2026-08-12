@@ -1,6 +1,8 @@
+import { canAccessTenantOwnedRuntimeCache } from '../../services/tenant/localTenantPolicy';
+
 const DRIVE_SESSION_KEY = 'lanzo_drive_session:v1';
 
-function clearPersistedDriveSession() {
+export function clearPersistedDriveSession() {
   try {
     sessionStorage.removeItem(DRIVE_SESSION_KEY);
   } catch {
@@ -9,6 +11,8 @@ function clearPersistedDriveSession() {
 }
 
 function readPersistedDriveSession() {
+  if (!canAccessTenantOwnedRuntimeCache()) return { session: null, expired: false };
+
   try {
     const serializedSession = sessionStorage.getItem(DRIVE_SESSION_KEY);
     if (!serializedSession) return { session: null, expired: false };
@@ -43,6 +47,8 @@ function readPersistedDriveSession() {
 }
 
 function persistDriveSession(accessToken, expiresAt) {
+  if (!canAccessTenantOwnedRuntimeCache()) return;
+
   try {
     sessionStorage.setItem(DRIVE_SESSION_KEY, JSON.stringify({
       accessToken,
@@ -62,7 +68,27 @@ export const createDriveSlice = (set) => {
     isDriveConnected: Boolean(session),
     needsDriveReauth: expired,
 
+    refreshDriveSession: () => {
+      const refreshed = readPersistedDriveSession();
+      set({
+        driveAccessToken: refreshed.session?.accessToken || null,
+        driveTokenExpiresAt: refreshed.session?.expiresAt || null,
+        isDriveConnected: Boolean(refreshed.session),
+        needsDriveReauth: refreshed.expired
+      });
+    },
+
     connectDrive: ({ accessToken, expiresIn }) => {
+      if (!canAccessTenantOwnedRuntimeCache()) {
+        set({
+          driveAccessToken: null,
+          driveTokenExpiresAt: null,
+          isDriveConnected: false,
+          needsDriveReauth: false
+        });
+        return false;
+      }
+
       const expiresInSeconds = Number(expiresIn);
       const tokenLifetime = Number.isFinite(expiresInSeconds) ? expiresInSeconds : 3600;
       const expiresAt = Date.now() + tokenLifetime * 1000;
@@ -72,6 +98,18 @@ export const createDriveSlice = (set) => {
         driveAccessToken: accessToken,
         driveTokenExpiresAt: expiresAt,
         isDriveConnected: true,
+        needsDriveReauth: false
+      });
+      return true;
+    },
+
+    lockDriveSession: () => {
+      // Logout/mismatch hides the tenant-owned token without deleting it. It
+      // can be rehydrated only after the same sticky tenant is granted again.
+      set({
+        driveAccessToken: null,
+        driveTokenExpiresAt: null,
+        isDriveConnected: false,
         needsDriveReauth: false
       });
     },

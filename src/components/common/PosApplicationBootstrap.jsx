@@ -12,6 +12,10 @@ import {
   getDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
 } from '../../services/db/databaseRecoveryState';
+import {
+  initializeLocalTenantGuard,
+  resetLocalTenantGuardForTests
+} from '../../services/tenant/localTenantGuard';
 
 let initialPreparationPromise = null;
 let readyRuntimePromise = null;
@@ -146,6 +150,9 @@ export const startInitialDatabasePreparation = ({
 
 export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) => {
   if (!readyRuntimePromise) {
+    // Database preflight has completed before this function is reached. Lock
+    // tenant-owned Dexie/runtime caches before importing App and its stores.
+    initializeLocalTenantGuard('ready_runtime_loading');
     readyRuntimePromise = Promise.resolve().then(loadReadyRuntime);
   }
 
@@ -295,4 +302,5 @@ export const resetPosApplicationBootstrapForTests = () => {
   initialPreparationPromise = null;
   readyRuntimePromise = null;
   readyRuntimeActivated = false;
+  resetLocalTenantGuardForTests();
 };

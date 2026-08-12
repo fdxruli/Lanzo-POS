@@ -12,6 +12,7 @@ import {
 import { cashCloudRepository } from './cashCloudRepository';
 import { cashLocalRepository } from './cashLocalRepository';
 import { isBrowserOnline } from './cashActor';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 
 const CASH_LAST_CHANGE_SEQ_KEY = 'cash_last_change_seq';
 let registered = false;
@@ -74,13 +75,14 @@ export const cashSyncHandler = {
       if (applied > 0) notifyCashChanged();
       return { success: true, applied, latestChangeSeq };
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[Cash/Sync] Snapshot inicial fallo sin bloquear app:', error);
       return { success: false, error };
     }
   },
 
-  async onEvents(events = []) {
-    const licenseKey = getRuntimeLicenseKey();
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+    const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isBrowserOnline()) return { applied: 0, skipped: true };
 
     const hasCashEvents = events.some((event) => {

@@ -16,6 +16,11 @@ import {
   selectNewestOrder,
   touchOrderVersion
 } from '../../services/orders/orderVersioning';
+import {
+  LOCAL_TENANT_STATUS,
+  canAccessTenantOwnedRuntimeCache,
+  localTenantAccessController
+} from '../../services/tenant/localTenantPolicy';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -59,7 +64,13 @@ export const selectCurrentOrderTableData = (state) => (
  * Hook para gestionar múltiples órdenes simultáneas en el POS.
  */
 export const useActiveOrders = create(
-  persist((set, get) => ({
+  persist((unsafeSet, get) => {
+    const set = (...args) => {
+      if (!canAccessTenantOwnedRuntimeCache()) return;
+      unsafeSet(...args);
+    };
+
+    return ({
     activeOrders: new Map(),
     currentOrderId: null,
     isLoading: false,
@@ -1133,11 +1144,13 @@ export const useActiveOrders = create(
         total: current.total
       };
     }
-  }), {
+    });
+  }, {
     name: 'lanzo-active-orders-storage',
     storage: createJSONStorage(() => ({
       getItem: (name) => {
         if (typeof window === 'undefined') return null;
+        if (!canAccessTenantOwnedRuntimeCache()) return null;
         try {
           return window.localStorage.getItem(name);
         } catch (e) {
@@ -1147,25 +1160,19 @@ export const useActiveOrders = create(
       },
       setItem: (name, value) => {
         if (typeof window === 'undefined') return;
+        if (!canAccessTenantOwnedRuntimeCache()) return;
         try {
           window.localStorage.setItem(name, value);
-        } catch {
-          console.warn(`[safeActiveOrdersStorage] Quota exceeded for ${name}. Cleaning up...`);
-          try {
-            for (let i = window.localStorage.length - 1; i >= 0; i--) {
-              const key = window.localStorage.key(i);
-              if (key && key.startsWith('lanzo-') && key !== name && key !== 'lanzo-cart-storage' && key !== 'lanzo-inventory-storage') {
-                window.localStorage.removeItem(key);
-              }
-            }
-            window.localStorage.setItem(name, value);
-          } catch (cleanupError) {
-            console.error(`[safeActiveOrdersStorage] Failed to save ${name} after cleanup`, cleanupError);
-          }
+        } catch (error) {
+          // Never evict unrelated Lanzo keys: they can belong to auth, device
+          // identity or another recovery surface. A failed write is safer than
+          // deleting data in response to quota pressure.
+          console.error(`[safeActiveOrdersStorage] Failed to save ${name}`, error);
         }
       },
       removeItem: (name) => {
         if (typeof window === 'undefined') return;
+        if (!canAccessTenantOwnedRuntimeCache()) return;
         try {
           window.localStorage.removeItem(name);
         } catch (e) {
@@ -1198,5 +1205,30 @@ export const useActiveOrders = create(
     }
   })
 );
+
+const setActiveOrdersStateUnsafe = useActiveOrders.setState;
+useActiveOrders.setState = (...args) => {
+  if (!canAccessTenantOwnedRuntimeCache()) return;
+  return setActiveOrdersStateUnsafe(...args);
+};
+
+localTenantAccessController.subscribe((tenantState) => {
+  if (!tenantState.enabled) return;
+
+  if (tenantState.status === LOCAL_TENANT_STATUS.GRANTED) {
+    void useActiveOrders.persist.rehydrate();
+    return;
+  }
+
+  // Keep the serialized data intact, while removing it from the active view
+  // as soon as auth is locked or a tenant mismatch is detected.
+  setActiveOrdersStateUnsafe({
+    activeOrders: new Map(),
+    currentOrderId: null,
+    isLoading: false,
+    pendingInventoryResolutions: new Map(),
+    isCurrentOrderLocked: false
+  });
+});
 
 // --- SUSCRIPCIÓN GLOBAL (Flujo Unidireccional: SSOT -> View) ---

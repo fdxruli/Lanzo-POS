@@ -434,11 +434,11 @@ describe('IndexedDB primary-key preserving recovery', () => {
   });
 
   it('rejects a newer native version without downgrade or deletion', async () => {
-    await openDatabase(310, (database) => database.createObjectStore('sales', { keyPath: 'id' }));
+    await openDatabase(320, (database) => database.createObjectStore('sales', { keyPath: 'id' }));
     await expect(preflightAndRepairIndexedDb()).rejects.toMatchObject({
       code: 'DB_UNSUPPORTED_NATIVE_VERSION'
     });
-    expect((await inspectIndexedDbStructure()).nativeVersion).toBe(310);
+    expect((await inspectIndexedDbStructure()).nativeVersion).toBe(320);
   });
 
   it('allows a compatible incomplete schema through normal Dexie upgrade', async () => {

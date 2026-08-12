@@ -15,6 +15,7 @@ import { customerLocalRepository } from '../customers/customerLocalRepository';
 import { customerCreditCloudRepository } from './customerCreditCloudRepository';
 import { customerCreditLocalRepository } from './customerCreditLocalRepository';
 import { customerCreditMigrationService } from './customerCreditMigrationService';
+import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 
 const CREDIT_LAST_CHANGE_SEQ_KEY = 'customer_credit_last_change_seq';
 let registered = false;
@@ -90,13 +91,14 @@ export const customerCreditSyncHandler = {
       if (applied > 0) notifyCreditChanged();
       return { success: true, migrationResult, applied, latestChangeSeq };
     } catch (error) {
+      if (isLocalTenantAccessError(error)) throw error;
       Logger.warn('[CustomerCredit/Sync] Inicio fallo sin bloquear app:', error);
       return { success: false, error };
     }
   },
 
-  async onEvents(events = []) {
-    const licenseKey = getRuntimeLicenseKey();
+  async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
+    const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isBrowserOnline()) return { applied: 0, skipped: true };
 
     const hasCreditEvents = events.some((event) => {

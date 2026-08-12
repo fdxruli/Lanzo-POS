@@ -47,6 +47,7 @@ import {
   BACKUP_PIN_SESSION_KEY,
   backupManager
 } from '../backupManager';
+import { localTenantAccessController } from '../../tenant/localTenantPolicy';
 
 const configuredSettings = {
   configured: true,
@@ -65,6 +66,7 @@ const persistedCryptoKey = {
 
 describe('BackupManager persisted key', () => {
   beforeEach(() => {
+    localTenantAccessController.reset();
     sessionStorage.clear();
     mocks.clearPersistedBackupKey.mockReset();
     mocks.getBackupSettings.mockReset();
@@ -84,6 +86,14 @@ describe('BackupManager persisted key', () => {
     backupManager.state.supported = false;
     backupManager.state.permission = 'unsupported';
     vi.restoreAllMocks();
+  });
+
+  it('bloquea backup antes de tocar el worker si no hay tenant concedido', async () => {
+    localTenantAccessController.enable('logout');
+    const workerSpy = vi.spyOn(backupManager, 'callWorker');
+
+    await expect(backupManager.backup()).rejects.toThrow('BACKUP_TENANT_ACCESS_REQUIRED');
+    expect(workerSpy).not.toHaveBeenCalled();
   });
 
   it('persiste solo la CryptoKey despues de desbloquear correctamente', async () => {

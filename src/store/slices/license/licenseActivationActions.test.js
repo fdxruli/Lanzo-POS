@@ -17,6 +17,13 @@ vi.mock('../../../services/licenseStorage', () => ({
     saveLicenseToStorage: mocks.saveLicenseToStorage
 }));
 
+vi.mock('../../../services/tenant/localTenantGuard', () => ({
+    assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
+    assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
+    initializeLocalTenantGuard: vi.fn(),
+    isLocalTenantAccessError: vi.fn(() => false)
+}));
+
 import { createLicenseActivationActions } from './licenseActivationActions';
 
 const createActionState = (profileStatus = 'ready') => {
