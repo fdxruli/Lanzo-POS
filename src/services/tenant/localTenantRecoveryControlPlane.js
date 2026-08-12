@@ -684,7 +684,54 @@ const manifestLockMetadata = (manifest) => ({
   copyManifestRecomputeSummary: manifest.recomputeSummary
 });
 
-const hasManifestLock = (journal) => Boolean(journal.copyManifestFingerprint);
+const MANIFEST_LOCK_FIELDS = Object.freeze([
+  'copyManifestVersion',
+  'copyManifestFingerprint',
+  'copyManifestItemCount',
+  'copyManifestStoreCounts',
+  'copyManifestExcludedCounts',
+  'copyManifestRecomputeSummary'
+]);
+const MANIFEST_LOCK_INTEGRITY_FAILURES = new Set([
+  'RECOVERY_COPY_MANIFEST_LOCK_MISSING',
+  'RECOVERY_COPY_MANIFEST_LOCK_INCOMPLETE'
+]);
+
+const isCountSummary = (value) => (
+  value !== null && typeof value === 'object' && !Array.isArray(value) &&
+  Object.values(value).every((count) => Number.isInteger(count) && count >= 0)
+);
+
+const manifestLockIntegrityError = (journal) => {
+  const presentFields = MANIFEST_LOCK_FIELDS.filter((field) => journal[field] !== undefined && journal[field] !== null);
+  if (presentFields.length === 0) return 'RECOVERY_COPY_MANIFEST_LOCK_MISSING';
+  if (
+    !Number.isInteger(journal.copyManifestVersion) || journal.copyManifestVersion < 1 ||
+    typeof journal.copyManifestFingerprint !== 'string' || journal.copyManifestFingerprint.length === 0 ||
+    !Number.isInteger(journal.copyManifestItemCount) || journal.copyManifestItemCount < 0 ||
+    !isCountSummary(journal.copyManifestStoreCounts) ||
+    !isCountSummary(journal.copyManifestExcludedCounts) ||
+    !isCountSummary(journal.copyManifestRecomputeSummary)
+  ) {
+    return 'RECOVERY_COPY_MANIFEST_LOCK_INCOMPLETE';
+  }
+  return null;
+};
+
+const assertManifestLockStateIntegrity = (journal) => {
+  if (
+    journal.state === RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE &&
+    journal.failureStage === 'COPY_MANIFEST' &&
+    MANIFEST_LOCK_INTEGRITY_FAILURES.has(journal.failureReason)
+  ) {
+    throw controlError(journal.failureReason);
+  }
+  if (!COPY_MANIFEST_STATES.has(journal.state)) return;
+  const integrityError = manifestLockIntegrityError(journal);
+  if (integrityError) throw controlError(integrityError);
+};
+
+const hasManifestLock = (journal) => manifestLockIntegrityError(journal) === null;
 
 const assertManifestLockMatches = (journal, manifest) => {
   if (!hasManifestLock(journal)) return;
@@ -761,6 +808,7 @@ export const createOrResumeRecoveryCopyManifest = async ({
   }
 
   try {
+    assertManifestLockStateIntegrity(journal);
     const destination = await verifyDestinationForCopyManifest({ name, journal, cryptoProvider });
     const revalidatedPlan = await inspectLegacyVaultAndBuildRecoveryPlan({
       adapter: sourceAdapter,

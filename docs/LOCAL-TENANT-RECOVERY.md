@@ -262,3 +262,15 @@ when its redacted fields happen to match. The intentionally repeated
 tier exactly match its primary row; an incompatible summary ref is a collision.
 RECOVERY.2C-R1 still persists no copy rows, refs, source keys, tenant aliases
 or business payloads, and performs no business-data copy.
+
+### RECOVERY.2C-R2 — advanced manifest lock integrity
+
+`COPY_MANIFEST_BUILDING` and `COPY_MANIFEST_READY` are valid only with a
+complete durable manifest lock: version, fingerprint, item count, store counts,
+excluded counts and recompute summary. Zero items and empty count objects are
+valid lock values. A missing or partial lock in either advanced state fails
+closed and cannot be reconstructed from current policy or source data. The
+resulting structural failure remains sticky when represented as
+`FAILED_RESUMABLE` for the copy-manifest stage, while failures that occur
+before any lock is calculated remain safely retryable. No reset, repair or
+automatic replacement path exists in RECOVERY.2C-R2.

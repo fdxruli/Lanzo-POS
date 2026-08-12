@@ -869,6 +869,89 @@ describe('tenant recovery control plane', () => {
     expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY);
   });
 
+  it('rejects a lockless BUILDING journal permanently without creating replacement authority', async () => {
+    const controlDatabase = createControlDatabase();
+    const activeTenantSource = { license_key: 'ACTIVE-A' };
+    const source = await createLegacySource();
+    const sourceAdapter = createSourceAdapter(source);
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({ adapter: sourceAdapter, activeTenantSource });
+    const { reserved } = await prepareSchemaReady({ controlDatabase, recoveryPlan: plan, activeTenantSource });
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    await controlDatabase.table('recovery_run_journal').update(journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_BUILDING,
+      copyManifestVersion: null,
+      copyManifestFingerprint: null,
+      copyManifestItemCount: null,
+      copyManifestStoreCounts: null,
+      copyManifestExcludedCounts: null,
+      copyManifestRecomputeSummary: null
+    });
+
+    for (const retry of [1, 2]) {
+      await expect(createOrResumeRecoveryCopyManifest({
+        controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+      })).rejects.toMatchObject({ code: 'RECOVERY_COPY_MANIFEST_LOCK_MISSING' });
+      const blocked = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+      expect(blocked.state).toBe(RECOVERY_JOURNAL_STATE.FAILED_RESUMABLE);
+      expect(blocked.failureReason).toBe('RECOVERY_COPY_MANIFEST_LOCK_MISSING');
+      expect(blocked.copyManifestFingerprint).toBeNull();
+      expect(retry).toBeGreaterThan(0);
+    }
+    const destination = await inspectDestinationRows(reserved.destinationDatabaseName);
+    expect(Object.values(destination.counts).every((count) => count === 0)).toBe(true);
+  });
+
+  it('rejects lockless READY and partial manifest locks without returning ready', async () => {
+    const controlDatabase = createControlDatabase();
+    const activeTenantSource = { license_key: 'ACTIVE-A' };
+    const source = await createLegacySource();
+    const sourceAdapter = createSourceAdapter(source);
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({ adapter: sourceAdapter, activeTenantSource });
+    await prepareSchemaReady({ controlDatabase, recoveryPlan: plan, activeTenantSource });
+    const journal = (await listRecoveryControlMetadata(controlDatabase)).journals[0];
+    await controlDatabase.table('recovery_run_journal').update(journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY,
+      copyManifestVersion: null,
+      copyManifestFingerprint: null,
+      copyManifestItemCount: null,
+      copyManifestStoreCounts: null,
+      copyManifestExcludedCounts: null,
+      copyManifestRecomputeSummary: null
+    });
+    await expect(createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    })).rejects.toMatchObject({ code: 'RECOVERY_COPY_MANIFEST_LOCK_MISSING' });
+
+    await controlDatabase.table('recovery_run_journal').update(journal.runId, {
+      state: RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY,
+      failureStage: null,
+      failureReason: null,
+      copyManifestFingerprint: 'sha256:partial-lock'
+    });
+    await expect(createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    })).rejects.toMatchObject({ code: 'RECOVERY_COPY_MANIFEST_LOCK_INCOMPLETE' });
+  });
+
+  it('accepts a complete zero-item lock on normal manifest resume', async () => {
+    const controlDatabase = createControlDatabase();
+    const activeTenantSource = { license_key: 'ACTIVE-A' };
+    const source = await createLegacySource();
+    const sourceAdapter = createSourceAdapter(source);
+    const plan = await inspectLegacyVaultAndBuildRecoveryPlan({ adapter: sourceAdapter, activeTenantSource });
+    await prepareSchemaReady({ controlDatabase, recoveryPlan: plan, activeTenantSource });
+    const first = await createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    });
+    const resumed = await createOrResumeRecoveryCopyManifest({
+      controlDatabase, recoveryPlan: plan, activeTenantSource, sourceAdapter
+    });
+    expect(first.manifest.copyItemCount).toBe(0);
+    expect(first.manifest.copyItemsByStore).toEqual({});
+    expect(resumed.journal.state).toBe(RECOVERY_JOURNAL_STATE.COPY_MANIFEST_READY);
+    expect(resumed.manifest.manifestFingerprint).toBe(first.manifest.manifestFingerprint);
+  });
+
   it('prevents RECOVERY.2A and RECOVERY.2B from regressing a manifest-ready journal', async () => {
     const controlDatabase = createControlDatabase();
     const activeTenantSource = { license_key: 'ACTIVE-A' };
