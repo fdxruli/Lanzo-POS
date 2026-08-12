@@ -216,3 +216,61 @@ advanced RECOVERY.2B journal.
 RECOVERY.2B DOES NOT COPY BUSINESS DATA, create a tenant binding, write sync
 metadata/outbox records, activate the destination, redirect the POS runtime,
 or make network, Supabase, sync or RPC calls.
+
+## RECOVERY.2C — deterministic copy manifest and execution precheck
+
+RECOVERY.2C does not copy a business row. It re-reads the legacy vault through
+the existing native readonly adapter, revalidates the immutable source and
+tenant-context fingerprints, revalidates the empty canonical destination, and
+creates an in-memory execution projection using only existing RecoveryPlan
+rows. A copy item requires both `PROVEN_DIRECT` or `PROVEN_RELATIONAL` and
+`COPY_IF_PROVEN`; this phase creates no ownership proof. Tier-A `sync_outbox`
+rows remain quarantined, and cloud-reconcilable, ambiguous, foreign, derived,
+operationally ignored and vault-only rows are never automatic copy items.
+
+The control journal advances only as `DESTINATION_SCHEMA_READY` →
+`COPY_MANIFEST_BUILDING` → `COPY_MANIFEST_READY`. It persists redacted
+fingerprints, counts and store summaries, never source keys, tenant aliases or
+business payloads. The manifest fingerprint is domain-separated and excludes
+timestamps and destination random identity. A zero-item manifest is valid and
+represents a successful fail-closed result for mixed historical topology.
+
+Every resume rebuilds and compares the projection against the supplied plan.
+Source/context drift, destination schema or row changes, policy-projection
+drift, opaque ref collision or a changed persisted manifest fail closed.
+RECOVERY.2A and RECOVERY.2B refuse later manifest states without mutating the
+journal or destination. RECOVERY.2C does not create binding, write destination
+business data, initialize sync metadata, replay outbox, activate the POS
+runtime, perform cloud reconciliation or use network/RPC/Supabase.
+
+### RECOVERY.2C-R1 — durable manifest lock
+
+The first fully revalidated manifest is durably locked, using only its
+redacted fingerprint, version and count summaries, in the same control-plane
+transition to `COPY_MANIFEST_BUILDING`. Both `COPY_MANIFEST_BUILDING` and
+`COPY_MANIFEST_READY` therefore refer to one immutable manifest candidate.
+Every later resume rebuilds the manifest and requires an exact match with the
+lock before it can continue. A source, policy or execution-projection drift
+remains fail-closed across repeated retries; it cannot replace the prior
+candidate, including after `FAILED_RESUMABLE`. Failures before a lock exists
+remain safely retryable once their underlying readonly prerequisite is fixed.
+
+Manifest and execution-projection data are deeply immutable after hashing.
+Any duplicate opaque ref among primary provenance rows now fails closed even
+when its redacted fields happen to match. The intentionally repeated
+`quarantined` compatibility summary is ignored only when its store, action and
+tier exactly match its primary row; an incompatible summary ref is a collision.
+RECOVERY.2C-R1 still persists no copy rows, refs, source keys, tenant aliases
+or business payloads, and performs no business-data copy.
+
+### RECOVERY.2C-R2 — advanced manifest lock integrity
+
+`COPY_MANIFEST_BUILDING` and `COPY_MANIFEST_READY` are valid only with a
+complete durable manifest lock: version, fingerprint, item count, store counts,
+excluded counts and recompute summary. Zero items and empty count objects are
+valid lock values. A missing or partial lock in either advanced state fails
+closed and cannot be reconstructed from current policy or source data. The
+resulting structural failure remains sticky when represented as
+`FAILED_RESUMABLE` for the copy-manifest stage, while failures that occur
+before any lock is calculated remain safely retryable. No reset, repair or
+automatic replacement path exists in RECOVERY.2C-R2.
