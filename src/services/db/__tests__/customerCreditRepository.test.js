@@ -1,17 +1,20 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { customerCreditRepository } from '../customerCreditRepository';
 import { db, STORES } from '../dexie';
+import { closeTestTenantRuntime, openTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
 describe('customerCreditRepository.processPayment', () => {
   beforeEach(async () => {
-    await db.open();
+    await openTestTenantRuntime();
     await db.table(STORES.CUSTOMER_LEDGER).clear();
     await db.table(STORES.MOVIMIENTOS_CAJA).clear();
     await db.table(STORES.CAJAS).clear();
     await db.table(STORES.SALES).clear();
     await db.table(STORES.CUSTOMERS).clear();
   });
+
+  afterEach(() => closeTestTenantRuntime());
 
   it('rechaza abono en efectivo sin cajaId y no modifica deuda ni ledger', async () => {
     await db.table(STORES.CUSTOMERS).put({

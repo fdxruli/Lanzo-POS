@@ -1,5 +1,6 @@
 import { db as defaultDatabase } from '../db/dexie';
 import { ensureLocalDatabaseReady } from '../db/databaseRuntime';
+import { getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
 import {
   DEVICE_SCOPED_SYNC_CACHE_KEYS,
   LOCAL_TENANT_BINDING_KEY,
@@ -848,7 +849,7 @@ export const createLocalTenantGuard = ({
 
   const getNativeDatabase = async () => {
     await ensureReady();
-    const nativeDatabase = database.backendDB();
+    const nativeDatabase = (database === defaultDatabase ? getActiveTenantDatabase() : database).backendDB();
     if (!nativeDatabase) throw new Error('LOCAL_TENANT_DATABASE_NOT_OPEN');
     return nativeDatabase;
   };
@@ -914,6 +915,10 @@ export const createLocalTenantGuard = ({
       throw error;
     }
 
+    // Do not replace the active physical DB while an incompatible tenant may
+    // still commit under an acquired sync lease.
+    if (database === defaultDatabase) await openTenantRuntime(activeIdentity);
+
     if (!alreadyGranted) controller.enable(reason);
     const nativeDatabase = await getNativeDatabase();
 
@@ -932,6 +937,7 @@ export const createLocalTenantGuard = ({
 
       if (snapshot.binding && bindingMatchesIdentity(snapshot.binding, activeIdentity)) {
         if (!alreadyGranted) controller.grant(activeIdentity, 'same_tenant');
+        if (database === defaultDatabase) await markTenantRuntimeReady();
         return { status: 'pass', binding: snapshot.binding, inspection: publicInspection(snapshot) };
       }
 
@@ -997,6 +1003,7 @@ export const createLocalTenantGuard = ({
         }
 
         controller.grant(activeIdentity, bindingSource);
+        if (database === defaultDatabase) await markTenantRuntimeReady();
         return {
           status: bindingSource === 'legacy_internal_evidence'
             ? 'legacy_backfilled'

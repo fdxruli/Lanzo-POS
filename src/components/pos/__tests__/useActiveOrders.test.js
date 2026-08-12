@@ -184,7 +184,7 @@ describe('useActiveOrders unified store', () => {
     const product = {
       id: 'product-1',
       name: 'Product',
-      price: 25,
+      price: 20,
       saleType: 'unit',
       trackStock: false
     };
@@ -196,7 +196,7 @@ describe('useActiveOrders unified store', () => {
     expect(state.currentOrderId).toBe('one');
     expect(state.activeOrders.get('one')?.items).toEqual([]);
     expect(state.activeOrders.get('two')?.items).toMatchObject([
-      { id: 'product-1', quantity: 2, price: 25 }
+      { id: 'product-1', quantity: 2, price: 20 }
     ]);
     expect(state.activeOrders.get('two')?.revision).toBe(2);
     expect(state.activeOrders.get('two')?.updatedAt).toEqual(expect.any(String));
@@ -242,14 +242,21 @@ describe('useActiveOrders unified store', () => {
     expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([{
       id: 'product-batch',
       batchId: 'batch-1',
-      price: 25,
+      price: 20,
       cost: 10,
       stock: 3,
       quantity: 1,
-      isVariant: true,
+      isVariant: false,
       skuDetected: 'BATCH-1'
     }]);
     expect(useActiveOrders.getState().pendingInventoryResolutions.has('one')).toBe(false);
+  });
+
+  it('uses batch sale price only for an explicit commercial variant', async () => {
+    dbState.batches = [{ id: 'batch-1', productId: 'product-variant', price: 25, cost: 10, stock: 4, committedStock: 1, isActive: true, sku: 'BATCH-1' }];
+    useActiveOrders.setState({ activeOrders: new Map([['one', makeOrder('one')]]), currentOrderId: 'one' });
+    await useActiveOrders.getState().addSmartItem({ id: 'product-variant', price: 20, cost: 8, trackStock: true, hasVariants: true, batchManagement: { enabled: true } });
+    expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([{ batchId: 'batch-1', price: 25, cost: 10, stock: 3, isVariant: true }]);
   });
 
   it('updates and removes cart lines by lineId without touching duplicate product ids', () => {

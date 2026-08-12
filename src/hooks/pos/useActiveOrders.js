@@ -17,10 +17,10 @@ import {
   touchOrderVersion
 } from '../../services/orders/orderVersioning';
 import {
-  LOCAL_TENANT_STATUS,
   canAccessTenantOwnedRuntimeCache,
   localTenantAccessController
 } from '../../services/tenant/localTenantPolicy';
+import { tenantScopedZustandStorage, registerTenantStorageHydrator } from '../../services/tenant/tenantScopedStorage';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -1147,39 +1147,8 @@ export const useActiveOrders = create(
     });
   }, {
     name: 'lanzo-active-orders-storage',
-    storage: createJSONStorage(() => ({
-      getItem: (name) => {
-        if (typeof window === 'undefined') return null;
-        if (!canAccessTenantOwnedRuntimeCache()) return null;
-        try {
-          return window.localStorage.getItem(name);
-        } catch (e) {
-          console.error(`[safeActiveOrdersStorage] Error reading ${name}`, e);
-          return null;
-        }
-      },
-      setItem: (name, value) => {
-        if (typeof window === 'undefined') return;
-        if (!canAccessTenantOwnedRuntimeCache()) return;
-        try {
-          window.localStorage.setItem(name, value);
-        } catch (error) {
-          // Never evict unrelated Lanzo keys: they can belong to auth, device
-          // identity or another recovery surface. A failed write is safer than
-          // deleting data in response to quota pressure.
-          console.error(`[safeActiveOrdersStorage] Failed to save ${name}`, error);
-        }
-      },
-      removeItem: (name) => {
-        if (typeof window === 'undefined') return;
-        if (!canAccessTenantOwnedRuntimeCache()) return;
-        try {
-          window.localStorage.removeItem(name);
-        } catch (e) {
-          console.error(`[safeActiveOrdersStorage] Error removing ${name}`, e);
-        }
-      }
-    })),
+    storage: createJSONStorage(() => tenantScopedZustandStorage),
+    skipHydration: true,
     partialize: (state) => ({
       activeOrders: Array.from(state.activeOrders.entries()),
       currentOrderId: state.currentOrderId
@@ -1215,13 +1184,8 @@ useActiveOrders.setState = (...args) => {
 localTenantAccessController.subscribe((tenantState) => {
   if (!tenantState.enabled) return;
 
-  if (tenantState.status === LOCAL_TENANT_STATUS.GRANTED) {
-    void useActiveOrders.persist.rehydrate();
-    return;
-  }
-
-  // Keep the serialized data intact, while removing it from the active view
-  // as soon as auth is locked or a tenant mismatch is detected.
+  // Keep all serialized state intact; only the isolated tenant runtime may
+  // explicitly hydrate it after its DB and storage namespace are ready.
   setActiveOrdersStateUnsafe({
     activeOrders: new Map(),
     currentOrderId: null,
@@ -1230,5 +1194,11 @@ localTenantAccessController.subscribe((tenantState) => {
     isCurrentOrderLocked: false
   });
 });
+
+export const resetAndHydrateActiveOrdersForTenant = async () => {
+  setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false });
+  await useActiveOrders.persist.rehydrate();
+};
+registerTenantStorageHydrator(resetAndHydrateActiveOrdersForTenant);
 
 // --- SUSCRIPCIÓN GLOBAL (Flujo Unidireccional: SSOT -> View) ---

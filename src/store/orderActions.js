@@ -17,6 +17,8 @@ import {
   getNextPersistedOrderVersion
 } from '../services/orders/orderVersioning';
 import { isCommercialVariantProduct } from '../services/products/commercialVariants';
+import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
+import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -317,6 +319,10 @@ export const createOrderActions = (set, get) => ({
 
           get().addItem(productToAdd, orderId);
         } catch (error) {
+          // An isolation failure is never a valid reason to add the parent
+          // product: doing so would turn a blocked tenant operation into a
+          // cross-context business mutation.
+          if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)) throw error;
           console.warn("Fallo al resolver el lote antes de agregar el producto:", error);
           get().addItem({ ...product }, orderId);
         } finally {

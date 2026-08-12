@@ -6,6 +6,7 @@ import {
   isLocalTenantAccessError,
   runWithLocalTenantSyncLease
 } from '../tenant/localTenantGuard';
+import { getTenantStorageItem, setTenantStorageItem } from '../tenant/tenantScopedStorage';
 
 const STORAGE_KEY = 'lanzo:restaurant-order-close-pending:v1';
 const MAX_RETRY_COUNT = 5;
@@ -20,7 +21,7 @@ const sumNumbers = (values = []) => values.reduce((sum, value) => sum + (numeric
 const readPending = () => {
   if (!canUseStorage()) return [];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '[]');
+    const parsed = JSON.parse(getTenantStorageItem(STORAGE_KEY) || '[]');
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -31,7 +32,7 @@ const writePending = (rows = []) => {
   if (!canUseStorage()) return;
   // Never evict another tenant's or a legacy unscoped recovery row merely
   // because a different tenant adds a retry entry.
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+  setTenantStorageItem(STORAGE_KEY, JSON.stringify(rows));
 };
 
 const getPendingRowKey = (payload = {}) => safe(payload.idempotencyKey || payload.localOrderId);

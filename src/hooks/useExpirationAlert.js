@@ -17,6 +17,7 @@ import { useInventoryMovement } from '../hooks/useInventoryMovement';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import { normalizeBusinessType } from '../utils/businessType';
+import { getTenantStorageItem, setTenantStorageItem } from '../services/tenant/tenantScopedStorage';
 
 const STORAGE_KEY = 'ignored_expirations_ttl';
 const IGNORE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 horas
@@ -233,7 +234,7 @@ export const useExpirationAlert = () => {
   // Leer ignored IDs desde localStorage
   const getIgnoredIds = useCallback(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = getTenantStorageItem(STORAGE_KEY);
       if (!stored) return new Map();
 
       const parsed = JSON.parse(stored);
@@ -249,7 +250,7 @@ export const useExpirationAlert = () => {
 
       // Guardar solo los validos (limpieza automatica)
       const validObject = Object.fromEntries(validMap);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(validObject));
+      setTenantStorageItem(STORAGE_KEY, JSON.stringify(validObject));
 
       return validMap;
     } catch (error) {
@@ -307,7 +308,7 @@ export const useExpirationAlert = () => {
       currentIgnored.set(id, Date.now());
 
       const ignoredObject = Object.fromEntries(currentIgnored);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(ignoredObject));
+      setTenantStorageItem(STORAGE_KEY, JSON.stringify(ignoredObject));
 
       // Actualizar estado local para UI reactiva
       setAlerts((prev) => prev.filter((alert) => alert.id !== id));
@@ -319,7 +320,8 @@ export const useExpirationAlert = () => {
   // Restaurar todas las alertas ignoradas
   const handleRestoreAll = useCallback(() => {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      // Expiration suppression is tenant-scoped; legacy unscoped data stays untouched.
+      setTenantStorageItem(STORAGE_KEY, JSON.stringify({}));
       // Recargar alertas
       refreshAlerts();
     } catch (error) {

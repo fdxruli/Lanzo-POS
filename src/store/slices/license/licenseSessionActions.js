@@ -20,6 +20,7 @@ import {
   getLocalTenantGuardState,
   lockLocalTenantAccess
 } from '../../../services/tenant/localTenantGuard';
+import { closeTenantRuntime } from '../../../services/db/tenantRuntimeRouter';
 
 const clearLocalLicenseSession = async () => {
   clearLicenseFromStorage();
@@ -37,6 +38,9 @@ const clearLocalLicenseSession = async () => {
     Logger.warn('[LicenseSession] No se pudieron limpiar todos los tokens de actor:', error);
   } finally {
     lockLocalTenantAccess('license_session_cleared');
+    // This invalidates all DB proxy operations but preserves the physical DB
+    // and its tenant-scoped browser namespace for the next actor of A.
+    closeTenantRuntime();
   }
 };
 
