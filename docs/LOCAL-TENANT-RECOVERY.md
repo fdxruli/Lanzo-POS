@@ -35,6 +35,13 @@ injected. Unavailable or denied storage fails closed with a storage-inspection
 error; omission is never treated as empty browser state. Non-browser callers
 must explicitly opt into `NOT_APPLICABLE` for tests or tooling.
 
+`NOT_APPLICABLE` is planning/test-only and never authorizes a future copy. A
+future RECOVERY.2/4 executor must require all of: a `COMPLETE` browser-storage
+inspection, `executableForFutureCopy === true`, a revalidated
+`sourceSnapshotFingerprint`, and a revalidated `recoveryContextFingerprint`.
+Missing inspection is represented as `UNVERIFIED`, fails closed, and changes
+the source fingerprint relative to an otherwise identical `COMPLETE` snapshot.
+
 Plan lifecycle available now:
 
 ```text

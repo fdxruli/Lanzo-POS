@@ -25,6 +25,11 @@ const SYNC_META_SUFFIXES = [
 const RECOVERY_CONTEXT_FINGERPRINT_DOMAIN = 'lanzo-local-recovery-context-v1';
 const RECOVERY_FINGERPRINT_DOMAIN = 'lanzo-local-recovery-snapshot-v2';
 const RECOVERY_RECORD_CONTENT_DOMAIN = 'lanzo-local-recovery-record-content-v1';
+const BROWSER_STORAGE_INSPECTION_STATUS = Object.freeze({
+  COMPLETE: 'COMPLETE',
+  NOT_APPLICABLE: 'NOT_APPLICABLE',
+  UNVERIFIED: 'UNVERIFIED'
+});
 
 const asText = (value) => (typeof value === 'string' ? value.trim() : '');
 const stableEntries = (object = {}) => Object.keys(object).sort().map((key) => [key, object[key]]);
@@ -189,6 +194,7 @@ const fingerprintProjection = async (
   localStorage = {},
   sessionStorage = {},
   sourceMetadata = {},
+  browserStorageInspection = {},
   cryptoProvider
 ) => {
   const stores = {};
@@ -215,6 +221,7 @@ const fingerprintProjection = async (
   }
   return {
     sourceMetadata,
+    browserStorageInspection,
     stores,
     localStorage: await storageFingerprintProjection(localStorage, cryptoProvider),
     sessionStorage: await storageFingerprintProjection(sessionStorage, cryptoProvider)
@@ -468,13 +475,19 @@ export const buildLegacyRecoveryPlan = async ({
       keyPath: null
     })))].sort((left, right) => String(left?.name).localeCompare(String(right?.name)))
   };
-  const browserStorageInspection = snapshot.browserStorageInspection || { status: 'NOT_APPLICABLE' };
+  const requestedInspectionStatus = snapshot.browserStorageInspection?.status;
+  const browserStorageInspection = {
+    status: Object.values(BROWSER_STORAGE_INSPECTION_STATUS).includes(requestedInspectionStatus)
+      ? requestedInspectionStatus
+      : BROWSER_STORAGE_INSPECTION_STATUS.UNVERIFIED
+  };
   const fingerprint = await digest(
     await fingerprintProjection(
       recordsByStore,
       snapshot.localStorage,
       snapshot.sessionStorage,
       sourceMetadata,
+      { browserStorageInspectionStatus: browserStorageInspection.status },
       cryptoProvider
     ),
     cryptoProvider
@@ -571,13 +584,17 @@ export const buildLegacyRecoveryPlan = async ({
     .filter((storeName) => !isKnownLegacyRecoveryStore(storeName))
     .sort();
   const boundSource = (recordsByStore.local_tenant_binding || []).some((record) => Boolean(record));
+  const storageInspectionComplete = (
+    browserStorageInspection.status === BROWSER_STORAGE_INSPECTION_STATUS.COMPLETE
+  );
   const warnings = [
     ...(activeTierACount === 0 ? ['ASSISTED_RECOVERY_REQUIRED'] : []),
     ...(counts.AMBIGUOUS > 0 ? ['UNSCOPED_ROWS_QUARANTINED'] : []),
     ...(counts.FOREIGN > 0 ? ['FOREIGN_METADATA_PRESERVED'] : []),
     ...(activeTierACount > 0 ? ['WHOLE_DATABASE_BINDING_FORBIDDEN'] : []),
     ...(unknownStores.length > 0 ? ['UNKNOWN_STORE_PRESENT'] : []),
-    ...(boundSource ? ['RECOVERY_SOURCE_ALREADY_BOUND'] : [])
+    ...(boundSource ? ['RECOVERY_SOURCE_ALREADY_BOUND'] : []),
+    ...(!storageInspectionComplete ? ['RECOVERY_STORAGE_INSPECTION_NOT_COMPLETE'] : [])
   ].sort();
 
   return deepFreeze({
@@ -589,8 +606,10 @@ export const buildLegacyRecoveryPlan = async ({
     browserStorageInspection,
     status: RECOVERY_PLAN_STATUS.PLAN_CREATED,
     createdFromSnapshot: true,
-    executableForFutureCopy: !boundSource && unknownStores.length === 0,
-    preconditionFailure: boundSource ? 'RECOVERY_SOURCE_ALREADY_BOUND' : null,
+    executableForFutureCopy: storageInspectionComplete && !boundSource && unknownStores.length === 0,
+    preconditionFailure: boundSource
+      ? 'RECOVERY_SOURCE_ALREADY_BOUND'
+      : (!storageInspectionComplete ? 'RECOVERY_STORAGE_INSPECTION_NOT_COMPLETE' : null),
     unknownStores,
     evidence: {
       activeTierARecordCount: activeTierACount,

@@ -533,6 +533,47 @@ describe('local tenant recovery plan', () => {
     expect(snapshot.browserStorageInspection).toEqual({ status: 'NOT_APPLICABLE' });
   });
 
+  it('requires COMPLETE storage inspection before a future copy can be eligible', async () => {
+    const snapshot = {
+      sourceDatabase: 'LanzoDB1',
+      recordsByStore: { menu: [{ id: 'empty-safe-product' }] },
+      localStorage: {},
+      sessionStorage: {},
+      browserStorageInspection: { status: 'COMPLETE' }
+    };
+    const complete = await buildLegacyRecoveryPlan({
+      snapshot,
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const notApplicable = await buildLegacyRecoveryPlan({
+      snapshot: {
+        ...snapshot,
+        browserStorageInspection: { status: 'NOT_APPLICABLE' }
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+    const omitted = await buildLegacyRecoveryPlan({
+      snapshot: {
+        sourceDatabase: snapshot.sourceDatabase,
+        recordsByStore: snapshot.recordsByStore,
+        localStorage: snapshot.localStorage,
+        sessionStorage: snapshot.sessionStorage
+      },
+      activeTenantSource: { license_key: 'ACTIVE-A' }
+    });
+
+    expect(complete.executableForFutureCopy).toBe(true);
+    expect(complete.preconditionFailure).toBeNull();
+    expect(notApplicable.browserStorageInspection.status).toBe('NOT_APPLICABLE');
+    expect(notApplicable.executableForFutureCopy).toBe(false);
+    expect(notApplicable.preconditionFailure).toBe('RECOVERY_STORAGE_INSPECTION_NOT_COMPLETE');
+    expect(notApplicable.warnings).toContain('RECOVERY_STORAGE_INSPECTION_NOT_COMPLETE');
+    expect(omitted.browserStorageInspection.status).toBe('UNVERIFIED');
+    expect(omitted.executableForFutureCopy).toBe(false);
+    expect(omitted.preconditionFailure).toBe('RECOVERY_STORAGE_INSPECTION_NOT_COMPLETE');
+    expect(complete.sourceSnapshotFingerprint).not.toBe(notApplicable.sourceSnapshotFingerprint);
+  });
+
   it('fingerprints browser-storage payload changes without exposing their contents', async () => {
     const snapshot = {
       sourceDatabase: 'LanzoDB1',
