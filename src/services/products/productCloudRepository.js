@@ -140,6 +140,26 @@ export const productCloudRepository = {
     });
   },
 
+  async addInventoryEntry({ licenseKey, entry, idempotencyKey }) {
+    return callCatalogMutationRpc('pos_add_inventory_entry', licenseKey, {
+      ...(await buildBaseRpcArgs(licenseKey)),
+      p_product_id: entry.productId,
+      p_batch_id: entry.batchId || null,
+      p_quantity: entry.quantity,
+      p_input_unit: entry.inputUnit || null,
+      p_base_quantity: entry.baseQuantity,
+      p_base_unit: entry.baseUnit || null,
+      p_unit_cost: entry.unitCost,
+      p_supplier: entry.supplier || null,
+      p_manufacturer_batch_id: entry.manufacturerBatchId || null,
+      p_expiry_date: entry.expiryDate || null,
+      p_occurred_at: entry.occurredAt || null,
+      p_entry_kind: entry.entryKind || 'restock',
+      p_metadata: entry.metadata || {},
+      p_idempotency_key: idempotencyKey
+    });
+  },
+
   async pullCatalogSnapshot({
     licenseKey,
     entityType = 'all',

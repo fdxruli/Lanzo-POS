@@ -34,6 +34,7 @@ export const SYNC_ENTITY_TYPES = Object.freeze({
   CATEGORY: 'category',
   PRODUCT: 'product',
   PRODUCT_BATCH: 'product_batch',
+  INVENTORY_ENTRY: 'inventory_entry',
   PREPARATION_STATION: 'preparation_station',
   RESTAURANT_ORDER: 'restaurant_order',
   RESTAURANT_ORDER_ITEM: 'restaurant_order_item',
@@ -66,6 +67,7 @@ export const SYNC_OPERATIONS = Object.freeze({
   CLOSE: 'close',
   MOVEMENT: 'movement',
   ADJUST: 'adjust',
+  INVENTORY_ENTRY: 'inventory_entry',
   UNKNOWN: 'unknown'
 });
 

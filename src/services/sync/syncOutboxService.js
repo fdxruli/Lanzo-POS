@@ -16,6 +16,35 @@ import {
 
 const nowIso = () => new Date().toISOString();
 
+export const buildSyncOutboxRecord = ({
+  licenseKey,
+  entityType,
+  operation,
+  entityId,
+  payload = null,
+  idempotencyKey = null,
+  metadata = null,
+  createdAt = nowIso()
+}) => {
+  const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId });
+  return {
+    id: resolvedIdempotencyKey,
+    licenseKey: licenseKey || null,
+    entityType,
+    operation,
+    entityId: entityId || null,
+    payload,
+    status: OUTBOX_STATUS.PENDING,
+    idempotencyKey: resolvedIdempotencyKey,
+    attempts: 0,
+    lastError: null,
+    metadata,
+    createdAt,
+    updatedAt: createdAt,
+    nextRetryAt: null
+  };
+};
+
 const ensureOpen = async () => {
   if (!db.isOpen()) {
     await db.open();
@@ -66,22 +95,16 @@ export const syncOutboxService = {
           return existing;
         }
 
-        const row = {
-          id: resolvedIdempotencyKey,
+        const row = buildSyncOutboxRecord({
           licenseKey,
           entityType,
           operation,
-          entityId: entityId || null,
+          entityId,
           payload,
-          status: OUTBOX_STATUS.PENDING,
           idempotencyKey: resolvedIdempotencyKey,
-          attempts: 0,
-          lastError: null,
           metadata,
-          createdAt,
-          updatedAt: createdAt,
-          nextRetryAt: null
-        };
+          createdAt
+        });
 
         await table.put(row);
         return row;

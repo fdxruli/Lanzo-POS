@@ -11,6 +11,7 @@ import { extractCalendarDate } from '../../utils/dateUtils';
 import { formatShelfLife, getProductBatchSummaryMap, getProductCardExpiryState } from '../../services/products/productBatchSummary';
 import { resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import WasteModal from './WasteModal';
+import InventoryEntryModal from './InventoryEntryModal';
 import ProductCloudSyncIndicators from './ProductCloudSyncIndicators';
 import './ProductList.css';
 
@@ -61,6 +62,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
   const [isSearching, setIsSearching] = useState(false);
   const [showWaste, setShowWaste] = useState(false);
   const [productForWaste, setProductForWaste] = useState(null);
+  const [productForInventoryEntry, setProductForInventoryEntry] = useState(null);
   const [batchSummaries, setBatchSummaries] = useState(() => new Map());
 
   // LEER DE LA BD CENTRAL: Estado para el filtro desplegable de activos/inactivos
@@ -275,6 +277,16 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         <Icons.Layers /> <span>Lotes</span>
                       </button>
                     )}
+                    {isTracked && !Array.isArray(item.recipe) && (
+                      <button
+                        className="ui-button ui-button--primary ui-button--sm btn-action"
+                        onClick={() => setProductForInventoryEntry(item)}
+                        title="Agregar existencia"
+                        disabled={!isActive}
+                      >
+                        <span>＋</span> <span>Agregar existencia</span>
+                      </button>
+                    )}
                     <button className="ui-button ui-button--ghost ui-button--sm btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
                       <Icons.Edit /> <span>Editar</span>
                     </button>
@@ -414,6 +426,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
       )}
 
       <WasteModal show={showWaste} onClose={handleCloseWaste} product={productForWaste} onConfirm={handleWasteConfirmed} />
+      {productForInventoryEntry && <InventoryEntryModal product={productForInventoryEntry} onClose={() => setProductForInventoryEntry(null)} onCompleted={refreshData} />}
     </div>
   );
 }
