@@ -28,6 +28,8 @@
 .page-container {
     flex: 1;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     padding: 16px;
     padding-bottom: calc(88px + var(--safe-area-bottom));
     box-sizing: border-box;

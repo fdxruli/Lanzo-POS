@@ -46,4 +46,22 @@ describe('VariantSelectorModal', () => {
     expect(screen.getByText(/No hay variantes disponibles con stock/i)).toBeInTheDocument();
     expect(screen.queryByText('UNIT')).not.toBeInTheDocument();
   });
+
+  it('adds a textual stock state for low and critical variants', () => {
+    render(
+      <VariantSelectorModal
+        show
+        onClose={vi.fn()}
+        product={product}
+        onConfirm={vi.fn()}
+        preloadedBatches={[
+          { id: 'critical', isActive: true, stock: 2, price: 150, cost: 80, attributes: { talla: 'S', color: 'Negro' } },
+          { id: 'low', isActive: true, stock: 4, price: 150, cost: 80, attributes: { talla: 'M', color: 'Negro' } }
+        ]}
+      />
+    );
+
+    expect(screen.getByText(/2 disponibles · Stock crítico/i)).toBeInTheDocument();
+    expect(screen.getByText(/4 disponibles · Stock bajo/i)).toBeInTheDocument();
+  });
 });

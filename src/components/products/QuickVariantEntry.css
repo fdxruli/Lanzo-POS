@@ -91,13 +91,13 @@
   gap: 8px;
 }
 
-.btn-group {
+.qv-button-group {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
 }
 
-.btn-xs {
+.qv-size-button {
   padding: 6px 10px;
   font-size: 0.8rem;
   border-radius: 4px;
@@ -108,9 +108,14 @@
   transition: var(--transition);
 }
 
-.btn-xs:hover {
+.qv-size-button:hover {
   border-color: var(--primary-color);
   color: var(--primary-color);
+}
+
+.qv-size-button:focus-visible, .qv-icon-button:focus-visible, .qv-add-row:focus-visible, .qv-toggle-categories:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
 }
 
 /* Tabla */
@@ -156,7 +161,7 @@
 }
 
 /* Inputs dentro de la tabla */
-.form-input-compact {
+.qv-input {
   width: 100%;
   padding: 8px;
   border: 1px solid var(--ui-border-color, var(--border-color));
@@ -167,13 +172,14 @@
   transition: all 0.2s;
 }
 
-.form-input-compact:focus {
-  border-color: var(--secondary-color);
+.qv-input:focus {
+  border-color: var(--primary-color);
   outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
   background-color: var(--ui-bg-surface, var(--card-background-color));
 }
 
-.form-input-compact::placeholder {
+.qv-input::placeholder {
   color: var(--ui-text-muted, var(--text-light));
   opacity: 0.75;
 }
@@ -186,7 +192,7 @@
 }
 
 /* Botones mini */
-.btn-icon {
+.qv-icon-button {
   border: none;
   background: none;
   cursor: pointer;
@@ -198,18 +204,18 @@
   color: var(--ui-text-muted, var(--text-light));
 }
 
-.btn-icon.delete {
+.qv-icon-button--delete {
   color: var(--ui-text-danger);
   font-size: 1rem;
 }
 
-.btn-icon.sync {
+.qv-icon-button--sync {
   color: var(--secondary-color);
   margin-left: 5px;
   font-weight: 700;
 }
 
-.btn-icon.gen {
+.qv-icon-button--generate {
   margin: 0;
   padding: 2px 4px;
   color: var(--ui-text-info);
@@ -220,7 +226,7 @@
 }
 
 /* Botón inferior */
-.btn-add-row {
+.qv-add-row {
   width: 100%;
   padding: 15px;
   font-size: 0.95rem;
@@ -233,12 +239,12 @@
   transition: background 0.2s;
 }
 
-.btn-add-row:hover {
+.qv-add-row:hover {
   background: var(--ui-border-color, var(--border-color));
 }
 
 /* Nuevo botón para expandir/colapsar categorías */
-.btn-toggle-categories {
+.qv-toggle-categories {
   background: none;
   border: none;
   color: var(--secondary-color);
@@ -251,7 +257,7 @@
   outline: none;
 }
 
-.btn-toggle-categories:hover {
+.qv-toggle-categories:hover {
   text-decoration: underline;
   opacity: 0.8;
 }
@@ -286,11 +292,11 @@
     width: 100%;
   }
 
-  .btn-group {
+  .qv-button-group {
     justify-content: space-between;
   }
   
-  .btn-xs {
+  .qv-size-button {
     flex: 1;
     text-align: center;
   }

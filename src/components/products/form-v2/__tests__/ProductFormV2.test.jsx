@@ -30,8 +30,8 @@ describe('ProductFormV2', () => {
     renderForm();
     const trackStock = screen.getByRole('checkbox', { name: /Controlar inventario/i });
 
-    fireEvent.click(screen.getByLabelText(/Existencia inicial/i));
-    fireEvent.click(screen.getByLabelText(/Alerta de stock bajo/i));
+    fireEvent.change(screen.getByLabelText(/Existencia inicial/i), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText(/Alerta de stock bajo/i), { target: { value: '2' } });
     fireEvent.click(screen.getByText(/Registra existencias y alertas/i));
 
     expect(trackStock).toBeChecked();
@@ -251,7 +251,10 @@ describe('ProductFormV2', () => {
   it('keeps apparel variant inputs editable after variants are enabled', () => {
     renderForm({ activeRubroContext: 'apparel', features: { hasVariants: true } });
     fireEvent.click(screen.getByRole('button', { name: /Tallas, colores y variantes/i }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /producto tiene variantes/i }));
+    const variantsToggle = screen.getByRole('checkbox', { name: /producto tiene variantes/i });
+    expect(screen.getAllByRole('checkbox', { name: /producto tiene variantes/i })).toHaveLength(1);
+    fireEvent.click(variantsToggle);
+    expect(variantsToggle).toBeChecked();
 
     const color = screen.getByPlaceholderText('Color');
     const size = screen.getByPlaceholderText('Talla');

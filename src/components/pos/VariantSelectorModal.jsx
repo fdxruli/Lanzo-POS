@@ -184,8 +184,8 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
   const hasCurrentStrictBatch = !isStrictExpiryProduct || groupedVariants.some((variant) => !variant.fefo?.isBlocked);
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content variant-modal">
+    <div className="variant-selector-modal" role="presentation">
+      <div className="variant-modal" role="dialog" aria-modal="true" aria-label={`Variantes de ${product.name}`}>
 
         {/* HEADER */}
         <div className="variant-header">
@@ -193,7 +193,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
             <h2 className="product-title">{product.name}</h2>
             <span className="product-base-price">Precio Base: ${product.price.toFixed(2)}</span>
           </div>
-          <button className="btn-close-x" onClick={onClose}>&times;</button>
+          <button type="button" className="btn-close-x" onClick={onClose} aria-label="Cerrar selector de variantes">&times;</button>
         </div>
 
         {/* SEARCH BAR */}
@@ -220,7 +220,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
           ) : !hasVariants ? (
             <div className="empty-state">
               <p>No hay variantes disponibles con stock.</p>
-              {searchTerm && <button className="btn-link" onClick={() => setSearchTerm('')}>Limpiar búsqueda</button>}
+              {searchTerm && <button type="button" className="btn-link" onClick={() => setSearchTerm('')}>Limpiar búsqueda</button>}
             </div>
           ) : !hasCurrentStrictBatch ? (
             <div className="empty-state empty-state--strict-expiry">
@@ -293,7 +293,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
                           <div className="card-bottom">
                             <div className={`stock-pill ${variant.stockState}`}>
-                              {variant.fefo?.availableStock ?? variant.stock} disponibles
+                              {variant.fefo?.availableStock ?? variant.stock} disponibles{variant.stockState === 'critical' ? ' · Stock crítico' : variant.stockState === 'low' ? ' · Stock bajo' : ''}
                             </div>
                           </div>
                         </button>
@@ -308,7 +308,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
 
         {/* FOOTER */}
         <div className="variant-footer">
-          <button className="btn btn-secondary full-width" onClick={onClose}>
+          <button type="button" className="variant-modal__cancel" onClick={onClose}>
             Cancelar
           </button>
         </div>
