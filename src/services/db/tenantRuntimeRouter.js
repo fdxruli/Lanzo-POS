@@ -1,6 +1,13 @@
 import Dexie from 'dexie';
 import { areLocalTenantAliasesCompatible, LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/localTenantPolicy';
 import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
+import { preflightAndRepairIndexedDb } from './indexedDbPreflightCoordinator';
+import {
+  DATABASE_RECOVERY_STATUS,
+  classifyDatabaseError,
+  reportStructuralDatabaseErrorOnce,
+  setDatabaseRecoveryState
+} from './databaseRecoveryState';
 
 const DIRECTORY_DB = 'LanzoTenantDirectory';
 const DIRECTORY_STORE = 'tenants';
@@ -109,6 +116,36 @@ export const getTenantRuntimeReadiness = () => {
   };
 };
 
+// This is the authoritative boundary for the tenant's physical database
+// opening. Catalog and sync callers can still report structural errors for
+// logging, but only this boundary may replace runtime state with recovery.
+const publishTenantDatabaseRecovery = (error, databaseName) => {
+  const classification = classifyDatabaseError(error);
+  if (!classification.structural) return false;
+
+  const diagnostic = error?.diagnostic && typeof error.diagnostic === 'object'
+    ? error.diagnostic
+    : {};
+  const isRetryable = typeof diagnostic.isRetryable === 'boolean'
+    ? diagnostic.isRetryable
+    : classification.retryable !== false;
+  const requiresMigration = diagnostic.requiresMigration === true
+    || classification.requiresMigration === true;
+
+  setDatabaseRecoveryState({
+    ...diagnostic,
+    status: isRetryable === false
+      ? DATABASE_RECOVERY_STATUS.FAILED
+      : DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
+    errorCode: diagnostic.errorCode || classification.code,
+    databaseName: diagnostic.databaseName || databaseName || null,
+    isRetryable,
+    requiresMigration,
+    message: diagnostic.message || error?.message || null
+  });
+  return true;
+};
+
 export const openTenantRuntime = async (identity) => {
   if (!tenantDatabaseFactory) {
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_NOT_CONFIGURED');
@@ -125,8 +162,33 @@ export const openTenantRuntime = async (identity) => {
   }
   clearActiveTenantStorageNamespace();
   const database = tenantDatabaseFactory(`LanzoDB_t_${opaqueId}`);
-  await database.open();
+  try {
+    await preflightAndRepairIndexedDb({
+      databaseName: database.name,
+      onBlocked: (error) => publishTenantDatabaseRecovery(error, database.name),
+      onProgress: (migration) => setDatabaseRecoveryState({
+        status: DATABASE_RECOVERY_STATUS.MIGRATING,
+        databaseName: database.name,
+        isRetryable: true,
+        requiresMigration: true,
+        migration
+      })
+    });
+    await database.open();
+  } catch (error) {
+    if (publishTenantDatabaseRecovery(error, database.name)) {
+      reportStructuralDatabaseErrorOnce(error, 'preflight');
+    }
+    throw error;
+  }
   active = { opaqueId, database, generation: ++generation };
+  // A recovery state is cleared only after this tenant's complete
+  // preparation succeeded. Do not put this in a finally: structural failures
+  // must remain visible to DatabaseRecoveryGate.
+  setDatabaseRecoveryState({
+    status: DATABASE_RECOVERY_STATUS.READY,
+    databaseName: database.name
+  });
   setActiveTenantStorageNamespace(opaqueId);
   channel?.postMessage({ type: 'tenant_context_changed', opaqueId });
   try { window?.localStorage?.setItem('lanzo:tenant-runtime-context:v1', JSON.stringify({ opaqueId, at: Date.now() })); } catch { /* BroadcastChannel remains preferred */ }

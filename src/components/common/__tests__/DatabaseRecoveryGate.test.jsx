@@ -269,4 +269,67 @@ describe('DatabaseRecoveryGate', () => {
 
     expect(screen.getByText('APP_CHILDREN')).toBeInTheDocument();
   });
+
+  it('makes unsupported newer versions actionable without inventing version numbers', () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
+      isRetryable: false,
+      detectedNativeVersion: 320,
+      expectedNativeVersion: 310
+    };
+
+    renderGate();
+
+    expect(screen.getByRole('heading', { name: /esta versión de lanzo no puede abrir tu base local/i })).toBeInTheDocument();
+    expect(screen.getByText(/tus datos permanecen guardados/i)).toBeInTheDocument();
+    expect(screen.getByText(/no borres los datos de la aplicación/i)).toBeInTheDocument();
+    expect(screen.getByText('DB_UNSUPPORTED_NATIVE_VERSION')).toBeInTheDocument();
+    expect(screen.getByText('320')).toBeInTheDocument();
+    expect(screen.getByText('310')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
+  });
+
+  it('uses the central mailto report and copies that exact report for every FAILED code', async () => {
+    const clipboard = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: clipboard } });
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_NOT_INSPECTABLE',
+      databaseName: 'LanzoDB_t_secret-tenant',
+      message: 'No se pudo inspeccionar la base local.'
+    };
+    const openSupportMailto = vi.fn();
+
+    renderGate({ openSupportMailto });
+    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    fireEvent.click(screen.getByRole('button', { name: /copiar diagnóstico/i }));
+
+    expect(openSupportMailto).toHaveBeenCalledTimes(1);
+    expect(openSupportMailto.mock.calls[0][0]).toContain('subject=%5BSoporte%20Lanzo%20POS%5D%20Recuperaci%C3%B3n%20local%20-%20DB_NOT_INSPECTABLE');
+    expect(clipboard).toHaveBeenCalledTimes(1);
+    expect(clipboard.mock.calls[0][0]).toContain('DB_NOT_INSPECTABLE');
+    expect(clipboard.mock.calls[0][0]).not.toContain('secret-tenant');
+    expect(await screen.findByRole('button', { name: /diagnóstico copiado/i })).toBeInTheDocument();
+  });
+
+  it('keeps copy available offline without changing the recovery code', () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
+      isRetryable: false
+    };
+
+    renderGate();
+
+    expect(screen.getByText(/estás sin conexión/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeEnabled();
+    expect(recoveryMocks.state.errorCode).toBe('DB_UNSUPPORTED_NATIVE_VERSION');
+  });
 });

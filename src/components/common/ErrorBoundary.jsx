@@ -2,7 +2,7 @@ import React from 'react';
 import { Mail, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle, Copy, CheckCheck, Wifi, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
-import { buildSupportMailtoUrl } from '../../services/support/supportContact';
+import { buildSupportMailtoUrl, copyTextToClipboard } from '../../services/support/supportContact';
 import './ErrorBoundary.css';
 
 // ─── Utilidades de diagnóstico ────────────────────────────────────────────────
@@ -72,7 +72,7 @@ const isRecoverableAppShellCache = (cacheName = '') => (
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
-class ErrorBoundary extends React.Component {
+export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
@@ -262,25 +262,8 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
   }
 
   handleCopy = async () => {
-    try {
-      const message = this._buildReportMessage();
-      await navigator.clipboard.writeText(message);
-    } catch {
-      // Fallback para navegadores sin clipboard API moderna
-      try {
-        const message = this._buildReportMessage();
-        const ta = document.createElement('textarea');
-        ta.value = message;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      } catch {
-        // execCommand tampoco disponible (jsdom, entorno test, etc.) — no romper la UI
-      }
-    }
+    const copiedSuccessfully = await copyTextToClipboard(this._buildReportMessage());
+    if (copiedSuccessfully !== true) return;
     this.setState({ copied: true });
     this._copyTimeout = setTimeout(() => this.setState({ copied: false }), 3000);
   }

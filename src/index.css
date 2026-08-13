@@ -277,6 +277,17 @@ body {
   color: var(--text-light);
 }
 
+.app-boot-recovery__actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.app-boot-recovery__actions .ui-button {
+  width: 100%;
+  justify-content: center;
+}
+
 img,
 svg,
 video,

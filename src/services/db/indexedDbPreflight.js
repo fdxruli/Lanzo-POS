@@ -95,7 +95,9 @@ const makeDiagnostic = ({
   mismatches = [],
   retryable = true,
   requiresMigration = false,
-  migration = null
+  migration = null,
+  detectedNativeVersion = null,
+  expectedNativeVersion = null
 }) => ({
   status,
   errorCode: code,
@@ -108,6 +110,8 @@ const makeDiagnostic = ({
     mismatches.map((item) => [item.store, item.expectedKeyPath ?? null])
   ),
   mismatches,
+  detectedNativeVersion,
+  expectedNativeVersion,
   isRetryable: retryable,
   requiresMigration,
   message: recoveryMessage(code),
@@ -119,6 +123,8 @@ const createMigrationError = ({
   databaseName = DB_NAME,
   mismatches = [],
   migration = null,
+  detectedNativeVersion = null,
+  expectedNativeVersion = null,
   cause = null
 }) => createDatabaseRecoveryError(makeDiagnostic({
   code,
@@ -126,7 +132,9 @@ const createMigrationError = ({
   mismatches,
   retryable: code !== DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
   requiresMigration: true,
-  migration
+  migration,
+  detectedNativeVersion,
+  expectedNativeVersion
 }), cause);
 
 const abortWithStructuredError = (transaction, error) => {
@@ -797,7 +805,9 @@ export const migratePrimaryKeysPreservingData = async ({
     throw createMigrationError({
       code: DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
       databaseName,
-      mismatches: currentInspection.mismatches
+      mismatches: currentInspection.mismatches,
+      detectedNativeVersion: currentInspection.nativeVersion,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION
     });
   }
   if (currentInspection.mismatches.length === 0) {
@@ -807,7 +817,9 @@ export const migratePrimaryKeysPreservingData = async ({
     throw createMigrationError({
       code: DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
       databaseName,
-      mismatches: currentInspection.mismatches
+      mismatches: currentInspection.mismatches,
+      detectedNativeVersion: currentInspection.nativeVersion,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION
     });
   }
 
@@ -886,7 +898,9 @@ export const preflightAndRepairIndexedDb = async ({
       code: DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION,
       databaseName,
       retryable: false,
-      requiresMigration: false
+      requiresMigration: false,
+      detectedNativeVersion: inspection.nativeVersion,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION
     }));
   }
   if (inspection.classification !== 'primary_key_incompatible') {

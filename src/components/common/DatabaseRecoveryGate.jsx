@@ -1,5 +1,5 @@
-import { useRef, useState, useSyncExternalStore } from 'react';
-import { AlertTriangle, Database, RefreshCw, RotateCw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { AlertTriangle, Check, Copy, Database, Mail, RefreshCw, RotateCw } from 'lucide-react';
 import {
   DATABASE_RECOVERY_STATUS,
   getDatabaseRecoveryState,
@@ -13,6 +13,11 @@ import {
   isLocalDatabasePreparationActive,
   retryLocalDatabaseRecovery
 } from '../../services/db/databaseRuntime';
+import {
+  buildDatabaseRecoverySupportReport,
+  buildSupportMailtoUrl,
+  copyTextToClipboard
+} from '../../services/support/supportContact';
 
 const useDatabaseRecoveryState = () => useSyncExternalStore(
   subscribeDatabaseRecoveryState,
@@ -43,6 +48,15 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
       title: 'Comprobando la base local...',
       body: 'Lanzo está verificando que la base local pueda abrirse de forma segura.',
       icon: 'database'
+    };
+  }
+
+  if (state.errorCode === 'DB_UNSUPPORTED_NATIVE_VERSION') {
+    return {
+      title: 'Esta versión de Lanzo no puede abrir tu base local',
+      body: 'Tus datos permanecen guardados. Esta base fue utilizada por una versión más reciente de Lanzo y esta instalación no puede abrirla de forma segura.',
+      advice: 'No borres los datos de la aplicación. Actualiza Lanzo o envía el diagnóstico a soporte para que podamos revisar tu instalación.',
+      icon: 'warning'
     };
   }
 
@@ -122,13 +136,33 @@ const MigrationDetails = ({ migration }) => {
 
 export default function DatabaseRecoveryGate({
   children,
-  reloadPage = () => window.location.reload()
+  reloadPage = () => window.location.reload(),
+  openSupportMailto = (url) => { window.location.href = url; }
 }) {
   const recovery = useDatabaseRecoveryState();
   const nativeOperations = useNativeDatabaseOperationState();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState('');
+  const [supportActionError, setSupportActionError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const retryPromiseRef = useRef(null);
+  const copyTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    const updateOnlineState = () => setIsOnline(globalThis.navigator?.onLine !== false);
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+    return () => {
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
+
+  const supportReport = useMemo(() => (recovery.status === DATABASE_RECOVERY_STATUS.FAILED
+    ? buildDatabaseRecoverySupportReport(recovery, { online: isOnline })
+    : null), [recovery, isOnline]);
 
   if (!BLOCKING_STATUSES.has(recovery.status)) return children;
 
@@ -141,6 +175,27 @@ export default function DatabaseRecoveryGate({
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
   const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT';
+
+  const sendSupportReport = () => {
+    if (!supportReport) return;
+    openSupportMailto(buildSupportMailtoUrl({
+      subject: `[Soporte Lanzo POS] Recuperación local - ${recovery.errorCode || 'sin-código'}`,
+      body: supportReport
+    }));
+  };
+
+  const copySupportReport = async () => {
+    if (!supportReport) return;
+    setSupportActionError('');
+    const copiedSuccessfully = await copyTextToClipboard(supportReport);
+    if (!copiedSuccessfully) {
+      setSupportActionError('No se pudo copiar el diagnóstico automáticamente. Intenta nuevamente desde un navegador compatible.');
+      return;
+    }
+    setCopied(true);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopied(false), 3_000);
+  };
 
   const retry = () => {
     if (retryPromiseRef.current) return retryPromiseRef.current;
@@ -178,6 +233,7 @@ export default function DatabaseRecoveryGate({
           : <Database size={44} aria-hidden="true" />}
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
+        {copy.advice && <p>{copy.advice}</p>}
         {recovery.affectedStores?.length > 0 && (
           <p><strong>Stores afectados:</strong> {recovery.affectedStores.join(', ')}</p>
         )}
@@ -185,10 +241,24 @@ export default function DatabaseRecoveryGate({
         {recovery.errorCode && recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
           <p><strong>Código:</strong> {recovery.errorCode}</p>
         )}
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED
+          && Number.isFinite(recovery.detectedNativeVersion) && (
+            <p><strong>Versión local detectada:</strong> {recovery.detectedNativeVersion}</p>
+          )}
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED
+          && Number.isFinite(recovery.expectedNativeVersion) && (
+            <p><strong>Versión compatible con esta instalación:</strong> {recovery.expectedNativeVersion}</p>
+          )}
         {retryError && (
           <div className="ui-alert ui-alert--danger" role="alert">
             <AlertTriangle size={18} aria-hidden="true" />
             {retryError}
+          </div>
+        )}
+        {supportActionError && (
+          <div className="ui-alert ui-alert--danger" role="alert">
+            <AlertTriangle size={18} aria-hidden="true" />
+            {supportActionError}
           </div>
         )}
         {canRetry && (
@@ -213,12 +283,34 @@ export default function DatabaseRecoveryGate({
           </button>
         )}
         {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
-          <p className="ui-alert ui-alert--warning">
-            La versión local no puede repararse automáticamente con seguridad. Conserva esta base y solicita una revisión técnica.
-          </p>
+          <>
+            {!isOnline && (
+              <p className="ui-alert ui-alert--warning" role="status">
+                Estás sin conexión. Tus datos siguen guardados. Puedes copiar el diagnóstico ahora y enviarlo a soporte cuando recuperes conexión.
+              </p>
+            )}
+            <div className="app-boot-recovery__actions">
+              <button
+                type="button"
+                className="ui-button ui-button--primary"
+                onClick={sendSupportReport}
+              >
+                <Mail size={18} aria-hidden="true" />
+                Enviar reporte a soporte
+              </button>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={() => { void copySupportReport(); }}
+              >
+                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+              </button>
+            </div>
+          </>
         )}
         <p className="app-boot-recovery__note">
-          Lanzo no borrará IndexedDB, localStorage, cachés ni credenciales durante esta recuperación.
+          Lanzo no borrará tus datos durante esta recuperación.
         </p>
       </section>
     </main>
