@@ -1,6 +1,14 @@
 export const LOCAL_TENANT_BINDING_STORE = 'local_tenant_binding';
 export const LOCAL_TENANT_BINDING_KEY = 'primary';
 
+// Physical runtime names are allocated by tenantRuntimeRouter.  Keep the
+// validator dependency-free so workers can reject legacy names without
+// importing the runtime authority they are not allowed to resolve themselves.
+export const isTenantWorkerDatabaseName = (databaseName) => (
+  typeof databaseName === 'string'
+  && /^LanzoDB_t_t_[a-f0-9]{32}$/i.test(databaseName)
+);
+
 export const LOCAL_STORE_SCOPE = Object.freeze({
   TENANT_OWNED: 'tenant_owned',
   DEVICE_OWNED: 'device_owned',

@@ -1,5 +1,4 @@
 import Dexie from 'dexie';
-import { DB_NAME } from '../config/dbConfig.js';
 import {
   BACKUP_CHUNK_SIZE,
   BACKUP_EXTENSION,
@@ -18,7 +17,8 @@ import { restoreWhitelistedDatabase } from '../services/backup/backupRestore.js'
 import {
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
-  areLocalTenantAliasesCompatible
+  areLocalTenantAliasesCompatible,
+  isTenantWorkerDatabaseName
 } from '../services/tenant/localTenantPolicy.js';
 
 let sessionKey = null;
@@ -44,8 +44,11 @@ function normalizeError(error) {
   };
 }
 
-async function openSourceDb() {
-  const database = new Dexie(DB_NAME);
+async function openSourceDb(context) {
+  if (!isTenantWorkerDatabaseName(context?.databaseName)) {
+    throw new Error('BACKUP_TENANT_DATABASE_INVALID');
+  }
+  const database = new Dexie(context.databaseName);
   await database.open();
   return database;
 }
@@ -105,15 +108,15 @@ async function writeEncryptedExport({
   fileName,
   reason = 'manual',
   includeBlob = false,
-  tenantAliases = []
+  context = null
 }) {
   if (!sessionKey) throw new Error('BACKUP_SESSION_LOCKED');
 
-  const database = await openSourceDb();
+  const database = await openSourceDb(context);
   let exportedBlob;
   let binding;
   try {
-    binding = await requireMatchingTenantBinding(database, tenantAliases);
+    binding = await requireMatchingTenantBinding(database, context.tenantAliases);
     exportedBlob = await exportWhitelistedDatabase(database, {
       prettyJson: false,
       numRowsPerChunk: 500,
@@ -129,7 +132,7 @@ async function writeEncryptedExport({
   const actualFileName = fileName || createBackupFileName();
   const { header, headerBytes, prefix } = buildHeader({
     createdAt: new Date().toISOString(),
-    dbName: DB_NAME,
+    dbName: context.databaseName,
     reason,
     sourceBytes: exportedBlob.size,
     tenantIdentity: binding.tenantIdentity,
@@ -219,12 +222,15 @@ async function decryptBackupBlob(blob, pin = null) {
   return { blob: new Blob(parts, { type: 'application/json' }), header, verifier: keyResult.verifier };
 }
 
-async function restoreBackup(file, pin, tenantAliases = []) {
+async function restoreBackup(file, pin, context = null) {
   const decrypted = await decryptBackupBlob(file, pin);
 
-  const database = await openSourceDb();
+  const database = await openSourceDb(context);
   try {
-    const binding = await requireMatchingTenantBinding(database, tenantAliases);
+    const binding = await requireMatchingTenantBinding(database, context.tenantAliases);
+    if (decrypted.header.dbName !== context.databaseName) {
+      throw new Error('BACKUP_TENANT_DATABASE_MISMATCH');
+    }
     if (!decrypted.header.tenantIdentity) {
       throw new Error('BACKUP_TENANT_IDENTITY_MISSING');
     }
@@ -232,7 +238,7 @@ async function restoreBackup(file, pin, tenantAliases = []) {
       throw new Error('BACKUP_TENANT_MISMATCH');
     }
     await restoreWhitelistedDatabase(database, decrypted.blob, {
-      expectedDatabaseName: DB_NAME,
+      expectedDatabaseName: context.databaseName,
       progressCallback: ({ completedRows, totalRows }) => {
         postProgress('restore', completedRows, totalRows, 'importing');
         return true;
@@ -356,7 +362,7 @@ async function handleMessage(message) {
       return restoreBackup(
         message.payload.file,
         message.payload.pin,
-        message.payload.tenantAliases
+        message.payload.context
       );
     case 'rekey':
       return reencryptDirectory(

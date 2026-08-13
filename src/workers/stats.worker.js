@@ -1,23 +1,30 @@
 import Dexie from 'dexie';
-import { DB_NAME } from '../config/dbConfig.js';
 import Logger from '../services/Logger.js';
 import { Money } from '../utils/moneyMath.js';
 import {
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
-  areLocalTenantAliasesCompatible
+  areLocalTenantAliasesCompatible,
+  isTenantWorkerDatabaseName
 } from '../services/tenant/localTenantPolicy.js';
 
 const CHUNK_SIZE = 1000;
 let activeDB = null;
 
 // --- 1. GESTIÓN DE CONEXIÓN ROBUSTA CON DEXIE ---
-const getDB = async () => {
-  if (activeDB && activeDB.isOpen()) return activeDB;
+const getDB = async (databaseName) => {
+  if (!isTenantWorkerDatabaseName(databaseName)) {
+    throw new Error('LOCAL_TENANT_WORKER_DATABASE_INVALID');
+  }
+  if (activeDB && activeDB.isOpen() && activeDB.name === databaseName) return activeDB;
+  if (activeDB) {
+    activeDB.close();
+    activeDB = null;
+  }
 
   // Instanciamos Dexie sin definir la versión. 
   // Esto hace que abra la BD dinámicamente y exponga todas las tablas existentes.
-  const db = new Dexie(DB_NAME);
+  const db = new Dexie(databaseName);
   
   // Dexie maneja internamente de manera segura onversionchange y onblocked,
   // evitando los deadlocks causados por conexiones crudas a IndexedDB.
@@ -42,8 +49,8 @@ const requireMatchingTenantBinding = async (db, tenantAliases) => {
 };
 
 // --- 2. CÁLCULO OPTIMIZADO (CHUNKS + TIMEOUT) ---
-const calculateInventoryValue = async (tenantAliases) => {
-  const db = await getDB();
+const calculateInventoryValue = async ({ databaseName, tenantAliases }) => {
+  const db = await getDB(databaseName);
   await requireMatchingTenantBinding(db, tenantAliases);
 
   // Inicialización estricta con el motor financiero
@@ -118,7 +125,7 @@ self.onmessage = async (e) => {
   try {
     switch (e.data.type) {
       case 'CALCULATE_STATS': {
-        const result = await calculateInventoryValue(e.data.tenantAliases);
+        const result = await calculateInventoryValue(e.data.context || {});
         self.postMessage({
           success: true,
           type: 'STATS_RESULT',

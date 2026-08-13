@@ -13,10 +13,13 @@ import {
 import { getFinancialQuality } from '../services/sales/financialPolicy';
 import {
   LOCAL_TENANT_STATUS,
-  areLocalTenantAliasesCompatible,
   canAccessTenantOwnedRuntimeCache,
   localTenantAccessController
 } from '../services/tenant/localTenantPolicy';
+import {
+  captureActiveTenantWorkerContext,
+  isActiveTenantWorkerContext
+} from '../services/tenant/tenantWorkerContext';
 
 const createEmptyStats = () => ({
   totalRevenue: 0,
@@ -150,7 +153,13 @@ export const useStatsStore = create((unsafeSet, get) => {
   loadStats: async (forceRebuild = false) => {
     const tenantState = localTenantAccessController.getState();
     if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) return;
-    const tenantAliases = [...tenantState.identities];
+    let workerContext;
+    try {
+      workerContext = captureActiveTenantWorkerContext();
+    } catch (error) {
+      Logger.warn('Se omitieron estadisticas del worker sin un runtime tenant activo.', error);
+      return;
+    }
     set({ isLoading: true });
 
     try {
@@ -170,10 +179,7 @@ export const useStatsStore = create((unsafeSet, get) => {
         worker.onmessage = (event) => {
           const { success, type, payload, error } = event.data;
           if (success && type === 'STATS_RESULT') {
-            const currentTenant = localTenantAccessController.getState();
-            const stillAuthorized = currentTenant.status === LOCAL_TENANT_STATUS.GRANTED
-              && areLocalTenantAliasesCompatible(currentTenant.identities, tenantAliases);
-            finish(stillAuthorized ? payload.inventoryValue : null);
+            finish(isActiveTenantWorkerContext(workerContext) ? payload.inventoryValue : null);
             return;
           }
 
@@ -186,7 +192,7 @@ export const useStatsStore = create((unsafeSet, get) => {
           finish(null);
         };
 
-        worker.postMessage({ type: 'CALCULATE_STATS', tenantAliases });
+        worker.postMessage({ type: 'CALCULATE_STATS', context: workerContext });
       });
 
       const db = await initDB();

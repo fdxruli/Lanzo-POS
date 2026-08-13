@@ -8,11 +8,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Logger from '../services/Logger';
-import { DB_NAME } from '../config/dbConfig';
 import {
     LOCAL_TENANT_STATUS,
     localTenantAccessController
 } from '../services/tenant/localTenantPolicy';
+import {
+    captureActiveTenantWorkerContext,
+    isActiveTenantWorkerContext
+} from '../services/tenant/tenantWorkerContext';
 
 const DEFAULT_MIGRATION_STORES = ['menu', 'product_batches'];
 
@@ -58,6 +61,7 @@ export const useMigrationWorker = (options = {}) => {
     const isRunningRef = useRef(false);
     const configRef = useRef({ stores, batchSize });
     const callbacksRef = useRef({ onComplete, onError });
+    const workerContextRef = useRef(null);
     
     const [state, setState] = useState({
         isRunning: false,
@@ -88,7 +92,19 @@ export const useMigrationWorker = (options = {}) => {
             return;
         }
 
+        let context;
+        try {
+            context = captureActiveTenantWorkerContext();
+        } catch {
+            setState((previous) => ({
+                ...previous,
+                error: 'LOCAL_TENANT_WORKER_CONTEXT_REQUIRED'
+            }));
+            return;
+        }
+
         isRunningRef.current = true;
+        workerContextRef.current = context;
         setState(prev => ({
             ...prev,
             isRunning: true,
@@ -101,8 +117,7 @@ export const useMigrationWorker = (options = {}) => {
         workerRef.current.postMessage({
             type: 'START',
             payload: {
-                dbName: DB_NAME,
-                tenantAliases: [...tenantState.identities],
+                context,
                 stores: configRef.current.stores,
                 batchSize: configRef.current.batchSize
             }
@@ -119,9 +134,11 @@ export const useMigrationWorker = (options = {}) => {
 
         worker.onmessage = (event) => {
             const { type, ...data } = event.data;
+            const acceptsResult = () => isActiveTenantWorkerContext(workerContextRef.current);
 
             switch (type) {
                 case 'STORE_START':
+                    if (!acceptsResult()) return;
                     setState(prev => ({
                         ...prev,
                         currentStore: data.store,
@@ -133,6 +150,7 @@ export const useMigrationWorker = (options = {}) => {
                     break;
 
                 case 'PROGRESS':
+                    if (!acceptsResult()) return;
                     setState(prev => ({
                         ...prev,
                         totalProcessed: prev.totalProcessed + data.currentBatch,
@@ -147,6 +165,7 @@ export const useMigrationWorker = (options = {}) => {
                     break;
 
                 case 'STORE_COMPLETE':
+                    if (!acceptsResult()) return;
                     setState(prev => ({
                         ...prev,
                         storeProgress: {
@@ -161,6 +180,7 @@ export const useMigrationWorker = (options = {}) => {
 
                 case 'COMPLETE':
                     isRunningRef.current = false;
+                    if (!acceptsResult()) return;
                     setState(prev => ({
                         ...prev,
                         isRunning: false,
@@ -211,6 +231,7 @@ export const useMigrationWorker = (options = {}) => {
         const unsubscribeTenant = localTenantAccessController.subscribe((tenantState) => {
             if (tenantState.enabled && tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) {
                 worker.postMessage({ type: 'STOP' });
+                workerContextRef.current = null;
             }
         });
 
@@ -222,6 +243,7 @@ export const useMigrationWorker = (options = {}) => {
                 workerRef.current = null;
             }
             isRunningRef.current = false;
+            workerContextRef.current = null;
         };
     }, [startMigration]);
 
