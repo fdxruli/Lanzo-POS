@@ -436,7 +436,12 @@ describe('IndexedDB primary-key preserving recovery', () => {
   it('rejects a newer native version without downgrade or deletion', async () => {
     await openDatabase(320, (database) => database.createObjectStore('sales', { keyPath: 'id' }));
     await expect(preflightAndRepairIndexedDb()).rejects.toMatchObject({
-      code: 'DB_UNSUPPORTED_NATIVE_VERSION'
+      code: 'DB_UNSUPPORTED_NATIVE_VERSION',
+      diagnostic: {
+        detectedNativeVersion: 320,
+        expectedNativeVersion: 310,
+        isRetryable: false
+      }
     });
     expect((await inspectIndexedDbStructure()).nativeVersion).toBe(320);
   });

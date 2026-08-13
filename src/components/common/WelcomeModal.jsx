@@ -14,6 +14,7 @@ import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { getStableDeviceId } from '../../services/supabase';
 import { showMessageModal } from '../../services/utils';
+import { buildSupportMailtoUrl, copyTextToClipboard, getSupportEmail } from '../../services/support/supportContact';
 
 
 export default function WelcomeModal() {
@@ -122,8 +123,7 @@ export default function WelcomeModal() {
   };
 
   const handleSupportClick = () => {
-    const envEmail = import.meta.env.VITE_SUPPORT_EMAIL;
-    const supportEmail = (envEmail && envEmail !== 'undefined') ? envEmail : 'contacto.entrealas@gmail.com';
+    const supportEmail = getSupportEmail();
 
     const deviceInfo = `
 Dispositivo: ${navigator.userAgent}
@@ -132,8 +132,8 @@ Idioma: ${navigator.language}
 Fecha: ${new Date().toLocaleString()}
     `.trim();
 
-    const subject = encodeURIComponent("Ayuda - No puedo acceder a Lanzo POS");
-    const body = encodeURIComponent(`Hola equipo de Lanzo,
+    const subject = 'Ayuda - No puedo acceder a Lanzo POS';
+    const body = `Hola equipo de Lanzo,
 
 Necesito ayuda para acceder a la aplicación.
 
@@ -143,14 +143,14 @@ ${deviceInfo}
 DESCRIBE TU PROBLEMA:
 [Escribe aquí qué está pasando]
 
-¡Gracias por su ayuda!`);
+¡Gracias por su ayuda!`;
 
-    navigator.clipboard.writeText(supportEmail).then(() => {
+    copyTextToClipboard(supportEmail).then(() => {
       showMessageModal(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
     }).catch(err => console.error("No se pudo copiar", err));
 
     setTimeout(() => {
-      window.location.href = `mailto:${supportEmail}?subject=${subject}&body=${body}`;
+      window.location.href = buildSupportMailtoUrl({ to: supportEmail, subject, body });
     }, 500);
   };
 

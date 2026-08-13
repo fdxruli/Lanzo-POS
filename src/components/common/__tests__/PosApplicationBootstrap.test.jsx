@@ -244,8 +244,10 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     renderBootstrap({ prepareLocalDatabase, loadReadyRuntime });
 
     expect(await screen.findByRole('heading', {
-      name: /recuperación automática no pudo completarse/i
+      name: /esta versión de lanzo no puede abrir tu base local/i
     })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByText(/^No se pudo iniciar Lanzo POS$/i)).not.toBeInTheDocument();
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
     expect(loadReadyRuntime).not.toHaveBeenCalled();

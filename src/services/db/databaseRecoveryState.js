@@ -30,6 +30,8 @@ let state = Object.freeze({
   affectedStores: [],
   existingKeyPaths: {},
   expectedKeyPaths: {},
+  detectedNativeVersion: null,
+  expectedNativeVersion: null,
   isRetryable: true,
   requiresMigration: false,
   message: null,
@@ -54,6 +56,12 @@ const sanitizeDiagnostic = (next = {}) => {
     affectedStores,
     existingKeyPaths: pickKeyPaths(next.existingKeyPaths),
     expectedKeyPaths: pickKeyPaths(next.expectedKeyPaths),
+    detectedNativeVersion: Number.isFinite(next.detectedNativeVersion)
+      ? next.detectedNativeVersion
+      : null,
+    expectedNativeVersion: Number.isFinite(next.expectedNativeVersion)
+      ? next.expectedNativeVersion
+      : null,
     isRetryable: next.isRetryable !== false,
     requiresMigration: next.requiresMigration === true,
     message: typeof next.message === 'string' ? next.message : null,
