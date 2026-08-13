@@ -18,9 +18,53 @@ import {
   openTenantRuntime,
   resolveTenantRuntimeDirectory
 } from '../tenantRuntimeRouter';
+import {
+  DATABASE_RECOVERY_STATUS,
+  clearDatabaseRecoveryState,
+  getDatabaseRecoveryState
+} from '../databaseRecoveryState';
+
+const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name, version);
+  request.onupgradeneeded = () => {
+    request.result.createObjectStore('sales', { keyPath: 'id' });
+  };
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    request.result.close();
+    resolve();
+  };
+});
 
 describe('tenant runtime router', () => {
-  afterEach(() => { closeTenantRuntime(); localTenantAccessController.reset(); });
+  afterEach(() => { closeTenantRuntime(); localTenantAccessController.reset(); clearDatabaseRecoveryState(); });
+
+  it('publishes a real terminal preflight diagnostic before the tenant runtime activates', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `UNSUPPORTED-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    await createNativeDatabase(databaseName, 320);
+
+    await expect(openTenantRuntime(identity)).rejects.toMatchObject({
+      code: 'DB_UNSUPPORTED_NATIVE_VERSION',
+      diagnostic: {
+        detectedNativeVersion: 320,
+        expectedNativeVersion: 310,
+        isRetryable: false
+      }
+    });
+
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
+      databaseName,
+      detectedNativeVersion: 320,
+      expectedNativeVersion: 310,
+      isRetryable: false,
+      requiresMigration: false
+    });
+    expect(getActiveTenantRuntime()).toBeNull();
+  });
 
   it('reopens A, isolates B, and rejects a stale A table handle', async () => {
     const a = await resolveActiveTenantIdentity({ license_key: 'FREE-A' });

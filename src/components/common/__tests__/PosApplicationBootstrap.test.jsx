@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import 'fake-indexeddb/auto';
 import { StrictMode } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +31,25 @@ import {
   getDatabaseRecoveryState,
   setDatabaseRecoveryState
 } from '../../../services/db/databaseRecoveryState';
+import '../../../services/db/dexie';
+import { resolveActiveTenantIdentity } from '../../../services/tenant/localTenantGuard';
+import {
+  closeTenantRuntime,
+  openTenantRuntime,
+  resolveTenantRuntimeDirectory
+} from '../../../services/db/tenantRuntimeRouter';
+
+const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name, version);
+  request.onupgradeneeded = () => {
+    request.result.createObjectStore('sales', { keyPath: 'id' });
+  };
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    request.result.close();
+    resolve();
+  };
+});
 
 const deferred = () => {
   let resolve;
@@ -106,6 +126,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  closeTenantRuntime();
   resetPosApplicationBootstrapForTests();
   clearDatabaseRecoveryState();
 });
@@ -229,19 +250,18 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     expect(readyRuntime.startPosSyncAutoBootstrap).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a definitive preparation error inside the recovery gate', async () => {
-    const error = new Error('Unsupported native version');
-    error.code = 'DB_UNSUPPORTED_NATIVE_VERSION';
-    const prepareLocalDatabase = vi.fn(() => {
-      setRecovery(DATABASE_RECOVERY_STATUS.FAILED, {
-        errorCode: error.code,
-        isRetryable: false
-      });
-      return Promise.reject(error);
-    });
-    const loadReadyRuntime = vi.fn();
+  it('shows support actions after the real tenant preflight publishes a terminal diagnostic', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `BOOTSTRAP-UNSUPPORTED-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    await createNativeDatabase(databaseName, 320);
+    const prepareLocalDatabase = vi.fn(() => openTenantRuntime(identity));
+    const readyRuntime = createReadyRuntime();
 
-    renderBootstrap({ prepareLocalDatabase, loadReadyRuntime });
+    renderBootstrap({
+      prepareLocalDatabase,
+      loadReadyRuntime: readyRuntime.loadReadyRuntime
+    });
 
     expect(await screen.findByRole('heading', {
       name: /esta versión de lanzo no puede abrir tu base local/i
@@ -250,7 +270,16 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByText(/^No se pudo iniciar Lanzo POS$/i)).not.toBeInTheDocument();
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
-    expect(loadReadyRuntime).not.toHaveBeenCalled();
+    expect(readyRuntime.loadReadyRuntime).not.toHaveBeenCalled();
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
+      databaseName,
+      detectedNativeVersion: 320,
+      expectedNativeVersion: 310,
+      isRetryable: false,
+      requiresMigration: false
+    });
   });
 
   it('deduplicates preparation and runtime activation under StrictMode', async () => {
