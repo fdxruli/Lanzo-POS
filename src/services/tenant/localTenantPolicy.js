@@ -55,8 +55,10 @@ export const LOCAL_STORE_CLASSIFICATION = Object.freeze({
   [LOCAL_TENANT_BINDING_STORE]: LOCAL_STORE_SCOPE.GLOBAL_RECOVERY
 });
 
-// These are the only records in the mixed legacy sync_cache store that have
-// been proven to identify the physical browser rather than a license.
+// Historical compatibility only: these rows in a legacy mixed sync_cache do
+// not identify a tenant. Normal runtime no longer reads or writes either key
+// through tenant sync_cache; device-owned persistence lives in
+// LanzoDeviceRegistry.
 export const DEVICE_SCOPED_SYNC_CACHE_KEYS = Object.freeze(new Set([
   'lanzo_device_id',
   'lanzo_license_attempts'

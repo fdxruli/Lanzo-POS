@@ -3,6 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
 import { safeLocalStorageSet, checkInternetConnection } from './utils';
 import { loadData, saveData, STORES } from './database';
+import {
+    DEVICE_REGISTRY_KEYS,
+    readDeviceRegistryValue,
+    writeDeviceRegistryValue
+} from './device/deviceRegistry';
 import Logger from "./Logger";
 import {
     assertLocalTenantAccess,
@@ -250,22 +255,18 @@ export function getStableDeviceId() {
 }
 
 async function _generateStableDeviceId() {
-    const STORAGE_KEY = 'lanzo_device_id';
+    const STORAGE_KEY = DEVICE_REGISTRY_KEYS.STABLE_DEVICE_ID;
 
     // A. Intentar leer de LocalStorage (Memoria rápida)
     const lsId = localStorage.getItem(STORAGE_KEY);
 
-    // B. Intentar leer de IndexedDB (Memoria persistente)
+    // B. Read the dedicated device registry. It is available before a tenant
+    // is resolved and never opens LanzoDB1 or a tenant runtime database.
     let dbId = null;
     try {
-        // Buscamos en la caché de sincronización
-        const record = await loadData(STORES.SYNC_CACHE, STORAGE_KEY);
-        // Asumimos que guardaremos el ID en la propiedad 'value'
-        if (record && record.value) {
-            dbId = record.value;
-        }
+        dbId = await readDeviceRegistryValue(STORAGE_KEY);
     } catch (e) {
-        Logger.warn("⚠️ No se pudo leer identidad de BD (posiblemente primer uso):", e);
+        Logger.warn("⚠️ No se pudo leer identidad de dispositivo:", e);
     }
 
     // --- LÓGICA DE RECONCILIACIÓN ---
@@ -273,8 +274,9 @@ async function _generateStableDeviceId() {
     // CASO 1: Coincidencia perfecta o recuperación cruzada
     if (dbId && lsId) {
         if (dbId !== lsId) {
-            Logger.warn("⚠️ Conflicto de identidad detectado. IndexedDB tiene prioridad.");
-            // IDB es más difícil de borrar, así que confiamos en él y reparamos LocalStorage
+            Logger.warn("⚠️ Conflicto de identidad detectado. El registro de dispositivo tiene prioridad.");
+            // The dedicated registry is durable device authority. Repair the
+            // browser mirror instead of generating a new identity.
             safeLocalStorageSet(STORAGE_KEY, dbId);
             return dbId;
         }
@@ -283,16 +285,16 @@ async function _generateStableDeviceId() {
 
     // CASO 2: Usuario borró cookies (localStorage vacío) pero BD sigue viva
     if (dbId && !lsId) {
-        Logger.log("♻️ Identidad recuperada desde IndexedDB.");
+        Logger.log("♻️ Identidad recuperada desde el registro de dispositivo.");
         safeLocalStorageSet(STORAGE_KEY, dbId);
         return dbId;
     }
 
     // CASO 3: BD vacía o corrupta, pero LocalStorage vivo (Raro, pero posible)
     if (lsId && !dbId) {
-        Logger.log("💾 Respaldando identidad existente en IndexedDB...");
+        Logger.log("💾 Respaldando identidad existente en el registro de dispositivo...");
         try {
-            await saveData(STORES.SYNC_CACHE, { key: STORAGE_KEY, value: lsId });
+            await writeDeviceRegistryValue(STORAGE_KEY, lsId);
         } catch (e) { Logger.warn("Fallo respaldo ID:", e); }
         return lsId;
     }
@@ -307,9 +309,9 @@ async function _generateStableDeviceId() {
         safeLocalStorageSet(STORAGE_KEY, newId);
 
         try {
-            await saveData(STORES.SYNC_CACHE, { key: STORAGE_KEY, value: newId });
+            await writeDeviceRegistryValue(STORAGE_KEY, newId);
         } catch (e) {
-            Logger.warn("⚠️ No se pudo persistir el ID nuevo en DB:", e);
+            Logger.warn("⚠️ No se pudo persistir el ID nuevo en el registro de dispositivo:", e);
         }
 
         return newId;
@@ -358,15 +360,14 @@ async function getUntamperedTime() {
 }
 
 // Configuración del Rate Limit
-const RATE_LIMIT_KEY = 'lanzo_license_attempts';
+const RATE_LIMIT_KEY = DEVICE_REGISTRY_KEYS.LICENSE_ATTEMPTS;
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_TIME = 5 * 60 * 1000;
 
 async function checkRateLimit() {
     let storedData = null;
     try {
-        const record = await loadData(STORES.SYNC_CACHE, RATE_LIMIT_KEY);
-        if (record && record.value) storedData = record.value;
+        storedData = await readDeviceRegistryValue(RATE_LIMIT_KEY);
     } catch {
         // Best effort: missing rate-limit cache should not block validation.
     }
@@ -396,7 +397,7 @@ async function registerFailedAttempt() {
         if (newAttempts >= MAX_ATTEMPTS) {
             newData.lockedUntil = Date.now() + LOCKOUT_TIME;
         }
-        await saveData(STORES.SYNC_CACHE, { key: RATE_LIMIT_KEY, value: newData });
+        await writeDeviceRegistryValue(RATE_LIMIT_KEY, newData);
     } catch (e) {
         Logger.warn("Error guardando rate limit", e);
     }
@@ -404,8 +405,9 @@ async function registerFailedAttempt() {
 
 async function resetRateLimit() {
     try {
-        // En lugar de removeItem, sobreescribimos con nulo o borramos si tienes deleteData
-        await saveData(STORES.SYNC_CACHE, { key: RATE_LIMIT_KEY, value: null });
+        // Preserve the existing null-tombstone reset semantics in the
+        // dedicated device registry.
+        await writeDeviceRegistryValue(RATE_LIMIT_KEY, null);
     } catch {
         // Best effort: reset failures should not block the user flow.
     }
