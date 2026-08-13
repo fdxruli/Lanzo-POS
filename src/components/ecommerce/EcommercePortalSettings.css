@@ -420,8 +420,10 @@
 .ecom-pause-form { display: grid; gap: .8rem; }
 
 .ecom-builder-shell { display: grid; gap: 1.25rem; }
-.ecom-builder-main { display: grid; grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr); gap: 1.25rem; align-items: start; }
-.ecom-builder-controls, .ecom-builder-preview, .ecom-builder-history { display: grid; gap: 1rem; min-width: 0; }
+.ecom-builder-header-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .6rem; }
+.ecom-builder-shell > .ecom-customization, .ecom-builder-main { width: min(100%, 52rem); margin-inline: auto; }
+.ecom-builder-main { display: grid; gap: 1.25rem; align-items: start; }
+.ecom-builder-controls, .ecom-builder-history { display: grid; gap: 1rem; min-width: 0; }
 .ecom-builder-controls fieldset { display: grid; gap: .75rem; margin: 0; padding: 1rem; border: 1px solid var(--border-color); border-radius: 12px; }
 .ecom-builder-controls legend { padding: 0 .35rem; font-weight: 800; }
 .ecom-builder-choice-row, .ecom-builder-order-actions, .ecom-builder-actions, .ecom-builder-conflict { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
@@ -432,9 +434,6 @@
 .ecom-builder-status { display: flex; flex-wrap: wrap; gap: .65rem; }
 .ecom-builder-status span, .ecom-builder-status strong { display: inline-flex; align-items: center; gap: .35rem; padding: .45rem .7rem; border-radius: 999px; background: var(--light-background); }
 .ecom-builder-status .is-warning, .ecom-builder-status strong { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
-.ecom-builder-preview-frame { width: 100%; margin-inline: auto; overflow: hidden; border: 1px solid var(--border-color); border-radius: 14px; background: var(--card-background-color); transition: max-width .2s ease; }
-.ecom-builder-preview-frame.is-mobile { max-width: 390px; }
-.ecom-builder-preview-inert { min-height: 0; color: var(--ui-text, #0f172a); background: var(--ui-bg-page, #f8fafc); pointer-events: none; user-select: none; }
 .ecom-builder-actions { justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color); }
 .ecom-builder-actions > span { margin-right: auto; }
 .ecom-builder-version-list { display: grid; gap: .65rem; }
@@ -446,7 +445,6 @@
 @media (max-width: 900px) {
   .ecom-operations-grid { grid-template-columns: 1fr; }
   .ecom-exception-row { grid-template-columns: 1fr 1fr; }
-  .ecom-builder-main { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 620px) {
