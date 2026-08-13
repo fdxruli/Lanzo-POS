@@ -1,63 +1,231 @@
+/* Canonical authority for shared button roles. Component styles may only add
+   scoped layout adjustments; they must not redefine these global selectors. */
+button {
+  max-width: 100%;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-sm);
+  padding: 10px 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: transform 0.1s, background-color 0.2s, box-shadow 0.2s;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.ui-button,
 .btn {
-    cursor: pointer;
-    border: 1px solid transparent;
-    border-radius: var(--border-radius-sm);
-    padding: 10px 20px;
-    font-weight: 600;
-    font-size: 0.95rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    transition: transform 0.1s, background-color 0.2s, box-shadow 0.2s;
+  max-width: 100%;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-sm);
+  padding: 0.625rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.1s ease,
+    background-color var(--ui-transition),
+    border-color var(--ui-transition),
+    color var(--ui-transition),
+    box-shadow var(--ui-transition),
+    filter var(--ui-transition);
 }
 
+.ui-button:active,
 .btn:active {
-    transform: scale(0.98);
+  transform: scale(0.98);
 }
 
-.btn:disabled {
-    background-color: var(--text-light);
-    opacity: 0.5;
-    cursor: not-allowed;
+.ui-button:focus-visible,
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
 }
 
+.ui-button:disabled,
+.ui-button[aria-disabled="true"],
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+.ui-button--primary,
+.btn-primary,
 .btn-save,
-.btn-primary {
-    background-color: var(--primary-color);
-    color: white;
+.btn-confirm {
+  background-color: var(--ui-color-primary);
+  color: var(--ui-text-on-primary);
+  border-color: var(--ui-color-primary);
 }
 
-.btn-save:hover {
-    background-color: var(--primary-hover);
+.ui-button--primary:hover:not(:disabled),
+.btn-primary:hover:not(:disabled),
+.btn-save:hover:not(:disabled),
+.btn-confirm:hover:not(:disabled) {
+  background-color: var(--ui-color-primary-hover);
+  border-color: var(--ui-color-primary-hover);
+  box-shadow: 0 10px 22px -14px var(--ui-color-primary);
 }
 
+.ui-button--secondary,
 .btn-secondary {
-    background-color: var(--secondary-color);
-    color: white;
+  background-color: var(--ui-color-secondary);
+  color: var(--ui-text-on-primary);
+  border-color: var(--ui-color-secondary);
 }
 
-.btn-secondary:hover {
-    filter: brightness(1.1);
+.ui-button--secondary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 22px -14px var(--ui-color-secondary);
 }
 
+.ui-button--neutral,
+.btn-neutral {
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
+  border-color: var(--ui-border-color);
+}
+
+.ui-button--neutral:hover:not(:disabled),
+.btn-neutral:hover:not(:disabled) {
+  border-color: var(--ui-text-muted);
+}
+
+.ui-button--ghost,
 .btn-cancel {
-    background-color: transparent;
-    color: var(--text-light);
-    border-color: var(--border-color);
+  background-color: transparent;
+  color: var(--ui-text-muted);
+  border-color: var(--ui-border-color);
 }
 
-.btn-cancel:hover {
-    background-color: var(--light-background);
-    color: var(--text-dark);
+.ui-button--ghost:hover:not(:disabled),
+.btn-cancel:hover:not(:disabled) {
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
+  border-color: var(--ui-text-muted);
 }
 
-.btn-delete {
-    background-color: rgba(255, 59, 92, 0.1);
-    color: var(--error-color);
+.ui-button--danger,
+.btn-delete,
+.btn-danger {
+  background-color: var(--ui-bg-danger-soft);
+  color: var(--ui-text-danger);
+  border-color: var(--ui-border-danger);
 }
 
-.btn-delete:hover {
-    background-color: var(--error-color);
-    color: white;
+.ui-button--danger:hover:not(:disabled),
+.btn-delete:hover:not(:disabled),
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--ui-color-danger);
+  color: var(--ui-text-on-danger);
+  border-color: var(--ui-color-danger);
+}
+
+.ui-button--danger:focus-visible,
+.btn-delete:focus-visible,
+.btn-danger:focus-visible {
+  box-shadow: var(--ui-shadow-focus-danger);
+}
+
+.ui-button--success {
+  background-color: var(--ui-color-success);
+  color: var(--ui-text-on-primary);
+  border-color: var(--ui-color-success);
+}
+
+.ui-button--success:focus-visible {
+  box-shadow: var(--ui-shadow-focus-success);
+}
+
+.ui-button--warning {
+  background-color: var(--ui-bg-warning-soft);
+  color: var(--ui-text-warning);
+  border-color: var(--ui-border-warning);
+}
+
+.ui-button--sm,
+.btn-sm {
+  min-height: 34px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.ui-button--lg,
+.btn-lg {
+  min-height: 46px;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+}
+
+.ui-button--block,
+.btn-block {
+  width: 100%;
+}
+
+.ui-icon-button,
+.btn-icon,
+.btn-icon-small {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: var(--ui-radius-sm);
+}
+
+.ui-icon-button--sm,
+.btn-icon-small {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+}
+
+[data-theme="dark"] .ui-button--warning {
+  color: var(--ui-text-warning-on-dark);
+}
+
+@media (max-width: 640px) {
+  button:not(.ui-icon-button):not(.btn-icon):not(.btn-icon-small),
+  .ui-button:not(.ui-icon-button):not(.ui-icon-button--sm),
+  .btn:not(.btn-icon):not(.btn-icon-small) {
+    min-height: 44px;
+  }
+
+  .ui-icon-button,
+  .btn-icon,
+  .btn-icon-small {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button,
+  .btn,
+  .ui-icon-button,
+  .btn-icon,
+  .btn-icon-small {
+    transition: none;
+  }
 }

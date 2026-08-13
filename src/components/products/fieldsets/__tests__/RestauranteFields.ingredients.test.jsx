@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   ingredients: [],
@@ -21,6 +21,10 @@ import RestauranteFields from '../RestauranteFields';
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.ingredients = [{ id: 'ingredient-1', name: 'Tocino', stock: 0, saleType: 'bulk', unit: 'kg' }];
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('RestauranteFields ingredient extras', () => {

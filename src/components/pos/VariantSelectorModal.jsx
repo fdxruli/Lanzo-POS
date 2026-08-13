@@ -193,7 +193,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
             <h2 className="product-title">{product.name}</h2>
             <span className="product-base-price">Precio Base: ${product.price.toFixed(2)}</span>
           </div>
-          <button type="button" className="btn-close-x" onClick={onClose} aria-label="Cerrar selector de variantes">&times;</button>
+          <button type="button" className="variant-modal__close" onClick={onClose} aria-label="Cerrar selector de variantes">&times;</button>
         </div>
 
         {/* SEARCH BAR */}
@@ -220,7 +220,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
           ) : !hasVariants ? (
             <div className="empty-state">
               <p>No hay variantes disponibles con stock.</p>
-              {searchTerm && <button type="button" className="btn-link" onClick={() => setSearchTerm('')}>Limpiar búsqueda</button>}
+              {searchTerm && <button type="button" className="variant-modal__clear-search" onClick={() => setSearchTerm('')}>Limpiar búsqueda</button>}
             </div>
           ) : !hasCurrentStrictBatch ? (
             <div className="empty-state empty-state--strict-expiry">
