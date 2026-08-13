@@ -94,6 +94,12 @@
   --safe-area-right: env(safe-area-inset-right, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
+
+  /* Mobile layout contract: fixed nav height + safe area + touch clearance. */
+  --mobile-bottom-nav-height: 65px;
+  --mobile-navigation-clearance: calc(
+    var(--mobile-bottom-nav-height) + var(--safe-area-bottom) + var(--spacing-lg)
+  );
 }
 
 /* ======================================================

@@ -1,10 +1,6 @@
 /* src/pages/SettingsPage.css */
 
-/* * AÑADIDO: Contenedor principal de la página
- * Esto asegura que el contenido final no quede oculto tras la barra de navegación en móviles
- */
 .settings-page-wrapper {
-  padding-bottom: 120px; /* Espacio generoso para la barra inferior en móvil */
   width: 100%;
 }
 
@@ -878,11 +874,6 @@ input[type="radio"]:checked + .theme-radio-text {
 
 /* Tablets y escritorio (>= 768px) */
 @media (min-width: 768px) {
-  /* En escritorio reducimos el padding inferior porque no hay barra fija móvil tapando */
-  .settings-page-wrapper {
-    padding-bottom: 40px;
-  }
-
   .backup-actions {
     flex-direction: row;
     align-items: center;
@@ -1085,10 +1076,6 @@ input[type="radio"]:checked + .theme-radio-text {
   min-width: 0;
 }
 
-.settings-page-wrapper {
-  padding-bottom: calc(120px + var(--safe-area-bottom));
-}
-
 .settings-page-wrapper .tabs-container {
   max-width: 100%;
 }
@@ -1131,8 +1118,8 @@ input[type="radio"]:checked + .theme-radio-text {
 .settings-page-wrapper {
   width: min(100%, 1180px);
   margin: 0 auto;
-  padding: var(--ui-space-lg);
-  padding-bottom: calc(96px + var(--safe-area-bottom));
+  padding-top: var(--ui-space-lg);
+  padding-inline: var(--ui-space-lg);
 }
 
 .settings-tabs-section {
@@ -1396,10 +1383,6 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 @media (min-width: 1024px) {
-  .settings-page-wrapper {
-    padding-bottom: var(--ui-space-lg);
-  }
-
   .settings-page-wrapper .tabs-container {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -1409,7 +1392,7 @@ input[type="radio"]:checked + .theme-radio-text {
 @media (max-width: 640px) {
   .settings-page-wrapper {
     padding: var(--ui-space-sm);
-    padding-bottom: calc(104px + var(--safe-area-bottom));
+    padding-bottom: var(--mobile-navigation-clearance);
   }
 
   .settings-page-wrapper .tabs-container {

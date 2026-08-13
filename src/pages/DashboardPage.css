@@ -12,10 +12,6 @@
   margin-bottom: var(--spacing-xl);
 }
 
-.dashboard-page {
-  padding-bottom: calc(var(--ui-space-xl) + 72px);
-}
-
 .dashboard-tabs-section {
   margin-bottom: var(--ui-space-lg);
 }
@@ -247,10 +243,6 @@
   min-width: 0;
 }
 
-.dashboard-page {
-  padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
-}
-
 .panel-body {
   -webkit-overflow-scrolling: touch;
 }
@@ -266,11 +258,5 @@
 
   .data-warning-banner {
     gap: var(--spacing-sm);
-  }
-}
-
-@media (min-width: 1024px) {
-  .dashboard-page {
-    padding-bottom: var(--ui-space-lg);
   }
 }
