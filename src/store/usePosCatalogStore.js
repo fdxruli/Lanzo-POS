@@ -16,6 +16,8 @@ import {
 } from '../services/products/productCatalogQueryService';
 import { subscribeProductCatalogEvents } from '../services/products/productCatalogEvents';
 import { registerPosCatalogSessionResetHandler } from '../services/products/posCatalogSessionEvents';
+import { getTenantRuntimeReadiness } from '../services/db/tenantRuntimeRouter';
+import { localTenantAccessController } from '../services/tenant/localTenantPolicy';
 import {
   CAT_DYNAMIC_EXPIRED,
   CAT_DYNAMIC_OUT_OF_STOCK,
@@ -26,6 +28,8 @@ const BURST_DEDUPE_MS = 300;
 export const POS_CATALOG_VIEW_CACHE_LIMIT = 6;
 let lastInvalidationTime = 0;
 let pendingInvalidation = false;
+let pendingInvalidationRuntime = null;
+let lastKnownRuntime = null;
 let unsubscribeCatalogEvents = null;
 let initializationRefs = 0;
 let catalogReconciliationGeneration = 0;
@@ -134,7 +138,6 @@ const reconcileCatalogItems = (items, productId, product) => {
 };
 
 const resetInvalidationState = (set) => {
-  pendingInvalidation = false;
   set({
     isInvalidating: false,
     isLoading: false,
@@ -144,8 +147,31 @@ const resetInvalidationState = (set) => {
   });
 };
 
+const runtimeKey = (runtime) => runtime && `${runtime.opaqueId}:${runtime.generation}`;
+const captureRuntimeReadiness = () => {
+  const readiness = getTenantRuntimeReadiness();
+  if (readiness.ready && readiness.runtime) lastKnownRuntime = readiness.runtime;
+  return readiness;
+};
+const isExpectedTenantLifecycleError = (error) => [
+  'TENANT_RUNTIME_NOT_READY',
+  'TENANT_RUNTIME_STALE_HANDLE',
+  'LOCAL_TENANT_ACCESS_REQUIRED'
+].includes(error?.code || error?.message);
+const deferInvalidationForUnavailableRuntime = (set) => {
+  const readiness = captureRuntimeReadiness();
+  if (readiness.ready) return false;
+  const runtime = readiness.runtime || lastKnownRuntime;
+  pendingInvalidation = Boolean(runtime);
+  pendingInvalidationRuntime = runtime || null;
+  resetInvalidationState(set);
+  return true;
+};
+
 const handleStructuralError = (error, set, context) => {
   if (!classifyDatabaseError(error).structural) return false;
+  pendingInvalidation = false;
+  pendingInvalidationRuntime = null;
   clearViewCache();
   resetInvalidationState(set);
   reportStructuralDatabaseErrorOnce(error, context);
@@ -156,6 +182,7 @@ const drainPendingInvalidation = (get) => {
   const state = get();
   if (!pendingInvalidation || state.isRefreshing || state.isLoadingInitial || state.isLoadingNextPage) return;
   pendingInvalidation = false;
+  pendingInvalidationRuntime = null;
   lastInvalidationTime = 0;
   void Promise.resolve().then(() => get().invalidateAndReset());
 };
@@ -267,6 +294,9 @@ export const usePosCatalogStore = create((set, get) => ({
     unsubscribeCatalogEvents?.();
     unsubscribeCatalogEvents = null;
     if (clearCache) clearViewCache();
+    pendingInvalidation = false;
+    pendingInvalidationRuntime = null;
+    lastKnownRuntime = null;
     set((state) => ({ initialized: false, requestVersion: state.requestVersion + 1 }));
   },
 
@@ -406,7 +436,7 @@ export const usePosCatalogStore = create((set, get) => ({
   setCategoryId: (categoryId) => get().setFilters({ categoryId }),
 
   loadFirstPage: async ({ includeCategories = false } = {}) => {
-    if (isDatabaseRecoveryPending()) return false;
+    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const version = get().requestVersion + 1;
     const view = currentView(get());
     const pageSize = get().pageSize;
@@ -443,7 +473,9 @@ export const usePosCatalogStore = create((set, get) => ({
       drainPendingInvalidation(get);
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'pos-catalog-load-first-page')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        resetInvalidationState(set);
+      } else if (!handleStructuralError(error, set, 'pos-catalog-load-first-page')) {
         Logger.error('[PosCatalogStore] Error cargando primera página:', error);
         if (get().requestVersion === version) set({ isLoadingInitial: false, isLoading: false });
       }
@@ -461,6 +493,7 @@ export const usePosCatalogStore = create((set, get) => ({
       || state.isLoadingInitial
       || state.isRefreshing
       || isDatabaseRecoveryPending()
+      || !captureRuntimeReadiness().ready
     ) return false;
 
     const version = state.requestVersion;
@@ -489,7 +522,9 @@ export const usePosCatalogStore = create((set, get) => ({
       drainPendingInvalidation(get);
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'pos-catalog-load-next-page')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        resetInvalidationState(set);
+      } else if (!handleStructuralError(error, set, 'pos-catalog-load-next-page')) {
         Logger.error('[PosCatalogStore] Error cargando página siguiente:', error);
       }
       return false;
@@ -503,7 +538,7 @@ export const usePosCatalogStore = create((set, get) => ({
   ),
 
   refreshCategories: async () => {
-    if (isDatabaseRecoveryPending()) return false;
+    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const categories = await loadCatalogCategories();
     const selectedCategoryMissing = get().categoryId
       && !isDynamicPosCategory(get().categoryId)
@@ -514,7 +549,7 @@ export const usePosCatalogStore = create((set, get) => ({
 
   refreshCurrentPages: async (retry = 0) => {
     const state = get();
-    if (state.isRefreshing || state.isLoadingInitial || isDatabaseRecoveryPending()) return false;
+    if (state.isRefreshing || state.isLoadingInitial || isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const version = state.requestVersion + 1;
     const view = currentView(state);
     const reconciliationGeneration = catalogReconciliationGeneration;
@@ -558,7 +593,9 @@ export const usePosCatalogStore = create((set, get) => ({
       drainPendingInvalidation(get);
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'pos-catalog-refresh-current-pages')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        deferInvalidationForUnavailableRuntime(set);
+      } else if (!handleStructuralError(error, set, 'pos-catalog-refresh-current-pages')) {
         Logger.error('[PosCatalogStore] Error refrescando páginas visibles:', error);
       }
       return false;
@@ -574,7 +611,7 @@ export const usePosCatalogStore = create((set, get) => ({
   checkHasExpiredProducts: () => checkPosExpiredProducts(),
 
   reconcileProductById: async (productId) => {
-    if (!productId || isDatabaseRecoveryPending()) return false;
+    if (!productId || isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const version = (productReconciliationVersions.get(productId) || 0) + 1;
     productReconciliationVersions.set(productId, version);
     catalogReconciliationGeneration += 1;
@@ -620,7 +657,9 @@ export const usePosCatalogStore = create((set, get) => ({
       }
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'pos-catalog-reconcile-product')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        resetInvalidationState(set);
+      } else if (!handleStructuralError(error, set, 'pos-catalog-reconcile-product')) {
         Logger.error('[PosCatalogStore] Error reconciliando producto:', error);
       }
       return false;
@@ -638,6 +677,7 @@ export const usePosCatalogStore = create((set, get) => ({
       resetInvalidationState(set);
       return Promise.resolve(false);
     }
+    if (deferInvalidationForUnavailableRuntime(set)) return Promise.resolve(false);
     if (state.isRefreshing || state.isLoadingInitial || state.isLoadingNextPage) {
       pendingInvalidation = true;
       return Promise.resolve(false);
@@ -658,6 +698,7 @@ export const usePosCatalogStore = create((set, get) => ({
     const version = get().requestVersion + 1;
     clearViewCache();
     pendingInvalidation = false;
+    pendingInvalidationRuntime = null;
     productReconciliationVersions.clear();
     set({
       items: [],
@@ -683,4 +724,18 @@ export const usePosCatalogStore = create((set, get) => ({
 
 registerPosCatalogSessionResetHandler(() => {
   usePosCatalogStore.getState().reset();
+});
+
+localTenantAccessController.subscribe(() => {
+  const readiness = captureRuntimeReadiness();
+  if (!pendingInvalidation || !readiness.ready || !readiness.runtime) return;
+  if (runtimeKey(readiness.runtime) !== runtimeKey(pendingInvalidationRuntime)) {
+    pendingInvalidation = false;
+    pendingInvalidationRuntime = null;
+    return;
+  }
+  pendingInvalidation = false;
+  pendingInvalidationRuntime = null;
+  lastInvalidationTime = 0;
+  void Promise.resolve().then(() => usePosCatalogStore.getState().invalidateAndReset());
 });

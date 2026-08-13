@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import { areLocalTenantAliasesCompatible, localTenantAccessController } from '../tenant/localTenantPolicy';
+import { areLocalTenantAliasesCompatible, LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/localTenantPolicy';
 import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
 
 const DIRECTORY_DB = 'LanzoTenantDirectory';
@@ -86,6 +86,28 @@ export const db = new Proxy({}, { get(_target, prop) {
 
 export const getActiveTenantDatabase = () => current().database;
 export const getActiveTenantRuntime = () => active && ({ opaqueId: active.opaqueId, databaseName: active.database.name, generation: active.generation });
+
+// Cache and event consumers need a non-throwing lifecycle probe.  It is
+// deliberately separate from the db proxy: callers that reach the proxy
+// without this authority must still fail closed with TENANT_RUNTIME_NOT_READY.
+// A disabled controller is retained for isolated/unit consumers which do not
+// bootstrap the production tenant guard; a real guarded runtime must be both
+// GRANTED and physically open.
+export const getTenantRuntimeReadiness = () => {
+  const tenantState = localTenantAccessController.getState();
+  if (!tenantState.enabled) return { ready: true, runtime: null };
+  if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED || !active?.database?.isOpen()) {
+    return { ready: false, runtime: null };
+  }
+  return {
+    ready: true,
+    runtime: {
+      opaqueId: active.opaqueId,
+      databaseName: active.database.name,
+      generation: active.generation
+    }
+  };
+};
 
 export const openTenantRuntime = async (identity) => {
   if (!tenantDatabaseFactory) {

@@ -394,7 +394,6 @@ export const startPosCloudBootstrap = async ({
 
   if (!force && bootstrapState.started && bootstrapState.signature === signature) {
     devLog('skip duplicate', { reason });
-    emitRouteDemand();
     return { started: true, skipped: true, reason: 'already_started' };
   }
 

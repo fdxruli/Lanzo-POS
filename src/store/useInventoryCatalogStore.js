@@ -13,10 +13,14 @@ import {
   queryInventoryCatalogProductById
 } from '../services/products/productCatalogQueryService';
 import { subscribeProductCatalogEvents } from '../services/products/productCatalogEvents';
+import { getTenantRuntimeReadiness } from '../services/db/tenantRuntimeRouter';
+import { localTenantAccessController } from '../services/tenant/localTenantPolicy';
 
 const BURST_DEDUPE_MS = 300;
 let lastInvalidationTime = 0;
 let pendingInvalidation = false;
+let pendingInvalidationRuntime = null;
+let lastKnownRuntime = null;
 let unsubscribeCatalogEvents = null;
 let initializationRefs = 0;
 let catalogReconciliationGeneration = 0;
@@ -58,7 +62,6 @@ const reconcileCatalogItems = (items, productId, product) => {
 };
 
 const resetInvalidationState = (set) => {
-  pendingInvalidation = false;
   set({
     isInvalidating: false,
     isLoading: false,
@@ -68,8 +71,33 @@ const resetInvalidationState = (set) => {
   });
 };
 
+const runtimeKey = (runtime) => runtime && `${runtime.opaqueId}:${runtime.generation}`;
+const captureRuntimeReadiness = () => {
+  const readiness = getTenantRuntimeReadiness();
+  if (readiness.ready && readiness.runtime) lastKnownRuntime = readiness.runtime;
+  return readiness;
+};
+const isExpectedTenantLifecycleError = (error) => [
+  'TENANT_RUNTIME_NOT_READY',
+  'TENANT_RUNTIME_STALE_HANDLE',
+  'LOCAL_TENANT_ACCESS_REQUIRED'
+].includes(error?.code || error?.message);
+const deferInvalidationForUnavailableRuntime = (set) => {
+  const readiness = captureRuntimeReadiness();
+  if (readiness.ready) return false;
+  const runtime = readiness.runtime || lastKnownRuntime;
+  // Without a tenant/generation, retaining a wake-up would make it possible
+  // to replay A's cache work under B. Dropping it is the safe outcome.
+  pendingInvalidation = Boolean(runtime);
+  pendingInvalidationRuntime = runtime || null;
+  resetInvalidationState(set);
+  return true;
+};
+
 const handleStructuralError = (error, set, context) => {
   if (!classifyDatabaseError(error).structural) return false;
+  pendingInvalidation = false;
+  pendingInvalidationRuntime = null;
   resetInvalidationState(set);
   reportStructuralDatabaseErrorOnce(error, context);
   return true;
@@ -81,6 +109,7 @@ const drainPendingInvalidation = (get) => {
     return;
   }
   pendingInvalidation = false;
+  pendingInvalidationRuntime = null;
   lastInvalidationTime = 0;
   void Promise.resolve().then(() => get().invalidateAndReset());
 };
@@ -162,6 +191,9 @@ export const useInventoryCatalogStore = create((set, get) => ({
     unsubscribeCatalogEvents?.();
     unsubscribeCatalogEvents = null;
     productReconciliationVersions.clear();
+    pendingInvalidation = false;
+    pendingInvalidationRuntime = null;
+    lastKnownRuntime = null;
     set((state) => ({ initialized: false, requestVersion: state.requestVersion + 1 }));
   },
 
@@ -194,7 +226,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
   },
 
   loadFirstPage: async ({ includeCategories = false } = {}) => {
-    if (isDatabaseRecoveryPending()) return false;
+    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const version = get().requestVersion + 1;
     const view = currentView(get());
     const pageSize = get().pageSize;
@@ -228,7 +260,9 @@ export const useInventoryCatalogStore = create((set, get) => ({
       drainPendingInvalidation(get);
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'inventory-catalog-load-first-page')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        resetInvalidationState(set);
+      } else if (!handleStructuralError(error, set, 'inventory-catalog-load-first-page')) {
         Logger.error('[InventoryCatalogStore] Error cargando primera página:', error);
       }
       return false;
@@ -245,6 +279,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
       || state.isLoadingInitial
       || state.isRefreshing
       || isDatabaseRecoveryPending()
+      || !captureRuntimeReadiness().ready
     ) return false;
 
     const version = state.requestVersion;
@@ -275,7 +310,9 @@ export const useInventoryCatalogStore = create((set, get) => ({
       drainPendingInvalidation(get);
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'inventory-catalog-load-next-page')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        resetInvalidationState(set);
+      } else if (!handleStructuralError(error, set, 'inventory-catalog-load-next-page')) {
         Logger.error('[InventoryCatalogStore] Error cargando página siguiente:', error);
       }
       return false;
@@ -289,7 +326,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
   ),
 
   refreshCategories: async () => {
-    if (isDatabaseRecoveryPending()) return false;
+    if (isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const categories = await loadCatalogCategories();
     const selectedCategoryMissing = get().filters.categoryId
       && !categories.some((category) => category.id === get().filters.categoryId);
@@ -305,7 +342,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
 
   refreshCurrentPages: async ({ includeCategories = true } = {}) => {
     const state = get();
-    if (state.isRefreshing || state.isLoadingInitial || isDatabaseRecoveryPending()) return false;
+    if (state.isRefreshing || state.isLoadingInitial || isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const version = state.requestVersion + 1;
     const view = currentView(state);
     const reconciliationGeneration = catalogReconciliationGeneration;
@@ -356,7 +393,9 @@ export const useInventoryCatalogStore = create((set, get) => ({
       drainPendingInvalidation(get);
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'inventory-catalog-refresh-current-pages')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        deferInvalidationForUnavailableRuntime(set);
+      } else if (!handleStructuralError(error, set, 'inventory-catalog-refresh-current-pages')) {
         Logger.error('[InventoryCatalogStore] Error refrescando páginas visibles:', error);
       }
       return false;
@@ -374,7 +413,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
   ),
 
   reconcileProductById: async (productId) => {
-    if (!productId || isDatabaseRecoveryPending()) return false;
+    if (!productId || isDatabaseRecoveryPending() || !captureRuntimeReadiness().ready) return false;
     const version = (productReconciliationVersions.get(productId) || 0) + 1;
     productReconciliationVersions.set(productId, version);
     catalogReconciliationGeneration += 1;
@@ -393,7 +432,9 @@ export const useInventoryCatalogStore = create((set, get) => ({
       });
       return true;
     } catch (error) {
-      if (!handleStructuralError(error, set, 'inventory-catalog-reconcile-product')) {
+      if (isExpectedTenantLifecycleError(error)) {
+        resetInvalidationState(set);
+      } else if (!handleStructuralError(error, set, 'inventory-catalog-reconcile-product')) {
         Logger.error('[InventoryCatalogStore] Error reconciliando producto:', error);
       }
       return false;
@@ -411,6 +452,7 @@ export const useInventoryCatalogStore = create((set, get) => ({
       resetInvalidationState(set);
       return Promise.resolve(false);
     }
+    if (deferInvalidationForUnavailableRuntime(set)) return Promise.resolve(false);
     if (state.isRefreshing || state.isLoadingInitial || state.isLoadingNextPage) {
       pendingInvalidation = true;
       return Promise.resolve(false);
@@ -427,6 +469,22 @@ export const useInventoryCatalogStore = create((set, get) => ({
     });
   }
 }));
+
+// A subscriber is a view-cache convenience only. The runtime proxy and tenant
+// middleware remain the enforcing boundary for every business operation.
+localTenantAccessController.subscribe(() => {
+  const readiness = captureRuntimeReadiness();
+  if (!pendingInvalidation || !readiness.ready || !readiness.runtime) return;
+  if (runtimeKey(readiness.runtime) !== runtimeKey(pendingInvalidationRuntime)) {
+    pendingInvalidation = false;
+    pendingInvalidationRuntime = null;
+    return;
+  }
+  pendingInvalidation = false;
+  pendingInvalidationRuntime = null;
+  lastInvalidationTime = 0;
+  void Promise.resolve().then(() => useInventoryCatalogStore.getState().invalidateAndReset());
+});
 
 if (typeof window !== 'undefined') {
   useInventoryCatalogStore.getState().initialize();
