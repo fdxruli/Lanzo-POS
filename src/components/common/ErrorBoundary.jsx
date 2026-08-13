@@ -72,7 +72,7 @@ const isRecoverableAppShellCache = (cacheName = '') => (
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
-class ErrorBoundary extends React.Component {
+export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
@@ -262,7 +262,8 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
   }
 
   handleCopy = async () => {
-    await copyTextToClipboard(this._buildReportMessage());
+    const copiedSuccessfully = await copyTextToClipboard(this._buildReportMessage());
+    if (copiedSuccessfully !== true) return;
     this.setState({ copied: true });
     this._copyTimeout = setTimeout(() => this.setState({ copied: false }), 3000);
   }

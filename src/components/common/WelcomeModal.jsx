@@ -145,12 +145,20 @@ DESCRIBE TU PROBLEMA:
 
 ¡Gracias por su ayuda!`;
 
-    copyTextToClipboard(supportEmail).then(() => {
-      showMessageModal(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
-    }).catch(err => console.error("No se pudo copiar", err));
+    copyTextToClipboard(supportEmail).then((copied) => {
+      if (copied === true) {
+        showMessageModal(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
+        return;
+      }
+      showMessageModal(`No pudimos copiar el correo automáticamente. Si tu aplicación de correo no se abre, escribe a: ${supportEmail}`);
+    }).catch((error) => {
+      Logger.warn('No se pudo copiar el correo de soporte:', error);
+      showMessageModal(`No pudimos copiar el correo automáticamente. Si tu aplicación de correo no se abre, escribe a: ${supportEmail}`);
+    });
 
+    const mailtoUrl = buildSupportMailtoUrl({ to: supportEmail, subject, body });
     setTimeout(() => {
-      window.location.href = buildSupportMailtoUrl({ to: supportEmail, subject, body });
+      window.location.href = mailtoUrl;
     }, 500);
   };
 
