@@ -36,6 +36,47 @@ describe('fefoUtils', () => {
     expect(recommended.id).toBe('oldest');
   });
 
+  it('no recomienda ni advierte FEFO de caducidad para variantes sin fechas', () => {
+    const product = { expirationMode: 'NONE' };
+    const batches = [
+      { id: 'first', isActive: true, stock: 5, createdAt: '2026-01-01' },
+      { id: 'second', isActive: true, stock: 5, createdAt: '2026-06-01' }
+    ];
+
+    const recommended = getRecommendedFefoBatch(batches, product, { now: today });
+    expect(recommended).toBeNull();
+    expect(getFefoWarningForSelection({ selectedBatch: batches[1], recommendedBatch: recommended, product, now: today })).toBeNull();
+  });
+
+  it('does not use createdAt as an expiry recommendation when an expiry policy is absent', () => {
+    const recommended = getRecommendedFefoBatch([
+      { id: 'old', isActive: true, stock: 1, createdAt: '2025-01-01' },
+      { id: 'new', isActive: true, stock: 1, createdAt: '2026-01-01' }
+    ], { expirationMode: 'NONE' }, { now: today });
+
+    expect(recommended).toBeNull();
+  });
+
+  it('excludes batches without expiry from a STRICT FEFO comparison', () => {
+    const recommended = getRecommendedFefoBatch([
+      { id: 'without-expiry', isActive: true, stock: 5, createdAt: '2026-01-01' },
+      { id: 'with-expiry', isActive: true, stock: 5, expiryDate: '2026-07-01' }
+    ], { expirationMode: 'STRICT' }, { now: today });
+
+    expect(recommended?.id).toBe('with-expiry');
+  });
+
+  it('requires two comparable expiry dates before showing a non-blocking FEFO warning', () => {
+    const warning = getFefoWarningForSelection({
+      product: { expirationMode: 'SHELF_LIFE' },
+      selectedBatch: { id: 'without-expiry', isActive: true, stock: 5 },
+      recommendedBatch: { id: 'with-expiry', isActive: true, stock: 5, expiryDate: '2026-07-01' },
+      now: today
+    });
+
+    expect(warning).toBeNull();
+  });
+
   it('no recomienda lotes vencidos en modo STRICT pero permite los que vencen hoy', () => {
     const product = { expirationMode: 'STRICT' };
     const recommended = getRecommendedFefoBatch([

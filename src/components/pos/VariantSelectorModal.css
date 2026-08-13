@@ -1,6 +1,6 @@
 /* src/components/pos/VariantSelectorModal.css */
 
-.modal-backdrop {
+.variant-selector-modal {
   position: fixed;
   top: 0;
   left: 0;
@@ -59,7 +59,7 @@
   margin-top: 4px;
 }
 
-.btn-close-x {
+.variant-modal__close {
   background: none;
   border: none;
   font-size: 1.8rem;
@@ -70,7 +70,7 @@
   margin-left: 15px;
   transition: color 0.2s;
 }
-.btn-close-x:hover { color: var(--error-color); }
+.variant-modal__close:hover { color: var(--error-color); }
 
 /* SEARCH BAR */
 .variant-search-bar {
@@ -114,7 +114,7 @@
   padding: 40px;
   color: var(--text-light);
 }
-.btn-link {
+.variant-modal__clear-search {
     background: none;
     border: none;
     color: var(--primary-color);
@@ -279,14 +279,20 @@
   background-color: var(--light-background);
 }
 
-.full-width { width: 100%; }
-
-.btn-secondary {
+.variant-modal__cancel {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 14px;
+    border-radius: 7px;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
     background-color: var(--card-background-color);
     color: var(--text-dark);
     border: 1px solid var(--border-color);
 }
-.btn-secondary:hover {
+.variant-modal__cancel:hover:not(:disabled) {
     background-color: var(--light-background);
     border-color: var(--text-light);
 }
+.variant-modal__cancel:focus-visible, .variant-modal__close:focus-visible, .variant-modal__clear-search:focus-visible, .size-card:focus-visible { outline: none; box-shadow: var(--ui-shadow-focus-primary); }

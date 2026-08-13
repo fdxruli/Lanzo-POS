@@ -38,7 +38,7 @@
   bottom: 0;
   left: 0;
   width: 100%;
-  height: calc(65px + env(safe-area-inset-bottom, 0px));
+  height: calc(var(--mobile-bottom-nav-height) + var(--safe-area-bottom));
   /* Un poco más bajo para ser más compacto */
   background-color: var(--card-background-color);
   /* Sombra suave arriba */
@@ -46,7 +46,7 @@
   justify-content: space-between;
   /* Distribución uniforme */
   align-items: center;
-  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  padding: 0 0 var(--safe-area-bottom);
   /* Sin padding lateral para aprovechar el ancho */
   z-index: var(--z-navbar);
   border-top: 1px solid var(--border-color);

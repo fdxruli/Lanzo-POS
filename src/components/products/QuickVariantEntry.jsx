@@ -196,17 +196,17 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
           {/* SECCIÓN 2: BOTONERAS DE TALLAS */}
           <div className="qv-size-tools">
 
-            <div className="btn-group">
+            <div className="qv-button-group">
               <small className="qv-group-label">Camisas/Blusas:</small>
-              <button type="button" className="btn-xs" style={getBtnStyle('top-xs')} onClick={() => toggleSizeRun('top-xs', ['XS', 'S', 'M', 'L'])}>XS - L</button>
-              <button type="button" className="btn-xs" style={getBtnStyle('top-s')} onClick={() => toggleSizeRun('top-s', ['S', 'M', 'L', 'XL'])}>S - XL</button>
-              <button type="button" className="btn-xs" style={getBtnStyle('top-m')} onClick={() => toggleSizeRun('top-m', ['M', 'L', 'XL', '2XL'])}>M - 2XL</button>
-              <button type="button" className="btn-xs" style={getBtnStyle('top-plus')} onClick={() => toggleSizeRun('top-plus', ['XL', '2XL', '3XL', '4XL'])}>Plus</button>
+              <button type="button" className="qv-size-button" style={getBtnStyle('top-xs')} onClick={() => toggleSizeRun('top-xs', ['XS', 'S', 'M', 'L'])}>XS - L</button>
+              <button type="button" className="qv-size-button" style={getBtnStyle('top-s')} onClick={() => toggleSizeRun('top-s', ['S', 'M', 'L', 'XL'])}>S - XL</button>
+              <button type="button" className="qv-size-button" style={getBtnStyle('top-m')} onClick={() => toggleSizeRun('top-m', ['M', 'L', 'XL', '2XL'])}>M - 2XL</button>
+              <button type="button" className="qv-size-button" style={getBtnStyle('top-plus')} onClick={() => toggleSizeRun('top-plus', ['XL', '2XL', '3XL', '4XL'])}>Plus</button>
             </div>
 
             <button
               type="button"
-              className="btn-toggle-categories"
+              className="qv-toggle-categories"
               onClick={() => setShowAllCategories(!showAllCategories)}
             >
               {showAllCategories ? 'Ocultar otras categorías' : 'Ver pantalones, niños y calzado'}
@@ -216,35 +216,35 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
             {showAllCategories && (
               <div className="qv-collapsible-area">
                 {/* BOTTOMS / JEANS HOMBRE */}
-                <div className="btn-group">
+                <div className="qv-button-group">
                   <small className="qv-group-label">Hombre:</small>
-                  <button type="button" className="btn-xs" style={getBtnStyle('man-28')} onClick={() => toggleSizeRun('man-28', ['28', '30', '32', '34'])}>28-34</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('man-30')} onClick={() => toggleSizeRun('man-30', ['30', '32', '34', '36', '38'])}>30-38</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('man-32')} onClick={() => toggleSizeRun('man-32', ['32', '34', '36', '38', '40'])}>32-40</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('man-28')} onClick={() => toggleSizeRun('man-28', ['28', '30', '32', '34'])}>28-34</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('man-30')} onClick={() => toggleSizeRun('man-30', ['30', '32', '34', '36', '38'])}>30-38</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('man-32')} onClick={() => toggleSizeRun('man-32', ['32', '34', '36', '38', '40'])}>32-40</button>
                 </div>
 
                 {/* BOTTOMS / JEANS DAMA */}
-                <div className="btn-group">
+                <div className="qv-button-group">
                   <small className="qv-group-label">Dama:</small>
-                  <button type="button" className="btn-xs" style={getBtnStyle('lady-3')} onClick={() => toggleSizeRun('lady-3', ['3', '5', '7', '9', '11'])}>3-11</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('lady-5')} onClick={() => toggleSizeRun('lady-5', ['5', '7', '9', '11', '13'])}>5-13</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('lady-7')} onClick={() => toggleSizeRun('lady-7', ['7', '9', '11', '13', '15'])}>7-15</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('uni')} onClick={() => toggleSizeRun('uni', ['UNITALLA'])}>Unitalla</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('lady-3')} onClick={() => toggleSizeRun('lady-3', ['3', '5', '7', '9', '11'])}>3-11</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('lady-5')} onClick={() => toggleSizeRun('lady-5', ['5', '7', '9', '11', '13'])}>5-13</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('lady-7')} onClick={() => toggleSizeRun('lady-7', ['7', '9', '11', '13', '15'])}>7-15</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('uni')} onClick={() => toggleSizeRun('uni', ['UNITALLA'])}>Unitalla</button>
                 </div>
 
                 {/* NIÑOS */}
-                <div className="btn-group">
+                <div className="qv-button-group">
                   <small className="qv-group-label">Niños:</small>
-                  <button type="button" className="btn-xs" style={getBtnStyle('kids-baby')} onClick={() => toggleSizeRun('kids-baby', ['3M', '6M', '9M', '12M', '18M', '24M'])}>Bebés</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('kids-todd')} onClick={() => toggleSizeRun('kids-todd', ['2', '4', '6', '8', '10'])}>2-10 Años</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('kids-teen')} onClick={() => toggleSizeRun('kids-teen', ['10', '12', '14', '16'])}>Junior</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('kids-baby')} onClick={() => toggleSizeRun('kids-baby', ['3M', '6M', '9M', '12M', '18M', '24M'])}>Bebés</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('kids-todd')} onClick={() => toggleSizeRun('kids-todd', ['2', '4', '6', '8', '10'])}>2-10 Años</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('kids-teen')} onClick={() => toggleSizeRun('kids-teen', ['10', '12', '14', '16'])}>Junior</button>
                 </div>
 
                 {/* CALZADO */}
-                <div className="btn-group">
+                <div className="qv-button-group">
                   <small className="qv-group-label">Calzado:</small>
-                  <button type="button" className="btn-xs" style={getBtnStyle('shoe-w')} onClick={() => toggleSizeRun('shoe-w', ['22', '23', '24', '25', '26'])}>22-26</button>
-                  <button type="button" className="btn-xs" style={getBtnStyle('shoe-m')} onClick={() => toggleSizeRun('shoe-m', ['25', '26', '27', '28', '29'])}>25-29</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('shoe-w')} onClick={() => toggleSizeRun('shoe-w', ['22', '23', '24', '25', '26'])}>22-26</button>
+                  <button type="button" className="qv-size-button" style={getBtnStyle('shoe-m')} onClick={() => toggleSizeRun('shoe-m', ['25', '26', '27', '28', '29'])}>25-29</button>
                 </div>
               </div>
             )}
@@ -262,11 +262,11 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
               <th style={{ width: '80px' }}>Stock</th>
               <th style={{ minWidth: '100px' }}>
                 Costo
-                <button type="button" className="btn-icon sync" onClick={() => syncColumn('cost', baseCost)} title="Aplicar Costo Base a todos">Base</button>
+                <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('cost', baseCost)} title="Aplicar Costo Base a todos">Base</button>
               </th>
               <th style={{ minWidth: '100px' }}>
                 Precio
-                <button type="button" className="btn-icon sync" onClick={() => syncColumn('price', basePrice)} title="Aplicar Precio Base a todos">Base</button>
+                <button type="button" className="qv-icon-button qv-icon-button--sync" onClick={() => syncColumn('price', basePrice)} title="Aplicar Precio Base a todos">Base</button>
               </th>
               <th>SKU / Auto</th>
               <th style={{ width: '40px' }}></th>
@@ -283,7 +283,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   <td className="qv-cell">
                     <input
                       type="text"
-                      className="form-input-compact"
+                      className="qv-input"
                       placeholder="Color"
                       value={row.color}
                       onChange={(e) => updateRow(row.id, 'color', e.target.value)}
@@ -296,7 +296,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   <td className="qv-cell">
                     <input
                       type="text"
-                      className="form-input-compact"
+                      className="qv-input"
                       placeholder="Talla"
                       value={row.talla}
                       onChange={(e) => updateRow(row.id, 'talla', e.target.value)}
@@ -308,7 +308,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   <td className="qv-cell">
                     <input
                       type="number"
-                      className="form-input-compact"
+                      className="qv-input"
                       placeholder="0"
                       value={row.stock}
                       min="0"
@@ -322,7 +322,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   <td className="qv-cell">
                     <input
                       type="number"
-                      className="form-input-compact"
+                      className="qv-input"
                       value={row.cost}
                       onChange={(e) => updateRow(row.id, 'cost', e.target.value)}
                     />
@@ -332,7 +332,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                   <td className="qv-cell" style={{ position: 'relative' }}>
                     <input
                       type="number"
-                      className="form-input-compact"
+                      className="qv-input"
                       value={row.price}
                       onChange={(e) => updateRow(row.id, 'price', e.target.value)}
                       style={{ fontWeight: 'bold' }}
@@ -351,21 +351,21 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                       <input
                         type="text"
-                        className="form-input-compact"
+                        className="qv-input"
                         placeholder="Auto"
                         value={row.sku}
                         onChange={(e) => updateRow(row.id, 'sku', e.target.value)}
                         style={{ fontSize: '0.75rem', color: 'var(--ui-text-muted)' }}
                       />
                       {(!row.sku && row.talla && row.color) && (
-                        <button type="button" className="btn-icon gen" onClick={() => generateSKU(row.id, row.talla, row.color)} title="Generar SKU">SKU</button>
+                        <button type="button" className="qv-icon-button qv-icon-button--generate" onClick={() => generateSKU(row.id, row.talla, row.color)} title="Generar SKU">SKU</button>
                       )}
                     </div>
                   </td>
 
                   {/* DELETE */}
                   <td className="qv-cell" style={{ textAlign: 'center' }}>
-                    <button type="button" className="btn-icon delete" onClick={() => removeRow(row.id)}>×</button>
+                    <button type="button" className="qv-icon-button qv-icon-button--delete" onClick={() => removeRow(row.id)} aria-label="Eliminar variante">×</button>
                   </td>
                 </tr>
               );
@@ -376,7 +376,7 @@ export default function QuickVariantEntry({ basePrice, baseCost, onVariantsChang
 
       <button
         type="button"
-        className="btn-add-row"
+        className="qv-add-row"
         onClick={addEmptyRow}
       >
         + Agregar variante manual

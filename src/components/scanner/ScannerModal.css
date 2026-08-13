@@ -458,7 +458,7 @@
   font-weight: bold;
 }
 
-.btn-clear-errors {
+#scanner-modal .btn-clear-errors {
   background: transparent;
   border: 1px solid var(--error-color, #dc3545);
   color: var(--error-color, #dc3545);
@@ -470,8 +470,8 @@
   transition: all 0.2s ease;
 }
 
-.btn-clear-errors:hover,
-.btn-clear-errors:active {
+#scanner-modal .btn-clear-errors:hover,
+#scanner-modal .btn-clear-errors:active {
   background: var(--error-color, #dc3545);
   color: white;
 }
@@ -712,7 +712,7 @@
 
   .scanner-close-btn,
   .scanner-qty-btn,
-  .btn-clear-errors {
+  #scanner-modal .btn-clear-errors {
     transition: none;
   }
 }

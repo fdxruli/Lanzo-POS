@@ -94,6 +94,12 @@
   --safe-area-right: env(safe-area-inset-right, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
+
+  /* Mobile layout contract: fixed nav height + safe area + touch clearance. */
+  --mobile-bottom-nav-height: 65px;
+  --mobile-navigation-clearance: calc(
+    var(--mobile-bottom-nav-height) + var(--safe-area-bottom) + var(--spacing-lg)
+  );
 }
 
 /* ======================================================
@@ -295,7 +301,6 @@ canvas {
   max-width: 100%;
 }
 
-button,
 input,
 select,
 textarea {
@@ -360,42 +365,4 @@ input:disabled {
   background-color: var(--light-background);
   cursor: not-allowed;
   opacity: 0.7;
-}
-
-/* Botones Base */
-button {
-  cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: var(--border-radius-sm);
-  padding: 10px 20px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  transition: transform 0.1s, background-color 0.2s, box-shadow 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-button:active {
-  transform: scale(0.98);
-}
-
-/* Variantes de Botones */
-.btn-save,
-.btn-confirm,
-.btn-primary {
-  background-color: var(--primary-color);
-  color: var(--text-on-primary);
-}
-
-.btn-save:hover,
-.btn-confirm:hover,
-.btn-primary:hover {
-  background-color: var(--primary-hover);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--primary-color) 24%, transparent);
-}
-
-.btn-save:disabled {
-  background-color: var(--text-light);
 }

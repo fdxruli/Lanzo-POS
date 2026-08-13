@@ -10,9 +10,11 @@ export default function ApparelProductFields({ values, errors, onFieldChange }) 
   );
 
   return <>
-    <label className="product-form-v2__checkbox">
-      <input type="checkbox" checked={values.hasVariants} onChange={(event) => onFieldChange('hasVariants', event.target.checked)} /> ¿El producto tiene variantes?
-    </label>
+    <div className="product-form-v2__toggle product-form-v2__toggle--compact">
+      <input id="product-v2-has-variants" className="product-form-v2__toggle-input" type="checkbox" checked={values.hasVariants} onChange={(event) => onFieldChange('hasVariants', event.target.checked)} aria-labelledby="product-v2-has-variants-label" />
+      <label className="product-form-v2__toggle-control" htmlFor="product-v2-has-variants"><span /></label>
+      <div id="product-v2-has-variants-label" className="product-form-v2__toggle-copy"><strong>¿El producto tiene variantes?</strong><small>Activa tallas, colores y existencias por combinación.</small></div>
+    </div>
     {values.hasVariants ? <>
       <p className="product-form-v2__help">La existencia total se calcula desde las combinaciones activas. Para variantes existentes, ajusta existencias desde inventario o lotes.</p>
       <QuickVariantEntry basePrice={values.price} baseCost={values.cost} initialData={values.quickVariants} onVariantsChange={handleVariantsChange} />
