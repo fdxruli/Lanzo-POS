@@ -162,10 +162,6 @@ export const openTenantRuntime = async (identity) => {
   }
   clearActiveTenantStorageNamespace();
   const database = tenantDatabaseFactory(`LanzoDB_t_${opaqueId}`);
-  setDatabaseRecoveryState({
-    status: DATABASE_RECOVERY_STATUS.CHECKING,
-    databaseName: database.name
-  });
   try {
     await preflightAndRepairIndexedDb({
       databaseName: database.name,
@@ -186,6 +182,13 @@ export const openTenantRuntime = async (identity) => {
     throw error;
   }
   active = { opaqueId, database, generation: ++generation };
+  // A recovery state is cleared only after this tenant's complete
+  // preparation succeeded. Do not put this in a finally: structural failures
+  // must remain visible to DatabaseRecoveryGate.
+  setDatabaseRecoveryState({
+    status: DATABASE_RECOVERY_STATUS.READY,
+    databaseName: database.name
+  });
   setActiveTenantStorageNamespace(opaqueId);
   channel?.postMessage({ type: 'tenant_context_changed', opaqueId });
   try { window?.localStorage?.setItem('lanzo:tenant-runtime-context:v1', JSON.stringify({ opaqueId, at: Date.now() })); } catch { /* BroadcastChannel remains preferred */ }
