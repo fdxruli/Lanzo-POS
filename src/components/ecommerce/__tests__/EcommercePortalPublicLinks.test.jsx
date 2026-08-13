@@ -7,6 +7,7 @@ import EcommercePortalSettings from '../EcommercePortalSettings';
 import { getEcommercePortal, listPublishedProducts } from '../../../services/ecommerce/ecommerceAdminService';
 
 vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
+  getEcommerceAdminAuthorizationContext: vi.fn(),
   getEcommercePortal: vi.fn(),
   listPublishedProducts: vi.fn(),
   saveEcommercePortal: vi.fn(),
@@ -75,8 +76,12 @@ describe('EcommercePortalSettings public link cutover', () => {
 
   it('shows, opens and encodes the standalone public URL in the QR', async () => {
     await renderPortal();
-    expect(screen.getByRole('link', { name: 'Abrir tienda' }))
-      .toHaveAttribute('href', publicStoreUrl);
+    const openStoreLinks = screen.getAllByRole('link', { name: 'Abrir tienda' });
+    expect(openStoreLinks).toHaveLength(2);
+    for (const link of openStoreLinks) {
+      expect(link).toHaveAttribute('href', publicStoreUrl);
+      expect(link).toHaveClass('btn', 'btn-secondary');
+    }
     expect(screen.getByRole('img', { name: 'Codigo QR de la tienda' }))
       .toHaveAttribute('data-qr-value', publicStoreUrl);
   });

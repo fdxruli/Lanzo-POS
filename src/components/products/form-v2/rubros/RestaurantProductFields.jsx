@@ -15,7 +15,7 @@ export default function RestaurantProductFields({ values, errors, onFieldChange,
   return <>
     {isDish ? <div className="product-form-v2__subsection">
       <h4>Preparación y venta</h4>
-      <RestauranteFields productType="sellable" setProductType={() => {}} hideTypeSelector onManageRecipe={onManageRecipe} printStation={values.printStation} setPrintStation={(value) => onFieldChange('printStation', value)} prepTime={values.prepTime} setPrepTime={(value) => onFieldChange('prepTime', value)} modifiers={values.modifiers} setModifiers={(value) => onFieldChange('modifiers', value)} />
+      <RestauranteFields productType="sellable" setProductType={() => {}} hideTypeSelector visualVariant="product-form-v2" onManageRecipe={onManageRecipe} printStation={values.printStation} setPrintStation={(value) => onFieldChange('printStation', value)} prepTime={values.prepTime} setPrepTime={(value) => onFieldChange('prepTime', value)} modifiers={values.modifiers} setModifiers={(value) => onFieldChange('modifiers', value)} />
       {errors.recipe && <small className="product-form-v2__error">{errors.recipe}</small>}
     </div> : <>
       <div className="product-form-v2__field"><label htmlFor="product-v2-restaurant-unit">Unidad</label>{isIngredient ? <select id="product-v2-restaurant-unit" value={selectedIngredientUnit} onChange={(event) => setIngredientUnit(event.target.value)}>

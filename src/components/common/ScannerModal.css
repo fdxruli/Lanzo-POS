@@ -476,7 +476,7 @@
   font-weight: bold;
 }
 
-.btn-clear-errors {
+#scanner-modal .btn-clear-errors {
   background: transparent;
   border: 1px solid var(--error-color);
   color: var(--error-color);
@@ -488,8 +488,8 @@
   transition: var(--transition);
 }
 
-.btn-clear-errors:hover, /* Añadido para mejor UX */
-.btn-clear-errors:active {
+#scanner-modal .btn-clear-errors:hover, /* Añadido para mejor UX */
+#scanner-modal .btn-clear-errors:active {
   background: var(--error-color);
   color: white;
 }

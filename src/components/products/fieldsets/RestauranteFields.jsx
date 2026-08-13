@@ -35,8 +35,19 @@ export default function RestauranteFields({
   preparationStationsLoading = null,
   preparationStationsError = null,
   inactivePreparationStationNotice = false,
-  hideTypeSelector = false
+  hideTypeSelector = false,
+  visualVariant = 'legacy'
 }) {
+  const isProductFormV2 = visualVariant === 'product-form-v2';
+  const recipeButtonClass = isProductFormV2
+    ? 'product-form-v2__button product-form-v2__button--secondary product-form-v2__recipe-action'
+    : 'btn btn-secondary';
+  const primaryButtonClass = isProductFormV2
+    ? 'product-form-v2__button product-form-v2__button--primary product-form-v2__restaurant-compact-action'
+    : 'btn btn-save';
+  const secondaryButtonClass = isProductFormV2
+    ? 'product-form-v2__button product-form-v2__button--secondary product-form-v2__restaurant-compact-action'
+    : 'btn btn-help';
   const [newModGroup, setNewModGroup] = useState('');
   const [optionDrafts, setOptionDrafts] = useState({});
   const [optionDraftErrors, setOptionDraftErrors] = useState({});
@@ -239,7 +250,7 @@ export default function RestauranteFields({
   };
 
   return (
-    <div className="restaurant-fields-container">
+    <div className={`restaurant-fields-container ${visualVariant === 'product-form-v2' ? 'restaurant-fields-container--v2' : ''}`}>
       {!hideTypeSelector && (
         <div className="form-group product-form-option-panel">
           <label className="form-label">Tipo de ítem</label>
@@ -271,7 +282,7 @@ export default function RestauranteFields({
               <label className="form-label">Inventario y costos</label>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className={recipeButtonClass}
                 onClick={onManageRecipe}
               >
                 Configurar receta
@@ -337,7 +348,7 @@ export default function RestauranteFields({
                 value={newModGroup}
                 onChange={(e) => setNewModGroup(e.target.value)}
               />
-              <button type="button" className="btn btn-save" style={{ width: 'auto' }} onClick={handleAddModifierGroup}>Crear</button>
+              <button type="button" className={primaryButtonClass} style={{ width: 'auto' }} onClick={handleAddModifierGroup}>Crear</button>
             </div>
 
             <div className="modifiers-list">
@@ -487,7 +498,7 @@ export default function RestauranteFields({
 
                         <button
                           type="button"
-                          className={`btn btn-help ${!canAddOption ? 'disabled' : ''}`}
+                          className={secondaryButtonClass}
                           style={{ margin: 0, minHeight: '35px' }}
                           onClick={() => addOptionToGroup(idx)}
                           disabled={!canAddOption}

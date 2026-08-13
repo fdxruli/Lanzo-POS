@@ -53,9 +53,12 @@ const getProductExpirationMode = (product) => (
   product?.expirationMode || product?.expiration_mode || 'NONE'
 );
 
+const supportsExpiryFefo = (product) => (
+  ['STRICT', 'SHELF_LIFE'].includes(getProductExpirationMode(product))
+);
+
 const batchHasCurrentExpiryForMode = (batch, product, now = new Date()) => {
-  const expirationMode = getProductExpirationMode(product);
-  if (!['STRICT', 'SHELF_LIFE'].includes(expirationMode)) return true;
+  if (!supportsExpiryFefo(product)) return false;
 
   const status = getBatchExpiryStatus({ expiryDate: getBatchExpiryValue(batch) }, now);
   return status === 'valid' || status === 'expires_today';
@@ -111,6 +114,8 @@ export const sortBatchesByFefo = (batches = []) => {
 };
 
 export const getRecommendedFefoBatch = (batches = [], product, { now = new Date() } = {}) => {
+  if (!supportsExpiryFefo(product)) return null;
+
   const eligibleBatches = (Array.isArray(batches) ? batches : []).filter((batch) => (
     isBatchActiveForFefo(batch)
     && getAvailableBatchStock(batch) > 0
@@ -177,8 +182,18 @@ export const getFefoWarningForSelection = ({
 
   const selectedBatchId = getBatchId(selectedBatch);
   const recommendedBatchId = getBatchId(recommendedBatch);
+  const selectedExpiry = parseDateStrict(getBatchExpiryValue(selectedBatch))?.getTime();
+  const recommendedExpiry = parseDateStrict(getBatchExpiryValue(recommendedBatch))?.getTime();
 
-  if (recommendedBatchId && selectedBatchId && selectedBatchId !== recommendedBatchId) {
+  if (
+    supportsExpiryFefo(product)
+    && recommendedBatchId
+    && selectedBatchId
+    && selectedBatchId !== recommendedBatchId
+    && Number.isFinite(selectedExpiry)
+    && Number.isFinite(recommendedExpiry)
+    && recommendedExpiry < selectedExpiry
+  ) {
     return {
       type: 'warning',
       blocking: false,

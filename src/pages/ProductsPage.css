@@ -5,10 +5,6 @@
   gap: var(--spacing-lg);
 }
 
-.products-page {
-  padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
-}
-
 .products-tabs-section {
   margin-bottom: var(--ui-space-lg);
 }
@@ -25,10 +21,6 @@
 @media (min-width: 1024px) {
   .product-management-grid {
     grid-template-columns: 1fr 2fr;
-  }
-
-  .products-page {
-    padding-bottom: var(--ui-space-lg);
   }
 }
 
