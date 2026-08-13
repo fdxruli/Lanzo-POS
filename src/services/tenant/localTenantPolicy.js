@@ -1,6 +1,14 @@
 export const LOCAL_TENANT_BINDING_STORE = 'local_tenant_binding';
 export const LOCAL_TENANT_BINDING_KEY = 'primary';
 
+// Physical runtime names are allocated by tenantRuntimeRouter.  Keep the
+// validator dependency-free so workers can reject legacy names without
+// importing the runtime authority they are not allowed to resolve themselves.
+export const isTenantWorkerDatabaseName = (databaseName) => (
+  typeof databaseName === 'string'
+  && /^LanzoDB_t_t_[a-f0-9]{32}$/i.test(databaseName)
+);
+
 export const LOCAL_STORE_SCOPE = Object.freeze({
   TENANT_OWNED: 'tenant_owned',
   DEVICE_OWNED: 'device_owned',
@@ -47,8 +55,10 @@ export const LOCAL_STORE_CLASSIFICATION = Object.freeze({
   [LOCAL_TENANT_BINDING_STORE]: LOCAL_STORE_SCOPE.GLOBAL_RECOVERY
 });
 
-// These are the only records in the mixed legacy sync_cache store that have
-// been proven to identify the physical browser rather than a license.
+// Historical compatibility only: these rows in a legacy mixed sync_cache do
+// not identify a tenant. Normal runtime no longer reads or writes either key
+// through tenant sync_cache; device-owned persistence lives in
+// LanzoDeviceRegistry.
 export const DEVICE_SCOPED_SYNC_CACHE_KEYS = Object.freeze(new Set([
   'lanzo_device_id',
   'lanzo_license_attempts'

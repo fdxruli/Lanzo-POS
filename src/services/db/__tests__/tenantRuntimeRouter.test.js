@@ -4,6 +4,11 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
 import { localTenantAccessController } from '../../tenant/localTenantPolicy';
+import {
+  captureActiveTenantWorkerContext,
+  isActiveTenantWorkerContext,
+  isTenantWorkerDatabaseName
+} from '../../tenant/tenantWorkerContext';
 import { getTenantStorageState, registerTenantStorageHydrator } from '../../tenant/tenantScopedStorage';
 import {
   closeTenantRuntime,
@@ -31,6 +36,25 @@ describe('tenant runtime router', () => {
     await openTenantRuntime(a);
     expect(getActiveTenantRuntime().databaseName).toBe(aName);
     expect(await db.table('menu').get('a-product')).toMatchObject({ name: 'A' });
+  });
+
+  it('captures only the granted active tenant worker target and invalidates A after B', async () => {
+    const a = await resolveActiveTenantIdentity({ license_key: `WORKER-A-${crypto.randomUUID()}` });
+    const b = await resolveActiveTenantIdentity({ license_key: `WORKER-B-${crypto.randomUUID()}` });
+    localTenantAccessController.enable('test');
+    await openTenantRuntime(a);
+    localTenantAccessController.grant(a, 'A');
+    const contextA = captureActiveTenantWorkerContext();
+
+    expect(isTenantWorkerDatabaseName(contextA.databaseName)).toBe(true);
+    expect(isTenantWorkerDatabaseName('LanzoDB1')).toBe(false);
+    expect(isActiveTenantWorkerContext(contextA)).toBe(true);
+
+    localTenantAccessController.lock('switch');
+    await openTenantRuntime(b);
+    localTenantAccessController.grant(b, 'B');
+    expect(isActiveTenantWorkerContext(contextA)).toBe(false);
+    expect(captureActiveTenantWorkerContext().databaseName).not.toBe(contextA.databaseName);
   });
 
   it('preserves alias-type compatibility and never mutates the directory on conflicts', async () => {

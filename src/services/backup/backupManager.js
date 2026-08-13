@@ -14,7 +14,10 @@ import {
   saveBackupSettings
 } from './backupConfigDb';
 import { getBackupTableScope } from './backupScope';
-import { localTenantAccessController } from '../tenant/localTenantPolicy';
+import {
+  captureActiveTenantWorkerContext,
+  isActiveTenantWorkerContext
+} from '../tenant/tenantWorkerContext';
 
 export const BACKUP_STATUS_EVENT = 'lanzo_backup_manager_status';
 export const BACKUP_ABORT_REASON = 'ABORTED';
@@ -22,12 +25,14 @@ export const BACKUP_WARNING_BLOB_PERF = 'BLOB_PERF_DEGRADED';
 export const BACKUP_PIN_SESSION_KEY = 'lanzo_backup_pin_session';
 export const BACKUP_KEY_SESSION_MARKER = 'lanzo_backup_key_session:v1';
 
-const requireBackupTenantAliases = () => {
-  const tenantState = localTenantAccessController.getState();
-  if (tenantState.status !== 'granted' || tenantState.identities.length === 0) {
+const requireBackupTenantContext = () => {
+  try {
+    return captureActiveTenantWorkerContext();
+  } catch {
+    // Preserve the public backup contract while refusing to create a worker
+    // without the main-thread runtime authority.
     throw new Error('BACKUP_TENANT_ACCESS_REQUIRED');
   }
-  return [...tenantState.identities];
 };
 
 function clearLegacySessionPin() {
@@ -375,7 +380,8 @@ class BackupManager {
     }
   }
 
-  async getMutationCount() {
+  async getMutationCount(context) {
+    if (!isActiveTenantWorkerContext(context)) throw new Error('BACKUP_TENANT_CONTEXT_STALE');
     await db.open();
     const { includedTables } = getBackupTableScope(db);
     const counts = await db.transaction('r', includedTables, () => (
@@ -396,12 +402,12 @@ class BackupManager {
   }
 
   async backup({ reason = 'manual', manual = true, includeBlob = false } = {}) {
-    const tenantAliases = requireBackupTenantAliases();
+    const tenantContext = requireBackupTenantContext();
     await this.initialize();
     if (this.state.busy) throw new Error('BACKUP_OPERATION_IN_PROGRESS');
     if (!this.state.unlocked) throw new Error('BACKUP_SESSION_LOCKED');
 
-    const mutationCount = await this.getMutationCount();
+    const mutationCount = await this.getMutationCount(tenantContext);
     if (!manual && mutationCount <= this.settings.lastMutationCount) {
       return { success: true, skipped: true, reason: 'NO_CHANGES' };
     }
@@ -429,12 +435,18 @@ class BackupManager {
     this.state.phase = 'starting';
     this.emit();
     try {
+      if (!isActiveTenantWorkerContext(tenantContext)) {
+        throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+      }
       const result = await this.callWorker('backup', {
         directoryHandle,
         reason,
         includeBlob,
-        tenantAliases
+        context: tenantContext
       });
+      if (!isActiveTenantWorkerContext(tenantContext)) {
+        throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+      }
       if (result.mode === 'DOWNLOAD') this.triggerDownload(result.blob, result.fileName);
       const completedAt = new Date().toISOString();
       this.settings = await saveBackupSettings({
@@ -480,16 +492,25 @@ class BackupManager {
   }
 
   async restore(file, pin) {
-    const tenantAliases = requireBackupTenantAliases();
+    const tenantContext = requireBackupTenantContext();
     if (!file) throw new Error('Selecciona un archivo de respaldo.');
     this.validatePin(pin);
     await this.backup({ reason: 'pre_restore', manual: true });
+    if (!isActiveTenantWorkerContext(tenantContext)) {
+      throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+    }
     this.state.busy = true;
     this.state.progress = 0;
     this.emit();
     try {
+      if (!isActiveTenantWorkerContext(tenantContext)) {
+        throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+      }
       db.close();
-      const result = await this.callWorker('restore', { file, pin, tenantAliases });
+      const result = await this.callWorker('restore', { file, pin, context: tenantContext });
+      if (!isActiveTenantWorkerContext(tenantContext)) {
+        throw new Error('BACKUP_TENANT_CONTEXT_STALE');
+      }
       return result;
     } catch (error) {
       await this.recordFailure(error, false);

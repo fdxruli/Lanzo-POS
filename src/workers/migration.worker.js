@@ -9,7 +9,8 @@ import { runChunkedMigration } from './migrationCore';
 import {
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
-  areLocalTenantAliasesCompatible
+  areLocalTenantAliasesCompatible,
+  isTenantWorkerDatabaseName
 } from '../services/tenant/localTenantPolicy';
 
 let isRunning = false;
@@ -85,6 +86,10 @@ const processBatch = async (database, storeName, offset, limit) => (
 );
 
 const openExistingDatabase = (dbName) => new Promise((resolve, reject) => {
+  if (!isTenantWorkerDatabaseName(dbName)) {
+    reject(new Error('LOCAL_TENANT_WORKER_DATABASE_INVALID'));
+    return;
+  }
   // Omitir el argumento version es deliberado: un worker de mantenimiento no
   // puede registrar ni disparar cambios de esquema.
   const request = indexedDB.open(dbName);
@@ -128,8 +133,7 @@ const requireMatchingTenantBinding = (database, tenantAliases) => new Promise((r
 
 const runMigration = async (config) => {
   const {
-    dbName,
-    tenantAliases,
+    context,
     stores = ['menu', 'product_batches'],
     batchSize = 500,
     delayBetweenBatches = 10
@@ -139,8 +143,8 @@ const runMigration = async (config) => {
   shouldStop = false;
 
   try {
-    activeDatabase = await openExistingDatabase(dbName);
-    await requireMatchingTenantBinding(activeDatabase, tenantAliases);
+    activeDatabase = await openExistingDatabase(context?.databaseName);
+    await requireMatchingTenantBinding(activeDatabase, context?.tenantAliases);
     const results = {
       totalProcessed: 0,
       stores: {},

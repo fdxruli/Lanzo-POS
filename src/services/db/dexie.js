@@ -8,7 +8,7 @@ import { getLowStockAlertStatus } from './utils';
 import { buildProductSearchFields } from './productSearchIndex';
 import { installLocalTenantDbMiddleware } from '../tenant/localTenantPolicy';
 import { registerCanonicalDexieExtensions } from './databaseSchema';
-import { db as runtimeDb } from './tenantRuntimeRouter';
+import { db as runtimeDb, configureTenantRuntimeDatabaseFactory } from './tenantRuntimeRouter';
 // Nota: Dexie maneja el versionado de forma interna y más limpia,
 // pero importamos DB_NAME para mantener consistencia.
 
@@ -571,6 +571,11 @@ export const installLanzoOperationalHooks = (database) => {
   operationalDatabases.add(database); return database;
 };
 export const createOperationalLanzoDatabase = (databaseName) => installLanzoOperationalHooks(installLocalTenantDbMiddleware(createCanonicalLanzoDatabase(databaseName)));
+
+// Register only after the complete operational factory exists. The router
+// never imports this module, which keeps the runtime dependency direction
+// one-way and prevents an ESM temporal-dead-zone cycle during cold boot.
+configureTenantRuntimeDatabaseFactory(createOperationalLanzoDatabase);
 
 // LanzoDB1 remains a legacy vault. Runtime business imports are routed through
 // the active tenant authority and cannot open this legacy handle.
