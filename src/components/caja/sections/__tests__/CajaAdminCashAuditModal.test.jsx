@@ -75,4 +75,46 @@ describe('CajaAdminCashAuditModal', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
     await waitFor(() => expect(closeAdmin).toHaveBeenCalledWith(expect.objectContaining({ closingMode: 'admin_unverified', countedAmount: null, nextShiftFund: null })));
   });
+
+  it('uses a new idempotency key and refreshed version after a confirmed conflict', async () => {
+    const onClose = vi.fn();
+    const closeAdmin = vi.fn()
+      .mockResolvedValueOnce({
+        success: false,
+        code: 'VERSION_CONFLICT',
+        response: {
+          cash_session: {
+            ...detail.cashSession,
+            server_version: 5,
+            expected_cash_total: '1200'
+          }
+        }
+      })
+      .mockResolvedValueOnce({ success: true });
+    renderModal({ onClose, cerrarCajaAdministrativamente: closeAdmin });
+
+    await screen.findByText('Caja sintetica');
+    fireEvent.click(screen.getByText(/conte fisicamente/i));
+    fireEvent.change(screen.getByLabelText(/efectivo contado/i), { target: { value: '1180' } });
+    fireEvent.change(screen.getByLabelText(/^motivo/i), { target: { value: 'operational_error' } });
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(1));
+    const firstAttempt = closeAdmin.mock.calls[0][0];
+    expect(firstAttempt).toMatchObject({ expectedVersion: 4 });
+    expect(screen.getByText(/actualizamos los datos/i)).toBeVisible();
+    expect(screen.getByText(/\$1200\.00/)).toBeVisible();
+    expect(screen.getByText(/\$-20\.00/)).toBeVisible();
+    expect(screen.getByRole('button', { name: /revisar confirmacion/i })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(2));
+    const secondAttempt = closeAdmin.mock.calls[1][0];
+    expect(secondAttempt).toMatchObject({ expectedVersion: 5 });
+    expect(secondAttempt.idempotencyKey).not.toBe(firstAttempt.idempotencyKey);
+    expect(onClose).toHaveBeenCalledWith({ closed: true });
+  });
 });

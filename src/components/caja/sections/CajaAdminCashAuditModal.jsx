@@ -108,10 +108,16 @@ const CajaAdminCashAuditModal = ({
       return;
     }
     const response = result?.response;
-    if (result?.code === 'VERSION_CONFLICT' && response?.cash_session) {
+    const requiresReview = ['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'].includes(result?.code);
+    if (requiresReview && response?.cash_session) {
       setDetail((current) => ({ ...current, cashSession: response.cash_session }));
       setConfirming(false);
-      setError('La caja cambio desde que la revisaste. Actualizamos los datos; vuelve a confirmar el cierre.');
+      // The backend completed this attempt with a conflict response. A new human
+      // confirmation is a new operation and must not replay that completed key.
+      idempotencyKeyRef.current = null;
+      setError(result?.code === 'CASH_TOTALS_CHANGED'
+        ? 'La caja cambio mientras la revisabas. Actualizamos el efectivo esperado; revisa nuevamente los datos antes de confirmar.'
+        : 'La caja cambio desde que la revisaste. Actualizamos los datos; vuelve a confirmar el cierre.');
     } else {
       setError(result?.message || 'No se pudo cerrar administrativamente la caja.');
     }

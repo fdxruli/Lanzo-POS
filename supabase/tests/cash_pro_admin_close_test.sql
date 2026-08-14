@@ -47,6 +47,8 @@ begin
   values
     ('cash-admin-audited-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:' || v_other_admin_device, 'open', 1196, 1196, 'Other admin', 1),
     ('cash-staff-unverified-' || v_suffix, v_license_id, v_staff_device, v_staff_user, 'staff', 'staff:' || v_staff_user, 'open', 1196, 1196, 'Staff cash', 1),
+    ('cash-recalc-drift-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 1196, 1196, 'Recalculation drift cash', 1),
+    ('cash-recalc-unverified-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 1196, 1196, 'Unverified recalculation drift cash', 1),
     ('cash-stale-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 10, 10, 'Stale cash', 1),
     ('cash-other-tenant-' || v_suffix, v_other_license_id, v_other_license_device, null, 'admin', 'admin_device:other-' || v_suffix, 'open', 5, 5, 'Other tenant', 1);
 
@@ -63,6 +65,54 @@ begin
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and closing_counted_amount is null and cash_difference is null and expected_cash_total=1196 and next_shift_fund=0 and reconciliation_status='unverified') then raise exception 'ADMIN_UNVERIFIED_NULL_SEMANTICS_FAILED'; end if;
   if exists(select 1 from public.pos_cash_movements where cash_session_id='cash-staff-unverified-' || v_suffix) then raise exception 'ADMIN_UNVERIFIED_CREATED_MOVEMENT'; end if;
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and close_detail->>'expected_cash_total'='1196' and close_detail->>'closing_counted_amount' is null and close_detail->>'cash_difference' is null) then raise exception 'ADMIN_UNVERIFIED_CLOSE_DETAIL_NULL_FAILED'; end if;
+
+  -- A stale aggregate can change during canonical recalculation without an earlier version bump.
+  insert into public.pos_cash_movements(
+    id, license_id, cash_session_id, device_id, actor_key, type, amount, concept,
+    source, created_by_device_id, actor_name, idempotency_key, metadata
+  ) values (
+    'mov-recalc-drift-' || v_suffix, v_license_id, 'cash-recalc-drift-' || v_suffix,
+    v_admin_device, 'admin_device:' || v_admin_device, 'entrada', 4, 'Entrada pendiente de proyectar',
+    'manual', v_admin_device, 'Cash owner', 'cash-recalc-drift-movement-' || v_suffix, '{}'::jsonb
+  );
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-recalc-drift-' || v_suffix, 'admin_audited', 1180, 0, 'operational_error', 'Snapshot previo', 1, 'cash-recalc-drift-key-a-' || v_suffix);
+  if v_result->>'code' <> 'CASH_TOTALS_CHANGED'
+     or v_result#>>'{cash_session,status}' <> 'open'
+     or v_result#>>'{cash_session,expected_cash_total}' <> '1200'
+     or v_result#>>'{cash_session,server_version}' <> '2' then
+    raise exception 'ADMIN_CLOSE_RECALC_GUARD_FAILED: %', v_result;
+  end if;
+  if exists(select 1 from public.pos_cash_sessions where id='cash-recalc-drift-' || v_suffix and (closed_at is not null or closing_mode is not null or cash_difference is not null))
+     or exists(select 1 from public.pos_cash_audit_events where cash_session_id='cash-recalc-drift-' || v_suffix and event_type in ('ADMIN_CLOSED_AUDITED', 'ADMIN_CLOSED_UNVERIFIED'))
+     or exists(select 1 from public.pos_sync_events where entity_type='cash_session' and entity_id='cash-recalc-drift-' || v_suffix and operation='close') then
+    raise exception 'ADMIN_CLOSE_RECALC_GUARD_CLOSED_OR_AUDITED';
+  end if;
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-recalc-drift-' || v_suffix, 'admin_audited', 1180, 0, 'operational_error', 'Replay conflict', 1, 'cash-recalc-drift-key-a-' || v_suffix);
+  if v_result->>'code' <> 'CASH_TOTALS_CHANGED' then raise exception 'ADMIN_CLOSE_RECALC_CONFLICT_IDEMPOTENCY_FAILED: %', v_result; end if;
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-recalc-drift-' || v_suffix, 'admin_audited', 1180, 0, 'operational_error', 'Confirmed refreshed snapshot', 2, 'cash-recalc-drift-key-b-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,cash_difference}' <> '-20' then raise exception 'ADMIN_CLOSE_RECALC_SECOND_ATTEMPT_FAILED: %', v_result; end if;
+
+  insert into public.pos_cash_movements(
+    id, license_id, cash_session_id, device_id, actor_key, type, amount, concept,
+    source, created_by_device_id, actor_name, idempotency_key, metadata
+  ) values (
+    'mov-recalc-unverified-' || v_suffix, v_license_id, 'cash-recalc-unverified-' || v_suffix,
+    v_admin_device, 'admin_device:' || v_admin_device, 'entrada', 4, 'Entrada pendiente de proyectar sin conteo',
+    'manual', v_admin_device, 'Cash owner', 'cash-recalc-unverified-movement-' || v_suffix, '{}'::jsonb
+  );
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-recalc-unverified-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'Sin conteo; snapshot previo', 1, 'cash-recalc-unverified-key-a-' || v_suffix);
+  if v_result->>'code' <> 'CASH_TOTALS_CHANGED'
+     or v_result#>>'{cash_session,status}' <> 'open'
+     or v_result#>>'{cash_session,expected_cash_total}' <> '1200' then
+    raise exception 'ADMIN_UNVERIFIED_RECALC_GUARD_FAILED: %', v_result;
+  end if;
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-recalc-unverified-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'Sin conteo; snapshot actualizado', 2, 'cash-recalc-unverified-key-b-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,closing_counted_amount}' is not null
+     or v_result#>>'{cash_session,cash_difference}' is not null
+     or v_result#>>'{cash_session,reconciliation_status}' <> 'unverified' then
+    raise exception 'ADMIN_UNVERIFIED_RECALC_SECOND_ATTEMPT_FAILED: %', v_result;
+  end if;
 
   v_result := public.pos_register_cash_movement_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'entrada', 1, 'Cambio concurrente sintetico', 'cash-stale-movement-' || v_suffix, '{}'::jsonb);
   if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,server_version}' <> '2' then raise exception 'CONCURRENCY_MUTATION_FAILED: %', v_result; end if;
