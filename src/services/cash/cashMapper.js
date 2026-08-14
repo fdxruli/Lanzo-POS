@@ -68,6 +68,8 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     cloudUpdatedAt: session.updated_at || session.created_at || syncedAt,
     actorKey: session.actor_key || null,
     staffUserId: session.staff_user_id || null,
+    adminUserId: session.admin_user_id || null,
+    cashIdentityState: session.cash_identity_state || null,
     deviceId: session.device_id || null,
     deviceRole: session.device_role || null,
     scope: session.scope || 'actor',

@@ -60,7 +60,8 @@ const normalizeRepositoryResult = (result = {}) => ({
   readOnly: Boolean(result.readOnly),
   actor: result.actor || cashRepository.getMode().actor,
   mode: result.mode || cashRepository.getMode(),
-  adminOpenSessions: result.adminOpenSessions || result.admin_open_sessions || []
+  adminOpenSessions: result.adminOpenSessions || result.admin_open_sessions || [],
+  legacyAdminCashSessions: result.legacyAdminCashSessions || result.legacy_admin_cash_sessions || []
 });
 
 export function useCaja() {
@@ -75,6 +76,7 @@ export function useCaja() {
   const [cashMode, setCashMode] = useState(() => cashRepository.getMode());
   const [cashActor, setCashActor] = useState(() => cashRepository.getMode().actor);
   const [adminCashSessions, setAdminCashSessions] = useState([]);
+  const [legacyAdminCashSessions, setLegacyAdminCashSessions] = useState([]);
 
   const totalesCacheRef = useRef({ teoricoTimestamp: 0, teoricoData: null, teoricoCajaId: null, totalesTurnoKey: null });
 
@@ -91,6 +93,7 @@ export function useCaja() {
     setCashMode({ ...cashRepository.getMode(), readOnly: result.readOnly });
     setCashActor(result.actor || cashRepository.getMode().actor);
     setAdminCashSessions(result.adminOpenSessions || []);
+    setLegacyAdminCashSessions(result.legacyAdminCashSessions || []);
 
     if (!current) {
       const suggestedAmount = getNextOpeningSuggestion(history);
@@ -617,13 +620,20 @@ export function useCaja() {
     return response;
   }, [sincronizarEstadoCaja]);
 
+  const adoptarCajaLegacy = useCallback(async (cashSessionId, expectedVersion = null) => {
+    const response = await cashRepository.adoptLegacyCashSession({ cashSessionId, expectedVersion });
+    if (response?.success) await sincronizarEstadoCaja();
+    return response;
+  }, [sincronizarEstadoCaja]);
+
   const modeSnapshot = useMemo(() => ({
     cashMode,
     isCloudCash,
     isCloudCashReadOnly,
     cashActor,
-    adminCashSessions
-  }), [adminCashSessions, cashActor, cashMode, isCloudCash, isCloudCashReadOnly]);
+    adminCashSessions,
+    legacyAdminCashSessions
+  }), [adminCashSessions, cashActor, cashMode, isCloudCash, isCloudCashReadOnly, legacyAdminCashSessions]);
 
   return {
     cajaActual,
@@ -649,6 +659,7 @@ export function useCaja() {
     listCashSessionsForAudit,
     getCashSessionDetailForAudit,
     cerrarCajaAdministrativamente,
+    adoptarCajaLegacy,
     ...modeSnapshot,
     CAJA_CONFIG
   };

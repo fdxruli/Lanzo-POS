@@ -4,7 +4,7 @@ import { useCaja } from '../hooks/useCaja';
 import { useModal } from '../hooks/useModal';
 import { useRecentActivity } from '../hooks/useRecentActivity';
 import AuditModal from '../components/common/AuditModal';
-import { showMessageModal } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import {
   downloadBackupSmart,
   BACKUP_ABORT_REASON,
@@ -26,7 +26,8 @@ import {
   CajaStaffAuditPanel,
   CajaBusinessCashSummary,
   CajaAdminCashAuditModal,
-  CajaOpeningPanel
+  CajaOpeningPanel,
+  CajaLegacyCashTransition
 } from '../components/caja/sections';
 
 // Componentes de modales
@@ -72,9 +73,11 @@ export default function CajaPage() {
     isCloudCashReadOnly,
     cashActor,
     adminCashSessions,
+    legacyAdminCashSessions,
     listCashSessionsForAudit,
     getCashSessionDetailForAudit,
     cerrarCajaAdministrativamente,
+    adoptarCajaLegacy,
     abrirCaja,
     ajustarMontoInicial,
     realizarAuditoriaYCerrar,
@@ -155,6 +158,18 @@ export default function CajaPage() {
     cashActor,
     adminOpenSessions: adminCashSessions
   });
+
+  const handleAdoptLegacyCashSession = async (session) => {
+    if (!session || isCloudCashReadOnly) return;
+    const confirmed = await showConfirmModal(
+      `Estás vinculando esta caja a tu identidad administrativa actual.\n\nCaja: $${Money.toNumber(session.expected_cash_total || 0).toFixed(2)}\nAbierta: ${new Date(session.opened_at).toLocaleString()}\nDispositivo original: ${session.opened_by_device_id || session.device_id || 'No disponible'}\n\nEsto NO combinará otras cajas abiertas.`,
+      { title: 'Continuar caja anterior', confirmButtonText: 'Continuar esta caja', cancelButtonText: 'Cancelar' }
+    );
+    if (!confirmed) return;
+    const result = await adoptarCajaLegacy(session.id, session.server_version || null);
+    if (result?.success) showMessageModal('La caja fue vinculada a tu identidad. Las demás cajas anteriores siguen pendientes de revisión.', null, { type: 'success' });
+    else showMessageModal(result?.message || 'No se pudo continuar la caja anterior.', null, { type: 'error' });
+  };
 
   // ============================================================
   // KEYBOARD SHORTCUTS
@@ -476,6 +491,7 @@ export default function CajaPage() {
           isReadOnly={isCloudCashReadOnly}
         />
         <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+        <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
         {showBusinessCashSummary && (
           <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
         )}
@@ -536,6 +552,8 @@ export default function CajaPage() {
       {showBusinessCashSummary && (
         <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
       )}
+
+      <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
 
       {/* 2. TARJETA DE ACCIONES */}
       <CajaActionsCard

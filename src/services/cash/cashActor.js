@@ -20,17 +20,22 @@ export const getStaffDisplayName = (staffUser = null) => (
 export const getCashActorFromState = (state = useAppStore.getState()) => {
   const deviceRole = state?.currentDeviceRole || 'admin';
   const staffUser = state?.currentStaffUser || null;
+  const adminUser = state?.currentAdminUser || state?.licenseDetails?.admin_user || null;
   const isStaff = deviceRole === 'staff';
-  const name = isStaff ? getStaffDisplayName(staffUser) : 'Administrador';
+  const name = isStaff ? getStaffDisplayName(staffUser) : getStaffDisplayName(adminUser || { display_name: 'Administrador' });
 
   return {
     deviceRole,
     isStaff,
     staffUser,
     staffUserId: staffUser?.id || null,
+    adminUser,
+    adminUserId: adminUser?.id || null,
     responsibleName: name,
     displayName: name,
-    actorKey: isStaff && staffUser?.id ? `staff:${staffUser.id}` : null,
+    actorKey: isStaff
+      ? (staffUser?.id ? `staff:${staffUser.id}` : null)
+      : (adminUser?.id ? `admin:${adminUser.id}` : null),
     label: isStaff ? 'Staff' : 'Admin'
   };
 };
