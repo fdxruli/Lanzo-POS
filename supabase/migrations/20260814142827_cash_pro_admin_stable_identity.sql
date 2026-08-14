@@ -13,6 +13,23 @@ create unique index if not exists ux_pos_cash_sessions_open_admin_identity
   on public.pos_cash_sessions (license_id, admin_user_id)
   where status = 'open' and deleted_at is null and admin_user_id is not null;
 
+-- Identity adoption is a first-class synchronization event. Keep the existing
+-- operation contract and extend it narrowly for the new audited transition.
+alter table public.pos_sync_events
+  drop constraint if exists pos_sync_events_operation_check;
+
+alter table public.pos_sync_events
+  add constraint pos_sync_events_operation_check check (
+    operation = any (array[
+      'create'::text, 'update'::text, 'delete'::text, 'restore'::text,
+      'upsert'::text, 'upsert_shadow'::text, 'cloud_commit'::text,
+      'cancel'::text, 'toggle_status'::text, 'status_update'::text,
+      'status_recalculate'::text, 'sync_checkpoint'::text, 'open'::text,
+      'close'::text, 'movement'::text, 'adjust'::text, 'identity_adopt'::text,
+      'unknown'::text
+    ])
+  );
+
 -- The historical fourth argument is the actor token. Keep its signature so
 -- all existing POS callers remain compatible, but bind admin contexts to the
 -- authenticated admin session rather than merely to an admin device.
