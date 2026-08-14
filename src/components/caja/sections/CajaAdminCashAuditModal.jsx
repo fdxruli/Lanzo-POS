@@ -14,7 +14,7 @@ const REASONS = [
 
 const formatMoney = (amount) => `$${Money.toNumber(amount ?? 0).toFixed(2)}`;
 const date = (value) => value ? new Date(value).toLocaleString() : 'No disponible';
-const sessionExpected = (session = {}) => session.expected_cash_total ?? session.total_teorico_cloud ?? 0;
+const sessionExpected = (session) => session?.expected_cash_total ?? session?.total_teorico_cloud ?? 0;
 const movementAmount = (movement = {}) => movement.amount ?? movement.monto ?? 0;
 
 const DetailValue = ({ label, children }) => (
