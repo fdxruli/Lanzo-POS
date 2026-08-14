@@ -1,16 +1,19 @@
-import { useMemo } from 'react';
-import { Monitor, Smartphone } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildEcommerceSiteBuilderPreviewCatalog } from '../../../utils/ecommerceSiteBuilderPreview';
 import EcommerceSiteRenderer from '../site/EcommerceSiteRenderer';
 import '../../../pages/PublicStorePage.css';
 
 const noop = () => {};
+const VIEWPORT_WIDTHS = Object.freeze({ mobile: 390, desktop: 1280 });
 
-export default function EcommerceSiteBuilderPreview({ document, viewport, onViewport, portal }) {
-  const previewCatalog = useMemo(
-    () => buildEcommerceSiteBuilderPreviewCatalog(),
-    []
-  );
+const getViewportWidth = (viewport) => VIEWPORT_WIDTHS[viewport] || VIEWPORT_WIDTHS.desktop;
+
+export default function EcommerceSiteBuilderPreview({ document, portal, viewport = 'desktop' }) {
+  const stageRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [metrics, setMetrics] = useState({ scale: 1, height: 0 });
+  const viewportWidth = getViewportWidth(viewport);
+  const previewCatalog = useMemo(() => buildEcommerceSiteBuilderPreviewCatalog(), []);
   const catalogProps = useMemo(() => ({
     products: previewCatalog.products,
     filteredProducts: previewCatalog.products,
@@ -28,15 +31,66 @@ export default function EcommerceSiteBuilderPreview({ document, viewport, onView
     isLoadingMore: false
   }), [previewCatalog]);
 
+  useEffect(() => {
+    const updateMetrics = () => {
+      const availableWidth = stageRef.current?.clientWidth || 0;
+      const scale = availableWidth > 0 ? Math.min(1, availableWidth / viewportWidth) : 1;
+      const height = canvasRef.current?.scrollHeight || 0;
+      setMetrics((current) => (
+        current.scale === scale && current.height === height ? current : { scale, height }
+      ));
+    };
+
+    updateMetrics();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateMetrics);
+    if (observer) {
+      if (stageRef.current) observer.observe(stageRef.current);
+      if (canvasRef.current) observer.observe(canvasRef.current);
+    }
+    window.addEventListener('resize', updateMetrics);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateMetrics);
+    };
+  }, [document, viewportWidth]);
+
+  useEffect(() => {
+    if (stageRef.current) stageRef.current.scrollTop = 0;
+  }, [viewport]);
+
+  const scaledCanvasStyle = {
+    width: `${viewportWidth * metrics.scale}px`,
+    minHeight: metrics.height ? `${metrics.height * metrics.scale}px` : undefined
+  };
+
   return (
-    <section className="ecom-builder-preview" aria-labelledby="ecom-builder-preview-title">
-      <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Borrador local</span><h3 id="ecom-builder-preview-title">Vista previa</h3><p>Los cambios de esta vista previa no serán visibles para tus clientes hasta guardar y publicar.</p></div></div>
-      <div className="ecom-builder-choice-row" aria-label="Tamaño de vista previa"><button type="button" className="btn btn-secondary" aria-pressed={viewport === 'desktop'} onClick={() => onViewport('desktop')}><Monitor size={16} />Escritorio</button><button type="button" className="btn btn-secondary" aria-pressed={viewport === 'mobile'} onClick={() => onViewport('mobile')}><Smartphone size={16} />Móvil</button></div>
-      <div className={`ecom-builder-preview-frame is-${viewport}`} aria-label="Vista previa inerte del sitio">
-        <div className="ecommerce-site-surface ecom-builder-preview-inert" data-preview-source={previewCatalog.usesExamples ? 'examples' : 'published'} inert>
-          <EcommerceSiteRenderer siteDocument={document} siteDocumentMode="custom" portal={portal} products={previewCatalog.products} categories={previewCatalog.categories} mode="editor" slug={portal?.slug || ''} catalogProps={catalogProps} />
+    <div className="ecom-builder-preview-stage" ref={stageRef} aria-label="Vista previa inerte del sitio">
+      <div className="ecom-builder-preview-canvas-shell" style={scaledCanvasStyle}>
+        <div
+          className="ecommerce-site-surface ecom-builder-preview-inert"
+          data-preview-source={previewCatalog.usesExamples ? 'examples' : 'published'}
+          data-preview-viewport={viewport}
+          inert
+          ref={canvasRef}
+          style={{ width: `${viewportWidth}px`, transform: `scale(${metrics.scale})` }}
+        >
+          <EcommerceSiteRenderer
+            siteDocument={document}
+            siteDocumentMode="custom"
+            portal={portal}
+            products={previewCatalog.products}
+            categories={previewCatalog.categories}
+            mode="preview"
+            slug={portal?.slug || ''}
+            catalogProps={catalogProps}
+          />
         </div>
       </div>
-    </section>
+    </div>
   );
 }
+
+export const ecommerceSiteBuilderPreviewInternals = Object.freeze({
+  VIEWPORT_WIDTHS,
+  getViewportWidth
+});

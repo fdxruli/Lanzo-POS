@@ -51,6 +51,23 @@ describe('ECOM.OPERATIONS.1 admin controls', () => {
     expect(screen.getByLabelText('Cierre Domingo')).toHaveValue('16:00');
   });
 
+  it('groups each weekly day metadata and its two time controls', () => {
+    render(<EcommerceOperatingHoursSettings data={{
+      timezone: 'America/Mexico_City',
+      businessHoursEnabled: true,
+      hours: { weekly: [], exceptions: [] },
+      availability: openAvailability
+    }} />);
+
+    const mondayRow = screen.getByText('Lunes').closest('.ecom-week-row');
+    expect(mondayRow.querySelector('.ecom-week-meta')).not.toBeNull();
+    expect(mondayRow.querySelector('.ecom-week-status')).toHaveTextContent('Cerrado');
+    expect(mondayRow.querySelector('.ecom-week-times')).not.toBeNull();
+    expect(mondayRow.querySelectorAll('.ecom-week-time')).toHaveLength(2);
+    expect(screen.getByLabelText('Apertura Lunes')).toHaveAttribute('type', 'time');
+    expect(screen.getByLabelText('Cierre Lunes')).toHaveAttribute('type', 'time');
+  });
+
   it('renders Monday through Sunday while preserving backend weekday values', async () => {
     render(<EcommerceOperatingHoursSettings data={{
       timezone: 'America/Mexico_City',

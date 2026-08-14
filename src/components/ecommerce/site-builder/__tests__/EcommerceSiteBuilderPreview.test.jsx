@@ -13,14 +13,14 @@ const portal = {
 };
 const renderPreview = (props = {}) => render(
   <MemoryRouter>
-    <EcommerceSiteBuilderPreview document={createDefaultEcommerceSiteDocument()} viewport="desktop" onViewport={vi.fn()} portal={portal} {...props} />
+    <EcommerceSiteBuilderPreview document={createDefaultEcommerceSiteDocument()} viewport="desktop" portal={portal} {...props} />
   </MemoryRouter>
 );
 
 describe('EcommerceSiteBuilderPreview', () => {
   afterEach(cleanup);
 
-  it('renders deterministic local examples, search, categories, grid layout, and remains inert', () => {
+  it('renders deterministic local examples, the shared renderer, and remains inert', () => {
     const dispatch = vi.spyOn(window, 'dispatchEvent');
     const { container } = renderPreview();
     expect(screen.getByText('Producto de muestra')).toBeTruthy();
@@ -39,7 +39,7 @@ describe('EcommerceSiteBuilderPreview', () => {
       'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
     );
     expect(container.querySelector('.ecom-builder-preview-inert')).toHaveAttribute('inert');
-    expect(container.querySelector('.ecommerce-site-renderer')).toBeTruthy();
+    expect(container.querySelector('.ecom-builder-preview-inert')).toHaveAttribute('data-preview-viewport', 'desktop');
     expect(container.querySelector('.ecommerce-site-renderer')).toHaveClass('ecommerce-site-visual-surface');
     fireEvent.click(screen.getByRole('button', { name: 'Agregar Producto de muestra' }));
     expect(dispatch).not.toHaveBeenCalled();
@@ -63,12 +63,11 @@ describe('EcommerceSiteBuilderPreview', () => {
     expect(container.querySelector('[data-preview-source="examples"]')).toBeTruthy();
   });
 
-  it('changes only the viewport presentation', () => {
-    const onViewport = vi.fn();
+  it('uses an explicit logical viewport width without mutating the site document', () => {
     const document = createDefaultEcommerceSiteDocument();
-    renderPreview({ document, onViewport });
-    fireEvent.click(screen.getByRole('button', { name: 'Móvil' }));
-    expect(onViewport).toHaveBeenCalledWith('mobile');
+    const { container } = renderPreview({ document, viewport: 'mobile' });
+    expect(container.querySelector('.ecom-builder-preview-inert')).toHaveAttribute('data-preview-viewport', 'mobile');
+    expect(container.querySelector('.ecom-builder-preview-inert')).toHaveStyle({ width: '390px' });
     expect(document).toEqual(createDefaultEcommerceSiteDocument());
   });
 

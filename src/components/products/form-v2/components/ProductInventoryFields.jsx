@@ -6,8 +6,8 @@ export default function ProductInventoryFields({ values, errors, onTrackStock, o
   const stockLabel = `${isEditing ? 'Existencia actual' : 'Existencia inicial'} (${unit})`;
   return <section className="product-form-v2__inventory" aria-label="Inventario inicial">
     <div className="product-form-v2__toggle">
-      <input id="product-v2-track-stock" type="checkbox" checked={values.trackStock} onChange={(event) => onTrackStock(event.target.checked)} aria-labelledby="product-v2-track-stock-label" />
-      <label className="product-form-v2__toggle-control" htmlFor="product-v2-track-stock" aria-hidden="true"><span /></label>
+      <input id="product-v2-track-stock" className="product-form-v2__toggle-input" type="checkbox" checked={values.trackStock} onChange={(event) => onTrackStock(event.target.checked)} aria-labelledby="product-v2-track-stock-label" />
+      <label className="product-form-v2__toggle-control" htmlFor="product-v2-track-stock"><span /></label>
       <div id="product-v2-track-stock-label"><strong>Controlar inventario</strong><small>Registra existencias y alertas para este producto.</small></div>
     </div>
     {values.trackStock && <div className="product-form-v2__inventory-fields">

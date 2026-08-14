@@ -61,6 +61,7 @@ describe('EcommercePortalCustomizationPanel image intents', () => {
     renderPanel();
 
     await waitFor(() => expect(changes).toHaveLength(1));
+    expect(document.querySelector('.ecom-customization__preview')).toBeNull();
     expect(changes[0]).toMatchObject({
       templateCode: portal.templateCode,
       logo: { value: portal.logoUrl, intent: 'preserve' },

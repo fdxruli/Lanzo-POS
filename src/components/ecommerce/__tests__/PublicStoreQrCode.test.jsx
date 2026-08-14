@@ -28,6 +28,7 @@ vi.mock('@zxing/library', () => ({
 }));
 
 vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
+  getEcommerceAdminAuthorizationContext: vi.fn(),
   getEcommercePortal: vi.fn(),
   listPublishedProducts: vi.fn(),
   saveEcommercePortal: vi.fn(),
@@ -122,12 +123,22 @@ describe('EcommercePortalSettings QR isolation', () => {
     expect(screen.getByText(
       'No se pudo generar el código QR. Puedes copiar el enlace de la tienda.'
     ).closest('[role="status"]')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Abrir tienda' }))
-      .toHaveAttribute('href', publicStoreUrl);
-    expect(screen.getByRole('button', { name: 'Copiar link' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Compartir' })).toBeEnabled();
-    expect(screen.getByRole('link', { name: 'WhatsApp' }).getAttribute('href'))
+    const openStores = screen.getAllByRole('link', { name: 'Abrir tienda' });
+    const copyLink = screen.getByRole('button', { name: 'Copiar link' });
+    const shareLink = screen.getByRole('button', { name: 'Compartir' });
+    const whatsApp = screen.getByRole('link', { name: 'WhatsApp' });
+
+    expect(openStores).toHaveLength(2);
+    for (const openStore of openStores) {
+      expect(openStore).toHaveAttribute('href', publicStoreUrl);
+    }
+    expect(copyLink).toBeEnabled();
+    expect(shareLink).toBeEnabled();
+    expect(whatsApp.getAttribute('href'))
       .toContain(encodeURIComponent(publicStoreUrl));
+    for (const action of [...openStores, copyLink, shareLink, whatsApp]) {
+      expect(action).toHaveClass('btn', 'btn-secondary');
+    }
     expect(screen.queryByRole('img', { name: 'Codigo QR de la tienda' })).not.toBeInTheDocument();
     expect(screen.queryByText(/sensitive QR encoder stack data/i)).not.toBeInTheDocument();
   });

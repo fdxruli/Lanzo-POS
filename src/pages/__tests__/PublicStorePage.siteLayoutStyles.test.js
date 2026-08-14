@@ -6,10 +6,15 @@ const previewStyles = readFileSync(
   new URL('../../components/ecommerce/EcommercePortalSettings.css', import.meta.url),
   'utf8'
 );
+const previewModalStyles = readFileSync(
+  new URL('../../components/ecommerce/site-builder/EcommerceSiteBuilderPreviewModal.css', import.meta.url),
+  'utf8'
+);
 
 const compactWhitespace = (value) => value.replace(/\s+/g, ' ');
 const normalizedPublicStyles = compactWhitespace(publicStyles);
 const normalizedPreviewStyles = compactWhitespace(previewStyles);
+const normalizedPreviewModalStyles = compactWhitespace(previewModalStyles);
 const sharedRendererSelectors = publicStyles.match(/^[^\n{]*\.ecommerce-site-renderer[^\n{]*\{/gm) || [];
 
 describe('public ecommerce site layout styles', () => {
@@ -55,6 +60,31 @@ describe('public ecommerce site layout styles', () => {
     expect(normalizedPublicStyles).toMatch(
       /@container ecommerce-site \(max-width: 34rem\).*?catalog.*?grid-template-columns: minmax\(0, 1fr\)/
     );
+  });
+
+  it('uses renderer container queries for virtual desktop and mobile content layouts', () => {
+    expect(normalizedPublicStyles).toContain('@container ecommerce-site (min-width: 42rem)');
+    expect(normalizedPublicStyles).toContain('@container ecommerce-site (min-width: 68rem)');
+    expect(normalizedPublicStyles).toContain('@container ecommerce-site (max-width: 28rem)');
+    expect(normalizedPublicStyles).toMatch(
+      /@container ecommerce-site \(min-width: 42rem\).*?ecommerce-site-renderer \.public-store-header__content/
+    );
+    expect(normalizedPublicStyles).toMatch(
+      /@container ecommerce-site \(min-width: 68rem\).*?ecommerce-site-renderer \.public-catalog__grid/
+    );
+    expect(normalizedPublicStyles).not.toMatch(
+      /@media \(min-width: 42rem\) \{[^}]*\.public-store-header__content/
+    );
+  });
+
+  it('defines a fullscreen mobile modal and a contained virtual preview canvas', () => {
+    expect(normalizedPreviewModalStyles).toContain('width: min(96vw, 1440px)');
+    expect(normalizedPreviewModalStyles).toContain('height: min(92dvh, 1000px)');
+    expect(normalizedPreviewModalStyles).toContain('z-index: var(--z-modal-overlay)');
+    expect(normalizedPreviewModalStyles).toContain('@media (max-width: 640px)');
+    expect(normalizedPreviewModalStyles).toContain('width: 100vw');
+    expect(normalizedPreviewModalStyles).toContain('height: 100dvh');
+    expect(normalizedPreviewModalStyles).toContain('transform-origin: top left');
   });
 
   it('keeps functional layout rules out of preview-only and template preset selectors', () => {

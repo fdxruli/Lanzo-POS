@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   ingredients: [],
@@ -23,7 +23,19 @@ beforeEach(() => {
   mocks.ingredients = [{ id: 'ingredient-1', name: 'Tocino', stock: 0, saleType: 'bulk', unit: 'kg' }];
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('RestauranteFields ingredient extras', () => {
+  it('renders the recipe action and delegates to onManageRecipe in the V2 visual variant', () => {
+    const onManageRecipe = vi.fn();
+    render(<RestauranteFields productType="sellable" setProductType={vi.fn()} visualVariant="product-form-v2" onManageRecipe={onManageRecipe} printStation="kitchen" setPrintStation={vi.fn()} prepTime="" setPrepTime={vi.fn()} modifiers={[]} setModifiers={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar receta' }));
+    expect(onManageRecipe).toHaveBeenCalledTimes(1);
+  });
+
   it('offers ingredients from the independent source even at zero stock', () => {
     const Harness = () => {
       const [modifiers, setModifiers] = useState([]);

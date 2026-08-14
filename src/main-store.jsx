@@ -9,7 +9,7 @@ import {
 } from './utils/publicChunkRecovery';
 import './index.css';
 import './styles/design-tokens.css';
-import './styles/ui-button.css';
+import './styles/buttons.css';
 import './styles/ui-card.css';
 
 const rootElement = document.getElementById('root');

@@ -74,7 +74,7 @@
   font-size: 0.95rem;
 }
 
-.btn-restore {
+.expiration-widget .btn-restore {
   margin-top: var(--spacing-sm);
   display: inline-flex;
   align-items: center;
@@ -89,7 +89,7 @@
   transition: all 0.2s ease;
 }
 
-.btn-restore:hover {
+.expiration-widget .btn-restore:hover {
   background: var(--secondary-color);
   color: var(--ui-text-on-primary);
 }
@@ -379,34 +379,34 @@
 }
 
 /* Action Button Variants */
-.btn-edit {
+.expiration-widget .btn-edit {
   background: rgba(123, 97, 255, 0.1);
   color: var(--secondary-color);
 }
 
-.btn-edit:hover:not(:disabled) {
+.expiration-widget .btn-edit:hover:not(:disabled) {
   border-color: var(--secondary-color);
   background: var(--secondary-color);
   color: var(--ui-text-on-primary);
 }
 
-.btn-waste {
+.expiration-widget .btn-waste {
   background: var(--ui-bg-warning-soft);
   color: var(--ui-text-warning);
 }
 
-.btn-waste:hover:not(:disabled) {
+.expiration-widget .btn-waste:hover:not(:disabled) {
   border-color: var(--ui-color-warning);
   background: var(--ui-color-warning);
   color: var(--ui-text-on-primary);
 }
 
-.btn-ignore {
+.expiration-widget .btn-ignore {
   background: var(--light-background);
   color: var(--text-light);
 }
 
-.btn-ignore:hover:not(:disabled) {
+.expiration-widget .btn-ignore:hover:not(:disabled) {
   border-color: var(--text-light);
   color: var(--text-dark);
 }

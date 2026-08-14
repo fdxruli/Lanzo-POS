@@ -1,6 +1,5 @@
 /* Caja page: Pulso de Caja */
 .caja-page {
-  padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
   min-width: 0;
 }
 
@@ -1192,10 +1191,6 @@
 }
 
 @media (min-width: 1024px) {
-  .caja-page {
-    padding-bottom: var(--ui-space-lg);
-  }
-
   .caja-grid {
     padding-bottom: 0.875rem;
   }

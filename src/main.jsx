@@ -16,7 +16,7 @@ import {
 import { updateExistingAdminWorkerOnPublicRoute } from './pwa/publicRouteWorkerUpdate';
 import './index.css';
 import './styles/design-tokens.css';
-import './styles/ui-button.css';
+import './styles/buttons.css';
 import './styles/ui-modal.css';
 import './styles/ui-card.css';
 import './styles/ui-alert.css';

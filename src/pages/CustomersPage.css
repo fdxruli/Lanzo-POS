@@ -9,7 +9,8 @@
   min-width: 0;
   max-width: none;
   margin: 0;
-  padding: var(--ui-space-lg);
+  padding-top: var(--ui-space-lg);
+  padding-inline: var(--ui-space-lg);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -165,7 +166,7 @@
     padding:
       var(--ui-space-sm)
       max(var(--ui-space-sm), var(--safe-area-right))
-      calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom))
+      var(--mobile-navigation-clearance)
       max(var(--ui-space-sm), var(--safe-area-left));
   }
 
@@ -175,12 +176,6 @@
 
   .customer-directory-toolbar {
     padding-inline: var(--ui-space-sm);
-  }
-}
-
-@media (min-width: 641px) {
-  .customers-page {
-    padding-bottom: calc(var(--ui-space-xl) + 72px + var(--safe-area-bottom));
   }
 }
 
@@ -194,12 +189,6 @@
     padding: 0 0 0 1.5rem;
     border-top: 0;
     border-left: 1px solid rgba(255, 255, 255, 0.14);
-  }
-}
-
-@media (min-width: 1024px) {
-  .customers-page {
-    padding-bottom: var(--ui-space-lg);
   }
 }
 
