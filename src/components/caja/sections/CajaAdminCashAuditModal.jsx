@@ -14,6 +14,11 @@ const REASONS = [
 
 const formatMoney = (amount) => `$${Money.toNumber(amount ?? 0).toFixed(2)}`;
 const date = (value) => value ? new Date(value).toLocaleString() : 'No disponible';
+const age = (value) => {
+  if (!value) return 'No disponible';
+  const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3600000));
+  return hours < 24 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+};
 const sessionExpected = (session) => session?.expected_cash_total ?? session?.total_teorico_cloud ?? 0;
 const movementAmount = (movement = {}) => movement.amount ?? movement.monto ?? 0;
 
@@ -141,7 +146,10 @@ const CajaAdminCashAuditModal = ({
             <>
               <div className="admin-cash-audit-summary">
                 <DetailValue label="Responsable">{session.responsible_name || session.responsable_apertura || 'No disponible'}</DetailValue>
+                <DetailValue label="Identidad">{session.cash_identity_state === 'legacy' ? 'Legacy' : 'CanÃ³nica'}</DetailValue>
+                <DetailValue label="Dispositivo de apertura">{session.opened_by_device_name || session.device_name || session.opened_by_device_id || session.device_id || 'No disponible'}</DetailValue>
                 <DetailValue label="Abierta">{date(session.opened_at || session.fecha_apertura)}</DetailValue>
+                <DetailValue label="AntigÃ¼edad">{age(session.opened_at || session.fecha_apertura)}</DetailValue>
                 <DetailValue label="Efectivo esperado">{formatMoney(expected)}</DetailValue>
                 <DetailValue label="Ventas">{session.sales_count ?? 'No disponible'}</DetailValue>
               </div>

@@ -153,6 +153,7 @@ export default function CajaPage() {
 
   const operationDisabled = isBackupLoading || isCloudCashReadOnly;
   const showAdminAuditPanel = Boolean(isCloudCash && !cashActor?.isStaff && listCashSessionsForAudit);
+  const usesAdminReconciliationClose = Boolean(isCloudCash && !cashActor?.isStaff);
   const showBusinessCashSummary = canShowBusinessCashSummary({
     isCloudCash,
     isReadOnly: isCloudCashReadOnly,
@@ -563,7 +564,13 @@ export default function CajaPage() {
         isReadOnly={isCloudCashReadOnly}
         cashActor={cashActor}
         readOnlyMessage={CLOUD_CASH_READ_ONLY_MESSAGE}
-        onCorte={() => setIsAuditOpen(true)}
+        onCorte={() => {
+          if (usesAdminReconciliationClose) {
+            setReviewCashSessionId(cajaActual?.id || null);
+            return;
+          }
+          setIsAuditOpen(true);
+        }}
         onEntrada={cashEntryModal.open}
         onSalida={cashExitModal.open}
         onAjuste={cashAdjustmentModal.open}
