@@ -120,25 +120,35 @@ export default function EcommerceOperatingHoursSettings({ data, onSaved }) {
       <div className="ecom-week-grid">
         {weekly.map((day) => (
           <div className="ecom-week-row" key={day.weekday}>
-            <label className="ecom-week-day">
-              <input
-                type="checkbox"
-                checked={day.isOpen}
-                onChange={(event) => updateDay(day.weekday, 'isOpen', event.target.checked)}
-              />
-              <strong>{DAY_NAMES[day.weekday]}</strong>
-            </label>
-            <span>{day.isOpen ? 'Abierto' : 'Cerrado'}</span>
-            <input
-              type="time" value={day.opensAt} disabled={!day.isOpen}
-              aria-label={`Apertura ${DAY_NAMES[day.weekday]}`}
-              onChange={(event) => updateDay(day.weekday, 'opensAt', event.target.value)}
-            />
-            <input
-              type="time" value={day.closesAt} disabled={!day.isOpen}
-              aria-label={`Cierre ${DAY_NAMES[day.weekday]}`}
-              onChange={(event) => updateDay(day.weekday, 'closesAt', event.target.value)}
-            />
+            <div className="ecom-week-meta">
+              <label className="ecom-week-day">
+                <input
+                  type="checkbox"
+                  checked={day.isOpen}
+                  onChange={(event) => updateDay(day.weekday, 'isOpen', event.target.checked)}
+                />
+                <strong>{DAY_NAMES[day.weekday]}</strong>
+              </label>
+              <span className="ecom-week-status">{day.isOpen ? 'Abierto' : 'Cerrado'}</span>
+            </div>
+            <div className="ecom-week-times">
+              <label className="ecom-week-time">
+                <span>Apertura</span>
+                <input
+                  type="time" value={day.opensAt} disabled={!day.isOpen}
+                  aria-label={`Apertura ${DAY_NAMES[day.weekday]}`}
+                  onChange={(event) => updateDay(day.weekday, 'opensAt', event.target.value)}
+                />
+              </label>
+              <label className="ecom-week-time">
+                <span>Cierre</span>
+                <input
+                  type="time" value={day.closesAt} disabled={!day.isOpen}
+                  aria-label={`Cierre ${DAY_NAMES[day.weekday]}`}
+                  onChange={(event) => updateDay(day.weekday, 'closesAt', event.target.value)}
+                />
+              </label>
+            </div>
           </div>
         ))}
       </div>

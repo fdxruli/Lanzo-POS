@@ -411,8 +411,13 @@
 .ecom-operation-toggle span { display: grid; gap: .15rem; }
 .ecom-operation-toggle small, .ecom-exceptions-heading small { color: var(--color-text-secondary, #5f6873); }
 .ecom-week-grid, .ecom-exception-list { display: grid; gap: .55rem; }
-.ecom-week-row { display: grid; grid-template-columns: minmax(125px, 1fr) 70px 110px 110px; gap: .6rem; align-items: center; }
-.ecom-week-row input[type="time"], .ecom-exception-row input, .ecom-exception-row select { min-width: 0; padding: .55rem; border: 1px solid var(--color-border, #d9dee5); border-radius: .55rem; }
+.ecom-week-row { display: grid; grid-template-columns: minmax(195px, 1fr) 220px; gap: .6rem; align-items: center; }
+.ecom-week-meta { display: grid; grid-template-columns: minmax(125px, 1fr) auto; gap: .6rem; align-items: center; min-width: 0; }
+.ecom-week-status { color: var(--color-text-secondary, #5f6873); font-size: .88rem; }
+.ecom-week-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; min-width: 0; }
+.ecom-week-time { display: grid; min-width: 0; }
+.ecom-week-time > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ecom-week-row input[type="time"], .ecom-exception-row input, .ecom-exception-row select { box-sizing: border-box; width: 100%; min-width: 0; padding: .55rem; border: 1px solid var(--color-border, #d9dee5); border-radius: .55rem; }
 .ecom-inline-error { color: var(--color-danger, #b42318); margin: 0; }
 .ecom-exceptions-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .ecom-exceptions-heading > div { display: grid; }
@@ -450,8 +455,12 @@
 }
 
 @media (max-width: 620px) {
-  .ecom-week-row { grid-template-columns: 1fr 70px; }
-  .ecom-week-row input[type="time"] { width: 100%; }
+  .ecom-week-row { grid-template-columns: 1fr; gap: .75rem; padding: .8rem; border: 1px solid var(--color-border, #d9dee5); border-radius: .7rem; background: var(--color-background-secondary, #f4f6f8); }
+  .ecom-week-meta { grid-template-columns: minmax(0, 1fr) auto; }
+  .ecom-week-status { padding: .25rem .5rem; border-radius: 999px; background: var(--card-background-color); font-size: .8rem; font-weight: 700; }
+  .ecom-week-times { gap: .65rem; }
+  .ecom-week-time { gap: .35rem; }
+  .ecom-week-time > span { position: static; width: auto; height: auto; overflow: visible; clip: auto; color: var(--color-text-secondary, #5f6873); font-size: .78rem; font-weight: 700; white-space: normal; }
   .ecom-exception-row { grid-template-columns: 1fr; }
   .ecom-builder-actions, .ecom-builder-version-list article { align-items: stretch; flex-direction: column; }
   .ecom-builder-actions > span { margin-right: 0; }
