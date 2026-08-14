@@ -20,6 +20,7 @@ declare
   v_admin_token text := 'cash-admin-session-' || v_suffix;
   v_staff_token text := 'cash-staff-session-' || v_suffix;
   v_result jsonb;
+  v_event_payload jsonb;
   v_count integer;
 begin
   insert into public.licenses(id, license_key, license_type, status, expires_at, max_devices, product_name, features, plan_id)
@@ -61,6 +62,7 @@ begin
   if coalesce((v_result->>'success')::boolean,false) is not true then raise exception 'ADMIN_UNVERIFIED_FAILED: %', v_result; end if;
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and closing_counted_amount is null and cash_difference is null and expected_cash_total=1196 and next_shift_fund=0 and reconciliation_status='unverified') then raise exception 'ADMIN_UNVERIFIED_NULL_SEMANTICS_FAILED'; end if;
   if exists(select 1 from public.pos_cash_movements where cash_session_id='cash-staff-unverified-' || v_suffix) then raise exception 'ADMIN_UNVERIFIED_CREATED_MOVEMENT'; end if;
+  if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and close_detail->>'expected_cash_total'='1196' and close_detail->>'closing_counted_amount' is null and close_detail->>'cash_difference' is null) then raise exception 'ADMIN_UNVERIFIED_CLOSE_DETAIL_NULL_FAILED'; end if;
 
   v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_audited', 10, 0, 'operational_error', 'Stale version', 1, 'cash-stale-idem-' || v_suffix);
   if v_result->>'code' <> 'VERSION_CONFLICT' then raise exception 'ADMIN_CLOSE_VERSION_CONFLICT_FAILED: %', v_result; end if;
@@ -90,6 +92,76 @@ begin
     perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_audited', null, 0, 'operational_error', 'Must fail', 2, 'cash-invalid-counted-' || v_suffix);
     raise exception 'ADMIN_AUDITED_NULL_COUNTED_ACCEPTED';
   exception when others then if sqlerrm <> 'ADMIN_CLOSE_COUNTED_AMOUNT_REQUIRED' then raise; end if; end;
+
+  -- The public rate-limited wrapper preserves the same privileged contract.
+  insert into public.pos_cash_sessions(id, license_id, device_id, device_role, actor_key, status, opening_amount, expected_cash_total, responsible_name, server_version)
+  values ('cash-wrapper-' || v_suffix, v_license_id, v_other_admin_device, 'admin', 'admin_device:wrapper-' || v_suffix, 'open', 7, 7, 'Wrapper cash', 1);
+  v_result := public.pos_admin_close_cash_session(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-wrapper-' || v_suffix, 'admin_audited', 7, 0, 'operational_error', 'Wrapper close', 1, 'cash-wrapper-idem-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true then raise exception 'ADMIN_CLOSE_WRAPPER_FAILED: %', v_result; end if;
+
+  -- Closed, deleted and unknown sessions never become administratively closable.
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-wrapper-' || v_suffix, 'admin_audited', 7, 0, 'operational_error', 'Second close', 2, 'cash-wrapper-second-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_CLOSED_ACCEPTED';
+  exception when others then if sqlerrm <> 'CASH_SESSION_NOT_OPEN' then raise; end if; end;
+  insert into public.pos_cash_sessions(id, license_id, device_id, device_role, actor_key, status, opening_amount, expected_cash_total, responsible_name, server_version, deleted_at)
+  values ('cash-deleted-' || v_suffix, v_license_id, v_other_admin_device, 'admin', 'admin_device:deleted-' || v_suffix, 'open', 1, 1, 'Deleted cash', 1, now());
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-deleted-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'Deleted fixture', 1, 'cash-deleted-idem-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_DELETED_ACCEPTED';
+  exception when others then if sqlerrm <> 'CASH_SESSION_NOT_FOUND' then raise; end if; end;
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-missing-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'Unknown fixture', 1, 'cash-missing-idem-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_MISSING_ACCEPTED';
+  exception when others then if sqlerrm <> 'CASH_SESSION_NOT_FOUND' then raise; end if; end;
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_audited', 5, 6, 'operational_error', 'Fund must fail', 2, 'cash-excess-fund-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_EXCESS_FUND_ACCEPTED';
+  exception when others then if sqlerrm <> 'NEXT_SHIFT_FUND_EXCEEDS_COUNTED' then raise; end if; end;
+
+  -- Normal owner closure remains available and retains its historical semantics.
+  insert into public.pos_cash_sessions(id, license_id, device_id, device_role, actor_key, status, opening_amount, expected_cash_total, responsible_name, server_version)
+  values ('cash-normal-' || v_suffix, v_license_id, v_admin_device, 'admin', 'admin_device:' || v_admin_device, 'open', 7, 7, 'Normal owner cash', 1);
+  v_result := public.pos_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-normal-' || v_suffix, '{"closing_counted_amount":7,"next_shift_fund":0,"audit_comments":"Normal close regression"}'::jsonb, 1, 'cash-normal-idem-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,cash_difference}' <> '0' then
+    raise exception 'NORMAL_CLOSE_REGRESSION_FAILED: %', v_result;
+  end if;
+
+  -- The detail RPC is tenant scoped and exposes the single-session audit read model.
+  v_result := public.pos_admin_get_cash_session_detail_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-admin-audited-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or coalesce(jsonb_array_length(v_result->'audit_events'), 0) <> 1
+     or v_result#>>'{cash_session,closing_mode}' <> 'admin_audited'
+     or v_result#>>'{audit_events,0,device_name}' <> 'Chrome admin'
+     or v_result#>>'{audit_events,0,admin_display_name}' <> 'Cash owner' then
+    raise exception 'ADMIN_DETAIL_READ_MODEL_FAILED: %', v_result;
+  end if;
+  v_result := public.pos_admin_list_cash_sessions_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, null, null, null, null, 100, 0);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or not exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') row_payload where row_payload->>'id'='cash-admin-audited-' || v_suffix and row_payload->>'device_name'='Edge admin' and row_payload->>'closed_by_device_name'='Chrome admin') then
+    raise exception 'ADMIN_LIST_READ_MODEL_FAILED: %', v_result;
+  end if;
+  select payload into v_event_payload from public.pos_cash_audit_events where cash_session_id='cash-admin-audited-' || v_suffix and event_type='ADMIN_CLOSED_AUDITED';
+  if v_event_payload::text like '%' || v_admin_token || '%' or v_event_payload::text like '%' || v_device_token || '%' then
+    raise exception 'ADMIN_AUDIT_EVENT_EXPOSED_SECRET';
+  end if;
+
+  -- A privileged close requires a live, unrevoked, unexpired admin session.
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, null, 'cash-stale-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'No session', 2, 'cash-no-session-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_NO_SESSION_ACCEPTED';
+  exception when others then if sqlerrm <> 'ADMIN_SESSION_REQUIRED' then raise; end if; end;
+  update public.license_admin_sessions set revoked_at = now() where id = v_admin_session_id;
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'Revoked session', 2, 'cash-revoked-session-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_REVOKED_SESSION_ACCEPTED';
+  exception when others then if sqlerrm <> 'ADMIN_SESSION_INVALID' then raise; end if; end;
+  update public.license_admin_sessions set revoked_at = null, expires_at = now() - interval '1 minute' where id = v_admin_session_id;
+  begin
+    perform public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_unverified', null, null, 'historical_test', 'Expired session', 2, 'cash-expired-session-' || v_suffix);
+    raise exception 'ADMIN_CLOSE_EXPIRED_SESSION_ACCEPTED';
+  exception when others then if sqlerrm <> 'ADMIN_SESSION_EXPIRED' then raise; end if; end;
 end;
 $test$;
 
