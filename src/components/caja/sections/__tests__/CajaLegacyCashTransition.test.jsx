@@ -17,15 +17,27 @@ const legacy = {
   server_version: 4
 };
 
+const legacyB = {
+  ...legacy,
+  id: 'cash-legacy-b',
+  expected_cash_total: '1196',
+  opened_by_device_id: 'device-linux',
+  opened_by_device_name: 'Chrome en Linux'
+};
+
 describe('CajaLegacyCashTransition', () => {
   it('keeps every legacy session visible and lets the admin select exactly one', () => {
     const onAdopt = vi.fn();
     const onReview = vi.fn();
-    render(<CajaLegacyCashTransition sessions={[legacy, { ...legacy, id: 'cash-legacy-b', expected_cash_total: '1196' }]} onAdopt={onAdopt} onReview={onReview} />);
+    render(<CajaLegacyCashTransition sessions={[legacy, legacyB]} onAdopt={onAdopt} onReview={onReview} />);
 
     expect(screen.getByText('Encontramos cajas administrativas anteriores')).toBeInTheDocument();
     expect(screen.getByText(/Dispositivo original: Chrome en Android/)).toBeInTheDocument();
+    expect(screen.getByText(/Dispositivo original: Chrome en Linux/)).toBeInTheDocument();
+    expect(screen.getByText(/\$75\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/\$1196\.00/)).toBeInTheDocument();
     expect(screen.queryByText(/device-android/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/device-linux/)).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Continuar esta caja' })).toHaveLength(2);
     fireEvent.click(screen.getAllByRole('button', { name: 'Continuar esta caja' })[0]);
     expect(onAdopt).toHaveBeenCalledWith(legacy);
@@ -47,7 +59,7 @@ describe('CajaLegacyCashTransition', () => {
   it('renders each legacy device label independently', () => {
     render(<CajaLegacyCashTransition sessions={[
       legacy,
-      { ...legacy, id: 'cash-legacy-b', opened_by_device_name: 'Chrome en Linux' }
+      legacyB
     ]} />);
     expect(screen.getByText(/Chrome en Android/)).toBeInTheDocument();
     expect(screen.getByText(/Chrome en Linux/)).toBeInTheDocument();
