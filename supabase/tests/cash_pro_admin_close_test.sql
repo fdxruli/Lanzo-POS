@@ -50,6 +50,8 @@ begin
     ('cash-recalc-drift-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 1196, 1196, 'Recalculation drift cash', 1),
     ('cash-recalc-unverified-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 1196, 1196, 'Unverified recalculation drift cash', 1),
     ('cash-stale-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 10, 10, 'Stale cash', 1),
+    ('cash-zero-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:zero-' || v_suffix, 'open', 0, 0, 'Zero counted cash', 1),
+    ('cash-next-fund-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:next-fund-' || v_suffix, 'open', 1196, 1196, 'Next shift fund cash', 1),
     ('cash-other-tenant-' || v_suffix, v_other_license_id, v_other_license_device, null, 'admin', 'admin_device:other-' || v_suffix, 'open', 5, 5, 'Other tenant', 1);
 
   v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-admin-audited-' || v_suffix, 'admin_audited', 1180, 0, 'operational_error', 'Conteo documentado', 1, 'cash-admin-idem-' || v_suffix);
@@ -65,6 +67,46 @@ begin
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and closing_counted_amount is null and cash_difference is null and expected_cash_total=1196 and next_shift_fund=0 and reconciliation_status='unverified') then raise exception 'ADMIN_UNVERIFIED_NULL_SEMANTICS_FAILED'; end if;
   if exists(select 1 from public.pos_cash_movements where cash_session_id='cash-staff-unverified-' || v_suffix) then raise exception 'ADMIN_UNVERIFIED_CREATED_MOVEMENT'; end if;
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and close_detail->>'expected_cash_total'='1196' and close_detail->>'closing_counted_amount' is null and close_detail->>'cash_difference' is null) then raise exception 'ADMIN_UNVERIFIED_CLOSE_DETAIL_NULL_FAILED'; end if;
+
+  -- Zero is a valid audited physical count, never the representation of an unavailable count.
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-zero-' || v_suffix, 'admin_audited', 0, 0, 'operational_error', 'Conteo fisico de cero.', 1, 'cash-zero-idem-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,closing_counted_amount}' <> '0'
+     or v_result#>>'{cash_session,cash_difference}' <> '0' then
+    raise exception 'ADMIN_AUDITED_ZERO_SEMANTICS_FAILED: %', v_result;
+  end if;
+
+  -- The retained next-shift fund is closure metadata and cannot change expected cash or difference.
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-next-fund-' || v_suffix, 'admin_audited', 1180, 200, 'operational_error', 'Fondo para el siguiente turno.', 1, 'cash-next-fund-idem-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,expected_cash_total}' <> '1196'
+     or v_result#>>'{cash_session,closing_counted_amount}' <> '1180'
+     or v_result#>>'{cash_session,cash_difference}' <> '-16'
+     or v_result#>>'{cash_session,next_shift_fund}' <> '200' then
+    raise exception 'ADMIN_CLOSE_NEXT_SHIFT_FUND_SEMANTICS_FAILED: %', v_result;
+  end if;
+
+  -- Phase 4's CHECK must reject invalid snapshots even if a write bypasses the RPC.
+  begin
+    update public.pos_cash_sessions set closing_counted_amount = null where id = 'cash-admin-audited-' || v_suffix;
+    raise exception 'ADMIN_AUDITED_NULL_COUNTED_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.pos_cash_sessions set cash_difference = 0 where id = 'cash-staff-unverified-' || v_suffix;
+    raise exception 'ADMIN_UNVERIFIED_DIFFERENCE_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.pos_cash_sessions set closure_reason_code = null where id = 'cash-staff-unverified-' || v_suffix;
+    raise exception 'ADMIN_UNVERIFIED_REASON_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.pos_cash_sessions set audit_comments = '' where id = 'cash-staff-unverified-' || v_suffix;
+    raise exception 'ADMIN_UNVERIFIED_COMMENT_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
 
   -- A stale aggregate can change during canonical recalculation without an earlier version bump.
   insert into public.pos_cash_movements(
