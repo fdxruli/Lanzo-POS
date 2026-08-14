@@ -174,8 +174,8 @@ const CajaStatusCard = ({
             <WalletCards size={22} />
           </span>
           <div>
-            <p className="cash-hero-eyebrow">Disponible en el turno</p>
-            <h2 id="cash-total-title">Total en Caja</h2>
+            <p className="cash-hero-eyebrow">Mi caja · disponible en este turno</p>
+            <h2 id="cash-total-title">Efectivo teórico de mi caja</h2>
           </div>
         </div>
 

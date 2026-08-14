@@ -1262,6 +1262,30 @@
   box-shadow: var(--box-shadow);
 }
 
+.caja-grid .business-cash-card { display: grid; gap: 0.85rem; }
+.caja-grid .business-cash-hero { display: flex; align-items: center; gap: 0.7rem; padding: 0.9rem; color: var(--primary-color); background: var(--caja-blue-soft); border-radius: 12px; }
+.caja-grid .business-cash-hero div { display: grid; gap: 0.1rem; }
+.caja-grid .business-cash-hero strong { color: var(--text-dark); font-size: 1.45rem; }
+.caja-grid .business-cash-hero span, .caja-grid .business-cash-help { color: var(--text-light); font-size: 0.76rem; line-height: 1.4; }
+.caja-grid .business-cash-help { margin: -0.25rem 0 0; }
+.caja-grid .business-cash-breakdown, .caja-grid .business-cash-components { display: grid; gap: 0.5rem; }
+.caja-grid .business-cash-breakdown { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.caja-grid .business-cash-breakdown span, .caja-grid .business-cash-components span { display: grid; gap: 0.18rem; min-width: 0; padding: 0.62rem; background: var(--light-background); border: 1px solid var(--border-color); border-radius: 8px; }
+.caja-grid .business-cash-breakdown small, .caja-grid .business-cash-components span { color: var(--text-light); font-size: 0.66rem; font-weight: 800; text-transform: uppercase; }
+.caja-grid .business-cash-breakdown strong, .caja-grid .business-cash-components strong { color: var(--text-dark); font-size: 0.84rem; overflow-wrap: anywhere; }
+.caja-grid .business-cash-components { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.caja-grid .business-cash-components span { grid-template-columns: minmax(0, 1fr) auto; align-items: center; text-transform: none; }
+.caja-grid .business-cash-list { display: grid; gap: 0.55rem; }
+.caja-grid .business-cash-list h3 { margin: 0; color: var(--text-dark); font-size: 0.9rem; }
+.caja-grid .business-cash-session { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.75rem 0; border-top: 1px solid var(--border-color); }
+.caja-grid .business-cash-session > div { display: grid; gap: 0.25rem; min-width: 0; }
+.caja-grid .business-cash-session > div > strong { color: var(--text-dark); overflow-wrap: anywhere; }
+.caja-grid .business-cash-session-meta, .caja-grid .business-cash-age { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--text-light); font-size: 0.72rem; }
+.caja-grid .business-cash-session-value { text-align: right; align-items: end; flex: 0 0 auto; }
+.caja-grid .business-cash-age--warning { color: var(--ui-text-warning); }
+.caja-grid .business-cash-age--important, .caja-grid .business-cash-age--review { color: var(--ui-text-danger); font-weight: 700; }
+.caja-grid .business-cash-empty { display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; color: var(--text-light); font-size: 0.8rem; }
+
 .caja-grid .staff-audit-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1388,6 +1412,8 @@
 }
 
 @media (min-width: 760px) {
+  .caja-grid .business-cash-card { grid-column: 1 / -1; }
+
   .caja-grid .staff-audit-card {
     grid-column: 1 / -1;
   }
@@ -1402,6 +1428,8 @@
 }
 
 @media (max-width: 640px) {
+  .caja-grid .business-cash-breakdown, .caja-grid .business-cash-components { grid-template-columns: 1fr; }
+
   .caja-grid .staff-audit-filters,
   .caja-grid .staff-audit-grid {
     grid-template-columns: 1fr;
