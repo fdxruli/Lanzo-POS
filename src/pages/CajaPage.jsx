@@ -15,6 +15,7 @@ import * as googleDriveService from '../services/googleDriveService';
 import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
+import { canShowBusinessCashSummary } from '../services/cash/businessCashSummary';
 
 // Componentes de secciones
 import {
@@ -23,6 +24,7 @@ import {
   CajaMovementsList,
   CajaHistoryList,
   CajaStaffAuditPanel,
+  CajaBusinessCashSummary,
   CajaOpeningPanel
 } from '../components/caja/sections';
 
@@ -143,6 +145,12 @@ export default function CajaPage() {
 
   const operationDisabled = isBackupLoading || isCloudCashReadOnly;
   const showAdminAuditPanel = Boolean(isCloudCash && !cashActor?.isStaff && listCashSessionsForAudit);
+  const showBusinessCashSummary = canShowBusinessCashSummary({
+    isCloudCash,
+    isReadOnly: isCloudCashReadOnly,
+    cashActor,
+    adminOpenSessions: adminCashSessions
+  });
 
   // ============================================================
   // KEYBOARD SHORTCUTS
@@ -464,6 +472,9 @@ export default function CajaPage() {
           isReadOnly={isCloudCashReadOnly}
         />
         <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+        {showBusinessCashSummary && (
+          <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} />
+        )}
         {showAdminAuditPanel && (
           <CajaStaffAuditPanel
             adminCashSessions={adminCashSessions}
@@ -509,6 +520,10 @@ export default function CajaPage() {
         onResumen={handleVerResumen}
         onImprimir={() => window.print()}
       />
+
+      {showBusinessCashSummary && (
+        <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} />
+      )}
 
       {/* 2. TARJETA DE ACCIONES */}
       <CajaActionsCard
