@@ -1,5 +1,6 @@
 import { History, ShieldAlert } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { getOpeningDeviceLabel } from '../../../services/cash/cashDeviceLabel';
 
 const formatDate = (value) => (value ? new Date(value).toLocaleString() : 'Fecha no disponible');
 
@@ -21,7 +22,7 @@ export default function CajaLegacyCashTransition({ sessions = [], isReadOnly = f
           <article key={session.id} className="caja-history-item">
             <div>
               <strong>{session.responsible_name || 'Administrador'} · ${Money.toNumber(session.expected_cash_total || 0).toFixed(2)}</strong>
-              <small>Abierta: {formatDate(session.opened_at)} · Dispositivo original: {session.opened_by_device_id || session.device_id || 'No disponible'}</small>
+              <small>Abierta: {formatDate(session.opened_at)} · Dispositivo original: {getOpeningDeviceLabel(session)}</small>
             </div>
             <div className="ui-section__actions">
               <button type="button" className="ui-button ui-button--secondary btn btn-secondary" onClick={() => onReview?.(session)}>

@@ -16,6 +16,7 @@ import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import { canShowBusinessCashSummary } from '../services/cash/businessCashSummary';
+import { buildLegacyCashAdoptionConfirmation } from '../services/cash/cashDeviceLabel';
 
 // Componentes de secciones
 import {
@@ -162,7 +163,7 @@ export default function CajaPage() {
   const handleAdoptLegacyCashSession = async (session) => {
     if (!session || isCloudCashReadOnly) return;
     const confirmed = await showConfirmModal(
-      `Estás vinculando esta caja a tu identidad administrativa actual.\n\nCaja: $${Money.toNumber(session.expected_cash_total || 0).toFixed(2)}\nAbierta: ${new Date(session.opened_at).toLocaleString()}\nDispositivo original: ${session.opened_by_device_id || session.device_id || 'No disponible'}\n\nEsto NO combinará otras cajas abiertas.`,
+      buildLegacyCashAdoptionConfirmation(session),
       { title: 'Continuar caja anterior', confirmButtonText: 'Continuar esta caja', cancelButtonText: 'Cancelar' }
     );
     if (!confirmed) return;

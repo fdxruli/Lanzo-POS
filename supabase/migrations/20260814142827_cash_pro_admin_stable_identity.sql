@@ -155,9 +155,15 @@ begin
   if coalesce(v_context->>'device_role','staff') <> 'staff' then
     select coalesce(jsonb_agg(private.pos_cash_session_to_jsonb(s) order by s.opened_at desc), '[]'::jsonb) into v_admin_open_sessions
       from public.pos_cash_sessions s where s.license_id=v_license_id and s.status='open' and s.deleted_at is null;
-    select coalesce(jsonb_agg(private.pos_cash_session_to_jsonb(s) order by s.opened_at desc), '[]'::jsonb) into v_legacy
-      from public.pos_cash_sessions s where s.license_id=v_license_id and s.device_role='admin' and s.admin_user_id is null
-        and s.actor_key like 'admin_device:%' and s.status='open' and s.deleted_at is null;
+    select coalesce(jsonb_agg(private.pos_cash_session_to_jsonb(s) || jsonb_strip_nulls(jsonb_build_object(
+      'opened_by_device_name', opening_device.device_name
+    )) order by s.opened_at desc), '[]'::jsonb) into v_legacy
+      from public.pos_cash_sessions s
+      left join public.license_devices opening_device
+        on opening_device.id = coalesce(s.opened_by_device_id, s.device_id)
+       and opening_device.license_id = s.license_id
+     where s.license_id=v_license_id and s.device_role='admin' and s.admin_user_id is null
+       and s.actor_key like 'admin_device:%' and s.status='open' and s.deleted_at is null;
   end if;
   return jsonb_build_object('success',true,'cash_session',case when v_session.id is null then null else private.pos_cash_session_to_jsonb(v_session) end,
     'movements',v_movements,'admin_open_sessions',v_admin_open_sessions,'legacy_admin_cash_sessions',v_legacy,
