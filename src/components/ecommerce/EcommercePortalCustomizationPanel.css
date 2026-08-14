@@ -43,3 +43,14 @@
   .ecom-template-options, .ecom-image-actions { grid-template-columns: 1fr; }
   .ecom-template-option:last-child { grid-column: auto; }
 }
+
+@media (min-width: 64rem) {
+  .ecom-customization__grid { width: 100%; }
+  .ecom-customization__grid > div { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(20rem, .9fr); gap: 0 2rem; }
+  .ecom-customization fieldset { min-width: 0; }
+  .ecom-customization__section--template, .ecom-customization__section--images { grid-column: 1 / -1; }
+  .ecom-customization__section--colors { grid-column: 1; }
+  .ecom-customization__section--corners, .ecom-customization__section--typography { grid-column: 2; }
+  .ecom-customization__section--typography { border-top: 0 !important; padding-top: 0 !important; }
+  .ecom-template-option { min-height: 9rem; }
+}

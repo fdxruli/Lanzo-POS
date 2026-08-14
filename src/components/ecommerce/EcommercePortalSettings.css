@@ -467,3 +467,17 @@
   .ecom-builder-actions, .ecom-builder-version-list article { align-items: stretch; flex-direction: column; }
   .ecom-builder-actions > span { margin-right: 0; }
 }
+
+@media (min-width: 64rem) {
+  .ecom-builder-shell { width: min(100%, 78rem); margin-inline: auto; }
+  .ecom-builder-shell > .ecom-customization, .ecom-builder-main { width: 100%; }
+  .ecom-builder-main { gap: 1.5rem; }
+  .ecom-builder-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; row-gap: 0; }
+  .ecom-builder-controls > .ecom-admin-card-heading, .ecom-builder-section-control--density, .ecom-builder-section-control--footer, .ecom-builder-controls > .btn { grid-column: 1 / -1; }
+  .ecom-builder-section-control--header { grid-column: 1; }
+  .ecom-builder-section-control--catalog { grid-column: 2; }
+  .ecom-builder-section-control--header, .ecom-builder-section-control--catalog { align-content: start; min-height: 100%; }
+  .ecom-builder-section-control--catalog { border-top: 1px solid var(--border-color) !important; padding-top: 1rem !important; }
+  .ecom-builder-controls > .btn { justify-self: start; }
+  .ecom-builder-actions, .ecom-builder-history { width: min(100%, 78rem); margin-inline: auto; }
+}
