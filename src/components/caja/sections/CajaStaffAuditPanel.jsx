@@ -121,7 +121,8 @@ const matchesStaffFilter = (session, staffFilter) => {
 const CajaStaffAuditPanel = ({
   adminCashSessions = [],
   listCashSessionsForAudit,
-  isReadOnly = false
+  isReadOnly = false,
+  onReviewSession = null
 }) => {
   const [sessions, setSessions] = useState(adminCashSessions);
   const [status, setStatus] = useState('open');
@@ -296,13 +297,18 @@ const CajaStaffAuditPanel = ({
                   <span><small>Diferencia</small><strong className={difference.eq(0) ? '' : difference.gt(0) ? 'amount positive' : 'amount negative'}>{formatMoney(difference)}</strong></span>
                   <span><small>Movimientos</small><strong>{getMovementCount(session)}</strong></span>
                 </div>
+                {onReviewSession && (
+                  <button type="button" className="business-cash-review" onClick={() => onReviewSession(session)} disabled={isReadOnly}>
+                    {isReadOnly ? 'Sin conexion' : 'Revisar'}
+                  </button>
+                )}
               </article>
             );
           })
         )}
       </div>
 
-      <p className="staff-audit-meta">Detalle completo de movimientos pendiente de integrarse cuando el hook exponga esa consulta.</p>
+      <p className="staff-audit-meta">Selecciona Revisar para cargar movimientos y eventos de auditoria de una sola caja.</p>
     </section>
   );
 };

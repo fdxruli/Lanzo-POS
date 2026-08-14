@@ -368,6 +368,80 @@ export const cashRepository = {
     };
   },
 
+  async getCashSessionDetailForAudit({ cashSessionId, force = false }) {
+    const mode = getCashMode();
+    if (!mode.cloudEnabled || !mode.online) {
+      return fail(CASH_CLOUD_OFFLINE_MESSAGE, 'CLOUD_CASH_OFFLINE');
+    }
+    if (!canAuditCashSessions()) {
+      return fail('No tienes permiso para revisar esta caja.', 'CASH_AUDIT_PERMISSION_DENIED');
+    }
+    const response = await cashCloudRepository.getCashSessionDetailForAudit({
+      licenseKey: mode.licenseKey,
+      cashSessionId,
+      force
+    });
+    if (response?.success === false) {
+      return fail(response.message || 'No se pudo cargar el detalle de caja.', response.code || 'CASH_AUDIT_DETAIL_FAILED', { response });
+    }
+    const applied = await applyCloudResponse(response);
+    return {
+      success: true,
+      cashSession: applied.cashSession || response.cash_session || null,
+      movements: response.movements || [],
+      auditEvents: response.audit_events || [],
+      response
+    };
+  },
+
+  async adminCloseCashSession({
+    cashSessionId,
+    closingMode,
+    countedAmount = null,
+    nextShiftFund = null,
+    reasonCode,
+    comments = '',
+    expectedVersion,
+    idempotencyKey = null
+  }) {
+    const mode = getCashMode();
+    if (!mode.cloudEnabled) {
+      return fail('El cierre administrativo solo esta disponible para Caja PRO cloud.', 'ADMIN_CASH_CLOSE_UNAVAILABLE');
+    }
+    if (!mode.online) {
+      showOfflineCashMessage();
+      return fail(CASH_CLOUD_OFFLINE_MESSAGE, 'CLOUD_CASH_OFFLINE');
+    }
+    if (mode.actor.isStaff) {
+      return fail('Solo un administrador con sesion valida puede cerrar administrativamente una caja.', 'ADMIN_SESSION_REQUIRED');
+    }
+
+    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({
+      entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
+      operation: SYNC_OPERATIONS.CLOSE,
+      entityId: cashSessionId,
+      prefix: 'cash_admin_close'
+    });
+    const response = await cashCloudRepository.adminCloseCashSession({
+      licenseKey: mode.licenseKey,
+      cashSessionId,
+      closingMode,
+      countedAmount: countedAmount === null ? null : normalizeAmount(countedAmount),
+      nextShiftFund: nextShiftFund === null ? null : normalizeAmount(nextShiftFund),
+      reasonCode,
+      comments,
+      expectedVersion,
+      idempotencyKey: resolvedIdempotencyKey
+    });
+    if (response?.success === false) {
+      return fail(response.message || 'No se pudo cerrar administrativamente la caja.', response.code || 'ADMIN_CASH_CLOSE_FAILED', { response });
+    }
+    const applied = await applyCloudResponse(response);
+    invalidateCloudCacheAfterCashMutation(mode.licenseKey);
+    posSyncOrchestrator.pullIncremental('cash_admin_close').catch(() => {});
+    return { success: true, cashSession: applied.cashSession, response };
+  },
+
   async pullCashSnapshot({ scope = 'mine', includeClosed = true, limit = 100, offset = 0, force = false } = {}) {
     const mode = getCashMode();
 

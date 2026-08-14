@@ -1285,6 +1285,24 @@
 .caja-grid .business-cash-age--warning { color: var(--ui-text-warning); }
 .caja-grid .business-cash-age--important, .caja-grid .business-cash-age--review { color: var(--ui-text-danger); font-weight: 700; }
 .caja-grid .business-cash-empty { display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; color: var(--text-light); font-size: 0.8rem; }
+.caja-grid .business-cash-session { grid-template-columns: minmax(0, 1fr) auto auto; }
+.caja-grid .business-cash-review { min-height: 36px; padding: 0.45rem 0.7rem; border: 1px solid var(--primary-color); border-radius: 7px; color: var(--primary-color); background: transparent; font-weight: 700; cursor: pointer; }
+.caja-grid .business-cash-review:disabled { opacity: .55; cursor: not-allowed; }
+.caja-modal--admin-audit { z-index: 1200; overflow-y: auto; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); }
+.admin-cash-audit-body { display: grid; gap: .9rem; }
+.admin-cash-audit-loading { display: inline-flex; gap: .5rem; align-items: center; }
+.admin-cash-audit-summary, .admin-cash-audit-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.admin-cash-audit-summary span, .admin-cash-audit-totals span { display: grid; gap: .2rem; padding: .65rem; border: 1px solid var(--border-color); border-radius: 8px; }
+.admin-cash-audit-summary small, .admin-cash-audit-totals small { color: var(--text-light); font-size: .68rem; text-transform: uppercase; font-weight: 700; }
+.admin-cash-audit-choice, .admin-cash-audit-form, .admin-cash-audit-confirm { display: grid; gap: .75rem; }
+.admin-cash-audit-choice button { display: flex; align-items: center; gap: .5rem; min-height: 48px; padding: .75rem; background: var(--card-background-color); border: 1px solid var(--primary-color); border-radius: 8px; color: var(--text-dark); font-weight: 700; text-align: left; cursor: pointer; }
+.admin-cash-audit-form label { display: grid; gap: .35rem; color: var(--text-dark); font-weight: 700; }
+.admin-cash-audit-form label span { color: var(--error-color); font-size: .75rem; }
+.admin-cash-audit-form input, .admin-cash-audit-form select, .admin-cash-audit-form textarea { width: 100%; padding: .65rem; border: 1px solid var(--border-color); border-radius: 7px; background: var(--card-background-color); color: var(--text-dark); }
+.admin-cash-audit-difference { margin: 0; padding: .7rem; border-radius: 8px; background: var(--light-background); }
+.admin-cash-audit-details summary { cursor: pointer; color: var(--primary-color); font-weight: 700; }
+.admin-cash-audit-stream { max-height: 150px; overflow: auto; margin-top: .5rem; border-left: 2px solid var(--border-color); padding-left: .65rem; }
+.admin-cash-audit-stream p { margin: .35rem 0; font-size: .82rem; overflow-wrap: anywhere; }
 
 .caja-grid .staff-audit-filters {
   display: grid;
@@ -1438,6 +1456,9 @@
   .caja-grid .staff-audit-item-header {
     flex-direction: column;
   }
+  .admin-cash-audit-summary, .admin-cash-audit-totals { grid-template-columns: 1fr; }
+  .caja-grid .business-cash-session { grid-template-columns: 1fr auto; }
+  .caja-grid .business-cash-review { grid-column: 1 / -1; }
 }
 
 /* Dark mode */
