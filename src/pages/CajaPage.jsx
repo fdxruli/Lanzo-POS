@@ -25,6 +25,7 @@ import {
   CajaHistoryList,
   CajaStaffAuditPanel,
   CajaBusinessCashSummary,
+  CajaAdminCashAuditModal,
   CajaOpeningPanel
 } from '../components/caja/sections';
 
@@ -72,6 +73,8 @@ export default function CajaPage() {
     cashActor,
     adminCashSessions,
     listCashSessionsForAudit,
+    getCashSessionDetailForAudit,
+    cerrarCajaAdministrativamente,
     abrirCaja,
     ajustarMontoInicial,
     realizarAuditoriaYCerrar,
@@ -107,6 +110,7 @@ export default function CajaPage() {
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [resumenData, setResumenData] = useState(null);
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [reviewCashSessionId, setReviewCashSessionId] = useState(null);
 
   // Hooks de modales para cada modal
   const editInitialModal = useModal();
@@ -473,15 +477,23 @@ export default function CajaPage() {
         />
         <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
         {showBusinessCashSummary && (
-          <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} />
+          <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
         )}
         {showAdminAuditPanel && (
           <CajaStaffAuditPanel
             adminCashSessions={adminCashSessions}
             listCashSessionsForAudit={listCashSessionsForAudit}
             isReadOnly={isCloudCashReadOnly}
+            onReviewSession={(session) => setReviewCashSessionId(session.id)}
           />
         )}
+        <CajaAdminCashAuditModal
+          cashSessionId={reviewCashSessionId}
+          onClose={() => setReviewCashSessionId(null)}
+          getCashSessionDetailForAudit={getCashSessionDetailForAudit}
+          cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
+          isReadOnly={isCloudCashReadOnly}
+        />
       </section>
       </main>
     );
@@ -522,7 +534,7 @@ export default function CajaPage() {
       />
 
       {showBusinessCashSummary && (
-        <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} />
+        <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
       )}
 
       {/* 2. TARJETA DE ACCIONES */}
@@ -549,6 +561,7 @@ export default function CajaPage() {
           adminCashSessions={adminCashSessions}
           listCashSessionsForAudit={listCashSessionsForAudit}
           isReadOnly={isCloudCashReadOnly}
+          onReviewSession={(session) => setReviewCashSessionId(session.id)}
         />
       )}
 
@@ -590,6 +603,13 @@ export default function CajaPage() {
         caja={cajaActual}
         calcularTeorico={calcularTotalTeorico}
         isProcessing={isBackupLoading}
+      />
+      <CajaAdminCashAuditModal
+        cashSessionId={reviewCashSessionId}
+        onClose={() => setReviewCashSessionId(null)}
+        getCashSessionDetailForAudit={getCashSessionDetailForAudit}
+        cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
+        isReadOnly={isCloudCashReadOnly}
       />
 
       <ResumenEstadisticoModal

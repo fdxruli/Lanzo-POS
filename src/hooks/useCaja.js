@@ -607,6 +607,16 @@ export function useCaja() {
 
   const listCashSessionsForAudit = useCallback((filters = {}) => cashRepository.listCashSessionsForAudit(filters), []);
 
+  const getCashSessionDetailForAudit = useCallback((cashSessionId, options = {}) => (
+    cashRepository.getCashSessionDetailForAudit({ cashSessionId, ...options })
+  ), []);
+
+  const cerrarCajaAdministrativamente = useCallback(async (input = {}) => {
+    const response = await cashRepository.adminCloseCashSession(input);
+    if (response?.success) await sincronizarEstadoCaja();
+    return response;
+  }, [sincronizarEstadoCaja]);
+
   const modeSnapshot = useMemo(() => ({
     cashMode,
     isCloudCash,
@@ -637,6 +647,8 @@ export function useCaja() {
     descargarReporteCaja,
     verificarExcesoLiquidez,
     listCashSessionsForAudit,
+    getCashSessionDetailForAudit,
+    cerrarCajaAdministrativamente,
     ...modeSnapshot,
     CAJA_CONFIG
   };

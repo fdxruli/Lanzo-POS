@@ -23,7 +23,7 @@ const getExpectedCash = (session = {}) => (
   session.expected_cash_total ?? session.total_teorico_cloud ?? 0
 );
 
-const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null }) => {
+const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null, onReviewSession = null, isReadOnly = false }) => {
   const summary = buildBusinessCashSummary(adminOpenSessions, cajaActual);
 
   return (
@@ -78,6 +78,11 @@ const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null }) 
                   <Clock3 size={13} aria-hidden="true" />{age.label}
                 </span>
               </div>
+              {onReviewSession && (
+                <button type="button" className="business-cash-review" onClick={() => onReviewSession(session)} disabled={isReadOnly}>
+                  {isReadOnly ? 'Sin conexion' : 'Revisar'}
+                </button>
+              )}
             </article>
           );
         })}

@@ -155,6 +155,34 @@ export const cashCloudRepository = {
     return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
+  async adminCloseCashSession({
+    licenseKey,
+    cashSessionId,
+    closingMode,
+    countedAmount = null,
+    nextShiftFund = null,
+    reasonCode,
+    comments,
+    expectedVersion,
+    idempotencyKey
+  }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_admin_close_cash_session', {
+      ...baseArgs,
+      p_cash_session_id: cashSessionId,
+      p_closing_mode: closingMode,
+      p_counted_amount: countedAmount,
+      p_next_shift_fund: nextShiftFund,
+      p_reason_code: reasonCode,
+      p_comments: comments,
+      p_expected_version: expectedVersion,
+      p_idempotency_key: idempotencyKey
+    });
+    if (error) throw error;
+    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+  },
+
   async pullCashSnapshot({ licenseKey, scope = 'mine', limit = 100, offset = 0, includeClosed = true, force = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
