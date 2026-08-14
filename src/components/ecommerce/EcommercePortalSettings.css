@@ -405,21 +405,25 @@
 }
 
 .ecom-operations-card { display: grid; align-content: start; gap: 1rem; }
-.ecom-availability-summary { display: grid; align-content: center; min-height: 4.5rem; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border-color); border-radius: .8rem; color: var(--text-color, var(--text-dark)); background: var(--light-background, var(--ui-bg-muted)); }
+.ecom-availability-summary { display: grid; align-content: center; min-height: 4.5rem; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--ui-border-color, var(--border-color)); border-radius: .8rem; color: var(--ui-text, var(--text-color, var(--text-dark))); background: var(--ui-bg-muted, var(--light-background)); }
 .ecom-availability-summary strong { font-size: 1rem; }
-.ecom-availability-summary span { color: var(--text-light, var(--color-text-secondary, #5f6873)); }
+.ecom-availability-summary span { color: var(--ui-text-muted, var(--text-light)); }
 .ecom-operation-toggle, .ecom-week-day { display: flex; align-items: center; gap: .7rem; }
 .ecom-operation-toggle span { display: grid; gap: .15rem; }
-.ecom-operation-toggle small, .ecom-exceptions-heading small { color: var(--color-text-secondary, #5f6873); }
+.ecom-operation-toggle small, .ecom-exceptions-heading small { color: var(--ui-text-muted, var(--text-light)); }
 .ecom-week-grid, .ecom-exception-list { display: grid; gap: .55rem; }
 .ecom-week-grid { gap: .4rem; }
-.ecom-week-row { display: grid; grid-template-columns: minmax(8.5rem, 1.25fr) 4.5rem minmax(5rem, .8fr) minmax(5rem, .8fr); min-height: 2.85rem; gap: .5rem; align-items: center; padding: .35rem .45rem; border: 1px solid var(--border-color); border-radius: .65rem; background: var(--light-background); }
+.ecom-week-row { display: grid; grid-template-columns: minmax(13rem, 1.25fr) minmax(10rem, 1fr); min-height: 2.85rem; gap: .5rem; align-items: center; padding: .35rem .45rem; border: 1px solid var(--ui-border-color, var(--border-color)); border-radius: .65rem; background: var(--ui-bg-muted, var(--light-background)); }
+.ecom-week-meta { display: grid; grid-template-columns: minmax(8.5rem, 1fr) 4.5rem; gap: .5rem; align-items: center; min-width: 0; }
 .ecom-week-day { min-width: 0; }
 .ecom-week-day strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ecom-week-row > span { color: var(--text-light); font-size: .82rem; font-weight: 700; }
-.ecom-week-row input[type="time"], .ecom-exception-row input, .ecom-exception-row select { min-width: 0; padding: .55rem; border: 1px solid var(--color-border, #d9dee5); border-radius: .55rem; }
-.ecom-week-row input[type="time"] { width: 100%; min-height: 2.2rem; }
-.ecom-inline-error { color: var(--color-danger, #b42318); margin: 0; }
+.ecom-week-status { color: var(--ui-text-muted, var(--text-light)); font-size: .82rem; font-weight: 700; }
+.ecom-week-times { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; min-width: 0; }
+.ecom-week-time { display: grid; min-width: 0; }
+.ecom-week-time > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ecom-week-row input[type="time"], .ecom-exception-row input, .ecom-exception-row select { box-sizing: border-box; width: 100%; min-width: 0; padding: .55rem; border: 1px solid var(--ui-border-color, var(--border-color)); border-radius: .55rem; }
+.ecom-week-row input[type="time"] { min-height: 2.2rem; }
+.ecom-inline-error { color: var(--ui-text-danger, var(--error-color)); margin: 0; }
 .ecom-exceptions-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .ecom-exceptions-heading > div { display: grid; }
 .ecom-exception-row { display: grid; grid-template-columns: 145px 90px 105px 105px minmax(130px, 1fr) 40px; gap: .5rem; align-items: center; }
@@ -468,8 +472,13 @@
   .ecom-builder-header-actions .btn { justify-content: center; min-width: 0; }
   .ecom-builder-controls fieldset { padding-block: .9rem; }
   .ecom-builder-segmented, .ecom-builder-visibility-list { width: 100%; }
-  .ecom-week-row { grid-template-columns: 1fr 70px; }
-  .ecom-week-row input[type="time"] { width: 100%; }
+  .ecom-week-row { grid-template-columns: 1fr; gap: .75rem; padding: .8rem; }
+  .ecom-week-meta { grid-template-columns: minmax(0, 1fr) auto; }
+  .ecom-week-status { padding: .25rem .5rem; border-radius: 999px; background: var(--ui-bg-surface, var(--card-background-color)); font-size: .8rem; font-weight: 700; }
+  .ecom-week-times { gap: .65rem; }
+  .ecom-week-time { gap: .35rem; }
+  .ecom-week-time > span { position: static; width: auto; height: auto; overflow: visible; clip: auto; color: var(--ui-text-muted, var(--text-light)); font-size: .78rem; font-weight: 700; white-space: normal; }
+  .ecom-week-row input[type="time"] { min-height: 2.75rem; }
   .ecom-exception-row { grid-template-columns: 1fr; }
   .ecom-builder-actions, .ecom-builder-version-list article { align-items: stretch; flex-direction: column; }
   .ecom-builder-actions > span { margin-right: 0; }
