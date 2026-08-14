@@ -7,3 +7,4 @@ export { default as CajaStaffAuditPanel } from './CajaStaffAuditPanel.jsx';
 export { default as CajaBusinessCashSummary } from './CajaBusinessCashSummary.jsx';
 export { default as CajaAdminCashAuditModal } from './CajaAdminCashAuditModal.jsx';
 export { default as CajaOpeningPanel } from './CajaOpeningPanel.jsx';
+export { default as CajaLegacyCashTransition } from './CajaLegacyCashTransition.jsx';

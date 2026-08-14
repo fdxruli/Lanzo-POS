@@ -142,6 +142,7 @@ export const cashRepository = {
         totals: projection.totals,
         cashSessions,
         adminOpenSessions: response.admin_open_sessions || [],
+        legacyAdminCashSessions: response.legacy_admin_cash_sessions || [],
         actor: {
           ...mode.actor,
           actorKey: response.actor_key || mode.actor.actorKey,
@@ -439,6 +440,40 @@ export const cashRepository = {
     const applied = await applyCloudResponse(response);
     invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_admin_close').catch(() => {});
+    return { success: true, cashSession: applied.cashSession, response };
+  },
+
+  async adoptLegacyCashSession({ cashSessionId, expectedVersion = null }) {
+    const mode = getCashMode();
+    if (!mode.cloudEnabled) {
+      return fail('La transición de cajas anteriores solo está disponible en Caja PRO cloud.', 'LEGACY_CASH_ADOPTION_UNAVAILABLE');
+    }
+    if (!mode.online) {
+      showOfflineCashMessage();
+      return fail(CASH_CLOUD_OFFLINE_MESSAGE, 'CLOUD_CASH_OFFLINE');
+    }
+    if (mode.actor.isStaff) {
+      return fail('Solo un administrador con sesión válida puede continuar una caja anterior.', 'ADMIN_SESSION_REQUIRED');
+    }
+
+    const idempotencyKey = generateIdempotencyKey({
+      entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
+      operation: 'identity_adopt',
+      entityId: cashSessionId,
+      prefix: 'cash_identity_adopt'
+    });
+    const response = await cashCloudRepository.adoptLegacyCashSession({
+      licenseKey: mode.licenseKey,
+      cashSessionId,
+      expectedVersion,
+      idempotencyKey
+    });
+    if (response?.success === false) {
+      return fail(response.message || 'No se pudo continuar la caja anterior.', response.code || 'LEGACY_CASH_ADOPTION_FAILED', { response });
+    }
+    const applied = await applyCloudResponse(response);
+    invalidateCloudCacheAfterCashMutation(mode.licenseKey);
+    posSyncOrchestrator.pullIncremental('cash_identity_adopt').catch(() => {});
     return { success: true, cashSession: applied.cashSession, response };
   },
 

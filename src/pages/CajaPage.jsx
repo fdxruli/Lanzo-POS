@@ -4,7 +4,7 @@ import { useCaja } from '../hooks/useCaja';
 import { useModal } from '../hooks/useModal';
 import { useRecentActivity } from '../hooks/useRecentActivity';
 import AuditModal from '../components/common/AuditModal';
-import { showMessageModal } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import {
   downloadBackupSmart,
   BACKUP_ABORT_REASON,
@@ -16,6 +16,7 @@ import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import { canShowBusinessCashSummary } from '../services/cash/businessCashSummary';
+import { buildLegacyCashAdoptionConfirmation } from '../services/cash/cashDeviceLabel';
 
 // Componentes de secciones
 import {
@@ -26,7 +27,8 @@ import {
   CajaStaffAuditPanel,
   CajaBusinessCashSummary,
   CajaAdminCashAuditModal,
-  CajaOpeningPanel
+  CajaOpeningPanel,
+  CajaLegacyCashTransition
 } from '../components/caja/sections';
 
 // Componentes de modales
@@ -72,9 +74,11 @@ export default function CajaPage() {
     isCloudCashReadOnly,
     cashActor,
     adminCashSessions,
+    legacyAdminCashSessions,
     listCashSessionsForAudit,
     getCashSessionDetailForAudit,
     cerrarCajaAdministrativamente,
+    adoptarCajaLegacy,
     abrirCaja,
     ajustarMontoInicial,
     realizarAuditoriaYCerrar,
@@ -155,6 +159,18 @@ export default function CajaPage() {
     cashActor,
     adminOpenSessions: adminCashSessions
   });
+
+  const handleAdoptLegacyCashSession = async (session) => {
+    if (!session || isCloudCashReadOnly) return;
+    const confirmed = await showConfirmModal(
+      buildLegacyCashAdoptionConfirmation(session),
+      { title: 'Continuar caja anterior', confirmButtonText: 'Continuar esta caja', cancelButtonText: 'Cancelar' }
+    );
+    if (!confirmed) return;
+    const result = await adoptarCajaLegacy(session.id, session.server_version || null);
+    if (result?.success) showMessageModal('La caja fue vinculada a tu identidad. Las demás cajas anteriores siguen pendientes de revisión.', null, { type: 'success' });
+    else showMessageModal(result?.message || 'No se pudo continuar la caja anterior.', null, { type: 'error' });
+  };
 
   // ============================================================
   // KEYBOARD SHORTCUTS
@@ -476,6 +492,7 @@ export default function CajaPage() {
           isReadOnly={isCloudCashReadOnly}
         />
         <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+        <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
         {showBusinessCashSummary && (
           <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
         )}
@@ -536,6 +553,8 @@ export default function CajaPage() {
       {showBusinessCashSummary && (
         <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
       )}
+
+      <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
 
       {/* 2. TARJETA DE ACCIONES */}
       <CajaActionsCard

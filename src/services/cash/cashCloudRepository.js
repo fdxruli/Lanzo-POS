@@ -183,6 +183,19 @@ export const cashCloudRepository = {
     return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
+  async adoptLegacyCashSession({ licenseKey, cashSessionId, expectedVersion = null, idempotencyKey }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_admin_adopt_legacy_cash_session', {
+      ...baseArgs,
+      p_cash_session_id: cashSessionId,
+      p_expected_version: expectedVersion,
+      p_idempotency_key: idempotencyKey
+    });
+    if (error) throw error;
+    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+  },
+
   async pullCashSnapshot({ licenseKey, scope = 'mine', limit = 100, offset = 0, includeClosed = true, force = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
