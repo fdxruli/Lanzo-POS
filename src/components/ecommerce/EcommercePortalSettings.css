@@ -443,6 +443,7 @@
 .ecom-builder-status .is-warning, .ecom-builder-status strong { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
 .ecom-builder-actions { justify-content: flex-end; padding-top: 1rem; border-top: 1px solid var(--border-color); }
 .ecom-builder-actions > span { margin-right: auto; }
+.ecom-builder-actions .btn { min-height: 2.75rem; }
 .ecom-builder-version-list { display: grid; gap: .65rem; }
 .ecom-builder-version-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border: 1px solid var(--border-color); border-radius: 10px; }
 .ecom-builder-version-list article > div { display: grid; gap: .2rem; }
@@ -473,11 +474,17 @@
   .ecom-builder-shell > .ecom-customization, .ecom-builder-main { width: 100%; }
   .ecom-builder-main { gap: 1.5rem; }
   .ecom-builder-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; row-gap: 0; }
-  .ecom-builder-controls > .ecom-admin-card-heading, .ecom-builder-section-control--density, .ecom-builder-section-control--footer, .ecom-builder-controls > .btn { grid-column: 1 / -1; }
+  .ecom-builder-controls > .ecom-admin-card-heading, .ecom-builder-section-control--density, .ecom-builder-controls > .btn { grid-column: 1 / -1; }
   .ecom-builder-section-control--header { grid-column: 1; }
   .ecom-builder-section-control--catalog { grid-column: 2; }
   .ecom-builder-section-control--header, .ecom-builder-section-control--catalog { align-content: start; min-height: 100%; }
   .ecom-builder-section-control--catalog { border-top: 1px solid var(--border-color) !important; padding-top: 1rem !important; }
-  .ecom-builder-controls > .btn { justify-self: start; }
+  .ecom-builder-section-control--footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 1rem; }
+  .ecom-builder-section-control--footer .ecom-builder-control-subgroup { width: min(100%, 28rem); }
+  .ecom-builder-section-control--footer .ecom-admin-help { margin: 0; }
+  .ecom-builder-controls > .btn { justify-self: end; }
   .ecom-builder-actions, .ecom-builder-history { width: min(100%, 78rem); margin-inline: auto; }
+  .ecom-builder-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .6rem; }
+  .ecom-builder-actions > span { margin-right: 0; }
+  .ecom-builder-actions .btn { justify-content: center; min-width: 9.75rem; }
 }
