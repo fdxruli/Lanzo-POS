@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../services/ecommerce/ecommerceSiteBuilderService', () => mocks);
 vi.mock('react-hot-toast', () => ({ toast: { error: mocks.error, success: mocks.success } }));
 vi.mock('../site/EcommerceSiteRenderer', () => ({ default: ({ siteDocument }) => <output data-testid="preview">{JSON.stringify(siteDocument)}</output> }));
+vi.mock('../site-builder/EcommerceSiteBuilderPreviewModal', () => ({
+  default: ({ document, portal, onClose }) => <section role="dialog" aria-label="Vista previa del portal"><button type="button" onClick={() => undefined}>Móvil</button><button type="button" onClick={onClose}>Cerrar vista previa</button><output data-testid="preview">{JSON.stringify({ document, portal })}</output></section>
+}));
 
 const document = createDefaultEcommerceSiteDocument();
 const builder = (overrides = {}) => ({
@@ -23,6 +26,10 @@ const builder = (overrides = {}) => ({
 });
 const portal = { id: 'portal-1', name: 'Tienda', slug: 'tienda', templateCode: 'classic', pickupEnabled: true, deliveryEnabled: false };
 const densityChoice = (label) => screen.getByRole('button', { name: label, exact: true });
+const openPreview = () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Vista previa' }));
+  return screen.getByTestId('preview');
+};
 const deferred = () => {
   let resolve;
   const promise = new Promise((next) => { resolve = next; });
@@ -49,7 +56,9 @@ describe('EcommerceSiteBuilderFoundation', () => {
     await screen.findByText('Restaurar v1');
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
     expect(mocks.listSiteVersions).toHaveBeenCalledWith({ limit: 20, offset: 0 });
-    expect(screen.getByTestId('preview')).toHaveTextContent('header-main');
+    expect(screen.queryByTestId('preview')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Vista previa' })).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(openPreview()).toHaveTextContent('header-main');
   });
 
   it('updates controls and preview locally, separates indicators, and reverts cleanly without saving', async () => {
@@ -58,7 +67,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     await screen.findByText('Borrador sin publicar');
     fireEvent.click(densityChoice('Compacta'));
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
-    expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
+    expect(openPreview()).toHaveTextContent('"density":"compact"');
     expect(mocks.saveSiteDraft).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('Cómoda'));
     expect(screen.queryByText('Cambios sin guardar')).toBeNull();
@@ -76,6 +85,8 @@ describe('EcommerceSiteBuilderFoundation', () => {
 
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
 
+    await screen.findByRole('button', { name: 'Vista previa' });
+    openPreview();
     await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('"templateCode":"showcase"'));
     expect(screen.getByTestId('preview')).toHaveTextContent('"logoUrl":"https://cdn.example/logo.png"');
     expect(screen.getByText('Guardar borrador')).toBeDisabled();
@@ -100,7 +111,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     fireEvent.click(densityChoice('Compacta'));
     fireEvent.click(screen.getByText('Guardar borrador'));
     await screen.findByText('El borrador cambió en otro dispositivo.');
-    expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
+    expect(openPreview()).toHaveTextContent('"density":"compact"');
     fireEvent.click(screen.getByText('Conservar mis cambios'));
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
   });
@@ -137,6 +148,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     fireEvent.click(screen.getByText('Restaurar v1'));
     await waitFor(() => expect(window.confirm).toHaveBeenCalled());
     expect(mocks.restoreSiteVersion).toHaveBeenCalledWith('version-1');
+    openPreview();
     await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"compact"'));
     expect(mocks.publishSiteDraft).not.toHaveBeenCalled();
   });
@@ -164,7 +176,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     const remove = vi.spyOn(window, 'removeEventListener');
     render(<EcommerceSiteBuilderFoundation isPro portal={portal} />);
     await screen.findByText('Ver más');
-    const before = screen.getByTestId('preview').textContent;
+    const before = openPreview().textContent;
     fireEvent.click(screen.getByText('Móvil'));
     expect(screen.getByTestId('preview').textContent).toBe(before);
     fireEvent.click(densityChoice('Compacta'));
@@ -185,7 +197,7 @@ describe('EcommerceSiteBuilderFoundation', () => {
     rerender(<EcommerceSiteBuilderFoundation isPro portal={{ ...portal, templateCode: 'showcase', logoUrl: 'logo-new.png', theme: { primaryColor: '#112233' } }} />);
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Cambios sin guardar')).toBeTruthy();
-    expect(screen.getByTestId('preview')).toHaveTextContent('"density":"compact"');
+    expect(openPreview()).toHaveTextContent('"density":"compact"');
     fireEvent.click(screen.getByText('Restablecer diseño base'));
     expect(screen.getByTestId('preview')).toHaveTextContent('"layout":"default"');
     expect(mocks.getSiteBuilderState).toHaveBeenCalledTimes(1);

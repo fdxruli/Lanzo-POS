@@ -1073,38 +1073,40 @@ body.public-store-body {
     left: auto;
     width: 24rem;
   }
+}
 
-  .public-store-header__content {
+@container ecommerce-site (min-width: 42rem) {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__content {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     column-gap: 1.25rem;
     align-items: start;
   }
 
-  .public-store-header__identity {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__identity {
     /* Keep the logo overlapping the cover, while the store name starts below it. */
     margin: 0;
     padding-top: 4.25rem;
   }
 
-  .public-store-header__details,
-  .public-store-header__badges {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__details,
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__badges {
     grid-column: 1 / -1;
   }
 
-  .public-store-header__details {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .public-catalog__tools {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-catalog__tools {
     grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
   }
 
-  .public-catalog__grid {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-catalog__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .public-product-card {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-product-card {
     grid-template-columns: 8.5rem minmax(0, 1fr);
   }
 }
@@ -1112,23 +1114,6 @@ body.public-store-body {
 @media (min-width: 68rem) {
   .public-store-shell {
     padding-bottom: 1.5rem;
-  }
-
-  .public-store-header__details {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .public-catalog__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .public-product-card {
-    grid-template-columns: 1fr;
-  }
-
-  .public-product-card__image {
-    height: 12rem;
-    min-height: 12rem;
   }
 
   .public-store-shell .public-cart-bar {
@@ -1139,52 +1124,74 @@ body.public-store-body {
   }
 }
 
-@media (max-width: 34rem) {
-  .public-store-footer {
+@container ecommerce-site (min-width: 68rem) {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__details {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ecommerce-site-surface .ecommerce-site-renderer .public-catalog__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ecommerce-site-surface .ecommerce-site-renderer .public-product-card {
+    grid-template-columns: 1fr;
+  }
+
+  .ecommerce-site-surface .ecommerce-site-renderer .public-product-card__image {
+    height: 12rem;
+    min-height: 12rem;
+  }
+
+}
+
+@container ecommerce-site (max-width: 34rem) {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-footer {
     max-width: calc(100% - 1rem);
   }
 
-  .public-store-footer__inner {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-footer__inner {
     gap: 0.55rem;
   }
 
-  .public-store-footer__cta {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-footer__cta {
     font-size: 0.72rem;
   }
 
-  .public-store-content__topbar p {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-content__topbar p {
     display: none;
   }
 
-  .public-store-content__topbar {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-content__topbar {
     justify-content: flex-end;
   }
 
-  .public-product-card {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-product-card {
     grid-template-columns: 6.5rem minmax(0, 1fr);
   }
 
-  .public-product-card__footer {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-product-card__footer {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .public-product-card__add {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-product-card__add {
     width: 100%;
   }
 }
 
 @media (max-width: 23rem) {
-  .public-store-header__content,
-  .public-store-content {
-    width: calc(100% - 1rem);
-  }
-
   .public-cart-bar {
     right: 0.5rem;
     left: 0.5rem;
     gap: 0.5rem;
     padding-inline: 0.75rem;
+  }
+}
+
+@container ecommerce-site (max-width: 23rem) {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__content,
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-content {
+    width: calc(100% - 1rem);
   }
 }
 
@@ -1524,18 +1531,18 @@ body.public-store-body {
   color: var(--store-on-primary, #fff);
 }
 
-@media (min-width: 42rem) {
-  .public-store-header__summary {
+@container ecommerce-site (min-width: 42rem) {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .public-store-header__information,
-  .public-store-header__summary,
-  .public-store-header__badges {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__information,
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__summary,
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__badges {
     grid-column: 1 / -1;
   }
 
-  .public-store-header__information .public-store-header__details {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__information .public-store-header__details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1544,7 +1551,7 @@ body.public-store-body {
   }
 }
 
-@media (min-width: 68rem) {
+@container ecommerce-site (min-width: 68rem) {
   .ecommerce-site-surface .ecommerce-site-renderer .public-catalog.public-catalog--view-grid .public-catalog__grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -1554,13 +1561,13 @@ body.public-store-body {
   }
 }
 
-@media (max-width: 28rem) {
-  .public-catalog__heading {
+@container ecommerce-site (max-width: 28rem) {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-catalog__heading {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .public-catalog__view-toggle {
+  .ecommerce-site-surface .ecommerce-site-renderer .public-catalog__view-toggle {
     align-self: flex-start;
   }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, Save, Send } from 'lucide-react';
+import { Eye, RefreshCw, Save, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
   deleteSiteVersion,
@@ -27,7 +27,7 @@ import {
 import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
 import EcommerceSiteBuilderControls from './site-builder/EcommerceSiteBuilderControls';
 import EcommerceSiteBuilderHistory from './site-builder/EcommerceSiteBuilderHistory';
-import EcommerceSiteBuilderPreview from './site-builder/EcommerceSiteBuilderPreview';
+import EcommerceSiteBuilderPreviewModal from './site-builder/EcommerceSiteBuilderPreviewModal';
 import EcommerceSiteBuilderStatus from './site-builder/EcommerceSiteBuilderStatus';
 
 const PAGE_SIZE = 20;
@@ -45,10 +45,11 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   const [loadingMore, setLoadingMore] = useState(false);
   const [restoringVersionId, setRestoringVersionId] = useState(null);
   const [deletingVersionId, setDeletingVersionId] = useState(null);
-  const [previewViewport, setPreviewViewport] = useState('desktop');
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [temporaryBranding, setTemporaryBranding] = useState(null);
+  const closePreview = useCallback(() => setPreviewOpen(false), []);
   const operationRef = useRef(null);
   const templateCodeRef = useRef(portal?.templateCode);
   const loadedPortalIdentityRef = useRef(undefined);
@@ -317,13 +318,14 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   };
   return (
     <section className="ui-card ecom-builder-shell" aria-labelledby="site-builder-title">
-      <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Constructor del sitio</span><h2 id="site-builder-title">Editor visual del borrador</h2></div><button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button></div>
+      <div className="ecom-admin-card-heading"><div><span className="ecom-admin-eyebrow">Constructor del sitio</span><h2 id="site-builder-title">Editor visual del borrador</h2></div><div className="ecom-builder-header-actions"><button type="button" className="btn btn-secondary" aria-haspopup="dialog" aria-expanded={previewOpen} onClick={() => setPreviewOpen(true)}><Eye size={16} />Vista previa</button><button type="button" className="btn btn-secondary" onClick={reloadRemote} disabled={busy}><RefreshCw size={16} />Actualizar</button></div></div>
       <EcommerceSiteBuilderStatus hasLocalChanges={hasLocalChanges} hasUnpublishedChanges={remoteState?.hasUnpublishedChanges === true} conflict={conflict} />
       {conflict ? <div className="ecom-builder-conflict"><button type="button" className="btn btn-secondary" onClick={reloadRemote}>Recargar borrador remoto</button><button type="button" className="btn btn-secondary" onClick={() => setConflict(false)}>Conservar mis cambios</button></div> : null}
       <EcommercePortalCustomizationPanel isPro portal={builderPortal} licenseKey={licenseKey} disabled={loading || saving || publishing || Boolean(restoringVersionId) || Boolean(deletingVersionId)} onChange={changeAppearance} onBusyChange={setUploading} />
-      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /><EcommerceSiteBuilderPreview document={workingDocument} viewport={previewViewport} onViewport={setPreviewViewport} portal={previewPortal} /></div>
+      <div className="ecom-builder-main"><EcommerceSiteBuilderControls document={workingDocument} disabled={busy} onDensity={(value) => setWorkingDocument((current) => setGlobalDensity(current, value))} onLayout={(type, value) => setWorkingDocument((current) => setSectionLayout(current, type, value))} onCatalogVisibility={(property, value) => setWorkingDocument((current) => setCatalogVisibility(current, property, value))} onMove={(id, direction) => setWorkingDocument((current) => moveSection(current, id, direction))} onReset={reset} /></div>
       <div className="ecom-builder-actions"><span>Revisión del borrador: <strong>{remoteState?.draft?.revision ?? '—'}</strong></span><button type="button" className="btn btn-secondary" onClick={save} disabled={!hasLocalChanges || !documentValidation.valid || busy}><Save size={16} />{saving ? 'Guardando…' : 'Guardar borrador'}</button><button type="button" className="btn btn-primary" onClick={publish} disabled={!remoteState || busy || hasLocalChanges}><Send size={16} />{publishing ? 'Publicando…' : 'Publicar'}</button></div>
       <EcommerceSiteBuilderHistory versions={versions} publishedVersionId={remoteState?.published?.versionId} hasMore={hasMoreVersions} loadingMore={loadingMore} restoringVersionId={restoringVersionId} deletingVersionId={deletingVersionId} disabled={saving || publishing || uploading} onRestore={restore} onDelete={deleteVersion} onLoadMore={loadMoreVersions} />
+      {previewOpen ? <EcommerceSiteBuilderPreviewModal document={workingDocument} portal={previewPortal} onClose={closePreview} /> : null}
     </section>
   );
 }
