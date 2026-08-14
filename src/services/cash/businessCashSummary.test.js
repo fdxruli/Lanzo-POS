@@ -39,6 +39,14 @@ describe('buildBusinessCashSummary', () => {
     expect(summary).toMatchObject({ openCount: 4, expectedCashTotal: '1352', currentActorTotal: '75', otherAdminTotal: '1196', staffTotal: '81' });
   });
 
+  it('keeps the business summary available when the admin has no current session', () => {
+    const summary = buildBusinessCashSummary([
+      session('admin-old', 1196),
+      session('staff-1', 81, { device_role: 'staff', staff_user_id: 'staff-1' })
+    ], null);
+    expect(summary).toMatchObject({ openCount: 2, expectedCashTotal: '1277', currentActorTotal: '0', otherAdminTotal: '1196', staffTotal: '81' });
+  });
+
   it('excludes closed, cancelled and deleted sessions and never returns NaN', () => {
     const summary = buildBusinessCashSummary([
       session('open', 0, { expected_cash_total: null }),

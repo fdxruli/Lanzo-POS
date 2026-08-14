@@ -20,6 +20,7 @@ const amountOf = (session, cloudKey, localKey) => (
 );
 
 export const isOpenBusinessCashSession = (session = {}) => (
+  Boolean(session) &&
   OPEN_STATUSES.has(String(session.status ?? session.estado ?? '').toLowerCase()) &&
   !session.deleted_at &&
   !session.deletedAt
