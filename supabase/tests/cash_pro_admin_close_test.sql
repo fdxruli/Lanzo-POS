@@ -47,7 +47,7 @@ begin
   values
     ('cash-admin-audited-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:' || v_other_admin_device, 'open', 1196, 1196, 'Other admin', 1),
     ('cash-staff-unverified-' || v_suffix, v_license_id, v_staff_device, v_staff_user, 'staff', 'staff:' || v_staff_user, 'open', 1196, 1196, 'Staff cash', 1),
-    ('cash-stale-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:stale-' || v_suffix, 'open', 10, 10, 'Stale cash', 2),
+    ('cash-stale-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 10, 10, 'Stale cash', 1),
     ('cash-other-tenant-' || v_suffix, v_other_license_id, v_other_license_device, null, 'admin', 'admin_device:other-' || v_suffix, 'open', 5, 5, 'Other tenant', 1);
 
   v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-admin-audited-' || v_suffix, 'admin_audited', 1180, 0, 'operational_error', 'Conteo documentado', 1, 'cash-admin-idem-' || v_suffix);
@@ -64,7 +64,9 @@ begin
   if exists(select 1 from public.pos_cash_movements where cash_session_id='cash-staff-unverified-' || v_suffix) then raise exception 'ADMIN_UNVERIFIED_CREATED_MOVEMENT'; end if;
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and close_detail->>'expected_cash_total'='1196' and close_detail->>'closing_counted_amount' is null and close_detail->>'cash_difference' is null) then raise exception 'ADMIN_UNVERIFIED_CLOSE_DETAIL_NULL_FAILED'; end if;
 
-  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_audited', 10, 0, 'operational_error', 'Stale version', 1, 'cash-stale-idem-' || v_suffix);
+  v_result := public.pos_register_cash_movement_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'entrada', 1, 'Cambio concurrente sintetico', 'cash-stale-movement-' || v_suffix, '{}'::jsonb);
+  if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,server_version}' <> '2' then raise exception 'CONCURRENCY_MUTATION_FAILED: %', v_result; end if;
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-stale-' || v_suffix, 'admin_audited', 11, 0, 'operational_error', 'Stale version', 1, 'cash-stale-idem-' || v_suffix);
   if v_result->>'code' <> 'VERSION_CONFLICT' then raise exception 'ADMIN_CLOSE_VERSION_CONFLICT_FAILED: %', v_result; end if;
 
   begin
