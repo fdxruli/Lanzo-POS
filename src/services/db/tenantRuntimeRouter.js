@@ -1,8 +1,10 @@
 import Dexie from 'dexie';
 import {
   areLocalTenantAliasesCompatible,
+  getLocalStoreScope,
   LOCAL_TENANT_BINDING_KEY,
   LOCAL_TENANT_BINDING_STORE,
+  LOCAL_STORE_SCOPE,
   LOCAL_TENANT_STATUS,
   localTenantAccessController
 } from '../tenant/localTenantPolicy';
@@ -103,7 +105,7 @@ const readTenantBinding = (databaseName) => new Promise((resolve, reject) => {
   };
   request.onerror = () => {
     if (createdDuringInspection && request.error?.name === 'AbortError') {
-      resolve(null);
+      resolve({ binding: null, hasTenantOwnedData: false, tenantOwnedStores: [] });
       return;
     }
     const inspectionError = new TenantRuntimeError('TENANT_DATABASE_INSPECTION_FAILED');
@@ -116,19 +118,35 @@ const readTenantBinding = (databaseName) => new Promise((resolve, reject) => {
   };
   request.onsuccess = () => {
     nativeDatabase = request.result;
-    if (!nativeDatabase.objectStoreNames.contains(LOCAL_TENANT_BINDING_STORE)) {
+    const storeNames = Array.from(nativeDatabase.objectStoreNames);
+    if (storeNames.length === 0) {
       nativeDatabase.close();
-      resolve(null);
+      resolve({ binding: null, hasTenantOwnedData: false, tenantOwnedStores: [] });
       return;
     }
 
-    const transaction = nativeDatabase.transaction([LOCAL_TENANT_BINDING_STORE], 'readonly');
-    const bindingRequest = transaction.objectStore(LOCAL_TENANT_BINDING_STORE).get(LOCAL_TENANT_BINDING_KEY);
+    const transaction = nativeDatabase.transaction(storeNames, 'readonly');
+    const bindingRequest = storeNames.includes(LOCAL_TENANT_BINDING_STORE)
+      ? transaction.objectStore(LOCAL_TENANT_BINDING_STORE).get(LOCAL_TENANT_BINDING_KEY)
+      : null;
+    const tenantOwnedStores = storeNames.filter((storeName) => (
+      getLocalStoreScope(storeName) === LOCAL_STORE_SCOPE.TENANT_OWNED
+    ));
     let binding = null;
-    bindingRequest.onsuccess = () => { binding = bindingRequest.result || null; };
+    const tenantOwnedCounts = {};
+    if (bindingRequest) bindingRequest.onsuccess = () => { binding = bindingRequest.result || null; };
+    for (const storeName of tenantOwnedStores) {
+      const countRequest = transaction.objectStore(storeName).count();
+      countRequest.onsuccess = () => { tenantOwnedCounts[storeName] = Number(countRequest.result) || 0; };
+    }
     transaction.oncomplete = () => {
       nativeDatabase.close();
-      resolve(binding);
+      resolve({
+        binding,
+        hasTenantOwnedData: Object.values(tenantOwnedCounts).some((count) => count > 0),
+        tenantOwnedStores: tenantOwnedStores.filter((storeName) => tenantOwnedCounts[storeName] > 0),
+        tenantOwnedCounts
+      });
     };
     transaction.onerror = () => {
       nativeDatabase.close();
@@ -150,10 +168,26 @@ const normalizedBindingAliases = (binding) => [...new Set([
   ...(Array.isArray(binding?.tenantAliases) ? binding.tenantAliases : [])
 ].filter(Boolean))];
 
+const isValidTenantAlias = (alias) => (
+  typeof alias === 'string'
+  && (
+    /^license-id:.+/.test(alias)
+    || /^license-key-sha256:[a-f0-9]{64}$/i.test(alias)
+  )
+);
+
 const isTrustedTenantBinding = (binding) => (
   binding?.key === LOCAL_TENANT_BINDING_KEY
   && Number(binding?.bindingVersion) === 1
-  && normalizedBindingAliases(binding).length > 0
+  && typeof binding?.tenantIdentity === 'string'
+  && Array.isArray(binding?.tenantAliases)
+  && binding.tenantAliases.length > 0
+  && binding.tenantAliases.includes(binding.tenantIdentity)
+  && binding.tenantAliases.every(isValidTenantAlias)
+  && isValidTenantAlias(binding.tenantIdentity)
+  && ['license-id:', 'license-key-sha256:'].every((prefix) => (
+    binding.tenantAliases.filter((alias) => alias.startsWith(prefix)).length <= 1
+  ))
 );
 
 const discoverBoundTenantDatabases = async (identity, physicalNames) => {
@@ -166,20 +200,40 @@ const discoverBoundTenantDatabases = async (identity, physicalNames) => {
     .sort();
   const inspected = await Promise.all(candidateNames.map(async (databaseName) => ({
     databaseName,
-    binding: await readTenantBinding(databaseName)
+    inspection: await readTenantBinding(databaseName)
   })));
 
-  return inspected
-    .filter(({ binding }) => (
-      isTrustedTenantBinding(binding)
-      && areLocalTenantAliasesCompatible(normalizedBindingAliases(binding), identity.aliases || [])
-    ))
-    .map(({ databaseName, binding }) => ({
+  const classified = {
+    trustedCompatible: [],
+    trustedForeign: [],
+    emptyUnbound: [],
+    unknownNonEmpty: []
+  };
+
+  for (const { databaseName, inspection } of inspected) {
+    const { binding } = inspection;
+    const entry = {
       databaseName,
       opaqueId: databaseName.slice(TENANT_DATABASE_PREFIX.length),
       binding,
-      bindingAliases: normalizedBindingAliases(binding)
-    }));
+      bindingAliases: normalizedBindingAliases(binding),
+      tenantOwnedStores: inspection.tenantOwnedStores || []
+    };
+
+    if (isTrustedTenantBinding(binding)) {
+      if (areLocalTenantAliasesCompatible(entry.bindingAliases, identity.aliases || [])) {
+        classified.trustedCompatible.push(entry);
+      } else {
+        classified.trustedForeign.push(entry);
+      }
+    } else if (inspection.hasTenantOwnedData) {
+      classified.unknownNonEmpty.push(entry);
+    } else {
+      classified.emptyUnbound.push(entry);
+    }
+  }
+
+  return classified;
 };
 
 const getDirectoryMatches = (aliases) => directory
@@ -227,15 +281,23 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
     // directory contents are preserved by policy, so this cannot be silently
     // rewritten to a different primary key; recovery must resolve it
     // explicitly instead of opening a new empty database.
-    const candidates = await discoverBoundTenantDatabases(identity, physical.names);
+    const discovery = await discoverBoundTenantDatabases(identity, physical.names);
+    if (discovery.unknownNonEmpty.length > 0) {
+      throw new TenantRuntimeError('TENANT_DATABASE_OWNERSHIP_UNRESOLVED');
+    }
+    const candidates = discovery.trustedCompatible;
     if (candidates.length === 0) throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
     if (candidates.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
     throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
   }
 
-  const candidates = mappingIsMissing
+  const discovery = mappingIsMissing
     ? await discoverBoundTenantDatabases(identity, physical.names)
-    : [];
+    : null;
+  if (discovery?.unknownNonEmpty.length > 0) {
+    throw new TenantRuntimeError('TENANT_DATABASE_OWNERSHIP_UNRESOLVED');
+  }
+  const candidates = discovery?.trustedCompatible || [];
   if (candidates.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
   const adopted = candidates[0] || null;
 

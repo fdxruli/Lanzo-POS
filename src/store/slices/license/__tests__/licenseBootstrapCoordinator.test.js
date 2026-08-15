@@ -44,7 +44,10 @@ describe('initializeApp coordinator', () => {
   it('shares one promise between concurrent StrictMode-style calls', async () => {
     const gate = deferred();
     runtimeMocks.prepareLocalDatabase.mockReturnValueOnce(gate.promise);
-    storageMocks.getLicenseFromStorage.mockResolvedValue(null);
+    storageMocks.getLicenseFromStorage.mockResolvedValue({
+      license_key: 'BOOTSTRAP-COORDINATOR-TEST',
+      device_role: 'unknown'
+    });
 
     const state = { appStatus: 'loading' };
     const set = (patch) => Object.assign(state, typeof patch === 'function' ? patch(state) : patch);
@@ -55,14 +58,31 @@ describe('initializeApp coordinator', () => {
     const second = state.initializeApp();
 
     expect(second).toBe(first);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(runtimeMocks.prepareLocalDatabase).toHaveBeenCalledTimes(1);
     expect(getInitializeAppCoordinatorState()).toBe('running');
 
     gate.resolve({ ready: true });
-    await expect(first).resolves.toEqual({ status: 'unauthenticated' });
+    await expect(first).resolves.toEqual({ status: 'license_access_required' });
 
-    expect(state.appStatus).toBe('unauthenticated');
+    expect(state.appStatus).toBe('license_access_required');
     expect(state._isInitializing).toBe(false);
     expect(getInitializeAppCoordinatorState()).toBe('ready');
+  });
+
+  it('keeps the pre-license boundary before any tenant database preparation', async () => {
+    vi.clearAllMocks();
+    storageMocks.getLicenseFromStorage.mockResolvedValue(null);
+    const state = { appStatus: 'loading' };
+    const set = (patch) => Object.assign(state, typeof patch === 'function' ? patch(state) : patch);
+    const get = () => state;
+    Object.assign(state, createLicenseBootstrapActions({ set, get }));
+
+    await expect(state.initializeApp()).resolves.toEqual({ status: 'unauthenticated' });
+    expect(runtimeMocks.prepareLocalDatabase).not.toHaveBeenCalled();
   });
 });

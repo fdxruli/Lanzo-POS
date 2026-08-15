@@ -48,6 +48,23 @@ const isUnsyncedCatalogRecord = (record) => {
   );
 };
 
+const markLocalDeletionPending = async (storeName, id) => {
+  await ensureOpen();
+  await db.table(storeName).update(id, {
+    syncStatus: PRODUCT_SYNC_STATUS.LOCAL,
+    lastSyncedAt: null,
+    pendingOperationId: null,
+    conflictReason: null,
+    deletionPending: true
+  });
+};
+
+const getDeletionStore = (entityType) => {
+  if (entityType === 'category') return STORES.DELETED_CATEGORIES;
+  if (entityType === 'product_batch') return STORES.PRODUCT_BATCHES;
+  return STORES.DELETED_MENU;
+};
+
 const validateCategoryNameUnique = async (category) => {
   const displayName = String(category?.name || '').trim();
   const comparisonName = displayName.replace(/\s+/g, '').toLowerCase();
@@ -126,12 +143,14 @@ export const productLocalRepository = {
       return { success: true };
     }
 
-    return softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, {
+    const result = await softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, {
       reason: 'Eliminada desde Catalogo de Productos',
       cascade: {
         updates: [{ store: STORES.MENU, index: 'categoryId', value: categoryId, field: 'categoryId', setTo: '' }]
       }
     });
+    if (result?.success) await markLocalDeletionPending(STORES.DELETED_CATEGORIES, categoryId);
+    return result;
   },
 
   async prepareProduct(productData, existingProduct = null) {
@@ -283,9 +302,11 @@ export const productLocalRepository = {
   async deleteProductLocal(product, sync = null) {
     const productId = typeof product === 'string' ? product : product?.id;
     if (!sync) {
-      return softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, productId, {
+      const result = await softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, productId, {
         reason: 'Eliminado desde Catalogo de Productos'
       });
+      if (result?.success) await markLocalDeletionPending(STORES.DELETED_MENU, productId);
+      return result;
     }
 
     await ensureOpen();
@@ -324,8 +345,10 @@ export const productLocalRepository = {
       stock: 0,
       isActive: false,
       status: 'archived',
-      deletedAt: batch.deletedAt || nowIso()
-    }, sync);
+      deletedAt: batch.deletedAt || nowIso(),
+      deletionPending: true,
+      lastSyncedAt: null
+    }, { ...sync, deletionPending: true, lastSyncedAt: null });
   },
 
   async applyCloudCategory(category) {
@@ -419,6 +442,33 @@ export const productLocalRepository = {
     return conflict;
   },
 
+  async markCatalogDeletionSynced({ entityType, entityId }) {
+    await ensureOpen();
+    const storeName = getDeletionStore(entityType);
+    const current = await db.table(storeName).get(entityId);
+    if (!current) return null;
+    const synced = {
+      ...current,
+      syncStatus: PRODUCT_SYNC_STATUS.SYNCED,
+      lastSyncedAt: nowIso(),
+      pendingOperationId: null,
+      conflictReason: null,
+      deletionPending: false
+    };
+    await db.table(storeName).put(synced);
+    return synced;
+  },
+
+  async markCatalogDeletionConflict({ entityType, entityId, reason }) {
+    await ensureOpen();
+    const storeName = getDeletionStore(entityType);
+    const current = await db.table(storeName).get(entityId);
+    if (!current) return null;
+    const conflict = markProductSyncConflict(current, reason);
+    await db.table(storeName).put({ ...conflict, deletionPending: true });
+    return conflict;
+  },
+
   async getLocalCatalogForMigration() {
     await ensureOpen();
     const [categories, products, batches] = await Promise.all([
@@ -436,16 +486,27 @@ export const productLocalRepository = {
 
   async listUnsyncedLocalCatalogForCloud() {
     await ensureOpen();
-    const [categories, products, batches] = await Promise.all([
+    const [categories, products, batches, deletedCategories, deletedProducts] = await Promise.all([
       db.table(STORES.CATEGORIES).toArray(),
       db.table(STORES.MENU).toArray(),
-      db.table(STORES.PRODUCT_BATCHES).toArray()
+      db.table(STORES.PRODUCT_BATCHES).toArray(),
+      db.table(STORES.DELETED_CATEGORIES).toArray(),
+      db.table(STORES.DELETED_MENU).toArray()
     ]);
 
     return {
       categories: categories.filter(isUnsyncedCatalogRecord),
       products: products.filter(isUnsyncedCatalogRecord),
-      batches: batches.filter(isUnsyncedCatalogRecord)
+      batches: batches.filter(isUnsyncedCatalogRecord),
+      deletes: {
+        categories: deletedCategories.filter((record) => record?.id && record.deletionPending !== false),
+        products: deletedProducts.filter((record) => record?.id && record.deletionPending !== false),
+        batches: batches.filter((record) => (
+          record?.id
+          && (record.deletedAt || record.deletedTimestamp)
+          && record.deletionPending !== false
+        ))
+      }
     };
   },
 

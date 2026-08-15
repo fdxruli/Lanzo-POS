@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   applyCloudCatalog: vi.fn(),
   migrateLocalCatalog: vi.fn(),
   pullCatalogSnapshot: vi.fn(),
+  runRecovery: vi.fn(),
   events: []
 }));
 
@@ -21,6 +22,9 @@ vi.mock('../../sync/syncConflictService', () => ({ syncConflictService: {
 vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
   getLocalCatalogForMigration: mocks.getLocalCatalogForMigration,
   applyCloudCatalog: mocks.applyCloudCatalog
+} }));
+vi.mock('../productLocalCatalogRecovery', () => ({ productLocalCatalogRecovery: {
+  runUnsyncedCatalogRecovery: mocks.runRecovery
 } }));
 vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   migrateLocalCatalog: mocks.migrateLocalCatalog,
@@ -62,6 +66,27 @@ describe('product migration FREE to PRO coordination', () => {
     mocks.events.push('pull');
     return { success: true, has_more: false };
   });
+
+  mocks.runRecovery.mockImplementation(async () => {
+    mocks.events.push('recovery');
+    return { success: true, recovered: 1 };
+  });
+  });
+
+  it('keeps the first FREE to PRO bootstrap as local migration followed by snapshot', async () => {
+    mocks.migrateLocalCatalog.mockResolvedValue({ success: true });
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-FIRST'
+    })).resolves.toMatchObject({ success: true, migrated: 2 });
+
+    expect(mocks.migrateLocalCatalog).toHaveBeenCalledTimes(2);
+    expect(mocks.events.slice(-3)).toEqual(['pull', 'pull', 'pull']);
+    expect(mocks.setMeta).toHaveBeenCalledWith(
+      buildProductsMigratedMetaKey('CUTOVER-FIRST'),
+      true,
+      { licenseKey: 'CUTOVER-FIRST' }
+    );
   });
 
   it('deduplicates concurrent bootstrap and keeps the marker unset after failure', async () => {
@@ -109,5 +134,49 @@ describe('product migration FREE to PRO coordination', () => {
       true,
       { licenseKey: 'CUTOVER-RETRY' }
     );
+  });
+
+  it('reconciles a previously migrated tenant before the next authoritative snapshot', async () => {
+    mocks.getMeta.mockResolvedValue(true);
+    const result = await productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-REPEATED'
+    });
+
+    expect(result).toMatchObject({ success: true, recovery: { recovered: 1 } });
+    expect(mocks.runRecovery).toHaveBeenCalledWith({
+      licenseKey: 'CUTOVER-REPEATED',
+      canMigrateProducts: true
+    });
+    expect(mocks.events[0]).toBe('recovery');
+    expect(mocks.events.slice(1)).toEqual(['pull', 'pull', 'pull']);
+  });
+
+  it('blocks repeated cutover and never pulls when local reconciliation fails', async () => {
+    mocks.getMeta.mockResolvedValue(true);
+    mocks.runRecovery.mockResolvedValue({
+      success: false,
+      blocked: true,
+      reason: 'rpc_failed'
+    });
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-BLOCKED'
+    })).resolves.toMatchObject({
+      success: false,
+      blocked: true,
+      recovery: { reason: 'rpc_failed' }
+    });
+    expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('guards direct snapshot callers with the same repeated-cutover reconciliation', async () => {
+    mocks.getMeta.mockResolvedValue(true);
+
+    await expect(productMigrationService.pullFullSnapshot({
+      licenseKey: 'DIRECT-PULL-GUARD'
+    })).resolves.toMatchObject({ success: true, applied: 0 });
+
+    expect(mocks.events[0]).toBe('recovery');
+    expect(mocks.events.slice(1)).toEqual(['pull', 'pull', 'pull']);
   });
 });

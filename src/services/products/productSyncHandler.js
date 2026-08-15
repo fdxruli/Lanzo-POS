@@ -130,10 +130,11 @@ export const productSyncHandler = {
 
       if (!canMigrateProducts) {
         const recovery = await productLocalCatalogRecovery.savePermissionBlockedWarning({ licenseKey });
-        const snapshot = await productMigrationService.pullFullSnapshot({ licenseKey });
         if (recovery?.blocked) {
           Logger.warn('[Products/Sync] Rescate de catalogo local bloqueado por permisos:', recovery);
+          return recovery;
         }
+        const snapshot = await productMigrationService.pullFullSnapshot({ licenseKey, skipCutoverGuard: true });
         return { ...snapshot, recovery, migrationSkipped: true };
       }
 

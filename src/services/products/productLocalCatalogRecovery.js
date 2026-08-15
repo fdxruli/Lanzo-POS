@@ -19,9 +19,13 @@ import { notifyProductsChanged } from './productEvents';
 const nowIso = () => new Date().toISOString();
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
-const countCatalogRows = ({ categories = [], products = [], batches = [] } = {}) => (
-  categories.length + products.length + batches.length
-);
+const countCatalogRows = (catalog = {}) => {
+  const { categories = [], products = [], batches = [], deletes = {} } = catalog;
+  return categories.length
+    + products.length
+    + batches.length
+    + Object.values(deletes).reduce((total, records) => total + (records?.length || 0), 0);
+};
 
 const saveRecoveryWarning = async ({ licenseKey, issues, conflictType, message }) => {
   const conflict = await syncConflictService.saveConflict({
@@ -56,6 +60,30 @@ const markCatalogConflictRecords = async (catalog = {}, reason = 'PRODUCT_CATALO
         await productLocalRepository.markConflict({ entityType, entityId: record.id, reason });
       } catch (error) {
         Logger.warn('[Products/Recovery] No se pudo marcar conflicto local:', { entityType, id: record?.id, error });
+      }
+    }
+  }
+
+  const deletionGroups = [
+    [SYNC_ENTITY_TYPES.CATEGORY, catalog.deletes?.categories || []],
+    [SYNC_ENTITY_TYPES.PRODUCT, catalog.deletes?.products || []],
+    [SYNC_ENTITY_TYPES.PRODUCT_BATCH, catalog.deletes?.batches || []]
+  ];
+
+  for (const [entityType, records] of deletionGroups) {
+    for (const record of records) {
+      try {
+        await productLocalRepository.markCatalogDeletionConflict({
+          entityType,
+          entityId: record.id,
+          reason
+        });
+      } catch (error) {
+        Logger.warn('[Products/Recovery] No se pudo marcar tombstone en conflicto:', {
+          entityType,
+          id: record?.id,
+          error
+        });
       }
     }
   }
@@ -108,6 +136,58 @@ const migrateUnsyncedCatalog = async ({ licenseKey, catalog }) => {
     if (response?.success === false) throw Object.assign(new Error(response.message || response.code || 'PRODUCT_RECOVERY_BATCH_FAILED'), { response });
     await productLocalRepository.applyCloudCatalog(response);
     migrated += batches.length;
+  }
+
+  const deletionOperations = [
+    {
+      entityType: SYNC_ENTITY_TYPES.CATEGORY,
+      records: catalog.deletes?.categories || [],
+      deleteRemote: (record, idempotencyKey) => productCloudRepository.deleteCategory({
+        licenseKey,
+        categoryId: record.id,
+        expectedVersion: record.serverVersion || null,
+        idempotencyKey
+      })
+    },
+    {
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      records: catalog.deletes?.products || [],
+      deleteRemote: (record, idempotencyKey) => productCloudRepository.deleteProduct({
+        licenseKey,
+        productId: record.id,
+        expectedVersion: record.serverVersion || null,
+        idempotencyKey
+      })
+    },
+    {
+      entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
+      records: catalog.deletes?.batches || [],
+      deleteRemote: (record, idempotencyKey) => productCloudRepository.deleteProductBatch({
+        licenseKey,
+        batchId: record.id,
+        expectedVersion: record.serverVersion || null,
+        idempotencyKey
+      })
+    }
+  ];
+
+  for (const operation of deletionOperations) {
+    for (const record of operation.records) {
+      const idempotencyKey = record.pendingOperationId
+        || `products-recovery-${licenseKey}-delete-${operation.entityType}-${record.id}`;
+      const response = await operation.deleteRemote(record, idempotencyKey);
+      if (response?.success === false) {
+        throw Object.assign(new Error(
+          response.message || response.code || `PRODUCT_RECOVERY_${operation.entityType.toUpperCase()}_DELETE_FAILED`
+        ), { response });
+      }
+
+      await productLocalRepository.markCatalogDeletionSynced({
+        entityType: operation.entityType,
+        entityId: record.id
+      });
+      migrated += 1;
+    }
   }
 
   return migrated;

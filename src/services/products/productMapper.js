@@ -117,6 +117,7 @@ export const cloudCategoryToLocal = (category = {}, existing = null, overrides =
     syncStatus: overrides.syncStatus || PRODUCT_SYNC_STATUS.SYNCED,
     lastSyncedAt: overrides.lastSyncedAt || nowIso(),
     pendingOperationId: overrides.pendingOperationId ?? null,
+    deletionPending: deletedAt ? false : (overrides.deletionPending ?? existing?.deletionPending ?? false),
     conflictReason: overrides.conflictReason ?? null,
     metadata: category.metadata || existing?.metadata || {}
   };
@@ -232,6 +233,7 @@ export const cloudProductToLocal = (product = {}, existing = null, overrides = {
     syncStatus: overrides.syncStatus || PRODUCT_SYNC_STATUS.SYNCED,
     lastSyncedAt: overrides.lastSyncedAt || nowIso(),
     pendingOperationId: overrides.pendingOperationId ?? null,
+    deletionPending: deletedAt ? false : (overrides.deletionPending ?? existing?.deletionPending ?? false),
     conflictReason: overrides.conflictReason ?? null,
     metadata
   };
@@ -298,6 +300,7 @@ export const cloudBatchToLocal = (batch = {}, existing = null, overrides = {}) =
     syncStatus: overrides.syncStatus || PRODUCT_SYNC_STATUS.SYNCED,
     lastSyncedAt: overrides.lastSyncedAt || nowIso(),
     pendingOperationId: overrides.pendingOperationId ?? null,
+    deletionPending: deletedAt ? false : (overrides.deletionPending ?? existing?.deletionPending ?? false),
     conflictReason: overrides.conflictReason ?? null,
     metadata: batch.metadata || existing?.metadata || {}
   };

@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
 import {
   LOCAL_TENANT_BINDING_KEY,
@@ -89,6 +89,20 @@ const createBoundOperationalTenantDatabase = async (identity, databaseName, prod
   if (product) await database.table('menu').put(product);
   database.close();
   return databaseName;
+};
+
+const createUnboundOperationalTenantDatabase = async (databaseName, { binding = null, product = null } = {}) => {
+  const database = createOperationalLanzoDatabase(databaseName);
+  await database.open();
+  if (binding) await database.table(LOCAL_TENANT_BINDING_STORE).put(binding);
+  if (product) await database.table('menu').put(product);
+  database.close();
+  return databaseName;
+};
+
+const deletePhysicalDatabase = async (databaseName) => {
+  const database = new Dexie(databaseName);
+  await database.delete();
 };
 
 const deleteDirectoryEntry = async (opaqueId) => {
@@ -214,6 +228,12 @@ describe('tenant runtime router', () => {
     const aName = getActiveTenantRuntime().databaseName;
     const staleProducts = db.table('menu');
     await staleProducts.put({ id: 'a-product', name: 'A' });
+    await db.table(LOCAL_TENANT_BINDING_STORE).put({
+      key: LOCAL_TENANT_BINDING_KEY,
+      tenantIdentity: a.primary,
+      tenantAliases: [...a.aliases],
+      bindingVersion: 1
+    });
     await openTenantRuntime(b);
     expect(getActiveTenantRuntime().databaseName).not.toBe(aName);
     expect(await db.table('menu').count()).toBe(0);
@@ -314,6 +334,12 @@ describe('tenant runtime router', () => {
     await openTenantRuntime(identity);
     const established = getActiveTenantRuntime();
     await db.table('menu').put({ id: 'reauth-product', name: 'Still here' });
+    await db.table(LOCAL_TENANT_BINDING_STORE).put({
+      key: LOCAL_TENANT_BINDING_KEY,
+      tenantIdentity: identity.primary,
+      tenantAliases: [...identity.aliases],
+      bindingVersion: 1
+    });
     closeTenantRuntime();
     localTenantAccessController.reset();
 
@@ -391,11 +417,23 @@ describe('tenant runtime router', () => {
     await openTenantRuntime(a);
     localTenantAccessController.grant(a, 'A');
     await db.table('menu').put({ id: 'a', name: 'A' });
+    await db.table(LOCAL_TENANT_BINDING_STORE).put({
+      key: LOCAL_TENANT_BINDING_KEY,
+      tenantIdentity: a.primary,
+      tenantAliases: [...a.aliases],
+      bindingVersion: 1
+    });
 
     localTenantAccessController.lock('transition');
     await openTenantRuntime(b);
     await expect(db.table('menu').put({ id: 'b', name: 'B' })).rejects.toMatchObject({ code: 'LOCAL_TENANT_ACCESS_REQUIRED' });
     localTenantAccessController.grant(b, 'B');
+    await db.table(LOCAL_TENANT_BINDING_STORE).put({
+      key: LOCAL_TENANT_BINDING_KEY,
+      tenantIdentity: b.primary,
+      tenantAliases: [...b.aliases],
+      bindingVersion: 1
+    });
     await expect(db.table('menu').put({ id: 'b', name: 'B' })).resolves.toBe('b');
   });
 
@@ -430,6 +468,95 @@ describe('tenant runtime router', () => {
       expect(() => db.table('menu').count()).toThrow('TENANT_RUNTIME_NOT_READY');
     } finally {
       unregister();
+    }
+  });
+
+  it('fails closed on an unbound non-empty tenant database without allocating a replacement', async () => {
+    const candidateName = tenantPhysicalName();
+    await createUnboundOperationalTenantDatabase(candidateName, {
+      product: { id: 'unknown-product', name: 'Preserve me' }
+    });
+    const identity = await resolveActiveTenantIdentity({ license_key: `UNKNOWN-OWNER-${crypto.randomUUID()}` });
+    const databaseNamesBefore = await Dexie.getDatabaseNames();
+
+    try {
+      await expect(resolveTenantRuntimeDirectory(identity)).rejects.toMatchObject({
+        code: 'TENANT_DATABASE_OWNERSHIP_UNRESOLVED'
+      });
+      expect(await Dexie.getDatabaseNames()).toContain(candidateName);
+      expect(await Dexie.getDatabaseNames()).toEqual(databaseNamesBefore);
+    } finally {
+      await deletePhysicalDatabase(candidateName);
+    }
+  });
+
+  it('fails closed on malformed binding plus tenant data instead of adopting or replacing it', async () => {
+    const candidateName = tenantPhysicalName();
+    const identity = await resolveActiveTenantIdentity({ license_key: `MALFORMED-OWNER-${crypto.randomUUID()}` });
+    await createUnboundOperationalTenantDatabase(candidateName, {
+      binding: {
+        key: LOCAL_TENANT_BINDING_KEY,
+        tenantIdentity: identity.primary,
+        tenantAliases: [identity.primary],
+        bindingVersion: 99
+      },
+      product: { id: 'malformed-product', name: 'Preserve malformed owner data' }
+    });
+
+    try {
+      await expect(resolveTenantRuntimeDirectory(identity)).rejects.toMatchObject({
+        code: 'TENANT_DATABASE_OWNERSHIP_UNRESOLVED'
+      });
+      expect(await Dexie.getDatabaseNames()).toContain(candidateName);
+    } finally {
+      await deletePhysicalDatabase(candidateName);
+    }
+  });
+
+  it('ignores a demonstrably empty unbound database and allocates a new tenant destination', async () => {
+    const emptyName = tenantPhysicalName();
+    await createUnboundOperationalTenantDatabase(emptyName);
+    const identity = await resolveActiveTenantIdentity({ license_key: `EMPTY-UNBOUND-${crypto.randomUUID()}` });
+
+    try {
+      const opaqueId = await resolveTenantRuntimeDirectory(identity);
+      expect(`LanzoDB_t_${opaqueId}`).not.toBe(emptyName);
+      expect(await Dexie.getDatabaseNames()).toContain(emptyName);
+    } finally {
+      await deletePhysicalDatabase(emptyName);
+    }
+  });
+
+  it('does not ignore unknown non-empty data even when one trusted compatible binding exists', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `MATCH-PLUS-UNKNOWN-${crypto.randomUUID()}` });
+    const compatibleName = tenantPhysicalName();
+    const unknownName = tenantPhysicalName();
+    await createBoundOperationalTenantDatabase(identity, compatibleName);
+    await createUnboundOperationalTenantDatabase(unknownName, {
+      product: { id: 'ambiguous-product', name: 'Unknown owner data' }
+    });
+
+    try {
+      await expect(resolveTenantRuntimeDirectory(identity)).rejects.toMatchObject({
+        code: 'TENANT_DATABASE_OWNERSHIP_UNRESOLVED'
+      });
+      expect(await Dexie.getDatabaseNames()).toEqual(expect.arrayContaining([compatibleName, unknownName]));
+    } finally {
+      await deletePhysicalDatabase(compatibleName);
+      await deletePhysicalDatabase(unknownName);
+    }
+  });
+
+  it('fails closed when physical database inspection fails before allocating a fresh database', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `INSPECTION-FAIL-${crypto.randomUUID()}` });
+    const databasesSpy = vi.spyOn(globalThis.indexedDB, 'databases').mockRejectedValueOnce(new Error('forced inspection failure'));
+
+    try {
+      await expect(resolveTenantRuntimeDirectory(identity)).rejects.toMatchObject({
+        code: 'TENANT_DATABASE_DISCOVERY_FAILED'
+      });
+    } finally {
+      databasesSpy.mockRestore();
     }
   });
 });
