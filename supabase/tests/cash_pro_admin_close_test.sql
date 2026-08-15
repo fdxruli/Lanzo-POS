@@ -1,4 +1,4 @@
--- CASH PRO FASE 2 regression matrix. Fixtures are synthetic and rolled back.
+-- CASH PRO FASE 2-4 regression matrix. Fixtures are synthetic and rolled back.
 begin;
 
 do $test$
@@ -11,34 +11,53 @@ declare
   v_staff_device uuid := extensions.gen_random_uuid();
   v_other_license_device uuid := extensions.gen_random_uuid();
   v_admin_user uuid := extensions.gen_random_uuid();
+  v_other_admin_user uuid := extensions.gen_random_uuid();
   v_staff_user uuid := extensions.gen_random_uuid();
   v_admin_session_id uuid := extensions.gen_random_uuid();
+  v_second_admin_session_id uuid := extensions.gen_random_uuid();
+  v_other_admin_session_id uuid := extensions.gen_random_uuid();
   v_admin_key text := 'TEST-CASH-ADMIN-' || v_suffix;
   v_other_key text := 'TEST-CASH-OTHER-' || v_suffix;
   v_fingerprint text := 'cash-admin-' || v_suffix;
+  v_second_fingerprint text := 'cash-admin-second-' || v_suffix;
+  v_other_fingerprint text := 'cash-other-license-' || v_suffix;
   v_device_token text := 'cash-device-' || v_suffix;
+  v_second_device_token text := 'cash-second-device-' || v_suffix;
+  v_other_device_token text := 'cash-other-device-' || v_suffix;
   v_admin_token text := 'cash-admin-session-' || v_suffix;
+  v_second_admin_token text := 'cash-second-admin-session-' || v_suffix;
+  v_other_admin_token text := 'cash-other-admin-session-' || v_suffix;
   v_staff_token text := 'cash-staff-session-' || v_suffix;
   v_result jsonb;
   v_event_payload jsonb;
   v_count integer;
+  v_version integer;
+  v_sales_before integer;
+  v_movements_before integer;
+  v_audits_before integer;
+  v_sync_before integer;
 begin
   insert into public.licenses(id, license_key, license_type, status, expires_at, max_devices, product_name, features, plan_id)
   values
-    (v_license_id, v_admin_key, 'pro', 'active', now() + interval '1 day', 6, 'Cash admin fixture', '{}'::jsonb, (select id from public.plans where code='pro_monthly' limit 1)),
-    (v_other_license_id, v_other_key, 'pro', 'active', now() + interval '1 day', 2, 'Other cash fixture', '{}'::jsonb, (select id from public.plans where code='pro_monthly' limit 1));
+    (v_license_id, v_admin_key, 'pro', 'active', now() + interval '1 day', 6, 'Cash admin fixture', '{"cloud_pos_sync":true,"cloud_cash_sync":true,"cloud_sales_sync_base":true,"cloud_sales_cashier":true}'::jsonb, (select id from public.plans where code='pro_monthly' limit 1)),
+    (v_other_license_id, v_other_key, 'pro', 'active', now() + interval '1 day', 2, 'Other cash fixture', '{"cloud_pos_sync":true,"cloud_cash_sync":true,"cloud_sales_sync_base":true,"cloud_sales_cashier":true}'::jsonb, (select id from public.plans where code='pro_monthly' limit 1));
   insert into public.license_admin_users(id, license_id, username, display_name, password_hash, is_owner, is_active)
-  values (v_admin_user, v_license_id, 'owner_' || substr(v_suffix,1,6), 'Cash owner', extensions.crypt('password-' || v_suffix, extensions.gen_salt('bf', 4)), true, true);
+  values
+    (v_admin_user, v_license_id, 'owner_' || substr(v_suffix,1,6), 'Cash owner', extensions.crypt('password-' || v_suffix, extensions.gen_salt('bf', 4)), true, true),
+    (v_other_admin_user, v_other_license_id, 'other_' || substr(v_suffix,1,6), 'Other owner', extensions.crypt('password-' || v_suffix, extensions.gen_salt('bf', 4)), true, true);
   insert into public.license_staff_users(id, license_id, username, display_name, password_hash, permissions)
   values (v_staff_user, v_license_id, 'staff_' || substr(v_suffix,1,6), 'Cash staff', extensions.crypt('password-' || v_suffix, extensions.gen_salt('bf', 4)), '{"cash_register":true,"cash_audit":true}'::jsonb);
   insert into public.license_devices(id, license_id, device_fingerprint, device_name, security_token, is_active, device_role, staff_user_id)
   values
     (v_admin_device, v_license_id, v_fingerprint, 'Chrome admin', v_device_token, true, 'admin', null),
-    (v_other_admin_device, v_license_id, 'cash-other-admin-' || v_suffix, 'Edge admin', 'other-admin-device-' || v_suffix, true, 'admin', null),
+    (v_other_admin_device, v_license_id, v_second_fingerprint, 'Edge admin', v_second_device_token, true, 'admin', null),
     (v_staff_device, v_license_id, 'cash-staff-' || v_suffix, 'Chrome staff', 'staff-device-' || v_suffix, true, 'staff', v_staff_user),
-    (v_other_license_device, v_other_license_id, 'cash-other-license-' || v_suffix, 'Other tenant', 'other-license-device-' || v_suffix, true, 'admin', null);
+    (v_other_license_device, v_other_license_id, v_other_fingerprint, 'Other tenant', v_other_device_token, true, 'admin', null);
   insert into public.license_admin_sessions(id, license_id, admin_user_id, device_id, session_token_hash, expires_at)
-  values (v_admin_session_id, v_license_id, v_admin_user, v_admin_device, extensions.crypt(v_admin_token, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
+  values
+    (v_admin_session_id, v_license_id, v_admin_user, v_admin_device, extensions.crypt(v_admin_token, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
+    (v_second_admin_session_id, v_license_id, v_admin_user, v_other_admin_device, extensions.crypt(v_second_admin_token, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
+    (v_other_admin_session_id, v_other_license_id, v_other_admin_user, v_other_license_device, extensions.crypt(v_other_admin_token, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
   insert into public.license_staff_sessions(license_id, staff_user_id, device_id, session_token_hash, expires_at)
   values (v_license_id, v_staff_user, v_staff_device, extensions.crypt(v_staff_token, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
 
@@ -50,7 +69,116 @@ begin
     ('cash-recalc-drift-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 1196, 1196, 'Recalculation drift cash', 1),
     ('cash-recalc-unverified-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 1196, 1196, 'Unverified recalculation drift cash', 1),
     ('cash-stale-' || v_suffix, v_license_id, v_admin_device, null, 'admin', 'admin_device:' || v_admin_device, 'open', 10, 10, 'Stale cash', 1),
+    ('cash-zero-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:zero-' || v_suffix, 'open', 0, 0, 'Zero counted cash', 1),
+    ('cash-next-fund-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:next-fund-' || v_suffix, 'open', 1196, 1196, 'Next shift fund cash', 1),
+    ('cash-legacy-adopt-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:legacy-adopt-' || v_suffix, 'open', 1185, 1196, 'Legacy to adopt', 1),
+    ('cash-legacy-unselected-' || v_suffix, v_license_id, v_other_admin_device, null, 'admin', 'admin_device:legacy-unselected-' || v_suffix, 'open', 77, 77, 'Legacy left untouched', 1),
     ('cash-other-tenant-' || v_suffix, v_other_license_id, v_other_license_device, null, 'admin', 'admin_device:other-' || v_suffix, 'open', 5, 5, 'Other tenant', 1);
+
+  -- Historical financial rows are fixtures only: adoption may change identity, never amounts or these rows.
+  insert into public.pos_sales(id, license_id, local_sale_id, device_id, device_role, actor_key, actor_name, cash_session_id, total, amount_paid, idempotency_key)
+  values ('sale-legacy-history-' || v_suffix, v_license_id, 'sale-legacy-history-' || v_suffix, v_other_admin_device, 'admin', 'admin_device:legacy-adopt-' || v_suffix, 'Legacy admin', 'cash-legacy-adopt-' || v_suffix, 30, 30, 'sale-legacy-history-' || v_suffix);
+  insert into public.pos_cash_movements(id, license_id, cash_session_id, device_id, actor_key, type, amount, concept, source, created_by_device_id, actor_name, idempotency_key, metadata)
+  values ('mov-legacy-history-' || v_suffix, v_license_id, 'cash-legacy-adopt-' || v_suffix, v_other_admin_device, 'admin_device:legacy-adopt-' || v_suffix, 'entrada', 11, 'Movimiento historico legacy', 'manual', v_other_admin_device, 'Legacy admin', 'mov-legacy-history-' || v_suffix, '{}'::jsonb);
+
+  -- Fase 3: real legacy adoption is identity_adopt, never a direct test UPDATE.
+  select count(*) into v_sales_before from public.pos_sales where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix;
+  select count(*) into v_movements_before from public.pos_cash_movements where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix;
+  select count(*) into v_audits_before from public.pos_cash_audit_events where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix;
+  select count(*) into v_sync_before from public.pos_sync_events where license_id=v_license_id and entity_type='cash_session' and entity_id='cash-legacy-adopt-' || v_suffix and operation='identity_adopt';
+  v_result := public.pos_admin_adopt_legacy_cash_session(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-legacy-adopt-' || v_suffix, 1, 'cash-identity-adopt-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,id}' <> 'cash-legacy-adopt-' || v_suffix
+     or v_result#>>'{cash_session,admin_user_id}' <> v_admin_user::text
+     or v_result#>>'{cash_session,actor_key}' <> 'admin:' || v_admin_user::text then
+    raise exception 'LEGACY_IDENTITY_ADOPT_FAILED: %', v_result;
+  end if;
+  if not exists(select 1 from public.pos_cash_sessions where id='cash-legacy-adopt-' || v_suffix and status='open' and admin_user_id=v_admin_user and actor_key='admin:' || v_admin_user::text and opening_amount=1185 and expected_cash_total=1196 and server_version=2) then
+    raise exception 'LEGACY_IDENTITY_ADOPT_CANONICAL_STATE_FAILED';
+  end if;
+  if (select count(*) from public.pos_sales where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> v_sales_before
+     or (select coalesce(sum(total), 0) from public.pos_sales where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> 30
+     or (select count(*) from public.pos_cash_movements where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> v_movements_before
+     or (select coalesce(sum(amount), 0) from public.pos_cash_movements where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> 11 then
+    raise exception 'LEGACY_IDENTITY_ADOPT_CHANGED_FINANCIAL_HISTORY';
+  end if;
+  if (select count(*) from public.pos_cash_audit_events where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix and event_type='ADMIN_CASH_IDENTITY_ADOPTED') <> v_audits_before + 1
+     or (select count(*) from public.pos_sync_events where license_id=v_license_id and entity_type='cash_session' and entity_id='cash-legacy-adopt-' || v_suffix and operation='identity_adopt') <> v_sync_before + 1 then
+    raise exception 'LEGACY_IDENTITY_ADOPT_AUDIT_OR_SYNC_FAILED';
+  end if;
+  v_result := public.pos_admin_adopt_legacy_cash_session(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-legacy-adopt-' || v_suffix, 1, 'cash-identity-adopt-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or (select count(*) from public.pos_cash_sessions where license_id=v_license_id and admin_user_id=v_admin_user and status='open' and deleted_at is null) <> 1
+     or (select count(*) from public.pos_sales where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> v_sales_before
+     or (select count(*) from public.pos_cash_movements where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> v_movements_before
+     or (select count(*) from public.pos_cash_audit_events where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix and event_type='ADMIN_CASH_IDENTITY_ADOPTED') <> v_audits_before + 1
+     or (select count(*) from public.pos_sync_events where license_id=v_license_id and entity_type='cash_session' and entity_id='cash-legacy-adopt-' || v_suffix and operation='identity_adopt') <> v_sync_before + 1 then
+    raise exception 'LEGACY_IDENTITY_ADOPT_IDEMPOTENCY_FAILED: %', v_result;
+  end if;
+  begin
+    perform public.pos_admin_adopt_legacy_cash_session(v_other_key, v_other_fingerprint, v_other_device_token, v_other_admin_token, 'cash-legacy-adopt-' || v_suffix, 2, 'cash-identity-cross-tenant-' || v_suffix);
+    raise exception 'LEGACY_IDENTITY_ADOPT_CROSS_TENANT_ACCEPTED';
+  exception when others then if sqlerrm <> 'CASH_SESSION_NOT_FOUND' then raise; end if; end;
+  begin
+    perform public.pos_admin_adopt_legacy_cash_session(v_admin_key, 'cash-staff-' || v_suffix, 'staff-device-' || v_suffix, v_staff_token, 'cash-legacy-unselected-' || v_suffix, 1, 'cash-identity-staff-' || v_suffix);
+    raise exception 'LEGACY_IDENTITY_ADOPT_STAFF_ACCEPTED';
+  exception when others then if sqlerrm <> 'ADMIN_SESSION_REQUIRED' then raise; end if; end;
+  if not exists(select 1 from public.pos_cash_sessions where id='cash-legacy-unselected-' || v_suffix and admin_user_id is null and actor_key='admin_device:legacy-unselected-' || v_suffix and status='open' and server_version=1) then
+    raise exception 'LEGACY_IDENTITY_ADOPT_UNSELECTED_CHANGED';
+  end if;
+
+  -- Both authenticated admin devices resolve the single canonical post-adoption cash session.
+  v_result := public.pos_get_current_cash_session(v_admin_key, v_fingerprint, v_device_token, v_admin_token);
+  if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,id}' <> 'cash-legacy-adopt-' || v_suffix or v_result->>'actor_key' <> 'admin:' || v_admin_user::text then
+    raise exception 'LEGACY_IDENTITY_ADOPT_DEVICE_A_RESOLUTION_FAILED: %', v_result;
+  end if;
+  v_result := public.pos_get_current_cash_session(v_admin_key, v_second_fingerprint, v_second_device_token, v_second_admin_token);
+  if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,id}' <> 'cash-legacy-adopt-' || v_suffix or v_result->>'actor_key' <> 'admin:' || v_admin_user::text
+     or (select count(*) from public.pos_cash_sessions where license_id=v_license_id and admin_user_id=v_admin_user and status='open' and deleted_at is null) <> 1 then
+    raise exception 'LEGACY_IDENTITY_ADOPT_MULTI_DEVICE_FAILED: %', v_result;
+  end if;
+
+  -- Sale then close: the actual cashier-sale RPC locks and updates the same cash session before the close snapshot.
+  v_result := public.pos_create_cloud_sale_cashier(
+    v_admin_key, v_fingerprint, v_device_token, v_admin_token,
+    jsonb_build_object('id', 'sale-before-close-' || v_suffix, 'local_sale_id', 'sale-before-close-' || v_suffix, 'total', 30, 'subtotal', 30, 'amount_paid', 30, 'payment_method', 'cash'),
+    jsonb_build_array(jsonb_build_object('id', 'sale-before-close-item-' || v_suffix, 'product_name', 'Venta de prueba', 'quantity', 1, 'unit_price', 30, 'line_total', 30)),
+    jsonb_build_array(jsonb_build_object('id', 'sale-before-close-payment-' || v_suffix, 'method', 'cash', 'amount', 30, 'received_amount', 30, 'change_amount', 0)),
+    'cash-legacy-adopt-' || v_suffix, 'sale-before-close-idem-' || v_suffix
+  );
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{sale,cash_session_id}' <> 'cash-legacy-adopt-' || v_suffix
+     or v_result#>>'{cash_session,expected_cash_total}' <> '1226'
+     or v_result#>>'{cash_movement,amount}' <> '30' then
+    raise exception 'SALE_BEFORE_CLOSE_EXPECTED_CASH_FAILED: %', v_result;
+  end if;
+  select server_version into v_version from public.pos_cash_sessions where id='cash-legacy-adopt-' || v_suffix;
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-legacy-adopt-' || v_suffix, 'admin_audited', 1226, 0, 'operational_error', 'Cierre posterior a venta de efectivo.', v_version, 'cash-close-after-sale-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,expected_cash_total}' <> '1226'
+     or v_result#>>'{cash_session,cash_difference}' <> '0' then
+    raise exception 'SALE_BEFORE_CLOSE_RECONCILIATION_FAILED: %', v_result;
+  end if;
+
+  -- Close then sale: the same cashier-sale RPC must reject a closed session and create no financial rows.
+  select count(*) into v_sales_before from public.pos_sales where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix;
+  select count(*) into v_movements_before from public.pos_cash_movements where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix;
+  begin
+    perform public.pos_create_cloud_sale_cashier(
+      v_admin_key, v_fingerprint, v_device_token, v_admin_token,
+      jsonb_build_object('id', 'sale-after-close-' || v_suffix, 'local_sale_id', 'sale-after-close-' || v_suffix, 'total', 5, 'subtotal', 5, 'amount_paid', 5, 'payment_method', 'cash'),
+      jsonb_build_array(jsonb_build_object('id', 'sale-after-close-item-' || v_suffix, 'product_name', 'Venta bloqueada', 'quantity', 1, 'unit_price', 5, 'line_total', 5)),
+      jsonb_build_array(jsonb_build_object('id', 'sale-after-close-payment-' || v_suffix, 'method', 'cash', 'amount', 5, 'received_amount', 5, 'change_amount', 0)),
+      'cash-legacy-adopt-' || v_suffix, 'sale-after-close-idem-' || v_suffix
+    );
+    raise exception 'SALE_AFTER_CLOSE_ACCEPTED';
+  exception when others then if sqlerrm <> 'CASH_SESSION_NOT_OPEN' then raise; end if; end;
+  if (select count(*) from public.pos_sales where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> v_sales_before
+     or (select count(*) from public.pos_cash_movements where license_id=v_license_id and cash_session_id='cash-legacy-adopt-' || v_suffix) <> v_movements_before then
+    raise exception 'SALE_AFTER_CLOSE_CREATED_FINANCIAL_ROWS';
+  end if;
+
+  -- This one-connection SQL file proves both serialized orders through real RPCs. A true overlapping sale/close race requires the existing two-session harness pattern.
 
   v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-admin-audited-' || v_suffix, 'admin_audited', 1180, 0, 'operational_error', 'Conteo documentado', 1, 'cash-admin-idem-' || v_suffix);
   if coalesce((v_result->>'success')::boolean,false) is not true or v_result#>>'{cash_session,cash_difference}' <> '-16' then raise exception 'ADMIN_AUDITED_DIFFERENCE_FAILED: %', v_result; end if;
@@ -65,6 +193,46 @@ begin
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and closing_counted_amount is null and cash_difference is null and expected_cash_total=1196 and next_shift_fund=0 and reconciliation_status='unverified') then raise exception 'ADMIN_UNVERIFIED_NULL_SEMANTICS_FAILED'; end if;
   if exists(select 1 from public.pos_cash_movements where cash_session_id='cash-staff-unverified-' || v_suffix) then raise exception 'ADMIN_UNVERIFIED_CREATED_MOVEMENT'; end if;
   if not exists(select 1 from public.pos_cash_sessions where id='cash-staff-unverified-' || v_suffix and close_detail->>'expected_cash_total'='1196' and close_detail->>'closing_counted_amount' is null and close_detail->>'cash_difference' is null) then raise exception 'ADMIN_UNVERIFIED_CLOSE_DETAIL_NULL_FAILED'; end if;
+
+  -- Zero is a valid audited physical count, never the representation of an unavailable count.
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-zero-' || v_suffix, 'admin_audited', 0, 0, 'operational_error', 'Conteo fisico de cero.', 1, 'cash-zero-idem-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,closing_counted_amount}' <> '0'
+     or v_result#>>'{cash_session,cash_difference}' <> '0' then
+    raise exception 'ADMIN_AUDITED_ZERO_SEMANTICS_FAILED: %', v_result;
+  end if;
+
+  -- The retained next-shift fund is closure metadata and cannot change expected cash or difference.
+  v_result := public.pos_admin_close_cash_session_unlimited(v_admin_key, v_fingerprint, v_device_token, v_admin_token, 'cash-next-fund-' || v_suffix, 'admin_audited', 1180, 200, 'operational_error', 'Fondo para el siguiente turno.', 1, 'cash-next-fund-idem-' || v_suffix);
+  if coalesce((v_result->>'success')::boolean, false) is not true
+     or v_result#>>'{cash_session,expected_cash_total}' <> '1196'
+     or v_result#>>'{cash_session,closing_counted_amount}' <> '1180'
+     or v_result#>>'{cash_session,cash_difference}' <> '-16'
+     or v_result#>>'{cash_session,next_shift_fund}' <> '200' then
+    raise exception 'ADMIN_CLOSE_NEXT_SHIFT_FUND_SEMANTICS_FAILED: %', v_result;
+  end if;
+
+  -- Phase 4's CHECK must reject invalid snapshots even if a write bypasses the RPC.
+  begin
+    update public.pos_cash_sessions set closing_counted_amount = null where id = 'cash-admin-audited-' || v_suffix;
+    raise exception 'ADMIN_AUDITED_NULL_COUNTED_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.pos_cash_sessions set cash_difference = 0 where id = 'cash-staff-unverified-' || v_suffix;
+    raise exception 'ADMIN_UNVERIFIED_DIFFERENCE_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.pos_cash_sessions set closure_reason_code = null where id = 'cash-staff-unverified-' || v_suffix;
+    raise exception 'ADMIN_UNVERIFIED_REASON_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.pos_cash_sessions set audit_comments = '' where id = 'cash-staff-unverified-' || v_suffix;
+    raise exception 'ADMIN_UNVERIFIED_COMMENT_CHECK_ACCEPTED';
+  exception when check_violation then null;
+  end;
 
   -- A stale aggregate can change during canonical recalculation without an earlier version bump.
   insert into public.pos_cash_movements(

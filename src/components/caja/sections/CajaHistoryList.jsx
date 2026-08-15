@@ -18,8 +18,10 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
     const historialPaginado = historial.slice(startIndex, startIndex + itemsPerPage);
 
     return historialPaginado.map(c => {
-      const diffSafe = Money.init(c.diferencia || 0);
-      const isCuadrada = diffSafe.abs().lt(1);
+      const rawDifference = c.diferencia ?? c.cash_difference;
+      const hasPhysicalCount = rawDifference !== null && rawDifference !== undefined;
+      const diffSafe = Money.init(rawDifference ?? 0);
+      const isCuadrada = hasPhysicalCount && diffSafe.abs().lt(1);
       const staffUserId = c.staffUserId || c.staff_user_id || null;
       const actorKey = c.actorKey || c.actor_key || null;
       const responsible = c.responsable_apertura || c.responsibleName || c.staff_display_name || c.staffDisplayName || null;
@@ -39,8 +41,8 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
         actorKey,
         staffUserId,
         isCuadrada,
-        cierre: c.monto_cierre ? `$${Money.toNumber(c.monto_cierre || 0).toFixed(2)}` : 'N/A',
-        dif: `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}`,
+        cierre: c.monto_cierre !== null && c.monto_cierre !== undefined ? `$${Money.toNumber(c.monto_cierre).toFixed(2)}` : 'No contado',
+        dif: hasPhysicalCount ? `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}` : 'No calculada',
         difTone: diffSafe.gt(0) ? 'positive' : 'negative'
       };
     });
@@ -85,14 +87,14 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
       <div className="history-list">
         {historialRender.map(c => (
           <div key={c.id} className="history-item">
-            <span className={`history-status-icon ${c.isCuadrada ? 'success' : 'error'}`} aria-hidden="true">
+            <span className={`history-status-icon ${c.isCuadrada ? 'success' : c.dif === 'No calculada' ? 'neutral' : 'error'}`} aria-hidden="true">
               {c.isCuadrada ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
             </span>
             <div className="history-content">
               <div className="movement-header">
                 <strong className="movement-title">{c.fecha} {c.hora}</strong>
-                <span className={`ui-badge ${c.isCuadrada ? 'ui-badge--success' : 'ui-badge--danger'} status-badge ${c.isCuadrada ? 'success' : 'error'}`}>
-                  {c.isCuadrada ? 'Cuadrada' : 'Descuadre'}
+                <span className={`ui-badge ${c.isCuadrada ? 'ui-badge--success' : c.dif === 'No calculada' ? 'ui-badge--neutral' : 'ui-badge--danger'} status-badge ${c.isCuadrada ? 'success' : c.dif === 'No calculada' ? 'neutral' : 'error'}`}>
+                  {c.isCuadrada ? 'Cuadrada' : c.dif === 'No calculada' ? 'Sin conteo' : 'Descuadre'}
                 </span>
               </div>
               <div className="movement-details">
