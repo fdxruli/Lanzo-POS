@@ -94,6 +94,8 @@ const makeIdempotencyKey = ({ entityType, operation, entityId }) => generateIdem
 const pendingSync = (idempotencyKey) => ({
   syncStatus: PRODUCT_SYNC_STATUS.PENDING,
   pendingOperationId: idempotencyKey,
+  localMutationId: idempotencyKey,
+  lastSyncedAt: null,
   conflictReason: null
 });
 

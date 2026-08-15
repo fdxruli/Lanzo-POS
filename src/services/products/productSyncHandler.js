@@ -51,6 +51,31 @@ const getExpectedVersion = (operation = {}) => {
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 
+const isCatalogOperation = (operation = {}) => (
+  operation.entityType === SYNC_ENTITY_TYPES.CATEGORY
+  || operation.entityType === SYNC_ENTITY_TYPES.PRODUCT
+  || operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH
+);
+
+const hasNewerLocalMutation = async (operation = {}) => {
+  if (!isCatalogOperation(operation) || typeof productLocalRepository.getCatalogRecordForSync !== 'function') {
+    return false;
+  }
+
+  const current = await productLocalRepository.getCatalogRecordForSync(
+    operation.entityType,
+    operation.entityId
+  );
+  if (!current) return false;
+
+  const operationKey = operation.idempotencyKey || operation.id;
+  if (current.localMutationId) return current.localMutationId !== operationKey;
+
+  const expectedVersion = getExpectedVersion(operation);
+  const currentVersion = Number(current.serverVersion ?? current.server_version);
+  return expectedVersion !== null && Number.isFinite(currentVersion) && currentVersion > expectedVersion;
+};
+
 export const pullCatalogChanges = async (licenseKeyOverride = null) => {
   const licenseKey = licenseKeyOverride || getRuntimeLicenseKey();
   if (!licenseKey || !isOnline()) return { skipped: true };
@@ -256,6 +281,22 @@ export const productSyncHandler = {
 
     if (response?.success === false) {
       throw asError(response, 'PRODUCT_PUSH_FAILED');
+    }
+
+    if (await hasNewerLocalMutation(operation)) {
+      const staleResponse = {
+        ...(response || {}),
+        success: false,
+        code: 'STALE_LOCAL_MUTATION',
+        message: 'La respuesta del outbox corresponde a una mutacion local anterior y no se aplico.'
+      };
+      await productConflictService.saveConflict({
+        operation,
+        response: staleResponse,
+        source: 'productSyncHandler.pushOperation.stale_local_mutation'
+      });
+      notifyProductsChanged({ source: 'productSyncHandler.pushOperation.stale_local_mutation' });
+      return { conflict: staleResponse, success: false };
     }
 
     await productLocalRepository.applyCloudCatalog(response);

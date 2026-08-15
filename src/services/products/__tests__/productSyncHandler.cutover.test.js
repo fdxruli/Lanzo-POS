@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   upsertProduct: vi.fn(),
   saveConflict: vi.fn(),
   applyCloudCatalog: vi.fn(),
+  getCatalogRecordForSync: vi.fn(),
   setMeta: vi.fn()
 }));
 
@@ -32,7 +33,8 @@ vi.mock('../productCloudRepository', () => ({ productCloudRepository: {
   upsertProduct: mocks.upsertProduct
 } }));
 vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
-  applyCloudCatalog: mocks.applyCloudCatalog
+  applyCloudCatalog: mocks.applyCloudCatalog,
+  getCatalogRecordForSync: mocks.getCatalogRecordForSync
 } }));
 vi.mock('../productConflictService', () => ({ productConflictService: {
   isConflictResponse: (response) => response?.code === 'VERSION_CONFLICT',
@@ -61,6 +63,7 @@ describe('product sync repeated cutover safety', () => {
     });
     mocks.runRecovery.mockResolvedValue({ success: true, skipped: true, reason: 'no_unsynced_catalog' });
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 1, batches: 0, rejected: [] });
+    mocks.getCatalogRecordForSync.mockResolvedValue(null);
   });
 
   it('does not double-submit recovery when migration already returned its recovery result', async () => {
@@ -109,5 +112,40 @@ describe('product sync repeated cutover safety', () => {
       source: 'productSyncHandler.pushOperation'
     }));
     expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('does not apply a successful replay from an old outbox key over a newer FREE mutation', async () => {
+    const replayResponse = { success: true, product: { id: 'product-stale', name: 'Old response', server_version: 6 } };
+    mocks.upsertProduct.mockResolvedValue(replayResponse);
+    mocks.getCatalogRecordForSync.mockResolvedValue({
+      id: 'product-stale',
+      serverVersion: 6,
+      localMutationId: 'new-free-mutation',
+      isActive: false
+    });
+
+    const result = await productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPDATE,
+      entityId: 'product-stale',
+      id: 'old-outbox-operation',
+      idempotencyKey: 'old-outbox-operation',
+      payload: {
+        expectedVersion: 5,
+        productId: 'product-stale',
+        product: { id: 'product-stale', is_active: true }
+      }
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      conflict: { code: 'STALE_LOCAL_MUTATION' }
+    });
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+    expect(mocks.saveConflict).toHaveBeenCalledWith(expect.objectContaining({
+      operation: expect.objectContaining({ id: 'old-outbox-operation' }),
+      response: expect.objectContaining({ code: 'STALE_LOCAL_MUTATION' })
+    }));
   });
 });

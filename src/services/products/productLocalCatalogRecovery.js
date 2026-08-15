@@ -2,6 +2,7 @@ import Logger from '../Logger';
 import { syncConflictService } from '../sync/syncConflictService';
 import { syncMetaService } from '../sync/syncMetaService';
 import { SYNC_ENTITY_TYPES } from '../sync/syncConstants';
+import { getTenantStorageState } from '../tenant/tenantScopedStorage';
 import {
   batchToCloudPayload,
   categoryToCloudPayload,
@@ -26,14 +27,15 @@ const countCatalogRows = (catalog = {}) => {
 };
 
 const saveRecoveryWarning = async ({ licenseKey, issues, conflictType, message }) => {
+  const tenantIdentity = getSafeTenantIdentity(licenseKey);
   const conflict = await syncConflictService.saveConflict({
-    id: `products-recovery:${licenseKey}:${Date.now()}`,
+    id: `products-recovery:${tenantIdentity}:${Date.now()}`,
     entityType: SYNC_ENTITY_TYPES.PRODUCT,
     entityId: 'local-catalog-recovery',
     conflictType,
     localPayload: { issues },
     serverPayload: null,
-    metadata: { licenseKey, message }
+    metadata: { tenantIdentity, message }
   });
 
   await syncMetaService.setMeta(PRODUCTS_UNSYNCED_RESCUE_META_KEY, {
@@ -95,23 +97,41 @@ const getExpectedVersion = (record) => {
 const sanitizeKeyPart = (value, fallback = 'unknown') => String(value || fallback)
   .replace(/[^a-zA-Z0-9._-]+/g, '-');
 
-const buildRecoveryIdempotencyKey = ({ licenseKey, entityType, operation, record }) => (
-  record?.pendingOperationId
+const fingerprint = (value) => {
+  let hash = 2166136261;
+  for (const character of String(value || '')) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+const getSafeTenantIdentity = (licenseKey) => (
+  getTenantStorageState()?.opaqueId || `license-fp-${fingerprint(licenseKey)}`
+);
+
+const getLocalMutationIdentity = (record) => (
+  record?.localMutationId
   || [
+    record?.updatedAt,
+    record?.updated_at,
+    record?.deletedAt,
+    record?.deletedTimestamp,
+    record?.createdAt,
+    record?.created_at
+  ].find(Boolean)
+  || 'legacy'
+);
+
+const buildRecoveryIdempotencyKey = ({ licenseKey, entityType, operation, record }) => (
+  [
     'products-recovery',
-    sanitizeKeyPart(licenseKey, 'tenant'),
+    sanitizeKeyPart(getSafeTenantIdentity(licenseKey), 'tenant'),
     operation,
     entityType,
     sanitizeKeyPart(record?.id, 'unknown'),
     getExpectedVersion(record) ?? 'new',
-    sanitizeKeyPart(
-      record?.updatedAt
-      || record?.updated_at
-      || record?.deletedAt
-      || record?.deletedTimestamp
-      || record?.createdAt,
-      'unknown'
-    )
+    sanitizeKeyPart(getLocalMutationIdentity(record), 'legacy')
   ].join(':')
 );
 

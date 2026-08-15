@@ -23,6 +23,15 @@ import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 
 const nowIso = () => new Date().toISOString();
 
+const createLocalMutationSync = (sync = {}) => ({
+  ...sync,
+  syncStatus: sync.syncStatus || PRODUCT_SYNC_STATUS.LOCAL,
+  lastSyncedAt: null,
+  pendingOperationId: sync.pendingOperationId ?? null,
+  localMutationId: sync.localMutationId || generateID('mutation'),
+  conflictReason: null
+});
+
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -40,7 +49,7 @@ const isActiveCatalogRecord = (record) => (
 );
 
 const isUnsyncedCatalogRecord = (record) => {
-  if (!isActiveCatalogRecord(record)) return false;
+  if (!record?.id || record.deletedAt || record.deletedTimestamp) return false;
   return (
     record.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED ||
     !record.serverVersion ||
@@ -54,6 +63,7 @@ const markLocalDeletionPending = async (storeName, id) => {
     syncStatus: PRODUCT_SYNC_STATUS.LOCAL,
     lastSyncedAt: null,
     pendingOperationId: null,
+    localMutationId: generateID('mutation'),
     conflictReason: null,
     deletionPending: true
   });
@@ -107,12 +117,24 @@ export const productLocalRepository = {
     return loadData(STORES.PRODUCT_BATCHES, batchId);
   },
 
+  async getCatalogRecordForSync(entityType, entityId) {
+    if (!entityId) return null;
+    await ensureOpen();
+    const activeStore = entityType === 'category'
+      ? STORES.CATEGORIES
+      : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU);
+    const active = await db.table(activeStore).get(entityId);
+    if (active) return active;
+    return db.table(getDeletionStore(entityType)).get(entityId);
+  },
+
   async saveCategoryLocal(categoryData, sync = {}) {
     await ensureOpen();
     const isNew = !categoryData.id;
+    const mutationSync = createLocalMutationSync(sync);
     const payload = {
       ...categoryData,
-      ...sync,
+      ...mutationSync,
       id: categoryData.id || generateID('cat'),
       name: String(categoryData.name || '').trim(),
       color: categoryData.color || '#cccccc',
@@ -130,8 +152,9 @@ export const productLocalRepository = {
   async deleteCategoryLocal(categoryId, sync = null) {
     if (sync) {
       await ensureOpen();
+      const mutationSync = createLocalMutationSync(sync);
       await db.table(STORES.CATEGORIES).update(categoryId, {
-        ...sync,
+        ...mutationSync,
         isActive: false,
         deletedAt: nowIso(),
         updatedAt: nowIso()
@@ -276,18 +299,19 @@ export const productLocalRepository = {
   },
 
   async savePreparedProductLocal(prepared, sync = {}) {
-    const product = { ...prepared.product, ...sync };
-    const batches = prepared.batches.map((batch) => ({ ...batch, ...sync }));
+    const mutationSync = createLocalMutationSync(sync);
+    const product = { ...prepared.product, ...mutationSync };
+    const batches = prepared.batches.map((batch) => ({ ...batch, ...mutationSync }));
     let result;
 
     if (prepared.editing) {
       result = await updateProductSafe(prepared.productId, product);
-      if (result?.success) await applySyncFields(STORES.MENU, prepared.productId, sync);
+      if (result?.success) await applySyncFields(STORES.MENU, prepared.productId, mutationSync);
     } else {
       result = await createProductWithInitialInventorySafe(product, batches);
       if (result?.success || result?.productId) {
-        await applySyncFields(STORES.MENU, prepared.productId, sync);
-        for (const batch of batches) await applySyncFields(STORES.PRODUCT_BATCHES, batch.id, sync);
+        await applySyncFields(STORES.MENU, prepared.productId, mutationSync);
+        for (const batch of batches) await applySyncFields(STORES.PRODUCT_BATCHES, batch.id, mutationSync);
       }
     }
 
@@ -310,8 +334,9 @@ export const productLocalRepository = {
     }
 
     await ensureOpen();
+    const mutationSync = createLocalMutationSync(sync);
     await db.table(STORES.MENU).update(productId, {
-      ...sync,
+      ...mutationSync,
       isActive: false,
       deletedAt: nowIso(),
       updatedAt: nowIso()
@@ -322,7 +347,13 @@ export const productLocalRepository = {
   async toggleProductStatusLocal(product, isActive) {
     const productId = typeof product === 'string' ? product : product?.id;
     const current = typeof product === 'string' ? await this.getProductById(productId) : product;
-    return updateProductSafe(productId, { ...current, isActive, updatedAt: nowIso() });
+    const mutationSync = createLocalMutationSync();
+    return updateProductSafe(productId, {
+      ...current,
+      ...mutationSync,
+      isActive,
+      updatedAt: nowIso()
+    });
   },
 
   async markProductPending(productId, sync = {}) {
@@ -330,11 +361,12 @@ export const productLocalRepository = {
   },
 
   async saveBatchLocal(batchData, sync = {}) {
-    const payload = { ...batchData, ...sync };
+    const mutationSync = createLocalMutationSync(sync);
+    const payload = { ...batchData, ...mutationSync };
     const result = await saveBatchAndSyncProductSafe(payload);
     if (result?.success) {
-      await applySyncFields(STORES.PRODUCT_BATCHES, payload.id, sync);
-      if (payload.productId) await applySyncFields(STORES.MENU, payload.productId, sync);
+      await applySyncFields(STORES.PRODUCT_BATCHES, payload.id, mutationSync);
+      if (payload.productId) await applySyncFields(STORES.MENU, payload.productId, mutationSync);
     }
     return result;
   },
@@ -452,6 +484,7 @@ export const productLocalRepository = {
       syncStatus: PRODUCT_SYNC_STATUS.SYNCED,
       lastSyncedAt: nowIso(),
       pendingOperationId: null,
+      localMutationId: null,
       conflictReason: null,
       deletionPending: false
     };

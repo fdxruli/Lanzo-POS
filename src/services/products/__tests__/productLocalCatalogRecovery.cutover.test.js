@@ -26,6 +26,9 @@ vi.mock('../../sync/syncMetaService', () => ({ syncMetaService: {
 vi.mock('../../sync/syncConflictService', () => ({ syncConflictService: {
   saveConflict: mocks.saveConflict
 } }));
+vi.mock('../../tenant/tenantScopedStorage', () => ({
+  getTenantStorageState: () => ({ opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' })
+}));
 vi.mock('../productLocalRepository', () => ({ productLocalRepository: {
   listUnsyncedLocalCatalogForCloud: mocks.listUnsynced,
   getLocalCatalogForMigration: mocks.getLocalCatalog,
@@ -58,6 +61,8 @@ vi.mock('../../Logger', () => ({ default: {
 vi.mock('../productEvents', () => ({ notifyProductsChanged: vi.fn() }));
 
 import { productLocalCatalogRecovery } from '../productLocalCatalogRecovery';
+
+const recoveryTenantId = 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 const localCatalog = {
   categories: [],
@@ -116,12 +121,12 @@ describe('repeated FREE to PRO catalog recovery', () => {
     expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({
        licenseKey: 'CUTOVER-UPDATE-CREATE',
        expectedVersion: 4,
-       idempotencyKey: 'products-recovery:CUTOVER-UPDATE-CREATE:upsert:product:existing-product:4:unknown'
+       idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:existing-product:4:legacy`
      }));
     expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({
       licenseKey: 'CUTOVER-UPDATE-CREATE',
       expectedVersion: null,
-      idempotencyKey: 'products-recovery:CUTOVER-UPDATE-CREATE:upsert:product:new-product:new:unknown'
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:new-product:new:legacy`
     }));
     expect(mocks.upsertProduct).toHaveBeenCalledTimes(2);
     expect(mocks.events).toEqual([]);
@@ -129,8 +134,23 @@ describe('repeated FREE to PRO catalog recovery', () => {
   });
 
   it('uses OCC for category and batch updates and keeps deterministic retry keys', async () => {
-    const category = { id: 'category-1', name: 'Category', serverVersion: 2, updatedAt: '2026-08-15T00:00:00.000Z' };
-    const batch = { id: 'batch-1', productId: 'existing-product', stock: 3, serverVersion: 6, updatedAt: '2026-08-15T00:00:01.000Z' };
+    const category = {
+      id: 'category-1',
+      name: 'Category',
+      serverVersion: 2,
+      updatedAt: '2026-08-15T00:00:00.000Z',
+      pendingOperationId: 'old-category-operation',
+      localMutationId: 'category-mutation-2'
+    };
+    const batch = {
+      id: 'batch-1',
+      productId: 'existing-product',
+      stock: 3,
+      serverVersion: 6,
+      updatedAt: '2026-08-15T00:00:01.000Z',
+      pendingOperationId: 'old-batch-operation',
+      localMutationId: 'batch-mutation-6'
+    };
     mocks.listUnsynced.mockResolvedValue({
       categories: [category],
       products: [],
@@ -145,11 +165,149 @@ describe('repeated FREE to PRO catalog recovery', () => {
 
     expect(mocks.upsertCategory).toHaveBeenCalledWith(expect.objectContaining({
       expectedVersion: 2,
-      idempotencyKey: 'products-recovery:CUTOVER-CATEGORY-BATCH:upsert:category:category-1:2:2026-08-15T00-00-00.000Z'
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:category:category-1:2:category-mutation-2`
     }));
     expect(mocks.upsertProductBatch).toHaveBeenCalledWith(expect.objectContaining({
       expectedVersion: 6,
-      idempotencyKey: 'products-recovery:CUTOVER-CATEGORY-BATCH:upsert:product_batch:batch-1:6:2026-08-15T00-00-01.000Z'
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product_batch:batch-1:6:batch-mutation-6`
+    }));
+    expect(mocks.upsertCategory).not.toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'old-category-operation' }));
+    expect(mocks.upsertProductBatch).not.toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'old-batch-operation' }));
+  });
+
+  it('recovers inactive unsynced products as upserts and keeps real deletes on the tombstone path', async () => {
+    const deactivated = {
+      id: 'deactivated-product',
+      name: 'Deactivated',
+      isActive: false,
+      serverVersion: 10,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      localMutationId: 'mutation-deactivate'
+    };
+    const activated = {
+      id: 'activated-product',
+      name: 'Activated',
+      isActive: true,
+      serverVersion: 11,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      localMutationId: 'mutation-activate'
+    };
+    const tombstone = {
+      id: 'deleted-product',
+      isActive: false,
+      deletedAt: '2026-08-15T00:00:00.000Z',
+      deletionPending: true,
+      serverVersion: 12,
+      localMutationId: 'mutation-delete'
+    };
+    mocks.listUnsynced.mockResolvedValue({
+      categories: [],
+      products: [deactivated, activated],
+      batches: [],
+      deletes: { categories: [], products: [tombstone], batches: [] }
+    });
+    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [deactivated, activated], batches: [] });
+
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'CUTOVER-INACTIVE-INTENT'
+    })).resolves.toMatchObject({ success: true, recovered: 3 });
+
+    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      expectedVersion: 10,
+      product: expect.objectContaining({ id: 'deactivated-product', isActive: false }),
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:deactivated-product:10:mutation-deactivate`
+    }));
+    expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      expectedVersion: 11,
+      product: expect.objectContaining({ id: 'activated-product', isActive: true }),
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:activated-product:11:mutation-activate`
+    }));
+    expect(mocks.deleteProduct).toHaveBeenCalledWith(expect.objectContaining({
+      productId: 'deleted-product',
+      idempotencyKey: `products-recovery:${recoveryTenantId}:delete:product:deleted-product:12:mutation-delete`
+    }));
+  });
+
+  it('does not replay an old outbox key, keeps retries stable, and changes key after a second edit', async () => {
+    const firstEdit = {
+      id: 'reused-key-product',
+      name: 'New FREE edit',
+      serverVersion: 7,
+      updatedAt: '2026-08-15T00:00:00.000Z',
+      pendingOperationId: 'old-completed-operation-k',
+      localMutationId: 'new-free-mutation-a'
+    };
+    const catalog = (record) => ({
+      categories: [],
+      products: [record],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+    mocks.listUnsynced.mockResolvedValue(catalog(firstEdit));
+    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [firstEdit], batches: [] });
+    mocks.upsertProduct
+      .mockRejectedValueOnce(new Error('transient failure'))
+      .mockResolvedValueOnce({ success: true, product: firstEdit });
+
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'CUTOVER-IDEMPOTENCY-RETRY'
+    })).resolves.toMatchObject({ success: false, blocked: true });
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'CUTOVER-IDEMPOTENCY-RETRY'
+    })).resolves.toMatchObject({ success: true, recovered: 1 });
+
+    const firstKey = mocks.upsertProduct.mock.calls[0][0].idempotencyKey;
+    const retryKey = mocks.upsertProduct.mock.calls[1][0].idempotencyKey;
+    expect(firstKey).toBe(retryKey);
+    expect(firstKey).not.toBe('old-completed-operation-k');
+    expect(firstKey).not.toContain('CUTOVER-IDEMPOTENCY-RETRY');
+
+    const secondEdit = { ...firstEdit, name: 'Second FREE edit', localMutationId: 'new-free-mutation-b' };
+    mocks.listUnsynced.mockResolvedValueOnce(catalog(firstEdit)).mockResolvedValueOnce(catalog(secondEdit));
+    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [secondEdit], batches: [] });
+    mocks.upsertProduct.mockResolvedValue({ success: true, product: secondEdit });
+
+    await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey: 'CUTOVER-IDEMPOTENCY-SECOND-EDIT' });
+    await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({ licenseKey: 'CUTOVER-IDEMPOTENCY-SECOND-EDIT' });
+
+    const secondEditKeys = mocks.upsertProduct.mock.calls.slice(-2).map(([payload]) => payload.idempotencyKey);
+    expect(secondEditKeys[0]).not.toBe(secondEditKeys[1]);
+    expect(secondEditKeys[0]).toContain('new-free-mutation-a');
+    expect(secondEditKeys[1]).toContain('new-free-mutation-b');
+  });
+
+  it('treats a server replay on the old key as stale and surfaces VERSION_CONFLICT for the new mutation', async () => {
+    const record = {
+      id: 'server-replay-product',
+      name: 'Current FREE edit',
+      serverVersion: 3,
+      pendingOperationId: 'old-completed-operation-k',
+      localMutationId: 'current-mutation'
+    };
+    mocks.listUnsynced.mockResolvedValue({
+      categories: [],
+      products: [record],
+      batches: [],
+      deletes: { categories: [], products: [], batches: [] }
+    });
+    mocks.getLocalCatalog.mockResolvedValue({ categories: [], products: [record], batches: [] });
+    mocks.upsertProduct.mockImplementation(async ({ idempotencyKey }) => (
+      idempotencyKey === 'old-completed-operation-k'
+        ? { success: true, product: { id: 'server-replay-product', name: 'Old response' } }
+        : { success: false, code: 'VERSION_CONFLICT', message: 'Current server version is newer.' }
+    ));
+
+    await expect(productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      licenseKey: 'CUTOVER-SERVER-REPLAY'
+    })).resolves.toMatchObject({ success: false, blocked: true });
+
+    expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:server-replay-product:3:current-mutation`
+    }));
+    expect(mocks.saveConflict).toHaveBeenCalledWith(expect.objectContaining({
+      localPayload: { issues: [expect.objectContaining({ code: 'VERSION_CONFLICT' })] }
     }));
   });
 
@@ -160,7 +318,9 @@ describe('repeated FREE to PRO catalog recovery', () => {
       id: 'deleted-product',
       serverVersion: 8,
       deletedTimestamp: '2026-08-15T00:00:00.000Z',
-      deletionPending: true
+      deletionPending: true,
+      pendingOperationId: 'old-upsert-operation',
+      localMutationId: 'delete-after-upsert'
     };
     mocks.listUnsynced.mockResolvedValue({
       categories: [],
@@ -176,15 +336,15 @@ describe('repeated FREE to PRO catalog recovery', () => {
 
     expect(mocks.upsertProduct).toHaveBeenNthCalledWith(1, expect.objectContaining({
       expectedVersion: 5,
-      idempotencyKey: 'products-recovery:CUTOVER-MIXED-INTENT:upsert:product:updated-product:5:unknown'
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:updated-product:5:legacy`
     }));
     expect(mocks.upsertProduct).toHaveBeenNthCalledWith(2, expect.objectContaining({
       expectedVersion: null,
-      idempotencyKey: 'products-recovery:CUTOVER-MIXED-INTENT:upsert:product:new-product:new:unknown'
+      idempotencyKey: `products-recovery:${recoveryTenantId}:upsert:product:new-product:new:legacy`
     }));
     expect(mocks.deleteProduct).toHaveBeenCalledWith(expect.objectContaining({
       expectedVersion: 8,
-      idempotencyKey: 'products-recovery:CUTOVER-MIXED-INTENT:delete:product:deleted-product:8:2026-08-15T00-00-00.000Z'
+      idempotencyKey: `products-recovery:${recoveryTenantId}:delete:product:deleted-product:8:delete-after-upsert`
     }));
     expect(mocks.markDeletionSynced).toHaveBeenCalledWith({
       entityType: 'product',
@@ -266,7 +426,7 @@ describe('repeated FREE to PRO catalog recovery', () => {
       licenseKey: 'CUTOVER-DELETE',
       productId: 'deleted-product',
        expectedVersion: 8,
-       idempotencyKey: 'products-recovery:CUTOVER-DELETE:delete:product:deleted-product:8:2026-08-15T00-00-00.000Z'
+       idempotencyKey: `products-recovery:${recoveryTenantId}:delete:product:deleted-product:8:2026-08-15T00-00-00.000Z`
     });
     expect(mocks.markDeletionSynced).toHaveBeenCalledWith({
       entityType: 'product',

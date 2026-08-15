@@ -8,6 +8,16 @@ const rows = vi.hoisted(() => ({
   deletedMenu: []
 }));
 
+const databaseMocks = vi.hoisted(() => ({
+  createProductWithInitialInventorySafe: vi.fn(),
+  loadData: vi.fn(),
+  loadDataPaginated: vi.fn(),
+  saveBatchAndSyncProductSafe: vi.fn(),
+  saveImageToDB: vi.fn(),
+  softDeleteWithCascadeSafe: vi.fn(),
+  updateProductSafe: vi.fn()
+}));
+
 const tableFor = (storeName) => ({
   toArray: vi.fn(async () => rows[storeName].map((row) => ({ ...row }))),
   get: vi.fn(async (id) => rows[storeName].find((row) => row.id === id) || null),
@@ -21,7 +31,10 @@ const tableFor = (storeName) => ({
     const index = rows[storeName].findIndex((row) => row.id === id);
     if (index >= 0) rows[storeName][index] = { ...rows[storeName][index], ...changes };
     return index >= 0 ? 1 : 0;
-  })
+  }),
+  filter: vi.fn((predicate) => ({
+    first: vi.fn(async () => rows[storeName].find(predicate) || null)
+  }))
 });
 
 const tables = vi.hoisted(() => new Map());
@@ -45,13 +58,13 @@ vi.mock('../../db/dexie', () => ({
 }));
 
 vi.mock('../../database', () => ({
-  createProductWithInitialInventorySafe: vi.fn(),
-  loadData: vi.fn(),
-  loadDataPaginated: vi.fn(),
-  saveBatchAndSyncProductSafe: vi.fn(),
-  saveImageToDB: vi.fn(),
-  softDeleteWithCascadeSafe: vi.fn(),
-  updateProductSafe: vi.fn()
+  createProductWithInitialInventorySafe: databaseMocks.createProductWithInitialInventorySafe,
+  loadData: databaseMocks.loadData,
+  loadDataPaginated: databaseMocks.loadDataPaginated,
+  saveBatchAndSyncProductSafe: databaseMocks.saveBatchAndSyncProductSafe,
+  saveImageToDB: databaseMocks.saveImageToDB,
+  softDeleteWithCascadeSafe: databaseMocks.softDeleteWithCascadeSafe,
+  updateProductSafe: databaseMocks.updateProductSafe
 }));
 vi.mock('../../db/general', () => ({ categoriesRepository: { getActiveCategories: vi.fn() } }));
 vi.mock('../../utils', () => ({ generateID: vi.fn((prefix = 'id') => `${prefix}-generated`) }));
@@ -62,17 +75,42 @@ describe('product local catalog cutover intent', () => {
   beforeEach(() => {
     Object.keys(rows).forEach((key) => { rows[key].length = 0; });
     tables.clear();
+    vi.clearAllMocks();
+    databaseMocks.createProductWithInitialInventorySafe.mockResolvedValue({ success: true });
+    databaseMocks.saveBatchAndSyncProductSafe.mockResolvedValue({ success: true });
+    databaseMocks.updateProductSafe.mockResolvedValue({ success: true });
+    databaseMocks.softDeleteWithCascadeSafe.mockResolvedValue({ success: true });
   });
 
   it('exposes active mutations and product/category/batch tombstones to cutover recovery', async () => {
     rows.menu.push({ id: 'updated-product', name: 'Updated', syncStatus: 'local', serverVersion: 4 });
+    rows.menu.push({
+      id: 'deactivated-product',
+      name: 'Deactivated',
+      isActive: false,
+      syncStatus: 'local',
+      serverVersion: 5,
+      lastSyncedAt: null,
+      deletedAt: null
+    });
+    rows.menu.push({
+      id: 'synced-inactive-product',
+      name: 'Synced inactive',
+      isActive: false,
+      syncStatus: 'synced',
+      serverVersion: 6,
+      lastSyncedAt: '2026-08-15T00:00:00Z'
+    });
     rows.deletedMenu.push({ id: 'deleted-product', deletedTimestamp: '2026-08-15T00:00:00Z', serverVersion: 7, deletionPending: true });
     rows.deletedCategories.push({ id: 'deleted-category', deletedTimestamp: '2026-08-15T00:00:00Z', serverVersion: 2, deletionPending: true });
     rows.productBatches.push({ id: 'deleted-batch', productId: 'updated-product', isActive: false, deletedAt: '2026-08-15T00:00:00Z', deletionPending: true, syncStatus: 'local' });
 
     await expect(productLocalRepository.listUnsyncedLocalCatalogForCloud()).resolves.toEqual({
       categories: [],
-      products: [expect.objectContaining({ id: 'updated-product' })],
+      products: [
+        expect.objectContaining({ id: 'updated-product' }),
+        expect.objectContaining({ id: 'deactivated-product', isActive: false })
+      ],
       batches: [],
       deletes: {
         categories: [expect.objectContaining({ id: 'deleted-category' })],
@@ -109,5 +147,115 @@ describe('product local catalog cutover intent', () => {
       deletes: { categories: [], products: [], batches: [] }
     });
     expect(rows.menu).toHaveLength(120);
+  });
+
+  it('turns a FREE status toggle into a fresh local mutation while preserving OCC version', async () => {
+    rows.menu.push({
+      id: 'toggle-product',
+      isActive: true,
+      serverVersion: 9,
+      syncStatus: 'synced',
+      lastSyncedAt: '2026-08-14T00:00:00.000Z',
+      pendingOperationId: 'old-operation',
+      localMutationId: 'old-mutation'
+    });
+
+    await expect(productLocalRepository.toggleProductStatusLocal(rows.menu[0], false))
+      .resolves.toMatchObject({ success: true });
+
+    expect(databaseMocks.updateProductSafe).toHaveBeenCalledWith('toggle-product', expect.objectContaining({
+      isActive: false,
+      serverVersion: 9,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated',
+      conflictReason: null
+    }));
+  });
+
+  it('resets local metadata on category, product, and batch FREE writes without losing serverVersion', async () => {
+    const oldMetadata = {
+      serverVersion: 4,
+      syncStatus: 'synced',
+      lastSyncedAt: '2026-08-14T00:00:00.000Z',
+      pendingOperationId: 'stale-operation',
+      localMutationId: 'stale-mutation'
+    };
+    await productLocalRepository.saveCategoryLocal({ id: 'category-1', name: 'Category', ...oldMetadata });
+    rows.menu.push({ id: 'product-1', ...oldMetadata });
+    await productLocalRepository.savePreparedProductLocal({
+      productId: 'product-1',
+      product: { id: 'product-1', ...oldMetadata },
+      batches: [],
+      editing: true,
+      inventoryValue: 0
+    });
+    await productLocalRepository.saveBatchLocal({ id: 'batch-1', productId: 'product-1', ...oldMetadata });
+
+    expect(rows.categories[0]).toMatchObject({
+      serverVersion: 4,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated'
+    });
+    expect(databaseMocks.updateProductSafe).toHaveBeenCalledWith('product-1', expect.objectContaining({
+      serverVersion: 4,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated'
+    }));
+    expect(databaseMocks.saveBatchAndSyncProductSafe).toHaveBeenCalledWith(expect.objectContaining({
+      serverVersion: 4,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated'
+    }));
+  });
+
+  it('gives category, product, and batch deletes independent local intent metadata', async () => {
+    databaseMocks.softDeleteWithCascadeSafe.mockImplementation(async (storeName, deletedStore, id) => {
+      rows[deletedStore].push({ id, serverVersion: 8, pendingOperationId: 'old-upsert' });
+      return { success: true };
+    });
+
+    await productLocalRepository.deleteCategoryLocal('category-delete');
+    await productLocalRepository.deleteProductLocal({ id: 'product-delete' });
+    await productLocalRepository.deleteBatchLocal({
+      id: 'batch-delete',
+      productId: 'product-delete',
+      serverVersion: 8,
+      pendingOperationId: 'old-upsert'
+    }, { syncStatus: 'local' });
+
+    expect(rows.deletedCategories[0]).toMatchObject({
+      id: 'category-delete',
+      serverVersion: 8,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated',
+      deletionPending: true
+    });
+    expect(rows.deletedMenu[0]).toMatchObject({
+      id: 'product-delete',
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated',
+      deletionPending: true
+    });
+    expect(databaseMocks.saveBatchAndSyncProductSafe).toHaveBeenLastCalledWith(expect.objectContaining({
+      id: 'batch-delete',
+      serverVersion: 8,
+      syncStatus: 'local',
+      lastSyncedAt: null,
+      pendingOperationId: null,
+      localMutationId: 'mutation-generated',
+      deletionPending: true
+    }));
   });
 });
