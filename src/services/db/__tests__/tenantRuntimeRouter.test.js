@@ -3,7 +3,12 @@ import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveActiveTenantIdentity } from '../../tenant/localTenantGuard';
-import { localTenantAccessController } from '../../tenant/localTenantPolicy';
+import {
+  LOCAL_TENANT_BINDING_KEY,
+  LOCAL_TENANT_BINDING_STORE,
+  localTenantAccessController
+} from '../../tenant/localTenantPolicy';
+import { createOperationalLanzoDatabase } from '../dexie';
 import {
   captureActiveTenantWorkerContext,
   isActiveTenantWorkerContext,
@@ -64,6 +69,34 @@ const waitUntil = async (predicate) => {
     if (Date.now() > deadline) throw new Error('Condition timeout');
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+};
+
+const tenantPhysicalName = () => `LanzoDB_t_t_${crypto.randomUUID().replace(/-/g, '')}`;
+
+const createBoundOperationalTenantDatabase = async (identity, databaseName, product = null) => {
+  const database = createOperationalLanzoDatabase(databaseName);
+  await database.open();
+  await database.table(LOCAL_TENANT_BINDING_STORE).put({
+    key: LOCAL_TENANT_BINDING_KEY,
+    tenantIdentity: identity.primary,
+    tenantAliases: [...identity.aliases],
+    authority: identity.authority,
+    bindingVersion: 1,
+    source: 'test',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  if (product) await database.table('menu').put(product);
+  database.close();
+  return databaseName;
+};
+
+const deleteDirectoryEntry = async (opaqueId) => {
+  const directory = new Dexie('LanzoTenantDirectory');
+  directory.version(1).stores({ tenants: 'opaqueId, *aliases' });
+  await directory.open();
+  await directory.table('tenants').delete(opaqueId);
+  directory.close();
 };
 
 describe('tenant runtime router', () => {
@@ -241,6 +274,114 @@ describe('tenant runtime router', () => {
     await resolveTenantRuntimeDirectory({ aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K1-${suffix}`] });
     await resolveTenantRuntimeDirectory({ aliases: [`license-id:L2-${suffix}`, `license-key-sha256:K2-${suffix}`] });
     await expect(resolveTenantRuntimeDirectory({ aliases: [`license-id:L1-${suffix}`, `license-key-sha256:K2-${suffix}`] })).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_AMBIGUOUS' });
+  });
+
+  it('repairs a lost directory entry from exactly one trusted physical tenant binding', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `RECOVER-DIRECTORY-${crypto.randomUUID()}` });
+    await openTenantRuntime(identity);
+    const established = getActiveTenantRuntime();
+    await db.table('menu').put({ id: 'recovered-product', name: 'Preserved' });
+    await db.table(LOCAL_TENANT_BINDING_STORE).put({
+      key: LOCAL_TENANT_BINDING_KEY,
+      tenantIdentity: identity.primary,
+      tenantAliases: [...identity.aliases],
+      authority: identity.authority,
+      bindingVersion: 1,
+      source: 'test',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    closeTenantRuntime();
+    await deleteDirectoryEntry(established.opaqueId);
+
+    await openTenantRuntime(identity);
+    expect(getActiveTenantRuntime()).toMatchObject({
+      opaqueId: established.opaqueId,
+      databaseName: established.databaseName
+    });
+    expect(await db.table('menu').get('recovered-product')).toMatchObject({ name: 'Preserved' });
+
+    const directory = new Dexie('LanzoTenantDirectory');
+    directory.version(1).stores({ tenants: 'opaqueId, *aliases' });
+    await directory.open();
+    expect(await directory.table('tenants').get(established.opaqueId)).toMatchObject({ opaqueId: established.opaqueId });
+    directory.close();
+  });
+
+  it('keeps the same physical tenant after reauthentication without session storage', async () => {
+    const licenseKey = `REAUTH-${crypto.randomUUID()}`;
+    const identity = await resolveActiveTenantIdentity({ license_key: licenseKey });
+    await openTenantRuntime(identity);
+    const established = getActiveTenantRuntime();
+    await db.table('menu').put({ id: 'reauth-product', name: 'Still here' });
+    closeTenantRuntime();
+    localTenantAccessController.reset();
+
+    const reauthenticated = await resolveActiveTenantIdentity({ license_key: licenseKey });
+    await openTenantRuntime(reauthenticated);
+
+    expect(getActiveTenantRuntime()).toMatchObject({
+      opaqueId: established.opaqueId,
+      databaseName: established.databaseName
+    });
+    expect(await db.table('menu').get('reauth-product')).toMatchObject({ name: 'Still here' });
+  });
+
+  it('does not adopt a trusted database bound to another tenant', async () => {
+    const owner = await resolveActiveTenantIdentity({ license_key: `BOUND-OTHER-${crypto.randomUUID()}` });
+    const candidateName = tenantPhysicalName();
+    await createBoundOperationalTenantDatabase(owner, candidateName, { id: 'foreign', name: 'Foreign' });
+
+    const requested = await resolveActiveTenantIdentity({ license_key: `BOUND-REQUESTED-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(requested);
+
+    expect(opaqueId).not.toBe(candidateName.slice('LanzoDB_t_'.length));
+    expect(await resolveTenantRuntimeDirectory(owner)).toBe(candidateName.slice('LanzoDB_t_'.length));
+  });
+
+  it('fails closed when two physical tenant bindings claim the authenticated tenant', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `AMBIGUOUS-PHYSICAL-${crypto.randomUUID()}` });
+    const firstName = tenantPhysicalName();
+    const secondName = tenantPhysicalName();
+    await createBoundOperationalTenantDatabase(identity, firstName);
+    await createBoundOperationalTenantDatabase(identity, secondName);
+
+    await expect(resolveTenantRuntimeDirectory(identity)).rejects.toMatchObject({
+      code: 'TENANT_DIRECTORY_AMBIGUOUS'
+    });
+  });
+
+  it('fails closed on a stale directory row without creating a replacement database', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `STALE-DIRECTORY-${crypto.randomUUID()}` });
+    const staleOpaqueId = await resolveTenantRuntimeDirectory(identity);
+    const boundCandidateName = tenantPhysicalName();
+    await createBoundOperationalTenantDatabase(identity, boundCandidateName);
+
+    await expect(openTenantRuntime(identity)).rejects.toMatchObject({
+      code: 'TENANT_DIRECTORY_CORRUPT'
+    });
+    expect(await Dexie.getDatabaseNames()).not.toContain(`LanzoDB_t_${staleOpaqueId}`);
+    expect(await Dexie.getDatabaseNames()).toContain(boundCandidateName);
+  });
+
+  it('serializes concurrent allocation for a genuinely new tenant', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `CONCURRENT-NEW-${crypto.randomUUID()}` });
+    const [left, right] = await Promise.all([
+      resolveTenantRuntimeDirectory(identity),
+      resolveTenantRuntimeDirectory(identity)
+    ]);
+
+    expect(left).toBe(right);
+  });
+
+  it('never treats LanzoDB1 as an isolated tenant candidate', async () => {
+    await createLegacyTenantDatabase('LanzoDB1');
+    const identity = await resolveActiveTenantIdentity({ license_key: `LEGACY-NO-FALLBACK-${crypto.randomUUID()}` });
+
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+
+    expect(opaqueId).not.toBe('1');
+    expect(await Dexie.getDatabaseNames()).toContain('LanzoDB1');
   });
 
   it('blocks B writes after its physical DB opens and before B receives a grant', async () => {

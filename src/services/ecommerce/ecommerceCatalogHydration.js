@@ -49,7 +49,12 @@ export const hydrateEcommerceCatalogSnapshot = async ({
   }
 
   const promise = (async () => {
-    const result = await migrationService.pullFullSnapshot({ licenseKey: key });
+    // FREE -> PRO can have a local catalog that has never been uploaded. Use
+    // the migration service's bootstrap barrier when available so ecommerce
+    // never treats Supabase as authoritative before local data is uploaded.
+    const result = typeof migrationService.runInitialMigrationIfNeeded === 'function'
+      ? await migrationService.runInitialMigrationIfNeeded({ licenseKey: key })
+      : await migrationService.pullFullSnapshot({ licenseKey: key });
     if (result?.success === false) throw createHydrationError(result);
 
     const completedAt = Number(getNow());

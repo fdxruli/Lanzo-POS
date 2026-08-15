@@ -25,6 +25,7 @@ import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 
 const nowIso = () => new Date().toISOString();
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+const initialMigrationByLicense = new Map();
 
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -210,6 +211,11 @@ export const productMigrationService = {
   },
 
   async runInitialMigrationIfNeeded({ licenseKey } = {}) {
+    if (licenseKey && initialMigrationByLicense.has(licenseKey)) {
+      return initialMigrationByLicense.get(licenseKey);
+    }
+
+    const operation = (async () => {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
     if (!isOnline()) return { skipped: true, reason: 'offline' };
 
@@ -313,6 +319,18 @@ export const productMigrationService = {
       migrated: totalLocalRows,
       snapshotCount: snapshot.applied || 0
     };
+    })();
+
+    if (!licenseKey) return operation;
+
+    initialMigrationByLicense.set(licenseKey, operation);
+    try {
+      return await operation;
+    } finally {
+      if (initialMigrationByLicense.get(licenseKey) === operation) {
+        initialMigrationByLicense.delete(licenseKey);
+      }
+    }
   }
 };
 

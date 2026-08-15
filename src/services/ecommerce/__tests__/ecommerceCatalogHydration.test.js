@@ -41,6 +41,30 @@ describe('ecommerce catalog hydration', () => {
     });
   });
 
+  it('waits for the FREE to PRO catalog bootstrap before ecommerce hydration', async () => {
+    let releaseBootstrap;
+    const migrationService = {
+      runInitialMigrationIfNeeded: vi.fn().mockReturnValue(new Promise((resolve) => {
+        releaseBootstrap = resolve;
+      })),
+      pullFullSnapshot: vi.fn()
+    };
+
+    const pending = hydrateEcommerceCatalogSnapshot({
+      licenseKey: 'CUTOVER-LICENSE',
+      force: true,
+      migrationService
+    });
+
+    expect(migrationService.runInitialMigrationIfNeeded).toHaveBeenCalledWith({
+      licenseKey: 'CUTOVER-LICENSE'
+    });
+    expect(migrationService.pullFullSnapshot).not.toHaveBeenCalled();
+
+    releaseBootstrap({ success: true, migrated: 3, snapshotCount: 3 });
+    await expect(pending).resolves.toMatchObject({ success: true, migrated: 3 });
+  });
+
   it('skips the cloud product snapshot when cloud products sync is disabled', async () => {
     const migrationService = {
       pullFullSnapshot: vi.fn()

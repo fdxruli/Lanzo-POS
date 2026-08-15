@@ -1,5 +1,11 @@
 import Dexie from 'dexie';
-import { areLocalTenantAliasesCompatible, LOCAL_TENANT_STATUS, localTenantAccessController } from '../tenant/localTenantPolicy';
+import {
+  areLocalTenantAliasesCompatible,
+  LOCAL_TENANT_BINDING_KEY,
+  LOCAL_TENANT_BINDING_STORE,
+  LOCAL_TENANT_STATUS,
+  localTenantAccessController
+} from '../tenant/localTenantPolicy';
 import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
 import { preflightAndRepairIndexedDb } from './indexedDbPreflightCoordinator';
 import {
@@ -11,6 +17,7 @@ import {
 
 const DIRECTORY_DB = 'LanzoTenantDirectory';
 const DIRECTORY_STORE = 'tenants';
+const TENANT_DATABASE_PREFIX = 'LanzoDB_t_';
 const directory = new Dexie(DIRECTORY_DB);
 directory.version(1).stores({ [DIRECTORY_STORE]: 'opaqueId, *aliases' });
 
@@ -57,21 +64,202 @@ const aliasFingerprint = async (alias) => {
   return `${type}${await digest(alias)}`;
 };
 
-export const resolveTenantRuntimeDirectory = async (identity) => {
-  const aliases = await Promise.all((identity?.aliases || []).map(aliasFingerprint));
-  if (!aliases.length) throw new TenantRuntimeError('TENANT_IDENTITY_MISSING');
-  const matches = await directory.table(DIRECTORY_STORE).where('aliases').anyOf(aliases).toArray();
-  const destinations = [...new Set(matches.map(({ opaqueId }) => opaqueId))];
+const listPhysicalDatabaseNames = async () => {
+  try {
+    if (typeof globalThis.indexedDB?.databases === 'function') {
+      const databases = await globalThis.indexedDB.databases();
+      return {
+        available: true,
+        names: new Set(databases.map(({ name }) => name).filter(Boolean))
+      };
+    }
+
+    if (typeof Dexie.getDatabaseNames === 'function') {
+      return {
+        available: true,
+        names: new Set((await Dexie.getDatabaseNames()).filter(Boolean))
+      };
+    }
+  } catch (error) {
+    const inspectionError = new TenantRuntimeError('TENANT_DATABASE_DISCOVERY_FAILED');
+    inspectionError.cause = error;
+    throw inspectionError;
+  }
+
+  throw new TenantRuntimeError('TENANT_DATABASE_DISCOVERY_UNAVAILABLE');
+};
+
+const readTenantBinding = (databaseName) => new Promise((resolve, reject) => {
+  let createdDuringInspection = false;
+  let nativeDatabase = null;
+  const request = globalThis.indexedDB.open(databaseName);
+
+  request.onupgradeneeded = () => {
+    // Opening an unlisted database would create it. Abort that upgrade so the
+    // discovery path remains strictly read-only and never manufactures a
+    // physical tenant database as a side effect of inspection.
+    createdDuringInspection = true;
+    try { request.transaction?.abort(); } catch { /* best effort */ }
+  };
+  request.onerror = () => {
+    if (createdDuringInspection && request.error?.name === 'AbortError') {
+      resolve(null);
+      return;
+    }
+    const inspectionError = new TenantRuntimeError('TENANT_DATABASE_INSPECTION_FAILED');
+    inspectionError.cause = request.error || null;
+    reject(inspectionError);
+  };
+  request.onblocked = () => {
+    const inspectionError = new TenantRuntimeError('TENANT_DATABASE_INSPECTION_BLOCKED');
+    reject(inspectionError);
+  };
+  request.onsuccess = () => {
+    nativeDatabase = request.result;
+    if (!nativeDatabase.objectStoreNames.contains(LOCAL_TENANT_BINDING_STORE)) {
+      nativeDatabase.close();
+      resolve(null);
+      return;
+    }
+
+    const transaction = nativeDatabase.transaction([LOCAL_TENANT_BINDING_STORE], 'readonly');
+    const bindingRequest = transaction.objectStore(LOCAL_TENANT_BINDING_STORE).get(LOCAL_TENANT_BINDING_KEY);
+    let binding = null;
+    bindingRequest.onsuccess = () => { binding = bindingRequest.result || null; };
+    transaction.oncomplete = () => {
+      nativeDatabase.close();
+      resolve(binding);
+    };
+    transaction.onerror = () => {
+      nativeDatabase.close();
+      const inspectionError = new TenantRuntimeError('TENANT_DATABASE_INSPECTION_FAILED');
+      inspectionError.cause = transaction.error || null;
+      reject(inspectionError);
+    };
+    transaction.onabort = () => {
+      nativeDatabase.close();
+      const inspectionError = new TenantRuntimeError('TENANT_DATABASE_INSPECTION_ABORTED');
+      inspectionError.cause = transaction.error || null;
+      reject(inspectionError);
+    };
+  };
+});
+
+const normalizedBindingAliases = (binding) => [...new Set([
+  binding?.tenantIdentity,
+  ...(Array.isArray(binding?.tenantAliases) ? binding.tenantAliases : [])
+].filter(Boolean))];
+
+const isTrustedTenantBinding = (binding) => (
+  binding?.key === LOCAL_TENANT_BINDING_KEY
+  && Number(binding?.bindingVersion) === 1
+  && normalizedBindingAliases(binding).length > 0
+);
+
+const discoverBoundTenantDatabases = async (identity, physicalNames) => {
+  const candidateNames = [...physicalNames]
+    .filter((name) => (
+      typeof name === 'string'
+      && name.startsWith(TENANT_DATABASE_PREFIX)
+      && name.length > TENANT_DATABASE_PREFIX.length
+    ))
+    .sort();
+  const inspected = await Promise.all(candidateNames.map(async (databaseName) => ({
+    databaseName,
+    binding: await readTenantBinding(databaseName)
+  })));
+
+  return inspected
+    .filter(({ binding }) => (
+      isTrustedTenantBinding(binding)
+      && areLocalTenantAliasesCompatible(normalizedBindingAliases(binding), identity.aliases || [])
+    ))
+    .map(({ databaseName, binding }) => ({
+      databaseName,
+      opaqueId: databaseName.slice(TENANT_DATABASE_PREFIX.length),
+      binding,
+      bindingAliases: normalizedBindingAliases(binding)
+    }));
+};
+
+const getDirectoryMatches = (aliases) => directory
+  .table(DIRECTORY_STORE)
+  .where('aliases')
+  .anyOf(aliases)
+  .toArray();
+
+const getUniqueDestinations = (matches) => [...new Set(matches.map(({ opaqueId }) => opaqueId))];
+
+const assertDirectoryMatchesAreCompatible = (matches, aliases) => {
+  const destinations = getUniqueDestinations(matches);
   if (destinations.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
   const prior = matches[0] || null;
   if (prior && !areLocalTenantAliasesCompatible(prior.aliases || [], aliases)) {
     throw new TenantRuntimeError('TENANT_DIRECTORY_ALIAS_CONFLICT');
   }
-  const opaqueId = prior?.opaqueId || `t_${(globalThis.crypto?.randomUUID?.() || aliases[0]).replace(/[^a-f0-9]/gi, '').slice(0, 32).padEnd(32, '0')}`;
-  // A conflict exits before this write. Aliases are opaque fingerprints with
-  // their type retained solely for compatibility validation.
-  await directory.table(DIRECTORY_STORE).put({ opaqueId, aliases: [...new Set([...(prior?.aliases || []), ...aliases])], updatedAt: new Date().toISOString() });
-  return opaqueId;
+  return prior;
+};
+
+const createOpaqueId = (aliases) => (
+  `t_${(globalThis.crypto?.randomUUID?.() || aliases[0])
+    .replace(/[^a-f0-9]/gi, '')
+    .slice(0, 32)
+    .padEnd(32, '0')}`
+);
+
+export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalDatabase = false } = {}) => {
+  const aliases = await Promise.all((identity?.aliases || []).map(aliasFingerprint));
+  if (!aliases.length) throw new TenantRuntimeError('TENANT_IDENTITY_MISSING');
+  const initialMatches = await getDirectoryMatches(aliases);
+  const prior = assertDirectoryMatchesAreCompatible(initialMatches, aliases);
+  const physical = await listPhysicalDatabaseNames();
+  const mappedDatabaseName = prior ? `${TENANT_DATABASE_PREFIX}${prior.opaqueId}` : null;
+  const mappingIsMissing = !prior;
+  const mappingIsCorrupt = Boolean(
+    prior
+    && requirePhysicalDatabase
+    && physical.available
+    && !physical.names.has(mappedDatabaseName)
+  );
+
+  if (mappingIsCorrupt) {
+    // A stale directory row must not recreate a missing destination. The
+    // directory contents are preserved by policy, so this cannot be silently
+    // rewritten to a different primary key; recovery must resolve it
+    // explicitly instead of opening a new empty database.
+    const candidates = await discoverBoundTenantDatabases(identity, physical.names);
+    if (candidates.length === 0) throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+    if (candidates.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
+    throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+  }
+
+  const candidates = mappingIsMissing
+    ? await discoverBoundTenantDatabases(identity, physical.names)
+    : [];
+  if (candidates.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
+  const adopted = candidates[0] || null;
+
+  // The write is serialized with other tabs. The candidate scan is read-only
+  // and happens before this transaction; rechecking aliases here prevents two
+  // concurrent resolutions of a new tenant from allocating divergent IDs.
+  return directory.transaction('rw', directory.table(DIRECTORY_STORE), async () => {
+    const currentMatches = await getDirectoryMatches(aliases);
+    const currentPrior = assertDirectoryMatchesAreCompatible(currentMatches, aliases);
+    if (currentPrior) return currentPrior.opaqueId;
+
+    const opaqueId = adopted?.opaqueId || createOpaqueId(aliases);
+    const adoptedAliases = adopted
+      ? await Promise.all(adopted.bindingAliases.map(aliasFingerprint))
+      : [];
+    await directory.table(DIRECTORY_STORE).put({
+      opaqueId,
+      // A conflict exits before this write. Aliases are opaque fingerprints
+      // with their type retained solely for compatibility validation.
+      aliases: [...new Set([...aliases, ...adoptedAliases])],
+      updatedAt: new Date().toISOString()
+    });
+    return opaqueId;
+  });
 };
 
 const current = () => {
@@ -150,7 +338,7 @@ export const openTenantRuntime = async (identity) => {
   if (!tenantDatabaseFactory) {
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_NOT_CONFIGURED');
   }
-  const opaqueId = await resolveTenantRuntimeDirectory(identity);
+  const opaqueId = await resolveTenantRuntimeDirectory(identity, { requirePhysicalDatabase: true });
   if (active?.opaqueId === opaqueId && active.database.isOpen()) return active;
   // Callers must lock the controller before switching tenants. Keep this
   // defensive lock for direct router consumers as well, so B is never opened
