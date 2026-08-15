@@ -11,6 +11,7 @@ import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
 import { productLocalCatalogRecovery } from './productLocalCatalogRecovery';
 import { validateLocalCatalogForMigration } from './productMigrationValidation';
+import { validateMigrationBatchResponse } from './productMigrationResponseValidation';
 import {
   buildProductsMigratedMetaKey,
   PRODUCT_CATALOG_LAST_SEQ_KEY,
@@ -48,6 +49,15 @@ const saveBlockedMigrationConflict = async ({ licenseKey, issues }) => {
   }, { licenseKey });
 
   return conflict;
+};
+
+const getBlockedMigrationResult = async ({ licenseKey, response, expectedCounts }) => {
+  const issues = validateMigrationBatchResponse({ response, expectedCounts });
+  if (issues.length === 0) return null;
+
+  await saveBlockedMigrationConflict({ licenseKey, issues });
+  Logger.warn('[Products/Migration] Migracion bloqueada por respuesta RPC invalida:', issues);
+  return { success: false, blocked: true, issues, response };
 };
 
 export const productMigrationService = {
@@ -191,13 +201,12 @@ export const productMigrationService = {
           batchId: `${batchId}-categories-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
         });
 
-        if (response?.success === false) {
-          await saveBlockedMigrationConflict({
-            licenseKey,
-            issues: [{ type: response.code || 'PRODUCT_MIGRATION_RPC_FAILED', message: response.message || 'Fallo RPC de migracion de categorias.', response }]
-          });
-          return { success: false, blocked: true, response };
-        }
+        const blocked = await getBlockedMigrationResult({
+          licenseKey,
+          response,
+          expectedCounts: { categories: categories.length, products: 0, batches: 0 }
+        });
+        if (blocked) return blocked;
 
         await productLocalRepository.applyCloudCatalog(response);
       }
@@ -212,13 +221,12 @@ export const productMigrationService = {
           batchId: `${batchId}-products-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
         });
 
-        if (response?.success === false) {
-          await saveBlockedMigrationConflict({
-            licenseKey,
-            issues: [{ type: response.code || 'PRODUCT_MIGRATION_RPC_FAILED', message: response.message || 'Fallo RPC de migracion de productos.', response }]
-          });
-          return { success: false, blocked: true, response };
-        }
+        const blocked = await getBlockedMigrationResult({
+          licenseKey,
+          response,
+          expectedCounts: { categories: 0, products: products.length, batches: 0 }
+        });
+        if (blocked) return blocked;
 
         await productLocalRepository.applyCloudCatalog(response);
       }
@@ -234,13 +242,12 @@ export const productMigrationService = {
           batchId: `${batchId}-batches-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
         });
 
-        if (response?.success === false) {
-          await saveBlockedMigrationConflict({
-            licenseKey,
-            issues: [{ type: response.code || 'PRODUCT_MIGRATION_RPC_FAILED', message: response.message || 'Fallo RPC de migracion de lotes.', response }]
-          });
-          return { success: false, blocked: true, response };
-        }
+        const blocked = await getBlockedMigrationResult({
+          licenseKey,
+          response,
+          expectedCounts: { categories: 0, products: 0, batches: batches.length }
+        });
+        if (blocked) return blocked;
 
         await productLocalRepository.applyCloudCatalog(response);
       }

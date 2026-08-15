@@ -144,7 +144,7 @@ export const productSyncHandler = {
         return migrationResult;
       }
 
-      const recovery = await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
+      const recovery = migrationResult?.recovery || await productLocalCatalogRecovery.runUnsyncedCatalogRecovery({
         licenseKey,
         canMigrateProducts
       });

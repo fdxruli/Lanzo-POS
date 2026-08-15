@@ -53,6 +53,15 @@ const localCatalog = {
   batches: []
 };
 
+const successfulMigrationResponse = ({ categories = [], products = [], batches = [] } = {}) => ({
+  success: true,
+  results: {
+    categories: categories.map((category) => ({ success: true, category })),
+    products: products.map((product) => ({ success: true, product })),
+    batches: batches.map((batch) => ({ success: true, batch }))
+  }
+});
+
 describe('product migration FREE to PRO coordination', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,6 +75,9 @@ describe('product migration FREE to PRO coordination', () => {
     mocks.events.push('pull');
     return { success: true, has_more: false };
   });
+  mocks.migrateLocalCatalog.mockImplementation(async ({ categories = [], products = [], batches = [] }) => (
+    successfulMigrationResponse({ categories, products, batches })
+  ));
 
   mocks.runRecovery.mockImplementation(async () => {
     mocks.events.push('recovery');
@@ -74,8 +86,6 @@ describe('product migration FREE to PRO coordination', () => {
   });
 
   it('keeps the first FREE to PRO bootstrap as local migration followed by snapshot', async () => {
-    mocks.migrateLocalCatalog.mockResolvedValue({ success: true });
-
     await expect(productMigrationService.runInitialMigrationIfNeeded({
       licenseKey: 'CUTOVER-FIRST'
     })).resolves.toMatchObject({ success: true, migrated: 2 });
@@ -113,9 +123,7 @@ describe('product migration FREE to PRO coordination', () => {
   });
 
   it('can retry the same tenant after bootstrap failure and commits readiness only after hydration', async () => {
-    mocks.migrateLocalCatalog
-      .mockResolvedValueOnce({ success: false, code: 'CLOUD_BOOTSTRAP_FAILED' })
-      .mockResolvedValueOnce({ success: true });
+    mocks.migrateLocalCatalog.mockResolvedValueOnce({ success: false, code: 'CLOUD_BOOTSTRAP_FAILED' });
 
     await expect(productMigrationService.runInitialMigrationIfNeeded({
       licenseKey: 'CUTOVER-RETRY'
@@ -133,6 +141,66 @@ describe('product migration FREE to PRO coordination', () => {
       buildProductsMigratedMetaKey('CUTOVER-RETRY'),
       true,
       { licenseKey: 'CUTOVER-RETRY' }
+    );
+  });
+
+  it('blocks initial migration when a nested product result fails despite outer success', async () => {
+    mocks.migrateLocalCatalog
+      .mockResolvedValueOnce(successfulMigrationResponse({ categories: localCatalog.categories }))
+      .mockResolvedValueOnce({
+        success: true,
+        results: {
+          categories: [],
+          products: [{
+            success: false,
+            code: 'DUPLICATE_BARCODE',
+            message: 'Duplicate barcode',
+            product: { id: 'product-1' },
+            server_version: 7
+          }],
+          batches: []
+        }
+      });
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-NESTED-FAILURE'
+    })).resolves.toMatchObject({
+      success: false,
+      blocked: true,
+      issues: [expect.objectContaining({
+        entityType: 'product',
+        entityId: 'product-1',
+        code: 'DUPLICATE_BARCODE',
+        serverVersion: 7
+      })]
+    });
+
+    expect(mocks.pullCatalogSnapshot).not.toHaveBeenCalled();
+    expect(mocks.setMeta).not.toHaveBeenCalledWith(
+      buildProductsMigratedMetaKey('CUTOVER-NESTED-FAILURE'),
+      true,
+      expect.anything()
+    );
+    expect(mocks.applyCloudCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets the marker only after all category, product, and batch nested results succeed', async () => {
+    const fullCatalog = {
+      categories: [{ id: 'category-full', name: 'Full category' }],
+      products: [{ id: 'product-full', name: 'Full product', price: 10, cost: 5, stock: 1 }],
+      batches: [{ id: 'batch-full', productId: 'product-full', stock: 1 }]
+    };
+    mocks.getLocalCatalogForMigration.mockResolvedValueOnce(fullCatalog);
+
+    await expect(productMigrationService.runInitialMigrationIfNeeded({
+      licenseKey: 'CUTOVER-NESTED-SUCCESS'
+    })).resolves.toMatchObject({ success: true, migrated: 3 });
+
+    expect(mocks.migrateLocalCatalog).toHaveBeenCalledTimes(3);
+    expect(mocks.setMeta).toHaveBeenCalledWith(
+      buildProductsMigratedMetaKey('CUTOVER-NESTED-SUCCESS'),
+      true,
+      { licenseKey: 'CUTOVER-NESTED-SUCCESS' }
     );
   });
 
