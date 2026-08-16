@@ -103,8 +103,7 @@ const isStaleLocalMutation = (operation = {}, current = null) => {
 };
 
 const isPreRpcSupersededMutation = (operation = {}, current = null) => (
-  Boolean(current?.localMutationId)
-  && !operationIdentityMatches(operation, current.localMutationId)
+  isStaleLocalMutation(operation, current)
 );
 
 const hasNewerLocalMutation = async (operation = {}) => (

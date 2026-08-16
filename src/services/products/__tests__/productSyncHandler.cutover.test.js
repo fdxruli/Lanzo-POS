@@ -127,12 +127,20 @@ describe('product sync repeated cutover safety', () => {
   it('does not apply a successful replay from an old outbox key over a newer FREE mutation', async () => {
     const replayResponse = { success: true, product: { id: 'product-stale', name: 'Old response', server_version: 6 } };
     mocks.upsertProduct.mockResolvedValue(replayResponse);
-    mocks.getCatalogRecordForSync.mockResolvedValue({
-      id: 'product-stale',
-      serverVersion: 6,
-      localMutationId: 'new-free-mutation',
-      isActive: false
-    });
+    mocks.getCatalogRecordForSync
+      .mockResolvedValueOnce({
+        id: 'product-stale',
+        serverVersion: 5,
+        localMutationId: 'old-outbox-operation',
+        syncStatus: 'pending'
+      })
+      .mockResolvedValueOnce({
+        id: 'product-stale',
+        serverVersion: 6,
+        localMutationId: 'new-free-mutation',
+        syncStatus: 'pending',
+        isActive: false
+      });
 
     const result = await productSyncHandler.pushOperation({
       licenseKey: 'CUTOVER-HANDLER',
@@ -150,8 +158,9 @@ describe('product sync repeated cutover safety', () => {
 
     expect(result).toMatchObject({
       success: false,
-      conflict: { code: 'STALE_LOCAL_MUTATION' }
+      conflict: { code: 'STALE_LOCAL_MUTATION', stalePhase: 'post_rpc' }
     });
+    expect(mocks.upsertProduct).toHaveBeenCalledTimes(1);
     expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
     expect(mocks.saveConflict).toHaveBeenCalledWith(expect.objectContaining({
       operation: expect.objectContaining({ id: 'old-outbox-operation' }),
@@ -185,11 +194,39 @@ describe('product sync repeated cutover safety', () => {
     expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
   });
 
+  it('keeps the old UPDATE OCC stale guard intact when the server version is newer', async () => {
+    mocks.getCatalogRecordForSync.mockResolvedValue({
+      id: 'product-occ-stale',
+      serverVersion: 6,
+      syncStatus: 'synced',
+      pendingOperationId: null,
+      localMutationId: null
+    });
+
+    const result = await productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPDATE,
+      entityId: 'product-occ-stale',
+      id: 'old-update-k',
+      idempotencyKey: 'old-update-k',
+      payload: {
+        expectedVersion: 5,
+        productId: 'product-occ-stale',
+        product: { id: 'product-occ-stale', name: 'Old update' }
+      }
+    });
+
+    expect(result).toMatchObject({ success: false, conflict: { code: 'STALE_LOCAL_MUTATION', stalePhase: 'pre_rpc' } });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+  });
+
   it('allows a same-operation product retry when the local mutation is still K', async () => {
     const response = { success: true, product: { id: 'product-retry', name: 'Retry' } };
     mocks.getCatalogRecordForSync.mockResolvedValue({
       id: 'product-retry',
       localMutationId: 'operation-k',
+      pendingOperationId: 'operation-k',
       syncStatus: 'pending'
     });
     mocks.upsertProduct.mockResolvedValue(response);
@@ -206,6 +243,29 @@ describe('product sync repeated cutover safety', () => {
 
     expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: 'operation-k' }));
     expect(mocks.applyCloudCatalog).toHaveBeenCalledWith(response);
+  });
+
+  it('allows a same-operation retry when the local mutation matches operation.id', async () => {
+    const response = { success: true, product: { id: 'product-id-fallback', name: 'Retry' } };
+    mocks.getCatalogRecordForSync.mockResolvedValue({
+      id: 'product-id-fallback',
+      localMutationId: 'operation-id-fallback',
+      pendingOperationId: 'operation-id-fallback',
+      syncStatus: 'pending'
+    });
+    mocks.upsertProduct.mockResolvedValue(response);
+
+    await expect(productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.CREATE,
+      entityId: 'product-id-fallback',
+      id: 'operation-id-fallback',
+      idempotencyKey: 'different-idempotency-key',
+      payload: { product: { id: 'product-id-fallback', name: 'Retry' } }
+    })).resolves.toEqual(response);
+
+    expect(mocks.upsertProduct).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -247,6 +307,45 @@ describe('product sync repeated cutover safety', () => {
     expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      label: 'category CREATE',
+      entityType: SYNC_ENTITY_TYPES.CATEGORY,
+      entityId: 'category-recovered',
+      payload: { category: { id: 'category-recovered', name: 'Old category' } },
+      rpc: 'upsertCategory'
+    },
+    {
+      label: 'batch CREATE',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
+      entityId: 'batch-recovered',
+      payload: { batch: { id: 'batch-recovered', product_id: 'product-1' } },
+      rpc: 'upsertProductBatch'
+    }
+  ])('blocks a never-sent stale $label after newer recovery', async ({ entityType, entityId, payload, rpc }) => {
+    mocks.getCatalogRecordForSync.mockResolvedValue({
+      id: entityId,
+      serverVersion: 7,
+      syncStatus: 'synced',
+      pendingOperationId: null,
+      localMutationId: null
+    });
+
+    const result = await productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType,
+      operation: SYNC_OPERATIONS.CREATE,
+      entityId,
+      id: 'old-create-k',
+      idempotencyKey: 'old-create-k',
+      payload
+    });
+
+    expect(result).toMatchObject({ success: false, conflict: { code: 'STALE_LOCAL_MUTATION', stalePhase: 'pre_rpc' } });
+    expect(mocks[rpc]).not.toHaveBeenCalled();
+    expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
   it('does not apply an old CREATE response after recovery has already produced a synced server-backed record', async () => {
     const response = { success: true, product: { id: 'product-recovered', name: 'Old response', server_version: 4 } };
     mocks.getCatalogRecordForSync.mockResolvedValue({
@@ -269,9 +368,32 @@ describe('product sync repeated cutover safety', () => {
       payload: { product: { id: 'product-recovered', name: 'Old value' } }
     });
 
-    expect(result).toMatchObject({ success: false, conflict: { code: 'STALE_LOCAL_MUTATION', stalePhase: 'post_rpc' } });
-    expect(mocks.upsertProduct).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ success: false, conflict: { code: 'STALE_LOCAL_MUTATION', stalePhase: 'pre_rpc' } });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
     expect(mocks.applyCloudCatalog).not.toHaveBeenCalled();
+  });
+
+  it('blocks an old UPSERT after newer recovery before invoking the product RPC', async () => {
+    mocks.getCatalogRecordForSync.mockResolvedValue({
+      id: 'product-upsert-recovered',
+      serverVersion: 7,
+      syncStatus: 'synced',
+      pendingOperationId: null,
+      localMutationId: null
+    });
+
+    const result = await productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPSERT,
+      entityId: 'product-upsert-recovered',
+      id: 'old-upsert-k',
+      idempotencyKey: 'old-upsert-k',
+      payload: { product: { id: 'product-upsert-recovered', name: 'Old upsert' } }
+    });
+
+    expect(result).toMatchObject({ success: false, conflict: { code: 'STALE_LOCAL_MUTATION', stalePhase: 'pre_rpc' } });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
   });
 
   it('allows a legitimate first-time CREATE retry while its local mutation still corresponds to K', async () => {
@@ -280,7 +402,8 @@ describe('product sync repeated cutover safety', () => {
       id: 'product-first-create',
       serverVersion: null,
       syncStatus: 'pending',
-      localMutationId: 'create-k'
+      localMutationId: 'create-k',
+      pendingOperationId: 'create-k'
     });
     mocks.upsertProduct.mockResolvedValue(response);
 
