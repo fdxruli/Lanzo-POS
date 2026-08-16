@@ -2,7 +2,6 @@ import {
   Archive,
   BellDot,
   CircleDollarSign,
-  CloudCog,
   Headphones,
   KeyRound,
   MonitorCog,
@@ -29,20 +28,18 @@ const formatNotificationDate = (value) => {
   }
 };
 
-const TYPE_ICONS = {
-  cash: CircleDollarSign,
+const CATEGORY_ICONS = {
+  operations: CircleDollarSign,
   license: KeyRound,
   support: Headphones,
-  sync: CloudCog,
   ecommerce: ShoppingBag,
   system: MonitorCog
 };
 
-const TYPE_LABELS = {
-  cash: 'Caja',
+const CATEGORY_LABELS = {
+  operations: 'Operaciones',
   license: 'Licencia',
   support: 'Soporte',
-  sync: 'Sincronización',
   ecommerce: 'Pedidos online',
   system: 'Sistema'
 };
@@ -76,10 +73,10 @@ export default function NotificationItem({
     is_dismissible: isDismissible = true
   } = notification || {};
   const itemTone = severity || tone || 'info';
-  const Icon = TYPE_ICONS[type] || BellDot;
-  const typeLabel = TYPE_LABELS[type] || 'Sistema';
-  const severityLabel = SEVERITY_LABELS[itemTone] || SEVERITY_LABELS.info;
   const category = getNotificationCategory(notification);
+  const Icon = CATEGORY_ICONS[category] || BellDot;
+  const typeLabel = CATEGORY_LABELS[category] || 'Sistema';
+  const severityLabel = SEVERITY_LABELS[itemTone] || SEVERITY_LABELS.info;
   const isMuted = itemTone !== 'critical' && isCategoryMuted(category, preferences);
   const isFeatured = shouldFeatureNotification(notification, preferences);
   const displayBody = body || description;
@@ -92,7 +89,7 @@ export default function NotificationItem({
     if (result?.success === false) return;
 
     if (typeof actionRoute === 'string' && actionRoute.startsWith('/')) {
-      if (type === 'ecommerce') {
+      if (category === 'ecommerce') {
         closeNotificationCenter?.();
       }
       navigate(actionRoute);
@@ -123,7 +120,8 @@ export default function NotificationItem({
       className={[
         'notification-item',
         `notification-item--${itemTone}`,
-        `notification-item--type-${type}`,
+        `notification-item--type-${category}`,
+        `notification-item--source-${type}`,
         isRead ? 'is-read' : 'is-unread',
         isMuted ? 'is-muted-category' : '',
         !isFeatured ? 'is-not-featured' : ''
@@ -138,7 +136,7 @@ export default function NotificationItem({
       </span>
       <div className="notification-item__copy">
         <div className="notification-item__badges" aria-label="Tipo y prioridad">
-          <span className={`notification-item__badge notification-item__badge--type-${type}`}>
+          <span className={`notification-item__badge notification-item__badge--type-${category}`}>
             {typeLabel}
           </span>
           <span className={`notification-item__badge notification-item__badge--severity-${itemTone}`}>
