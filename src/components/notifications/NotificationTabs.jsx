@@ -3,7 +3,7 @@ const TABS = [
   { key: 'unread', label: 'No leídas' },
   { key: 'support', label: 'Soporte' },
   { key: 'ecommerce', label: 'Pedidos online' },
-  { key: 'operation', label: 'Operación' },
+  { key: 'operations', label: 'Operaciones' },
   { key: 'license', label: 'Licencia' },
   { key: 'system', label: 'Sistema' }
 ];

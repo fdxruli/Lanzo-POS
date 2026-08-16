@@ -8,8 +8,7 @@ import {
 const CATEGORY_LABELS = {
   support: 'Soporte',
   ecommerce: 'Pedidos online',
-  cash: 'Caja',
-  sync: 'Sincronización',
+  operations: 'Operaciones',
   license: 'Licencia',
   system: 'Sistema'
 };
@@ -63,7 +62,7 @@ export default function NotificationPreferencesPanel({
         </span>
         <div>
           <h3>Preferencias</h3>
-          <p>Estos ajustes solo aplican en este dispositivo.</p>
+          <p>Estos ajustes se guardan por negocio y usuario en este dispositivo.</p>
         </div>
       </header>
 

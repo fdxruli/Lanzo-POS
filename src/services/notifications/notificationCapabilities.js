@@ -49,6 +49,14 @@ const NOTIFICATION_CAPABILITY_KEYS = Object.freeze([
   'plan_messages_personalized'
 ]);
 
+export const NOTIFICATION_CATEGORY_PERMISSION_KEYS = Object.freeze({
+  ecommerce: 'notifications_ecommerce',
+  support: 'notifications_support',
+  license: 'notifications_license',
+  operations: 'notifications_operations',
+  system: 'notifications_system'
+});
+
 const isPlainObject = (value) => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
 );
@@ -92,19 +100,40 @@ const isStaffSession = (staffSession = {}) => (
   staffSession?.currentDeviceRole === 'staff'
 );
 
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+
 export function canStaffAccessNotifications(_licenseDetails = {}, staffSession = {}) {
   if (!isStaffSession(staffSession)) return true;
   return getStaffPermissions(staffSession).notifications === true;
 }
 
-export function canStaffAccessEcommerceOperationalAlert(
+export function canStaffAccessNotificationCategory(
   _licenseDetails = {},
+  staffSession = {},
+  category = 'system'
+) {
+  if (!isStaffSession(staffSession)) return true;
+
+  const permissions = getStaffPermissions(staffSession);
+  if (permissions.notifications !== true) return false;
+
+  const permissionKey = NOTIFICATION_CATEGORY_PERMISSION_KEYS[category]
+    || NOTIFICATION_CATEGORY_PERMISSION_KEYS.system;
+
+  // Existing staff users predate granular category keys. Preserve the current
+  // all-categories behavior until an admin explicitly saves the new switches.
+  if (!hasOwn(permissions, permissionKey)) return true;
+  return permissions[permissionKey] === true;
+}
+
+export function canStaffAccessEcommerceOperationalAlert(
+  licenseDetails = {},
   staffSession = {}
 ) {
   if (!isStaffSession(staffSession)) return true;
   const permissions = getStaffPermissions(staffSession);
   return (
-    permissions.notifications === true
+    canStaffAccessNotificationCategory(licenseDetails, staffSession, 'ecommerce')
     && permissions.settings === true
     && permissions.ecommerce === true
   );

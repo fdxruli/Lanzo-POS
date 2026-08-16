@@ -56,6 +56,7 @@ export const createLicenseSessionActions = ({
     Logger.warn('[LicensePlan] Licencia bloqueada por cambio de plan:', blockInfo);
 
     get()._invalidateProfileLoads?.();
+    get().resetNotificationRuntime?.();
 
     await get().stopLicenseSync();
     await clearStaffSessionCache();
@@ -98,6 +99,7 @@ export const createLicenseSessionActions = ({
 
   confirmLicenseChangeRequired: async () => {
     get()._invalidateProfileLoads?.();
+    get().resetNotificationRuntime?.();
     await clearLocalLicenseSession();
     get().lockDriveSession?.();
     notifyPosCatalogSessionReset();
@@ -132,6 +134,7 @@ export const createLicenseSessionActions = ({
     // authorized only long enough to revoke its own actor credentials.
     get()._invalidateProfileLoads?.();
     get().resetEcommerceOrdersState?.();
+    get().resetNotificationRuntime?.();
     set({
       appStatus: 'loading',
       _isLoggingOut: true,
@@ -185,6 +188,7 @@ export const createLicenseSessionActions = ({
     // records belong to the database's original tenant, not the attempted one.
     get()._invalidateProfileLoads?.();
     get().resetEcommerceOrdersState?.();
+    get().resetNotificationRuntime?.();
     await get().stopLicenseSync();
     get().lockDriveSession?.();
     clearLicenseFromStorage();

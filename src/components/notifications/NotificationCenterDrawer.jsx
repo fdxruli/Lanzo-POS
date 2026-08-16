@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, SlidersHorizontal } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import {
+  canStaffAccessNotificationCategory,
   canStaffAccessNotifications,
   canStaffAccessSupportCenter,
   isCloudNotificationsEnabled,
@@ -25,15 +26,7 @@ const isUnreadNotification = (notification) => (
   notification?.is_read !== true && notification?.is_archived !== true
 );
 
-const getNotificationGroup = (notification) => {
-  const type = getNotificationCategory(notification);
-
-  if (type === 'cash' || type === 'sync') return 'operation';
-  if (type === 'support') return 'support';
-  if (type === 'ecommerce') return 'ecommerce';
-  if (type === 'license') return 'license';
-  return 'system';
-};
+const getNotificationGroup = (notification) => getNotificationCategory(notification);
 
 const getNotificationPriorityRank = (notification, preferences) => {
   const unread = isUnreadNotification(notification);
@@ -97,7 +90,10 @@ export default function NotificationCenterDrawer({
   const muteNotificationCategory = useAppStore((state) => state.muteNotificationCategory);
   const unmuteNotificationCategory = useAppStore((state) => state.unmuteNotificationCategory);
 
-  const staffSession = { currentDeviceRole, currentStaffUser };
+  const staffSession = useMemo(
+    () => ({ currentDeviceRole, currentStaffUser }),
+    [currentDeviceRole, currentStaffUser]
+  );
   const notificationsAccessEnabled = canStaffAccessNotifications(licenseDetails, staffSession);
   const supportAccessEnabled = canStaffAccessSupportCenter(licenseDetails, staffSession);
   const cloudNotificationsEnabled = (
@@ -113,28 +109,37 @@ export default function NotificationCenterDrawer({
     [notificationPreferences]
   );
 
+  const visibleNotifications = useMemo(
+    () => notifications.filter((notification) => canStaffAccessNotificationCategory(
+      licenseDetails,
+      staffSession,
+      getNotificationCategory(notification)
+    )),
+    [licenseDetails, notifications, staffSession]
+  );
+
   const notificationCounts = useMemo(() => {
     const counts = {
-      all: notifications.length,
+      all: visibleNotifications.length,
       unread: 0,
       support: 0,
       ecommerce: 0,
-      operation: 0,
+      operations: 0,
       license: 0,
       system: 0
     };
 
-    notifications.forEach((notification) => {
+    visibleNotifications.forEach((notification) => {
       if (isUnreadNotification(notification)) counts.unread += 1;
       const group = getNotificationGroup(notification);
       counts[group] = Number(counts[group] || 0) + 1;
     });
 
     return counts;
-  }, [notifications]);
+  }, [visibleNotifications]);
 
   const filteredNotifications = useMemo(() => {
-    const indexedNotifications = notifications.map((notification, index) => ({
+    const indexedNotifications = visibleNotifications.map((notification, index) => ({
       notification,
       index
     }));
@@ -155,7 +160,7 @@ export default function NotificationCenterDrawer({
         return left.index - right.index;
       })
       .map(({ notification }) => notification);
-  }, [activeTab, normalizedPreferences, notifications]);
+  }, [activeTab, normalizedPreferences, visibleNotifications]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -265,7 +270,7 @@ export default function NotificationCenterDrawer({
   };
 
   const handleNotificationRead = async (notificationId) => {
-    const notification = notifications.find((item) => item.id === notificationId);
+    const notification = visibleNotifications.find((item) => item.id === notificationId);
     const result = await markNotificationRead?.(notificationId);
 
     if (
