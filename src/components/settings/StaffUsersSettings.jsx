@@ -7,6 +7,14 @@ import {
 } from '../../services/licenseService';
 import { showMessageModal } from '../../services/utils';
 
+const NOTIFICATION_DETAIL_PERMISSIONS = [
+  'notifications_ecommerce',
+  'notifications_support',
+  'notifications_license',
+  'notifications_operations',
+  'notifications_system'
+];
+
 const PERMISSION_LABELS = {
   pos: 'Punto de venta',
   orders: 'Pedidos',
@@ -14,6 +22,11 @@ const PERMISSION_LABELS = {
   customers: 'Clientes',
   reports: 'Reportes',
   notifications: 'Centro de Notificaciones',
+  notifications_ecommerce: 'Mensajes de pedidos online',
+  notifications_support: 'Mensajes de soporte',
+  notifications_license: 'Mensajes de licencia',
+  notifications_operations: 'Mensajes de operaciones',
+  notifications_system: 'Mensajes de sistema',
   support_center: 'Soporte Lanzo',
   ai_agents: 'Agentes IA',
   settings: 'Configuracion',
@@ -28,7 +41,12 @@ const PERMISSION_LABELS = {
 };
 
 const PERMISSION_DESCRIPTIONS = {
-  notifications: 'Permite ver la campana, notificaciones de licencia, caja, sincronizacion y sistema.',
+  notifications: 'Interruptor maestro. Al desactivarlo, el staff no puede abrir el Centro de Notificaciones.',
+  notifications_ecommerce: 'Avisos de nuevos pedidos online y eventos del canal ecommerce.',
+  notifications_support: 'Avisos de respuestas y cambios de solicitudes de soporte.',
+  notifications_license: 'Vencimiento, renovacion, plan y eventos importantes de la licencia.',
+  notifications_operations: 'Caja, sincronizacion, inventario y otras alertas operativas del negocio.',
+  notifications_system: 'Mensajes generales de Lanzo que no pertenecen a otra categoria.',
   support_center: 'Permite crear y responder solicitudes de soporte desde Lanzo Nube.'
 };
 
@@ -54,7 +72,12 @@ const PERMISSION_GROUPS = [
   },
   {
     title: 'Lanzo Nube',
-    permissions: ['notifications', 'support_center', 'ai_agents']
+    permissions: [
+      'notifications',
+      ...NOTIFICATION_DETAIL_PERMISSIONS,
+      'support_center',
+      'ai_agents'
+    ]
   }
 ];
 
@@ -74,7 +97,7 @@ const ROLE_DESCRIPTIONS = {
   staff: 'Acceso básico al punto de venta.',
   cashier: 'Puede vender, cobrar y aplicar descuentos.',
   waiter: 'Pensado para tomar pedidos.',
-  supervisor: 'Puede operar, revisar reportes, inventario, caja y agentes IA.',
+  supervisor: 'Puede operar, revisar reportes, inventario, caja, notificaciones y agentes IA.',
   custom: 'Permisos configurados manualmente.'
 };
 
@@ -97,6 +120,11 @@ const ROLE_TEMPLATES = {
     customers: true,
     reports: true,
     notifications: true,
+    notifications_ecommerce: true,
+    notifications_support: true,
+    notifications_license: true,
+    notifications_operations: true,
+    notifications_system: true,
     support_center: true,
     ai_agents: true,
     inventory: true,
@@ -109,11 +137,25 @@ const ROLE_TEMPLATES = {
 };
 
 const ROLE_OPTIONS = ['staff', 'cashier', 'waiter', 'supervisor', 'custom'];
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
-const normalizePermissions = (permissions = {}) => ({
-  ...EMPTY_PERMISSIONS,
-  ...permissions
-});
+const normalizePermissions = (permissions = {}) => {
+  const normalized = {
+    ...EMPTY_PERMISSIONS,
+    ...permissions
+  };
+
+  // Compatibility for staff created before category-level notification flags.
+  // An existing master notifications=true keeps access to every category until
+  // an admin explicitly saves granular switches.
+  NOTIFICATION_DETAIL_PERMISSIONS.forEach((permission) => {
+    if (!hasOwn(permissions, permission)) {
+      normalized[permission] = permissions.notifications === true;
+    }
+  });
+
+  return normalized;
+};
 
 const createEmptyForm = () => ({
   username: '',
@@ -167,14 +209,27 @@ export default function StaffUsersSettings({ licenseKey }) {
   };
 
   const togglePermission = (permission) => {
-    setForm((current) => ({
-      ...current,
-      role_name: 'custom',
-      permissions: {
+    setForm((current) => {
+      const nextValue = current.permissions?.[permission] !== true;
+      const nextPermissions = {
         ...current.permissions,
-        [permission]: !current.permissions?.[permission]
+        [permission]: nextValue
+      };
+
+      // Preserve the old, intuitive behavior when the master switch is first
+      // enabled: all categories start enabled and the admin can narrow them.
+      if (permission === 'notifications' && nextValue) {
+        NOTIFICATION_DETAIL_PERMISSIONS.forEach((detailPermission) => {
+          nextPermissions[detailPermission] = true;
+        });
       }
-    }));
+
+      return {
+        ...current,
+        role_name: 'custom',
+        permissions: nextPermissions
+      };
+    });
   };
 
   const startEdit = (staffUser) => {
@@ -327,22 +382,29 @@ export default function StaffUsersSettings({ licenseKey }) {
             <fieldset key={group.title} className="staff-permissions-group">
               <legend>{group.title}</legend>
               <div className="staff-permissions-grid">
-                {group.permissions.map((permission) => (
-                  <label key={permission} className="staff-permission-toggle">
-                    <input
-                      type="checkbox"
-                      checked={form.permissions?.[permission] === true}
-                      onChange={() => togglePermission(permission)}
-                      disabled={isSaving}
-                    />
-                    <span>
-                      {PERMISSION_LABELS[permission]}
-                      {PERMISSION_DESCRIPTIONS[permission] && (
-                        <small>{PERMISSION_DESCRIPTIONS[permission]}</small>
-                      )}
-                    </span>
-                  </label>
-                ))}
+                {group.permissions.map((permission) => {
+                  const isNotificationDetail = NOTIFICATION_DETAIL_PERMISSIONS.includes(permission);
+                  const isDisabled = isSaving || (
+                    isNotificationDetail && form.permissions?.notifications !== true
+                  );
+
+                  return (
+                    <label key={permission} className="staff-permission-toggle">
+                      <input
+                        type="checkbox"
+                        checked={form.permissions?.[permission] === true}
+                        onChange={() => togglePermission(permission)}
+                        disabled={isDisabled}
+                      />
+                      <span>
+                        {PERMISSION_LABELS[permission]}
+                        {PERMISSION_DESCRIPTIONS[permission] && (
+                          <small>{PERMISSION_DESCRIPTIONS[permission]}</small>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </fieldset>
           ))}
