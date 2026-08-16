@@ -16,7 +16,8 @@ import { productLocalCatalogRecovery } from './productLocalCatalogRecovery';
 import { productConflictService } from './productConflictService';
 import {
   PRODUCT_CATALOG_ENTITY_TYPES,
-  PRODUCT_CATALOG_LAST_SEQ_KEY
+  PRODUCT_CATALOG_LAST_SEQ_KEY,
+  PRODUCT_SYNC_STATUS
 } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
@@ -57,23 +58,80 @@ const isCatalogOperation = (operation = {}) => (
   || operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH
 );
 
-const hasNewerLocalMutation = async (operation = {}) => {
+const getCurrentCatalogRecord = async (operation = {}) => {
   if (!isCatalogOperation(operation) || typeof productLocalRepository.getCatalogRecordForSync !== 'function') {
-    return false;
+    return null;
   }
 
-  const current = await productLocalRepository.getCatalogRecordForSync(
+  return productLocalRepository.getCatalogRecordForSync(
     operation.entityType,
     operation.entityId
   );
+};
+
+const operationIdentityMatches = (operation = {}, localMutationId) => (
+  Boolean(localMutationId)
+  && new Set([operation.idempotencyKey, operation.id].filter(Boolean)).has(localMutationId)
+);
+
+const isRecoveredCreateReplay = (operation = {}, current = null) => {
+  const isCreateOperation = operation.operation === SYNC_OPERATIONS.CREATE
+    || operation.operation === SYNC_OPERATIONS.UPSERT;
+  if (!current || !isCreateOperation || getExpectedVersion(operation) !== null) {
+    return false;
+  }
+
+  const currentVersion = Number(current.serverVersion ?? current.server_version);
+  return (
+    current.syncStatus === PRODUCT_SYNC_STATUS.SYNCED
+    && (current.pendingOperationId === null || current.pendingOperationId === undefined)
+    && (current.localMutationId === null || current.localMutationId === undefined)
+    && Number.isFinite(currentVersion)
+    && currentVersion > 0
+  );
+};
+
+const isStaleLocalMutation = (operation = {}, current = null) => {
   if (!current) return false;
 
-  const operationKey = operation.idempotencyKey || operation.id;
-  if (current.localMutationId) return current.localMutationId !== operationKey;
+  if (current.localMutationId) return !operationIdentityMatches(operation, current.localMutationId);
+  if (isRecoveredCreateReplay(operation, current)) return true;
 
   const expectedVersion = getExpectedVersion(operation);
   const currentVersion = Number(current.serverVersion ?? current.server_version);
   return expectedVersion !== null && Number.isFinite(currentVersion) && currentVersion > expectedVersion;
+};
+
+const isPreRpcSupersededMutation = (operation = {}, current = null) => (
+  Boolean(current?.localMutationId)
+  && !operationIdentityMatches(operation, current.localMutationId)
+);
+
+const hasNewerLocalMutation = async (operation = {}) => (
+  isStaleLocalMutation(operation, await getCurrentCatalogRecord(operation))
+);
+
+const createStaleConflictResponse = (operation = {}, response = null, phase = 'post_rpc') => ({
+  ...(response || {}),
+  success: false,
+  code: 'STALE_LOCAL_MUTATION',
+  message: 'La respuesta del outbox corresponde a una mutacion local anterior y no se aplico.',
+  entityType: operation.entityType || null,
+  entityId: operation.entityId || null,
+  operationId: operation.id || operation.idempotencyKey || null,
+  stalePhase: phase
+});
+
+const saveStaleConflict = async (operation, response, phase) => {
+  await productConflictService.saveConflict({
+    operation,
+    response,
+    source: 'productSyncHandler.pushOperation.stale_local_mutation'
+  });
+  notifyProductsChanged({
+    source: 'productSyncHandler.pushOperation.stale_local_mutation',
+    phase
+  });
 };
 
 export const pullCatalogChanges = async (licenseKeyOverride = null) => {
@@ -208,6 +266,14 @@ export const productSyncHandler = {
     const expectedVersion = getExpectedVersion(operation);
     const idempotencyKey = operation.idempotencyKey || operation.id;
     const op = operation.operation;
+
+    const currentBeforeRpc = await getCurrentCatalogRecord(operation);
+    if (isPreRpcSupersededMutation(operation, currentBeforeRpc)) {
+      const staleResponse = createStaleConflictResponse(operation, null, 'pre_rpc');
+      await saveStaleConflict(operation, staleResponse, 'pre_rpc');
+      return { conflict: staleResponse, success: false };
+    }
+
     let response;
 
     if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) {
@@ -284,18 +350,8 @@ export const productSyncHandler = {
     }
 
     if (await hasNewerLocalMutation(operation)) {
-      const staleResponse = {
-        ...(response || {}),
-        success: false,
-        code: 'STALE_LOCAL_MUTATION',
-        message: 'La respuesta del outbox corresponde a una mutacion local anterior y no se aplico.'
-      };
-      await productConflictService.saveConflict({
-        operation,
-        response: staleResponse,
-        source: 'productSyncHandler.pushOperation.stale_local_mutation'
-      });
-      notifyProductsChanged({ source: 'productSyncHandler.pushOperation.stale_local_mutation' });
+      const staleResponse = createStaleConflictResponse(operation, response, 'post_rpc');
+      await saveStaleConflict(operation, staleResponse, 'post_rpc');
       return { conflict: staleResponse, success: false };
     }
 

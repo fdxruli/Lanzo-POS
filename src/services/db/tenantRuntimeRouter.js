@@ -300,6 +300,9 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
   const candidates = discovery?.trustedCompatible || [];
   if (candidates.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
   const adopted = candidates[0] || null;
+  const adoptedAliases = adopted
+    ? await Promise.all(adopted.bindingAliases.map(aliasFingerprint))
+    : [];
 
   // The write is serialized with other tabs. The candidate scan is read-only
   // and happens before this transaction; rechecking aliases here prevents two
@@ -310,9 +313,6 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
     if (currentPrior) return currentPrior.opaqueId;
 
     const opaqueId = adopted?.opaqueId || createOpaqueId(aliases);
-    const adoptedAliases = adopted
-      ? await Promise.all(adopted.bindingAliases.map(aliasFingerprint))
-      : [];
     await directory.table(DIRECTORY_STORE).put({
       opaqueId,
       // A conflict exits before this write. Aliases are opaque fingerprints
