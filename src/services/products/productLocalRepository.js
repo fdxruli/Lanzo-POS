@@ -23,6 +23,15 @@ import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 
 const nowIso = () => new Date().toISOString();
 
+const createLocalMutationSync = (sync = {}) => ({
+  ...sync,
+  syncStatus: sync.syncStatus || PRODUCT_SYNC_STATUS.LOCAL,
+  lastSyncedAt: null,
+  pendingOperationId: sync.pendingOperationId ?? null,
+  localMutationId: sync.localMutationId || generateID('mutation'),
+  conflictReason: null
+});
+
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -40,12 +49,30 @@ const isActiveCatalogRecord = (record) => (
 );
 
 const isUnsyncedCatalogRecord = (record) => {
-  if (!isActiveCatalogRecord(record)) return false;
+  if (!record?.id || record.deletedAt || record.deletedTimestamp) return false;
   return (
     record.syncStatus !== PRODUCT_SYNC_STATUS.SYNCED ||
     !record.serverVersion ||
     !record.lastSyncedAt
   );
+};
+
+const markLocalDeletionPending = async (storeName, id) => {
+  await ensureOpen();
+  await db.table(storeName).update(id, {
+    syncStatus: PRODUCT_SYNC_STATUS.LOCAL,
+    lastSyncedAt: null,
+    pendingOperationId: null,
+    localMutationId: generateID('mutation'),
+    conflictReason: null,
+    deletionPending: true
+  });
+};
+
+const getDeletionStore = (entityType) => {
+  if (entityType === 'category') return STORES.DELETED_CATEGORIES;
+  if (entityType === 'product_batch') return STORES.PRODUCT_BATCHES;
+  return STORES.DELETED_MENU;
 };
 
 const validateCategoryNameUnique = async (category) => {
@@ -90,12 +117,24 @@ export const productLocalRepository = {
     return loadData(STORES.PRODUCT_BATCHES, batchId);
   },
 
+  async getCatalogRecordForSync(entityType, entityId) {
+    if (!entityId) return null;
+    await ensureOpen();
+    const activeStore = entityType === 'category'
+      ? STORES.CATEGORIES
+      : (entityType === 'product_batch' ? STORES.PRODUCT_BATCHES : STORES.MENU);
+    const active = await db.table(activeStore).get(entityId);
+    if (active) return active;
+    return db.table(getDeletionStore(entityType)).get(entityId);
+  },
+
   async saveCategoryLocal(categoryData, sync = {}) {
     await ensureOpen();
     const isNew = !categoryData.id;
+    const mutationSync = createLocalMutationSync(sync);
     const payload = {
       ...categoryData,
-      ...sync,
+      ...mutationSync,
       id: categoryData.id || generateID('cat'),
       name: String(categoryData.name || '').trim(),
       color: categoryData.color || '#cccccc',
@@ -113,8 +152,9 @@ export const productLocalRepository = {
   async deleteCategoryLocal(categoryId, sync = null) {
     if (sync) {
       await ensureOpen();
+      const mutationSync = createLocalMutationSync(sync);
       await db.table(STORES.CATEGORIES).update(categoryId, {
-        ...sync,
+        ...mutationSync,
         isActive: false,
         deletedAt: nowIso(),
         updatedAt: nowIso()
@@ -126,12 +166,14 @@ export const productLocalRepository = {
       return { success: true };
     }
 
-    return softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, {
+    const result = await softDeleteWithCascadeSafe(STORES.CATEGORIES, STORES.DELETED_CATEGORIES, categoryId, {
       reason: 'Eliminada desde Catalogo de Productos',
       cascade: {
         updates: [{ store: STORES.MENU, index: 'categoryId', value: categoryId, field: 'categoryId', setTo: '' }]
       }
     });
+    if (result?.success) await markLocalDeletionPending(STORES.DELETED_CATEGORIES, categoryId);
+    return result;
   },
 
   async prepareProduct(productData, existingProduct = null) {
@@ -257,18 +299,19 @@ export const productLocalRepository = {
   },
 
   async savePreparedProductLocal(prepared, sync = {}) {
-    const product = { ...prepared.product, ...sync };
-    const batches = prepared.batches.map((batch) => ({ ...batch, ...sync }));
+    const mutationSync = createLocalMutationSync(sync);
+    const product = { ...prepared.product, ...mutationSync };
+    const batches = prepared.batches.map((batch) => ({ ...batch, ...mutationSync }));
     let result;
 
     if (prepared.editing) {
       result = await updateProductSafe(prepared.productId, product);
-      if (result?.success) await applySyncFields(STORES.MENU, prepared.productId, sync);
+      if (result?.success) await applySyncFields(STORES.MENU, prepared.productId, mutationSync);
     } else {
       result = await createProductWithInitialInventorySafe(product, batches);
       if (result?.success || result?.productId) {
-        await applySyncFields(STORES.MENU, prepared.productId, sync);
-        for (const batch of batches) await applySyncFields(STORES.PRODUCT_BATCHES, batch.id, sync);
+        await applySyncFields(STORES.MENU, prepared.productId, mutationSync);
+        for (const batch of batches) await applySyncFields(STORES.PRODUCT_BATCHES, batch.id, mutationSync);
       }
     }
 
@@ -283,14 +326,17 @@ export const productLocalRepository = {
   async deleteProductLocal(product, sync = null) {
     const productId = typeof product === 'string' ? product : product?.id;
     if (!sync) {
-      return softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, productId, {
+      const result = await softDeleteWithCascadeSafe(STORES.MENU, STORES.DELETED_MENU, productId, {
         reason: 'Eliminado desde Catalogo de Productos'
       });
+      if (result?.success) await markLocalDeletionPending(STORES.DELETED_MENU, productId);
+      return result;
     }
 
     await ensureOpen();
+    const mutationSync = createLocalMutationSync(sync);
     await db.table(STORES.MENU).update(productId, {
-      ...sync,
+      ...mutationSync,
       isActive: false,
       deletedAt: nowIso(),
       updatedAt: nowIso()
@@ -301,7 +347,13 @@ export const productLocalRepository = {
   async toggleProductStatusLocal(product, isActive) {
     const productId = typeof product === 'string' ? product : product?.id;
     const current = typeof product === 'string' ? await this.getProductById(productId) : product;
-    return updateProductSafe(productId, { ...current, isActive, updatedAt: nowIso() });
+    const mutationSync = createLocalMutationSync();
+    return updateProductSafe(productId, {
+      ...current,
+      ...mutationSync,
+      isActive,
+      updatedAt: nowIso()
+    });
   },
 
   async markProductPending(productId, sync = {}) {
@@ -309,11 +361,12 @@ export const productLocalRepository = {
   },
 
   async saveBatchLocal(batchData, sync = {}) {
-    const payload = { ...batchData, ...sync };
+    const mutationSync = createLocalMutationSync(sync);
+    const payload = { ...batchData, ...mutationSync };
     const result = await saveBatchAndSyncProductSafe(payload);
     if (result?.success) {
-      await applySyncFields(STORES.PRODUCT_BATCHES, payload.id, sync);
-      if (payload.productId) await applySyncFields(STORES.MENU, payload.productId, sync);
+      await applySyncFields(STORES.PRODUCT_BATCHES, payload.id, mutationSync);
+      if (payload.productId) await applySyncFields(STORES.MENU, payload.productId, mutationSync);
     }
     return result;
   },
@@ -324,8 +377,10 @@ export const productLocalRepository = {
       stock: 0,
       isActive: false,
       status: 'archived',
-      deletedAt: batch.deletedAt || nowIso()
-    }, sync);
+      deletedAt: batch.deletedAt || nowIso(),
+      deletionPending: true,
+      lastSyncedAt: null
+    }, { ...sync, deletionPending: true, lastSyncedAt: null });
   },
 
   async applyCloudCategory(category) {
@@ -419,6 +474,34 @@ export const productLocalRepository = {
     return conflict;
   },
 
+  async markCatalogDeletionSynced({ entityType, entityId }) {
+    await ensureOpen();
+    const storeName = getDeletionStore(entityType);
+    const current = await db.table(storeName).get(entityId);
+    if (!current) return null;
+    const synced = {
+      ...current,
+      syncStatus: PRODUCT_SYNC_STATUS.SYNCED,
+      lastSyncedAt: nowIso(),
+      pendingOperationId: null,
+      localMutationId: null,
+      conflictReason: null,
+      deletionPending: false
+    };
+    await db.table(storeName).put(synced);
+    return synced;
+  },
+
+  async markCatalogDeletionConflict({ entityType, entityId, reason }) {
+    await ensureOpen();
+    const storeName = getDeletionStore(entityType);
+    const current = await db.table(storeName).get(entityId);
+    if (!current) return null;
+    const conflict = markProductSyncConflict(current, reason);
+    await db.table(storeName).put({ ...conflict, deletionPending: true });
+    return conflict;
+  },
+
   async getLocalCatalogForMigration() {
     await ensureOpen();
     const [categories, products, batches] = await Promise.all([
@@ -436,16 +519,27 @@ export const productLocalRepository = {
 
   async listUnsyncedLocalCatalogForCloud() {
     await ensureOpen();
-    const [categories, products, batches] = await Promise.all([
+    const [categories, products, batches, deletedCategories, deletedProducts] = await Promise.all([
       db.table(STORES.CATEGORIES).toArray(),
       db.table(STORES.MENU).toArray(),
-      db.table(STORES.PRODUCT_BATCHES).toArray()
+      db.table(STORES.PRODUCT_BATCHES).toArray(),
+      db.table(STORES.DELETED_CATEGORIES).toArray(),
+      db.table(STORES.DELETED_MENU).toArray()
     ]);
 
     return {
       categories: categories.filter(isUnsyncedCatalogRecord),
       products: products.filter(isUnsyncedCatalogRecord),
-      batches: batches.filter(isUnsyncedCatalogRecord)
+      batches: batches.filter(isUnsyncedCatalogRecord),
+      deletes: {
+        categories: deletedCategories.filter((record) => record?.id && record.deletionPending !== false),
+        products: deletedProducts.filter((record) => record?.id && record.deletionPending !== false),
+        batches: batches.filter((record) => (
+          record?.id
+          && (record.deletedAt || record.deletedTimestamp)
+          && record.deletionPending !== false
+        ))
+      }
     };
   },
 

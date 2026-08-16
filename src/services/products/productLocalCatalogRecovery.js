@@ -2,6 +2,7 @@ import Logger from '../Logger';
 import { syncConflictService } from '../sync/syncConflictService';
 import { syncMetaService } from '../sync/syncMetaService';
 import { SYNC_ENTITY_TYPES } from '../sync/syncConstants';
+import { getTenantStorageState } from '../tenant/tenantScopedStorage';
 import {
   batchToCloudPayload,
   categoryToCloudPayload,
@@ -9,29 +10,32 @@ import {
 } from './productMapper';
 import { productCloudRepository } from './productCloudRepository';
 import { productLocalRepository } from './productLocalRepository';
-import { validateLocalCatalogForMigration } from './productMigrationService';
-import {
-  PRODUCT_MIGRATION_BATCH_SIZE,
-  PRODUCTS_UNSYNCED_RESCUE_META_KEY
-} from './productConstants';
+import { validateLocalCatalogForMigration } from './productMigrationValidation';
+import { validateMigrationBatchResponse } from './productMigrationResponseValidation';
+import { PRODUCTS_UNSYNCED_RESCUE_META_KEY } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
 
 const nowIso = () => new Date().toISOString();
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
-const countCatalogRows = ({ categories = [], products = [], batches = [] } = {}) => (
-  categories.length + products.length + batches.length
-);
+const countCatalogRows = (catalog = {}) => {
+  const { categories = [], products = [], batches = [], deletes = {} } = catalog;
+  return categories.length
+    + products.length
+    + batches.length
+    + Object.values(deletes).reduce((total, records) => total + (records?.length || 0), 0);
+};
 
 const saveRecoveryWarning = async ({ licenseKey, issues, conflictType, message }) => {
+  const tenantIdentity = getSafeTenantIdentity(licenseKey);
   const conflict = await syncConflictService.saveConflict({
-    id: `products-recovery:${licenseKey}:${Date.now()}`,
+    id: `products-recovery:${tenantIdentity}:${Date.now()}`,
     entityType: SYNC_ENTITY_TYPES.PRODUCT,
     entityId: 'local-catalog-recovery',
     conflictType,
     localPayload: { issues },
     serverPayload: null,
-    metadata: { licenseKey, message }
+    metadata: { tenantIdentity, message }
   });
 
   await syncMetaService.setMeta(PRODUCTS_UNSYNCED_RESCUE_META_KEY, {
@@ -59,55 +63,227 @@ const markCatalogConflictRecords = async (catalog = {}, reason = 'PRODUCT_CATALO
       }
     }
   }
+
+  const deletionGroups = [
+    [SYNC_ENTITY_TYPES.CATEGORY, catalog.deletes?.categories || []],
+    [SYNC_ENTITY_TYPES.PRODUCT, catalog.deletes?.products || []],
+    [SYNC_ENTITY_TYPES.PRODUCT_BATCH, catalog.deletes?.batches || []]
+  ];
+
+  for (const [entityType, records] of deletionGroups) {
+    for (const record of records) {
+      try {
+        await productLocalRepository.markCatalogDeletionConflict({
+          entityType,
+          entityId: record.id,
+          reason
+        });
+      } catch (error) {
+        Logger.warn('[Products/Recovery] No se pudo marcar tombstone en conflicto:', {
+          entityType,
+          id: record?.id,
+          error
+        });
+      }
+    }
+  }
+};
+
+const getExpectedVersion = (record) => {
+  const value = Number(record?.serverVersion ?? record?.server_version);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const sanitizeKeyPart = (value, fallback = 'unknown') => String(value || fallback)
+  .replace(/[^a-zA-Z0-9._-]+/g, '-');
+
+const fingerprint = (value) => {
+  let hash = 2166136261;
+  for (const character of String(value || '')) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+};
+
+const getSafeTenantIdentity = (licenseKey) => (
+  getTenantStorageState()?.opaqueId || `license-fp-${fingerprint(licenseKey)}`
+);
+
+const getLocalMutationIdentity = (record) => (
+  record?.localMutationId
+  || [
+    record?.updatedAt,
+    record?.updated_at,
+    record?.deletedAt,
+    record?.deletedTimestamp,
+    record?.createdAt,
+    record?.created_at
+  ].find(Boolean)
+  || 'legacy'
+);
+
+const buildRecoveryIdempotencyKey = ({ licenseKey, entityType, operation, record }) => (
+  [
+    'products-recovery',
+    sanitizeKeyPart(getSafeTenantIdentity(licenseKey), 'tenant'),
+    operation,
+    entityType,
+    sanitizeKeyPart(record?.id, 'unknown'),
+    getExpectedVersion(record) ?? 'new',
+    sanitizeKeyPart(getLocalMutationIdentity(record), 'legacy')
+  ].join(':')
+);
+
+const throwRecoveryResponseError = ({
+  response,
+  fallbackCode,
+  expectedCounts = null,
+  entityType = null,
+  entityId = null
+}) => {
+  const issues = expectedCounts
+    ? validateMigrationBatchResponse({ response, expectedCounts })
+    : [{
+      type: 'PRODUCT_RECOVERY_RPC_FAILED',
+      entityType,
+      entityId,
+      code: response?.code || fallbackCode,
+      message: response?.message || fallbackCode,
+      serverVersion: response?.server_version ?? response?.serverVersion ?? null,
+      serverPayload: response?.server_payload ?? response?.serverPayload ?? null
+    }];
+
+  if (issues.length === 0) return;
+
+  throw Object.assign(new Error(issues[0].message || issues[0].code || fallbackCode), {
+    response: {
+      ...(response || {}),
+      success: false,
+      code: issues[0].code || fallbackCode,
+      message: issues[0].message || fallbackCode,
+      issues
+    }
+  });
+};
+
+const assertCanonicalMutationResponse = (response, fallbackCode, identity = {}) => {
+  if (response?.success === true) return response;
+  throwRecoveryResponseError({ response, fallbackCode, ...identity });
 };
 
 const migrateUnsyncedCatalog = async ({ licenseKey, catalog }) => {
-  const batchPrefix = `products-recovery-${licenseKey}-${Date.now()}`;
   let migrated = 0;
 
-  for (let index = 0; index < catalog.categories.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-    const categories = catalog.categories.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(categoryToCloudPayload);
-    const response = await productCloudRepository.migrateLocalCatalog({
-      licenseKey,
-      categories,
-      products: [],
-      batches: [],
-      batchId: `${batchPrefix}-categories-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
-    });
+  const mutationOperations = [
+    {
+      entityType: SYNC_ENTITY_TYPES.CATEGORY,
+      records: catalog.categories,
+      mutate: (record, idempotencyKey) => productCloudRepository.upsertCategory({
+        licenseKey,
+        category: categoryToCloudPayload(record),
+        expectedVersion: getExpectedVersion(record),
+        idempotencyKey
+      }),
+      fallbackCode: 'PRODUCT_RECOVERY_CATEGORY_FAILED'
+    },
+    {
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      records: catalog.products,
+      mutate: (record, idempotencyKey) => productCloudRepository.upsertProduct({
+        licenseKey,
+        product: productToCloudPayload(record),
+        initialBatches: [],
+        expectedVersion: getExpectedVersion(record),
+        idempotencyKey
+      }),
+      fallbackCode: 'PRODUCT_RECOVERY_PRODUCT_FAILED'
+    },
+    {
+      entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
+      records: catalog.batches,
+      mutate: (record, idempotencyKey) => productCloudRepository.upsertProductBatch({
+        licenseKey,
+        batch: batchToCloudPayload(record),
+        expectedVersion: getExpectedVersion(record),
+        idempotencyKey
+      }),
+      fallbackCode: 'PRODUCT_RECOVERY_BATCH_FAILED'
+    }
+  ];
 
-    if (response?.success === false) throw Object.assign(new Error(response.message || response.code || 'PRODUCT_RECOVERY_CATEGORY_FAILED'), { response });
-    await productLocalRepository.applyCloudCatalog(response);
-    migrated += categories.length;
+  for (const operation of mutationOperations) {
+    for (const record of operation.records) {
+      const idempotencyKey = buildRecoveryIdempotencyKey({
+        licenseKey,
+        entityType: operation.entityType,
+        operation: 'upsert',
+        record
+      });
+      const response = await operation.mutate(record, idempotencyKey);
+      assertCanonicalMutationResponse(response, operation.fallbackCode, {
+        entityType: operation.entityType,
+        entityId: record.id
+      });
+      await productLocalRepository.applyCloudCatalog(response);
+      migrated += 1;
+    }
   }
 
-  for (let index = 0; index < catalog.products.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-    const products = catalog.products.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(productToCloudPayload);
-    const response = await productCloudRepository.migrateLocalCatalog({
-      licenseKey,
-      categories: [],
-      products,
-      batches: [],
-      batchId: `${batchPrefix}-products-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
-    });
+  const deletionOperations = [
+    {
+      entityType: SYNC_ENTITY_TYPES.CATEGORY,
+      records: catalog.deletes?.categories || [],
+      deleteRemote: (record, idempotencyKey) => productCloudRepository.deleteCategory({
+        licenseKey,
+        categoryId: record.id,
+        expectedVersion: getExpectedVersion(record),
+        idempotencyKey
+      })
+    },
+    {
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      records: catalog.deletes?.products || [],
+      deleteRemote: (record, idempotencyKey) => productCloudRepository.deleteProduct({
+        licenseKey,
+        productId: record.id,
+        expectedVersion: getExpectedVersion(record),
+        idempotencyKey
+      })
+    },
+    {
+      entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
+      records: catalog.deletes?.batches || [],
+      deleteRemote: (record, idempotencyKey) => productCloudRepository.deleteProductBatch({
+        licenseKey,
+        batchId: record.id,
+        expectedVersion: getExpectedVersion(record),
+        idempotencyKey
+      })
+    }
+  ];
 
-    if (response?.success === false) throw Object.assign(new Error(response.message || response.code || 'PRODUCT_RECOVERY_PRODUCT_FAILED'), { response });
-    await productLocalRepository.applyCloudCatalog(response);
-    migrated += products.length;
-  }
+  for (const operation of deletionOperations) {
+    for (const record of operation.records) {
+      const idempotencyKey = buildRecoveryIdempotencyKey({
+        licenseKey,
+        entityType: operation.entityType,
+        operation: 'delete',
+        record
+      });
+      const response = await operation.deleteRemote(record, idempotencyKey);
+      assertCanonicalMutationResponse(
+        response,
+        `PRODUCT_RECOVERY_${operation.entityType.toUpperCase()}_DELETE_FAILED`,
+        { entityType: operation.entityType, entityId: record.id }
+      );
 
-  for (let index = 0; index < catalog.batches.length; index += PRODUCT_MIGRATION_BATCH_SIZE) {
-    const batches = catalog.batches.slice(index, index + PRODUCT_MIGRATION_BATCH_SIZE).map(batchToCloudPayload);
-    const response = await productCloudRepository.migrateLocalCatalog({
-      licenseKey,
-      categories: [],
-      products: [],
-      batches,
-      batchId: `${batchPrefix}-batches-${index / PRODUCT_MIGRATION_BATCH_SIZE}`
-    });
-
-    if (response?.success === false) throw Object.assign(new Error(response.message || response.code || 'PRODUCT_RECOVERY_BATCH_FAILED'), { response });
-    await productLocalRepository.applyCloudCatalog(response);
-    migrated += batches.length;
+      await productLocalRepository.markCatalogDeletionSynced({
+        entityType: operation.entityType,
+        entityId: record.id
+      });
+      migrated += 1;
+    }
   }
 
   return migrated;
@@ -171,11 +347,13 @@ export const productLocalCatalogRecovery = {
       return { success: true, recovered };
     } catch (error) {
       const response = error?.response;
-      const issues = [{
-        type: response?.code || 'PRODUCT_RECOVERY_RPC_FAILED',
-        message: response?.message || error?.message || 'Fallo RPC de recuperacion de catalogo.',
-        response
-      }];
+      const issues = Array.isArray(response?.issues) && response.issues.length > 0
+        ? response.issues
+        : [{
+          type: response?.code || 'PRODUCT_RECOVERY_RPC_FAILED',
+          message: response?.message || error?.message || 'Fallo RPC de recuperacion de catalogo.',
+          response
+        }];
 
       await saveRecoveryWarning({
         licenseKey,
