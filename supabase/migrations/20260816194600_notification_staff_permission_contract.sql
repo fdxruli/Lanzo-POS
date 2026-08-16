@@ -70,4 +70,55 @@ begin
 end;
 $function$;
 
+-- Server authorization already reads the current staff row on every RPC. This
+-- trigger closes the remaining UI/cache window: connected devices receive a
+-- generic notification invalidation as soon as an admin changes permissions or
+-- deactivates a staff user, then refetch through the authoritative RPC filter.
+create or replace function private.broadcast_staff_notification_access_change_v1()
+returns trigger
+language plpgsql
+security definer
+set search_path to ''
+as $function$
+begin
+  if old.permissions is not distinct from new.permissions
+     and old.is_active is not distinct from new.is_active then
+    return new;
+  end if;
+
+  perform private.broadcast_notification_event(
+    p_license_id => new.license_id,
+    p_event => 'notifications_changed',
+    p_reason => 'staff_notification_access_changed',
+    p_metadata => jsonb_build_object(
+      'scope', 'staff_notification_access',
+      'access_changed', true
+    )
+  );
+
+  return new;
+exception
+  when others then
+    -- Permission persistence remains authoritative even if Realtime delivery is
+    -- temporarily unavailable. The next RPC/TTL refresh still enforces access.
+    return new;
+end;
+$function$;
+
+revoke all on function private.broadcast_staff_notification_access_change_v1()
+  from public, anon, authenticated;
+
+drop trigger if exists trg_license_staff_notification_access_changed
+  on public.license_staff_users;
+
+create trigger trg_license_staff_notification_access_changed
+after update of permissions, is_active
+on public.license_staff_users
+for each row
+when (
+  old.permissions is distinct from new.permissions
+  or old.is_active is distinct from new.is_active
+)
+execute function private.broadcast_staff_notification_access_change_v1();
+
 commit;
