@@ -185,11 +185,15 @@ export const getNotificationRuntimeOwner = (state = {}) => {
   return `${licenseIdentity}|${getActorRuntimeIdentity(state)}`;
 };
 
-const clearRealtimeTimer = () => {
+const clearRealtimeTimerHandle = () => {
   if (notificationRealtimeRefreshTimer && typeof window !== 'undefined') {
     window.clearTimeout(notificationRealtimeRefreshTimer);
   }
   notificationRealtimeRefreshTimer = null;
+};
+
+const clearRealtimeTimer = () => {
+  clearRealtimeTimerHandle();
   pendingNotificationRealtimeEvent = null;
 };
 
@@ -230,6 +234,7 @@ const ensureNotificationRuntime = (set, get) => {
   set({
     ...resetNotificationState,
     ...resetSupportState,
+    isNotificationCenterOpen: false,
     notificationRuntimeOwner: owner,
     notificationRuntimeGeneration: generation,
     notificationPreferences,
@@ -613,12 +618,21 @@ export const createNotificationSlice = (set, get) => ({
   },
 
   stopNotificationRealtime: async () => {
+    const subscription = get().notificationRealtimeSubscription;
+    const topic = get().notificationRealtimeTopic;
     clearRealtimeTimer();
     await stopNotificationRealtimeChannel();
-    set({
-      notificationRealtimeSubscription: null,
-      notificationRealtimeTopic: null
-    });
+
+    const state = get();
+    if (
+      state.notificationRealtimeSubscription === subscription
+      && state.notificationRealtimeTopic === topic
+    ) {
+      set({
+        notificationRealtimeSubscription: null,
+        notificationRealtimeTopic: null
+      });
+    }
   },
 
   handleNotificationRealtimeEvent: (event = {}) => {
@@ -648,20 +662,14 @@ export const createNotificationSlice = (set, get) => ({
       operational: isOperationalEvent
     });
 
+    const previousPending = pendingNotificationRealtimeEvent;
+    clearRealtimeTimerHandle();
     pendingNotificationRealtimeEvent = {
-      ...(pendingNotificationRealtimeEvent || {}),
+      ...(previousPending || {}),
       ...event,
       runtimeToken: token,
-      ticketId: ticketId || pendingNotificationRealtimeEvent?.ticketId || null,
-      support: isSupportEvent || pendingNotificationRealtimeEvent?.support || false
-    };
-
-    clearRealtimeTimer();
-    pendingNotificationRealtimeEvent = {
-      ...event,
-      runtimeToken: token,
-      ticketId,
-      support: isSupportEvent
+      ticketId: ticketId || previousPending?.ticketId || null,
+      support: isSupportEvent || previousPending?.support || false
     };
 
     if (typeof window === 'undefined') return;
