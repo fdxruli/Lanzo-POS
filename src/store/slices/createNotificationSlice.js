@@ -36,17 +36,24 @@ import {
 } from '../../services/notifications/notificationPreferencesService';
 import Logger from '../../services/Logger';
 
+let notificationRuntimeGeneration = 0;
 let notificationRealtimeRefreshTimer = null;
 let pendingNotificationRealtimeEvent = null;
-let notificationsRequestPromise = null;
-let operationalRefreshPromise = null;
-let supportTicketsRequestPromise = null;
+let notificationsRequest = null;
+let operationalRefreshRequest = null;
+let supportTicketsRequest = null;
 const supportThreadRequestPromises = new Map();
 
 const NOTIFICATIONS_TTL_MS = 60 * 1000;
 const OPERATIONAL_REFRESH_TTL_MS = 5 * 60 * 1000;
 const SUPPORT_TICKETS_TTL_MS = 2 * 60 * 1000;
 const SUPPORT_THREAD_TTL_MS = 30 * 1000;
+const STALE_RUNTIME_RESULT = Object.freeze({
+  success: false,
+  skipped: true,
+  stale: true,
+  code: 'STALE_NOTIFICATION_RUNTIME'
+});
 
 const now = () => Date.now();
 const isFresh = (timestamp, ttlMs) => (
@@ -146,6 +153,101 @@ const resetSupportState = {
   isRefreshingSupport: false
 };
 
+const getLicenseRuntimeIdentity = (licenseDetails = {}) => (
+  licenseDetails?.license_id ||
+  licenseDetails?.id ||
+  licenseDetails?.details?.license_id ||
+  licenseDetails?.details?.id ||
+  licenseDetails?.license_key ||
+  licenseDetails?.licenseKey ||
+  licenseDetails?.details?.license_key ||
+  licenseDetails?.details?.licenseKey ||
+  null
+);
+
+const getActorRuntimeIdentity = (state = {}) => {
+  if (state.currentDeviceRole === 'staff') {
+    const staffIdentity = state.currentStaffUser?.id || state.currentStaffUser?.username || 'pending';
+    return `staff:${staffIdentity}`;
+  }
+
+  if (state.currentDeviceRole === 'admin') {
+    const adminIdentity = state.currentAdminUser?.id || state.currentAdminUser?.username || 'pending';
+    return `admin:${adminIdentity}`;
+  }
+
+  return `role:${state.currentDeviceRole || 'unknown'}`;
+};
+
+export const getNotificationRuntimeOwner = (state = {}) => {
+  const licenseIdentity = getLicenseRuntimeIdentity(state.licenseDetails);
+  if (!licenseIdentity) return null;
+  return `${licenseIdentity}|${getActorRuntimeIdentity(state)}`;
+};
+
+const clearRealtimeTimer = () => {
+  if (notificationRealtimeRefreshTimer && typeof window !== 'undefined') {
+    window.clearTimeout(notificationRealtimeRefreshTimer);
+  }
+  notificationRealtimeRefreshTimer = null;
+  pendingNotificationRealtimeEvent = null;
+};
+
+const invalidateNotificationRuntimeBookkeeping = () => {
+  notificationRuntimeGeneration += 1;
+  clearRealtimeTimer();
+  notificationsRequest = null;
+  operationalRefreshRequest = null;
+  supportTicketsRequest = null;
+  supportThreadRequestPromises.clear();
+  return notificationRuntimeGeneration;
+};
+
+const buildRuntimeToken = (owner, generation) => ({ owner, generation });
+const runtimeRequestKey = (token) => `${token.owner || 'none'}@${token.generation}`;
+
+const isRuntimeTokenCurrent = (get, token) => {
+  if (!token) return false;
+  const state = get();
+  return (
+    state.notificationRuntimeOwner === token.owner
+    && state.notificationRuntimeGeneration === token.generation
+    && getNotificationRuntimeOwner(state) === token.owner
+  );
+};
+
+const ensureNotificationRuntime = (set, get) => {
+  const state = get();
+  const owner = getNotificationRuntimeOwner(state);
+
+  if (state.notificationRuntimeOwner === owner && owner) {
+    return buildRuntimeToken(owner, state.notificationRuntimeGeneration);
+  }
+
+  const generation = invalidateNotificationRuntimeBookkeeping();
+  const notificationPreferences = getNotificationPreferences(owner);
+
+  set({
+    ...resetNotificationState,
+    ...resetSupportState,
+    notificationRuntimeOwner: owner,
+    notificationRuntimeGeneration: generation,
+    notificationPreferences,
+    notificationCenterRequestedTab: null,
+    notificationCenterRequestedTicketId: null
+  });
+
+  return buildRuntimeToken(owner, generation);
+};
+
+const setIfRuntimeCurrent = (set, get, token, patch) => {
+  if (!isRuntimeTokenCurrent(get, token)) return false;
+  set(patch);
+  return true;
+};
+
+const staleRuntimeResult = () => ({ ...STALE_RUNTIME_RESULT });
+
 export const createNotificationSlice = (set, get) => ({
   ...resetNotificationState,
   ...resetSupportState,
@@ -154,16 +256,39 @@ export const createNotificationSlice = (set, get) => ({
   notificationCenterRequestedTicketId: null,
   notificationRealtimeSubscription: null,
   notificationRealtimeTopic: null,
+  notificationRuntimeOwner: null,
+  notificationRuntimeGeneration: notificationRuntimeGeneration,
   notificationPreferences: getNotificationPreferences(),
 
+  resetNotificationRuntime: () => {
+    const generation = invalidateNotificationRuntimeBookkeeping();
+    set({
+      ...resetNotificationState,
+      ...resetSupportState,
+      isNotificationCenterOpen: false,
+      notificationCenterRequestedTab: null,
+      notificationCenterRequestedTicketId: null,
+      notificationRealtimeSubscription: null,
+      notificationRealtimeTopic: null,
+      notificationRuntimeOwner: null,
+      notificationRuntimeGeneration: generation,
+      notificationPreferences: getNotificationPreferences()
+    });
+    return generation;
+  },
+
   loadNotificationPreferences: () => {
-    const notificationPreferences = getNotificationPreferences();
-    set({ notificationPreferences });
+    const token = ensureNotificationRuntime(set, get);
+    const notificationPreferences = getNotificationPreferences(token.owner);
+    setIfRuntimeCurrent(set, get, token, { notificationPreferences });
     return notificationPreferences;
   },
 
   updateNotificationPreferences: (nextPreferences = {}) => {
-    const currentPreferences = get().notificationPreferences || getNotificationPreferences();
+    const token = ensureNotificationRuntime(set, get);
+    if (!isRuntimeTokenCurrent(get, token)) return getNotificationPreferences();
+
+    const currentPreferences = get().notificationPreferences || getNotificationPreferences(token.owner);
     const notificationPreferences = saveNotificationPreferences({
       ...currentPreferences,
       ...nextPreferences,
@@ -183,33 +308,38 @@ export const createNotificationSlice = (set, get) => ({
         ...(currentPreferences.mutedEventKeys || {}),
         ...(nextPreferences.mutedEventKeys || {})
       }
-    });
-    set({ notificationPreferences });
+    }, token.owner);
+    setIfRuntimeCurrent(set, get, token, { notificationPreferences });
     return notificationPreferences;
   },
 
   resetNotificationPreferences: () => {
-    const notificationPreferences = resetStoredNotificationPreferences();
-    set({ notificationPreferences });
+    const token = ensureNotificationRuntime(set, get);
+    const notificationPreferences = resetStoredNotificationPreferences(token.owner);
+    setIfRuntimeCurrent(set, get, token, { notificationPreferences });
     return notificationPreferences;
   },
 
   muteNotificationCategory: (category, durationMs) => {
+    const token = ensureNotificationRuntime(set, get);
     const notificationPreferences = persistMutedNotificationCategory(
       category,
       durationMs,
-      get().notificationPreferences
+      get().notificationPreferences,
+      token.owner
     );
-    set({ notificationPreferences });
+    setIfRuntimeCurrent(set, get, token, { notificationPreferences });
     return notificationPreferences;
   },
 
   unmuteNotificationCategory: (category) => {
+    const token = ensureNotificationRuntime(set, get);
     const notificationPreferences = persistUnmutedNotificationCategory(
       category,
-      get().notificationPreferences
+      get().notificationPreferences,
+      token.owner
     );
-    set({ notificationPreferences });
+    setIfRuntimeCurrent(set, get, token, { notificationPreferences });
     return notificationPreferences;
   },
 
@@ -217,7 +347,8 @@ export const createNotificationSlice = (set, get) => ({
     tab = null,
     ticketId = null
   } = {}) => {
-    set({
+    const token = ensureNotificationRuntime(set, get);
+    setIfRuntimeCurrent(set, get, token, {
       isNotificationCenterOpen: true,
       notificationCenterRequestedTab: tab,
       notificationCenterRequestedTicketId: ticketId
@@ -243,23 +374,26 @@ export const createNotificationSlice = (set, get) => ({
     force = false,
     background = false
   } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
-      set(resetNotificationState);
+    if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
+      setIfRuntimeCurrent(set, get, token, resetNotificationState);
       return { success: true, notifications: [], unread_count: 0, skipped: true };
     }
 
     const state = get();
     const shouldUseCache = (
-      !force &&
-      state.notificationsLoaded &&
-      !state.notificationsStale &&
-      isFresh(state.lastNotificationsLoadedAt, NOTIFICATIONS_TTL_MS)
+      state.notificationRuntimeOwner === token.owner
+      && state.notificationRuntimeGeneration === token.generation
+      && !force
+      && state.notificationsLoaded
+      && !state.notificationsStale
+      && isFresh(state.lastNotificationsLoadedAt, NOTIFICATIONS_TTL_MS)
     );
 
     if (shouldUseCache) {
-      logNotificationDebug('using cached notifications');
+      logNotificationDebug('using tenant-owned cached notifications', token.owner);
       return {
         success: true,
         notifications: state.notifications || [],
@@ -269,28 +403,32 @@ export const createNotificationSlice = (set, get) => ({
       };
     }
 
-    if (notificationsRequestPromise) {
-      logNotificationDebug('deduplicating notifications request');
-      return notificationsRequestPromise;
+    const requestKey = runtimeRequestKey(token);
+    if (notificationsRequest?.key === requestKey) {
+      logNotificationDebug('deduplicating notifications request', requestKey);
+      return notificationsRequest.promise;
     }
 
     const hasCachedNotifications = state.notificationsLoaded && (state.notifications || []).length > 0;
-    set({
+    setIfRuntimeCurrent(set, get, token, {
       notificationsLoading: !background && !hasCachedNotifications,
       isRefreshingNotifications: background || hasCachedNotifications,
       notificationsRequestInFlight: true,
       notificationsError: null
     });
 
-    notificationsRequestPromise = (async () => {
+    const promise = (async () => {
       if (refreshOperational) {
         await get().refreshOperationalNotificationsIfNeeded?.({ force });
       }
 
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+
       logNotificationDebug(
         force
           ? 'loading notifications because manual refresh requested'
-          : 'loading notifications because stale'
+          : 'loading notifications because stale',
+        token.owner
       );
 
       const result = await listCloudNotifications({
@@ -300,9 +438,11 @@ export const createNotificationSlice = (set, get) => ({
         includeArchived
       });
 
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+
       if (result.success === false) {
         const message = result.message || result.code || 'No pudimos cargar tus notificaciones. Intenta de nuevo.';
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           notifications: [],
           notificationsUnreadCount: 0,
           notificationsLoading: false,
@@ -315,7 +455,7 @@ export const createNotificationSlice = (set, get) => ({
         return result;
       }
 
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         notifications: result.notifications || [],
         notificationsUnreadCount: Number(result.unread_count ?? result.unreadCount ?? 0) || 0,
         notificationsLoading: false,
@@ -330,11 +470,14 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     })();
 
+    notificationsRequest = { key: requestKey, promise };
+
     try {
-      return await notificationsRequestPromise;
+      return await promise;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const message = getNotificationErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         notificationsLoading: false,
         isRefreshingNotifications: false,
         notificationsRequestInFlight: false,
@@ -342,17 +485,18 @@ export const createNotificationSlice = (set, get) => ({
       });
       return { success: false, message };
     } finally {
-      notificationsRequestPromise = null;
+      if (notificationsRequest?.key === requestKey) notificationsRequest = null;
     }
   },
 
   refreshOperationalNotificationsIfNeeded: async ({
     force = false
   } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
-      set({
+    if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
+      setIfRuntimeCurrent(set, get, token, {
         lastOperationalRefreshAt: null,
         operationalRefreshStale: false,
         operationalRefreshInFlight: false
@@ -362,42 +506,49 @@ export const createNotificationSlice = (set, get) => ({
 
     const state = get();
     const shouldSkip = (
-      !force &&
-      !state.operationalRefreshStale &&
-      isFresh(state.lastOperationalRefreshAt, OPERATIONAL_REFRESH_TTL_MS)
+      !force
+      && !state.operationalRefreshStale
+      && isFresh(state.lastOperationalRefreshAt, OPERATIONAL_REFRESH_TTL_MS)
     );
 
     if (shouldSkip) {
-      logNotificationDebug('skipping operational refresh due TTL');
+      logNotificationDebug('skipping operational refresh due tenant TTL', token.owner);
       return { success: true, skipped: true, cached: true };
     }
 
-    if (operationalRefreshPromise) {
-      logNotificationDebug('deduplicating operational refresh');
-      return operationalRefreshPromise;
+    const requestKey = runtimeRequestKey(token);
+    if (operationalRefreshRequest?.key === requestKey) {
+      logNotificationDebug('deduplicating operational refresh', requestKey);
+      return operationalRefreshRequest.promise;
     }
 
-    set({ operationalRefreshInFlight: true });
+    setIfRuntimeCurrent(set, get, token, { operationalRefreshInFlight: true });
 
-    operationalRefreshPromise = (async () => {
+    const promise = (async () => {
       try {
         const result = await refreshOperationalNotifications({ licenseDetails });
-        set({
+        if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+        setIfRuntimeCurrent(set, get, token, {
           lastOperationalRefreshAt: now(),
           operationalRefreshStale: false,
           operationalRefreshInFlight: false
         });
         return result;
       } catch (error) {
-        set({ operationalRefreshInFlight: false });
+        if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+        setIfRuntimeCurrent(set, get, token, { operationalRefreshInFlight: false });
         logNotificationDebug('operational refresh failed', error?.message || error);
         return { success: false, message: getNotificationErrorMessage(error) };
-      } finally {
-        operationalRefreshPromise = null;
       }
     })();
 
-    return operationalRefreshPromise;
+    operationalRefreshRequest = { key: requestKey, promise };
+
+    try {
+      return await promise;
+    } finally {
+      if (operationalRefreshRequest?.key === requestKey) operationalRefreshRequest = null;
+    }
   },
 
   invalidateNotificationCache: ({
@@ -405,17 +556,13 @@ export const createNotificationSlice = (set, get) => ({
     ticketId = null,
     operational = false
   } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const nextState = {
       notificationsStale: true
     };
 
-    if (operational) {
-      nextState.operationalRefreshStale = true;
-    }
-
-    if (support) {
-      nextState.supportStale = true;
-    }
+    if (operational) nextState.operationalRefreshStale = true;
+    if (support) nextState.supportStale = true;
 
     if (ticketId) {
       const currentThreadStale = get().supportThreadStaleByTicketId || {};
@@ -425,14 +572,15 @@ export const createNotificationSlice = (set, get) => ({
       };
     }
 
-    logNotificationDebug('realtime invalidated cache');
-    set(nextState);
+    logNotificationDebug('realtime invalidated tenant cache', token.owner);
+    setIfRuntimeCurrent(set, get, token, nextState);
   },
 
   startNotificationRealtime: async () => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseNotificationRealtime(licenseDetails, getStaffSessionContext(get()))) {
+    if (!token.owner || !canUseNotificationRealtime(licenseDetails, getStaffSessionContext(get()))) {
       await get().stopNotificationRealtime?.();
       return null;
     }
@@ -445,31 +593,27 @@ export const createNotificationSlice = (set, get) => ({
     }
 
     await get().stopNotificationRealtime?.();
+    if (!isRuntimeTokenCurrent(get, token)) return null;
 
     const channel = startNotificationRealtimeChannel({
       licenseDetails,
       staffSession: getStaffSessionContext(get()),
       onNotificationEvent: (event) => {
+        if (!isRuntimeTokenCurrent(get, token)) return;
         get().handleNotificationRealtimeEvent?.(event);
       }
     });
 
-    set({
+    setIfRuntimeCurrent(set, get, token, {
       notificationRealtimeSubscription: channel,
       notificationRealtimeTopic: channel ? nextTopic : null
     });
 
-    return channel;
+    return isRuntimeTokenCurrent(get, token) ? channel : null;
   },
 
   stopNotificationRealtime: async () => {
-    if (notificationRealtimeRefreshTimer) {
-      window.clearTimeout(notificationRealtimeRefreshTimer);
-      notificationRealtimeRefreshTimer = null;
-    }
-
-    pendingNotificationRealtimeEvent = null;
-
+    clearRealtimeTimer();
     await stopNotificationRealtimeChannel();
     set({
       notificationRealtimeSubscription: null,
@@ -478,9 +622,10 @@ export const createNotificationSlice = (set, get) => ({
   },
 
   handleNotificationRealtimeEvent: (event = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) return;
+    if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) return;
 
     const ticketId = event.ticketId || event.ticket_id || null;
     const reason = event.reason || '';
@@ -494,7 +639,7 @@ export const createNotificationSlice = (set, get) => ({
       reason === 'operational_refresh' ||
       reason === 'cash_changed' ||
       reason === 'sync_changed' ||
-      ['cash', 'sync', 'staff'].includes(event.metadata?.category)
+      ['cash', 'sync', 'staff', 'inventory', 'operation', 'operations'].includes(event.metadata?.category)
     );
 
     get().invalidateNotificationCache?.({
@@ -506,18 +651,27 @@ export const createNotificationSlice = (set, get) => ({
     pendingNotificationRealtimeEvent = {
       ...(pendingNotificationRealtimeEvent || {}),
       ...event,
+      runtimeToken: token,
       ticketId: ticketId || pendingNotificationRealtimeEvent?.ticketId || null,
       support: isSupportEvent || pendingNotificationRealtimeEvent?.support || false
     };
 
-    if (notificationRealtimeRefreshTimer) {
-      window.clearTimeout(notificationRealtimeRefreshTimer);
-    }
+    clearRealtimeTimer();
+    pendingNotificationRealtimeEvent = {
+      ...event,
+      runtimeToken: token,
+      ticketId,
+      support: isSupportEvent
+    };
+
+    if (typeof window === 'undefined') return;
 
     notificationRealtimeRefreshTimer = window.setTimeout(async () => {
       const realtimeEvent = pendingNotificationRealtimeEvent || {};
       notificationRealtimeRefreshTimer = null;
       pendingNotificationRealtimeEvent = null;
+
+      if (!isRuntimeTokenCurrent(get, realtimeEvent.runtimeToken)) return;
 
       await get().loadNotifications?.({
         refreshOperational: false,
@@ -525,10 +679,12 @@ export const createNotificationSlice = (set, get) => ({
         background: true
       });
 
-      const ticketId = realtimeEvent.ticketId;
+      if (!isRuntimeTokenCurrent(get, realtimeEvent.runtimeToken)) return;
+
+      const eventTicketId = realtimeEvent.ticketId;
       const shouldRefreshSupport = (
         realtimeEvent.support ||
-        ticketId ||
+        eventTicketId ||
         realtimeEvent.reason === 'support_reply' ||
         realtimeEvent.reason === 'ticket_status_changed' ||
         realtimeEvent.reason === 'support_ticket_changed'
@@ -543,8 +699,8 @@ export const createNotificationSlice = (set, get) => ({
         await get().loadSupportTickets?.({ force: true, background: true });
       }
 
-      if (ticketId && activeTicketId === ticketId) {
-        await get().openSupportTicket?.(ticketId, { force: true, background: true });
+      if (eventTicketId && activeTicketId === eventTicketId) {
+        await get().openSupportTicket?.(eventTicketId, { force: true, background: true });
       }
     }, 750);
   },
@@ -552,19 +708,18 @@ export const createNotificationSlice = (set, get) => ({
   markNotificationRead: async (notificationId) => {
     if (!notificationId) return { success: false, code: 'NOTIFICATION_ID_REQUIRED' };
 
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
-    if (!canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
+    if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
       return { success: false, code: 'STAFF_NOTIFICATIONS_DISABLED', message: 'Tu usuario staff no tiene acceso al Centro de Notificaciones.' };
     }
 
     const currentNotifications = get().notifications || [];
     const currentNotification = currentNotifications.find((item) => item.id === notificationId);
 
-    if (currentNotification?.is_read) {
-      return { success: true, skipped: true };
-    }
+    if (currentNotification?.is_read) return { success: true, skipped: true };
 
-    set((state) => ({
+    setIfRuntimeCurrent(set, get, token, (state) => ({
       notifications: (state.notifications || []).map((item) => (
         item.id === notificationId
           ? { ...item, is_read: true, read_at: item.read_at || new Date().toISOString() }
@@ -576,6 +731,7 @@ export const createNotificationSlice = (set, get) => ({
 
     try {
       const result = await markCloudNotificationRead({ licenseDetails, notificationId });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
         await get().loadNotifications?.({ force: true, refreshOperational: false, background: true });
@@ -583,23 +739,25 @@ export const createNotificationSlice = (set, get) => ({
 
       return result;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const message = getNotificationErrorMessage(error);
-      set({ notificationsError: message });
+      setIfRuntimeCurrent(set, get, token, { notificationsError: message });
       await get().loadNotifications?.({ force: true, refreshOperational: false, background: true });
       return { success: false, message };
     }
   },
 
   markAllNotificationsRead: async () => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
-    if (!canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
+    if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
       return { success: false, code: 'STAFF_NOTIFICATIONS_DISABLED', message: 'Tu usuario staff no tiene acceso al Centro de Notificaciones.' };
     }
 
     const previousNotifications = get().notifications || [];
     const previousUnreadCount = get().notificationsUnreadCount || 0;
 
-    set((state) => ({
+    setIfRuntimeCurrent(set, get, token, (state) => ({
       notifications: (state.notifications || []).map((item) => ({
         ...item,
         is_read: true,
@@ -611,9 +769,10 @@ export const createNotificationSlice = (set, get) => ({
 
     try {
       const result = await markAllCloudNotificationsRead({ licenseDetails });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           notifications: previousNotifications,
           notificationsUnreadCount: previousUnreadCount
         });
@@ -621,8 +780,9 @@ export const createNotificationSlice = (set, get) => ({
 
       return result;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const message = getNotificationErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         notifications: previousNotifications,
         notificationsUnreadCount: previousUnreadCount,
         notificationsError: message
@@ -634,8 +794,9 @@ export const createNotificationSlice = (set, get) => ({
   archiveNotification: async (notificationId) => {
     if (!notificationId) return { success: false, code: 'NOTIFICATION_ID_REQUIRED' };
 
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
-    if (!canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
+    if (!token.owner || !canUseCloudNotifications(licenseDetails, getStaffSessionContext(get()))) {
       return { success: false, code: 'STAFF_NOTIFICATIONS_DISABLED', message: 'Tu usuario staff no tiene acceso al Centro de Notificaciones.' };
     }
 
@@ -643,7 +804,7 @@ export const createNotificationSlice = (set, get) => ({
     const previousUnreadCount = get().notificationsUnreadCount || 0;
     const currentNotification = previousNotifications.find((item) => item.id === notificationId);
 
-    set((state) => ({
+    setIfRuntimeCurrent(set, get, token, (state) => ({
       notifications: (state.notifications || []).filter((item) => item.id !== notificationId),
       notificationsUnreadCount: currentNotification?.is_read
         ? Number(state.notificationsUnreadCount || 0)
@@ -653,9 +814,10 @@ export const createNotificationSlice = (set, get) => ({
 
     try {
       const result = await archiveCloudNotification({ licenseDetails, notificationId });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           notifications: previousNotifications,
           notificationsUnreadCount: previousUnreadCount
         });
@@ -664,8 +826,9 @@ export const createNotificationSlice = (set, get) => ({
 
       return result;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const message = getNotificationErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         notifications: previousNotifications,
         notificationsUnreadCount: previousUnreadCount,
         notificationsError: message
@@ -675,13 +838,14 @@ export const createNotificationSlice = (set, get) => ({
   },
 
   showSupportTicketForm: () => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
-    if (!canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
-      set({ supportTicketsError: 'Tu usuario staff no tiene acceso a soporte Lanzo.' });
+    if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
+      setIfRuntimeCurrent(set, get, token, { supportTicketsError: 'Tu usuario staff no tiene acceso a soporte Lanzo.' });
       return false;
     }
 
-    set({
+    setIfRuntimeCurrent(set, get, token, {
       supportTicketView: 'form',
       activeSupportTicket: null,
       supportTicketMessages: [],
@@ -691,7 +855,8 @@ export const createNotificationSlice = (set, get) => ({
   },
 
   showSupportTicketList: () => {
-    set({
+    const token = ensureNotificationRuntime(set, get);
+    setIfRuntimeCurrent(set, get, token, {
       supportTicketView: 'list',
       activeSupportTicket: null,
       supportTicketMessages: [],
@@ -706,44 +871,47 @@ export const createNotificationSlice = (set, get) => ({
     force = false,
     background = false
   } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
-      set(resetSupportState);
+    if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
+      setIfRuntimeCurrent(set, get, token, resetSupportState);
       return { success: true, tickets: [], skipped: true };
     }
 
     const state = get();
     const shouldUseCache = (
-      !force &&
-      state.supportTicketsLoaded &&
-      !state.supportStale &&
-      isFresh(state.lastSupportTicketsLoadedAt, SUPPORT_TICKETS_TTL_MS)
+      !force
+      && state.supportTicketsLoaded
+      && !state.supportStale
+      && isFresh(state.lastSupportTicketsLoadedAt, SUPPORT_TICKETS_TTL_MS)
     );
 
     if (shouldUseCache) {
-      logNotificationDebug('using cached support tickets');
+      logNotificationDebug('using tenant-owned cached support tickets', token.owner);
       return { success: true, tickets: state.supportTickets || [], cached: true };
     }
 
-    if (supportTicketsRequestPromise) {
-      logNotificationDebug('deduplicating support tickets request');
-      return supportTicketsRequestPromise;
+    const requestKey = runtimeRequestKey(token);
+    if (supportTicketsRequest?.key === requestKey) {
+      logNotificationDebug('deduplicating support tickets request', requestKey);
+      return supportTicketsRequest.promise;
     }
 
     const hasCachedTickets = state.supportTicketsLoaded && (state.supportTickets || []).length > 0;
-    set({
+    setIfRuntimeCurrent(set, get, token, {
       supportTicketsLoading: !background && !hasCachedTickets,
       isRefreshingSupport: background || hasCachedTickets,
       supportTicketsRequestInFlight: true,
       supportTicketsError: null
     });
 
-    supportTicketsRequestPromise = (async () => {
+    const promise = (async () => {
       logNotificationDebug(
         force
           ? 'loading support tickets because manual refresh requested'
-          : 'loading support tickets because stale'
+          : 'loading support tickets because stale',
+        token.owner
       );
 
       const result = await listSupportTickets({
@@ -753,9 +921,11 @@ export const createNotificationSlice = (set, get) => ({
         includeClosed
       });
 
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+
       if (result.success === false) {
         const message = 'No pudimos cargar el soporte. Intenta de nuevo.';
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           supportTickets: [],
           supportTicketsLoading: false,
           isRefreshingSupport: false,
@@ -767,7 +937,7 @@ export const createNotificationSlice = (set, get) => ({
         return result;
       }
 
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTickets: result.tickets || [],
         supportTicketsLoading: false,
         isRefreshingSupport: false,
@@ -781,11 +951,14 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     })();
 
+    supportTicketsRequest = { key: requestKey, promise };
+
     try {
-      return await supportTicketsRequestPromise;
+      return await promise;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const message = getSupportErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTicketsLoading: false,
         isRefreshingSupport: false,
         supportTicketsRequestInFlight: false,
@@ -793,7 +966,7 @@ export const createNotificationSlice = (set, get) => ({
       });
       return { success: false, message };
     } finally {
-      supportTicketsRequestPromise = null;
+      if (supportTicketsRequest?.key === requestKey) supportTicketsRequest = null;
     }
   },
 
@@ -801,15 +974,16 @@ export const createNotificationSlice = (set, get) => ({
     force = false,
     background = false
   } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
-      set({ supportTicketThreadError: 'Tu usuario staff no tiene acceso a soporte Lanzo.' });
+    if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
+      setIfRuntimeCurrent(set, get, token, { supportTicketThreadError: 'Tu usuario staff no tiene acceso a soporte Lanzo.' });
       return { success: false, code: 'STAFF_SUPPORT_DISABLED' };
     }
 
     if (!ticketId) {
-      set({ supportTicketView: 'list' });
+      setIfRuntimeCurrent(set, get, token, { supportTicketView: 'list' });
       return { success: false, code: 'TICKET_ID_REQUIRED' };
     }
 
@@ -818,15 +992,15 @@ export const createNotificationSlice = (set, get) => ({
     const threadIsStale = state.supportThreadStaleByTicketId?.[ticketId] === true;
     const isActiveThread = state.activeSupportTicket?.id === ticketId;
     const shouldUseCache = (
-      !force &&
-      isActiveThread &&
-      !threadIsStale &&
-      isFresh(threadLoadedAt, SUPPORT_THREAD_TTL_MS)
+      !force
+      && isActiveThread
+      && !threadIsStale
+      && isFresh(threadLoadedAt, SUPPORT_THREAD_TTL_MS)
     );
 
     if (shouldUseCache) {
-      logNotificationDebug('using cached support thread', ticketId);
-      set({ supportTicketView: 'thread' });
+      logNotificationDebug('using tenant-owned cached support thread', ticketId, token.owner);
+      setIfRuntimeCurrent(set, get, token, { supportTicketView: 'thread' });
       return {
         success: true,
         ticket: state.activeSupportTicket,
@@ -835,13 +1009,14 @@ export const createNotificationSlice = (set, get) => ({
       };
     }
 
-    if (supportThreadRequestPromises.has(ticketId)) {
-      logNotificationDebug('deduplicating support thread request', ticketId);
-      return supportThreadRequestPromises.get(ticketId);
+    const requestKey = `${runtimeRequestKey(token)}:${ticketId}`;
+    if (supportThreadRequestPromises.has(requestKey)) {
+      logNotificationDebug('deduplicating support thread request', requestKey);
+      return supportThreadRequestPromises.get(requestKey);
     }
 
     const currentThreadRequestState = get().supportThreadRequestInFlightByTicketId || {};
-    set({
+    setIfRuntimeCurrent(set, get, token, {
       supportTicketView: 'thread',
       supportTicketThreadLoading: !background && !isActiveThread,
       supportTicketThreadError: null,
@@ -856,15 +1031,17 @@ export const createNotificationSlice = (set, get) => ({
         force
           ? 'loading support thread because manual refresh requested'
           : 'loading support thread because stale',
-        ticketId
+        ticketId,
+        token.owner
       );
 
       const result = await getSupportTicketThread({ licenseDetails, ticketId });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
         const message = 'No pudimos cargar el hilo de soporte. Intenta de nuevo.';
         const requestState = get().supportThreadRequestInFlightByTicketId || {};
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           supportTicketThreadLoading: false,
           supportTicketThreadError: message,
           supportThreadRequestInFlightByTicketId: {
@@ -878,7 +1055,7 @@ export const createNotificationSlice = (set, get) => ({
       const loadedAtByTicketId = get().activeThreadLoadedAtByTicketId || {};
       const staleByTicketId = get().supportThreadStaleByTicketId || {};
       const requestState = get().supportThreadRequestInFlightByTicketId || {};
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         activeSupportTicket: result.ticket,
         supportTicketMessages: result.messages || [],
         supportTicketThreadLoading: false,
@@ -901,14 +1078,15 @@ export const createNotificationSlice = (set, get) => ({
       return result;
     })();
 
-    supportThreadRequestPromises.set(ticketId, threadPromise);
+    supportThreadRequestPromises.set(requestKey, threadPromise);
 
     try {
       return await threadPromise;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const message = getSupportErrorMessage(error);
       const requestState = get().supportThreadRequestInFlightByTicketId || {};
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTicketThreadLoading: false,
         supportTicketThreadError: message,
         supportThreadRequestInFlightByTicketId: {
@@ -918,7 +1096,7 @@ export const createNotificationSlice = (set, get) => ({
       });
       return { success: false, message };
     } finally {
-      supportThreadRequestPromises.delete(ticketId);
+      supportThreadRequestPromises.delete(requestKey);
     }
   },
 
@@ -929,14 +1107,15 @@ export const createNotificationSlice = (set, get) => ({
     message,
     metadata = {}
   } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
 
-    if (!canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
-      set({ supportTicketsError: 'Tu usuario staff no tiene acceso a soporte Lanzo.' });
+    if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
+      setIfRuntimeCurrent(set, get, token, { supportTicketsError: 'Tu usuario staff no tiene acceso a soporte Lanzo.' });
       return { success: false, code: 'STAFF_SUPPORT_DISABLED' };
     }
 
-    set({ supportTicketSubmitting: true, supportTicketsError: null });
+    setIfRuntimeCurrent(set, get, token, { supportTicketSubmitting: true, supportTicketsError: null });
 
     try {
       const result = await createSupportTicket({
@@ -948,30 +1127,34 @@ export const createNotificationSlice = (set, get) => ({
         metadata
       });
 
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+
       if (result.success === false) {
         const messageText = 'No pudimos crear la solicitud. Intenta de nuevo.';
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           supportTicketSubmitting: false,
           supportTicketsError: messageText
         });
         return result;
       }
 
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,
         supportTicketView: 'thread'
       });
 
       await get().loadSupportTickets?.({ force: true, background: true });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       await get().loadNotifications?.({ force: true, refreshOperational: false, background: true });
-      if (result.ticket?.id) {
+      if (result.ticket?.id && isRuntimeTokenCurrent(get, token)) {
         await get().openSupportTicket?.(result.ticket.id, { force: true });
       }
 
       return result;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const messageText = getSupportErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,
         supportTicketsError: messageText
       });
@@ -980,15 +1163,16 @@ export const createNotificationSlice = (set, get) => ({
   },
 
   replyTicket: async ({ ticketId, message } = {}) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
-    if (!canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
+    if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
       return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso a soporte Lanzo.' };
     }
 
     const resolvedTicketId = ticketId || get().activeSupportTicket?.id;
     if (!resolvedTicketId) return { success: false, code: 'TICKET_ID_REQUIRED' };
 
-    set({ supportTicketSubmitting: true, supportTicketThreadError: null });
+    setIfRuntimeCurrent(set, get, token, { supportTicketSubmitting: true, supportTicketThreadError: null });
 
     try {
       const result = await replySupportTicket({
@@ -997,23 +1181,27 @@ export const createNotificationSlice = (set, get) => ({
         message
       });
 
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
+
       if (result.success === false) {
         const messageText = 'No pudimos enviar la respuesta. Intenta de nuevo.';
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           supportTicketSubmitting: false,
           supportTicketThreadError: messageText
         });
         return result;
       }
 
-      set({ supportTicketSubmitting: false });
+      setIfRuntimeCurrent(set, get, token, { supportTicketSubmitting: false });
       await get().openSupportTicket?.(resolvedTicketId, { force: true, background: true });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       await get().loadSupportTickets?.({ force: true, background: true });
       await get().loadNotifications?.({ force: true, refreshOperational: false, background: true });
       return result;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const messageText = getSupportErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,
         supportTicketThreadError: messageText
       });
@@ -1022,35 +1210,39 @@ export const createNotificationSlice = (set, get) => ({
   },
 
   closeTicket: async (ticketId) => {
+    const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
-    if (!canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
+    if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
       return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso a soporte Lanzo.' };
     }
 
     const resolvedTicketId = ticketId || get().activeSupportTicket?.id;
     if (!resolvedTicketId) return { success: false, code: 'TICKET_ID_REQUIRED' };
 
-    set({ supportTicketSubmitting: true, supportTicketThreadError: null });
+    setIfRuntimeCurrent(set, get, token, { supportTicketSubmitting: true, supportTicketThreadError: null });
 
     try {
       const result = await closeSupportTicket({ licenseDetails, ticketId: resolvedTicketId });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
 
       if (result.success === false) {
         const messageText = 'No pudimos cerrar el ticket. Intenta de nuevo.';
-        set({
+        setIfRuntimeCurrent(set, get, token, {
           supportTicketSubmitting: false,
           supportTicketThreadError: messageText
         });
         return result;
       }
 
-      set({ supportTicketSubmitting: false });
+      setIfRuntimeCurrent(set, get, token, { supportTicketSubmitting: false });
       await get().openSupportTicket?.(resolvedTicketId, { force: true, background: true });
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       await get().loadSupportTickets?.({ includeClosed: true, force: true, background: true });
       return result;
     } catch (error) {
+      if (!isRuntimeTokenCurrent(get, token)) return staleRuntimeResult();
       const messageText = getSupportErrorMessage(error);
-      set({
+      setIfRuntimeCurrent(set, get, token, {
         supportTicketSubmitting: false,
         supportTicketThreadError: messageText
       });
