@@ -13,13 +13,21 @@ export const isUnsafeTenantStatePatch = (patch = {}, guardState = {}, currentSta
     || isPresent(patch.selectedEcommerceOrderActorIdentity)
     || Object.values(patch.ecommerceOrderCounts || {}).some((value) => Number(value) > 0)
   );
+  const exposesNotificationRuntime = (
+    (Array.isArray(patch.notifications) && patch.notifications.length > 0)
+    || Number(patch.notificationsUnreadCount || 0) > 0
+    || (Array.isArray(patch.supportTickets) && patch.supportTickets.length > 0)
+    || isPresent(patch.activeSupportTicket)
+    || (Array.isArray(patch.supportTicketMessages) && patch.supportTicketMessages.length > 0)
+  );
   const exposesTenantRuntime = TENANT_VISIBLE_APP_STATUSES.has(patch.appStatus)
     || isPresent(patch.companyProfile)
     || isPresent(patch.profileImportCandidate)
     || isPresent(patch.driveAccessToken)
     || patch.isDriveConnected === true
     || patch.cashOpeningPolicy === 'automatic'
-    || exposesEcommerceRuntime;
+    || exposesEcommerceRuntime
+    || exposesNotificationRuntime;
   const actorLoginBoundary = (
     currentState.appStatus === 'admin_login_required' && !currentState.currentAdminUser
   ) || (
