@@ -1,11 +1,10 @@
 -- NOTIF.TENANT.1
 -- Harden notification tenant isolation, add granular staff visibility and make
--- admin read/archive state follow the authenticated admin actor across devices.
+-- read/archive state follow the authenticated actor across devices.
 
 begin;
 
--- The read model must never be able to point at a notification from another
--- license. Fail before installing the composite FK if legacy data violates it.
+-- Fail closed before adding structural tenant constraints.
 do $preflight$
 begin
   if exists (
@@ -16,29 +15,36 @@ begin
   ) then
     raise exception 'NOTIF_TENANT_CROSS_LICENSE_READS_PRESENT' using errcode = 'P0001';
   end if;
+
+  if exists (
+    select 1
+    from public.pos_notification_reads r
+    join public.license_staff_users s on s.id = r.staff_user_id
+    where r.staff_user_id is not null
+      and r.license_id <> s.license_id
+  ) then
+    raise exception 'NOTIF_TENANT_CROSS_LICENSE_STAFF_READS_PRESENT' using errcode = 'P0001';
+  end if;
+
+  if exists (
+    select 1
+    from public.pos_notifications n
+    join public.license_staff_users s on s.id = n.target_staff_user_id
+    where n.target_staff_user_id is not null
+      and n.license_id <> s.license_id
+  ) then
+    raise exception 'NOTIF_TENANT_CROSS_LICENSE_TARGETS_PRESENT' using errcode = 'P0001';
+  end if;
 end;
 $preflight$;
 
 alter table public.pos_notification_reads
   add column if not exists admin_user_id uuid;
 
--- Actor-scoped admin reads. Keep device_fingerprint as a legacy actor option so
--- old rows remain physically preserved; all new authenticated admin writes use
--- admin_user_id instead.
+-- Composite uniqueness enables tenant-aware foreign keys instead of relying
+-- only on RPC WHERE clauses.
 do $constraints$
 begin
-  if not exists (
-    select 1 from pg_constraint
-    where conrelid = 'public.pos_notification_reads'::regclass
-      and conname = 'pos_notification_reads_admin_user_id_fkey'
-  ) then
-    alter table public.pos_notification_reads
-      add constraint pos_notification_reads_admin_user_id_fkey
-      foreign key (admin_user_id)
-      references public.license_admin_users(id)
-      on delete cascade;
-  end if;
-
   if not exists (
     select 1 from pg_constraint
     where conrelid = 'public.pos_notifications'::regclass
@@ -46,6 +52,24 @@ begin
   ) then
     alter table public.pos_notifications
       add constraint pos_notifications_id_license_id_key unique (id, license_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.license_staff_users'::regclass
+      and conname = 'license_staff_users_id_license_id_key'
+  ) then
+    alter table public.license_staff_users
+      add constraint license_staff_users_id_license_id_key unique (id, license_id);
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.license_admin_users'::regclass
+      and conname = 'license_admin_users_id_license_id_key'
+  ) then
+    alter table public.license_admin_users
+      add constraint license_admin_users_id_license_id_key unique (id, license_id);
   end if;
 
   if not exists (
@@ -59,6 +83,42 @@ begin
       references public.pos_notifications(id, license_id)
       on delete cascade;
   end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.pos_notification_reads'::regclass
+      and conname = 'pos_notification_reads_staff_license_fkey'
+  ) then
+    alter table public.pos_notification_reads
+      add constraint pos_notification_reads_staff_license_fkey
+      foreign key (staff_user_id, license_id)
+      references public.license_staff_users(id, license_id)
+      on delete cascade;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.pos_notification_reads'::regclass
+      and conname = 'pos_notification_reads_admin_license_fkey'
+  ) then
+    alter table public.pos_notification_reads
+      add constraint pos_notification_reads_admin_license_fkey
+      foreign key (admin_user_id, license_id)
+      references public.license_admin_users(id, license_id)
+      on delete cascade;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.pos_notifications'::regclass
+      and conname = 'pos_notifications_target_staff_license_fkey'
+  ) then
+    alter table public.pos_notifications
+      add constraint pos_notifications_target_staff_license_fkey
+      foreign key (target_staff_user_id, license_id)
+      references public.license_staff_users(id, license_id)
+      on delete cascade;
+  end if;
 end;
 $constraints$;
 
@@ -67,10 +127,19 @@ alter table public.pos_notification_reads
 
 alter table public.pos_notification_reads
   add constraint pos_notification_reads_actor_check check (
-    staff_user_id is not null
-    or admin_user_id is not null
-    or nullif(btrim(coalesce(device_fingerprint, '')), '') is not null
+    num_nonnulls(
+      staff_user_id,
+      admin_user_id,
+      nullif(btrim(coalesce(device_fingerprint, '')), '')
+    ) = 1
   );
+
+-- Rebuild actor uniqueness so admin rows are not part of the legacy-device key.
+drop index if exists public.uq_pos_notification_reads_device;
+create unique index uq_pos_notification_reads_device
+  on public.pos_notification_reads (notification_id, license_id, device_fingerprint)
+  where staff_user_id is null
+    and admin_user_id is null;
 
 create unique index if not exists uq_pos_notification_reads_admin
   on public.pos_notification_reads (notification_id, license_id, admin_user_id)
@@ -80,14 +149,13 @@ create index if not exists idx_pos_notification_reads_license_admin
   on public.pos_notification_reads (license_id, admin_user_id, archived_at, read_at)
   where admin_user_id is not null;
 
--- Backfill a separate actor-scoped row only when a legacy device can be mapped
--- to exactly one admin. Legacy rows are intentionally retained for rollback and
--- audit provenance; no historical read marker is deleted.
+-- Backfill an actor-scoped row only when a legacy device maps to exactly one
+-- admin. Legacy device rows stay preserved as provenance/rollback evidence.
 with device_admin_map as (
   select
     d.license_id,
     d.device_fingerprint,
-    min(s.admin_user_id) as admin_user_id
+    (array_agg(distinct s.admin_user_id))[1] as admin_user_id
   from public.license_devices d
   join public.license_admin_sessions s
     on s.license_id = d.license_id
@@ -118,12 +186,7 @@ insert into public.pos_notification_reads (
   read_at,
   archived_at
 )
-select
-  notification_id,
-  license_id,
-  admin_user_id,
-  read_at,
-  archived_at
+select notification_id, license_id, admin_user_id, read_at, archived_at
 from actor_reads
 on conflict (notification_id, license_id, admin_user_id)
   where admin_user_id is not null
@@ -132,7 +195,7 @@ do update set
   archived_at = coalesce(public.pos_notification_reads.archived_at, excluded.archived_at),
   updated_at = now();
 
--- Canonical categories exposed to staff permission policy and UI.
+-- One canonical classifier shared by authorization and client presentation.
 create or replace function private.pos_notification_category_v1(
   p_type text,
   p_metadata jsonb default '{}'::jsonb
@@ -150,20 +213,16 @@ begin
   if v_type = 'ecommerce' or v_metadata_category = 'ecommerce' then
     return 'ecommerce';
   end if;
-
   if v_type = 'support' or v_metadata_category = 'support' then
     return 'support';
   end if;
-
   if v_type = 'license' or v_metadata_category = 'license' then
     return 'license';
   end if;
-
   if v_type in ('cash', 'sync', 'inventory')
      or v_metadata_category in ('cash', 'sync', 'inventory', 'staff', 'operation', 'operations') then
     return 'operations';
   end if;
-
   return 'system';
 end;
 $function$;
@@ -188,11 +247,9 @@ begin
   if coalesce(p_device_role, '') = 'admin' then
     return true;
   end if;
-
   if coalesce(p_device_role, '') <> 'staff' then
     return false;
   end if;
-
   if coalesce((v_permissions->>'notifications')::boolean, false) is not true then
     return false;
   end if;
@@ -206,9 +263,7 @@ begin
     else 'notifications_system'
   end;
 
-  -- Backward compatibility: existing staff rows predate category keys. Master
-  -- notifications=true therefore keeps the old all-categories behavior until
-  -- an admin explicitly saves granular flags.
+  -- Backward compatible: old staff rows have only notifications=true.
   if not (v_permissions ? v_permission) then
     return true;
   end if;
@@ -266,10 +321,7 @@ begin
   v_offset := greatest(coalesce(p_offset, 0), 0);
 
   with visible_notifications as (
-    select
-      n.*,
-      r.read_at,
-      r.archived_at
+    select n.*, r.read_at, r.archived_at
     from public.pos_notifications n
     left join lateral (
       select
@@ -280,11 +332,7 @@ begin
         and pr.license_id = n.license_id
         and (
           (v_staff_user_id is not null and pr.staff_user_id = v_staff_user_id)
-          or (
-            v_staff_user_id is null
-            and v_admin_user_id is not null
-            and pr.admin_user_id = v_admin_user_id
-          )
+          or (v_staff_user_id is null and v_admin_user_id is not null and pr.admin_user_id = v_admin_user_id)
           or (
             v_staff_user_id is null
             and v_admin_user_id is null
@@ -319,96 +367,34 @@ begin
     order by created_at desc, id desc
     limit v_limit offset v_offset
   )
-  select coalesce(jsonb_agg(jsonb_build_object(
-    'id', id,
-    'type', type,
-    'category', private.pos_notification_category_v1(type, metadata),
-    'severity', severity,
-    'title', title,
-    'body', body,
-    'action_label', action_label,
-    'action_route', action_route,
-    'metadata', metadata,
-    'source', source,
-    'created_at', created_at,
-    'starts_at', starts_at,
-    'expires_at', expires_at,
-    'read_at', read_at,
-    'archived_at', archived_at,
-    'is_read', read_at is not null,
-    'is_archived', archived_at is not null,
-    'is_dismissible', is_dismissible
-  ) order by created_at desc, id desc), '[]'::jsonb)
-  into v_notifications
-  from page_rows;
-
-  with visible_notifications as (
-    select n.id
-    from public.pos_notifications n
-    where n.license_id = v_license_id
-      and n.starts_at <= now()
-      and (n.expires_at is null or n.expires_at >= now())
-      and private.pos_notification_target_allowed_v1(
-        n.target_scope,
-        n.target_staff_user_id,
-        n.target_device_role,
-        n.metadata,
-        v_device_role,
-        v_staff_user_id,
-        v_staff_permissions
-      )
-      and private.pos_notification_category_allowed_v1(
-        n.type,
-        n.metadata,
-        v_device_role,
-        v_staff_permissions
-      )
-      and not exists (
-        select 1
-        from public.pos_notification_reads pr
-        where pr.notification_id = n.id
-          and pr.license_id = n.license_id
-          and pr.read_at is not null
-          and (
-            (v_staff_user_id is not null and pr.staff_user_id = v_staff_user_id)
-            or (
-              v_staff_user_id is null
-              and v_admin_user_id is not null
-              and pr.admin_user_id = v_admin_user_id
-            )
-            or (
-              v_staff_user_id is null
-              and v_admin_user_id is null
-              and pr.staff_user_id is null
-              and pr.admin_user_id is null
-              and pr.device_fingerprint = p_device_fingerprint
-            )
-          )
-      )
-      and not exists (
-        select 1
-        from public.pos_notification_reads pr
-        where pr.notification_id = n.id
-          and pr.license_id = n.license_id
-          and pr.archived_at is not null
-          and (
-            (v_staff_user_id is not null and pr.staff_user_id = v_staff_user_id)
-            or (
-              v_staff_user_id is null
-              and v_admin_user_id is not null
-              and pr.admin_user_id = v_admin_user_id
-            )
-            or (
-              v_staff_user_id is null
-              and v_admin_user_id is null
-              and pr.staff_user_id is null
-              and pr.admin_user_id is null
-              and pr.device_fingerprint = p_device_fingerprint
-            )
-          )
-      )
-  )
-  select count(*)::integer into v_unread_count from visible_notifications;
+  select
+    coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', id,
+        'type', type,
+        'category', private.pos_notification_category_v1(type, metadata),
+        'severity', severity,
+        'title', title,
+        'body', body,
+        'action_label', action_label,
+        'action_route', action_route,
+        'metadata', metadata,
+        'source', source,
+        'created_at', created_at,
+        'starts_at', starts_at,
+        'expires_at', expires_at,
+        'read_at', read_at,
+        'archived_at', archived_at,
+        'is_read', read_at is not null,
+        'is_archived', archived_at is not null,
+        'is_dismissible', is_dismissible
+      ) order by created_at desc, id desc)
+      from page_rows
+    ), '[]'::jsonb),
+    (select count(*)::integer
+       from visible_notifications
+      where read_at is null and archived_at is null)
+  into v_notifications, v_unread_count;
 
   return jsonb_build_object(
     'success', true,
@@ -495,7 +481,11 @@ begin
   limit 1;
 
   if v_notification_id is null then
-    return jsonb_build_object('success', false, 'code', 'NOTIFICATION_NOT_FOUND', 'message', 'La notificacion no existe o no esta autorizada para este actor.');
+    return jsonb_build_object(
+      'success', false,
+      'code', 'NOTIFICATION_NOT_FOUND',
+      'message', 'La notificacion no existe o no esta autorizada para este actor.'
+    );
   end if;
 
   if v_staff_user_id is not null then
@@ -511,14 +501,27 @@ begin
   else
     insert into public.pos_notification_reads (notification_id, license_id, device_fingerprint, read_at)
     values (v_notification_id, v_license_id, p_device_fingerprint, now())
-    on conflict (notification_id, license_id, device_fingerprint) where staff_user_id is null
+    on conflict (notification_id, license_id, device_fingerprint)
+      where staff_user_id is null and admin_user_id is null
     do update set read_at = coalesce(public.pos_notification_reads.read_at, excluded.read_at), updated_at = now();
   end if;
+
+  perform private.broadcast_notification_event(
+    p_license_id => v_license_id,
+    p_event => 'notifications_changed',
+    p_reason => 'notification_read_changed',
+    p_notification_id => v_notification_id,
+    p_metadata => jsonb_build_object('actor_state', 'read')
+  );
 
   return jsonb_build_object('success', true, 'notification_id', v_notification_id);
 exception
   when others then
-    return jsonb_build_object('success', false, 'code', 'MARK_NOTIFICATION_READ_FAILED', 'message', 'No se pudo marcar la notificacion como leida.');
+    return jsonb_build_object(
+      'success', false,
+      'code', 'MARK_NOTIFICATION_READ_FAILED',
+      'message', 'No se pudo marcar la notificacion como leida.'
+    );
 end;
 $function$;
 
@@ -580,11 +583,19 @@ begin
   limit 1;
 
   if v_notification.id is null then
-    return jsonb_build_object('success', false, 'code', 'NOTIFICATION_NOT_FOUND', 'message', 'La notificacion no existe o no esta autorizada para este actor.');
+    return jsonb_build_object(
+      'success', false,
+      'code', 'NOTIFICATION_NOT_FOUND',
+      'message', 'La notificacion no existe o no esta autorizada para este actor.'
+    );
   end if;
 
   if v_notification.is_dismissible is not true then
-    return jsonb_build_object('success', false, 'code', 'NOTIFICATION_NOT_DISMISSIBLE', 'message', 'Esta notificacion no se puede archivar.');
+    return jsonb_build_object(
+      'success', false,
+      'code', 'NOTIFICATION_NOT_DISMISSIBLE',
+      'message', 'Esta notificacion no se puede archivar.'
+    );
   end if;
 
   if v_staff_user_id is not null then
@@ -606,17 +617,30 @@ begin
   else
     insert into public.pos_notification_reads (notification_id, license_id, device_fingerprint, read_at, archived_at)
     values (v_notification.id, v_license_id, p_device_fingerprint, now(), now())
-    on conflict (notification_id, license_id, device_fingerprint) where staff_user_id is null
+    on conflict (notification_id, license_id, device_fingerprint)
+      where staff_user_id is null and admin_user_id is null
     do update set
       read_at = coalesce(public.pos_notification_reads.read_at, excluded.read_at),
       archived_at = coalesce(public.pos_notification_reads.archived_at, excluded.archived_at),
       updated_at = now();
   end if;
 
+  perform private.broadcast_notification_event(
+    p_license_id => v_license_id,
+    p_event => 'notifications_changed',
+    p_reason => 'notification_archive_changed',
+    p_notification_id => v_notification.id,
+    p_metadata => jsonb_build_object('actor_state', 'archived')
+  );
+
   return jsonb_build_object('success', true, 'notification_id', v_notification.id);
 exception
   when others then
-    return jsonb_build_object('success', false, 'code', 'ARCHIVE_NOTIFICATION_FAILED', 'message', 'No se pudo archivar la notificacion.');
+    return jsonb_build_object(
+      'success', false,
+      'code', 'ARCHIVE_NOTIFICATION_FAILED',
+      'message', 'No se pudo archivar la notificacion.'
+    );
 end;
 $function$;
 
@@ -716,15 +740,30 @@ begin
           and r.device_fingerprint = p_device_fingerprint
           and r.archived_at is not null
       )
-    on conflict (notification_id, license_id, device_fingerprint) where staff_user_id is null
+    on conflict (notification_id, license_id, device_fingerprint)
+      where staff_user_id is null and admin_user_id is null
     do update set read_at = coalesce(public.pos_notification_reads.read_at, excluded.read_at), updated_at = now();
   end if;
 
   get diagnostics v_count = row_count;
+
+  if v_count > 0 then
+    perform private.broadcast_notification_event(
+      p_license_id => v_license_id,
+      p_event => 'notifications_changed',
+      p_reason => 'notifications_read_all_changed',
+      p_metadata => jsonb_build_object('actor_state', 'read_all')
+    );
+  end if;
+
   return jsonb_build_object('success', true, 'updated_count', coalesce(v_count, 0));
 exception
   when others then
-    return jsonb_build_object('success', false, 'code', 'MARK_ALL_NOTIFICATIONS_READ_FAILED', 'message', 'No se pudieron marcar las notificaciones como leidas.');
+    return jsonb_build_object(
+      'success', false,
+      'code', 'MARK_ALL_NOTIFICATIONS_READ_FAILED',
+      'message', 'No se pudieron marcar las notificaciones como leidas.'
+    );
 end;
 $function$;
 
