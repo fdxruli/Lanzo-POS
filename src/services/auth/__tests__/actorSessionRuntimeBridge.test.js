@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  loadData: vi.fn()
+  get: vi.fn()
 }));
 
-vi.mock('../../database', () => ({
-  loadData: mocks.loadData,
-  STORES: { SYNC_CACHE: 'sync_cache' }
+vi.mock('../../db/tenantRuntimeRouter', () => ({
+  db: {
+    table: vi.fn(() => ({ get: mocks.get }))
+  },
+  getTenantRuntimeReadiness: vi.fn(() => ({ ready: false, runtime: null }))
 }));
 
 import {
@@ -33,7 +35,7 @@ describe('actor session runtime bridge', () => {
   });
 
   it('reads only the explicitly requested staff session binding', async () => {
-    mocks.loadData.mockImplementation(async (_store, key) => ({
+    mocks.get.mockImplementation(async (key) => ({
       value: {
         staff_session_token: 'staff-token',
         staff_session_id: 'staff-session',
@@ -48,7 +50,7 @@ describe('actor session runtime bridge', () => {
   });
 
   it('fails closed on admin plus staff token ambiguity instead of selecting Admin', async () => {
-    mocks.loadData.mockImplementation(async (_store, key) => ({
+    mocks.get.mockImplementation(async (key) => ({
       value: {
         staff_session_token: 'staff-token',
         staff_session_id: 'staff-session',
@@ -62,7 +64,7 @@ describe('actor session runtime bridge', () => {
   });
 
   it('requires both the actor-specific token and session id', async () => {
-    mocks.loadData.mockResolvedValue({ value: null });
+    mocks.get.mockResolvedValue({ value: null });
     await expect(readActorSessionBinding('admin')).rejects.toMatchObject({
       code: 'ACTOR_SESSION_REQUIRED'
     });
