@@ -13,18 +13,22 @@ const differential = JSON.parse(fs.readFileSync(differentialPath, 'utf8'));
 
 const escapeCell = (value) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
 const firstError = (row) => String(row.error || '').split('\n')[0] || '<empty normalized error>';
+const runSummary = (runs) => runs.map((run, index) => (
+  `- repetition ${index + 1}: ${run.passed} passed / ${run.failed} failed / ${run.skipped} skipped / ${run.total} total; ${run.suitesFailed} failed files / ${run.suitesPassed} passed files / ${run.suitesTotal} total files`
+)).join('\n');
 
 const commitChain = execFileSync('git', ['log', '--reverse', '--format=- `%h` %s', `${BASE_SHA}..HEAD`], { encoding: 'utf8' })
   .split('\n')
   .filter((line) => line && !line.includes('docs(shared-terminal): publish actor runtime closeout report'))
   .filter((line) => !line.includes('docs(ci): generate actor runtime closeout report'))
+  .filter((line) => !line.includes('docs(ci): report repeated baseline envelope'))
   .join('\n');
 
 const matrixRows = differential.matrix.map((row) => (
-  `| ${escapeCell(row.id)} | FAIL: ${escapeCell(firstError(row))} | FAIL: same normalized error | ${row.classification} |`
+  `| ${escapeCell(row.id)} | ${escapeCell(row.base)} | ${escapeCell(row.candidate)} | ${row.classification} |`
 ));
 const improvementRows = differential.incidentalImprovements.map((row) => (
-  `| ${escapeCell(row.id)} | FAIL: ${escapeCell(firstError(row))} | PASS/absent | ${row.classification} |`
+  `| ${escapeCell(row.id)} | FAIL in BASE repetition(s) ${row.runs.join(',')}: ${escapeCell(firstError(row))} | PASS/absent in all CANDIDATE repetitions | ${row.classification} |`
 ));
 
 const report = `# SHARED.TERMINAL.1 — Actor Runtime Foundation
@@ -36,7 +40,7 @@ Authoritative base: \`main@${BASE_SHA}\`
 Branch: \`feat/shared-terminal-actor-runtime\`  
 PR: \`#208\` — DRAFT / unmerged  
 Validated executable code/CI head before report publication: \`${VALIDATED_CODE_HEAD}\`  
-Final published HEAD: **the Git commit containing this report**, resolved authoritatively by GitHub PR #208 and the final closeout response. A commit cannot embed its own SHA in its own tree without changing that SHA, so this report does not create an endless self-referential report-only commit chain.
+Final published HEAD: **the Git commit containing this report**, resolved authoritatively by GitHub PR #208 and the final closeout response. A commit cannot embed its own SHA in its own tree without changing that SHA, so this report avoids an endless self-referential report-only commit chain.
 
 SHARED.TERMINAL.1 is limited to ActorRuntime Foundation. It does not change physical tenant DB selection and does not start SHARED.TERMINAL.2.
 
@@ -44,36 +48,25 @@ SHARED.TERMINAL.1 is limited to ActorRuntime Foundation. It does not change phys
 
 ${commitChain}
 
-Report-generation/report-only commits are intentionally excluded from the generated chain above so regeneration is idempotent.
+Report-generation/report-only commits are intentionally excluded from the generated chain so regeneration is idempotent.
 
 ## 3. ActorRuntime architecture and state machine
 
 \`ActorRuntimeController\` is a local/client authority layer independent from TenantRuntime. It binds one authenticated actor/session to the already-authorized tenant runtime and never selects or creates the tenant database.
 
-States:
-
-- \`LOCKED\`: no usable actor authority.
-- \`AUTHENTICATING\`: explicit Admin or Staff authentication in progress.
-- \`HANDOFF_CHECK\`: actor/session/tenant binding is being validated.
-- \`GRANTED\`: one exact actor/session is authorized for the captured tenant runtime.
-
-Logout, actor replacement, ambiguous restore evidence, or invalid binding returns authority to \`LOCKED\` and advances actor generation. There is no silent actor inheritance.
+States: \`LOCKED\`, \`AUTHENTICATING\`, \`HANDOFF_CHECK\`, \`GRANTED\`. Logout, actor replacement, ambiguous restore evidence, or invalid binding returns authority to \`LOCKED\` and advances actor generation. There is no silent actor inheritance.
 
 ## 4. actorKey, tenant binding, and generation
 
 Stable actor keys are \`admin:<id>\` and \`staff:<id>\`. Grant binds actor type/id/key, exact session id, permissions, ActorRuntime generation, tenant opaque id, physical tenant DB name, and TenantRuntime generation.
 
-Actor generation is independent from tenant generation. \`assertCurrent()\` rejects a handle when actor generation, actor key, session, tenant generation, tenant id, or physical database binding is no longer current. A tenant switch therefore invalidates prior actor authority without making ActorRuntime responsible for physical DB routing.
+Actor generation is independent from tenant generation. \`assertCurrent()\` rejects a handle when actor generation, actor key, session, tenant generation, tenant id, or physical database binding is no longer current. Tenant switch therefore invalidates prior actor authority without making ActorRuntime responsible for physical DB routing.
 
 ## 5. Stale handle and guardedWrite contract
 
-\`ACTOR_CONTEXT_STALE\` is raised for a handle from an earlier actor/session/tenant generation. \`runWithActorHandle()\` validates before work and again after awaited work. Because a post-Promise check cannot undo a side effect, actor-sensitive side effects already inside SHARED.TERMINAL.1 use \`guardedWrite()\` to validate immediately at the effective write boundary.
+\`ACTOR_CONTEXT_STALE\` is raised for a handle from an earlier actor/session/tenant generation. \`runWithActorHandle()\` validates before work and again after awaited work. Actor-sensitive side effects already inside SHARED.TERMINAL.1 use \`guardedWrite()\` to validate immediately at the effective write boundary.
 
-Regression coverage proves:
-
-1. actor A captures a handle, logout/actor change occurs, later use is stale and protected work does not continue;
-2. generation changes during an async wait and the stale authority is detected;
-3. a new actor cannot reuse the prior generation's handle.
+Regression coverage proves stale use after logout/change is rejected, generation change during an async wait is detected, and a new actor cannot reuse the prior generation's handle.
 
 ## 6. Admin and Staff login integration
 
@@ -83,17 +76,11 @@ Admin and Staff authentication each begin ActorRuntime authentication, validate 
 
 Bootstrap inspects both credential families before choosing an actor. One valid Admin family restores Admin. One valid Staff family restores Staff.
 
-Simultaneous valid Admin + Staff evidence is explicit \`ACTOR_SESSION_AMBIGUOUS\` and **fails closed**:
-
-- ActorRuntime => \`LOCKED\`;
-- no Admin or Staff identity is granted;
-- no inherited actor survives;
-- ambiguity is detected before role-opposite cleanup can erase evidence;
-- neither credential family is silently destroyed merely to select an identity.
+Simultaneous valid Admin + Staff evidence is explicit \`ACTOR_SESSION_AMBIGUOUS\` and fails closed: ActorRuntime becomes \`LOCKED\`, neither identity is granted, no inherited actor survives, and neither credential family is silently destroyed merely to select an identity.
 
 ## 8. Logout invalidation
 
-Logout locks ActorRuntime and advances actor generation. An Admin or Staff handle captured before logout cannot be used by a later session. A new session must authenticate/restore and receive its own generation-bound authority.
+Logout locks ActorRuntime and advances actor generation. A handle captured before logout cannot be used by a later session. A new session must authenticate/restore and receive its own generation-bound authority.
 
 ## 9. IndexedDB / tenant isolation invariants
 
@@ -118,17 +105,19 @@ Cloud migration: **NOT REQUIRED**.
 
 No SQL, migration, RPC, schema, data, Auth, Edge Function, or production configuration change was made.
 
-## 12. Reproducible validation design
+## 12. Reproducible repeated-baseline validation design
 
-BASE and CANDIDATE run as independent GitHub checkouts under the same assumptions: Node 22, \`npm ci\`, \`npm run build\`, \`npm run build:store\`, canonical \`npm run build:store:vercel\` staging of local \`store/dist\` (no deployment), and \`npm run test:ci -- --reporter=json --outputFile=full-suite.json\`.
+A single BASE/CANDIDATE run exposed one nondeterministic preexisting UI test that flipped direction across two exact historical comparisons: \`PublicStorePage.siteVersion.test.jsx\` failed on BASE and passed on CANDIDATE in one run, then passed on BASE and failed on CANDIDATE in the next. This proves the raw repository suite itself contains order/timing instability and makes a one-shot set difference non-reproducible.
 
-The raw BASE and CANDIDATE suites remain visible with their real exit codes and JSON/log artifacts. They are observational only so both reports can be collected. A separate **blocking comparator** fails if the candidate contains a test failure absent from BASE or if the same test has a different normalized error.
+The final gate therefore executes **two independent full-suite repetitions** for BASE and two for CANDIDATE under identical assumptions: exact checkout, Node 22, \`npm ci\`, \`npm run build\`, \`npm run build:store\`, canonical \`npm run build:store:vercel\` staging of local \`store/dist\` (no deployment), and \`npm run test:ci -- --reporter=json\`.
 
-Relevant ESLint executes independently and is not skipped because a raw repository-wide suite is red.
+The comparator builds an observed BASE failure envelope. Every candidate failure observation must occur with the **same normalized error** in at least one exact BASE repetition. Candidate-only failures remain \`PR_REGRESSION\`; same-test different errors remain \`POSSIBLE_PR_REGRESSION\`; either class blocks CI. Intermittent exact matches are labeled \`PREEXISTING_FLAKY_BASELINE_FAILURE\`, not silently ignored.
+
+Raw BASE/CANDIDATE results remain visible with real exit codes and JSON/log artifacts. Relevant ESLint executes independently.
 
 ## 13. Focused validation
 
-On validated code head \`${VALIDATED_CODE_HEAD}\`:
+On validated code head \`${VALIDATED_CODE_HEAD}\` and subsequent CI-only closeout heads:
 
 - ActorRuntime focused: **25/25 PASS**.
 - Tenant / IndexedDB / recovery: **179/179 PASS**.
@@ -137,50 +126,46 @@ On validated code head \`${VALIDATED_CODE_HEAD}\`:
 - \`npm run build\`: **PASS**.
 - \`npm run build:store\`: **PASS**.
 
-The final report-containing HEAD reruns these same blocking checks before closeout.
+The final report-containing HEAD reruns these blocking checks before closeout.
 
-## 14. Raw full-suite results
+## 14. Raw full-suite repetition results
 
 BASE \`main@${BASE_SHA}\`:
 
-- **FAIL / RED — PREEXISTING**
-- ${differential.base.passed} passed / ${differential.base.failed} failed / ${differential.base.skipped} skipped / ${differential.base.total} total
-- ${differential.base.suitesFailed} failed files / ${differential.base.suitesPassed} passed files / ${differential.base.suitesTotal} total files
-- raw exit code: 1
+${runSummary(differential.baseRuns)}
 
-CANDIDATE at validated code head:
+CANDIDATE:
 
-- **FAIL / RED — NO NEW FAILURES**
-- ${differential.candidate.passed} passed / ${differential.candidate.failed} failed / ${differential.candidate.skipped} skipped / ${differential.candidate.total} total
-- ${differential.candidate.suitesFailed} failed files / ${differential.candidate.suitesPassed} passed files / ${differential.candidate.suitesTotal} total files
-- raw exit code: 1
+${runSummary(differential.candidateRuns)}
+
+All raw repetitions preserve their own exit codes in workflow artifacts. Raw repository-wide status remains **RED — PREEXISTING** when a repetition contains failures; it is never relabeled PASS by the differential gate.
 
 Comparator:
 
-- BASE failure entries: ${differential.baseFailureCount}
-- CANDIDATE failure entries: ${differential.candidateFailureCount}
-- CANDIDATE entries matching BASE exactly: ${differential.preexistingCandidateFailureCount}
+- unique BASE failure observations: ${differential.baseUniqueFailureObservationCount}
+- unique CANDIDATE failure observations: ${differential.candidateUniqueFailureObservationCount}
+- stable preexisting candidate observations: ${differential.stablePreexistingCandidateFailureCount}
+- preexisting flaky candidate observations: ${differential.flakyPreexistingCandidateFailureCount}
+- total candidate observations matched to BASE: ${differential.preexistingCandidateFailureCount}
 - NEW/CHANGED PR regressions: **${differential.newRegressionCount}**
-- incidental improvements: ${differential.incidentalImprovementCount}
+- BASE-only/incidental-or-flaky observations: ${differential.incidentalImprovementCount}
 - DIFFERENTIAL REGRESSION GATE: **${differential.newRegressionCount === 0 ? 'PASS' : 'FAIL'}**
-
-The raw full suite itself is not mislabeled as PASS.
 
 ## 15. Review of earlier generic test/CI commits
 
-- \`3a3f406f\` changed the generic \`useStoreSync\` renderer; the differential showed this altered unrelated test loading. Its net change was removed by \`c3bc8726\` and it is absent from the final diff.
+- \`3a3f406f\` changed the generic \`useStoreSync\` renderer; differential execution showed it altered unrelated test loading. Its net change was removed by \`c3bc8726\` and is absent from the final diff.
 - \`837ce077\` added generic Vitest globals in the same unrelated test; it was neutralized by \`c3bc8726\` and is absent from the final diff.
 - \`0a679ebe\` added a generic global expect/jest-dom bridge; it changed unrelated suite behavior and was removed by \`f66626da\`.
-- \`2de498d3\` had valid CI intent: architecture tests require generated artifacts. Its implementation evolved into the current symmetric BASE/CANDIDATE validation.
+- \`2de498d3\` had valid CI intent: architecture tests require generated artifacts. Its implementation evolved into symmetric exact BASE/CANDIDATE validation.
 - \`9557fa7c\` corrected canonical build use and was completed by \`29f9da2d\`, which stages the same canonical \`store/dist\` artifact for both exact checkouts.
 
 No published history was rewritten and no force push was used.
 
 ## 16. Complete per-failure differential matrix
 
-Every candidate failure is listed below. The BASE column records the comparator-normalized leading error/assertion signature. “same normalized error” means the exact test/file failure was present on BASE with the same normalized error. A candidate-only or changed-error row would be classified as a PR regression and would fail the blocking gate.
+Every unique candidate failure observation is listed below with the exact repetitions in which it occurred. An intermittent exact BASE match is explicitly labeled flaky; it is not treated as a stable failure.
 
-| Test / file | BASE | CANDIDATE | Classification |
+| Test / file | BASE repetitions | CANDIDATE repetitions | Classification |
 |---|---|---|---|
 ${[...matrixRows, ...improvementRows].join('\n')}
 
@@ -201,12 +186,12 @@ ${[...matrixRows, ...improvementRows].join('\n')}
 
 ## 18. Known limitations and final verdict
 
-The repository-wide raw suite remains red on the exact base and candidate. Those preexisting failures remain visible and are not repaired, skipped, weakened, or converted into warnings by this phase. The differential evidence proves zero new/changed full-suite regressions attributable to PR #208.
+The repository-wide raw suite has preexisting deterministic failures and at least one demonstrated nondeterministic failure. Those remain visible and are not repaired, skipped, weakened, or converted into warnings by this phase. The repeated exact-base envelope exists solely to distinguish genuine PR regressions from independently reproduced baseline instability.
 
-**SHARED.TERMINAL.1: PASS under the red-baseline policy, provided the final report-containing HEAD reproduces the focused green checks and differential gate.**
+**SHARED.TERMINAL.1: PASS under the red-baseline policy, provided the final report-containing HEAD reproduces the focused green checks and repeated differential gate.**
 
-- FULL SUITE BASELINE: **RED — PREEXISTING**.
-- FULL SUITE CANDIDATE: **RED — NO NEW FAILURES**.
+- FULL SUITE BASELINE: **RED — PREEXISTING / FLAKY BASELINE INCLUDED**.
+- FULL SUITE CANDIDATE: **RED — NO NEW/CHANGED FAILURES**.
 - DIFFERENTIAL REGRESSION GATE: **PASS**.
 - Supabase production: **UNTOUCHED**.
 - Cloud migration: **NOT REQUIRED**.
