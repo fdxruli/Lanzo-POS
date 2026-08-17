@@ -27,6 +27,11 @@ import {
     hasAdminSessionToken,
     verifyAdminSession
 } from '../../../services/supabase';
+import {
+    beginActorRuntimeAuthentication,
+    grantAuthenticatedActorRuntime,
+    lockActorRuntime
+} from '../../../services/auth/actorSessionRuntimeBridge';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
 
 const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
@@ -52,6 +57,7 @@ export const createLicenseProcessingActions = ({
         const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
 
         if (isLicensePlanBlockFailure(serverValidation)) {
+            lockActorRuntime('license_plan_blocked');
             await get()._requireLicenseChange(localLicense, serverValidation);
             return;
         }
@@ -76,7 +82,7 @@ export const createLicenseProcessingActions = ({
 
             if (isFatalValidationFailure(serverValidation)) {
                 Logger.warn('[AppStore] Licencia revocada fatalmente:', serverValidation.reason);
-
+                lockActorRuntime('license_validation_fatal');
                 await clearLocalLicenseSession();
 
                 set({
@@ -93,6 +99,7 @@ export const createLicenseProcessingActions = ({
 
             if (RENEWAL_REASONS.includes(serverValidation.reason)) {
                 Logger.warn('[AppStore] Licencia expirada. Bloqueando pantalla...');
+                lockActorRuntime('license_renewal_required');
 
                 await get()._loadProfile(localLicense.license_key, {
                     refreshProfile: false,
@@ -162,6 +169,7 @@ export const createLicenseProcessingActions = ({
             !requiresAdminIdentity(finalLicenseData);
 
         if (becameFree) {
+            lockActorRuntime('admin_identity_no_longer_required');
             await clearAdminSessionCache();
         }
 
@@ -177,6 +185,7 @@ export const createLicenseProcessingActions = ({
             });
 
             if (await hasAdminSessionToken()) {
+                beginActorRuntimeAuthentication('admin');
                 const adminSession = await verifyAdminSession(finalLicenseData.license_key);
                 if (adminSession?.valid) {
                     const restored = {
@@ -192,9 +201,22 @@ export const createLicenseProcessingActions = ({
                         currentAdminUser: restored.admin_user,
                         appStatus: 'ready'
                     });
+                    try {
+                        await grantAuthenticatedActorRuntime({
+                            actorType: 'admin',
+                            actor: restored.admin_user
+                        });
+                    } catch (actorError) {
+                        lockActorRuntime('hot_pro_upgrade_actor_binding_failed');
+                        await clearAdminSessionCache();
+                        Logger.warn('[AdminAuth] Sesión hot-upgrade sin autoridad ActorRuntime segura.', actorError);
+                        await get().discoverAdminAccess(finalLicenseData.license_key);
+                        return;
+                    }
                     await get()._loadProfile(restored.license_key, { refreshProfile, reason: 'hot_pro_upgrade_admin_session' });
                     return;
                 }
+                lockActorRuntime('hot_pro_upgrade_admin_session_invalid');
             }
 
             await get().discoverAdminAccess(finalLicenseData.license_key);
@@ -247,6 +269,7 @@ export const createLicenseProcessingActions = ({
             console.warn(`Fecha de expiración: ${localLicense.localExpiry}`);
             console.warn(`Fecha actual: ${now.toISOString()}`);
 
+            lockActorRuntime('offline_license_expired');
             await clearLocalLicenseSession();
 
             set({ appStatus: 'unauthenticated' });
@@ -282,6 +305,7 @@ export const createLicenseProcessingActions = ({
             } else {
                 console.warn('[AppStore] Licencia expirada localmente');
 
+                lockActorRuntime('offline_license_expired');
                 await clearLocalLicenseSession();
 
                 set({ appStatus: 'unauthenticated' });
