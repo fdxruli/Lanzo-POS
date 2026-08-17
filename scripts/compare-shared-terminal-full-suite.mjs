@@ -34,6 +34,7 @@ const normalizeFailure = (value = '') => {
   const lines = withoutAnsi
     .split('\n')
     .map((line) => line.replace(/\/home\/runner\/work\/[^/]+\/[^/]+\//g, ''))
+    .map((line) => line.replace(/\/tmp\/lanzo-pos-cutover-1-1-[A-Za-z0-9_-]+/g, '/tmp/lanzo-pos-cutover-1-1-<tmp>'))
     .map((line) => line.replace(/([A-Za-z0-9_./-]+\.(?:js|jsx|mjs|cjs|ts|tsx)):\d+:\d+/g, '$1:<line>:<col>'))
     .map((line) => line.trimEnd())
     .filter((line) => line.trim() !== '')
