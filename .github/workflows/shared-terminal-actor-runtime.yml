@@ -49,7 +49,6 @@ jobs:
         run: |
           npm run build
           npm run build:store
-          npm run build:store:dir
 
       - name: Full test suite
         run: npm run test:ci
