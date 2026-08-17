@@ -52,7 +52,6 @@ const createState = (initial = {}) => {
     _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; }),
     _validateInBackground: vi.fn(),
     _processOfflineMode: vi.fn(async () => { state.appStatus = 'ready'; }),
-    discoverAdminAccess: vi.fn(),
     _requireLicenseChange: vi.fn(),
     _requireAdminLogin: vi.fn(),
     ...initial
