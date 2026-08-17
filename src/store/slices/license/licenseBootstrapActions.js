@@ -9,8 +9,9 @@ import {
     setDatabaseRecoveryState
 } from '../../../services/db/databaseRecoveryState';
 import {
+    ACTOR_SESSION_AMBIGUOUS,
     beginActorRuntimeAuthentication,
-    grantAuthenticatedActorRuntime,
+    restoreActorRuntimeFromCurrentSessionCache,
     lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 
@@ -69,13 +70,10 @@ const enterDatabaseRecovery = (set, error) => {
 
 const restoreActorAuthority = async (actorType, actor) => {
     beginActorRuntimeAuthentication(actorType);
-    try {
-        return await grantAuthenticatedActorRuntime({ actorType, actor });
-    } catch (error) {
-        lockActorRuntime(`${actorType}_session_restore_failed`);
-        throw error;
-    }
+    return restoreActorRuntimeFromCurrentSessionCache({ actorType, actor });
 };
+
+const canClearFailedActorSession = (error) => error?.code !== ACTOR_SESSION_AMBIGUOUS;
 
 export const getInitializeAppCoordinatorState = () => coordinatorState;
 
@@ -146,7 +144,6 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 }
 
                 if (localDeviceRole === 'staff') {
-                    await clearAdminSessionCache();
                     set({
                         licenseDetails: { ...localLicense, device_role: 'staff' },
                         currentDeviceRole: 'staff',
@@ -206,7 +203,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     try {
                         await restoreActorAuthority('staff', restoredLicense.staff_user);
                     } catch (actorError) {
-                        await clearStaffSessionCache();
+                        if (canClearFailedActorSession(actorError)) {
+                            await clearStaffSessionCache();
+                        }
                         set({
                             appStatus: 'staff_login_required',
                             currentStaffUser: null,
@@ -228,7 +227,6 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
                 const needsAdminIdentity = localDeviceRole === 'admin' && requiresAdminIdentity(localLicense);
                 if (needsAdminIdentity) {
-                    await clearStaffSessionCache();
                     set({
                         licenseDetails: { ...localLicense, device_role: 'admin' },
                         currentDeviceRole: 'admin',
@@ -244,7 +242,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                                 set({ currentAdminUser: offlineAdmin });
                                 await get()._processOfflineMode(localLicense);
                             } catch (actorError) {
-                                await clearAdminSessionCache();
+                                if (canClearFailedActorSession(actorError)) {
+                                    await clearAdminSessionCache();
+                                }
                                 set({
                                     appStatus: 'admin_login_required',
                                     currentAdminUser: null,
@@ -302,7 +302,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     try {
                         await restoreActorAuthority('admin', restoredLicense.admin_user);
                     } catch (actorError) {
-                        await clearAdminSessionCache();
+                        if (canClearFailedActorSession(actorError)) {
+                            await clearAdminSessionCache();
+                        }
                         set({
                             appStatus: 'admin_login_required',
                             currentAdminUser: null,
