@@ -211,13 +211,15 @@ export const createLicenseStaffActions = ({
       localTenantIsolation: null
     });
 
-    await get()._loadProfile(licenseKey);
-
     try {
+      // Actor authority must exist before profile hydration can publish the
+      // operational UI as ready. If profile hydration later fails, the catch
+      // below invalidates this actor epoch again.
       await grantAuthenticatedActorRuntime({
         actorType: 'staff',
         actor: licenseDataToSave.staff_user
       });
+      await get()._loadProfile(licenseKey);
     } catch (error) {
       lockActorRuntime('staff_actor_binding_failed');
       set({
