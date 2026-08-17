@@ -130,9 +130,36 @@ describe('license admin actions', () => {
     expect(state.pendingAdminSessionResult).toBeNull();
   });
 
-  it('fails closed instead of publishing a role-neutral selector when actor cache cleanup fails', async () => {
+  it('switches profiles after explicit admin logout without writing locked tenant session cache', async () => {
     const state = setup();
     state.currentDeviceRole = 'admin';
+    state.currentAdminUser = { id: 'admin-1' };
+
+    await state.logoutAdmin();
+
+    expect(mocks.adminLogoutSession).toHaveBeenCalledTimes(1);
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(state.currentAdminUser).toBeNull();
+
+    mocks.clearAdminSessionCache.mockRejectedValueOnce(new Error('locked tenant admin cache'));
+    mocks.clearStaffSessionCache.mockRejectedValueOnce(new Error('locked tenant staff cache'));
+
+    await expect(state.returnToLicenseAccessChoice()).resolves.toEqual({ success: true });
+
+    expect(mocks.adminLogoutSession).toHaveBeenCalledTimes(1);
+    expect(mocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(mocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(state.appStatus).toBe('license_access_required');
+    expect(state.currentDeviceRole).toBeNull();
+    expect(state.currentAdminUser).toBeNull();
+    expect(state.currentStaffUser).toBeNull();
+  });
+
+  it('fails closed instead of publishing a role-neutral selector when active admin cleanup fails', async () => {
+    const state = setup();
+    state.currentDeviceRole = 'admin';
+    state.currentAdminUser = { id: 'admin-1' };
+    mocks.adminLogoutSession.mockRejectedValueOnce(new Error('fixture remote logout failure'));
     mocks.clearAdminSessionCache.mockRejectedValueOnce(new Error('fixture cache cleanup failure'));
 
     await expect(state.returnToLicenseAccessChoice()).resolves.toMatchObject({
@@ -140,8 +167,11 @@ describe('license admin actions', () => {
       code: 'ACTOR_SESSION_CLEANUP_FAILED'
     });
 
+    expect(mocks.clearAdminSessionCache).toHaveBeenCalledTimes(1);
+    expect(mocks.clearStaffSessionCache).not.toHaveBeenCalled();
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.currentDeviceRole).toBe('admin');
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
     expect(state.pendingAdminSessionResult).toBeNull();
   });
 
