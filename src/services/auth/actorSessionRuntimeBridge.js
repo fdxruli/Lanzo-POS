@@ -5,16 +5,16 @@ import {
   ACTOR_RUNTIME_ERROR_CODES
 } from './actorRuntimeController';
 
+export const ACTOR_SESSION_AMBIGUOUS = 'ACTOR_SESSION_AMBIGUOUS';
+
 const SESSION_KEYS = Object.freeze({
   admin: Object.freeze({
     token: 'admin_session_token',
-    sessionId: 'admin_session_id',
-    oppositeToken: 'staff_session_token'
+    sessionId: 'admin_session_id'
   }),
   staff: Object.freeze({
     token: 'staff_session_token',
-    sessionId: 'staff_session_id',
-    oppositeToken: 'admin_session_token'
+    sessionId: 'staff_session_id'
   })
 });
 
@@ -25,6 +25,32 @@ const readSyncCacheValue = async (key) => {
   // repositories/store modules into the authentication lifecycle.
   const record = await tenantRuntimeDb.table('sync_cache').get(key);
   return record?.value || null;
+};
+
+const readSessionEvidence = async () => {
+  const [adminToken, adminSessionId, staffToken, staffSessionId] = await Promise.all([
+    readSyncCacheValue(SESSION_KEYS.admin.token),
+    readSyncCacheValue(SESSION_KEYS.admin.sessionId),
+    readSyncCacheValue(SESSION_KEYS.staff.token),
+    readSyncCacheValue(SESSION_KEYS.staff.sessionId)
+  ]);
+
+  return Object.freeze({
+    admin: Object.freeze({ token: adminToken, sessionId: adminSessionId }),
+    staff: Object.freeze({ token: staffToken, sessionId: staffSessionId })
+  });
+};
+
+const assertUnambiguousSessionEvidence = (evidence) => {
+  // Presence of both credential families is itself ambiguous. Do not infer an
+  // actor from device_role, relative freshness or privilege level.
+  if (evidence.admin.token && evidence.staff.token) {
+    throw new ActorRuntimeError(ACTOR_SESSION_AMBIGUOUS, {
+      adminSessionIdPresent: Boolean(evidence.admin.sessionId),
+      staffSessionIdPresent: Boolean(evidence.staff.sessionId)
+    });
+  }
+  return evidence;
 };
 
 export const resolveStableActorId = (actorType, actor = null) => {
@@ -48,27 +74,21 @@ export const getExplicitActorPermissions = (actorType, actor = null) => {
   )).map((permission) => permission.trim()))];
 };
 
+export const readCurrentActorSessionCache = async () => (
+  assertUnambiguousSessionEvidence(await readSessionEvidence())
+);
+
 export const readActorSessionBinding = async (actorType) => {
   const keys = SESSION_KEYS[actorType];
   if (!keys) throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
 
-  const [selectedToken, sessionId, oppositeToken] = await Promise.all([
-    readSyncCacheValue(keys.token),
-    readSyncCacheValue(keys.sessionId),
-    readSyncCacheValue(keys.oppositeToken)
-  ]);
-
-  // Even with an explicit actor type, a dual-token cache is an invalid handoff
-  // state. Never allow a residual Admin credential to coexist with Staff
-  // authority (or vice versa) and silently pick the more privileged token.
-  if (selectedToken && oppositeToken) {
-    throw new ActorRuntimeError('ACTOR_SESSION_AMBIGUOUS', { actorType });
-  }
-  if (!selectedToken || !sessionId) {
+  const evidence = await readCurrentActorSessionCache();
+  const selected = evidence[actorType];
+  if (!selected?.token || !selected?.sessionId) {
     throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, { actorType });
   }
 
-  return Object.freeze({ actorType, sessionId: String(sessionId) });
+  return Object.freeze({ actorType, sessionId: String(selected.sessionId) });
 };
 
 export const beginActorRuntimeAuthentication = (actorType) => (
@@ -89,6 +109,30 @@ export const grantAuthenticatedActorRuntime = async ({
     sessionId: binding.sessionId,
     permissions: permissions ?? getExplicitActorPermissions(actorType, actor)
   });
+};
+
+/**
+ * Restore the actor authority only when the tenant cache contains one
+ * unambiguous credential family. This intentionally does not delete either
+ * credential family when ambiguity is detected; cleanup belongs to explicit
+ * authentication/logout contracts, not identity selection.
+ */
+export const restoreActorRuntimeFromCurrentSessionCache = async ({
+  actorType,
+  actor,
+  permissions = null
+} = {}) => {
+  try {
+    await readCurrentActorSessionCache();
+    return await grantAuthenticatedActorRuntime({ actorType, actor, permissions });
+  } catch (error) {
+    actorRuntimeController.lock(
+      error?.code === ACTOR_SESSION_AMBIGUOUS
+        ? 'ambiguous_actor_session_evidence'
+        : `${actorType || 'unknown'}_session_restore_failed`
+    );
+    throw error;
+  }
 };
 
 export const lockActorRuntime = (reason = 'actor_locked') => actorRuntimeController.lock(reason);
