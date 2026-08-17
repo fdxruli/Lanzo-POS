@@ -10,6 +10,9 @@ on:
       - 'src/services/db/**'
       - 'src/services/supabase.js'
       - 'src/store/slices/license/**'
+      - 'src/test/**'
+      - 'src/tests/**'
+      - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
 
@@ -42,11 +45,14 @@ jobs:
       - name: Authentication regression
         run: npx vitest run src/store/slices/license --maxWorkers=4
 
+      - name: Build validation artifacts
+        run: |
+          npm run build
+          npm run build:store
+          npm run build:store:dir
+
       - name: Full test suite
         run: npm run test:ci
 
       - name: Relevant ESLint
-        run: npx eslint "src/services/auth/**/*.{js,jsx}" "src/services/tenant/**/*.{js,jsx}" "src/services/db/**/*.{js,jsx}" "src/store/slices/license/**/*.{js,jsx}"
-
-      - name: Production build
-        run: npm run build
+        run: npx eslint "src/services/auth/**/*.{js,jsx}" "src/services/tenant/**/*.{js,jsx}" "src/services/db/**/*.{js,jsx}" "src/store/slices/license/**/*.{js,jsx}" src/test/setupTestingLibrary.js src/tests/useStoreSync.test.js
