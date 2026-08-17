@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ACTOR_RUNTIME_ERROR_CODES,
   ACTOR_RUNTIME_STATUS,
-  createActorRuntimeController
+  createActorRuntimeController,
+  runWithActorHandle
 } from '../actorRuntimeController';
 
 const TENANT_A = Object.freeze({
@@ -96,6 +97,53 @@ describe('ActorRuntimeController', () => {
     expect(() => capturedAdmin.assertCurrent('cash.read')).toThrowError(
       expect.objectContaining({ code: ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE })
     );
+  });
+
+  it('prevents a stale handle from entering protected work after logout', async () => {
+    grantAdmin();
+    const adminHandle = controller.capture('sales.create');
+    const protectedOperation = vi.fn();
+    controller.lock('admin_logout');
+
+    await expect(runWithActorHandle(adminHandle, protectedOperation, 'sales.create')).rejects.toMatchObject({
+      code: ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE
+    });
+    expect(protectedOperation).not.toHaveBeenCalled();
+  });
+
+  it('revalidates actor generation at the effective write boundary after an await', async () => {
+    grantAdmin();
+    const adminHandle = controller.capture('sales.create');
+    const sideEffect = vi.fn(() => 'written');
+    let resume;
+    const waitForResume = new Promise((resolve) => { resume = resolve; });
+
+    const pending = runWithActorHandle(adminHandle, async ({ guardedWrite }) => {
+      await waitForResume;
+      return guardedWrite(sideEffect, 'sales.create');
+    }, 'sales.create');
+
+    controller.lock('admin_logout_during_async_work');
+    grantStaff();
+    resume();
+
+    await expect(pending).rejects.toMatchObject({
+      code: ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE
+    });
+    expect(sideEffect).not.toHaveBeenCalled();
+  });
+
+  it('does not let a new actor reuse a handle from the previous actor generation', async () => {
+    grantAdmin();
+    const adminHandle = controller.capture();
+    controller.lock('handoff');
+    grantStaff();
+
+    await expect(runWithActorHandle(adminHandle, async ({ guardedWrite }) => (
+      guardedWrite(() => 'unexpected')
+    ))).rejects.toMatchObject({
+      code: ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE
+    });
   });
 
   it('keeps only explicit staff permissions and cannot inherit admin wildcard authority', () => {
