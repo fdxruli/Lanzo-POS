@@ -11,6 +11,7 @@ on:
       - 'src/services/supabase.js'
       - 'src/store/slices/license/**'
       - 'scripts/compare-shared-terminal-full-suite.mjs'
+      - 'scripts/generate-shared-terminal-actor-runtime-report.mjs'
       - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
@@ -67,6 +68,7 @@ jobs:
           src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
           src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
           scripts/compare-shared-terminal-full-suite.mjs
+          scripts/generate-shared-terminal-actor-runtime-report.mjs
 
       - name: npm run build
         if: always()
@@ -230,3 +232,42 @@ jobs:
             differential/full-suite-differential.md
             differential/full-suite-differential.json
           if-no-files-found: error
+
+  publish-audit-report:
+    name: Publish idempotent closeout report
+    needs:
+      - focused-validation
+      - differential-regression-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Download differential evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-full-suite-differential
+          path: differential
+
+      - name: Generate audit report from exact differential JSON
+        run: node scripts/generate-shared-terminal-actor-runtime-report.mjs differential/full-suite-differential.json
+
+      - name: Publish report only when content changed
+        shell: bash
+        run: |
+          if git diff --quiet -- docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md; then
+            echo "Audit report already matches the reproducible differential evidence."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md
+          git commit -m "docs(shared-terminal): publish actor runtime closeout report"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
