@@ -35,11 +35,11 @@ const report = `# SHARED.TERMINAL.1 — Actor Runtime Foundation
 
 ## 1. Scope and exact repository state
 
-Repository: \`fdxruli/Lanzo-POS\`  
-Authoritative base: \`main@${BASE_SHA}\`  
-Branch: \`feat/shared-terminal-actor-runtime\`  
-PR: \`#208\` — DRAFT / unmerged  
-Validated executable code/CI head before report publication: \`${VALIDATED_CODE_HEAD}\`  
+Repository: \`fdxruli/Lanzo-POS\`<br>
+Authoritative base: \`main@${BASE_SHA}\`<br>
+Branch: \`feat/shared-terminal-actor-runtime\`<br>
+PR: \`#208\` — DRAFT / unmerged<br>
+Validated executable code/CI head before report publication: \`${VALIDATED_CODE_HEAD}\`<br>
 Final published HEAD: **the Git commit containing this report**, resolved authoritatively by GitHub PR #208 and the final closeout response. A commit cannot embed its own SHA in its own tree without changing that SHA, so this report avoids an endless self-referential report-only commit chain.
 
 SHARED.TERMINAL.1 is limited to ActorRuntime Foundation. It does not change physical tenant DB selection and does not start SHARED.TERMINAL.2.
@@ -100,7 +100,7 @@ SHARED.TERMINAL.2 was **NOT STARTED**. This phase does not implement \`device_mo
 
 ## 11. Supabase / cloud impact
 
-Supabase production: **UNTOUCHED**.  
+Supabase production: **UNTOUCHED**.<br>
 Cloud migration: **NOT REQUIRED**.
 
 No SQL, migration, RPC, schema, data, Auth, Edge Function, or production configuration change was made.
