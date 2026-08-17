@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   prepareLocalDatabase: vi.fn(),
   beginActorRuntimeAuthentication: vi.fn(),
   grantAuthenticatedActorRuntime: vi.fn(),
+  restoreActorRuntimeFromCurrentSessionCache: vi.fn(),
   lockActorRuntime: vi.fn()
 }));
 
@@ -39,8 +40,10 @@ vi.mock('../../../services/supabase', () => ({
   adminLogoutSession: mocks.adminLogoutSession
 }));
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
+  ACTOR_SESSION_AMBIGUOUS: 'ACTOR_SESSION_AMBIGUOUS',
   beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
+  restoreActorRuntimeFromCurrentSessionCache: mocks.restoreActorRuntimeFromCurrentSessionCache,
   lockActorRuntime: mocks.lockActorRuntime
 }));
 vi.mock('../../../services/licenseStorage', () => ({
@@ -118,9 +121,10 @@ describe('canonical actor session transitions', () => {
     mocks.clearStaffSessionCache.mockResolvedValue(undefined);
     mocks.saveLicenseToStorage.mockResolvedValue(undefined);
     mocks.grantAuthenticatedActorRuntime.mockResolvedValue({ status: 'granted' });
+    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted' });
   });
 
-  it('restores admin after staff → admin → reload, clearing the residual staff cache', async () => {
+  it('restores admin after staff → admin → reload once the explicit login cleared the staff cache', async () => {
     const state = createStore({ appStatus: 'admin_login_required' });
     mocks.adminLoginOnDevice.mockResolvedValue({
       success: true,
@@ -150,11 +154,15 @@ describe('canonical actor session transitions', () => {
       state.licenseDetails.license_key,
       expect.objectContaining({ beforeLocalPersistence: expect.any(Function) })
     );
+    expect(mocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: expect.objectContaining({ id: 'admin-1' })
+    });
     expect(mocks.verifyStaffSession).not.toHaveBeenCalled();
     expect(state.appStatus).toBe('ready');
   });
 
-  it('restores staff after admin → staff → reload, clearing the residual admin cache', async () => {
+  it('restores staff after admin → staff → reload once the explicit login cleared the admin cache', async () => {
     const state = createStore({
       appStatus: 'staff_login_required',
       licenseDetails: proLicense('admin'),
@@ -181,6 +189,10 @@ describe('canonical actor session transitions', () => {
     await state.initializeApp();
     expect(mocks.prepareLocalDatabase).toHaveBeenCalled();
     expect(mocks.verifyStaffSession).toHaveBeenCalledWith(state.licenseDetails.license_key);
+    expect(mocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
+      actorType: 'staff',
+      actor: expect.objectContaining({ id: 'staff-1' })
+    });
     expect(mocks.verifyAdminSession).not.toHaveBeenCalled();
     expect(state.appStatus).toBe('ready');
   });
