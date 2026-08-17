@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, LogIn, LockKeyhole, WifiOff } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, LockKeyhole, LogIn, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import LicenseContextSummary from './LicenseContextSummary';
+import PasswordField from './PasswordField';
 import './StaffLoginModal.css';
 
 export default function StaffLoginModal() {
@@ -12,10 +14,14 @@ export default function StaffLoginModal() {
 
   const handleStaffLogin = useAppStore((state) => state.handleStaffLogin);
   const logout = useAppStore((state) => state.logout);
+  const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
   const staffLoginMessage = useAppStore((state) => state.staffLoginMessage);
   const staffLoginError = useAppStore((state) => state.staffLoginError);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
   const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
+  const canSwitchAccess = licenseDetails?.staff_access_available === true
+    || licenseDetails?.features?.staff_roles === true;
   const staffAlreadyInUseMessage = (staffLoginMessage || staffLoginError?.message || '')
     .split('\n')
     .filter((line) => !line.startsWith('Dispositivo activo:'))
@@ -39,7 +45,7 @@ export default function StaffLoginModal() {
     event.preventDefault();
 
     if (!isOnline) {
-      setErrorMessage('Necesitas internet para iniciar sesion staff.');
+      setErrorMessage('Necesitas internet para iniciar sesión staff.');
       return;
     }
 
@@ -52,28 +58,48 @@ export default function StaffLoginModal() {
     });
 
     if (!result?.success) {
-      setErrorMessage(result?.code === 'STAFF_ALREADY_IN_USE' ? '' : result?.message || 'No se pudo iniciar sesion staff.');
+      setErrorMessage(result?.code === 'STAFF_ALREADY_IN_USE' ? '' : result?.message || 'No se pudo iniciar sesión staff.');
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="staff-login-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-login-title">
-      <div className="staff-login-panel">
+    <div
+      className="staff-login-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="staff-login-title"
+      aria-describedby="staff-login-description"
+    >
+      <section className="staff-login-panel">
+        <div className="auth-login-topline staff-login-topline">
+          <span className="auth-login-step">Acceso seguro</span>
+          <span className="auth-login-role staff-login-role">
+            <span className="auth-login-role__dot" aria-hidden="true" />
+            Personal / Staff
+          </span>
+        </div>
+
+        <LicenseContextSummary licenseDetails={licenseDetails} licenseKey={licenseKey} />
+
         <div className="staff-login-brand">
           <span className="staff-login-icon" aria-hidden="true">
-            <LockKeyhole size={26} />
+            <LockKeyhole size={26} strokeWidth={2.2} />
           </span>
           <div>
             <h1 id="staff-login-title">Acceso staff</h1>
-            <p>Ingresa con el usuario asignado por el administrador.</p>
+            <p id="staff-login-description">Ingresa con el usuario asignado por el administrador.</p>
           </div>
         </div>
+
+        <p className="staff-login-helper">
+          Usa tu cuenta personal para entrar sólo a las funciones permitidas para tu puesto.
+        </p>
 
         {!isOnline && (
           <div className="staff-login-alert ui-alert ui-alert--danger" role="status">
             <WifiOff size={18} aria-hidden="true" />
-            <span>El login staff requiere conexion a internet.</span>
+            <span>El acceso staff requiere conexión a internet.</span>
           </div>
         )}
 
@@ -99,8 +125,8 @@ export default function StaffLoginModal() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="staff-login-form">
-          <div className="form-group">
+        <form onSubmit={handleSubmit} className="staff-login-form" aria-busy={isLoading}>
+          <div className="staff-login-field form-group">
             <label className="form-label" htmlFor="staff-username">Usuario</label>
             <input
               id="staff-username"
@@ -113,19 +139,14 @@ export default function StaffLoginModal() {
             />
           </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="staff-password">Contrasena</label>
-            <input
-              id="staff-password"
-              className="form-input"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              disabled={isLoading || !isOnline}
-              required
-            />
-          </div>
+          <PasswordField
+            id="staff-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={isLoading || !isOnline}
+            fieldClassName="staff-login-field form-group"
+            labelClassName="form-label"
+          />
 
           {errorMessage && (
             <div className="staff-login-error ui-alert ui-alert--danger" role="alert">
@@ -144,12 +165,24 @@ export default function StaffLoginModal() {
         </form>
 
         <div className="staff-login-footer">
-          <span>{licenseKey ? `Licencia ${licenseKey.slice(0, 12)}...` : 'Licencia pendiente'}</span>
-          <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={isLoading}>
-            Cambiar licencia
-          </button>
+          <div className="staff-login-footer-actions">
+            {canSwitchAccess && (
+              <button
+                type="button"
+                className="auth-mode-back-button"
+                onClick={returnToLicenseAccessChoice}
+                disabled={isLoading}
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Elegir otro perfil
+              </button>
+            )}
+            <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={isLoading}>
+              Cambiar licencia
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

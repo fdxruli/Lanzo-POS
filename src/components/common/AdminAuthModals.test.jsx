@@ -6,17 +6,29 @@ import { useAppStore } from '../../store/useAppStore';
 import LicenseAccessChooser from './LicenseAccessChooser';
 import AdminLoginModal from './AdminLoginModal';
 import AdminEnrollmentModal from './AdminEnrollmentModal';
+import StaffLoginModal from './StaffLoginModal';
 
 describe('admin access UI', () => {
   afterEach(() => cleanup());
   beforeEach(() => {
     useAppStore.setState({
       chooseLicenseAccess: vi.fn(),
+      returnToLicenseAccessChoice: vi.fn(),
       logout: vi.fn(),
       handleAdminLogin: vi.fn(),
+      handleStaffLogin: vi.fn(),
       handleAdminEnrollment: vi.fn(),
       adminLoginMessage: null,
-      licenseDetails: { features: { staff_roles: true } }
+      staffLoginMessage: null,
+      staffLoginError: null,
+      staffLoginLicenseKey: 'LANZO-TEST-CHOOSER',
+      companyProfile: { name: 'Cafeteria Brisa' },
+      licenseDetails: {
+        license_key: 'LANZO-TEST-CHOOSER',
+        product_name: 'Lanzo POS',
+        plan_name: 'Pro',
+        features: { staff_roles: true }
+      }
     });
   });
 
@@ -33,6 +45,21 @@ describe('admin access UI', () => {
     render(<LicenseAccessChooser />);
     expect(screen.getByRole('button', { name: /^AdministradorUsa/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Personal \/ StaffUsa/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps license context visible in chooser and both login modals', () => {
+    render(<LicenseAccessChooser />);
+    expect(screen.getByText(/Licencia LANZO-TEST/)).toBeInTheDocument();
+    expect(screen.getByText(/Cafeteria Brisa/)).toBeInTheDocument();
+
+    cleanup();
+    render(<AdminLoginModal />);
+    expect(screen.getByText(/Licencia LANZO-TEST/)).toBeInTheDocument();
+
+    cleanup();
+    render(<StaffLoginModal />);
+    expect(screen.getByText(/Licencia LANZO-TEST/)).toBeInTheDocument();
+    expect(screen.queryByText('Sesión para')).not.toBeInTheDocument();
   });
 
   it('submits admin credentials without persisting the password in store', async () => {
@@ -53,6 +80,36 @@ describe('admin access UI', () => {
     fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'wrong-fixture' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales incorrectas.');
+  });
+
+  it('returns to profile selection from both login modals', () => {
+    const returnToChoice = vi.fn();
+    useAppStore.setState({ returnToLicenseAccessChoice: returnToChoice });
+
+    render(<AdminLoginModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir otro perfil' }));
+    expect(returnToChoice).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    render(<StaffLoginModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Elegir otro perfil' }));
+    expect(returnToChoice).toHaveBeenCalledTimes(2);
+  });
+
+  it('allows viewing the password in both login modals', () => {
+    render(<AdminLoginModal />);
+    const adminPassword = screen.getByLabelText('Contraseña');
+    expect(adminPassword).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(adminPassword).toHaveAttribute('type', 'text');
+    expect(screen.getByRole('button', { name: 'Ocultar contraseña' })).toBeInTheDocument();
+
+    cleanup();
+    render(<StaffLoginModal />);
+    const staffPassword = screen.getByLabelText('Contraseña');
+    expect(staffPassword).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(staffPassword).toHaveAttribute('type', 'text');
   });
 
   it('blocks owner enrollment when password confirmation differs', () => {

@@ -51,6 +51,8 @@ const setup = () => {
 describe('license admin actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.adminLogoutSession.mockResolvedValue({ success: true });
+    mocks.clearAdminSessionCache.mockResolvedValue(undefined);
     mocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
     mocks.clearStaffSessionCache.mockResolvedValue(undefined);
     mocks.saveLicenseToStorage.mockResolvedValue(undefined);
@@ -93,6 +95,54 @@ describe('license admin actions', () => {
     expect(state.adminLoginError.code).toBe('INVALID_ADMIN_CREDENTIALS');
     expect(state.pendingAdminSessionResult).toBeNull();
     expect(mocks.ensureLocalDatabaseReady).not.toHaveBeenCalled();
+  });
+
+  it('cleans an authenticated admin session before returning to profile selection after local bootstrap failure', async () => {
+    const state = setup();
+    mocks.adminLoginOnDevice.mockResolvedValue({
+      success: true,
+      admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
+      details: { license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }
+    });
+    mocks.ensureLocalDatabaseReady.mockRejectedValueOnce(new Error('fixture local bootstrap failure'));
+
+    await expect(state.handleAdminLogin({
+      username: 'owner',
+      password: 'fixture-password'
+    })).resolves.toMatchObject({
+      success: false,
+      remoteAuthenticated: true,
+      code: 'ADMIN_LOCAL_BOOTSTRAP_FAILED'
+    });
+
+    expect(state.pendingAdminSessionResult?.result?.success).toBe(true);
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
+
+    await expect(state.returnToLicenseAccessChoice()).resolves.toEqual({ success: true });
+
+    expect(mocks.adminLogoutSession).toHaveBeenCalledTimes(1);
+    expect(mocks.adminLogoutSession).toHaveBeenCalledWith('LANZO-ADMIN-TEST');
+    expect(mocks.clearStaffSessionCache).toHaveBeenCalled();
+    expect(state.appStatus).toBe('license_access_required');
+    expect(state.currentDeviceRole).toBeNull();
+    expect(state.currentAdminUser).toBeNull();
+    expect(state.currentStaffUser).toBeNull();
+    expect(state.pendingAdminSessionResult).toBeNull();
+  });
+
+  it('fails closed instead of publishing a role-neutral selector when actor cache cleanup fails', async () => {
+    const state = setup();
+    state.currentDeviceRole = 'admin';
+    mocks.clearAdminSessionCache.mockRejectedValueOnce(new Error('fixture cache cleanup failure'));
+
+    await expect(state.returnToLicenseAccessChoice()).resolves.toMatchObject({
+      success: false,
+      code: 'ACTOR_SESSION_CLEANUP_FAILED'
+    });
+
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(state.currentDeviceRole).toBe('admin');
+    expect(state.pendingAdminSessionResult).toBeNull();
   });
 
   it('does not remain loading when the legacy backend validates an admin device', async () => {
