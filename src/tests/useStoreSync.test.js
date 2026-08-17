@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react-hooks';
+import { renderHook, act } from '@testing-library/react';
 import { useOrderStore } from '../store/useOrderStore';
 import { useActiveOrders } from '../hooks/pos/useActiveOrders';
 
