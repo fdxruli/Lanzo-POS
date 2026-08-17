@@ -145,11 +145,38 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     });
   },
 
-  returnToLicenseAccessChoice: () => {
-    const licenseKey = get().adminLoginLicenseKey
-      || get().staffLoginLicenseKey
-      || get().licenseDetails?.license_key
+  returnToLicenseAccessChoice: async () => {
+    const state = get();
+    const licenseKey = state.adminLoginLicenseKey
+      || state.staffLoginLicenseKey
+      || state.licenseDetails?.license_key
       || null;
+    const hasAuthenticatedAdminSession = Boolean(
+      state.pendingAdminSessionResult?.result?.success
+      || state.currentAdminUser
+    );
+
+    try {
+      if (hasAuthenticatedAdminSession && licenseKey) {
+        try {
+          await adminLogoutSession(licenseKey);
+        } catch (logoutError) {
+          Logger.warn('[AdminAuth] Falló el cierre remoto al cambiar de perfil; limpiando credencial local.', logoutError);
+          await clearAdminSessionCache();
+        }
+      } else {
+        await clearAdminSessionCache();
+      }
+
+      await clearStaffSessionCache();
+    } catch (cleanupError) {
+      Logger.error('[AdminAuth] No se pudo limpiar la sesión actor antes de cambiar de perfil:', cleanupError);
+      return {
+        success: false,
+        code: 'ACTOR_SESSION_CLEANUP_FAILED',
+        message: 'No se pudo limpiar la sesión actual. Reintenta antes de cambiar de perfil.'
+      };
+    }
 
     clearPendingAdminSession(set, 'return_to_access_choice');
     set({
@@ -166,6 +193,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       adminEnrollmentRequired: false,
       _isLoggingOut: false
     });
+    return { success: true };
   },
 
   _requireAdminLogin: async (licenseSource = null, validation = {}) => {
