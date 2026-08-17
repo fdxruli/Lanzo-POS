@@ -156,26 +156,33 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       || state.currentAdminUser
     );
 
-    try {
-      if (hasAuthenticatedAdminSession && licenseKey) {
-        try {
-          await adminLogoutSession(licenseKey);
-        } catch (logoutError) {
-          Logger.warn('[AdminAuth] Falló el cierre remoto al cambiar de perfil; limpiando credencial local.', logoutError);
+    // An explicit actor logout already cleared the actor credential before the
+    // tenant guard was locked. In that state the login modal is intentionally
+    // allowed to switch profiles without touching tenant-owned SYNC_CACHE.
+    // Persisted cleanup is only required when a remote Admin session is still
+    // active/pending (for example after a local bootstrap failure).
+    if (hasAuthenticatedAdminSession) {
+      try {
+        if (licenseKey) {
+          try {
+            await adminLogoutSession(licenseKey);
+          } catch (logoutError) {
+            Logger.warn('[AdminAuth] Falló el cierre remoto al cambiar de perfil; limpiando credencial local.', logoutError);
+            await clearAdminSessionCache();
+          }
+        } else {
           await clearAdminSessionCache();
         }
-      } else {
-        await clearAdminSessionCache();
-      }
 
-      await clearStaffSessionCache();
-    } catch (cleanupError) {
-      Logger.error('[AdminAuth] No se pudo limpiar la sesión actor antes de cambiar de perfil:', cleanupError);
-      return {
-        success: false,
-        code: 'ACTOR_SESSION_CLEANUP_FAILED',
-        message: 'No se pudo limpiar la sesión actual. Reintenta antes de cambiar de perfil.'
-      };
+        await clearStaffSessionCache();
+      } catch (cleanupError) {
+        Logger.error('[AdminAuth] No se pudo limpiar la sesión actor antes de cambiar de perfil:', cleanupError);
+        return {
+          success: false,
+          code: 'ACTOR_SESSION_CLEANUP_FAILED',
+          message: 'No se pudo limpiar la sesión actual. Reintenta antes de cambiar de perfil.'
+        };
+      }
     }
 
     clearPendingAdminSession(set, 'return_to_access_choice');
