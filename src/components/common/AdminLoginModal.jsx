@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { LogIn, ShieldCheck, WifiOff } from 'lucide-react';
+import { ArrowLeft, LogIn, ShieldCheck, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { classifyDatabaseError } from '../../services/db/databaseRecoveryState';
+import LicenseContextSummary from './LicenseContextSummary';
+import PasswordField from './PasswordField';
 import './AdminAuthModal.css';
 
 const describeLoginError = (error, result = null) => {
@@ -38,7 +40,12 @@ export default function AdminLoginModal() {
   const [error, setError] = useState('');
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const logout = useAppStore((state) => state.logout);
+  const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
   const message = useAppStore((state) => state.adminLoginMessage);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const licenseKey = useAppStore((state) => state.adminLoginLicenseKey || state.licenseDetails?.license_key);
+  const canSwitchAccess = licenseDetails?.staff_access_available === true
+    || licenseDetails?.features?.staff_roles === true;
 
   useEffect(() => {
     const onOnline = () => setOnline(true);
@@ -69,33 +76,95 @@ export default function AdminLoginModal() {
   };
 
   return (
-    <div className="admin-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
-      <section className="admin-auth-panel">
+    <div
+      className="admin-auth-overlay admin-auth-overlay--login"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="admin-login-title"
+      aria-describedby="admin-login-description"
+    >
+      <section className="admin-auth-panel admin-auth-panel--login">
+        <div className="auth-login-topline">
+          <span className="auth-login-step">Acceso seguro</span>
+          <span className="auth-login-role auth-login-role--admin">
+            <span className="auth-login-role__dot" aria-hidden="true" />
+            Administrador
+          </span>
+        </div>
+
+        <LicenseContextSummary licenseDetails={licenseDetails} licenseKey={licenseKey} />
+
         <div className="admin-auth-heading">
-          <ShieldCheck size={30} />
+          <span className="admin-auth-heading__icon" aria-hidden="true">
+            <ShieldCheck size={27} strokeWidth={2.2} />
+          </span>
           <div>
             <h1 id="admin-login-title">Acceso administrador</h1>
-            <p>Ingresa con la cuenta del propietario.</p>
+            <p id="admin-login-description">Ingresa con la cuenta del propietario.</p>
           </div>
         </div>
-        {!online && <div className="ui-alert ui-alert--danger"><WifiOff size={18} /> Necesitas internet para iniciar sesión.</div>}
-        {message && !error && <div className="ui-alert ui-alert--info">{message}</div>}
-        <form onSubmit={submit} className="admin-auth-form">
-          <label>
+
+        <p className="auth-login-helper">
+          Usa tus credenciales de administración para continuar con todos los permisos del negocio.
+        </p>
+
+        {!online && (
+          <div className="ui-alert ui-alert--danger" role="status">
+            <WifiOff size={18} aria-hidden="true" />
+            Necesitas internet para iniciar sesión.
+          </div>
+        )}
+        {message && !error && (
+          <div className="ui-alert ui-alert--info" role="status">{message}</div>
+        )}
+
+        <form onSubmit={submit} className="admin-auth-form" aria-busy={loading}>
+          <label className="admin-auth-field" htmlFor="admin-username">
             Usuario
-            <input className="form-input" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={loading || !online} />
+            <input
+              id="admin-username"
+              className="form-input"
+              autoComplete="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              required
+              disabled={loading || !online}
+            />
           </label>
-          <label>
-            Contraseña
-            <input className="form-input" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={loading || !online} />
-          </label>
+          <PasswordField
+            id="admin-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={loading || !online}
+            fieldClassName="admin-auth-field"
+          />
           {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
-          <button className="ui-button ui-button--primary" disabled={loading || !online || !username.trim() || !password}>
-            <LogIn size={18} />
+          <button
+            type="submit"
+            className="ui-button ui-button--primary admin-auth-submit"
+            disabled={loading || !online || !username.trim() || !password}
+          >
+            <LogIn size={18} aria-hidden="true" />
             {loading ? 'Verificando...' : 'Entrar'}
           </button>
         </form>
-        <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>Cambiar licencia</button>
+
+        <div className="auth-modal-actions">
+          {canSwitchAccess && (
+            <button
+              type="button"
+              className="auth-mode-back-button"
+              onClick={returnToLicenseAccessChoice}
+              disabled={loading}
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              Elegir otro perfil
+            </button>
+          )}
+          <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
+            Cambiar licencia
+          </button>
+        </div>
       </section>
     </div>
   );

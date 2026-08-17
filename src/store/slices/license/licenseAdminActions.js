@@ -132,12 +132,40 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         currentAdminUser: null,
         currentStaffUser: null,
         staffLoginLicenseKey: licenseKey,
-        staffLoginMessage: 'Ingresa con el usuario asignado por el administrador.',
+        staffLoginMessage: null,
         staffLoginError: null
       });
       return;
     }
-    set({ appStatus: 'admin_login_required', currentDeviceRole: 'admin', adminLoginError: null });
+    set({
+      appStatus: 'admin_login_required',
+      currentDeviceRole: 'admin',
+      adminLoginMessage: null,
+      adminLoginError: null
+    });
+  },
+
+  returnToLicenseAccessChoice: () => {
+    const licenseKey = get().adminLoginLicenseKey
+      || get().staffLoginLicenseKey
+      || get().licenseDetails?.license_key
+      || null;
+
+    clearPendingAdminSession(set, 'return_to_access_choice');
+    set({
+      appStatus: 'license_access_required',
+      currentDeviceRole: null,
+      currentAdminUser: null,
+      currentStaffUser: null,
+      adminLoginLicenseKey: licenseKey,
+      staffLoginLicenseKey: licenseKey,
+      adminLoginMessage: null,
+      adminLoginError: null,
+      staffLoginMessage: null,
+      staffLoginError: null,
+      adminEnrollmentRequired: false,
+      _isLoggingOut: false
+    });
   },
 
   _requireAdminLogin: async (licenseSource = null, validation = {}) => {
