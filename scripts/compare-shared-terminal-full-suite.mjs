@@ -1,20 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [basePath, candidatePath, markdownPath = 'full-suite-differential.md', jsonPath = 'full-suite-differential.json'] = process.argv.slice(2);
+const [baseDir, candidateDir, markdownPath = 'full-suite-differential.md', jsonPath = 'full-suite-differential.json'] = process.argv.slice(2);
 
-if (!basePath || !candidatePath) {
-  console.error('Usage: node scripts/compare-shared-terminal-full-suite.mjs <base.json> <candidate.json> [matrix.md] [summary.json]');
+if (!baseDir || !candidateDir) {
+  console.error('Usage: node scripts/compare-shared-terminal-full-suite.mjs <base-dir> <candidate-dir> [matrix.md] [summary.json]');
   process.exit(2);
 }
 
+const findReports = (dir, label) => {
+  if (!fs.existsSync(dir)) throw new Error(`${label} report directory missing: ${dir}`);
+  const paths = fs.readdirSync(dir)
+    .filter((name) => /^full-suite-\d+\.json$/.test(name))
+    .sort()
+    .map((name) => path.join(dir, name));
+  if (paths.length < 2) throw new Error(`${label} requires at least two full-suite repetitions; found ${paths.length}`);
+  return paths;
+};
+
 const readReport = (reportPath, label) => {
-  if (!fs.existsSync(reportPath)) {
-    throw new Error(`${label} report missing: ${reportPath}`);
-  }
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
   if (!Array.isArray(report.testResults)) {
-    throw new Error(`${label} report does not contain Vitest/Jest-compatible testResults`);
+    throw new Error(`${label} report does not contain Vitest/Jest-compatible testResults: ${reportPath}`);
   }
   return report;
 };
@@ -45,18 +52,15 @@ const normalizeFailure = (value = '') => {
 
 const assertionName = (assertion) => {
   if (assertion.fullName) return assertion.fullName;
-  const parts = [...(assertion.ancestorTitles || []), assertion.title].filter(Boolean);
-  return parts.join(' > ') || '<unnamed-test>';
+  return [...(assertion.ancestorTitles || []), assertion.title].filter(Boolean).join(' > ') || '<unnamed-test>';
 };
 
 const collectFailures = (report) => {
   const failures = [];
-
   for (const fileResult of report.testResults) {
     const file = normalizeFile(fileResult.name || fileResult.testFilePath || '');
     const assertions = Array.isArray(fileResult.assertionResults) ? fileResult.assertionResults : [];
     const failedAssertions = assertions.filter((assertion) => assertion.status === 'failed');
-
     for (const assertion of failedAssertions) {
       const rawFailure = Array.isArray(assertion.failureMessages)
         ? assertion.failureMessages.join('\n')
@@ -68,7 +72,6 @@ const collectFailures = (report) => {
         error: normalizeFailure(rawFailure)
       });
     }
-
     if (fileResult.status === 'failed' && failedAssertions.length === 0) {
       failures.push({
         id: `${file} > [file-level failure]`,
@@ -78,7 +81,6 @@ const collectFailures = (report) => {
       });
     }
   }
-
   return failures;
 };
 
@@ -92,79 +94,128 @@ const counts = (report) => ({
   suitesTotal: Number(report.numTotalTestSuites ?? 0)
 });
 
-const escapeCell = (value) => String(value ?? '')
-  .replaceAll('|', '\\|')
-  .replaceAll('\n', '<br>');
+const escapeCell = (value) => String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', '<br>');
+const keyOf = (failure) => `${failure.id}\u0000${failure.error}`;
 
-const base = readReport(basePath, 'BASE');
-const candidate = readReport(candidatePath, 'CANDIDATE');
-const baseFailures = collectFailures(base);
-const candidateFailures = collectFailures(candidate);
-const baseById = new Map(baseFailures.map((failure) => [failure.id, failure]));
-const candidateById = new Map(candidateFailures.map((failure) => [failure.id, failure]));
+const basePaths = findReports(baseDir, 'BASE');
+const candidatePaths = findReports(candidateDir, 'CANDIDATE');
+const baseReports = basePaths.map((reportPath, index) => readReport(reportPath, `BASE#${index + 1}`));
+const candidateReports = candidatePaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE#${index + 1}`));
+const baseFailuresByRun = baseReports.map(collectFailures);
+const candidateFailuresByRun = candidateReports.map(collectFailures);
 
-const matrix = candidateFailures.map((candidateFailure) => {
-  const baseFailure = baseById.get(candidateFailure.id);
-  if (!baseFailure) {
+const observationMap = (runs) => {
+  const byKey = new Map();
+  const errorsById = new Map();
+  runs.forEach((failures, runIndex) => {
+    for (const failure of failures) {
+      const key = keyOf(failure);
+      const entry = byKey.get(key) || { ...failure, runs: [] };
+      entry.runs.push(runIndex + 1);
+      byKey.set(key, entry);
+      const errors = errorsById.get(failure.id) || new Set();
+      errors.add(failure.error);
+      errorsById.set(failure.id, errors);
+    }
+  });
+  return { byKey, errorsById };
+};
+
+const baseObs = observationMap(baseFailuresByRun);
+const candidateObs = observationMap(candidateFailuresByRun);
+
+const matrix = [...candidateObs.byKey.values()].map((candidateFailure) => {
+  const baseExact = baseObs.byKey.get(keyOf(candidateFailure));
+  if (baseExact) {
+    const stableInBase = baseExact.runs.length === baseReports.length;
+    const stableInCandidate = candidateFailure.runs.length === candidateReports.length;
+    const classification = stableInBase && stableInCandidate
+      ? 'PREEXISTING_BASELINE_FAILURE'
+      : 'PREEXISTING_FLAKY_BASELINE_FAILURE';
     return {
       ...candidateFailure,
-      base: 'PASS',
-      candidate: `FAIL: ${candidateFailure.error}`,
-      classification: 'PR_REGRESSION'
+      baseRuns: baseExact.runs,
+      candidateRuns: candidateFailure.runs,
+      base: `FAIL in repetition(s) ${baseExact.runs.join(',')}: ${baseExact.error}`,
+      candidate: `FAIL in repetition(s) ${candidateFailure.runs.join(',')}: ${candidateFailure.error}`,
+      classification
     };
   }
-  if (baseFailure.error !== candidateFailure.error) {
+
+  const baseErrors = baseObs.errorsById.get(candidateFailure.id);
+  if (baseErrors?.size) {
     return {
       ...candidateFailure,
-      base: `FAIL: ${baseFailure.error}`,
-      candidate: `FAIL: ${candidateFailure.error}`,
+      baseRuns: [],
+      candidateRuns: candidateFailure.runs,
+      base: `FAIL with different normalized error(s): ${[...baseErrors].join(' || ')}`,
+      candidate: `FAIL in repetition(s) ${candidateFailure.runs.join(',')}: ${candidateFailure.error}`,
       classification: 'POSSIBLE_PR_REGRESSION'
     };
   }
+
   return {
     ...candidateFailure,
-    base: `FAIL: ${baseFailure.error}`,
-    candidate: `FAIL: ${candidateFailure.error}`,
-    classification: 'PREEXISTING_BASELINE_FAILURE'
+    baseRuns: [],
+    candidateRuns: candidateFailure.runs,
+    base: 'PASS in all BASE repetitions',
+    candidate: `FAIL in repetition(s) ${candidateFailure.runs.join(',')}: ${candidateFailure.error}`,
+    classification: 'PR_REGRESSION'
   };
 });
 
-const incidentalImprovements = baseFailures
-  .filter((failure) => !candidateById.has(failure.id))
-  .map((failure) => ({ ...failure, classification: 'INCIDENTAL_IMPROVEMENT' }));
+const candidateKeys = new Set(candidateObs.byKey.keys());
+const incidentalImprovements = [...baseObs.byKey.values()]
+  .filter((failure) => !candidateKeys.has(keyOf(failure)))
+  .map((failure) => ({ ...failure, classification: 'INCIDENTAL_OR_BASELINE_FLAKE' }));
 
-const regressions = matrix.filter(({ classification }) => classification !== 'PREEXISTING_BASELINE_FAILURE');
+const regressionClasses = new Set(['PR_REGRESSION', 'POSSIBLE_PR_REGRESSION']);
+const regressions = matrix.filter(({ classification }) => regressionClasses.has(classification));
+const stablePreexisting = matrix.filter(({ classification }) => classification === 'PREEXISTING_BASELINE_FAILURE');
+const flakyPreexisting = matrix.filter(({ classification }) => classification === 'PREEXISTING_FLAKY_BASELINE_FAILURE');
+const baseRunCounts = baseReports.map(counts);
+const candidateRunCounts = candidateReports.map(counts);
+
 const summary = {
-  base: counts(base),
-  candidate: counts(candidate),
-  baseFailureCount: baseFailures.length,
-  candidateFailureCount: candidateFailures.length,
+  base: baseRunCounts[0],
+  candidate: candidateRunCounts[0],
+  baseRuns: baseRunCounts,
+  candidateRuns: candidateRunCounts,
+  baseUniqueFailureObservationCount: baseObs.byKey.size,
+  candidateUniqueFailureObservationCount: candidateObs.byKey.size,
   newRegressionCount: regressions.length,
-  preexistingCandidateFailureCount: matrix.length - regressions.length,
+  stablePreexistingCandidateFailureCount: stablePreexisting.length,
+  flakyPreexistingCandidateFailureCount: flakyPreexisting.length,
+  preexistingCandidateFailureCount: stablePreexisting.length + flakyPreexisting.length,
   incidentalImprovementCount: incidentalImprovements.length,
   matrix,
   incidentalImprovements
 };
 
+const runLine = (label, values) => values.map((value, index) => (
+  `- ${label} repetition ${index + 1}: ${value.passed} passed / ${value.failed} failed / ${value.skipped} skipped / ${value.total} total`
+));
+
 const markdown = [
-  '# Shared Terminal full-suite differential',
+  '# Shared Terminal repeated full-suite differential',
   '',
-  `- BASE: ${summary.base.passed} passed / ${summary.base.failed} failed / ${summary.base.skipped} skipped / ${summary.base.total} total`,
-  `- CANDIDATE: ${summary.candidate.passed} passed / ${summary.candidate.failed} failed / ${summary.candidate.skipped} skipped / ${summary.candidate.total} total`,
+  ...runLine('BASE', baseRunCounts),
+  ...runLine('CANDIDATE', candidateRunCounts),
   `- NEW/CHANGED REGRESSIONS: ${summary.newRegressionCount}`,
-  `- PREEXISTING CANDIDATE FAILURES: ${summary.preexistingCandidateFailureCount}`,
-  `- INCIDENTAL IMPROVEMENTS: ${summary.incidentalImprovementCount}`,
+  `- STABLE PREEXISTING CANDIDATE FAILURES: ${summary.stablePreexistingCandidateFailureCount}`,
+  `- PREEXISTING FLAKY CANDIDATE FAILURES: ${summary.flakyPreexistingCandidateFailureCount}`,
+  `- INCIDENTAL/BASELINE-FLAKE OBSERVATIONS: ${summary.incidentalImprovementCount}`,
   '',
   '## Candidate failure matrix',
   '',
-  '| Test / file | BASE | CANDIDATE | Classification |',
+  '| Test / file | BASE repetitions | CANDIDATE repetitions | Classification |',
   '|---|---|---|---|',
   ...matrix.map((row) => `| ${escapeCell(row.id)} | ${escapeCell(row.base)} | ${escapeCell(row.candidate)} | ${row.classification} |`),
   '',
-  '## Baseline failures absent from candidate',
+  '## BASE failure observations absent from all candidate repetitions',
   '',
   ...(incidentalImprovements.length
-    ? incidentalImprovements.map((row) => `- ${row.id}: INCIDENTAL_IMPROVEMENT`)
+    ? incidentalImprovements.map((row) => `- ${row.id}: ${row.error} (${row.classification}; BASE repetitions ${row.runs.join(',')})`)
     : ['- None']),
   ''
 ].join('\n');
@@ -174,8 +225,8 @@ fs.writeFileSync(jsonPath, `${JSON.stringify(summary, null, 2)}\n`);
 console.log(markdown);
 
 if (regressions.length > 0) {
-  console.error(`Differential regression gate failed: ${regressions.length} candidate failure(s) are new or changed versus base.`);
+  console.error(`Differential regression gate failed: ${regressions.length} candidate failure observation(s) were not reproduced with the same normalized error in any BASE repetition.`);
   process.exit(1);
 }
 
-console.log('Differential regression gate passed: candidate introduces zero new or changed full-suite failures.');
+console.log('Differential regression gate passed: every candidate failure observation is reproduced with the same normalized error in at least one exact BASE repetition.');
