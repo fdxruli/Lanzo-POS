@@ -16,8 +16,9 @@ const supabaseMocks = vi.hoisted(() => ({
   verifyAdminSession: vi.fn()
 }));
 const actorMocks = vi.hoisted(() => ({
+  ACTOR_SESSION_AMBIGUOUS: 'ACTOR_SESSION_AMBIGUOUS',
   beginActorRuntimeAuthentication: vi.fn(),
-  grantAuthenticatedActorRuntime: vi.fn(),
+  restoreActorRuntimeFromCurrentSessionCache: vi.fn(),
   lockActorRuntime: vi.fn()
 }));
 
@@ -72,7 +73,7 @@ describe('initializeApp coordinator', () => {
     supabaseMocks.hasStaffSessionToken.mockResolvedValue(false);
     supabaseMocks.hasAdminSessionToken.mockResolvedValue(false);
     supabaseMocks.hasValidOfflineAdminSession.mockResolvedValue(false);
-    actorMocks.grantAuthenticatedActorRuntime.mockResolvedValue({ status: 'granted' });
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted' });
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
@@ -136,10 +137,11 @@ describe('initializeApp coordinator', () => {
 
     expect(runtimeMocks.prepareLocalDatabase).toHaveBeenCalledTimes(1);
     expect(actorMocks.beginActorRuntimeAuthentication).toHaveBeenCalledWith('staff');
-    expect(actorMocks.grantAuthenticatedActorRuntime).toHaveBeenCalledWith({
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
       actorType: 'staff',
       actor: { id: 'staff-verified', permissions: ['sales.create'] }
     });
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
     expect(state.currentStaffUser.id).toBe('staff-verified');
   });
 
@@ -164,11 +166,40 @@ describe('initializeApp coordinator', () => {
 
     expect(runtimeMocks.prepareLocalDatabase).toHaveBeenCalledTimes(1);
     expect(actorMocks.beginActorRuntimeAuthentication).toHaveBeenCalledWith('admin');
-    expect(actorMocks.grantAuthenticatedActorRuntime).toHaveBeenCalledWith({
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
       actorType: 'admin',
       actor: { id: 'admin-verified' }
     });
+    expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
     expect(state.currentAdminUser.id).toBe('admin-verified');
+  });
+
+  it('preserves both credential families and fails closed when bootstrap restoration is ambiguous', async () => {
+    storageMocks.getLicenseFromStorage.mockResolvedValue({
+      license_key: 'BOOT-ADMIN-AMBIGUOUS',
+      device_role: 'admin',
+      plan_code: 'pro',
+      max_devices: 2,
+      admin_user: { id: 'admin-old' }
+    });
+    supabaseMocks.hasAdminSessionToken.mockResolvedValue(true);
+    supabaseMocks.verifyAdminSession.mockResolvedValue({
+      valid: true,
+      admin_user: { id: 'admin-verified' },
+      details: { license_key: 'BOOT-ADMIN-AMBIGUOUS', plan_code: 'pro', max_devices: 2 }
+    });
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockRejectedValueOnce(Object.assign(
+      new Error('ambiguous actor session evidence'),
+      { code: 'ACTOR_SESSION_AMBIGUOUS' }
+    ));
+    const state = createState();
+
+    await expect(state.initializeApp()).resolves.toEqual({ status: 'admin_login_required' });
+
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(state.currentAdminUser).toBeNull();
+    expect(state.adminLoginError).toMatchObject({ code: 'ACTOR_SESSION_AMBIGUOUS' });
   });
 
   it('fails closed to admin login when offline cache cannot bind stable actor authority', async () => {
@@ -181,7 +212,7 @@ describe('initializeApp coordinator', () => {
       admin_user: { id: 'admin-offline' }
     });
     supabaseMocks.hasValidOfflineAdminSession.mockResolvedValue(true);
-    actorMocks.grantAuthenticatedActorRuntime.mockRejectedValueOnce(Object.assign(
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockRejectedValueOnce(Object.assign(
       new Error('ACTOR_SESSION_REQUIRED'),
       { code: 'ACTOR_SESSION_REQUIRED' }
     ));
@@ -189,7 +220,6 @@ describe('initializeApp coordinator', () => {
 
     await expect(state.initializeApp()).resolves.toEqual({ status: 'admin_login_required' });
 
-    expect(actorMocks.lockActorRuntime).toHaveBeenCalledWith('admin_session_restore_failed');
     expect(supabaseMocks.clearAdminSessionCache).toHaveBeenCalled();
     expect(state.currentAdminUser).toBeNull();
     expect(state._processOfflineMode).not.toHaveBeenCalled();
