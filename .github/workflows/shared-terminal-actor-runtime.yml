@@ -46,7 +46,7 @@ jobs:
         run: npm run test:ci
 
       - name: Relevant ESLint
-        run: npx eslint src/services/auth/**/*.{js,jsx} src/services/tenant/**/*.{js,jsx} src/services/db/**/*.{js,jsx} src/store/slices/license/**/*.{js,jsx}
+        run: npx eslint "src/services/auth/**/*.{js,jsx}" "src/services/tenant/**/*.{js,jsx}" "src/services/db/**/*.{js,jsx}" "src/store/slices/license/**/*.{js,jsx}"
 
       - name: Production build
         run: npm run build
