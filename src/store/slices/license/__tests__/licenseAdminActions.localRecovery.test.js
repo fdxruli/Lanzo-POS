@@ -10,10 +10,16 @@ const supabaseMocks = vi.hoisted(() => ({
 }));
 const storageMocks = vi.hoisted(() => ({ saveLicenseToStorage: vi.fn() }));
 const runtimeMocks = vi.hoisted(() => ({ ensureLocalDatabaseReady: vi.fn() }));
+const actorMocks = vi.hoisted(() => ({
+  beginActorRuntimeAuthentication: vi.fn(),
+  grantAuthenticatedActorRuntime: vi.fn(),
+  lockActorRuntime: vi.fn()
+}));
 
 vi.mock('../../../../services/supabase', () => supabaseMocks);
 vi.mock('../../../../services/licenseStorage', () => storageMocks);
 vi.mock('../../../../services/db/databaseRuntime', () => runtimeMocks);
+vi.mock('../../../../services/auth/actorSessionRuntimeBridge', () => actorMocks);
 vi.mock('../../../../services/tenant/localTenantGuard', () => ({
   assertLocalTenantAccess: vi.fn(async () => ({ status: 'pass' })),
   assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
@@ -57,6 +63,7 @@ beforeEach(() => {
   supabaseMocks.clearStaffSessionCache.mockResolvedValue(undefined);
   storageMocks.saveLicenseToStorage.mockResolvedValue(undefined);
   runtimeMocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
+  actorMocks.grantAuthenticatedActorRuntime.mockResolvedValue({ status: 'granted' });
 });
 
 describe('admin session local recovery', () => {
@@ -75,6 +82,7 @@ describe('admin session local recovery', () => {
       remoteAuthenticated: true,
       localRecoveryRequired: true
     });
+    expect(actorMocks.lockActorRuntime).toHaveBeenCalledWith('admin_actor_binding_or_bootstrap_failed');
     expect(state.currentAdminUser).toEqual({ id: 'admin-LIC-1' });
     expect(state.pendingAdminSessionResult).toMatchObject({
       licenseKey: 'LIC-1',
@@ -93,6 +101,10 @@ describe('admin session local recovery', () => {
     expect(second).toMatchObject({ success: true, remoteAuthenticated: true });
     expect(supabaseMocks.adminLoginOnDevice).toHaveBeenCalledTimes(1);
     expect(state._loadProfile).toHaveBeenCalledTimes(1);
+    expect(actorMocks.grantAuthenticatedActorRuntime).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: { id: 'admin-LIC-1' }
+    });
     expect(state.pendingAdminSessionResult).toBeNull();
   });
 
@@ -168,6 +180,7 @@ describe('admin session local recovery', () => {
     const result = await state.handleAdminLogin({ username: 'owner', password: 'bad' });
 
     expect(result).toMatchObject({ success: false, code: 'INVALID_CREDENTIALS' });
+    expect(actorMocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
     expect(state.pendingAdminSessionResult).toBeNull();
   });
 
@@ -183,6 +196,7 @@ describe('admin session local recovery', () => {
       remoteAuthenticated: true,
       code: 'ADMIN_LOCAL_BOOTSTRAP_FAILED'
     });
+    expect(actorMocks.lockActorRuntime).toHaveBeenCalledWith('admin_actor_binding_or_bootstrap_failed');
     expect(supabaseMocks.adminLogoutSession).not.toHaveBeenCalled();
     expect(state.currentAdminUser).toEqual({ id: 'admin-LIC-1' });
     expect(state.pendingAdminSessionResult).toMatchObject({
