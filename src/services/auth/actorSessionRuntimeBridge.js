@@ -1,4 +1,4 @@
-import { loadData, STORES } from '../database';
+import { db as tenantRuntimeDb } from '../db/tenantRuntimeRouter';
 import {
   actorRuntimeController,
   ActorRuntimeError,
@@ -19,7 +19,11 @@ const SESSION_KEYS = Object.freeze({
 });
 
 const readSyncCacheValue = async (key) => {
-  const record = await loadData(STORES.SYNC_CACHE, key);
+  // Read credentials through the authoritative tenant runtime proxy instead of
+  // the historical database compatibility barrel. This keeps ActorRuntime on
+  // the already-authorized LanzoDB_t_<opaque> and avoids importing unrelated
+  // repositories/store modules into the authentication lifecycle.
+  const record = await tenantRuntimeDb.table('sync_cache').get(key);
   return record?.value || null;
 };
 
