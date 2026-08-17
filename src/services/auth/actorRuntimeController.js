@@ -301,4 +301,32 @@ export const createActorRuntimeController = ({
   return controller;
 };
 
+/**
+ * Execute async actor-sensitive work with an immutable captured handle.
+ *
+ * The helper checks the handle before and after the async operation. Writes that
+ * can happen after an await MUST be performed through guardedWrite(); that is
+ * the effective side-effect boundary and revalidates actor generation, session,
+ * permissions and tenant binding immediately before invoking the write callback.
+ */
+export const runWithActorHandle = async (handle, operation, permission = null) => {
+  if (!handle || typeof handle.assertCurrent !== 'function' || typeof operation !== 'function') {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+  }
+
+  const assertCurrent = (requiredPermission = permission) => handle.assertCurrent(requiredPermission);
+  const guardedWrite = (write, requiredPermission = permission) => {
+    if (typeof write !== 'function') {
+      throw new TypeError('guardedWrite requires a write callback');
+    }
+    const currentActor = assertCurrent(requiredPermission);
+    return write(currentActor);
+  };
+
+  assertCurrent();
+  const result = await operation(Object.freeze({ assertCurrent, guardedWrite }));
+  assertCurrent();
+  return result;
+};
+
 export const actorRuntimeController = createActorRuntimeController();
