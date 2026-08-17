@@ -8,6 +8,11 @@ import {
   staffLoginOnDevice,
   staffLogoutSession
 } from '../../../services/supabase';
+import {
+  beginActorRuntimeAuthentication,
+  grantAuthenticatedActorRuntime,
+  lockActorRuntime
+} from '../../../services/auth/actorSessionRuntimeBridge';
 
 import {
   saveLicenseToStorage
@@ -62,6 +67,8 @@ export const createLicenseStaffActions = ({
       }
       : state.licenseDetails;
 
+    lockActorRuntime('staff_login_required');
+
     // Si un staff queda bloqueado/liberado/no autorizado, apagamos cualquier
     // sincronización activa para evitar revalidaciones de fondo o un canal
     // Realtime vivo mientras el usuario está en StaffLoginModal.
@@ -90,13 +97,16 @@ export const createLicenseStaffActions = ({
     const licenseKey = state.staffLoginLicenseKey || state.licenseDetails?.license_key;
 
     if (!licenseKey) {
+      lockActorRuntime('staff_login_missing_license');
       return { success: false, message: 'No hay licencia para iniciar sesion staff.' };
     }
 
     try {
       initializeLocalTenantGuard('staff_login');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'staff_login' });
+      beginActorRuntimeAuthentication('staff');
     } catch (error) {
+      lockActorRuntime('staff_login_tenant_rejected');
       if (!isLocalTenantAccessError(error)) throw error;
       enterLocalTenantIsolationFailure(set, error);
       return {
@@ -118,6 +128,7 @@ export const createLicenseStaffActions = ({
         )
       });
     } catch (error) {
+      lockActorRuntime('staff_login_failed');
       if (!isLocalTenantAccessError(error)) throw error;
       enterLocalTenantIsolationFailure(set, error);
       return {
@@ -129,6 +140,7 @@ export const createLicenseStaffActions = ({
     }
 
     if (!result.success) {
+      lockActorRuntime('staff_credentials_rejected');
       const isStaffAlreadyInUse = result.code === 'STAFF_ALREADY_IN_USE';
 
       const message = isStaffAlreadyInUse
@@ -173,6 +185,7 @@ export const createLicenseStaffActions = ({
     try {
       await assertLocalTenantAccess(licenseDataToSave, { reason: 'staff_login_response' });
     } catch (error) {
+      lockActorRuntime('staff_login_response_tenant_rejected');
       if (!isLocalTenantAccessError(error)) throw error;
       enterLocalTenantIsolationFailure(set, error);
       return {
@@ -200,10 +213,35 @@ export const createLicenseStaffActions = ({
 
     await get()._loadProfile(licenseKey);
 
+    try {
+      await grantAuthenticatedActorRuntime({
+        actorType: 'staff',
+        actor: licenseDataToSave.staff_user
+      });
+    } catch (error) {
+      lockActorRuntime('staff_actor_binding_failed');
+      set({
+        appStatus: 'staff_login_required',
+        currentStaffUser: null,
+        staffLoginError: {
+          code: error?.code || 'ACTOR_SESSION_BINDING_FAILED',
+          message: 'No se pudo vincular la sesión staff al contexto operativo. Vuelve a iniciar sesión.'
+        }
+      });
+      return {
+        success: false,
+        code: error?.code || 'ACTOR_SESSION_BINDING_FAILED',
+        message: 'No se pudo vincular la sesión staff al contexto operativo.'
+      };
+    }
+
     return { success: true };
   },
   logoutStaff: async () => {
     const licenseKey = get().licenseDetails?.license_key || get().staffLoginLicenseKey;
+    // Invalidate actor-sensitive async work before any remote/local logout I/O.
+    // Tenant teardown keeps its existing behavior in this phase.
+    lockActorRuntime('staff_actor_logged_out');
     get()._invalidateProfileLoads?.();
     get().resetEcommerceOrdersState?.();
     get().lockDriveSession?.();
