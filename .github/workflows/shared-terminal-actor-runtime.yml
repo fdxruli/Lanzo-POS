@@ -1,0 +1,52 @@
+name: Shared Terminal Actor Runtime Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/services/auth/**'
+      - 'src/services/tenant/**'
+      - 'src/services/db/**'
+      - 'src/services/supabase.js'
+      - 'src/store/slices/license/**'
+      - '.github/workflows/shared-terminal-actor-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actor-runtime-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ActorRuntime focused tests
+        run: npx vitest run src/services/auth/__tests__/actorRuntimeController.test.js src/services/auth/__tests__/actorSessionRuntimeBridge.test.js --maxWorkers=4
+
+      - name: Tenant isolation and recovery regression
+        run: npx vitest run src/services/tenant/__tests__ src/services/db/__tests__ --maxWorkers=4
+
+      - name: Authentication regression
+        run: npx vitest run src/store/slices/license --maxWorkers=4
+
+      - name: Full test suite
+        run: npm run test:ci
+
+      - name: Relevant ESLint
+        run: npx eslint src/services/auth/**/*.{js,jsx} src/services/tenant/**/*.{js,jsx} src/services/db/**/*.{js,jsx} src/store/slices/license/**/*.{js,jsx}
+
+      - name: Production build
+        run: npm run build
