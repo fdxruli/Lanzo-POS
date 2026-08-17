@@ -53,12 +53,31 @@ jobs:
         run: npx vitest run src/store/slices/license --maxWorkers=4
 
       - name: Relevant ESLint
-        run: npx eslint "src/services/auth/**/*.{js,jsx}" "src/services/tenant/**/*.{js,jsx}" "src/services/db/**/*.{js,jsx}" "src/store/slices/license/**/*.{js,jsx}" src/test/setupTestingLibrary.js src/tests/useStoreSync.test.js scripts/compare-shared-terminal-full-suite.mjs
+        if: always()
+        run: >-
+          npx eslint
+          src/services/auth/actorRuntimeController.js
+          src/services/auth/actorSessionRuntimeBridge.js
+          src/services/auth/__tests__/actorRuntimeController.test.js
+          src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseStaffActions.js
+          src/store/slices/license/licenseBootstrapActions.js
+          src/store/slices/license/licenseProcessingActions.js
+          src/store/slices/license/licenseAdminActions.test.js
+          src/store/slices/license/licenseSessionTransitions.test.js
+          src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+          src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+          src/test/setupTestingLibrary.js
+          src/tests/useStoreSync.test.js
+          scripts/compare-shared-terminal-full-suite.mjs
 
       - name: npm run build
+        if: always()
         run: npm run build
 
       - name: npm run build:store
+        if: always()
         run: npm run build:store
 
   full-suite-baseline:
