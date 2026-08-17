@@ -73,11 +73,14 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     }
 
     await ensureLocalDatabaseReady();
-    await get()._loadProfile(licenseKey, { forceRemote: true, reason });
+    // Actor authority must exist before profile hydration can publish the
+    // operational UI as ready. A later bootstrap failure invalidates it in the
+    // catch below, so no partially bootstrapped Admin actor remains granted.
     await grantAuthenticatedActorRuntime({
       actorType: 'admin',
       actor: result.admin_user || licenseData.admin_user
     });
+    await get()._loadProfile(licenseKey, { forceRemote: true, reason });
     set({ pendingAdminSessionResult: null });
     return { success: true, remoteAuthenticated: true };
   } catch (error) {
