@@ -10,8 +10,6 @@ on:
       - 'src/services/db/**'
       - 'src/services/supabase.js'
       - 'src/store/slices/license/**'
-      - 'src/test/**'
-      - 'src/tests/**'
       - 'scripts/compare-shared-terminal-full-suite.mjs'
       - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
@@ -68,8 +66,6 @@ jobs:
           src/store/slices/license/licenseSessionTransitions.test.js
           src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
           src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
-          src/test/setupTestingLibrary.js
-          src/tests/useStoreSync.test.js
           scripts/compare-shared-terminal-full-suite.mjs
 
       - name: npm run build
@@ -83,7 +79,7 @@ jobs:
   full-suite-baseline:
     name: Full suite BASE (observational)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout exact BASE SHA
         uses: actions/checkout@v4
@@ -103,6 +99,7 @@ jobs:
         run: |
           npm run build
           npm run build:store
+          npm run build:store:vercel
 
       - name: BASE raw full suite
         id: base-full-suite
@@ -121,6 +118,7 @@ jobs:
         run: |
           echo "BASE full suite step outcome: ${{ steps.base-full-suite.outcome }}"
           echo "BASE full suite exit code: $(cat full-suite.exit 2>/dev/null || echo missing)"
+          node -e "const fs=require('node:fs');const r=JSON.parse(fs.readFileSync('full-suite.json','utf8'));console.log('BASE tests:',r.numPassedTests,'passed /',r.numFailedTests,'failed /',r.numPendingTests ?? r.numTodoTests ?? 0,'skipped /',r.numTotalTests,'total')"
 
       - name: Upload BASE full-suite evidence
         if: always()
@@ -136,7 +134,7 @@ jobs:
   full-suite-candidate:
     name: Full suite CANDIDATE (observational)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
@@ -156,6 +154,7 @@ jobs:
         run: |
           npm run build
           npm run build:store
+          npm run build:store:vercel
 
       - name: CANDIDATE raw full suite
         id: candidate-full-suite
@@ -174,6 +173,7 @@ jobs:
         run: |
           echo "CANDIDATE full suite step outcome: ${{ steps.candidate-full-suite.outcome }}"
           echo "CANDIDATE full suite exit code: $(cat full-suite.exit 2>/dev/null || echo missing)"
+          node -e "const fs=require('node:fs');const r=JSON.parse(fs.readFileSync('full-suite.json','utf8'));console.log('CANDIDATE tests:',r.numPassedTests,'passed /',r.numFailedTests,'failed /',r.numPendingTests ?? r.numTodoTests ?? 0,'skipped /',r.numTotalTests,'total')"
 
       - name: Upload CANDIDATE full-suite evidence
         if: always()
