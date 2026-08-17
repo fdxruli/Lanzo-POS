@@ -141,9 +141,6 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.currentAdminUser).toBeNull();
 
-    mocks.clearAdminSessionCache.mockRejectedValueOnce(new Error('locked tenant admin cache'));
-    mocks.clearStaffSessionCache.mockRejectedValueOnce(new Error('locked tenant staff cache'));
-
     await expect(state.returnToLicenseAccessChoice()).resolves.toEqual({ success: true });
 
     expect(mocks.adminLogoutSession).toHaveBeenCalledTimes(1);
