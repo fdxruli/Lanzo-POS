@@ -12,6 +12,7 @@ on:
       - 'src/store/slices/license/**'
       - 'src/test/**'
       - 'src/tests/**'
+      - 'scripts/compare-shared-terminal-full-suite.mjs'
       - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
@@ -19,13 +20,19 @@ on:
 permissions:
   contents: read
 
+env:
+  SHARED_TERMINAL_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
+
 jobs:
-  actor-runtime-regression:
+  focused-validation:
+    name: Focused ActorRuntime / tenant / auth / lint / builds
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout
+      - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -45,13 +52,162 @@ jobs:
       - name: Authentication regression
         run: npx vitest run src/store/slices/license --maxWorkers=4
 
-      - name: Build validation artifacts
+      - name: Relevant ESLint
+        run: npx eslint "src/services/auth/**/*.{js,jsx}" "src/services/tenant/**/*.{js,jsx}" "src/services/db/**/*.{js,jsx}" "src/store/slices/license/**/*.{js,jsx}" src/test/setupTestingLibrary.js src/tests/useStoreSync.test.js scripts/compare-shared-terminal-full-suite.mjs
+
+      - name: npm run build
+        run: npm run build
+
+      - name: npm run build:store
+        run: npm run build:store
+
+  full-suite-baseline:
+    name: Full suite BASE (observational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact BASE SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHARED_TERMINAL_BASE_SHA }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build BASE validation artifacts
         run: |
           npm run build
           npm run build:store
 
-      - name: Full test suite
-        run: npm run test:ci
+      - name: BASE raw full suite
+        id: base-full-suite
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          set +e
+          npm run test:ci -- --reporter=json --outputFile=full-suite.json 2>&1 | tee full-suite.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > full-suite.exit
+          exit "$code"
 
-      - name: Relevant ESLint
-        run: npx eslint "src/services/auth/**/*.{js,jsx}" "src/services/tenant/**/*.{js,jsx}" "src/services/db/**/*.{js,jsx}" "src/store/slices/license/**/*.{js,jsx}" src/test/setupTestingLibrary.js src/tests/useStoreSync.test.js
+      - name: Record BASE raw result
+        if: always()
+        run: |
+          echo "BASE full suite step outcome: ${{ steps.base-full-suite.outcome }}"
+          echo "BASE full suite exit code: $(cat full-suite.exit 2>/dev/null || echo missing)"
+
+      - name: Upload BASE full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-base-full-suite
+          path: |
+            full-suite.json
+            full-suite.log
+            full-suite.exit
+          if-no-files-found: error
+
+  full-suite-candidate:
+    name: Full suite CANDIDATE (observational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CANDIDATE validation artifacts
+        run: |
+          npm run build
+          npm run build:store
+
+      - name: CANDIDATE raw full suite
+        id: candidate-full-suite
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          set +e
+          npm run test:ci -- --reporter=json --outputFile=full-suite.json 2>&1 | tee full-suite.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > full-suite.exit
+          exit "$code"
+
+      - name: Record CANDIDATE raw result
+        if: always()
+        run: |
+          echo "CANDIDATE full suite step outcome: ${{ steps.candidate-full-suite.outcome }}"
+          echo "CANDIDATE full suite exit code: $(cat full-suite.exit 2>/dev/null || echo missing)"
+
+      - name: Upload CANDIDATE full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-candidate-full-suite
+          path: |
+            full-suite.json
+            full-suite.log
+            full-suite.exit
+          if-no-files-found: error
+
+  differential-regression-gate:
+    name: Differential full-suite regression gate
+    if: always()
+    needs:
+      - full-suite-baseline
+      - full-suite-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download BASE evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-base-full-suite
+          path: differential/base
+
+      - name: Download CANDIDATE evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-candidate-full-suite
+          path: differential/candidate
+
+      - name: Compare BASE vs CANDIDATE failures
+        run: |
+          node scripts/compare-shared-terminal-full-suite.mjs \
+            differential/base/full-suite.json \
+            differential/candidate/full-suite.json \
+            differential/full-suite-differential.md \
+            differential/full-suite-differential.json
+          cat differential/full-suite-differential.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-full-suite-differential
+          path: |
+            differential/full-suite-differential.md
+            differential/full-suite-differential.json
+          if-no-files-found: error
