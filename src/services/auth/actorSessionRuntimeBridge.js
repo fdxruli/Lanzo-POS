@@ -62,7 +62,7 @@ export const resolveStableActorId = (actorType, actor = null) => {
     (typeof value === 'string' && value.trim().length > 0)
     || (typeof value === 'number' && Number.isFinite(value))
   ));
-  return candidate == null ? null : String(candidate).trim();
+  return candidate === null || candidate === undefined ? null : String(candidate).trim();
 };
 
 export const getExplicitActorPermissions = (actorType, actor = null) => {
