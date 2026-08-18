@@ -10,18 +10,30 @@ const legacyCutoverPath = path.resolve(
 const secondaryContextPath = path.resolve(
   'supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql'
 );
+const occupancyFixPath = path.resolve(
+  'supabase/migrations/20260818234329_shared_terminal_staff_occupancy_fix.sql'
+);
+const occupancyTestPath = path.resolve(
+  'supabase/tests/shared_terminal_staff_occupancy_test.sql'
+);
 const uploadEdgePath = path.resolve(
   'supabase/functions/authorize-image-upload/index.ts'
 );
 const uploadClientPath = path.resolve(
   'src/services/storage/imageUploadService.js'
 );
+const uploadHistoricalTestPath = path.resolve(
+  'src/services/storage/__tests__/imageUploadService.test.js'
+);
 
 const foundationSql = fs.readFileSync(foundationPath, 'utf8');
 const legacyCutoverSql = fs.readFileSync(legacyCutoverPath, 'utf8');
 const secondaryContextSql = fs.readFileSync(secondaryContextPath, 'utf8');
+const occupancyFixSql = fs.readFileSync(occupancyFixPath, 'utf8');
+const occupancyTestSql = fs.readFileSync(occupancyTestPath, 'utf8');
 const uploadEdge = fs.readFileSync(uploadEdgePath, 'utf8');
 const uploadClient = fs.readFileSync(uploadClientPath, 'utf8');
+const uploadHistoricalTest = fs.readFileSync(uploadHistoricalTestPath, 'utf8');
 
 const requiredFoundationFragments = [
   "when 'admin' then 'admin_only'",
@@ -63,10 +75,22 @@ const requiredSecondaryContextFragments = [
   'SECONDARY_CONTEXT_ACTOR_RESOLVER_MISSING'
 ];
 
+const requiredOccupancyFixFragments = [
+  'staff_login_on_device_unlimited',
+  "d.staff_user_id = v_staff_user.id and d.device_mode = 'staff_only' and d.is_active is true",
+  'from public.license_staff_sessions ss join public.license_devices d on d.id = ss.device_id',
+  'ss.revoked_at is null and ss.expires_at > now()',
+  'uq_license_devices_one_active_device_per_staff',
+  "device_mode = 'staff_only'",
+  'STAFF_ACTIVE_SESSION_GUARD_MISSING',
+  'STAFF_ONLY_RESERVATION_INDEX_UNEXPECTED'
+];
+
 const groups = [
   ['foundation', foundationSql, requiredFoundationFragments],
   ['legacy cutover', legacyCutoverSql, requiredLegacyCutoverFragments],
-  ['secondary actor context', secondaryContextSql, requiredSecondaryContextFragments]
+  ['secondary actor context', secondaryContextSql, requiredSecondaryContextFragments],
+  ['staff occupancy fix', occupancyFixSql, requiredOccupancyFixFragments]
 ];
 
 let missingAny = false;
@@ -89,6 +113,19 @@ const forbiddenFoundationPatterns = [
 for (const pattern of forbiddenFoundationPatterns) {
   if (pattern.test(foundationSql)) {
     console.error(`Forbidden shared-device migration pattern detected: ${pattern}`);
+    process.exit(1);
+  }
+}
+
+const forbiddenOccupancyPatterns = [
+  /update\s+public\.license_devices[\s\S]*?set\s+staff_user_id\s*=\s*null[\s\S]*?device_mode\s*=\s*'shared'/i,
+  /delete\s+from\s+public\.license_devices/i,
+  /delete\s+from\s+public\.license_staff_sessions/i,
+  /set\s+device_mode\s*=\s*'shared'/i
+];
+for (const pattern of forbiddenOccupancyPatterns) {
+  if (pattern.test(occupancyFixSql)) {
+    console.error(`Forbidden occupancy migration pattern detected: ${pattern}`);
     process.exit(1);
   }
 }
@@ -127,6 +164,23 @@ for (const functionName of [
 
   if (!body.includes('resolve_device_actor_session')) {
     console.error(`Secondary context does not resolve actor session: ${functionName}`);
+    process.exit(1);
+  }
+}
+
+const requiredOccupancyTestFragments = [
+  'TEST_A_EXPECTED_STAFF_ALREADY_IN_USE',
+  "set device_mode = 'shared'",
+  'staff_logout_session_unlimited',
+  'TEST_B_EXPECTED_LOGIN_B_PASS',
+  'TEST_C_EXPECTED_LOGIN_B_PASS',
+  'TEST_D_EXPECTED_ACTIVE_SESSION_BLOCK',
+  'TEST_E_EXPECTED_STAFF_Y_PASS',
+  'rollback;'
+];
+for (const fragment of requiredOccupancyTestFragments) {
+  if (!occupancyTestSql.includes(fragment)) {
+    console.error(`Staff occupancy integration fixture missing: ${fragment}`);
     process.exit(1);
   }
 }
@@ -181,4 +235,9 @@ for (const forbidden of [
   }
 }
 
-console.log('SHARED.TERMINAL.2 migration + actor authorization contract: PASS');
+if (!uploadHistoricalTest.includes("getActorSessionToken.mockResolvedValue('staff-session-fixture')")) {
+  console.error('Historical image upload success fixtures do not provide an actor session token.');
+  process.exit(1);
+}
+
+console.log('SHARED.TERMINAL.2-R1 migration + actor authorization + occupancy contract: PASS');
