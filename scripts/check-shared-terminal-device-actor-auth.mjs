@@ -105,8 +105,14 @@ for (const functionName of [
   'get_ai_agent_usage_unlimited',
   'refresh_operational_notifications'
 ]) {
-  const start = secondaryContextSql.indexOf(`function ${functionName}`);
-  const next = start >= 0 ? secondaryContextSql.indexOf('\ncreate or replace function ', start + 20) : -1;
+  const privateMarker = `function private.${functionName}`;
+  const publicMarker = `function public.${functionName}`;
+  const privateStart = secondaryContextSql.indexOf(privateMarker);
+  const publicStart = secondaryContextSql.indexOf(publicMarker);
+  const start = [privateStart, publicStart].filter((value) => value >= 0).sort((a, b) => a - b)[0] ?? -1;
+  const next = start >= 0
+    ? secondaryContextSql.indexOf('\ncreate or replace function ', start + 20)
+    : -1;
   const body = start >= 0
     ? secondaryContextSql.slice(start, next >= 0 ? next : secondaryContextSql.length)
     : '';
