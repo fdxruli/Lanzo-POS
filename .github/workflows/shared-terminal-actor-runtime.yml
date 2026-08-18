@@ -1,0 +1,316 @@
+name: Shared Terminal Actor Runtime Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/services/auth/**'
+      - 'src/services/tenant/**'
+      - 'src/services/db/**'
+      - 'src/services/supabase.js'
+      - 'src/store/slices/license/**'
+      - 'scripts/compare-shared-terminal-full-suite.mjs'
+      - 'scripts/generate-shared-terminal-actor-runtime-report.mjs'
+      - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
+      - '.github/workflows/shared-terminal-actor-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SHARED_TERMINAL_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
+
+jobs:
+  focused-validation:
+    name: Focused ActorRuntime / tenant / auth / lint / builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: git diff --check
+        run: git diff --check "${SHARED_TERMINAL_BASE_SHA}...HEAD"
+
+      - name: ActorRuntime focused tests
+        run: npx vitest run src/services/auth/__tests__/actorRuntimeController.test.js src/services/auth/__tests__/actorSessionRuntimeBridge.test.js --maxWorkers=4
+
+      - name: Tenant isolation and recovery regression
+        run: npx vitest run src/services/tenant/__tests__ src/services/db/__tests__ --maxWorkers=4
+
+      - name: Authentication regression
+        run: npx vitest run src/store/slices/license --maxWorkers=4
+
+      - name: Relevant ESLint
+        if: always()
+        run: >-
+          npx eslint
+          src/services/auth/actorRuntimeController.js
+          src/services/auth/actorSessionRuntimeBridge.js
+          src/services/auth/__tests__/actorRuntimeController.test.js
+          src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/store/slices/license/licenseAdminActions.js
+          src/store/slices/license/licenseStaffActions.js
+          src/store/slices/license/licenseBootstrapActions.js
+          src/store/slices/license/licenseProcessingActions.js
+          src/store/slices/license/licenseAdminActions.test.js
+          src/store/slices/license/licenseSessionTransitions.test.js
+          src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
+          src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
+          scripts/compare-shared-terminal-full-suite.mjs
+          scripts/generate-shared-terminal-actor-runtime-report.mjs
+
+      - name: npm run build
+        if: always()
+        run: npm run build
+
+      - name: npm run build:store
+        if: always()
+        run: npm run build:store
+
+  full-suite-baseline:
+    name: Full suite BASE repeated (observational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact BASE SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHARED_TERMINAL_BASE_SHA }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build BASE validation artifacts
+        run: |
+          npm run build
+          npm run build:store
+          npm run build:store:vercel
+
+      - name: BASE raw full-suite repetitions
+        shell: bash
+        run: |
+          set -o pipefail
+          for i in 1 2; do
+            set +e
+            npm run test:ci -- --reporter=json --outputFile="full-suite-${i}.json" 2>&1 | tee "full-suite-${i}.log"
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$code" > "full-suite-${i}.exit"
+            echo "BASE repetition ${i} raw exit code: ${code}"
+          done
+
+      - name: Record BASE raw results
+        if: always()
+        run: |
+          for i in 1 2; do
+            echo "BASE repetition ${i} raw exit code: $(cat full-suite-${i}.exit 2>/dev/null || echo missing)"
+            node -e "const fs=require('node:fs');const r=JSON.parse(fs.readFileSync('full-suite-${i}.json','utf8'));console.log('BASE repetition ${i}:',r.numPassedTests,'passed /',r.numFailedTests,'failed /',r.numPendingTests ?? r.numTodoTests ?? 0,'skipped /',r.numTotalTests,'total')"
+          done
+
+      - name: Upload BASE full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-base-full-suite
+          path: |
+            full-suite-*.json
+            full-suite-*.log
+            full-suite-*.exit
+          if-no-files-found: error
+
+  full-suite-candidate:
+    name: Full suite CANDIDATE repeated (observational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CANDIDATE validation artifacts
+        run: |
+          npm run build
+          npm run build:store
+          npm run build:store:vercel
+
+      - name: CANDIDATE raw full-suite repetitions
+        shell: bash
+        run: |
+          set -o pipefail
+          for i in 1 2; do
+            set +e
+            npm run test:ci -- --reporter=json --outputFile="full-suite-${i}.json" 2>&1 | tee "full-suite-${i}.log"
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$code" > "full-suite-${i}.exit"
+            echo "CANDIDATE repetition ${i} raw exit code: ${code}"
+          done
+
+      - name: Record CANDIDATE raw results
+        if: always()
+        run: |
+          for i in 1 2; do
+            echo "CANDIDATE repetition ${i} raw exit code: $(cat full-suite-${i}.exit 2>/dev/null || echo missing)"
+            node -e "const fs=require('node:fs');const r=JSON.parse(fs.readFileSync('full-suite-${i}.json','utf8'));console.log('CANDIDATE repetition ${i}:',r.numPassedTests,'passed /',r.numFailedTests,'failed /',r.numPendingTests ?? r.numTodoTests ?? 0,'skipped /',r.numTotalTests,'total')"
+          done
+
+      - name: Upload CANDIDATE full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-candidate-full-suite
+          path: |
+            full-suite-*.json
+            full-suite-*.log
+            full-suite-*.exit
+          if-no-files-found: error
+
+  differential-regression-gate:
+    name: Differential repeated full-suite regression gate
+    if: always()
+    needs:
+      - full-suite-baseline
+      - full-suite-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download BASE evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-base-full-suite
+          path: differential/base
+
+      - name: Download CANDIDATE evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-candidate-full-suite
+          path: differential/candidate
+
+      - name: Compare repeated BASE vs CANDIDATE failure envelope
+        run: |
+          node scripts/compare-shared-terminal-full-suite.mjs \
+            differential/base \
+            differential/candidate \
+            differential/full-suite-differential.md \
+            differential/full-suite-differential.json
+          cat differential/full-suite-differential.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-full-suite-differential
+          path: |
+            differential/full-suite-differential.md
+            differential/full-suite-differential.json
+          if-no-files-found: error
+
+  publish-audit-report:
+    name: Publish idempotent closeout report
+    needs:
+      - focused-validation
+      - differential-regression-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Detect report-only HEAD
+        id: report_only
+        shell: bash
+        run: |
+          REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
+          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)
+
+          if [[ "${#changed_paths[@]}" -eq 1 && "${changed_paths[0]}" == "$REPORT_PATH" ]]; then
+            echo "report_only=true" >> "$GITHUB_OUTPUT"
+            echo "REPORT-ONLY HEAD — validation complete; no republish required."
+            exit 0
+          fi
+
+          echo "report_only=false" >> "$GITHUB_OUTPUT"
+
+      - name: Download differential evidence
+        if: steps.report_only.outputs.report_only != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-full-suite-differential
+          path: differential
+
+      - name: Generate audit report from exact differential JSON
+        if: steps.report_only.outputs.report_only != 'true'
+        run: node scripts/generate-shared-terminal-actor-runtime-report.mjs differential/full-suite-differential.json
+
+      - name: Publish report only when content changed
+        if: steps.report_only.outputs.report_only != 'true'
+        shell: bash
+        run: |
+          REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
+
+          if git ls-files --error-unmatch "$REPORT_PATH" >/dev/null 2>&1; then
+            if git diff --quiet -- "$REPORT_PATH"; then
+              echo "Audit report already matches the reproducible differential evidence."
+              exit 0
+            fi
+          else
+            if [[ ! -f "$REPORT_PATH" ]]; then
+              echo "::error::Audit report generation did not create $REPORT_PATH"
+              exit 1
+            fi
+            echo "Audit report is new and will be published."
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$REPORT_PATH"
+
+          if git diff --cached --quiet -- "$REPORT_PATH"; then
+            echo "Audit report produced no staged change; no commit required."
+            exit 0
+          fi
+
+          git commit -m "docs(shared-terminal): publish actor runtime closeout report"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"

@@ -8,7 +8,10 @@ const mocks = vi.hoisted(() => ({
   clearStaffSessionCache: vi.fn(),
   enrollAdminOwnerOnDevice: vi.fn(),
   ensureLocalDatabaseReady: vi.fn(),
-  saveLicenseToStorage: vi.fn()
+  saveLicenseToStorage: vi.fn(),
+  beginActorRuntimeAuthentication: vi.fn(),
+  grantAuthenticatedActorRuntime: vi.fn(),
+  lockActorRuntime: vi.fn()
 }));
 
 vi.mock('../../../services/supabase', () => ({
@@ -18,6 +21,11 @@ vi.mock('../../../services/supabase', () => ({
   clearAdminSessionCache: mocks.clearAdminSessionCache,
   clearStaffSessionCache: mocks.clearStaffSessionCache,
   enrollAdminOwnerOnDevice: mocks.enrollAdminOwnerOnDevice
+}));
+vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
+  beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
+  grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
+  lockActorRuntime: mocks.lockActorRuntime
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));
 vi.mock('../../../services/db/databaseRuntime', () => ({
@@ -56,6 +64,10 @@ describe('license admin actions', () => {
     mocks.ensureLocalDatabaseReady.mockResolvedValue(undefined);
     mocks.clearStaffSessionCache.mockResolvedValue(undefined);
     mocks.saveLicenseToStorage.mockResolvedValue(undefined);
+    mocks.grantAuthenticatedActorRuntime.mockResolvedValue({
+      status: 'granted',
+      actorKey: 'admin:admin-1'
+    });
   });
 
   it('completes admin login immediately without reloading', async () => {
@@ -71,6 +83,11 @@ describe('license admin actions', () => {
       password: 'fixture-password'
     })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
 
+    expect(mocks.beginActorRuntimeAuthentication).toHaveBeenCalledWith('admin');
+    expect(mocks.grantAuthenticatedActorRuntime).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: expect.objectContaining({ id: 'admin-1' })
+    });
     expect(mocks.ensureLocalDatabaseReady).toHaveBeenCalledTimes(1);
     expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
     expect(state.currentStaffUser).toBeNull();
@@ -95,6 +112,7 @@ describe('license admin actions', () => {
     expect(state.adminLoginError.code).toBe('INVALID_ADMIN_CREDENTIALS');
     expect(state.pendingAdminSessionResult).toBeNull();
     expect(mocks.ensureLocalDatabaseReady).not.toHaveBeenCalled();
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
   });
 
   it('cleans an authenticated admin session before returning to profile selection after local bootstrap failure', async () => {
@@ -137,6 +155,7 @@ describe('license admin actions', () => {
 
     await state.logoutAdmin();
 
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_actor_logged_out');
     expect(mocks.adminLogoutSession).toHaveBeenCalledTimes(1);
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.currentAdminUser).toBeNull();
@@ -183,6 +202,8 @@ describe('license admin actions', () => {
       success: true,
       legacyBackendFallback: true
     });
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('legacy_admin_without_actor_session');
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
     expect(state._processOfflineMode).toHaveBeenCalledWith(
       expect.objectContaining({ license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }),
       { reason: 'legacy_admin_auth_compatibility' }
@@ -206,6 +227,10 @@ describe('license admin actions', () => {
     })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
 
     expect(mocks.ensureLocalDatabaseReady).toHaveBeenCalledTimes(1);
+    expect(mocks.grantAuthenticatedActorRuntime).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: expect.objectContaining({ id: 'owner-1' })
+    });
     expect(state.currentAdminUser.id).toBe('owner-1');
     expect(state.adminEnrollmentRequired).toBe(false);
     expect(state.appStatus).toBe('ready');
@@ -216,6 +241,7 @@ describe('license admin actions', () => {
     const state = setup();
     state.currentAdminUser = { id: 'admin-1' };
     await state.logoutAdmin();
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_actor_logged_out');
     expect(mocks.adminLogoutSession).toHaveBeenCalledWith('LANZO-ADMIN-TEST');
     expect(state.appStatus).toBe('admin_login_required');
     expect(state.licenseDetails.license_key).toBe('LANZO-ADMIN-TEST');

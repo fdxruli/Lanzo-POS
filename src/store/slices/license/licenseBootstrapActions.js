@@ -8,6 +8,12 @@ import {
     getDatabaseRecoveryState,
     setDatabaseRecoveryState
 } from '../../../services/db/databaseRecoveryState';
+import {
+    ACTOR_SESSION_AMBIGUOUS,
+    beginActorRuntimeAuthentication,
+    restoreActorRuntimeFromCurrentSessionCache,
+    lockActorRuntime
+} from '../../../services/auth/actorSessionRuntimeBridge';
 
 import {
     revalidateLicense,
@@ -32,9 +38,9 @@ import {
 import {
     assertLocalTenantAccess,
     initializeLocalTenantGuard,
-  isLocalTenantAccessError,
-  lockLocalTenantAccess,
-  runWithLocalTenantSyncLease
+    isLocalTenantAccessError,
+    lockLocalTenantAccess,
+    runWithLocalTenantSyncLease
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
@@ -62,6 +68,13 @@ const enterDatabaseRecovery = (set, error) => {
     });
 };
 
+const restoreActorAuthority = async (actorType, actor) => {
+    beginActorRuntimeAuthentication(actorType);
+    return restoreActorRuntimeFromCurrentSessionCache({ actorType, actor });
+};
+
+const canClearFailedActorSession = (error) => error?.code !== ACTOR_SESSION_AMBIGUOUS;
+
 export const getInitializeAppCoordinatorState = () => coordinatorState;
 
 export const createLicenseBootstrapActions = ({ set, get }) => ({
@@ -78,6 +91,10 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
         initializePromise = (async () => {
             try {
+                // App bootstrap is a new actor authority epoch. Any async work
+                // captured by a previous in-memory actor must be stale before
+                // stored credentials are inspected or a tenant is prepared.
+                lockActorRuntime('application_bootstrap');
                 initializeLocalTenantGuard('application_bootstrap');
                 const localLicense = await getLicenseFromStorage();
 
@@ -127,7 +144,6 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 }
 
                 if (localDeviceRole === 'staff') {
-                    await clearAdminSessionCache();
                     set({
                         licenseDetails: { ...localLicense, device_role: 'staff' },
                         currentDeviceRole: 'staff',
@@ -183,6 +199,26 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         staffLoginMessage: null,
                         staffLoginError: null
                     });
+
+                    try {
+                        await restoreActorAuthority('staff', restoredLicense.staff_user);
+                    } catch (actorError) {
+                        if (canClearFailedActorSession(actorError)) {
+                            await clearStaffSessionCache();
+                        }
+                        set({
+                            appStatus: 'staff_login_required',
+                            currentStaffUser: null,
+                            staffLoginMessage: 'La sesión staff no pudo recuperar una autoridad operativa segura. Inicia sesión nuevamente.',
+                            staffLoginError: {
+                                code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                                message: actorError?.message || null
+                            }
+                        });
+                        coordinatorState = 'ready';
+                        return { status: 'staff_login_required' };
+                    }
+
                     await get()._loadProfile(restoredLicense.license_key);
                     get()._validateInBackground(restoredLicense.license_key);
                     coordinatorState = 'ready';
@@ -191,7 +227,6 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
                 const needsAdminIdentity = localDeviceRole === 'admin' && requiresAdminIdentity(localLicense);
                 if (needsAdminIdentity) {
-                    await clearStaffSessionCache();
                     set({
                         licenseDetails: { ...localLicense, device_role: 'admin' },
                         currentDeviceRole: 'admin',
@@ -201,8 +236,25 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
                     if (!navigator.onLine) {
                         if (await hasValidOfflineAdminSession()) {
-                            set({ currentAdminUser: localLicense.admin_user || null });
-                            await get()._processOfflineMode(localLicense);
+                            const offlineAdmin = localLicense.admin_user || null;
+                            try {
+                                await restoreActorAuthority('admin', offlineAdmin);
+                                set({ currentAdminUser: offlineAdmin });
+                                await get()._processOfflineMode(localLicense);
+                            } catch (actorError) {
+                                if (canClearFailedActorSession(actorError)) {
+                                    await clearAdminSessionCache();
+                                }
+                                set({
+                                    appStatus: 'admin_login_required',
+                                    currentAdminUser: null,
+                                    adminLoginMessage: 'Conéctate a internet para recuperar de forma segura la sesión administrativa.',
+                                    adminLoginError: {
+                                        code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                                        message: actorError?.message || null
+                                    }
+                                });
+                            }
                         } else {
                             set({
                                 appStatus: 'admin_login_required',
@@ -246,12 +298,35 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         adminLoginMessage: null,
                         adminLoginError: null
                     });
+
+                    try {
+                        await restoreActorAuthority('admin', restoredLicense.admin_user);
+                    } catch (actorError) {
+                        if (canClearFailedActorSession(actorError)) {
+                            await clearAdminSessionCache();
+                        }
+                        set({
+                            appStatus: 'admin_login_required',
+                            currentAdminUser: null,
+                            adminLoginMessage: 'La sesión administrativa no pudo recuperar una autoridad operativa segura. Inicia sesión nuevamente.',
+                            adminLoginError: {
+                                code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                                message: actorError?.message || null
+                            }
+                        });
+                        coordinatorState = 'ready';
+                        return { status: 'admin_login_required' };
+                    }
+
                     await get()._loadProfile(restoredLicense.license_key);
                     get()._validateInBackground(restoredLicense.license_key);
                     coordinatorState = 'ready';
                     return { status: get().appStatus };
                 }
 
+                // Legacy/FREE admin compatibility has no stable authenticated
+                // admin-user session proof. Keep ActorRuntime LOCKED rather
+                // than manufacturing authority from a device identity.
                 await get()._processOfflineMode(localLicense);
                 if (navigator.onLine) {
                     get()._validateInBackground(localLicense.license_key);
@@ -261,6 +336,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 coordinatorState = 'ready';
                 return { status: get().appStatus };
             } catch (criticalError) {
+                lockActorRuntime('application_bootstrap_failed');
                 if (isLocalTenantAccessError(criticalError)) {
                     coordinatorState = 'tenant_blocked';
                     enterLocalTenantIsolationFailure(set, criticalError);

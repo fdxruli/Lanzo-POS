@@ -7,6 +7,11 @@ import {
   clearStaffSessionCache,
   enrollAdminOwnerOnDevice
 } from '../../../services/supabase';
+import {
+  beginActorRuntimeAuthentication,
+  grantAuthenticatedActorRuntime,
+  lockActorRuntime
+} from '../../../services/auth/actorSessionRuntimeBridge';
 import { saveLicenseToStorage } from '../../../services/licenseStorage';
 import { ensureLocalDatabaseReady } from '../../../services/db/databaseRuntime';
 import {
@@ -68,10 +73,18 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     }
 
     await ensureLocalDatabaseReady();
+    // Actor authority must exist before profile hydration can publish the
+    // operational UI as ready. A later bootstrap failure invalidates it in the
+    // catch below, so no partially bootstrapped Admin actor remains granted.
+    await grantAuthenticatedActorRuntime({
+      actorType: 'admin',
+      actor: result.admin_user || licenseData.admin_user
+    });
     await get()._loadProfile(licenseKey, { forceRemote: true, reason });
     set({ pendingAdminSessionResult: null });
     return { success: true, remoteAuthenticated: true };
   } catch (error) {
+    lockActorRuntime('admin_actor_binding_or_bootstrap_failed');
     const classification = classifyDatabaseError(error);
 
     if (classification.structural) {
@@ -105,16 +118,21 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
 
     Logger.error('[AdminAuth] Sesión remota válida; falló el bootstrap local:', error);
     set({
+      appStatus: 'admin_login_required',
       adminLoginError: {
-        code: 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
-        message: 'La sesión ya fue validada, pero no se pudo completar la carga local. Reintenta sin volver a registrar el dispositivo.'
+        code: error?.code || 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
+        message: error?.code?.startsWith?.('ACTOR_')
+          ? 'La sesión se validó, pero no pudo vincularse a la autoridad operativa. Vuelve a iniciar sesión.'
+          : 'La sesión ya fue validada, pero no se pudo completar la carga local. Reintenta sin volver a registrar el dispositivo.'
       }
     });
     return {
       success: false,
       remoteAuthenticated: true,
-      code: 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
-      message: 'La sesión ya fue validada. Reintenta para completar la carga local.'
+      code: error?.code || 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
+      message: error?.code?.startsWith?.('ACTOR_')
+        ? 'La sesión no obtuvo autoridad operativa.'
+        : 'La sesión ya fue validada. Reintenta para completar la carga local.'
     };
   }
 };
@@ -185,6 +203,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       }
     }
 
+    lockActorRuntime('return_to_license_access_choice');
     clearPendingAdminSession(set, 'return_to_access_choice');
     set({
       appStatus: 'license_access_required',
@@ -206,6 +225,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
   _requireAdminLogin: async (licenseSource = null, validation = {}) => {
     const source = licenseSource || get().licenseDetails || {};
     const licenseKey = source.license_key || get().adminLoginLicenseKey;
+    lockActorRuntime('admin_login_required');
     await get().stopLicenseSync();
     await clearAdminSessionCache();
     await clearStaffSessionCache();
@@ -234,6 +254,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       )
     });
     if (result.admin_enrollment_required) {
+      lockActorRuntime('admin_enrollment_required');
       set({
         appStatus: 'admin_enrollment_required',
         licenseDetails: { ...(result.details || {}), license_key: licenseKey, device_role: 'admin' },
@@ -260,6 +281,9 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         staff_user: null
       };
 
+      // Legacy device validation has no authenticated actor session proof.
+      // Preserve compatibility, but never manufacture ActorRuntime authority.
+      lockActorRuntime('legacy_admin_without_actor_session');
       Logger.warn('[AdminAuth] Backend legacy detectado; continuando con sesión local hasta aplicar la migración.');
       await saveLicenseToStorage(legacyLicense);
       set({
@@ -289,6 +313,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     try {
       initializeLocalTenantGuard('admin_login');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_login' });
+      beginActorRuntimeAuthentication('admin');
       const pending = get().pendingAdminSessionResult;
       const pendingValidation = validatePendingAdminSession({
         pending,
@@ -310,12 +335,14 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         )
       });
       if (!result.success) {
+        lockActorRuntime('admin_credentials_rejected');
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
         return result;
       }
       return completeAdminSession(set, get, licenseKey, result, 'admin_login');
     } catch (error) {
+      lockActorRuntime('admin_login_failed');
       if (isLocalTenantAccessError(error)) {
         enterLocalTenantIsolationFailure(set, error);
         return {
@@ -358,6 +385,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     try {
       initializeLocalTenantGuard('admin_enrollment');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_enrollment' });
+      beginActorRuntimeAuthentication('admin');
       const result = await enrollAdminOwnerOnDevice({
         licenseKey,
         username,
@@ -369,12 +397,14 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         )
       });
       if (!result.success) {
+        lockActorRuntime('admin_enrollment_rejected');
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
         return result;
       }
       return completeAdminSession(set, get, licenseKey, result, 'admin_enrollment');
     } catch (error) {
+      lockActorRuntime('admin_enrollment_failed');
       if (isLocalTenantAccessError(error)) {
         enterLocalTenantIsolationFailure(set, error);
         return {
@@ -395,6 +425,9 @@ export const createLicenseAdminActions = ({ set, get }) => ({
 
   logoutAdmin: async () => {
     const licenseKey = get().licenseDetails?.license_key || get().adminLoginLicenseKey;
+    // Invalidate actor-sensitive async work before any remote/local logout I/O.
+    // Tenant teardown keeps its existing behavior in this phase.
+    lockActorRuntime('admin_actor_logged_out');
     get()._invalidateProfileLoads?.();
     get().resetEcommerceOrdersState?.();
     get().lockDriveSession?.();
