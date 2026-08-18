@@ -1,7 +1,14 @@
 // src/components/common/DeviceManager.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import './DeviceManager.css';
 import { getLicenseDevicesSmart, deactivateDeviceSmart } from '../../services/licenseService';
+import { setDeviceModeSmart } from '../../services/deviceModeService';
+import {
+  DEVICE_MODE_OPTIONS,
+  deviceModeAllowsActor,
+  getDeviceModeLabel,
+  resolveDeviceMode
+} from '../../services/deviceModePolicy';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -13,6 +20,7 @@ export default function DeviceManager({ licenseKey }) {
   const [error, setError] = useState(null);
   const [isOfflineData, setIsOfflineData] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [modeUpdatingDeviceId, setModeUpdatingDeviceId] = useState(null);
 
   const fetchDevices = useCallback(async (silent = false) => {
     if (!licenseKey) return;
@@ -51,9 +59,67 @@ export default function DeviceManager({ licenseKey }) {
     fetchDevices();
   }, [fetchDevices]);
 
+  const handleModeChange = async (device, nextMode) => {
+    const currentMode = resolveDeviceMode(device);
+    if (!nextMode || nextMode === currentMode) return;
+
+    if (currentDeviceRole === 'staff') {
+      showMessageModal('Solo una sesion Admin puede cambiar el modo de un dispositivo.', null, { type: 'error' });
+      return;
+    }
+
+    if (!navigator.onLine) {
+      showMessageModal('Se requiere internet para cambiar el modo del dispositivo.', null, { type: 'error' });
+      return;
+    }
+
+    const isCurrentDevice = Boolean(device.is_current_device);
+    const nextLabel = getDeviceModeLabel(nextMode);
+    const currentLabel = getDeviceModeLabel(currentMode);
+    const sessionWarning = isCurrentDevice && nextMode === 'staff_only'
+      ? '\n\nEste es el dispositivo actual. Al dejarlo como Solo Staff, la sesion Admin actual se cerrara y deberas iniciar sesion Staff.'
+      : '';
+
+    if (!(await showConfirmModal(
+      `Cambiar ${device.device_name || 'este dispositivo'} de ${currentLabel} a ${nextLabel}?${sessionWarning}`,
+      {
+        title: 'Cambiar modo del dispositivo',
+        confirmButtonText: 'Cambiar modo',
+        cancelButtonText: 'Cancelar'
+      }
+    ))) return;
+
+    setModeUpdatingDeviceId(device.device_id);
+    try {
+      const result = await setDeviceModeSmart(device.device_id, nextMode, licenseKey);
+
+      if (!result?.success) {
+        showMessageModal(
+          result?.message || result?.code || 'No se pudo cambiar el modo del dispositivo.',
+          null,
+          { type: 'error' }
+        );
+        return;
+      }
+
+      showMessageModal(`Modo actualizado: ${getDeviceModeLabel(result.device_mode || nextMode)}.`);
+
+      if (result.requester_session_revoked) {
+        await logout();
+        return;
+      }
+
+      await fetchDevices(true);
+    } catch (changeError) {
+      showMessageModal(changeError?.message || 'No se pudo cambiar el modo del dispositivo.', null, { type: 'error' });
+    } finally {
+      setModeUpdatingDeviceId(null);
+    }
+  };
+
   const handleRelease = async (device) => {
     if (currentDeviceRole === 'staff') {
-      showMessageModal('Solo el dispositivo administrador puede liberar dispositivos.', null, { type: 'error' });
+      showMessageModal('Solo una sesion Admin puede liberar dispositivos.', null, { type: 'error' });
       return;
     }
 
@@ -63,14 +129,14 @@ export default function DeviceManager({ licenseKey }) {
     }
 
     const isCurrentDevice = Boolean(device.is_current_device);
-    const isLastActiveAdmin = device.device_role === 'admin'
-      && device.is_active
-      && devices.filter((entry) => entry.is_active && entry.device_role === 'admin').length === 1;
+    const isLastActiveAdmin = device.is_active
+      && deviceModeAllowsActor(device, 'admin')
+      && devices.filter((entry) => entry.is_active && deviceModeAllowsActor(entry, 'admin')).length === 1;
     const confirmMessage = isLastActiveAdmin
-      ? `Este es el ultimo dispositivo administrador activo.\n\nPodras recuperar la administracion desde otro dispositivo utilizando las credenciales del propietario.\n\nLa licencia y los datos del negocio no se eliminaran.\n\nDeseas continuar?`
+      ? `Este es el ultimo dispositivo con capacidad Admin activa.\n\nPodras recuperar la administracion desde otro dispositivo utilizando las credenciales del propietario.\n\nLa licencia y los datos del negocio no se eliminaran.\n\nDeseas continuar?`
       : isCurrentDevice
-      ? 'Vas a liberar este dispositivo. Se cerrara la sesion local y esta licencia podra activarse de nuevo despues. Deseas continuar?'
-      : 'Vas a liberar este dispositivo de la licencia. Deseas continuar?';
+        ? 'Vas a liberar este dispositivo. Se cerrara la sesion local y esta licencia podra activarse de nuevo despues. Deseas continuar?'
+        : 'Vas a liberar este dispositivo de la licencia. Deseas continuar?';
 
     if (!(await showConfirmModal(confirmMessage, {
       title: 'Liberar dispositivo',
@@ -138,62 +204,86 @@ export default function DeviceManager({ licenseKey }) {
         <p style={{ color: '#666', fontStyle: 'italic' }}>No hay dispositivos registrados.</p>
       ) : (
         <ul className="device-list">
-          {devices.map((device) => (
-            <li key={device.device_id} className={`device-item ${device.is_active ? '' : 'inactive'}`}>
-              <div className="device-info">
-                <strong>{device.device_name || 'Dispositivo desconocido'}</strong>
+          {devices.map((device) => {
+            const deviceMode = resolveDeviceMode(device);
+            const isUpdatingMode = modeUpdatingDeviceId === device.device_id;
+            const modeDisabled = isOfflineData
+              || currentDeviceRole === 'staff'
+              || !device.is_active
+              || isUpdatingMode;
 
-                <div className="device-status-tags">
-                  {!device.is_active ? (
-                    <span className="device-status-badge inactive">Liberado</span>
-                  ) : (
-                    <span className="device-status-badge active">Activo</span>
-                  )}
+            return (
+              <li key={device.device_id} className={`device-item ${device.is_active ? '' : 'inactive'}`}>
+                <div className="device-info">
+                  <strong>{device.device_name || 'Dispositivo desconocido'}</strong>
 
-                  {device.is_current_device && (
-                    <span className="device-status-badge current">Este dispositivo</span>
-                  )}
+                  <div className="device-status-tags">
+                    {!device.is_active ? (
+                      <span className="device-status-badge inactive">Liberado</span>
+                    ) : (
+                      <span className="device-status-badge active">Activo</span>
+                    )}
 
-                  {device.device_role && (
-                    <span className={`device-status-badge role-${device.device_role}`}>
-                      {device.device_role === 'admin' ? 'Admin' : 'Staff'}
+                    {device.is_current_device && (
+                      <span className="device-status-badge current">Este dispositivo</span>
+                    )}
+
+                    <span className="device-status-badge">
+                      {getDeviceModeLabel(deviceMode)}
                     </span>
+
+                    {device.device_role && (
+                      <span className={`device-status-badge role-${device.device_role}`} title="Rol legacy de compatibilidad; no representa al actor autenticado en modo compartido.">
+                        Legacy {device.device_role === 'admin' ? 'Admin' : 'Staff'}
+                      </span>
+                    )}
+                  </div>
+
+                  {(device.staff_display_name || device.staff_username || device.staff_user_id) && (
+                    <small>
+                      Staff vinculado legacy: {device.staff_display_name || device.staff_username || device.staff_user_id}
+                    </small>
                   )}
+
+                  <small>
+                    Sesiones activas: Admin {Number(device.active_admin_sessions || 0)} · Staff {Number(device.active_staff_sessions || 0)}
+                  </small>
+
+                  <small>
+                    Ultimo uso: {new Date(device.last_used_at).toLocaleDateString()}
+                  </small>
+
+                  <label style={{ display: 'grid', gap: '4px', marginTop: '8px', maxWidth: '220px' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Capacidad del dispositivo</span>
+                    <select
+                      value={deviceMode || ''}
+                      onChange={(event) => handleModeChange(device, event.target.value)}
+                      disabled={modeDisabled}
+                      aria-label={`Modo de ${device.device_name || 'dispositivo'}`}
+                    >
+                      {!deviceMode && <option value="">Sin definir</option>}
+                      {DEVICE_MODE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
-                {(device.staff_display_name || device.staff_username || device.staff_user_id) && (
-                  <small>
-                    Staff: {device.staff_display_name || device.staff_username || device.staff_user_id}
-                  </small>
+                {device.is_active && (
+                  <button
+                    type="button"
+                    className="btn btn-cancel btn-deactivate-device"
+                    onClick={() => handleRelease(device)}
+                    disabled={isOfflineData || currentDeviceRole === 'staff' || isUpdatingMode}
+                    title={isOfflineData ? 'Conectate para gestionar' : 'Liberar dispositivo'}
+                    style={isOfflineData || currentDeviceRole === 'staff' || isUpdatingMode ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                  >
+                    Liberar
+                  </button>
                 )}
-
-                {device.device_role === 'admin' && (
-                  <small>
-                    Propietario: {device.admin_display_name || 'Administrador'}
-                    {Number(device.active_admin_sessions || 0) > 0
-                      ? ` · ${device.active_admin_sessions} sesion(es) activa(s)`
-                      : ''}
-                  </small>
-                )}
-
-                <small>
-                  Ultimo uso: {new Date(device.last_used_at).toLocaleDateString()}
-                </small>
-              </div>
-
-              {device.is_active && (
-                <button type="button"
-                  className="btn btn-cancel btn-deactivate-device"
-                  onClick={() => handleRelease(device)}
-                  disabled={isOfflineData || currentDeviceRole === 'staff'}
-                  title={isOfflineData ? 'Conectate para gestionar' : 'Liberar dispositivo'}
-                  style={isOfflineData || currentDeviceRole === 'staff' ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                >
-                  Liberar
-                </button>
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
 

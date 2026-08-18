@@ -13,6 +13,7 @@ import {
   grantAuthenticatedActorRuntime,
   lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
+import { resolveDeviceMode } from '../../../services/deviceModePolicy';
 
 import {
   saveLicenseToStorage
@@ -29,26 +30,25 @@ import {
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
-export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => (
-  // The persisted role is authoritative.  A leftover staff token must never
-  // re-route an admin device into the staff flow during a background check.
-  // Only when the role is genuinely unknown do we use a stored token as a
-  // discovery hint.
-  (() => {
-    const canonicalRole =
-      licenseDetails?.device_role ||
-      state.licenseDetails?.device_role ||
-      state.currentDeviceRole ||
-      null;
+export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => {
+  const source = {
+    ...(state.licenseDetails || {}),
+    ...(licenseDetails || {})
+  };
+  const deviceMode = resolveDeviceMode(source);
 
-    if (canonicalRole === 'admin') return false;
-    if (canonicalRole === 'staff') return true;
-    return null;
-  })() ?? (
-    state.appStatus === 'staff_login_required' ||
-    hasStaffSessionToken()
-  )
-);
+  if (deviceMode === 'admin_only') return false;
+  if (deviceMode === 'staff_only') return true;
+
+  if (deviceMode === 'shared') {
+    if (state.currentDeviceRole === 'staff' || state.appStatus === 'staff_login_required') {
+      return true;
+    }
+    return hasStaffSessionToken();
+  }
+
+  return state.appStatus === 'staff_login_required' || hasStaffSessionToken();
+};
 
 export const createLicenseStaffActions = ({
   set,
