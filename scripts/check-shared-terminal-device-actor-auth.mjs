@@ -10,10 +10,18 @@ const legacyCutoverPath = path.resolve(
 const secondaryContextPath = path.resolve(
   'supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql'
 );
+const uploadEdgePath = path.resolve(
+  'supabase/functions/authorize-image-upload/index.ts'
+);
+const uploadClientPath = path.resolve(
+  'src/services/storage/imageUploadService.js'
+);
 
 const foundationSql = fs.readFileSync(foundationPath, 'utf8');
 const legacyCutoverSql = fs.readFileSync(legacyCutoverPath, 'utf8');
 const secondaryContextSql = fs.readFileSync(secondaryContextPath, 'utf8');
+const uploadEdge = fs.readFileSync(uploadEdgePath, 'utf8');
+const uploadClient = fs.readFileSync(uploadClientPath, 'utf8');
 
 const requiredFoundationFragments = [
   "when 'admin' then 'admin_only'",
@@ -123,4 +131,54 @@ for (const functionName of [
   }
 }
 
-console.log('SHARED.TERMINAL.2 migration contract: PASS');
+const requiredUploadEdgeFragments = [
+  "supabase.rpc('validate_pos_rpc_rate_limit_context'",
+  'p_staff_session_token: validation.actorSessionToken',
+  "actorContext?.success !== true",
+  "actorContext?.allowed !== true",
+  "cleanText(actorContext?.actor_type)",
+  "cleanText(actorContext?.actor_key)",
+  "!['admin', 'staff'].includes(actorType)",
+  "!['admin_only', 'staff_only', 'shared'].includes(deviceMode)"
+];
+
+for (const fragment of requiredUploadEdgeFragments) {
+  if (!uploadEdge.includes(fragment)) {
+    console.error(`Image upload edge actor contract missing: ${fragment}`);
+    process.exit(1);
+  }
+}
+
+for (const forbidden of [
+  'verify_device_license_unified',
+  'verify_staff_session'
+]) {
+  if (uploadEdge.includes(forbidden)) {
+    console.error(`Image upload edge still uses legacy actor authority: ${forbidden}`);
+    process.exit(1);
+  }
+}
+
+const requiredUploadClientFragments = [
+  'getActorSessionToken()',
+  'if (!deviceFingerprint || !securityToken || !actorSessionToken)',
+  'staff_session_token: actorSessionToken'
+];
+for (const fragment of requiredUploadClientFragments) {
+  if (!uploadClient.includes(fragment)) {
+    console.error(`Image upload client actor contract missing: ${fragment}`);
+    process.exit(1);
+  }
+}
+
+for (const forbidden of [
+  'reintentando autorización sin sesión de actor',
+  'staff_session_token: null'
+]) {
+  if (uploadClient.includes(forbidden)) {
+    console.error(`Image upload client can drop actor authority: ${forbidden}`);
+    process.exit(1);
+  }
+}
+
+console.log('SHARED.TERMINAL.2 migration + actor authorization contract: PASS');
