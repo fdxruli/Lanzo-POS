@@ -77,7 +77,7 @@ const requiredSecondaryContextFragments = [
 
 const requiredOccupancyFixFragments = [
   'staff_login_on_device_unlimited',
-  "d.staff_user_id = v_staff_user.id and d.device_mode = 'staff_only' and d.is_active is true",
+  "d.staff_user_id = v_staff_user.id and d.device_mode = ''staff_only'' and d.is_active is true",
   'from public.license_staff_sessions ss join public.license_devices d on d.id = ss.device_id',
   'ss.revoked_at is null and ss.expires_at > now()',
   'uq_license_devices_one_active_device_per_staff',
