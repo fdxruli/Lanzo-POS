@@ -8,9 +8,12 @@ on:
       - 'supabase/migrations/20260818164207_shared_terminal_device_actor_auth.sql'
       - 'supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql'
       - 'supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql'
+      - 'supabase/functions/authorize-image-upload/index.ts'
       - 'src/services/deviceModePolicy.js'
       - 'src/services/deviceModeService.js'
       - 'src/services/__tests__/deviceModePolicy.test.js'
+      - 'src/services/storage/imageUploadService.js'
+      - 'src/services/storage/__tests__/imageUploadService.actorSession.test.js'
       - 'src/components/common/DeviceManager.jsx'
       - 'src/store/slices/license/licenseStaffActions.js'
       - 'src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js'
@@ -48,7 +51,7 @@ jobs:
       - name: git diff --check
         run: git diff --check "${SHARED_TERMINAL_2_BASE_SHA}...HEAD"
 
-      - name: Migration contract guard
+      - name: Migration + actor authorization contract guard
         run: node scripts/check-shared-terminal-device-actor-auth.mjs
 
       - name: Shared device focused tests
@@ -58,6 +61,7 @@ jobs:
           src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js
           src/services/auth/__tests__/actorRuntimeController.test.js
           src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/services/storage/__tests__/imageUploadService.actorSession.test.js
           --maxWorkers=4
 
       - name: Tenant isolation and recovery regression
@@ -73,6 +77,8 @@ jobs:
           src/services/deviceModePolicy.js
           src/services/deviceModeService.js
           src/services/__tests__/deviceModePolicy.test.js
+          src/services/storage/imageUploadService.js
+          src/services/storage/__tests__/imageUploadService.actorSession.test.js
           src/components/common/DeviceManager.jsx
           src/store/slices/license/licenseStaffActions.js
           src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js
