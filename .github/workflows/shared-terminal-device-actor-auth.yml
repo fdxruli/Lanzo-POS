@@ -8,11 +8,14 @@ on:
       - 'supabase/migrations/20260818164207_shared_terminal_device_actor_auth.sql'
       - 'supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql'
       - 'supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql'
+      - 'supabase/migrations/20260818234329_shared_terminal_staff_occupancy_fix.sql'
+      - 'supabase/tests/shared_terminal_staff_occupancy_test.sql'
       - 'supabase/functions/authorize-image-upload/index.ts'
       - 'src/services/deviceModePolicy.js'
       - 'src/services/deviceModeService.js'
       - 'src/services/__tests__/deviceModePolicy.test.js'
       - 'src/services/storage/imageUploadService.js'
+      - 'src/services/storage/__tests__/imageUploadService.test.js'
       - 'src/services/storage/__tests__/imageUploadService.actorSession.test.js'
       - 'src/components/common/DeviceManager.jsx'
       - 'src/store/slices/license/licenseStaffActions.js'
@@ -61,6 +64,7 @@ jobs:
           src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js
           src/services/auth/__tests__/actorRuntimeController.test.js
           src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/services/storage/__tests__/imageUploadService.test.js
           src/services/storage/__tests__/imageUploadService.actorSession.test.js
           --maxWorkers=4
 
@@ -78,6 +82,7 @@ jobs:
           src/services/deviceModeService.js
           src/services/__tests__/deviceModePolicy.test.js
           src/services/storage/imageUploadService.js
+          src/services/storage/__tests__/imageUploadService.test.js
           src/services/storage/__tests__/imageUploadService.actorSession.test.js
           src/components/common/DeviceManager.jsx
           src/store/slices/license/licenseStaffActions.js
