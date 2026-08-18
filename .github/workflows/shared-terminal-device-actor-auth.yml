@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'supabase/migrations/20260818164207_shared_terminal_device_actor_auth.sql'
+      - 'supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql'
       - 'src/services/deviceModePolicy.js'
       - 'src/services/deviceModeService.js'
       - 'src/services/__tests__/deviceModePolicy.test.js'
