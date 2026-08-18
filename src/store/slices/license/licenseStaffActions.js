@@ -13,7 +13,7 @@ import {
   grantAuthenticatedActorRuntime,
   lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
-import { resolveDeviceMode } from '../../../services/deviceModePolicy';
+import { resolveStaffAuthRoutingDecision } from '../../../services/deviceModePolicy';
 
 import {
   saveLicenseToStorage
@@ -31,23 +31,9 @@ import {
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
 export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => {
-  const source = {
-    ...(state.licenseDetails || {}),
-    ...(licenseDetails || {})
-  };
-  const deviceMode = resolveDeviceMode(source);
-
-  if (deviceMode === 'admin_only') return false;
-  if (deviceMode === 'staff_only') return true;
-
-  if (deviceMode === 'shared') {
-    if (state.currentDeviceRole === 'staff' || state.appStatus === 'staff_login_required') {
-      return true;
-    }
-    return hasStaffSessionToken();
-  }
-
-  return state.appStatus === 'staff_login_required' || hasStaffSessionToken();
+  const routingDecision = resolveStaffAuthRoutingDecision(state, licenseDetails);
+  if (routingDecision !== null) return routingDecision;
+  return hasStaffSessionToken();
 };
 
 export const createLicenseStaffActions = ({
