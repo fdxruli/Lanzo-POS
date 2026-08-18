@@ -51,6 +51,16 @@ const functionError = (status, payload) => ({
   }
 });
 
+const uploadFixture = () => {
+  const file = new TestFile(['webp-image'], 'product.webp', { type: 'image/webp' });
+  return uploadImageFile({
+    file,
+    licenseKey: 'license-fixture',
+    purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
+    imageOptimizer: vi.fn(async () => file)
+  });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('File', TestFile);
@@ -79,14 +89,7 @@ describe('imageUploadService actor session authorization', () => {
       })
     });
 
-    const file = new TestFile(['webp-image'], 'product.webp', { type: 'image/webp' });
-
-    await expect(uploadImageFile({
-      file,
-      licenseKey: 'license-fixture',
-      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
-      imageOptimizer: vi.fn(async () => file)
-    })).rejects.toMatchObject({
+    await expect(uploadFixture()).rejects.toMatchObject({
       code: 'STORAGE_UPLOAD_NOT_ALLOWED'
     });
 
@@ -98,18 +101,66 @@ describe('imageUploadService actor session authorization', () => {
   it('fails before authorization when no unambiguous actor session exists', async () => {
     mocks.getActorSessionToken.mockResolvedValueOnce(null);
 
-    const file = new TestFile(['webp-image'], 'product.webp', { type: 'image/webp' });
-
-    await expect(uploadImageFile({
-      file,
-      licenseKey: 'license-fixture',
-      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
-      imageOptimizer: vi.fn(async () => file)
-    })).rejects.toMatchObject({
+    await expect(uploadFixture()).rejects.toMatchObject({
       code: 'SECURE_CONTEXT_REQUIRED'
     });
 
     expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the actor session token is invalid', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      data: null,
+      error: functionError(403, {
+        success: false,
+        code: 'ACTOR_SESSION_INVALID',
+        message: 'Actor session invalid.'
+      })
+    });
+
+    await expect(uploadFixture()).rejects.toMatchObject({
+      code: 'ACTOR_SESSION_INVALID'
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when Admin and Staff evidence is ambiguous', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      data: null,
+      error: functionError(403, {
+        success: false,
+        code: 'ACTOR_SESSION_AMBIGUOUS',
+        message: 'Actor session ambiguous.'
+      })
+    });
+
+    await expect(uploadFixture()).rejects.toMatchObject({
+      code: 'ACTOR_SESSION_AMBIGUOUS'
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the actor session belongs to another tenant', async () => {
+    mocks.invoke.mockResolvedValueOnce({
+      data: null,
+      error: functionError(403, {
+        success: false,
+        code: 'ACTOR_SESSION_INVALID',
+        message: 'Actor does not belong to this tenant.'
+      })
+    });
+
+    await expect(uploadFixture()).rejects.toMatchObject({
+      code: 'ACTOR_SESSION_INVALID'
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke.mock.calls[0][1].body.license_key).toBe('license-fixture');
+    expect(mocks.uploadToSignedUrl).not.toHaveBeenCalled();
   });
 
   it('surfaces structured function errors without changing actor authority', async () => {
@@ -121,14 +172,7 @@ describe('imageUploadService actor session authorization', () => {
       })
     });
 
-    const file = new TestFile(['webp-image'], 'product.webp', { type: 'image/webp' });
-
-    await expect(uploadImageFile({
-      file,
-      licenseKey: 'license-fixture',
-      purpose: IMAGE_UPLOAD_PURPOSES.PRODUCT_IMAGE,
-      imageOptimizer: vi.fn(async () => file)
-    })).rejects.toMatchObject({
+    await expect(uploadFixture()).rejects.toMatchObject({
       code: 'STORAGE_UPLOAD_RATE_LIMITED'
     });
 
