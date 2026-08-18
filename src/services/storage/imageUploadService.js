@@ -66,7 +66,7 @@ const FRIENDLY_UPLOAD_ERRORS = Object.freeze({
   STORAGE_UPLOAD_NOT_ALLOWED: 'No tienes permiso para subir esta imagen.',
   STORAGE_UPLOAD_FAILED: 'No se pudo subir la imagen. Revisa tu conexión e intenta de nuevo.',
   ONLINE_REQUIRED: 'Necesitas conexión a internet para subir imágenes.',
-  SECURE_CONTEXT_REQUIRED: 'No se pudo confirmar la identidad segura del dispositivo. Vuelve a iniciar sesión o reactiva la licencia.'
+  SECURE_CONTEXT_REQUIRED: 'No se pudo confirmar la identidad segura del dispositivo y del actor. Vuelve a iniciar sesión o reactiva la licencia.'
 });
 
 function normalizePurpose(purpose) {
@@ -135,22 +135,10 @@ function getFunctionErrorStatus(error) {
 }
 
 async function invokeUploadAuthorization(body) {
-  let result = await supabaseClient.functions.invoke(AUTHORIZE_FUNCTION, { body });
-
-  if (result.error && body.staff_session_token && getFunctionErrorStatus(result.error) === 403) {
-    const rejection = await readFunctionErrorPayload(result.error);
-    Logger.warn('[Storage] Sesión residual rechazada; reintentando autorización sin sesión de actor.', {
-      code: rejection?.code || null
-    });
-    result = await supabaseClient.functions.invoke(AUTHORIZE_FUNCTION, {
-      body: {
-        ...body,
-        staff_session_token: null
-      }
-    });
-  }
-
-  return result;
+  // Actor authority is fail-closed. A rejected actor session must never be
+  // retried without that credential because a shared device may retain legacy
+  // device_role=admin metadata.
+  return supabaseClient.functions.invoke(AUTHORIZE_FUNCTION, { body });
 }
 
 async function prepareUploadFile(file, purpose, imageOptimizer) {
@@ -190,13 +178,13 @@ export async function uploadImageFile({
     throw buildUploadError('SECURE_CONTEXT_REQUIRED');
   }
 
-  const [deviceFingerprint, securityToken, staffSessionToken] = await Promise.all([
+  const [deviceFingerprint, securityToken, actorSessionToken] = await Promise.all([
     getStableDeviceId(),
     getDeviceSecurityToken(),
     getActorSessionToken()
   ]);
 
-  if (!deviceFingerprint || !securityToken) {
+  if (!deviceFingerprint || !securityToken || !actorSessionToken) {
     throw buildUploadError('SECURE_CONTEXT_REQUIRED');
   }
 
@@ -212,7 +200,8 @@ export async function uploadImageFile({
     license_key: licenseKey,
     device_fingerprint: deviceFingerprint,
     security_token: securityToken,
-    staff_session_token: staffSessionToken || null,
+    // Historical wire name retained; value is the current Admin or Staff actor session.
+    staff_session_token: actorSessionToken,
     purpose: normalizedPurpose,
     filename: uploadFile.name,
     mime_type: uploadFile.type,
