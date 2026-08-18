@@ -21,6 +21,7 @@ on:
       - 'src/store/slices/license/licenseStaffActions.js'
       - 'src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js'
       - 'scripts/check-shared-terminal-device-actor-auth.mjs'
+      - 'docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md'
       - '.github/workflows/shared-terminal-device-actor-auth.yml'
   workflow_dispatch:
 
