@@ -13,6 +13,7 @@ on:
       - 'scripts/compare-shared-terminal-full-suite.mjs'
       - 'scripts/generate-shared-terminal-actor-runtime-report.mjs'
       - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
+      - 'docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
 
@@ -262,10 +263,12 @@ jobs:
         id: report_only
         shell: bash
         run: |
-          REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
+          PHASE1_REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
+          PHASE2_REPORT_PATH="docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md"
           mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)
 
-          if [[ "${#changed_paths[@]}" -eq 1 && "${changed_paths[0]}" == "$REPORT_PATH" ]]; then
+          if [[ "${#changed_paths[@]}" -eq 1 ]] && \
+             [[ "${changed_paths[0]}" == "$PHASE1_REPORT_PATH" || "${changed_paths[0]}" == "$PHASE2_REPORT_PATH" ]]; then
             echo "report_only=true" >> "$GITHUB_OUTPUT"
             echo "REPORT-ONLY HEAD — validation complete; no republish required."
             exit 0
