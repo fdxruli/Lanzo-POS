@@ -7,9 +7,13 @@ const foundationPath = path.resolve(
 const legacyCutoverPath = path.resolve(
   'supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql'
 );
+const secondaryContextPath = path.resolve(
+  'supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql'
+);
 
 const foundationSql = fs.readFileSync(foundationPath, 'utf8');
 const legacyCutoverSql = fs.readFileSync(legacyCutoverPath, 'utf8');
+const secondaryContextSql = fs.readFileSync(secondaryContextPath, 'utf8');
 
 const requiredFoundationFragments = [
   "when 'admin' then 'admin_only'",
@@ -38,19 +42,35 @@ const requiredLegacyCutoverFragments = [
   'ADMIN_STAFF_CANONICAL_SESSION_GUARD_MISSING'
 ];
 
-const missingFoundation = requiredFoundationFragments.filter(
-  (fragment) => !foundationSql.includes(fragment)
-);
-const missingLegacyCutover = requiredLegacyCutoverFragments.filter(
-  (fragment) => !legacyCutoverSql.includes(fragment)
-);
+const requiredSecondaryContextFragments = [
+  'private.resolve_device_actor_session',
+  'ACTOR_SESSION_AMBIGUOUS',
+  'ACTOR_SESSION_INVALID',
+  'ecommerce_admin_authorize_v2',
+  'get_support_ticket_context',
+  'validate_pos_rpc_rate_limit_context',
+  'get_ai_agent_usage_unlimited',
+  'refresh_operational_notifications',
+  'SECONDARY_CONTEXT_DEVICE_ROLE_AUTHORITY_REMAINS',
+  'SECONDARY_CONTEXT_ACTOR_RESOLVER_MISSING'
+];
 
-if (missingFoundation.length > 0 || missingLegacyCutover.length > 0) {
-  console.error('Missing SHARED.TERMINAL.2 migration contracts:');
-  for (const fragment of missingFoundation) console.error(`- foundation: ${fragment}`);
-  for (const fragment of missingLegacyCutover) console.error(`- legacy cutover: ${fragment}`);
-  process.exit(1);
+const groups = [
+  ['foundation', foundationSql, requiredFoundationFragments],
+  ['legacy cutover', legacyCutoverSql, requiredLegacyCutoverFragments],
+  ['secondary actor context', secondaryContextSql, requiredSecondaryContextFragments]
+];
+
+let missingAny = false;
+for (const [label, sql, required] of groups) {
+  for (const fragment of required) {
+    if (!sql.includes(fragment)) {
+      console.error(`Missing ${label} contract: ${fragment}`);
+      missingAny = true;
+    }
+  }
 }
+if (missingAny) process.exit(1);
 
 const forbiddenFoundationPatterns = [
   /update\s+public\.license_devices\s+set\s+device_mode\s*=\s*'shared'/i,
@@ -74,6 +94,25 @@ const canonicalAdminOverloads = [
 for (const pattern of canonicalAdminOverloads) {
   if (!pattern.test(legacyCutoverSql)) {
     console.error(`Canonical Admin session overload missing: ${pattern}`);
+    process.exit(1);
+  }
+}
+
+for (const functionName of [
+  'ecommerce_admin_authorize_v2',
+  'get_support_ticket_context',
+  'validate_pos_rpc_rate_limit_context',
+  'get_ai_agent_usage_unlimited',
+  'refresh_operational_notifications'
+]) {
+  const start = secondaryContextSql.indexOf(`function ${functionName}`);
+  const next = start >= 0 ? secondaryContextSql.indexOf('\ncreate or replace function ', start + 20) : -1;
+  const body = start >= 0
+    ? secondaryContextSql.slice(start, next >= 0 ? next : secondaryContextSql.length)
+    : '';
+
+  if (!body.includes('resolve_device_actor_session')) {
+    console.error(`Secondary context does not resolve actor session: ${functionName}`);
     process.exit(1);
   }
 }
