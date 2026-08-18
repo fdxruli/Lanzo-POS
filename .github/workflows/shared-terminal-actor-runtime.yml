@@ -258,16 +258,34 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: Detect report-only HEAD
+        id: report_only
+        shell: bash
+        run: |
+          REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
+          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)
+
+          if [[ "${#changed_paths[@]}" -eq 1 && "${changed_paths[0]}" == "$REPORT_PATH" ]]; then
+            echo "report_only=true" >> "$GITHUB_OUTPUT"
+            echo "REPORT-ONLY HEAD — validation complete; no republish required."
+            exit 0
+          fi
+
+          echo "report_only=false" >> "$GITHUB_OUTPUT"
+
       - name: Download differential evidence
+        if: steps.report_only.outputs.report_only != 'true'
         uses: actions/download-artifact@v4
         with:
           name: shared-terminal-full-suite-differential
           path: differential
 
       - name: Generate audit report from exact differential JSON
+        if: steps.report_only.outputs.report_only != 'true'
         run: node scripts/generate-shared-terminal-actor-runtime-report.mjs differential/full-suite-differential.json
 
       - name: Publish report only when content changed
+        if: steps.report_only.outputs.report_only != 'true'
         shell: bash
         run: |
           REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
