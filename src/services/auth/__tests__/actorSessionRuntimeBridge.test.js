@@ -11,16 +11,19 @@ const mocks = vi.hoisted(() => ({
   suspendActorScopedStorageWrites: vi.fn(),
   invalidateActorScopedStorage: vi.fn(),
   subscribeActorScopedStorage: vi.fn(() => () => {}),
+  configureActorOperationalPersistence: vi.fn(() => true),
   installActorOperationalHandoffGuards: vi.fn(async () => true),
   refreshPersistedActorCheckoutOwnership: vi.fn(async () => []),
   assertActorOperationalHandoffClear: vi.fn(() => true),
   rebindActorOperationalOwnership: vi.fn(() => 0)
 }));
 
+const tenantRuntimeDb = {
+  table: vi.fn(() => ({ get: mocks.get }))
+};
+
 vi.mock('../../db/tenantRuntimeRouter', () => ({
-  db: {
-    table: vi.fn(() => ({ get: mocks.get }))
-  },
+  db: tenantRuntimeDb,
   getTenantRuntimeReadiness: vi.fn(() => mocks.readiness())
 }));
 
@@ -39,6 +42,7 @@ vi.mock('../actorScopedStorage', () => ({
 }));
 
 vi.mock('../actorOperationalHandoff', () => ({
+  configureActorOperationalPersistence: mocks.configureActorOperationalPersistence,
   installActorOperationalHandoffGuards: mocks.installActorOperationalHandoffGuards,
   refreshPersistedActorCheckoutOwnership: mocks.refreshPersistedActorCheckoutOwnership,
   assertActorOperationalHandoffClear: mocks.assertActorOperationalHandoffClear,
@@ -134,6 +138,10 @@ describe('actor session runtime bridge', () => {
       actorKey: 'admin:admin-1',
       sessionId: 'admin-session'
     });
+    expect(mocks.configureActorOperationalPersistence).toHaveBeenCalledWith({
+      db: tenantRuntimeDb,
+      salesStore: 'sales'
+    });
     expect(mocks.refreshPersistedActorCheckoutOwnership).toHaveBeenCalledWith({
       tenant: TENANT_RUNTIME
     });
@@ -141,6 +149,9 @@ describe('actor session runtime bridge', () => {
       tenant: TENANT_RUNTIME,
       actorKey: 'admin:admin-1'
     });
+    expect(mocks.configureActorOperationalPersistence.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]
+    );
     expect(mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.assertActorOperationalHandoffClear.mock.invocationCallOrder[0]
     );
