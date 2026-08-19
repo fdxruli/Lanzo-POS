@@ -1,7 +1,9 @@
 # SHARED.TERMINAL.4 — CASH STATION + CASH SESSION + FINANCIAL HANDOFF
 
-Fecha de verificación: 2026-08-19  
-Repositorio: `fdxruli/Lanzo-POS`  
+Fecha de verificación: 2026-08-19
+
+Repositorio: `fdxruli/Lanzo-POS`
+
 Proyecto Supabase: `odlrhijtfyavryeqivaa`
 
 ## 1. Precondición PR #210 / SHARED.TERMINAL.3
@@ -124,7 +126,7 @@ Resultados equivalentes:
 
 Supabase sigue siendo la autoridad canónica en planes cloud/PRO. La UI/local cache no declara “libre” una estación si el cloud no lo confirma.
 
-En IndexedDB se mantiene la misma base física `LanzoDB_t_<opaque-id>` para el tenant, sin DB por actor ni por CashStation. Dexie sube a versión nativa 32 (`CURRENT_NATIVE_DATABASE_VERSION=320`) con migración forward-only, determinista, no destructiva, restart-safe y retry-safe.
+En IndexedDB se mantiene la misma base física `LanzoDB_t_<opaque-id>` para el tenant, sin DB por actor ni por CashStation. Dexie registra el esquema con `db.version(32)`; la capa de recuperación lo expone como versión nativa de IndexedDB `320` (`CURRENT_NATIVE_DATABASE_VERSION=320`). La migración es forward-only, determinista, no destructiva, restart-safe y retry-safe.
 
 Stores/campos relevantes:
 
@@ -259,7 +261,77 @@ Estado parcial por deudas secundarias que permanecen fail-closed:
 
 No se inventó ownership histórico ni se hizo limpieza destructiva para ocultar estos riesgos.
 
-## 18. Estado exacto
+## 18. CLOSEOUT.R1 — corrección de evidencia y auditoría de migraciones
+
+### Estado remoto inicial
+
+- PR #211 antes de este closeout: `OPEN`, `DRAFT`, `merged=false`.
+- Rama: `feat/shared-terminal-financial-handoff`.
+- Old HEAD: `23b8449a9ba91651bd8799e9b1f76a6a10bcd1a2`.
+- Código validado sin cambios: `26e67f698f3fc8132c5add8b906e332a27d2fabd`.
+- El nuevo final HEAD será el commit documental de `SHARED.TERMINAL.4-CLOSEOUT.R1`; se verificará directamente en GitHub después de publicarlo y no se generará otro commit automático de reporte.
+
+### Causa exacta del fallo report-only
+
+Los workflows del old HEAD `23b8449a` reportaron:
+
+- `Shared Terminal Actor Scoped Storage Validation` — run `32237418999`: FAIL.
+- `Shared Terminal Actor Runtime Validation` — run `32237418996`: FAIL.
+- `HOTFIX Dexie Recovery Validation` — run `32237419115`: FAIL.
+- `PR127 Global Comparison` — run `32237419044`: PASS.
+
+La causa reproducible del primer fallo de calidad fue `git diff --check` sobre el reporte, líneas 3 y 4: espacios de Markdown para hard-break al final de `Fecha de verificación` y `Repositorio`. Se eliminaron todos los trailing whitespace del reporte; no se modificó código funcional.
+
+### Auditoría de migration history
+
+El repositorio conserva estas migraciones ejecutables:
+
+- `20260819090000_shared_terminal_cash_station_financial_handoff.sql`.
+- `20260819090100_shared_terminal_cash_movement_performed_by.sql`.
+
+La aplicación productiva se hizo mediante el conector Supabase `apply_migration`, que recibe un nombre separado del SQL y registra un `version` numérico generado por el mecanismo remoto. La evidencia del propio proyecto documenta el mismo comportamiento en Builder.1: una migración local con timestamp `20260720010757` fue aplicada por MCP, producción registró `20260721113522`, conservó el nombre y el SQL quedó hash-equivalente; luego el archivo Git se alineó al timestamp remoto.
+
+Producción conserva actualmente:
+
+| version | name | evidencia SQL |
+| --- | --- | --- |
+| `20260819084636` | `shared_terminal_4_cash_station_financial_handoff` | nombre corto del primer apply; una sentencia |
+| `20260819084719` | `20260819090000_shared_terminal_cash_station_financial_handoff` | MD5 `c03d9dca69296b3bd9b6b4c5f5bbe91c`, igual al archivo Git |
+| `20260819085828` | `20260819090100_shared_terminal_cash_movement_performed_by` | MD5 `2a9a1c5e3cda971f6907fc073236f11c`, igual al archivo Git sin su LF final |
+
+La consulta read-only confirmó que `supabase_migrations.schema_migrations` tiene `version`, `statements[]`, `name`, `created_by`, `idempotency_key` y `rollback[]`. Las dos sentencias Git fueron aplicadas como una sentencia cada una. No hay indicio de contenido SQL distinto: la diferencia del segundo hash es únicamente el newline final que el conector no conserva.
+
+La documentación oficial de Supabase establece que `supabase migration list` compara únicamente timestamps locales contra `schema_migrations.version`, y que `supabase db push` omite sólo migraciones cuyo timestamp ya está aplicado. La documentación y los scripts del repositorio identifican `supabase migration list` / `supabase db push --dry-run` como el mecanismo normal de despliegue versionado; no hay workflow de GitHub que despliegue estas migraciones automáticamente.
+
+**Resultado:** existe drift real de historia, no una discrepancia inocua de nombres. Para la CLI normal, `20260819090000` y `20260819090100` serían local-only, mientras `20260819084719` y `20260819085828` serían remote-only; por tanto existe riesgo de reapply.
+
+La reparación soportada sería `supabase migration repair`, pero el entorno conectado no expone esa operación: no hay herramienta MCP de repair, el binario Supabase CLI no está instalado y el checkout no está enlazado con credenciales remotas. No se usó `supabase_execute_sql` para modificar historial.
+
+- **MIGRATION REAPPLY RISK:** CONFIRMED.
+- **SUPABASE CLOSEOUT MUTATION:** NOT PERFORMED.
+- **Migration SQL reexecuted:** NO.
+- **Repair status:** BLOCKED — safe official history repair is unavailable in this environment.
+- **SHARED.TERMINAL.4-CLOSEOUT.R1:** BLOCKED.
+
+### Producción después de la auditoría
+
+La auditoría fue read-only y dejó el esquema financiero sin cambios:
+
+- `pos_cash_stations`: presente.
+- `pos_cash_station_bindings`: presente.
+- columnas de estación/provenance: presentes.
+- `ux_pos_cash_sessions_open_station`: presente con semántica correcta.
+- FKs de estación en bindings, sessions y movements: presentes.
+- duplicate OPEN station groups: `0`.
+- movement station mismatches: `0`.
+- movement performed_by null: `0`.
+- cross-tenant bindings: `0`.
+
+### Validación del nuevo HEAD
+
+Después de publicar el commit documental se hará una sola consulta de PR/HEAD y de workflows; no se regenerará ni autopublicará este reporte. El resultado se reportará sin convertir estados pendientes o RED en PASS.
+
+## 19. Estado exacto
 
 **SHARED.TERMINAL.4: PARTIAL**
 
