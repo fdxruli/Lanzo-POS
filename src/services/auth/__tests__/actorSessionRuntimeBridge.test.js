@@ -2,7 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
-  readiness: vi.fn()
+  readiness: vi.fn(),
+  hydrateTenantStorageConsumers: vi.fn(async () => []),
+  resumeTenantStorageWrites: vi.fn(),
+  prepareActorScopedStorage: vi.fn(async () => ({})),
+  activateActorScopedStorage: vi.fn(),
+  resumeActorScopedStorageWrites: vi.fn(),
+  suspendActorScopedStorageWrites: vi.fn(),
+  invalidateActorScopedStorage: vi.fn(),
+  subscribeActorScopedStorage: vi.fn(() => () => {}),
+  installActorOperationalHandoffGuards: vi.fn(async () => true),
+  assertActorOperationalHandoffClear: vi.fn(() => true),
+  rebindActorOperationalOwnership: vi.fn(() => 0)
 }));
 
 vi.mock('../../db/tenantRuntimeRouter', () => ({
@@ -10,6 +21,26 @@ vi.mock('../../db/tenantRuntimeRouter', () => ({
     table: vi.fn(() => ({ get: mocks.get }))
   },
   getTenantRuntimeReadiness: vi.fn(() => mocks.readiness())
+}));
+
+vi.mock('../../tenant/tenantScopedStorage', () => ({
+  hydrateTenantStorageConsumers: mocks.hydrateTenantStorageConsumers,
+  resumeTenantStorageWrites: mocks.resumeTenantStorageWrites
+}));
+
+vi.mock('../actorScopedStorage', () => ({
+  prepareActorScopedStorage: mocks.prepareActorScopedStorage,
+  activateActorScopedStorage: mocks.activateActorScopedStorage,
+  resumeActorScopedStorageWrites: mocks.resumeActorScopedStorageWrites,
+  suspendActorScopedStorageWrites: mocks.suspendActorScopedStorageWrites,
+  invalidateActorScopedStorage: mocks.invalidateActorScopedStorage,
+  subscribeActorScopedStorage: mocks.subscribeActorScopedStorage
+}));
+
+vi.mock('../actorOperationalHandoff', () => ({
+  installActorOperationalHandoffGuards: mocks.installActorOperationalHandoffGuards,
+  assertActorOperationalHandoffClear: mocks.assertActorOperationalHandoffClear,
+  rebindActorOperationalOwnership: mocks.rebindActorOperationalOwnership
 }));
 
 import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../actorRuntimeController';
@@ -22,8 +53,8 @@ import {
 } from '../actorSessionRuntimeBridge';
 
 const TENANT_RUNTIME = Object.freeze({
-  opaqueId: 't_actor_bridge',
-  databaseName: 'LanzoDB_t_t_actor_bridge',
+  opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  databaseName: 'LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   generation: 7
 });
 
@@ -100,6 +131,10 @@ describe('actor session runtime bridge', () => {
       status: ACTOR_RUNTIME_STATUS.GRANTED,
       actorKey: 'admin:admin-1',
       sessionId: 'admin-session'
+    });
+    expect(mocks.assertActorOperationalHandoffClear).toHaveBeenCalledWith({
+      tenant: TENANT_RUNTIME,
+      actorKey: 'admin:admin-1'
     });
   });
 
