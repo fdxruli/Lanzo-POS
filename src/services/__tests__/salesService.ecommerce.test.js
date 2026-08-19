@@ -7,7 +7,13 @@ const mocks = vi.hoisted(() => ({
   splitOpenTableOrderCore: vi.fn(),
   table: vi.fn(),
   loggerError: vi.fn(),
-  loggerWarn: vi.fn()
+  loggerWarn: vi.fn(),
+  grantedHandle: {
+    actorKey: 'admin:test',
+    generation: 1,
+    tenant: { opaqueId: 'tenant-test', generation: 1 },
+    assertCurrent: vi.fn()
+  }
 }));
 
 vi.mock('../database', () => ({
@@ -37,7 +43,7 @@ vi.mock('../database', () => ({
 // unit tests continue to exercise their original behavior without restoring a
 // permissive production fallback for LOCKED/HANDOFF_CHECK.
 vi.mock('../auth/actorOperationalHandoff', () => ({
-  runCheckoutActorOperation: async ({ operation }) => operation(),
+  runCheckoutActorOperation: async ({ operation }) => operation({ handle: mocks.grantedHandle }),
   runTrackedActorOperationIfGranted: async (_label, operation) => operation()
 }));
 

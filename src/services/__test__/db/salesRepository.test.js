@@ -185,6 +185,80 @@ describe('salesRepository.executeSaleTransaction', () => {
     expect(state.maps[state.STORES.SALES].has('sale-credit-cash-down-payment')).toBe(false);
   });
 
+  it('never lets a new actor sell against another actor cash session', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.CAJAS].set('cash-admin-a', {
+      id: 'cash-admin-a',
+      estado: 'abierta',
+      actorKey: 'admin:a',
+      cashStationId: 'station-s',
+      fecha_apertura: '2026-06-14T08:00:00.000Z'
+    });
+    state.maps[state.STORES.MENU].set('cash-product', {
+      id: 'cash-product',
+      name: 'Producto efectivo',
+      trackStock: true,
+      stock: 10,
+      committedStock: 0
+    });
+
+    await expect(
+      salesRepository.executeSaleTransaction({
+        id: 'sale-staff-b-on-admin-a-cash',
+        paymentMethod: 'efectivo',
+        cash_session_id: 'cash-admin-a',
+        cashStationId: 'station-s',
+        cashOriginActorKey: 'staff:b',
+        total: 10,
+        abono: '10',
+        saldoPendiente: '0',
+        items: [{ id: 'cash-product', quantity: 1, stockDeducted: 1, batchesUsed: [] }]
+      }, [])
+    ).rejects.toMatchObject({
+      name: 'DatabaseError',
+      code: 'VALIDATION_ERROR',
+      message: expect.stringContaining('CASH_HANDOFF_REQUIRED')
+    });
+
+    expect(state.maps[state.STORES.SALES].has('sale-staff-b-on-admin-a-cash')).toBe(false);
+  });
+
+  it('binds a valid cash sale to the exact actor and station session', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.CAJAS].set('cash-admin-a', {
+      id: 'cash-admin-a',
+      estado: 'abierta',
+      actorKey: 'admin:a',
+      cashStationId: 'station-s',
+      fecha_apertura: '2026-06-14T08:00:00.000Z'
+    });
+    state.maps[state.STORES.MENU].set('cash-product', {
+      id: 'cash-product',
+      name: 'Producto efectivo',
+      trackStock: true,
+      stock: 10,
+      committedStock: 0
+    });
+
+    const result = await salesRepository.executeSaleTransaction({
+      id: 'sale-admin-a-on-own-cash',
+      paymentMethod: 'efectivo',
+      cash_session_id: 'cash-admin-a',
+      cashStationId: 'station-s',
+      cashOriginActorKey: 'admin:a',
+      total: 10,
+      abono: '10',
+      saldoPendiente: '0',
+      items: [{ id: 'cash-product', quantity: 1, stockDeducted: 1, batchesUsed: [] }]
+    }, []);
+
+    expect(result.success).toBe(true);
+    expect(state.maps[state.STORES.SALES].get('sale-admin-a-on-own-cash')).toMatchObject({
+      cash_session_id: 'cash-admin-a',
+      cashStationId: 'station-s'
+    });
+  });
+
   it('permite fiado sin abono inicial aunque no haya caja abierta', async () => {
     state.maps[state.STORES.CAJAS].clear();
     state.maps[state.STORES.CUSTOMERS].set('customer-1', {
