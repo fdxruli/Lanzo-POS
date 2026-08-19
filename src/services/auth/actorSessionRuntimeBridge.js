@@ -10,6 +10,7 @@ import {
 } from './actorScopedStorage';
 import {
   assertActorOperationalHandoffClear,
+  configureActorOperationalPersistence,
   installActorOperationalHandoffGuards,
   rebindActorOperationalOwnership,
   refreshPersistedActorCheckoutOwnership
@@ -139,8 +140,13 @@ export const grantAuthenticatedActorRuntime = async ({
 
   actorRuntimeController.beginHandoffCheck();
   try {
-    // Install the operational fences before GRANTED. Existing wrappers are
-    // idempotent and always capture the actor that starts each async action.
+    // Durable checkout inspection must be available before any POS store is
+    // mounted. Bind it directly to the already-authorized tenant runtime proxy;
+    // do not import UI/store modules into the authentication authority.
+    configureActorOperationalPersistence({
+      db: tenantRuntimeDb,
+      salesStore: 'sales'
+    });
     await installActorOperationalHandoffGuards();
     // Checkout ownership is also recorded on the tenant-shared SALES row so a
     // browser restart cannot erase the safety barrier. Legacy locked rows with
