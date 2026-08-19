@@ -7,6 +7,7 @@ import {
 } from '../auth/actorScopedStorage';
 
 const PREFIX = 'lanzo:t:';
+const ACTOR_ACTIVE_ORDERS_KEY = 'lanzo-active-orders-storage';
 let activeNamespace = null;
 let ready = false;
 let writesSuspended = false;
@@ -21,6 +22,44 @@ export class TenantScopedStorageInspectionError extends Error {
     this.code = code;
   }
 }
+
+// ActiveOrders mixes two contracts in memory: unsaved editing state and
+// tenant-shared SALES rows loaded from Dexie. Only the former belongs in the
+// actor namespace. Never serialize a committed/open business record as if it
+// were private actor state merely because it is currently open in the POS UI.
+const sanitizeActorScopedValue = (logicalKey, value) => {
+  if (logicalKey !== ACTOR_ACTIVE_ORDERS_KEY) return value;
+  if (typeof value !== 'string') return null;
+
+  try {
+    const parsed = JSON.parse(value);
+    const state = parsed?.state;
+    if (!state || !Array.isArray(state.activeOrders)) return null;
+
+    const actorOrders = state.activeOrders.filter((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return false;
+      const order = entry[1];
+      return order?.isSaved !== true;
+    });
+    const actorOrderIds = new Set(actorOrders.map(([orderId]) => orderId));
+    const currentOrderId = actorOrderIds.has(state.currentOrderId)
+      ? state.currentOrderId
+      : (actorOrders[0]?.[0] || null);
+
+    return JSON.stringify({
+      ...parsed,
+      state: {
+        ...state,
+        activeOrders: actorOrders,
+        currentOrderId
+      }
+    });
+  } catch {
+    // A malformed actor-sensitive payload must never fall back to the tenant
+    // namespace or be persisted unsanitized.
+    return null;
+  }
+};
 
 // This is intentionally independent from READY. The local tenant guard needs
 // to inspect the physical namespace before it binds a freshly opened runtime,
@@ -105,7 +144,9 @@ export const getTenantStorageItem = (logicalKey) => {
 export const setTenantStorageItem = (logicalKey, value) => {
   if (!ready) return;
   if (isActorScopedLogicalKey(logicalKey)) {
-    setActorStorageItem(logicalKey, value);
+    const sanitizedValue = sanitizeActorScopedValue(logicalKey, value);
+    if (sanitizedValue === null) return;
+    setActorStorageItem(logicalKey, sanitizedValue);
     return;
   }
   const key = !writesSuspended && physicalKey(logicalKey);
