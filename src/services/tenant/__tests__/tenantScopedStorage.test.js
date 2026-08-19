@@ -16,14 +16,27 @@ describe('tenantScopedStorage', () => {
   beforeEach(() => { localStorage.clear(); clearActiveTenantStorageNamespace(); });
 
   it('never reads or mutates an unscoped legacy key', () => {
+    const opaqueId = 't_0123456789abcdef0123456789abcdef';
+    const legacyTenantKey = `lanzo:t:${opaqueId}:lanzo-active-orders-storage`;
     localStorage.setItem('lanzo-active-orders-storage', '{"tenant":"legacy-A"}');
-    setActiveTenantStorageNamespace('t_0123456789abcdef0123456789abcdef');
+    setActiveTenantStorageNamespace(opaqueId);
     markTenantStorageReady();
     resumeTenantStorageWrites();
+
     expect(getTenantStorageItem('lanzo-active-orders-storage')).toBeNull();
-    setTenantStorageItem('lanzo-active-orders-storage', '{"tenant":"B"}');
+    setTenantStorageItem('lanzo-active-orders-storage', JSON.stringify({
+      state: {
+        activeOrders: [['draft-b', { id: 'draft-b', isSaved: false }]],
+        currentOrderId: 'draft-b'
+      },
+      version: 0
+    }));
+
+    // No actor is mounted, so actor-owned data fails closed. Neither the
+    // historical unscoped key nor the old tenant-scoped ownership location is
+    // mutated or claimed by the tenant storage layer.
     expect(localStorage.getItem('lanzo-active-orders-storage')).toBe('{"tenant":"legacy-A"}');
-    expect(localStorage.getItem('lanzo:t:t_0123456789abcdef0123456789abcdef:lanzo-active-orders-storage')).toBe('{"tenant":"B"}');
+    expect(localStorage.getItem(legacyTenantKey)).toBeNull();
   });
 
   it('keeps A and B state physically separate and blocks pre-ready reads', () => {
