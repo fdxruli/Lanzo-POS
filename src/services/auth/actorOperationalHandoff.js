@@ -200,9 +200,18 @@ export const runTrackedActorOperation = async (label, operation, permission = nu
   )
 );
 
+// Compatibility name retained for existing callers, but actor-sensitive work
+// is never allowed to downgrade to an unguarded callback. Only GRANTED may
+// proceed; every earlier handoff state fails closed with the canonical runtime
+// authority error and the callback is not executed.
 export const runTrackedActorOperationIfGranted = async (label, operation, permission = null) => {
   const state = actorRuntimeController.getState();
-  if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) return operation();
+  if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_LOCKED, {
+      status: state.status,
+      reason: 'actor_runtime_not_granted'
+    });
+  }
   return runTrackedActorOperation(label, operation, permission);
 };
 
