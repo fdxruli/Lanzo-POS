@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const VERSION_RE = /^(\d{14})_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/;
+const GIT_SHA_RE = /^[0-9a-f]{40}$/;
 
 const fail = (message) => {
   throw new Error(`CANONICAL_MIGRATION_GUARD: ${message}`);
@@ -16,6 +17,16 @@ export const parseExpectedVersions = (value) => {
     if (!/^\d{14}$/.test(version)) fail(`invalid expected version: ${version}`);
   }
   return versions.sort();
+};
+
+export const assertCurrentMainSha = ({ expectedGitSha, checkedOutSha, currentRemoteMainSha }) => {
+  for (const [label, sha] of Object.entries({ expectedGitSha, checkedOutSha, currentRemoteMainSha })) {
+    if (!GIT_SHA_RE.test(String(sha || ''))) fail(`${label} is not a full lowercase Git SHA`);
+  }
+  if (checkedOutSha !== expectedGitSha || currentRemoteMainSha !== expectedGitSha) {
+    fail(`expected_git_sha is not current main HEAD: expected=${expectedGitSha} checked_out=${checkedOutSha} current_remote_main=${currentRemoteMainSha}`);
+  }
+  return expectedGitSha;
 };
 
 export const localMigrationVersions = (directory) => {
