@@ -35,8 +35,14 @@ const actorPhysicalKey = async (tenant) => {
   return `lanzo:t:${tenant.opaqueId}:a:${actorOpaqueId}:${logicalKey}`;
 };
 
-const mountActorStorage = async (tenant, actorGeneration) => {
+// Production handoff prepares the actor namespace with writes suspended,
+// hydrates through that pending binding, then activates/resumes only after
+// ActorRuntime reaches GRANTED. Tests must preserve that order too.
+const prepareActorStorage = async (tenant, actorGeneration) => {
   await prepareActorScopedStorage({ tenant, actorKey, actorGeneration });
+};
+
+const activatePreparedActorStorage = (tenant, actorGeneration) => {
   activateActorScopedStorage({
     actorKey,
     generation: actorGeneration,
@@ -66,13 +72,14 @@ describe('active orders tenant persistence', () => {
     localTenantAccessController.grant({ aliases: ['license-key-sha256:test'], authority: 'license_key_sha256' });
     markTenantStorageReady();
     resumeTenantStorageWrites();
-    await mountActorStorage(tenant, 1);
+    await prepareActorStorage(tenant, 1);
 
     const key = await actorPhysicalKey(tenant);
     localStorage.setItem(key, fixture);
     await resetAndHydrateActiveOrdersForTenant();
     expect(localStorage.getItem(key)).toBe(fixture);
     expect(useActiveOrders.getState().activeOrders.get('order-A')).toMatchObject({ id: 'order-A' });
+    activatePreparedActorStorage(tenant, 1);
 
     localTenantAccessController.lock('logout');
     invalidateActorScopedStorage('logout');
@@ -81,8 +88,9 @@ describe('active orders tenant persistence', () => {
 
     localTenantAccessController.grant({ aliases: ['license-key-sha256:test'], authority: 'license_key_sha256' });
     markTenantStorageReady();
-    await mountActorStorage(tenant, 3);
+    await prepareActorStorage(tenant, 3);
     await resetAndHydrateActiveOrdersForTenant();
+    activatePreparedActorStorage(tenant, 3);
     expect(useActiveOrders.getState().activeOrders.get('order-A')).toMatchObject({ id: 'order-A' });
   });
 
@@ -100,12 +108,13 @@ describe('active orders tenant persistence', () => {
       version: 0
     });
 
-    await mountActorStorage(runtime, 1);
+    await prepareActorStorage(runtime, 1);
     localStorage.setItem(key, seeded);
     await markTenantRuntimeReady();
     localTenantAccessController.grant(identity, 'ready');
     expect(useActiveOrders.getState().activeOrders.get('seed')).toMatchObject({ id: 'seed' });
     expect(localStorage.getItem(key)).toBe(seeded);
+    activatePreparedActorStorage(runtime, 1);
 
     useActiveOrders.setState({
       activeOrders: new Map([['updated', { id: 'updated', isSaved: false, items: [], total: 99 }]]),
@@ -119,8 +128,9 @@ describe('active orders tenant persistence', () => {
     expect(localStorage.getItem(key)).toBe(afterUpdate);
 
     localTenantAccessController.grant(identity, 'reopen');
-    await mountActorStorage(runtime, 3);
+    await prepareActorStorage(runtime, 3);
     await resetAndHydrateActiveOrdersForTenant();
+    activatePreparedActorStorage(runtime, 3);
     expect(useActiveOrders.getState().activeOrders.get('updated')).toMatchObject({ total: 99 });
   });
 });
