@@ -54,6 +54,7 @@ import {
   ACTOR_HANDOFF_CHECKOUT_OWNED,
   ACTOR_HANDOFF_PENDING_OPERATIONS,
   assertActorOperationalHandoffClear,
+  configureActorOperationalPersistence,
   getActorCheckoutOwnerships,
   getPendingActorOperations,
   installActorOperationalHandoffGuards,
@@ -96,6 +97,7 @@ const createHandle = ({
 describe('actor operational handoff barrier', () => {
   beforeEach(async () => {
     fixtures.state.sales = [];
+    configureActorOperationalPersistence({ db: fixtures.db, salesStore: 'sales' });
     await installActorOperationalHandoffGuards();
     await refreshPersistedActorCheckoutOwnership({ tenant: TENANT });
   });
