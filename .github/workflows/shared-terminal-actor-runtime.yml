@@ -14,6 +14,7 @@ on:
       - 'scripts/generate-shared-terminal-actor-runtime-report.mjs'
       - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
       - 'docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md'
+      - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
 

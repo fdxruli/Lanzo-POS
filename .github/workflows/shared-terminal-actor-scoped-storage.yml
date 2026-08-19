@@ -24,6 +24,7 @@ on:
       - 'src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js'
       - 'src/services/tenant/__tests__/tenantScopedStorage.test.js'
       - 'docs/reports/SHARED.TERMINAL.3.ACTOR.SCOPED.STORAGE.HANDOFF.md'
+      - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
       - '.github/workflows/shared-terminal-actor-scoped-storage.yml'
   workflow_dispatch:
 
@@ -191,6 +192,29 @@ jobs:
           done
           echo "BASE PublicStore observational failures: ${failures}/8"
 
+      - name: BASE PublicStore BFCache focused repetitions (baseline evidence)
+        shell: bash
+        run: |
+          failures=0
+          for i in $(seq 1 20); do
+            echo "BASE PublicStore BFCache repetition ${i}"
+            set +e
+            npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+              -t "rebuilds the first page on BFCache restore without clearing visible products" \
+              --maxWorkers=4 \
+              --reporter=json \
+              --outputFile="public-store-bfcache-${i}.json" \
+              > "public-store-bfcache-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "public-store-bfcache-${i}.exit"
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "BASE PublicStore BFCache repetition ${i} observational failure: exit ${code}"
+            fi
+          done
+          echo "BASE PublicStore BFCache observational failures: ${failures}/20"
+
       - name: BASE raw full-suite repetitions
         shell: bash
         run: |
@@ -221,6 +245,9 @@ jobs:
             full-suite-*.json
             full-suite-*.log
             full-suite-*.exit
+            public-store-bfcache-*.json
+            public-store-bfcache-*.log
+            public-store-bfcache-*.exit
           if-no-files-found: error
 
   full-suite-candidate:
@@ -265,6 +292,29 @@ jobs:
           done
           echo "CANDIDATE PublicStore observational failures: ${failures}/8"
 
+      - name: CANDIDATE PublicStore BFCache focused repetitions (candidate evidence)
+        shell: bash
+        run: |
+          failures=0
+          for i in $(seq 1 20); do
+            echo "CANDIDATE PublicStore BFCache repetition ${i}"
+            set +e
+            npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+              -t "rebuilds the first page on BFCache restore without clearing visible products" \
+              --maxWorkers=4 \
+              --reporter=json \
+              --outputFile="public-store-bfcache-${i}.json" \
+              > "public-store-bfcache-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "public-store-bfcache-${i}.exit"
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "CANDIDATE PublicStore BFCache repetition ${i} observational failure: exit ${code}"
+            fi
+          done
+          echo "CANDIDATE PublicStore BFCache observational failures: ${failures}/20"
+
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
         run: |
@@ -295,6 +345,9 @@ jobs:
             full-suite-*.json
             full-suite-*.log
             full-suite-*.exit
+            public-store-bfcache-*.json
+            public-store-bfcache-*.log
+            public-store-bfcache-*.exit
           if-no-files-found: error
 
   differential-regression-gate:
