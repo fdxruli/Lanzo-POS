@@ -14,6 +14,7 @@ on:
       - 'scripts/generate-shared-terminal-actor-runtime-report.mjs'
       - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
       - 'docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md'
+      - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
 
@@ -21,7 +22,11 @@ permissions:
   contents: read
 
 env:
-  SHARED_TERMINAL_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
+  # Immutable SHARED.TERMINAL.1 ActorRuntime contract baseline.
+  SHARED_TERMINAL_CONTRACT_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
+  # Current PR refs drive new-regression attribution.
+  SHARED_TERMINAL_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+  SHARED_TERMINAL_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   focused-validation:
@@ -32,8 +37,21 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Validate comparison refs
+        shell: bash
+        run: |
+          echo "PR_BASE_SHA=${SHARED_TERMINAL_PR_BASE_SHA}"
+          echo "CANDIDATE_SHA=${SHARED_TERMINAL_CANDIDATE_SHA}"
+          echo "CONTRACT_BASE_SHA=${SHARED_TERMINAL_CONTRACT_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_PR_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_CANDIDATE_SHA}"
+          test -n "${SHARED_TERMINAL_CONTRACT_BASE_SHA}"
+          git cat-file -e "${SHARED_TERMINAL_PR_BASE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_CANDIDATE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_CONTRACT_BASE_SHA}^{commit}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -45,7 +63,7 @@ jobs:
         run: npm ci
 
       - name: git diff --check
-        run: git diff --check "${SHARED_TERMINAL_BASE_SHA}...HEAD"
+        run: git diff --check "${SHARED_TERMINAL_CONTRACT_BASE_SHA}...HEAD"
 
       - name: ActorRuntime focused tests
         run: npx vitest run src/services/auth/__tests__/actorRuntimeController.test.js src/services/auth/__tests__/actorSessionRuntimeBridge.test.js --maxWorkers=4
@@ -91,7 +109,7 @@ jobs:
       - name: Checkout exact BASE SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SHARED_TERMINAL_BASE_SHA }}
+          ref: ${{ env.SHARED_TERMINAL_PR_BASE_SHA }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -107,6 +125,37 @@ jobs:
           npm run build
           npm run build:store
           npm run build:store:vercel
+
+      - name: BASE PublicStore focused repetitions (baseline evidence)
+        shell: bash
+        run: |
+          cases=(
+            "bfcache|rebuilds the first page on BFCache restore without clearing visible products"
+            "site-version|PublicStore published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision"
+          )
+          failures=0
+          for spec in "${cases[@]}"; do
+            slug="${spec%%|*}"
+            test_name="${spec#*|}"
+            for i in $(seq 1 20); do
+              echo "BASE PublicStore ${slug} repetition ${i}"
+              set +e
+              npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+                -t "${test_name}" \
+                --maxWorkers=4 \
+                --reporter=json \
+                --outputFile="public-store-${slug}-${i}.json" \
+                > "public-store-${slug}-${i}.log" 2>&1
+              code=$?
+              set -e
+              echo "$code" > "public-store-${slug}-${i}.exit"
+              if [ "$code" -ne 0 ]; then
+                failures=$((failures + 1))
+                echo "BASE PublicStore ${slug} repetition ${i} observational failure: exit ${code}"
+              fi
+            done
+          done
+          echo "BASE PublicStore focused observational failures: ${failures}/40"
 
       - name: BASE raw full-suite repetitions
         shell: bash
@@ -138,6 +187,9 @@ jobs:
             full-suite-*.json
             full-suite-*.log
             full-suite-*.exit
+            public-store-*.json
+            public-store-*.log
+            public-store-*.exit
           if-no-files-found: error
 
   full-suite-candidate:
@@ -148,7 +200,7 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_CANDIDATE_SHA }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -164,6 +216,37 @@ jobs:
           npm run build
           npm run build:store
           npm run build:store:vercel
+
+      - name: CANDIDATE PublicStore focused repetitions (candidate evidence)
+        shell: bash
+        run: |
+          cases=(
+            "bfcache|rebuilds the first page on BFCache restore without clearing visible products"
+            "site-version|PublicStore published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision"
+          )
+          failures=0
+          for spec in "${cases[@]}"; do
+            slug="${spec%%|*}"
+            test_name="${spec#*|}"
+            for i in $(seq 1 20); do
+              echo "CANDIDATE PublicStore ${slug} repetition ${i}"
+              set +e
+              npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+                -t "${test_name}" \
+                --maxWorkers=4 \
+                --reporter=json \
+                --outputFile="public-store-${slug}-${i}.json" \
+                > "public-store-${slug}-${i}.log" 2>&1
+              code=$?
+              set -e
+              echo "$code" > "public-store-${slug}-${i}.exit"
+              if [ "$code" -ne 0 ]; then
+                failures=$((failures + 1))
+                echo "CANDIDATE PublicStore ${slug} repetition ${i} observational failure: exit ${code}"
+              fi
+            done
+          done
+          echo "CANDIDATE PublicStore focused observational failures: ${failures}/40"
 
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
@@ -195,6 +278,9 @@ jobs:
             full-suite-*.json
             full-suite-*.log
             full-suite-*.exit
+            public-store-*.json
+            public-store-*.log
+            public-store-*.exit
           if-no-files-found: error
 
   differential-regression-gate:
@@ -209,7 +295,7 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_CANDIDATE_SHA }}
 
       - name: Download BASE evidence
         uses: actions/download-artifact@v4
@@ -251,7 +337,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/shared-terminal-actor-runtime'
     steps:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
@@ -265,10 +351,11 @@ jobs:
         run: |
           PHASE1_REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
           PHASE2_REPORT_PATH="docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md"
+          PHASE4_REPORT_PATH="docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md"
           mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)
 
           if [[ "${#changed_paths[@]}" -eq 1 ]] && \
-             [[ "${changed_paths[0]}" == "$PHASE1_REPORT_PATH" || "${changed_paths[0]}" == "$PHASE2_REPORT_PATH" ]]; then
+             [[ "${changed_paths[0]}" == "$PHASE1_REPORT_PATH" || "${changed_paths[0]}" == "$PHASE2_REPORT_PATH" || "${changed_paths[0]}" == "$PHASE4_REPORT_PATH" ]]; then
             echo "report_only=true" >> "$GITHUB_OUTPUT"
             echo "REPORT-ONLY HEAD — validation complete; no republish required."
             exit 0

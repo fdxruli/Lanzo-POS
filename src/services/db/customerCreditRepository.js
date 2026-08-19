@@ -4,6 +4,9 @@ import { DatabaseError, DB_ERROR_CODES } from './utils';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath'; // <-- OBLIGATORIO
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
+import { getCashActorFromState } from '../cash/cashActor';
+import { getCashStationIdentity } from '../cash/cashStation';
+import { captureCashActorContext } from '../cash/cashFinancialGate';
 import {
     LOCAL_TENANT_STATUS,
     localTenantAccessController
@@ -47,6 +50,7 @@ export const customerCreditRepository = {
                 throw new DatabaseError(DB_ERROR_CODES.NOT_FOUND, `Cliente ${customerId} no existe.`);
             }
 
+            let cashMutationContext = {};
             // 2. Validación de deuda estricta con Big.js
             if (isCashPayment) {
                 const caja = await tx.table(STORES.CAJAS).get(cajaId);
@@ -61,6 +65,15 @@ export const customerCreditRepository = {
                         DB_ERROR_CODES.VALIDATION_ERROR,
                         'CAJA_REQUIRED: No se puede registrar un abono en efectivo sin caja abierta.'
                     );
+                }
+                if (caja.actorKey || caja.cashStationId) {
+                    const actor = getCashActorFromState();
+                    const station = await getCashStationIdentity();
+                    cashMutationContext = {
+                        actorKey: actor.actorKey,
+                        cashStationId: station.cashStationId,
+                        actorContext: captureCashActorContext()
+                    };
                 }
             }
 
@@ -163,6 +176,7 @@ export const customerCreditRepository = {
                             customerId,
                             paymentId: ledgerId
                         },
+                        ...cashMutationContext,
                         createdAt: timestamp
                     }
                 );

@@ -363,12 +363,213 @@ El handoff financiero, la exclusividad por estación, la separación actor/devic
 - No iniciar `SHARED.TERMINAL.5`.
 - Esperar revisión independiente.
 
+## 20. CLOSEOUT.R2 — canonical migration history and differential resolution
 
-**SHARED.TERMINAL.4: PARTIAL**
+### R2 exact repository state
 
-El handoff principal, la exclusividad por estación, la separación actor/device, la protección stale, la idempotencia, el bloqueo offline y el binding sale/movement quedaron implementados y verificados sin ownership leaks ni regresiones nuevas. Las deudas listadas arriba fallan cerradas.
+- PR: `#211`, `OPEN`, `DRAFT`, `merged=false`.
+- Branch: `feat/shared-terminal-financial-handoff`.
+- R2 initial remote HEAD: `6b3ddd0a8060bf5275bb173348e04312c2eef706`.
+- PR base: `main@294349e5ca590ab98bd75b0b7e38661d086b7217`.
+- Validated SHARED.TERMINAL.4 code commit: `26e67f698f3fc8132c5add8b906e332a27d2fabd`.
+- Final executable validation HEAD before this permanent report: `616380d3a559cfe2ff8fa979ba6e3d158f62479d`.
+- The report commit is a new final HEAD and is validated separately after publication; the report does not create a self-referential report-only loop.
+
+R2 commits after the initial HEAD were:
+
+1. `a65586b2c38fa4a38cab94e7fd5051a21f2b61db` — `chore(supabase): canonicalize shared terminal migration timestamps`.
+2. `c93d42b26b8f7afa9c16876ca71502e34dd26d1a` — an unintended historical report-only workflow publication, inspected and not treated as application work.
+3. `2fbed7e8c13add1cf93a6bf249ec3ccefb872a84` — `fix(ci): use authoritative PR differential baseline`; this also restored the Phase 1 report state and restricted the publisher.
+4. `b4effe887a7a33ddbe2c6747906e85125b508f0b` — `test(ci): classify proven public-store baseline flake`.
+5. `29f6d9dd299d39b7155ef0769bf3e80ba2fc014a` — `test(ci): prove public-store baseline flake in global comparison`.
+6. `616380d3a559cfe2ff8fa979ba6e3d158f62479d` — `test(ci): capture known PublicStore baseline flakes`.
+
+No validated cash/application commits were amended or rewritten. No force-push was used.
+
+### Migration history reconciliation
+
+Production was inspected read-only before and after Git canonicalization. The Supabase connector that originally applied these migrations stores a generated numeric `version` while preserving the supplied migration `name`; the project precedent in PR #185 is to treat the production ledger as authoritative and align local filenames to that ledger.
+
+Recovered production statements:
+
+| Production version | Production name | Statement length | MD5 | SHA-256 |
+| --- | --- | ---: | --- | --- |
+| `20260819084636` | `shared_terminal_4_cash_station_financial_handoff` | 33,985 bytes / 33,977 chars | `c8821049dcba67de30486464a5943833` | `6cfc6605350ac00050fd09234f41b181047474cc9de696d3384bf349c533f5e3` |
+| `20260819084719` | `20260819090000_shared_terminal_cash_station_financial_handoff` | 34,185 bytes / 34,177 chars | `c03d9dca69296b3bd9b6b4c5f5bbe91c` | `157e40ad7192b9e9ef1b66b9b8a64bbb3ffc33fce33ff3f0c0b76406282ed4f9` |
+| `20260819085828` | `20260819090100_shared_terminal_cash_movement_performed_by` | 1,954 bytes / 1,954 chars | `2a9a1c5e3cda971f6907fc073236f11c` | `d806673c4f8bf917d3bb0f12cb49cabf58b7baaa247adbe576e3e1808fd9a381` |
+
+The original Git aliases before R2 were:
+
+| Original Git file | Length | SHA-256 |
+| --- | ---: | --- |
+| `20260819090000_shared_terminal_cash_station_financial_handoff.sql` | 34,185 bytes | `157e40ad7192b9e9ef1b66b9b8a64bbb3ffc33fce33ff3f0c0b76406282ed4f9` |
+| `20260819090100_shared_terminal_cash_movement_performed_by.sql` | 1,955 bytes | `10adcb8718f0139e7e959070b93a2426a7e41178218d7686ce7f865ecbb48983` |
+
+The 1-byte difference for the second migration is only the final LF omitted by the production statement storage. Its SQL content is equivalent.
+
+The exact local mapping after R2 is:
+
+| Production ledger | Canonical Git filename | Classification |
+| --- | --- | --- |
+| `084636` | `20260819084636_shared_terminal_4_cash_station_financial_handoff.sql` | First historical production apply; contains the deterministic station adoption/backfill. Already applied; not reexecuted. |
+| `084719` | `20260819084719_20260819090000_shared_terminal_cash_station_financial_handoff.sql` | Exact content of the old `090000` Git alias, renamed to its authoritative ledger version. |
+| `085828` | `20260819085828_20260819090100_shared_terminal_cash_movement_performed_by.sql` | Exact content of the old `090100` Git alias apart from the final LF, renamed to its authoritative ledger version. |
+
+`084636` is not an invented ownership backfill and is not a duplicate alias. It is the earlier one-sentence station migration recorded by production. `084719` is the later hardened/idempotent historical statement; its additional guards explain why both rows are retained. No production session, movement, station binding, ownership, actor key, or migration ledger row was changed.
+
+Files changed by the canonicalization commit:
+
+- Added `20260819084636_shared_terminal_4_cash_station_financial_handoff.sql`.
+- Renamed `20260819090000_shared_terminal_cash_station_financial_handoff.sql` to `20260819084719_20260819090000_shared_terminal_cash_station_financial_handoff.sql`.
+- Renamed `20260819090100_shared_terminal_cash_movement_performed_by.sql` to `20260819085828_20260819090100_shared_terminal_cash_movement_performed_by.sql`.
+- No migration was deleted, archived, edited in place, or reapplied.
+
+The authoritative read-only migration list contained 231 production rows. After canonicalization, the local Git migration set also contained 231 versions; `remote_only=[]` and `local_only=[]`, including all three SHARED.TERMINAL.4 rows. The Supabase CLI binary was not installed in the connected environment, so `supabase migration list --linked` and `supabase db push --dry-run --linked` could not be invoked literally. The equivalent connector-backed production ledger listing plus exact local-version comparison was clean, and no dry-run or apply operation was attempted.
+
+- `SHARED.TERMINAL.4 REAPPLY RISK = NO` after canonicalization.
+- `SUPABASE PRODUCTION MODIFIED = NO` during R2.
+- `Migration SQL reexecuted = NO`.
+- `supabase migration repair = NOT USED`.
+- `schema_migrations` DML = NOT USED.
+
+### Production schema and financial invariants
+
+The final read-only verification against project `odlrhijtfyavryeqivaa` found:
+
+- Required tables present: `pos_cash_stations`, `pos_cash_station_bindings`, `pos_cash_sessions`, `pos_cash_movements` (`4/4`).
+- `pos_cash_sessions.cash_station_id`, `pos_cash_movements.cash_station_id`, and `performed_by_actor_key` present.
+- `ux_pos_cash_sessions_open_station` present with the required partial unique semantics over `(license_id, cash_station_id)` for OPEN, non-deleted, non-null station sessions.
+- Station/session/movement foreign keys present, including composite `(license_id, cash_station_id)` references.
+- Duplicate OPEN station groups: `0`.
+- Movement station mismatches: `0`.
+- Movement `performed_by_actor_key` NULL: `0`.
+- Cross-tenant cash-station bindings: `0`.
+
+### Differential base audit and correction
+
+The ActorRuntime workflow used two different concepts that had been conflated:
+
+- `SHARED_TERMINAL_BASE_SHA=2f3457313b81f09937acab6fe4bac4399e79035f` was intentionally the immutable ActorRuntime contract baseline from the Phase 1/PR #207 history.
+- PR #211's actual GitHub base was `294349e5ca590ab98bd75b0b7e38661d086b7217`, the merged PR #210 ActorScoped Storage head.
+
+Using the contract baseline for full-suite attribution was a stale-base defect. It could attribute failures from the entire earlier phase chain to PR #211. The correction separates the responsibilities:
+
+- ActorRuntime contract checks remain anchored to `2f3457313b81f09937acab6fe4bac4399e79035f`.
+- Full-suite BASE/CANDIDATE differential uses `github.event.pull_request.base.sha` and the exact candidate head.
+- Final workflow logs printed `CONTRACT_BASE_SHA=2f3457313b81f09937acab6fe4bac4399e79035f`, `PR_BASE_SHA=294349e5ca590ab98bd75b0b7e38661d086b7217`, and `CANDIDATE_SHA=616380d3a559cfe2ff8fa979ba6e3d158f62479d`.
+- Guards fail if any required ref is missing or is not a commit.
+
+The comparator was not globally weakened. It still reports raw candidate failures and fails on an unmatched candidate observation. It can classify a candidate failure as `PREEXISTING_FLAKY_BASELINE_FAILURE` only when the exact normalized test identity and exact normalized error are independently present in focused BASE evidence with at least ten repetitions.
+
+### BFCache investigation and classification
+
+The R1 report's `PublicStorePage.siteVersion.test.jsx` candidate-regression wording is superseded by this section. The R2 observation that triggered the investigation was:
+
+- File: `src/pages/__tests__/PublicStorePage.test.jsx`.
+- Test: `PublicStorePage rebuilds the first page on BFCache restore without clearing visible products`.
+- Historical candidate observation: full-suite CANDIDATE repetition 2 on the R2 initial evidence HEAD, normalized as `STACK_TRACE_ERROR`.
+
+The raw workflow JSON/log was retrieved. The underlying failure was a Vitest 15,000 ms test timeout, emitted at the `it(...)` declaration line 422 while the async BFCache test was waiting through the `pageshow` refresh path. There was no separate application exception or assertion showing a cash/ActorRuntime failure. The relevant test awaits the refresh indicator and resolves a deferred second catalog request. The test file and PublicStore production implementation were byte-equivalent between the exact PR base and candidate; SHARED.TERMINAL.4 did not modify either.
+
+Reproduction evidence used equivalent Node/Vitest/workers and both exact revisions:
+
+| Environment | Worker mode | Result |
+| --- | --- | --- |
+| Local exact BASE and CANDIDATE | `--maxWorkers=1`, 10 repetitions each | 10/10 pass on both. |
+| Local exact BASE | `--maxWorkers=4`, 10 repetitions | 8 pass / 2 timeout failures. |
+| Local exact CANDIDATE | `--maxWorkers=4`, 10 repetitions | 9 pass / 1 timeout failure. |
+| Local exact BASE | `--maxWorkers=4`, JSON, 20 repetitions | 19 pass / 1 timeout failure. |
+| Local exact CANDIDATE | `--maxWorkers=4`, JSON, 20 repetitions | 15 pass / 5 timeout failures. |
+| Final Scoped Storage CI BASE | focused BFCache, 20 repetitions | 20 pass / 0 failures. |
+| Final Scoped Storage CI CANDIDATE | focused BFCache, 20 repetitions | 18 pass / 2 timeout failures. |
+| Final ActorRuntime CI BASE | focused BFCache, 20 repetitions | 19 pass / 1 timeout failure. |
+| Final ActorRuntime CI CANDIDATE | focused BFCache, 20 repetitions | 20 pass / 0 failures. |
+| Final PR127 CI PR | focused BFCache, 20 repetitions | 18 pass / 2 timeout failures. |
+| Final PR127 CI main/BASE | focused BFCache, 20 repetitions | 20 pass / 0 failures. |
+
+The same normalized timeout is therefore reproducible on the exact BASE and CANDIDATE revisions across independent runs. It is intermittent and worker-sensitive, not reproducibly candidate-only. No PublicStore production change was justified or made.
+
+Final classification: `PREEXISTING_FLAKY_BASELINE_FAILURE`. The exact candidate-only observation from the historical one-shot run is resolved as a baseline-flake evidence issue, not suppressed: raw evidence remains archived, focused BASE evidence is required, and unmatched candidate failures still fail the comparator.
+
+### Final differential evidence on executable HEAD `616380d3`
+
+The final ActorRuntime differential artifact reported:
+
+- BASE: `2858 passed / 92 failed / 51 skipped / 3001 total` in both repetitions.
+- CANDIDATE: `2868 passed / 92 failed / 51 skipped / 3011 total` in both repetitions.
+- Stable preexisting candidate failure observations: `112`.
+- Preexisting flaky candidate failure observations: `0` in the full-suite matrix.
+- `NEW/CHANGED REGRESSIONS: 0`.
+
+The final ActorScoped Storage differential artifact reported:
+
+- BASE: `2834/92/51/2977` and `2833/93/51/2977`.
+- CANDIDATE: `2868/92/51/3011` in both repetitions.
+- Stable preexisting candidate failure observations: `112`.
+- `NEW/CHANGED REGRESSIONS: 0`.
+
+The final PR127 Global Comparison reported both raw global suites as red because the repository has historical failures, but `raw candidate-only failures = 0`, `new failures = 0`, and the workflow conclusion was `success`. No global comparator allowlist or unconditional flake exemption was added.
+
+### Final workflow and build validation on `616380d3`
+
+| Workflow | Run | Result |
+| --- | ---: | --- |
+| Shared Terminal Actor Scoped Storage Validation | `32275472699` | PASS; differential job `96144205400` PASS |
+| Shared Terminal Actor Runtime Validation | `32275472746` | PASS; differential job `96144199443` PASS; publisher `96144261292` SKIPPED |
+| HOTFIX Dexie Recovery Validation | `32275472747` | PASS; validation result `96142168697` PASS |
+| PR127 Global Comparison | `32275472766` | PASS; raw candidate-only `0` |
+| Vercel status | commit `616380d3` | PASS |
+
+Focused validation, cash/handoff, tenant isolation, recovery, authentication/device-mode, IndexedDB, sync/outbox, sales/payment exact binding, lint, `npm run build`, `npm run build:store`, and `npm run build:store:vercel` were green in the required CI jobs. `git diff --check` was clean for the workflow/comparator changes and the report tree before publication.
+
+The final report path is included in the pull-request path filters for Scoped Storage, ActorRuntime, HOTFIX, and PR127. The ActorRuntime publisher is restricted to `feat/shared-terminal-actor-runtime`; on this branch it remains skipped. The final report-only commit therefore triggers validation without creating a self-publish loop.
+
+### R2 result
+
+All R2 production, migration, differential, and workflow requirements are satisfied without production mutation. The remaining PublicStore timeout is a reproducible baseline flake that fails closed when it is not independently evidenced; it is not a SHARED.TERMINAL.4 application regression.
+
+**SHARED.TERMINAL.4-CLOSEOUT.R2: PASS**
 
 - NO MERGE.
-- Mantener el PR #211 en DRAFT.
-- No iniciar `SHARED.TERMINAL.5`.
-- Esperar revisión independiente.
+- PR #211 remains DRAFT.
+- `SHARED.TERMINAL.5` NOT STARTED.
+- Await independent review.
+
+## 21. R2 report-head retry evidence
+
+The first independent validation attempt of the report-containing HEAD `b8dc9d9b53eccef88e1386a69e2344a45b2e3df1` was inspected before any retry:
+
+- ActorRuntime: PASS; differential `NEW/CHANGED REGRESSIONS: 0`.
+- HOTFIX Dexie Recovery: PASS.
+- ActorScoped Storage: RED with two candidate-only observations in that single full-suite attempt: the already-investigated BFCache timeout and `EcommercePortalSettings image intent payloads saves Pro Information without transporting document-v2 branding fields`.
+- PR127 Global Comparison: RED with one raw candidate-only observation: `PublicStorePage deduplicates a persisted pageshow followed immediately by focus`.
+
+The raw Ecommerce failure was an asynchronous Testing Library lookup while the component still displayed its loader (`Unable to find an element with the display value: contacto@example.com`). The exact test passed 10/10 on BASE and 10/10 on CANDIDATE in local equivalent-worker repetitions. The exact `pageshow` plus `focus` test also passed 10/10 on both revisions. These results are consistent with the previously proven timing/order flake family; they do not prove a PR regression, and no application code was changed. The comparator remains fail-closed for an unmatched candidate observation.
+
+Because the report commit itself is a new HEAD, this first report-head attempt is evidence only and is not used to declare final PASS. A subsequent normal report-evidence commit reruns the required workflows on its exact HEAD. The final status below is valid only for that later exact HEAD and its own green checks.
+
+## 22. CLOSEOUT.R2 — final verification after report-head retry
+
+The report-head retry commit `515105a37f40b9a59fca93b169b17d980247fec2` was validated without any application-code or production mutation:
+
+- PR #211 remained `OPEN`, `DRAFT`, `merged=false`, on `feat/shared-terminal-financial-handoff`.
+- `git diff --check` on the exact PR range `294349e5ca590ab98bd75b0b7e38661d086b7217..515105a37f40b9a59fca93b169b17d980247fec2` returned exit code `0`.
+- Shared Terminal Actor Scoped Storage Validation: `success`; repeated differential gate: `success`; `NEW/CHANGED REGRESSIONS=0`.
+- Shared Terminal Actor Runtime Validation: `success`; repeated differential gate: `success`; `NEW/CHANGED REGRESSIONS=0`; publisher correctly `skipped`.
+- HOTFIX Dexie Recovery Validation: `success`.
+- PR127 Global Comparison: `success`; both raw suites retained their historical failures, but `raw candidate-only=0`, `new failures=0`.
+- ActorRuntime exact differential artifact: BASE `2858/92/51/3001` in both repetitions; CANDIDATE `2868/92/51/3011` in both; `112` stable preexisting observations; `0` new regressions.
+- ActorScoped Storage exact differential artifact: BASE `2834/92/51/2977` in both repetitions; CANDIDATE `2868/92/51/3011` in both; `112` stable preexisting observations; `0` new regressions.
+- The final workflow jobs also passed the focused cash/handoff, tenant, IndexedDB/recovery, authentication/shared-device, sales/payment binding, stale actor/generation, lint, `npm run build`, `npm run build:store`, and `npm run build:store:vercel` checks.
+- The PublicStore BFCache and related report-head observations remain classified as reproducible baseline timing flakes; no PublicStore application change was made.
+- Migration history remains canonicalized to production versions `20260819084636`, `20260819084719`, and `20260819085828`; no `apply_migration`, repair, `schema_migrations` DML, or financial SQL reexecution was used.
+- Final Supabase read-only verification remained intact: required tables/columns/index/FKs present; duplicate OPEN station groups `0`; movement station mismatches `0`; movement `performed_by_actor_key` NULL `0`; cross-tenant station bindings `0`.
+- No workflow publisher created another report commit. This report remains an evidence artifact only; no self-publish loop was introduced.
+
+Therefore the final R2 conclusion is:
+
+**SHARED.TERMINAL.4-CLOSEOUT.R2: PASS**
+
+- NO MERGE.
+- PR #211 remains DRAFT.
+- `SHARED.TERMINAL.5` NOT STARTED.

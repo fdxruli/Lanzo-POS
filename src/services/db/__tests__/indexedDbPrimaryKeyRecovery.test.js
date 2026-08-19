@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DB_NAME } from '../../../config/dbConfig';
-import { RECOVERY_STORES } from '../databaseSchema';
+import { CURRENT_NATIVE_DATABASE_VERSION, RECOVERY_STORES } from '../databaseSchema';
 import {
   getActiveNativeOpenOperations,
   inspectIndexedDbStructure,
@@ -434,16 +434,16 @@ describe('IndexedDB primary-key preserving recovery', () => {
   });
 
   it('rejects a newer native version without downgrade or deletion', async () => {
-    await openDatabase(320, (database) => database.createObjectStore('sales', { keyPath: 'id' }));
+    await openDatabase(CURRENT_NATIVE_DATABASE_VERSION + 10, (database) => database.createObjectStore('sales', { keyPath: 'id' }));
     await expect(preflightAndRepairIndexedDb()).rejects.toMatchObject({
       code: 'DB_UNSUPPORTED_NATIVE_VERSION',
       diagnostic: {
-        detectedNativeVersion: 320,
-        expectedNativeVersion: 310,
+        detectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION + 10,
+        expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
         isRetryable: false
       }
     });
-    expect((await inspectIndexedDbStructure()).nativeVersion).toBe(320);
+    expect((await inspectIndexedDbStructure()).nativeVersion).toBe(CURRENT_NATIVE_DATABASE_VERSION + 10);
   });
 
   it('allows a compatible incomplete schema through normal Dexie upgrade', async () => {

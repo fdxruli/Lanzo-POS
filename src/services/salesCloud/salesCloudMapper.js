@@ -151,6 +151,7 @@ const buildSyntheticPayment = (sale = {}, options = {}) => {
     change_amount: toNumber(sale.changeAmount, 0),
     reference: firstText(sale.paymentReference, sale.reference),
     cash_session_id: firstText(sale.cash_session_id, sale.cashSessionId),
+    cash_station_id: firstText(sale.cash_station_id, sale.cashStationId),
     cash_movement_id: firstText(sale.cash_movement_id, sale.cashMovementId),
     customer_ledger_id: firstText(sale.customer_ledger_id, sale.customerLedgerId),
     metadata: compactObject({
@@ -175,6 +176,7 @@ const mapPayment = (payment = {}, sale = {}, index = 0) => compactObject({
     : toNumber(payment.changeAmount ?? payment.change_amount, 0),
   reference: firstText(payment.reference, payment.ref),
   cash_session_id: firstText(payment.cash_session_id, payment.cashSessionId, sale.cash_session_id, sale.cashSessionId),
+  cash_station_id: firstText(payment.cash_station_id, payment.cashStationId, sale.cash_station_id, sale.cashStationId),
   cash_movement_id: firstText(payment.cash_movement_id, payment.cashMovementId),
   customer_ledger_id: firstText(payment.customer_ledger_id, payment.customerLedgerId),
   metadata: compactObject({
@@ -227,7 +229,10 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
     balance_due: balanceDue,
     currency: localSale.currency || 'MXN',
     cash_session_id: firstText(localSale.cash_session_id, localSale.cashSessionId),
+    cash_station_id: firstText(localSale.cash_station_id, localSale.cashStationId),
     cash_movement_id: firstText(localSale.cash_movement_id, localSale.cashMovementId),
+    origin_actor_key: firstText(localSale.cashOriginActorKey, localSale.originActorKey),
+    origin_actor_generation: localSale.cashOriginActorGeneration ?? localSale.originActorGeneration ?? null,
     customer_ledger_id: firstText(localSale.customer_ledger_id, localSale.customerLedgerId),
     metadata: buildShadowMetadata(localSale, options)
   });

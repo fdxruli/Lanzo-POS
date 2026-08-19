@@ -30,6 +30,7 @@ import {
   setDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
 } from '../databaseRecoveryState';
+import { CURRENT_NATIVE_DATABASE_VERSION } from '../databaseSchema';
 
 const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, version);
@@ -120,13 +121,13 @@ describe('tenant runtime router', () => {
     const identity = await resolveActiveTenantIdentity({ license_key: `UNSUPPORTED-${crypto.randomUUID()}` });
     const opaqueId = await resolveTenantRuntimeDirectory(identity);
     const databaseName = `LanzoDB_t_${opaqueId}`;
-    await createNativeDatabase(databaseName, 320);
+    await createNativeDatabase(databaseName, CURRENT_NATIVE_DATABASE_VERSION + 10);
 
     await expect(openTenantRuntime(identity)).rejects.toMatchObject({
       code: 'DB_UNSUPPORTED_NATIVE_VERSION',
       diagnostic: {
-        detectedNativeVersion: 320,
-        expectedNativeVersion: 310,
+        detectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION + 10,
+        expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
         isRetryable: false
       }
     });
@@ -135,8 +136,8 @@ describe('tenant runtime router', () => {
       status: DATABASE_RECOVERY_STATUS.FAILED,
       errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
       databaseName,
-      detectedNativeVersion: 320,
-      expectedNativeVersion: 310,
+      detectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION + 10,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
       isRetryable: false,
       requiresMigration: false
     });
@@ -206,7 +207,7 @@ describe('tenant runtime router', () => {
     const identity = await resolveActiveTenantIdentity({ license_key: `MIGRATION-FAIL-${crypto.randomUUID()}` });
     const opaqueId = await resolveTenantRuntimeDirectory(identity);
     const databaseName = `LanzoDB_t_${opaqueId}`;
-    await createLegacyTenantDatabase(databaseName, { version: 309 });
+    await createLegacyTenantDatabase(databaseName, { version: CURRENT_NATIVE_DATABASE_VERSION - 1 });
 
     await expect(openTenantRuntime(identity)).rejects.toMatchObject({
       code: 'DB_UNSUPPORTED_NATIVE_VERSION',

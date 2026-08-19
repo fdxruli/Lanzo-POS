@@ -18,6 +18,14 @@ const findReports = (dir, label) => {
   return paths;
 };
 
+const findFocusedReports = (dir, label) => {
+  if (!fs.existsSync(dir)) throw new Error(`${label} report directory missing: ${dir}`);
+  return fs.readdirSync(dir)
+    .filter((name) => /^public-store-(?:bfcache|site-version)-\d+\.json$/.test(name))
+    .sort()
+    .map((name) => path.join(dir, name));
+};
+
 const readReport = (reportPath, label) => {
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
   if (!Array.isArray(report.testResults)) {
@@ -99,10 +107,22 @@ const keyOf = (failure) => `${failure.id}\u0000${failure.error}`;
 
 const basePaths = findReports(baseDir, 'BASE');
 const candidatePaths = findReports(candidateDir, 'CANDIDATE');
+const baseFocusedPaths = findFocusedReports(baseDir, 'BASE');
+const candidateFocusedPaths = findFocusedReports(candidateDir, 'CANDIDATE');
+if (baseFocusedPaths.length !== candidateFocusedPaths.length) {
+  throw new Error(`BASE/CANDIDATE focused BFCache evidence count differs: ${baseFocusedPaths.length} vs ${candidateFocusedPaths.length}`);
+}
+if (baseFocusedPaths.length > 0 && baseFocusedPaths.length < 10) {
+  throw new Error(`Focused BFCache evidence requires at least 10 repetitions when present; found ${baseFocusedPaths.length}`);
+}
 const baseReports = basePaths.map((reportPath, index) => readReport(reportPath, `BASE#${index + 1}`));
 const candidateReports = candidatePaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE#${index + 1}`));
+const baseFocusedReports = baseFocusedPaths.map((reportPath, index) => readReport(reportPath, `BASE focused PublicStore#${index + 1}`));
+const candidateFocusedReports = candidateFocusedPaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE focused PublicStore#${index + 1}`));
 const baseFailuresByRun = baseReports.map(collectFailures);
 const candidateFailuresByRun = candidateReports.map(collectFailures);
+const baseFocusedFailuresByRun = baseFocusedReports.map(collectFailures);
+const candidateFocusedFailuresByRun = candidateFocusedReports.map(collectFailures);
 
 const observationMap = (runs) => {
   const byKey = new Map();
@@ -111,7 +131,7 @@ const observationMap = (runs) => {
     for (const failure of failures) {
       const key = keyOf(failure);
       const entry = byKey.get(key) || { ...failure, runs: [] };
-      entry.runs.push(runIndex + 1);
+      if (!entry.runs.includes(runIndex + 1)) entry.runs.push(runIndex + 1);
       byKey.set(key, entry);
       const errors = errorsById.get(failure.id) || new Set();
       errors.add(failure.error);
@@ -123,6 +143,8 @@ const observationMap = (runs) => {
 
 const baseObs = observationMap(baseFailuresByRun);
 const candidateObs = observationMap(candidateFailuresByRun);
+const baseFocusedObs = observationMap(baseFocusedFailuresByRun);
+const candidateFocusedObs = observationMap(candidateFocusedFailuresByRun);
 
 const matrix = [...candidateObs.byKey.values()].map((candidateFailure) => {
   const baseExact = baseObs.byKey.get(keyOf(candidateFailure));
@@ -139,6 +161,21 @@ const matrix = [...candidateObs.byKey.values()].map((candidateFailure) => {
       base: `FAIL in repetition(s) ${baseExact.runs.join(',')}: ${baseExact.error}`,
       candidate: `FAIL in repetition(s) ${candidateFailure.runs.join(',')}: ${candidateFailure.error}`,
       classification
+    };
+  }
+
+  const baseFocusedExact = baseFocusedObs.byKey.get(keyOf(candidateFailure));
+  if (baseFocusedExact) {
+    const candidateFocusedExact = candidateFocusedObs.byKey.get(keyOf(candidateFailure));
+    return {
+      ...candidateFailure,
+      baseRuns: [],
+      baseFocusedRuns: baseFocusedExact.runs,
+      candidateRuns: candidateFailure.runs,
+      candidateFocusedRuns: candidateFocusedExact?.runs || [],
+      base: `PASS in all BASE full-suite repetitions; FAIL in focused BASE repetition(s) ${baseFocusedExact.runs.join(',')}: ${baseFocusedExact.error}`,
+      candidate: `FAIL in full-suite repetition(s) ${candidateFailure.runs.join(',')}: ${candidateFailure.error}${candidateFocusedExact ? `; focused repetition(s) ${candidateFocusedExact.runs.join(',')}` : ''}`,
+      classification: 'PREEXISTING_FLAKY_BASELINE_FAILURE'
     };
   }
 
@@ -175,12 +212,16 @@ const stablePreexisting = matrix.filter(({ classification }) => classification =
 const flakyPreexisting = matrix.filter(({ classification }) => classification === 'PREEXISTING_FLAKY_BASELINE_FAILURE');
 const baseRunCounts = baseReports.map(counts);
 const candidateRunCounts = candidateReports.map(counts);
+const baseFocusedRunCounts = baseFocusedReports.map(counts);
+const candidateFocusedRunCounts = candidateFocusedReports.map(counts);
 
 const summary = {
   base: baseRunCounts[0],
   candidate: candidateRunCounts[0],
   baseRuns: baseRunCounts,
   candidateRuns: candidateRunCounts,
+  baseFocusedRuns: baseFocusedRunCounts,
+  candidateFocusedRuns: candidateFocusedRunCounts,
   baseUniqueFailureObservationCount: baseObs.byKey.size,
   candidateUniqueFailureObservationCount: candidateObs.byKey.size,
   newRegressionCount: regressions.length,
@@ -201,6 +242,13 @@ const markdown = [
   '',
   ...runLine('BASE', baseRunCounts),
   ...runLine('CANDIDATE', candidateRunCounts),
+  ...(baseFocusedRunCounts.length
+    ? [
+        '',
+        ...runLine('BASE focused PublicStore', baseFocusedRunCounts),
+        ...runLine('CANDIDATE focused PublicStore', candidateFocusedRunCounts)
+      ]
+    : []),
   `- NEW/CHANGED REGRESSIONS: ${summary.newRegressionCount}`,
   `- STABLE PREEXISTING CANDIDATE FAILURES: ${summary.stablePreexistingCandidateFailureCount}`,
   `- PREEXISTING FLAKY CANDIDATE FAILURES: ${summary.flakyPreexistingCandidateFailureCount}`,

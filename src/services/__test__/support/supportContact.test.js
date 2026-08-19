@@ -5,6 +5,7 @@ import {
   buildSupportMailtoUrl,
   getSupportEmail
 } from '../../support/supportContact';
+import { CURRENT_NATIVE_DATABASE_VERSION } from '../../db/databaseSchema';
 
 describe('supportContact', () => {
   it('construye payload de soporte por correo con contexto comercial', () => {
@@ -56,8 +57,8 @@ describe('supportContact', () => {
       errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
       message: 'La base fue creada por una versión más reciente.',
       databaseName: 'LanzoDB_t_opaque-tenant-id',
-      detectedNativeVersion: 320,
-      expectedNativeVersion: 310,
+      detectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION + 10,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
       isRetryable: false,
       requiresMigration: false,
       affectedStores: ['sales']
@@ -76,8 +77,8 @@ describe('supportContact', () => {
     expect(report).toContain('Navegador/entorno: Lanzo Test Browser');
     expect(report).toContain('Estado de red: Offline');
     expect(report).toContain('Fecha y hora: 2026-08-13T06:00:00.000Z');
-    expect(report).toContain('Versión local detectada: 320');
-    expect(report).toContain('Versión compatible con esta instalación: 310');
+    expect(report).toContain(`Versión local detectada: ${CURRENT_NATIVE_DATABASE_VERSION + 10}`);
+    expect(report).toContain(`Versión compatible con esta instalación: ${CURRENT_NATIVE_DATABASE_VERSION}`);
     expect(report).toContain('identificador redactado');
     expect(report).not.toContain('opaque-tenant-id');
     expect(report).not.toMatch(/license key|token|password|\bpin\b/i);

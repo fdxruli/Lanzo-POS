@@ -67,6 +67,30 @@ const buildConcurrencyError = (message) => {
     return error;
 };
 
+const getSaleCashActorKey = (sale = {}) => (
+    sale.cashOriginActorKey
+    || sale.originActorKey
+    || sale.metadata?.cashOriginActorKey
+    || sale.metadata?.originActorKey
+    || null
+);
+
+const getSaleCashStationId = (sale = {}) => (
+    sale.cashStationId
+    || sale.cash_station_id
+    || sale.metadata?.cashStationId
+    || sale.metadata?.cash_station_id
+    || null
+);
+
+const getCashSessionActorKey = (session = {}) => session.actorKey || session.actor_key || null;
+const getCashSessionStationId = (session = {}) => session.cashStationId || session.cash_station_id || null;
+
+const buildCashBindingError = (code, message) => new DatabaseError(
+    DB_ERROR_CODES.VALIDATION_ERROR,
+    `${code}: ${message}`
+);
+
 const collectAffectedProductIds = (sale, deductions = []) => {
     const affectedProductIds = new Set();
 
@@ -387,11 +411,66 @@ const processSaleWithinTransaction = async ({
 
     if (tables.cajas) {
         const openCashSessions = await tables.cajas.where('estado').equals('abierta').toArray();
-        if (openCashSessions.length > 0) {
-            const activeCashSession = openCashSessions.sort(
-                (a, b) => Date.parse(b.fecha_apertura || 0) - Date.parse(a.fecha_apertura || 0)
-            )[0];
+        const requestedSessionId = sale.cash_session_id || sale.cashSessionId || null;
+        const saleActorKey = getSaleCashActorKey(sale);
+        const saleStationId = getSaleCashStationId(sale);
+        let activeCashSession = null;
+
+        if (requestedSessionId) {
+            activeCashSession = openCashSessions.find((session) => session.id === requestedSessionId) || null;
+            if (!activeCashSession) {
+                throw buildCashBindingError('CASH_SESSION_NOT_OPEN', 'La sesión solicitada no está abierta.');
+            }
+        } else if (saleActorKey) {
+            activeCashSession = openCashSessions.find((session) => (
+                getCashSessionActorKey(session) === saleActorKey
+                && (!saleHasCashComponent(sale) || (saleStationId && getCashSessionStationId(session) === saleStationId))
+            )) || null;
+        }
+
+        if (activeCashSession) {
+            const owner = getCashSessionActorKey(activeCashSession);
+            const station = getCashSessionStationId(activeCashSession);
+            if (owner && saleActorKey && owner !== saleActorKey) {
+                throw buildCashBindingError('CASH_HANDOFF_REQUIRED', 'La venta no puede usar la sesión financiera de otro actor.');
+            }
+            if (station && saleStationId && station !== saleStationId) {
+                throw buildCashBindingError('CASH_SESSION_STATION_MISMATCH', 'La venta no corresponde a la estación financiera actual.');
+            }
+            if ((saleHasCashComponent(sale) || requestedSessionId) && (!owner || !station || (saleHasCashComponent(sale) && !saleStationId))) {
+                throw buildCashBindingError('CASH_STATION_UNRESOLVED', 'La sesión legacy no puede recibir una mutación financiera sin reconciliación.');
+            }
             sale.cash_session_id = activeCashSession.id;
+            sale.cashStationId = station || saleStationId || null;
+        } else if (saleActorKey) {
+            const incompatibleStationSession = openCashSessions.find((session) => (
+                getCashSessionActorKey(session) && getCashSessionActorKey(session) !== saleActorKey
+                && saleStationId
+                && getCashSessionStationId(session) === saleStationId
+            ));
+            if (incompatibleStationSession && saleHasCashComponent(sale)) {
+                throw buildCashBindingError('CASH_HANDOFF_REQUIRED', 'La estación financiera está ocupada por otro actor.');
+            }
+
+            const legacySession = openCashSessions.find((session) => (
+                !getCashSessionActorKey(session) && !getCashSessionStationId(session)
+            ));
+            // Legacy rows are only tolerated for historical non-canonical
+            // flows. New actor-scoped cash operations never select them.
+            if (legacySession && !saleHasCashComponent(sale)) {
+                sale.cash_session_id = legacySession.id;
+            } else if (saleHasCashComponent(sale)) {
+                throw buildCashBindingError('CASH_SESSION_REQUIRED', 'La venta de efectivo requiere una sesión propia y una estación verificable.');
+            }
+        } else if (openCashSessions.length > 0) {
+            const legacySession = openCashSessions.find((session) => (
+                !getCashSessionActorKey(session) && !getCashSessionStationId(session)
+            ));
+            if (legacySession) {
+                sale.cash_session_id = legacySession.id;
+            } else if (saleHasCashComponent(sale)) {
+                throw buildCashBindingError('CASH_ACTOR_CONTEXT_REQUIRED', 'La venta de efectivo requiere el actor autenticado.');
+            }
         } else if (saleHasCashComponent(sale)) {
             throw new DatabaseError(
                 DB_ERROR_CODES.VALIDATION_ERROR,

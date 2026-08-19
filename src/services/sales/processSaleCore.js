@@ -156,7 +156,8 @@ export const processSaleCore = async ({
     companyName,
     tempPrescriptionData,
     ignoreStock = false,
-    activeOrderId
+    activeOrderId,
+    actorContext = null
 }, {
     loadData,
     loadMultipleData,
@@ -344,6 +345,10 @@ export const processSaleCore = async ({
             total: Money.toExactString(totalNum),
             customerId: safePaymentData.customerId,
             paymentMethod: safePaymentData.paymentMethod,
+            cash_session_id: safePaymentData.cashSessionId || safePaymentData.cash_session_id || null,
+            cashStationId: safePaymentData.cashStationId || safePaymentData.cash_station_id || null,
+            cashOriginActorKey: actorContext?.actorKey || safePaymentData.originActorKey || null,
+            cashOriginActorGeneration: actorContext?.generation ?? safePaymentData.originActorGeneration ?? null,
             abono: Money.toExactString(abonoSeguro),
             saldoPendiente: Money.toExactString(saldoSeguro),
             dueDate: safePaymentData.dueDate ? new Date(safePaymentData.dueDate).toISOString() : null,
@@ -367,6 +372,7 @@ export const processSaleCore = async ({
             let cloudResult;
 
             try {
+                actorContext?.assertCurrent?.();
                 cloudResult = await salesCloudCashierService.processCloudCashierSale({
                     sale,
                     processedItems,
@@ -435,7 +441,9 @@ export const processSaleCore = async ({
             };
         }
 
+        actorContext?.assertCurrent?.();
         const transactionResult = await executeSaleTransactionSafe(sale, batchesToDeduct);
+        actorContext?.assertCurrent?.();
 
         if (!transactionResult.success) {
             if (transactionResult.isConcurrencyError) {
