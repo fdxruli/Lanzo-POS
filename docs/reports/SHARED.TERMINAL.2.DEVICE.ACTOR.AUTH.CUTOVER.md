@@ -1,385 +1,365 @@
 # SHARED.TERMINAL.2 — DEVICE + ACTOR AUTHENTICATION CUTOVER
 
-## Status
+## Status and closeout rule
 
-**SHARED.TERMINAL.2: PASS**
+**SHARED.TERMINAL.2-R1 closeout candidate: PASS**
 
-This report records the implementation and validation of the shared-device actor-authentication cutover. The pull request remains **DRAFT** and must not be merged until independent review is complete.
+This is the single permanent SHARED.TERMINAL.2 report. The PASS statement is valid only when the GitHub checks on the **exact commit containing this report** complete successfully with `NEW/CHANGED REGRESSIONS = 0`. If any required same-HEAD check is red, the authoritative status is BLOCKED regardless of this document text.
+
+PR `#209` remains **DRAFT** and must not be merged before independent review.
 
 ## Preconditions
 
 - Repository: `fdxruli/Lanzo-POS`
-- Phase 1 PR: `#208`
-- PR #208 merge: **VERIFIED**
-- Exact post-#208 `main` used as base: `cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39`
-- ActorRuntime Foundation was verified in that `main` before implementation.
-- New branch: `feat/shared-terminal-device-actor-auth`
-- New PR: `#209` — **DRAFT**
-- No merge was performed.
+- Existing PR: `#209` — DRAFT
+- Branch: `feat/shared-terminal-device-actor-auth`
+- Exact post-#208 base: `main@cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39`
+- R1 starting remote HEAD verified before modification: `614432344abf00c2a776a666395f62cf203dcc3c`
+- No new branch or PR was created.
+- No merge, rebase, tenant redesign, actor-specific database, cash transfer, cart migration, or draft migration was performed.
 
-## Architecture before this phase
+The Phase 1 architecture remains authoritative:
 
-The repository already had Phase 1 ActorRuntime authority with the lifecycle:
+- TenantRuntime owns one physical `LanzoDB_t_<opaque-id>` per tenant.
+- ActorRuntime is separate and owns actor identity/session/generation.
+- `device_mode` is `admin_only | staff_only | shared`.
+- device token and actor session token are distinct authorities.
+- ambiguous Admin + Staff evidence fails closed.
+- no device is automatically promoted to `shared`.
 
-`LOCKED → AUTHENTICATING → HANDOFF_CHECK → GRANTED`
+## Independent-review findings corrected by R1
 
-and protections for stable `actorKey`, actor generation, stale actor handles (`ACTOR_CONTEXT_STALE`), ambiguous actor evidence (`ACTOR_SESSION_AMBIGUOUS`), and ActorRuntime invalidation during logout/handoff.
+Independent review blocked the original closeout for two concrete reasons:
 
-Tenant isolation remained independently authoritative:
+1. six candidate-only `imageUploadService.test.js` regressions after the actor-session security cutover;
+2. a legacy Staff occupancy reservation that could survive `staff_only → shared` and falsely return `STAFF_ALREADY_IN_USE` after the Staff session ended.
 
-- one tenant/license → one opaque tenant runtime;
-- one physical IndexedDB: `LanzoDB_t_<opaque-id>`;
-- no actor-specific database;
-- local tenant guard/generation protections unchanged.
+R1 corrects only those closeout blockers and their permanent regression evidence.
 
-## Architecture implemented
+---
 
-The cutover explicitly separates:
+## R1 blocker 1 — image upload regressions
 
-- **TENANT** — business/license authority;
-- **DEVICE** — physical terminal authority;
-- **ACTOR** — currently authenticated Admin or Staff identity;
-- **SESSION** — credential proving that actor;
-- **OPERATIONAL STATE** — cash/cart/drafts/outbox, which are not implicitly transferred during actor changes.
+### Cause
 
-### Device mode contract
+Production image upload had already been hardened correctly. `imageUploadService` requires all of:
 
-`public.license_devices.device_mode` is now canonical:
+- device fingerprint;
+- device security token;
+- actor session token.
 
-- `admin_only`
-- `staff_only`
-- `shared`
+If secure actor context is absent it fails locally with:
 
-Semantics:
+`SECURE_CONTEXT_REQUIRED`
 
-- `admin_only`: Admin allowed, Staff rejected.
-- `staff_only`: Staff allowed, Admin rejected.
-- `shared`: either authenticated Admin or authenticated Staff is allowed, exactly one actor authority at a time.
+The six historical success tests still configured:
 
-`device_role` remains as a legacy compatibility field. It is not the actor authority for a shared device.
+`getActorSessionToken() => null`
 
-### Conservative compatibility migration
+and therefore expected successful actor-sensitive uploads without satisfying the new security contract. BASE did not contain that new requirement, so the six failures were legitimate candidate regressions and were not classified away.
 
-Existing devices were mapped deterministically:
+### Correction
 
-- legacy `device_role=admin` → `device_mode=admin_only`
-- legacy `device_role=staff` → `device_mode=staff_only`
+The production security rule was **not weakened**.
 
-No existing device was promoted automatically to `shared`.
+Historical success fixtures now provide an explicit actor session token and assert that the token is sent through the compatibility wire field `staff_session_token`.
 
-Post-apply production verification confirmed:
+Security coverage explicitly preserves:
 
-- `device_mode` is `NOT NULL`;
-- there is no default that can accidentally promote a device;
-- the CHECK constraint accepts only the three canonical values;
-- automatic `shared` conversions: **0**;
-- Admin backfill mismatches: **0**;
-- Staff backfill mismatches: **0**.
+- missing actor token → `SECURE_CONTEXT_REQUIRED` before Edge invocation;
+- rejected/invalid actor token → fail closed;
+- `ACTOR_SESSION_AMBIGUOUS` → fail closed;
+- wrong-tenant actor evidence → fail closed;
+- rejected actor session is never retried without actor authority.
 
-## Supabase production
+The Edge Function remains the previously deployed hardened `authorize-image-upload` v8 contract using canonical actor context. No fallback to device-only authority was introduced.
 
-Project: `odlrhijtfyavryeqivaa`
+### Result
 
-Supabase was **TOUCHED**. Three additive migrations were applied in production and then verified read-only.
+The six original image-upload candidate regressions were removed without modifying production authorization to accommodate legacy tests.
 
-### Migration 1
+`SECURE_CONTEXT_REQUIRED` remains part of the client contract.
 
-`supabase/migrations/20260818164207_shared_terminal_device_actor_auth.sql`
+---
 
-Apply: **PASS**
+## R1 blocker 2 — Staff occupancy after `staff_only → shared`
 
-Installed/updated the primary contract:
+### Production investigation
 
-- `device_mode` column/constraint/backfill/compatibility behavior;
-- shared-aware Admin authentication;
-- shared-aware Staff authentication;
-- canonical actor context in POS validation;
-- device authority separated from actor authority;
-- actor-derived permissions;
-- fail-closed ambiguity;
-- authenticated `admin_set_device_mode` operation;
-- shared-safe device administration/list/release behavior.
+Production project: `odlrhijtfyavryeqivaa`
 
-`admin_set_device_mode` was verified as `SECURITY DEFINER` with an empty `search_path` and explicit grants. Mode changes require real Admin session authority; Staff and anonymous clients cannot promote a device to `shared`.
+The production audit inspected:
 
-### Migration 2
+- `staff_login_on_device`;
+- `staff_login_on_device_unlimited`;
+- `admin_set_device_mode`;
+- `license_devices`;
+- `device_role`;
+- `device_mode`;
+- `staff_user_id`;
+- `license_staff_sessions`;
+- logout/revoke behavior;
+- Staff deactivation behavior;
+- the unique Staff-device reservation index;
+- all `STAFF_ALREADY_IN_USE` consumers found in the installed contract.
 
-`supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql`
+The modern active-use check was already correct: an unrevoked, unexpired `license_staff_sessions` row on another active device is the primary evidence that Staff is currently in use.
 
-Apply: **PASS**
+Two legacy reservations still ignored `device_mode`:
 
-An audit found legacy public Staff-management/device-release paths that still treated physical `device_role='admin'` as sufficient Admin authority. They were closed before closeout.
+1. `staff_login_on_device_unlimited` also treated an active `license_devices` row with matching `staff_user_id` and legacy `device_role='staff'` as occupied;
+2. `uq_license_devices_one_active_device_per_staff` uniquely reserved `staff_user_id` on active legacy Staff-role devices regardless of whether the terminal had since become `shared`.
+
+`admin_set_device_mode` intentionally preserves historical `device_role` and `staff_user_id`, while Staff logout revokes the session rather than erasing device history. Therefore a legitimate `staff_only → shared` transition could leave stale dedicated-device semantics even though no Staff session remained active.
+
+### New policy
+
+Active Staff sessions remain the primary active-occupancy authority.
+
+Legacy `staff_user_id` reservation remains only when the device is an active dedicated terminal:
+
+`device_mode = 'staff_only'`
+
+A `shared` terminal may retain legacy `device_role='staff'` and `staff_user_id=X` as historical compatibility metadata, but those fields no longer reserve Staff X after the real Staff session is revoked or expires.
+
+This preserves dedicated-device compatibility without granting exclusivity semantics to shared historical metadata.
+
+### New additive migration
+
+`supabase/migrations/20260818234329_shared_terminal_staff_occupancy_fix.sql`
+
+Production apply: **PASS**
+
+Post-apply verification: **PASS**
 
 The migration:
 
-- preserves historical public signatures for compatibility;
-- makes legacy mutation paths fail closed with `ADMIN_SESSION_REQUIRED`;
-- routes canonical Admin overloads through `private.require_active_admin_session`;
-- keeps private implementation helpers unavailable to `anon`;
-- makes Staff deactivation affect only dedicated `staff_only` devices, never a shared physical terminal merely because the disabled Staff had been linked there.
+- fails closed if existing production data already violates the new dedicated `staff_only` uniqueness invariant;
+- changes only the legacy reservation predicate inside `staff_login_on_device_unlimited` from physical legacy role to `device_mode='staff_only'`;
+- verifies the active-session check remains installed;
+- recreates `uq_license_devices_one_active_device_per_staff` with a `staff_only` predicate;
+- preserves the existing public wrapper/helper grant split;
+- performs no device/session deletion;
+- performs no `staff_user_id` cleanup;
+- performs no automatic shared conversion;
+- performs no ID change and no financial-state mutation.
 
-Post-apply verification confirmed no legacy `device_role` Admin authorization remains in those wrappers.
+Production post-apply evidence confirmed:
 
-### Migration 3
+- active-session guard present: YES;
+- `staff_only` legacy guard present: YES;
+- old `device_role='staff'` occupancy guard absent: YES;
+- unique index uses `device_mode='staff_only'`: YES;
+- unique index contains no `device_role` authority: YES;
+- duplicate active dedicated Staff reservations: 0;
+- no persistent fixture/data cleanup was required.
 
-`supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql`
+## Staff occupancy integration evidence
 
-Apply: **PASS**
+A transactional integration fixture was added at:
 
-A second audit found secondary cloud contexts that still inferred actor behavior from the physical role. A canonical private actor-session resolver was introduced and the following contexts were migrated to it:
+`supabase/tests/shared_terminal_staff_occupancy_test.sql`
 
-- ecommerce authorization;
-- support context;
-- POS RPC rate-limit context;
-- AI usage;
-- operational notifications.
+The same fixture logic was executed against production inside `BEGIN ... ROLLBACK`; all synthetic writes were rolled back.
 
-These paths now resolve `device_mode + actor session`, preserve Staff permission enforcement, and fail closed on invalid/ambiguous actor evidence.
+Validated scenarios:
 
-## Device and actor backend authority
+### A — dedicated legacy `staff_only`
 
-The authoritative POS context now separates device fields from actor fields.
+Active dedicated Device A with Staff X reservation; Staff X login on Device B:
 
-Device authority includes:
+`STAFF_ALREADY_IN_USE`
 
-- license/tenant;
-- fingerprint;
-- active device;
-- device security token;
-- `device_mode` capability.
+**PASS**
 
-Actor authority includes exactly one valid actor session and returns canonical fields including:
+### B — `staff_only → shared`
 
-- `actor_type`
-- `actor_id`
-- `actor_key`
-- `actor_session_id`
-- `actor_permissions`
+Staff X logs into A, authorized mode transition changes A to `shared`, Staff X logs out, historical `device_role/staff_user_id` remain, then Staff X logs into B:
 
-The historical wire parameter `p_staff_session_token` remains for compatibility in several APIs, but on the shared cutover path it transports the current **actor session token**, whether the actor is Admin or Staff.
+**PASS**
 
-## Ambiguity / residual tokens
+No false legacy reservation remains.
 
-Fail-closed behavior is preserved.
+### C — shared with legacy Staff metadata
 
-If valid Admin and Staff evidence cannot be disambiguated, the result is:
+Shared A retains legacy `device_role='staff'` and `staff_user_id=Staff X`, with no active Staff session. Staff X login on B:
 
-`ACTOR_SESSION_AMBIGUOUS`
+**PASS**
 
-There is no:
+### D — real active Staff session
 
-- Admin-wins rule;
-- Staff-wins rule;
-- newest-token rule;
-- `device_role` fallback;
-- first-token fallback.
+Shared A has a real unrevoked Staff X session. Staff X login on B:
 
-The local `getActorSessionToken()` contract also returns no actor token when simultaneous residual Admin and Staff authority is present.
+`STAFF_ALREADY_IN_USE`
 
-## Permissions
+**PASS**
 
-Permissions are derived from the authenticated actor.
+The product continues to enforce one active Staff session across devices.
 
-Required regression was explicitly verified conceptually and read-only against production helpers:
+### E — actor change on the same shared terminal
 
-- device: `device_mode=shared`
-- legacy metadata: `device_role=admin`
-- current actor: Staff
+Staff X logs out of shared A; Staff Y logs into that same A:
 
-Result:
+**PASS**
 
-- actor resolves as Staff;
-- Admin authority is false;
-- only Staff permissions are honored;
-- cash actor key remains `staff:<staff-user-id>`.
+Staff Y does not inherit Staff X authority, and the preserved historical device metadata is not silently reassigned.
 
-Legacy device metadata cannot elevate Staff.
+---
 
-## Client cutover
+## Actor authority invariants preserved
 
-Client changes include:
+R1 does not replace or fork ActorRuntime.
 
-- canonical `deviceModePolicy`;
-- Admin-authenticated `deviceModeService`;
-- Device Manager UI that displays device capability separately from legacy role metadata;
-- Admin-only device-mode mutation;
-- Staff routing that evaluates explicit `device_mode` before legacy metadata;
-- no inference of a shared actor from `device_role` alone.
+The existing regressions continue to cover:
 
-Both Admin and Staff login shells retain an explicit profile-selection handoff so a shared terminal can change actor without changing tenant/IndexedDB.
+- `admin_only + Staff` → fail;
+- `staff_only + Admin` → fail;
+- `shared + Admin` → pass;
+- `shared + Staff` → pass;
+- shared Staff on a device with legacy `device_role=admin` receives Staff permissions only;
+- simultaneous Admin + Staff evidence → `ACTOR_SESSION_AMBIGUOUS`;
+- residual Admin evidence cannot elevate the Staff actor;
+- stale actor generation → `ACTOR_CONTEXT_STALE`;
+- wrong tenant → fail closed;
+- inactive device → fail;
+- inactive Staff → fail;
+- invalid device token → fail;
+- invalid actor token → fail.
 
-## Storage / Edge Function security audit
+## Same IndexedDB / tenant isolation
 
-A final serverless audit found a P0 bypass in the historical `authorize-image-upload` Edge Function: it could still branch on physical `device_role`, and the old client contained a retry path that could drop the actor credential.
+No physical-storage architecture changed.
 
-This was corrected before closeout.
+For Admin and Staff on the same tenant:
 
-### Production deployment
-
-Edge Function: `authorize-image-upload`
-
-Production version: **v8**
-
-State: **ACTIVE**
-
-`verify_jwt=true`
-
-The deployed function now:
-
-- requires an actor session credential;
-- calls the canonical `validate_pos_rpc_rate_limit_context`;
-- requires canonical `actor_type` and `actor_key`;
-- validates canonical `device_mode`;
-- does not call legacy `verify_device_license_unified` / `verify_staff_session` to infer actor authority;
-- fails closed if actor authority is absent or invalid.
-
-The client no longer retries a rejected image authorization without actor authority.
-
-A legacy test double can return `undefined` even though the runtime contract is token-or-`null`; explicit `null` remains a local fail-closed condition, while any out-of-contract value is still rejected by production Edge v8 unless a canonical actor context is proven. Dedicated tests preserve this distinction without removing or hiding existing tests.
-
-## ActorRuntime / same IndexedDB
-
-Phase 1 ActorRuntime remains the only actor authority.
-
-Regression coverage verifies Admin → logout → Staff within the same tenant keeps:
-
-- same tenant;
+- same tenant id;
 - same opaque tenant id;
 - same `databaseName`;
 - same physical `LanzoDB_t_<opaque-id>`.
 
-The actor changes:
+Actor/session/generation change, but the tenant database does not.
 
-- actor id/key;
-- session;
-- actor generation.
+Tenant A → Staff A → logout → Tenant B → Tenant A regressions remain in the dedicated workflows, including tenant generation, binding/recovery and runtime routing protections.
 
-No actor-specific IndexedDB is created.
-
-## Stale actor protection
-
-The stale-generation regression remains active:
-
-- Admin operation captures generation N;
-- Admin logs out;
-- Staff authenticates;
-- generation advances;
-- old Admin handle/write fails with `ACTOR_CONTEXT_STALE`.
+No actor from Tenant A may write Tenant B.
 
 ## Cash / operational state
 
-This phase performs **no cash ownership transfer**.
+R1 performs no cash handoff.
 
-Regression coverage verifies an existing cash/operational record is not:
+An open cash session owned by Admin A remains:
 
-- reassigned to the next actor;
-- relabeled with the new actor key;
-- closed automatically by actor logout;
-- deleted by the handoff.
+- owned by Admin A;
+- `actorKey=admin:A`;
+- open unless an explicit financial operation changes it.
 
-Cart, drafts and full ActorScopedStorage migration remain outside SHARED.TERMINAL.2. Ambiguous actor-sensitive state must remain blocked/hand-off pending rather than silently transferred.
+Logging Staff B into the shared terminal does not transfer, relabel, close, delete, or inherit that session.
 
-## Outbox / sync
+ActorScopedStorage for cart/drafts and the complete financial handoff policy remain deferred to later phases.
 
-Pending operations are not reinterpreted as belonging to the new current actor. Actor evidence is preserved when known; ambiguous evidence fails closed. POS sync obtains the canonical actor session token and passes it through the historical token parameter without deriving actor identity from physical device role.
+---
 
-## Tests and regression evidence
+## CI and differential evidence
 
-### Focused SHARED.TERMINAL.2 validation
+### Starting blocked HEAD
 
-**PASS**
+R1 started from verified remote HEAD:
 
-Coverage includes:
+`614432344abf00c2a776a666395f62cf203dcc3c`
 
-- device-mode policy and conservative legacy mapping;
-- shared Staff routing with legacy Admin metadata;
-- ActorRuntime state/generation/handoff;
-- same tenant/opaqueId/databaseName;
-- stale actor handles;
-- cash ownership preservation;
-- image-upload actor-session fail-closed behavior;
-- tenant isolation;
-- database recovery;
-- authentication regression;
-- relevant ESLint;
-- `git diff --check`;
-- `npm run build`;
-- `npm run build:store`;
-- `npm run build:store:vercel`.
-
-### Full suite / BASE vs CANDIDATE
-
-The repository has preexisting raw full-suite failures. They were not hidden or rewritten.
-
-The dedicated differential workflow runs repeated BASE and CANDIDATE suites against exact base `cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39` and gates on normalized failure classes/counts rather than pretending the raw suite is green.
-
-A validated pre-storage cutover repetition recorded:
+The dedicated repeated differential there reproduced the independent-review finding:
 
 - BASE: `2823 passed / 92 failed / 51 skipped / 2966 total`
-- CANDIDATE: `2830 passed / 92 failed / 51 skipped / 2973 total`
-- candidate-only failure classes: `0`
-- failure-count regressions: `0`
-- `NEW/CHANGED REGRESSIONS = 0`
+- CANDIDATE: six additional image-upload failures
+- `NEW/CHANGED REGRESSIONS = 6`
 
-During the final Storage hardening, the global comparison correctly detected six candidate-only failures in the existing `imageUploadService.test.js` fixture because its old mock returned `undefined` for actor session. This was treated as a real candidate regression signal, not classified away. The compatibility correction preserves production fail-closed authority and the Storage tests were rerun without removing any case.
+### R1 code-head evidence before report publication
 
-Final closeout criterion remains:
+On R1 code HEAD `b4412d298570a067c4c9be8b4fd8d7ffc5cb411a`:
+
+- Shared Terminal Device Actor Auth focused job: **PASS**
+  - migration/authority guard: PASS
+  - image upload focused tests: PASS
+  - device/ActorRuntime focused tests: PASS
+  - tenant/recovery: PASS
+  - auth: PASS
+  - relevant ESLint: PASS
+  - `git diff --check`: PASS
+  - `npm run build`: PASS
+  - `npm run build:store`: PASS
+  - `npm run build:store:vercel`: PASS
+- Shared Terminal Actor Runtime focused + repeated differential: **PASS**
+- PR127 Global Comparison: **PASS**
+
+One SHARED.TERMINAL.2 repeated candidate run observed an unrelated one-repetition `PublicStorePage.siteVersion.test.jsx` `STACK_TRACE_ERROR` while BASE passed that test. It was **not** labeled preexisting and kept that run red exactly as required. A separate ActorRuntime repeated comparison and PR127 comparison on the same code HEAD were green. The report-only final HEAD must therefore be re-run rather than using the earlier green checks as a substitute.
+
+### Final same-HEAD gate
+
+This report path is now included in both Shared Terminal workflow path filters. Therefore the commit containing this report must itself run:
+
+- `Shared Terminal Device Actor Auth Validation`;
+- `Shared Terminal Actor Runtime Validation`;
+- `PR127 Global Comparison`;
+- required additional regression workflows.
+
+The final closeout requirement is:
 
 `NEW/CHANGED REGRESSIONS = 0`
 
-## Report publishing / HEAD stability
+**Final CI result: PASS only when all required checks on this exact report-containing commit are `success`.** The GitHub check state of this commit is the authoritative post-publication evidence; no previous HEAD may be substituted.
 
-SHARED.TERMINAL.2 does not introduce an automatic report-publishing job. The permanent report is committed once as ordinary source documentation and does not create a report-only self-publish loop.
+---
 
-The PR must remain DRAFT and unmerged after this report commit.
+## Report self-publish / loop protection
 
-## Security invariants after cutover
+The existing ActorRuntime publisher now treats a commit that changes only either permanent Shared Terminal report as report-only.
 
-The implementation is designed so that it is not valid to:
+For a Phase 2 report-only HEAD it:
 
-1. elevate a Staff actor because legacy `device_role=admin`;
-2. use an old Admin handle after Staff handoff;
-3. silently use a residual Admin session for a Staff operation;
-4. auto-select one actor from ambiguous Admin+Staff evidence;
-5. change tenant as a side effect of shared login;
-6. open an actor-specific IndexedDB;
-7. transfer/relabel/delete the previous actor's cash session;
-8. reinterpret pending outbox operations as the new actor;
-9. let Staff/anonymous authority change `device_mode`;
-10. authorize image uploads by physical role instead of canonical actor context.
+1. validates the HEAD;
+2. detects the sole changed report path;
+3. skips report regeneration/publication;
+4. must not create another report commit.
 
-## Risks / deferred work
+Thus this report commit is expected to be the stable final HEAD after its checks complete. If another report commit is produced, R1 closeout is BLOCKED until the loop is corrected.
 
-Intentionally deferred to later phases:
+## Residual/deferred scope
 
-- full cart migration to ActorScopedStorage;
-- full draft migration;
-- cashStation/cash-session handoff policy;
-- historical cash reassignment (explicitly forbidden here);
-- broad actor-scoped outbox redesign.
+Intentionally not implemented in R1:
 
-These items are not treated as blockers for SHARED.TERMINAL.2 because this phase blocks/retains ambiguous state rather than silently transferring authority.
+- ActorScopedStorage migration for cart/drafts;
+- cashStation/full cash-session handoff;
+- historical cash reassignment;
+- general actor-scoped outbox redesign.
 
-## Final disposition
+These remain later-phase work and are not allowed to weaken actor authority, tenant isolation, stale-generation protection, or financial ownership in this phase.
 
-- PR #208 prerequisite: **VERIFIED**
-- post-#208 main base: **VERIFIED**
-- new branch/PR: **VERIFIED**
-- device_mode: **PASS**
-- backward compatibility: **PASS**
-- Admin auth: **PASS**
-- Staff auth: **PASS**
-- shared Admin/Staff authority: **PASS**
-- actor ambiguity: **PASS / fail closed**
-- stale generation: **PASS**
-- same IndexedDB: **PASS**
-- cash ownership unchanged: **PASS**
-- tenant isolation: **PASS**
-- Supabase apply/post-apply verification: **PASS**
-- Edge Function production deployment: **PASS**
-- focused/build/lint/diff checks: **PASS**
-- differential criterion: **NEW/CHANGED REGRESSIONS = 0**
-- report self-publish loop: **not introduced**
+## Final disposition contract
+
+R1 can be closed as PASS only if the exact report-containing HEAD proves all of the following in GitHub:
+
+- PR #209 remains DRAFT/open/unmerged;
+- `SECURE_CONTEXT_REQUIRED` preserved;
+- image-upload new regressions: 0;
+- `staff_only → shared` false occupancy fixed;
+- dedicated `staff_only` occupancy preserved;
+- real active Staff session protection preserved;
+- actor ambiguity fail-closed;
+- no residual Admin privilege escalation;
+- stale actor generation protected;
+- same IndexedDB per tenant;
+- cash ownership unchanged;
+- tenant isolation intact;
+- production migration applied and post-apply verified;
+- build/lint/diff checks pass;
+- Shared Terminal Device Actor Auth Validation passes;
+- Shared Terminal Actor Runtime Validation passes;
+- PR127 Global Comparison passes;
+- repeated differential reports `NEW/CHANGED REGRESSIONS = 0`;
+- report-only commit produces no follow-up report commit;
+- final HEAD remains stable.
+
+When those same-HEAD conditions are green, the final disposition is:
 
 **SHARED.TERMINAL.2: PASS**
 
