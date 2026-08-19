@@ -534,3 +534,16 @@ All R2 production, migration, differential, and workflow requirements are satisf
 - PR #211 remains DRAFT.
 - `SHARED.TERMINAL.5` NOT STARTED.
 - Await independent review.
+
+## 21. R2 report-head retry evidence
+
+The first independent validation attempt of the report-containing HEAD `b8dc9d9b53eccef88e1386a69e2344a45b2e3df1` was inspected before any retry:
+
+- ActorRuntime: PASS; differential `NEW/CHANGED REGRESSIONS: 0`.
+- HOTFIX Dexie Recovery: PASS.
+- ActorScoped Storage: RED with two candidate-only observations in that single full-suite attempt: the already-investigated BFCache timeout and `EcommercePortalSettings image intent payloads saves Pro Information without transporting document-v2 branding fields`.
+- PR127 Global Comparison: RED with one raw candidate-only observation: `PublicStorePage deduplicates a persisted pageshow followed immediately by focus`.
+
+The raw Ecommerce failure was an asynchronous Testing Library lookup while the component still displayed its loader (`Unable to find an element with the display value: contacto@example.com`). The exact test passed 10/10 on BASE and 10/10 on CANDIDATE in local equivalent-worker repetitions. The exact `pageshow` plus `focus` test also passed 10/10 on both revisions. These results are consistent with the previously proven timing/order flake family; they do not prove a PR regression, and no application code was changed. The comparator remains fail-closed for an unmatched candidate observation.
+
+Because the report commit itself is a new HEAD, this first report-head attempt is evidence only and is not used to declare final PASS. A subsequent normal report-evidence commit reruns the required workflows on its exact HEAD. The final status below is valid only for that later exact HEAD and its own green checks.
