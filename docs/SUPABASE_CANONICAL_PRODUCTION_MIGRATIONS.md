@@ -35,6 +35,11 @@ restrictions.
    filename, missing secret, unexpected local-only/remote-only row, duplicate
    version, or already-applied expected version fails closed.
 
+The supplied SHA must equal both the checked-out commit and the **current remote
+`main` HEAD** at execution time. If `main` moves between review and deployment,
+the workflow fails. Do not retry with the stale SHA: review the new `main` and
+start a new workflow run with its exact SHA.
+
 ## APPLY
 
 Use only after reviewed DRY_RUN evidence. Run from `main` with the same SHA and
