@@ -88,11 +88,9 @@ export const deriveActorStorageOpaqueId = async (tenantOpaqueId, actorKey) => (
 const actorPhysicalKey = (binding, logicalKey) => (
   `${TENANT_PREFIX}${binding.tenantOpaqueId}:a:${binding.actorOpaqueId}:${logicalKey}`
 );
-
 const legacyTenantPhysicalKey = (tenantOpaqueId, logicalKey) => (
   `${TENANT_PREFIX}${tenantOpaqueId}:${logicalKey}`
 );
-
 const actorContextPhysicalKey = (tenantOpaqueId) => (
   `${TENANT_PREFIX}${tenantOpaqueId}:${ACTOR_CONTEXT_LOGICAL_KEY}`
 );
@@ -110,11 +108,7 @@ const cloneBinding = (binding) => binding && Object.freeze({
 
 const notify = (event) => {
   for (const listener of listeners) {
-    try {
-      listener(Object.freeze({ ...event }));
-    } catch {
-      // Observers never participate in the actor storage authority boundary.
-    }
+    try { listener(Object.freeze({ ...event })); } catch { /* observer isolation */ }
   }
 };
 
@@ -134,8 +128,7 @@ const parseContextRecord = (raw) => {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    if (parsed?.version !== ACTOR_STORAGE_VERSION) return null;
-    return parsed;
+    return parsed?.version === ACTOR_STORAGE_VERSION ? parsed : null;
   } catch {
     return null;
   }
@@ -144,14 +137,10 @@ const parseContextRecord = (raw) => {
 const readContextRecord = (tenantOpaqueId) => {
   const browserStorage = storage();
   if (!browserStorage) return null;
-  try {
-    return parseContextRecord(browserStorage.getItem(actorContextPhysicalKey(tenantOpaqueId)));
-  } catch {
-    return null;
-  }
+  try { return parseContextRecord(browserStorage.getItem(actorContextPhysicalKey(tenantOpaqueId))); } catch { return null; }
 };
 
-const writeContextRecord = (record) => {
+const publishContextRecord = (record) => {
   const browserStorage = storage();
   if (!browserStorage) {
     throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
@@ -159,35 +148,22 @@ const writeContextRecord = (record) => {
     });
   }
   try {
-    browserStorage.setItem(
-      actorContextPhysicalKey(record.tenantOpaqueId),
-      JSON.stringify(record)
-    );
+    browserStorage.setItem(actorContextPhysicalKey(record.tenantOpaqueId), JSON.stringify(record));
   } catch (error) {
     throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED, {
       reason: 'context_write_failed',
       cause: error?.name || null
     });
   }
+  try { channel?.postMessage(record); } catch { /* storage record is authoritative */ }
 };
 
 let channel = null;
 try {
-  channel = typeof BroadcastChannel === 'undefined'
-    ? null
-    : new BroadcastChannel(ACTOR_CONTEXT_CHANNEL);
+  channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(ACTOR_CONTEXT_CHANNEL);
 } catch {
   channel = null;
 }
-
-const publishContextRecord = (record) => {
-  writeContextRecord(record);
-  try {
-    channel?.postMessage(record);
-  } catch {
-    // localStorage remains the durable same-device coordination record.
-  }
-};
 
 const handleForeignContext = (record) => {
   if (
@@ -195,9 +171,7 @@ const handleForeignContext = (record) => {
     || !record
     || record.tenantOpaqueId !== activeBinding.tenantOpaqueId
     || record.contextToken === activeBinding.contextToken
-  ) {
-    return;
-  }
+  ) return;
 
   writesSuspended = true;
   pendingBinding = null;
@@ -235,7 +209,6 @@ const inspectLegacyKeys = (tenantOpaqueId) => {
 };
 
 export const isActorScopedLogicalKey = (logicalKey) => actorScopedLogicalKeys.has(logicalKey);
-
 export const registerActorScopedLogicalKey = (logicalKey) => {
   const normalized = String(logicalKey || '').trim();
   if (!normalized) throw new TypeError('logicalKey is required');
@@ -243,11 +216,7 @@ export const registerActorScopedLogicalKey = (logicalKey) => {
   return () => actorScopedLogicalKeys.delete(normalized);
 };
 
-export const prepareActorScopedStorage = async ({
-  tenant,
-  actorKey,
-  actorGeneration
-} = {}) => {
+export const prepareActorScopedStorage = async ({ tenant, actorKey, actorGeneration } = {}) => {
   const tenantOpaqueId = assertTenantOpaqueId(tenant?.opaqueId);
   const tenantDatabaseName = String(tenant?.databaseName || '').trim();
   if (!tenantDatabaseName.startsWith('LanzoDB_t_')) {
@@ -272,7 +241,6 @@ export const prepareActorScopedStorage = async ({
     contextToken: null,
     legacyUnresolvedKeys: inspectLegacyKeys(tenantOpaqueId)
   };
-
   const snapshot = cloneBinding(pendingBinding);
   notify({ type: 'prepared', binding: snapshot });
   return snapshot;
@@ -295,29 +263,30 @@ const assertBindingMatchesGrant = (binding, granted) => {
 
 export const activateActorScopedStorage = (granted) => {
   assertBindingMatchesGrant(pendingBinding, granted);
-  const contextToken = randomToken();
-  activeBinding = { ...pendingBinding, contextToken };
+  activeBinding = { ...pendingBinding, contextToken: randomToken() };
   pendingBinding = null;
   writesSuspended = true;
-
-  const record = {
+  publishContextRecord({
     version: ACTOR_STORAGE_VERSION,
     tenantOpaqueId: activeBinding.tenantOpaqueId,
     actorOpaqueId: activeBinding.actorOpaqueId,
     actorGeneration: activeBinding.actorGeneration,
-    contextToken,
+    contextToken: activeBinding.contextToken,
     status: 'granted',
     updatedAt: new Date().toISOString()
-  };
-  publishContextRecord(record);
+  });
   const snapshot = cloneBinding(activeBinding);
   notify({ type: 'activated', binding: snapshot });
   return snapshot;
 };
 
 const assertActiveContextCurrent = () => {
+  // This helper is only reached by a previously captured/active handle. If the
+  // binding disappeared, that reference is stale rather than merely locked.
   if (!activeBinding) {
-    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_LOCKED);
+    throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_STALE, {
+      reason: 'actor_storage_binding_invalidated'
+    });
   }
   const current = readContextRecord(activeBinding.tenantOpaqueId);
   if (
@@ -346,41 +315,22 @@ export const getActorStorageItem = (logicalKey) => {
   const binding = pendingBinding || activeBinding;
   const browserStorage = storage();
   if (!binding || !browserStorage) return null;
-  try {
-    return browserStorage.getItem(actorPhysicalKey(binding, logicalKey));
-  } catch {
-    return null;
-  }
+  try { return browserStorage.getItem(actorPhysicalKey(binding, logicalKey)); } catch { return null; }
 };
 
 export const setActorStorageItem = (logicalKey, value) => {
   if (!isActorScopedLogicalKey(logicalKey) || !activeBinding || writesSuspended) return;
   const binding = assertActiveContextCurrent();
-  const browserStorage = storage();
-  if (!browserStorage) return;
-  try {
-    browserStorage.setItem(actorPhysicalKey(binding, logicalKey), value);
-  } catch {
-    // Quota/privacy errors do not fall back to a tenant or legacy namespace.
-  }
+  try { storage()?.setItem(actorPhysicalKey(binding, logicalKey), value); } catch { /* fail closed */ }
 };
 
 export const removeActorStorageItem = (logicalKey) => {
   if (!isActorScopedLogicalKey(logicalKey) || !activeBinding || writesSuspended) return;
   const binding = assertActiveContextCurrent();
-  const browserStorage = storage();
-  if (!browserStorage) return;
-  try {
-    browserStorage.removeItem(actorPhysicalKey(binding, logicalKey));
-  } catch {
-    // Never fall back to deleting another actor or legacy namespace.
-  }
+  try { storage()?.removeItem(actorPhysicalKey(binding, logicalKey)); } catch { /* fail closed */ }
 };
 
-export const suspendActorScopedStorageWrites = () => {
-  writesSuspended = true;
-};
-
+export const suspendActorScopedStorageWrites = () => { writesSuspended = true; };
 export const resumeActorScopedStorageWrites = () => {
   assertActiveContextCurrent();
   writesSuspended = false;
@@ -404,9 +354,7 @@ export const invalidateActorScopedStorage = (reason = 'actor_locked') => {
         reason,
         updatedAt: new Date().toISOString()
       });
-    } catch {
-      // Runtime authority is already removed; never restore it due to metadata I/O.
-    }
+    } catch { /* actor authority is already removed */ }
   }
   notify({ type: 'invalidated', reason, tenantOpaqueId: previous?.tenantOpaqueId || null });
 };
@@ -437,25 +385,18 @@ export const captureActorScopedStorageHandle = () => {
     getItem(logicalKey) {
       assertCurrent();
       if (!isActorScopedLogicalKey(logicalKey)) return null;
-      const browserStorage = storage();
-      return browserStorage?.getItem(actorPhysicalKey(captured, logicalKey)) || null;
+      return storage()?.getItem(actorPhysicalKey(captured, logicalKey)) || null;
     },
     setItem(logicalKey, value) {
       assertCurrent();
-      if (writesSuspended) {
-        throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_LOCKED);
-      }
+      if (writesSuspended) throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_LOCKED);
       const browserStorage = storage();
-      if (!browserStorage) {
-        throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED);
-      }
+      if (!browserStorage) throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.ACCESS_DENIED);
       browserStorage.setItem(actorPhysicalKey(captured, logicalKey), value);
     },
     removeItem(logicalKey) {
       assertCurrent();
-      if (writesSuspended) {
-        throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_LOCKED);
-      }
+      if (writesSuspended) throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_LOCKED);
       storage()?.removeItem(actorPhysicalKey(captured, logicalKey));
     }
   });
