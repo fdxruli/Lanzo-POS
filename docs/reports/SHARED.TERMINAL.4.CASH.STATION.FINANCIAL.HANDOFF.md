@@ -547,3 +547,29 @@ The first independent validation attempt of the report-containing HEAD `b8dc9d9b
 The raw Ecommerce failure was an asynchronous Testing Library lookup while the component still displayed its loader (`Unable to find an element with the display value: contacto@example.com`). The exact test passed 10/10 on BASE and 10/10 on CANDIDATE in local equivalent-worker repetitions. The exact `pageshow` plus `focus` test also passed 10/10 on both revisions. These results are consistent with the previously proven timing/order flake family; they do not prove a PR regression, and no application code was changed. The comparator remains fail-closed for an unmatched candidate observation.
 
 Because the report commit itself is a new HEAD, this first report-head attempt is evidence only and is not used to declare final PASS. A subsequent normal report-evidence commit reruns the required workflows on its exact HEAD. The final status below is valid only for that later exact HEAD and its own green checks.
+
+## 22. CLOSEOUT.R2 — final verification after report-head retry
+
+The report-head retry commit `515105a37f40b9a59fca93b169b17d980247fec2` was validated without any application-code or production mutation:
+
+- PR #211 remained `OPEN`, `DRAFT`, `merged=false`, on `feat/shared-terminal-financial-handoff`.
+- `git diff --check` on the exact PR range `294349e5ca590ab98bd75b0b7e38661d086b7217..515105a37f40b9a59fca93b169b17d980247fec2` returned exit code `0`.
+- Shared Terminal Actor Scoped Storage Validation: `success`; repeated differential gate: `success`; `NEW/CHANGED REGRESSIONS=0`.
+- Shared Terminal Actor Runtime Validation: `success`; repeated differential gate: `success`; `NEW/CHANGED REGRESSIONS=0`; publisher correctly `skipped`.
+- HOTFIX Dexie Recovery Validation: `success`.
+- PR127 Global Comparison: `success`; both raw suites retained their historical failures, but `raw candidate-only=0`, `new failures=0`.
+- ActorRuntime exact differential artifact: BASE `2858/92/51/3001` in both repetitions; CANDIDATE `2868/92/51/3011` in both; `112` stable preexisting observations; `0` new regressions.
+- ActorScoped Storage exact differential artifact: BASE `2834/92/51/2977` in both repetitions; CANDIDATE `2868/92/51/3011` in both; `112` stable preexisting observations; `0` new regressions.
+- The final workflow jobs also passed the focused cash/handoff, tenant, IndexedDB/recovery, authentication/shared-device, sales/payment binding, stale actor/generation, lint, `npm run build`, `npm run build:store`, and `npm run build:store:vercel` checks.
+- The PublicStore BFCache and related report-head observations remain classified as reproducible baseline timing flakes; no PublicStore application change was made.
+- Migration history remains canonicalized to production versions `20260819084636`, `20260819084719`, and `20260819085828`; no `apply_migration`, repair, `schema_migrations` DML, or financial SQL reexecution was used.
+- Final Supabase read-only verification remained intact: required tables/columns/index/FKs present; duplicate OPEN station groups `0`; movement station mismatches `0`; movement `performed_by_actor_key` NULL `0`; cross-tenant station bindings `0`.
+- No workflow publisher created another report commit. This report remains an evidence artifact only; no self-publish loop was introduced.
+
+Therefore the final R2 conclusion is:
+
+**SHARED.TERMINAL.4-CLOSEOUT.R2: PASS**
+
+- NO MERGE.
+- PR #211 remains DRAFT.
+- `SHARED.TERMINAL.5` NOT STARTED.
