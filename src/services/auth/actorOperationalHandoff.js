@@ -1,12 +1,19 @@
 import {
+  resumeActorScopedStorageWrites,
+  suspendActorScopedStorageWrites
+} from './actorScopedStorage';
+import {
   ACTOR_RUNTIME_ERROR_CODES,
+  ACTOR_RUNTIME_STATUS,
   actorRuntimeController,
   ActorRuntimeError
 } from './actorRuntimeController';
 
 export const ACTOR_HANDOFF_PENDING_OPERATIONS = 'ACTOR_HANDOFF_PENDING_OPERATIONS';
+export const ACTOR_HANDOFF_CHECKOUT_OWNED = 'ACTOR_HANDOFF_CHECKOUT_OWNED';
 
 const pendingOperations = new Map();
+const checkoutOwnership = new Map();
 let operationSequence = 0;
 let installPromise = null;
 
@@ -22,19 +29,46 @@ const toPendingSnapshot = (operation) => Object.freeze({
   startedAt: operation.startedAt
 });
 
+const toCheckoutSnapshot = (ownership) => Object.freeze({
+  orderId: ownership.orderId,
+  actorKey: ownership.handle.actorKey,
+  actorGeneration: ownership.handle.generation,
+  tenantOpaqueId: ownership.handle.tenant?.opaqueId || null,
+  tenantGeneration: ownership.handle.tenant?.generation ?? null,
+  acquiredAt: ownership.acquiredAt
+});
+
 export const getPendingActorOperations = () => Object.freeze(
   [...pendingOperations.values()].map(toPendingSnapshot)
 );
 
-export const assertActorOperationalHandoffClear = ({ tenant = null } = {}) => {
+export const getActorCheckoutOwnerships = () => Object.freeze(
+  [...checkoutOwnership.values()].map(toCheckoutSnapshot)
+);
+
+export const assertActorOperationalHandoffClear = ({ tenant = null, actorKey = null } = {}) => {
   const pending = getPendingActorOperations().filter((operation) => (
     !tenant?.opaqueId || operation.tenantOpaqueId === tenant.opaqueId
   ));
   if (pending.length > 0) {
     throw new ActorRuntimeError(ACTOR_HANDOFF_PENDING_OPERATIONS, {
-      pending: pending.map(({ label, actorKey, actorGeneration }) => ({
+      pending: pending.map(({ label, actorKey: pendingActorKey, actorGeneration }) => ({
         label,
-        actorKey,
+        actorKey: pendingActorKey,
+        actorGeneration
+      }))
+    });
+  }
+
+  const incompatibleCheckout = getActorCheckoutOwnerships().filter((ownership) => (
+    (!tenant?.opaqueId || ownership.tenantOpaqueId === tenant.opaqueId)
+    && (!actorKey || ownership.actorKey !== actorKey)
+  ));
+  if (incompatibleCheckout.length > 0) {
+    throw new ActorRuntimeError(ACTOR_HANDOFF_CHECKOUT_OWNED, {
+      checkout: incompatibleCheckout.map(({ orderId, actorKey: ownerActorKey, actorGeneration }) => ({
+        orderId,
+        actorKey: ownerActorKey,
         actorGeneration
       }))
     });
@@ -86,6 +120,39 @@ export const runTrackedActorOperation = async (label, operation, permission = nu
   )
 );
 
+export const runTrackedActorOperationIfGranted = async (label, operation, permission = null) => {
+  const state = actorRuntimeController.getState();
+  if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) return operation();
+  return runTrackedActorOperation(label, operation, permission);
+};
+
+export const runCheckoutActorOperation = async ({
+  orderId,
+  label = 'checkout.operation',
+  operation
+} = {}) => {
+  const ownership = orderId ? checkoutOwnership.get(orderId) : null;
+  if (ownership) {
+    return runTrackedActorOperationWithHandle(ownership.handle, label, operation);
+  }
+  return runTrackedActorOperationIfGranted(label, operation);
+};
+
+export const rebindActorOperationalOwnership = ({ actorKey, tenant, handle } = {}) => {
+  if (!actorKey || !tenant?.opaqueId || !handle || typeof handle.assertCurrent !== 'function') return 0;
+  let rebound = 0;
+  for (const [orderId, ownership] of checkoutOwnership.entries()) {
+    if (
+      ownership.handle.actorKey === actorKey
+      && ownership.handle.tenant?.opaqueId === tenant.opaqueId
+    ) {
+      checkoutOwnership.set(orderId, { ...ownership, handle });
+      rebound += 1;
+    }
+  }
+  return rebound;
+};
+
 const markGuarded = (fn) => {
   Object.defineProperty(fn, '__lanzoActorOperationalGuard', {
     value: true,
@@ -100,16 +167,12 @@ const isGuarded = (fn) => Boolean(fn?.__lanzoActorOperationalGuard);
 const ACTIVE_ORDER_ASYNC_ACTIONS = Object.freeze([
   'releaseEcommerceDraft',
   'loadOpenOrder',
-  'removeOrder',
   'addItemToOrder',
   'cancelCurrentOrder',
   'cancelOrder',
   'cancelOpenSaleByIdFromPos',
   'pauseOrder',
-  'closeOrder',
-  'loadOrdersFromDB',
-  'lockOrderForCheckout',
-  'unlockOrder'
+  'closeOrder'
 ]);
 
 const ORDER_STORE_ASYNC_ACTIONS = Object.freeze([
@@ -117,6 +180,57 @@ const ORDER_STORE_ASYNC_ACTIONS = Object.freeze([
   'saveOrderAsOpen',
   'reconcileOrphanedOrders'
 ]);
+
+const installLoadOrdersGuard = (useActiveOrders) => {
+  const original = useActiveOrders.getState().loadOrdersFromDB;
+  if (typeof original !== 'function' || isGuarded(original)) return null;
+
+  return markGuarded(() => {
+    const handle = actorRuntimeController.capture();
+    const ownedOrderIds = new Set(useActiveOrders.getState().activeOrders.keys());
+    suspendActorScopedStorageWrites();
+
+    return runTrackedActorOperationWithHandle(
+      handle,
+      'activeOrders.loadOrdersFromDB',
+      async ({ assertCurrent, guardedWrite }) => {
+        try {
+          await original();
+          assertCurrent();
+
+          return guardedWrite(() => {
+            const state = useActiveOrders.getState();
+            const actorOrders = new Map(
+              [...state.activeOrders.entries()].filter(([orderId]) => ownedOrderIds.has(orderId))
+            );
+            const nextCurrentOrderId = state.currentOrderId && actorOrders.has(state.currentOrderId)
+              ? state.currentOrderId
+              : (actorOrders.keys().next().value || null);
+
+            // Only the actor-owned editing set is allowed back into persisted
+            // ActiveOrders. DB-only open SALES remain tenant-shared business
+            // records and can still be explicitly loaded by order id.
+            resumeActorScopedStorageWrites();
+            useActiveOrders.setState({
+              activeOrders: actorOrders,
+              currentOrderId: nextCurrentOrderId,
+              isLoading: false
+            });
+            if (actorOrders.size === 0) useActiveOrders.getState().createOrder();
+          });
+        } catch (error) {
+          try {
+            assertCurrent();
+            resumeActorScopedStorageWrites();
+          } catch {
+            // A stale actor must never regain write authority while unwinding.
+          }
+          throw error;
+        }
+      }
+    );
+  });
+};
 
 const installActiveOrderGuards = (useActiveOrders) => {
   const state = useActiveOrders.getState();
@@ -130,6 +244,68 @@ const installActiveOrderGuards = (useActiveOrders) => {
       () => original(...args)
     ));
   }
+
+  const originalLock = state.lockOrderForCheckout;
+  if (typeof originalLock === 'function' && !isGuarded(originalLock)) {
+    patch.lockOrderForCheckout = markGuarded((orderId, ...args) => {
+      const handle = actorRuntimeController.capture();
+      return runTrackedActorOperationWithHandle(
+        handle,
+        'activeOrders.lockOrderForCheckout',
+        async ({ assertCurrent }) => {
+          const result = await originalLock(orderId, ...args);
+          assertCurrent();
+          if (result?.success && orderId) {
+            checkoutOwnership.set(orderId, {
+              orderId,
+              handle,
+              acquiredAt: new Date().toISOString()
+            });
+          }
+          return result;
+        }
+      );
+    });
+  }
+
+  const originalUnlock = state.unlockOrder;
+  if (typeof originalUnlock === 'function' && !isGuarded(originalUnlock)) {
+    patch.unlockOrder = markGuarded((orderId, ...args) => {
+      const ownership = orderId ? checkoutOwnership.get(orderId) : null;
+      const handle = ownership?.handle || actorRuntimeController.capture();
+      return runTrackedActorOperationWithHandle(
+        handle,
+        'activeOrders.unlockOrder',
+        async ({ assertCurrent }) => {
+          const result = await originalUnlock(orderId, ...args);
+          assertCurrent();
+          if (result?.success && orderId) checkoutOwnership.delete(orderId);
+          return result;
+        }
+      );
+    });
+  }
+
+  const originalRemove = state.removeOrder;
+  if (typeof originalRemove === 'function' && !isGuarded(originalRemove)) {
+    patch.removeOrder = markGuarded((orderId, ...args) => {
+      const ownership = orderId ? checkoutOwnership.get(orderId) : null;
+      const handle = ownership?.handle || actorRuntimeController.capture();
+      return runTrackedActorOperationWithHandle(
+        handle,
+        'activeOrders.removeOrder',
+        async ({ assertCurrent }) => {
+          const result = await originalRemove(orderId, ...args);
+          assertCurrent();
+          if (result?.success !== false && orderId) checkoutOwnership.delete(orderId);
+          return result;
+        }
+      );
+    });
+  }
+
+  const guardedLoadOrders = installLoadOrdersGuard(useActiveOrders);
+  if (guardedLoadOrders) patch.loadOrdersFromDB = guardedLoadOrders;
 
   if (Object.keys(patch).length > 0) useActiveOrders.setState(patch);
 };
