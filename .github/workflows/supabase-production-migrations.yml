@@ -28,7 +28,6 @@ permissions:
 
 jobs:
   canonical-migration-deploy:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: production
     env:
