@@ -1,8 +1,4 @@
 import {
-  resumeActorScopedStorageWrites,
-  suspendActorScopedStorageWrites
-} from './actorScopedStorage';
-import {
   ACTOR_RUNTIME_ERROR_CODES,
   ACTOR_RUNTIME_STATUS,
   actorRuntimeController,
@@ -263,6 +259,7 @@ const isGuarded = (fn) => Boolean(fn?.__lanzoActorOperationalGuard);
 const ACTIVE_ORDER_ASYNC_ACTIONS = Object.freeze([
   'releaseEcommerceDraft',
   'loadOpenOrder',
+  'loadOrdersFromDB',
   'addItemToOrder',
   'cancelCurrentOrder',
   'cancelOrder',
@@ -276,54 +273,6 @@ const ORDER_STORE_ASYNC_ACTIONS = Object.freeze([
   'saveOrderAsOpen',
   'reconcileOrphanedOrders'
 ]);
-
-const installLoadOrdersGuard = (useActiveOrders) => {
-  const original = useActiveOrders.getState().loadOrdersFromDB;
-  if (typeof original !== 'function' || isGuarded(original)) return null;
-
-  return markGuarded(() => {
-    const handle = actorRuntimeController.capture();
-    const ownedOrderIds = new Set(useActiveOrders.getState().activeOrders.keys());
-    suspendActorScopedStorageWrites();
-
-    return runTrackedActorOperationWithHandle(
-      handle,
-      'activeOrders.loadOrdersFromDB',
-      async ({ assertCurrent, guardedWrite }) => {
-        try {
-          await original();
-          assertCurrent();
-
-          return guardedWrite(() => {
-            const state = useActiveOrders.getState();
-            const actorOrders = new Map(
-              [...state.activeOrders.entries()].filter(([orderId]) => ownedOrderIds.has(orderId))
-            );
-            const nextCurrentOrderId = state.currentOrderId && actorOrders.has(state.currentOrderId)
-              ? state.currentOrderId
-              : (actorOrders.keys().next().value || null);
-
-            resumeActorScopedStorageWrites();
-            useActiveOrders.setState({
-              activeOrders: actorOrders,
-              currentOrderId: nextCurrentOrderId,
-              isLoading: false
-            });
-            if (actorOrders.size === 0) useActiveOrders.getState().createOrder();
-          });
-        } catch (error) {
-          try {
-            assertCurrent();
-            resumeActorScopedStorageWrites();
-          } catch {
-            // A stale actor must never regain write authority while unwinding.
-          }
-          throw error;
-        }
-      }
-    );
-  });
-};
 
 const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
   if (!useActiveOrders || !db || !STORES?.SALES) return false;
@@ -425,9 +374,6 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
       );
     });
   }
-
-  const guardedLoadOrders = installLoadOrdersGuard(useActiveOrders);
-  if (guardedLoadOrders) patch.loadOrdersFromDB = guardedLoadOrders;
 
   if (Object.keys(patch).length > 0) useActiveOrders.setState(patch);
   return true;
