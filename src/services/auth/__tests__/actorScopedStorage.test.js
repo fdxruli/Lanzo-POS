@@ -49,10 +49,26 @@ const mountActor = async (tenant, actorKey, generation) => {
   resumeActorScopedStorageWrites();
 };
 
-const writeCart = (value) => setTenantStorageItem(CART_KEY, JSON.stringify(value));
+const writeCart = (value) => setTenantStorageItem(CART_KEY, JSON.stringify({
+  state: {
+    activeOrders: [[
+      'draft-cart',
+      {
+        id: 'draft-cart',
+        isSaved: false,
+        ...value
+      }
+    ]],
+    currentOrderId: 'draft-cart'
+  },
+  version: 0
+}));
 const readCart = () => {
   const raw = getTenantStorageItem(CART_KEY);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  const parsed = JSON.parse(raw);
+  const order = parsed?.state?.activeOrders?.[0]?.[1];
+  return order ? { items: order.items } : null;
 };
 
 beforeEach(() => {
@@ -103,6 +119,35 @@ describe('ActorScopedStorage cart ownership', () => {
     invalidateActorScopedStorage('staff_y_logout');
     await mountActor(TENANT_A, 'staff:staff-x', 7);
     expect(readCart()).toEqual({ items: ['X1'] });
+  });
+
+  it('persists only actor-owned drafts and never serializes a tenant-shared SALES row', async () => {
+    await mountActor(TENANT_A, 'admin:admin-a', 1);
+
+    setTenantStorageItem(CART_KEY, JSON.stringify({
+      state: {
+        activeOrders: [
+          ['draft-a', { id: 'draft-a', isSaved: false, items: ['A1'] }],
+          ['shared-sale', { id: 'shared-sale', isSaved: true, items: ['BUSINESS'] }]
+        ],
+        currentOrderId: 'shared-sale'
+      },
+      version: 0
+    }));
+
+    const persisted = JSON.parse(getTenantStorageItem(CART_KEY));
+    expect(persisted.state.activeOrders).toEqual([
+      ['draft-a', expect.objectContaining({ id: 'draft-a', isSaved: false, items: ['A1'] })]
+    ]);
+    expect(persisted.state.currentOrderId).toBe('draft-a');
+    expect(JSON.stringify(persisted)).not.toContain('shared-sale');
+    expect(JSON.stringify(persisted)).not.toContain('BUSINESS');
+  });
+
+  it('fails closed instead of persisting malformed actor-sensitive payloads', async () => {
+    await mountActor(TENANT_A, 'admin:admin-a', 1);
+    setTenantStorageItem(CART_KEY, '{not-json');
+    expect(getTenantStorageItem(CART_KEY)).toBeNull();
   });
 
   it('never auto-claims a legacy tenant-scoped cart', async () => {
