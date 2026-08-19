@@ -7,7 +7,9 @@ if (!differentialPath) {
   process.exit(2);
 }
 
-const BASE_SHA = '2f3457313b81f09937acab6fe4bac4399e79035f';
+const CONTRACT_BASE_SHA = process.env.SHARED_TERMINAL_CONTRACT_BASE_SHA || '2f3457313b81f09937acab6fe4bac4399e79035f';
+const PR_BASE_SHA = process.env.SHARED_TERMINAL_PR_BASE_SHA || process.env.GITHUB_BASE_SHA || CONTRACT_BASE_SHA;
+const CANDIDATE_SHA = process.env.SHARED_TERMINAL_CANDIDATE_SHA || process.env.GITHUB_SHA || 'HEAD';
 const VALIDATED_CODE_HEAD = '29f9da2d65194c6aa1d8f4c001a98d4944577040';
 const differential = JSON.parse(fs.readFileSync(differentialPath, 'utf8'));
 
@@ -17,7 +19,7 @@ const runSummary = (runs) => runs.map((run, index) => (
   `- repetition ${index + 1}: ${run.passed} passed / ${run.failed} failed / ${run.skipped} skipped / ${run.total} total; ${run.suitesFailed} failed files / ${run.suitesPassed} passed files / ${run.suitesTotal} total files`
 )).join('\n');
 
-const commitChain = execFileSync('git', ['log', '--reverse', '--format=- `%h` %s', `${BASE_SHA}..HEAD`], { encoding: 'utf8' })
+const commitChain = execFileSync('git', ['log', '--reverse', '--format=- `%h` %s', `${CONTRACT_BASE_SHA}..HEAD`], { encoding: 'utf8' })
   .split('\n')
   .filter((line) => line && !line.includes('docs(shared-terminal): publish actor runtime closeout report'))
   .filter((line) => !line.includes('docs(ci): generate actor runtime closeout report'))
@@ -36,7 +38,9 @@ const report = `# SHARED.TERMINAL.1 — Actor Runtime Foundation
 ## 1. Scope and exact repository state
 
 Repository: \`fdxruli/Lanzo-POS\`<br>
-Authoritative base: \`main@${BASE_SHA}\`<br>
+ActorRuntime contract base: \`main@${CONTRACT_BASE_SHA}\`<br>
+Current PR differential base: \`main@${PR_BASE_SHA}\`<br>
+Candidate SHA: \`${CANDIDATE_SHA}\`<br>
 Branch: \`feat/shared-terminal-actor-runtime\`<br>
 PR: \`#208\` — DRAFT / unmerged<br>
 Validated executable code/CI head before report publication: \`${VALIDATED_CODE_HEAD}\`<br>
@@ -130,7 +134,7 @@ The final report-containing HEAD reruns these blocking checks before closeout.
 
 ## 14. Raw full-suite repetition results
 
-BASE \`main@${BASE_SHA}\`:
+BASE \`main@${PR_BASE_SHA}\`:
 
 ${runSummary(differential.baseRuns)}
 

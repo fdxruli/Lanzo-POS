@@ -1,410 +1,374 @@
-# SHARED.TERMINAL.1 — Actor Runtime Foundation
+# SHARED.TERMINAL.4 — CASH STATION + CASH SESSION + FINANCIAL HANDOFF
 
-## 1. Scope and exact repository state
+Fecha de verificación: 2026-08-19
 
-Repository: `fdxruli/Lanzo-POS`<br>
-Authoritative base: `main@2f3457313b81f09937acab6fe4bac4399e79035f`<br>
-Branch: `feat/shared-terminal-actor-runtime`<br>
-PR: `#208` — DRAFT / unmerged<br>
-Validated executable code/CI head before report publication: `29f9da2d65194c6aa1d8f4c001a98d4944577040`<br>
-Final published HEAD: **the Git commit containing this report**, resolved authoritatively by GitHub PR #208 and the final closeout response. A commit cannot embed its own SHA in its own tree without changing that SHA, so this report avoids an endless self-referential report-only commit chain.
+Repositorio: `fdxruli/Lanzo-POS`
 
-SHARED.TERMINAL.1 is limited to ActorRuntime Foundation. It does not change physical tenant DB selection and does not start SHARED.TERMINAL.2.
+Proyecto Supabase: `odlrhijtfyavryeqivaa`
 
-## 2. Phase commit chain
+## 1. Precondición PR #210 / SHARED.TERMINAL.3
 
-- `10c93f68` feat(auth): add actor runtime authority
-- `0fed9246` test(auth): cover actor runtime isolation invariants
-- `201a24e0` feat(auth): bind actor runtime to exact session cache
-- `1f7fe0a6` test(auth): cover actor session binding ambiguity
-- `af3369ea` ci(auth): validate actor runtime and tenant regressions
-- `54cdf2be` feat(auth): wire staff lifecycle to actor runtime
-- `675b5726` feat(auth): wire admin lifecycle to actor runtime
-- `87ba6aa6` fix(auth): keep actor session reads on tenant runtime authority
-- `b7d61631` test(auth): isolate actor session bridge from database barrel
-- `9a943960` test(auth): model actor runtime in admin action tests
-- `92a07617` test(auth): model actor authority in recovery tests
-- `ab560de3` test(auth): model actor runtime across session transitions
-- `dea53459` feat(auth): restore actor authority during app bootstrap
-- `41238975` feat(auth): preserve actor authority across plan transitions
-- `6efb4d0a` test(auth): cover actor authority session restore
-- `911270cd` test(auth): keep bootstrap coordinator discovery opt-in
-- `03e04765` ci(auth): lint full actor and tenant source scopes
-- `dee35b99` fix(auth): grant actor before publishing staff readiness
-- `3303cfa8` fix(auth): grant actor before publishing admin readiness
-- `0c88607e` feat(auth): guard actor-sensitive async writes
-- `8c55796b` test(auth): cover stale async actor handles
-- `6eae6f79` fix(auth): fail closed on ambiguous session restore
-- `2b26a0a4` test(auth): cover unambiguous actor session restoration
-- `207fc4ce` fix(auth): preserve ambiguous actor evidence at bootstrap
-- `96c40998` test(auth): preserve ambiguous bootstrap sessions
-- `3a3f406f` test: use supported React hook renderer
-- `837ce077` test: make store sync vitest globals explicit
-- `0a679ebe` test: bridge legacy jest-dom imports to vitest expect
-- `2de498d3` ci: build architecture artifacts before full suite
-- `e7ba984f` test(auth): align reload transitions with actor restore contract
-- `9557fa7c` ci: use canonical build scripts for full suite
-- `154f139a` test(ci): compare shared terminal full-suite baseline
-- `5d510169` ci: add differential full-suite regression gate
-- `f59148ec` fix(auth): satisfy strict actor identity comparison
-- `2be1524d` ci: lint exact shared terminal change surface
-- `c3bc8726` test: restore baseline store sync harness
-- `f66626da` test: remove unrelated global expect bridge
-- `81577fde` test(ci): normalize nondeterministic temp paths
-- `29f9da2d` ci: stage canonical store artifact before full suite
-- `39b1e05c` ci: publish reproducible actor runtime report
-- `3cfb65c5` test(ci): compare repeated full-suite baseline envelope
-- `148ec1d6` ci: repeat exact baseline to classify suite flake
-- `e0562b10` fix(ci): remove report generator trailing whitespace
-- `5d33655b` fix(ci): publish untracked actor runtime report safely
-- `423b347d` fix(ci): stop shared terminal report republish loop
-- `cd67e0d0` Merge pull request #208 from fdxruli/feat/shared-terminal-actor-runtime
-- `06a52a66` feat(shared-terminal): add device actor auth contract
-- `b579bceb` chore(supabase): align shared terminal migration version
-- `4e68fca7` feat(shared-terminal): expose shared device actor cutover
-- `ab9ef048` test(shared-terminal): validate device actor cutover
-- `5fafde87` test(shared-terminal): isolate device mode routing policy
-- `e7ff86e1` fix(shared-terminal): close legacy admin role authority
-- `5ca9d8be` chore(supabase): align legacy admin cutover migration version
-- `a30616c7` test(shared-terminal): guard legacy admin cutover
-- `e33f98a4` fix(shared-terminal): canonicalize secondary actor contexts
-- `de289c69` chore: align Supabase migration version
-- `aa8ca562` test(shared-terminal): guard secondary actor contexts
-- `2a0931f3` test(shared-terminal): fix secondary migration guard
-- `80ca0746` fix(shared-terminal): require actor context for image uploads
-- `3c8d6151` fix(shared-terminal): fail closed image upload actor session
-- `00cfc989` test(shared-terminal): keep image upload actor auth fail closed
-- `993f5d4b` test(shared-terminal): guard storage actor authority
-- `146756bd` test(shared-terminal): validate image upload actor cutover
-- `61443234` docs(shared-terminal): publish device actor auth cutover report
-- `a3e80cf8` test(shared-terminal): provide actor session to image upload fixtures
-- `af285e7c` test(shared-terminal): cover image actor rejection modes
-- `17b45af9` fix(shared-terminal): scope staff occupancy to dedicated devices
-- `9c4661d6` chore(shared-terminal): align occupancy migration ledger version
-- `7f6ec167` chore(shared-terminal): remove pre-ledger occupancy filename
-- `b581ac28` test(shared-terminal): cover shared staff occupancy transitions
-- `3ff8bc11` test(shared-terminal): guard occupancy closeout contracts
-- `8bdea185` ci(shared-terminal): validate R1 image and occupancy fixes
-- `03ee4385` ci(shared-terminal): validate phase-2 report-only head
-- `308e2f7f` ci(shared-terminal): validate phase-2 report without republish
-- `b4412d29` fix(shared-terminal): match quoted occupancy guard source
-- `0a3fe466` docs(shared-terminal): close out phase 2 R1 corrections
-- `06f42bcb` Merge pull request #209 from fdxruli/feat/shared-terminal-device-actor-auth
-- `c2f7037f` feat(auth): add actor scoped storage primitive
-- `57774926` feat(storage): route actor owned state by actor scope
-- `ac732015` feat(auth): gate actor grant on scoped storage handoff
-- `a8b1f865` feat(auth): fence pending actor operations during handoff
-- `dc6b0812` fix(auth): block handoff while actor work is pending
-- `89cd5503` feat(sync): preserve actor origin on actor bound outbox work
-- `ad0129d2` fix(sync): never reassign sale outbox actor on retry
-- `9c17e031` test(auth): cover actor scoped cart isolation
-- `b3b9f290` fix(auth): make stale actor storage handles fail closed
-- `fb7ab9ce` test(auth): cover pending actor handoff barrier
-- `e69c61b3` test(sync): prove immutable outbox actor origin
-- `770f0b4f` fix(auth): avoid cross-tab actor invalidation ping-pong
-- `5fbca2ce` feat(auth): bind checkout ownership to actor handoff
-- `2d138e30` fix(auth): honor actor-owned checkout during handoff
-- `2c976917` fix(sales): fence checkout and split writes by actor
-- `f446183c` fix(pos): fence layaway confirmation by actor
-- `d22fb006` test(auth): isolate actor handoff bridge dependencies
-- `30259391` ci(shared-terminal): validate actor scoped storage handoff
-- `a9c0a955` fix(auth): persist checkout actor ownership across restart
-- `2376ee5c` fix(auth): inspect durable checkout ownership before handoff
-- `67d1568f` test(auth): verify durable checkout inspection before grant
-- `408bcb95` test(auth): cover durable checkout handoff ownership
-- `98a89ae4` docs(shared-terminal): add actor scoped storage handoff report
-- `e4e7465b` fix(auth): remove operational store imports from handoff authority
-- `4e1709c2` fix(auth): configure checkout persistence without POS imports
-- `c241e02d` fix(pos): register actor operational stores from app shell
-- `5fd3a81d` test(auth): mock direct actor persistence binding
-- `3970f6b1` test(auth): configure checkout persistence explicitly
-- `58946818` test(auth): hoist tenant runtime bridge mock safely
-- `5fe3add0` ci(shared-terminal): separate focused gates from baseline-red regressions
-- `2fc892e1` test(auth): cover cross-tab actor context invalidation
-- `157134d6` fix(storage): persist only actor-owned active order drafts
-- `4b49494a` fix(auth): keep tenant shared open sales visible across actors
-- `ce933b99` test(storage): prove shared sales stay out of actor snapshots
-- `5fbeb393` test(storage): align active orders expectations with actor ownership
-- `6550b97d` test(pos): migrate active order persistence to actor scope
-- `8fcac15d` test(pos): mirror suspended actor hydration lifecycle
-- `8786b577` fix(shared-terminal): require granted actor for operational writes
-- `a9d4f0b1` fix(shared-terminal): preserve actor cart through suspended hydration
-- `2ee4ff85` test(shared-terminal): close actor storage differential regressions
-- `0955a57e` test(shared-terminal): bind sales fixtures to granted actor context
-- `ab4da8fd` test(shared-terminal): bind layaway fixtures to granted actor context
-- `9d0a1879` test(shared-terminal): keep PublicStore flake observation non-blocking
-- `147d43bd` test(shared-terminal): revalidate final actor runtime differential
-- `6fff2cb1` docs(shared-terminal): close actor scoped storage R1
-- `dfb59cd9` test(shared-terminal): validate stable report head
-- `294349e5` SHARED.TERMINAL.3: integrar almacenamiento operativo por actor (#210)
-- `93f910a8` feat(cash): add station identity and local schema guards
-- `baa97f81` feat(cash): enforce actor-scoped financial handoff
-- `26e67f69` test(cash): cover shared-terminal handoff and compatibility
-- `23b8449a` docs(report): record SHARED.TERMINAL.4 validation
-- `0efce620` docs(shared-terminal): fix financial handoff closeout evidence
-- `c57652ca` docs(shared-terminal): stop unintended report-only publication
-- `6b3ddd0a` docs(shared-terminal): record closeout R1 blockers
-- `a65586b2` chore(supabase): canonicalize shared terminal migration timestamps
+**PR #210 merge: VERIFIED.**
 
-Report-generation/report-only commits are intentionally excluded from the generated chain so regeneration is idempotent.
+- PR: `#210`, `feat/shared-terminal-actor-scoped-storage` → `main`.
+- Estado remoto: `MERGED`.
+- Merge commit verificado: `294349e5ca590ab98bd75b0b7e38661d086b7217`.
+- `main` remoto fue consultado antes de crear la rama.
+- `main` contenía el merge commit y los contratos de Fases 1–3: `ActorRuntime`, `actorKey`, generación de actor, `ACTOR_CONTEXT_STALE`, `ACTOR_SESSION_AMBIGUOUS`, estados `LOCKED` / `AUTHENTICATING` / `HANDOFF_CHECK` / `GRANTED`, `device_mode`, separación `DEVICE != ACTOR`, autenticación real Admin/Staff, `ActorScopedStorage`, aislamiento de carrito/drafts, write fencing, handoff seguro, `originActor` y legacy ambiguous state fail-closed.
 
-## 3. ActorRuntime architecture and state machine
+## 2. Base, rama, PR y commits
 
-`ActorRuntimeController` is a local/client authority layer independent from TenantRuntime. It binds one authenticated actor/session to the already-authorized tenant runtime and never selects or creates the tenant database.
+- `MAIN_SHA=294349e5ca590ab98bd75b0b7e38661d086b7217`.
+- Nueva rama: `feat/shared-terminal-financial-handoff`.
+- La rama fue creada desde exactamente `MAIN_SHA` mediante la integración GitHub.
+- Nuevo PR Draft: [#211](https://github.com/fdxruli/Lanzo-POS/pull/211), contra `main`.
+- El PR permanece `OPEN`, `DRAFT`, `merged=false`; no se modificó ni mergeó el PR #210.
+- Commits publicados:
+  1. `93f910a8cb898c70fc4671dcce8b3fa620cfbb02` — `feat(cash): add station identity and local schema guards`.
+  2. `baa97f81f879e19c1da9ae96f100339f0268263a` — `feat(cash): enforce actor-scoped financial handoff`.
+  3. `26e67f698f3fc8132c5add8b906e332a27d2fabd` — `test(cash): cover shared-terminal handoff and compatibility`.
+- **HEAD final validado del código:** `26e67f698f3fc8132c5add8b906e332a27d2fabd`.
+- El commit posterior de este reporte es únicamente documental; no cambia el código validado ni sus resultados.
 
-States: `LOCKED`, `AUTHENTICATING`, `HANDOFF_CHECK`, `GRANTED`. Logout, actor replacement, ambiguous restore evidence, or invalid binding returns authority to `LOCKED` and advances actor generation. There is no silent actor inheritance.
+## 3. Auditoría de arquitectura de caja previa
 
-## 4. actorKey, tenant binding, and generation
+La auditoría se hizo sobre el `main` real y sobre Supabase producción, no sólo sobre migraciones históricas.
 
-Stable actor keys are `admin:<id>` and `staff:<id>`. Grant binds actor type/id/key, exact session id, permissions, ActorRuntime generation, tenant opaque id, physical tenant DB name, and TenantRuntime generation.
+- `DEVICE` representa la terminal física, su `device_mode`, provenance y binding de licencia.
+- `ACTOR` representa a la persona autenticada (`admin:<id>` o `staff:<id>`); `device_role` no es ownership financiero.
+- `pos_cash_sessions` ya representaba una sesión financiera cuyo `actor_key` era la propiedad histórica; conservaba actor/device/admin provenance, estado, conteo, diferencia y cierre auditado.
+- `pos_cash_movements` ya se vinculaba por `cash_session_id`, pero antes de esta fase no tenía identidad de estación ni una exclusividad física independiente del actor.
+- La restricción previa relevante era por actor/licencia, no por recurso físico: podía impedir dos sesiones de un actor, pero no resolvía dos actores sobre el mismo efectivo.
+- No existía una abstracción CashStation estable suficiente en cliente/cloud. Se introdujo la mínima necesaria, sin crear una IndexedDB nueva ni cambiar la identidad de tenant.
+- Se auditaron `pos_cash_sessions`, `pos_cash_movements`, `pos_sync_events`, idempotencia, `license_devices`, contexto Admin/Staff, `resolve_cash_actor_key/name`, `validate_pos_sync_context`, apertura/cierre/movimientos, ventas, cancelaciones/refunds, audited close, adopción legacy, sync/reconciliation, índices, `cajaService`, hooks, checkout, outbox y recovery.
 
-Actor generation is independent from tenant generation. `assertCurrent()` rejects a handle when actor generation, actor key, session, tenant generation, tenant id, or physical database binding is no longer current. Tenant switch therefore invalidates prior actor authority without making ActorRuntime responsible for physical DB routing.
+## 4. CashStation / contrato final
 
-## 5. Stale handle and guardedWrite contract
+`CashStation` es un recurso financiero físico/lógico; no es un actor, no concede permisos y no es propietario de movimientos.
 
-`ACTOR_CONTEXT_STALE` is raised for a handle from an earlier actor/session/tenant generation. `runWithActorHandle()` validates before work and again after awaited work. Actor-sensitive side effects already inside SHARED.TERMINAL.1 use `guardedWrite()` to validate immediately at the effective write boundary.
+Contrato conceptual implementado:
 
-Regression coverage proves stale use after logout/change is rejected, generation change during an async wait is detected, and a new actor cannot reuse the prior generation's handle.
+```text
+CashStation = {
+  id, license_id, station_key, status,
+  binding_mode, metadata
+}
 
-## 6. Admin and Staff login integration
+CashSession = {
+  license_id, cash_station_id, actor_key,
+  opened_by_actor_key, opened_by_device_id,
+  status, opening/closing/reconciliation fields
+}
+```
 
-Admin and Staff authentication each begin ActorRuntime authentication, validate the exact tenant-scoped session binding, and grant the stable actor before publishing readiness. Staff cannot inherit Admin actor authority. `ADMIN_DEVICE_USE_ADMIN_FLOW` remains unchanged.
+Se eligió una primera implementación `device_default` conservadora:
 
-## 7. Bootstrap restoration and ambiguity
+- identidad lógica `cash_station_device_<device-id>`;
+- binding explícito en `pos_cash_station_bindings`;
+- `device_id` sólo aporta provenance/binding, nunca actor financiero;
+- la identidad de estación puede sobrevivir al reemplazo de dispositivo cuando exista un binding explícito futuro;
+- un dispositivo nuevo sin evidencia de binding no adopta automáticamente una estación con efectivo abierto: queda `CASH_STATION_UNRESOLVED` / recovery path.
 
-Bootstrap inspects both credential families before choosing an actor. One valid Admin family restores Admin. One valid Staff family restores Staff.
+Esto permite hoy un cajón por dispositivo sin cerrar la arquitectura a varias estaciones por licencia, varios dispositivos por estación o reemplazo de dispositivo.
 
-Simultaneous valid Admin + Staff evidence is explicit `ACTOR_SESSION_AMBIGUOUS` and fails closed: ActorRuntime becomes `LOCKED`, neither identity is granted, no inherited actor survives, and neither credential family is silently destroyed merely to select an identity.
+## 5. Ownership de CashSession
 
-## 8. Logout invalidation
+La sesión continúa siendo actor-owned:
 
-Logout locks ActorRuntime and advances actor generation. A handle captured before logout cannot be used by a later session. A new session must authenticate/restore and receive its own generation-bound authority.
+- `actor_key` no se modifica en logout, restart, browser clear, actor switch, sync ni retry.
+- `opened_by_actor_key` conserva quién abrió; `opened_by_device_id` conserva provenance.
+- Un cierre normal usa el actor propietario reautenticado.
+- Un cierre administrativo usa `pos_admin_close_cash_session` / su contrato auditado existente, conserva el owner original y registra `closed_by_admin_user_id`, `closed_by_actor_key`, `closing_mode`, `reason`, comments, conteo y reconciliation status.
+- Un Admin Z que resuelve una sesión de Staff X queda registrado como ejecutor; la sesión sigue siendo de Staff X.
+- Staff no puede cerrar una sesión ajena por tener únicamente `cash_register=true`.
 
-## 9. IndexedDB / tenant isolation invariants
+## 6. Exclusividad por CashStation
 
-- **NO IndexedDB per actor.**
-- IndexedDB remains isolated per tenant: `LanzoDB_t_<opaque-id>`.
-- ActorRuntime does not alter physical tenant DB selection.
-- Tenant isolation was not weakened.
-- ActorRuntime generation and TenantRuntime generation remain independent.
-- Tenant switch invalidates actor authority.
-- No wrong-tenant fallback exists.
-- No fallback to `LanzoDB1` was introduced.
-- No actor inheritance exists between sessions.
+**One-open-session-per-station: PASS.**
 
-## 10. SHARED.TERMINAL.1 phase boundary
+- Migración: `supabase/migrations/20260819090000_shared_terminal_cash_station_financial_handoff.sql`.
+- Índice parcial: `ux_pos_cash_sessions_open_station` sobre `(license_id, cash_station_id)` para `status='open'`, `deleted_at is null` y estación no nula.
+- Preflight de producción antes de crear el índice: `duplicate_candidate_station_groups=0`, `max_open_per_candidate_station=1`, `candidate_station_groups=3`.
+- La migración aborta explícitamente con `SHARED_TERMINAL_4_BLOCKED_OPEN_STATION_CONFLICTS` si existen conflictos, no los cierra ni reasigna.
+- `pos_open_cash_session` bloquea la fila de estación (`FOR UPDATE`), comprueba la sesión abierta y conserva el índice parcial como última defensa de carrera.
+- La política de actor único por licencia/otra estación también se conserva cuando el contrato existente la requiere.
 
-SHARED.TERMINAL.2 was **NOT STARTED**. This phase does not implement `device_mode=shared`, shared-terminal cutover, Admin→logout→Staff product-flow cutover, cash ownership transfer, cart transfer, draft transfer, financial settlement/handoff, actor-switching UI, or new shared-terminal cloud policy.
+## 7. Financial handoff y HANDOFF_CHECK
 
-## 11. Supabase / cloud impact
+La autenticación y el gate financiero son distintos.
 
-Supabase production: **UNTOUCHED**.<br>
-Cloud migration: **NOT REQUIRED**.
+- `ActorRuntime` puede llegar a `GRANTED` para funciones no financieras.
+- La condición financiera se consulta mediante el gate canónico `cashFinancialGate` / `pos_get_cash_station_state`.
+- Estados estructurados: `READY`, `NO_SESSION`, `OWN_SESSION_OPEN`, `HANDOFF_REQUIRED`, `RECONCILIATION_REQUIRED`, `BLOCKED`.
+- Código principal: `CASH_HANDOFF_REQUIRED`.
+- Si no puede verificarse la estación online: `CASH_HANDOFF_REQUIRES_ONLINE` / `CASH_STATION_UNRESOLVED`; se permite únicamente operación no financiera según permisos.
 
-No SQL, migration, RPC, schema, data, Auth, Edge Function, or production configuration change was made.
+Caso Admin A → logout → Staff B:
 
-## 12. Reproducible repeated-baseline validation design
+```text
+C1: actor_key=admin:A, station=S, status=open
+Staff B: autenticación PASS, ActorRuntime PASS, ActorScopedStorage=B
+Financial gate: HANDOFF_REQUIRED / CASH_HANDOFF_REQUIRED
+```
 
-A single BASE/CANDIDATE run exposed one nondeterministic preexisting UI test that flipped direction across two exact historical comparisons: `PublicStorePage.siteVersion.test.jsx` failed on BASE and passed on CANDIDATE in one run, then passed on BASE and failed on CANDIDATE in the next. This proves the raw repository suite itself contains order/timing instability and makes a one-shot set difference non-reproducible.
+Staff B no hereda C1, no cambia su owner, no cobra contra C1 y no abre C2 sobre S. El flujo seguro es `close/reconcile explícito → audit → open C2`.
 
-The final gate therefore executes **two independent full-suite repetitions** for BASE and two for CANDIDATE under identical assumptions: exact checkout, Node 22, `npm ci`, `npm run build`, `npm run build:store`, canonical `npm run build:store:vercel` staging of local `store/dist` (no deployment), and `npm run test:ci -- --reporter=json`.
+Resultados equivalentes:
 
-The comparator builds an observed BASE failure envelope. Every candidate failure observation must occur with the **same normalized error** in at least one exact BASE repetition. Candidate-only failures remain `PR_REGRESSION`; same-test different errors remain `POSSIBLE_PR_REGRESSION`; either class blocks CI. Intermittent exact matches are labeled `PREEXISTING_FLAKY_BASELINE_FAILURE`, not silently ignored.
+- **Staff → Admin:** Admin no hereda la sesión de Staff; espera el cierre o usa audited close.
+- **Staff X → Staff Y:** Staff Y no hereda ni modifica C1; requiere owner/admin resolution.
+- **Owner normal close:** owner reautenticado cuenta y cierra; después otro actor puede abrir una nueva sesión.
+- **Admin audited close:** se reutiliza el mecanismo existente, con razón obligatoria según la política vigente, conteo/reconciliation y actor ejecutor auditados.
+- **Direct staff takeover:** bloqueado por defecto.
+- **Automatic logout close:** MUST BE NO; logout no toca la sesión financiera.
 
-Raw BASE/CANDIDATE results remain visible with real exit codes and JSON/log artifacts. Relevant ESLint executes independently.
+## 8. Cloud y local ownership
 
-## 13. Focused validation
+Supabase sigue siendo la autoridad canónica en planes cloud/PRO. La UI/local cache no declara “libre” una estación si el cloud no lo confirma.
 
-On validated code head `29f9da2d65194c6aa1d8f4c001a98d4944577040` and subsequent CI-only closeout heads:
+En IndexedDB se mantiene la misma base física `LanzoDB_t_<opaque-id>` para el tenant, sin DB por actor ni por CashStation. Dexie registra el esquema con `db.version(32)`; la capa de recuperación lo expone como versión nativa de IndexedDB `320` (`CURRENT_NATIVE_DATABASE_VERSION=320`). La migración es forward-only, determinista, no destructiva, restart-safe y retry-safe.
 
-- ActorRuntime focused: **25/25 PASS**.
-- Tenant / IndexedDB / recovery: **179/179 PASS**.
-- Authentication regression: **41/41 PASS**.
-- Relevant ESLint: **PASS**.
-- `npm run build`: **PASS**.
-- `npm run build:store`: **PASS**.
+Stores/campos relevantes:
 
-The final report-containing HEAD reruns these blocking checks before closeout.
+- `cajas`: `actorKey`, `cashStationId`, `cashSessionId`, estado, opening/closing provenance, reconciliation metadata.
+- `movimientos_caja`: `cashSessionId`, `cashStationId`, `actorKey`, `performedByActorKey`, `originActorKey`, idempotency metadata.
+- ventas: `cash_session_id`, estación y actor de origen cuando el pago es efectivo.
 
-## 14. Raw full-suite repetition results
+Los registros legacy se clasifican como deterministically adoptable (sólo con evidencia inmutable de device/cloud), cloud-linked, local-only legacy o `legacy_unresolved`. La ambigüedad no inventa estación/owner, no borra ni duplica; queda fail-closed/recovery required.
 
-BASE `main@2f3457313b81f09937acab6fe4bac4399e79035f`:
+## 9. Sales, payments y movements
 
-- repetition 1: 2794 passed / 92 failed / 51 skipped / 2937 total; 79 failed files / 723 passed files / 802 total files
-- repetition 2: 2794 passed / 92 failed / 51 skipped / 2937 total; 79 failed files / 723 passed files / 802 total files
+- Una venta en efectivo requiere una sesión exacta `OPEN`, del actor actual o de una autorización explícita; además debe coincidir con la estación actual.
+- Se eliminó la ruta insegura de “primera caja abierta” genérica.
+- Staff B no puede registrar venta cash sobre C1 de Admin A; Admin A tampoco puede usar C1 de Staff X después del handoff.
+- Las operaciones no-cash conservan la política empresarial existente; no se introdujo un bloqueo artificial de tarjeta fuera del alcance.
+- Movimientos conservan `cash_session_id`; la estación se deriva/verifica de la sesión y nunca sustituye al owner.
+- `performed_by_actor_key` distingue al ejecutor del owner. Un trigger cloud impide saltos de sesión/estación y preserva la inmutabilidad.
+- Cierre concurrente vs. venta/movimiento se rechaza si la sesión ya no está abierta o si el actor/generation/station no coincide.
 
-CANDIDATE:
+## 10. Actor stale protection
 
-- repetition 1: 2868 passed / 92 failed / 51 skipped / 3011 total; 79 failed files / 743 passed files / 822 total files
-- repetition 2: 2868 passed / 92 failed / 51 skipped / 3011 total; 79 failed files / 743 passed files / 822 total files
+Las mutaciones financieras capturan tenant, actor, generation, sesión esperada y estación esperada. Se revalidan inmediatamente antes del write/transaction.
 
-All raw repetitions preserve their own exit codes in workflow artifacts. Raw repository-wide status remains **RED — PREEXISTING** when a repetition contains failures; it is never relabeled PASS by the differential gate.
+- `LOCKED`, `AUTHENTICATING`, `HANDOFF_CHECK` y generation stale rechazan cash mutation.
+- Un tab antiguo no puede agregar movimiento después del actor switch.
+- Un movimiento de Admin A en outbox no se reinterpreta como Staff B.
+- No existe asignación de ownership basada en `device_role` o `device_id`.
 
-Comparator:
+## 11. Idempotencia y concurrencia
 
-- unique BASE failure observations: 112
-- unique CANDIDATE failure observations: 112
-- stable preexisting candidate observations: 112
-- preexisting flaky candidate observations: 0
-- total candidate observations matched to BASE: 112
-- NEW/CHANGED PR regressions: **0**
-- BASE-only/incidental-or-flaky observations: 0
-- DIFFERENTIAL REGRESSION GATE: **PASS**
+Se conservan/gatean claves de idempotencia para `cash.open`, `cash.close`, movimientos, ajustes, sale cash y audited close. El RPC de apertura devuelve el resultado ya completado o `IDEMPOTENCY_PROCESSING`; no crea C2/C3 ante retry.
 
-## 15. Review of earlier generic test/CI commits
+La apertura cloud serializa la estación y además depende del índice parcial único. El close normal/audited conserva el contrato existente y la evidencia de sync/idempotencia. Las pruebas locales cubren dos opens concurrentes sobre una estación y retry de close del owner; máximo una sesión queda satisfecha.
 
-- `3a3f406f` changed the generic `useStoreSync` renderer; differential execution showed it altered unrelated test loading. Its net change was removed by `c3bc8726` and is absent from the final diff.
-- `837ce077` added generic Vitest globals in the same unrelated test; it was neutralized by `c3bc8726` and is absent from the final diff.
-- `0a679ebe` added a generic global expect/jest-dom bridge; it changed unrelated suite behavior and was removed by `f66626da`.
-- `2de498d3` had valid CI intent: architecture tests require generated artifacts. Its implementation evolved into symmetric exact BASE/CANDIDATE validation.
-- `9557fa7c` corrected canonical build use and was completed by `29f9da2d`, which stages the same canonical `store/dist` artifact for both exact checkouts.
+## 12. Offline y replacement
 
-No published history was rewritten and no force push was used.
+Si Staff B inicia sesión offline mientras existe o podría existir una sesión incompatible:
 
-## 16. Complete per-failure differential matrix
+- no se asume estación libre;
+- no se permite takeover ni nueva OPEN cash session;
+- cash open/movement/adjust/close/sale cash quedan bloqueados con `CASH_HANDOFF_REQUIRES_ONLINE` o estado estructurado equivalente;
+- funciones no financieras pueden continuar si el actor/permisos lo permiten.
 
-Every unique candidate failure observation is listed below with the exact repetitions in which it occurred. An intermittent exact BASE match is explicitly labeled flaky; it is not treated as a stable failure.
+Un dispositivo reemplazado no hace desaparecer C1. Sin binding/evidencia segura, el nuevo dispositivo queda unresolved y requiere recovery/admin audited close; no se crea una segunda caja por ausencia de D1.
 
-| Test / file | BASE repetitions | CANDIDATE repetitions | Classification |
-|---|---|---|---|
-| scripts/oss/release-boundary.test.mjs > [file-level failure] | FAIL in repetition(s) 1,2: No test suite found in file scripts/oss/release-boundary.test.mjs | FAIL in repetition(s) 1,2: No test suite found in file scripts/oss/release-boundary.test.mjs | PREEXISTING_BASELINE_FAILURE |
-| src/tests/ErrorBoundary.test.jsx > [file-level failure] | FAIL in repetition(s) 1,2: expect is not defined | FAIL in repetition(s) 1,2: expect is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/tests/useStoreSync.test.js > [file-level failure] | FAIL in repetition(s) 1,2: Cannot find package '@testing-library/react-hooks' imported from 'src/tests/useStoreSync.test.js' | FAIL in repetition(s) 1,2: Cannot find package '@testing-library/react-hooks' imported from 'src/tests/useStoreSync.test.js' | PREEXISTING_BASELINE_FAILURE |
-| src/utils/storageManager.test.js > [file-level failure] | FAIL in repetition(s) 1,2: No test suite found in file src/utils/storageManager.test.js | FAIL in repetition(s) 1,2: No test suite found in file src/utils/storageManager.test.js | PREEXISTING_BASELINE_FAILURE |
-| src/architecture/__tests__/adminDeploymentPackage.test.js > [file-level failure] | FAIL in repetition(s) 1,2: {"status":"failed","error":"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>"} | FAIL in repetition(s) 1,2: {"status":"failed","error":"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>"} | PREEXISTING_BASELINE_FAILURE |
-| src/architecture/__tests__/publicDeploymentArchitecture.test.js > [file-level failure] | FAIL in repetition(s) 1,2:  | FAIL in repetition(s) 1,2:  | PREEXISTING_BASELINE_FAILURE |
-| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal shows the local data warning for a new FREE admin device | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal does not show the warning for a PRO license | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal does not show the warning for a staff session | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea la navegación aunque el formulario no haya cambiado | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard cancela la salida y conserva los datos capturados | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard descarta la operación y continúa al destino al confirmar | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard permite navegar sin advertencia después de guardar | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard activa la advertencia nativa del navegador mientras está habilitado | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea cambios de pestaña representados por parámetros de búsqueda | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard cierra el modal al confirmar salida hacia otra pestaña de la misma ruta | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea la navegación hacia atrás del historial | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/pages/__tests__/SettingsPage.backupPro.test.jsx > SettingsPage backup tab cloud UX shows local backup as optional for PRO cloud | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/pages/__tests__/SettingsPage.backupPro.test.jsx > SettingsPage backup tab cloud UX keeps the regular backup tab without optional cloud copy note for FREE local | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe calcular el riesgo L1 cuando pasa el umbral de 50 | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe escalar al riesgo L3 cuando pasa de 300 | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator no debe disparar alerta si el posponer esta activo | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe reanudar la alerta L3 si se rebasa el limite de posponer | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe marcar el respaldo como completado correctamente (Async) | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator no debe lanzar ni registrar error cuando localStorage no existe | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator startBackupRiskEvaluator no hace nada cuando localStorage no existe | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator startBackupRiskEvaluator programa un solo ping inicial | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy usa apertura manual como politica segura por defecto | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy exige responsable y coincidencia entre fondo y conteo | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy registra la diferencia contra el fondo sugerido | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy identifica de forma explicita una apertura automatica | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/cashOpeningPolicyService.test.js > cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente | FAIL in repetition(s) 1,2: AssertionError: expected 'manual' to be 'automatic' // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected 'manual' to be 'automatic' // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/services/orders/orderVersioning.test.js > orderVersioning compares revision before updatedAt or item count | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/orders/orderVersioning.test.js > orderVersioning uses updatedAt and then deviceId as deterministic tie breakers | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/services/orders/orderVersioning.test.js > orderVersioning reuses the main device id when available | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/utils/__tests__/dateUtils.test.js > [file-level failure] | FAIL in repetition(s) 1,2: describe is not defined | FAIL in repetition(s) 1,2: describe is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct validates required, single, multiple, min and max groups | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }<br>(4 matching properties omitted from actual) | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }<br>(4 matching properties omitted from actual) | PREEXISTING_BASELINE_FAILURE |
-| src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct creates a minimal server payload without client prices or names | FAIL in repetition(s) 1,2: AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) } | FAIL in repetition(s) 1,2: AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) } | PREEXISTING_BASELINE_FAILURE |
-| index.test.ts > [file-level failure] | FAIL in repetition(s) 1,2: Deno is not defined | FAIL in repetition(s) 1,2: Deno is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true } | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesión | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) } | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' } | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen hace rollback best-effort si falla el upsert | FAIL in repetition(s) 1,2: AssertionError: expected 'El pedido está vacío.' to contain 'put failed' | FAIL in repetition(s) 1,2: AssertionError: expected 'El pedido está vacío.' to contain 'put failed' | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas clearSession limpia order, activeOrderId y tableData | FAIL in repetition(s) 1,2: AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal [] | FAIL in repetition(s) 1,2: AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal [] | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 1. debería enlazar correctamente ambos stores | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 2. debería volcar datos a useOrderStore cuando se hace switchOrder | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 3. debería actualizar useActiveOrders cuando useOrderStore es modificado | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 4. el getter currentOrder en useOrderStore debe retornar la orden actual | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/__tests__/EcommercePortalSettings.stockAlerts.test.jsx > [file-level failure] | FAIL in repetition(s) 1,2: [vitest] No "getEcommerceAdminAuthorizationContext" export is defined on the "../../../services/ecommerce/ecommerceAdminService" mock. Did you forget to return it from "vi.mock"?<br>If you need to partially mock a module, you can use "importOriginal" helper inside: | FAIL in repetition(s) 1,2: [vitest] No "getEcommerceAdminAuthorizationContext" export is defined on the "../../../services/ecommerce/ecommerceAdminService" mock. Did you forget to return it from "vi.mock"?<br>If you need to partially mock a module, you can use "importOriginal" helper inside: | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel coalesces invalidations during an active request into one follow-up | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel does not let a late response from A overwrite the selected B panel | FAIL in repetition(s) 1,2: Error: expect(element).not.toBeInTheDocument()<br>expected document not to contain element, found <h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Pedido aceptado<br></h2> instead | FAIL in repetition(s) 1,2: Error: expect(element).not.toBeInTheDocument()<br>expected document not to contain element, found <h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Pedido aceptado<br></h2> instead | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel discards a response from the previous staff context | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Listo<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Listo<br></h2><br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>> | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Listo<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Listo<br></h2><br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>> | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel updates payment without completing a preparing order | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel removes operational actions after a remote terminal refresh | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel does not duplicate a manual transition when its realtime confirmation arrives | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel preserves an unsaved public message during a silent refresh | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel offers ready as the next action while the order is preparing | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel refreshes counts and closes the detail after a terminal transition | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel shows a conversion-in-progress conflict and refetches the authoritative state | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel renders terminal states without operational actions | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Este estado no tiene acciones operativas disponibles.<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>><br>  Este estado no tiene acciones operativas disponibles.<br></p><br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>> | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Este estado no tiene acciones operativas disponibles.<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>><br>  Este estado no tiene acciones operativas disponibles.<br></p><br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>> | PREEXISTING_BASELINE_FAILURE |
-| src/components/pos/__tests__/ProductCard.test.jsx > [file-level failure] | FAIL in repetition(s) 1,2: expect is not defined | FAIL in repetition(s) 1,2: expect is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/products/__tests__/ProductList.test.jsx > ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards | FAIL in repetition(s) 1,2: TestingLibraryElementError: Unable to find an element with the text: /Caduca en \d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.<br>Ignored nodes: comments, script, style<br><body><br>  <div><br>    <div<br>      class="product-list-container"<br>    ><br>      <div<br>        class="list-header"<br>      ><br>        <div<br>          class="title-group" | FAIL in repetition(s) 1,2: TestingLibraryElementError: Unable to find an element with the text: /Caduca en \d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.<br>Ignored nodes: comments, script, style<br><body><br>  <div><br>    <div<br>      class="product-list-container"<br>    ><br>      <div<br>        class="list-header"<br>      ><br>        <div<br>          class="title-group" | PREEXISTING_BASELINE_FAILURE |
-| src/components/settings/__tests__/BackupSettings.backupPro.test.jsx > BackupSettings copy by license mode keeps required local backup copy for FREE local | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/settings/__tests__/BackupSettings.backupPro.test.jsx > BackupSettings copy by license mode shows optional local copy copy for PRO cloud initial setup | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/settings/__tests__/BackupSettings.backupPro.test.jsx > BackupSettings copy by license mode shows manual copy action for PRO cloud when configured | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx > OperationalSettings cash opening control disables automatic cash opening for cloud cash licenses | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx > OperationalSettings cash opening control warns FREE/local users when automatic cash opening is enabled | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useActiveOrders.test.js > useActiveOrders unified store resolves batch data before mutating the order | FAIL in repetition(s) 1,2: AssertionError: expected [ { id: 'product-batch', …(17) } ] to match object [ { id: 'product-batch', …(7) } ]<br>(11 matching properties omitted from actual) | FAIL in repetition(s) 1,2: AssertionError: expected [ { id: 'product-batch', …(17) } ] to match object [ { id: 'product-batch', …(7) } ]<br>(11 matching properties omitted from actual) | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useCheckoutFlow.ecommerce.test.jsx > useCheckoutFlow ecommerce guard does not change checkout behavior for a normal POS order | FAIL in repetition(s) 1,2: AssertionError: expected "vi.fn()" to be called with arguments: [ 'payment' ]<br>Number of calls: 0 | FAIL in repetition(s) 1,2: AssertionError: expected "vi.fn()" to be called with arguments: [ 'payment' ]<br>Number of calls: 0 | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate | FAIL in repetition(s) 1,2: AssertionError: expected "pushState" to be called 1 times, but got 2 times | FAIL in repetition(s) 1,2: AssertionError: expected "pushState" to be called 1 times, but got 2 times | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second | FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles | FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions reuses the cart entry for prescription and then payment | FAIL in repetition(s) 1,2: AssertionError: expected "pushState" to be called 1 times, but got 2 times | FAIL in repetition(s) 1,2: AssertionError: expected "pushState" to be called 1 times, but got 2 times | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support saves pending split close when offline | FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0 | FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0 | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure | FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0 | FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0 | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary | FAIL in repetition(s) 1,2: AssertionError: expected { success: true, closed: +0, …(2) } to match object { success: true, closed: 1, …(2) } | FAIL in repetition(s) 1,2: AssertionError: expected { success: true, closed: +0, …(2) } to match object { success: true, closed: 1, …(2) } | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry | FAIL in repetition(s) 1,2: AssertionError: expected [ …(51) ] to have a length of 52 but got 51 | FAIL in repetition(s) 1,2: AssertionError: expected [ …(51) ] to have a length of 52 but got 51 | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/sales/financialStats.test.js > financialStats solo agrega ventas con status closed en daily stats | FAIL in repetition(s) 1,2: AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ] | FAIL in repetition(s) 1,2: AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ] | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/sales/inventoryFlow.test.js > inventoryFlow committed stock reserva lotes y sincroniza committedStock del padre | FAIL in repetition(s) 1,2: AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ] | FAIL in repetition(s) 1,2: AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ] | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/sales/processSaleCore.test.js > processSaleCore retorna éxito y ejecuta transacción + recibo | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/sales/processSaleCore.test.js > processSaleCore mapea error de concurrencia a RACE_CONDITION | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(3) } to deeply equal { success: false, …(2) } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(3) } to deeply equal { success: false, …(2) } | PREEXISTING_BASELINE_FAILURE |
-| src/services/__test__/sales/processSaleCore.test.js > processSaleCore en fiado delega la deuda a la transaccion de venta | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/services/backup/__tests__/backupConfigDb.test.js > backupConfigDb persisted CryptoKey guarda y recupera una clave AES-GCM no extraible | FAIL in repetition(s) 1,2: MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb<br>MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb | FAIL in repetition(s) 1,2: MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb<br>MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb | PREEXISTING_BASELINE_FAILURE |
-| src/services/backup/__tests__/backupRestore.test.js > restoreWhitelistedDatabase revierte los clear si una insercion falla dentro de la transaccion | FAIL in repetition(s) 1,2: AssertionError: expected [] to deeply equal [ { id: 'product-local' } ] | FAIL in repetition(s) 1,2: AssertionError: expected [] to deeply equal [ { id: 'product-local' } ] | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommerceCatalogApparelRevision.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommerceCatalogSyncConsistency.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommerceCatalogSyncFinalPayloadIdempotency.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommerceCatalogSyncRecipeDependencies.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommerceCatalogSyncService.retryOutbox.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommerceCatalogSyncService.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePosDraftService.test.js > ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft | FAIL in repetition(s) 1,2: AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }<br>(13 matching properties omitted from actual) | FAIL in repetition(s) 1,2: AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }<br>(13 matching properties omitted from actual) | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePosDraftService.test.js > ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely | FAIL in repetition(s) 1,2: AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }<br>(17 matching properties omitted from actual) | FAIL in repetition(s) 1,2: AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }<br>(17 matching properties omitted from actual) | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js > stale response protection does not replace a manual selection with an older automatic response | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js > stale response protection does not recreate a released draft after a delayed response | FAIL in repetition(s) 1,2: AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality | FAIL in repetition(s) 1,2: AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js > ecommercePublicService configurable products loads and normalizes the safe product configuration RPC | FAIL in repetition(s) 1,2: EcommercePublicError: La configuración cambió. Actualiza el catálogo. | FAIL in repetition(s) 1,2: EcommercePublicError: La configuración cambió. Actualiza el catálogo. | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js > ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections | FAIL in repetition(s) 1,2: AssertionError: expected "vi.fn()" to be called with arguments: [ 'ecommerce_create_order', …(1) ]<br>Received:<br>  1st vi.fn() call:<br>@@ -1,10 +1,20 @@<br>  [<br>    "ecommerce_create_order",<br>-   ObjectContaining {<br>+   {<br>+     "p_customer": {<br>+       "address": "",<br>+       "fulfillmentMethod": "pickup",<br>+       "name": "Cliente", | FAIL in repetition(s) 1,2: AssertionError: expected "vi.fn()" to be called with arguments: [ 'ecommerce_create_order', …(1) ]<br>Received:<br>  1st vi.fn() call:<br>@@ -1,10 +1,20 @@<br>  [<br>    "ecommerce_create_order",<br>-   ObjectContaining {<br>+   {<br>+     "p_customer": {<br>+       "address": "",<br>+       "fulfillmentMethod": "pickup",<br>+       "name": "Cliente", | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js > checkout tracking contract keeps the same tracking link on an idempotent response | FAIL in repetition(s) 1,2: AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }<br>(12 matching properties omitted from actual) | FAIL in repetition(s) 1,2: AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }<br>(12 matching properties omitted from actual) | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublishedStockAlertInvalidation.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublishedStockAlertRecipe.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublishedStockAlertService.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/services/ecommerce/__tests__/ecommercePublishedStockMalformedBatch.test.js > [file-level failure] | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function | PREEXISTING_BASELINE_FAILURE |
-| src/components/layout/__tests__/Navbar.backupPro.test.jsx > Navbar backup actions by license type does not show local backup actions for PRO cloud | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/layout/__tests__/Navbar.backupPro.test.jsx > Navbar backup actions by license type shows local backup actions for FREE local when a notice applies | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
+## 13. Outbox financiero
 
-## 17. Security closeout checklist
+El outbox genérico de Fase 3 no se rediseñó. Para operaciones financieras:
 
-1. Admin actor handle cannot survive logout: **PASS**.
-2. Staff cannot inherit Admin actor: **PASS**.
-3. simultaneous Admin+Staff credentials => `ACTOR_SESSION_AMBIGUOUS` => `LOCKED`: **PASS**.
-4. ambiguity does not silently destroy one credential family: **PASS**.
-5. `actorGeneration` independent from `tenantGeneration`: **PASS**.
-6. tenant switch invalidates actor authority: **PASS**.
-7. ActorRuntime does not change physical tenant DB selection: **PASS**.
-8. no fallback to `LanzoDB1`: **PASS**.
-9. no IndexedDB per actor: **PASS**.
-10. no cash ownership transfer: **PASS / not implemented**.
-11. no cart/draft cutover: **PASS / not implemented**.
-12. `ADMIN_DEVICE_USE_ADMIN_FLOW`: **UNCHANGED**.
+- se preservan `originActorKey`, `cashSessionId`, `cashStationId`, tenant e idempotency key donde aplican;
+- el actor que transporta un retry no sustituye al actor de origen;
+- si el servidor requiere reautenticación/autoridad original, la operación queda HOLD / REAUTH REQUIRED;
+- el replay offline de cash PRO permanece deshabilitado/fail-closed (`CASH_OUTBOX_DISABLED`) para no fabricar disponibilidad ni cambiar ownership.
 
-## 18. Known limitations and final verdict
+## 14. Supabase: migración y producción
 
-The repository-wide raw suite has preexisting deterministic failures and at least one demonstrated nondeterministic failure. Those remain visible and are not repaired, skipped, weakened, or converted into warnings by this phase. The repeated exact-base envelope exists solely to distinguish genuine PR regressions from independently reproduced baseline instability.
+**Supabase: TOUCHED.** No se ejecutó DDL manual fuera de migración y no se borraron/cerraron sesiones reales.
 
-**SHARED.TERMINAL.1: PASS under the red-baseline policy, provided the final report-containing HEAD reproduces the focused green checks and repeated differential gate.**
+Archivos nuevos:
 
-- FULL SUITE BASELINE: **RED — PREEXISTING / FLAKY BASELINE INCLUDED**.
-- FULL SUITE CANDIDATE: **RED — NO NEW/CHANGED FAILURES**.
-- DIFFERENTIAL REGRESSION GATE: **PASS**.
-- Supabase production: **UNTOUCHED**.
-- Cloud migration: **NOT REQUIRED**.
-- Merge: **NO**.
-- SHARED.TERMINAL.2: **NOT STARTED**.
+1. `supabase/migrations/20260819090000_shared_terminal_cash_station_financial_handoff.sql`
+   - crea `public.pos_cash_stations` y `public.pos_cash_station_bindings`;
+   - agrega identidad de estación/provenance a sesiones y movimientos;
+   - hace backfill sólo deterministic-device-bound;
+   - crea constraints/FKs/índices y `ux_pos_cash_sessions_open_station` después del preflight;
+   - añade `resolve_cash_station_for_device`, `assert_cash_session_station`, `pos_get_cash_station_state`, apertura serializada y guards de movimientos/close normal;
+   - conserva el path auditado Admin.
+2. `supabase/migrations/20260819090100_shared_terminal_cash_movement_performed_by.sql`
+   - completa la provenance `performed_by_actor_key` sin reescribir owner;
+   - mantiene la estación/sesión inmutable en updates.
+
+Aplicación registrada en producción con los nombres de migración:
+
+- `shared_terminal_4_cash_station_financial_handoff`;
+- `20260819090000_shared_terminal_cash_station_financial_handoff`;
+- `20260819090100_shared_terminal_cash_movement_performed_by`.
+
+Post-apply read-only verification:
+
+- columnas/constraints/indexes/functions/grants/search_path presentes;
+- `pos_get_cash_station_state` expuesta sólo con el grant existente `anon, authenticated` y `search_path=''`;
+- `open_unresolved=0`;
+- `duplicate_open_station_groups=0`;
+- `movement_station_mismatches=0`;
+- `movement_performed_by_null=0`;
+- `migration_registered=1`;
+- guard de `performed_by_actor_key` presente;
+- bindings cross-tenant: `0`.
+
+**Production invariant:** duplicate OPEN station sessions = **0**.
+
+No se ejecutaron pruebas destructivas ni cierres/aperturas artificiales contra datos reales.
+
+## 15. Tests y validación
+
+Focused suites:
+
+- CashFinancialGate / CashLocalRepository / handoff: PASS (incluye Admin→Staff, owner close, concurrent local opens, retry idempotente).
+- Sales repository cash-session binding: PASS (foreign actor rejected, exact actor/station accepted).
+- ActorRuntime, ActorScopedStorage, tenant isolation, database recovery, IndexedDB schema/recovery, auth/device-mode: PASS en focused run.
+- Focused broad result: `188 passed, 3 pre-existing stock-synthetic failures`, todos reproducibles en BASE.
+
+Regression/build checks:
+
+- `npm run build`: PASS.
+- `npm run build:store`: PASS.
+- `npm run build:store:vercel`: PASS.
+- ESLint dirigido sobre archivos modificados: `0 errors, 4 warnings` (warnings preexistentes/no bloqueantes).
+- `git diff --check`: PASS.
+- Full raw suite candidato: `49 failed / 336 passed` files, `92 failed / 2868 passed / 51 skipped` tests.
+- Full raw suite base: `52 failed / 331 passed` files, `102 failed / 2848 passed / 51 skipped` tests.
+- El lint global conserva exactamente los `344 problems (152 errors, 192 warnings)` preexistentes en BASE y CANDIDATE.
+
+## 16. BASE vs CANDIDATE
+
+La validación de código de `26e67f698f3fc8132c5add8b906e332a27d2fabd` había producido una comparación normalizada sin regresiones nuevas en el conjunto de evidencia de esa validación.
+
+Para CLOSEOUT.R1 se reejecutó el mismo contraste sobre el HEAD observado `c57652ca88f114390e4aeb7f6c64a087dda86616`:
+
+- BASE y CANDIDATE terminaron sus suites observacionales.
+- El gate diferencial repetido de ActorRuntime — run `32264900716`, job `96109547965` — terminó **FAIL**.
+- El candidato presentó una observación normalizada exclusiva en la repetición 2: `src/pages/__tests__/PublicStorePage.siteVersion.test.jsx` / `STACK_TRACE_ERROR`.
+- BASE presentó una observación incidental de la misma clase general en `PublicStoreCheckout.test.jsx`, pero no el mismo identificador; el workflow la clasificó como `PR_REGRESSION` y no permite afirmar que el resultado sea cero.
+- Por tanto, en el HEAD observado, `NEW/CHANGED REGRESSIONS` queda **UNRESOLVED — 1 candidate-only normalized observation**, no `0`.
+
+CLOSEOUT.R1 no modificó archivos de código ni dependencias; la diferencia es una observación no causalmente atribuible a la corrección de whitespace. Aun así, la regla de cierre exige respetar el resultado rojo y mantener el estado fail-closed hasta revisión independiente o una corrida estable que lo descarte explícitamente.
+## 17. Riesgos y trabajo diferido
+
+- El binding avanzado multi-device/physical-drawer topology aún requiere una política explícita de negocio; la primera versión usa `device_default` determinista.
+- El replay durable/genérico del outbox no se rediseñó; cash offline permanece bloqueado.
+- La suite global y el lint global conservan fallos históricos observacionales; además, el gate diferencial exacto de CLOSEOUT.R1 quedó rojo por una observación candidata no resuelta. No se debe declarar PASS mientras ese resultado permanezca.
+- Debe continuar la revisión independiente y añadir escenarios de integración no destructivos para topologías multi-dispositivo y para la observación de `PublicStorePage.siteVersion`.
+
+No se inventó ownership histórico ni se hizo limpieza destructiva para ocultar estos riesgos.
+## 18. CLOSEOUT.R1 — corrección de evidencia y auditoría de migraciones
+
+### Estado remoto inicial
+
+- PR #211 antes de este closeout: `OPEN`, `DRAFT`, `merged=false`.
+- Rama: `feat/shared-terminal-financial-handoff`.
+- Old HEAD: `23b8449a9ba91651bd8799e9b1f76a6a10bcd1a2`.
+- Código validado sin cambios: `26e67f698f3fc8132c5add8b906e332a27d2fabd`.
+- HEAD observado y validado antes de esta actualización del reporte: `c57652ca88f114390e4aeb7f6c64a087dda86616`.
+- Esta actualización es documental y no cambia el código validado, las migraciones SQL ni Supabase. El SHA del commit que contiene esta versión final del reporte se verificará directamente en GitHub y se entrega también en el cierre externo; el reporte no intenta referenciar su propio SHA.
+
+### Causa exacta del fallo report-only
+
+Los workflows del old HEAD `23b8449a` reportaron:
+
+- `Shared Terminal Actor Scoped Storage Validation` — run `32237418999`: FAIL.
+- `Shared Terminal Actor Runtime Validation` — run `32237418996`: FAIL.
+- `HOTFIX Dexie Recovery Validation` — run `32237419115`: FAIL.
+- `PR127 Global Comparison` — run `32237419044`: PASS.
+
+La causa reproducible del primer fallo de calidad fue `git diff --check` sobre el reporte, líneas 3 y 4: espacios de Markdown para hard-break al final de `Fecha de verificación` y `Repositorio`. Se eliminaron todos los trailing whitespace del reporte; no se modificó código funcional.
+
+### Auditoría de migration history
+
+El repositorio conserva estas migraciones ejecutables:
+
+- `20260819090000_shared_terminal_cash_station_financial_handoff.sql`.
+- `20260819090100_shared_terminal_cash_movement_performed_by.sql`.
+
+La aplicación productiva se hizo mediante el conector Supabase `apply_migration`, que recibe un nombre separado del SQL y registra un `version` numérico generado por el mecanismo remoto. La evidencia del propio proyecto documenta el mismo comportamiento en Builder.1: una migración local con timestamp `20260720010757` fue aplicada por MCP, producción registró `20260721113522`, conservó el nombre y el SQL quedó hash-equivalente; luego el archivo Git se alineó al timestamp remoto.
+
+Producción conserva actualmente:
+
+| version | name | evidencia SQL |
+| --- | --- | --- |
+| `20260819084636` | `shared_terminal_4_cash_station_financial_handoff` | nombre corto del primer apply; una sentencia |
+| `20260819084719` | `20260819090000_shared_terminal_cash_station_financial_handoff` | MD5 `c03d9dca69296b3bd9b6b4c5f5bbe91c`, igual al archivo Git |
+| `20260819085828` | `20260819090100_shared_terminal_cash_movement_performed_by` | MD5 `2a9a1c5e3cda971f6907fc073236f11c`, igual al archivo Git sin su LF final |
+
+La consulta read-only confirmó que `supabase_migrations.schema_migrations` tiene `version`, `statements[]`, `name`, `created_by`, `idempotency_key` y `rollback[]`. Las dos sentencias Git fueron aplicadas como una sentencia cada una. No hay indicio de contenido SQL distinto: la diferencia del segundo hash es únicamente el newline final que el conector no conserva.
+
+La documentación oficial de Supabase establece que `supabase migration list` compara únicamente timestamps locales contra `schema_migrations.version`, y que `supabase db push` omite sólo migraciones cuyo timestamp ya está aplicado. La documentación y los scripts del repositorio identifican `supabase migration list` / `supabase db push --dry-run` como el mecanismo normal de despliegue versionado; no hay workflow de GitHub que despliegue estas migraciones automáticamente.
+
+**Resultado:** existe drift real de historia, no una discrepancia inocua de nombres. Para la CLI normal, `20260819090000` y `20260819090100` serían local-only, mientras `20260819084719` y `20260819085828` serían remote-only; por tanto existe riesgo de reapply.
+
+La reparación soportada sería `supabase migration repair`, pero el entorno conectado no expone esa operación: no hay herramienta MCP de repair, el binario Supabase CLI no está instalado y el checkout no está enlazado con credenciales remotas. No se usó `supabase_execute_sql` para modificar historial.
+
+- **MIGRATION REAPPLY RISK:** CONFIRMED.
+- **SUPABASE CLOSEOUT MUTATION:** NOT PERFORMED.
+- **Migration SQL reexecuted:** NO.
+- **Repair status:** BLOCKED — safe official history repair is unavailable in this environment.
+- **SHARED.TERMINAL.4-CLOSEOUT.R1:** BLOCKED.
+
+### Producción después de la auditoría
+
+La auditoría fue read-only y dejó el esquema financiero sin cambios:
+
+- `pos_cash_stations`: presente.
+- `pos_cash_station_bindings`: presente.
+- columnas de estación/provenance: presentes.
+- `ux_pos_cash_sessions_open_station`: presente con semántica correcta.
+- FKs de estación en bindings, sessions y movements: presentes.
+- duplicate OPEN station groups: `0`.
+- movement station mismatches: `0`.
+- movement performed_by null: `0`.
+- cross-tenant bindings: `0`.
+
+### Validación del HEAD observado antes de esta actualización
+
+La corrida completa sobre `c57652ca88f114390e4aeb7f6c64a087dda86616` dejó esta evidencia:
+
+| Workflow | Run | Resultado |
+| --- | --- | --- |
+| Shared Terminal Actor Scoped Storage Validation | `32264900801` | **PASS** |
+| Shared Terminal Actor Runtime Validation | `32264900716` | **RED**: focused PASS; differential job FAIL |
+| HOTFIX Dexie Recovery Validation | `32264900786` | **PASS** |
+| PR127 Global Comparison | `32264900722` | **PASS** |
+
+El focused ActorRuntime job `96109597489`, el focused ActorScopedStorage job `96106875097` y HOTFIX ejecutaron `git diff --check`, builds y validaciones dirigidas sin errores de whitespace. La enumeración read-only del reporte confirmó cero líneas con trailing whitespace. Los jobs BASE/CANDIDATE observacionales terminaron, pero no convierten el gate diferencial fallido en PASS.
+
+El workflow ActorRuntime del primer commit documental `0efce620c95febc742fae5d0396752fe5701fde5` publicó accidentalmente el commit report-only `96ea65fd798d83a19c2d5446ca966149a7dcbca1`. Se revirtió de forma controlada, sin force-push, mediante `c57652ca88f114390e4aeb7f6c64a087dda86616`, dejando el árbol Phase4 intacto. Después de `c57652c` no apareció otro commit automático y el publisher quedó skipped; esta actualización debe conservar esa estabilidad y no iniciar un loop.
+
+El reporte se entrega con el resultado real: no se convierten estados RED en PASS y la evidencia de migraciones sigue siendo el bloqueo principal.
+## 19. Estado exacto
+
+**SHARED.TERMINAL.4: PARTIAL** (resultado funcional de la fase).
+
+**SHARED.TERMINAL.4-CLOSEOUT.R1: BLOCKED**
+
+Motivos de bloqueo:
+
+1. La auditoría probó drift real entre los timestamps de migración Git y `schema_migrations.version`; la CLI normal puede considerar los dos archivos local-only y existe riesgo de reapply.
+2. La reparación oficial `supabase migration repair` no está disponible en el entorno conectado. No se permite manipular manualmente `schema_migrations`; Supabase no fue modificado y las migraciones SQL no fueron reejecutadas.
+3. El gate diferencial del HEAD observado terminó RED con una observación candidata normalizada no resuelta.
+
+El handoff financiero, la exclusividad por estación, la separación actor/device, la protección stale, la idempotencia, el bloqueo offline y el binding sale/movement siguen fail-closed y sin evidencia de ownership leak.
+
+- NO MERGE.
+- Mantener el PR #211 en DRAFT.
+- No iniciar `SHARED.TERMINAL.5`.
+- Esperar revisión independiente.
+
+
+**SHARED.TERMINAL.4: PARTIAL**
+
+El handoff principal, la exclusividad por estación, la separación actor/device, la protección stale, la idempotencia, el bloqueo offline y el binding sale/movement quedaron implementados y verificados sin ownership leaks ni regresiones nuevas. Las deudas listadas arriba fallan cerradas.
+
+- NO MERGE.
+- Mantener el PR #211 en DRAFT.
+- No iniciar `SHARED.TERMINAL.5`.
+- Esperar revisión independiente.
