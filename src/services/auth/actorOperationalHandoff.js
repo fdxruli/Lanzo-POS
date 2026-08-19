@@ -16,6 +16,8 @@ const pendingOperations = new Map();
 const checkoutOwnership = new Map();
 let operationSequence = 0;
 let installPromise = null;
+let operationalDb = null;
+let operationalStores = null;
 
 const nextOperationId = (label) => `${label}:${++operationSequence}`;
 
@@ -31,11 +33,12 @@ const toPendingSnapshot = (operation) => Object.freeze({
 
 const toCheckoutSnapshot = (ownership) => Object.freeze({
   orderId: ownership.orderId,
-  actorKey: ownership.handle.actorKey,
-  actorGeneration: ownership.handle.generation,
-  tenantOpaqueId: ownership.handle.tenant?.opaqueId || null,
-  tenantGeneration: ownership.handle.tenant?.generation ?? null,
-  acquiredAt: ownership.acquiredAt
+  actorKey: ownership.actorKey || ownership.handle?.actorKey || null,
+  actorGeneration: ownership.actorGeneration ?? ownership.handle?.generation ?? null,
+  tenantOpaqueId: ownership.tenantOpaqueId || ownership.handle?.tenant?.opaqueId || null,
+  tenantGeneration: ownership.tenantGeneration ?? ownership.handle?.tenant?.generation ?? null,
+  acquiredAt: ownership.acquiredAt || null,
+  persisted: ownership.persisted === true
 });
 
 export const getPendingActorOperations = () => Object.freeze(
@@ -45,6 +48,61 @@ export const getPendingActorOperations = () => Object.freeze(
 export const getActorCheckoutOwnerships = () => Object.freeze(
   [...checkoutOwnership.values()].map(toCheckoutSnapshot)
 );
+
+export const refreshPersistedActorCheckoutOwnership = async ({ tenant = null } = {}) => {
+  if (!operationalDb || !operationalStores?.SALES) return getActorCheckoutOwnerships();
+
+  const lockedSales = await operationalDb.table(operationalStores.SALES)
+    .filter((sale) => sale?.isLockedForCheckout === true)
+    .toArray();
+  const persistedIds = new Set(lockedSales.map((sale) => sale.id).filter(Boolean));
+
+  for (const [orderId, ownership] of checkoutOwnership.entries()) {
+    if (
+      ownership.persisted === true
+      && (!tenant?.opaqueId || ownership.tenantOpaqueId === tenant.opaqueId)
+      && !persistedIds.has(orderId)
+    ) {
+      checkoutOwnership.delete(orderId);
+    }
+  }
+
+  for (const sale of lockedSales) {
+    if (!sale?.id) continue;
+    const existing = checkoutOwnership.get(sale.id);
+    const actorKey = typeof sale.checkoutActorKey === 'string' && sale.checkoutActorKey.trim()
+      ? sale.checkoutActorKey.trim()
+      : null;
+    const actorGeneration = Number.isFinite(sale.checkoutActorGeneration)
+      ? sale.checkoutActorGeneration
+      : null;
+
+    if (existing?.handle && existing.handle.actorKey === actorKey) {
+      checkoutOwnership.set(sale.id, {
+        ...existing,
+        persisted: true,
+        actorKey,
+        actorGeneration,
+        tenantOpaqueId: tenant?.opaqueId || existing.tenantOpaqueId || existing.handle.tenant?.opaqueId || null,
+        tenantGeneration: tenant?.generation ?? existing.tenantGeneration ?? existing.handle.tenant?.generation ?? null
+      });
+      continue;
+    }
+
+    checkoutOwnership.set(sale.id, {
+      orderId: sale.id,
+      handle: null,
+      actorKey,
+      actorGeneration,
+      tenantOpaqueId: tenant?.opaqueId || null,
+      tenantGeneration: tenant?.generation ?? null,
+      acquiredAt: sale.checkoutLockedAt || sale.updatedAt || null,
+      persisted: true
+    });
+  }
+
+  return getActorCheckoutOwnerships();
+};
 
 export const assertActorOperationalHandoffClear = ({ tenant = null, actorKey = null } = {}) => {
   const pending = getPendingActorOperations().filter((operation) => (
@@ -62,7 +120,7 @@ export const assertActorOperationalHandoffClear = ({ tenant = null, actorKey = n
 
   const incompatibleCheckout = getActorCheckoutOwnerships().filter((ownership) => (
     (!tenant?.opaqueId || ownership.tenantOpaqueId === tenant.opaqueId)
-    && (!actorKey || ownership.actorKey !== actorKey)
+    && (!actorKey || !ownership.actorKey || ownership.actorKey !== actorKey)
   ));
   if (incompatibleCheckout.length > 0) {
     throw new ActorRuntimeError(ACTOR_HANDOFF_CHECKOUT_OWNED, {
@@ -133,6 +191,12 @@ export const runCheckoutActorOperation = async ({
 } = {}) => {
   const ownership = orderId ? checkoutOwnership.get(orderId) : null;
   if (ownership) {
+    if (!ownership.handle) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+        reason: ownership.actorKey ? 'checkout_owner_not_reauthenticated' : 'checkout_owner_unresolved',
+        orderId
+      });
+    }
     return runTrackedActorOperationWithHandle(ownership.handle, label, operation);
   }
   return runTrackedActorOperationIfGranted(label, operation);
@@ -142,11 +206,17 @@ export const rebindActorOperationalOwnership = ({ actorKey, tenant, handle } = {
   if (!actorKey || !tenant?.opaqueId || !handle || typeof handle.assertCurrent !== 'function') return 0;
   let rebound = 0;
   for (const [orderId, ownership] of checkoutOwnership.entries()) {
-    if (
-      ownership.handle.actorKey === actorKey
-      && ownership.handle.tenant?.opaqueId === tenant.opaqueId
-    ) {
-      checkoutOwnership.set(orderId, { ...ownership, handle });
+    const ownerActorKey = ownership.actorKey || ownership.handle?.actorKey || null;
+    const ownerTenantOpaqueId = ownership.tenantOpaqueId || ownership.handle?.tenant?.opaqueId || null;
+    if (ownerActorKey === actorKey && ownerTenantOpaqueId === tenant.opaqueId) {
+      checkoutOwnership.set(orderId, {
+        ...ownership,
+        handle,
+        actorKey,
+        actorGeneration: handle.generation,
+        tenantOpaqueId: tenant.opaqueId,
+        tenantGeneration: tenant.generation
+      });
       rebound += 1;
     }
   }
@@ -232,7 +302,7 @@ const installLoadOrdersGuard = (useActiveOrders) => {
   });
 };
 
-const installActiveOrderGuards = (useActiveOrders) => {
+const installActiveOrderGuards = (useActiveOrders, db, STORES) => {
   const state = useActiveOrders.getState();
   const patch = {};
 
@@ -246,6 +316,7 @@ const installActiveOrderGuards = (useActiveOrders) => {
   }
 
   const originalLock = state.lockOrderForCheckout;
+  const originalUnlock = state.unlockOrder;
   if (typeof originalLock === 'function' && !isGuarded(originalLock)) {
     patch.lockOrderForCheckout = markGuarded((orderId, ...args) => {
       const handle = actorRuntimeController.capture();
@@ -256,10 +327,26 @@ const installActiveOrderGuards = (useActiveOrders) => {
           const result = await originalLock(orderId, ...args);
           assertCurrent();
           if (result?.success && orderId) {
+            try {
+              await db.table(STORES.SALES).update(orderId, {
+                checkoutActorKey: handle.actorKey,
+                checkoutActorGeneration: handle.generation,
+                checkoutLockedAt: new Date().toISOString()
+              });
+              assertCurrent();
+            } catch (error) {
+              try { await originalUnlock?.(orderId); } catch { /* keep original error */ }
+              throw error;
+            }
             checkoutOwnership.set(orderId, {
               orderId,
               handle,
-              acquiredAt: new Date().toISOString()
+              actorKey: handle.actorKey,
+              actorGeneration: handle.generation,
+              tenantOpaqueId: handle.tenant?.opaqueId || null,
+              tenantGeneration: handle.tenant?.generation ?? null,
+              acquiredAt: new Date().toISOString(),
+              persisted: true
             });
           }
           return result;
@@ -268,7 +355,6 @@ const installActiveOrderGuards = (useActiveOrders) => {
     });
   }
 
-  const originalUnlock = state.unlockOrder;
   if (typeof originalUnlock === 'function' && !isGuarded(originalUnlock)) {
     patch.unlockOrder = markGuarded((orderId, ...args) => {
       const ownership = orderId ? checkoutOwnership.get(orderId) : null;
@@ -279,7 +365,19 @@ const installActiveOrderGuards = (useActiveOrders) => {
         async ({ assertCurrent }) => {
           const result = await originalUnlock(orderId, ...args);
           assertCurrent();
-          if (result?.success && orderId) checkoutOwnership.delete(orderId);
+          if (result?.success && orderId) {
+            try {
+              await db.table(STORES.SALES).update(orderId, {
+                checkoutActorKey: null,
+                checkoutActorGeneration: null,
+                checkoutLockedAt: null
+              });
+            } catch {
+              // isLockedForCheckout=false remains authoritative; stale metadata
+              // is ignored by persisted checkout inspection.
+            }
+            checkoutOwnership.delete(orderId);
+          }
           return result;
         }
       );
@@ -445,13 +543,15 @@ const installGuards = async () => {
     });
   }
 
-  installActiveOrderGuards(useActiveOrders);
+  operationalDb = dexieModule.db;
+  operationalStores = dexieModule.STORES;
+  installActiveOrderGuards(useActiveOrders, operationalDb, operationalStores);
   installOrderStoreAsyncGuards(useOrderStore);
   installHardenedSmartItem({
     useOrderStore,
     useActiveOrders,
-    db: dexieModule.db,
-    STORES: dexieModule.STORES,
+    db: operationalDb,
+    STORES: operationalStores,
     getAvailableStock: dbUtilsModule.getAvailableStock,
     getSortedBatchesForProduct: inventoryFlowModule.getSortedBatchesForProduct,
     isCommercialVariantProduct: variantsModule.isCommercialVariantProduct
