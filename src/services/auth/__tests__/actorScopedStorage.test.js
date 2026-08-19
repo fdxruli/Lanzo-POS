@@ -154,6 +154,40 @@ describe('ActorScopedStorage cart ownership', () => {
     );
   });
 
+  it('invalidates the old tab when another tab publishes a different actor context', async () => {
+    await mountActor(TENANT_A, 'admin:admin-a', 1);
+    const oldHandle = captureActorScopedStorageHandle();
+    const current = getActorScopedStorageState().active;
+    const contextKey = Array.from({ length: window.localStorage.length }, (_, index) => (
+      window.localStorage.key(index)
+    )).find((key) => key?.endsWith(':actor-runtime-context:v1'));
+
+    expect(contextKey).toBeTruthy();
+    const foreignRecord = {
+      version: 1,
+      tenantOpaqueId: TENANT_A.opaqueId,
+      actorOpaqueId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      actorGeneration: current.actorGeneration + 1,
+      contextToken: 'other-tab-context-token',
+      status: 'granted',
+      updatedAt: '2026-08-19T01:30:00.000Z'
+    };
+    const oldValue = window.localStorage.getItem(contextKey);
+    const newValue = JSON.stringify(foreignRecord);
+    window.localStorage.setItem(contextKey, newValue);
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: contextKey,
+      oldValue,
+      newValue,
+      storageArea: window.localStorage
+    }));
+
+    expect(getActorScopedStorageState().writesSuspended).toBe(true);
+    expect(() => oldHandle.assertCurrent()).toThrowError(
+      expect.objectContaining({ code: ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_STALE })
+    );
+  });
+
   it('keeps actor namespaces distinct across tenants and restores A after A→B→A', async () => {
     await mountActor(TENANT_A, 'admin:shared-user-id', 1);
     writeCart({ items: ['TENANT-A'] });
