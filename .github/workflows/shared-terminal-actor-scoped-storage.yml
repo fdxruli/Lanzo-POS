@@ -13,11 +13,14 @@ on:
       - 'src/services/salesCloud/salesCloudShadowService.js'
       - 'src/services/salesService.js'
       - 'src/hooks/pos/useLayawayFlow.js'
+      - 'src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js'
       - 'src/components/layout/Layout.jsx'
       - 'src/services/auth/__tests__/actorScopedStorage.test.js'
       - 'src/services/auth/__tests__/actorOperationalHandoff.test.js'
+      - 'src/services/auth/__tests__/actorOperationalAuthority.test.js'
       - 'src/services/auth/__tests__/actorSessionRuntimeBridge.test.js'
       - 'src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js'
+      - 'src/services/tenant/__tests__/tenantScopedStorage.test.js'
       - 'docs/reports/SHARED.TERMINAL.3.ACTOR.SCOPED.STORAGE.HANDOFF.md'
       - '.github/workflows/shared-terminal-actor-scoped-storage.yml'
   workflow_dispatch:
@@ -52,14 +55,22 @@ jobs:
       - name: git diff --check
         run: git diff --check "${SHARED_TERMINAL_3_BASE_SHA}...HEAD"
 
-      - name: Actor storage and handoff focused tests
+      - name: Actor storage, authority and handoff focused tests
         run: >-
           npx vitest run
           src/services/auth/__tests__/actorRuntimeController.test.js
           src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
           src/services/auth/__tests__/actorScopedStorage.test.js
           src/services/auth/__tests__/actorOperationalHandoff.test.js
+          src/services/auth/__tests__/actorOperationalAuthority.test.js
           --maxWorkers=4
+
+      - name: Actor and tenant persistence lifecycle tests
+        run: >-
+          npx vitest run
+          src/services/tenant/__tests__/tenantScopedStorage.test.js
+          src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js
+          --maxWorkers=1
 
       - name: Actor-origin outbox focused tests
         run: npx vitest run src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js --maxWorkers=4
@@ -109,8 +120,11 @@ jobs:
           src/components/layout/Layout.jsx
           src/services/auth/__tests__/actorScopedStorage.test.js
           src/services/auth/__tests__/actorOperationalHandoff.test.js
+          src/services/auth/__tests__/actorOperationalAuthority.test.js
           src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
           src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js
+          src/services/tenant/__tests__/tenantScopedStorage.test.js
+          src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js
 
       - name: npm run build
         if: always()
@@ -148,6 +162,13 @@ jobs:
           npm run build
           npm run build:store
           npm run build:store:vercel
+
+      - name: BASE PublicStore focused repetitions
+        run: |
+          for i in 1 2 3 4 5 6 7 8; do
+            echo "BASE PublicStore repetition ${i}"
+            npx vitest run src/pages/__tests__/PublicStorePage.siteVersion.test.jsx --maxWorkers=1
+          done
 
       - name: BASE raw full-suite repetitions
         shell: bash
@@ -205,6 +226,13 @@ jobs:
           npm run build
           npm run build:store
           npm run build:store:vercel
+
+      - name: CANDIDATE PublicStore focused repetitions
+        run: |
+          for i in 1 2 3 4 5 6 7 8; do
+            echo "CANDIDATE PublicStore repetition ${i}"
+            npx vitest run src/pages/__tests__/PublicStorePage.siteVersion.test.jsx --maxWorkers=1
+          done
 
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
