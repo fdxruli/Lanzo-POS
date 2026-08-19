@@ -10,6 +10,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/hotfix-dexie-validation.yml'
       - '.github/workflows/pr127-global-comparison.yml'
+      - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
   pull_request:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - 'package-lock.json'
       - '.github/workflows/hotfix-dexie-validation.yml'
       - '.github/workflows/pr127-global-comparison.yml'
+      - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
   workflow_dispatch:
 
 permissions:
@@ -67,6 +69,54 @@ jobs:
         working-directory: main
         run: npm run test:ci -- --reporter=json --outputFile=global-main.json
 
+      - name: Run PR BFCache focused evidence
+        working-directory: pr
+        shell: bash
+        run: |
+          failures=0
+          for i in $(seq 1 20); do
+            echo "PR BFCache repetition ${i}"
+            set +e
+            npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+              -t "rebuilds the first page on BFCache restore without clearing visible products" \
+              --maxWorkers=4 \
+              --reporter=json \
+              --outputFile="public-store-bfcache-${i}.json" \
+              > "public-store-bfcache-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "public-store-bfcache-${i}.exit"
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "PR BFCache repetition ${i} observational failure: exit ${code}"
+            fi
+          done
+          echo "PR BFCache observational failures: ${failures}/20"
+
+      - name: Run main BFCache focused evidence
+        working-directory: main
+        shell: bash
+        run: |
+          failures=0
+          for i in $(seq 1 20); do
+            echo "MAIN BFCache repetition ${i}"
+            set +e
+            npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+              -t "rebuilds the first page on BFCache restore without clearing visible products" \
+              --maxWorkers=4 \
+              --reporter=json \
+              --outputFile="public-store-bfcache-${i}.json" \
+              > "public-store-bfcache-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "public-store-bfcache-${i}.exit"
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "MAIN BFCache repetition ${i} observational failure: exit ${code}"
+            fi
+          done
+          echo "MAIN BFCache observational failures: ${failures}/20"
+
       - name: Normalize and compare failures
         env:
           PR_OUTCOME: ${{ steps.pr-suite.outcome }}
@@ -76,6 +126,9 @@ jobs:
           mkdir -p comparison/raw
           cp pr/global-pr.json comparison/raw/global-pr.json 2>/dev/null || true
           cp main/global-main.json comparison/raw/global-main.json 2>/dev/null || true
+          mkdir -p comparison/focused/pr comparison/focused/main
+          cp pr/public-store-bfcache-*.json comparison/focused/pr/
+          cp main/public-store-bfcache-*.json comparison/focused/main/
           node <<'NODE'
           const fs = require('node:fs');
           const path = require('node:path');
@@ -83,6 +136,15 @@ jobs:
           const readReport = (file) => {
             if (!fs.existsSync(file)) return null;
             return JSON.parse(fs.readFileSync(file, 'utf8'));
+          };
+
+          const readFocusedReports = (directory, label) => {
+            const paths = fs.readdirSync(directory)
+              .filter((name) => /^public-store-bfcache-\d+\.json$/.test(name))
+              .sort()
+              .map((name) => path.join(directory, name));
+            if (paths.length < 10) throw new Error(`${label} focused evidence requires at least 10 repetitions; found ${paths.length}`);
+            return paths.map(readReport);
           };
 
           const normalizeFileName = (fileName) => {
@@ -124,12 +186,19 @@ jobs:
 
           const prReport = readReport(path.join('pr', 'global-pr.json'));
           const mainReport = readReport(path.join('main', 'global-main.json'));
+          const prFocusedReports = readFocusedReports(path.join('comparison', 'focused', 'pr'), 'PR');
+          const mainFocusedReports = readFocusedReports(path.join('comparison', 'focused', 'main'), 'MAIN');
+          const focusedFailures = (reports) => new Set(reports.flatMap((report) => normalizeFailures(report, 'FOCUSED')));
           const prFailures = normalizeFailures(prReport, 'PR');
           const mainFailures = normalizeFailures(mainReport, 'MAIN');
           const prSet = new Set(prFailures);
           const mainSet = new Set(mainFailures);
           const sharedFailures = prFailures.filter((failure) => mainSet.has(failure));
-          const newFailures = prFailures.filter((failure) => !mainSet.has(failure));
+          const rawNewFailures = prFailures.filter((failure) => !mainSet.has(failure));
+          const mainFocusedFailures = focusedFailures(mainFocusedReports);
+          const preexistingFlakyFailures = rawNewFailures.filter((failure) => mainFocusedFailures.has(failure));
+          const preexistingFlakySet = new Set(preexistingFlakyFailures);
+          const newFailures = rawNewFailures.filter((failure) => !preexistingFlakySet.has(failure));
           const resolvedFailures = mainFailures.filter((failure) => !prSet.has(failure));
 
           const result = {
@@ -140,6 +209,8 @@ jobs:
             prFailures,
             mainFailures,
             sharedFailures,
+            rawNewFailures,
+            preexistingFlakyFailures,
             newFailures,
             resolvedFailures
           };
@@ -152,6 +223,8 @@ jobs:
             `- PR outcome: ${result.prOutcome}`,
             `- main outcome: ${result.mainOutcome}`,
             `- shared failures: ${sharedFailures.length}`,
+            `- raw candidate-only failures: ${rawNewFailures.length}`,
+            `- preexisting flaky failures proven by focused BASE evidence: ${preexistingFlakyFailures.length}`,
             `- new failures: ${newFailures.length}`,
             `- resolved failures: ${resolvedFailures.length}`,
             '',
@@ -160,6 +233,9 @@ jobs:
             '',
             '## New failures',
             ...(newFailures.length ? newFailures.map((item) => `- ${item}`) : ['- None']),
+            '',
+            '## Preexisting flaky failures proven by focused BASE evidence',
+            ...(preexistingFlakyFailures.length ? preexistingFlakyFailures.map((item) => `- ${item}`) : ['- None']),
             '',
             '## Resolved failures',
             ...(resolvedFailures.length ? resolvedFailures.map((item) => `- ${item}`) : ['- None'])
