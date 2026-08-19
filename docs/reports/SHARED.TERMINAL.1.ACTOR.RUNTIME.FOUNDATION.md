@@ -88,6 +88,54 @@ SHARED.TERMINAL.1 is limited to ActorRuntime Foundation. It does not change phys
 - `03ee4385` ci(shared-terminal): validate phase-2 report-only head
 - `308e2f7f` ci(shared-terminal): validate phase-2 report without republish
 - `b4412d29` fix(shared-terminal): match quoted occupancy guard source
+- `0a3fe466` docs(shared-terminal): close out phase 2 R1 corrections
+- `06f42bcb` Merge pull request #209 from fdxruli/feat/shared-terminal-device-actor-auth
+- `c2f7037f` feat(auth): add actor scoped storage primitive
+- `57774926` feat(storage): route actor owned state by actor scope
+- `ac732015` feat(auth): gate actor grant on scoped storage handoff
+- `a8b1f865` feat(auth): fence pending actor operations during handoff
+- `dc6b0812` fix(auth): block handoff while actor work is pending
+- `89cd5503` feat(sync): preserve actor origin on actor bound outbox work
+- `ad0129d2` fix(sync): never reassign sale outbox actor on retry
+- `9c17e031` test(auth): cover actor scoped cart isolation
+- `b3b9f290` fix(auth): make stale actor storage handles fail closed
+- `fb7ab9ce` test(auth): cover pending actor handoff barrier
+- `e69c61b3` test(sync): prove immutable outbox actor origin
+- `770f0b4f` fix(auth): avoid cross-tab actor invalidation ping-pong
+- `5fbca2ce` feat(auth): bind checkout ownership to actor handoff
+- `2d138e30` fix(auth): honor actor-owned checkout during handoff
+- `2c976917` fix(sales): fence checkout and split writes by actor
+- `f446183c` fix(pos): fence layaway confirmation by actor
+- `d22fb006` test(auth): isolate actor handoff bridge dependencies
+- `30259391` ci(shared-terminal): validate actor scoped storage handoff
+- `a9c0a955` fix(auth): persist checkout actor ownership across restart
+- `2376ee5c` fix(auth): inspect durable checkout ownership before handoff
+- `67d1568f` test(auth): verify durable checkout inspection before grant
+- `408bcb95` test(auth): cover durable checkout handoff ownership
+- `98a89ae4` docs(shared-terminal): add actor scoped storage handoff report
+- `e4e7465b` fix(auth): remove operational store imports from handoff authority
+- `4e1709c2` fix(auth): configure checkout persistence without POS imports
+- `c241e02d` fix(pos): register actor operational stores from app shell
+- `5fd3a81d` test(auth): mock direct actor persistence binding
+- `3970f6b1` test(auth): configure checkout persistence explicitly
+- `58946818` test(auth): hoist tenant runtime bridge mock safely
+- `5fe3add0` ci(shared-terminal): separate focused gates from baseline-red regressions
+- `2fc892e1` test(auth): cover cross-tab actor context invalidation
+- `157134d6` fix(storage): persist only actor-owned active order drafts
+- `4b49494a` fix(auth): keep tenant shared open sales visible across actors
+- `ce933b99` test(storage): prove shared sales stay out of actor snapshots
+- `5fbeb393` test(storage): align active orders expectations with actor ownership
+- `6550b97d` test(pos): migrate active order persistence to actor scope
+- `8fcac15d` test(pos): mirror suspended actor hydration lifecycle
+- `8786b577` fix(shared-terminal): require granted actor for operational writes
+- `a9d4f0b1` fix(shared-terminal): preserve actor cart through suspended hydration
+- `2ee4ff85` test(shared-terminal): close actor storage differential regressions
+- `0955a57e` test(shared-terminal): bind sales fixtures to granted actor context
+- `ab4da8fd` test(shared-terminal): bind layaway fixtures to granted actor context
+- `9d0a1879` test(shared-terminal): keep PublicStore flake observation non-blocking
+- `147d43bd` test(shared-terminal): revalidate final actor runtime differential
+- `6fff2cb1` docs(shared-terminal): close actor scoped storage R1
+- `dfb59cd9` test(shared-terminal): validate stable report head
 
 Report-generation/report-only commits are intentionally excluded from the generated chain so regeneration is idempotent.
 
@@ -178,8 +226,8 @@ BASE `main@2f3457313b81f09937acab6fe4bac4399e79035f`:
 
 CANDIDATE:
 
-- repetition 1: 2834 passed / 92 failed / 51 skipped / 2977 total; 79 failed files / 731 passed files / 810 total files
-- repetition 2: 2834 passed / 92 failed / 51 skipped / 2977 total; 79 failed files / 731 passed files / 810 total files
+- repetition 1: 2858 passed / 92 failed / 51 skipped / 3001 total; 79 failed files / 739 passed files / 818 total files
+- repetition 2: 2858 passed / 92 failed / 51 skipped / 3001 total; 79 failed files / 739 passed files / 818 total files
 
 All raw repetitions preserve their own exit codes in workflow artifacts. Raw repository-wide status remains **RED — PREEXISTING** when a repetition contains failures; it is never relabeled PASS by the differential gate.
 
@@ -216,6 +264,9 @@ Every unique candidate failure observation is listed below with the exact repeti
 | src/utils/storageManager.test.js > [file-level failure] | FAIL in repetition(s) 1,2: No test suite found in file src/utils/storageManager.test.js | FAIL in repetition(s) 1,2: No test suite found in file src/utils/storageManager.test.js | PREEXISTING_BASELINE_FAILURE |
 | src/architecture/__tests__/adminDeploymentPackage.test.js > [file-level failure] | FAIL in repetition(s) 1,2: {"status":"failed","error":"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>"} | FAIL in repetition(s) 1,2: {"status":"failed","error":"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>"} | PREEXISTING_BASELINE_FAILURE |
 | src/architecture/__tests__/publicDeploymentArchitecture.test.js > [file-level failure] | FAIL in repetition(s) 1,2:  | FAIL in repetition(s) 1,2:  | PREEXISTING_BASELINE_FAILURE |
+| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal shows the local data warning for a new FREE admin device | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
+| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal does not show the warning for a PRO license | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
+| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal does not show the warning for a staff session | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
 | src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea la navegación aunque el formulario no haya cambiado | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
 | src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard cancela la salida y conserva los datos capturados | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
 | src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard descarta la operación y continúa al destino al confirmar | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
@@ -224,11 +275,6 @@ Every unique candidate failure observation is listed below with the exact repeti
 | src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea cambios de pestaña representados por parámetros de búsqueda | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
 | src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard cierra el modal al confirmar salida hacia otra pestaña de la misma ruta | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)') | PREEXISTING_BASELINE_FAILURE |
 | src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea la navegación hacia atrás del historial | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal shows the local data warning for a new FREE admin device | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal does not show the warning for a PRO license | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/common/DataSafetyModal.test.jsx > DataSafetyModal does not show the warning for a staff session | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/pages/__tests__/SettingsPage.backupPro.test.jsx > SettingsPage backup tab cloud UX shows local backup as optional for PRO cloud | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/pages/__tests__/SettingsPage.backupPro.test.jsx > SettingsPage backup tab cloud UX keeps the regular backup tab without optional cloud copy note for FREE local | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
 | src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true } | PREEXISTING_BASELINE_FAILURE |
 | src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesión | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) } | PREEXISTING_BASELINE_FAILURE |
 | src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' } | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' } | PREEXISTING_BASELINE_FAILURE |
@@ -260,6 +306,9 @@ Every unique candidate failure observation is listed below with the exact repeti
 | src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }<br>(4 matching properties omitted from actual) | FAIL in repetition(s) 1,2: AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }<br>(4 matching properties omitted from actual) | PREEXISTING_BASELINE_FAILURE |
 | src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct creates a minimal server payload without client prices or names | FAIL in repetition(s) 1,2: AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) } | FAIL in repetition(s) 1,2: AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) } | PREEXISTING_BASELINE_FAILURE |
 | index.test.ts > [file-level failure] | FAIL in repetition(s) 1,2: Deno is not defined | FAIL in repetition(s) 1,2: Deno is not defined | PREEXISTING_BASELINE_FAILURE |
+| src/pages/__tests__/SettingsPage.backupPro.test.jsx > SettingsPage backup tab cloud UX shows local backup as optional for PRO cloud | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
+| src/pages/__tests__/SettingsPage.backupPro.test.jsx > SettingsPage backup tab cloud UX keeps the regular backup tab without optional cloud copy note for FREE local | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
+| src/components/ecommerce/__tests__/EcommercePortalSettings.stockAlerts.test.jsx > [file-level failure] | FAIL in repetition(s) 1,2: [vitest] No "getEcommerceAdminAuthorizationContext" export is defined on the "../../../services/ecommerce/ecommerceAdminService" mock. Did you forget to return it from "vi.mock"?<br>If you need to partially mock a module, you can use "importOriginal" helper inside: | FAIL in repetition(s) 1,2: [vitest] No "getEcommerceAdminAuthorizationContext" export is defined on the "../../../services/ecommerce/ecommerceAdminService" mock. Did you forget to return it from "vi.mock"?<br>If you need to partially mock a module, you can use "importOriginal" helper inside: | PREEXISTING_BASELINE_FAILURE |
 | src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel coalesces invalidations during an active request into one follow-up | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | FAIL in repetition(s) 1,2: Error: STACK_TRACE_ERROR | PREEXISTING_BASELINE_FAILURE |
 | src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel does not let a late response from A overwrite the selected B panel | FAIL in repetition(s) 1,2: Error: expect(element).not.toBeInTheDocument()<br>expected document not to contain element, found <h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Pedido aceptado<br></h2> instead | FAIL in repetition(s) 1,2: Error: expect(element).not.toBeInTheDocument()<br>expected document not to contain element, found <h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Pedido aceptado<br></h2> instead | PREEXISTING_BASELINE_FAILURE |
 | src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel discards a response from the previous staff context | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Listo<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Listo<br></h2><br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>> | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Listo<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>><br>  Listo<br></h2><br>Ignored nodes: comments, script, style<br><h2<br>  id="ecommerce-fulfillment-title"<br>> | PREEXISTING_BASELINE_FAILURE |
@@ -273,7 +322,6 @@ Every unique candidate failure observation is listed below with the exact repeti
 | src/components/ecommerce/orders/EcommerceFulfillmentPanel.test.jsx > EcommerceFulfillmentPanel renders terminal states without operational actions | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Este estado no tiene acciones operativas disponibles.<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>><br>  Este estado no tiene acciones operativas disponibles.<br></p><br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>> | FAIL in repetition(s) 1,2: TestingLibraryElementError: Found multiple elements with the text: Este estado no tiene acciones operativas disponibles.<br>Here are the matching elements:<br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>><br>  Este estado no tiene acciones operativas disponibles.<br></p><br>Ignored nodes: comments, script, style<br><p<br>  class="ecommerce-fulfillment-terminal"<br>> | PREEXISTING_BASELINE_FAILURE |
 | src/components/layout/__tests__/Navbar.backupPro.test.jsx > Navbar backup actions by license type does not show local backup actions for PRO cloud | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
 | src/components/layout/__tests__/Navbar.backupPro.test.jsx > Navbar backup actions by license type shows local backup actions for FREE local when a notice applies | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |
-| src/components/ecommerce/__tests__/EcommercePortalSettings.stockAlerts.test.jsx > [file-level failure] | FAIL in repetition(s) 1,2: [vitest] No "getEcommerceAdminAuthorizationContext" export is defined on the "../../../services/ecommerce/ecommerceAdminService" mock. Did you forget to return it from "vi.mock"?<br>If you need to partially mock a module, you can use "importOriginal" helper inside: | FAIL in repetition(s) 1,2: [vitest] No "getEcommerceAdminAuthorizationContext" export is defined on the "../../../services/ecommerce/ecommerceAdminService" mock. Did you forget to return it from "vi.mock"?<br>If you need to partially mock a module, you can use "importOriginal" helper inside: | PREEXISTING_BASELINE_FAILURE |
 | src/components/pos/__tests__/ProductCard.test.jsx > [file-level failure] | FAIL in repetition(s) 1,2: expect is not defined | FAIL in repetition(s) 1,2: expect is not defined | PREEXISTING_BASELINE_FAILURE |
 | src/components/products/__tests__/ProductList.test.jsx > ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards | FAIL in repetition(s) 1,2: TestingLibraryElementError: Unable to find an element with the text: /Caduca en \d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.<br>Ignored nodes: comments, script, style<br><body><br>  <div><br>    <div<br>      class="product-list-container"<br>    ><br>      <div<br>        class="list-header"<br>      ><br>        <div<br>          class="title-group" | FAIL in repetition(s) 1,2: TestingLibraryElementError: Unable to find an element with the text: /Caduca en \d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.<br>Ignored nodes: comments, script, style<br><body><br>  <div><br>    <div<br>      class="product-list-container"<br>    ><br>      <div<br>        class="list-header"<br>      ><br>        <div<br>          class="title-group" | PREEXISTING_BASELINE_FAILURE |
 | src/components/settings/__tests__/BackupSettings.backupPro.test.jsx > BackupSettings copy by license mode keeps required local backup copy for FREE local | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | FAIL in repetition(s) 1,2: ReferenceError: document is not defined | PREEXISTING_BASELINE_FAILURE |

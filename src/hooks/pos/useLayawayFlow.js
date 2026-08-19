@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react';
 
 import { useFeatureConfig } from '../useFeatureConfig';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
+import { runTrackedActorOperationIfGranted } from '../../services/auth/actorOperationalHandoff';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
@@ -15,7 +16,7 @@ import {
 /**
  * Hook para manejar los apartados (layaway) del POS.
  * Encapsula la lógica de iniciar y confirmar un apartado.
- * 
+ *
  * @param {Object} deps - Dependencias externas
  * @param {function} deps.openModal - Función para abrir modales
  * @param {function} deps.closeModal - Función para cerrar modales
@@ -60,51 +61,55 @@ export function useLayawayFlow({
     }, [blockEcommerceLayaway, order.length, features?.hasLayaway, openModal, showToast]);
 
     // ── Confirmar apartado ─────────────────────────────────────────
-    const handleConfirmLayaway = useCallback(async ({ initialPayment, deadline, customer: customerFromModal, cajaId }) => {
-        const blocked = blockEcommerceLayaway();
-        if (blocked) return blocked;
+    const handleConfirmLayaway = useCallback(async ({ initialPayment, deadline, customer: customerFromModal, cajaId }) => (
+        runTrackedActorOperationIfGranted('pos.layaway.confirm', async () => {
+            const blocked = blockEcommerceLayaway();
+            if (blocked) return blocked;
 
-        try {
-            if (submittingRef.current) return { success: false, duplicate: true };
-            submittingRef.current = true;
-            const targetCustomer = customerFromModal || customer;
-            if (!targetCustomer) {
-                throw new Error('No se ha identificado al cliente para el apartado.');
+            try {
+                if (submittingRef.current) return { success: false, duplicate: true };
+                submittingRef.current = true;
+                const targetCustomer = customerFromModal || customer;
+                if (!targetCustomer) {
+                    throw new Error('No se ha identificado al cliente para el apartado.');
+                }
+
+                const layawayData = {
+                    id: crypto.randomUUID(),
+                    customerId: targetCustomer.id,
+                    customerName: targetCustomer.name,
+                    items: order,
+                    totalAmount: total,
+                    deadline: deadline,
+                };
+
+                const result = await layawayFinancialService.create({
+                    layawayData,
+                    initialPayment,
+                    paymentId: crypto.randomUUID(),
+                    paymentType: 'initial_deposit',
+                    cajaId
+                });
+
+                if (result.success) {
+                    // clearOrder is actor-sensitive. Keeping it inside the tracked
+                    // operation prevents a late A completion from clearing B's cart.
+                    clearOrder();
+                    closeModal('layaway');
+                    showMessageModal('✅ Apartado guardado correctamente');
+                } else {
+                    showMessageModal('❌ Error al guardar apartado: ' + result.message);
+                }
+                return result;
+            } catch (error) {
+                Logger.error('Layaway Error', error);
+                showMessageModal('Error inesperado al crear apartado.');
+                return { success: false, message: error?.message || 'No se pudo crear el apartado.' };
+            } finally {
+                submittingRef.current = false;
             }
-
-            const layawayData = {
-                id: crypto.randomUUID(),
-                customerId: targetCustomer.id,
-                customerName: targetCustomer.name,
-                items: order,
-                totalAmount: total,
-                deadline: deadline,
-            };
-
-            const result = await layawayFinancialService.create({
-                layawayData,
-                initialPayment,
-                paymentId: crypto.randomUUID(),
-                paymentType: 'initial_deposit',
-                cajaId
-            });
-
-            if (result.success) {
-                clearOrder();
-                closeModal('layaway');
-                showMessageModal('✅ Apartado guardado correctamente');
-            } else {
-                showMessageModal('❌ Error al guardar apartado: ' + result.message);
-            }
-            return result;
-        } catch (error) {
-            Logger.error('Layaway Error', error);
-            showMessageModal('Error inesperado al crear apartado.');
-            return { success: false, message: error?.message || 'No se pudo crear el apartado.' };
-        } finally {
-            submittingRef.current = false;
-        }
-    }, [blockEcommerceLayaway, order, customer, total, clearOrder, closeModal]);
+        })
+    ), [blockEcommerceLayaway, order, customer, total, clearOrder, closeModal]);
 
     return {
         handleInitiateLayaway,

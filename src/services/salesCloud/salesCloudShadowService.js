@@ -28,7 +28,13 @@ const getContext = async () => {
   };
 };
 
-const enqueueShadow = async ({ licenseKey, saleId, payload, reason }) => {
+const enqueueShadow = async ({
+  licenseKey,
+  saleId,
+  payload,
+  reason,
+  captureCurrentActor
+}) => {
   if (!licenseKey || !saleId) return null;
 
   return syncOutboxService.enqueueOperation({
@@ -38,6 +44,8 @@ const enqueueShadow = async ({ licenseKey, saleId, payload, reason }) => {
     entityId: saleId,
     payload,
     idempotencyKey: payload.idempotencyKey,
+    actorSensitive: true,
+    captureCurrentActor: captureCurrentActor === true,
     metadata: {
       phase: 'fase6a_sales_cloud_base',
       sourceMode: 'shadow',
@@ -58,6 +66,7 @@ export const salesCloudShadowService = {
       ...options,
       deviceId: context.deviceId
     });
+    const captureCurrentActor = options?.retry !== true;
 
     await salesCloudLocalRepository.markShadowPending(localSale.id, {
       reason: isOnline() ? 'sync_attempt_started' : 'offline_shadow_pending'
@@ -68,7 +77,8 @@ export const salesCloudShadowService = {
         licenseKey: context.licenseKey,
         saleId: localSale.id,
         payload,
-        reason: 'offline'
+        reason: 'offline',
+        captureCurrentActor
       }).catch((error) => Logger.warn('[SalesCloud/Shadow] No se pudo encolar venta offline:', error));
 
       return { success: false, pending: true, reason: 'offline' };
@@ -94,7 +104,8 @@ export const salesCloudShadowService = {
         licenseKey: context.licenseKey,
         saleId: localSale.id,
         payload,
-        reason: 'cloud_error'
+        reason: 'cloud_error',
+        captureCurrentActor
       }).catch((queueError) => Logger.warn('[SalesCloud/Shadow] No se pudo encolar reintento:', queueError));
 
       return { success: false, pending: true, error };
@@ -110,6 +121,8 @@ export const salesCloudShadowService = {
     let failed = 0;
 
     for (const sale of pendingSales) {
+      // A retry may use the current session as transport authority, but it may
+      // not claim that current actor as the origin of an older local sale.
       const result = await this.syncSaleShadowAfterLocalCommit(sale, { retry: true });
       if (result?.success) synced += 1;
       else if (!result?.skipped) failed += 1;

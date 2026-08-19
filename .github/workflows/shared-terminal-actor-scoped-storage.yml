@@ -1,0 +1,343 @@
+name: Shared Terminal Actor Scoped Storage Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/services/auth/actorScopedStorage.js'
+      - 'src/services/auth/actorOperationalHandoff.js'
+      - 'src/services/auth/actorSessionRuntimeBridge.js'
+      - 'src/services/tenant/tenantScopedStorage.js'
+      - 'src/services/sync/syncOutboxService.js'
+      - 'src/services/salesCloud/salesCloudShadowService.js'
+      - 'src/services/salesService.js'
+      - 'src/services/__tests__/salesService.ecommerce.test.js'
+      - 'src/hooks/pos/useLayawayFlow.js'
+      - 'src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx'
+      - 'src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js'
+      - 'src/components/layout/Layout.jsx'
+      - 'src/services/auth/__tests__/actorScopedStorage.test.js'
+      - 'src/services/auth/__tests__/actorOperationalHandoff.test.js'
+      - 'src/services/auth/__tests__/actorOperationalAuthority.test.js'
+      - 'src/services/auth/__tests__/actorSessionRuntimeBridge.test.js'
+      - 'src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js'
+      - 'src/services/tenant/__tests__/tenantScopedStorage.test.js'
+      - 'docs/reports/SHARED.TERMINAL.3.ACTOR.SCOPED.STORAGE.HANDOFF.md'
+      - '.github/workflows/shared-terminal-actor-scoped-storage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SHARED_TERMINAL_3_BASE_SHA: 06f42bcbbc4282c6f8f5d4e0b9065437d16f19ab
+
+jobs:
+  focused-validation:
+    name: Actor storage / handoff / tenant / sync / POS / lint / builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: git diff --check
+        run: git diff --check "${SHARED_TERMINAL_3_BASE_SHA}...HEAD"
+
+      - name: Actor storage, authority and handoff focused tests
+        run: >-
+          npx vitest run
+          src/services/auth/__tests__/actorRuntimeController.test.js
+          src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/services/auth/__tests__/actorScopedStorage.test.js
+          src/services/auth/__tests__/actorOperationalHandoff.test.js
+          src/services/auth/__tests__/actorOperationalAuthority.test.js
+          --maxWorkers=4
+
+      - name: Real sale and layaway caller contracts under granted actor fixture
+        run: >-
+          npx vitest run
+          src/services/__tests__/salesService.ecommerce.test.js
+          src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
+          --maxWorkers=2
+
+      - name: Actor and tenant persistence lifecycle tests
+        run: >-
+          npx vitest run
+          src/services/tenant/__tests__/tenantScopedStorage.test.js
+          src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js
+          --maxWorkers=1
+
+      - name: Actor-origin outbox focused tests
+        run: npx vitest run src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js --maxWorkers=4
+
+      - name: POS cart / drafts / checkout / restaurant regression observation
+        if: always()
+        continue-on-error: true
+        run: npx vitest run src/hooks/pos/__tests__ --maxWorkers=4
+
+      - name: Sync / outbox regression observation
+        if: always()
+        continue-on-error: true
+        run: npx vitest run src/services/sync/__tests__ --maxWorkers=4
+
+      - name: Tenant isolation and recovery regression observation
+        if: always()
+        continue-on-error: true
+        run: npx vitest run src/services/tenant/__tests__ src/services/db/__tests__ --maxWorkers=4
+
+      - name: Authentication and shared-device regression observation
+        if: always()
+        continue-on-error: true
+        run: >-
+          npx vitest run
+          src/store/slices/license
+          src/services/__tests__/deviceModePolicy.test.js
+          src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js
+          --maxWorkers=4
+
+      - name: Cash regression observation
+        if: always()
+        continue-on-error: true
+        run: npx vitest run src/services/cash --maxWorkers=4
+
+      - name: Relevant ESLint
+        if: always()
+        run: >-
+          npx eslint
+          src/services/auth/actorScopedStorage.js
+          src/services/auth/actorOperationalHandoff.js
+          src/services/auth/actorSessionRuntimeBridge.js
+          src/services/tenant/tenantScopedStorage.js
+          src/services/sync/syncOutboxService.js
+          src/services/salesCloud/salesCloudShadowService.js
+          src/services/salesService.js
+          src/services/__tests__/salesService.ecommerce.test.js
+          src/hooks/pos/useLayawayFlow.js
+          src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
+          src/components/layout/Layout.jsx
+          src/services/auth/__tests__/actorScopedStorage.test.js
+          src/services/auth/__tests__/actorOperationalHandoff.test.js
+          src/services/auth/__tests__/actorOperationalAuthority.test.js
+          src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/services/sync/__tests__/syncOutboxService.actorOrigin.test.js
+          src/services/tenant/__tests__/tenantScopedStorage.test.js
+          src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js
+
+      - name: npm run build
+        if: always()
+        run: npm run build
+
+      - name: npm run build:store
+        if: always()
+        run: npm run build:store
+
+      - name: npm run build:store:vercel
+        if: always()
+        run: npm run build:store:vercel
+
+  full-suite-baseline:
+    name: Full suite BASE repeated (observational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact BASE SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHARED_TERMINAL_3_BASE_SHA }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build BASE validation artifacts
+        run: |
+          npm run build
+          npm run build:store
+          npm run build:store:vercel
+
+      - name: BASE PublicStore focused repetitions (observational)
+        shell: bash
+        run: |
+          failures=0
+          for i in 1 2 3 4 5 6 7 8; do
+            echo "BASE PublicStore repetition ${i}"
+            set +e
+            npx vitest run src/pages/__tests__/PublicStorePage.siteVersion.test.jsx --maxWorkers=1
+            code=$?
+            set -e
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "BASE PublicStore repetition ${i} observational failure: exit ${code}"
+            fi
+          done
+          echo "BASE PublicStore observational failures: ${failures}/8"
+
+      - name: BASE raw full-suite repetitions
+        shell: bash
+        run: |
+          set -o pipefail
+          for i in 1 2; do
+            set +e
+            npm run test:ci -- --reporter=json --outputFile="full-suite-${i}.json" 2>&1 | tee "full-suite-${i}.log"
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$code" > "full-suite-${i}.exit"
+            echo "BASE repetition ${i} raw exit code: ${code}"
+          done
+
+      - name: Record BASE raw results
+        if: always()
+        run: |
+          for i in 1 2; do
+            echo "BASE repetition ${i} raw exit code: $(cat full-suite-${i}.exit 2>/dev/null || echo missing)"
+            node -e "const fs=require('node:fs');const r=JSON.parse(fs.readFileSync('full-suite-${i}.json','utf8'));console.log('BASE repetition ${i}:',r.numPassedTests,'passed /',r.numFailedTests,'failed /',r.numPendingTests ?? r.numTodoTests ?? 0,'skipped /',r.numTotalTests,'total')"
+          done
+
+      - name: Upload BASE full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-3-base-full-suite
+          path: |
+            full-suite-*.json
+            full-suite-*.log
+            full-suite-*.exit
+          if-no-files-found: error
+
+  full-suite-candidate:
+    name: Full suite CANDIDATE repeated (observational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build CANDIDATE validation artifacts
+        run: |
+          npm run build
+          npm run build:store
+          npm run build:store:vercel
+
+      - name: CANDIDATE PublicStore focused repetitions (observational)
+        shell: bash
+        run: |
+          failures=0
+          for i in 1 2 3 4 5 6 7 8; do
+            echo "CANDIDATE PublicStore repetition ${i}"
+            set +e
+            npx vitest run src/pages/__tests__/PublicStorePage.siteVersion.test.jsx --maxWorkers=1
+            code=$?
+            set -e
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "CANDIDATE PublicStore repetition ${i} observational failure: exit ${code}"
+            fi
+          done
+          echo "CANDIDATE PublicStore observational failures: ${failures}/8"
+
+      - name: CANDIDATE raw full-suite repetitions
+        shell: bash
+        run: |
+          set -o pipefail
+          for i in 1 2; do
+            set +e
+            npm run test:ci -- --reporter=json --outputFile="full-suite-${i}.json" 2>&1 | tee "full-suite-${i}.log"
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$code" > "full-suite-${i}.exit"
+            echo "CANDIDATE repetition ${i} raw exit code: ${code}"
+          done
+
+      - name: Record CANDIDATE raw results
+        if: always()
+        run: |
+          for i in 1 2; do
+            echo "CANDIDATE repetition ${i} raw exit code: $(cat full-suite-${i}.exit 2>/dev/null || echo missing)"
+            node -e "const fs=require('node:fs');const r=JSON.parse(fs.readFileSync('full-suite-${i}.json','utf8'));console.log('CANDIDATE repetition ${i}:',r.numPassedTests,'passed /',r.numFailedTests,'failed /',r.numPendingTests ?? r.numTodoTests ?? 0,'skipped /',r.numTotalTests,'total')"
+          done
+
+      - name: Upload CANDIDATE full-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-3-candidate-full-suite
+          path: |
+            full-suite-*.json
+            full-suite-*.log
+            full-suite-*.exit
+          if-no-files-found: error
+
+  differential-regression-gate:
+    name: Differential repeated full-suite regression gate
+    if: always()
+    needs:
+      - full-suite-baseline
+      - full-suite-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download BASE evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-3-base-full-suite
+          path: differential/base
+
+      - name: Download CANDIDATE evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-terminal-3-candidate-full-suite
+          path: differential/candidate
+
+      - name: Compare repeated BASE vs CANDIDATE failure envelope
+        run: |
+          node scripts/compare-shared-terminal-full-suite.mjs \
+            differential/base \
+            differential/candidate \
+            differential/full-suite-differential.md \
+            differential/full-suite-differential.json
+          cat differential/full-suite-differential.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-terminal-3-full-suite-differential
+          path: |
+            differential/full-suite-differential.md
+            differential/full-suite-differential.json
+          if-no-files-found: error

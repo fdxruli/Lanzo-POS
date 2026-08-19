@@ -1,15 +1,56 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
-  readiness: vi.fn()
-}));
+const mocks = vi.hoisted(() => {
+  const get = vi.fn();
+  const tenantRuntimeDb = {
+    table: vi.fn(() => ({ get }))
+  };
+
+  return {
+    get,
+    tenantRuntimeDb,
+    readiness: vi.fn(),
+    hydrateTenantStorageConsumers: vi.fn(async () => []),
+    resumeTenantStorageWrites: vi.fn(),
+    prepareActorScopedStorage: vi.fn(async () => ({})),
+    activateActorScopedStorage: vi.fn(),
+    resumeActorScopedStorageWrites: vi.fn(),
+    suspendActorScopedStorageWrites: vi.fn(),
+    invalidateActorScopedStorage: vi.fn(),
+    subscribeActorScopedStorage: vi.fn(() => () => {}),
+    configureActorOperationalPersistence: vi.fn(() => true),
+    installActorOperationalHandoffGuards: vi.fn(async () => true),
+    refreshPersistedActorCheckoutOwnership: vi.fn(async () => []),
+    assertActorOperationalHandoffClear: vi.fn(() => true),
+    rebindActorOperationalOwnership: vi.fn(() => 0)
+  };
+});
 
 vi.mock('../../db/tenantRuntimeRouter', () => ({
-  db: {
-    table: vi.fn(() => ({ get: mocks.get }))
-  },
+  db: mocks.tenantRuntimeDb,
   getTenantRuntimeReadiness: vi.fn(() => mocks.readiness())
+}));
+
+vi.mock('../../tenant/tenantScopedStorage', () => ({
+  hydrateTenantStorageConsumers: mocks.hydrateTenantStorageConsumers,
+  resumeTenantStorageWrites: mocks.resumeTenantStorageWrites
+}));
+
+vi.mock('../actorScopedStorage', () => ({
+  prepareActorScopedStorage: mocks.prepareActorScopedStorage,
+  activateActorScopedStorage: mocks.activateActorScopedStorage,
+  resumeActorScopedStorageWrites: mocks.resumeActorScopedStorageWrites,
+  suspendActorScopedStorageWrites: mocks.suspendActorScopedStorageWrites,
+  invalidateActorScopedStorage: mocks.invalidateActorScopedStorage,
+  subscribeActorScopedStorage: mocks.subscribeActorScopedStorage
+}));
+
+vi.mock('../actorOperationalHandoff', () => ({
+  configureActorOperationalPersistence: mocks.configureActorOperationalPersistence,
+  installActorOperationalHandoffGuards: mocks.installActorOperationalHandoffGuards,
+  refreshPersistedActorCheckoutOwnership: mocks.refreshPersistedActorCheckoutOwnership,
+  assertActorOperationalHandoffClear: mocks.assertActorOperationalHandoffClear,
+  rebindActorOperationalOwnership: mocks.rebindActorOperationalOwnership
 }));
 
 import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../actorRuntimeController';
@@ -22,8 +63,8 @@ import {
 } from '../actorSessionRuntimeBridge';
 
 const TENANT_RUNTIME = Object.freeze({
-  opaqueId: 't_actor_bridge',
-  databaseName: 'LanzoDB_t_t_actor_bridge',
+  opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  databaseName: 'LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   generation: 7
 });
 
@@ -84,7 +125,7 @@ describe('actor session runtime bridge', () => {
     });
   });
 
-  it('restores Admin when Admin is the only valid session evidence', async () => {
+  it('restores Admin only after durable checkout inspection and handoff validation', async () => {
     setCache({
       admin_session_token: 'admin-token',
       admin_session_id: 'admin-session'
@@ -101,6 +142,23 @@ describe('actor session runtime bridge', () => {
       actorKey: 'admin:admin-1',
       sessionId: 'admin-session'
     });
+    expect(mocks.configureActorOperationalPersistence).toHaveBeenCalledWith({
+      db: mocks.tenantRuntimeDb,
+      salesStore: 'sales'
+    });
+    expect(mocks.refreshPersistedActorCheckoutOwnership).toHaveBeenCalledWith({
+      tenant: TENANT_RUNTIME
+    });
+    expect(mocks.assertActorOperationalHandoffClear).toHaveBeenCalledWith({
+      tenant: TENANT_RUNTIME,
+      actorKey: 'admin:admin-1'
+    });
+    expect(mocks.configureActorOperationalPersistence.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]
+    );
+    expect(mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.assertActorOperationalHandoffClear.mock.invocationCallOrder[0]
+    );
   });
 
   it('restores Staff when Staff is the only valid session evidence and preserves only Staff permissions', async () => {

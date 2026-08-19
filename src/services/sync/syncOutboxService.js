@@ -2,8 +2,15 @@ import './syncDexieBootstrap';
 import Dexie from 'dexie';
 import { db } from '../db/dexie';
 import Logger from '../Logger';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { generateIdempotencyKey } from './idempotency';
-import { OUTBOX_STATUS, POS_SYNC_STORES, RETRY_CONFIG, SYNC_LIMITS } from './syncConstants';
+import {
+  OUTBOX_STATUS,
+  POS_SYNC_STORES,
+  RETRY_CONFIG,
+  SYNC_ENTITY_TYPES,
+  SYNC_LIMITS
+} from './syncConstants';
 import {
   assertLocalTenantSyncAccess,
   isLocalTenantAccessError,
@@ -15,6 +22,33 @@ import {
 } from '../tenant/localTenantPolicy';
 
 const nowIso = () => new Date().toISOString();
+const LEGACY_ACTOR_BOUND_ENTITY_TYPES = new Set([SYNC_ENTITY_TYPES.SALE]);
+
+const normalizeOriginActor = (originActor) => {
+  if (!originActor?.actorKey) return null;
+  return Object.freeze({
+    actorType: originActor.actorType || null,
+    actorId: originActor.actorId || null,
+    actorKey: String(originActor.actorKey),
+    actorGeneration: Number.isFinite(originActor.actorGeneration)
+      ? originActor.actorGeneration
+      : (Number.isFinite(originActor.generation) ? originActor.generation : null)
+  });
+};
+
+const isActorBoundOutboxRow = (row) => (
+  row?.actorSensitivity === 'actor_bound'
+  || (!row?.actorSensitivity && LEGACY_ACTOR_BOUND_ENTITY_TYPES.has(row?.entityType))
+);
+
+const hasBoundActorOrigin = (row) => (
+  !isActorBoundOutboxRow(row)
+  || (
+    row?.actorOwnershipStatus === 'bound'
+    && typeof row?.originActorKey === 'string'
+    && row.originActorKey.length > 0
+  )
+);
 
 export const buildSyncOutboxRecord = ({
   licenseKey,
@@ -24,9 +58,13 @@ export const buildSyncOutboxRecord = ({
   payload = null,
   idempotencyKey = null,
   metadata = null,
+  actorSensitive = false,
+  originActor = null,
   createdAt = nowIso()
 }) => {
   const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId });
+  const normalizedOrigin = normalizeOriginActor(originActor);
+  const actorSensitivity = actorSensitive ? 'actor_bound' : 'tenant_shared';
   return {
     id: resolvedIdempotencyKey,
     licenseKey: licenseKey || null,
@@ -39,6 +77,14 @@ export const buildSyncOutboxRecord = ({
     attempts: 0,
     lastError: null,
     metadata,
+    actorSensitivity,
+    actorOwnershipStatus: actorSensitive
+      ? (normalizedOrigin ? 'bound' : 'legacy_unresolved')
+      : 'tenant_shared',
+    originActorType: normalizedOrigin?.actorType || null,
+    originActorId: normalizedOrigin?.actorId || null,
+    originActorKey: normalizedOrigin?.actorKey || null,
+    originActorGeneration: normalizedOrigin?.actorGeneration ?? null,
     createdAt,
     updatedAt: createdAt,
     nextRetryAt: null
@@ -68,18 +114,39 @@ export const syncOutboxService = {
     entityId,
     payload = null,
     idempotencyKey = null,
-    metadata = null
+    metadata = null,
+    actorSensitive = false,
+    captureCurrentActor = false,
+    originActor = null
   }) {
     if (!licenseKey) {
       throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
         reason: 'outbox_license_missing'
       });
     }
+
+    // Capture at enqueue creation time, never at later sync time. A retry may
+    // deliberately pass actorSensitive=true without captureCurrentActor; that
+    // produces legacy_unresolved and is held instead of stealing currentActor.
+    const capturedHandle = actorSensitive && captureCurrentActor
+      ? actorRuntimeController.capture()
+      : null;
+    const resolvedOriginActor = normalizeOriginActor(
+      originActor
+      || (capturedHandle && {
+        actorType: capturedHandle.actorType,
+        actorId: capturedHandle.actorId,
+        actorKey: capturedHandle.actorKey,
+        actorGeneration: capturedHandle.generation
+      })
+    );
+
     return runWithLocalTenantSyncLease(
       { license_key: licenseKey },
       { reason: 'outbox_enqueue' },
       async () => {
         await ensureOpen();
+        capturedHandle?.assertCurrent();
 
         const createdAt = nowIso();
         const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType, operation, entityId });
@@ -92,9 +159,11 @@ export const syncOutboxService = {
               reason: existing.licenseKey ? 'outbox_tenant_mismatch' : 'outbox_tenant_missing'
             });
           }
+          // Idempotency never rewrites the origin actor of an existing row.
           return existing;
         }
 
+        capturedHandle?.assertCurrent();
         const row = buildSyncOutboxRecord({
           licenseKey,
           entityType,
@@ -103,6 +172,8 @@ export const syncOutboxService = {
           payload,
           idempotencyKey: resolvedIdempotencyKey,
           metadata,
+          actorSensitive,
+          originActor: resolvedOriginActor,
           createdAt
         });
 
@@ -177,9 +248,10 @@ export const syncOutboxService = {
       .where('[status+createdAt]')
       .between([OUTBOX_STATUS.PENDING, Dexie.minKey], [OUTBOX_STATUS.PENDING, Dexie.maxKey])
       .filter((row) => {
-        // Fail closed: legacy unscoped rows remain untouched until an explicit
-        // recovery/migration assigns their owner.
         if (licenseKey && row.licenseKey !== licenseKey) return false;
+        // Actor-bound legacy rows with no immutable origin proof remain in the
+        // database but are an effective HOLD: currentActor is never substituted.
+        if (!hasBoundActorOrigin(row)) return false;
         if (!row.nextRetryAt) return true;
         return Date.parse(row.nextRetryAt) <= now;
       })
@@ -238,6 +310,11 @@ const assertOperationOwnership = async (id, licenseKey) => {
   if (!row || row.licenseKey !== licenseKey) {
     throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
       reason: row?.licenseKey ? 'outbox_tenant_mismatch' : 'outbox_tenant_missing'
+    });
+  }
+  if (!hasBoundActorOrigin(row)) {
+    throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+      reason: 'outbox_actor_origin_unresolved'
     });
   }
   return row;

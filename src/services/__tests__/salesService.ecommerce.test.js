@@ -32,6 +32,15 @@ vi.mock('../database', () => ({
   }
 }));
 
+// This suite owns the ecommerce idempotency/retry contract, not ActorRuntime.
+// Model the already-proven GRANTED boundary explicitly so these historical
+// unit tests continue to exercise their original behavior without restoring a
+// permissive production fallback for LOCKED/HANDOFF_CHECK.
+vi.mock('../auth/actorOperationalHandoff', () => ({
+  runCheckoutActorOperation: async ({ operation }) => operation(),
+  runTrackedActorOperationIfGranted: async (_label, operation) => operation()
+}));
+
 vi.mock('../sales/processSaleCore', () => ({
   processSaleCore: (...args) => mocks.processSaleCore(...args)
 }));

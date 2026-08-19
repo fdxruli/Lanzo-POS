@@ -1,4 +1,13 @@
+import {
+  getActorStorageItem,
+  invalidateActorScopedStorage,
+  isActorScopedLogicalKey,
+  removeActorStorageItem,
+  setActorStorageItem
+} from '../auth/actorScopedStorage';
+
 const PREFIX = 'lanzo:t:';
+const ACTOR_ACTIVE_ORDERS_KEY = 'lanzo-active-orders-storage';
 let activeNamespace = null;
 let ready = false;
 let writesSuspended = false;
@@ -13,6 +22,44 @@ export class TenantScopedStorageInspectionError extends Error {
     this.code = code;
   }
 }
+
+// ActiveOrders mixes two contracts in memory: unsaved editing state and
+// tenant-shared SALES rows loaded from Dexie. Only the former belongs in the
+// actor namespace. Never serialize a committed/open business record as if it
+// were private actor state merely because it is currently open in the POS UI.
+const sanitizeActorScopedValue = (logicalKey, value) => {
+  if (logicalKey !== ACTOR_ACTIVE_ORDERS_KEY) return value;
+  if (typeof value !== 'string') return null;
+
+  try {
+    const parsed = JSON.parse(value);
+    const state = parsed?.state;
+    if (!state || !Array.isArray(state.activeOrders)) return null;
+
+    const actorOrders = state.activeOrders.filter((entry) => {
+      if (!Array.isArray(entry) || entry.length < 2) return false;
+      const order = entry[1];
+      return order?.isSaved !== true;
+    });
+    const actorOrderIds = new Set(actorOrders.map(([orderId]) => orderId));
+    const currentOrderId = actorOrderIds.has(state.currentOrderId)
+      ? state.currentOrderId
+      : (actorOrders[0]?.[0] || null);
+
+    return JSON.stringify({
+      ...parsed,
+      state: {
+        ...state,
+        activeOrders: actorOrders,
+        currentOrderId
+      }
+    });
+  } catch {
+    // A malformed actor-sensitive payload must never fall back to the tenant
+    // namespace or be persisted unsanitized.
+    return null;
+  }
+};
 
 // This is intentionally independent from READY. The local tenant guard needs
 // to inspect the physical namespace before it binds a freshly opened runtime,
@@ -53,6 +100,7 @@ export const inspectActiveTenantStorageSnapshot = () => {
 
 export const setActiveTenantStorageNamespace = (opaqueId) => {
   if (!/^t_[a-f0-9]{32}$/.test(String(opaqueId || ''))) throw new Error('TENANT_STORAGE_NAMESPACE_INVALID');
+  invalidateActorScopedStorage('tenant_namespace_changed');
   activeNamespace = opaqueId;
   ready = false;
   writesSuspended = true;
@@ -69,6 +117,7 @@ export const hydrateTenantStorageConsumers = async () => Promise.all([...hydrato
 
 export const clearActiveTenantStorageNamespace = () => {
   const opaqueId = activeNamespace;
+  invalidateActorScopedStorage('tenant_namespace_cleared');
   activeNamespace = null;
   ready = false;
   writesSuspended = true;
@@ -86,17 +135,35 @@ const storage = () => {
   }
 };
 export const getTenantStorageItem = (logicalKey) => {
-  const key = ready && physicalKey(logicalKey);
+  if (!ready) return null;
+  if (isActorScopedLogicalKey(logicalKey)) return getActorStorageItem(logicalKey);
+  const key = physicalKey(logicalKey);
   if (!key || !storage()) return null;
   try { return storage().getItem(key); } catch { return null; }
 };
 export const setTenantStorageItem = (logicalKey, value) => {
-  const key = ready && !writesSuspended && physicalKey(logicalKey);
+  // Tenant suspension is the outer write fence for every browser-storage
+  // consumer, including actor-routed logical keys. Hydration may still read a
+  // prepared actor namespace, but a logout/tenant reset must never serialize
+  // its empty in-memory reset over the actor's preserved payload.
+  if (!ready || writesSuspended) return;
+  if (isActorScopedLogicalKey(logicalKey)) {
+    const sanitizedValue = sanitizeActorScopedValue(logicalKey, value);
+    if (sanitizedValue === null) return;
+    setActorStorageItem(logicalKey, sanitizedValue);
+    return;
+  }
+  const key = physicalKey(logicalKey);
   if (!key || !storage()) return;
   try { storage().setItem(key, value); } catch { /* storage quota/privacy must fail closed */ }
 };
 export const removeTenantStorageItem = (logicalKey) => {
-  const key = ready && !writesSuspended && physicalKey(logicalKey);
+  if (!ready || writesSuspended) return;
+  if (isActorScopedLogicalKey(logicalKey)) {
+    removeActorStorageItem(logicalKey);
+    return;
+  }
+  const key = physicalKey(logicalKey);
   if (!key || !storage()) return;
   try { storage().removeItem(key); } catch { /* never cascade a failed removal */ }
 };
@@ -110,7 +177,9 @@ export const resumeTenantStorageWrites = () => {
   writesSuspended = false;
 };
 
-// Zustand receives logical names only; legacy unscoped keys are never read.
+// Zustand receives logical names only. Actor-owned logical keys are routed to
+// ActorScopedStorage; legacy tenant-scoped values remain physically preserved
+// but are never auto-claimed by the current actor.
 export const tenantScopedZustandStorage = {
   getItem: getTenantStorageItem,
   setItem: setTenantStorageItem,
