@@ -11,7 +11,8 @@ import {
 import {
   assertActorOperationalHandoffClear,
   installActorOperationalHandoffGuards,
-  rebindActorOperationalOwnership
+  rebindActorOperationalOwnership,
+  refreshPersistedActorCheckoutOwnership
 } from './actorOperationalHandoff';
 import {
   actorRuntimeController,
@@ -141,6 +142,10 @@ export const grantAuthenticatedActorRuntime = async ({
     // Install the operational fences before GRANTED. Existing wrappers are
     // idempotent and always capture the actor that starts each async action.
     await installActorOperationalHandoffGuards();
+    // Checkout ownership is also recorded on the tenant-shared SALES row so a
+    // browser restart cannot erase the safety barrier. Legacy locked rows with
+    // no actor proof remain unresolved and block handoff fail-closed.
+    await refreshPersistedActorCheckoutOwnership({ tenant });
     assertActorOperationalHandoffClear({ tenant, actorKey });
 
     // Preparation is read-only with respect to actor payloads. Legacy tenant-
