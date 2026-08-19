@@ -14,6 +14,10 @@ import { useStatsStore } from '../store/useStatsStore';
 import { generateID, roundCurrency, sendWhatsAppMessage } from './utils';
 import { calculatePricingDetails } from './pricingLogic';
 import Logger from './Logger';
+import {
+    runCheckoutActorOperation,
+    runTrackedActorOperationIfGranted
+} from './auth/actorOperationalHandoff';
 import { processSaleCore } from './sales/processSaleCore';
 import { splitOpenTableOrderCore } from './sales/splitOrderService';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
@@ -197,48 +201,56 @@ const runProcessSaleWithRetry = async (params, maxRetries = 3) => {
     };
 };
 
-export const processSale = async (params, maxRetries = 3) => {
-    Logger.info('Iniciando proceso de venta (Safe Mode)...');
-    const ecommerceCheckout = getEcommerceCheckoutContext(params);
-    if (!ecommerceCheckout) return runProcessSaleWithRetry(params, maxRetries);
+export const processSale = async (params, maxRetries = 3) => (
+    runCheckoutActorOperation({
+        orderId: params?.activeOrderId || null,
+        label: 'sales.processSale',
+        operation: async () => {
+            Logger.info('Iniciando proceso de venta (Safe Mode)...');
+            const ecommerceCheckout = getEcommerceCheckoutContext(params);
+            if (!ecommerceCheckout) return runProcessSaleWithRetry(params, maxRetries);
 
-    const key = ecommerceCheckout.idempotencyKey;
-    if (ecommerceSalePromises.has(key)) return ecommerceSalePromises.get(key);
+            const key = ecommerceCheckout.idempotencyKey;
+            if (ecommerceSalePromises.has(key)) return ecommerceSalePromises.get(key);
 
-    const promise = runProcessSaleWithRetry(params, maxRetries);
-    ecommerceSalePromises.set(key, promise);
-    return promise.finally(() => {
-        if (ecommerceSalePromises.get(key) === promise) ecommerceSalePromises.delete(key);
-    });
-};
+            const promise = runProcessSaleWithRetry(params, maxRetries);
+            ecommerceSalePromises.set(key, promise);
+            return promise.finally(() => {
+                if (ecommerceSalePromises.get(key) === promise) ecommerceSalePromises.delete(key);
+            });
+        }
+    })
+);
 
-export const splitOpenTableOrder = async (params, maxRetries = 3) => {
-    Logger.info('Iniciando split bill de mesa (Safe Mode)...');
+export const splitOpenTableOrder = async (params, maxRetries = 3) => (
+    runTrackedActorOperationIfGranted('sales.splitOpenTableOrder', async () => {
+        Logger.info('Iniciando split bill de mesa (Safe Mode)...');
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        const result = await _splitOpenTableOrderInternal(params);
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            const result = await _splitOpenTableOrderInternal(params);
 
-        if (result.success) {
+            if (result.success) {
+                return result;
+            }
+
+            if (result.errorType === 'RACE_CONDITION' && attempt < maxRetries) {
+                const delay = 100 * attempt;
+                Logger.warn(`[Retry ${attempt}/${maxRetries}] Race condition detectada en split bill. Reintentando en ${delay}ms...`);
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                continue;
+            }
+
             return result;
         }
 
-        if (result.errorType === 'RACE_CONDITION' && attempt < maxRetries) {
-            const delay = 100 * attempt;
-            Logger.warn(`[Retry ${attempt}/${maxRetries}] Race condition detectada en split bill. Reintentando en ${delay}ms...`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            continue;
-        }
-
-        return result;
-    }
-
-    Logger.error('Fallo en split bill tras multiples intentos de concurrencia.');
-    return {
-        success: false,
-        errorType: 'MAX_RETRIES',
-        message: 'El sistema esta muy ocupado. Por favor intenta dividir/cobrar de nuevo.'
-    };
-};
+        Logger.error('Fallo en split bill tras multiples intentos de concurrencia.');
+        return {
+            success: false,
+            errorType: 'MAX_RETRIES',
+            message: 'El sistema esta muy ocupado. Por favor intenta dividir/cobrar de nuevo.'
+        };
+    })
+);
 
 const findSaleForCancellation = async ({ saleId, timestamp, currentSales = [] }) => {
     const fromMemory = currentSales.find((sale) => (
