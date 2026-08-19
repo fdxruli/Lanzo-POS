@@ -142,24 +142,28 @@ export const getTenantStorageItem = (logicalKey) => {
   try { return storage().getItem(key); } catch { return null; }
 };
 export const setTenantStorageItem = (logicalKey, value) => {
-  if (!ready) return;
+  // Tenant suspension is the outer write fence for every browser-storage
+  // consumer, including actor-routed logical keys. Hydration may still read a
+  // prepared actor namespace, but a logout/tenant reset must never serialize
+  // its empty in-memory reset over the actor's preserved payload.
+  if (!ready || writesSuspended) return;
   if (isActorScopedLogicalKey(logicalKey)) {
     const sanitizedValue = sanitizeActorScopedValue(logicalKey, value);
     if (sanitizedValue === null) return;
     setActorStorageItem(logicalKey, sanitizedValue);
     return;
   }
-  const key = !writesSuspended && physicalKey(logicalKey);
+  const key = physicalKey(logicalKey);
   if (!key || !storage()) return;
   try { storage().setItem(key, value); } catch { /* storage quota/privacy must fail closed */ }
 };
 export const removeTenantStorageItem = (logicalKey) => {
-  if (!ready) return;
+  if (!ready || writesSuspended) return;
   if (isActorScopedLogicalKey(logicalKey)) {
     removeActorStorageItem(logicalKey);
     return;
   }
-  const key = !writesSuspended && physicalKey(logicalKey);
+  const key = physicalKey(logicalKey);
   if (!key || !storage()) return;
   try { storage().removeItem(key); } catch { /* never cascade a failed removal */ }
 };
