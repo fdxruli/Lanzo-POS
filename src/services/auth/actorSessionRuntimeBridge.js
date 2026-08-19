@@ -9,6 +9,10 @@ import {
   suspendActorScopedStorageWrites
 } from './actorScopedStorage';
 import {
+  assertActorOperationalHandoffClear,
+  installActorOperationalHandoffGuards
+} from './actorOperationalHandoff';
+import {
   actorRuntimeController,
   ActorRuntimeError,
   ACTOR_RUNTIME_ERROR_CODES,
@@ -133,6 +137,11 @@ export const grantAuthenticatedActorRuntime = async ({
 
   actorRuntimeController.beginHandoffCheck();
   try {
+    // Install the operational fences before GRANTED. Existing wrappers are
+    // idempotent and always capture the actor that starts each async action.
+    await installActorOperationalHandoffGuards();
+    assertActorOperationalHandoffClear({ tenant });
+
     // Preparation is read-only with respect to actor payloads. Legacy tenant-
     // scoped cart/draft state may be detected here, but is never mounted or
     // attributed to the actor that happens to authenticate first.
@@ -164,7 +173,9 @@ export const grantAuthenticatedActorRuntime = async ({
   } catch (error) {
     suspendActorScopedStorageWrites();
     invalidateActorScopedStorage('actor_handoff_failed');
-    actorRuntimeController.lock('actor_handoff_failed');
+    if (actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
+      actorRuntimeController.lock('actor_handoff_failed');
+    }
     throw error;
   }
 };
@@ -184,11 +195,13 @@ export const restoreActorRuntimeFromCurrentSessionCache = async ({
     await readCurrentActorSessionCache();
     return await grantAuthenticatedActorRuntime({ actorType, actor, permissions });
   } catch (error) {
-    lockActorRuntime(
-      error?.code === ACTOR_SESSION_AMBIGUOUS
-        ? 'ambiguous_actor_session_evidence'
-        : `${actorType || 'unknown'}_session_restore_failed`
-    );
+    if (actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
+      lockActorRuntime(
+        error?.code === ACTOR_SESSION_AMBIGUOUS
+          ? 'ambiguous_actor_session_evidence'
+          : `${actorType || 'unknown'}_session_restore_failed`
+      );
+    }
     throw error;
   }
 };
