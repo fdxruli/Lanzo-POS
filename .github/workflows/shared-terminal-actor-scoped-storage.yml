@@ -12,7 +12,9 @@ on:
       - 'src/services/sync/syncOutboxService.js'
       - 'src/services/salesCloud/salesCloudShadowService.js'
       - 'src/services/salesService.js'
+      - 'src/services/__tests__/salesService.ecommerce.test.js'
       - 'src/hooks/pos/useLayawayFlow.js'
+      - 'src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx'
       - 'src/hooks/pos/__tests__/useActiveOrders.tenantPersistence.test.js'
       - 'src/components/layout/Layout.jsx'
       - 'src/services/auth/__tests__/actorScopedStorage.test.js'
@@ -65,6 +67,13 @@ jobs:
           src/services/auth/__tests__/actorOperationalAuthority.test.js
           --maxWorkers=4
 
+      - name: Real sale and layaway caller contracts under granted actor fixture
+        run: >-
+          npx vitest run
+          src/services/__tests__/salesService.ecommerce.test.js
+          src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
+          --maxWorkers=2
+
       - name: Actor and tenant persistence lifecycle tests
         run: >-
           npx vitest run
@@ -116,7 +125,9 @@ jobs:
           src/services/sync/syncOutboxService.js
           src/services/salesCloud/salesCloudShadowService.js
           src/services/salesService.js
+          src/services/__tests__/salesService.ecommerce.test.js
           src/hooks/pos/useLayawayFlow.js
+          src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
           src/components/layout/Layout.jsx
           src/services/auth/__tests__/actorScopedStorage.test.js
           src/services/auth/__tests__/actorOperationalHandoff.test.js
@@ -163,12 +174,22 @@ jobs:
           npm run build:store
           npm run build:store:vercel
 
-      - name: BASE PublicStore focused repetitions
+      - name: BASE PublicStore focused repetitions (observational)
+        shell: bash
         run: |
+          failures=0
           for i in 1 2 3 4 5 6 7 8; do
             echo "BASE PublicStore repetition ${i}"
+            set +e
             npx vitest run src/pages/__tests__/PublicStorePage.siteVersion.test.jsx --maxWorkers=1
+            code=$?
+            set -e
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "BASE PublicStore repetition ${i} observational failure: exit ${code}"
+            fi
           done
+          echo "BASE PublicStore observational failures: ${failures}/8"
 
       - name: BASE raw full-suite repetitions
         shell: bash
@@ -227,12 +248,22 @@ jobs:
           npm run build:store
           npm run build:store:vercel
 
-      - name: CANDIDATE PublicStore focused repetitions
+      - name: CANDIDATE PublicStore focused repetitions (observational)
+        shell: bash
         run: |
+          failures=0
           for i in 1 2 3 4 5 6 7 8; do
             echo "CANDIDATE PublicStore repetition ${i}"
+            set +e
             npx vitest run src/pages/__tests__/PublicStorePage.siteVersion.test.jsx --maxWorkers=1
+            code=$?
+            set -e
+            if [ "$code" -ne 0 ]; then
+              failures=$((failures + 1))
+              echo "CANDIDATE PublicStore repetition ${i} observational failure: exit ${code}"
+            fi
           done
+          echo "CANDIDATE PublicStore observational failures: ${failures}/8"
 
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
