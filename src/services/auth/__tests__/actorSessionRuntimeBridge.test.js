@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   invalidateActorScopedStorage: vi.fn(),
   subscribeActorScopedStorage: vi.fn(() => () => {}),
   installActorOperationalHandoffGuards: vi.fn(async () => true),
+  refreshPersistedActorCheckoutOwnership: vi.fn(async () => []),
   assertActorOperationalHandoffClear: vi.fn(() => true),
   rebindActorOperationalOwnership: vi.fn(() => 0)
 }));
@@ -39,6 +40,7 @@ vi.mock('../actorScopedStorage', () => ({
 
 vi.mock('../actorOperationalHandoff', () => ({
   installActorOperationalHandoffGuards: mocks.installActorOperationalHandoffGuards,
+  refreshPersistedActorCheckoutOwnership: mocks.refreshPersistedActorCheckoutOwnership,
   assertActorOperationalHandoffClear: mocks.assertActorOperationalHandoffClear,
   rebindActorOperationalOwnership: mocks.rebindActorOperationalOwnership
 }));
@@ -115,7 +117,7 @@ describe('actor session runtime bridge', () => {
     });
   });
 
-  it('restores Admin when Admin is the only valid session evidence', async () => {
+  it('restores Admin only after durable checkout inspection and handoff validation', async () => {
     setCache({
       admin_session_token: 'admin-token',
       admin_session_id: 'admin-session'
@@ -132,10 +134,16 @@ describe('actor session runtime bridge', () => {
       actorKey: 'admin:admin-1',
       sessionId: 'admin-session'
     });
+    expect(mocks.refreshPersistedActorCheckoutOwnership).toHaveBeenCalledWith({
+      tenant: TENANT_RUNTIME
+    });
     expect(mocks.assertActorOperationalHandoffClear).toHaveBeenCalledWith({
       tenant: TENANT_RUNTIME,
       actorKey: 'admin:admin-1'
     });
+    expect(mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.assertActorOperationalHandoffClear.mock.invocationCallOrder[0]
+    );
   });
 
   it('restores Staff when Staff is the only valid session evidence and preserves only Staff permissions', async () => {
