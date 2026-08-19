@@ -242,25 +242,25 @@ Regression/build checks:
 
 ## 16. BASE vs CANDIDATE
 
-Se ejecutaron BASE y CANDIDATE desde el mismo `MAIN_SHA`, con normalización de artefactos ignorados de build.
+La validación de código de `26e67f698f3fc8132c5add8b906e332a27d2fabd` había producido una comparación normalizada sin regresiones nuevas en el conjunto de evidencia de esa validación.
 
-- Fallos exclusivos del candidato: `0`.
-- Fallos nuevos normalizados: **0**.
-- Tres diferencias favorables de archivos de arquitectura pública/admin corresponden a artefactos generados presentes durante la corrida candidata, no a regresiones del código.
+Para CLOSEOUT.R1 se reejecutó el mismo contraste sobre el HEAD observado `c57652ca88f114390e4aeb7f6c64a087dda86616`:
 
-**NEW/CHANGED REGRESSIONS: 0.**
+- BASE y CANDIDATE terminaron sus suites observacionales.
+- El gate diferencial repetido de ActorRuntime — run `32264900716`, job `96109547965` — terminó **FAIL**.
+- El candidato presentó una observación normalizada exclusiva en la repetición 2: `src/pages/__tests__/PublicStorePage.siteVersion.test.jsx` / `STACK_TRACE_ERROR`.
+- BASE presentó una observación incidental de la misma clase general en `PublicStoreCheckout.test.jsx`, pero no el mismo identificador; el workflow la clasificó como `PR_REGRESSION` y no permite afirmar que el resultado sea cero.
+- Por tanto, en el HEAD observado, `NEW/CHANGED REGRESSIONS` queda **UNRESOLVED — 1 candidate-only normalized observation**, no `0`.
 
+CLOSEOUT.R1 no modificó archivos de código ni dependencias; la diferencia es una observación no causalmente atribuible a la corrección de whitespace. Aun así, la regla de cierre exige respetar el resultado rojo y mantener el estado fail-closed hasta revisión independiente o una corrida estable que lo descarte explícitamente.
 ## 17. Riesgos y trabajo diferido
-
-Estado parcial por deudas secundarias que permanecen fail-closed:
 
 - El binding avanzado multi-device/physical-drawer topology aún requiere una política explícita de negocio; la primera versión usa `device_default` determinista.
 - El replay durable/genérico del outbox no se rediseñó; cash offline permanece bloqueado.
-- La suite global y el lint global siguen RED por baseline histórico; el diferencial no muestra regresiones nuevas y el lint dirigido/builds pasan.
-- Debe continuar la revisión independiente y añadir escenarios de integración no destructivos para topologías multi-dispositivo.
+- La suite global y el lint global conservan fallos históricos observacionales; además, el gate diferencial exacto de CLOSEOUT.R1 quedó rojo por una observación candidata no resuelta. No se debe declarar PASS mientras ese resultado permanezca.
+- Debe continuar la revisión independiente y añadir escenarios de integración no destructivos para topologías multi-dispositivo y para la observación de `PublicStorePage.siteVersion`.
 
 No se inventó ownership histórico ni se hizo limpieza destructiva para ocultar estos riesgos.
-
 ## 18. CLOSEOUT.R1 — corrección de evidencia y auditoría de migraciones
 
 ### Estado remoto inicial
@@ -269,7 +269,8 @@ No se inventó ownership histórico ni se hizo limpieza destructiva para ocultar
 - Rama: `feat/shared-terminal-financial-handoff`.
 - Old HEAD: `23b8449a9ba91651bd8799e9b1f76a6a10bcd1a2`.
 - Código validado sin cambios: `26e67f698f3fc8132c5add8b906e332a27d2fabd`.
-- El nuevo final HEAD será el commit documental de `SHARED.TERMINAL.4-CLOSEOUT.R1`; se verificará directamente en GitHub después de publicarlo y no se generará otro commit automático de reporte.
+- HEAD observado y validado antes de esta actualización del reporte: `c57652ca88f114390e4aeb7f6c64a087dda86616`.
+- Esta actualización es documental y no cambia el código validado, las migraciones SQL ni Supabase. El SHA del commit que contiene esta versión final del reporte se verificará directamente en GitHub y se entrega también en el cierre externo; el reporte no intenta referenciar su propio SHA.
 
 ### Causa exacta del fallo report-only
 
@@ -327,11 +328,41 @@ La auditoría fue read-only y dejó el esquema financiero sin cambios:
 - movement performed_by null: `0`.
 - cross-tenant bindings: `0`.
 
-### Validación del nuevo HEAD
+### Validación del HEAD observado antes de esta actualización
 
-Después de publicar el commit documental se hará una sola consulta de PR/HEAD y de workflows; no se regenerará ni autopublicará este reporte. El resultado se reportará sin convertir estados pendientes o RED en PASS.
+La corrida completa sobre `c57652ca88f114390e4aeb7f6c64a087dda86616` dejó esta evidencia:
 
+| Workflow | Run | Resultado |
+| --- | --- | --- |
+| Shared Terminal Actor Scoped Storage Validation | `32264900801` | **PASS** |
+| Shared Terminal Actor Runtime Validation | `32264900716` | **RED**: focused PASS; differential job FAIL |
+| HOTFIX Dexie Recovery Validation | `32264900786` | **PASS** |
+| PR127 Global Comparison | `32264900722` | **PASS** |
+
+El focused ActorRuntime job `96109597489`, el focused ActorScopedStorage job `96106875097` y HOTFIX ejecutaron `git diff --check`, builds y validaciones dirigidas sin errores de whitespace. La enumeración read-only del reporte confirmó cero líneas con trailing whitespace. Los jobs BASE/CANDIDATE observacionales terminaron, pero no convierten el gate diferencial fallido en PASS.
+
+El workflow ActorRuntime del primer commit documental `0efce620c95febc742fae5d0396752fe5701fde5` publicó accidentalmente el commit report-only `96ea65fd798d83a19c2d5446ca966149a7dcbca1`. Se revirtió de forma controlada, sin force-push, mediante `c57652ca88f114390e4aeb7f6c64a087dda86616`, dejando el árbol Phase4 intacto. Después de `c57652c` no apareció otro commit automático y el publisher quedó skipped; esta actualización debe conservar esa estabilidad y no iniciar un loop.
+
+El reporte se entrega con el resultado real: no se convierten estados RED en PASS y la evidencia de migraciones sigue siendo el bloqueo principal.
 ## 19. Estado exacto
+
+**SHARED.TERMINAL.4: PARTIAL** (resultado funcional de la fase).
+
+**SHARED.TERMINAL.4-CLOSEOUT.R1: BLOCKED**
+
+Motivos de bloqueo:
+
+1. La auditoría probó drift real entre los timestamps de migración Git y `schema_migrations.version`; la CLI normal puede considerar los dos archivos local-only y existe riesgo de reapply.
+2. La reparación oficial `supabase migration repair` no está disponible en el entorno conectado. No se permite manipular manualmente `schema_migrations`; Supabase no fue modificado y las migraciones SQL no fueron reejecutadas.
+3. El gate diferencial del HEAD observado terminó RED con una observación candidata normalizada no resuelta.
+
+El handoff financiero, la exclusividad por estación, la separación actor/device, la protección stale, la idempotencia, el bloqueo offline y el binding sale/movement siguen fail-closed y sin evidencia de ownership leak.
+
+- NO MERGE.
+- Mantener el PR #211 en DRAFT.
+- No iniciar `SHARED.TERMINAL.5`.
+- Esperar revisión independiente.
+
 
 **SHARED.TERMINAL.4: PARTIAL**
 
