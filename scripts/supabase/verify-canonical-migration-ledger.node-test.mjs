@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { verify } from './verify-canonical-migration-ledger.mjs';
+import { assertCurrentMainSha, verify } from './verify-canonical-migration-ledger.mjs';
 
 const fixture = (files, listing) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lanzo-ledger-'));
@@ -44,4 +44,14 @@ test('rejects NONE with a pending migration and after apply', () => {
   assert.throws(() => verify({ migrationsDirectory: x.migrations, expectedVersions: 'NONE', migrationListPath: x.list }), /unexpected pending versions/);
   assert.throws(() => verify({ migrationsDirectory: x.migrations, expectedVersions: 'NONE', migrationListPath: x.list, afterApply: true }), /NONE is invalid after apply/);
   fs.rmSync(x.root, { recursive: true, force: true });
+});
+
+test('accepts equal expected, checkout and remote main SHAs', () => {
+  const sha = 'a'.repeat(40);
+  assert.equal(assertCurrentMainSha({ expectedGitSha: sha, checkedOutSha: sha, currentRemoteMainSha: sha }), sha);
+});
+
+test('rejects a stale expected SHA and malformed expected SHA', () => {
+  assert.throws(() => assertCurrentMainSha({ expectedGitSha: 'a'.repeat(40), checkedOutSha: 'a'.repeat(40), currentRemoteMainSha: 'b'.repeat(40) }), /not current main HEAD/);
+  assert.throws(() => assertCurrentMainSha({ expectedGitSha: 'not-a-sha', checkedOutSha: 'a'.repeat(40), currentRemoteMainSha: 'a'.repeat(40) }), /not a full lowercase Git SHA/);
 });
