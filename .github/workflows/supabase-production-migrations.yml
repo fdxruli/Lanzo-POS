@@ -14,7 +14,7 @@ on:
         required: true
         type: string
       expected_versions:
-        description: Comma-separated exact 14-digit migration version(s) expected to be pending.
+        description: Comma-separated exact 14-digit pending versions, or NONE for DRY_RUN only.
         required: true
         type: string
       apply_confirmation:
@@ -22,6 +22,10 @@ on:
         required: false
         default: ''
         type: string
+
+concurrency:
+  group: supabase-production-migrations
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -36,12 +40,14 @@ jobs:
       SUPABASE_PROJECT_REF: odlrhijtfyavryeqivaa
       SUPABASE_CLI_VERSION: 2.79.0
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.expected_git_sha }}
           fetch-depth: 0
 
-      - uses: supabase/setup-cli@v1
+      # supabase/setup-cli v1.5.0
+      - uses: supabase/setup-cli@d347ba47d3fb7eeeddbbc793bc8d4779caf773ea
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
 
@@ -54,6 +60,10 @@ jobs:
           test -n "${SUPABASE_ACCESS_TOKEN}"
           test -n "${SUPABASE_DB_PASSWORD}"
           test "${SUPABASE_PROJECT_REF}" = "odlrhijtfyavryeqivaa"
+          if [ "${{ inputs.mode }}" = "APPLY" ] && [ "${{ inputs.expected_versions }}" = "NONE" ]; then
+            echo "NONE is valid only for DRY_RUN" >&2
+            exit 1
+          fi
           if [ "${{ inputs.mode }}" = "APPLY" ]; then
             test "${{ inputs.apply_confirmation }}" = "APPLY ${{ inputs.expected_versions }}"
           fi
@@ -78,6 +88,10 @@ jobs:
           supabase migration list --linked | tee migration-list.before.txt
           node scripts/supabase/verify-canonical-migration-ledger.mjs supabase/migrations "${{ inputs.expected_versions }}" migration-list.before.txt
           supabase db push --dry-run --linked | tee db-push-dry-run.txt
+          if [ "${{ inputs.expected_versions }}" = "NONE" ] && ! grep -Eqi 'no.*migration|nothing to apply|up to date' db-push-dry-run.txt; then
+            echo "DRY_RUN NONE did not prove zero migrations to apply" >&2
+            exit 1
+          fi
 
       - name: Apply exactly the preflighted set
         if: inputs.mode == 'APPLY'
