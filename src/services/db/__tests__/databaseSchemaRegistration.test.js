@@ -3,6 +3,7 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   LOCAL_TENANT_BINDING_DEXIE_VERSION,
+  CASH_FINANCIAL_DEXIE_VERSION,
   POS_SYNC_DEXIE_VERSION,
   PRIMARY_KEY_RECOVERY_DEXIE_VERSION,
   RECOVERY_STORES,
@@ -143,6 +144,63 @@ describe('canonical Dexie registration', () => {
       name: 'Synthetic customer'
     });
     await expect(upgraded.table('local_tenant_binding').count()).resolves.toBe(0);
+    upgraded.close();
+  });
+
+  it('migrates cash identity metadata deterministically and preserves unresolved legacy rows', async () => {
+    const name = `lanzo-v31-to-v32-cash-${crypto.randomUUID()}`;
+    names.push(name);
+    const legacy = new Dexie(name);
+    legacy.version(31).stores({
+      sales: 'id, timestamp',
+      deleted_sales: 'id, deletedAt',
+      cajas: 'id, estado, fecha_apertura',
+      movimientos_caja: 'id, caja_id, cash_session_id, fecha',
+      local_tenant_binding: 'key'
+    });
+    await legacy.open();
+    await legacy.table('cajas').bulkPut([
+      {
+        id: 'cash-device-bound',
+        estado: 'abierta',
+        fecha_apertura: '2026-08-19T10:00:00.000Z',
+        actorKey: 'admin:a',
+        deviceId: 'device-a'
+      },
+      {
+        id: 'cash-legacy-unresolved',
+        estado: 'cerrada',
+        fecha_apertura: '2026-08-18T10:00:00.000Z',
+        actorKey: 'staff:x'
+      }
+    ]);
+    await legacy.table('movimientos_caja').put({
+      id: 'movement-device-bound',
+      caja_id: 'cash-device-bound',
+      cash_session_id: 'cash-device-bound',
+      fecha: '2026-08-19T11:00:00.000Z',
+      actorKey: 'admin:a'
+    });
+    legacy.close();
+
+    const upgraded = createCanonicalLanzoDatabase(name);
+    await upgraded.open();
+
+    expect(upgraded.verno).toBe(CASH_FINANCIAL_DEXIE_VERSION);
+    await expect(upgraded.table('cajas').get('cash-device-bound')).resolves.toMatchObject({
+      cashStationId: 'local:device:device-a',
+      cashIdentityState: 'deterministic-device-bound',
+      originActorKey: 'admin:a',
+      openedByActorKey: 'admin:a'
+    });
+    await expect(upgraded.table('movimientos_caja').get('movement-device-bound')).resolves.toMatchObject({
+      cashStationId: 'local:device:device-a',
+      originActorKey: 'admin:a'
+    });
+    await expect(upgraded.table('cajas').get('cash-legacy-unresolved')).resolves.toMatchObject({
+      cashIdentityState: 'legacy_unresolved'
+    });
+    await expect(upgraded.table('cajas').get('cash-legacy-unresolved')).resolves.not.toHaveProperty('cashStationId');
     upgraded.close();
   });
 });

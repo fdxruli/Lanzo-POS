@@ -8,6 +8,7 @@ import {
   reportStructuralDatabaseErrorOnce,
   setDatabaseRecoveryState
 } from '../databaseRecoveryState';
+import { CURRENT_NATIVE_DATABASE_VERSION } from '../databaseSchema';
 
 afterEach(() => clearDatabaseRecoveryState());
 
@@ -17,13 +18,13 @@ describe('databaseRecoveryState', () => {
       status: DATABASE_RECOVERY_STATUS.FAILED,
       errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
       detectedNativeVersion: 320,
-      expectedNativeVersion: 310,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
       isRetryable: false
     });
 
     expect(diagnostic).toMatchObject({
       detectedNativeVersion: 320,
-      expectedNativeVersion: 310,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
       isRetryable: false
     });
     expect(getDatabaseRecoveryState()).toBe(diagnostic);

@@ -11,6 +11,10 @@ import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDeb
 import { evaluator } from '../BackupRiskEvaluator';
 import { updateProduct, updateProductSafe, bulkUpdateProducts } from './productUpdates';
 import { layawayFinancialService } from '../layawayFinancialService';
+import { assertCashSessionMutationContext } from '../cajaService';
+import { getCashActorFromState } from '../cash/cashActor';
+import { getCashStationIdentity } from '../cash/cashStation';
+import { captureCashActorContext } from '../cash/cashFinancialGate';
 import {
     isExpiredForPosMenu,
     isOutOfStockForPosMenu,
@@ -157,6 +161,18 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expect
                     throw new Error("Transacción abortada: La caja fue cerrada antes de completar la operación.");
                 }
 
+                let cashMutationContext = {};
+                if (caja.actorKey || caja.cashStationId) {
+                    const actor = getCashActorFromState();
+                    const station = await getCashStationIdentity();
+                    cashMutationContext = {
+                        actorKey: actor.actorKey,
+                        cashStationId: station.cashStationId,
+                        actorContext: captureCashActorContext()
+                    };
+                    await assertCashSessionMutationContext(caja, cashMutationContext);
+                }
+
                 // Control de Concurrencia Optimista (OCC)
                 const currentVersion = caja.updatedAt || caja.fecha_apertura;
                 if (expectedVersion && currentVersion !== expectedVersion) {
@@ -182,7 +198,11 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expect
                     tipo: 'salida',
                     monto: String(paymentInfo.monto),
                     concepto: paymentInfo.concepto,
-                    fecha: new Date().toISOString()
+                    fecha: new Date().toISOString(),
+                    actorKey: cashMutationContext.actorKey || caja.actorKey || null,
+                    originActorKey: cashMutationContext.actorKey || caja.originActorKey || caja.actorKey || null,
+                    cashStationId: cashMutationContext.cashStationId || caja.cashStationId || null,
+                    actorGeneration: cashMutationContext.actorContext?.generation ?? null
                 };
                 await db.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
 

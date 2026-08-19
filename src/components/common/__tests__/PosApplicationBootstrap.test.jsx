@@ -38,6 +38,7 @@ import {
   openTenantRuntime,
   resolveTenantRuntimeDirectory
 } from '../../../services/db/tenantRuntimeRouter';
+import { CURRENT_NATIVE_DATABASE_VERSION } from '../../../services/db/databaseSchema';
 
 const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, version);
@@ -254,7 +255,7 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     const identity = await resolveActiveTenantIdentity({ license_key: `BOOTSTRAP-UNSUPPORTED-${crypto.randomUUID()}` });
     const opaqueId = await resolveTenantRuntimeDirectory(identity);
     const databaseName = `LanzoDB_t_${opaqueId}`;
-    await createNativeDatabase(databaseName, 320);
+    await createNativeDatabase(databaseName, CURRENT_NATIVE_DATABASE_VERSION + 10);
     const prepareLocalDatabase = vi.fn(() => openTenantRuntime(identity));
     const readyRuntime = createReadyRuntime();
 
@@ -275,8 +276,8 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       status: DATABASE_RECOVERY_STATUS.FAILED,
       errorCode: 'DB_UNSUPPORTED_NATIVE_VERSION',
       databaseName,
-      detectedNativeVersion: 320,
-      expectedNativeVersion: 310,
+      detectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION + 10,
+      expectedNativeVersion: CURRENT_NATIVE_DATABASE_VERSION,
       isRetryable: false,
       requiresMigration: false
     });

@@ -80,7 +80,7 @@ const normalizeNativeStore = (store) => ({
     keyPath: normalizeKeyPath(store.keyPath),
     autoIncrement: store.autoIncrement === true
   },
-  indexes: Array.from(store.indexNames).sort().map((name) => {
+  indexes: Array.from(store.indexNames).sort((left, right) => left.localeCompare(right)).map((name) => {
     const index = store.index(name);
     return {
       name,

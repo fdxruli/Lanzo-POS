@@ -6,8 +6,9 @@ export const LEGACY_NATIVE_DATABASE_VERSION = 110;
 export const POS_SYNC_DEXIE_VERSION = 24;
 export const PRIMARY_KEY_RECOVERY_DEXIE_VERSION = 30;
 export const LOCAL_TENANT_BINDING_DEXIE_VERSION = 31;
+export const CASH_FINANCIAL_DEXIE_VERSION = 32;
 export const CURRENT_NATIVE_DATABASE_VERSION =
-  LOCAL_TENANT_BINDING_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
+  CASH_FINANCIAL_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
 
 export const RECOVERY_STORES = Object.freeze({
   SALES_BACKUP: '__lanzo_sales_backup_v30',
@@ -47,6 +48,26 @@ export const SYNC_CONFLICTS_SCHEMA = 'id, entityType, entityId, status, createdA
 export const RECOVERY_BACKUP_SCHEMA = 'legacyKey, sourceKey, migratedId';
 export const RECOVERY_META_SCHEMA = 'key';
 export const LOCAL_TENANT_BINDING_SCHEMA = 'key';
+export const CASH_SESSIONS_SCHEMA = [
+  'id',
+  'estado',
+  'fecha_apertura',
+  'actorKey',
+  'cashStationId',
+  '[cashStationId+estado]',
+  '[actorKey+estado]'
+].join(', ');
+export const CASH_MOVEMENTS_SCHEMA = [
+  'id',
+  'caja_id',
+  'cash_session_id',
+  'fecha',
+  'actorKey',
+  'cashStationId',
+  'idempotencyKey',
+  '[cash_session_id+fecha]',
+  '[cashStationId+fecha]'
+].join(', ');
 
 const registeredDatabases = new WeakSet();
 
@@ -83,6 +104,61 @@ export const registerCanonicalDexieExtensions = (db, stores) => {
     [LOCAL_TENANT_BINDING_STORE]: LOCAL_TENANT_BINDING_SCHEMA
   });
 
+  // Forward-only cash identity metadata.  The upgrade is deliberately
+  // additive: records without deterministic device/session evidence remain
+  // legacy_unresolved and are never assigned an invented station.
+  const cashFinancialStores = {};
+  if (stores.CAJAS) cashFinancialStores[stores.CAJAS] = CASH_SESSIONS_SCHEMA;
+  if (stores.MOVIMIENTOS_CAJA) cashFinancialStores[stores.MOVIMIENTOS_CAJA] = CASH_MOVEMENTS_SCHEMA;
+  if (stores.SALES) cashFinancialStores[stores.SALES] = SALES_CLOUD_SCHEMA;
+  if (stores.DELETED_SALES) cashFinancialStores[stores.DELETED_SALES] = DELETED_SALES_SCHEMA;
+
+  const cashFinancialVersion = db.version(CASH_FINANCIAL_DEXIE_VERSION).stores(cashFinancialStores);
+  if (stores.CAJAS && stores.MOVIMIENTOS_CAJA) {
+    cashFinancialVersion.upgrade(async (tx) => {
+      const sessionsTable = tx.table(stores.CAJAS);
+      const movementsTable = tx.table(stores.MOVIMIENTOS_CAJA);
+      const sessions = await sessionsTable.toArray();
+      const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+
+      const localStationFromDevice = (record) => {
+        const deviceId = record?.deviceId || record?.device_id || record?.openedByDeviceId || record?.opened_by_device_id;
+        return deviceId ? `local:device:${deviceId}` : null;
+      };
+
+      for (const session of sessions) {
+        const next = { ...session };
+        if (!next.originActorKey && !next.openedByActorKey && next.actorKey) {
+          next.originActorKey = next.actorKey;
+          next.openedByActorKey = next.actorKey;
+        }
+        if (!next.cashStationId) {
+          const stationId = localStationFromDevice(next);
+          if (stationId) {
+            next.cashStationId = stationId;
+            next.cashIdentityState = next.cashIdentityState || 'deterministic-device-bound';
+          } else {
+            next.cashIdentityState = next.cashIdentityState || 'legacy_unresolved';
+          }
+        }
+        if (JSON.stringify(next) !== JSON.stringify(session)) await sessionsTable.put(next);
+        sessionsById.set(next.id, next);
+      }
+
+      const movements = await movementsTable.toArray();
+      for (const movement of movements) {
+        const next = { ...movement };
+        const session = sessionsById.get(next.cash_session_id || next.caja_id);
+        if (!next.originActorKey && (next.actorKey || session?.actorKey)) {
+          next.originActorKey = next.actorKey || session.actorKey;
+        }
+        if (!next.cashStationId && session?.cashStationId) next.cashStationId = session.cashStationId;
+        if (!next.cashStationId && !session?.cashStationId) next.cashIdentityState = 'legacy_unresolved';
+        if (JSON.stringify(next) !== JSON.stringify(movement)) await movementsTable.put(next);
+      }
+    });
+  }
+
   registeredDatabases.add(db);
   return db;
 };
@@ -100,6 +176,33 @@ const index = (name, keyPath = name, options = {}) => ({
 });
 
 export const NATIVE_CURRENT_STORE_DEFINITIONS = Object.freeze({
+  cajas: {
+    keyPath: 'id',
+    autoIncrement: false,
+    indexes: [
+      index('estado'),
+      index('fecha_apertura'),
+      index('actorKey'),
+      index('cashStationId'),
+      index('cashIdentityState'),
+      index('[cashStationId+estado]', ['cashStationId', 'estado']),
+      index('[actorKey+estado]', ['actorKey', 'estado'])
+    ]
+  },
+  movimientos_caja: {
+    keyPath: 'id',
+    autoIncrement: false,
+    indexes: [
+      index('caja_id'),
+      index('cash_session_id'),
+      index('fecha'),
+      index('actorKey'),
+      index('cashStationId'),
+      index('idempotencyKey'),
+      index('[cash_session_id+fecha]', ['cash_session_id', 'fecha']),
+      index('[cashStationId+fecha]', ['cashStationId', 'fecha'])
+    ]
+  },
   sales: {
     keyPath: 'id',
     autoIncrement: false,
