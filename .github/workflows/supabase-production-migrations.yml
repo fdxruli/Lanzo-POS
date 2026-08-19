@@ -1,0 +1,96 @@
+name: Canonical Supabase Production Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: DRY_RUN is default and never mutates production; APPLY requires exact confirmation.
+        required: true
+        default: DRY_RUN
+        type: choice
+        options: [DRY_RUN, APPLY]
+      expected_git_sha:
+        description: Exact main commit SHA to deploy.
+        required: true
+        type: string
+      expected_versions:
+        description: Comma-separated exact 14-digit migration version(s) expected to be pending.
+        required: true
+        type: string
+      apply_confirmation:
+        description: For APPLY only, enter exactly APPLY <expected_versions>.
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-migration-deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PRODUCTION_DB_PASSWORD }}
+      SUPABASE_PROJECT_REF: odlrhijtfyavryeqivaa
+      SUPABASE_CLI_VERSION: 2.79.0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.expected_git_sha }}
+          fetch-depth: 0
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Verify dispatch and immutable target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "${{ inputs.expected_git_sha }}"
+          test -n "${SUPABASE_ACCESS_TOKEN}"
+          test -n "${SUPABASE_DB_PASSWORD}"
+          test "${SUPABASE_PROJECT_REF}" = "odlrhijtfyavryeqivaa"
+          if [ "${{ inputs.mode }}" = "APPLY" ]; then
+            test "${{ inputs.apply_confirmation }}" = "APPLY ${{ inputs.expected_versions }}"
+          fi
+
+      - name: Validate canonical migration filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | \
+            awk 'BEGIN { ok=1 } !/^[0-9]{14}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/ { print "invalid migration filename: " $0 > "/dev/stderr"; ok=0 } END { exit ok ? 0 : 1 }'
+
+      - name: Link only the production project
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "${SUPABASE_PROJECT_REF}" --password "${SUPABASE_DB_PASSWORD}"
+
+      - name: Read canonical migration status
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --linked | tee migration-list.before.txt
+          node scripts/supabase/verify-canonical-migration-ledger.mjs supabase/migrations "${{ inputs.expected_versions }}" migration-list.before.txt
+          supabase db push --dry-run --linked | tee db-push-dry-run.txt
+
+      - name: Apply exactly the preflighted set
+        if: inputs.mode == 'APPLY'
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push --linked
+
+      - name: Verify final canonical ledger
+        if: inputs.mode == 'APPLY'
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list --linked | tee migration-list.after.txt
+          node scripts/supabase/verify-canonical-migration-ledger.mjs supabase/migrations "${{ inputs.expected_versions }}" migration-list.after.txt after-apply
