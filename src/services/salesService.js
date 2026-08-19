@@ -205,15 +205,24 @@ export const processSale = async (params, maxRetries = 3) => (
     runCheckoutActorOperation({
         orderId: params?.activeOrderId || null,
         label: 'sales.processSale',
-        operation: async () => {
+        operation: async ({ handle }) => {
             Logger.info('Iniciando proceso de venta (Safe Mode)...');
+            const actorScopedParams = {
+                ...params,
+                actorContext: handle,
+                paymentData: {
+                    ...(params?.paymentData || {}),
+                    originActorKey: handle.actorKey,
+                    originActorGeneration: handle.generation
+                }
+            };
             const ecommerceCheckout = getEcommerceCheckoutContext(params);
-            if (!ecommerceCheckout) return runProcessSaleWithRetry(params, maxRetries);
+            if (!ecommerceCheckout) return runProcessSaleWithRetry(actorScopedParams, maxRetries);
 
             const key = ecommerceCheckout.idempotencyKey;
             if (ecommerceSalePromises.has(key)) return ecommerceSalePromises.get(key);
 
-            const promise = runProcessSaleWithRetry(params, maxRetries);
+            const promise = runProcessSaleWithRetry(actorScopedParams, maxRetries);
             ecommerceSalePromises.set(key, promise);
             return promise.finally(() => {
                 if (ecommerceSalePromises.get(key) === promise) ecommerceSalePromises.delete(key);

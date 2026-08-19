@@ -9,6 +9,11 @@ import { db, STORES } from './db/dexie';
 import { generateID } from './utils';
 import { Money } from '../utils/moneyMath';
 import Logger from './Logger';
+import {
+  CASH_FINANCIAL_CODES,
+  CashFinancialError,
+  assertCashActorContextCurrent
+} from './cash/cashFinancialGate';
 
 // ============================================================================
 // CONSTANTES CANÓNICAS
@@ -76,6 +81,40 @@ const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEM
   throw lastError;
 };
 
+/**
+ * Central local financial write fence.  Legacy rows with neither actor nor
+ * station metadata are retained for recovery/read-only compatibility; new
+ * repository-created sessions always carry both fields and therefore take the
+ * strict path below.
+ */
+export const assertCashSessionMutationContext = async (cashSession, {
+  actorKey = null,
+  cashStationId = null,
+  actorContext = null,
+  operation = 'cash mutation'
+} = {}) => {
+  const ownerActorKey = cashSession?.actorKey || cashSession?.actor_key || null;
+  const sessionStationId = cashSession?.cashStationId || cashSession?.cash_station_id || null;
+  if (!ownerActorKey && !sessionStationId) return cashSession;
+
+  if (actorContext) assertCashActorContextCurrent(actorContext);
+  if (!actorKey || ownerActorKey !== actorKey) {
+    throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, `${operation}: la sesión pertenece a otro actor.`, {
+      ownerActorKey,
+      actorKey,
+      cashSessionId: cashSession?.id
+    });
+  }
+  if (!cashStationId || sessionStationId !== cashStationId) {
+    throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, `${operation}: la sesión no pertenece a la estación actual.`, {
+      sessionStationId,
+      cashStationId,
+      cashSessionId: cashSession?.id
+    });
+  }
+  return cashSession;
+};
+
 // ============================================================================
 // FUNCIONES PÚBLICAS
 // ============================================================================
@@ -136,6 +175,13 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
     throw new Error('Transacción abortada: La caja no está abierta.');
   }
 
+  await assertCashSessionMutationContext(cajaDb, {
+    actorKey: options.actorKey || options.metadata?.actorKey || null,
+    cashStationId: options.cashStationId || options.metadata?.cashStationId || null,
+    actorContext: options.actorContext || null,
+    operation: 'cash movement'
+  });
+
   if (existingMovement) {
     return {
       cajaActualizada: cajaDb,
@@ -156,6 +202,7 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
   }
 
   cajaDb.updatedAt = new Date().toISOString();
+  if (options.actorContext) assertCashActorContextCurrent(options.actorContext);
   await tx.table(STORES.CAJAS).put(cajaDb);
 
   const movimiento = {
@@ -166,6 +213,15 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
     monto: Money.toExactString(montoSafe),
     concepto: conceptoLimpio,
     fecha: options.createdAt || new Date().toISOString(),
+    actorKey: options.actorKey || options.metadata?.actorKey || cajaDb.actorKey || null,
+    originActorKey: options.originActorKey || options.metadata?.originActorKey || cajaDb.originActorKey || cajaDb.actorKey || null,
+    actorGeneration: options.actorGeneration || options.metadata?.actorGeneration || null,
+    cashStationId: options.cashStationId || options.metadata?.cashStationId || cajaDb.cashStationId || null,
+    performedByActorKey: options.performedByActorKey
+      || options.metadata?.performedByActorKey
+      || options.actorKey
+      || options.metadata?.actorKey
+      || null,
     ...(options.metadata || {}),
     ...(idempotencyKey ? { idempotencyKey } : {})
   };

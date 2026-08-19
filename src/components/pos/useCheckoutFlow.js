@@ -130,7 +130,11 @@ export function useCheckoutFlow({
 
             const result = await processSale({
                 order,
-                paymentData,
+                paymentData: {
+                    ...paymentData,
+                    cashSessionId: cajaActual?.id || paymentData.cashSessionId || null,
+                    cashStationId: cajaActual?.cashStationId || paymentData.cashStationId || null
+                },
                 total,
                 allProducts: usePosCatalogStore.getState().items || [],
                 features,

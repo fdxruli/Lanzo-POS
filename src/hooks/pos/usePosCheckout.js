@@ -1165,7 +1165,11 @@ export function usePosCheckout({
 
             const result = await processSale({
                 order: snapshot.order,
-                paymentData,
+                paymentData: {
+                    ...paymentData,
+                    cashSessionId: pos.cajaActual?.id || paymentData.cashSessionId || null,
+                    cashStationId: pos.cajaActual?.cashStationId || paymentData.cashStationId || null
+                },
                 total: snapshot.total,
                 allProducts: posSearch.menuVisual,
                 features,

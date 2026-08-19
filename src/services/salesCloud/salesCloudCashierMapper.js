@@ -181,6 +181,7 @@ const buildSyntheticPayment = (sale = {}) => {
     change_amount: toNumber(sale.changeAmount, 0),
     reference: firstText(sale.paymentReference, sale.reference),
     cash_session_id: firstText(sale.cash_session_id, sale.cashSessionId),
+    cash_station_id: firstText(sale.cash_station_id, sale.cashStationId),
     cash_movement_id: firstText(sale.cash_movement_id, sale.cashMovementId),
     customer_ledger_id: firstText(sale.customer_ledger_id, sale.customerLedgerId),
     metadata: compactObject({ source: 'synthetic_from_local_sale', snapshotOnly: true })
@@ -195,6 +196,7 @@ const mapPayment = (payment = {}, sale = {}, index = 0) => compactObject({
   change_amount: payment.changeAmount === undefined && payment.change_amount === undefined ? null : toNumber(payment.changeAmount ?? payment.change_amount, 0),
   reference: firstText(payment.reference, payment.ref),
   cash_session_id: firstText(payment.cash_session_id, payment.cashSessionId, sale.cash_session_id, sale.cashSessionId),
+  cash_station_id: firstText(payment.cash_station_id, payment.cashStationId, sale.cash_station_id, sale.cashStationId),
   cash_movement_id: firstText(payment.cash_movement_id, payment.cashMovementId),
   customer_ledger_id: firstText(payment.customer_ledger_id, payment.customerLedgerId),
   metadata: compactObject({ ...(payment.metadata || {}), snapshotOnly: true })
@@ -326,6 +328,9 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
     balance_due: 0,
     currency: sale.currency || 'MXN',
     cash_session_id: firstText(paymentData.cashSessionId, paymentData.cash_session_id, sale.cashSessionId, sale.cash_session_id),
+    cash_station_id: firstText(paymentData.cashStationId, paymentData.cash_station_id, sale.cashStationId, sale.cash_station_id),
+    origin_actor_key: firstText(sale.cashOriginActorKey, sale.originActorKey, paymentData.originActorKey),
+    origin_actor_generation: sale.cashOriginActorGeneration ?? sale.originActorGeneration ?? paymentData.originActorGeneration ?? null,
     metadata: buildSaleMetadata({ sale, paymentData, discount, discountTotal, inventoryEnabled, origin: 'cloud_checkout', phase: inventoryEnabled ? 'fase6c_cloud_sales_inventory' : 'fase6b_cloud_cashier_sales' })
   });
 
@@ -372,6 +377,9 @@ export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = 
     balance_due: balanceDue,
     currency: sale.currency || 'MXN',
     cash_session_id: firstText(paymentData.cashSessionId, paymentData.cash_session_id, sale.cashSessionId, sale.cash_session_id),
+    cash_station_id: firstText(paymentData.cashStationId, paymentData.cash_station_id, sale.cashStationId, sale.cash_station_id),
+    origin_actor_key: firstText(sale.cashOriginActorKey, sale.originActorKey, paymentData.originActorKey),
+    origin_actor_generation: sale.cashOriginActorGeneration ?? sale.originActorGeneration ?? paymentData.originActorGeneration ?? null,
     metadata: buildSaleMetadata({ sale, paymentData, discount, discountTotal, inventoryEnabled, credit: true, origin: 'cloud_credit_checkout', phase: 'fase6d_cloud_sales_credit_ledger' })
   });
 

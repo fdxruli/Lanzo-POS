@@ -3,6 +3,13 @@ import { generateID } from '../utils';
 import { registrarMovimientoCaja } from '../cajaService';
 import { loadCashSessionProjection, loadCashSessionTotals } from '../cajaProjection';
 import { Money } from '../../utils/moneyMath';
+import { getCashStationIdentity } from './cashStation';
+import {
+  CASH_FINANCIAL_CODES,
+  CASH_FINANCIAL_STATUS,
+  CashFinancialError,
+  assertCashActorContextCurrent
+} from './cashFinancialGate';
 import {
   cloudCashMovementToLocal,
   cloudCashSessionToLocal,
@@ -29,28 +36,168 @@ const getAllCashMovements = async () => {
   return db.table(STORES.MOVIMIENTOS_CAJA).toArray();
 };
 
-const matchesActor = (record, { actorKey = null, staffUserId = null, isAdmin = false } = {}) => {
-  if (isAdmin) return true;
+const matchesActor = (record, { actorKey = null, staffUserId = null } = {}) => {
   if (actorKey && record?.actorKey === actorKey) return true;
   if (staffUserId && record?.staffUserId === staffUserId) return true;
-  return !actorKey && !staffUserId;
+  // `isAdmin` is an audit scope hint, never an ownership grant.  A normal
+  // current-session read with no actor can only return legacy records.
+  return !actorKey && !staffUserId && !record?.actorKey && !record?.cashStationId;
+};
+
+const createCashError = (code, message = code, details = {}) => (
+  new CashFinancialError(code, message, details)
+);
+
+const getSessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
+const getSessionStationId = (session) => session?.cashStationId || session?.cash_station_id || null;
+const isOpenSession = (session) => session?.estado === 'abierta' || session?.status === 'open';
+
+const assertLocalSessionOwnership = async ({
+  cashSessionId,
+  actorKey,
+  cashStationId,
+  actorContext = null,
+  operation = 'cash mutation'
+} = {}) => {
+  if (actorContext) assertCashActorContextCurrent(actorContext);
+  const session = await db.table(STORES.CAJAS).get(cashSessionId);
+  if (!session) throw createCashError('CASH_SESSION_NOT_FOUND', 'La sesión de caja no existe.');
+  if (!isOpenSession(session)) throw createCashError(CASH_FINANCIAL_CODES.SESSION_NOT_OPEN, 'La sesión de caja ya no está abierta.');
+
+  const owner = getSessionActorKey(session);
+  const station = getSessionStationId(session);
+  if (!owner || !station) {
+    throw createCashError(CASH_FINANCIAL_CODES.STATION_UNRESOLVED, 'La sesión local no tiene identidad financiera determinista.', {
+      operation,
+      cashSessionId,
+      cashIdentityState: session.cashIdentityState || 'legacy_unresolved'
+    });
+  }
+  if (!actorKey || owner !== actorKey) {
+    throw createCashError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La sesión de caja pertenece a otro actor.', {
+      operation,
+      ownerActorKey: owner,
+      actorKey
+    });
+  }
+  if (!cashStationId || station !== cashStationId) {
+    throw createCashError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La sesión no pertenece a la estación financiera actual.', {
+      operation,
+      sessionStationId: station,
+      cashStationId
+    });
+  }
+  return session;
 };
 
 export const cashLocalRepository = {
-  async getCurrentCashSession({ actorKey = null, staffUserId = null, isAdmin = false } = {}) {
+  async getCurrentCashSession({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, cashStationId = null } = {}) {
     const sessions = await getAllCashSessions();
     const openSessions = sessions
       .filter((cashSession) => cashSession.estado === 'abierta')
-      .filter((cashSession) => matchesActor(cashSession, { actorKey, staffUserId, isAdmin }));
+      .filter((cashSession) => (
+        includeAll
+          ? true
+          : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
+      ))
+      .filter((cashSession) => !cashStationId || cashSession.cashStationId === cashStationId);
 
     return sortByOpenedDesc(openSessions)[0] || null;
   },
 
-  async getHistory({ actorKey = null, staffUserId = null, isAdmin = true, limit = 50 } = {}) {
+  async getHistory({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, limit = 50 } = {}) {
     const sessions = await getAllCashSessions();
     return sortByOpenedDesc(
-      sessions.filter((cashSession) => matchesActor(cashSession, { actorKey, staffUserId, isAdmin }))
+      sessions.filter((cashSession) => (
+        includeAll
+          ? true
+          : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
+      ))
     ).slice(0, limit);
+  },
+
+  async getFinancialState({
+    actorKey = null,
+    cashStationId = null,
+    online = true,
+    cloudEnabled = false,
+    stateKnown = true
+  } = {}) {
+    const sessions = await getAllCashSessions();
+    const openSessions = sessions.filter(isOpenSession);
+    const ownSession = openSessions.find((session) => (
+      getSessionActorKey(session) === actorKey
+      && (!cashStationId || getSessionStationId(session) === cashStationId)
+    )) || null;
+    const stationOpenCashSession = cashStationId
+      ? openSessions.find((session) => getSessionStationId(session) === cashStationId) || null
+      : null;
+    const unresolvedOpen = openSessions.find((session) => !getSessionStationId(session)) || null;
+
+    if (!cashStationId && unresolvedOpen) {
+      return {
+        status: CASH_FINANCIAL_STATUS.BLOCKED,
+        code: CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+        cashSession: null,
+        stationOpenCashSession: unresolvedOpen,
+        cashStationId: null,
+        actorKey,
+        stateKnown
+      };
+    }
+
+    if (cashStationId && unresolvedOpen && !stationOpenCashSession && !ownSession) {
+      return {
+        status: CASH_FINANCIAL_STATUS.BLOCKED,
+        code: CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+        cashSession: null,
+        stationOpenCashSession: unresolvedOpen,
+        cashStationId,
+        actorKey,
+        stateKnown
+      };
+    }
+
+    if (cloudEnabled && !online && !stateKnown && !stationOpenCashSession && !ownSession) {
+      return {
+        status: CASH_FINANCIAL_STATUS.BLOCKED,
+        code: CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE,
+        cashSession: null,
+        stationOpenCashSession: null,
+        cashStationId,
+        actorKey,
+        stateKnown: false,
+        online,
+        cloudEnabled
+      };
+    }
+
+    const stationOwner = getSessionActorKey(stationOpenCashSession);
+    if (stationOpenCashSession && stationOwner !== actorKey) {
+      return {
+        status: CASH_FINANCIAL_STATUS.HANDOFF_REQUIRED,
+        code: CASH_FINANCIAL_CODES.HANDOFF_REQUIRED,
+        cashSession: null,
+        stationOpenCashSession,
+        cashStationId,
+        actorKey,
+        stateKnown,
+        online,
+        cloudEnabled
+      };
+    }
+
+    return {
+      status: ownSession ? CASH_FINANCIAL_STATUS.OWN_SESSION_OPEN : CASH_FINANCIAL_STATUS.NO_SESSION,
+      code: null,
+      cashSession: ownSession,
+      stationOpenCashSession: stationOpenCashSession || ownSession,
+      cashStationId,
+      actorKey,
+      stateKnown,
+      online,
+      cloudEnabled
+    };
   },
 
   async loadProjection(cashSession) {
@@ -63,12 +210,42 @@ export const cashLocalRepository = {
     return loadCashSessionProjection(db, cashSession);
   },
 
-  async openCashSession(openingData) {
+  async openCashSession(openingData = {}) {
     await ensureOpen();
+    const actorKey = openingData.actorKey || openingData.originActorKey || null;
+    if (!actorKey) throw createCashError('CASH_ACTOR_CONTEXT_REQUIRED', 'Se requiere el actor autenticado para abrir caja.');
+    const station = openingData.cashStationId
+      ? {
+        cashStationId: openingData.cashStationId,
+        deviceId: openingData.deviceId || null,
+        identityState: openingData.cashIdentityState || 'canonical'
+      }
+      : await getCashStationIdentity({ deviceId: openingData.deviceId });
+
     return db.transaction('rw', db.table(STORES.CAJAS), async () => {
       const openSessions = await db.table(STORES.CAJAS).where('estado').equals('abierta').toArray();
-      if (openSessions.length > 0) {
-        return sortByOpenedDesc(openSessions)[0];
+      const stationOpen = openSessions.find((session) => session.cashStationId === station.cashStationId) || null;
+      if (stationOpen) {
+        if (getSessionActorKey(stationOpen) === actorKey) return stationOpen;
+        throw createCashError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La estación financiera requiere cierre y reconciliación antes de cambiar de actor.', {
+          cashStationId: station.cashStationId,
+          cashSession: stationOpen
+        });
+      }
+
+      const actorOpen = openSessions.find((session) => getSessionActorKey(session) === actorKey) || null;
+      if (actorOpen) {
+        throw createCashError('CASH_SESSION_ALREADY_OPEN', 'El actor ya tiene una sesión de caja abierta en otra estación.', {
+          cashSession: actorOpen,
+          cashStationId: actorOpen.cashStationId || null
+        });
+      }
+
+      const unresolvedOpen = openSessions.find((session) => !session.cashStationId);
+      if (unresolvedOpen) {
+        throw createCashError(CASH_FINANCIAL_CODES.STATION_UNRESOLVED, 'Existe una caja abierta legacy cuya estación no puede determinarse de forma segura.', {
+          cashSession: unresolvedOpen
+        });
       }
 
       const now = nowIso();
@@ -90,6 +267,15 @@ export const cashLocalRepository = {
         salidas_efectivo: '0',
         diferencia: null,
         es_auto_apertura: openingData.esAutoApertura,
+        actorKey,
+        originActorKey: actorKey,
+        openedByActorKey: actorKey,
+        originActorGeneration: openingData.actorGeneration ?? null,
+        deviceId: station.deviceId || openingData.deviceId || null,
+        deviceRole: openingData.deviceRole || null,
+        cashStationId: station.cashStationId,
+        cashIdentityState: station.identityState || 'canonical',
+        lastIdempotencyKey: openingData.idempotencyKey || null,
         syncStatus: CASH_SYNC_STATUS.LOCAL,
         updatedAt: now
       };
@@ -99,7 +285,14 @@ export const cashLocalRepository = {
     });
   },
 
-  async registerMovement({ cashSessionId, type, amount, concept, idempotencyKey = null, referenceId = null, metadata = {} }) {
+  async registerMovement({ cashSessionId, type, amount, concept, idempotencyKey = null, referenceId = null, metadata = {}, actorKey = null, cashStationId = null, actorContext = null }) {
+    const session = await assertLocalSessionOwnership({
+      cashSessionId,
+      actorKey,
+      cashStationId,
+      actorContext,
+      operation: 'cash movement'
+    });
     const { cajaActualizada, movimiento, alreadyRegistered = false } = await registrarMovimientoCaja(
       cashSessionId,
       type,
@@ -107,10 +300,18 @@ export const cashLocalRepository = {
       concept,
       {
         idempotencyKey,
-        metadata: {
+      metadata: {
           ...metadata,
-          ...(referenceId ? { referenceId } : {})
-        }
+          ...(referenceId ? { referenceId } : {}),
+          actorKey,
+          originActorKey: actorKey,
+          cashStationId,
+          originActorGeneration: actorContext?.generation ?? null,
+          cashSessionId: session.id
+        },
+        actorKey,
+        cashStationId,
+        actorContext
       }
     );
     return {
@@ -121,8 +322,9 @@ export const cashLocalRepository = {
     };
   },
 
-  async adjustInitialFund({ cashSessionId, newAmount, reason, expectedVersion = null }) {
+  async adjustInitialFund({ cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey = null, actorKey = null, cashStationId = null, actorContext = null }) {
     await ensureOpen();
+    await assertLocalSessionOwnership({ cashSessionId, actorKey, cashStationId, actorContext, operation: 'cash initial fund adjustment' });
     const amountSafe = Money.init(newAmount);
     if (amountSafe.lt(0)) throw new Error('El fondo no puede ser negativo.');
 
@@ -131,10 +333,16 @@ export const cashLocalRepository = {
       if (!cashSession) throw new Error('CRITICAL: La caja no existe.');
       if (cashSession.estado !== 'abierta') throw new Error('Solo se puede ajustar una caja abierta.');
 
+      const existingMovement = idempotencyKey
+        ? await db.table(STORES.MOVIMIENTOS_CAJA).where('idempotencyKey').equals(idempotencyKey).first()
+        : null;
+      if (existingMovement) return { success: true, noChange: true, alreadyRegistered: true, cashSession, movement: existingMovement };
+
       const currentVersion = cashSession.updatedAt || cashSession.fecha_apertura;
       if (expectedVersion && currentVersion !== expectedVersion) {
         throw new Error('CONCURRENCY_ERROR: Modificación concurrente detectada.');
       }
+      if (actorContext) assertCashActorContextCurrent(actorContext);
 
       const previousSafe = Money.init(cashSession.monto_inicial || 0);
       const deltaSafe = Money.subtract(amountSafe, previousSafe);
@@ -156,6 +364,12 @@ export const cashLocalRepository = {
         concepto: `Ajuste fondo inicial: $${Money.toNumber(previousSafe).toFixed(2)} -> $${Money.toNumber(amountSafe).toFixed(2)}. Motivo: ${reason}`,
         fecha: now,
         actor: cashSession.responsable_apertura || 'Administrador local',
+        actorKey,
+        originActorKey: actorKey,
+        performedByActorKey: actorKey,
+        cashStationId,
+        idempotencyKey,
+        originActorGeneration: actorContext?.generation ?? null,
         audit: {
           eventType: 'INITIAL_FUND_ADJUSTMENT',
           previousAmount: Money.toExactString(previousSafe),
@@ -171,8 +385,23 @@ export const cashLocalRepository = {
     });
   },
 
-  async closeCashSession({ cashSessionId, countedAmount, nextShiftFund, comments = '', expectedVersion = null }) {
+  async closeCashSession({ cashSessionId, countedAmount, nextShiftFund, comments = '', expectedVersion = null, idempotencyKey = null, actorKey = null, cashStationId = null, actorContext = null }) {
     await ensureOpen();
+    const initialSession = await db.table(STORES.CAJAS).get(cashSessionId);
+    if (initialSession && !isOpenSession(initialSession)) {
+      if (initialSession.estado === 'cerrada'
+        && initialSession.closedByActorKey === actorKey
+        && initialSession.cashStationId === cashStationId) {
+        if (actorContext) assertCashActorContextCurrent(actorContext);
+        return {
+          success: true,
+          alreadyClosed: true,
+          cashSession: initialSession,
+          diferencia: initialSession.diferencia
+        };
+      }
+    }
+    await assertLocalSessionOwnership({ cashSessionId, actorKey, cashStationId, actorContext, operation: 'cash session close' });
     const countedSafe = Money.init(countedAmount);
     const nextFundSafe = Money.init(nextShiftFund);
     if (countedSafe.lt(0) || nextFundSafe.lt(0)) throw new Error('Los montos de auditoria no pueden ser negativos.');
@@ -181,12 +410,25 @@ export const cashLocalRepository = {
     return db.transaction('rw', [db.table(STORES.CAJAS), db.table(STORES.SALES)], async () => {
       const cashSession = await db.table(STORES.CAJAS).get(cashSessionId);
       if (!cashSession) throw new Error('CRITICAL: La caja no existe.');
-      if (cashSession.estado !== 'abierta') throw new Error('La caja ya no está abierta.');
+      if (cashSession.estado !== 'abierta') {
+        if (cashSession.estado === 'cerrada'
+          && cashSession.closedByActorKey === actorKey
+          && cashSession.cashStationId === cashStationId) {
+          return {
+            success: true,
+            alreadyClosed: true,
+            cashSession,
+            diferencia: cashSession.diferencia
+          };
+        }
+        throw new Error('La caja ya no está abierta.');
+      }
 
       const currentVersion = cashSession.updatedAt || cashSession.fecha_apertura;
       if (expectedVersion && currentVersion !== expectedVersion) {
         throw new Error('CONCURRENCY_ERROR: Operación de cierre abortada. La caja fue modificada externamente.');
       }
+      if (actorContext) assertCashActorContextCurrent(actorContext);
 
       const closedAt = nowIso();
       const { ventasContado, abonosFiado } = await loadCashSessionTotals(db, cashSession, closedAt);
@@ -209,6 +451,9 @@ export const cashLocalRepository = {
         diferencia: Money.toExactString(differenceSafe),
         comentarios_auditoria: comments,
         estado: 'cerrada',
+        closedByActorKey: actorKey,
+        closedByDeviceId: cashSession.deviceId || null,
+        lastCloseIdempotencyKey: idempotencyKey || null,
         updatedAt: nowIso(),
         detalle_cierre: {
           ventas_contado: Money.toExactString(ventasContado),

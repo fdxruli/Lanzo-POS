@@ -67,11 +67,19 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     lastSyncedAt: syncedAt,
     cloudUpdatedAt: session.updated_at || session.created_at || syncedAt,
     actorKey: session.actor_key || null,
+    originActorKey: session.opened_by_actor_key || session.actor_key || null,
+    openedByActorKey: session.opened_by_actor_key || session.actor_key || null,
+    closedByActorKey: session.closed_by_actor_key || null,
+    lastIdempotencyKey: session.last_idempotency_key || existing?.lastIdempotencyKey || null,
+    lastCloseIdempotencyKey: session.last_close_idempotency_key || existing?.lastCloseIdempotencyKey || null,
     staffUserId: session.staff_user_id || null,
     adminUserId: session.admin_user_id || null,
-    cashIdentityState: session.cash_identity_state || null,
     deviceId: session.device_id || null,
     deviceRole: session.device_role || null,
+    cashStationId: session.cash_station_id || session.cashStationId || null,
+    cashIdentityState: session.cash_identity_state || session.cashIdentityState || (
+      session.cash_station_id || session.cashStationId ? 'canonical' : 'legacy_unresolved'
+    ),
     scope: session.scope || 'actor',
     cloudCash: true,
     deletedAt: session.deleted_at || null
@@ -128,8 +136,12 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
     lastSyncedAt: syncedAt,
     cloudUpdatedAt: movement.created_at || syncedAt,
     actorKey: movement.actor_key || null,
+    originActorKey: movement.origin_actor_key || movement.actor_key || null,
+    performedByActorKey: movement.performed_by_actor_key || null,
     staffUserId: movement.staff_user_id || null,
     deviceId: movement.device_id || null,
+    cashStationId: movement.cash_station_id || movement.cashStationId || null,
+    idempotencyKey: movement.idempotency_key || movement.idempotencyKey || existing?.idempotencyKey || null,
     cloudCash: true,
     deletedAt: movement.deleted_at || null
   };

@@ -1,5 +1,7 @@
 import { layawayRepository } from './db/layaways';
 import { cashRepository } from './cash/cashRepository';
+import { getCashStationIdentity } from './cash/cashStation';
+import { captureCashActorContext } from './cash/cashFinancialGate';
 
 const OPEN_CASH_MESSAGE = 'Debes abrir Caja antes de registrar un pago de apartado.';
 
@@ -44,6 +46,17 @@ const refundMetadata = ({ layawayId, refundId, customerId, idempotencyKey }) => 
     idempotencyKey
 });
 
+const getLocalCashMutationContext = async () => {
+    const actor = cashRepository.getMode()?.actor || null;
+    if (!actor?.actorKey) return {};
+    const station = await getCashStationIdentity();
+    return {
+        actorKey: actor.actorKey,
+        cashStationId: station.cashStationId,
+        actorContext: captureCashActorContext()
+    };
+};
+
 const stablePayment = ({ layawayId, amount, paymentId, paymentType, customerId }) => {
     const id = paymentId || crypto.randomUUID();
     const idempotencyKey = paymentReference(layawayId, id);
@@ -77,11 +90,13 @@ export const layawayFinancialService = {
         const mode = cashRepository.getMode();
 
         if (!mode.cloudEnabled) {
+            const cashContext = await getLocalCashMutationContext();
             return layawayRepository.create(layawayData, amount, session.id, {
                 payment,
                 cashMovement: {
                     idempotencyKey: payment.idempotencyKey,
                     metadata: cashMetadata({ ...payment, layawayId: layawayData.id }),
+                    ...cashContext,
                     createdAt: payment.date
                 }
             });
@@ -136,9 +151,11 @@ export const layawayFinancialService = {
         });
 
         if (!mode.cloudEnabled) {
+            const cashContext = await getLocalCashMutationContext();
             return layawayRepository.addPaymentWithCash(layawayId, payment, session.id, {
                 idempotencyKey: payment.idempotencyKey,
                 metadata: cashMetadata({ ...payment, layawayId }),
+                ...cashContext,
                 createdAt: payment.date
             });
         }
@@ -181,10 +198,12 @@ export const layawayFinancialService = {
         const pendingRefund = pendingResult.pending || layaway.pendingRefund;
 
         if (!mode.cloudEnabled) {
+            const cashContext = await getLocalCashMutationContext();
             return layawayRepository.cancel(layawayId, reason, false, session.id, {
                 cashMovement: {
                     idempotencyKey: pendingRefund.idempotencyKey,
                     metadata: refundMetadata({ layawayId, ...pendingRefund }),
+                    ...cashContext,
                     createdAt: pendingRefund.createdAt
                 }
             });

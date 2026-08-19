@@ -35,6 +35,12 @@ const createCloudCashOfflineError = () => {
   return error;
 };
 
+const createCashFinancialGateError = (code, message) => {
+  const error = new Error(message || code);
+  error.code = code;
+  return error;
+};
+
 const switchCashOpeningToManual = () => {
   const storeSetter = useAppStore.getState?.().setCashOpeningPolicy;
   if (typeof storeSetter === 'function') {
@@ -60,6 +66,11 @@ const normalizeRepositoryResult = (result = {}) => ({
   readOnly: Boolean(result.readOnly),
   actor: result.actor || cashRepository.getMode().actor,
   mode: result.mode || cashRepository.getMode(),
+  financialStatus: result.financialStatus || result.financial_state?.status || null,
+  financialCode: result.financialCode || result.financial_state?.code || null,
+  financialState: result.financialState || result.financial_state || null,
+  cashStationId: result.cashStationId || result.cash_station_id || null,
+  stationOpenCashSession: result.stationOpenCashSession || result.station_open_cash_session || null,
   adminOpenSessions: result.adminOpenSessions || result.admin_open_sessions || [],
   legacyAdminCashSessions: result.legacyAdminCashSessions || result.legacy_admin_cash_sessions || []
 });
@@ -104,10 +115,19 @@ export function useCaja() {
         montoSugerido: Money.toExactString(Money.init(suggestedAmount)),
         ultimaCajaId: history.find((cashSession) => cashSession.estado === 'cerrada')?.id || null,
         motivo: history.length > 0 ? 'previous_close' : 'first_opening',
-        readOnly: result.readOnly
+        readOnly: result.readOnly,
+        financialStatus: result.financialStatus,
+        financialCode: result.financialCode,
+        stationOpenCashSession: result.stationOpenCashSession
       });
       setHistorialCajas(history);
-      setEstadoCaja('needs_opening');
+      setEstadoCaja(
+        result.financialStatus === 'HANDOFF_REQUIRED'
+          ? 'financial_handoff_required'
+          : result.financialStatus === 'BLOCKED'
+            ? 'financial_blocked'
+            : 'needs_opening'
+      );
       return;
     }
 
@@ -268,6 +288,19 @@ export function useCaja() {
         throw createCloudCashOfflineError();
       }
 
+      if (result?.financialStatus === 'HANDOFF_REQUIRED' || result?.financialCode === 'CASH_HANDOFF_REQUIRED') {
+        throw createCashFinancialGateError(
+          'CASH_HANDOFF_REQUIRED',
+          'La caja anterior sigue abierta. Requiere cierre y reconciliación explícitos antes de cobrar.'
+        );
+      }
+      if (result?.financialStatus === 'BLOCKED' || result?.financialCode === 'CASH_HANDOFF_REQUIRES_ONLINE') {
+        throw createCashFinancialGateError(
+          result.financialCode || 'CASH_HANDOFF_REQUIRES_ONLINE',
+          'No se puede verificar la estación financiera. Conéctate para resolver el estado de caja.'
+        );
+      }
+
       applyCashState(result);
 
       const current = result.cashSession || result.cash_session || null;
@@ -277,6 +310,19 @@ export function useCaja() {
     }
 
     if (getCashOpeningPolicy() !== CASH_OPENING_POLICY.AUTOMATIC) {
+      const localState = await cashRepository.getCurrentCashSession();
+      if (localState?.financialStatus === 'HANDOFF_REQUIRED' || localState?.financialCode === 'CASH_HANDOFF_REQUIRED') {
+        throw createCashFinancialGateError(
+          'CASH_HANDOFF_REQUIRED',
+          'La caja anterior sigue abierta y requiere reconciliación.'
+        );
+      }
+      if (localState?.financialStatus === 'BLOCKED') {
+        throw createCashFinancialGateError(
+          localState.financialCode || 'CASH_STATION_UNRESOLVED',
+          'No se puede determinar de forma segura la estación financiera.'
+        );
+      }
       await sincronizarEstadoCaja();
       throw createCajaNeedsOpeningError('La caja requiere apertura manual. Confirma el fondo, el conteo y el empleado responsable.');
     }

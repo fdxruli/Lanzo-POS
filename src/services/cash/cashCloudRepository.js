@@ -97,6 +97,24 @@ export const cashCloudRepository = {
     });
   },
 
+  async getCashStationState({ licenseKey, force = false }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    return cachedCashRpc({
+      rpcName: 'pos_get_cash_station_state',
+      licenseKey,
+      baseArgs,
+      ttlMs: CLOUD_REQUEST_TTL.SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
+      force,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_get_cash_station_state', baseArgs);
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
+    });
+  },
+
   // IMPORTANTE: estas RPCs de caja son transaccionales y NO deben pasar por CloudRequestManager.
   async openCashSession({ licenseKey, opening, idempotencyKey }) {
     assertSupabase();
