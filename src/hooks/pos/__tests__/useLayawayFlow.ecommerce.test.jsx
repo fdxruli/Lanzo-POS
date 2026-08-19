@@ -16,6 +16,14 @@ vi.mock('../../../services/layawayFinancialService', () => ({
   layawayFinancialService: { create: mocks.createLayaway }
 }));
 
+// The ecommerce-guard suite is intentionally below an already-GRANTED actor
+// boundary. Actor authority states are covered by actorOperationalAuthority;
+// keeping that dependency explicit prevents these unit tests from depending on
+// global ActorRuntime singleton state while production remains fail-closed.
+vi.mock('../../../services/auth/actorOperationalHandoff', () => ({
+  runTrackedActorOperationIfGranted: async (_label, operation) => operation()
+}));
+
 vi.mock('../../../services/Logger', () => ({
   default: { error: vi.fn(), log: vi.fn(), warn: vi.fn() }
 }));
