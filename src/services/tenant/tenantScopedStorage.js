@@ -1,3 +1,11 @@
+import {
+  getActorStorageItem,
+  invalidateActorScopedStorage,
+  isActorScopedLogicalKey,
+  removeActorStorageItem,
+  setActorStorageItem
+} from '../auth/actorScopedStorage';
+
 const PREFIX = 'lanzo:t:';
 let activeNamespace = null;
 let ready = false;
@@ -53,6 +61,7 @@ export const inspectActiveTenantStorageSnapshot = () => {
 
 export const setActiveTenantStorageNamespace = (opaqueId) => {
   if (!/^t_[a-f0-9]{32}$/.test(String(opaqueId || ''))) throw new Error('TENANT_STORAGE_NAMESPACE_INVALID');
+  invalidateActorScopedStorage('tenant_namespace_changed');
   activeNamespace = opaqueId;
   ready = false;
   writesSuspended = true;
@@ -69,6 +78,7 @@ export const hydrateTenantStorageConsumers = async () => Promise.all([...hydrato
 
 export const clearActiveTenantStorageNamespace = () => {
   const opaqueId = activeNamespace;
+  invalidateActorScopedStorage('tenant_namespace_cleared');
   activeNamespace = null;
   ready = false;
   writesSuspended = true;
@@ -86,17 +96,29 @@ const storage = () => {
   }
 };
 export const getTenantStorageItem = (logicalKey) => {
-  const key = ready && physicalKey(logicalKey);
+  if (!ready) return null;
+  if (isActorScopedLogicalKey(logicalKey)) return getActorStorageItem(logicalKey);
+  const key = physicalKey(logicalKey);
   if (!key || !storage()) return null;
   try { return storage().getItem(key); } catch { return null; }
 };
 export const setTenantStorageItem = (logicalKey, value) => {
-  const key = ready && !writesSuspended && physicalKey(logicalKey);
+  if (!ready) return;
+  if (isActorScopedLogicalKey(logicalKey)) {
+    setActorStorageItem(logicalKey, value);
+    return;
+  }
+  const key = !writesSuspended && physicalKey(logicalKey);
   if (!key || !storage()) return;
   try { storage().setItem(key, value); } catch { /* storage quota/privacy must fail closed */ }
 };
 export const removeTenantStorageItem = (logicalKey) => {
-  const key = ready && !writesSuspended && physicalKey(logicalKey);
+  if (!ready) return;
+  if (isActorScopedLogicalKey(logicalKey)) {
+    removeActorStorageItem(logicalKey);
+    return;
+  }
+  const key = !writesSuspended && physicalKey(logicalKey);
   if (!key || !storage()) return;
   try { storage().removeItem(key); } catch { /* never cascade a failed removal */ }
 };
@@ -110,7 +132,9 @@ export const resumeTenantStorageWrites = () => {
   writesSuspended = false;
 };
 
-// Zustand receives logical names only; legacy unscoped keys are never read.
+// Zustand receives logical names only. Actor-owned logical keys are routed to
+// ActorScopedStorage; legacy tenant-scoped values remain physically preserved
+// but are never auto-claimed by the current actor.
 export const tenantScopedZustandStorage = {
   getItem: getTenantStorageItem,
   setItem: setTenantStorageItem,
