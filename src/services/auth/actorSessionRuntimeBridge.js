@@ -214,12 +214,14 @@ export const lockActorRuntime = (reason = 'actor_locked') => {
 };
 
 // A second tab on the same tenant may complete the handoff first. Its durable
-// actor context token invalidates this tab's storage handle; mirror that signal
-// into ActorRuntime so stale UI/actions cannot retain GRANTED authority.
+// actor context token invalidates this tab's storage handle. Lock only this
+// tab's ActorRuntime: publishing another storage context here would invalidate
+// the newly granted actor in the other tab and create a cross-tab ping-pong.
 subscribeActorScopedStorage((event) => {
   if (event?.type !== 'foreign_context') return;
   const state = actorRuntimeController.getState();
   if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) return;
   if (state.tenant?.opaqueId !== event.tenantOpaqueId) return;
-  lockActorRuntime('actor_context_changed_in_other_tab');
+  suspendActorScopedStorageWrites();
+  actorRuntimeController.lock('actor_context_changed_in_other_tab');
 });
