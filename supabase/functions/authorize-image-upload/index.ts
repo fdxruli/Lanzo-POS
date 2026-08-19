@@ -44,6 +44,8 @@ type UploadRequest = {
   license_key?: string;
   device_fingerprint?: string;
   security_token?: string;
+  // Historical field name retained for compatibility. SHARED.TERMINAL.2 uses
+  // it as the current actor session token for either Admin or Staff.
   staff_session_token?: string | null;
   purpose?: string;
   filename?: string;
@@ -105,7 +107,7 @@ async function writeAudit(
   payload: { status: string; code?: string; objectPath?: string; metadata?: Record<string, unknown> }
 ) {
   try {
-    const [licenseHash, deviceHash, staffHash] = await Promise.all([
+    const [licenseHash, deviceHash, actorSessionHash] = await Promise.all([
       sha256Hex(request.license_key),
       sha256Hex(request.device_fingerprint),
       sha256Hex(request.staff_session_token || undefined)
@@ -116,7 +118,8 @@ async function writeAudit(
     await supabase.from('storage_upload_audit').insert({
       license_key_hash: licenseHash,
       device_fingerprint_hash: deviceHash,
-      staff_session_hash: staffHash,
+      // Column name is historical. Value is the current actor session hash.
+      staff_session_hash: actorSessionHash,
       purpose: cleanText(request.purpose || 'misc') || 'misc',
       bucket_id: BUCKET,
       object_path: payload.objectPath || '',
@@ -135,14 +138,16 @@ function validateRequest(input: UploadRequest) {
   const licenseKey = cleanText(input.license_key);
   const deviceFingerprint = cleanText(input.device_fingerprint);
   const securityToken = cleanText(input.security_token);
-  const staffSessionToken = cleanText(input.staff_session_token || '');
+  const actorSessionToken = cleanText(input.staff_session_token || '');
   const purpose = cleanText(input.purpose || 'misc').toLowerCase();
   const filename = cleanText(input.filename);
   const mimeType = cleanText(input.mime_type).toLowerCase();
   const sizeBytes = Number(input.size_bytes);
   const extension = getExtension(filename);
 
-  if (!licenseKey || !deviceFingerprint || !securityToken) return { ok: false as const, code: 'STORAGE_UPLOAD_NOT_ALLOWED' };
+  if (!licenseKey || !deviceFingerprint || !securityToken || !actorSessionToken) {
+    return { ok: false as const, code: 'STORAGE_UPLOAD_NOT_ALLOWED' };
+  }
   if (!ALLOWED_PURPOSES.has(purpose)) return { ok: false as const, code: 'INVALID_IMAGE_PATH' };
   if (!filename || filename.length > 180 || hasUnsafePathContent(filename)) return { ok: false as const, code: 'INVALID_IMAGE_PATH' };
   if (!ALLOWED_EXTENSIONS.has(extension) || !ALLOWED_MIME_TYPES.has(mimeType)) return { ok: false as const, code: 'INVALID_IMAGE_TYPE' };
@@ -158,7 +163,7 @@ function validateRequest(input: UploadRequest) {
     licenseKey,
     deviceFingerprint,
     securityToken,
-    staffSessionToken: staffSessionToken || null,
+    actorSessionToken,
     purpose,
     mimeType,
     sizeBytes: Math.trunc(sizeBytes),
@@ -196,7 +201,7 @@ Deno.serve(async (req: Request) => {
   const rateLimit = await supabase.rpc('enforce_pos_rpc_rate_limit_v2', {
     p_license_key: validation.licenseKey,
     p_device_fingerprint: validation.deviceFingerprint,
-    p_staff_session_token: validation.staffSessionToken,
+    p_staff_session_token: validation.actorSessionToken,
     p_rpc_name: 'authorize_image_upload',
     p_scope: 'STORAGE_UPLOAD',
     p_max_attempts: 30,
@@ -217,50 +222,45 @@ Deno.serve(async (req: Request) => {
     return fail('STORAGE_UPLOAD_RATE_LIMITED', 429, { retry_after_seconds: rateLimit.data?.retry_after_seconds || null });
   }
 
-  const licenseValidation = await supabase.rpc('verify_device_license_unified', {
+  // Canonical SHARED.TERMINAL.2 authority check. This validates the physical
+  // device separately from exactly one authenticated actor session and fails
+  // closed for ambiguous Admin+Staff evidence. Never infer actor from
+  // license_devices.device_role.
+  const actorContextResult = await supabase.rpc('validate_pos_rpc_rate_limit_context', {
     p_license_key: validation.licenseKey,
     p_device_fingerprint: validation.deviceFingerprint,
-    p_security_token: validation.securityToken
+    p_security_token: validation.securityToken,
+    p_staff_session_token: validation.actorSessionToken
   });
 
-  if (licenseValidation.error || licenseValidation.data?.valid !== true) {
+  const actorContext = actorContextResult.data;
+  if (
+    actorContextResult.error ||
+    actorContext?.success !== true ||
+    actorContext?.allowed !== true ||
+    !cleanText(actorContext?.actor_type) ||
+    !cleanText(actorContext?.actor_key)
+  ) {
+    const reason = actorContext?.code || actorContextResult.error?.code || 'ACTOR_SESSION_INVALID';
     await writeAudit(supabase, body, {
       status: 'rejected',
       code: 'STORAGE_UPLOAD_NOT_ALLOWED',
-      metadata: { reason: licenseValidation.data?.reason || licenseValidation.error?.code || null }
+      metadata: { reason }
     });
     return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
   }
 
-  const deviceRole = cleanText(licenseValidation.data?.device_role || '').toLowerCase();
+  const actorType = cleanText(actorContext.actor_type).toLowerCase();
+  const actorKey = cleanText(actorContext.actor_key);
+  const deviceMode = cleanText(actorContext.device_mode).toLowerCase();
 
-  if (deviceRole === 'staff') {
-    if (!validation.staffSessionToken) {
-      await writeAudit(supabase, body, {
-        status: 'rejected',
-        code: 'STORAGE_UPLOAD_NOT_ALLOWED',
-        metadata: { reason: 'STAFF_SESSION_REQUIRED', device_role: deviceRole }
-      });
-      return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
-    }
-
-    const staffValidation = await supabase.rpc('verify_staff_session', {
-      p_license_key: validation.licenseKey,
-      p_device_fingerprint: validation.deviceFingerprint,
-      p_staff_session_token: validation.staffSessionToken
+  if (!['admin', 'staff'].includes(actorType) || !['admin_only', 'staff_only', 'shared'].includes(deviceMode)) {
+    await writeAudit(supabase, body, {
+      status: 'rejected',
+      code: 'STORAGE_UPLOAD_NOT_ALLOWED',
+      metadata: { reason: 'ACTOR_CONTEXT_INVALID' }
     });
-
-    if (staffValidation.error || staffValidation.data?.valid !== true) {
-      await writeAudit(supabase, body, {
-        status: 'rejected',
-        code: 'STORAGE_UPLOAD_NOT_ALLOWED',
-        metadata: {
-          reason: staffValidation.data?.code || staffValidation.error?.code || null,
-          device_role: deviceRole
-        }
-      });
-      return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
-    }
+    return fail('STORAGE_UPLOAD_NOT_ALLOWED', 403);
   }
 
   const licenseHash = await sha256Hex(validation.licenseKey);
@@ -283,7 +283,9 @@ Deno.serve(async (req: Request) => {
     objectPath,
     metadata: {
       signed_upload: true,
-      device_role: deviceRole || null,
+      device_mode: deviceMode,
+      actor_type: actorType,
+      actor_key: actorKey,
       path_contract: `${PUBLIC_PREFIX}/{license_hash}/{purpose}/{uuid}.${validation.extension}`
     }
   });

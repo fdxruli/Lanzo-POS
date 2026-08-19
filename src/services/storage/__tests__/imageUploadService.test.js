@@ -71,7 +71,7 @@ beforeEach(() => {
   mocks.checkInternetConnection.mockResolvedValue(true);
   mocks.getStableDeviceId.mockResolvedValue('device-fixture');
   mocks.getDeviceSecurityToken.mockResolvedValue('security-fixture');
-  mocks.getActorSessionToken.mockResolvedValue(null);
+  mocks.getActorSessionToken.mockResolvedValue('staff-session-fixture');
   mocks.storageFrom.mockReturnValue({
     uploadToSignedUrl: mocks.uploadToSignedUrl,
     getPublicUrl: mocks.getPublicUrl
@@ -118,7 +118,8 @@ describe('imageUploadService image normalization', () => {
         purpose: 'business-cover',
         filename: 'portada.webp',
         mime_type: 'image/webp',
-        size_bytes: optimized.size
+        size_bytes: optimized.size,
+        staff_session_token: 'staff-session-fixture'
       })
     });
     expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
@@ -170,7 +171,8 @@ describe('imageUploadService image normalization', () => {
         purpose: 'product-image',
         filename: 'electrolit-fresa.webp',
         mime_type: 'image/webp',
-        size_bytes: optimized.size
+        size_bytes: optimized.size,
+        staff_session_token: 'staff-session-fixture'
       })
     });
     expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(
@@ -227,7 +229,8 @@ describe('imageUploadService image normalization', () => {
       body: expect.objectContaining({
         purpose: 'product-image',
         filename: 'producto.webp',
-        mime_type: 'image/webp'
+        mime_type: 'image/webp',
+        staff_session_token: 'staff-session-fixture'
       })
     });
     expect(result.purpose).toBe('product-image');
@@ -255,7 +258,8 @@ describe('imageUploadService image normalization', () => {
     expect(mocks.invoke).toHaveBeenCalledWith('authorize-image-upload', {
       body: expect.objectContaining({
         filename: 'portada.png',
-        mime_type: 'image/png'
+        mime_type: 'image/png',
+        staff_session_token: 'staff-session-fixture'
       })
     });
     expect(mocks.uploadToSignedUrl).toHaveBeenCalledWith(

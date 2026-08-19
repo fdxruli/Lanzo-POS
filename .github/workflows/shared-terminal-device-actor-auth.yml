@@ -1,33 +1,41 @@
-name: Shared Terminal Actor Runtime Validation
+name: Shared Terminal Device Actor Auth Validation
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      - 'src/services/auth/**'
-      - 'src/services/tenant/**'
-      - 'src/services/db/**'
-      - 'src/services/supabase.js'
-      - 'src/store/slices/license/**'
-      - 'scripts/compare-shared-terminal-full-suite.mjs'
-      - 'scripts/generate-shared-terminal-actor-runtime-report.mjs'
-      - 'docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md'
+      - 'supabase/migrations/20260818164207_shared_terminal_device_actor_auth.sql'
+      - 'supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql'
+      - 'supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql'
+      - 'supabase/migrations/20260818234329_shared_terminal_staff_occupancy_fix.sql'
+      - 'supabase/tests/shared_terminal_staff_occupancy_test.sql'
+      - 'supabase/functions/authorize-image-upload/index.ts'
+      - 'src/services/deviceModePolicy.js'
+      - 'src/services/deviceModeService.js'
+      - 'src/services/__tests__/deviceModePolicy.test.js'
+      - 'src/services/storage/imageUploadService.js'
+      - 'src/services/storage/__tests__/imageUploadService.test.js'
+      - 'src/services/storage/__tests__/imageUploadService.actorSession.test.js'
+      - 'src/components/common/DeviceManager.jsx'
+      - 'src/store/slices/license/licenseStaffActions.js'
+      - 'src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js'
+      - 'scripts/check-shared-terminal-device-actor-auth.mjs'
       - 'docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md'
-      - '.github/workflows/shared-terminal-actor-runtime.yml'
+      - '.github/workflows/shared-terminal-device-actor-auth.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  SHARED_TERMINAL_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
+  SHARED_TERMINAL_2_BASE_SHA: cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39
 
 jobs:
   focused-validation:
-    name: Focused ActorRuntime / tenant / auth / lint / builds
+    name: Device mode / ActorRuntime / tenant / auth / lint / builds
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
@@ -45,10 +53,21 @@ jobs:
         run: npm ci
 
       - name: git diff --check
-        run: git diff --check "${SHARED_TERMINAL_BASE_SHA}...HEAD"
+        run: git diff --check "${SHARED_TERMINAL_2_BASE_SHA}...HEAD"
 
-      - name: ActorRuntime focused tests
-        run: npx vitest run src/services/auth/__tests__/actorRuntimeController.test.js src/services/auth/__tests__/actorSessionRuntimeBridge.test.js --maxWorkers=4
+      - name: Migration + actor authorization contract guard
+        run: node scripts/check-shared-terminal-device-actor-auth.mjs
+
+      - name: Shared device focused tests
+        run: >-
+          npx vitest run
+          src/services/__tests__/deviceModePolicy.test.js
+          src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js
+          src/services/auth/__tests__/actorRuntimeController.test.js
+          src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
+          src/services/storage/__tests__/imageUploadService.test.js
+          src/services/storage/__tests__/imageUploadService.actorSession.test.js
+          --maxWorkers=4
 
       - name: Tenant isolation and recovery regression
         run: npx vitest run src/services/tenant/__tests__ src/services/db/__tests__ --maxWorkers=4
@@ -60,20 +79,16 @@ jobs:
         if: always()
         run: >-
           npx eslint
-          src/services/auth/actorRuntimeController.js
-          src/services/auth/actorSessionRuntimeBridge.js
-          src/services/auth/__tests__/actorRuntimeController.test.js
-          src/services/auth/__tests__/actorSessionRuntimeBridge.test.js
-          src/store/slices/license/licenseAdminActions.js
+          src/services/deviceModePolicy.js
+          src/services/deviceModeService.js
+          src/services/__tests__/deviceModePolicy.test.js
+          src/services/storage/imageUploadService.js
+          src/services/storage/__tests__/imageUploadService.test.js
+          src/services/storage/__tests__/imageUploadService.actorSession.test.js
+          src/components/common/DeviceManager.jsx
           src/store/slices/license/licenseStaffActions.js
-          src/store/slices/license/licenseBootstrapActions.js
-          src/store/slices/license/licenseProcessingActions.js
-          src/store/slices/license/licenseAdminActions.test.js
-          src/store/slices/license/licenseSessionTransitions.test.js
-          src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js
-          src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js
-          scripts/compare-shared-terminal-full-suite.mjs
-          scripts/generate-shared-terminal-actor-runtime-report.mjs
+          src/store/slices/license/__tests__/sharedDeviceModeRouting.test.js
+          scripts/check-shared-terminal-device-actor-auth.mjs
 
       - name: npm run build
         if: always()
@@ -83,15 +98,19 @@ jobs:
         if: always()
         run: npm run build:store
 
+      - name: npm run build:store:vercel
+        if: always()
+        run: npm run build:store:vercel
+
   full-suite-baseline:
     name: Full suite BASE repeated (observational)
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     steps:
       - name: Checkout exact BASE SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SHARED_TERMINAL_BASE_SHA }}
+          ref: ${{ env.SHARED_TERMINAL_2_BASE_SHA }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -133,7 +152,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shared-terminal-base-full-suite
+          name: shared-terminal-2-base-full-suite
           path: |
             full-suite-*.json
             full-suite-*.log
@@ -143,7 +162,7 @@ jobs:
   full-suite-candidate:
     name: Full suite CANDIDATE repeated (observational)
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     steps:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
@@ -190,7 +209,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shared-terminal-candidate-full-suite
+          name: shared-terminal-2-candidate-full-suite
           path: |
             full-suite-*.json
             full-suite-*.log
@@ -214,13 +233,13 @@ jobs:
       - name: Download BASE evidence
         uses: actions/download-artifact@v4
         with:
-          name: shared-terminal-base-full-suite
+          name: shared-terminal-2-base-full-suite
           path: differential/base
 
       - name: Download CANDIDATE evidence
         uses: actions/download-artifact@v4
         with:
-          name: shared-terminal-candidate-full-suite
+          name: shared-terminal-2-candidate-full-suite
           path: differential/candidate
 
       - name: Compare repeated BASE vs CANDIDATE failure envelope
@@ -236,84 +255,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shared-terminal-full-suite-differential
+          name: shared-terminal-2-full-suite-differential
           path: |
             differential/full-suite-differential.md
             differential/full-suite-differential.json
           if-no-files-found: error
-
-  publish-audit-report:
-    name: Publish idempotent closeout report
-    needs:
-      - focused-validation
-      - differential-regression-gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - name: Checkout exact candidate HEAD
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-
-      - name: Detect report-only HEAD
-        id: report_only
-        shell: bash
-        run: |
-          PHASE1_REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
-          PHASE2_REPORT_PATH="docs/reports/SHARED.TERMINAL.2.DEVICE.ACTOR.AUTH.CUTOVER.md"
-          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD)
-
-          if [[ "${#changed_paths[@]}" -eq 1 ]] && \
-             [[ "${changed_paths[0]}" == "$PHASE1_REPORT_PATH" || "${changed_paths[0]}" == "$PHASE2_REPORT_PATH" ]]; then
-            echo "report_only=true" >> "$GITHUB_OUTPUT"
-            echo "REPORT-ONLY HEAD — validation complete; no republish required."
-            exit 0
-          fi
-
-          echo "report_only=false" >> "$GITHUB_OUTPUT"
-
-      - name: Download differential evidence
-        if: steps.report_only.outputs.report_only != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: shared-terminal-full-suite-differential
-          path: differential
-
-      - name: Generate audit report from exact differential JSON
-        if: steps.report_only.outputs.report_only != 'true'
-        run: node scripts/generate-shared-terminal-actor-runtime-report.mjs differential/full-suite-differential.json
-
-      - name: Publish report only when content changed
-        if: steps.report_only.outputs.report_only != 'true'
-        shell: bash
-        run: |
-          REPORT_PATH="docs/reports/SHARED.TERMINAL.1.ACTOR.RUNTIME.FOUNDATION.md"
-
-          if git ls-files --error-unmatch "$REPORT_PATH" >/dev/null 2>&1; then
-            if git diff --quiet -- "$REPORT_PATH"; then
-              echo "Audit report already matches the reproducible differential evidence."
-              exit 0
-            fi
-          else
-            if [[ ! -f "$REPORT_PATH" ]]; then
-              echo "::error::Audit report generation did not create $REPORT_PATH"
-              exit 1
-            fi
-            echo "Audit report is new and will be published."
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- "$REPORT_PATH"
-
-          if git diff --cached --quiet -- "$REPORT_PATH"; then
-            echo "Audit report produced no staged change; no commit required."
-            exit 0
-          fi
-
-          git commit -m "docs(shared-terminal): publish actor runtime closeout report"
-          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"

@@ -13,6 +13,7 @@ import {
   grantAuthenticatedActorRuntime,
   lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
+import { resolveStaffAuthRoutingDecision } from '../../../services/deviceModePolicy';
 
 import {
   saveLicenseToStorage
@@ -29,26 +30,11 @@ import {
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
-export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => (
-  // The persisted role is authoritative.  A leftover staff token must never
-  // re-route an admin device into the staff flow during a background check.
-  // Only when the role is genuinely unknown do we use a stored token as a
-  // discovery hint.
-  (() => {
-    const canonicalRole =
-      licenseDetails?.device_role ||
-      state.licenseDetails?.device_role ||
-      state.currentDeviceRole ||
-      null;
-
-    if (canonicalRole === 'admin') return false;
-    if (canonicalRole === 'staff') return true;
-    return null;
-  })() ?? (
-    state.appStatus === 'staff_login_required' ||
-    hasStaffSessionToken()
-  )
-);
+export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => {
+  const routingDecision = resolveStaffAuthRoutingDecision(state, licenseDetails);
+  if (routingDecision !== null) return routingDecision;
+  return hasStaffSessionToken();
+};
 
 export const createLicenseStaffActions = ({
   set,
