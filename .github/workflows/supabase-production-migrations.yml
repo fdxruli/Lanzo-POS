@@ -43,7 +43,6 @@ jobs:
       # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ inputs.expected_git_sha }}
           fetch-depth: 0
 
       # supabase/setup-cli v1.5.0
@@ -53,10 +52,29 @@ jobs:
 
       - name: Verify dispatch and immutable target
         shell: bash
+        env:
+          EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
         run: |
           set -euo pipefail
+          expected_git_sha="${EXPECTED_GIT_SHA}"
           test "${GITHUB_REF}" = "refs/heads/main"
-          test "$(git rev-parse HEAD)" = "${{ inputs.expected_git_sha }}"
+          if ! [[ "${expected_git_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "CANONICAL_MIGRATION_GUARD: expected_git_sha must be a full lowercase 40-hex SHA" >&2
+            exit 1
+          fi
+          checked_out_sha="$(git rev-parse HEAD)"
+          current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if ! [[ "${current_main_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "CANONICAL_MIGRATION_GUARD: could not resolve current remote main HEAD" >&2
+            exit 1
+          fi
+          if [ "${checked_out_sha}" != "${expected_git_sha}" ] || [ "${current_main_sha}" != "${expected_git_sha}" ]; then
+            echo "EXPECTED MAIN SHA: ${expected_git_sha}" >&2
+            echo "CURRENT REMOTE MAIN SHA: ${current_main_sha}" >&2
+            echo "CHECKED OUT HEAD: ${checked_out_sha}" >&2
+            echo "CANONICAL_MIGRATION_GUARD: expected_git_sha is not current main HEAD" >&2
+            exit 1
+          fi
           test -n "${SUPABASE_ACCESS_TOKEN}"
           test -n "${SUPABASE_DB_PASSWORD}"
           test "${SUPABASE_PROJECT_REF}" = "odlrhijtfyavryeqivaa"
