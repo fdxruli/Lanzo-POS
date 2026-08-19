@@ -10,7 +10,8 @@ import {
 } from './actorScopedStorage';
 import {
   assertActorOperationalHandoffClear,
-  installActorOperationalHandoffGuards
+  installActorOperationalHandoffGuards,
+  rebindActorOperationalOwnership
 } from './actorOperationalHandoff';
 import {
   actorRuntimeController,
@@ -140,7 +141,7 @@ export const grantAuthenticatedActorRuntime = async ({
     // Install the operational fences before GRANTED. Existing wrappers are
     // idempotent and always capture the actor that starts each async action.
     await installActorOperationalHandoffGuards();
-    assertActorOperationalHandoffClear({ tenant });
+    assertActorOperationalHandoffClear({ tenant, actorKey });
 
     // Preparation is read-only with respect to actor payloads. Legacy tenant-
     // scoped cart/draft state may be detected here, but is never mounted or
@@ -164,6 +165,13 @@ export const grantAuthenticatedActorRuntime = async ({
       tenantOpaqueId: tenant.opaqueId
     });
 
+    // A checkout can survive a same-actor reauthentication, but its immutable
+    // ownership must bind to the new actor generation before writes resume.
+    rebindActorOperationalOwnership({
+      actorKey,
+      tenant,
+      handle: actorRuntimeController.capture()
+    });
     activateActorScopedStorage(granted);
     resumeActorScopedStorageWrites();
     // The actor hydrator uses the existing tenant transition suspension helper;
