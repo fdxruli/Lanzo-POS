@@ -1,4 +1,5 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Check, Copy, Mail, RotateCw } from 'lucide-react';
 import DatabaseRecoveryGate from './DatabaseRecoveryGate';
 import Logger from '../../services/Logger';
 import { cleanupDevelopmentServiceWorkers as defaultCleanupDevelopmentServiceWorkers } from '../../services/devServiceWorkerCleanup';
@@ -16,6 +17,12 @@ import {
   initializeLocalTenantGuard,
   resetLocalTenantGuardForTests
 } from '../../services/tenant/localTenantGuard';
+import { getTenantRuntimeReadiness } from '../../services/db/tenantRuntimeRouter';
+import {
+  buildAdminBootSupportReport,
+  buildSupportMailtoUrl,
+  copyTextToClipboard
+} from '../../services/support/supportContact';
 
 let initialPreparationPromise = null;
 let readyRuntimePromise = null;
@@ -165,47 +172,129 @@ export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) 
   });
 };
 
-const ReadyRuntimeLoading = ({ error, isRecovering, onRetry }) => (
+export const getAdminBootErrorCode = (error) => (
+  error?.code
+  || (/\bTENANT_RUNTIME_NOT_READY\b/.test(error?.message || '')
+    ? 'TENANT_RUNTIME_NOT_READY'
+    : 'ADMIN_RUNTIME_INITIALIZATION_FAILED')
+);
+
+export const classifyAdminBootError = (error) => (
+  isRecoverableAdminStartupError(error) ? 'asset_load_failure' : 'application_runtime'
+);
+
+const ReadyRuntimeLoading = ({
+  error,
+  isRecovering,
+  onAssetRecovery,
+  onRetryStart,
+  onSendSupport,
+  onCopySupport,
+  copied,
+  supportActionError,
+  isOnline
+}) => {
+  const assetFailure = error && classifyAdminBootError(error) === 'asset_load_failure';
+  const code = error ? getAdminBootErrorCode(error) : null;
+
+  return (
   <main className="app-boot-recovery" role={error ? 'alert' : 'status'} aria-live="polite">
     <section className="app-boot-recovery__card">
       <h1>
         {isRecovering
           ? 'Actualizando Lanzo POS...'
           : error
-            ? 'No se pudo cargar Lanzo POS'
+            ? assetFailure ? 'No se pudo cargar Lanzo POS' : 'No se pudo iniciar Lanzo POS'
             : 'Preparando Lanzo POS...'}
       </h1>
       <p>
         {isRecovering
           ? 'Estamos reemplazando los archivos anteriores por la versión más reciente.'
           : error
-            ? 'La base local está lista, pero los archivos administrativos no pudieron cargarse. Actualiza para recuperar el sistema.'
+            ? assetFailure
+              ? 'La base local está lista, pero los archivos administrativos no pudieron cargarse. Actualiza para recuperar el sistema.'
+              : 'La base local está protegida, pero Lanzo no pudo completar el inicio de la aplicación. Tus datos locales no se han eliminado.'
             : 'La base local está lista. Estamos cargando el entorno administrativo.'}
       </p>
+      {code && !assetFailure && <p><strong>Código:</strong> {code}</p>}
       {error && !isRecovering && (
-        <button
-          type="button"
-          className="ui-button ui-button--primary"
-          onClick={onRetry}
-        >
-          Actualizar Lanzo POS
-        </button>
+        assetFailure ? (
+          <button type="button" className="ui-button ui-button--primary" onClick={onAssetRecovery}>
+            Actualizar Lanzo POS
+          </button>
+        ) : (
+          <>
+            {!isOnline && (
+              <p className="ui-alert ui-alert--warning" role="status">
+                Estás sin conexión. Tus datos locales siguen preservados; puedes copiar el diagnóstico y enviarlo después.
+              </p>
+            )}
+            {supportActionError && <p className="ui-alert ui-alert--danger" role="alert">{supportActionError}</p>}
+            <div className="app-boot-recovery__actions">
+              <button type="button" className="ui-button ui-button--primary" onClick={onRetryStart}>
+                <RotateCw size={18} aria-hidden="true" />
+                Reintentar inicio
+              </button>
+              <button type="button" className="ui-button ui-button--secondary" onClick={onSendSupport}>
+                <Mail size={18} aria-hidden="true" />
+                Enviar reporte a soporte
+              </button>
+              <button type="button" className="ui-button ui-button--secondary" onClick={onCopySupport}>
+                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+              </button>
+            </div>
+          </>
+        )
       )}
     </section>
   </main>
-);
+  );
+};
 
 export default function PosApplicationBootstrap({
   databaseRuntime,
   cleanupDevelopmentServiceWorkers = defaultCleanupDevelopmentServiceWorkers,
   loadReadyRuntime = loadPosReadyRuntime,
   recoverStartup = recoverAdminStartup,
-  completeStartupRecovery = completeAdminStartupRecovery
+  completeStartupRecovery = completeAdminStartupRecovery,
+  reloadPage = () => window.location.reload(),
+  openSupportMailto = (url) => { window.location.href = url; }
 }) {
   const recovery = useDatabaseRecoveryState();
   const [ReadyApplication, setReadyApplication] = useState(null);
   const [readyRuntimeError, setReadyRuntimeError] = useState(null);
   const [isRecoveringRuntime, setIsRecoveringRuntime] = useState(false);
+  const [supportActionError, setSupportActionError] = useState('');
+  const [copiedSupportReport, setCopiedSupportReport] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => globalThis.navigator?.onLine !== false);
+  const copyTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    const updateOnlineState = () => setIsOnline(globalThis.navigator?.onLine !== false);
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+    return () => {
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
+
+  const supportReport = useMemo(() => {
+    if (!readyRuntimeError || classifyAdminBootError(readyRuntimeError) === 'asset_load_failure') return null;
+    const readiness = getTenantRuntimeReadiness();
+    return buildAdminBootSupportReport({
+      errorCode: getAdminBootErrorCode(readyRuntimeError),
+      message: readyRuntimeError?.message,
+      classification: classifyAdminBootError(readyRuntimeError),
+      stage: 'ready_runtime_loading',
+      databaseRecoveryStatus: recovery.status,
+      tenantRuntimeReady: readiness.ready,
+      assetRecoveryAttempted: false,
+      assetRecoveryResult: 'No intentada para error de runtime'
+    }, { online: isOnline });
+  }, [isOnline, readyRuntimeError, recovery.status]);
 
   useEffect(() => {
     let active = true;
@@ -241,6 +330,8 @@ export default function PosApplicationBootstrap({
         if (!active) return;
         Logger.error('[Boot] No se pudo cargar el runtime administrativo después de READY.', error);
         setReadyRuntimeError(error);
+        setSupportActionError('');
+        setCopiedSupportReport(false);
 
         if (!isRecoverableAdminStartupError(error)) return;
 
@@ -267,7 +358,7 @@ export default function PosApplicationBootstrap({
     recovery.status
   ]);
 
-  const retryReadyRuntimeRecovery = async () => {
+  const retryAssetReadyRuntimeRecovery = async () => {
     if (!readyRuntimeError || isRecoveringRuntime) return;
 
     setIsRecoveringRuntime(true);
@@ -283,6 +374,29 @@ export default function PosApplicationBootstrap({
     }
   };
 
+  const retryAdministrativeStart = () => reloadPage();
+
+  const sendSupportReport = () => {
+    if (!supportReport) return;
+    openSupportMailto(buildSupportMailtoUrl({
+      subject: `[Soporte Lanzo POS] Error de inicio - ${getAdminBootErrorCode(readyRuntimeError)}`,
+      body: supportReport
+    }));
+  };
+
+  const copySupportReport = async () => {
+    if (!supportReport) return;
+    setSupportActionError('');
+    const copied = await copyTextToClipboard(supportReport);
+    if (!copied) {
+      setSupportActionError('No se pudo copiar el diagnóstico automáticamente. Intenta nuevamente desde un navegador compatible.');
+      return;
+    }
+    setCopiedSupportReport(true);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = setTimeout(() => setCopiedSupportReport(false), 3_000);
+  };
+
   return (
     <DatabaseRecoveryGate>
       {ReadyApplication
@@ -291,7 +405,13 @@ export default function PosApplicationBootstrap({
           <ReadyRuntimeLoading
             error={readyRuntimeError}
             isRecovering={isRecoveringRuntime}
-            onRetry={retryReadyRuntimeRecovery}
+            onAssetRecovery={retryAssetReadyRuntimeRecovery}
+            onRetryStart={retryAdministrativeStart}
+            onSendSupport={sendSupportReport}
+            onCopySupport={() => { void copySupportReport(); }}
+            copied={copiedSupportReport}
+            supportActionError={supportActionError}
+            isOnline={isOnline}
           />
         )}
     </DatabaseRecoveryGate>

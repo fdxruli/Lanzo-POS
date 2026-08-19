@@ -52,7 +52,11 @@ export const configureActorOperationalPersistence = ({
   stores = null,
   salesStore = null
 } = {}) => {
-  if (!db || typeof db.table !== 'function') {
+  // `db` is the fail-closed tenant runtime Proxy. Reading `db.table` here
+  // would itself be a tenant operation, even though this function only saves
+  // a provider for a later authenticated handoff. Keep registration import-
+  // safe; the actual table access remains guarded in the real operation.
+  if (!db) {
     throw new TypeError('Actor operational persistence requires a database table provider');
   }
   const resolvedSalesStore = salesStore || stores?.SALES;

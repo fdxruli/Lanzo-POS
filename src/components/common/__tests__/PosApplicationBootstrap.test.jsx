@@ -2,7 +2,7 @@
 
 import 'fake-indexeddb/auto';
 import { StrictMode } from 'react';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gateRuntimeMocks = vi.hoisted(() => ({
@@ -97,7 +97,8 @@ const createReadyRuntime = ({ storageResult = { isVolatile: false } } = {}) => {
 const renderBootstrap = ({
   prepareLocalDatabase,
   loadReadyRuntime = vi.fn(),
-  cleanupDevelopmentServiceWorkers = vi.fn().mockResolvedValue(true)
+  cleanupDevelopmentServiceWorkers = vi.fn().mockResolvedValue(true),
+  ...bootstrapProps
 }) => {
   const databaseRuntime = { prepareLocalDatabase };
 
@@ -107,6 +108,7 @@ const renderBootstrap = ({
         databaseRuntime={databaseRuntime}
         cleanupDevelopmentServiceWorkers={cleanupDevelopmentServiceWorkers}
         loadReadyRuntime={loadReadyRuntime}
+        {...bootstrapProps}
       />
     </StrictMode>
   );
@@ -281,6 +283,67 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       isRetryable: false,
       requiresMigration: false
     });
+  });
+
+  it('classifies TENANT_RUNTIME_NOT_READY as a runtime boot failure and preserves the safe retry path', async () => {
+    const error = Object.assign(new Error('TENANT_RUNTIME_NOT_READY'), {
+      code: 'TENANT_RUNTIME_NOT_READY'
+    });
+    const prepareLocalDatabase = vi.fn(async () => {
+      setRecovery(DATABASE_RECOVERY_STATUS.READY);
+      return { ready: true };
+    });
+    const loadReadyRuntime = vi.fn().mockRejectedValue(error);
+    const recoverStartup = vi.fn();
+    const reloadPage = vi.fn();
+    const openSupportMailto = vi.fn();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) }
+    });
+
+    renderBootstrap({
+      prepareLocalDatabase,
+      loadReadyRuntime,
+      recoverStartup,
+      reloadPage,
+      openSupportMailto
+    });
+
+    expect(await screen.findByRole('heading', { name: /no se pudo iniciar lanzo pos/i })).toBeInTheDocument();
+    expect(screen.getByText('TENANT_RUNTIME_NOT_READY')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reintentar inicio/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
+    expect(recoverStartup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /reintentar inicio/i }));
+    expect(reloadPage).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    expect(openSupportMailto).toHaveBeenCalledWith(expect.stringContaining('TENANT_RUNTIME_NOT_READY'));
+
+    fireEvent.click(screen.getByRole('button', { name: /copiar diagnóstico/i }));
+    expect(await screen.findByRole('button', { name: /diagnóstico copiado/i })).toBeInTheDocument();
+  });
+
+  it('keeps the update action exclusively for a ChunkLoadError', async () => {
+    const error = Object.assign(new Error('Loading chunk 123 failed'), { name: 'ChunkLoadError' });
+    const prepareLocalDatabase = vi.fn(async () => {
+      setRecovery(DATABASE_RECOVERY_STATUS.READY);
+      return { ready: true };
+    });
+    const recoverStartup = vi.fn().mockResolvedValue({ status: 'already-attempted' });
+
+    renderBootstrap({
+      prepareLocalDatabase,
+      loadReadyRuntime: vi.fn().mockRejectedValue(error),
+      recoverStartup
+    });
+
+    expect(await screen.findByRole('button', { name: /actualizar lanzo pos/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reintentar inicio/i })).not.toBeInTheDocument();
+    expect(recoverStartup).toHaveBeenCalledWith({ error });
   });
 
   it('deduplicates preparation and runtime activation under StrictMode', async () => {

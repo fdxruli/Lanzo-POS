@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  buildAdminBootSupportReport,
   buildDatabaseRecoverySupportReport,
   buildSupportEmailPayload,
   buildSupportMailtoUrl,
@@ -82,5 +83,38 @@ describe('supportContact', () => {
     expect(report).toContain('identificador redactado');
     expect(report).not.toContain('opaque-tenant-id');
     expect(report).not.toMatch(/license key|token|password|\bpin\b/i);
+  });
+
+  it('construye un reporte de inicio administrativo con metadatos acotados y sin secretos', () => {
+    const report = buildAdminBootSupportReport({
+      errorCode: 'TENANT_RUNTIME_NOT_READY',
+      message: 'token: abcdefghijkl license_key LZ-SECRET-12345 LanzoDB_t_t_12345678901234567890',
+      classification: 'application_runtime',
+      stage: 'ready_runtime_loading',
+      databaseRecoveryStatus: 'ready',
+      tenantRuntimeReady: false,
+      assetRecoveryAttempted: false,
+      assetRecoveryResult: 'No intentada para error de runtime'
+    }, {
+      appVersion: '4.0.0',
+      buildCommit: 'abcdef1',
+      buildDate: '2026-08-19T00:00:00.000Z',
+      userAgent: 'Lanzo Test Browser',
+      platform: 'TestOS',
+      language: 'es-MX',
+      online: false,
+      path: '/ventas',
+      now: new Date('2026-08-19T06:00:00.000Z')
+    });
+
+    expect(report).toContain('TENANT_RUNTIME_NOT_READY');
+    expect(report).toContain('Etapa de inicio: ready_runtime_loading');
+    expect(report).toContain('Tenant runtime listo: No');
+    expect(report).toContain('Commit de build: abcdef1');
+    expect(report).toContain('Fecha de build: 2026-08-19T00:00:00.000Z');
+    expect(report).toContain('Estado de red: Offline');
+    expect(report).not.toContain('LZ-SECRET-12345');
+    expect(report).not.toContain('t_12345678901234567890');
+    expect(report).not.toContain('abcdefghijkl');
   });
 });
