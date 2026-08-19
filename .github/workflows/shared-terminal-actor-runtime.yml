@@ -126,6 +126,37 @@ jobs:
           npm run build:store
           npm run build:store:vercel
 
+      - name: BASE PublicStore focused repetitions (baseline evidence)
+        shell: bash
+        run: |
+          cases=(
+            "bfcache|rebuilds the first page on BFCache restore without clearing visible products"
+            "site-version|PublicStore published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision"
+          )
+          failures=0
+          for spec in "${cases[@]}"; do
+            slug="${spec%%|*}"
+            test_name="${spec#*|}"
+            for i in $(seq 1 20); do
+              echo "BASE PublicStore ${slug} repetition ${i}"
+              set +e
+              npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+                -t "${test_name}" \
+                --maxWorkers=4 \
+                --reporter=json \
+                --outputFile="public-store-${slug}-${i}.json" \
+                > "public-store-${slug}-${i}.log" 2>&1
+              code=$?
+              set -e
+              echo "$code" > "public-store-${slug}-${i}.exit"
+              if [ "$code" -ne 0 ]; then
+                failures=$((failures + 1))
+                echo "BASE PublicStore ${slug} repetition ${i} observational failure: exit ${code}"
+              fi
+            done
+          done
+          echo "BASE PublicStore focused observational failures: ${failures}/40"
+
       - name: BASE raw full-suite repetitions
         shell: bash
         run: |
@@ -156,6 +187,9 @@ jobs:
             full-suite-*.json
             full-suite-*.log
             full-suite-*.exit
+            public-store-*.json
+            public-store-*.log
+            public-store-*.exit
           if-no-files-found: error
 
   full-suite-candidate:
@@ -182,6 +216,37 @@ jobs:
           npm run build
           npm run build:store
           npm run build:store:vercel
+
+      - name: CANDIDATE PublicStore focused repetitions (candidate evidence)
+        shell: bash
+        run: |
+          cases=(
+            "bfcache|rebuilds the first page on BFCache restore without clearing visible products"
+            "site-version|PublicStore published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision"
+          )
+          failures=0
+          for spec in "${cases[@]}"; do
+            slug="${spec%%|*}"
+            test_name="${spec#*|}"
+            for i in $(seq 1 20); do
+              echo "CANDIDATE PublicStore ${slug} repetition ${i}"
+              set +e
+              npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
+                -t "${test_name}" \
+                --maxWorkers=4 \
+                --reporter=json \
+                --outputFile="public-store-${slug}-${i}.json" \
+                > "public-store-${slug}-${i}.log" 2>&1
+              code=$?
+              set -e
+              echo "$code" > "public-store-${slug}-${i}.exit"
+              if [ "$code" -ne 0 ]; then
+                failures=$((failures + 1))
+                echo "CANDIDATE PublicStore ${slug} repetition ${i} observational failure: exit ${code}"
+              fi
+            done
+          done
+          echo "CANDIDATE PublicStore focused observational failures: ${failures}/40"
 
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
@@ -213,6 +278,9 @@ jobs:
             full-suite-*.json
             full-suite-*.log
             full-suite-*.exit
+            public-store-*.json
+            public-store-*.log
+            public-store-*.exit
           if-no-files-found: error
 
   differential-regression-gate:

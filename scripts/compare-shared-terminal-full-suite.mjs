@@ -21,7 +21,7 @@ const findReports = (dir, label) => {
 const findFocusedReports = (dir, label) => {
   if (!fs.existsSync(dir)) throw new Error(`${label} report directory missing: ${dir}`);
   return fs.readdirSync(dir)
-    .filter((name) => /^public-store-bfcache-\d+\.json$/.test(name))
+    .filter((name) => /^public-store-(?:bfcache|site-version)-\d+\.json$/.test(name))
     .sort()
     .map((name) => path.join(dir, name));
 };
@@ -117,8 +117,8 @@ if (baseFocusedPaths.length > 0 && baseFocusedPaths.length < 10) {
 }
 const baseReports = basePaths.map((reportPath, index) => readReport(reportPath, `BASE#${index + 1}`));
 const candidateReports = candidatePaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE#${index + 1}`));
-const baseFocusedReports = baseFocusedPaths.map((reportPath, index) => readReport(reportPath, `BASE focused BFCache#${index + 1}`));
-const candidateFocusedReports = candidateFocusedPaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE focused BFCache#${index + 1}`));
+const baseFocusedReports = baseFocusedPaths.map((reportPath, index) => readReport(reportPath, `BASE focused PublicStore#${index + 1}`));
+const candidateFocusedReports = candidateFocusedPaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE focused PublicStore#${index + 1}`));
 const baseFailuresByRun = baseReports.map(collectFailures);
 const candidateFailuresByRun = candidateReports.map(collectFailures);
 const baseFocusedFailuresByRun = baseFocusedReports.map(collectFailures);
@@ -245,8 +245,8 @@ const markdown = [
   ...(baseFocusedRunCounts.length
     ? [
         '',
-        ...runLine('BASE focused BFCache', baseFocusedRunCounts),
-        ...runLine('CANDIDATE focused BFCache', candidateFocusedRunCounts)
+        ...runLine('BASE focused PublicStore', baseFocusedRunCounts),
+        ...runLine('CANDIDATE focused PublicStore', candidateFocusedRunCounts)
       ]
     : []),
   `- NEW/CHANGED REGRESSIONS: ${summary.newRegressionCount}`,
