@@ -1,8 +1,19 @@
-import { db as tenantRuntimeDb } from '../db/tenantRuntimeRouter';
+import { db as tenantRuntimeDb, getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
+import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
+import {
+  activateActorScopedStorage,
+  invalidateActorScopedStorage,
+  prepareActorScopedStorage,
+  resumeActorScopedStorageWrites,
+  subscribeActorScopedStorage,
+  suspendActorScopedStorageWrites
+} from './actorScopedStorage';
 import {
   actorRuntimeController,
   ActorRuntimeError,
-  ACTOR_RUNTIME_ERROR_CODES
+  ACTOR_RUNTIME_ERROR_CODES,
+  ACTOR_RUNTIME_STATUS,
+  createActorKey
 } from './actorRuntimeController';
 
 export const ACTOR_SESSION_AMBIGUOUS = 'ACTOR_SESSION_AMBIGUOUS';
@@ -95,6 +106,14 @@ export const beginActorRuntimeAuthentication = (actorType) => (
   actorRuntimeController.beginAuthentication({ actorType })
 );
 
+const requireTenantRuntime = () => {
+  const readiness = getTenantRuntimeReadiness();
+  if (!readiness.ready || !readiness.runtime) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.TENANT_NOT_READY);
+  }
+  return readiness.runtime;
+};
+
 export const grantAuthenticatedActorRuntime = async ({
   actorType,
   actor,
@@ -103,12 +122,51 @@ export const grantAuthenticatedActorRuntime = async ({
   const actorId = resolveStableActorId(actorType, actor);
   if (!actorId) throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID, { actorType });
   const binding = await readActorSessionBinding(actorType);
-  return actorRuntimeController.grant({
-    actorType,
-    actorId,
-    sessionId: binding.sessionId,
-    permissions: permissions ?? getExplicitActorPermissions(actorType, actor)
-  });
+  const stateBeforeHandoff = actorRuntimeController.getState();
+  if (stateBeforeHandoff.status !== ACTOR_RUNTIME_STATUS.AUTHENTICATING) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
+  }
+
+  const tenant = requireTenantRuntime();
+  const actorKey = createActorKey(actorType, actorId);
+  const nextActorGeneration = stateBeforeHandoff.generation + 1;
+
+  actorRuntimeController.beginHandoffCheck();
+  try {
+    // Preparation is read-only with respect to actor payloads. Legacy tenant-
+    // scoped cart/draft state may be detected here, but is never mounted or
+    // attributed to the actor that happens to authenticate first.
+    await prepareActorScopedStorage({
+      tenant,
+      actorKey,
+      actorGeneration: nextActorGeneration
+    });
+
+    // ActiveOrders is the registered tenant storage consumer today. Rehydrate
+    // while actor writes remain suspended so the previous actor's in-memory
+    // session is replaced before GRANTED.
+    await hydrateTenantStorageConsumers();
+
+    const granted = actorRuntimeController.grant({
+      actorType,
+      actorId,
+      sessionId: binding.sessionId,
+      permissions: permissions ?? getExplicitActorPermissions(actorType, actor),
+      tenantOpaqueId: tenant.opaqueId
+    });
+
+    activateActorScopedStorage(granted);
+    resumeActorScopedStorageWrites();
+    // The actor hydrator uses the existing tenant transition suspension helper;
+    // restore tenant-shared browser writes only after the handoff succeeded.
+    resumeTenantStorageWrites();
+    return granted;
+  } catch (error) {
+    suspendActorScopedStorageWrites();
+    invalidateActorScopedStorage('actor_handoff_failed');
+    actorRuntimeController.lock('actor_handoff_failed');
+    throw error;
+  }
 };
 
 /**
@@ -126,7 +184,7 @@ export const restoreActorRuntimeFromCurrentSessionCache = async ({
     await readCurrentActorSessionCache();
     return await grantAuthenticatedActorRuntime({ actorType, actor, permissions });
   } catch (error) {
-    actorRuntimeController.lock(
+    lockActorRuntime(
       error?.code === ACTOR_SESSION_AMBIGUOUS
         ? 'ambiguous_actor_session_evidence'
         : `${actorType || 'unknown'}_session_restore_failed`
@@ -135,4 +193,20 @@ export const restoreActorRuntimeFromCurrentSessionCache = async ({
   }
 };
 
-export const lockActorRuntime = (reason = 'actor_locked') => actorRuntimeController.lock(reason);
+export const lockActorRuntime = (reason = 'actor_locked') => {
+  suspendActorScopedStorageWrites();
+  const locked = actorRuntimeController.lock(reason);
+  invalidateActorScopedStorage(reason);
+  return locked;
+};
+
+// A second tab on the same tenant may complete the handoff first. Its durable
+// actor context token invalidates this tab's storage handle; mirror that signal
+// into ActorRuntime so stale UI/actions cannot retain GRANTED authority.
+subscribeActorScopedStorage((event) => {
+  if (event?.type !== 'foreign_context') return;
+  const state = actorRuntimeController.getState();
+  if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) return;
+  if (state.tenant?.opaqueId !== event.tenantOpaqueId) return;
+  lockActorRuntime('actor_context_changed_in_other_tab');
+});
