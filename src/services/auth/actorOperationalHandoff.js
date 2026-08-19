@@ -15,9 +15,11 @@ export const ACTOR_HANDOFF_CHECKOUT_OWNED = 'ACTOR_HANDOFF_CHECKOUT_OWNED';
 const pendingOperations = new Map();
 const checkoutOwnership = new Map();
 let operationSequence = 0;
-let installPromise = null;
+let guardsEnabled = false;
 let operationalDb = null;
 let operationalStores = null;
+let activeOrdersRegistration = null;
+let orderStoreRegistration = null;
 
 const nextOperationId = (label) => `${label}:${++operationSequence}`;
 
@@ -49,8 +51,32 @@ export const getActorCheckoutOwnerships = () => Object.freeze(
   [...checkoutOwnership.values()].map(toCheckoutSnapshot)
 );
 
+export const configureActorOperationalPersistence = ({
+  db,
+  stores = null,
+  salesStore = null
+} = {}) => {
+  if (!db || typeof db.table !== 'function') {
+    throw new TypeError('Actor operational persistence requires a database table provider');
+  }
+  const resolvedSalesStore = salesStore || stores?.SALES;
+  if (!resolvedSalesStore) {
+    throw new TypeError('Actor operational persistence requires the SALES store name');
+  }
+  operationalDb = db;
+  operationalStores = Object.freeze({
+    ...(stores || {}),
+    SALES: resolvedSalesStore
+  });
+  return true;
+};
+
 export const refreshPersistedActorCheckoutOwnership = async ({ tenant = null } = {}) => {
-  if (!operationalDb || !operationalStores?.SALES) return getActorCheckoutOwnerships();
+  if (!operationalDb || !operationalStores?.SALES) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_LOCKED, {
+      reason: 'actor_operational_persistence_not_configured'
+    });
+  }
 
   const lockedSales = await operationalDb.table(operationalStores.SALES)
     .filter((sale) => sale?.isLockedForCheckout === true)
@@ -277,9 +303,6 @@ const installLoadOrdersGuard = (useActiveOrders) => {
               ? state.currentOrderId
               : (actorOrders.keys().next().value || null);
 
-            // Only the actor-owned editing set is allowed back into persisted
-            // ActiveOrders. DB-only open SALES remain tenant-shared business
-            // records and can still be explicitly loaded by order id.
             resumeActorScopedStorageWrites();
             useActiveOrders.setState({
               activeOrders: actorOrders,
@@ -302,7 +325,8 @@ const installLoadOrdersGuard = (useActiveOrders) => {
   });
 };
 
-const installActiveOrderGuards = (useActiveOrders, db, STORES) => {
+const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
+  if (!useActiveOrders || !db || !STORES?.SALES) return false;
   const state = useActiveOrders.getState();
   const patch = {};
 
@@ -406,9 +430,11 @@ const installActiveOrderGuards = (useActiveOrders, db, STORES) => {
   if (guardedLoadOrders) patch.loadOrdersFromDB = guardedLoadOrders;
 
   if (Object.keys(patch).length > 0) useActiveOrders.setState(patch);
+  return true;
 };
 
 const installOrderStoreAsyncGuards = (useOrderStore) => {
+  if (!useOrderStore) return false;
   const state = useOrderStore.getState();
   const patch = {};
 
@@ -422,6 +448,7 @@ const installOrderStoreAsyncGuards = (useOrderStore) => {
   }
 
   if (Object.keys(patch).length > 0) useOrderStore.setState(patch);
+  return true;
 };
 
 const toFiniteNumber = (value) => {
@@ -438,16 +465,14 @@ const installHardenedSmartItem = ({
   getSortedBatchesForProduct,
   isCommercialVariantProduct
 }) => {
-  const current = useOrderStore.getState();
-  if (isGuarded(current.addSmartItem)) return;
+  const current = useOrderStore?.getState?.();
+  if (!current || isGuarded(current.addSmartItem)) return false;
 
   const hardenedAddSmartItem = markGuarded((product) => {
     const handle = actorRuntimeController.capture();
     const targetOrderId = useActiveOrders.getState().currentOrderId;
     const productToAdd = { ...product };
 
-    // Preserve the existing immediate cart UX. The actor handle is captured
-    // before the synchronous mutation and therefore represents its real owner.
     useOrderStore.getState().addItem(productToAdd);
 
     if (!product?.batchManagement?.enabled || product?.batchId || !product?.id || !targetOrderId) {
@@ -516,55 +541,52 @@ const installHardenedSmartItem = ({
   });
 
   useOrderStore.setState({ addSmartItem: hardenedAddSmartItem });
+  return true;
 };
 
-const installGuards = async () => {
-  const [
-    orderStoreModule,
-    activeOrdersModule,
-    dexieModule,
-    dbUtilsModule,
-    inventoryFlowModule,
-    variantsModule
-  ] = await Promise.all([
-    import('../../store/useOrderStore.jsx'),
-    import('../../hooks/pos/useActiveOrders.js'),
-    import('../db/dexie.js'),
-    import('../db/utils.js'),
-    import('../sales/inventoryFlow.js'),
-    import('../products/commercialVariants.js')
-  ]);
-
-  const useOrderStore = orderStoreModule.useOrderStore;
-  const useActiveOrders = activeOrdersModule.useActiveOrders;
-  if (!useOrderStore || !useActiveOrders) {
-    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_LOCKED, {
-      reason: 'actor_operational_store_missing'
-    });
+const installRegisteredGuards = () => {
+  if (!guardsEnabled) return;
+  if (activeOrdersRegistration) installActiveOrderGuards(activeOrdersRegistration);
+  if (orderStoreRegistration) {
+    installOrderStoreAsyncGuards(orderStoreRegistration.useOrderStore);
+    installHardenedSmartItem(orderStoreRegistration);
   }
+};
 
-  operationalDb = dexieModule.db;
-  operationalStores = dexieModule.STORES;
-  installActiveOrderGuards(useActiveOrders, operationalDb, operationalStores);
-  installOrderStoreAsyncGuards(useOrderStore);
-  installHardenedSmartItem({
-    useOrderStore,
-    useActiveOrders,
-    db: operationalDb,
-    STORES: operationalStores,
-    getAvailableStock: dbUtilsModule.getAvailableStock,
-    getSortedBatchesForProduct: inventoryFlowModule.getSortedBatchesForProduct,
-    isCommercialVariantProduct: variantsModule.isCommercialVariantProduct
-  });
+export const registerActorOperationalActiveOrders = ({
+  useActiveOrders,
+  db,
+  STORES
+} = {}) => {
+  if (!useActiveOrders || !db || !STORES?.SALES) {
+    throw new TypeError('ActiveOrders operational registration is incomplete');
+  }
+  activeOrdersRegistration = Object.freeze({ useActiveOrders, db, STORES });
+  configureActorOperationalPersistence({ db, stores: STORES });
+  installRegisteredGuards();
+  return true;
+};
+
+export const registerActorOperationalOrderStore = (registration = {}) => {
+  const required = [
+    registration.useOrderStore,
+    registration.useActiveOrders,
+    registration.db,
+    registration.STORES?.PRODUCT_BATCHES,
+    registration.getAvailableStock,
+    registration.getSortedBatchesForProduct,
+    registration.isCommercialVariantProduct
+  ];
+  if (required.some((value) => !value)) {
+    throw new TypeError('OrderStore operational registration is incomplete');
+  }
+  orderStoreRegistration = Object.freeze({ ...registration });
+  installRegisteredGuards();
+  return true;
 };
 
 export const installActorOperationalHandoffGuards = async () => {
-  if (!installPromise) {
-    installPromise = installGuards().catch((error) => {
-      installPromise = null;
-      throw error;
-    });
-  }
-  await installPromise;
+  guardsEnabled = true;
+  installRegisteredGuards();
   return true;
 };
