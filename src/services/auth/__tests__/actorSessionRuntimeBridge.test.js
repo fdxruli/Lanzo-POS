@@ -1,29 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  get: vi.fn(),
-  readiness: vi.fn(),
-  hydrateTenantStorageConsumers: vi.fn(async () => []),
-  resumeTenantStorageWrites: vi.fn(),
-  prepareActorScopedStorage: vi.fn(async () => ({})),
-  activateActorScopedStorage: vi.fn(),
-  resumeActorScopedStorageWrites: vi.fn(),
-  suspendActorScopedStorageWrites: vi.fn(),
-  invalidateActorScopedStorage: vi.fn(),
-  subscribeActorScopedStorage: vi.fn(() => () => {}),
-  configureActorOperationalPersistence: vi.fn(() => true),
-  installActorOperationalHandoffGuards: vi.fn(async () => true),
-  refreshPersistedActorCheckoutOwnership: vi.fn(async () => []),
-  assertActorOperationalHandoffClear: vi.fn(() => true),
-  rebindActorOperationalOwnership: vi.fn(() => 0)
-}));
+const mocks = vi.hoisted(() => {
+  const get = vi.fn();
+  const tenantRuntimeDb = {
+    table: vi.fn(() => ({ get }))
+  };
 
-const tenantRuntimeDb = {
-  table: vi.fn(() => ({ get: mocks.get }))
-};
+  return {
+    get,
+    tenantRuntimeDb,
+    readiness: vi.fn(),
+    hydrateTenantStorageConsumers: vi.fn(async () => []),
+    resumeTenantStorageWrites: vi.fn(),
+    prepareActorScopedStorage: vi.fn(async () => ({})),
+    activateActorScopedStorage: vi.fn(),
+    resumeActorScopedStorageWrites: vi.fn(),
+    suspendActorScopedStorageWrites: vi.fn(),
+    invalidateActorScopedStorage: vi.fn(),
+    subscribeActorScopedStorage: vi.fn(() => () => {}),
+    configureActorOperationalPersistence: vi.fn(() => true),
+    installActorOperationalHandoffGuards: vi.fn(async () => true),
+    refreshPersistedActorCheckoutOwnership: vi.fn(async () => []),
+    assertActorOperationalHandoffClear: vi.fn(() => true),
+    rebindActorOperationalOwnership: vi.fn(() => 0)
+  };
+});
 
 vi.mock('../../db/tenantRuntimeRouter', () => ({
-  db: tenantRuntimeDb,
+  db: mocks.tenantRuntimeDb,
   getTenantRuntimeReadiness: vi.fn(() => mocks.readiness())
 }));
 
@@ -139,7 +143,7 @@ describe('actor session runtime bridge', () => {
       sessionId: 'admin-session'
     });
     expect(mocks.configureActorOperationalPersistence).toHaveBeenCalledWith({
-      db: tenantRuntimeDb,
+      db: mocks.tenantRuntimeDb,
       salesStore: 'sales'
     });
     expect(mocks.refreshPersistedActorCheckoutOwnership).toHaveBeenCalledWith({
