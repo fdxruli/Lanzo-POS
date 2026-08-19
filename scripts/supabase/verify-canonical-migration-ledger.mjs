@@ -8,6 +8,7 @@ const fail = (message) => {
 };
 
 export const parseExpectedVersions = (value) => {
+  if (String(value || '').trim() === 'NONE') return [];
   const versions = String(value || '').split(',').map((item) => item.trim()).filter(Boolean);
   if (!versions.length) fail('expected migration version set is required');
   if (new Set(versions).size !== versions.length) fail('expected migration version set contains duplicates');
@@ -61,6 +62,7 @@ export const assertCanonicalLedger = ({ local, remote, expected, afterApply = fa
   const missingExpected = expected.filter((version) => !pending.includes(version) && !remoteSet.has(version));
   if (remoteOnly.length) fail(`unexpected remote-only versions: ${remoteOnly.join(',')}`);
   if (afterApply) {
+    if (!expected.length) fail('NONE is invalid after apply');
     if (expectedAlreadyApplied.length !== expected.length) fail(`applied version missing from remote ledger: ${expected.filter((version) => !remoteSet.has(version)).join(',')}`);
     if (pending.length) fail(`migration remains pending after apply: ${pending.join(',')}`);
   } else {
