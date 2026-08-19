@@ -12,10 +12,30 @@ import { useStatsStore } from '../../store/useStatsStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useAppStore } from '../../store/useAppStore';
+import { useOrderStore } from '../../store/useOrderStore';
 import Logger from '../../services/Logger';
 import { GLOBAL_ALERT } from '../../config/botContext';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { db, STORES } from '../../services/db/dexie';
+import { getAvailableStock } from '../../services/db/utils';
+import { getSortedBatchesForProduct } from '../../services/sales/inventoryFlow';
+import { isCommercialVariantProduct } from '../../services/products/commercialVariants';
+import {
+  registerActorOperationalActiveOrders,
+  registerActorOperationalOrderStore
+} from '../../services/auth/actorOperationalHandoff';
 import './Layout.css';
+
+registerActorOperationalActiveOrders({ useActiveOrders, db, STORES });
+registerActorOperationalOrderStore({
+  useOrderStore,
+  useActiveOrders,
+  db,
+  STORES,
+  getAvailableStock,
+  getSortedBatchesForProduct,
+  isCommercialVariantProduct
+});
 
 const AssistantBot = lazy(() => import('../common/AssistantBot'));
 
