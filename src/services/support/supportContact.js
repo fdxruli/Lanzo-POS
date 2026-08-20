@@ -26,6 +26,8 @@ const getSafeDatabaseFamily = (databaseName) => {
 
 const redactSensitiveText = (value) => String(value || '')
   .replace(/\b(license(?:\s|_|-)?key|licencia|token|jwt|password|contrase(?:ñ|n)a|pin)\s*[:=]\s*[^\s,;]+/gi, '$1: [redactado]')
+  .replace(/\b(?:license(?:\s|_|-)?key|licencia|token|jwt|password|contrase(?:ñ|n)a|pin)\b\s+[^\s,;]+/gi, '[redactado]')
+  .replace(/\b(?:LanzoDB_t_|t_)[a-zA-Z0-9_-]{8,}\b/g, '[identificador de tenant redactado]')
   .replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[redactado]');
 
 const getRecoveryEnvironment = (environment = {}) => {
@@ -35,6 +37,8 @@ const getRecoveryEnvironment = (environment = {}) => {
 
   return {
     appVersion: normalizeText(environment.appVersion ?? import.meta.env?.VITE_APP_VERSION, 'No disponible'),
+    buildCommit: normalizeText(environment.buildCommit ?? import.meta.env?.VITE_BUILD_COMMIT, 'No disponible'),
+    buildDate: normalizeText(environment.buildDate ?? import.meta.env?.VITE_BUILD_DATE, 'No disponible'),
     userAgent: normalizeText(environment.userAgent ?? browser?.userAgent, 'No disponible'),
     platform: normalizeText(environment.platform ?? browser?.platform, 'No disponible'),
     language: normalizeText(environment.language ?? browser?.language, 'No disponible'),
@@ -45,6 +49,50 @@ const getRecoveryEnvironment = (environment = {}) => {
     timestamp: now.toISOString()
   };
 };
+
+const normalizeDiagnosticCode = (value, fallback = 'UNKNOWN_ADMIN_BOOT_ERROR') => {
+  const code = normalizeText(value, fallback).replace(/[^A-Za-z0-9_.-]/g, '_');
+  return code.slice(0, 120) || fallback;
+};
+
+/**
+ * Builds a bounded technical report for a failure while loading the
+ * administrative shell. It receives only boot metadata; tenant identity,
+ * IndexedDB rows and authentication material are intentionally excluded.
+ */
+export function buildAdminBootSupportReport(boot = {}, environment = {}) {
+  const details = getRecoveryEnvironment(environment);
+  const code = normalizeDiagnosticCode(boot.errorCode || boot.code);
+  const message = redactSensitiveText(normalizeText(boot.message, 'No disponible')).slice(0, 500);
+  const classification = redactSensitiveText(
+    normalizeText(boot.classification, 'application_runtime')
+  ).slice(0, 120);
+
+  return [
+    'REPORTE TÉCNICO DE INICIO ADMINISTRATIVO - LANZO POS',
+    '',
+    `Código de diagnóstico: ${code}`,
+    `Etapa de inicio: ${normalizeText(boot.stage, 'ready_runtime_loading')}`,
+    `Clasificación: ${classification}`,
+    `Mensaje saneado: ${message}`,
+    `Estado de recuperación de base: ${normalizeText(boot.databaseRecoveryStatus, 'No disponible')}`,
+    `Tenant runtime listo: ${boot.tenantRuntimeReady === true ? 'Sí' : 'No'}`,
+    `Recuperación de assets intentada: ${boot.assetRecoveryAttempted === true ? 'Sí' : 'No'}`,
+    `Resultado de recuperación de assets: ${normalizeText(boot.assetRecoveryResult, 'No intentada')}`,
+    '',
+    `Versión de Lanzo: ${details.appVersion}`,
+    `Commit de build: ${details.buildCommit}`,
+    `Fecha de build: ${details.buildDate}`,
+    `Navegador/entorno: ${details.userAgent}`,
+    `Plataforma: ${details.platform}`,
+    `Idioma: ${details.language}`,
+    `Estado de red: ${details.online ? 'Online' : 'Offline'}`,
+    `Ruta: ${details.path}`,
+    `Fecha y hora: ${details.timestamp}`,
+    '',
+    'Reporte generado automáticamente. No incluye credenciales, identificadores de tenant ni datos de negocio.'
+  ].join('\n');
+}
 
 /**
  * Builds the bounded, privacy-safe report for controlled IndexedDB recovery.
