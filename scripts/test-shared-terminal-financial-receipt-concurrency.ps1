@@ -1,60 +1,93 @@
 param(
-  [string]$DatabaseUrl = $env:LANZO_POS_TEST_DATABASE_URL
+  [string]$DatabaseUrl = $env:LANZO_POS_TEST_DATABASE_URL,
+  [string]$LicenseKey = $env:LANZO_POS_TEST_LICENSE_KEY,
+  [string]$DeviceFingerprint = $env:LANZO_POS_TEST_DEVICE_FINGERPRINT,
+  [string]$SecurityToken = $env:LANZO_POS_TEST_SECURITY_TOKEN,
+  [string]$StaffSessionToken = $env:LANZO_POS_TEST_STAFF_SESSION_TOKEN,
+  [string]$CashSessionId = $env:LANZO_POS_TEST_CASH_SESSION_ID
 )
 
 $ErrorActionPreference = 'Stop'
-if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) {
-  throw 'Set LANZO_POS_TEST_DATABASE_URL to an authorized migrated local PostgreSQL test database.'
+if ([string]::IsNullOrWhiteSpace($DatabaseUrl) -or $DatabaseUrl -notmatch '(localhost|127\.0\.0\.1)') {
+  throw 'LANZO_POS_TEST_DATABASE_URL must target an authorized local PostgreSQL test database (localhost or 127.0.0.1), never production.'
+}
+foreach ($required in @($LicenseKey, $DeviceFingerprint, $SecurityToken, $CashSessionId)) {
+  if ([string]::IsNullOrWhiteSpace($required)) {
+    throw 'Set local-only LANZO_POS_TEST_LICENSE_KEY, LANZO_POS_TEST_DEVICE_FINGERPRINT, LANZO_POS_TEST_SECURITY_TOKEN, and LANZO_POS_TEST_CASH_SESSION_ID.'
+  }
 }
 $psql = (Get-Command psql -ErrorAction Stop).Source
-$licenseId = [guid]::NewGuid().ToString()
-$suffix = $licenseId.Replace('-', '')
-$licenseKey = "F5AR1-CONC-$suffix"
-$externalK = "f5ar1-concurrent-$suffix"
-$canonical = "{`"sale_id`":`"sale-$suffix`",`"reason`":`"concurrency`"}"
+$suffix = ([guid]::NewGuid().ToString('N'))
+$externalK = "f5ar2-executor-$suffix"
+$conflictK = "f5ar2-conflict-$suffix"
+$referenceId = "f5ar2-business-effect-$suffix"
 
+function Escape-SqlLiteral([string]$Value) { return $Value.Replace("'", "''") }
 function Invoke-Psql([string]$Sql) {
   $output = & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -A -t -q -c $Sql 2>&1
   if ($LASTEXITCODE -ne 0) { throw ($output | Out-String) }
   return ($output | Out-String).Trim()
 }
 
+$lk = Escape-SqlLiteral $LicenseKey
+$df = Escape-SqlLiteral $DeviceFingerprint
+$st = Escape-SqlLiteral $SecurityToken
+$ss = Escape-SqlLiteral $StaffSessionToken
+$session = Escape-SqlLiteral $CashSessionId
 try {
-  Invoke-Psql "insert into public.licenses (id, license_key, license_type, max_devices, status, product_name, features) values ('$licenseId', '$licenseKey', 'pro', 1, 'active', 'F5A R1 concurrency', '{}'::jsonb);" | Out-Null
-  $hash = Invoke-Psql "select private.financial_operation_hash('sale.cancel', '$canonical'::jsonb, 'actor:concurrency', null, null);"
-  $otherHash = Invoke-Psql "select private.financial_operation_hash('sale.cancel', jsonb_build_object('sale_id','other-$suffix','reason','concurrency'), 'actor:concurrency', null, null);"
-  $reserve = "select (private.reserve_financial_operation_v1('$licenseId'::uuid, '$externalK', '$hash', 'sale.cancel', '$canonical'::jsonb, 'actor:concurrency', null, null)).status;"
+  # The caller supplies an already-open, disposable local-test cash session.
+  # Every fixture written below has this UUID-derived suffix and is removed in
+  # finally; no production URL is accepted.
+  $originSql = "select (private.validate_pos_sync_context('$lk','$df','$st',nullif('$ss','')) ->> 'license_id') || '|' || private.resolve_cash_actor_key(private.validate_pos_sync_context('$lk','$df','$st',nullif('$ss',''))) || '|' || coalesce((select cash_station_id from public.pos_cash_sessions where id='$session' and deleted_at is null),'');"
+  $origin = (Invoke-Psql $originSql).Split('|', 3)
+  if ($origin.Count -ne 3 -or [string]::IsNullOrWhiteSpace($origin[0]) -or [string]::IsNullOrWhiteSpace($origin[1])) { throw 'Local test auth/session fixture is invalid.' }
+  $licenseId, $actorKey, $stationId = $origin
+  $requestSql = "jsonb_build_object('cash_session_id','$session','type','entrada','amount','1.00','concept','F5A R2 public executor concurrency','source','test','reference_type','f5a-r2','reference_id','$referenceId')"
+  $hashSql = "select private.financial_operation_hash('cash.movement',$requestSql,'$(Escape-SqlLiteral $actorKey)','$session',nullif('$(Escape-SqlLiteral $stationId)',''));"
+  $hash = Invoke-Psql $hashSql
+  $callSql = "select public.pos_execute_financial_operation_v1('$lk','$df','$st',nullif('$ss',''),'$externalK','$hash','cash.movement',$requestSql);"
 
-  # T1 owns the transaction-scoped tenant/K advisory lock while reserving.
-  $t1 = Start-Job -ArgumentList $psql, $DatabaseUrl, $reserve -ScriptBlock {
-    param($PsqlPath, $Url, $ReserveSql)
-    & $PsqlPath $Url -X -v ON_ERROR_STOP=1 -A -t -q -c "begin; $ReserveSql select pg_sleep(2); commit;" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw 'T1 reservation failed' }
+  # T1 uses the real public executor.  The barrier observes the exact V1
+  # tenant/K advisory lock, rather than assuming that a timer means T1 started.
+  $t1 = Start-Job -ArgumentList $psql, $DatabaseUrl, $callSql -ScriptBlock {
+    param($PsqlPath, $Url, $Sql)
+    & $PsqlPath $Url -X -v ON_ERROR_STOP=1 -A -t -q -c "begin; $Sql select pg_sleep(2); commit;" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'T1 public executor failed' }
   }
-  Start-Sleep -Milliseconds 250
-  $sameResult = Invoke-Psql "begin; $reserve commit;"
+  $lockSql = "select not pg_try_advisory_xact_lock(hashtextextended('$licenseId:$externalK',9152026));"
+  $deadline = [Diagnostics.Stopwatch]::StartNew()
+  do { $locked = Invoke-Psql $lockSql } while ($locked -ne 't' -and $deadline.Elapsed.TotalSeconds -lt 10)
+  if ($locked -ne 't') { throw 'Deterministic V1 advisory-lock barrier was not reached.' }
+  $sameResult = Invoke-Psql $callSql
   Receive-Job -Job $t1 -Wait -AutoRemoveJob | Out-Null
-  if ((Invoke-Psql "select count(*) from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key='$externalK';") -ne '1') {
-    throw 'same K/H created more than one financial reservation'
-  }
-  if ($sameResult -notmatch 'processing') { throw "same K/H did not converge to the authoritative reservation: $sameResult" }
+  if ($sameResult -notmatch $externalK) { throw 'Same K/H did not return the public financial receipt.' }
+  $movementCount = Invoke-Psql "select count(*) from public.pos_cash_movements where license_id='$licenseId'::uuid and metadata->>'reference_id'='$referenceId' and deleted_at is null;"
+  if ($movementCount -ne '1') { throw "Same K/H replay business-effect count was $movementCount, expected 1." }
 
-  $externalK2 = "$externalK-conflict"
-  $reserve1 = "select (private.reserve_financial_operation_v1('$licenseId'::uuid, '$externalK2', '$hash', 'sale.cancel', '$canonical'::jsonb, 'actor:concurrency', null, null)).status;"
-  $t2 = Start-Job -ArgumentList $psql, $DatabaseUrl, $reserve1 -ScriptBlock {
-    param($PsqlPath, $Url, $ReserveSql)
-    & $PsqlPath $Url -X -v ON_ERROR_STOP=1 -A -t -q -c "begin; $ReserveSql select pg_sleep(2); commit;" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw 'T1 conflict reservation failed' }
+  # A second public-executor race uses the same K but distinct canonical H.
+  $otherRequestSql = "jsonb_build_object('cash_session_id','$session','type','entrada','amount','2.00','concept','F5A R2 public executor concurrency','source','test','reference_type','f5a-r2','reference_id','$referenceId-conflict')"
+  $otherHash = Invoke-Psql "select private.financial_operation_hash('cash.movement',$otherRequestSql,'$(Escape-SqlLiteral $actorKey)','$session',nullif('$(Escape-SqlLiteral $stationId)',''));"
+  $firstConflictCall = "select public.pos_execute_financial_operation_v1('$lk','$df','$st',nullif('$ss',''),'$conflictK','$hash','cash.movement',$requestSql);"
+  $t2 = Start-Job -ArgumentList $psql, $DatabaseUrl, $firstConflictCall -ScriptBlock {
+    param($PsqlPath, $Url, $Sql)
+    & $PsqlPath $Url -X -v ON_ERROR_STOP=1 -A -t -q -c "begin; $Sql select pg_sleep(2); commit;" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'T2 public executor failed' }
   }
-  Start-Sleep -Milliseconds 250
-  $conflictSql = "begin; select private.reserve_financial_operation_v1('$licenseId'::uuid, '$externalK2', '$otherHash', 'sale.cancel', jsonb_build_object('sale_id','other-$suffix','reason','concurrency'), 'actor:concurrency', null, null); commit;"
-  $conflictOutput = & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -A -t -q -c $conflictSql 2>&1
+  $lockConflictSql = "select not pg_try_advisory_xact_lock(hashtextextended('$licenseId:$conflictK',9152026));"
+  $deadline = [Diagnostics.Stopwatch]::StartNew()
+  do { $locked = Invoke-Psql $lockConflictSql } while ($locked -ne 't' -and $deadline.Elapsed.TotalSeconds -lt 10)
+  if ($locked -ne 't') { throw 'Deterministic conflict advisory-lock barrier was not reached.' }
+  $conflictOutput = & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -A -t -q -c "select public.pos_execute_financial_operation_v1('$lk','$df','$st',nullif('$ss',''),'$conflictK','$otherHash','cash.movement',$otherRequestSql);" 2>&1
   Receive-Job -Job $t2 -Wait -AutoRemoveJob | Out-Null
-  if ($LASTEXITCODE -eq 0 -or ($conflictOutput | Out-String) -notmatch 'IDEMPOTENCY_CONFLICT') {
-    throw "K/H1 versus K/H2 did not fail closed: $($conflictOutput | Out-String)"
-  }
+  if ($LASTEXITCODE -eq 0 -or ($conflictOutput | Out-String) -notmatch 'IDEMPOTENCY_CONFLICT') { throw 'Same K/different H did not fail closed through the public executor.' }
   Write-Output 'shared terminal financial receipt concurrency: PASS'
 }
 finally {
-  if ($licenseId) { & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -q -c "delete from public.licenses where id='$licenseId'::uuid;" 2>$null }
+  if ($licenseId) {
+    $internalK = Invoke-Psql "select private.financial_operation_internal_key_v1('cash.movement','$externalK');"
+    $internalConflictK = Invoke-Psql "select private.financial_operation_internal_key_v1('cash.movement','$conflictK');"
+    # Local-test fixture cleanup: exact financial/generic rows and the two
+    # generated movement references only.  The supplied cash session remains.
+    & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -q -c "delete from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key in ('$externalK','$conflictK'); delete from public.pos_idempotency_keys where license_id='$licenseId'::uuid and idempotency_key in ('$internalK','$internalConflictK'); delete from public.pos_cash_movements where license_id='$licenseId'::uuid and metadata->>'reference_id' in ('$referenceId','$referenceId-conflict');" 2>$null
+  }
 }

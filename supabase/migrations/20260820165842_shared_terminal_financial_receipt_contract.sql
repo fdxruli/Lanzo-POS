@@ -221,6 +221,100 @@ exception when invalid_text_representation then
 end;
 $$;
 
+-- Alias handling is deliberately shallow and explicit.  This lets compatible
+-- client spellings converge without admitting UI/metadata fields into H.
+create or replace function private.financial_first_value_v1(p_object jsonb, p_keys text[])
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare v_key text;
+begin
+  if jsonb_typeof(p_object) <> 'object' then return null; end if;
+  foreach v_key in array p_keys loop
+    if p_object ? v_key then return p_object -> v_key; end if;
+  end loop;
+  return null;
+end;
+$$;
+
+create or replace function private.financial_text_v1(p_value jsonb)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$ select nullif(btrim(p_value #>> '{}'), '') $$;
+
+create or replace function private.canonical_financial_sale_item_v1(p_item jsonb)
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_strip_nulls(jsonb_build_object(
+    'id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['id'])),
+    'product_id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['product_id','productId','parentId'])),
+    'product_name', private.financial_text_v1(private.financial_first_value_v1(p_item, array['product_name','productName','name'])),
+    'product_sku', private.financial_text_v1(private.financial_first_value_v1(p_item, array['product_sku','productSku','sku'])),
+    'barcode', private.financial_text_v1(private.financial_first_value_v1(p_item, array['barcode','barCode'])),
+    'category_id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['category_id','categoryId'])),
+    'category_name', private.financial_text_v1(private.financial_first_value_v1(p_item, array['category_name','categoryName','rubro','category'])),
+    'batch_id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_id','batchId'])),
+    'batch_sku', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_sku','batchSku'])),
+    'batch_expiry_date', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_expiry_date','batchExpiryDate','expiryDate'])),
+    'stock_source', private.financial_text_v1(private.financial_first_value_v1(p_item, array['stock_source','stockSource'])),
+    'quantity', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['quantity','qty'])),
+    'unit_price', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['unit_price','unitPrice','price'])),
+    'unit_cost', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['unit_cost','unitCost','cost'])),
+    'line_total', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['line_total','lineTotal','total','exactTotal'])),
+    'discount_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['discount_amount','discountAmount'])),
+    'tax_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['tax_amount','taxAmount']))
+  ))
+$$;
+
+create or replace function private.canonical_financial_payment_v1(p_payment jsonb)
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_strip_nulls(jsonb_build_object(
+    'id', private.financial_text_v1(private.financial_first_value_v1(p_payment, array['id'])),
+    'method', private.financial_text_v1(private.financial_first_value_v1(p_payment, array['method','payment_method','paymentMethod'])),
+    'amount', private.financial_decimal_v1(private.financial_first_value_v1(p_payment, array['amount','total'])),
+    'received_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_payment, array['received_amount','receivedAmount'])),
+    'change_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_payment, array['change_amount','changeAmount'])),
+    'reference', private.financial_text_v1(private.financial_first_value_v1(p_payment, array['reference','ref']))
+  ))
+$$;
+
+create or replace function private.canonical_financial_sale_v1(p_sale jsonb)
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_strip_nulls(jsonb_build_object(
+    'id', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['id','cloud_sale_id','cloudSaleId'])),
+    'local_sale_id', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['local_sale_id','localSaleId'])),
+    'subtotal', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['subtotal'])),
+    'discount_total', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['discount_total','discountTotal'])),
+    'tax_total', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['tax_total','taxTotal'])),
+    'total', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['total'])),
+    'amount_paid', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['amount_paid','amountPaid','abono'])),
+    'change_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['change_amount','changeAmount'])),
+    'balance_due', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['balance_due','balanceDue','saldoPendiente'])),
+    'payment_method', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['payment_method','paymentMethod'])),
+    'fulfillment_status', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['fulfillment_status','fulfillmentStatus'])),
+    'local_folio', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['local_folio','localFolio','folio'])),
+    'customer_id', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_id','customerId'])),
+    'customer_name', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_name','customerName'])),
+    'customer_phone', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_phone','customerPhone'])),
+    'currency', upper(private.financial_text_v1(private.financial_first_value_v1(p_sale, array['currency'])))
+  ))
+$$;
+
 -- V1 semantic allowlist.  Authentication material, trace/UI fields, timestamps
 -- and arbitrary metadata are excluded.  Sale documents are carried as explicit
 -- business documents because their line/payment fields change financial meaning.
@@ -276,12 +370,13 @@ begin
          or jsonb_typeof(v_request->'payments') <> 'array' then
         raise exception 'FINANCIAL_SALE_CONTRACT_INVALID' using errcode = 'P0001';
       end if;
-      return jsonb_build_object('sale', v_request->'sale' - 'metadata' - 'created_at' - 'createdAt' - 'timestamp',
-        'items', (select coalesce(jsonb_agg(value - 'metadata' order by ordinality), '[]'::jsonb)
+      return jsonb_build_object('sale', private.canonical_financial_sale_v1(v_request->'sale'),
+        'items', (select coalesce(jsonb_agg(private.canonical_financial_sale_item_v1(value) order by ordinality), '[]'::jsonb)
                     from jsonb_array_elements(v_request->'items') with ordinality),
-        'payments', (select coalesce(jsonb_agg(value - 'metadata' order by ordinality), '[]'::jsonb)
+        'payments', (select coalesce(jsonb_agg(private.canonical_financial_payment_v1(value) order by ordinality), '[]'::jsonb)
                      from jsonb_array_elements(v_request->'payments') with ordinality),
-        'cash_session_id', v_request->>'cash_session_id', 'customer_id', v_request->>'customer_id');
+        'cash_session_id', private.financial_text_v1(v_request->'cash_session_id'),
+        'customer_id', private.financial_text_v1(v_request->'customer_id'));
     when 'sale.cancel' then
       return jsonb_build_object('sale_id', v_request->>'sale_id', 'reason', v_request->>'reason');
     else
@@ -316,23 +411,8 @@ begin
     raise exception 'FINANCIAL_IDEMPOTENCY_KEY_REQUIRED' using errcode = 'P0001';
   end if;
   perform private.assert_financial_request_hash_v1(p_request_hash);
-  perform private.lock_financial_operation_v1(p_license_id, p_idempotency_key);
-
-  -- Financial K/H state is authoritative and takes precedence over a generic
-  -- idempotency row.  The latter is consulted only when no financial row exists.
-  select * into v_existing from public.pos_financial_operations o
-  where o.license_id = p_license_id and o.idempotency_key = p_idempotency_key
-  for update;
-  if v_existing.id is not null then
-    if v_existing.request_hash is distinct from p_request_hash then
-      raise exception 'IDEMPOTENCY_CONFLICT' using errcode = 'P0001';
-    end if;
-    perform private.assert_financial_operation_origin_v1(
-      v_existing, p_verified_actor_key, p_verified_device_id, p_cash_session_id
-    );
-    return v_existing;
-  end if;
-
+  -- Reconstruct the origin-bound H from this invocation before considering an
+  -- existing receipt.  A stale H may never turn a changed request into replay.
   if p_cash_session_id is not null then
     select * into v_session from public.pos_cash_sessions s
     where s.license_id = p_license_id and s.id = p_cash_session_id and s.deleted_at is null;
@@ -348,14 +428,41 @@ begin
   if p_request_hash is distinct from v_expected_hash then
     raise exception 'FINANCIAL_REQUEST_HASH_INVALID' using errcode = 'P0001';
   end if;
+  v_internal_idempotency_key := private.financial_operation_internal_key_v1(p_operation_type, p_idempotency_key);
+  perform private.lock_financial_operation_v1(p_license_id, p_idempotency_key);
+
+  -- Financial K/H state is authoritative and takes precedence over a generic
+  -- idempotency row.  The latter is consulted only when no financial row exists.
+  select * into v_existing from public.pos_financial_operations o
+  where o.license_id = p_license_id and o.idempotency_key = p_idempotency_key
+  for update;
+  if v_existing.id is not null then
+    if v_existing.legacy_idempotency_key is distinct from
+       private.financial_operation_internal_key_v1(v_existing.operation_type, v_existing.idempotency_key) then
+      raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_INTEGRITY' using errcode = 'P0001';
+    end if;
+    if v_existing.legacy_idempotency_key is distinct from v_internal_idempotency_key
+       or v_existing.request_hash is distinct from p_request_hash then
+      raise exception 'IDEMPOTENCY_CONFLICT' using errcode = 'P0001';
+    end if;
+    perform private.assert_financial_operation_origin_v1(
+      v_existing, p_verified_actor_key, p_verified_device_id, p_cash_session_id
+    );
+    return v_existing;
+  end if;
 
   -- A generic K in the external namespace predates strict V1 and cannot be
   -- adopted.  V1 itself writes only the deterministic internal namespace below.
   if exists (
     select 1 from public.pos_idempotency_keys k
-    where k.license_id = p_license_id and k.idempotency_key = p_idempotency_key
+  where k.license_id = p_license_id and k.idempotency_key = p_idempotency_key
   ) then raise exception 'LEGACY_IDEMPOTENCY_UNVERIFIED' using errcode = 'P0001'; end if;
-  v_internal_idempotency_key := private.financial_operation_internal_key_v1(p_operation_type, p_idempotency_key);
+  -- Never adopt a preexisting generic row in V1's deterministic internal
+  -- namespace.  With no strict owner above, this is a collision, not a replay.
+  if exists (
+    select 1 from public.pos_idempotency_keys k
+    where k.license_id = p_license_id and k.idempotency_key = v_internal_idempotency_key
+  ) then raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_COLLISION' using errcode = 'P0001'; end if;
 
   insert into public.pos_financial_operations (
     license_id, idempotency_key, legacy_idempotency_key, request_hash, operation_type,
@@ -372,6 +479,32 @@ begin
     raise exception 'FINANCIAL_OPERATION_RESERVATION_FAILED' using errcode = 'P0001';
   end if;
   return v_result;
+end;
+$$;
+
+create or replace function private.public_financial_response_v1(
+  p_response jsonb,
+  p_external_idempotency_key text,
+  p_internal_idempotency_key text
+)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare v_response jsonb;
+begin
+  if jsonb_typeof(p_response) <> 'object' then
+    raise exception 'FINANCIAL_LEGACY_RESPONSE_INVALID' using errcode = 'P0001';
+  end if;
+  if p_response->>'code' = 'IDEMPOTENCY_PROCESSING' then
+    raise exception 'FINANCIAL_LEGACY_RESPONSE_NONTERMINAL' using errcode = 'P0001';
+  end if;
+  v_response := p_response - 'idempotency_key';
+  if position(p_internal_idempotency_key in v_response::text) > 0 then
+    raise exception 'FINANCIAL_INTERNAL_KEY_LEAK' using errcode = 'P0001';
+  end if;
+  return jsonb_set(v_response, '{idempotency_key}', to_jsonb(p_external_idempotency_key), true);
 end;
 $$;
 
@@ -485,9 +618,11 @@ begin
         v_canonical->>'sale_id', v_canonical->>'reason', v_internal_idempotency_key);
     else raise exception 'FINANCIAL_OPERATION_TYPE_UNSUPPORTED' using errcode = 'P0001';
   end case;
-  -- Internal legacy results must never replace the external financial K in the
-  -- durable receipt payload returned to a client.
-  v_response := jsonb_set(v_response, '{idempotency_key}', to_jsonb(p_idempotency_key), true);
+  -- Reject nonterminal/malformed inner output, then scrub internal K before it
+  -- can become a durable receipt or a public response.
+  v_response := private.public_financial_response_v1(
+    v_response, p_idempotency_key, v_internal_idempotency_key
+  );
   perform private.complete_financial_operation_v1(v_license_id, p_idempotency_key, v_response);
   return v_response;
 end;
@@ -546,8 +681,14 @@ revoke all on function private.lock_financial_operation_v1(uuid, text) from publ
 revoke all on function private.assert_financial_operation_origin_v1(public.pos_financial_operations, text, uuid, text) from public, anon, authenticated;
 revoke all on function private.financial_decimal_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.financial_integer_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.financial_first_value_v1(jsonb, text[]) from public, anon, authenticated;
+revoke all on function private.financial_text_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.canonical_financial_sale_item_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.canonical_financial_payment_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.canonical_financial_sale_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.canonical_financial_request_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text) from public, anon, authenticated;
+revoke all on function private.public_financial_response_v1(jsonb, text, text) from public, anon, authenticated;
 revoke all on function private.complete_financial_operation_v1(uuid, text, jsonb) from public, anon, authenticated;
 revoke all on function public.pos_execute_financial_operation_v1(text, text, text, text, text, text, text, jsonb) from public;
 revoke all on function public.pos_get_financial_operation_receipt(text, text, text, text, text, text) from public;

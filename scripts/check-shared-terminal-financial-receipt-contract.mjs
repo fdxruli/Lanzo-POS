@@ -29,6 +29,14 @@ const requireSource = [
   "raise exception 'LEGACY_IDEMPOTENCY_UNVERIFIED'",
   'private.financial_decimal_v1',
   'trim_scale(',
+  'private.canonical_financial_sale_v1',
+  'private.canonical_financial_sale_item_v1',
+  'private.canonical_financial_payment_v1',
+  'private.financial_first_value_v1',
+  "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_COLLISION'",
+  "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_INTEGRITY'",
+  'private.public_financial_response_v1',
+  "raise exception 'FINANCIAL_LEGACY_RESPONSE_NONTERMINAL'",
   "'verified_origin'",
   'security definer',
   "set search_path = ''",
@@ -42,6 +50,20 @@ const financialBeforeLegacy = source.indexOf('select * into v_existing from publ
 const legacyClassification = source.indexOf("raise exception 'LEGACY_IDEMPOTENCY_UNVERIFIED'");
 if (financialBeforeLegacy < 0 || legacyClassification < financialBeforeLegacy) {
   throw new Error('Financial K/H precedence must be evaluated before legacy external-K classification');
+}
+const reserveStart = source.indexOf('create or replace function private.reserve_financial_operation_v1');
+const reserveEnd = source.indexOf('create or replace function private.public_financial_response_v1');
+const reserveBody = source.slice(reserveStart, reserveEnd);
+const currentHash = reserveBody.indexOf('v_expected_hash := private.financial_operation_hash(');
+const hashGuard = reserveBody.indexOf("raise exception 'FINANCIAL_REQUEST_HASH_INVALID'");
+const replayLookup = reserveBody.indexOf('select * into v_existing from public.pos_financial_operations o');
+const lock = reserveBody.indexOf('perform private.lock_financial_operation_v1');
+if (currentHash < 0 || hashGuard < currentHash || replayLookup < hashGuard || lock < hashGuard) {
+  throw new Error('Current request H must be derived and enforced before lock/replay inspection');
+}
+if (!reserveBody.includes('v_existing.legacy_idempotency_key is distinct from\n       private.financial_operation_internal_key_v1')
+  || !reserveBody.includes('where k.license_id = p_license_id and k.idempotency_key = v_internal_idempotency_key')) {
+  throw new Error('Strict internal-key integrity and preexisting internal collision guards are required');
 }
 const receiptBody = source.slice(source.indexOf('create or replace function public.pos_get_financial_operation_receipt'));
 if (receiptBody.includes(':= public.pos_execute_financial_operation_v1(') || receiptBody.includes('perform public.pos_execute_financial_operation_v1(')) {
@@ -61,10 +83,16 @@ for (const expected of [
   'FINANCIAL_R1_NUMERIC_NORMALIZATION',
   'FINANCIAL_R1_DIRECT_TABLE_ACCESS',
   'FINANCIAL_REQUEST_HASH_REQUIRED',
+  'FINANCIAL_R2_EXPECTED_STALE_HASH_DENIAL',
+  'FINANCIAL_R2_EXPECTED_INTERNAL_COLLISION',
+  'FINANCIAL_R2_EXPECTED_INTERNAL_INTEGRITY',
+  'FINANCIAL_R2_SALE_ALIAS_OR_NUMERIC_NORMALIZATION',
+  'FINANCIAL_R2_SALE_ITEM_ORDER_NOT_SEMANTIC',
 ]) {
   if (!test.includes(expected)) throw new Error(`Executable SQL assertion missing: ${expected}`);
 }
-for (const expected of ['Start-Job', 'private.reserve_financial_operation_v1', 'IDEMPOTENCY_CONFLICT', 'shared terminal financial receipt concurrency: PASS']) {
+for (const expected of ['Start-Job', 'public.pos_execute_financial_operation_v1', 'cash.movement', 'pg_try_advisory_xact_lock', 'business-effect', 'shared terminal financial receipt concurrency: PASS']) {
   if (!harness.includes(expected)) throw new Error(`Concurrency harness is incomplete: ${expected}`);
 }
-console.log('shared terminal financial receipt R1 static contract: PASS');
+if (harness.includes('Start-Sleep')) throw new Error('Concurrency harness must use a deterministic lock barrier, not a timing delay');
+console.log('shared terminal financial receipt R2 static contract: PASS');
