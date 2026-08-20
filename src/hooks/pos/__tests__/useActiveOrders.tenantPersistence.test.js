@@ -2,7 +2,11 @@
 import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { useActiveOrders, resetAndHydrateActiveOrdersForTenant } from '../useActiveOrders';
-import { localTenantAccessController } from '../../../services/tenant/localTenantPolicy';
+import {
+  LOCAL_TENANT_BINDING_KEY,
+  LOCAL_TENANT_BINDING_STORE,
+  localTenantAccessController
+} from '../../../services/tenant/localTenantPolicy';
 import {
   clearActiveTenantStorageNamespace,
   markTenantStorageReady,
@@ -16,7 +20,8 @@ import {
   prepareActorScopedStorage,
   resumeActorScopedStorageWrites
 } from '../../../services/auth/actorScopedStorage';
-import { closeTenantRuntime, getActiveTenantRuntime, markTenantRuntimeReady, openTenantRuntime } from '../../../services/db/tenantRuntimeRouter';
+import { closeTenantRuntime, db, getActiveTenantRuntime, markTenantRuntimeReady, openTenantRuntime } from '../../../services/db/tenantRuntimeRouter';
+import { DATABASE_RECOVERY_STATUS, getDatabaseRecoveryState } from '../../../services/db/databaseRecoveryState';
 import { resolveActiveTenantIdentity } from '../../../services/tenant/localTenantGuard';
 
 const opaque = 't_dddddddddddddddddddddddddddddddd';
@@ -33,6 +38,19 @@ const fixture = JSON.stringify({
 const actorPhysicalKey = async (tenant) => {
   const actorOpaqueId = await deriveActorStorageOpaqueId(tenant.opaqueId, actorKey);
   return `lanzo:t:${tenant.opaqueId}:a:${actorOpaqueId}:${logicalKey}`;
+};
+
+const writeTrustedBindingToActiveRuntime = async (identity) => {
+  await db.table(LOCAL_TENANT_BINDING_STORE).put({
+    key: LOCAL_TENANT_BINDING_KEY,
+    tenantIdentity: identity.primary,
+    tenantAliases: [...identity.aliases],
+    authority: identity.authority,
+    bindingVersion: 1,
+    source: 'test',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
 };
 
 // Production handoff prepares the actor namespace with writes suspended,
@@ -98,6 +116,7 @@ describe('active orders tenant persistence', () => {
     const identity = await resolveActiveTenantIdentity({ license_key: `PERSIST-A-${crypto.randomUUID()}` });
     localTenantAccessController.enable('test');
     await openTenantRuntime(identity);
+    await writeTrustedBindingToActiveRuntime(identity);
     const runtime = getActiveTenantRuntime();
     const key = await actorPhysicalKey(runtime);
     const seeded = JSON.stringify({
@@ -111,6 +130,7 @@ describe('active orders tenant persistence', () => {
     await prepareActorStorage(runtime, 1);
     localStorage.setItem(key, seeded);
     await markTenantRuntimeReady();
+    expect(getDatabaseRecoveryState().status).toBe(DATABASE_RECOVERY_STATUS.READY);
     localTenantAccessController.grant(identity, 'ready');
     expect(useActiveOrders.getState().activeOrders.get('seed')).toMatchObject({ id: 'seed' });
     expect(localStorage.getItem(key)).toBe(seeded);
