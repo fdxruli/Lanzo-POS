@@ -6,10 +6,16 @@
 -- operations fail closed without a versioned request contract.
 begin;
 
+-- A cash-session ID is globally generated today, but the business contract is
+-- tenant scoped.  Make that relationship explicit before using it as an FK.
+alter table public.pos_cash_sessions
+  add constraint pos_cash_sessions_license_id_id_uk unique (license_id, id);
+
 create table if not exists public.pos_financial_operations (
   id uuid primary key default gen_random_uuid(),
   license_id uuid not null references public.licenses(id) on delete cascade,
   idempotency_key text not null,
+  legacy_idempotency_key text not null,
   request_hash text not null,
   request_contract_version integer not null default 1,
   operation_type text not null,
@@ -31,9 +37,10 @@ create table if not exists public.pos_financial_operations (
   constraint pos_financial_operations_completed_chk
     check ((status = 'completed') = (completed_at is not null)),
   constraint pos_financial_operations_license_key_uk unique (license_id, idempotency_key),
+  constraint pos_financial_operations_license_legacy_key_uk unique (license_id, legacy_idempotency_key),
   constraint pos_financial_operations_session_fk
-    foreign key (verified_cash_session_id)
-    references public.pos_cash_sessions(id),
+    foreign key (license_id, verified_cash_session_id)
+    references public.pos_cash_sessions(license_id, id),
   constraint pos_financial_operations_station_fk
     foreign key (license_id, verified_cash_station_id)
     references public.pos_cash_stations(license_id, id)
@@ -50,7 +57,10 @@ revoke all on table public.pos_financial_operations from public, anon, authentic
 -- this exact canonical document, and the server recomputes it before reserve.
 create or replace function private.financial_operation_hash(
   p_operation_type text,
-  p_canonical_request jsonb
+  p_canonical_request jsonb,
+  p_verified_actor_key text,
+  p_verified_cash_session_id text,
+  p_verified_cash_station_id text
 )
 returns text
 language plpgsql
@@ -59,6 +69,7 @@ set search_path = ''
 as $$
 begin
   if p_operation_type is null or btrim(p_operation_type) = ''
+     or nullif(btrim(p_verified_actor_key), '') is null
      or jsonb_typeof(p_canonical_request) <> 'object' then
     raise exception 'FINANCIAL_REQUEST_CONTRACT_INVALID' using errcode = 'P0001';
   end if;
@@ -71,12 +82,142 @@ begin
       convert_to(jsonb_build_object(
         'request_contract_version', 1,
         'operation_type', p_operation_type,
-        'request', p_canonical_request
+        'request', p_canonical_request,
+        'verified_origin', jsonb_build_object(
+          'actor_key', p_verified_actor_key,
+          'cash_session_id', p_verified_cash_session_id,
+          'cash_station_id', p_verified_cash_station_id
+        )
       )::text, 'utf8'),
       'sha256'
     ),
     'hex'
   );
+end;
+$$;
+
+create or replace function private.assert_financial_request_hash_v1(p_request_hash text)
+returns void
+language plpgsql
+immutable
+set search_path = ''
+as $$
+begin
+  if nullif(btrim(p_request_hash), '') is null then
+    raise exception 'FINANCIAL_REQUEST_HASH_REQUIRED' using errcode = 'P0001';
+  end if;
+  if p_request_hash !~ '^sha256:[0-9a-f]{64}$' then
+    raise exception 'FINANCIAL_REQUEST_HASH_INVALID' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+create or replace function private.financial_operation_internal_key_v1(
+  p_operation_type text,
+  p_external_idempotency_key text
+)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+begin
+  if nullif(btrim(p_operation_type), '') is null
+     or nullif(btrim(p_external_idempotency_key), '') is null then
+    raise exception 'FINANCIAL_IDEMPOTENCY_KEY_REQUIRED' using errcode = 'P0001';
+  end if;
+  return 'financial-v1:' || p_operation_type || ':'
+    || encode(extensions.digest(convert_to(p_external_idempotency_key, 'utf8'), 'sha256'), 'hex');
+end;
+$$;
+
+create or replace function private.lock_financial_operation_v1(
+  p_license_id uuid,
+  p_external_idempotency_key text
+)
+returns void
+language plpgsql
+volatile
+set search_path = ''
+as $$
+begin
+  if nullif(btrim(p_external_idempotency_key), '') is null then
+    raise exception 'FINANCIAL_IDEMPOTENCY_KEY_REQUIRED' using errcode = 'P0001';
+  end if;
+  -- Lock ordering is: tenant/K advisory lock, then financial-operation row,
+  -- then the existing financial RPC's own locks.  Receipt only takes the first
+  -- lock and reads, so it cannot form a reverse lock cycle.
+  perform pg_advisory_xact_lock(hashtextextended(p_license_id::text || ':' || p_external_idempotency_key, 9152026));
+end;
+$$;
+
+create or replace function private.assert_financial_operation_origin_v1(
+  p_operation public.pos_financial_operations,
+  p_current_actor_key text,
+  p_current_device_id uuid,
+  p_requested_cash_session_id text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_current_station_id text;
+begin
+  -- Actor is strict V1 replay authority.  Device is immutable provenance for
+  -- sessionless work, but an operation with a cash session must be recovered
+  -- from a device currently bound to that exact station.
+  if p_operation.verified_actor_key is distinct from p_current_actor_key then
+    raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
+  end if;
+  if p_requested_cash_session_id is not null
+     and p_operation.verified_cash_session_id is distinct from p_requested_cash_session_id then
+    raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
+  end if;
+  if p_operation.verified_cash_session_id is null then return; end if;
+  if p_operation.verified_cash_station_id is null or p_current_device_id is null then
+    raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
+  end if;
+  select b.cash_station_id into v_current_station_id
+  from public.pos_cash_station_bindings b
+  where b.license_id = p_operation.license_id
+    and b.device_id = p_current_device_id
+    and b.status = 'active'
+  limit 1;
+  if v_current_station_id is distinct from p_operation.verified_cash_station_id then
+    raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+create or replace function private.financial_decimal_v1(p_value jsonb)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare v_numeric numeric;
+begin
+  if p_value is null or p_value = 'null'::jsonb then return null; end if;
+  v_numeric := trim_scale((p_value #>> '{}')::numeric);
+  return v_numeric::text;
+exception when invalid_text_representation then
+  raise exception 'FINANCIAL_NUMERIC_INVALID' using errcode = 'P0001';
+end;
+$$;
+
+create or replace function private.financial_integer_v1(p_value jsonb)
+returns text
+language plpgsql
+immutable
+set search_path = ''
+as $$
+begin
+  if p_value is null or p_value = 'null'::jsonb then return null; end if;
+  return ((p_value #>> '{}')::bigint)::text;
+exception when invalid_text_representation then
+  raise exception 'FINANCIAL_INTEGER_INVALID' using errcode = 'P0001';
 end;
 $$;
 
@@ -102,33 +243,33 @@ begin
   case p_operation_type
     when 'cash.open' then
       return jsonb_build_object('opening', jsonb_build_object(
-        'opening_amount', v_request->>'opening_amount',
-        'opening_counted_amount', v_request->>'opening_counted_amount',
-        'opening_suggested_amount', v_request->>'opening_suggested_amount',
+        'opening_amount', private.financial_decimal_v1(v_request->'opening_amount'),
+        'opening_counted_amount', private.financial_decimal_v1(v_request->'opening_counted_amount'),
+        'opening_suggested_amount', private.financial_decimal_v1(v_request->'opening_suggested_amount'),
         'opening_policy', v_request->>'opening_policy',
         'opening_origin', v_request->>'opening_origin',
-        'is_auto_opening', v_request->>'is_auto_opening',
+        'is_auto_opening', case when v_request ? 'is_auto_opening' then (v_request->>'is_auto_opening')::boolean else null end,
         'responsible_name', v_request->>'responsible_name'
       ));
     when 'cash.movement' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
-        'type', v_request->>'type', 'amount', v_request->>'amount',
+        'type', v_request->>'type', 'amount', private.financial_decimal_v1(v_request->'amount'),
         'concept', v_request->>'concept', 'source', v_request->>'source',
         'reference_type', v_request->>'reference_type', 'reference_id', v_request->>'reference_id');
     when 'cash.adjust_initial_fund' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
-        'new_opening_amount', v_request->>'new_opening_amount',
-        'reason', v_request->>'reason', 'expected_version', v_request->>'expected_version');
+        'new_opening_amount', private.financial_decimal_v1(v_request->'new_opening_amount'),
+        'reason', v_request->>'reason', 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'cash.close' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
-        'closing_counted_amount', v_request->>'closing_counted_amount',
-        'next_shift_fund', v_request->>'next_shift_fund',
-        'comments', v_request->>'comments', 'expected_version', v_request->>'expected_version');
+        'closing_counted_amount', private.financial_decimal_v1(v_request->'closing_counted_amount'),
+        'next_shift_fund', private.financial_decimal_v1(v_request->'next_shift_fund'),
+        'comments', v_request->>'comments', 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'cash.admin_close' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
-        'closing_mode', v_request->>'closing_mode', 'counted_amount', v_request->>'counted_amount',
-        'next_shift_fund', v_request->>'next_shift_fund', 'reason_code', v_request->>'reason_code',
-        'comments', v_request->>'comments', 'expected_version', v_request->>'expected_version');
+        'closing_mode', v_request->>'closing_mode', 'counted_amount', private.financial_decimal_v1(v_request->'counted_amount'),
+        'next_shift_fund', private.financial_decimal_v1(v_request->'next_shift_fund'), 'reason_code', v_request->>'reason_code',
+        'comments', v_request->>'comments', 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'sale.cashier', 'sale.cashier_inventory', 'sale.credit' then
       if jsonb_typeof(v_request->'sale') <> 'object'
          or jsonb_typeof(v_request->'items') <> 'array'
@@ -169,23 +310,27 @@ declare
   v_result public.pos_financial_operations;
   v_expected_hash text;
   v_session public.pos_cash_sessions;
+  v_internal_idempotency_key text;
 begin
-  if nullif(btrim(p_idempotency_key), '') is null
-     or nullif(btrim(p_request_hash), '') is null then
-    raise exception 'FINANCIAL_IDEMPOTENCY_KEY_AND_HASH_REQUIRED' using errcode = 'P0001';
+  if nullif(btrim(p_idempotency_key), '') is null then
+    raise exception 'FINANCIAL_IDEMPOTENCY_KEY_REQUIRED' using errcode = 'P0001';
   end if;
-  v_expected_hash := private.financial_operation_hash(p_operation_type, p_canonical_request);
-  if p_request_hash <> v_expected_hash then
-    raise exception 'FINANCIAL_REQUEST_HASH_INVALID' using errcode = 'P0001';
-  end if;
+  perform private.assert_financial_request_hash_v1(p_request_hash);
+  perform private.lock_financial_operation_v1(p_license_id, p_idempotency_key);
 
-  -- A K-only generic row cannot prove a strict K+H financial replay.  Refuse
-  -- this new endpoint rather than binding an old response to new semantics.
-  if exists (
-    select 1 from public.pos_idempotency_keys k
-    where k.license_id = p_license_id and k.idempotency_key = p_idempotency_key
-  ) then
-    raise exception 'LEGACY_IDEMPOTENCY_UNVERIFIED' using errcode = 'P0001';
+  -- Financial K/H state is authoritative and takes precedence over a generic
+  -- idempotency row.  The latter is consulted only when no financial row exists.
+  select * into v_existing from public.pos_financial_operations o
+  where o.license_id = p_license_id and o.idempotency_key = p_idempotency_key
+  for update;
+  if v_existing.id is not null then
+    if v_existing.request_hash is distinct from p_request_hash then
+      raise exception 'IDEMPOTENCY_CONFLICT' using errcode = 'P0001';
+    end if;
+    perform private.assert_financial_operation_origin_v1(
+      v_existing, p_verified_actor_key, p_verified_device_id, p_cash_session_id
+    );
+    return v_existing;
   end if;
 
   if p_cash_session_id is not null then
@@ -196,26 +341,37 @@ begin
     end if;
   end if;
 
+  v_expected_hash := private.financial_operation_hash(
+    p_operation_type, p_canonical_request, p_verified_actor_key,
+    p_cash_session_id, v_session.cash_station_id
+  );
+  if p_request_hash is distinct from v_expected_hash then
+    raise exception 'FINANCIAL_REQUEST_HASH_INVALID' using errcode = 'P0001';
+  end if;
+
+  -- A generic K in the external namespace predates strict V1 and cannot be
+  -- adopted.  V1 itself writes only the deterministic internal namespace below.
+  if exists (
+    select 1 from public.pos_idempotency_keys k
+    where k.license_id = p_license_id and k.idempotency_key = p_idempotency_key
+  ) then raise exception 'LEGACY_IDEMPOTENCY_UNVERIFIED' using errcode = 'P0001'; end if;
+  v_internal_idempotency_key := private.financial_operation_internal_key_v1(p_operation_type, p_idempotency_key);
+
   insert into public.pos_financial_operations (
-    license_id, idempotency_key, request_hash, operation_type,
+    license_id, idempotency_key, legacy_idempotency_key, request_hash, operation_type,
     verified_actor_key, verified_device_id, verified_cash_session_id, verified_cash_station_id,
     canonical_request
   ) values (
-    p_license_id, p_idempotency_key, p_request_hash, p_operation_type,
+    p_license_id, p_idempotency_key, v_internal_idempotency_key, p_request_hash, p_operation_type,
     p_verified_actor_key, p_verified_device_id, p_cash_session_id, v_session.cash_station_id,
     p_canonical_request
   ) on conflict (license_id, idempotency_key) do nothing
   returning * into v_result;
 
-  if v_result.id is not null then return v_result; end if;
-
-  select * into v_existing from public.pos_financial_operations o
-  where o.license_id = p_license_id and o.idempotency_key = p_idempotency_key
-  for update;
-  if v_existing.request_hash <> p_request_hash then
-    raise exception 'IDEMPOTENCY_CONFLICT' using errcode = 'P0001';
+  if v_result.id is null then
+    raise exception 'FINANCIAL_OPERATION_RESERVATION_FAILED' using errcode = 'P0001';
   end if;
-  return v_existing;
+  return v_result;
 end;
 $$;
 
@@ -284,6 +440,7 @@ declare
   v_canonical jsonb;
   v_operation public.pos_financial_operations;
   v_response jsonb;
+  v_internal_idempotency_key text;
 begin
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
@@ -294,39 +451,43 @@ begin
     p_operation_type, v_canonical, v_actor_key, v_device_id, v_canonical->>'cash_session_id');
 
   if v_operation.status = 'completed' then return v_operation.response_payload; end if;
+  v_internal_idempotency_key := v_operation.legacy_idempotency_key;
 
   case p_operation_type
     when 'cash.open' then
-      v_response := public.pos_open_cash_session(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token, v_canonical->'opening', p_idempotency_key);
+      v_response := public.pos_open_cash_session(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token, v_canonical->'opening', v_internal_idempotency_key);
     when 'cash.movement' then
       v_response := public.pos_register_cash_movement(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        p_request->>'cash_session_id', p_request->>'type', (p_request->>'amount')::numeric, p_request->>'concept', p_idempotency_key,
-        jsonb_strip_nulls(jsonb_build_object('source', p_request->>'source', 'reference_type', p_request->>'reference_type', 'reference_id', p_request->>'reference_id')));
+        v_canonical->>'cash_session_id', v_canonical->>'type', (v_canonical->>'amount')::numeric, v_canonical->>'concept', v_internal_idempotency_key,
+        jsonb_strip_nulls(jsonb_build_object('source', v_canonical->>'source', 'reference_type', v_canonical->>'reference_type', 'reference_id', v_canonical->>'reference_id')));
     when 'cash.adjust_initial_fund' then
       v_response := public.pos_adjust_initial_cash_fund(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        p_request->>'cash_session_id', (p_request->>'new_opening_amount')::numeric, p_request->>'reason', (p_request->>'expected_version')::integer, p_idempotency_key);
+        v_canonical->>'cash_session_id', (v_canonical->>'new_opening_amount')::numeric, v_canonical->>'reason', (v_canonical->>'expected_version')::integer, v_internal_idempotency_key);
     when 'cash.close' then
       v_response := public.pos_close_cash_session(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        p_request->>'cash_session_id', jsonb_strip_nulls(jsonb_build_object('closing_counted_amount', p_request->>'closing_counted_amount', 'next_shift_fund', p_request->>'next_shift_fund', 'comments', p_request->>'comments')),
-        (p_request->>'expected_version')::integer, p_idempotency_key);
+        v_canonical->>'cash_session_id', jsonb_strip_nulls(jsonb_build_object('closing_counted_amount', v_canonical->>'closing_counted_amount', 'next_shift_fund', v_canonical->>'next_shift_fund', 'comments', v_canonical->>'comments')),
+        (v_canonical->>'expected_version')::integer, v_internal_idempotency_key);
     when 'cash.admin_close' then
       v_response := public.pos_admin_close_cash_session(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        p_request->>'cash_session_id', p_request->>'closing_mode', (p_request->>'counted_amount')::numeric, (p_request->>'next_shift_fund')::numeric,
-        p_request->>'reason_code', p_request->>'comments', (p_request->>'expected_version')::integer, p_idempotency_key);
+        v_canonical->>'cash_session_id', v_canonical->>'closing_mode', (v_canonical->>'counted_amount')::numeric, (v_canonical->>'next_shift_fund')::numeric,
+        v_canonical->>'reason_code', v_canonical->>'comments', (v_canonical->>'expected_version')::integer, v_internal_idempotency_key);
     when 'sale.cashier' then
       v_response := public.pos_create_cloud_sale_cashier(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        v_canonical->'sale', v_canonical->'items', v_canonical->'payments', v_canonical->>'cash_session_id', p_idempotency_key);
+        v_canonical->'sale', v_canonical->'items', v_canonical->'payments', v_canonical->>'cash_session_id', v_internal_idempotency_key);
     when 'sale.cashier_inventory' then
       v_response := public.pos_create_cloud_sale_cashier_inventory(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        v_canonical->'sale', v_canonical->'items', v_canonical->'payments', v_canonical->>'cash_session_id', p_idempotency_key);
+        v_canonical->'sale', v_canonical->'items', v_canonical->'payments', v_canonical->>'cash_session_id', v_internal_idempotency_key);
     when 'sale.credit' then
       v_response := public.pos_create_cloud_sale_credit(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        v_canonical->'sale', v_canonical->'items', v_canonical->'payments', v_canonical->>'cash_session_id', v_canonical->>'customer_id', p_idempotency_key);
+        v_canonical->'sale', v_canonical->'items', v_canonical->'payments', v_canonical->>'cash_session_id', v_canonical->>'customer_id', v_internal_idempotency_key);
     when 'sale.cancel' then
       v_response := public.pos_cancel_cloud_sale(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
-        p_request->>'sale_id', p_request->>'reason', p_idempotency_key);
+        v_canonical->>'sale_id', v_canonical->>'reason', v_internal_idempotency_key);
     else raise exception 'FINANCIAL_OPERATION_TYPE_UNSUPPORTED' using errcode = 'P0001';
   end case;
+  -- Internal legacy results must never replace the external financial K in the
+  -- durable receipt payload returned to a client.
+  v_response := jsonb_set(v_response, '{idempotency_key}', to_jsonb(p_idempotency_key), true);
   perform private.complete_financial_operation_v1(v_license_id, p_idempotency_key, v_response);
   return v_response;
 end;
@@ -350,16 +511,27 @@ as $$
 declare
   v_context jsonb;
   v_license_id uuid;
+  v_device_id uuid;
+  v_actor_key text;
   v_operation public.pos_financial_operations;
 begin
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
+  v_device_id := nullif(v_context->>'device_id', '')::uuid;
+  v_actor_key := private.resolve_cash_actor_key(v_context);
+  perform private.assert_financial_request_hash_v1(p_request_hash);
+  -- Wait for an in-flight executor with this tenant/K to commit or roll back,
+  -- then read a fresh statement snapshot.  A committed unresolved row is the
+  -- only legitimate PROCESSING response; transient in-flight work is never
+  -- misreported as a permanent NOT_FOUND.
+  perform private.lock_financial_operation_v1(v_license_id, p_idempotency_key);
   select * into v_operation from public.pos_financial_operations o
   where o.license_id = v_license_id and o.idempotency_key = p_idempotency_key;
   if v_operation.id is null then return jsonb_build_object('status', 'NOT_FOUND'); end if;
-  if v_operation.request_hash <> p_request_hash then
+  if v_operation.request_hash is distinct from p_request_hash then
     return jsonb_build_object('status', 'CONFLICT', 'code', 'IDEMPOTENCY_CONFLICT');
   end if;
+  perform private.assert_financial_operation_origin_v1(v_operation, v_actor_key, v_device_id, null);
   if v_operation.status = 'processing' then
     return jsonb_build_object('status', 'PROCESSING', 'operation_type', v_operation.operation_type);
   end if;
@@ -367,7 +539,13 @@ begin
 end;
 $$;
 
-revoke all on function private.financial_operation_hash(text, jsonb) from public, anon, authenticated;
+revoke all on function private.financial_operation_hash(text, jsonb, text, text, text) from public, anon, authenticated;
+revoke all on function private.assert_financial_request_hash_v1(text) from public, anon, authenticated;
+revoke all on function private.financial_operation_internal_key_v1(text, text) from public, anon, authenticated;
+revoke all on function private.lock_financial_operation_v1(uuid, text) from public, anon, authenticated;
+revoke all on function private.assert_financial_operation_origin_v1(public.pos_financial_operations, text, uuid, text) from public, anon, authenticated;
+revoke all on function private.financial_decimal_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.financial_integer_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.canonical_financial_request_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text) from public, anon, authenticated;
 revoke all on function private.complete_financial_operation_v1(uuid, text, jsonb) from public, anon, authenticated;
