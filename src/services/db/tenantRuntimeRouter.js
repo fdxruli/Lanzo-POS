@@ -20,6 +20,11 @@ import {
 const DIRECTORY_DB = 'LanzoTenantDirectory';
 const DIRECTORY_STORE = 'tenants';
 const TENANT_DATABASE_PREFIX = 'LanzoDB_t_';
+const DIRECTORY_LIFECYCLE_VERSION = 1;
+const TENANT_DIRECTORY_STATE = Object.freeze({
+  PROVISIONING: 'PROVISIONING',
+  ACTIVE: 'ACTIVE'
+});
 const directory = new Dexie(DIRECTORY_DB);
 directory.version(1).stores({ [DIRECTORY_STORE]: 'opaqueId, *aliases' });
 
@@ -261,6 +266,21 @@ const createOpaqueId = (aliases) => (
     .padEnd(32, '0')}`
 );
 
+const isResumableProvisioning = (entry) => (
+  entry?.directoryLifecycleVersion === DIRECTORY_LIFECYCLE_VERSION
+  && entry?.directoryState === TENANT_DIRECTORY_STATE.PROVISIONING
+);
+
+const createDirectoryReservation = ({ opaqueId, aliases }) => ({
+  opaqueId,
+  // A lifecycle is durable ownership metadata, not a Dexie index. Keeping it
+  // on the existing record avoids a directory schema upgrade for this hotfix.
+  directoryLifecycleVersion: DIRECTORY_LIFECYCLE_VERSION,
+  directoryState: TENANT_DIRECTORY_STATE.PROVISIONING,
+  aliases,
+  updatedAt: new Date().toISOString()
+});
+
 export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalDatabase = false } = {}) => {
   const aliases = await Promise.all((identity?.aliases || []).map(aliasFingerprint));
   if (!aliases.length) throw new TenantRuntimeError('TENANT_IDENTITY_MISSING');
@@ -277,17 +297,11 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
   );
 
   if (mappingIsCorrupt) {
-    // A stale directory row must not recreate a missing destination. The
-    // directory contents are preserved by policy, so this cannot be silently
-    // rewritten to a different primary key; recovery must resolve it
-    // explicitly instead of opening a new empty database.
-    const discovery = await discoverBoundTenantDatabases(identity, physical.names);
-    if (discovery.unknownNonEmpty.length > 0) {
-      throw new TenantRuntimeError('TENANT_DATABASE_OWNERSHIP_UNRESOLVED');
-    }
-    const candidates = discovery.trustedCompatible;
-    if (candidates.length === 0) throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
-    if (candidates.length > 1) throw new TenantRuntimeError('TENANT_DIRECTORY_AMBIGUOUS');
+    // A durable provisioning reservation is the sole missing-database state
+    // that may be resumed. ACTIVE and lifecycle-less (legacy) rows have no
+    // proof that a missing database was never established, so recreating one
+    // would risk silently replacing tenant data.
+    if (isResumableProvisioning(prior)) return prior.opaqueId;
     throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
   }
 
@@ -313,15 +327,71 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
     if (currentPrior) return currentPrior.opaqueId;
 
     const opaqueId = adopted?.opaqueId || createOpaqueId(aliases);
-    await directory.table(DIRECTORY_STORE).put({
+    await directory.table(DIRECTORY_STORE).put(createDirectoryReservation({
       opaqueId,
       // A conflict exits before this write. Aliases are opaque fingerprints
       // with their type retained solely for compatibility validation.
-      aliases: [...new Set([...aliases, ...adoptedAliases])],
-      updatedAt: new Date().toISOString()
-    });
+      aliases: [...new Set([...aliases, ...adoptedAliases])]
+    }));
     return opaqueId;
   });
+};
+
+const promoteDirectoryReservationToActive = async (runtime) => {
+  const physical = await listPhysicalDatabaseNames();
+  if (!physical.available || !physical.names.has(runtime.database.name)) {
+    throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+  }
+
+  const binding = await runtime.database
+    .table(LOCAL_TENANT_BINDING_STORE)
+    .get(LOCAL_TENANT_BINDING_KEY);
+  const bindingAliases = normalizedBindingAliases(binding);
+  if (
+    !isTrustedTenantBinding(binding)
+    || !areLocalTenantAliasesCompatible(bindingAliases, runtime.identity.aliases)
+  ) {
+    throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+  }
+  const runtimeDirectoryAliases = await Promise.all(
+    runtime.identity.aliases.map(aliasFingerprint)
+  );
+
+  await directory.transaction('rw', directory.table(DIRECTORY_STORE), async () => {
+    const currentReservation = await directory.table(DIRECTORY_STORE).get(runtime.opaqueId);
+    if (
+      !currentReservation
+      || !areLocalTenantAliasesCompatible(currentReservation.aliases || [], runtimeDirectoryAliases)
+    ) {
+      throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+    }
+
+    if (
+      currentReservation.directoryState === TENANT_DIRECTORY_STATE.ACTIVE
+      && currentReservation.directoryLifecycleVersion === DIRECTORY_LIFECYCLE_VERSION
+    ) return;
+
+    // This is also the safe, post-validation backfill for a valid legacy row.
+    // It never changes its opaqueId or aliases.
+    await directory.table(DIRECTORY_STORE).put({
+      ...currentReservation,
+      directoryLifecycleVersion: DIRECTORY_LIFECYCLE_VERSION,
+      directoryState: TENANT_DIRECTORY_STATE.ACTIVE,
+      updatedAt: new Date().toISOString()
+    });
+  });
+};
+
+const publishTenantDirectoryCorruption = (error) => {
+  if (error?.code !== 'TENANT_DIRECTORY_CORRUPT') return false;
+  setDatabaseRecoveryState({
+    status: DATABASE_RECOVERY_STATUS.FAILED,
+    errorCode: error.code,
+    databaseName: null,
+    isRetryable: true,
+    message: 'El almacenamiento local de este tenant no puede abrirse de forma segura.'
+  });
+  return true;
 };
 
 const current = () => {
@@ -400,7 +470,13 @@ export const openTenantRuntime = async (identity) => {
   if (!tenantDatabaseFactory) {
     throw new TenantRuntimeError('TENANT_RUNTIME_FACTORY_NOT_CONFIGURED');
   }
-  const opaqueId = await resolveTenantRuntimeDirectory(identity, { requirePhysicalDatabase: true });
+  let opaqueId;
+  try {
+    opaqueId = await resolveTenantRuntimeDirectory(identity, { requirePhysicalDatabase: true });
+  } catch (error) {
+    publishTenantDirectoryCorruption(error);
+    throw error;
+  }
   if (active?.opaqueId === opaqueId && active.database.isOpen()) return active;
   // Callers must lock the controller before switching tenants. Keep this
   // defensive lock for direct router consumers as well, so B is never opened
@@ -431,7 +507,7 @@ export const openTenantRuntime = async (identity) => {
     }
     throw error;
   }
-  active = { opaqueId, database, generation: ++generation };
+  active = { opaqueId, database, generation: ++generation, identity };
   // A recovery state is cleared only after this tenant's complete
   // preparation succeeded. Do not put this in a finally: structural failures
   // must remain visible to DatabaseRecoveryGate.
@@ -453,11 +529,13 @@ export const markTenantRuntimeReady = async () => {
   try {
     await hydrateTenantStorageConsumers();
     resumeTenantStorageWrites();
+    await promoteDirectoryReservationToActive(current());
   } catch (error) {
     // A partially hydrated tenant is never usable. Preserve its physical DB
     // and storage payload, lock access, then leave no active runtime handle.
     localTenantAccessController.lock('tenant_storage_hydration_failed');
     closeTenantRuntime();
+    publishTenantDirectoryCorruption(error);
     throw error;
   }
 };

@@ -130,6 +130,24 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
   });
 
+  it('shows bounded support recovery for tenant directory corruption without naming LanzoDB1', () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'TENANT_DIRECTORY_CORRUPT'
+    };
+    const reloadPage = vi.fn();
+
+    renderGate({ reloadPage });
+
+    expect(screen.getByText(/almacenamiento local de este tenant no puede abrirse/i)).toBeInTheDocument();
+    expect(screen.getByText(/no se eliminó ningún dato local/i)).toBeInTheDocument();
+    expect(screen.queryByText(/crear nueva base|restablecer tenant|continuar de todos modos/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/LanzoDB1/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /recargar lanzo/i }));
+    expect(reloadPage).toHaveBeenCalledTimes(1);
+  });
+
   it('collapses multiple retry clicks into one recovery call', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,

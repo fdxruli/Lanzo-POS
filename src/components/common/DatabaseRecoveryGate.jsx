@@ -60,6 +60,15 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
     };
   }
 
+  if (state.errorCode === 'TENANT_DIRECTORY_CORRUPT') {
+    return {
+      title: 'El almacenamiento local de este tenant no puede abrirse de forma segura',
+      body: 'Lanzo detectó una referencia local sin su base física correspondiente. No se eliminó ningún dato local.',
+      advice: 'No crees ni restablezcas una base local. Puedes reintentar o enviar el diagnóstico a soporte para una revisión segura.',
+      icon: 'warning'
+    };
+  }
+
   if (state.status === DATABASE_RECOVERY_STATUS.MIGRATING) {
     return {
       title: 'Actualizando la base local de forma segura...',
@@ -174,7 +183,8 @@ export default function DatabaseRecoveryGate({
   const canRetry = recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
-  const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT';
+  const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT'
+    || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT';
 
   const sendSupportReport = () => {
     if (!supportReport) return;
