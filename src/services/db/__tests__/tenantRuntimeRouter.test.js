@@ -114,6 +114,36 @@ const deleteDirectoryEntry = async (opaqueId) => {
   directory.close();
 };
 
+const readDirectoryEntry = async (opaqueId) => {
+  const directory = new Dexie('LanzoTenantDirectory');
+  directory.version(1).stores({ tenants: 'opaqueId, *aliases' });
+  await directory.open();
+  const entry = await directory.table('tenants').get(opaqueId);
+  directory.close();
+  return entry;
+};
+
+const writeDirectoryEntry = async (entry) => {
+  const directory = new Dexie('LanzoTenantDirectory');
+  directory.version(1).stores({ tenants: 'opaqueId, *aliases' });
+  await directory.open();
+  await directory.table('tenants').put(entry);
+  directory.close();
+};
+
+const writeTrustedBindingToActiveRuntime = async (identity) => {
+  await db.table(LOCAL_TENANT_BINDING_STORE).put({
+    key: LOCAL_TENANT_BINDING_KEY,
+    tenantIdentity: identity.primary,
+    tenantAliases: [...identity.aliases],
+    authority: identity.authority,
+    bindingVersion: 1,
+    source: 'test',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+};
+
 describe('tenant runtime router', () => {
   afterEach(() => { closeTenantRuntime(); localTenantAccessController.reset(); clearDatabaseRecoveryState(); });
 
@@ -381,6 +411,12 @@ describe('tenant runtime router', () => {
   it('fails closed on a stale directory row without creating a replacement database', async () => {
     const identity = await resolveActiveTenantIdentity({ license_key: `STALE-DIRECTORY-${crypto.randomUUID()}` });
     const staleOpaqueId = await resolveTenantRuntimeDirectory(identity);
+    const reserved = await readDirectoryEntry(staleOpaqueId);
+    await writeDirectoryEntry({
+      ...reserved,
+      directoryLifecycleVersion: 1,
+      directoryState: 'ACTIVE'
+    });
     const boundCandidateName = tenantPhysicalName();
     await createBoundOperationalTenantDatabase(identity, boundCandidateName);
 
@@ -399,6 +435,148 @@ describe('tenant runtime router', () => {
     ]);
 
     expect(left).toBe(right);
+  });
+
+  it('reserves a fresh destination as PROVISIONING and promotes it only after binding and hydration', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-FRESH-${crypto.randomUUID()}` });
+
+    await openTenantRuntime(identity);
+    const runtime = getActiveTenantRuntime();
+    expect(await readDirectoryEntry(runtime.opaqueId)).toMatchObject({
+      opaqueId: runtime.opaqueId,
+      directoryLifecycleVersion: 1,
+      directoryState: 'PROVISIONING'
+    });
+
+    await writeTrustedBindingToActiveRuntime(identity);
+    await markTenantRuntimeReady();
+
+    expect(await readDirectoryEntry(runtime.opaqueId)).toMatchObject({
+      opaqueId: runtime.opaqueId,
+      directoryLifecycleVersion: 1,
+      directoryState: 'ACTIVE'
+    });
+    expect(await Dexie.getDatabaseNames()).toContain(runtime.databaseName);
+    expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+  });
+
+  it('resumes a crash after directory reservation with the same opaqueId', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-RESERVE-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+
+    expect(await Dexie.getDatabaseNames()).not.toContain(databaseName);
+    await openTenantRuntime(identity);
+    expect(getActiveTenantRuntime()).toMatchObject({ opaqueId, databaseName });
+    await writeTrustedBindingToActiveRuntime(identity);
+    await markTenantRuntimeReady();
+
+    expect(await readDirectoryEntry(opaqueId)).toMatchObject({ directoryState: 'ACTIVE' });
+    expect(await Dexie.getDatabaseNames()).toContain(databaseName);
+  });
+
+  it('resumes a provisioning database created before its first binding without allocating another database', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-PHYSICAL-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    await createUnboundOperationalTenantDatabase(databaseName);
+
+    await openTenantRuntime(identity);
+    await writeTrustedBindingToActiveRuntime(identity);
+    await markTenantRuntimeReady();
+
+    expect(getActiveTenantRuntime()).toMatchObject({ opaqueId, databaseName });
+    expect(await readDirectoryEntry(opaqueId)).toMatchObject({ directoryState: 'ACTIVE' });
+    expect((await Dexie.getDatabaseNames()).filter((name) => name.startsWith('LanzoDB_t_'))).toContain(databaseName);
+  });
+
+  it('resumes a matching bound provisioning database and preserves its business rows before ACTIVE', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-BOUND-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    await createBoundOperationalTenantDatabase(identity, databaseName, { id: 'preserved-before-active', name: 'Preserved' });
+
+    await openTenantRuntime(identity);
+    await markTenantRuntimeReady();
+
+    expect(await db.table('menu').get('preserved-before-active')).toMatchObject({ name: 'Preserved' });
+    expect(await readDirectoryEntry(opaqueId)).toMatchObject({ directoryState: 'ACTIVE' });
+  });
+
+  it('fails closed when an ACTIVE directory entry loses its physical database', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-ACTIVE-LOSS-${crypto.randomUUID()}` });
+    await openTenantRuntime(identity);
+    const runtime = getActiveTenantRuntime();
+    await writeTrustedBindingToActiveRuntime(identity);
+    await markTenantRuntimeReady();
+    closeTenantRuntime();
+    await Dexie.delete(runtime.databaseName);
+    const before = await readDirectoryEntry(runtime.opaqueId);
+
+    await expect(openTenantRuntime(identity)).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_CORRUPT' });
+
+    expect(await Dexie.getDatabaseNames()).not.toContain(runtime.databaseName);
+    expect(await readDirectoryEntry(runtime.opaqueId)).toEqual(before);
+    expect(getActiveTenantRuntime()).toBeNull();
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'TENANT_DIRECTORY_CORRUPT',
+      databaseName: null
+    });
+  });
+
+  it('keeps a lifecycle-less missing directory entry fail-closed', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-LEGACY-LOSS-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const reserved = await readDirectoryEntry(opaqueId);
+    await writeDirectoryEntry({
+      opaqueId,
+      aliases: reserved.aliases,
+      updatedAt: reserved.updatedAt
+    });
+
+    await expect(openTenantRuntime(identity)).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_CORRUPT' });
+    expect(await readDirectoryEntry(opaqueId)).toEqual({
+      opaqueId,
+      aliases: reserved.aliases,
+      updatedAt: reserved.updatedAt
+    });
+    expect(await Dexie.getDatabaseNames()).not.toContain(`LanzoDB_t_${opaqueId}`);
+  });
+
+  it('backfills a valid lifecycle-less directory entry to ACTIVE only after trusted preparation', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-LEGACY-VALID-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    const reserved = await readDirectoryEntry(opaqueId);
+    await writeDirectoryEntry({ opaqueId, aliases: reserved.aliases, updatedAt: reserved.updatedAt });
+    await createBoundOperationalTenantDatabase(identity, databaseName);
+
+    await openTenantRuntime(identity);
+    await markTenantRuntimeReady();
+
+    expect(await readDirectoryEntry(opaqueId)).toMatchObject({
+      opaqueId,
+      directoryLifecycleVersion: 1,
+      directoryState: 'ACTIVE'
+    });
+  });
+
+  it('converges concurrent first opens on one provisioning reservation and physical database', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-TWO-TAB-${crypto.randomUUID()}` });
+    const [left, right] = await Promise.all([
+      resolveTenantRuntimeDirectory(identity),
+      resolveTenantRuntimeDirectory(identity)
+    ]);
+    expect(left).toBe(right);
+
+    await openTenantRuntime(identity);
+    await writeTrustedBindingToActiveRuntime(identity);
+    await markTenantRuntimeReady();
+
+    const row = await readDirectoryEntry(left);
+    expect(row).toMatchObject({ opaqueId: left, directoryState: 'ACTIVE' });
+    expect((await Dexie.getDatabaseNames()).filter((name) => name === `LanzoDB_t_${left}`)).toHaveLength(1);
   });
 
   it('never treats LanzoDB1 as an isolated tenant candidate', async () => {
