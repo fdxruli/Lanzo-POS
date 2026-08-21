@@ -42,6 +42,9 @@ const requireSource = [
   'private.financial_payment_method_v1',
   'private.financial_execution_request_v1',
   'private.financial_first_value_v1',
+  'private.financial_first_present_value_v1',
+  'private.financial_first_nonblank_scalar_v1',
+  'FINANCIAL_TIMESTAMP_INVALID',
   "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_COLLISION'",
   "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_INTEGRITY'",
   'private.public_financial_response_v1',
@@ -77,6 +80,28 @@ if (currentHash < 0 || hashGuard < currentHash || replayLookup < hashGuard || lo
 if (!reserveBody.includes('v_existing.legacy_idempotency_key is distinct from\n       private.financial_operation_internal_key_v1')
   || !reserveBody.includes('where k.license_id = p_license_id and k.idempotency_key = v_internal_idempotency_key')) {
   throw new Error('Strict internal-key integrity and preexisting internal collision guards are required');
+}
+const exactReserveRevoke = 'revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text, text) from public, anon, authenticated;';
+const obsoleteReserveRevoke = 'revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text) from public, anon, authenticated;';
+if (!source.includes(exactReserveRevoke) || source.includes(obsoleteReserveRevoke)) {
+  throw new Error('Reserve CREATE/REVOKE identity must be the exact nine-argument signature');
+}
+if (!reserveBody.includes('p_verified_cash_station_id text default null')) {
+  throw new Error('Reserve CREATE identity must contain nine arguments');
+}
+const originStart = source.indexOf('create or replace function private.assert_financial_operation_origin_v1');
+const originEnd = source.indexOf('create or replace function private.financial_decimal_v1');
+const originBody = source.slice(originStart, originEnd);
+if (!originBody.includes('p_operation.verified_cash_session_id is null\n     and p_operation.verified_cash_station_id is null then return')
+  || !originBody.includes('s.status = \'active\'')) {
+  throw new Error('Station-bound sessionless receipt authority is incomplete');
+}
+const completeStart = source.indexOf('create or replace function private.complete_financial_operation_v1');
+const completeEnd = source.indexOf('create or replace function public.pos_execute_financial_operation_v1');
+const completeBody = source.slice(completeStart, completeEnd);
+if (!completeBody.includes("v_operation.operation_type = 'cash.open'")
+  || !completeBody.includes('v_session.cash_station_id is distinct from v_operation.verified_cash_station_id')) {
+  throw new Error('cash.open completion must prove the reserved and returned stations are equal');
 }
 if (!reserveBody.includes('v_operation_id uuid := extensions.gen_random_uuid()')
   || !reserveBody.includes('private.financial_operation_internal_key_v1(v_existing.operation_type, v_existing.id)')
@@ -118,11 +143,27 @@ for (const expected of [
   'FINANCIAL_R4_NESTED_INTERNAL_KEY_SANITIZATION',
   'FINANCIAL_R4_SELECTED_MODIFIER_ALIAS_NORMALIZATION',
   'FINANCIAL_R4_SELECTED_MODIFIER_NOT_HASHED',
+  'FINANCIAL_R6_RECEIPT_CROSS_ACTOR_NON_DISCLOSURE',
+  'FINANCIAL_R6_FIXED_HASH_VECTOR_A',
+  'FINANCIAL_R6_FIXED_HASH_VECTOR_B',
+  'FINANCIAL_R6_FIXED_HASH_VECTOR_C',
+  'FINANCIAL_R6_FIXED_HASH_VECTOR_D',
+  'FINANCIAL_R6_FIXED_HASH_VECTOR_E',
+  'FINANCIAL_R6_NULL_FALLBACK_CASH_OPEN',
+  'FINANCIAL_R6_BLANK_FALLBACK_CUSTOMER',
+  'FINANCIAL_R6_OFFSETLESS_TIMESTAMP_ACCEPTED',
+  'FINANCIAL_R6_SALE_CASHIER_MISSING_SESSION',
+  'FINANCIAL_R6_SALE_CASHIER_INVENTORY_MISSING_SESSION',
+  'FINANCIAL_R6_SALE_CREDIT_MISSING_SESSION',
+  'FINANCIAL_R6_CASH_OPEN_STATION_RESOLUTION',
+  'FINANCIAL_R6_CASH_OPEN_STATION_HASH',
+  'FINANCIAL_R6_CASH_OPEN_STATION_MISMATCH_COMPLETED',
+  'FINANCIAL_R6_SESSIONLESS_STATION_AUTHORITY',
 ]) {
   if (!test.includes(expected)) throw new Error(`Executable SQL assertion missing: ${expected}`);
 }
-for (const expected of ['Start-Job', 'public.pos_execute_financial_operation_v1', 'cash.movement', 'pg_try_advisory_xact_lock', 'business-effect', 'LANZO_POS_TEST_ALLOW_FINANCIAL_MUTATION', 'LANZO_POS_TEST_DISPOSABLE_CASH_SESSION', 'pos_cash_audit_events', 'pos_sync_events', 'cash_entries_total', 'shared terminal financial receipt concurrency: PASS']) {
+for (const expected of ['Start-Job', 'public.pos_execute_financial_operation_v1', 'cash.movement', 'pg_try_advisory_xact_lock', 'business-effect', 'LANZO_POS_TEST_ALLOW_FINANCIAL_MUTATION', 'LANZO_POS_TEST_DISPOSABLE_CASH_SESSION', "'postgres', 'postgresql'", "'localhost', '127.0.0.1', '::1'", "'host', 'hostaddr', 'service', 'servicefile'", 'pos_cash_audit_events', 'pos_sync_events', 'pos_idempotency_keys', 'baselineExact', 'PRIMARY TEST FAILURE', 'shared terminal financial receipt concurrency: PASS']) {
   if (!harness.includes(expected)) throw new Error(`Concurrency harness is incomplete: ${expected}`);
 }
 if (harness.includes('Start-Sleep')) throw new Error('Concurrency harness must use a deterministic lock barrier, not a timing delay');
-console.log('shared terminal financial receipt R4 static contract: PASS');
+console.log('shared terminal financial receipt R6 static contract: PASS');

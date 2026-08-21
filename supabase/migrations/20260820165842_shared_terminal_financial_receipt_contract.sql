@@ -195,9 +195,9 @@ as $$
 declare
   v_current_station_id text;
 begin
-  -- Actor is strict V1 replay authority.  Device is immutable provenance for
-  -- sessionless work, but an operation with a cash session must be recovered
-  -- from a device currently bound to that exact station.
+  -- Actor is strict V1 replay authority.  Any station-bound operation,
+  -- including a cash.open that has not yet received its session id, must be
+  -- recovered from a device currently bound to that exact active station.
   if p_operation.verified_actor_key is distinct from p_current_actor_key then
     raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
   end if;
@@ -205,15 +205,18 @@ begin
      and p_operation.verified_cash_session_id is distinct from p_requested_cash_session_id then
     raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
   end if;
-  if p_operation.verified_cash_session_id is null then return; end if;
+  if p_operation.verified_cash_session_id is null
+     and p_operation.verified_cash_station_id is null then return; end if;
   if p_operation.verified_cash_station_id is null or p_current_device_id is null then
     raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
   end if;
   select b.cash_station_id into v_current_station_id
   from public.pos_cash_station_bindings b
+  join public.pos_cash_stations s
+    on s.license_id = b.license_id and s.id = b.cash_station_id
   where b.license_id = p_operation.license_id
     and b.device_id = p_current_device_id
-    and b.status = 'active'
+    and b.status = 'active' and s.status = 'active'
   limit 1;
   if v_current_station_id is distinct from p_operation.verified_cash_station_id then
     raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
@@ -269,6 +272,50 @@ begin
 end;
 $$;
 
+-- Raw first-present precedence is intentionally retained for JSON containers:
+-- a present null/scalar blocks later aliases exactly as the inventory
+-- normalizers do, and callers then type-guard it before expanding arrays.
+create or replace function private.financial_first_present_value_v1(p_object jsonb, p_keys text[])
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare v_key text;
+begin
+  if jsonb_typeof(p_object) <> 'object' then return null; end if;
+  foreach v_key in array p_keys loop
+    if p_object ? v_key then return p_object -> v_key; end if;
+  end loop;
+  return null;
+end;
+$$;
+
+-- Mirrors private.pos_sale_jsonb_text/numeric: missing, JSON null and blank
+-- scalar text fall through, while the first meaningful scalar is retained so
+-- its downstream type validation cannot be silently bypassed.
+create or replace function private.financial_first_nonblank_scalar_v1(p_object jsonb, p_keys text[])
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare v_key text; v_value jsonb;
+begin
+  if jsonb_typeof(p_object) <> 'object' then return null; end if;
+  foreach v_key in array p_keys loop
+    if p_object ? v_key then
+      v_value := p_object -> v_key;
+      if v_value is not null and v_value <> 'null'::jsonb
+         and nullif(btrim(v_value #>> '{}'), '') is not null then
+        return v_value;
+      end if;
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+
 create or replace function private.financial_text_v1(p_value jsonb)
 returns text
 language sql
@@ -284,8 +331,11 @@ set search_path = ''
 as $$
 begin
   if p_value is null or p_value = 'null'::jsonb then return null; end if;
+  if (p_value #>> '{}') !~ '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$' then
+    raise exception 'FINANCIAL_TIMESTAMP_INVALID' using errcode = 'P0001';
+  end if;
   return to_char(((p_value #>> '{}')::timestamptz at time zone 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"');
-exception when invalid_datetime_format then
+exception when invalid_datetime_format or datetime_field_overflow then
   raise exception 'FINANCIAL_TIMESTAMP_INVALID' using errcode = 'P0001';
 end;
 $$;
@@ -319,19 +369,22 @@ $$;
 -- provenance except its two batches_used aliases lifted here.
 create or replace function private.canonical_financial_batch_allocations_v1(p_item jsonb)
 returns jsonb
-language sql
+language plpgsql
 immutable
 set search_path = ''
 as $$
-  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-    'batch_id', private.financial_text_v1(private.financial_first_value_v1(value, array['batch_id','batchId','id'])),
-    'quantity', private.financial_decimal_v1(private.financial_first_value_v1(value, array['quantity','qty','usedQuantity','used_quantity']))
-  )) order by ordinality), '[]'::jsonb)
-  from jsonb_array_elements(coalesce(
-    private.financial_first_value_v1(p_item, array['batches_used','batchesUsed']),
-    private.financial_first_value_v1(p_item->'metadata', array['batches_used','batchesUsed']),
-    '[]'::jsonb
-  )) with ordinality
+declare v_allocations jsonb;
+begin
+  v_allocations := private.financial_first_present_value_v1(p_item, array['batches_used','batchesUsed']);
+  if v_allocations is null then
+    v_allocations := private.financial_first_present_value_v1(p_item->'metadata', array['batches_used','batchesUsed']);
+  end if;
+  if jsonb_typeof(v_allocations) <> 'array' then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+    'batch_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(value, array['batch_id','batchId','id'])),
+    'quantity', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(value, array['quantity','qty','usedQuantity','used_quantity']))
+  )) order by ordinality) from jsonb_array_elements(v_allocations) with ordinality), '[]'::jsonb);
+end;
 $$;
 
 -- REST.INV.5.1 tracks modifier inventory iff ingredient identity and a valid
@@ -340,11 +393,14 @@ create or replace function private.canonical_financial_selected_modifiers_v1(p_i
 returns jsonb language plpgsql immutable set search_path = '' as $$
 declare v_modifiers jsonb;
 begin
-  v_modifiers := coalesce(private.financial_first_value_v1(p_item, array['selected_modifiers','selectedModifiers']), private.financial_first_value_v1(p_item->'metadata', array['selected_modifiers','selectedModifiers']), '[]'::jsonb);
+  v_modifiers := private.financial_first_present_value_v1(p_item, array['selected_modifiers','selectedModifiers']);
+  if v_modifiers is null then
+    v_modifiers := private.financial_first_present_value_v1(p_item->'metadata', array['selected_modifiers','selectedModifiers']);
+  end if;
   if jsonb_typeof(v_modifiers) <> 'array' then return '[]'::jsonb; end if;
   return coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-    'ingredient_id', private.financial_text_v1(private.financial_first_value_v1(value, array['ingredientId','ingredient_id'])),
-    'ingredient_quantity', private.financial_decimal_v1(private.financial_first_value_v1(value, array['ingredientQuantity','ingredient_quantity','quantity']))
+    'ingredient_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(value, array['ingredientId','ingredient_id'])),
+    'ingredient_quantity', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(value, array['ingredientQuantity','ingredient_quantity','quantity']))
   )) order by ordinality) from jsonb_array_elements(v_modifiers) with ordinality), '[]'::jsonb);
 end;
 $$;
@@ -356,25 +412,25 @@ immutable
 set search_path = ''
 as $$
   select jsonb_strip_nulls(jsonb_build_object(
-    'id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['id'])),
-    'product_id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['product_id','productId','parentId'])),
-    'product_name', private.financial_text_v1(private.financial_first_value_v1(p_item, array['product_name','productName','name'])),
-    'product_sku', private.financial_text_v1(private.financial_first_value_v1(p_item, array['product_sku','productSku','sku'])),
-    'barcode', private.financial_text_v1(private.financial_first_value_v1(p_item, array['barcode','barCode'])),
-    'category_id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['category_id','categoryId'])),
-    'category_name', private.financial_text_v1(private.financial_first_value_v1(p_item, array['category_name','categoryName','rubro','category'])),
-    'batch_id', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_id','batchId'])),
-    'batch_sku', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_sku','batchSku'])),
-    'batch_expiry_date', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_expiry_date','batchExpiryDate','expiryDate'])),
-    'stock_source', private.financial_text_v1(private.financial_first_value_v1(p_item, array['stock_source','stockSource'])),
+    'id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['id'])),
+    'product_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['product_id','productId','parentId'])),
+    'product_name', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['product_name','productName','name'])),
+    'product_sku', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['product_sku','productSku','sku'])),
+    'barcode', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['barcode','barCode'])),
+    'category_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['category_id','categoryId'])),
+    'category_name', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['category_name','categoryName','rubro','category'])),
+    'batch_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['batch_id','batchId'])),
+    'batch_sku', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['batch_sku','batchSku'])),
+    'batch_expiry_date', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['batch_expiry_date','batchExpiryDate','expiryDate'])),
+    'stock_source', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_item, array['stock_source','stockSource'])),
     'batch_allocations', private.canonical_financial_batch_allocations_v1(p_item),
     'selected_modifiers', private.canonical_financial_selected_modifiers_v1(p_item),
-    'quantity', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['quantity','qty'])),
-    'unit_price', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['unit_price','unitPrice','price'])),
-    'unit_cost', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['unit_cost','unitCost','cost'])),
-    'line_total', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['line_total','lineTotal','total','exactTotal'])),
-    'discount_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['discount_amount','discountAmount'])),
-    'tax_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['tax_amount','taxAmount']))
+    'quantity', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['quantity','qty'])),
+    'unit_price', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['unit_price','unitPrice','price'])),
+    'unit_cost', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['unit_cost','unitCost','cost'])),
+    'line_total', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['line_total','lineTotal','total','exactTotal'])),
+    'discount_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['discount_amount','discountAmount'])),
+    'tax_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['tax_amount','taxAmount']))
   ))
 $$;
 
@@ -385,12 +441,12 @@ immutable
 set search_path = ''
 as $$
   select jsonb_strip_nulls(jsonb_build_object(
-    'id', private.financial_text_v1(private.financial_first_value_v1(p_payment, array['id'])),
-    'method', private.financial_payment_method_v1(p_operation_type, private.financial_text_v1(private.financial_first_value_v1(p_payment, array['method','payment_method','paymentMethod']))),
-    'amount', private.financial_decimal_v1(private.financial_first_value_v1(p_payment, array['amount','total'])),
-    'received_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_payment, array['received_amount','receivedAmount'])),
-    'change_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_payment, array['change_amount','changeAmount'])),
-    'reference', private.financial_text_v1(private.financial_first_value_v1(p_payment, array['reference','ref']))
+    'id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_payment, array['id'])),
+    'method', private.financial_payment_method_v1(p_operation_type, private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_payment, array['method','payment_method','paymentMethod']))),
+    'amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_payment, array['amount','total'])),
+    'received_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_payment, array['received_amount','receivedAmount'])),
+    'change_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_payment, array['change_amount','changeAmount'])),
+    'reference', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_payment, array['reference','ref']))
   ))
 $$;
 
@@ -401,24 +457,24 @@ immutable
 set search_path = ''
 as $$
   select jsonb_strip_nulls(jsonb_build_object(
-    'id', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['id','cloud_sale_id','cloudSaleId'])),
-    'local_sale_id', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['local_sale_id','localSaleId'])),
-    'subtotal', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['subtotal'])),
-    'discount_total', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['discount_total','discountTotal'])),
-    'tax_total', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['tax_total','taxTotal'])),
-    'total', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['total'])),
-    'amount_paid', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['amount_paid','amountPaid','abono'])),
-    'change_amount', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['change_amount','changeAmount'])),
-    'balance_due', private.financial_decimal_v1(private.financial_first_value_v1(p_sale, array['balance_due','balanceDue','saldoPendiente'])),
-    'payment_method', private.financial_payment_method_v1(p_operation_type, private.financial_text_v1(private.financial_first_value_v1(p_sale, array['payment_method','paymentMethod']))),
-    'fulfillment_status', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['fulfillment_status','fulfillmentStatus'])),
-    'local_folio', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['local_folio','localFolio','folio'])),
-    'customer_id', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_id','customerId'])),
-    'customer_name', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_name','customerName'])),
-    'customer_phone', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_phone','customerPhone'])),
-    'currency', upper(private.financial_text_v1(private.financial_first_value_v1(p_sale, array['currency']))),
-    'sold_at', private.financial_timestamp_v1(private.financial_first_value_v1(p_sale, array['sold_at','soldAt','timestamp'])),
-    'created_at', private.financial_timestamp_v1(private.financial_first_value_v1(p_sale, array['created_at','createdAt','timestamp']))
+    'id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['id','cloud_sale_id','cloudSaleId'])),
+    'local_sale_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['local_sale_id','localSaleId'])),
+    'subtotal', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['subtotal'])),
+    'discount_total', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['discount_total','discountTotal'])),
+    'tax_total', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['tax_total','taxTotal'])),
+    'total', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['total'])),
+    'amount_paid', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['amount_paid','amountPaid','abono'])),
+    'change_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['change_amount','changeAmount'])),
+    'balance_due', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['balance_due','balanceDue','saldoPendiente'])),
+    'payment_method', private.financial_payment_method_v1(p_operation_type, private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['payment_method','paymentMethod']))),
+    'fulfillment_status', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['fulfillment_status','fulfillmentStatus'])),
+    'local_folio', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['local_folio','localFolio','folio'])),
+    'customer_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['customer_id','customerId'])),
+    'customer_name', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['customer_name','customerName'])),
+    'customer_phone', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['customer_phone','customerPhone'])),
+    'currency', upper(private.financial_text_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['currency']))),
+    'sold_at', private.financial_timestamp_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['sold_at','soldAt','timestamp'])),
+    'created_at', private.financial_timestamp_v1(private.financial_first_nonblank_scalar_v1(p_sale, array['created_at','createdAt','timestamp']))
   ))
 $$;
 
@@ -446,13 +502,13 @@ begin
   case p_operation_type
     when 'cash.open' then
       return jsonb_build_object('opening', jsonb_build_object(
-        'opening_amount', coalesce(private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['opening_amount','montoInicial'])),'0'),
-        'opening_counted_amount', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['opening_counted_amount','montoContado','montoContadoInicial'])),
-        'opening_suggested_amount', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['opening_suggested_amount','montoSugerido'])),
-        'opening_policy', private.financial_text_v1(private.financial_first_value_v1(v_request,array['opening_policy','politicaApertura'])),
-        'opening_origin', private.financial_text_v1(private.financial_first_value_v1(v_request,array['opening_origin','origen'])),
-        'is_auto_opening', private.financial_text_v1(private.financial_first_value_v1(v_request,array['is_auto_opening','esAutoApertura'])),
-        'responsible_name', private.financial_text_v1(private.financial_first_value_v1(v_request,array['responsible_name','responsable']))
+        'opening_amount', coalesce(private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(v_request,array['opening_amount','montoInicial'])),'0'),
+        'opening_counted_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(v_request,array['opening_counted_amount','montoContado','montoContadoInicial'])),
+        'opening_suggested_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(v_request,array['opening_suggested_amount','montoSugerido'])),
+        'opening_policy', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request,array['opening_policy','politicaApertura'])),
+        'opening_origin', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request,array['opening_origin','origen'])),
+        'is_auto_opening', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request,array['is_auto_opening','esAutoApertura'])),
+        'responsible_name', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request,array['responsible_name','responsable']))
       ));
     when 'cash.movement' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
@@ -465,9 +521,9 @@ begin
         'reason', v_request->>'reason', 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'cash.close' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
-        'closing_counted_amount', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['closing_counted_amount','countedAmount','montoFisicoTotal'])),
-        'next_shift_fund', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['next_shift_fund','nextShiftFund','montoFondoSiguienteTurno'])),
-        'comments', private.financial_text_v1(private.financial_first_value_v1(v_request,array['audit_comments','comments','comentarios'])), 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
+        'closing_counted_amount', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(v_request,array['closing_counted_amount','countedAmount','montoFisicoTotal'])),
+        'next_shift_fund', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(v_request,array['next_shift_fund','nextShiftFund','montoFondoSiguienteTurno'])),
+        'comments', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request,array['audit_comments','comments','comentarios'])), 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'cash.admin_close' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
         'closing_mode', v_request->>'closing_mode', 'counted_amount', private.financial_decimal_v1(v_request->'counted_amount'),
@@ -720,6 +776,14 @@ begin
     select * into v_session from public.pos_cash_sessions s
     where s.license_id = p_license_id and s.id = v_session_id;
   end if;
+  if v_operation.operation_type = 'cash.open' then
+    if nullif(btrim(v_session_id), '') is null
+       or v_session.id is null
+       or v_session.cash_station_id is null
+       or v_session.cash_station_id is distinct from v_operation.verified_cash_station_id then
+      raise exception 'FINANCIAL_OPERATION_ORIGIN_MISMATCH' using errcode = 'P0001';
+    end if;
+  end if;
   update public.pos_financial_operations
   set status = 'completed', response_payload = p_response, completed_at = now(),
       verified_cash_session_id = coalesce(verified_cash_session_id, v_session.id),
@@ -883,6 +947,8 @@ revoke all on function private.assert_financial_operation_origin_v1(public.pos_f
 revoke all on function private.financial_decimal_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.financial_integer_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.financial_first_value_v1(jsonb, text[]) from public, anon, authenticated;
+revoke all on function private.financial_first_present_value_v1(jsonb, text[]) from public, anon, authenticated;
+revoke all on function private.financial_first_nonblank_scalar_v1(jsonb, text[]) from public, anon, authenticated;
 revoke all on function private.financial_text_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.financial_timestamp_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.financial_payment_method_v1(text, text) from public, anon, authenticated;
@@ -893,7 +959,7 @@ revoke all on function private.canonical_financial_payment_v1(text, jsonb) from 
 revoke all on function private.canonical_financial_sale_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function private.canonical_financial_request_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function private.financial_execution_request_v1(jsonb) from public, anon, authenticated;
-revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text) from public, anon, authenticated;
+revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text, text) from public, anon, authenticated;
 revoke all on function private.assert_financial_legacy_result_terminal_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function private.sanitize_financial_response_idempotency_v1(jsonb, text, text) from public, anon, authenticated;
 revoke all on function private.assert_financial_response_no_internal_key_v1(jsonb, text) from public, anon, authenticated;

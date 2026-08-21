@@ -11,7 +11,12 @@ declare
   v_license_a uuid := extensions.gen_random_uuid();
   v_license_b uuid := extensions.gen_random_uuid();
   v_device_a uuid := extensions.gen_random_uuid();
+  v_device_b uuid := extensions.gen_random_uuid();
   v_actor_x text := 'staff-user:' || extensions.gen_random_uuid()::text;
+  v_station_a text := 'r6-station-a-' || v_suffix;
+  v_station_b text := 'r6-station-b-' || v_suffix;
+  v_session_b text := 'r6-session-b-' || v_suffix;
+  v_open_operation public.pos_financial_operations;
   v_canonical jsonb := jsonb_build_object('sale_id', 'sale-' || v_suffix, 'reason', 'test');
   v_hash text;
   v_other_hash text;
@@ -42,7 +47,26 @@ begin
     (v_license_a, 'F5AR1-A-' || v_suffix, 'pro', 2, 'active', 'F5A R1 test A', '{}'::jsonb),
     (v_license_b, 'F5AR1-B-' || v_suffix, 'pro', 2, 'active', 'F5A R1 test B', '{}'::jsonb);
   insert into public.license_devices (id, license_id, device_fingerprint, device_name, device_info, is_active, security_token, device_role, device_mode)
-  values (v_device_a, v_license_a, 'f5ar1-' || v_suffix, 'F5A R1 device', '{}'::jsonb, true, 'fixture-token', 'staff', 'shared');
+  values
+    (v_device_a, v_license_a, 'f5ar1-' || v_suffix, 'F5A R1 device', '{}'::jsonb, true, 'fixture-token', 'staff', 'shared'),
+    (v_device_b, v_license_a, 'f5ar1-b-' || v_suffix, 'F5A R1 device B', '{}'::jsonb, true, 'fixture-token-b', 'staff', 'shared');
+  insert into public.pos_cash_stations (id, license_id, station_key, status, binding_mode)
+  values (v_station_a, v_license_a, 'r6-a-' || v_suffix, 'active', 'explicit'),
+         (v_station_b, v_license_a, 'r6-b-' || v_suffix, 'active', 'explicit');
+  insert into public.pos_cash_station_bindings (license_id, cash_station_id, device_id, binding_mode, status)
+  values (v_license_a, v_station_a, v_device_a, 'explicit', 'active'),
+         (v_license_a, v_station_b, v_device_b, 'explicit', 'active');
+  if private.resolve_financial_cash_station_v1(v_license_a, v_device_a) <> v_station_a then
+    raise exception 'FINANCIAL_R6_CASH_OPEN_STATION_RESOLUTION';
+  end if;
+  if private.financial_operation_hash('cash.open', private.canonical_financial_request_v1('cash.open', jsonb_build_object('opening_amount',100)), v_actor_x, null, v_station_a)
+       = private.financial_operation_hash('cash.open', private.canonical_financial_request_v1('cash.open', jsonb_build_object('opening_amount',100)), v_actor_x, null, v_station_b) then
+    raise exception 'FINANCIAL_R6_CASH_OPEN_STATION_HASH';
+  end if;
+  update public.pos_cash_station_bindings set status='retired' where license_id=v_license_a and device_id=v_device_a;
+  begin perform private.resolve_financial_cash_station_v1(v_license_a, v_device_a); raise exception 'FINANCIAL_R6_CASH_OPEN_UNBOUND_ACCEPTED';
+  exception when sqlstate 'P0001' then if position('CASH_STATION_UNRESOLVED' in sqlerrm)=0 then raise; end if; end;
+  update public.pos_cash_station_bindings set status='active' where license_id=v_license_a and device_id=v_device_a;
 
   -- Numeric normalization is semantic: 10, 10.0 and "10.00" normalize alike.
   if private.canonical_financial_request_v1('cash.movement', jsonb_build_object('cash_session_id','s','type','entrada','amount',10,'concept','x'))
@@ -97,6 +121,33 @@ begin
   v_operation := private.complete_financial_operation_v1(v_license_a, v_operation.idempotency_key,
     jsonb_build_object('success', true, 'idempotency_key', v_operation.idempotency_key, 'sale_id', 'sale-' || v_suffix));
 
+  -- A cash.open reserves the active device station before dispatch.  A returned
+  -- session from another station must abort completion, leaving no completed
+  -- receipt; sessionless station-bound origin must also reject device B.
+  insert into public.pos_cash_sessions (id, license_id, device_id, actor_key, responsible_name, cash_station_id)
+  values (v_session_b, v_license_a, v_device_b, v_actor_x, 'R6 fixture', v_station_b);
+  v_open_operation := private.reserve_financial_operation_v1(
+    v_license_a, 'r6-open-' || v_suffix,
+    private.financial_operation_hash('cash.open', private.canonical_financial_request_v1('cash.open', jsonb_build_object('opening_amount',100)), v_actor_x, null, v_station_a),
+    'cash.open', private.canonical_financial_request_v1('cash.open', jsonb_build_object('opening_amount',100)),
+    v_actor_x, v_device_a, null, v_station_a);
+  begin
+    perform private.complete_financial_operation_v1(v_license_a, v_open_operation.idempotency_key,
+      jsonb_build_object('success',true,'cash_session_id',v_session_b));
+    raise exception 'FINANCIAL_R6_CASH_OPEN_STATION_MISMATCH_COMPLETED';
+  exception when sqlstate 'P0001' then
+    if position('FINANCIAL_OPERATION_ORIGIN_MISMATCH' in sqlerrm) = 0 then raise; end if;
+  end;
+  if (select status from public.pos_financial_operations where id=v_open_operation.id) = 'completed' then
+    raise exception 'FINANCIAL_R6_CASH_OPEN_STATION_MISMATCH_PERSISTED';
+  end if;
+  begin
+    perform private.assert_financial_operation_origin_v1(v_open_operation, v_actor_x, v_device_b, null);
+    raise exception 'FINANCIAL_R6_SESSIONLESS_STATION_AUTHORITY';
+  exception when sqlstate 'P0001' then
+    if position('FINANCIAL_OPERATION_ORIGIN_MISMATCH' in sqlerrm) = 0 then raise; end if;
+  end;
+
   -- Stub only the auth-context seam inside this rolled-back local test so the
   -- public receipt contract is exercised without production credentials.
   perform set_config('financial_r1.license_id', v_license_a::text, true);
@@ -111,6 +162,27 @@ begin
   returns text language sql stable security definer set search_path = '' as $stub$
     select p_context->>'actor_key'
   $stub$;
+  -- R6: the three sale mutations reject absent/blank session evidence before
+  -- reservation or legacy dispatch.  The local auth seam above keeps this a
+  -- rolled-back contract test rather than a real sale.
+  select count(*) into v_before from public.pos_financial_operations;
+  foreach v_receipt in array array[
+    'sale.cashier'::jsonb, 'sale.cashier_inventory'::jsonb, 'sale.credit'::jsonb
+  ] loop
+    begin
+      perform public.pos_execute_financial_operation_v1('fixture','fixture','fixture',null,
+        'r6-missing-session-' || v_suffix || '-' || v_receipt #>> '{}', null, v_receipt #>> '{}',
+        jsonb_build_object('sale',jsonb_build_object('total',1),'items','[]'::jsonb,'payments','[]'::jsonb,'cash_session_id','   '));
+      raise exception 'FINANCIAL_R6_%_MISSING_SESSION_ACCEPTED', upper(replace(v_receipt #>> '{}','.','_'));
+    exception when sqlstate 'P0001' then
+      if position('FINANCIAL_CASH_SESSION_ID_REQUIRED' in sqlerrm) = 0 then raise; end if;
+    end;
+  end loop;
+  select count(*) into v_after from public.pos_financial_operations;
+  if v_before <> v_after then raise exception 'FINANCIAL_R6_SALE_MISSING_SESSION_RESERVED'; end if;
+  -- FINANCIAL_R6_SALE_CASHIER_MISSING_SESSION
+  -- FINANCIAL_R6_SALE_CASHIER_INVENTORY_MISSING_SESSION
+  -- FINANCIAL_R6_SALE_CREDIT_MISSING_SESSION
   begin
     perform public.pos_get_financial_operation_receipt('fixture', 'fixture', 'fixture', null, v_operation.idempotency_key, null);
     raise exception 'FINANCIAL_R1_EXPECTED_PUBLIC_NULL_H_DENIAL';
@@ -126,12 +198,14 @@ begin
     raise exception 'FINANCIAL_R1_PUBLIC_WRONG_H_CONFLICT';
   end if;
   perform set_config('financial_r1.actor_key', 'staff-user:other', true);
-  begin
-    perform public.pos_get_financial_operation_receipt('fixture', 'fixture', 'fixture', null, v_operation.idempotency_key, v_hash);
-    raise exception 'FINANCIAL_R1_EXPECTED_PUBLIC_ACTOR_DENIAL';
-  exception when sqlstate 'P0001' then
-    if position('FINANCIAL_OPERATION_ORIGIN_MISMATCH' in sqlerrm) = 0 then raise; end if;
-  end;
+  if public.pos_get_financial_operation_receipt('fixture', 'fixture', 'fixture', null, v_operation.idempotency_key, v_hash)
+       is distinct from jsonb_build_object('status','NOT_FOUND')
+     or public.pos_get_financial_operation_receipt('fixture', 'fixture', 'fixture', null, v_operation.idempotency_key, 'sha256:' || repeat('0',64))
+       is distinct from jsonb_build_object('status','NOT_FOUND')
+     or public.pos_get_financial_operation_receipt('fixture', 'fixture', 'fixture', null, 'missing-' || v_suffix, v_hash)
+       is distinct from jsonb_build_object('status','NOT_FOUND') then
+    raise exception 'FINANCIAL_R6_RECEIPT_CROSS_ACTOR_NON_DISCLOSURE';
+  end if;
   perform set_config('financial_r1.actor_key', v_actor_x, true);
   perform set_config('financial_r1.license_id', v_license_b::text, true);
   if (public.pos_get_financial_operation_receipt('fixture', 'fixture', 'fixture', null, v_operation.idempotency_key, v_hash)->>'status') <> 'NOT_FOUND' then
@@ -248,5 +322,54 @@ begin
   if v_before <> v_after then raise exception 'FINANCIAL_R1_HASH_GUARD_SIDE_EFFECT'; end if;
 end;
 $test$;
+
+-- SHARED.TERMINAL.5A-R6: portable hash vectors and alias/null regressions.
+-- Expected SHA-256 constants were frozen with Node's standards-based crypto
+-- over the explicit UTF-8 canonical strings below, not by this SQL function.
+do $r6$
+declare
+  v_a jsonb := '{"operation_type":"sale.cancel","request":{"reason":"test","sale_id":"sale-1"},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":null,"cash_station_id":null}}';
+  v_b jsonb := '{"operation_type":"cash.movement","request":{"amount":"10","cash_session_id":"session-a","concept":"float","reference_id":null,"reference_type":null,"source":null,"type":"entrada"},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":"session-a","cash_station_id":"station-a"}}';
+  v_c jsonb := '{"operation_type":"sale.cashier","request":{"cash_session_id":"session-a","customer_id":null,"items":[{"batch_allocations":[],"product_id":"product-a","quantity":"2","selected_modifiers":[]}],"payments":[{"amount":"20","method":"cash"}],"sale":{"id":"sale-a","sold_at":"2026-01-02T03:04:05.000000Z","total":"20"}},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":"session-a","cash_station_id":"station-a"}}';
+  v_d jsonb := '{"operation_type":"cash.open","request":{"opening":{"opening_amount":"100","opening_origin":"manual"}},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":null,"cash_station_id":"station-a"}}';
+  v_e jsonb := '{"operation_type":"cash.open","request":{"opening":{"opening_amount":"100","opening_origin":"manual"}},"request_contract_version":1,"verified_origin":{"actor_key":"actor-b","cash_session_id":null,"cash_station_id":"station-b"}}';
+  v_sale_a jsonb;
+  v_sale_b jsonb;
+begin
+  -- FINANCIAL_R6_FIXED_HASH_VECTOR_A
+  if private.financial_canonical_json_v1(v_a) <> '{"operation_type":"sale.cancel","request":{"reason":"test","sale_id":"sale-1"},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":null,"cash_station_id":null}}'
+     or private.financial_operation_hash('sale.cancel', v_a->'request', 'actor-a', null, null) <> 'sha256:b9a2aae4a9cbac969509bf776db9ac49d6169e4318151657d2d6842eb56d953b' then raise exception 'FINANCIAL_R6_FIXED_HASH_VECTOR_A'; end if;
+  -- FINANCIAL_R6_FIXED_HASH_VECTOR_B
+  if private.financial_canonical_json_v1(v_b) <> '{"operation_type":"cash.movement","request":{"amount":"10","cash_session_id":"session-a","concept":"float","reference_id":null,"reference_type":null,"source":null,"type":"entrada"},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":"session-a","cash_station_id":"station-a"}}'
+     or private.financial_operation_hash('cash.movement', v_b->'request', 'actor-a', 'session-a', 'station-a') <> 'sha256:57142afa91156723a4695a48ecf277848c835da2d30c990f8625e0fc6b41b875' then raise exception 'FINANCIAL_R6_FIXED_HASH_VECTOR_B'; end if;
+  -- FINANCIAL_R6_FIXED_HASH_VECTOR_C
+  if private.financial_canonical_json_v1(v_c) <> '{"operation_type":"sale.cashier","request":{"cash_session_id":"session-a","customer_id":null,"items":[{"batch_allocations":[],"product_id":"product-a","quantity":"2","selected_modifiers":[]}],"payments":[{"amount":"20","method":"cash"}],"sale":{"id":"sale-a","sold_at":"2026-01-02T03:04:05.000000Z","total":"20"}},"request_contract_version":1,"verified_origin":{"actor_key":"actor-a","cash_session_id":"session-a","cash_station_id":"station-a"}}'
+     or private.financial_operation_hash('sale.cashier', v_c->'request', 'actor-a', 'session-a', 'station-a') <> 'sha256:9aaf9ed23a8f01db515cee3e5469043af8240766d0c72d88663633812b8f5f88' then raise exception 'FINANCIAL_R6_FIXED_HASH_VECTOR_C'; end if;
+  -- FINANCIAL_R6_FIXED_HASH_VECTOR_D
+  if private.financial_operation_hash('cash.open', v_d->'request', 'actor-a', null, 'station-a') <> 'sha256:1105cf39098eb4b6a855bb7bf29fe5269008cdfc2817b04a15aa7af2c01d1002' then raise exception 'FINANCIAL_R6_FIXED_HASH_VECTOR_D'; end if;
+  -- FINANCIAL_R6_FIXED_HASH_VECTOR_E (origin evidence changes H)
+  if private.financial_operation_hash('cash.open', v_e->'request', 'actor-b', null, 'station-b') <> 'sha256:f6b5a9675db1aba16d44140e9e345f4ac1e52e5f4197b16dc5ebe120660ba6a1' then raise exception 'FINANCIAL_R6_FIXED_HASH_VECTOR_E'; end if;
+  if private.financial_canonical_json_v1('{"z":1,"a":{"y":true,"b":null}}'::jsonb) <> '{"a":{"b":null,"y":true},"z":1}' then raise exception 'FINANCIAL_R6_OBJECT_KEY_ORDER'; end if;
+
+  if private.canonical_financial_request_v1('cash.open', '{"opening_amount":null,"montoInicial":100}'::jsonb)
+       = private.canonical_financial_request_v1('cash.open', '{"opening_amount":null,"montoInicial":500}'::jsonb) then raise exception 'FINANCIAL_R6_NULL_FALLBACK_CASH_OPEN'; end if;
+  if private.canonical_financial_sale_v1('sale.cashier', '{"id":null,"cloudSaleId":"A"}'::jsonb)
+       = private.canonical_financial_sale_v1('sale.cashier', '{"id":null,"cloudSaleId":"B"}'::jsonb) then raise exception 'FINANCIAL_R6_NULL_FALLBACK_SALE_ID'; end if;
+  if private.canonical_financial_sale_v1('sale.cashier', '{"customer_id":"   ","customerId":"A"}'::jsonb)
+       = private.canonical_financial_sale_v1('sale.cashier', '{"customer_id":"   ","customerId":"B"}'::jsonb) then raise exception 'FINANCIAL_R6_BLANK_FALLBACK_CUSTOMER'; end if;
+  if private.canonical_financial_sale_item_v1('{"product_id":null,"productId":"A"}'::jsonb)
+       = private.canonical_financial_sale_item_v1('{"product_id":null,"productId":"B"}'::jsonb) then raise exception 'FINANCIAL_R6_NULL_FALLBACK_PRODUCT'; end if;
+  if private.canonical_financial_batch_allocations_v1('{"batches_used":[{"batch_id":null,"batchId":"A","quantity":1}]}'::jsonb)
+       = private.canonical_financial_batch_allocations_v1('{"batches_used":[{"batch_id":null,"batchId":"B","quantity":1}]}'::jsonb) then raise exception 'FINANCIAL_R6_NULL_FALLBACK_BATCH'; end if;
+  if private.canonical_financial_payment_v1('sale.cashier', '{"method":null,"paymentMethod":"cash"}'::jsonb)
+       = private.canonical_financial_payment_v1('sale.cashier', '{"method":null,"paymentMethod":"card"}'::jsonb) then raise exception 'FINANCIAL_R6_NULL_FALLBACK_PAYMENT'; end if;
+  if private.canonical_financial_sale_v1('sale.cashier', '{"sold_at":null,"timestamp":"2026-01-02T03:04:05Z"}'::jsonb)
+       = private.canonical_financial_sale_v1('sale.cashier', '{"sold_at":null,"timestamp":"2026-01-02T03:04:06Z"}'::jsonb) then raise exception 'FINANCIAL_R6_NULL_FALLBACK_TIMESTAMP'; end if;
+  if private.canonical_financial_sale_v1('sale.cashier', '{"soldAt":"2026-01-01T21:04:05-06:00"}'::jsonb)
+       is distinct from private.canonical_financial_sale_v1('sale.cashier', '{"sold_at":"2026-01-02T03:04:05Z"}'::jsonb) then raise exception 'FINANCIAL_R6_ZONED_TIMESTAMP_EQUIVALENCE'; end if;
+  begin perform private.financial_timestamp_v1('"2026-01-02T03:04:05"'::jsonb); raise exception 'FINANCIAL_R6_OFFSETLESS_TIMESTAMP_ACCEPTED';
+  exception when sqlstate 'P0001' then if position('FINANCIAL_TIMESTAMP_INVALID' in sqlerrm) = 0 then raise; end if; end;
+end;
+$r6$;
 
 rollback;
