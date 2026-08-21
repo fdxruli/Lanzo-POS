@@ -12,6 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $primaryFailure = $null
 $cleanupFailure = $null
+$testSucceeded = $false
 try { $databaseUri = [uri]$DatabaseUrl } catch { throw 'LANZO_POS_TEST_DATABASE_URL must be a safely parseable PostgreSQL URI.' }
 $databaseHost = $databaseUri.Host.Trim('[', ']').ToLowerInvariant()
 if ($databaseUri.Scheme -notin @('postgres', 'postgresql') -or $databaseHost -notin @('localhost', '127.0.0.1', '::1')) {
@@ -98,12 +99,10 @@ $baseline = Invoke-Psql "select coalesce(cash_entries_total,0)::text || '|' || c
   $conflictOutput = & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -A -t -q -c "select public.pos_execute_financial_operation_v1('$lk','$df','$st',nullif('$ss',''),'$conflictK','$otherHash','cash.movement',$otherRequestSql);" 2>&1
   Receive-Job -Job $t2 -Wait -AutoRemoveJob | Out-Null
   if ($LASTEXITCODE -eq 0 -or ($conflictOutput | Out-String) -notmatch 'IDEMPOTENCY_CONFLICT') { throw 'Same K/different H did not fail closed through the public executor.' }
-  Write-Output 'shared terminal financial receipt concurrency: PASS'
+  $testSucceeded = $true
 }
 catch {
   $primaryFailure = $_
-  Write-Error "PRIMARY TEST FAILURE: $($_.Exception.Message)"
-  throw
 }
 finally {
   if ($licenseId -and -not [string]::IsNullOrWhiteSpace($baseline)) {
@@ -124,8 +123,17 @@ finally {
     }
     catch {
       $cleanupFailure = $_
-      if ($primaryFailure) { Write-Error "CLEANUP FAILURE (primary test failure preserved): $($_.Exception.Message)" }
-      else { throw }
     }
   }
 }
+
+if ($primaryFailure) {
+  [Console]::Error.WriteLine("PRIMARY TEST FAILURE: $($primaryFailure.Exception.Message)")
+}
+if ($cleanupFailure) {
+  [Console]::Error.WriteLine("CLEANUP FAILURE: $($cleanupFailure.Exception.Message)")
+}
+if ($primaryFailure) { throw $primaryFailure }
+if ($cleanupFailure) { throw $cleanupFailure }
+if (-not $testSucceeded) { throw 'Concurrency test did not complete its primary assertions.' }
+Write-Output 'shared terminal financial receipt concurrency: PASS'

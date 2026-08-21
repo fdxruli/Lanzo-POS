@@ -23,6 +23,7 @@ declare
   v_operation public.pos_financial_operations;
   v_replay public.pos_financial_operations;
   v_receipt jsonb;
+  v_operation_type text;
   v_before bigint;
   v_after bigint;
   v_sale_a jsonb;
@@ -166,14 +167,14 @@ begin
   -- reservation or legacy dispatch.  The local auth seam above keeps this a
   -- rolled-back contract test rather than a real sale.
   select count(*) into v_before from public.pos_financial_operations;
-  foreach v_receipt in array array[
-    'sale.cashier'::jsonb, 'sale.cashier_inventory'::jsonb, 'sale.credit'::jsonb
+  foreach v_operation_type in array array[
+    'sale.cashier', 'sale.cashier_inventory', 'sale.credit'
   ] loop
     begin
       perform public.pos_execute_financial_operation_v1('fixture','fixture','fixture',null,
-        'r6-missing-session-' || v_suffix || '-' || v_receipt #>> '{}', null, v_receipt #>> '{}',
+        'r6-missing-session-' || v_suffix || '-' || v_operation_type, null, v_operation_type,
         jsonb_build_object('sale',jsonb_build_object('total',1),'items','[]'::jsonb,'payments','[]'::jsonb,'cash_session_id','   '));
-      raise exception 'FINANCIAL_R6_%_MISSING_SESSION_ACCEPTED', upper(replace(v_receipt #>> '{}','.','_'));
+      raise exception 'FINANCIAL_R6_%_MISSING_SESSION_ACCEPTED', upper(replace(v_operation_type,'.','_'));
     exception when sqlstate 'P0001' then
       if position('FINANCIAL_CASH_SESSION_ID_REQUIRED' in sqlerrm) = 0 then raise; end if;
     end;
