@@ -53,12 +53,12 @@ begin
   -- Sale canonicalization only admits explicit business fields.  Aliases and
   -- numeric spellings converge; metadata/UI/timestamps do not; order does.
   v_sale_a := private.canonical_financial_request_v1('sale.cashier', jsonb_build_object(
-    'sale', jsonb_build_object('cloudSaleId','sale-1','total','10.00','currency','mxn','metadata',jsonb_build_object('ui','a'),'createdAt','ignored'),
+    'sale', jsonb_build_object('cloudSaleId','sale-1','total','10.00','currency','mxn','metadata',jsonb_build_object('ui','a'),'createdAt','2026-01-02T03:04:05Z'),
     'items', jsonb_build_array(jsonb_build_object('productId','p1','qty','1.0','price',10,'total','10.00','metadata',jsonb_build_object('x',1))),
     'payments', jsonb_build_array(jsonb_build_object('paymentMethod','cash','amount','10.0','reference','r','timestamp','ignored'))
   ));
   v_sale_b := private.canonical_financial_request_v1('sale.cashier', jsonb_build_object(
-    'sale', jsonb_build_object('id','sale-1','total',10,'currency','MXN','metadata',jsonb_build_object('ui','b')),
+    'sale', jsonb_build_object('id','sale-1','total',10,'currency','MXN','metadata',jsonb_build_object('ui','b'),'created_at','2026-01-02T03:04:05+00:00'),
     'items', jsonb_build_array(jsonb_build_object('product_id','p1','quantity',1,'unit_price','10.00','line_total',10,'ui_only','ignored')),
     'payments', jsonb_build_array(jsonb_build_object('method','cash','amount',10,'reference','r','ui_only','ignored'))
   ));

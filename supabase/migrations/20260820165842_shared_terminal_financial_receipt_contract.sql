@@ -52,6 +52,26 @@ create index if not exists idx_pos_financial_operations_receipt
 alter table public.pos_financial_operations enable row level security;
 revoke all on table public.pos_financial_operations from public, anon, authenticated;
 
+-- Portable V1 JSON bytes: UTF-8, C/bytewise sorted object keys, compact JSON,
+-- recursive arrays in input order.  jsonb scalar rendering supplies RFC JSON
+-- escaping; normalized numeric values are already strings in the projection.
+create or replace function private.financial_canonical_json_v1(p_value jsonb)
+returns text language plpgsql immutable set search_path = '' as $$
+declare v_key text; v_value jsonb; v_parts text[] := array[]::text[];
+begin
+  case jsonb_typeof(p_value)
+    when 'object' then
+      for v_key, v_value in select key, value from jsonb_each(p_value) order by key collate "C" loop
+        v_parts := array_append(v_parts, to_jsonb(v_key)::text || ':' || private.financial_canonical_json_v1(v_value));
+      end loop;
+      return '{' || array_to_string(v_parts, ',') || '}';
+    when 'array' then
+      return '[' || coalesce((select string_agg(private.financial_canonical_json_v1(value), ',' order by ordinality) from jsonb_array_elements(p_value) with ordinality), '') || ']';
+    else return p_value::text;
+  end case;
+end;
+$$;
+
 -- V1 hashes a whitelisted, operation-specific canonical JSON document.  It is
 -- intentionally not an arbitrary jsonb::text MD5: callers submit a SHA-256 of
 -- this exact canonical document, and the server recomputes it before reserve.
@@ -79,7 +99,7 @@ begin
   -- canonical representation, not a serialization of arbitrary client JSON.
   return 'sha256:' || encode(
     extensions.digest(
-      convert_to(jsonb_build_object(
+      convert_to(private.financial_canonical_json_v1(jsonb_build_object(
         'request_contract_version', 1,
         'operation_type', p_operation_type,
         'request', p_canonical_request,
@@ -88,7 +108,7 @@ begin
           'cash_session_id', p_verified_cash_session_id,
           'cash_station_id', p_verified_cash_station_id
         )
-      )::text, 'utf8'),
+      )), 'UTF8'),
       'sha256'
     ),
     'hex'
@@ -146,6 +166,18 @@ begin
   -- then the existing financial RPC's own locks.  Receipt only takes the first
   -- lock and reads, so it cannot form a reverse lock cycle.
   perform pg_advisory_xact_lock(hashtextextended(p_license_id::text || ':' || p_external_idempotency_key, 9152026));
+end;
+$$;
+
+create or replace function private.resolve_financial_cash_station_v1(p_license_id uuid, p_device_id uuid)
+returns text language plpgsql security definer set search_path = '' as $$
+declare v_station_id text;
+begin
+  select b.cash_station_id into v_station_id from public.pos_cash_station_bindings b
+  join public.pos_cash_stations s on s.license_id=b.license_id and s.id=b.cash_station_id
+  where b.license_id=p_license_id and b.device_id=p_device_id and b.status='active' and s.status='active';
+  if v_station_id is null then raise exception 'CASH_STATION_UNRESOLVED' using errcode='P0001'; end if;
+  return v_station_id;
 end;
 $$;
 
@@ -487,7 +519,8 @@ create or replace function private.reserve_financial_operation_v1(
   p_canonical_request jsonb,
   p_verified_actor_key text,
   p_verified_device_id uuid,
-  p_cash_session_id text default null
+  p_cash_session_id text default null,
+  p_verified_cash_station_id text default null
 )
 returns public.pos_financial_operations
 language plpgsql
@@ -518,7 +551,7 @@ begin
 
   v_expected_hash := private.financial_operation_hash(
     p_operation_type, p_canonical_request, p_verified_actor_key,
-    p_cash_session_id, v_session.cash_station_id
+    p_cash_session_id, coalesce(v_session.cash_station_id, p_verified_cash_station_id)
   );
   if p_request_hash is distinct from v_expected_hash then
     raise exception 'FINANCIAL_REQUEST_HASH_INVALID' using errcode = 'P0001';
@@ -564,7 +597,7 @@ begin
     canonical_request
   ) values (
     v_operation_id, p_license_id, p_idempotency_key, v_internal_idempotency_key, p_request_hash, p_operation_type,
-    p_verified_actor_key, p_verified_device_id, p_cash_session_id, v_session.cash_station_id,
+    p_verified_actor_key, p_verified_device_id, p_cash_session_id, coalesce(v_session.cash_station_id, p_verified_cash_station_id),
     p_canonical_request
   ) on conflict (license_id, idempotency_key) do nothing
   returning * into v_result;
@@ -725,6 +758,7 @@ declare
   v_actor_key text;
   v_canonical jsonb;
   v_execution jsonb;
+  v_cash_station_id text;
   v_operation public.pos_financial_operations;
   v_response jsonb;
   v_internal_idempotency_key text;
@@ -733,10 +767,17 @@ begin
   v_license_id := (v_context->>'license_id')::uuid;
   v_device_id := nullif(v_context->>'device_id', '')::uuid;
   v_actor_key := private.resolve_cash_actor_key(v_context);
+  if p_operation_type in ('sale.cashier','sale.cashier_inventory','sale.credit')
+     and nullif(btrim(p_request->>'cash_session_id'),'') is null then
+    raise exception 'FINANCIAL_CASH_SESSION_ID_REQUIRED' using errcode = 'P0001';
+  end if;
+  if p_operation_type = 'cash.open' then
+    v_cash_station_id := private.resolve_financial_cash_station_v1(v_license_id, v_device_id);
+  end if;
   v_canonical := private.canonical_financial_request_v1(p_operation_type, p_request);
   v_execution := private.financial_execution_request_v1(p_request);
   v_operation := private.reserve_financial_operation_v1(v_license_id, p_idempotency_key, p_request_hash,
-    p_operation_type, v_canonical, v_actor_key, v_device_id, v_canonical->>'cash_session_id');
+    p_operation_type, v_canonical, v_actor_key, v_device_id, v_canonical->>'cash_session_id', v_cash_station_id);
 
   if v_operation.status = 'completed' then return v_operation.response_payload; end if;
   v_internal_idempotency_key := v_operation.legacy_idempotency_key;
@@ -817,10 +858,14 @@ begin
   select * into v_operation from public.pos_financial_operations o
   where o.license_id = v_license_id and o.idempotency_key = p_idempotency_key;
   if v_operation.id is null then return jsonb_build_object('status', 'NOT_FOUND'); end if;
+  begin
+    perform private.assert_financial_operation_origin_v1(v_operation, v_actor_key, v_device_id, null);
+  exception when sqlstate 'P0001' then
+    return jsonb_build_object('status', 'NOT_FOUND');
+  end;
   if v_operation.request_hash is distinct from p_request_hash then
     return jsonb_build_object('status', 'CONFLICT', 'code', 'IDEMPOTENCY_CONFLICT');
   end if;
-  perform private.assert_financial_operation_origin_v1(v_operation, v_actor_key, v_device_id, null);
   if v_operation.status = 'processing' then
     return jsonb_build_object('status', 'PROCESSING', 'operation_type', v_operation.operation_type);
   end if;
@@ -829,6 +874,8 @@ end;
 $$;
 
 revoke all on function private.financial_operation_hash(text, jsonb, text, text, text) from public, anon, authenticated;
+revoke all on function private.financial_canonical_json_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.resolve_financial_cash_station_v1(uuid, uuid) from public, anon, authenticated;
 revoke all on function private.assert_financial_request_hash_v1(text) from public, anon, authenticated;
 revoke all on function private.financial_operation_internal_key_v1(text, uuid) from public, anon, authenticated;
 revoke all on function private.lock_financial_operation_v1(uuid, text) from public, anon, authenticated;
