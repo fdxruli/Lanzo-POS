@@ -33,6 +33,7 @@ const requireSource = [
   'private.canonical_financial_sale_item_v1',
   'private.canonical_financial_payment_v1',
   'private.canonical_financial_batch_allocations_v1',
+  'private.canonical_financial_selected_modifiers_v1',
   'batches_used',
   'private.financial_payment_method_v1',
   'private.financial_execution_request_v1',
@@ -40,6 +41,8 @@ const requireSource = [
   "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_COLLISION'",
   "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_INTEGRITY'",
   'private.public_financial_response_v1',
+  'private.sanitize_financial_response_idempotency_v1',
+  'private.assert_financial_response_no_internal_key_v1',
   'private.assert_financial_legacy_result_terminal_v1',
   "raise exception 'FINANCIAL_LEGACY_OPERATION_REJECTED:%'",
   "raise exception 'FINANCIAL_LEGACY_RESPONSE_NONTERMINAL'",
@@ -108,6 +111,9 @@ for (const expected of [
   'FINANCIAL_R3_PAYMENT_ALIAS_NORMALIZATION',
   'FINANCIAL_R3_INTERNAL_KEY_OPERATION_OWNERSHIP',
   'FINANCIAL_R3_SUCCESS_FALSE_COMPLETED',
+  'FINANCIAL_R4_NESTED_INTERNAL_KEY_SANITIZATION',
+  'FINANCIAL_R4_SELECTED_MODIFIER_ALIAS_NORMALIZATION',
+  'FINANCIAL_R4_SELECTED_MODIFIER_NOT_HASHED',
 ]) {
   if (!test.includes(expected)) throw new Error(`Executable SQL assertion missing: ${expected}`);
 }
@@ -115,4 +121,4 @@ for (const expected of ['Start-Job', 'public.pos_execute_financial_operation_v1'
   if (!harness.includes(expected)) throw new Error(`Concurrency harness is incomplete: ${expected}`);
 }
 if (harness.includes('Start-Sleep')) throw new Error('Concurrency harness must use a deterministic lock barrier, not a timing delay');
-console.log('shared terminal financial receipt R3 static contract: PASS');
+console.log('shared terminal financial receipt R4 static contract: PASS');

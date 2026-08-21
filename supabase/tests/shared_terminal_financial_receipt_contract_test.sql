@@ -78,6 +78,14 @@ begin
   if private.financial_execution_request_v1(jsonb_build_object('items', jsonb_build_array(jsonb_build_object('batches_used',jsonb_build_array(jsonb_build_object('batch_id','b1','quantity',1,'provenance','preserved')))))) #> '{items,0,batches_used,0,provenance}' <> '"preserved"'::jsonb then
     raise exception 'FINANCIAL_R3_EXECUTION_BATCHES_USED_NOT_PRESERVED';
   end if;
+  if private.canonical_financial_selected_modifiers_v1(jsonb_build_object('selectedModifiers',jsonb_build_array(jsonb_build_object('ingredientId','i1','ingredientQuantity','2.00','tracksInventory',false))))
+       is distinct from private.canonical_financial_selected_modifiers_v1(jsonb_build_object('metadata',jsonb_build_object('selected_modifiers',jsonb_build_array(jsonb_build_object('ingredient_id','i1','ingredient_quantity',2))))) then
+    raise exception 'FINANCIAL_R4_SELECTED_MODIFIER_ALIAS_NORMALIZATION';
+  end if;
+  if private.canonical_financial_selected_modifiers_v1(jsonb_build_object('selected_modifiers',jsonb_build_array(jsonb_build_object('ingredient_id','i1','quantity',1))))
+       = private.canonical_financial_selected_modifiers_v1(jsonb_build_object('selected_modifiers',jsonb_build_array(jsonb_build_object('ingredient_id','i2','quantity',1)))) then
+    raise exception 'FINANCIAL_R4_SELECTED_MODIFIER_NOT_HASHED';
+  end if;
   if private.canonical_financial_request_v1('sale.cashier', jsonb_set(v_sale_a, '{items}', jsonb_build_array(jsonb_build_object('product_id','p2','quantity',1), jsonb_build_object('product_id','p1','quantity',1))))
        = private.canonical_financial_request_v1('sale.cashier', jsonb_set(v_sale_a, '{items}', jsonb_build_array(jsonb_build_object('product_id','p1','quantity',1), jsonb_build_object('product_id','p2','quantity',1)))) then
     raise exception 'FINANCIAL_R2_SALE_ITEM_ORDER_NOT_SEMANTIC';
@@ -178,6 +186,22 @@ begin
   if position(v_operation.legacy_idempotency_key in private.public_financial_response_v1('sale.cancel',
       jsonb_build_object('success',true,'idempotency_key',v_operation.legacy_idempotency_key), v_operation.idempotency_key, v_operation.legacy_idempotency_key)::text) > 0 then
     raise exception 'FINANCIAL_R2_INTERNAL_KEY_RESPONSE_LEAK';
+  end if;
+  v_receipt := private.public_financial_response_v1('cash.movement', jsonb_build_object(
+    'success',true,'idempotency_key',v_operation.legacy_idempotency_key,
+    'movement',jsonb_build_object('idempotency_key',v_operation.legacy_idempotency_key),
+    'cash_session',jsonb_build_object('last_idempotency_key',v_operation.legacy_idempotency_key),
+    'sale',jsonb_build_object('idempotency_key',v_operation.legacy_idempotency_key),
+    'event',jsonb_build_object('idempotency_key',v_operation.legacy_idempotency_key),
+    'items',jsonb_build_array(jsonb_build_object('idempotency_key',v_operation.legacy_idempotency_key)),
+    'concept','financial-v1:looks-like-user-text'
+  ), v_operation.idempotency_key, v_operation.legacy_idempotency_key);
+  if position(v_operation.legacy_idempotency_key in v_receipt::text) > 0
+     or v_receipt #>> '{movement,idempotency_key}' <> v_operation.idempotency_key
+     or v_receipt #>> '{cash_session,last_idempotency_key}' <> v_operation.idempotency_key
+     or v_receipt #>> '{items,0,idempotency_key}' <> v_operation.idempotency_key
+     or v_receipt->>'concept' <> 'financial-v1:looks-like-user-text' then
+    raise exception 'FINANCIAL_R4_NESTED_INTERNAL_KEY_SANITIZATION';
   end if;
   begin
     perform private.assert_financial_legacy_result_terminal_v1('sale.cancel', jsonb_build_object('success',false,'code','SALE_NOT_FOUND'));

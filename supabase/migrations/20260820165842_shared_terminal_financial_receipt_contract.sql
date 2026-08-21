@@ -302,6 +302,21 @@ as $$
   )) with ordinality
 $$;
 
+-- REST.INV.5.1 tracks modifier inventory iff ingredient identity and a valid
+-- resolved quantity exist; explicit tracksInventory is deliberately ignored.
+create or replace function private.canonical_financial_selected_modifiers_v1(p_item jsonb)
+returns jsonb language plpgsql immutable set search_path = '' as $$
+declare v_modifiers jsonb;
+begin
+  v_modifiers := coalesce(private.financial_first_value_v1(p_item, array['selected_modifiers','selectedModifiers']), private.financial_first_value_v1(p_item->'metadata', array['selected_modifiers','selectedModifiers']), '[]'::jsonb);
+  if jsonb_typeof(v_modifiers) <> 'array' then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+    'ingredient_id', private.financial_text_v1(private.financial_first_value_v1(value, array['ingredientId','ingredient_id'])),
+    'ingredient_quantity', private.financial_decimal_v1(private.financial_first_value_v1(value, array['ingredientQuantity','ingredient_quantity','quantity']))
+  )) order by ordinality) from jsonb_array_elements(v_modifiers) with ordinality), '[]'::jsonb);
+end;
+$$;
+
 create or replace function private.canonical_financial_sale_item_v1(p_item jsonb)
 returns jsonb
 language sql
@@ -321,6 +336,7 @@ as $$
     'batch_expiry_date', private.financial_text_v1(private.financial_first_value_v1(p_item, array['batch_expiry_date','batchExpiryDate','expiryDate'])),
     'stock_source', private.financial_text_v1(private.financial_first_value_v1(p_item, array['stock_source','stockSource'])),
     'batch_allocations', private.canonical_financial_batch_allocations_v1(p_item),
+    'selected_modifiers', private.canonical_financial_selected_modifiers_v1(p_item),
     'quantity', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['quantity','qty'])),
     'unit_price', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['unit_price','unitPrice','price'])),
     'unit_cost', private.financial_decimal_v1(private.financial_first_value_v1(p_item, array['unit_cost','unitCost','cost'])),
@@ -369,8 +385,8 @@ as $$
     'customer_name', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_name','customerName'])),
     'customer_phone', private.financial_text_v1(private.financial_first_value_v1(p_sale, array['customer_phone','customerPhone'])),
     'currency', upper(private.financial_text_v1(private.financial_first_value_v1(p_sale, array['currency']))),
-    'sold_at', private.financial_timestamp_v1(private.financial_first_value_v1(p_sale, array['sold_at','soldAt'])),
-    'created_at', private.financial_timestamp_v1(private.financial_first_value_v1(p_sale, array['created_at','createdAt']))
+    'sold_at', private.financial_timestamp_v1(private.financial_first_value_v1(p_sale, array['sold_at','soldAt','timestamp'])),
+    'created_at', private.financial_timestamp_v1(private.financial_first_value_v1(p_sale, array['created_at','createdAt','timestamp']))
   ))
 $$;
 
@@ -398,13 +414,13 @@ begin
   case p_operation_type
     when 'cash.open' then
       return jsonb_build_object('opening', jsonb_build_object(
-        'opening_amount', private.financial_decimal_v1(v_request->'opening_amount'),
-        'opening_counted_amount', private.financial_decimal_v1(v_request->'opening_counted_amount'),
-        'opening_suggested_amount', private.financial_decimal_v1(v_request->'opening_suggested_amount'),
-        'opening_policy', v_request->>'opening_policy',
-        'opening_origin', v_request->>'opening_origin',
-        'is_auto_opening', case when v_request ? 'is_auto_opening' then (v_request->>'is_auto_opening')::boolean else null end,
-        'responsible_name', v_request->>'responsible_name'
+        'opening_amount', coalesce(private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['opening_amount','montoInicial'])),'0'),
+        'opening_counted_amount', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['opening_counted_amount','montoContado','montoContadoInicial'])),
+        'opening_suggested_amount', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['opening_suggested_amount','montoSugerido'])),
+        'opening_policy', private.financial_text_v1(private.financial_first_value_v1(v_request,array['opening_policy','politicaApertura'])),
+        'opening_origin', private.financial_text_v1(private.financial_first_value_v1(v_request,array['opening_origin','origen'])),
+        'is_auto_opening', private.financial_text_v1(private.financial_first_value_v1(v_request,array['is_auto_opening','esAutoApertura'])),
+        'responsible_name', private.financial_text_v1(private.financial_first_value_v1(v_request,array['responsible_name','responsable']))
       ));
     when 'cash.movement' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
@@ -417,9 +433,9 @@ begin
         'reason', v_request->>'reason', 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'cash.close' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
-        'closing_counted_amount', private.financial_decimal_v1(v_request->'closing_counted_amount'),
-        'next_shift_fund', private.financial_decimal_v1(v_request->'next_shift_fund'),
-        'comments', v_request->>'comments', 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
+        'closing_counted_amount', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['closing_counted_amount','countedAmount','montoFisicoTotal'])),
+        'next_shift_fund', private.financial_decimal_v1(private.financial_first_value_v1(v_request,array['next_shift_fund','nextShiftFund','montoFondoSiguienteTurno'])),
+        'comments', private.financial_text_v1(private.financial_first_value_v1(v_request,array['audit_comments','comments','comentarios'])), 'expected_version', private.financial_integer_v1(v_request->'expected_version'));
     when 'cash.admin_close' then
       return jsonb_build_object('cash_session_id', v_request->>'cash_session_id',
         'closing_mode', v_request->>'closing_mode', 'counted_amount', private.financial_decimal_v1(v_request->'counted_amount'),
@@ -584,6 +600,47 @@ begin
 end;
 $$;
 
+-- Structural JSON traversal replaces only exact machine idempotency fields.
+-- User concept/reason/comment strings are never substring-rewritten.
+create or replace function private.sanitize_financial_response_idempotency_v1(
+  p_value jsonb, p_external_idempotency_key text, p_internal_idempotency_key text
+)
+returns jsonb language plpgsql immutable set search_path = '' as $$
+declare v_key text; v_value jsonb; v_result jsonb := '{}'::jsonb;
+begin
+  if jsonb_typeof(p_value) = 'array' then
+    return coalesce((select jsonb_agg(private.sanitize_financial_response_idempotency_v1(value, p_external_idempotency_key, p_internal_idempotency_key) order by ordinality) from jsonb_array_elements(p_value) with ordinality), '[]'::jsonb);
+  end if;
+  if jsonb_typeof(p_value) <> 'object' then return p_value; end if;
+  for v_key, v_value in select key, value from jsonb_each(p_value) loop
+    if lower(v_key) in ('idempotency_key','last_idempotency_key')
+       and v_value = to_jsonb(p_internal_idempotency_key) then
+      v_result := v_result || jsonb_build_object(v_key, p_external_idempotency_key);
+    else
+      v_result := v_result || jsonb_build_object(v_key, private.sanitize_financial_response_idempotency_v1(v_value, p_external_idempotency_key, p_internal_idempotency_key));
+    end if;
+  end loop;
+  return v_result;
+end;
+$$;
+
+create or replace function private.assert_financial_response_no_internal_key_v1(p_value jsonb, p_internal_idempotency_key text)
+returns void language plpgsql immutable set search_path = '' as $$
+declare v_key text; v_value jsonb;
+begin
+  if jsonb_typeof(p_value) = 'array' then
+    for v_value in select value from jsonb_array_elements(p_value) loop perform private.assert_financial_response_no_internal_key_v1(v_value, p_internal_idempotency_key); end loop;
+  elsif jsonb_typeof(p_value) = 'object' then
+    for v_key, v_value in select key, value from jsonb_each(p_value) loop
+      if lower(v_key) like '%idempotency_key' and v_value = to_jsonb(p_internal_idempotency_key) then
+        raise exception 'FINANCIAL_INTERNAL_KEY_LEAK' using errcode = 'P0001';
+      end if;
+      perform private.assert_financial_response_no_internal_key_v1(v_value, p_internal_idempotency_key);
+    end loop;
+  end if;
+end;
+$$;
+
 create or replace function private.public_financial_response_v1(
   p_operation_type text,
   p_response jsonb,
@@ -598,10 +655,8 @@ as $$
 declare v_response jsonb;
 begin
   perform private.assert_financial_legacy_result_terminal_v1(p_operation_type, p_response);
-  v_response := p_response - 'idempotency_key';
-  if position(p_internal_idempotency_key in v_response::text) > 0 then
-    raise exception 'FINANCIAL_INTERNAL_KEY_LEAK' using errcode = 'P0001';
-  end if;
+  v_response := private.sanitize_financial_response_idempotency_v1(p_response, p_external_idempotency_key, p_internal_idempotency_key);
+  perform private.assert_financial_response_no_internal_key_v1(v_response, p_internal_idempotency_key);
   return jsonb_set(v_response, '{idempotency_key}', to_jsonb(p_external_idempotency_key), true);
 end;
 $$;
@@ -785,6 +840,7 @@ revoke all on function private.financial_text_v1(jsonb) from public, anon, authe
 revoke all on function private.financial_timestamp_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.financial_payment_method_v1(text, text) from public, anon, authenticated;
 revoke all on function private.canonical_financial_batch_allocations_v1(jsonb) from public, anon, authenticated;
+revoke all on function private.canonical_financial_selected_modifiers_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.canonical_financial_sale_item_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.canonical_financial_payment_v1(text, jsonb) from public, anon, authenticated;
 revoke all on function private.canonical_financial_sale_v1(text, jsonb) from public, anon, authenticated;
@@ -792,6 +848,8 @@ revoke all on function private.canonical_financial_request_v1(text, jsonb) from 
 revoke all on function private.financial_execution_request_v1(jsonb) from public, anon, authenticated;
 revoke all on function private.reserve_financial_operation_v1(uuid, text, text, text, jsonb, text, uuid, text) from public, anon, authenticated;
 revoke all on function private.assert_financial_legacy_result_terminal_v1(text, jsonb) from public, anon, authenticated;
+revoke all on function private.sanitize_financial_response_idempotency_v1(jsonb, text, text) from public, anon, authenticated;
+revoke all on function private.assert_financial_response_no_internal_key_v1(jsonb, text) from public, anon, authenticated;
 revoke all on function private.public_financial_response_v1(text, jsonb, text, text) from public, anon, authenticated;
 revoke all on function private.complete_financial_operation_v1(uuid, text, jsonb) from public, anon, authenticated;
 revoke all on function public.pos_execute_financial_operation_v1(text, text, text, text, text, text, text, jsonb) from public;

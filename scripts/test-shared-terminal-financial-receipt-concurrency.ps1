@@ -93,6 +93,8 @@ finally {
   if ($licenseId) {
     $internalKeys = Invoke-Psql "select string_agg(quote_literal(legacy_idempotency_key), ',') from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key in ('$externalK','$conflictK');"
     $movementIds = Invoke-Psql "select string_agg(quote_literal(id), ',') from public.pos_cash_movements where license_id='$licenseId'::uuid and metadata->>'reference_id' in ('$referenceId','$referenceId-conflict');"
+    if ([string]::IsNullOrWhiteSpace($internalKeys)) { $internalKeys = 'null' }
+    if ([string]::IsNullOrWhiteSpace($movementIds)) { $movementIds = 'null' }
     $baselineParts = $baseline.Split('|', 6)
     # Exact disposable-fixture cleanup: movement/audit/sync/idempotency rows,
     # followed by the captured financial session baseline restoration.
