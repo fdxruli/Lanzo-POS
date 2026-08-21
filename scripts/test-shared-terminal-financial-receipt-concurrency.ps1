@@ -4,12 +4,17 @@ param(
   [string]$DeviceFingerprint = $env:LANZO_POS_TEST_DEVICE_FINGERPRINT,
   [string]$SecurityToken = $env:LANZO_POS_TEST_SECURITY_TOKEN,
   [string]$StaffSessionToken = $env:LANZO_POS_TEST_STAFF_SESSION_TOKEN,
-  [string]$CashSessionId = $env:LANZO_POS_TEST_CASH_SESSION_ID
+  [string]$CashSessionId = $env:LANZO_POS_TEST_CASH_SESSION_ID,
+  [string]$AllowFinancialMutation = $env:LANZO_POS_TEST_ALLOW_FINANCIAL_MUTATION,
+  [string]$DisposableCashSession = $env:LANZO_POS_TEST_DISPOSABLE_CASH_SESSION
 )
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($DatabaseUrl) -or $DatabaseUrl -notmatch '(localhost|127\.0\.0\.1)') {
   throw 'LANZO_POS_TEST_DATABASE_URL must target an authorized local PostgreSQL test database (localhost or 127.0.0.1), never production.'
+}
+if ($AllowFinancialMutation -ne 'YES' -or $DisposableCashSession -ne 'YES') {
+  throw 'Set LANZO_POS_TEST_ALLOW_FINANCIAL_MUTATION=YES and LANZO_POS_TEST_DISPOSABLE_CASH_SESSION=YES; an ordinary cash session is never accepted.'
 }
 foreach ($required in @($LicenseKey, $DeviceFingerprint, $SecurityToken, $CashSessionId)) {
   if ([string]::IsNullOrWhiteSpace($required)) {
@@ -42,6 +47,8 @@ try {
   $origin = (Invoke-Psql $originSql).Split('|', 3)
   if ($origin.Count -ne 3 -or [string]::IsNullOrWhiteSpace($origin[0]) -or [string]::IsNullOrWhiteSpace($origin[1])) { throw 'Local test auth/session fixture is invalid.' }
   $licenseId, $actorKey, $stationId = $origin
+  $baseline = Invoke-Psql "select coalesce(cash_entries_total,0)::text || '|' || coalesce(cash_exits_total,0)::text || '|' || coalesce(expected_cash_total,0)::text || '|' || server_version::text || '|' || updated_at::text || '|' || coalesce(last_idempotency_key,'') from public.pos_cash_sessions where license_id='$licenseId'::uuid and id='$session' and metadata->>'financial_test_disposable'='true';"
+  if ([string]::IsNullOrWhiteSpace($baseline)) { throw 'Cash session must be explicitly marked metadata.financial_test_disposable=true.' }
   $requestSql = "jsonb_build_object('cash_session_id','$session','type','entrada','amount','1.00','concept','F5A R2 public executor concurrency','source','test','reference_type','f5a-r2','reference_id','$referenceId')"
   $hashSql = "select private.financial_operation_hash('cash.movement',$requestSql,'$(Escape-SqlLiteral $actorKey)','$session',nullif('$(Escape-SqlLiteral $stationId)',''));"
   $hash = Invoke-Psql $hashSql
@@ -84,10 +91,14 @@ try {
 }
 finally {
   if ($licenseId) {
-    $internalK = Invoke-Psql "select private.financial_operation_internal_key_v1('cash.movement','$externalK');"
-    $internalConflictK = Invoke-Psql "select private.financial_operation_internal_key_v1('cash.movement','$conflictK');"
-    # Local-test fixture cleanup: exact financial/generic rows and the two
-    # generated movement references only.  The supplied cash session remains.
-    & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -q -c "delete from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key in ('$externalK','$conflictK'); delete from public.pos_idempotency_keys where license_id='$licenseId'::uuid and idempotency_key in ('$internalK','$internalConflictK'); delete from public.pos_cash_movements where license_id='$licenseId'::uuid and metadata->>'reference_id' in ('$referenceId','$referenceId-conflict');" 2>$null
+    $internalKeys = Invoke-Psql "select string_agg(quote_literal(legacy_idempotency_key), ',') from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key in ('$externalK','$conflictK');"
+    $movementIds = Invoke-Psql "select string_agg(quote_literal(id), ',') from public.pos_cash_movements where license_id='$licenseId'::uuid and metadata->>'reference_id' in ('$referenceId','$referenceId-conflict');"
+    $baselineParts = $baseline.Split('|', 6)
+    # Exact disposable-fixture cleanup: movement/audit/sync/idempotency rows,
+    # followed by the captured financial session baseline restoration.
+    $cleanupSql = "delete from public.pos_cash_audit_events where license_id='$licenseId'::uuid and cash_session_id='$session' and payload->>'movement_id' in ($movementIds); delete from public.pos_sync_events where license_id='$licenseId'::uuid and idempotency_key in ($internalKeys); delete from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key in ('$externalK','$conflictK'); delete from public.pos_idempotency_keys where license_id='$licenseId'::uuid and idempotency_key in ($internalKeys); delete from public.pos_cash_movements where license_id='$licenseId'::uuid and id in ($movementIds); update public.pos_cash_sessions set cash_entries_total='$($baselineParts[0])'::numeric, cash_exits_total='$($baselineParts[1])'::numeric, expected_cash_total='$($baselineParts[2])'::numeric, server_version='$($baselineParts[3])'::integer, updated_at='$($baselineParts[4])'::timestamptz, last_idempotency_key=nullif('$($baselineParts[5])','') where license_id='$licenseId'::uuid and id='$session';"
+    & $psql $DatabaseUrl -X -v ON_ERROR_STOP=1 -q -c $cleanupSql
+    $remaining = Invoke-Psql "select (select count(*) from public.pos_cash_movements where license_id='$licenseId'::uuid and metadata->>'reference_id' in ('$referenceId','$referenceId-conflict')) || '|' || (select count(*) from public.pos_financial_operations where license_id='$licenseId'::uuid and idempotency_key in ('$externalK','$conflictK')) || '|' || (select count(*) from public.pos_cash_audit_events where license_id='$licenseId'::uuid and cash_session_id='$session' and payload->>'movement_id' in ($movementIds));"
+    if ($remaining -ne '0|0|0') { throw "Disposable fixture cleanup assertion failed: $remaining" }
   }
 }

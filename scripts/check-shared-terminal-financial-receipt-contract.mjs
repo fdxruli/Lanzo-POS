@@ -32,10 +32,16 @@ const requireSource = [
   'private.canonical_financial_sale_v1',
   'private.canonical_financial_sale_item_v1',
   'private.canonical_financial_payment_v1',
+  'private.canonical_financial_batch_allocations_v1',
+  'batches_used',
+  'private.financial_payment_method_v1',
+  'private.financial_execution_request_v1',
   'private.financial_first_value_v1',
   "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_COLLISION'",
   "raise exception 'FINANCIAL_INTERNAL_IDEMPOTENCY_INTEGRITY'",
   'private.public_financial_response_v1',
+  'private.assert_financial_legacy_result_terminal_v1',
+  "raise exception 'FINANCIAL_LEGACY_OPERATION_REJECTED:%'",
   "raise exception 'FINANCIAL_LEGACY_RESPONSE_NONTERMINAL'",
   "'verified_origin'",
   'security definer',
@@ -65,6 +71,15 @@ if (!reserveBody.includes('v_existing.legacy_idempotency_key is distinct from\n 
   || !reserveBody.includes('where k.license_id = p_license_id and k.idempotency_key = v_internal_idempotency_key')) {
   throw new Error('Strict internal-key integrity and preexisting internal collision guards are required');
 }
+if (!reserveBody.includes('v_operation_id uuid := extensions.gen_random_uuid()')
+  || !reserveBody.includes('private.financial_operation_internal_key_v1(v_existing.operation_type, v_existing.id)')
+  || reserveBody.includes('financial_operation_internal_key_v1(p_operation_type, p_idempotency_key)')) {
+  throw new Error('Internal K must be server-generated from the strict operation UUID, never external K');
+}
+const executorBody = source.slice(source.indexOf('create or replace function public.pos_execute_financial_operation_v1'));
+for (const dispatch of ["v_execution->'sale', v_execution->'items', v_execution->'payments'", "v_execution->>'cash_session_id'"]) {
+  if (!executorBody.includes(dispatch)) throw new Error('Business dispatch must use the original execution payload, not hash projection');
+}
 const receiptBody = source.slice(source.indexOf('create or replace function public.pos_get_financial_operation_receipt'));
 if (receiptBody.includes(':= public.pos_execute_financial_operation_v1(') || receiptBody.includes('perform public.pos_execute_financial_operation_v1(')) {
   throw new Error('Receipt RPC must not dispatch a financial mutation');
@@ -84,15 +99,20 @@ for (const expected of [
   'FINANCIAL_R1_DIRECT_TABLE_ACCESS',
   'FINANCIAL_REQUEST_HASH_REQUIRED',
   'FINANCIAL_R2_EXPECTED_STALE_HASH_DENIAL',
-  'FINANCIAL_R2_EXPECTED_INTERNAL_COLLISION',
   'FINANCIAL_R2_EXPECTED_INTERNAL_INTEGRITY',
   'FINANCIAL_R2_SALE_ALIAS_OR_NUMERIC_NORMALIZATION',
   'FINANCIAL_R2_SALE_ITEM_ORDER_NOT_SEMANTIC',
+  'FINANCIAL_R3_BATCH_ALLOCATION_ALIAS_NORMALIZATION',
+  'FINANCIAL_R3_BATCH_ALLOCATION_NOT_HASHED',
+  'FINANCIAL_R3_EXECUTION_BATCHES_USED_NOT_PRESERVED',
+  'FINANCIAL_R3_PAYMENT_ALIAS_NORMALIZATION',
+  'FINANCIAL_R3_INTERNAL_KEY_OPERATION_OWNERSHIP',
+  'FINANCIAL_R3_SUCCESS_FALSE_COMPLETED',
 ]) {
   if (!test.includes(expected)) throw new Error(`Executable SQL assertion missing: ${expected}`);
 }
-for (const expected of ['Start-Job', 'public.pos_execute_financial_operation_v1', 'cash.movement', 'pg_try_advisory_xact_lock', 'business-effect', 'shared terminal financial receipt concurrency: PASS']) {
+for (const expected of ['Start-Job', 'public.pos_execute_financial_operation_v1', 'cash.movement', 'pg_try_advisory_xact_lock', 'business-effect', 'LANZO_POS_TEST_ALLOW_FINANCIAL_MUTATION', 'LANZO_POS_TEST_DISPOSABLE_CASH_SESSION', 'pos_cash_audit_events', 'pos_sync_events', 'cash_entries_total', 'shared terminal financial receipt concurrency: PASS']) {
   if (!harness.includes(expected)) throw new Error(`Concurrency harness is incomplete: ${expected}`);
 }
 if (harness.includes('Start-Sleep')) throw new Error('Concurrency harness must use a deterministic lock barrier, not a timing delay');
-console.log('shared terminal financial receipt R2 static contract: PASS');
+console.log('shared terminal financial receipt R3 static contract: PASS');

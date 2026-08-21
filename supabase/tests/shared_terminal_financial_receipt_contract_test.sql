@@ -22,7 +22,6 @@ declare
   v_after bigint;
   v_sale_a jsonb;
   v_sale_b jsonb;
-  v_internal_collision_key text;
 begin
   if to_regclass('public.pos_financial_operations') is null
      or to_regprocedure('public.pos_get_financial_operation_receipt(text,text,text,text,text,text)') is null
@@ -64,6 +63,21 @@ begin
     'payments', jsonb_build_array(jsonb_build_object('method','cash','amount',10,'reference','r','ui_only','ignored'))
   ));
   if v_sale_a is distinct from v_sale_b then raise exception 'FINANCIAL_R2_SALE_ALIAS_OR_NUMERIC_NORMALIZATION'; end if;
+  if private.canonical_financial_request_v1('sale.cashier', jsonb_build_object('sale',jsonb_build_object('total',1),'items',jsonb_build_array(jsonb_build_object('product_id','p','quantity',1)),'payments',jsonb_build_array(jsonb_build_object('method','cash','amount',1))))
+       is distinct from private.canonical_financial_request_v1('sale.cashier', jsonb_build_object('sale',jsonb_build_object('total',1),'items',jsonb_build_array(jsonb_build_object('product_id','p','quantity',1)),'payments',jsonb_build_array(jsonb_build_object('method','efectivo','amount',1)))) then
+    raise exception 'FINANCIAL_R3_PAYMENT_ALIAS_NORMALIZATION';
+  end if;
+  if private.canonical_financial_request_v1('sale.cashier_inventory', jsonb_build_object('sale',jsonb_build_object('total',1),'items',jsonb_build_array(jsonb_build_object('productId','p','qty',1,'batchesUsed',jsonb_build_array(jsonb_build_object('batchId','b1','usedQuantity','1.00')))),'payments','[]'::jsonb))
+       is distinct from private.canonical_financial_request_v1('sale.cashier_inventory', jsonb_build_object('sale',jsonb_build_object('total',1),'items',jsonb_build_array(jsonb_build_object('product_id','p','quantity',1,'metadata',jsonb_build_object('batches_used',jsonb_build_array(jsonb_build_object('batch_id','b1','quantity',1))))),'payments','[]'::jsonb)) then
+    raise exception 'FINANCIAL_R3_BATCH_ALLOCATION_ALIAS_NORMALIZATION';
+  end if;
+  if private.canonical_financial_request_v1('sale.cashier_inventory', jsonb_build_object('sale',jsonb_build_object('total',1),'items',jsonb_build_array(jsonb_build_object('product_id','p','quantity',1,'batches_used',jsonb_build_array(jsonb_build_object('batch_id','b1','quantity',1)))),'payments','[]'::jsonb))
+       = private.canonical_financial_request_v1('sale.cashier_inventory', jsonb_build_object('sale',jsonb_build_object('total',1),'items',jsonb_build_array(jsonb_build_object('product_id','p','quantity',1,'batches_used',jsonb_build_array(jsonb_build_object('batch_id','b2','quantity',1)))),'payments','[]'::jsonb)) then
+    raise exception 'FINANCIAL_R3_BATCH_ALLOCATION_NOT_HASHED';
+  end if;
+  if private.financial_execution_request_v1(jsonb_build_object('items', jsonb_build_array(jsonb_build_object('batches_used',jsonb_build_array(jsonb_build_object('batch_id','b1','quantity',1,'provenance','preserved')))))) #> '{items,0,batches_used,0,provenance}' <> '"preserved"'::jsonb then
+    raise exception 'FINANCIAL_R3_EXECUTION_BATCHES_USED_NOT_PRESERVED';
+  end if;
   if private.canonical_financial_request_v1('sale.cashier', jsonb_set(v_sale_a, '{items}', jsonb_build_array(jsonb_build_object('product_id','p2','quantity',1), jsonb_build_object('product_id','p1','quantity',1))))
        = private.canonical_financial_request_v1('sale.cashier', jsonb_set(v_sale_a, '{items}', jsonb_build_array(jsonb_build_object('product_id','p1','quantity',1), jsonb_build_object('product_id','p2','quantity',1)))) then
     raise exception 'FINANCIAL_R2_SALE_ITEM_ORDER_NOT_SEMANTIC';
@@ -147,18 +161,10 @@ begin
     if position('IDEMPOTENCY_CONFLICT' in sqlerrm) = 0 then raise; end if;
   end;
 
-  -- A generic row already occupying the deterministic inner namespace is not
-  -- adopted.  Existing strict owners remain the only allowed owners.
-  v_internal_collision_key := private.financial_operation_internal_key_v1('sale.cancel', 'internal-collision-' || v_suffix);
-  insert into public.pos_idempotency_keys (license_id, idempotency_key, operation_type, status)
-  values (v_license_a, v_internal_collision_key, 'legacy-test', 'completed');
-  begin
-    perform private.reserve_financial_operation_v1(v_license_a, 'internal-collision-' || v_suffix, v_hash,
-      'sale.cancel', v_canonical, v_actor_x, v_device_a, null);
-    raise exception 'FINANCIAL_R2_EXPECTED_INTERNAL_COLLISION';
-  exception when sqlstate 'P0001' then
-    if position('FINANCIAL_INTERNAL_IDEMPOTENCY_COLLISION' in sqlerrm) = 0 then raise; end if;
-  end;
+  if v_operation.legacy_idempotency_key is distinct from
+     private.financial_operation_internal_key_v1(v_operation.operation_type, v_operation.id) then
+    raise exception 'FINANCIAL_R3_INTERNAL_KEY_OPERATION_OWNERSHIP';
+  end if;
 
   update public.pos_financial_operations set legacy_idempotency_key = 'tampered-' || v_suffix
   where id = v_operation.id;
@@ -169,10 +175,23 @@ begin
   exception when sqlstate 'P0001' then
     if position('FINANCIAL_INTERNAL_IDEMPOTENCY_INTEGRITY' in sqlerrm) = 0 then raise; end if;
   end;
-  if position(v_operation.legacy_idempotency_key in private.public_financial_response_v1(
+  if position(v_operation.legacy_idempotency_key in private.public_financial_response_v1('sale.cancel',
       jsonb_build_object('success',true,'idempotency_key',v_operation.legacy_idempotency_key), v_operation.idempotency_key, v_operation.legacy_idempotency_key)::text) > 0 then
     raise exception 'FINANCIAL_R2_INTERNAL_KEY_RESPONSE_LEAK';
   end if;
+  begin
+    perform private.assert_financial_legacy_result_terminal_v1('sale.cancel', jsonb_build_object('success',false,'code','SALE_NOT_FOUND'));
+    raise exception 'FINANCIAL_R3_SUCCESS_FALSE_COMPLETED';
+  exception when sqlstate 'P0001' then
+    if position('FINANCIAL_LEGACY_OPERATION_REJECTED:SALE_NOT_FOUND' in sqlerrm) = 0 then raise; end if;
+  end;
+  begin
+    perform private.assert_financial_legacy_result_terminal_v1('cash.movement', jsonb_build_object('success',false,'code','CASH_SESSION_NOT_OPEN'));
+    raise exception 'FINANCIAL_R3_SECOND_SUCCESS_FALSE_COMPLETED';
+  exception when sqlstate 'P0001' then
+    if position('FINANCIAL_LEGACY_OPERATION_REJECTED:CASH_SESSION_NOT_OPEN' in sqlerrm) = 0 then raise; end if;
+  end;
+  perform private.assert_financial_legacy_result_terminal_v1('sale.cancel', jsonb_build_object('success',true));
   begin
     perform private.assert_financial_operation_origin_v1(v_operation, 'staff-user:other', v_device_a, null);
     raise exception 'FINANCIAL_R1_EXPECTED_ACTOR_DENIAL';
