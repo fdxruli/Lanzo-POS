@@ -51,8 +51,10 @@ export const remoteVersionsFromList = (output) => {
     if (columns.length < 2) fail('unparseable migration list row');
     const [local, remoteVersion] = columns;
     const isVersionOrEmpty = (value) => value === '' || /^\d{14}$/.test(value);
+    const isTableSeparator = (value) => /^-+$/.test(value);
     if (!isVersionOrEmpty(local) || !isVersionOrEmpty(remoteVersion)) {
       if (/^local$/i.test(local) && /^remote$/i.test(remoteVersion)) continue;
+      if (isTableSeparator(local) && isTableSeparator(remoteVersion)) continue;
       fail(`unparseable migration list row: ${rawLine}`);
     }
     if (remoteVersion) remote.push(remoteVersion);
