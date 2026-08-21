@@ -144,6 +144,15 @@ const writeTrustedBindingToActiveRuntime = async (identity) => {
   });
 };
 
+const malformedLifecycleMutations = [
+  ['unknown version', (entry) => ({ ...entry, directoryLifecycleVersion: 999, directoryState: 'ACTIVE' })],
+  ['unknown state', (entry) => ({ ...entry, directoryLifecycleVersion: 1, directoryState: 'BROKEN' })],
+  ['unknown version and state', (entry) => ({ ...entry, directoryLifecycleVersion: 999, directoryState: 'BROKEN' })],
+  ['version only', (entry) => { const { directoryState, ...partial } = entry; return { ...partial, directoryLifecycleVersion: 1 }; }],
+  ['state only', (entry) => { const { directoryLifecycleVersion, ...partial } = entry; return { ...partial, directoryState: 'PROVISIONING' }; }],
+  ['explicit null lifecycle', (entry) => ({ ...entry, directoryLifecycleVersion: null, directoryState: null })]
+];
+
 describe('tenant runtime router', () => {
   afterEach(() => { closeTenantRuntime(); localTenantAccessController.reset(); clearDatabaseRecoveryState(); });
 
@@ -458,6 +467,47 @@ describe('tenant runtime router', () => {
     });
     expect(await Dexie.getDatabaseNames()).toContain(runtime.databaseName);
     expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+    expect(getTenantStorageState()).toMatchObject({ writesSuspended: false });
+  });
+
+  it.each(malformedLifecycleMutations)('fails closed on a %s directory lifecycle without changing its physical tenant', async (_label, mutate) => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-MALFORMED-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const reserved = await readDirectoryEntry(opaqueId);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    await createBoundOperationalTenantDatabase(identity, databaseName);
+    const malformed = mutate(reserved);
+    await writeDirectoryEntry(malformed);
+
+    await expect(openTenantRuntime(identity)).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_CORRUPT' });
+
+    expect(getActiveTenantRuntime()).toBeNull();
+    expect(await readDirectoryEntry(opaqueId)).toEqual(malformed);
+    expect(await Dexie.getDatabaseNames()).toContain(databaseName);
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'TENANT_DIRECTORY_CORRUPT'
+    });
+  });
+
+  it('fails closed when a provisioning lifecycle becomes malformed before readiness, without resuming writes', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `LIFECYCLE-PROMOTION-MALFORMED-${crypto.randomUUID()}` });
+    await openTenantRuntime(identity);
+    const runtime = getActiveTenantRuntime();
+    await writeTrustedBindingToActiveRuntime(identity);
+    const reservation = await readDirectoryEntry(runtime.opaqueId);
+    const malformed = { ...reservation, directoryLifecycleVersion: 999, directoryState: 'BROKEN' };
+    await writeDirectoryEntry(malformed);
+
+    await expect(markTenantRuntimeReady()).rejects.toMatchObject({ code: 'TENANT_DIRECTORY_CORRUPT' });
+
+    expect(await readDirectoryEntry(runtime.opaqueId)).toEqual(malformed);
+    expect(getActiveTenantRuntime()).toBeNull();
+    expect(getTenantStorageState()).toMatchObject({ ready: false, writesSuspended: true });
+    expect(getDatabaseRecoveryState()).toMatchObject({
+      status: DATABASE_RECOVERY_STATUS.FAILED,
+      errorCode: 'TENANT_DIRECTORY_CORRUPT'
+    });
   });
 
   it('resumes a crash after directory reservation with the same opaqueId', async () => {

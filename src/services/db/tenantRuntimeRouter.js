@@ -266,9 +266,30 @@ const createOpaqueId = (aliases) => (
     .padEnd(32, '0')}`
 );
 
+const DIRECTORY_LIFECYCLE_CLASSIFICATION = Object.freeze({
+  LEGACY: 'LEGACY',
+  PROVISIONING: 'PROVISIONING',
+  ACTIVE: 'ACTIVE',
+  MALFORMED: 'MALFORMED'
+});
+
+const classifyDirectoryLifecycle = (entry) => {
+  const hasVersion = Object.prototype.hasOwnProperty.call(entry || {}, 'directoryLifecycleVersion');
+  const hasState = Object.prototype.hasOwnProperty.call(entry || {}, 'directoryState');
+  if (!hasVersion && !hasState) return DIRECTORY_LIFECYCLE_CLASSIFICATION.LEGACY;
+  if (
+    entry?.directoryLifecycleVersion === DIRECTORY_LIFECYCLE_VERSION
+    && entry?.directoryState === TENANT_DIRECTORY_STATE.PROVISIONING
+  ) return DIRECTORY_LIFECYCLE_CLASSIFICATION.PROVISIONING;
+  if (
+    entry?.directoryLifecycleVersion === DIRECTORY_LIFECYCLE_VERSION
+    && entry?.directoryState === TENANT_DIRECTORY_STATE.ACTIVE
+  ) return DIRECTORY_LIFECYCLE_CLASSIFICATION.ACTIVE;
+  return DIRECTORY_LIFECYCLE_CLASSIFICATION.MALFORMED;
+};
+
 const isResumableProvisioning = (entry) => (
-  entry?.directoryLifecycleVersion === DIRECTORY_LIFECYCLE_VERSION
-  && entry?.directoryState === TENANT_DIRECTORY_STATE.PROVISIONING
+  classifyDirectoryLifecycle(entry) === DIRECTORY_LIFECYCLE_CLASSIFICATION.PROVISIONING
 );
 
 const createDirectoryReservation = ({ opaqueId, aliases }) => ({
@@ -286,6 +307,9 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
   if (!aliases.length) throw new TenantRuntimeError('TENANT_IDENTITY_MISSING');
   const initialMatches = await getDirectoryMatches(aliases);
   const prior = assertDirectoryMatchesAreCompatible(initialMatches, aliases);
+  if (prior && classifyDirectoryLifecycle(prior) === DIRECTORY_LIFECYCLE_CLASSIFICATION.MALFORMED) {
+    throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+  }
   const physical = await listPhysicalDatabaseNames();
   const mappedDatabaseName = prior ? `${TENANT_DATABASE_PREFIX}${prior.opaqueId}` : null;
   const mappingIsMissing = !prior;
@@ -324,7 +348,12 @@ export const resolveTenantRuntimeDirectory = async (identity, { requirePhysicalD
   return directory.transaction('rw', directory.table(DIRECTORY_STORE), async () => {
     const currentMatches = await getDirectoryMatches(aliases);
     const currentPrior = assertDirectoryMatchesAreCompatible(currentMatches, aliases);
-    if (currentPrior) return currentPrior.opaqueId;
+    if (currentPrior) {
+      if (classifyDirectoryLifecycle(currentPrior) === DIRECTORY_LIFECYCLE_CLASSIFICATION.MALFORMED) {
+        throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+      }
+      return currentPrior.opaqueId;
+    }
 
     const opaqueId = adopted?.opaqueId || createOpaqueId(aliases);
     await directory.table(DIRECTORY_STORE).put(createDirectoryReservation({
@@ -366,10 +395,11 @@ const promoteDirectoryReservationToActive = async (runtime) => {
       throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
     }
 
-    if (
-      currentReservation.directoryState === TENANT_DIRECTORY_STATE.ACTIVE
-      && currentReservation.directoryLifecycleVersion === DIRECTORY_LIFECYCLE_VERSION
-    ) return;
+    const lifecycle = classifyDirectoryLifecycle(currentReservation);
+    if (lifecycle === DIRECTORY_LIFECYCLE_CLASSIFICATION.MALFORMED) {
+      throw new TenantRuntimeError('TENANT_DIRECTORY_CORRUPT');
+    }
+    if (lifecycle === DIRECTORY_LIFECYCLE_CLASSIFICATION.ACTIVE) return;
 
     // This is also the safe, post-validation backfill for a valid legacy row.
     // It never changes its opaqueId or aliases.
@@ -528,8 +558,8 @@ export const markTenantRuntimeReady = async () => {
   markTenantStorageReady();
   try {
     await hydrateTenantStorageConsumers();
-    resumeTenantStorageWrites();
     await promoteDirectoryReservationToActive(current());
+    resumeTenantStorageWrites();
   } catch (error) {
     // A partially hydrated tenant is never usable. Preserve its physical DB
     // and storage payload, lock access, then leave no active runtime handle.
