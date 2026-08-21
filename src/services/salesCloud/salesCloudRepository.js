@@ -18,6 +18,7 @@ import {
   isCloudSalesInventoryEnabled,
   SYNC_LIMITS
 } from '../sync/syncConstants';
+import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -136,28 +137,19 @@ export const salesCloudRepository = {
     return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
-  async createCloudCashierSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier', buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }));
-    if (error) throw error;
-    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
+  async createCloudCashierSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.cashier', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
-  async createCloudCashierInventorySale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_cashier_inventory', buildCloudCashierArgs({ baseArgs, sale, items, payments, cashSessionId, idempotencyKey }));
-    if (error) throw error;
-    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
+  async createCloudCashierInventorySale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.cashier_inventory', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
-  async createCloudCreditSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, customerId = null, idempotencyKey = null }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_create_cloud_sale_credit', buildCloudCreditArgs({ baseArgs, sale, items, payments, cashSessionId, customerId, idempotencyKey }));
-    if (error) throw error;
-    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
+  async createCloudCreditSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, customerId = null, idempotencyKey = null, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.credit', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: customerId || sale?.customer_id || sale?.customerId || null }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
   async previewCloudSaleCancellation({ licenseKey, saleId, reason = null }) {
@@ -172,17 +164,9 @@ export const salesCloudRepository = {
     return parseRpcPayload(data);
   },
 
-  async cancelCloudSale({ licenseKey, saleId, reason, idempotencyKey = null }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_cancel_cloud_sale', {
-      ...baseArgs,
-      p_sale_id: saleId,
-      p_reason: reason,
-      p_idempotency_key: idempotencyKey || null
-    });
-    if (error) throw error;
-    return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
+  async cancelCloudSale({ licenseKey, saleId, reason, idempotencyKey = null, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.cancel', request: { sale_id: saleId, reason }, licenseKey, idempotencyKey, actorHandle });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
   async validateCloudSaleIntegrity({ licenseKey, saleId }) {

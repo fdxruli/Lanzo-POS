@@ -28,6 +28,7 @@ import {
   localClosingToCloudPayload,
   localOpeningToCloudPayload
 } from './cashMapper';
+import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
 
 import './cashSyncHandler';
 
@@ -151,6 +152,21 @@ const applyCloudResponse = async (response = {}) => {
   }
 
   return applied;
+};
+
+const applyFinancialCloudResponse = async ({ response, actorContext }) => {
+  try {
+    const applied = await applyCloudResponse(response);
+    if (response?.financialIntentId) {
+      await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle: actorContext });
+    }
+    return applied;
+  } catch (error) {
+    if (response?.financialIntentId) {
+      await markFinancialIntentProjectionFailed({ intentId: response.financialIntentId, errorCode: error?.code || 'CASH_LOCAL_PROJECTION_FAILED', actorHandle: actorContext });
+    }
+    throw error;
+  }
 };
 
 const getCachedScope = async (mode, { limit = 50 } = {}) => {
@@ -331,15 +347,14 @@ export const cashRepository = {
       cashIdentityState: station.identityState
     };
 
-    const idempotencyKey = generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
-      operation: SYNC_OPERATIONS.OPEN,
-      entityId: 'current',
-      prefix: 'cash_open'
-    });
-    canonicalOpeningData.idempotencyKey = idempotencyKey;
-
     if (!mode.cloudEnabled) {
+      const idempotencyKey = generateIdempotencyKey({
+        entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
+        operation: SYNC_OPERATIONS.OPEN,
+        entityId: 'current',
+        prefix: 'cash_open'
+      });
+      canonicalOpeningData.idempotencyKey = idempotencyKey;
       const cashSession = await cashLocalRepository.openCashSession(canonicalOpeningData);
       return { success: true, cashSession };
     }
@@ -354,7 +369,8 @@ export const cashRepository = {
       response = await cashCloudRepository.openCashSession({
         licenseKey: mode.licenseKey,
         opening: localOpeningToCloudPayload(canonicalOpeningData),
-        idempotencyKey
+        idempotencyKey: null,
+        actorHandle: actorContext
       });
     } catch (openError) {
       const normalized = normalizeCashMutationError(openError, 'CASH_OPEN_FAILED');
@@ -369,7 +385,7 @@ export const cashRepository = {
           stationOpenCashSession: response.cash_session
         });
       }
-      const applied = await applyCloudResponse(response);
+      const applied = await applyFinancialCloudResponse({ response, actorContext });
       invalidateCloudCacheAfterCashMutation(mode.licenseKey);
       posSyncOrchestrator.pullIncremental('cash_open').catch(() => {});
       return {
@@ -440,12 +456,7 @@ export const cashRepository = {
       operation: 'cash movement'
     });
 
-    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CASH_MOVEMENT,
-      operation: SYNC_OPERATIONS.MOVEMENT,
-      entityId: `${cashSessionId}:${type}:${Date.now()}`,
-      prefix: 'cash_movement'
-    });
+    const resolvedIdempotencyKey = idempotencyKey || null;
 
     let response;
     try {
@@ -460,8 +471,12 @@ export const cashRepository = {
           ...movementMetadata,
           originActorKey: mode.actor.actorKey,
           cashStationId: station.cashStationId,
-          originActorGeneration: actorContext.generation
-        }
+          originActorGeneration: actorContext.generation,
+          source: movementMetadata.source || movementMetadata.origen || 'manual',
+          reference_type: movementMetadata.reference_type || movementMetadata.referenceType || null,
+          reference_id: movementMetadata.reference_id || movementMetadata.referenceId || null
+        },
+        actorHandle: actorContext
       });
     } catch (movementError) {
       const normalized = normalizeCashMutationError(movementError, 'CASH_MOVEMENT_FAILED');
@@ -472,7 +487,7 @@ export const cashRepository = {
       return fail(response.message || 'No se pudo registrar el movimiento cloud.', response.code || 'CASH_MOVEMENT_FAILED', { response });
     }
 
-    const applied = await applyCloudResponse(response);
+    const applied = await applyFinancialCloudResponse({ response, actorContext });
     invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_movement').catch(() => {});
 
@@ -491,14 +506,13 @@ export const cashRepository = {
     assertCanUseCashRegister();
     const station = await getStationForMode();
     const actorContext = captureFinancialActor();
-    const idempotencyKey = generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
-      operation: SYNC_OPERATIONS.ADJUST,
-      entityId: cashSessionId,
-      prefix: 'cash_adjust'
-    });
-
     if (!mode.cloudEnabled) {
+      const idempotencyKey = generateIdempotencyKey({
+        entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
+        operation: SYNC_OPERATIONS.ADJUST,
+        entityId: cashSessionId,
+        prefix: 'cash_adjust'
+      });
       return cashLocalRepository.adjustInitialFund({
         cashSessionId,
         newAmount,
@@ -532,7 +546,8 @@ export const cashRepository = {
         newAmount: normalizeAmount(newAmount),
         reason,
         expectedVersion,
-        idempotencyKey
+        idempotencyKey: null,
+        actorHandle: actorContext
       });
     } catch (adjustError) {
       const normalized = normalizeCashMutationError(adjustError, 'CASH_ADJUST_FAILED');
@@ -543,7 +558,7 @@ export const cashRepository = {
       return fail(response.message || 'No se pudo ajustar el fondo inicial.', response.code || 'CASH_ADJUST_FAILED', { response });
     }
 
-    const applied = await applyCloudResponse(response);
+    const applied = await applyFinancialCloudResponse({ response, actorContext });
     invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_adjust').catch(() => {});
     actorContext.assertCurrent();
@@ -561,14 +576,13 @@ export const cashRepository = {
     assertCanUseCashRegister();
     const station = await getStationForMode();
     const actorContext = captureFinancialActor();
-    const idempotencyKey = generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
-      operation: SYNC_OPERATIONS.CLOSE,
-      entityId: cashSessionId,
-      prefix: 'cash_close'
-    });
-
     if (!mode.cloudEnabled) {
+      const idempotencyKey = generateIdempotencyKey({
+        entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
+        operation: SYNC_OPERATIONS.CLOSE,
+        entityId: cashSessionId,
+        prefix: 'cash_close'
+      });
       return cashLocalRepository.closeCashSession({
         cashSessionId,
         countedAmount,
@@ -611,7 +625,8 @@ export const cashRepository = {
           }
         }),
         expectedVersion,
-        idempotencyKey
+        idempotencyKey: null,
+        actorHandle: actorContext
       });
     } catch (closeError) {
       const normalized = normalizeCashMutationError(closeError, 'CASH_CLOSE_FAILED');
@@ -622,7 +637,7 @@ export const cashRepository = {
       return fail(response.message || 'No se pudo cerrar caja cloud.', response.code || 'CASH_CLOSE_FAILED', { response });
     }
 
-    const applied = await applyCloudResponse(response);
+    const applied = await applyFinancialCloudResponse({ response, actorContext });
     invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_close').catch(() => {});
     actorContext.assertCurrent();
@@ -683,12 +698,7 @@ export const cashRepository = {
     }
     const actorContext = captureFinancialActor();
 
-    const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
-      operation: SYNC_OPERATIONS.CLOSE,
-      entityId: cashSessionId,
-      prefix: 'cash_admin_close'
-    });
+    const resolvedIdempotencyKey = idempotencyKey || null;
     let response;
     try {
       response = await cashCloudRepository.adminCloseCashSession({
@@ -700,7 +710,8 @@ export const cashRepository = {
         reasonCode,
         comments,
         expectedVersion,
-        idempotencyKey: resolvedIdempotencyKey
+        idempotencyKey: resolvedIdempotencyKey,
+        actorHandle: actorContext
       });
     } catch (adminCloseError) {
       const normalized = normalizeCashMutationError(adminCloseError, 'ADMIN_CASH_CLOSE_FAILED');
@@ -709,7 +720,7 @@ export const cashRepository = {
     if (response?.success === false) {
       return fail(response.message || 'No se pudo cerrar administrativamente la caja.', response.code || 'ADMIN_CASH_CLOSE_FAILED', { response });
     }
-    const applied = await applyCloudResponse(response);
+    const applied = await applyFinancialCloudResponse({ response, actorContext });
     invalidateCloudCacheAfterCashMutation(mode.licenseKey);
     posSyncOrchestrator.pullIncremental('cash_admin_close').catch(() => {});
     actorContext.assertCurrent();
