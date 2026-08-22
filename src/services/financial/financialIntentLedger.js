@@ -73,6 +73,25 @@ const hasCapturedOrigin = (row, handle) => (
   && row?.originTenantGeneration === handle.tenant.generation
 );
 
+// Recovery deliberately has a narrower authority rule than normal execution.
+// A new login for the *same* actor has a new session/generation, but must never
+// be allowed to adopt another actor's durable financial evidence.
+export const assertFinancialIntentRecoveryAuthority = (row, handle) => {
+  handle?.assertCurrent?.();
+  if (
+    !row
+    || row.originActorKey !== handle?.actorKey
+    || row.originActorType !== handle?.actorType
+    || row.originActorId !== handle?.actorId
+    || row.originTenantOpaqueId !== handle?.tenant?.opaqueId
+    || row.originTenantDatabaseName !== handle?.tenant?.databaseName
+  ) throw new Error('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
+  if (row.originDeviceRef && handle?.deviceRef && row.originDeviceRef !== handle.deviceRef) {
+    throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
+  }
+  return true;
+};
+
 const updateMutable = async (intentId, changes, handle) => {
   const keys = Object.keys(changes || {});
   if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
@@ -84,6 +103,75 @@ const updateMutable = async (intentId, changes, handle) => {
   }
   handle.assertCurrent();
   await db.table(STORES.FINANCIAL_INTENTS).update(intentId, { ...changes, updatedAt: now() });
+};
+
+/**
+ * Cross-boot recovery mutation boundary.  Do not use this for ordinary 5B
+ * execution: normal execution intentionally keeps its exact captured-origin
+ * session/generation checks above.
+ */
+export const updateFinancialIntentForRecovery = async (intentId, changes, handle) => {
+  const keys = Object.keys(changes || {});
+  if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
+  handle?.assertCurrent?.();
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  const row = await table.get(intentId);
+  if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(row, handle);
+  // Recheck immediately before the write: an async receipt must never land
+  // under a later actor/tenant runtime.
+  handle?.assertCurrent?.();
+  await table.update(intentId, { ...changes, updatedAt: now() });
+};
+
+const leaseExpired = (row, currentTime) => !row?.recoveryLeaseUntil || Date.parse(row.recoveryLeaseUntil) <= currentTime;
+
+export const claimFinancialIntentRecovery = async ({ intentId, actorHandle, leaseMs = 30_000, currentTime = Date.now() } = {}) => {
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  const safeLeaseMs = Math.min(Math.max(Number(leaseMs) || 30_000, 1_000), 120_000);
+  const leaseId = secureKey();
+  let claimed = null;
+  await db.transaction('rw', table, async () => {
+    actorHandle?.assertCurrent?.();
+    const row = await table.get(intentId);
+    if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+    assertFinancialIntentRecoveryAuthority(row, actorHandle);
+    if (row.recoveryLeaseId && !leaseExpired(row, currentTime)) {
+      const error = new Error('FINANCIAL_RECOVERY_LEASE_HELD');
+      error.code = 'FINANCIAL_RECOVERY_LEASE_HELD';
+      throw error;
+    }
+    actorHandle?.assertCurrent?.();
+    const leaseUntil = new Date(currentTime + safeLeaseMs).toISOString();
+    await table.update(intentId, {
+      recoveryLeaseId: leaseId,
+      recoveryLeaseUntil: leaseUntil,
+      recoveryAttemptCount: Number(row.recoveryAttemptCount || 0) + 1,
+      lastRecoveryAt: new Date(currentTime).toISOString(),
+      lastRecoveryCode: null,
+      updatedAt: now()
+    });
+    claimed = { ...row, recoveryLeaseId: leaseId, recoveryLeaseUntil: leaseUntil };
+  });
+  return Object.freeze(claimed);
+};
+
+export const releaseFinancialIntentRecoveryClaim = async ({ intentId, leaseId, actorHandle, code = null } = {}) => {
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  await db.transaction('rw', table, async () => {
+    actorHandle?.assertCurrent?.();
+    const row = await table.get(intentId);
+    if (!row) return;
+    assertFinancialIntentRecoveryAuthority(row, actorHandle);
+    if (row.recoveryLeaseId !== leaseId) return;
+    actorHandle?.assertCurrent?.();
+    await table.update(intentId, {
+      recoveryLeaseId: null,
+      recoveryLeaseUntil: null,
+      lastRecoveryCode: code || row.lastRecoveryCode || null,
+      updatedAt: now()
+    });
+  });
 };
 
 const resolveStation = async ({ auth, cashSessionId, operationType }) => {
@@ -118,6 +206,15 @@ const receiptForCurrentOrigin = async ({ intent, licenseKey, handle }) => {
   });
   if (error) throw error;
   return parseRpcPayload(data);
+};
+
+export const getFinancialIntentReceiptForRecovery = async ({ intent, licenseKey, actorHandle = null } = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  assertFinancialIntentRecoveryAuthority(intent, handle);
+  const row = await db.table(STORES.FINANCIAL_INTENTS).get(intent.id);
+  if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(row, handle);
+  return receiptForCurrentOrigin({ intent: row, licenseKey, handle });
 };
 
 const initialIntent = ({ operationType, request, idempotencyKey, requestHash, canonicalRequest, handle, cashSessionId, cashStationId, projectionStatus }) => ({
@@ -205,6 +302,64 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
   }
 };
 
+/**
+ * The only recovery execution path.  It is intentionally restricted to an
+ * immutable PREPARED row that has never crossed the durable dispatch boundary.
+ */
+export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null } = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  handle.assertCurrent();
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  const durableIntent = await table.get(intentId);
+  if (!durableIntent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(durableIntent, handle);
+  if (durableIntent.status !== FINANCIAL_INTENT_STATUS.PREPARED || Number(durableIntent.dispatchAttemptCount || 0) !== 0) {
+    throw new Error('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
+  }
+  await updateFinancialIntentForRecovery(intentId, {
+    status: FINANCIAL_INTENT_STATUS.DISPATCHING,
+    dispatchAttemptCount: 1,
+    firstDispatchAt: durableIntent.firstDispatchAt || now(),
+    lastDispatchAt: now(),
+    lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH'
+  }, handle);
+  try {
+    const auth = await buildAuth(licenseKey);
+    handle.assertCurrent();
+    const { data, error } = await supabaseClient.rpc('pos_execute_financial_operation_v1', {
+      ...auth,
+      p_idempotency_key: durableIntent.idempotencyKey,
+      p_request_hash: durableIntent.requestHash,
+      p_operation_type: durableIntent.operationType,
+      p_request: durableIntent.requestPayload
+    });
+    if (error) throw error;
+    const result = parseRpcPayload(data);
+    if (result?.success === false) {
+      const rejected = new Error(result.code || result.message || 'FINANCIAL_OPERATION_REJECTED');
+      rejected.code = result.code || null;
+      throw rejected;
+    }
+    await updateFinancialIntentForRecovery(intentId, {
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      lastReceiptStatus: 'COMPLETED',
+      lastProtocolCode: null,
+      responsePayload: result,
+      completedAt: now()
+    }, handle);
+    return { intentId, response: result };
+  } catch (error) {
+    const code = protocolCode(error);
+    const status = code === 'IDEMPOTENCY_CONFLICT'
+      ? FINANCIAL_INTENT_STATUS.CONFLICT
+      : ((code === 'FINANCIAL_REQUEST_HASH_INVALID' || code === 'FINANCIAL_OPERATION_ORIGIN_MISMATCH')
+        ? FINANCIAL_INTENT_STATUS.BLOCKED
+        : FINANCIAL_INTENT_STATUS.PENDING_RECEIPT);
+    await updateFinancialIntentForRecovery(intentId, { status, lastProtocolCode: code }, handle);
+    throw error;
+  }
+};
+
 export const executeNewFinancialIntent = async (options) => {
   const intent = await createFinancialIntent(options);
   return { intent, ...(await executeFinancialIntent({ intent, licenseKey: options.licenseKey, actorHandle: options.actorHandle })) };
@@ -215,4 +370,26 @@ export const markFinancialIntentProjectionFailed = async ({ intentId, errorCode 
 export const listUnresolvedFinancialIntents = async () => db.table(STORES.FINANCIAL_INTENTS).where('status').anyOf(FINANCIAL_INTENT_STATUS.PREPARED, FINANCIAL_INTENT_STATUS.DISPATCHING, FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, FINANCIAL_INTENT_STATUS.BLOCKED).toArray();
 export const getFinancialIntent = async (intentId) => db.table(STORES.FINANCIAL_INTENTS).get(intentId);
 
-export const financialIntentLedgerInternals = Object.freeze({ canonicalFinancialRequestV1, assertNoSecretPayload, secureKey, updateMutable, resolveStation });
+export const listFinancialIntentsForRecovery = async ({ actorHandle = null, limit = 25 } = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  handle.assertCurrent();
+  const rows = await db.table(STORES.FINANCIAL_INTENTS)
+    .where('originActorKey').equals(handle.actorKey)
+    .toArray();
+  handle.assertCurrent();
+  return rows
+    .filter((row) => [
+      FINANCIAL_INTENT_STATUS.PREPARED,
+      FINANCIAL_INTENT_STATUS.DISPATCHING,
+      FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      FINANCIAL_INTENT_STATUS.COMPLETED
+    ].includes(row.status))
+    .filter((row) => row.status !== FINANCIAL_INTENT_STATUS.COMPLETED || [
+      FINANCIAL_PROJECTION_STATUS.PENDING,
+      FINANCIAL_PROJECTION_STATUS.FAILED
+    ].includes(row.projectionStatus))
+    .sort((left, right) => String(left.createdAt).localeCompare(String(right.createdAt)))
+    .slice(0, Math.min(Math.max(Number(limit) || 25, 1), 50));
+};
+
+export const financialIntentLedgerInternals = Object.freeze({ canonicalFinancialRequestV1, assertNoSecretPayload, secureKey, updateMutable, resolveStation, hasCapturedOrigin });

@@ -11,6 +11,7 @@ import {
   stopPosCloudBootstrap
 } from './posSyncBootstrapCoordinator';
 import { getLicenseKeyFromDetails, isCloudPosSyncEnabled } from './syncConstants';
+import { installFinancialIntentRecoveryCoordinator } from '../financial/financialIntentRecoveryCoordinator';
 
 let unsubscribe = null;
 let lastSignature = null;
@@ -45,6 +46,10 @@ const reconcilePosSync = (state, reason = 'state_change') => {
 
 export const startPosSyncAutoBootstrap = () => {
   if (unsubscribe) return;
+
+  // This layer is reached only after the ready application runtime activates;
+  // recovery remains outside pre-license database preparation.
+  installFinancialIntentRecoveryCoordinator();
 
   const initialState = useAppStore.getState();
   lastSignature = buildSignature(initialState);
