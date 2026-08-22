@@ -28,7 +28,8 @@ import {
   CajaBusinessCashSummary,
   CajaAdminCashAuditModal,
   CajaOpeningPanel,
-  CajaLegacyCashTransition
+  CajaLegacyCashTransition,
+  FinancialDiagnosticsPanel
 } from '../components/caja/sections';
 
 // Componentes de modales
@@ -505,6 +506,7 @@ export default function CajaPage() {
           {showBusinessCashSummary && (
             <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
           )}
+          <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
           {showAdminAuditPanel && (
             <CajaStaffAuditPanel
               adminCashSessions={adminCashSessions}
@@ -546,6 +548,7 @@ export default function CajaPage() {
         {showBusinessCashSummary && (
           <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
         )}
+        <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
         {showAdminAuditPanel && (
           <CajaStaffAuditPanel
             adminCashSessions={adminCashSessions}
@@ -603,6 +606,8 @@ export default function CajaPage() {
       {showBusinessCashSummary && (
         <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
       )}
+
+      <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
 
       <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
 
