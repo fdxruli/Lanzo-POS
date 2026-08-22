@@ -26,7 +26,7 @@ const IMMUTABLE_FIELDS = new Set([
   'originActorSessionId', 'originActorGeneration', 'originTenantOpaqueId', 'originTenantDatabaseName',
   'originTenantGeneration', 'originDeviceRef', 'cashSessionId', 'cashStationId', 'createdAt'
 ]);
-const SECRET_FIELD = new Set(['licensekey', 'securitytoken', 'previoussecuritytoken', 'staffsessiontoken', 'adminsessionsecret', 'admintoken', 'adminsessiontoken', 'password', 'passwordhash', 'supabasetoken', 'serviceroletoken', 'jwt', 'authorization']);
+const SECRET_FIELD = new Set(['licensekey', 'securitytoken', 'previoussecuritytoken', 'staffsessiontoken', 'adminsessionsecret', 'admintoken', 'adminsessiontoken', 'password', 'passwordhash', 'supabasetoken', 'serviceroletoken', 'jwt', 'authorization', 'accesstoken', 'refreshtoken']);
 const now = () => new Date().toISOString();
 const parseRpcPayload = (data) => typeof data === 'string' ? JSON.parse(data) : (data || {});
 

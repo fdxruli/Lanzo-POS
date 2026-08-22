@@ -127,6 +127,26 @@ describe('financial intent ledger', () => {
       .rejects.toThrow('FINANCIAL_INTENT_SECRET_FIELD_FORBIDDEN');
   });
 
+  it('rejects access and refresh token fields recursively before persistence or RPC', async () => {
+    for (const field of ['access_token', 'accessToken', 'refresh_token', 'refreshToken']) {
+      const idempotencyKey = `secret-${field}`;
+      const rowsBefore = runtime.rows.size;
+      const rpcCallsBefore = runtime.rpcCalls.length;
+
+      await expect(createOpenIntent({
+        idempotencyKey,
+        request: {
+          opening_amount: '1',
+          metadata: { auth: { [field]: 'obviously-fake-token' } }
+        }
+      })).rejects.toThrow('FINANCIAL_INTENT_SECRET_FIELD_FORBIDDEN');
+
+      expect(runtime.rows.size).toBe(rowsBefore);
+      expect(runtime.rpcCalls).toHaveLength(rpcCallsBefore);
+      expect([...runtime.rows.values()].some((row) => row.idempotencyKey === idempotencyKey)).toBe(false);
+    }
+  });
+
   it('enforces one tenant-local owner for a supplied external idempotency key', async () => {
     await createOpenIntent();
     await expect(createOpenIntent()).rejects.toThrow('FINANCIAL_IDEMPOTENCY_KEY_ALREADY_OWNED');
