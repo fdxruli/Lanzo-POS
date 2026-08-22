@@ -1,0 +1,39 @@
+.financial-diagnostics {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border-color, #d7dde7);
+  border-radius: 12px;
+  background: var(--card-background, #fff);
+}
+
+.financial-diagnostics__header,
+.financial-diagnostics__detail header,
+.financial-diagnostics__item,
+.financial-diagnostics__actions,
+.financial-diagnostics__filters,
+.financial-diagnostics__summary {
+  display: flex;
+  gap: .75rem;
+}
+
+.financial-diagnostics__header,
+.financial-diagnostics__detail header,
+.financial-diagnostics__item { justify-content: space-between; align-items: start; }
+.financial-diagnostics__header p, .financial-diagnostics__item p { margin: 0 0 .25rem; }
+.financial-diagnostics__header h2, .financial-diagnostics__detail h3 { margin: 0; }
+.financial-diagnostics__filters { flex-wrap: wrap; }
+.financial-diagnostics__filters .is-selected { font-weight: 700; text-decoration: underline; }
+.financial-diagnostics__summary { flex-wrap: wrap; }
+.financial-diagnostics__summary span { min-width: 130px; display: grid; gap: .2rem; padding: .5rem; background: rgba(32, 91, 164, .08); border-radius: 8px; }
+.financial-diagnostics__summary small, .financial-diagnostics__item small { display: block; }
+.financial-diagnostics__list { display: grid; gap: .75rem; }
+.financial-diagnostics__item { padding: .9rem; border: 1px solid var(--border-color, #d7dde7); border-radius: 8px; }
+.financial-diagnostics__actions { flex-wrap: wrap; justify-content: end; max-width: 460px; }
+.financial-diagnostics__actions small { width: 100%; color: var(--text-muted, #5f6877); }
+.financial-diagnostics__detail { padding: 1rem; border-radius: 8px; background: rgba(32, 91, 164, .06); }
+.financial-diagnostics__detail dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .75rem; margin: 1rem 0 0; }
+.financial-diagnostics__detail dt { font-size: .8rem; color: var(--text-muted, #5f6877); }
+.financial-diagnostics__detail dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
+.financial-diagnostics__message { margin: 0; color: var(--text-muted, #5f6877); }
+@media (max-width: 720px) { .financial-diagnostics__item { display: grid; } .financial-diagnostics__actions { justify-content: start; max-width: none; } }

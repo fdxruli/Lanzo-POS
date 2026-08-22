@@ -8,3 +8,4 @@ export { default as CajaBusinessCashSummary } from './CajaBusinessCashSummary.js
 export { default as CajaAdminCashAuditModal } from './CajaAdminCashAuditModal.jsx';
 export { default as CajaOpeningPanel } from './CajaOpeningPanel.jsx';
 export { default as CajaLegacyCashTransition } from './CajaLegacyCashTransition.jsx';
+export { default as FinancialDiagnosticsPanel } from './FinancialDiagnosticsPanel.jsx';

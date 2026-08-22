@@ -10,10 +10,10 @@ import {
   updateFinancialIntentForRecovery
 } from './financialIntentLedger';
 import { applyFinancialProjection } from './financialProjectionRegistry';
-
-const receiptStatus = (receipt) => String(receipt?.status || '').toUpperCase();
+import { FINANCIAL_RECEIPT_CLASSIFICATION, classifyFinancialReceipt } from './financialReceiptClassifier';
 
 const completedPayload = (receipt) => receipt?.result || receipt?.response || receipt;
+const receiptStatus = (receipt) => String(receipt?.status || '').toUpperCase();
 
 const persistReceipt = async ({ intentId, actorHandle, receipt, status, code = null }) => (
   updateFinancialIntentForRecovery(intentId, {
@@ -100,19 +100,19 @@ export const recoverFinancialIntent = async ({ intentId, licenseKey, actorHandle
       return { intentId, outcome: 'receipt_unavailable', error };
     }
 
-    switch (receiptStatus(receipt)) {
-      case 'COMPLETED': {
+    switch (classifyFinancialReceipt(receipt)) {
+      case FINANCIAL_RECEIPT_CLASSIFICATION.COMPLETED: {
         await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.COMPLETED });
         const completed = await getFinancialIntent(intentId);
         return recoverProjectionOnly({ intent: completed, actorHandle, project });
       }
-      case 'PROCESSING':
+      case FINANCIAL_RECEIPT_CLASSIFICATION.PROCESSING:
         await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
         return { intentId, outcome: 'receipt_processing' };
-      case 'CONFLICT':
+      case FINANCIAL_RECEIPT_CLASSIFICATION.CONFLICT:
         await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.CONFLICT, code: 'IDEMPOTENCY_CONFLICT' });
         return { intentId, outcome: 'receipt_conflict' };
-      case 'NOT_FOUND':
+      case FINANCIAL_RECEIPT_CLASSIFICATION.NOT_FOUND:
         if (intent.status === FINANCIAL_INTENT_STATUS.PREPARED && Number(intent.dispatchAttemptCount || 0) === 0) {
           const execution = await executePreparedFinancialIntentForRecovery({ intentId, licenseKey, actorHandle });
           const completed = await getFinancialIntent(intentId);
