@@ -11,6 +11,7 @@ import {
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
+import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -116,61 +117,31 @@ export const cashCloudRepository = {
   },
 
   // IMPORTANTE: estas RPCs de caja son transaccionales y NO deben pasar por CloudRequestManager.
-  async openCashSession({ licenseKey, opening, idempotencyKey }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_open_cash_session', {
-      ...baseArgs,
-      p_opening: opening,
-      p_idempotency_key: idempotencyKey
-    });
-    if (error) throw error;
-    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+  async openCashSession({ licenseKey, opening, idempotencyKey, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'cash.open', request: opening || {}, licenseKey, idempotencyKey, actorHandle });
+    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
-  async registerCashMovement({ licenseKey, cashSessionId, type, amount, concept, idempotencyKey, metadata = {} }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_register_cash_movement', {
-      ...baseArgs,
-      p_cash_session_id: cashSessionId,
-      p_type: type,
-      p_amount: amount,
-      p_concept: concept,
-      p_idempotency_key: idempotencyKey,
-      p_metadata: metadata
-    });
-    if (error) throw error;
-    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+  async registerCashMovement({ licenseKey, cashSessionId, type, amount, concept, idempotencyKey, metadata = {}, actorHandle = null }) {
+    const request = {
+      cash_session_id: cashSessionId, type, amount, concept,
+      source: metadata.source || metadata.origen || null,
+      reference_type: metadata.reference_type || metadata.referenceType || null,
+      reference_id: metadata.reference_id || metadata.referenceId || null,
+      metadata
+    };
+    const result = await executeNewFinancialIntent({ operationType: 'cash.movement', request, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
-  async adjustInitialCashFund({ licenseKey, cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_adjust_initial_cash_fund', {
-      ...baseArgs,
-      p_cash_session_id: cashSessionId,
-      p_new_opening_amount: newAmount,
-      p_reason: reason,
-      p_expected_version: expectedVersion,
-      p_idempotency_key: idempotencyKey
-    });
-    if (error) throw error;
-    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+  async adjustInitialCashFund({ licenseKey, cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'cash.adjust_initial_fund', request: { cash_session_id: cashSessionId, new_opening_amount: newAmount, reason, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
-  async closeCashSession({ licenseKey, cashSessionId, closing, expectedVersion = null, idempotencyKey }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_close_cash_session', {
-      ...baseArgs,
-      p_cash_session_id: cashSessionId,
-      p_closing: closing,
-      p_expected_version: expectedVersion,
-      p_idempotency_key: idempotencyKey
-    });
-    if (error) throw error;
-    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+  async closeCashSession({ licenseKey, cashSessionId, closing, expectedVersion = null, idempotencyKey, actorHandle = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'cash.close', request: { ...(closing || {}), cash_session_id: cashSessionId, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
   async adminCloseCashSession({
@@ -182,23 +153,11 @@ export const cashCloudRepository = {
     reasonCode,
     comments,
     expectedVersion,
-    idempotencyKey
+    idempotencyKey,
+    actorHandle = null
   }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_admin_close_cash_session', {
-      ...baseArgs,
-      p_cash_session_id: cashSessionId,
-      p_closing_mode: closingMode,
-      p_counted_amount: countedAmount,
-      p_next_shift_fund: nextShiftFund,
-      p_reason_code: reasonCode,
-      p_comments: comments,
-      p_expected_version: expectedVersion,
-      p_idempotency_key: idempotencyKey
-    });
-    if (error) throw error;
-    return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
+    const result = await executeNewFinancialIntent({ operationType: 'cash.admin_close', request: { cash_session_id: cashSessionId, closing_mode: closingMode, counted_amount: countedAmount, next_shift_fund: nextShiftFund, reason_code: reasonCode, comments, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
   },
 
   async adoptLegacyCashSession({ licenseKey, cashSessionId, expectedVersion = null, idempotencyKey }) {

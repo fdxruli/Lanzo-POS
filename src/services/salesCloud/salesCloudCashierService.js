@@ -10,6 +10,8 @@ import {
 import { pullCatalogChanges } from '../products/productSyncHandler';
 import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
+import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
   isCloudCashierCompatiblePayment,
   isCreditLikePaymentMethod,
@@ -362,6 +364,8 @@ export const salesCloudCashierService = {
       throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
     }
 
+    const actorHandle = actorRuntimeController.capture();
+
     const payload = creditSale
       ? mapLocalCreditCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled })
       : mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled });
@@ -382,7 +386,8 @@ export const salesCloudCashierService = {
         ...payload,
         cashSessionId: paymentData.cashSessionId || paymentData.cash_session_id || null,
         customerId: payload.customerId || paymentData.customerId || sale?.customerId || null,
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
 
       if (response?.success === false) {
@@ -392,32 +397,42 @@ export const salesCloudCashierService = {
         throw error;
       }
 
-      const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
-        localSale: {
-          ...sale,
-          items: processedItems,
-          syncStatus: 'SYNCED',
-          cloudSalesSyncStatus: 'synced',
-          sourceMode: 'cloud_committed',
-          effectsStatus: response.sale?.effects_status || (creditSale ? 'credit_applied' : 'payment_recorded'),
-          inventoryEffectStatus: response.sale?.inventory_effect_status || (inventoryEnabled ? 'applied' : 'not_applied'),
-          creditEffectStatus: response.sale?.credit_effect_status || (creditSale ? 'applied' : 'not_applied'),
-          creditLedgerChargeId: response.sale?.credit_ledger_charge_id || response.ledger_charge?.id || null,
-          creditLedgerPaymentId: response.sale?.credit_ledger_payment_id || response.ledger_payment?.id || null,
-          customerLedgerId: response.sale?.customer_ledger_id || response.ledger_charge?.id || null
-        },
-        response
-      });
-
-      await salesCloudLocalRepository.applyCloudSalesPayload(response);
-
-      if (inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
-        pullCatalogChanges(context.licenseKey).catch((pullError) => {
-          Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras venta cloud inventory:', pullError);
+      try {
+        actorHandle.assertCurrent();
+        const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+          localSale: {
+            ...sale,
+            items: processedItems,
+            syncStatus: 'SYNCED',
+            cloudSalesSyncStatus: 'synced',
+            sourceMode: 'cloud_committed',
+            effectsStatus: response.sale?.effects_status || (creditSale ? 'credit_applied' : 'payment_recorded'),
+            inventoryEffectStatus: response.sale?.inventory_effect_status || (inventoryEnabled ? 'applied' : 'not_applied'),
+            creditEffectStatus: response.sale?.credit_effect_status || (creditSale ? 'applied' : 'not_applied'),
+            creditLedgerChargeId: response.sale?.credit_ledger_charge_id || response.ledger_charge?.id || null,
+            creditLedgerPaymentId: response.sale?.credit_ledger_payment_id || response.ledger_payment?.id || null,
+            customerLedgerId: response.sale?.customer_ledger_id || response.ledger_charge?.id || null
+          },
+          response
         });
-      }
 
-      return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled, creditSale };
+        actorHandle.assertCurrent();
+        await salesCloudLocalRepository.applyCloudSalesPayload(response);
+        if (response.financialIntentId) await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle });
+
+        if (inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
+          pullCatalogChanges(context.licenseKey).catch((pullError) => {
+            Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras venta cloud inventory:', pullError);
+          });
+        }
+
+        return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled, creditSale };
+      } catch (projectionError) {
+        if (response.financialIntentId) {
+          await markFinancialIntentProjectionFailed({ intentId: response.financialIntentId, errorCode: projectionError?.code || 'SALE_LOCAL_PROJECTION_FAILED', actorHandle });
+        }
+        throw projectionError;
+      }
     } catch (error) {
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
       throw friendlyCloudCashierError(error);

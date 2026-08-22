@@ -42,7 +42,8 @@ export const STORES = {
   CUSTOMER_LEDGER: 'customer_ledger',
   INVENTORY_EVENTS: 'inventory_events',
   SEQUENCES: 'sequences',
-  CORRUPTED_STATES: 'corrupted_states'
+  CORRUPTED_STATES: 'corrupted_states',
+  FINANCIAL_INTENTS: 'financial_intents'
 };
 
 export class LanzoDatabase extends Dexie {
@@ -544,6 +545,12 @@ export class LanzoDatabase extends Dexie {
 
       this.version(23).stores({
         [STORES.CUSTOMER_LEDGER]: 'id, customerId, type, timestamp, cashSessionId, cashMovementId, staffUserId, deviceId, syncStatus, serverVersion, cloudUpdatedAt, lastSyncedAt, [customerId+timestamp], [cashSessionId+timestamp], [staffUserId+timestamp], [deviceId+timestamp], [syncStatus+timestamp]'
+      });
+
+      // The financial ledger is tenant-owned.  This additive store deliberately
+      // has no upgrade callback: existing tenant business rows are untouched.
+      this.version(24).stores({
+        [STORES.FINANCIAL_INTENTS]: 'id, &idempotencyKey, status, operationType, createdAt, updatedAt, originActorKey, cashSessionId, [status+updatedAt], [originActorKey+status]'
       });
     }
   }

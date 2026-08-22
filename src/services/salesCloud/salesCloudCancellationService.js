@@ -8,6 +8,8 @@ import {
   isCloudSalesCancellationEnabled
 } from '../sync/syncConstants';
 import { salesCloudRepository } from './salesCloudRepository';
+import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
   buildCancellationIdempotencyKey,
   getCloudSaleId,
@@ -197,6 +199,7 @@ export const salesCloudCancellationService = {
     if (!cloudSaleId) throw friendlyCloudCancellationError(new Error('SALE_NOT_FOUND'));
 
     const idempotencyKey = buildCancellationIdempotencyKey({ saleId: cloudSaleId, deviceId: context.deviceId });
+    const actorHandle = actorRuntimeController.capture();
 
     try {
       const preview = await salesCloudRepository.previewCloudSaleCancellation({
@@ -220,11 +223,14 @@ export const salesCloudCancellationService = {
         throw error;
       }
 
+      actorHandle.assertCurrent();
+
       const response = await salesCloudRepository.cancelCloudSale({
         licenseKey: context.licenseKey,
         saleId: cloudSaleId,
         reason: trimmedReason,
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
 
       if (response?.success === false) {
@@ -247,11 +253,18 @@ export const salesCloudCancellationService = {
         Logger.warn('[SalesCloud/Cancellation] No se pudo ejecutar diagnostico post-cancelacion:', integrityError);
       }
 
-      const responseWithIntegrity = integrity ? { ...response, integrity } : response;
-      const patch = mapCancellationResponseToLocalPatch(responseWithIntegrity);
-      const localSale = await saveCancellationPatch({ localSale: sale, response: responseWithIntegrity, patch });
-      dispatchCancellationEvents();
-      return { success: true, code: 'CLOUD_CANCELLED', sale: localSale || { ...sale, ...patch }, response: responseWithIntegrity, preview, integrity, idempotencyKey };
+      try {
+        actorHandle.assertCurrent();
+        const responseWithIntegrity = integrity ? { ...response, integrity } : response;
+        const patch = mapCancellationResponseToLocalPatch(responseWithIntegrity);
+        const localSale = await saveCancellationPatch({ localSale: sale, response: responseWithIntegrity, patch });
+        if (response.financialIntentId) await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle });
+        dispatchCancellationEvents();
+        return { success: true, code: 'CLOUD_CANCELLED', sale: localSale || { ...sale, ...patch }, response: responseWithIntegrity, preview, integrity, idempotencyKey };
+      } catch (projectionError) {
+        if (response.financialIntentId) await markFinancialIntentProjectionFailed({ intentId: response.financialIntentId, errorCode: projectionError?.code || 'SALE_CANCEL_LOCAL_PROJECTION_FAILED', actorHandle });
+        throw projectionError;
+      }
     } catch (error) {
       Logger.error('[SalesCloud/Cancellation] Cancelacion cloud no aplicada:', error);
       throw friendlyCloudCancellationError(error);

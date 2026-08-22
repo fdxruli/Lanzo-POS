@@ -259,6 +259,7 @@ export const createActorRuntimeController = ({
         sessionId: captured.sessionId,
         generation: captured.generation,
         tenant: captured.tenant,
+        deviceRef: captured.deviceRef,
         assertCurrent(requiredPermission = permission) {
           return controller.assertCurrent({
             actorKey: captured.actorKey,
