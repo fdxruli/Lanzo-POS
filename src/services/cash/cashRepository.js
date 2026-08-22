@@ -29,6 +29,7 @@ import {
   localOpeningToCloudPayload
 } from './cashMapper';
 import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
+import { registerFinancialProjectionHandler } from '../financial/financialProjectionRegistry';
 
 import './cashSyncHandler';
 
@@ -154,9 +155,16 @@ const applyCloudResponse = async (response = {}) => {
   return applied;
 };
 
+export const applyCashFinancialResponseProjection = async ({ responsePayload, actorHandle }) => {
+  actorHandle?.assertCurrent?.();
+  const applied = await applyCloudResponse(responsePayload || {});
+  actorHandle?.assertCurrent?.();
+  return applied;
+};
+
 const applyFinancialCloudResponse = async ({ response, actorContext }) => {
   try {
-    const applied = await applyCloudResponse(response);
+    const applied = await applyCashFinancialResponseProjection({ responsePayload: response, actorHandle: actorContext });
     if (response?.financialIntentId) {
       await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle: actorContext });
     }
@@ -168,6 +176,10 @@ const applyFinancialCloudResponse = async ({ response, actorContext }) => {
     throw error;
   }
 };
+
+['cash.open', 'cash.movement', 'cash.adjust_initial_fund', 'cash.close', 'cash.admin_close'].forEach((operationType) => {
+  registerFinancialProjectionHandler(operationType, applyCashFinancialResponseProjection);
+});
 
 const getCachedScope = async (mode, { limit = 50 } = {}) => {
   const actor = mode.actor;

@@ -11,6 +11,7 @@ import { pullCatalogChanges } from '../products/productSyncHandler';
 import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
 import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
+import { registerFinancialProjectionHandler } from '../financial/financialProjectionRegistry';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
   isCloudCashierCompatiblePayment,
@@ -50,6 +51,38 @@ const getRuntimeContext = async () => {
     experimentalEnabled: isExperimentalFlagEnabled()
   };
 };
+
+// Reuses the same committed-snapshot + payload projection sequence as normal
+// execution.  It receives only durable request/response evidence and never
+// invokes a financial RPC.
+export const applySalesFinancialResponseProjection = async ({ operationType, requestPayload, responsePayload, actorHandle }) => {
+  actorHandle?.assertCurrent?.();
+  const inventoryEnabled = operationType === 'sale.cashier_inventory';
+  const creditSale = operationType === 'sale.credit';
+  const response = responsePayload || {};
+  await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+    localSale: {
+      ...(requestPayload?.sale || {}),
+      items: Array.isArray(requestPayload?.items) ? requestPayload.items : [],
+      syncStatus: 'SYNCED',
+      cloudSalesSyncStatus: 'synced',
+      sourceMode: 'cloud_committed',
+      effectsStatus: response.sale?.effects_status || (creditSale ? 'credit_applied' : 'payment_recorded'),
+      inventoryEffectStatus: response.sale?.inventory_effect_status || (inventoryEnabled ? 'applied' : 'not_applied'),
+      creditEffectStatus: response.sale?.credit_effect_status || (creditSale ? 'applied' : 'not_applied'),
+      creditLedgerChargeId: response.sale?.credit_ledger_charge_id || response.ledger_charge?.id || null,
+      creditLedgerPaymentId: response.sale?.credit_ledger_payment_id || response.ledger_payment?.id || null,
+      customerLedgerId: response.sale?.customer_ledger_id || response.ledger_charge?.id || null
+    },
+    response
+  });
+  actorHandle?.assertCurrent?.();
+  return salesCloudLocalRepository.applyCloudSalesPayload(response);
+};
+
+['sale.cashier', 'sale.cashier_inventory', 'sale.credit'].forEach((operationType) => {
+  registerFinancialProjectionHandler(operationType, applySalesFinancialResponseProjection);
+});
 
 const friendlyCloudCashierError = (error) => {
   const raw = String(error?.message || error?.code || error || '');
