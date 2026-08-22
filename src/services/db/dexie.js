@@ -547,11 +547,6 @@ export class LanzoDatabase extends Dexie {
         [STORES.CUSTOMER_LEDGER]: 'id, customerId, type, timestamp, cashSessionId, cashMovementId, staffUserId, deviceId, syncStatus, serverVersion, cloudUpdatedAt, lastSyncedAt, [customerId+timestamp], [cashSessionId+timestamp], [staffUserId+timestamp], [deviceId+timestamp], [syncStatus+timestamp]'
       });
 
-      // The financial ledger is tenant-owned.  This additive store deliberately
-      // has no upgrade callback: existing tenant business rows are untouched.
-      this.version(24).stores({
-        [STORES.FINANCIAL_INTENTS]: 'id, &idempotencyKey, status, operationType, createdAt, updatedAt, originActorKey, cashSessionId, [status+updatedAt], [originActorKey+status]'
-      });
     }
   }
 

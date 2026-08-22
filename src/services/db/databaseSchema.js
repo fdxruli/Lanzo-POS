@@ -7,8 +7,12 @@ export const POS_SYNC_DEXIE_VERSION = 24;
 export const PRIMARY_KEY_RECOVERY_DEXIE_VERSION = 30;
 export const LOCAL_TENANT_BINDING_DEXIE_VERSION = 31;
 export const CASH_FINANCIAL_DEXIE_VERSION = 32;
+// `financial_intents` was introduced after v32 had already shipped. Keep its
+// declaration in a new, monotonic version so existing tenant databases do not
+// trigger Dexie's schema-patch fallback at native version 320.
+export const FINANCIAL_INTENT_DEXIE_VERSION = 33;
 export const CURRENT_NATIVE_DATABASE_VERSION =
-  CASH_FINANCIAL_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
+  FINANCIAL_INTENT_DEXIE_VERSION * DEXIE_NATIVE_VERSION_MULTIPLIER;
 
 export const RECOVERY_STORES = Object.freeze({
   SALES_BACKUP: '__lanzo_sales_backup_v30',
@@ -67,6 +71,18 @@ export const CASH_MOVEMENTS_SCHEMA = [
   'idempotencyKey',
   '[cash_session_id+fecha]',
   '[cashStationId+fecha]'
+].join(', ');
+export const FINANCIAL_INTENT_SCHEMA = [
+  'id',
+  '&idempotencyKey',
+  'status',
+  'operationType',
+  'createdAt',
+  'updatedAt',
+  'originActorKey',
+  'cashSessionId',
+  '[status+updatedAt]',
+  '[originActorKey+status]'
 ].join(', ');
 
 const registeredDatabases = new WeakSet();
@@ -156,6 +172,16 @@ export const registerCanonicalDexieExtensions = (db, stores) => {
         if (!next.cashStationId && !session?.cashStationId) next.cashIdentityState = 'legacy_unresolved';
         if (JSON.stringify(next) !== JSON.stringify(movement)) await movementsTable.put(next);
       }
+    });
+  }
+
+  // The durable financial-intent ledger was added after the released v32
+  // schema. It must never be declared in historical v24: Dexie would then
+  // patch an existing native-320 database to 321 without advancing the
+  // canonical version, and the next structural preflight would reject it.
+  if (stores.FINANCIAL_INTENTS) {
+    db.version(FINANCIAL_INTENT_DEXIE_VERSION).stores({
+      [stores.FINANCIAL_INTENTS]: FINANCIAL_INTENT_SCHEMA
     });
   }
 
