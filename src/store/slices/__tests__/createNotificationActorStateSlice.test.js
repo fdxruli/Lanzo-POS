@@ -67,6 +67,12 @@ const adminState = (adminId = 'admin-a') => ({
   currentAdminUser: { id: adminId }
 });
 
+const staffState = (staffId = 'staff-a') => ({
+  licenseDetails: license(),
+  currentDeviceRole: 'staff',
+  currentStaffUser: { id: staffId, permissions: { notifications: true } }
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
@@ -79,7 +85,7 @@ beforeEach(() => {
 });
 
 describe('createNotificationActorStateSlice', () => {
-  it('keeps runtime ownership actor-scoped, not device-scoped', () => {
+  it('keeps admin runtime ownership actor-scoped, not device-scoped', () => {
     expect(getNotificationRuntimeOwner({
       ...adminState('admin-a'),
       deviceFingerprint: 'device-1'
@@ -94,6 +100,37 @@ describe('createNotificationActorStateSlice', () => {
       ...adminState('admin-b'),
       deviceFingerprint: 'device-1'
     })).toBe('license-a|admin:admin-b');
+  });
+
+  it('keeps staff runtime ownership actor-scoped across devices and isolated between staff actors', () => {
+    expect(getNotificationRuntimeOwner({
+      ...staffState('staff-a'),
+      deviceFingerprint: 'device-1'
+    })).toBe('license-a|staff:staff-a');
+
+    expect(getNotificationRuntimeOwner({
+      ...staffState('staff-a'),
+      deviceFingerprint: 'device-2'
+    })).toBe('license-a|staff:staff-a');
+
+    expect(getNotificationRuntimeOwner({
+      ...staffState('staff-b'),
+      deviceFingerprint: 'device-1'
+    })).toBe('license-a|staff:staff-b');
+  });
+
+  it('keeps identical actor ids isolated across licenses', () => {
+    expect(getNotificationRuntimeOwner({
+      ...adminState('admin-a'),
+      licenseDetails: license('license-a'),
+      deviceFingerprint: 'device-1'
+    })).toBe('license-a|admin:admin-a');
+
+    expect(getNotificationRuntimeOwner({
+      ...adminState('admin-a'),
+      licenseDetails: license('license-b'),
+      deviceFingerprint: 'device-1'
+    })).toBe('license-b|admin:admin-a');
   });
 
   it('loads separate authoritative unread and unseen counts', async () => {
