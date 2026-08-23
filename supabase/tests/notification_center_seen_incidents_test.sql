@@ -3,6 +3,8 @@ begin;
 do $$
 declare
   v_license_id uuid;
+  v_incident_type text;
+  v_entity_id text;
   v_first jsonb;
   v_repeat jsonb;
   v_resolved jsonb;
@@ -38,10 +40,10 @@ begin
   if exists (
     select 1
     from public.pos_notification_reads r
-    where r.read_at is not null
+    where (r.read_at is not null or r.archived_at is not null)
       and r.seen_at is null
   ) then
-    raise exception '2 read_at must imply seen_at after backfill';
+    raise exception '2 read/archive must imply seen_at after backfill';
   end if;
 
   if not exists (
@@ -89,70 +91,86 @@ begin
     raise exception '6 private incident table exposed';
   end if;
 
-  -- Durable incident semantics: same unresolved state reuses an incident,
-  -- resolution closes it, recurrence creates a new incident identity.
-  delete from private.pos_notification_operational_incidents
-  where license_id = v_license_id
-    and incident_type = 'test_notification_hotfix';
+  -- Exercise the exact four state-based operational incident types. Repeated
+  -- refresh while active must reuse one incident; resolution then recurrence
+  -- must open a distinct new incident.
+  foreach v_incident_type in array array[
+    'device_disabled',
+    'staff_disabled',
+    'device_limit_reached',
+    'sync_errors_active'
+  ]
+  loop
+    v_entity_id := case
+      when v_incident_type in ('device_disabled', 'staff_disabled')
+        then '__notification_hotfix_test_entity__'
+      else null
+    end;
 
-  v_first := private.set_pos_operational_incident_state(
-    v_license_id,
-    'test_notification_hotfix',
-    'entity-a',
-    true,
-    jsonb_build_object('revision', 1)
-  );
-  v_repeat := private.set_pos_operational_incident_state(
-    v_license_id,
-    'test_notification_hotfix',
-    'entity-a',
-    true,
-    jsonb_build_object('revision', 2)
-  );
+    delete from private.pos_notification_operational_incidents
+    where license_id = v_license_id
+      and incident_type = v_incident_type
+      and coalesce(entity_id, '') = coalesce(v_entity_id, '');
 
-  v_first_id := nullif(v_first->>'incident_id', '')::uuid;
-  if v_first_id is null
-     or coalesce((v_first->>'newly_opened')::boolean, false) is false
-     or nullif(v_repeat->>'incident_id', '')::uuid <> v_first_id
-     or coalesce((v_repeat->>'newly_opened')::boolean, true) is true then
-    raise exception '7 unresolved incident was duplicated';
-  end if;
+    v_first := private.set_pos_operational_incident_state(
+      v_license_id,
+      v_incident_type,
+      v_entity_id,
+      true,
+      jsonb_build_object('test_revision', 1)
+    );
+    v_repeat := private.set_pos_operational_incident_state(
+      v_license_id,
+      v_incident_type,
+      v_entity_id,
+      true,
+      jsonb_build_object('test_revision', 2)
+    );
 
-  v_resolved := private.set_pos_operational_incident_state(
-    v_license_id,
-    'test_notification_hotfix',
-    'entity-a',
-    false,
-    jsonb_build_object('revision', 3)
-  );
-  if coalesce((v_resolved->>'resolved')::boolean, false) is false then
-    raise exception '8 incident did not resolve';
-  end if;
+    v_first_id := nullif(v_first->>'incident_id', '')::uuid;
+    if v_first_id is null
+       or coalesce((v_first->>'newly_opened')::boolean, false) is false
+       or nullif(v_repeat->>'incident_id', '')::uuid <> v_first_id
+       or coalesce((v_repeat->>'newly_opened')::boolean, true) is true then
+      raise exception '7 unresolved % incident was duplicated', v_incident_type;
+    end if;
 
-  v_reopened := private.set_pos_operational_incident_state(
-    v_license_id,
-    'test_notification_hotfix',
-    'entity-a',
-    true,
-    jsonb_build_object('revision', 4)
-  );
-  v_reopened_id := nullif(v_reopened->>'incident_id', '')::uuid;
-  if v_reopened_id is null
-     or v_reopened_id = v_first_id
-     or coalesce((v_reopened->>'newly_opened')::boolean, false) is false then
-    raise exception '9 recurrence did not create a new incident';
-  end if;
+    v_resolved := private.set_pos_operational_incident_state(
+      v_license_id,
+      v_incident_type,
+      v_entity_id,
+      false,
+      jsonb_build_object('test_revision', 3)
+    );
+    if coalesce((v_resolved->>'resolved')::boolean, false) is false then
+      raise exception '8 % incident did not resolve', v_incident_type;
+    end if;
 
-  if (
-    select count(*)
-    from private.pos_notification_operational_incidents i
-    where i.license_id = v_license_id
-      and i.incident_type = 'test_notification_hotfix'
-      and i.entity_id = 'entity-a'
-      and i.resolved_at is null
-  ) <> 1 then
-    raise exception '10 more than one open incident exists for a state';
-  end if;
+    v_reopened := private.set_pos_operational_incident_state(
+      v_license_id,
+      v_incident_type,
+      v_entity_id,
+      true,
+      jsonb_build_object('test_revision', 4)
+    );
+    v_reopened_id := nullif(v_reopened->>'incident_id', '')::uuid;
+    if v_reopened_id is null
+       or v_reopened_id = v_first_id
+       or coalesce((v_reopened->>'newly_opened')::boolean, false) is false then
+      raise exception '9 % recurrence did not create a new incident', v_incident_type;
+    end if;
+
+    if (
+      select count(*)
+      from private.pos_notification_operational_incidents i
+      where i.license_id = v_license_id
+        and i.incident_type = v_incident_type
+        and coalesce(i.entity_id, '') = coalesce(v_entity_id, '')
+        and i.resolved_at is null
+    ) <> 1 then
+      raise exception '10 more than one open % incident exists', v_incident_type;
+    end if;
+  end loop;
 
   v_staff_gen_def := pg_get_functiondef(
     'private.generate_staff_operational_notifications(uuid)'::regprocedure
@@ -185,7 +203,7 @@ begin
     where n.nspname = 'private'
       and t.relname = 'pos_notification_operational_incidents'
       and c.conname = 'pos_notification_operational_incidents_notification_license_fkey'
-      and pg_get_constraintdef(c.oid) like '%FOREIGN KEY (notification_id, license_id)%'
+      and position('FOREIGN KEY (notification_id, license_id)' in pg_get_constraintdef(c.oid)) > 0
   ) then
     raise exception '13 tenant-aware incident notification FK missing';
   end if;
