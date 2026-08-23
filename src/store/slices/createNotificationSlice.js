@@ -121,6 +121,7 @@ const getSupportErrorMessage = (error) => {
 const resetNotificationState = {
   notifications: [],
   notificationsUnreadCount: 0,
+  notificationsUnseenCount: 0,
   notificationsLoading: false,
   notificationsError: null,
   notificationsLoaded: false,

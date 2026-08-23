@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,12 +25,14 @@ const createState = () => ({
   deviceFingerprint: 'device-a',
   notifications: [],
   notificationsUnreadCount: 0,
+  notificationsUnseenCount: 0,
   notificationsLoading: false,
   notificationsError: null,
   isNotificationCenterOpen: false,
   openNotificationCenter: vi.fn(),
   closeNotificationCenter: vi.fn(),
   loadNotifications: vi.fn(),
+  markNotificationsSeen: vi.fn(),
   markAllNotificationsRead: vi.fn(),
   markNotificationRead: vi.fn(),
   archiveNotification: vi.fn(),
@@ -103,21 +105,50 @@ describe('NotificationBell', () => {
       .not.toBeInTheDocument();
   });
 
-  it('solicita abrir el centro para licencias cloud con contador real', () => {
+  it('usa unseen para la campana y conserva unread para el drawer', () => {
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
-      notificationsUnreadCount: 3
+      notificationsUnreadCount: 25,
+      notificationsUnseenCount: 3
     };
 
     renderBell();
 
     fireEvent.click(screen.getByRole('button', {
-      name: /Abrir centro de notificaciones, 3 sin leer/i
+      name: /Abrir centro de notificaciones, 3 nuevas/i
     }));
 
     expect(store.state.openNotificationCenter).toHaveBeenCalledTimes(1);
     expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.queryByText('25')).not.toBeInTheDocument();
+  });
+
+  it('abrir el drawer marca visto pero no marca leído', async () => {
+    store.state = {
+      ...createState(),
+      licenseDetails: cloudLicense(),
+      isNotificationCenterOpen: true,
+      notificationsUnreadCount: 1,
+      notificationsUnseenCount: 1,
+      notifications: [{
+        id: 'notification-1',
+        title: 'Alerta',
+        body: 'Requiere revisión',
+        is_seen: false,
+        is_read: false,
+        is_archived: false
+      }]
+    };
+
+    renderBell();
+
+    await waitFor(() => {
+      expect(store.state.loadNotifications).toHaveBeenCalled();
+      expect(store.state.markNotificationsSeen).toHaveBeenCalledTimes(1);
+    });
+    expect(store.state.markNotificationRead).not.toHaveBeenCalled();
+    expect(store.state.markAllNotificationsRead).not.toHaveBeenCalled();
   });
 
   it('renderiza el drawer abierto y lo cierra con Escape', () => {
@@ -139,11 +170,12 @@ describe('NotificationBell', () => {
     expect(store.state.closeNotificationCenter).toHaveBeenCalledTimes(1);
   });
 
-  it('muestra una señal separada sin alterar el contador cloud', () => {
+  it('muestra una señal separada sin alterar el contador cloud unseen', () => {
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
-      notificationsUnreadCount: 2,
+      notificationsUnreadCount: 8,
+      notificationsUnseenCount: 2,
       ecommercePublishedStockAlertContextKey: 'license-a:admin:admin:device-a',
       ecommercePublishedStockAlertSnapshot: {
         success: true,
@@ -160,7 +192,7 @@ describe('NotificationBell', () => {
       'Alerta operacional: productos publicados sin stock'
     )).toBeInTheDocument();
     expect(screen.getByRole('button', {
-      name: /2 sin leer, alerta operacional de ecommerce activa/i
+      name: /2 nuevas, alerta operacional de ecommerce activa/i
     })).toBeInTheDocument();
   });
 
