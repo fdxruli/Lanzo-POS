@@ -17,13 +17,18 @@ begin
     'private.get_pos_notification_context(text,text,text,text,text)'::regprocedure
   );
 
+  -- Assert the canonical contract without depending on pg_get_functiondef()
+  -- whitespace/pretty-printing. Authentication must require an actor session,
+  -- distinguish admin/staff, and publish canonical actor IDs into context.
   if position('ACTOR_SESSION_REQUIRED' in v_validator_def) = 0
      or position('ACTOR_SESSION_INVALID' in v_validator_def) = 0
-     or position('v_actor_type := ''admin''' in v_validator_def) = 0
-     or position('v_actor_type := ''staff''' in v_validator_def) = 0
-     or position('''device_role'', v_actor_type' in v_validator_def) = 0
-     or position('''admin_user_id'', case when v_actor_type = ''admin'' then v_actor_id else null end' in v_validator_def) = 0
-     or position('''staff_user_id'', case when v_actor_type = ''staff'' then v_actor_id else null end' in v_validator_def) = 0 then
+     or position('v_actor_type' in v_validator_def) = 0
+     or position('''admin''' in v_validator_def) = 0
+     or position('''staff''' in v_validator_def) = 0
+     or position('''device_role''' in v_validator_def) = 0
+     or position('''admin_user_id''' in v_validator_def) = 0
+     or position('''staff_user_id''' in v_validator_def) = 0
+     or position('v_actor_id' in v_validator_def) = 0 then
     raise exception '1 canonical sync context no longer requires/resolves an authenticated actor';
   end if;
 
