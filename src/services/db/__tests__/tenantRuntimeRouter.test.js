@@ -8,7 +8,7 @@ import {
   LOCAL_TENANT_BINDING_STORE,
   localTenantAccessController
 } from '../../tenant/localTenantPolicy';
-import { createOperationalLanzoDatabase } from '../dexie';
+import { createOperationalLanzoDatabase, STORES } from '../dexie';
 import {
   captureActiveTenantWorkerContext,
   isActiveTenantWorkerContext,
@@ -30,7 +30,10 @@ import {
   setDatabaseRecoveryState,
   subscribeDatabaseRecoveryState
 } from '../databaseRecoveryState';
-import { CURRENT_NATIVE_DATABASE_VERSION } from '../databaseSchema';
+import {
+  CURRENT_NATIVE_DATABASE_VERSION,
+  FINANCIAL_INTENT_SCHEMA
+} from '../databaseSchema';
 
 const createNativeDatabase = (name, version) => new Promise((resolve, reject) => {
   const request = indexedDB.open(name, version);
@@ -63,6 +66,55 @@ const createLegacyTenantDatabase = (name, { keepOpen = false, version = 110 } = 
     }
   };
 });
+
+const RELEASED_V32_TENANT_SCHEMA = {
+  [STORES.MENU]: 'id, createdAt, barcode, name_lower, categoryId, sku, activeStockStatus',
+  [STORES.CATEGORIES]: 'id, name, isActive, sortOrder',
+  [STORES.CUSTOMERS]: 'id, phone, createdAt',
+  [STORES.SALES]: 'id, timestamp, cash_session_id, customerId, fulfillmentStatus, status, orderType, [customerId+timestamp], [cash_session_id+timestamp]',
+  [STORES.DELETED_SALES]: 'id, deletedAt, cash_session_id, [cash_session_id+deletedAt]',
+  [STORES.CAJAS]: 'id, estado, fecha_apertura, actorKey, cashStationId, [cashStationId+estado], [actorKey+estado]',
+  [STORES.MOVIMIENTOS_CAJA]: 'id, caja_id, cash_session_id, fecha, actorKey, cashStationId, idempotencyKey, [cash_session_id+fecha], [cashStationId+fecha]',
+  [STORES.CUSTOMER_LEDGER]: 'id, customerId, type, timestamp, [customerId+timestamp]',
+  [STORES.PRODUCT_BATCHES]: 'id, productId, sku, expiryDate, [productId+isActive]',
+  sync_outbox: 'id, status, entityType, createdAt, [status+createdAt], idempotencyKey',
+  sync_meta: 'key',
+  sync_conflicts: 'id, entityType, entityId, status, createdAt',
+  [LOCAL_TENANT_BINDING_STORE]: 'key'
+};
+
+const readNativeVersion = (name) => new Promise((resolve, reject) => {
+  const request = indexedDB.open(name);
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    const database = request.result;
+    resolve(database.version);
+    database.close();
+  };
+});
+
+const createReleasedRuntimeTenant = async ({ identity, databaseName, version, intent = null }) => {
+  const legacy = new Dexie(databaseName);
+  legacy.version(version / 10).stores({
+    ...RELEASED_V32_TENANT_SCHEMA,
+    ...(intent ? { [STORES.FINANCIAL_INTENTS]: FINANCIAL_INTENT_SCHEMA } : {})
+  });
+  await legacy.open();
+  await legacy.table(STORES.MENU).put({ id: 'product-a', name: 'Existing product', stock: 3 });
+  await legacy.table(LOCAL_TENANT_BINDING_STORE).put({
+    key: LOCAL_TENANT_BINDING_KEY,
+    tenantIdentity: identity.primary,
+    tenantAliases: [...identity.aliases],
+    authority: identity.authority,
+    bindingVersion: 1,
+    source: 'test',
+    createdAt: '2026-08-22T00:00:00.000Z',
+    updatedAt: '2026-08-22T00:00:00.000Z'
+  });
+  if (intent) await legacy.table(STORES.FINANCIAL_INTENTS).put(intent);
+  legacy.close();
+  expect(await readNativeVersion(databaseName)).toBe(version);
+};
 
 const waitUntil = async (predicate) => {
   const deadline = Date.now() + 1_000;
@@ -198,6 +250,51 @@ describe('tenant runtime router', () => {
 
     await openTenantRuntime(a);
     expect(getActiveTenantRuntime()).not.toBeNull();
+    expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+  });
+
+  it('upgrades released native 320 and bug-affected native 321 tenants through the production router and remains READY across A to B to A', async () => {
+    const a = await resolveActiveTenantIdentity({ license_key: `FINANCIAL-320-A-${crypto.randomUUID()}` });
+    const b = await resolveActiveTenantIdentity({ license_key: `FINANCIAL-321-B-${crypto.randomUUID()}` });
+    const aOpaqueId = await resolveTenantRuntimeDirectory(a);
+    const bOpaqueId = await resolveTenantRuntimeDirectory(b);
+    const aName = `LanzoDB_t_${aOpaqueId}`;
+    const bName = `LanzoDB_t_${bOpaqueId}`;
+    const intent = {
+      id: 'intent-existing',
+      idempotencyKey: 'financial:v1:router-k',
+      requestHash: 'router-h',
+      operationType: 'sale.cancel',
+      status: 'PENDING_RECEIPT',
+      originActorKey: 'admin:b',
+      originTenantOpaqueId: bOpaqueId,
+      originTenantDatabaseName: bName,
+      cashSessionId: 'cash-b',
+      cashStationId: 'station-b',
+      receiptState: 'UNKNOWN',
+      reconciliationState: 'PENDING',
+      createdAt: '2026-08-22T00:00:00.000Z',
+      updatedAt: '2026-08-22T00:00:00.000Z'
+    };
+
+    await createReleasedRuntimeTenant({ identity: a, databaseName: aName, version: 320 });
+    await createReleasedRuntimeTenant({ identity: b, databaseName: bName, version: 321, intent });
+    setDatabaseRecoveryState({ status: DATABASE_RECOVERY_STATUS.READY });
+
+    await openTenantRuntime(a);
+    expect(getActiveTenantRuntime()).toMatchObject({ opaqueId: aOpaqueId, databaseName: aName });
+    expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+    expect(await readNativeVersion(aName)).toBe(CURRENT_NATIVE_DATABASE_VERSION);
+    await expect(db.table(STORES.MENU).get('product-a')).resolves.toMatchObject({ name: 'Existing product' });
+
+    await openTenantRuntime(b);
+    expect(getActiveTenantRuntime()).toMatchObject({ opaqueId: bOpaqueId, databaseName: bName });
+    expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
+    expect(await readNativeVersion(bName)).toBe(CURRENT_NATIVE_DATABASE_VERSION);
+    await expect(db.table(STORES.FINANCIAL_INTENTS).get(intent.id)).resolves.toEqual(intent);
+
+    await openTenantRuntime(a);
+    expect(getActiveTenantRuntime()).toMatchObject({ opaqueId: aOpaqueId, databaseName: aName });
     expect(getDatabaseRecoveryState()).toMatchObject({ status: DATABASE_RECOVERY_STATUS.READY });
   });
 

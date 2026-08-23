@@ -3,7 +3,7 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   LOCAL_TENANT_BINDING_DEXIE_VERSION,
-  CASH_FINANCIAL_DEXIE_VERSION,
+  FINANCIAL_INTENT_DEXIE_VERSION,
   POS_SYNC_DEXIE_VERSION,
   PRIMARY_KEY_RECOVERY_DEXIE_VERSION,
   RECOVERY_STORES,
@@ -18,7 +18,8 @@ import {
 const names = [];
 const stores = {
   SALES: 'sales',
-  DELETED_SALES: 'deleted_sales'
+  DELETED_SALES: 'deleted_sales',
+  FINANCIAL_INTENTS: 'financial_intents'
 };
 
 const baseSchema = {
@@ -89,6 +90,7 @@ describe('canonical Dexie registration', () => {
     expect(firstDescription.versions).toContain(POS_SYNC_DEXIE_VERSION);
     expect(firstDescription.versions).toContain(PRIMARY_KEY_RECOVERY_DEXIE_VERSION);
     expect(firstDescription.versions).toContain(LOCAL_TENANT_BINDING_DEXIE_VERSION);
+    expect(firstDescription.versions).toContain(FINANCIAL_INTENT_DEXIE_VERSION);
     expect(firstDescription.tables).toEqual(expect.arrayContaining([
       'sales',
       'deleted_sales',
@@ -98,7 +100,8 @@ describe('canonical Dexie registration', () => {
       RECOVERY_STORES.SALES_BACKUP,
       RECOVERY_STORES.DELETED_SALES_BACKUP,
       RECOVERY_STORES.META,
-      'local_tenant_binding'
+      'local_tenant_binding',
+      'financial_intents'
     ]));
     expect(first.table('sales').schema.primKey.keyPath).toBe('id');
     expect(second.table('sales').schema.primKey.keyPath).toBe('id');
@@ -186,7 +189,7 @@ describe('canonical Dexie registration', () => {
     const upgraded = createCanonicalLanzoDatabase(name);
     await upgraded.open();
 
-    expect(upgraded.verno).toBe(CASH_FINANCIAL_DEXIE_VERSION);
+    expect(upgraded.verno).toBe(FINANCIAL_INTENT_DEXIE_VERSION);
     await expect(upgraded.table('cajas').get('cash-device-bound')).resolves.toMatchObject({
       cashStationId: 'local:device:device-a',
       cashIdentityState: 'deterministic-device-bound',
