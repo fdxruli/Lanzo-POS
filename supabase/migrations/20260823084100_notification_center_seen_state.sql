@@ -6,11 +6,13 @@ begin;
 alter table public.pos_notification_reads
   add column if not exists seen_at timestamptz;
 
+-- read/archive are stronger acknowledgements than seen. Preserve all existing
+-- actor provenance while making those historical states internally coherent.
 update public.pos_notification_reads
-set seen_at = read_at,
+set seen_at = coalesce(read_at, archived_at),
     updated_at = now()
-where read_at is not null
-  and seen_at is null;
+where seen_at is null
+  and (read_at is not null or archived_at is not null);
 
 create index if not exists idx_pos_notification_reads_license_seen_at
   on public.pos_notification_reads (license_id, seen_at)
