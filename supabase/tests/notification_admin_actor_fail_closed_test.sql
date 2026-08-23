@@ -7,6 +7,7 @@ declare
   v_read_def text;
   v_all_def text;
   v_archive_def text;
+  v_actor_check text;
 begin
   v_context_def := pg_get_functiondef(
     'private.get_pos_notification_context(text,text,text,text,text)'::regprocedure
@@ -39,16 +40,19 @@ begin
     raise exception '2 an actor-state RPC bypasses the hardened server context';
   end if;
 
-  if not exists (
-    select 1
-    from pg_constraint c
-    join pg_class t on t.oid = c.conrelid
-    join pg_namespace n on n.oid = t.relnamespace
-    where n.nspname = 'public'
-      and t.relname = 'pos_notification_reads'
-      and c.conname = 'pos_notification_reads_actor_check'
-      and pg_get_constraintdef(c.oid) like '%admin_user_id%staff_user_id%device_fingerprint%'
-  ) then
+  select pg_get_constraintdef(c.oid)
+  into v_actor_check
+  from pg_constraint c
+  join pg_class t on t.oid = c.conrelid
+  join pg_namespace n on n.oid = t.relnamespace
+  where n.nspname = 'public'
+    and t.relname = 'pos_notification_reads'
+    and c.conname = 'pos_notification_reads_actor_check';
+
+  if v_actor_check is null
+     or position('admin_user_id' in v_actor_check) = 0
+     or position('staff_user_id' in v_actor_check) = 0
+     or position('device_fingerprint' in v_actor_check) = 0 then
     raise exception '3 exactly-one-actor state constraint missing';
   end if;
 
