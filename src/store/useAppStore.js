@@ -4,19 +4,28 @@ import { createLicenseSlice } from './slices/createLicenseSlice';
 import { createProfileSlice } from './slices/createProfileSlice';
 import { createPWASlice } from './slices/createPWASlice';
 import { createDriveSlice } from './slices/createDriveSlice';
-import { createNotificationSlice } from './slices/createNotificationSlice';
+import {
+  createNotificationSlice,
+  shouldResetNotificationRuntimeForStatePatch
+} from './slices/createNotificationActorStateSlice';
 import { createEcommercePublishedStockAlertSlice } from './slices/createEcommercePublishedStockAlertSlice';
 import { localTenantAccessController } from '../services/tenant/localTenantPolicy';
 import { isUnsafeTenantStatePatch } from './tenantSafeState';
 
 export const useAppStore = create((set, get, store) => {
   const tenantSafeSet = (partial, replace) => {
-    const patch = typeof partial === 'function' ? partial(get()) : partial;
+    const currentState = get();
+    const patch = typeof partial === 'function' ? partial(currentState) : partial;
     if (!patch || isUnsafeTenantStatePatch(
       patch,
       localTenantAccessController.getState(),
-      get()
+      currentState
     )) return undefined;
+
+    if (shouldResetNotificationRuntimeForStatePatch(currentState, patch, replace)) {
+      currentState.resetNotificationRuntime?.();
+    }
+
     return set(patch, replace);
   };
   const args = [tenantSafeSet, get, store];
@@ -44,5 +53,10 @@ useAppStore.setState = (partial, replace) => {
     localTenantAccessController.getState(),
     currentState
   )) return undefined;
+
+  if (shouldResetNotificationRuntimeForStatePatch(currentState, patch, replace)) {
+    currentState.resetNotificationRuntime?.();
+  }
+
   return setAppStateUnsafe(patch, replace);
 };
