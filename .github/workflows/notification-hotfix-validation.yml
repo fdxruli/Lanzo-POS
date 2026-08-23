@@ -1,0 +1,79 @@
+name: Notification Hotfix Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/services/notifications/**'
+      - 'src/store/slices/createNotificationActorStateSlice.js'
+      - 'src/store/slices/__tests__/createNotificationActorStateSlice.test.js'
+      - 'src/store/useAppStore.js'
+      - 'src/components/notifications/**'
+      - 'supabase/migrations/**notification**'
+      - 'supabase/tests/notification_*'
+      - '.github/workflows/notification-hotfix-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Focused notification tests
+        run: >-
+          npm run test:ci --
+          src/services/notifications/__tests__/cloudNotificationService.test.js
+          src/components/notifications/__tests__/NotificationBell.test.jsx
+          src/store/slices/__tests__/createNotificationActorStateSlice.test.js
+          src/store/slices/__tests__/createNotificationSlice.tenantIsolation.test.js
+      - name: Notification lint
+        run: >-
+          npx eslint
+          src/services/notifications/cloudNotificationService.js
+          src/services/notifications/notificationRealtimeService.js
+          src/store/slices/createNotificationActorStateSlice.js
+          src/store/slices/__tests__/createNotificationActorStateSlice.test.js
+          src/store/useAppStore.js
+          src/components/notifications/NotificationCenterDrawer.jsx
+          src/components/notifications/NotificationBell.jsx
+          src/components/notifications/NotificationItem.jsx
+          src/services/notifications/__tests__/cloudNotificationService.test.js
+          src/components/notifications/__tests__/NotificationBell.test.jsx
+      - name: Production build
+        run: npm run build
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
+
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.79.0
+      - name: Validate migration filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | \
+            awk 'BEGIN { ok=1 } !/^[0-9]{14}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/ { print "invalid migration filename: " $0 > "/dev/stderr"; ok=0 } END { exit ok ? 0 : 1 }'
+      - name: Start local Supabase
+        run: supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,realtime
+      - name: Apply canonical migration chain locally
+        run: supabase db reset --local
+      - name: Run notification SQL regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          eval "$(supabase status -o env | grep '^DB_URL=')"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f supabase/tests/notification_center_seen_incidents_test.sql
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -f supabase/tests/notification_admin_actor_fail_closed_test.sql
