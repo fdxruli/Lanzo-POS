@@ -60,6 +60,7 @@ export default function NotificationCenterDrawer({
   const isRefreshingNotifications = useAppStore((state) => state.isRefreshingNotifications);
   const notificationsError = useAppStore((state) => state.notificationsError);
   const loadNotifications = useAppStore((state) => state.loadNotifications);
+  const markNotificationsSeen = useAppStore((state) => state.markNotificationsSeen);
   const markAllNotificationsRead = useAppStore((state) => state.markAllNotificationsRead);
   const markNotificationRead = useAppStore((state) => state.markNotificationRead);
   const archiveNotification = useAppStore((state) => state.archiveNotification);
@@ -182,10 +183,30 @@ export default function NotificationCenterDrawer({
   }, [isOpen, onClose]);
 
   useEffect(() => {
-    if (!isOpen || !cloudNotificationsEnabled) return;
+    if (!isOpen || !cloudNotificationsEnabled) return undefined;
+
+    let cancelled = false;
     loadNotificationPreferences?.();
-    loadNotifications?.();
-  }, [cloudNotificationsEnabled, isOpen, loadNotificationPreferences, loadNotifications]);
+
+    const loadAndMarkSeen = async () => {
+      await loadNotifications?.();
+      if (!cancelled) {
+        await markNotificationsSeen?.();
+      }
+    };
+
+    void loadAndMarkSeen();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cloudNotificationsEnabled,
+    isOpen,
+    loadNotificationPreferences,
+    loadNotifications,
+    markNotificationsSeen
+  ]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'support' || !supportCenterEnabled) return;
