@@ -34,8 +34,7 @@ vi.mock('../../../services/notifications/notificationRealtimeService', () => ({
 
 import {
   createNotificationSlice,
-  getNotificationRuntimeOwner,
-  shouldResetNotificationRuntimeForStatePatch
+  getNotificationRuntimeOwner
 } from '../createNotificationActorStateSlice';
 
 const license = (key = 'license-a') => ({
@@ -52,15 +51,9 @@ const license = (key = 'license-a') => ({
 const createHarness = (initialState = {}) => {
   let state = { ...initialState };
   const get = () => state;
-  const set = (patch, replace = false) => {
-    const currentState = state;
-    const next = typeof patch === 'function' ? patch(currentState) : patch;
-
-    if (shouldResetNotificationRuntimeForStatePatch(currentState, next, replace)) {
-      currentState.resetNotificationRuntime?.();
-    }
-
-    state = replace ? next : { ...state, ...next };
+  const set = (patch) => {
+    const next = typeof patch === 'function' ? patch(state) : patch;
+    state = { ...state, ...next };
   };
 
   const slice = createNotificationSlice(set, get);
@@ -155,7 +148,8 @@ describe('createNotificationActorStateSlice', () => {
     expect(harness.get().notificationsUnseenCount).toBe(3);
   });
 
-  it('resets actor-owned notification state before a failed first load for the next owner', async () => {
+  it('resets actor-owned notification state before the next owner first load can fail', async () => {
+    let rejectActorBLoad;
     cloudMocks.listCloudNotifications
       .mockResolvedValueOnce({
         success: true,
@@ -163,7 +157,9 @@ describe('createNotificationActorStateSlice', () => {
         unread_count: 5,
         unseen_count: 5
       })
-      .mockRejectedValueOnce(new Error('actor-b-first-load-failed'))
+      .mockImplementationOnce(() => new Promise((resolve, reject) => {
+        rejectActorBLoad = reject;
+      }))
       .mockResolvedValueOnce({
         success: true,
         notifications: [{ id: 'actor-b-notification', is_seen: false, is_read: false }],
@@ -179,11 +175,6 @@ describe('createNotificationActorStateSlice', () => {
     expect(harness.get().notifications.map((item) => item.id)).toEqual(['actor-a-notification']);
 
     harness.set({ currentAdminUser: { id: 'admin-b' } });
-
-    expect(harness.get().notificationsUnseenCount).toBe(0);
-    expect(harness.get().notificationsUnreadCount).toBe(0);
-    expect(harness.get().notifications).toEqual([]);
-
     const failedLoad = harness.get().loadNotifications({
       refreshOperational: false,
       force: true
@@ -194,6 +185,7 @@ describe('createNotificationActorStateSlice', () => {
     expect(harness.get().notificationsUnreadCount).toBe(0);
     expect(harness.get().notifications).toEqual([]);
 
+    rejectActorBLoad(new Error('actor-b-first-load-failed'));
     await expect(failedLoad).resolves.toMatchObject({
       success: false,
       message: 'actor-b-first-load-failed'

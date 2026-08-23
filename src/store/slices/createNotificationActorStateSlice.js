@@ -6,18 +6,6 @@ import {
 
 export { getNotificationRuntimeOwner } from './createNotificationSlice';
 
-export const shouldResetNotificationRuntimeForStatePatch = (
-  currentState = {},
-  patch = {},
-  replace = false
-) => {
-  const nextState = replace ? patch : { ...currentState, ...patch };
-  const currentRuntimeOwner = currentState.notificationRuntimeOwner;
-
-  return Boolean(currentRuntimeOwner)
-    && currentRuntimeOwner !== getNotificationRuntimeOwner(nextState);
-};
-
 const hasCount = (result, snakeKey, camelKey) => (
   result?.[snakeKey] !== undefined || result?.[camelKey] !== undefined
 );
@@ -80,14 +68,6 @@ export const createNotificationSlice = (set, get) => {
 
   return {
     ...base,
-    notificationsUnseenCount: 0,
-
-    resetNotificationRuntime: () => {
-      const generation = base.resetNotificationRuntime();
-      set({ notificationsUnseenCount: 0 });
-      return generation;
-    },
-
     loadNotifications,
 
     markNotificationsSeen: async () => {

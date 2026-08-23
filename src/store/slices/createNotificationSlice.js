@@ -121,6 +121,7 @@ const getSupportErrorMessage = (error) => {
 const resetNotificationState = {
   notifications: [],
   notificationsUnreadCount: 0,
+  notificationsUnseenCount: 0,
   notificationsLoading: false,
   notificationsError: null,
   notificationsLoaded: false,
@@ -1174,7 +1175,7 @@ export const createNotificationSlice = (set, get) => ({
     const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
     if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
-      return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso a soporte Lanzo.' };
+      return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso al Centro de Notificaciones.' };
     }
 
     const resolvedTicketId = ticketId || get().activeSupportTicket?.id;
@@ -1221,7 +1222,7 @@ export const createNotificationSlice = (set, get) => ({
     const token = ensureNotificationRuntime(set, get);
     const licenseDetails = get().licenseDetails;
     if (!token.owner || !canUseSupportTickets(licenseDetails, getStaffSessionContext(get()))) {
-      return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso a soporte Lanzo.' };
+      return { success: false, code: 'STAFF_SUPPORT_DISABLED', message: 'Tu usuario staff no tiene acceso al Centro de Notificaciones.' };
     }
 
     const resolvedTicketId = ticketId || get().activeSupportTicket?.id;
