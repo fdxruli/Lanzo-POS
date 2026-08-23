@@ -21,6 +21,7 @@ export default function NotificationBell({ className = '', showLabel = false, on
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const isOpen = useAppStore((state) => state.isNotificationCenterOpen);
   const unreadCount = useAppStore((state) => state.notificationsUnreadCount);
+  const unseenCount = useAppStore((state) => state.notificationsUnseenCount);
   const openNotificationCenter = useAppStore((state) => state.openNotificationCenter);
   const closeNotificationCenter = useAppStore((state) => state.closeNotificationCenter);
   const staffSession = { currentDeviceRole, currentStaffUser };
@@ -52,6 +53,7 @@ export default function NotificationBell({ className = '', showLabel = false, on
     className
   ].filter(Boolean).join(' ');
   const safeUnreadCount = Number(unreadCount || 0);
+  const safeUnseenCount = Number(unseenCount || 0);
   const drawer = (
     <>
       <NotificationCenterDrawer
@@ -71,7 +73,7 @@ export default function NotificationBell({ className = '', showLabel = false, on
   );
 
   const openLabel = [
-    `Abrir centro de notificaciones, ${safeUnreadCount} sin leer`,
+    `Abrir centro de notificaciones, ${safeUnseenCount} nuevas`,
     hasLocalOperationalWarning ? 'alerta operacional de ecommerce activa' : ''
   ].filter(Boolean).join(', ');
 
@@ -95,9 +97,9 @@ export default function NotificationBell({ className = '', showLabel = false, on
       >
         <Bell size={20} strokeWidth={2.35} aria-hidden="true" />
         {showLabel && <span className="notification-bell__label">Notificaciones</span>}
-        {safeUnreadCount > 0 && (
-          <span className="notification-bell__badge" aria-label={`${safeUnreadCount} notificaciones sin leer`}>
-            {safeUnreadCount > 99 ? '99+' : safeUnreadCount}
+        {safeUnseenCount > 0 && (
+          <span className="notification-bell__badge" aria-label={`${safeUnseenCount} notificaciones nuevas`}>
+            {safeUnseenCount > 99 ? '99+' : safeUnseenCount}
           </span>
         )}
         {hasLocalOperationalWarning && !isOpen && (

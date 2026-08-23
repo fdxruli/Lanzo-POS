@@ -10,6 +10,8 @@ const EMPTY_CLOUD_NOTIFICATIONS = Object.freeze({
   notifications: [],
   unread_count: 0,
   unreadCount: 0,
+  unseen_count: 0,
+  unseenCount: 0,
   skipped: true
 });
 
@@ -55,26 +57,38 @@ const normalizeNotification = (notification = {}) => ({
   metadata: notification.metadata || {},
   created_at: notification.created_at || null,
   createdAt: notification.created_at || '',
+  seen_at: notification.seen_at || null,
   read_at: notification.read_at || null,
   archived_at: notification.archived_at || null,
+  is_seen: Boolean(notification.is_seen ?? notification.seen_at),
   is_read: Boolean(notification.is_read),
   is_archived: Boolean(notification.is_archived),
   is_dismissible: notification.is_dismissible !== false
 });
+
+const normalizeCounts = (payload = {}) => {
+  const unreadCount = Number(payload.unread_count ?? payload.unreadCount ?? 0) || 0;
+  const unseenCount = Number(payload.unseen_count ?? payload.unseenCount ?? 0) || 0;
+
+  return {
+    unread_count: unreadCount,
+    unreadCount,
+    unseen_count: unseenCount,
+    unseenCount
+  };
+};
 
 const normalizeListResponse = (data) => {
   const payload = parseRpcPayload(data);
   const notifications = Array.isArray(payload.notifications)
     ? payload.notifications.map(normalizeNotification).filter((item) => item.id)
     : [];
-  const unreadCount = Number(payload.unread_count ?? payload.unreadCount ?? 0) || 0;
 
   return {
     ...payload,
+    ...normalizeCounts(payload),
     success: payload.success !== false,
-    notifications,
-    unread_count: unreadCount,
-    unreadCount
+    notifications
   };
 };
 
@@ -82,6 +96,9 @@ const normalizeMutationResponse = (data) => {
   const payload = parseRpcPayload(data);
   return {
     ...payload,
+    ...(payload.unread_count !== undefined || payload.unreadCount !== undefined || payload.unseen_count !== undefined || payload.unseenCount !== undefined
+      ? normalizeCounts(payload)
+      : {}),
     success: payload.success !== false
   };
 };
@@ -160,6 +177,21 @@ export async function refreshOperationalNotifications({
     generated: Number(payload.generated || 0),
     events: Array.isArray(payload.events) ? payload.events : []
   };
+}
+
+export async function markCloudNotificationsSeen({
+  licenseDetails
+} = {}) {
+  if (!ensureRpcAvailable(licenseDetails)) {
+    return { success: true, skipped: true, unread_count: 0, unseen_count: 0 };
+  }
+
+  const authArgs = await buildRpcAuthArgs(licenseDetails);
+  const { data, error } = await supabaseClient.rpc('mark_pos_notifications_seen', authArgs);
+
+  if (error) throw error;
+
+  return normalizeMutationResponse(data);
 }
 
 export async function markCloudNotificationRead({
