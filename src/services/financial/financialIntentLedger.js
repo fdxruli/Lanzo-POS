@@ -47,7 +47,69 @@ const secureKey = () => {
 };
 
 const protocolCode = (error) => String(error?.code || error?.message || error || '').match(/(?:IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/)?.[0] || null;
-const isAmbiguousTransport = (error) => !protocolCode(error) || /(?:network|fetch|timeout|abort|offline|failed to fetch)/i.test(String(error?.message || error));
+
+const TRANSPORT_ERROR_CODES = new Set([
+  'ABORT_ERR',
+  'ECONNABORTED',
+  'ECONNRESET',
+  'ECANCELED',
+  'EHOSTUNREACH',
+  'ENETDOWN',
+  'ENETUNREACH',
+  'ESOCKETTIMEDOUT',
+  'ETIMEDOUT',
+  'ERR_NETWORK',
+  'ERR_NETWORK_CHANGED',
+  'ERR_CANCELED',
+  'ERR_CONNECTION_CLOSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_INTERNET_DISCONNECTED',
+  'ERR_TIMED_OUT',
+  'FETCH_ERROR',
+  'NETWORK_ERR',
+  'NETWORK_ERROR',
+  'NETWORK_UNAVAILABLE',
+  'TIMEOUT_ERR',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET'
+]);
+
+const normalizedErrorCode = (error) => String(error?.code || '').trim().toUpperCase();
+
+const isStructuredServerError = (error) => {
+  if (!error || typeof error !== 'object') return false;
+  const code = normalizedErrorCode(error);
+  const status = Number(error.status);
+  return Boolean(
+    error.isDeterministicServerResponse
+    || /^(?:[0-9A-Z]{5}|PGRST[0-9A-Z]{3})$/.test(code)
+    || (code && (Object.hasOwn(error, 'details') || Object.hasOwn(error, 'hint')))
+    || (Number.isFinite(status) && status >= 400)
+    || /^(?:FunctionsHttpError|PostgrestError)$/i.test(String(error.name || ''))
+  );
+};
+
+const isAmbiguousTransport = (error) => {
+  if (!error || protocolCode(error) || isStructuredServerError(error)) return false;
+  const code = normalizedErrorCode(error);
+  if (TRANSPORT_ERROR_CODES.has(code)) return true;
+  if (/^(?:AbortError|NetworkError|TimeoutError)$/i.test(String(error?.name || ''))) return true;
+  return /(?:\bfailed to fetch\b|\bfetch failed\b|^load failed$|\bnetworkerror\b|\bnetwork (?:request )?(?:failed|failure|error|unavailable|offline|interrupted)\b|\b(?:network|request|connection|transport|fetch) (?:timed out|timeout|was aborted|aborted|was interrupted|interrupted)\b|\boperation (?:timed out|timeout)\b|\btimeout(?: of \S+)? (?:exceeded|expired)\b|^timeout$|\boffline\b|\bconnection (?:reset|aborted|interrupted|closed unexpectedly)\b|\bsocket hang up\b)/i
+    .test(String(error?.message || error).trim());
+};
+
+const dispatchFailureStatus = (error) => {
+  const code = protocolCode(error);
+  if (code === 'IDEMPOTENCY_CONFLICT') return FINANCIAL_INTENT_STATUS.CONFLICT;
+  if (code === 'FINANCIAL_REQUEST_HASH_INVALID' || code === 'FINANCIAL_OPERATION_ORIGIN_MISMATCH') {
+    return FINANCIAL_INTENT_STATUS.BLOCKED;
+  }
+  return isAmbiguousTransport(error)
+    ? FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
+    : FINANCIAL_INTENT_STATUS.BLOCKED;
+};
 
 const assertSupabase = () => {
   if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED');
@@ -279,25 +341,27 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
     if (result?.success === false) {
       const rejected = new Error(result.code || result.message || 'FINANCIAL_OPERATION_REJECTED');
       rejected.code = result.code || null;
+      rejected.isDeterministicServerResponse = true;
       throw rejected;
     }
     await recordReceipt({ intentId: durableIntent.id, handle, receipt: result, status: FINANCIAL_INTENT_STATUS.COMPLETED });
     return { intentId: durableIntent.id, response: result };
   } catch (error) {
     const code = protocolCode(error);
-    if (code === 'IDEMPOTENCY_CONFLICT') await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.CONFLICT, code });
-    else if (code === 'FINANCIAL_REQUEST_HASH_INVALID' || code === 'FINANCIAL_OPERATION_ORIGIN_MISMATCH') await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.BLOCKED, code });
-    else if (isAmbiguousTransport(error)) {
+    const status = dispatchFailureStatus(error);
+    if (status === FINANCIAL_INTENT_STATUS.CONFLICT || status === FINANCIAL_INTENT_STATUS.BLOCKED) {
+      await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status, code });
+    } else {
       await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, code });
       try {
         const receipt = await receiptForCurrentOrigin({ intent: durableIntent, licenseKey, handle });
         if (receipt?.status === 'COMPLETED') await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.COMPLETED });
         else if (receipt?.status === 'CONFLICT') await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.CONFLICT, code: 'IDEMPOTENCY_CONFLICT' });
         else await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
-      } catch (receiptError) {
+      } catch {
         // The original ambiguous intent remains durable; 5B never resends it.
       }
-    } else await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.BLOCKED, code });
+    }
     throw error;
   }
 };
@@ -338,6 +402,7 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
     if (result?.success === false) {
       const rejected = new Error(result.code || result.message || 'FINANCIAL_OPERATION_REJECTED');
       rejected.code = result.code || null;
+      rejected.isDeterministicServerResponse = true;
       throw rejected;
     }
     await updateFinancialIntentForRecovery(intentId, {
@@ -350,11 +415,7 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
     return { intentId, response: result };
   } catch (error) {
     const code = protocolCode(error);
-    const status = code === 'IDEMPOTENCY_CONFLICT'
-      ? FINANCIAL_INTENT_STATUS.CONFLICT
-      : ((code === 'FINANCIAL_REQUEST_HASH_INVALID' || code === 'FINANCIAL_OPERATION_ORIGIN_MISMATCH')
-        ? FINANCIAL_INTENT_STATUS.BLOCKED
-        : FINANCIAL_INTENT_STATUS.PENDING_RECEIPT);
+    const status = dispatchFailureStatus(error);
     await updateFinancialIntentForRecovery(intentId, { status, lastProtocolCode: code }, handle);
     throw error;
   }

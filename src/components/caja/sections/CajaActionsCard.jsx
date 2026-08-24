@@ -71,7 +71,7 @@ const CajaActionsCard = ({
           </span>
           <span className="action-button-copy">
             <strong>Corte de caja</strong>
-            <small>Auditar y cerrar turno</small>
+            <small>Contar y cerrar turno</small>
           </span>
         </button>
 

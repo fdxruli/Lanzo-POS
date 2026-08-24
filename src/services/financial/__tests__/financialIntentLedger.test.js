@@ -77,6 +77,7 @@ import {
   FINANCIAL_INTENT_STATUS,
   createFinancialIntent,
   executeFinancialIntent,
+  executePreparedFinancialIntentForRecovery,
   getFinancialIntent,
   markFinancialIntentProjectionApplied,
   markFinancialIntentProjectionFailed
@@ -184,6 +185,142 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+  });
+
+  it('keeps an explicit network failure receipt-first and pending after NOT_FOUND without resending', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => { throw new TypeError('Failed to fetch'); };
+    runtime.receipt = async () => ({ status: 'NOT_FOUND' });
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toThrow('Failed to fetch');
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'NOT_FOUND',
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+  });
+
+  it('fails closed on a structured PostgreSQL 42703 response without querying a receipt', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => {
+      throw Object.assign(new Error('column cash_sessions.closed_by_actor_key does not exist'), {
+        code: '42703',
+        details: null,
+        hint: null
+      });
+    };
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toMatchObject({ code: '42703' });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1,
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it('fails closed on a generic deterministic application exception', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => { throw new Error('Unexpected deterministic application failure'); };
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toThrow('Unexpected deterministic application failure');
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it('does not treat a locally aborted business operation as transport ambiguity', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => { throw new Error('Business operation aborted by validation'); };
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toThrow('Business operation aborted by validation');
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it.each([
+    ['IDEMPOTENCY_CONFLICT', FINANCIAL_INTENT_STATUS.CONFLICT],
+    ['FINANCIAL_REQUEST_HASH_INVALID', FINANCIAL_INTENT_STATUS.BLOCKED],
+    ['FINANCIAL_OPERATION_ORIGIN_MISMATCH', FINANCIAL_INTENT_STATUS.BLOCKED]
+  ])('preserves %s dispatch semantics as %s', async (code, expectedStatus) => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => { throw Object.assign(new Error(code), { code }); };
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toMatchObject({ code });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: expectedStatus,
+      dispatchAttemptCount: 1,
+      lastProtocolCode: code
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it('also fails closed on structured errors at the PREPARED zero-attempt recovery dispatch edge', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => {
+      throw Object.assign(new Error('column cash_sessions.closed_by_actor_key does not exist'), {
+        code: '42703',
+        details: null,
+        hint: null
+      });
+    };
+
+    await expect(executePreparedFinancialIntentForRecovery({
+      intentId: intent.id,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle
+    })).rejects.toMatchObject({ code: '42703' });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1,
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+  });
+
+  it('keeps genuine transport ambiguity pending at the recovery dispatch edge and cannot dispatch it again', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => { throw new TypeError('Network request failed'); };
+
+    await expect(executePreparedFinancialIntentForRecovery({
+      intentId: intent.id,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle
+    })).rejects.toThrow('Network request failed');
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      dispatchAttemptCount: 1,
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+    await expect(executePreparedFinancialIntentForRecovery({
+      intentId: intent.id,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle
+    })).rejects.toThrow('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
     expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
   });
 

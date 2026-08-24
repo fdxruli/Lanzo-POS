@@ -115,6 +115,23 @@ describe('CajaAdminCashAuditModal', () => {
     const secondAttempt = closeAdmin.mock.calls[1][0];
     expect(secondAttempt).toMatchObject({ expectedVersion: 5 });
     expect(secondAttempt.idempotencyKey).not.toBe(firstAttempt.idempotencyKey);
-    expect(onClose).toHaveBeenCalledWith({ closed: true });
+    expect(onClose).toHaveBeenCalledWith({ closed: true, cashSessionId: 'cash-1196' });
+  });
+
+  it('shows thrown submit errors and always restores the submit action', async () => {
+    const onClose = vi.fn();
+    const closeAdmin = vi.fn().mockRejectedValue(new Error('El servidor rechazó el cierre.'));
+    renderModal({ onClose, cerrarCajaAdministrativamente: closeAdmin });
+
+    await screen.findByText('Caja sintetica');
+    fireEvent.click(screen.getByText(/conte fisicamente/i));
+    fireEvent.change(screen.getByLabelText(/efectivo contado/i), { target: { value: '1196' } });
+    fireEvent.change(screen.getByLabelText(/^motivo/i), { target: { value: 'operational_error' } });
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+
+    expect(await screen.findByText('El servidor rechazó el cierre.')).toBeVisible();
+    expect(screen.getByRole('button', { name: /confirmar cierre administrativo/i })).toBeEnabled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

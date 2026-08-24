@@ -66,6 +66,8 @@ const writeClipboard = async (text) => {
 
 /** A presentation-only consumer of the sanitized financial DTO. */
 const FinancialDiagnosticsPanel = ({ enabled = false }) => {
+  const cashMode = getCashMode();
+  const isStaff = Boolean(cashMode.actor?.isStaff);
   const [filter, setFilter] = useState('attention');
   const [diagnostics, setDiagnostics] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -73,6 +75,7 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
   const [loading, setLoading] = useState(false);
   const [busyIntentId, setBusyIntentId] = useState(null);
   const [message, setMessage] = useState('');
+  const [expanded, setExpanded] = useState(() => !isStaff);
 
   const reload = useCallback(async () => {
     if (!enabled || !getCashMode().cloudEnabled) return;
@@ -96,6 +99,11 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
   }, [enabled, filter]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    setExpanded(!isStaff);
+    setSelectedId(null);
+  }, [cashMode.actor?.actorKey, isStaff]);
 
   const selected = useMemo(() => diagnostics.find((diagnostic) => diagnostic.intentId === selectedId) || null, [diagnostics, selectedId]);
 
@@ -136,15 +144,51 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
   };
 
   if (!enabled) return null;
-  if (!getCashMode().cloudEnabled) {
+  if (!cashMode.cloudEnabled) {
     return <section className="financial-diagnostics" aria-label="Diagnóstico financiero"><p>Diagnóstico financiero no disponible para este modo.</p></section>;
   }
 
+  const attentionCount = Number(summary?.requiringAttention || 0);
+  const staffStatusUnavailable = !loading && !summary;
+  if (isStaff && !expanded) {
+    return (
+      <section className="financial-diagnostics financial-diagnostics--compact" aria-label="Verificación financiera">
+        <div className="financial-diagnostics__compact-copy">
+          <span className={`financial-diagnostics__compact-indicator${attentionCount > 0 || staffStatusUnavailable ? ' is-attention' : ''}`} aria-hidden="true" />
+          <div>
+            <strong>
+              {loading
+                ? 'Verificando operaciones financieras…'
+                : staffStatusUnavailable
+                  ? 'No se pudo verificar el estado financiero'
+                  : attentionCount > 0
+                    ? attentionCount === 1 ? 'Hay una operación pendiente de verificar' : `Hay ${attentionCount} operaciones pendientes de verificar`
+                    : 'Operaciones financieras al día'}
+            </strong>
+            <p>
+              {attentionCount > 0
+                ? 'Revisa el detalle antes de continuar con una operación relacionada.'
+                : staffStatusUnavailable
+                  ? 'Abre el detalle para actualizar o revisar el diagnóstico.'
+                  : 'No hay operaciones propias que requieran atención.'}
+            </p>
+          </div>
+        </div>
+        <button type="button" aria-expanded="false" onClick={() => setExpanded(true)}>
+          {attentionCount > 0 || staffStatusUnavailable ? 'Revisar detalles' : 'Ver diagnóstico'}
+        </button>
+      </section>
+    );
+  }
+
   return (
-    <section className="financial-diagnostics" aria-labelledby="financial-diagnostics-title">
+    <section className={`financial-diagnostics${isStaff ? ' financial-diagnostics--staff-expanded' : ''}`} aria-labelledby="financial-diagnostics-title">
       <header className="financial-diagnostics__header">
         <div><p>Control local de reconciliación</p><h2 id="financial-diagnostics-title">Diagnóstico financiero</h2></div>
-        <button type="button" onClick={reload} disabled={loading || Boolean(busyIntentId)}>Actualizar vista</button>
+        <div className="financial-diagnostics__header-actions">
+          <button type="button" onClick={reload} disabled={loading || Boolean(busyIntentId)}>Actualizar vista</button>
+          {isStaff && <button type="button" aria-expanded="true" onClick={() => setExpanded(false)}>Ocultar detalles</button>}
+        </div>
       </header>
       {summary && (
         <div className="financial-diagnostics__summary" aria-label="Resumen de salud financiera">

@@ -1252,6 +1252,88 @@
   font-weight: 700;
 }
 
+.caja-grid .caja-handoff-card {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.caja-grid .caja-handoff-card__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.caja-grid .caja-handoff-card__heading > svg {
+  flex: 0 0 auto;
+}
+
+.caja-grid .caja-handoff-card__heading div {
+  min-width: 0;
+}
+
+.caja-grid .caja-handoff-card__heading p,
+.caja-grid .caja-handoff-card__guidance {
+  margin: 0.35rem 0 0;
+  line-height: 1.5;
+}
+
+.caja-grid .caja-handoff-card__summary,
+.caja-grid .caja-handoff-card__technical dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.caja-grid .caja-handoff-card__summary div,
+.caja-grid .caja-handoff-card__technical dl div {
+  min-width: 0;
+  padding: 0.65rem;
+  background: color-mix(in srgb, var(--card-background-color) 72%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 8px;
+}
+
+.caja-grid .caja-handoff-card dt {
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.caja-grid .caja-handoff-card dd {
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.caja-grid .caja-handoff-card__guidance {
+  font-weight: 650;
+}
+
+.caja-grid .caja-handoff-card__technical {
+  padding-top: 0.2rem;
+  font-size: 0.76rem;
+}
+
+.caja-grid .caja-handoff-card__technical summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.caja-grid .caja-handoff-card__technical dl {
+  margin-top: 0.55rem;
+}
+
+.caja-grid .caja-handoff-card__technical code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .caja-grid .staff-audit-card {
   display: grid;
   gap: var(--ui-space-md);
@@ -1447,6 +1529,11 @@
 
 @media (max-width: 640px) {
   .caja-grid .business-cash-breakdown, .caja-grid .business-cash-components { grid-template-columns: 1fr; }
+
+  .caja-grid .caja-handoff-card__summary,
+  .caja-grid .caja-handoff-card__technical dl {
+    grid-template-columns: 1fr;
+  }
 
   .caja-grid .staff-audit-filters,
   .caja-grid .staff-audit-grid {

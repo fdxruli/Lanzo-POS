@@ -22,6 +22,7 @@
     "test:oss-bootstrap": "node --test scripts/oss/reset-local-with-bootstrap.node-test.mjs",
     "test:oss-release": "node --test scripts/oss/release-boundary.test.mjs scripts/oss/reset-local-with-bootstrap.node-test.mjs",
     "test:supabase-ledger-baseline": "node --test scripts/supabase/migration-ledger-baseline.node-test.mjs",
+    "test:admin-cash-close-contract": "node --test scripts/supabase/admin-cash-close-contract.node-test.mjs",
     "test:button-css-scope": "node --test scripts/audit-button-css-scope.node-test.mjs",
     "lint": "eslint src/**/*.{js,jsx}",
     "preview": "vite preview",

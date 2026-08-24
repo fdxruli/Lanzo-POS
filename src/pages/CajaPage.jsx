@@ -1,5 +1,6 @@
 // src/pages/CajaPage.jsx
 import { useState, useEffect, useMemo } from 'react';
+import { LockKeyhole } from 'lucide-react';
 import { useCaja } from '../hooks/useCaja';
 import { useModal } from '../hooks/useModal';
 import { useRecentActivity } from '../hooks/useRecentActivity';
@@ -44,6 +45,34 @@ import {
 import './CajaPage.css';
 
 const CLOUD_CASH_READ_ONLY_MESSAGE = 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Puedes consultar el último estado, pero no registrar movimientos.';
+
+const cashSessionActorKey = (cashSession) => cashSession?.actor_key || cashSession?.actorKey || null;
+
+export const isCashSessionOwnedByActor = (cashSession, cashActor) => {
+  const ownerActorKey = cashSessionActorKey(cashSession);
+  const currentActorKey = cashActor?.actorKey || null;
+  return Boolean(ownerActorKey && currentActorKey && ownerActorKey === currentActorKey);
+};
+
+const shortenTechnicalIdentifier = (value) => {
+  const identifier = String(value || '').trim();
+  if (!identifier || identifier.length <= 18) return identifier || 'No disponible';
+  const separatorIndex = identifier.indexOf(':');
+  const prefixLength = separatorIndex > -1 ? separatorIndex + 1 : 8;
+  return `${identifier.slice(0, prefixLength)}…${identifier.slice(-6)}`;
+};
+
+const cashSessionResponsibleLabel = (cashSession) => {
+  const friendlyName = cashSession?.responsible_name
+    || cashSession?.responsable_apertura
+    || cashSession?.actor_name
+    || cashSession?.responsibleName;
+  if (friendlyName) return friendlyName;
+  const ownerActorKey = cashSessionActorKey(cashSession);
+  if (ownerActorKey?.startsWith('staff:')) return 'Personal';
+  if (ownerActorKey?.startsWith('admin:')) return 'Administrador';
+  return 'Otro usuario';
+};
 
 /**
  * CajaPage - Orquestador principal de la página de Caja
@@ -154,7 +183,7 @@ export default function CajaPage() {
 
   const operationDisabled = isBackupLoading || isCloudCashReadOnly;
   const showAdminAuditPanel = Boolean(isCloudCash && !cashActor?.isStaff && listCashSessionsForAudit);
-  const usesAdminReconciliationClose = Boolean(isCloudCash && !cashActor?.isStaff);
+  const canUseOwnerClose = !isCloudCash || isCashSessionOwnedByActor(cajaActual, cashActor);
   const showBusinessCashSummary = canShowBusinessCashSummary({
     isCloudCash,
     isReadOnly: isCloudCashReadOnly,
@@ -172,6 +201,28 @@ export default function CajaPage() {
     const result = await adoptarCajaLegacy(session.id, session.server_version || null);
     if (result?.success) showMessageModal('La caja fue vinculada a tu identidad. Las demás cajas anteriores siguen pendientes de revisión.', null, { type: 'success' });
     else showMessageModal(result?.message || 'No se pudo continuar la caja anterior.', null, { type: 'error' });
+  };
+
+  const handlePrimaryCashClose = () => {
+    if (canUseOwnerClose) {
+      setIsAuditOpen(true);
+      return;
+    }
+
+    showMessageModal(
+      cashActor?.isStaff
+        ? 'Esta caja pertenece a otro usuario. No puedes tomarla ni cerrarla; debe cerrarla su responsable o un administrador.'
+        : 'Esta caja pertenece a otro usuario. Para conciliarla, selecciónala desde la revisión administrativa de cajas.',
+      null,
+      { type: 'warning' }
+    );
+  };
+
+  const handleAdminCashAuditClose = (result = null) => {
+    setReviewCashSessionId(null);
+    if (result?.closed) {
+      showMessageModal('Cierre administrativo completado.', null, { type: 'success' });
+    }
   };
 
   // ============================================================
@@ -480,27 +531,47 @@ export default function CajaPage() {
   if (estadoCaja === 'financial_handoff_required' || estadoCaja === 'financial_blocked') {
     const handoffRequired = estadoCaja === 'financial_handoff_required';
     const stationSession = aperturaPendiente?.stationOpenCashSession || null;
+    const stationOwnerActorKey = cashSessionActorKey(stationSession);
     return (
       <main className="ui-page caja-page" aria-label="Caja">
         <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
           <div className="ui-section__actions">
             <span className="ui-badge ui-badge--warning">
-              {handoffRequired ? 'Reconciliación requerida' : 'Estado financiero bloqueado'}
+              {handoffRequired ? 'Cierre pendiente' : 'Estado financiero bloqueado'}
             </span>
           </div>
         </header>
         <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Resolución financiera">
-          <div className="ui-alert ui-alert--warning" role="alert">
-            <strong>{handoffRequired ? 'La estación tiene una caja abierta de otro actor.' : 'No se puede verificar la estación financiera.'}</strong>
-            <p>
-              {handoffRequired
-                ? 'La sesión anterior conserva su propietario. No se transfirió, no se cerró automáticamente y no puedes abrir otra caja ni cobrar hasta completar un cierre y conteo explícitos.'
-                : 'La caja permanece protegida. Conéctate o completa la recuperación administrativa antes de realizar operaciones de efectivo.'}
-            </p>
-            {stationSession?.id && (
-              <p>Sesión protegida: <code>{stationSession.id}</code>. Propietario histórico: {stationSession.actor_key || stationSession.actorKey || 'no resuelto'}.</p>
-            )}
-          </div>
+          {handoffRequired ? (
+            <div className="ui-alert ui-alert--warning caja-handoff-card" role="alert">
+              <div className="caja-handoff-card__heading">
+                <LockKeyhole size={22} aria-hidden="true" />
+                <div>
+                  <strong>Caja protegida por cambio de usuario</strong>
+                  <p>Hay una caja abierta por otro usuario en esta estación. Lanzo no la transfirió ni la cerró automáticamente para proteger el efectivo.</p>
+                </div>
+              </div>
+              <dl className="caja-handoff-card__summary">
+                <div><dt>Caja abierta por</dt><dd>{cashSessionResponsibleLabel(stationSession)}</dd></div>
+                <div><dt>Estado</dt><dd>Pendiente de cierre y conteo</dd></div>
+              </dl>
+              <p className="caja-handoff-card__guidance">El usuario que abrió la caja o un administrador debe completar el cierre antes de que otro usuario pueda iniciar un nuevo turno.</p>
+              {(stationSession?.id || stationOwnerActorKey) && (
+                <details className="caja-handoff-card__technical">
+                  <summary>Ver detalles técnicos</summary>
+                  <dl>
+                    {stationSession?.id && <div><dt>Sesión</dt><dd><code>{shortenTechnicalIdentifier(stationSession.id)}</code></dd></div>}
+                    {stationOwnerActorKey && <div><dt>Propietario</dt><dd><code>{shortenTechnicalIdentifier(stationOwnerActorKey)}</code></dd></div>}
+                  </dl>
+                </details>
+              )}
+            </div>
+          ) : (
+            <div className="ui-alert ui-alert--warning" role="alert">
+              <strong>No se puede verificar la estación financiera.</strong>
+              <p>La caja permanece protegida. Conéctate o completa la recuperación administrativa antes de realizar operaciones de efectivo.</p>
+            </div>
+          )}
           <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
           <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
           {showBusinessCashSummary && (
@@ -517,7 +588,7 @@ export default function CajaPage() {
           )}
           <CajaAdminCashAuditModal
             cashSessionId={reviewCashSessionId}
-            onClose={() => setReviewCashSessionId(null)}
+            onClose={handleAdminCashAuditClose}
             getCashSessionDetailForAudit={getCashSessionDetailForAudit}
             cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
             isReadOnly={isCloudCashReadOnly}
@@ -559,7 +630,7 @@ export default function CajaPage() {
         )}
         <CajaAdminCashAuditModal
           cashSessionId={reviewCashSessionId}
-          onClose={() => setReviewCashSessionId(null)}
+          onClose={handleAdminCashAuditClose}
           getCashSessionDetailForAudit={getCashSessionDetailForAudit}
           cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
           isReadOnly={isCloudCashReadOnly}
@@ -618,13 +689,7 @@ export default function CajaPage() {
         isReadOnly={isCloudCashReadOnly}
         cashActor={cashActor}
         readOnlyMessage={CLOUD_CASH_READ_ONLY_MESSAGE}
-        onCorte={() => {
-          if (usesAdminReconciliationClose) {
-            setReviewCashSessionId(cajaActual?.id || null);
-            return;
-          }
-          setIsAuditOpen(true);
-        }}
+        onCorte={handlePrimaryCashClose}
         onEntrada={cashEntryModal.open}
         onSalida={cashExitModal.open}
         onAjuste={cashAdjustmentModal.open}
@@ -686,7 +751,7 @@ export default function CajaPage() {
       />
       <CajaAdminCashAuditModal
         cashSessionId={reviewCashSessionId}
-        onClose={() => setReviewCashSessionId(null)}
+        onClose={handleAdminCashAuditClose}
         getCashSessionDetailForAudit={getCashSessionDetailForAudit}
         cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
         isReadOnly={isCloudCashReadOnly}

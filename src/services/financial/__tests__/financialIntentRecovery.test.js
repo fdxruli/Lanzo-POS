@@ -63,6 +63,36 @@ describe('financial receipt-first recovery', () => {
     expect(runtime.rows.get('intent-1')).toMatchObject({ status: 'PENDING_RECEIPT', idempotencyKey: 'K-original', requestHash: 'H-original' });
   });
 
+  it('preserves the exact attempted cash.admin_close NOT_FOUND incident without resend, replacement K, or state reset', async () => {
+    runtime.rows.set('intent-1', row({
+      operationType: 'cash.admin_close',
+      status: 'PENDING_RECEIPT',
+      projectionStatus: 'PENDING',
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'NOT_FOUND'
+    }));
+    runtime.receipt.mockResolvedValue({ status: 'NOT_FOUND' });
+
+    await expect(recoverFinancialIntent({
+      intentId: 'intent-1',
+      licenseKey: 'transient',
+      actorHandle: handle
+    })).resolves.toMatchObject({ outcome: 'receipt_not_found_no_resend' });
+
+    expect(runtime.receipt).toHaveBeenCalledTimes(1);
+    expect(runtime.execute).not.toHaveBeenCalled();
+    expect(runtime.rows.size).toBe(1);
+    expect(runtime.rows.get('intent-1')).toMatchObject({
+      operationType: 'cash.admin_close',
+      status: 'PENDING_RECEIPT',
+      projectionStatus: 'PENDING',
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'NOT_FOUND',
+      idempotencyKey: 'K-original',
+      requestHash: 'H-original'
+    });
+  });
+
   it('uses the existing zero-attempt PREPARED intent for exactly one first dispatch', async () => {
     runtime.rows.set('intent-1', row({ status: 'PREPARED', dispatchAttemptCount: 0 }));
     runtime.receipt.mockResolvedValue({ status: 'NOT_FOUND' });
