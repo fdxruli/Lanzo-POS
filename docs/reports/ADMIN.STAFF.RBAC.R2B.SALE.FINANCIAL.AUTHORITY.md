@@ -12,11 +12,11 @@ This report records the R2B sale-price, discount, cost, arithmetic, cash, invent
 
 ## 3. PR
 
-Pending Draft PR creation after the implementation commit. The PR must remain Draft and must not be merged or marked ready.
+ Draft PR [#227](https://github.com/fdxruli/Lanzo-POS/pull/227) is open. It must remain Draft and must not be merged or marked ready.
 
 ## 4. Final implementation SHA
 
-Pending the initial implementation commit. The report metadata will be updated with that commit SHA after commit and push.
+`615cd0c16747ad892c7c4b74cee198b83d7b9228` — implementation commit. The later report-metadata commit is administrative only.
 
 ## 5. Exact files changed
 
@@ -126,7 +126,7 @@ PASS for the local differential suite: existing ledger baseline, admin cash-clos
 
 ## 30. Remaining risks
 
-Remote CI has not yet been observed on the final pushed PR head. Supabase CLI post-apply dry-run was blocked by temporary-role authentication failures, although pre-apply dry-run, migration ledger alignment, read-only function/grant checks, direct RPC tests, security-advisor filtering, and performance advisors passed. E-commerce tax semantics remain fail-closed rather than newly inferred. Independent review is required before any readiness or merge decision.
+Remote CI is not yet complete on the current PR head: Vercel is green and `PR127 Global Comparison` is in progress. Supabase CLI post-apply dry-run was blocked by temporary-role authentication failures, although pre-apply dry-run, migration ledger alignment, read-only function/grant checks, direct RPC tests, security-advisor filtering, and performance advisors passed. E-commerce tax semantics remain fail-closed rather than newly inferred. Independent review is required before any readiness or merge decision.
 
 ## 31. AI P0 explicitly deferred to R2C
 
@@ -140,11 +140,11 @@ The server-authority closure is implemented and production-applied with no known
 
 BASE_SHA = `69c3fe376683d3bac2e5710ff5fcd072c676e72b`
 BRANCH = `codex/sale-price-discount-server-authority-r2b`
-PR_NUMBER = `pending Draft PR creation`
-PR_STATE = `pending Draft PR creation`
-FINAL_HEAD_SHA = `pending implementation commit`
+PR_NUMBER = `227`
+PR_STATE = `OPEN / DRAFT / NOT MERGED`
+FINAL_HEAD_SHA = `615cd0c16747ad892c7c4b74cee198b83d7b9228` — implementation head; report metadata follows in the administrative commit
 
-COMMITS = `pending initial implementation commit`
+COMMITS = `2 — 615cd0c16747ad892c7c4b74cee198b83d7b9228 implementation; report metadata update`
 FILES_CHANGED = `7 exact files listed in Section 5`
 
 SALE_RPC_ENTRY_POINTS = `public.pos_create_cloud_sale_cashier; public.pos_create_cloud_sale_cashier_inventory; public.pos_create_cloud_sale_credit; corresponding _unlimited wrappers; renamed *_legacy_r2b delegates; shared financial receipt dispatch; e-commerce conversion and offline shadow paths audited`
@@ -196,8 +196,8 @@ LINT = PASS
 BUILD = PASS
 FOCUSED_TESTS = PASS
 DIRECT_RPC_TESTS = PASS
-REMOTE_CI = `pending Draft PR`
-DIFFERENTIAL_REGRESSIONS = `PASS locally; remote CI pending`
+REMOTE_CI = `Vercel PASS; PR127 Global Comparison IN_PROGRESS on PR #227`
+DIFFERENTIAL_REGRESSIONS = `PASS locally; PR127 Global Comparison pending`
 
 AI_PERMISSION_CHANGED = NO
 GRANULAR_PRODUCT_RBAC_STARTED = NO
