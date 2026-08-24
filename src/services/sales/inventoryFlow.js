@@ -648,7 +648,7 @@ export const releaseCommittedStock = async (items, deps = {}) => {
     const itemsToProcess = Array.isArray(items) ? items : [];
     if (itemsToProcess.length === 0) return { success: true };
 
-    const { db, STORES, allProducts = [] } = deps;
+    const { db, STORES, allProducts = [], assertActorCurrent = () => {} } = deps;
     if (!db || !STORES?.MENU || !STORES?.PRODUCT_BATCHES) {
         throw new Error('INVENTORY_CRITICAL: releaseCommittedStock requiere db, STORES.MENU y STORES.PRODUCT_BATCHES.');
     }
@@ -661,6 +661,7 @@ export const releaseCommittedStock = async (items, deps = {}) => {
 
     return await withUnifiedTimestamp(async (unifiedTimestamp) => {
         await db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
+            assertActorCurrent();
             const batchIdsToLoad = new Set();
             for (const orderItem of itemsToProcess) {
                 if (!isTableReservation(orderItem)) continue;
@@ -752,6 +753,7 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                     unifiedTimestamp
                 });
             }
+            assertActorCurrent();
         });
 
         return { success: true };

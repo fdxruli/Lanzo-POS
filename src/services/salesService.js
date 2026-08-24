@@ -18,6 +18,7 @@ import {
     runCheckoutActorOperation,
     runTrackedActorOperationIfGranted
 } from './auth/actorOperationalHandoff';
+import { runRefundsActorOperation } from './auth/refundsActorAuthorization';
 import { processSaleCore } from './sales/processSaleCore';
 import { splitOpenTableOrderCore } from './sales/splitOrderService';
 import { sendReceiptWhatsApp as sendReceiptWhatsAppBase } from './sales/receiptWhatsApp';
@@ -286,17 +287,24 @@ export const cancelSale = async ({
     dispositionPlan = null,
     reason = '',
     cancelledBy = 'local-user',
-    allowWaste = false
-}) => {
+    allowWaste = false,
+    actorHandle = null
+}) => runRefundsActorOperation({
+    actorHandle,
+    label: 'sales.cancel',
+    operation: async ({ assertCurrent, handle }) => {
     const saleForCancellation = await findSaleForCancellation({ saleId, timestamp, currentSales });
+    assertCurrent();
 
     if (saleForCancellation && isCloudCommittedSale(saleForCancellation)) {
         try {
             const result = await salesCloudCancellationService.cancelCloudSale({
                 sale: saleForCancellation,
                 saleId: saleForCancellation.cloudSaleId || saleForCancellation.cloud_sale_id || saleForCancellation.id,
-                reason
+                reason,
+                actorHandle: handle
             });
+            assertCurrent();
 
             if (result.success) {
                 try {
@@ -334,6 +342,7 @@ export const cancelSale = async ({
             db,
             Logger,
             generateId: generateID,
+            assertActorCurrent: assertCurrent,
             restoreStockFromCancellation: (items) =>
                 productsRepository.restoreStockFromCancellation(items)
         }
@@ -351,9 +360,13 @@ export const cancelSale = async ({
     }
 
     return result;
-};
+    }
+});
 
-export const restoreDeletedSale = async (saleId) => {
+export const restoreDeletedSale = async (saleId, { actorHandle = null } = {}) => runRefundsActorOperation({
+    actorHandle,
+    label: 'sales.restoreCancelled',
+    operation: async ({ assertCurrent }) => {
     const result = await restoreDeletedSaleCore(
         { saleId },
         {
@@ -361,6 +374,7 @@ export const restoreDeletedSale = async (saleId) => {
             STORES,
             Logger,
             generateId: generateID,
+            assertActorCurrent: assertCurrent,
             reapplyStockFromCancellation: (items) =>
                 productsRepository.reapplyStockFromCancellation(items)
         }
@@ -375,9 +389,13 @@ export const restoreDeletedSale = async (saleId) => {
     }
 
     return result;
-};
+    }
+});
 
-export const moveCancelledSaleToTrash = async (saleId) => {
+export const moveCancelledSaleToTrash = async (saleId, { actorHandle = null } = {}) => runRefundsActorOperation({
+    actorHandle,
+    label: 'sales.archiveCancelled',
+    operation: async ({ assertCurrent }) => {
     try {
         await db.transaction(
             'rw',
@@ -404,6 +422,7 @@ export const moveCancelledSaleToTrash = async (saleId) => {
                     originalStore: STORES.SALES
                 });
                 await db.table(STORES.SALES).delete(sale.id);
+                assertCurrent();
             }
         );
         return { success: true, code: 'MOVED_TO_TRASH', saleId };
@@ -415,7 +434,25 @@ export const moveCancelledSaleToTrash = async (saleId) => {
             message: error?.message || 'No se pudo mover la venta a papelera.'
         };
     }
-};
+    }
+});
+
+export const permanentlyDeleteCancelledSales = async (saleIds, { actorHandle = null } = {}) => runRefundsActorOperation({
+    actorHandle,
+    label: 'sales.permanentlyDeleteCancelled',
+    operation: async ({ assertCurrent }) => {
+        const normalizedIds = [...new Set((Array.isArray(saleIds) ? saleIds : [saleIds]).filter(Boolean))];
+        if (normalizedIds.length === 0) return { success: true, deletedCount: 0 };
+
+        await db.transaction('rw', [STORES.DELETED_SALES], async () => {
+            assertCurrent();
+            await db.table(STORES.DELETED_SALES).bulkDelete(normalizedIds);
+            assertCurrent();
+        });
+
+        return { success: true, deletedCount: normalizedIds.length };
+    }
+});
 
 export const salesServiceInternals = Object.freeze({
     ECOMMERCE_SALE_READ_FAILED,

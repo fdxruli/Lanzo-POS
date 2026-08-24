@@ -18,6 +18,11 @@ import { db } from '../services/db/dexie';
 import { loadData, STORES, DB_ERROR_CODES } from '../services/database';
 import { customerRepository } from '../services/customers/customerRepository';
 import { getSafeCustomerDebt, formatCustomerDebt } from '../utils/customerUtils';
+import {
+  canPerformRefunds,
+  getSalesActorIdentity
+} from '../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
 import './CustomersPage.css';
 
 const PAGE_SIZE = 50;
@@ -63,8 +68,15 @@ export default function CustomersPage() {
     cashMode
   } = useCaja();
   const companyProfile = useAppStore((state) => state.companyProfile);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canManageRefunds = canPerformRefunds(actorRuntime);
+  const salesActorIdentity = getSalesActorIdentity(actorRuntime);
   const companyName = companyProfile?.name || 'Tu Negocio';
   const globalCreditLimit = Number(companyProfile?.settings_default_credit_limit) || 0;
+
+  useEffect(() => {
+    setIsLayawayModalOpen(false);
+  }, [canManageRefunds, salesActorIdentity]);
 
   const customerPortfolio = useMemo(() => {
     return customers.reduce((summary, customer) => {
@@ -672,6 +684,8 @@ ${itemsString}
         show={isLayawayModalOpen}
         onClose={handleCloseModals}
         customer={selectedCustomer}
+        canManageRefunds={canManageRefunds}
+        actorIdentity={salesActorIdentity}
         onUpdate={() => {
           // Apartados siguen fuera del alcance cloud Fase 1.
         }}

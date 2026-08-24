@@ -28,6 +28,14 @@ const selectOrder = (state) => (
 const selectStats = (state) => state.stats;
 const selectLicense = (state) => state.licenseDetails;
 const selectCompanyProfile = (state) => state.companyProfile;
+const EMPTY_REPORT_STATS = Object.freeze({
+  totalRevenue: 0,
+  totalItemsSold: 0,
+  totalNetProfit: 0,
+  totalOrders: 0,
+  inventoryValue: null,
+  hasMissingCosts: false,
+});
 
 // Calcula el total directamente del estado en lugar de llamar a getTotalPrice
 // Esto evita suscribirse a una función inestable
@@ -231,7 +239,7 @@ const ALERT_KEY = GLOBAL_ALERT?.active ? `lanzo_alert_${GLOBAL_ALERT.id}` : null
 const HAS_PENDING_ALERT =
   GLOBAL_ALERT?.active && ALERT_KEY ? !localStorage.getItem(ALERT_KEY) : false;
 
-const AssistantBot = () => {
+const AssistantBot = ({ reportsAllowed = true }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -261,7 +269,8 @@ const AssistantBot = () => {
   const cartTotal = useActiveOrders(selectCartTotal);
   const lowStockCount = useProductStore(selectLowStockCount);
   const productCount = useProductStore(selectProductCount);
-  const stats = useStatsStore(selectStats);
+  const reportStats = useStatsStore(selectStats);
+  const stats = reportsAllowed ? reportStats : EMPTY_REPORT_STATS;
   const licenseDetails = useAppStore(selectLicense);
   const companyProfile = useAppStore(selectCompanyProfile);
 
@@ -502,6 +511,11 @@ const AssistantBot = () => {
     showGlobalAlert || criticalAlert?.severity === 'critical';
   const hasItemsInCart = cartOrder.length > 0;
   const PageIcon = pageContext.icon;
+
+  // The assistant can query sales directly from the tenant database. Keep a
+  // pending system-wide alert available, but expose no assistant/report UI to
+  // an actor who lacks the current reports permission.
+  if (!reportsAllowed && !showGlobalAlert) return null;
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
   return (

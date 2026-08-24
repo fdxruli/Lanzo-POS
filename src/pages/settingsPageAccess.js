@@ -15,14 +15,4 @@ export const evaluateEcommercePortalAccess = ({
 
 export const canManageEcommercePortal = evaluateEcommercePortalAccess;
 
-export const resolveAllowedSettingsTab = ({
-  requestedTab,
-  visibleTabs
-}) => {
-  const allowedTabs = Array.isArray(visibleTabs) ? visibleTabs : [];
-  const fallbackTab = allowedTabs[0]?.key || 'general';
-
-  return allowedTabs.some((tab) => tab.key === requestedTab)
-    ? requestedTab
-    : fallbackTab;
-};
+export { resolveAllowedSettingsTab } from '../services/auth/settingsAccessPolicy';

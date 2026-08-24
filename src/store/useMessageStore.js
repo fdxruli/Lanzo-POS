@@ -1,5 +1,9 @@
 // src/store/useMessageStore.js
 import { create } from 'zustand';
+import {
+  actorRuntimeController,
+  ACTOR_RUNTIME_STATUS
+} from '../services/auth/actorRuntimeController';
 
 export const useMessageStore = create((set) => ({
   // --- ESTADO ---
@@ -7,6 +11,7 @@ export const useMessageStore = create((set) => ({
   message: '',
   onConfirm: null,
   options: {},
+  actorGeneration: null,
 
   // --- ACCIONES ---
   
@@ -14,11 +19,15 @@ export const useMessageStore = create((set) => ({
    * Muestra el modal con un nuevo mensaje y configuración
    */
   show: (message, onConfirm = null, options = {}) => {
+    const actor = actorRuntimeController.getState();
     set({
       isOpen: true,
       message,
       onConfirm,
-      options
+      options,
+      actorGeneration: actor.status === ACTOR_RUNTIME_STATUS.GRANTED
+        ? actor.generation
+        : null
     });
   },
 
@@ -30,10 +39,26 @@ export const useMessageStore = create((set) => ({
       isOpen: false,
       message: '',
       onConfirm: null,
-      options: {}
+      options: {},
+      actorGeneration: null
     });
   }
 }));
+
+actorRuntimeController.subscribe((actor) => {
+  const messageState = useMessageStore.getState();
+  if (!messageState.isOpen || messageState.actorGeneration === null) return;
+  if (
+    actor.status === ACTOR_RUNTIME_STATUS.GRANTED
+    && actor.generation === messageState.actorGeneration
+  ) {
+    return;
+  }
+
+  const onCancel = messageState.options?.onCancel;
+  messageState.hide();
+  onCancel?.();
+});
 
 // Exportamos una forma fácil de llamar al store
 // sin necesidad de estar dentro de un componente de React.

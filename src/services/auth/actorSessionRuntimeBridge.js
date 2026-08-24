@@ -86,8 +86,12 @@ export const resolveStableActorId = (actorType, actor = null) => {
 export const getExplicitActorPermissions = (actorType, actor = null) => {
   if (actorType === 'admin') return ['*'];
   const permissions = actor?.permissions;
-  if (!Array.isArray(permissions)) return [];
-  return [...new Set(permissions.filter((permission) => (
+  const grantedPermissions = Array.isArray(permissions)
+    ? permissions
+    : Object.entries(permissions || {})
+      .filter(([, granted]) => granted === true)
+      .map(([permission]) => permission);
+  return [...new Set(grantedPermissions.filter((permission) => (
     typeof permission === 'string' && permission.trim().length > 0
   )).map((permission) => permission.trim()))];
 };

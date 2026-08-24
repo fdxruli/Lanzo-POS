@@ -9,7 +9,7 @@ import {
 } from '../sync/syncConstants';
 import { salesCloudRepository } from './salesCloudRepository';
 import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
-import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { captureRefundsActorHandle, runRefundsActorOperation } from '../auth/refundsActorAuthorization';
 import {
   buildCancellationIdempotencyKey,
   getCloudSaleId,
@@ -116,6 +116,8 @@ const friendlyCloudCancellationError = (error) => {
     SALE_NOT_CLOUD_COMMITTED: 'Esta venta no fue confirmada en la nube; se debe usar la cancelacion local.',
     SALE_NOT_CLOSED: 'Solo se pueden cancelar ventas cerradas.',
     SALE_CANCELLATION_FORBIDDEN: 'No tienes permiso para cancelar esta venta.',
+    ACTOR_PERMISSION_DENIED: 'No tienes permiso para cancelar o reembolsar ventas.',
+    'POS_PERMISSION_DENIED:refunds': 'No tienes permiso para cancelar o reembolsar ventas.',
     'POS_PERMISSION_DENIED:sales_cancellations': 'No tienes permiso para cancelar ventas.',
     IDEMPOTENCY_PROCESSING: 'La cancelacion ya esta en proceso. Evita presionar dos veces.',
     CUSTOMER_DEBT_NEGATIVE_AFTER_CANCEL: 'No se cancelo la venta porque la deuda quedaria inconsistente. Revisa abonos posteriores antes de cancelar.',
@@ -135,7 +137,15 @@ export const salesCloudCancellationService = {
   async canCancelCloudSale(sale = {}, licenseDetails = null) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
+    let hasRefundAuthority = false;
+    try {
+      captureRefundsActorHandle();
+      hasRefundAuthority = true;
+    } catch {
+      hasRefundAuthority = false;
+    }
     return Boolean(
+      hasRefundAuthority &&
       context.online &&
       context.licenseKey &&
       context.runtimeCancellationEnabled &&
@@ -145,7 +155,11 @@ export const salesCloudCancellationService = {
     );
   },
 
-  async previewCloudSaleCancellation({ sale = {}, saleId = null, reason = '' } = {}) {
+  async previewCloudSaleCancellation({ sale = {}, saleId = null, reason = '', actorHandle = null } = {}) {
+    return runRefundsActorOperation({
+      actorHandle,
+      label: 'sales.cloudCancellationPreview',
+      operation: async ({ assertCurrent }) => {
     const context = await getRuntimeContext();
     const cloudSaleId = saleId || getCloudSaleId(sale);
 
@@ -160,6 +174,7 @@ export const salesCloudCancellationService = {
         saleId: cloudSaleId,
         reason: String(reason || '').trim() || null
       });
+      assertCurrent();
 
       return {
         ...preview,
@@ -170,6 +185,8 @@ export const salesCloudCancellationService = {
       Logger.error('[SalesCloud/Cancellation] Preview de cancelacion cloud fallo:', error);
       throw friendlyCloudCancellationError(error);
     }
+      }
+    });
   },
 
   async validateCloudSaleIntegrity({ sale = {}, saleId = null } = {}) {
@@ -186,7 +203,11 @@ export const salesCloudCancellationService = {
     });
   },
 
-  async cancelCloudSale({ sale = {}, saleId = null, reason = '' } = {}) {
+  async cancelCloudSale({ sale = {}, saleId = null, reason = '', actorHandle = null } = {}) {
+    return runRefundsActorOperation({
+      actorHandle,
+      label: 'sales.cloudCancellationExecute',
+      operation: async ({ assertCurrent, handle }) => {
     const context = await getRuntimeContext();
     const cloudSaleId = saleId || getCloudSaleId(sale);
     const trimmedReason = String(reason || '').trim();
@@ -199,8 +220,6 @@ export const salesCloudCancellationService = {
     if (!cloudSaleId) throw friendlyCloudCancellationError(new Error('SALE_NOT_FOUND'));
 
     const idempotencyKey = buildCancellationIdempotencyKey({ saleId: cloudSaleId, deviceId: context.deviceId });
-    const actorHandle = actorRuntimeController.capture();
-
     try {
       const preview = await salesCloudRepository.previewCloudSaleCancellation({
         licenseKey: context.licenseKey,
@@ -223,14 +242,14 @@ export const salesCloudCancellationService = {
         throw error;
       }
 
-      actorHandle.assertCurrent();
+      assertCurrent();
 
       const response = await salesCloudRepository.cancelCloudSale({
         licenseKey: context.licenseKey,
         saleId: cloudSaleId,
         reason: trimmedReason,
         idempotencyKey,
-        actorHandle
+        actorHandle: handle
       });
 
       if (response?.success === false) {
@@ -254,21 +273,23 @@ export const salesCloudCancellationService = {
       }
 
       try {
-        actorHandle.assertCurrent();
+        assertCurrent();
         const responseWithIntegrity = integrity ? { ...response, integrity } : response;
         const patch = mapCancellationResponseToLocalPatch(responseWithIntegrity);
         const localSale = await saveCancellationPatch({ localSale: sale, response: responseWithIntegrity, patch });
-        if (response.financialIntentId) await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle });
+        if (response.financialIntentId) await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle: handle });
         dispatchCancellationEvents();
         return { success: true, code: 'CLOUD_CANCELLED', sale: localSale || { ...sale, ...patch }, response: responseWithIntegrity, preview, integrity, idempotencyKey };
       } catch (projectionError) {
-        if (response.financialIntentId) await markFinancialIntentProjectionFailed({ intentId: response.financialIntentId, errorCode: projectionError?.code || 'SALE_CANCEL_LOCAL_PROJECTION_FAILED', actorHandle });
+        if (response.financialIntentId) await markFinancialIntentProjectionFailed({ intentId: response.financialIntentId, errorCode: projectionError?.code || 'SALE_CANCEL_LOCAL_PROJECTION_FAILED', actorHandle: handle });
         throw projectionError;
       }
     } catch (error) {
       Logger.error('[SalesCloud/Cancellation] Cancelacion cloud no aplicada:', error);
       throw friendlyCloudCancellationError(error);
     }
+      }
+    });
   }
 };
 

@@ -11,10 +11,15 @@ import {
 } from '../../services/deviceModePolicy';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { useAppStore } from '../../store/useAppStore';
+import {
+  useSettingsAccess,
+  useSettingsActionGuard
+} from '../../services/auth/useSettingsAccess';
 
 export default function DeviceManager({ licenseKey }) {
   const logout = useAppStore((state) => state.logout);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const settingsAccess = useSettingsAccess();
+  const captureSettingsAction = useSettingsActionGuard();
   const [devices, setDevices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -25,11 +30,20 @@ export default function DeviceManager({ licenseKey }) {
   const fetchDevices = useCallback(async (silent = false) => {
     if (!licenseKey) return;
 
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('devices', { adminOnly: true });
+    } catch {
+      if (!silent) setIsLoading(false);
+      return;
+    }
+
     if (!silent) setIsLoading(true);
     setError(null);
 
     try {
       const result = await getLicenseDevicesSmart(licenseKey);
+      actorHandle.assertCurrent('devices');
 
       if (result.success) {
         setDevices(result.data);
@@ -39,11 +53,21 @@ export default function DeviceManager({ licenseKey }) {
         setError(result.message);
       }
     } catch (err) {
-      setError(err.message);
+      try {
+        actorHandle.assertCurrent('devices');
+        setError(err.message);
+      } catch {
+        // The actor changed while the request was pending.
+      }
     } finally {
-      if (!silent) setIsLoading(false);
+      try {
+        actorHandle.assertCurrent('devices');
+        if (!silent) setIsLoading(false);
+      } catch {
+        // The replacement actor receives a fresh device subtree.
+      }
     }
-  }, [licenseKey]);
+  }, [captureSettingsAction, licenseKey]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -63,8 +87,10 @@ export default function DeviceManager({ licenseKey }) {
     const currentMode = resolveDeviceMode(device);
     if (!nextMode || nextMode === currentMode) return;
 
-    if (currentDeviceRole === 'staff') {
-      showMessageModal('Solo una sesion Admin puede cambiar el modo de un dispositivo.', null, { type: 'error' });
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('devices', { adminOnly: true });
+    } catch {
       return;
     }
 
@@ -89,9 +115,11 @@ export default function DeviceManager({ licenseKey }) {
       }
     ))) return;
 
-    setModeUpdatingDeviceId(device.device_id);
     try {
+      actorHandle.assertCurrent('devices');
+      setModeUpdatingDeviceId(device.device_id);
       const result = await setDeviceModeSmart(device.device_id, nextMode, licenseKey);
+      actorHandle.assertCurrent('devices');
 
       if (!result?.success) {
         showMessageModal(
@@ -111,15 +139,27 @@ export default function DeviceManager({ licenseKey }) {
 
       await fetchDevices(true);
     } catch (changeError) {
-      showMessageModal(changeError?.message || 'No se pudo cambiar el modo del dispositivo.', null, { type: 'error' });
+      try {
+        actorHandle.assertCurrent('devices');
+        showMessageModal(changeError?.message || 'No se pudo cambiar el modo del dispositivo.', null, { type: 'error' });
+      } catch {
+        // The actor changed while the request was pending.
+      }
     } finally {
-      setModeUpdatingDeviceId(null);
+      try {
+        actorHandle.assertCurrent('devices');
+        setModeUpdatingDeviceId(null);
+      } catch {
+        // The replacement actor receives a fresh device subtree.
+      }
     }
   };
 
   const handleRelease = async (device) => {
-    if (currentDeviceRole === 'staff') {
-      showMessageModal('Solo una sesion Admin puede liberar dispositivos.', null, { type: 'error' });
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('devices', { adminOnly: true });
+    } catch {
       return;
     }
 
@@ -144,23 +184,37 @@ export default function DeviceManager({ licenseKey }) {
       cancelButtonText: 'Cancelar'
     }))) return;
 
-    setIsLoading(true);
-    const result = await deactivateDeviceSmart(device.device_id, licenseKey);
+    try {
+      actorHandle.assertCurrent('devices');
+      setIsLoading(true);
+      const result = await deactivateDeviceSmart(device.device_id, licenseKey);
+      actorHandle.assertCurrent('devices');
 
-    if (result.success) {
-      showMessageModal('Dispositivo liberado correctamente.');
+      if (result.success) {
+        showMessageModal('Dispositivo liberado correctamente.');
 
-      if (isCurrentDevice) {
-        await logout();
-        return;
+        if (isCurrentDevice) {
+          await logout();
+          return;
+        }
+
+        await fetchDevices();
+      } else {
+        showMessageModal(`Error: ${result.message}`, null, { type: 'error' });
+        setIsLoading(false);
       }
-
-      await fetchDevices();
-    } else {
-      showMessageModal(`Error: ${result.message}`, null, { type: 'error' });
-      setIsLoading(false);
+    } catch (releaseError) {
+      try {
+        actorHandle.assertCurrent('devices');
+        showMessageModal(releaseError?.message || 'No se pudo liberar el dispositivo.', null, { type: 'error' });
+        setIsLoading(false);
+      } catch {
+        // The actor changed while the request was pending.
+      }
     }
   };
+
+  if (!settingsAccess.isAdmin || !settingsAccess.canAccessSection('devices')) return null;
 
   if (isLoading) {
     return (
@@ -208,7 +262,7 @@ export default function DeviceManager({ licenseKey }) {
             const deviceMode = resolveDeviceMode(device);
             const isUpdatingMode = modeUpdatingDeviceId === device.device_id;
             const modeDisabled = isOfflineData
-              || currentDeviceRole === 'staff'
+              || !settingsAccess.isAdmin
               || !device.is_active
               || isUpdatingMode;
 
@@ -274,9 +328,9 @@ export default function DeviceManager({ licenseKey }) {
                     type="button"
                     className="btn btn-cancel btn-deactivate-device"
                     onClick={() => handleRelease(device)}
-                    disabled={isOfflineData || currentDeviceRole === 'staff' || isUpdatingMode}
+                    disabled={isOfflineData || !settingsAccess.isAdmin || isUpdatingMode}
                     title={isOfflineData ? 'Conectate para gestionar' : 'Liberar dispositivo'}
-                    style={isOfflineData || currentDeviceRole === 'staff' || isUpdatingMode ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                    style={isOfflineData || !settingsAccess.isAdmin || isUpdatingMode ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
                   >
                     Liberar
                   </button>

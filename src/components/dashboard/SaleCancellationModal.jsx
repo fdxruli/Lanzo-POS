@@ -30,6 +30,7 @@ const getPreviewBlockMessage = (preview) => {
 export default function SaleCancellationModal({
   show,
   sale,
+  actorHandle,
   allowWaste,
   isSubmitting,
   onClose,
@@ -75,14 +76,15 @@ export default function SaleCancellationModal({
   }, [show, sale]);
 
   useEffect(() => {
-    if (!show || !sale || !isCloudSale || offlineCloud) return undefined;
+    if (!show || !sale || !actorHandle || !isCloudSale || offlineCloud) return undefined;
 
     let cancelled = false;
 
     const loadPreview = async () => {
       setPreviewStatus('loading');
       try {
-        const preview = await salesCloudCancellationService.previewCloudSaleCancellation({ sale });
+        actorHandle.assertCurrent('refunds');
+        const preview = await salesCloudCancellationService.previewCloudSaleCancellation({ sale, actorHandle });
         if (cancelled) return;
         setServerPreview(preview);
         setPreviewStatus(preview?.can_cancel === false ? 'blocked' : 'ready');
@@ -98,7 +100,7 @@ export default function SaleCancellationModal({
     return () => {
       cancelled = true;
     };
-  }, [show, sale, isCloudSale, offlineCloud]);
+  }, [show, sale, actorHandle, isCloudSale, offlineCloud]);
 
   if (!show || !sale) return null;
 
@@ -108,6 +110,16 @@ export default function SaleCancellationModal({
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (!actorHandle) {
+      setError('No hay una sesión autorizada para cancelar esta venta.');
+      return;
+    }
+    try {
+      actorHandle.assertCurrent('refunds');
+    } catch (actorError) {
+      setError(actorError?.message || 'La sesión cambió. Vuelve a abrir la cancelación.');
+      return;
+    }
 
     const trimmedReason = reason.trim();
 
@@ -126,7 +138,8 @@ export default function SaleCancellationModal({
       try {
         const preview = await salesCloudCancellationService.previewCloudSaleCancellation({
           sale,
-          reason: trimmedReason
+          reason: trimmedReason,
+          actorHandle
         });
         const normalizedPreview = normalizeCloudCancellationPreview(preview, sale || {});
         setServerPreview(preview);
@@ -165,13 +178,14 @@ export default function SaleCancellationModal({
         };
       });
 
-    onConfirm({
+    await onConfirm({
       dispositionPlan,
       reason: trimmedReason
     });
   };
 
   const submitDisabled = isSubmitting
+    || !actorHandle
     || (!isCloudSale && items.length === 0)
     || offlineCloud
     || cloudPreviewLoading

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
+import {
+  actorRuntimeController,
+  ACTOR_RUNTIME_STATUS
+} from '../../services/auth/actorRuntimeController';
 import './InputPromptModal.css';
 
 function InputPromptModal({
@@ -116,17 +120,48 @@ export function showInputPromptModal(options = {}) {
   }
 
   return new Promise((resolve) => {
+    const actorAtOpen = actorRuntimeController.getState();
+    const actorGeneration = actorAtOpen.status === ACTOR_RUNTIME_STATUS.GRANTED
+      ? actorAtOpen.generation
+      : null;
     const mountNode = document.createElement('div');
     document.body.appendChild(mountNode);
 
     const root = createRoot(mountNode);
+    let settled = false;
+    let mounted = false;
+    let unsubscribeActor = () => {};
 
     const cleanup = (value) => {
-      root.unmount();
+      if (settled) return;
+      settled = true;
+      unsubscribeActor();
+      if (mounted) root.unmount();
       mountNode.remove();
       resolve(value);
     };
 
+    if (actorGeneration !== null) {
+      unsubscribeActor = actorRuntimeController.subscribe((actor) => {
+        if (
+          actor.status !== ACTOR_RUNTIME_STATUS.GRANTED
+          || actor.generation !== actorGeneration
+        ) {
+          cleanup(null);
+        }
+      });
+
+      const currentActor = actorRuntimeController.getState();
+      if (
+        currentActor.status !== ACTOR_RUNTIME_STATUS.GRANTED
+        || currentActor.generation !== actorGeneration
+      ) {
+        cleanup(null);
+        return;
+      }
+    }
+
+    mounted = true;
     root.render(<InputPromptModal {...options} onResolve={cleanup} />);
   });
 }

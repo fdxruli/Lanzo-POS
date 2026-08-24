@@ -16,6 +16,11 @@ import * as googleDriveService from '../../services/googleDriveService';
 import { useAppStore } from '../../store/useAppStore';
 import { showConfirmModal } from '../../services/utils';
 import GoogleDriveSettings from './GoogleDriveSettings';
+import NoPermission from '../common/NoPermission';
+import {
+  useSettingsAccess,
+  useSettingsActionGuard
+} from '../../services/auth/useSettingsAccess';
 import './BackupSettings.css';
 
 const MANUAL_BACKUP_LABELS = {
@@ -80,7 +85,11 @@ function CardHeading({ Icon, eyebrow, title, description }) {
   );
 }
 
-function LocalBackupSettings({ backupContext, isCloudLicense = false }) {
+function LocalBackupSettings({
+  backupContext,
+  captureSettingsAction,
+  isCloudLicense = false
+}) {
   const { status, backupManager } = backupContext;
   const driveAccessToken = useAppStore((state) => state.driveAccessToken);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
@@ -115,13 +124,23 @@ function LocalBackupSettings({ backupContext, isCloudLicense = false }) {
     ? 'Usa esta opcion con cuidado: una copia local puede actualizar informacion local o cache de este dispositivo.'
     : 'Usa esta opcion con cuidado. Antes de continuar se creara una copia preventiva.';
 
-  const run = async (action, successMessage) => {
+  const run = async (action, successMessage, existingHandle = null) => {
     setError('');
+    let actorHandle = existingHandle;
     try {
-      const result = await action();
+      actorHandle ||= captureSettingsAction('sync');
+      actorHandle.assertCurrent('sync');
+      const result = await action(actorHandle);
+      actorHandle.assertCurrent('sync');
       if (successMessage) toast.success(successMessage);
       return result;
     } catch (actionError) {
+      if (!actorHandle) return null;
+      try {
+        actorHandle.assertCurrent('sync');
+      } catch {
+        return null;
+      }
       const message = actionError.message === 'BACKUP_PIN_INVALID'
         ? 'PIN incorrecto.'
         : actionError.message;
@@ -177,32 +196,52 @@ function LocalBackupSettings({ backupContext, isCloudLicense = false }) {
       return;
     }
 
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('sync');
+    } catch {
+      return;
+    }
+
     setManualBackupPhase('encrypting');
-    const result = await run(async () => {
-      const backupResult = await backupManager.backup({
+    const result = await run(
+      () => backupManager.backup({
         reason: 'manual_settings',
         manual: true,
         includeBlob: shouldUploadToDrive
-      });
-
-      if (shouldUploadToDrive) {
-        if (!(backupResult.blob instanceof Blob)) {
-          throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
-        }
-        setManualBackupPhase('uploading');
-        await googleDriveService.uploadBackup(
-          driveAccessToken,
-          backupResult.blob,
-          backupResult.fileName
-        );
-      }
-
-      return backupResult;
-    });
+      }),
+      null,
+      actorHandle
+    );
 
     if (!result) {
       setManualBackupPhase('idle');
       return;
+    }
+
+    if (shouldUploadToDrive) {
+      setManualBackupPhase('uploading');
+      const uploaded = await run(
+        async (currentActorHandle) => {
+          if (!(result.blob instanceof Blob)) {
+            throw new Error('El worker no devolvio el respaldo cifrado para Google Drive.');
+          }
+          currentActorHandle.assertCurrent('sync');
+          await googleDriveService.uploadBackup(
+            driveAccessToken,
+            result.blob,
+            result.fileName
+          );
+          return true;
+        },
+        null,
+        actorHandle
+      );
+
+      if (!uploaded) {
+        setManualBackupPhase('idle');
+        return;
+      }
     }
 
     setManualBackupPhase('completed');
@@ -221,6 +260,12 @@ function LocalBackupSettings({ backupContext, isCloudLicense = false }) {
 
   const executeRestore = async () => {
     if (!restoreFile || !restorePin) return;
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('sync');
+    } catch {
+      return;
+    }
     const confirmed = await showConfirmModal(
       'La restauracion aplicara el archivo seleccionado en este dispositivo. Antes se creara una copia preventiva. Continuar?',
       {
@@ -231,7 +276,17 @@ function LocalBackupSettings({ backupContext, isCloudLicense = false }) {
     );
     if (!confirmed) return;
 
-    const result = await run(() => backupManager.restore(restoreFile, restorePin));
+    try {
+      actorHandle.assertCurrent('sync');
+    } catch {
+      return;
+    }
+
+    const result = await run(
+      () => backupManager.restore(restoreFile, restorePin),
+      null,
+      actorHandle
+    );
     if (result) {
       toast.success('Restauracion completada. La aplicacion se recargara.');
       setRestoreFile(null);
@@ -463,6 +518,10 @@ function LocalBackupSettings({ backupContext, isCloudLicense = false }) {
 export default function BackupSettings({ isCloudLicense = false }) {
   const backupContext = useBackupManager();
   const { status } = backupContext;
+  const settingsAccess = useSettingsAccess();
+  const captureSettingsAction = useSettingsActionGuard();
+
+  if (!settingsAccess.canAccessSection('backup')) return <NoPermission />;
 
   return (
     <div className="backup-settings-shell">
@@ -478,7 +537,11 @@ export default function BackupSettings({ isCloudLicense = false }) {
         </div>
 
         <div className="backup-local-column">
-          <LocalBackupSettings backupContext={backupContext} isCloudLicense={isCloudLicense} />
+          <LocalBackupSettings
+            backupContext={backupContext}
+            captureSettingsAction={captureSettingsAction}
+            isCloudLicense={isCloudLicense}
+          />
         </div>
       </section>
     </div>

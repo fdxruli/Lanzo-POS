@@ -52,9 +52,13 @@ export const createActorKey = (actorType, actorId) => {
 
 const normalizePermissions = (actorType, permissions) => {
   if (actorType === 'admin') return Object.freeze(['*']);
-  if (!Array.isArray(permissions)) return Object.freeze([]);
+  const grantedPermissions = Array.isArray(permissions)
+    ? permissions
+    : Object.entries(permissions || {})
+      .filter(([, granted]) => granted === true)
+      .map(([permission]) => permission);
   return Object.freeze([
-    ...new Set(permissions.filter((permission) => (
+    ...new Set(grantedPermissions.filter((permission) => (
       typeof permission === 'string' && permission.trim().length > 0
     )).map((permission) => permission.trim()))
   ]);

@@ -59,10 +59,23 @@ const makeDeps = (db, reapplyStockFromCancellation) => ({
   reapplyStockFromCancellation,
   generateId: () => 'txn-restore',
   now: () => '2026-06-14T13:00:00.000Z',
+  assertActorCurrent: vi.fn(),
   Logger: { error: vi.fn() }
 });
 
 describe('restoreDeletedSaleCore', () => {
+  it('falla cerrado cuando se invoca sin una asercion de actor', async () => {
+    const sale = makeSale();
+    const db = makeDb(sale);
+    const deps = makeDeps(db, vi.fn());
+    delete deps.assertActorCurrent;
+
+    const result = await restoreDeletedSaleCore({ saleId: sale.id }, deps);
+
+    expect(result).toMatchObject({ success: false, code: 'ACTOR_SESSION_REQUIRED' });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
   it('restaura la venta y reaplica la salida previamente compensada', async () => {
     const sale = makeSale();
     const db = makeDb(sale);

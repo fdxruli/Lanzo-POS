@@ -290,12 +290,23 @@ export const createLicenseActivationActions = ({
 
                 set({
                     pendingAdminSessionResult: null,
-                    licenseDetails: licenseDataToSave,
-                    appStatus: 'setup_required',
+                    licenseDetails: {
+                        ...licenseDataToSave,
+                        valid: false,
+                        device_role: 'admin'
+                    },
+                    appStatus: 'admin_enrollment_required',
+                    currentDeviceRole: 'admin',
+                    currentAdminUser: null,
+                    currentStaffUser: null,
+                    adminLoginLicenseKey: licenseDataToSave.license_key,
+                    adminLoginMessage: 'Crea las credenciales del propietario para continuar.',
+                    adminLoginError: null,
+                    adminEnrollmentRequired: true,
                     localTenantIsolation: null
                 });
 
-                return { success: true };
+                return { success: true, adminEnrollmentRequired: true };
             }
 
             return {

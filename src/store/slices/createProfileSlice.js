@@ -18,6 +18,7 @@ import {
   assertLocalTenantSyncAccess,
   isLocalTenantAccessError
 } from '../../services/tenant/localTenantGuard';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 
 let _profileLoadGeneration = 0;
 let _profileSessionGeneration = 0;
@@ -89,14 +90,16 @@ const markProfileLoaded = (licenseKey) => {
   }
 };
 
-const saveProfileCache = async (licenseKey, companyData) => {
+const saveProfileCache = async (licenseKey, companyData, { beforeWrite = null } = {}) => {
   const scopedProfile = {
     ...companyData,
     id: getProfileCacheKey(licenseKey),
     license_key: licenseKey
   };
 
+  beforeWrite?.();
   await saveData(STORES.COMPANY, scopedProfile);
+  beforeWrite?.();
   await saveData(STORES.COMPANY, {
     ...scopedProfile,
     id: LEGACY_COMPANY_KEY
@@ -292,6 +295,7 @@ export const createProfileSlice = (set, get) => ({
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
+    const actorHandle = actorRuntimeController.capture('settings');
     const sessionGeneration = _profileSessionGeneration;
 
     try {
@@ -306,13 +310,16 @@ export const createProfileSlice = (set, get) => ({
         logoUrl = uploadResult.publicUrl;
       }
 
+      actorHandle.assertCurrent('settings');
+      if (sessionGeneration !== _profileSessionGeneration) return null;
+
       const profileData = {
         ...setupData,
         logo: logoUrl,
         business_type: normalizeBusinessTypes(setupData.business_type)
       };
 
-      const saveResult = await saveBusinessProfile(licenseKey, profileData);
+      const saveResult = await saveBusinessProfile(licenseKey, profileData, { actorHandle });
       if (!saveResult?.success) {
         throw new Error(
           saveResult?.message ||
@@ -321,11 +328,16 @@ export const createProfileSlice = (set, get) => ({
         );
       }
 
+      actorHandle.assertCurrent('settings');
+      if (sessionGeneration !== _profileSessionGeneration) return null;
+
       const companyData = await saveProfileCache(
         licenseKey,
-        buildCompanyData(profileData, licenseKey)
+        buildCompanyData(profileData, licenseKey),
+        { beforeWrite: () => actorHandle.assertCurrent('settings') }
       );
 
+      actorHandle.assertCurrent('settings');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       set({
@@ -342,6 +354,7 @@ export const createProfileSlice = (set, get) => ({
   updateCompanyProfile: async (companyData) => {
     const licenseKey = get().licenseDetails?.license_key;
     if (!licenseKey) return;
+    const actorHandle = actorRuntimeController.capture('settings');
     const sessionGeneration = _profileSessionGeneration;
 
     try {
@@ -356,9 +369,12 @@ export const createProfileSlice = (set, get) => ({
         nextCompanyData.logo = uploadResult.publicUrl;
       }
 
+      actorHandle.assertCurrent('settings');
+      if (sessionGeneration !== _profileSessionGeneration) return null;
+
       nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
 
-      const saveResult = await saveBusinessProfile(licenseKey, nextCompanyData);
+      const saveResult = await saveBusinessProfile(licenseKey, nextCompanyData, { actorHandle });
       if (!saveResult?.success) {
         throw new Error(
           saveResult?.message ||
@@ -367,11 +383,16 @@ export const createProfileSlice = (set, get) => ({
         );
       }
 
+      actorHandle.assertCurrent('settings');
+      if (sessionGeneration !== _profileSessionGeneration) return null;
+
       const scopedCompanyData = await saveProfileCache(
         licenseKey,
-        buildCompanyData(nextCompanyData, licenseKey)
+        buildCompanyData(nextCompanyData, licenseKey),
+        { beforeWrite: () => actorHandle.assertCurrent('settings') }
       );
 
+      actorHandle.assertCurrent('settings');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
       set({ companyProfile: scopedCompanyData });

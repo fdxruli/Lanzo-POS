@@ -12,15 +12,18 @@ import {
     LogOut,
     RefreshCw,
     ShieldCheck,
-    Smartphone,
     Store,
     Users
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import DeviceManager from '../common/DeviceManager';
 import StaffUsersSettings from './StaffUsersSettings';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCommercialPlanName, getCommercialPlanShortName } from '../../utils/planDisplay';
+import NoPermission from '../common/NoPermission';
+import {
+    useSettingsAccess,
+    useSettingsActionGuard
+} from '../../services/auth/useSettingsAccess';
 
 const BUSINESS_RUBROS = [
     { id: 'food_service', label: 'Restaurante / Cocina', description: 'Recetas, comandas e insumos.', Icon: Store },
@@ -394,12 +397,12 @@ export default function LicenseSettings() {
     const companyProfile = useAppStore((state) => state.companyProfile);
     const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
     const licenseDetails = useAppStore((state) => state.licenseDetails);
-    const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
     const currentStaffUser = useAppStore((state) => state.currentStaffUser);
-    const canAccess = useAppStore((state) => state.canAccess);
     const logoutStaff = useAppStore((state) => state.logoutStaff);
     const logoutAdmin = useAppStore((state) => state.logoutAdmin);
     const renewLicense = useAppStore((state) => state.renewLicense);
+    const settingsAccess = useSettingsAccess();
+    const captureSettingsAction = useSettingsActionGuard();
 
     const [isUpdatingFree, setIsUpdatingFree] = useState(false);
     const [freeUpdateError, setFreeUpdateError] = useState('');
@@ -410,8 +413,9 @@ export default function LicenseSettings() {
     const isAllAllowed = allowedRubrosList.includes('*');
     const isProLicense = licenseFeatures.realtime_license_sync === true;
     const staffRolesEnabled = licenseFeatures.staff_roles === true;
-    const isStaffDevice = currentDeviceRole === 'staff';
-    const canManageStaff = !isStaffDevice && staffRolesEnabled && canAccess('license');
+    const isStaffDevice = settingsAccess.isStaff;
+    const canEditBusinessProfile = settingsAccess.canAccessPermission('settings');
+    const canManageStaff = settingsAccess.isAdmin && staffRolesEnabled;
     const gracePeriodState = getGracePeriodState(licenseDetails);
     const { isFreePlan, isFreeLifetime } = getFreeState(licenseDetails);
     const showFreeCompatibilityUpdate = gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
@@ -447,6 +451,33 @@ export default function LicenseSettings() {
     ]);
 
     const handleRubroToggle = async (rubroId) => {
+        let actorHandle;
+        try {
+            actorHandle = captureSettingsAction('settings');
+        } catch {
+            return;
+        }
+        const persistSelection = async (businessType) => {
+            try {
+                actorHandle.assertCurrent('settings');
+                if (companyProfile) {
+                    await updateCompanyProfile({ ...companyProfile, business_type: businessType });
+                }
+                actorHandle.assertCurrent('settings');
+            } catch (error) {
+                try {
+                    actorHandle.assertCurrent('settings');
+                    showMessageModal(
+                        error?.message || 'No se pudo actualizar el giro del negocio.',
+                        null,
+                        { type: 'error' }
+                    );
+                } catch {
+                    // The actor changed while the profile update was pending.
+                }
+            }
+        };
+
         if (!isAllAllowed && !allowedRubrosList.includes(rubroId)) {
             showMessageModal('Tu licencia no incluye acceso a este modulo. Contacta a soporte para ampliarla.', null, { type: 'warning' });
             return;
@@ -460,7 +491,7 @@ export default function LicenseSettings() {
             }
 
             const newSelection = selectedRubros.filter((id) => id !== rubroId);
-            if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
+            await persistSelection(newSelection);
             return;
         }
 
@@ -476,34 +507,79 @@ export default function LicenseSettings() {
         }
 
         const newSelection = [...selectedRubros, rubroId];
-        if (companyProfile) await updateCompanyProfile({ ...companyProfile, business_type: newSelection });
+        await persistSelection(newSelection);
     };
 
     const handleLogout = async () => {
+        let actorHandle;
+        try {
+            actorHandle = captureSettingsAction('license');
+        } catch {
+            return;
+        }
         const confirmMessage =
             'Cerrar sesion revocara la sesion administrativa de este equipo.\n\n' +
             'La licencia seguira vinculada a este dispositivo. Si quieres liberar el cupo remoto, usa el boton Liberar en la lista de dispositivos.\n\n' +
             'Deseas cerrar la sesion administrativa?';
 
-        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesion admin', confirmButtonText: 'Si, cerrar sesion' })) logoutAdmin();
+        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesion admin', confirmButtonText: 'Si, cerrar sesion' })) {
+            try {
+                actorHandle.assertCurrent('license');
+                logoutAdmin();
+            } catch {
+                // The actor changed while the confirmation was open.
+            }
+        }
     };
 
     const handleStaffLogout = async () => {
-        if (await showConfirmModal('Deseas cerrar solo la sesion staff en este dispositivo?', { title: 'Cerrar sesion staff', confirmButtonText: 'Si, cerrar sesion' })) logoutStaff();
+        let actorHandle;
+        try {
+            actorHandle = captureSettingsAction('license');
+        } catch {
+            return;
+        }
+        if (await showConfirmModal('Deseas cerrar solo la sesion staff en este dispositivo?', { title: 'Cerrar sesion staff', confirmButtonText: 'Si, cerrar sesion' })) {
+            try {
+                actorHandle.assertCurrent('license');
+                logoutStaff();
+            } catch {
+                // The actor changed while the confirmation was open.
+            }
+        }
     };
 
     const handleFreeCompatibilityUpdate = async () => {
+        let actorHandle;
+        try {
+            actorHandle = captureSettingsAction('license');
+        } catch {
+            return;
+        }
         setIsUpdatingFree(true);
         setFreeUpdateError('');
         try {
             const result = await renewLicense();
+            actorHandle.assertCurrent('license');
             if (!result?.success) setFreeUpdateError(result?.message || 'No se pudo actualizar la licencia.');
         } catch (error) {
-            setFreeUpdateError(error?.message || 'Ocurrio un error al actualizar la licencia.');
+            try {
+                actorHandle.assertCurrent('license');
+                setFreeUpdateError(error?.message || 'Ocurrio un error al actualizar la licencia.');
+            } catch {
+                // Do not publish the previous actor's result to the next actor.
+            }
         } finally {
-            setIsUpdatingFree(false);
+            try {
+                actorHandle.assertCurrent('license');
+                setIsUpdatingFree(false);
+            } catch {
+                // The replacement actor gets a fresh Settings render.
+            }
         }
     };
+
+    if (!settingsAccess.canAccessSection('license')) return <NoPermission />;
 
     return (
         <div className="license-settings-shell">
@@ -515,14 +591,16 @@ export default function LicenseSettings() {
             />
 
             <div className="license-settings-layout">
-                <RubroSelector
-                    selectedRubros={selectedRubros}
-                    selectedRubrosSet={selectedRubrosSet}
-                    maxRubrosAllowed={maxRubrosAllowed}
-                    allowedRubrosList={allowedRubrosList}
-                    isAllAllowed={isAllAllowed}
-                    onToggle={handleRubroToggle}
-                />
+                {canEditBusinessProfile && (
+                    <RubroSelector
+                        selectedRubros={selectedRubros}
+                        selectedRubrosSet={selectedRubrosSet}
+                        maxRubrosAllowed={maxRubrosAllowed}
+                        allowedRubrosList={allowedRubrosList}
+                        isAllAllowed={isAllAllowed}
+                        onToggle={handleRubroToggle}
+                    />
+                )}
 
                 <LicenseInfoPanel
                     licenseDetails={licenseDetails}
@@ -536,22 +614,6 @@ export default function LicenseSettings() {
                 <span>Rubros activos</span>
                 <strong>{activeRubroLabels}</strong>
             </section>
-
-            {!isStaffDevice && canAccess('devices') && licenseDetails?.valid && (
-                <section className="license-panel license-linked-devices">
-                    <div className="license-panel-heading">
-                        <div>
-                            <h3>Dispositivos vinculados</h3>
-                            <p>Revisa equipos conectados y libera cupos cuando sea necesario.</p>
-                        </div>
-                        <span className="license-panel-badge">
-                            <Smartphone size={15} />
-                            Equipos
-                        </span>
-                    </div>
-                    <DeviceManager licenseKey={licenseDetails.license_key} />
-                </section>
-            )}
 
             {canManageStaff && licenseDetails?.valid && (
                 <section className="license-panel license-staff-panel">

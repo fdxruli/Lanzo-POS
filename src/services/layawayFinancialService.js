@@ -2,6 +2,7 @@ import { layawayRepository } from './db/layaways';
 import { cashRepository } from './cash/cashRepository';
 import { getCashStationIdentity } from './cash/cashStation';
 import { captureCashActorContext } from './cash/cashFinancialGate';
+import { runRefundsActorOperation } from './auth/refundsActorAuthorization';
 
 const OPEN_CASH_MESSAGE = 'Debes abrir Caja antes de registrar un pago de apartado.';
 
@@ -177,11 +178,18 @@ export const layawayFinancialService = {
         return layawayRepository.confirmPayment(layawayId, payment.id, cashMovementId, session.id);
     },
 
-    async cancel({ layawayId, reason, retainMoney = false, refundId = null }) {
+    async cancel({ layawayId, reason, retainMoney = false, refundId = null, actorHandle = null }) {
+      return runRefundsActorOperation({
+        actorHandle,
+        label: 'layaway.cancelOrRefund',
+        operation: async ({ assertCurrent }) => {
         const layaway = await layawayRepository.getById(layawayId);
+        assertCurrent();
         if (!layaway) throw new Error('Apartado no encontrado');
         if (retainMoney || Number(layaway.paidAmount || 0) <= 0) {
-            return layawayRepository.cancel(layawayId, reason, retainMoney, null);
+            return layawayRepository.cancel(layawayId, reason, retainMoney, null, {
+              assertActorCurrent: assertCurrent
+            });
         }
 
         const session = await requireOpenCashSession();
@@ -193,13 +201,15 @@ export const layawayFinancialService = {
             idempotencyKey,
             amount: layaway.paidAmount,
             customerId: layaway.customerId
-        });
+        }, { assertActorCurrent: assertCurrent });
+        assertCurrent();
         if (pendingResult.duplicate && pendingResult.layaway?.status === 'cancelled') return pendingResult;
         const pendingRefund = pendingResult.pending || layaway.pendingRefund;
 
         if (!mode.cloudEnabled) {
             const cashContext = await getLocalCashMutationContext();
             return layawayRepository.cancel(layawayId, reason, false, session.id, {
+                assertActorCurrent: assertCurrent,
                 cashMovement: {
                     idempotencyKey: pendingRefund.idempotencyKey,
                     metadata: refundMetadata({ layawayId, ...pendingRefund }),
@@ -218,10 +228,15 @@ export const layawayFinancialService = {
             referenceId: layawayId,
             metadata: refundMetadata({ layawayId, ...pendingRefund })
         });
+        assertCurrent();
         if (!response || response.success === false) throw new Error(response?.message || 'No se pudo registrar el reembolso en Caja.');
         const cashMovementId = getMovementId(response);
         if (!cashMovementId) throw new Error('Caja confirmo el reembolso, pero no devolvio su identificador.');
-        return layawayRepository.completeRefund(layawayId, reason, cashMovementId);
+        return layawayRepository.completeRefund(layawayId, reason, cashMovementId, {
+          assertActorCurrent: assertCurrent
+        });
+        }
+      });
     }
 };
 

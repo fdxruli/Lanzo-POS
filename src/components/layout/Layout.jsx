@@ -24,6 +24,8 @@ import {
   registerActorOperationalActiveOrders,
   registerActorOperationalOrderStore
 } from '../../services/auth/actorOperationalHandoff';
+import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import './Layout.css';
 
 registerActorOperationalActiveOrders({ useActiveOrders, db, STORES });
@@ -47,6 +49,8 @@ function Layout() {
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);
   const showTicker = useAppStore((state) => state.showTicker);
   const licenseStatus = useAppStore((state) => state.licenseStatus);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canReadReports = canReadSalesReports(actorRuntime);
   const { pathname } = useLocation();
   const isPosPage = pathname === '/';
   const isAboutPage = pathname === '/acerca-de';
@@ -85,13 +89,17 @@ function Layout() {
         Logger.error('Fallo durante la reconciliación de órdenes:', error);
       }
 
-      loadStats();
       loadProducts();
-      loadSales();
     };
 
     initializeData();
-  }, [loadProducts, loadSales, loadStats, reconcileOrphanedOrders]);
+  }, [loadProducts, reconcileOrphanedOrders]);
+
+  useEffect(() => {
+    if (!canReadReports) return;
+    loadStats();
+    loadSales();
+  }, [canReadReports, loadSales, loadStats]);
 
   return (
     <div className="app-layout">
@@ -134,9 +142,12 @@ function Layout() {
       <MessageModal />
       <DataSafetyModal />
 
-      {(showAssistantBot || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
+      {((canReadReports && showAssistantBot) || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
         <Suspense fallback={null}>
-          <AssistantBot />
+          <AssistantBot
+            key={actorRuntime.generation}
+            reportsAllowed={canReadReports}
+          />
         </Suspense>
       )}
     </div>

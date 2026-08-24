@@ -43,4 +43,11 @@ describe('settingsPageAccess', () => {
       visibleTabs: [{ key: 'general', allowed: true }]
     })).toBe('general');
   });
+
+  it('returns no tab instead of falling back to General when access is empty', () => {
+    expect(resolveAllowedSettingsTab({
+      requestedTab: 'general',
+      visibleTabs: []
+    })).toBeNull();
+  });
 });

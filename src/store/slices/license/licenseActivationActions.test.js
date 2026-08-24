@@ -198,4 +198,43 @@ describe('createLicenseActivationActions.handleLogin', () => {
             reason: 'activation'
         });
     });
+
+    it('routes a new free trial through real Admin enrollment before Setup', async () => {
+        const { state } = createActionState('setup_required');
+        mocks.createFreeTrial.mockResolvedValue({
+            success: true,
+            details: {
+                license_key: 'LANZO-FREE-ACTOR',
+                plan_code: 'free_trial',
+                product_name: 'Lanzo Local',
+                max_devices: 1,
+                features: { staff_roles: false }
+            }
+        });
+
+        await expect(state.handleFreeTrial()).resolves.toEqual({
+            success: true,
+            adminEnrollmentRequired: true
+        });
+
+        expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
+            license_key: 'LANZO-FREE-ACTOR',
+            valid: true
+        }));
+        expect(state).toMatchObject({
+            appStatus: 'admin_enrollment_required',
+            currentDeviceRole: 'admin',
+            currentAdminUser: null,
+            currentStaffUser: null,
+            adminLoginLicenseKey: 'LANZO-FREE-ACTOR',
+            adminEnrollmentRequired: true
+        });
+        expect(state.licenseDetails).toMatchObject({
+            license_key: 'LANZO-FREE-ACTOR',
+            plan_code: 'free_trial',
+            valid: false,
+            device_role: 'admin'
+        });
+        expect(state._loadProfile).not.toHaveBeenCalled();
+    });
 });

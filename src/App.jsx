@@ -16,6 +16,8 @@ import LocalTenantMismatchScreen from './components/common/LocalTenantMismatchSc
 import RenewalModal from './components/common/RenewalModal';
 import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
+import SettingsRoute from './components/common/SettingsRoute';
+import SalesReportsRoute from './components/common/SalesReportsRoute';
 import EcommerceOrdersRoute from './components/ecommerce/orders/EcommerceOrdersRoute';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
@@ -404,9 +406,9 @@ function App() {
                   <Route path="pedidos-online" element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
                   <Route path="productos" element={<PermissionRoute permission="products"><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
-                  <Route path="ventas" element={<PermissionRoute permission="reports"><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></PermissionRoute>} />
+                  <Route path="ventas" element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
                   <Route path="portal-online" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
-                  <Route path="configuracion" element={<PermissionRoute permission={['settings', 'products']}><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></PermissionRoute>} />
+                  <Route path="configuracion" element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                 </Route>
               </Routes>

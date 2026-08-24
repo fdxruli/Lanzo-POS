@@ -181,7 +181,8 @@ export const useSalesStore = create((set, get) => ({
       reason = '',
       cancelledBy = 'local-user',
       allowWaste = false,
-      saleOverride = null
+      saleOverride = null,
+      actorHandle = null
     } = {}
   ) => {
     const normalizedRestoreStock = Boolean(restoreStock);
@@ -207,7 +208,8 @@ export const useSalesStore = create((set, get) => ({
         dispositionPlan,
         reason,
         cancelledBy,
-        allowWaste
+        allowWaste,
+        actorHandle
       });
 
       if (result.success) {
@@ -227,7 +229,7 @@ export const useSalesStore = create((set, get) => ({
       Logger.error('Error inesperado al cancelar venta:', error);
       return {
         success: false,
-        code: 'ERROR',
+        code: error?.code || 'ERROR',
         restoreStock: normalizedRestoreStock,
         warnings: [],
         message: error?.message || 'Error inesperado al cancelar la venta.'
@@ -237,10 +239,10 @@ export const useSalesStore = create((set, get) => ({
     }
   },
 
-  archiveCancelledSale: async (saleId) => {
+  archiveCancelledSale: async (saleId, { actorHandle = null } = {}) => {
     set({ isLoading: true });
     try {
-      const result = await moveCancelledSaleToTrash(saleId);
+      const result = await moveCancelledSaleToTrash(saleId, { actorHandle });
       if (result.success) {
         set(state => ({
           sales: state.sales.filter((sale) => sale.id !== saleId)
@@ -251,7 +253,7 @@ export const useSalesStore = create((set, get) => ({
       Logger.error('Error inesperado moviendo venta a papelera:', error);
       return {
         success: false,
-        code: 'ERROR',
+        code: error?.code || 'ERROR',
         message: error?.message || 'No se pudo mover la venta a papelera.'
       };
     } finally {

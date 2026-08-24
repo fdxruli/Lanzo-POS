@@ -34,6 +34,12 @@ import { useFeatureConfig } from '../hooks/useFeatureConfig';
 import './DashboardPage.css';
 import { BarChart3, Trash2 } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../services/sales/cancelSaleCore';
+import {
+  canPerformRefunds,
+  getSalesActorIdentity
+} from '../services/auth/salesPermissionPolicy';
+import { captureRefundsActorHandle } from '../services/auth/refundsActorAuthorization';
+import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
 
@@ -93,6 +99,9 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const features = useFeatureConfig();
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canManageRefunds = canPerformRefunds(actorRuntime);
+  const salesActorIdentity = getSalesActorIdentity(actorRuntime);
   const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(), [licenseDetails]);
   const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
 
@@ -275,16 +284,33 @@ export default function DashboardPage() {
   };
 
   const handleDeleteSale = (sale) => {
-    setSaleToCancel(sale);
+    if (!canManageRefunds || !salesActorIdentity) return;
+    try {
+      setSaleToCancel({
+        sale,
+        actorHandle: captureRefundsActorHandle(),
+        actorIdentity: salesActorIdentity
+      });
+    } catch {
+      showMessageModal('No tienes permiso vigente para cancelar o reembolsar ventas.', null, { type: 'error' });
+    }
   };
 
   const handleArchiveCancelledSale = async (sale) => {
+    if (!canManageRefunds) return;
+    let actorHandle;
+    try {
+      actorHandle = captureRefundsActorHandle();
+    } catch {
+      showMessageModal('No tienes permiso vigente para archivar ventas canceladas.', null, { type: 'error' });
+      return;
+    }
     if (!(await showConfirmModal('Mover esta venta cancelada a la papelera?', {
       title: 'Mover a papelera',
       confirmButtonText: 'Si, mover',
       cancelButtonText: 'Cancelar'
     }))) return;
-    const result = await archiveCancelledSale(sale.id);
+    const result = await archiveCancelledSale(sale.id, { actorHandle });
     if (!result.success) {
       showMessageModal(result.message || 'No se pudo mover la venta a papelera.', null, { type: 'error' });
       return;
@@ -297,17 +323,19 @@ export default function DashboardPage() {
   };
 
   const handleConfirmCancellation = async ({ dispositionPlan, reason }) => {
-    if (!saleToCancel) return;
+    if (!saleToCancel || !canManageRefunds || saleToCancel.actorIdentity !== salesActorIdentity) return;
+    const sale = saleToCancel.sale;
 
     const restoreStock = dispositionPlan.some(
       (entry) => entry.action === CANCELLATION_ACTIONS.RESTOCK
     );
-    const result = await deleteSale(saleToCancel.id || saleToCancel.cloudSaleId || saleToCancel.timestamp, {
+    const result = await deleteSale(sale.id || sale.cloudSaleId || sale.timestamp, {
       restoreStock,
       dispositionPlan,
       reason,
       allowWaste: features.hasWaste,
-      saleOverride: saleToCancel
+      saleOverride: sale,
+      actorHandle: saleToCancel.actorHandle
     });
 
     if (result.success) {
@@ -347,6 +375,16 @@ export default function DashboardPage() {
       { type: 'error' }
     );
   };
+
+  useEffect(() => {
+    setSaleToCancel((current) => (
+      current
+      && canManageRefunds
+      && current.actorIdentity === salesActorIdentity
+        ? current
+        : null
+    ));
+  }, [canManageRefunds, salesActorIdentity]);
 
   const handleSalesHistoryNext = () => {
     if (reportingData.usesRepositorySalesHistory) {
@@ -458,6 +496,7 @@ export default function DashboardPage() {
                   source={historySource}
                   reportSource={historySource}
                   isCloudFinal={historyIsCloudFinal}
+                  canManageRefunds={canManageRefunds}
                 />
               </div>
             </section>
@@ -467,7 +506,7 @@ export default function DashboardPage() {
                 <h3><Trash2 size={20} /> Papelera</h3>
                 <span className="panel-subtitle">Elementos eliminados</span>
               </div>
-              <div className="panel-body"><RecycleBin /></div>
+              <div className="panel-body"><RecycleBin canManageSaleRefunds={canManageRefunds} /></div>
             </section>
           </div>
         </section>
@@ -508,14 +547,18 @@ export default function DashboardPage() {
 
       </main>
 
-      <SaleCancellationModal
-        show={Boolean(saleToCancel)}
-        sale={saleToCancel}
-        allowWaste={features.hasWaste}
-        isSubmitting={isSaleLoading}
-        onClose={() => !isSaleLoading && setSaleToCancel(null)}
-        onConfirm={handleConfirmCancellation}
-      />
+      {canManageRefunds && saleToCancel?.actorIdentity === salesActorIdentity && (
+        <SaleCancellationModal
+          key={saleToCancel.actorIdentity}
+          show
+          sale={saleToCancel.sale}
+          actorHandle={saleToCancel.actorHandle}
+          allowWaste={features.hasWaste}
+          isSubmitting={isSaleLoading}
+          onClose={() => !isSaleLoading && setSaleToCancel(null)}
+          onConfirm={handleConfirmCancellation}
+        />
+      )}
     </>
   );
 }

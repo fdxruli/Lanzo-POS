@@ -90,6 +90,9 @@ describe('actor session runtime bridge', () => {
       permissions: ['sales.create', 'cash.read', 'sales.create']
     })).toEqual(['sales.create', 'cash.read']);
     expect(getExplicitActorPermissions('staff', {})).toEqual([]);
+    expect(getExplicitActorPermissions('staff', {
+      permissions: { reports: true, refunds: true, settings: false }
+    })).toEqual(['reports', 'refunds']);
     expect(getExplicitActorPermissions('admin', { permissions: [] })).toEqual(['*']);
   });
 

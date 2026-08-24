@@ -63,6 +63,7 @@ const makeDeps = (db, overrides = {}) => ({
     warnings: [],
     restoredInventoryValue: 0
   })),
+  assertActorCurrent: vi.fn(),
   Logger: { error: vi.fn() },
   ...overrides
 });
@@ -79,6 +80,21 @@ const makeSale = (overrides = {}) => ({
 });
 
 describe('cancelSaleCore', () => {
+  it('falla cerrado cuando se invoca sin una asercion de actor', async () => {
+    const sale = makeSale();
+    const db = makeDb([sale]);
+    const deps = makeDeps(db);
+    delete deps.assertActorCurrent;
+
+    const result = await cancelSaleCore(
+      { saleId: sale.id, currentSales: [sale] },
+      deps
+    );
+
+    expect(result).toMatchObject({ success: false, code: 'ACTOR_SESSION_REQUIRED' });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
   it('cancela sin regresar inventario y conserva la venta auditable', async () => {
     const sale = makeSale();
     const db = makeDb([sale]);

@@ -190,7 +190,8 @@ export default function SalesHistory({
   isLoading = false,
   source = null,
   reportSource = null,
-  isCloudFinal = false
+  isCloudFinal = false,
+  canManageRefunds = false
 }) {
   const [expandedSplits, setExpandedSplits] = useState({});
   const [filters, setFilters] = useState({
@@ -529,18 +530,20 @@ export default function SalesHistory({
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      className="delete-order-btn"
-                      title={actionState.title}
-                      disabled={actionState.disabled}
-                      onClick={() => {
-                        if (actionState.action === 'archive') onArchiveSale?.(sale);
-                        if (actionState.action === 'cancel') onDeleteSale?.(sale);
-                      }}
-                    >
-                      {actionState.label}
-                    </button>
+                    {canManageRefunds && (
+                      <button
+                        type="button"
+                        className="delete-order-btn"
+                        title={actionState.title}
+                        disabled={actionState.disabled}
+                        onClick={() => {
+                          if (actionState.action === 'archive') onArchiveSale?.(sale);
+                          if (actionState.action === 'cancel') onDeleteSale?.(sale);
+                        }}
+                      >
+                        {actionState.label}
+                      </button>
+                    )}
                   </div>
 
                   {expandedData && (

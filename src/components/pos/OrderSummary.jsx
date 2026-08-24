@@ -39,6 +39,9 @@ import { getCartLineId } from '../../utils/cartLineIdentity';
 import { getOrderQuantityInputProps } from '../../utils/quantityInputStep';
 import { getProductUnitShortLabel, resolveProductSaleUnit } from '../../utils/productUnitConfiguration';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
+import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
+import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
@@ -128,6 +131,8 @@ export default function OrderSummary({
   const getTotalPrice = useActiveOrders((state) => state.getTotalPrice);
   const setTableData = useActiveOrders((state) => state.setTableData);
   const features = useFeatureConfig();
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canManageRefunds = canPerformRefunds(actorRuntime);
   const cloudStatus = useRestaurantOrderCloudStatus({
     localOrderId: currentOrderId,
     enabled: Boolean(showRestaurantActions && isEditMode && currentOrderId)
@@ -362,6 +367,17 @@ export default function OrderSummary({
       return;
     }
 
+    let actorHandle = null;
+    if (isEditMode) {
+      if (!canManageRefunds) return;
+      try {
+        actorHandle = captureRefundsActorHandle();
+      } catch {
+        showMessageModal('No tienes permiso vigente para anular esta venta.', null, { type: 'error' });
+        return;
+      }
+    }
+
     const confirmMessage = (isEditMode && showRestaurantActions)
       ? '¿Descartar los cambios no guardados y salir de la mesa?'
       : '¿Vaciar carrito?';
@@ -374,7 +390,7 @@ export default function OrderSummary({
     if (!confirmed) return;
 
     try {
-      await useActiveOrders.getState().cancelCurrentOrder();
+      await useActiveOrders.getState().cancelCurrentOrder({ actorHandle });
       if (isMobileModal) onClose?.();
     } catch (error) {
       console.error('Error cancelando orden:', error);
@@ -758,14 +774,16 @@ export default function OrderSummary({
                 </button>
               )}
 
-              <button
-                type="button"
-                className="order-action-btn order-action-btn--danger"
-                onClick={handleCancelOrder}
-              >
-                <X size={19} aria-hidden="true" />
-                {isEcommerceDraft ? 'Liberar borrador' : ((isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar')}
-              </button>
+              {(!isEditMode || isEcommerceDraft || canManageRefunds) && (
+                <button
+                  type="button"
+                  className="order-action-btn order-action-btn--danger"
+                  onClick={handleCancelOrder}
+                >
+                  <X size={19} aria-hidden="true" />
+                  {isEcommerceDraft ? 'Liberar borrador' : ((isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar')}
+                </button>
+              )}
             </div>
           </footer>
       )}

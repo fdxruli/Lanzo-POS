@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import OperationalSettings from '../components/settings/OperationalSettings';
 import LicenseSettings from '../components/settings/LicenseSettings';
+import DevicesSettings from '../components/settings/DevicesSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
@@ -10,47 +10,21 @@ import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
+import NoPermission from '../components/common/NoPermission';
+import { useSettingsAccess } from '../services/auth/useSettingsAccess';
 import {
   resolveAllowedSettingsTab
 } from './settingsPageAccess';
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState('general');
   const [searchParams, setSearchParams] = useSearchParams();
-  const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const settingsAccess = useSettingsAccess();
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
-
-  const visibleTabs = useMemo(() => [
-    { key: 'general', allowed: canAccess('settings') },
-    { key: 'controls', allowed: canAccess('settings') },
-    { key: 'license', allowed: canAccess('license') },
-    { key: 'maintenance', allowed: canAccess('sync') || canAccess('inventory') },
-    { key: 'backup', allowed: canAccess('sync') },
-    { key: 'debug', allowed: import.meta.env.DEV },
-    { key: 'test-ventas', allowed: import.meta.env.DEV }
-  ].filter((tab) => tab.allowed), [canAccess]);
-
-  useEffect(() => {
-    const tabParam = searchParams.get('tab');
-    const tabMap = {
-      general: 'general',
-      controls: 'controls',
-      license: 'license',
-      maintenance: 'maintenance',
-      backup: 'backup',
-      debug: 'debug',
-      'test-ventas': 'test-ventas'
-    };
-
-    const requestedTab = tabParam && tabMap[tabParam] ? tabMap[tabParam] : 'general';
-
-    setActiveTab(resolveAllowedSettingsTab({
-      requestedTab,
-      visibleTabs
-    }));
-  }, [searchParams, visibleTabs]);
+  const visibleTabs = settingsAccess.visibleTabs;
+  const requestedTab = searchParams.get('tab') || 'general';
+  const activeTab = resolveAllowedSettingsTab({ requestedTab, visibleTabs });
 
   const handleTabChange = (tabKey) => {
     const param = tabKey === 'general' ? {} : { tab: tabKey };
@@ -59,6 +33,10 @@ export default function SettingsPage() {
 
   const tabIsVisible = (key) => visibleTabs.some((tab) => tab.key === key);
 
+  if (!settingsAccess.canEnterSettings || !activeTab) {
+    return <NoPermission />;
+  }
+
   return (
     <main className="ui-page settings-page-wrapper" aria-label="Configuracion">
       <section className="ui-section settings-tabs-section" aria-label="Secciones de configuracion">
@@ -66,17 +44,22 @@ export default function SettingsPage() {
           <button type="button" className={`tab-btn ${activeTab === 'general' ? 'active' : ''}`} onClick={() => handleTabChange('general')} hidden={!tabIsVisible('general')}>Datos y Apariencia</button>
           <button type="button" className={`tab-btn ${activeTab === 'controls' ? 'active' : ''}`} onClick={() => handleTabChange('controls')} hidden={!tabIsVisible('controls')}>Controles</button>
           <button type="button" className={`tab-btn ${activeTab === 'license' ? 'active' : ''}`} onClick={() => handleTabChange('license')} hidden={!tabIsVisible('license')}>Licencia y Rubros</button>
+          <button type="button" className={`tab-btn ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => handleTabChange('devices')} hidden={!tabIsVisible('devices')}>Dispositivos</button>
           <button type="button" className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
           <button type="button" className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`} onClick={() => handleTabChange('backup')} hidden={!tabIsVisible('backup')}>Respaldos</button>
-          {import.meta.env.DEV && <button type="button" className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} onClick={() => handleTabChange('debug')}>Depuracion DB</button>}
-          {import.meta.env.DEV && <button type="button" className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} onClick={() => handleTabChange('test-ventas')}>Test Ventas</button>}
+          {tabIsVisible('debug') && <button type="button" className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} onClick={() => handleTabChange('debug')}>Depuracion DB</button>}
+          {tabIsVisible('test-ventas') && <button type="button" className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} onClick={() => handleTabChange('test-ventas')}>Test Ventas</button>}
         </div>
       </section>
 
-      <section className="ui-section settings-content">
+      <section
+        key={`${settingsAccess.actorKey}:${settingsAccess.generation}`}
+        className="ui-section settings-content"
+      >
         {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'controls' && <OperationalSettings />}
         {activeTab === 'license' && <LicenseSettings />}
+        {activeTab === 'devices' && <DevicesSettings />}
         {activeTab === 'maintenance' && <MaintenanceSettings />}
         {activeTab === 'backup' && (
           <>

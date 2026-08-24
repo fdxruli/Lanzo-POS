@@ -8,9 +8,17 @@ import { layawayFinancialService } from '../../services/layawayFinancialService'
 import { useCaja } from '../../hooks/useCaja';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
+import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import './LayawayModal.css';
 
-export default function LayawayModal({ show, onClose, customer, onUpdate }) {
+export default function LayawayModal({
+    show,
+    onClose,
+    customer,
+    onUpdate,
+    canManageRefunds = false,
+    actorIdentity = null
+}) {
     const [layaways, setLayaways] = useState([]);
     const [loading, setLoading] = useState(false);
     const [processingId, setProcessingId] = useState(null);
@@ -131,6 +139,14 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
     };
 
     const handleCancel = async (layaway) => {
+    if (!canManageRefunds || !actorIdentity) return;
+    let actorHandle;
+    try {
+        actorHandle = captureRefundsActorHandle();
+    } catch {
+        showMessageModal('No tienes permiso vigente para cancelar o reembolsar apartados.', null, { type: 'error' });
+        return;
+    }
     const isOverdue = checkIsOverdue(layaway.deadline);
     if (!(await showConfirmModal(`¿CANCELAR apartado ${isOverdue ? 'VENCIDO' : ''}? El stock será devuelto al inventario.`, {
         title: 'Cancelar apartado',
@@ -164,7 +180,8 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
         await layawayFinancialService.cancel({
             layawayId: layaway.id,
             reason: 'Cancelado por usuario/vencimiento',
-            retainMoney: retenerDinero
+            retainMoney: retenerDinero,
+            actorHandle
         });
         
         let msg = 'Apartado cancelado y stock restaurado.';
@@ -399,7 +416,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                                                 <ShoppingBag size={18} style={{marginRight:5}} /> Confirmar entrega y reconocer venta
                                                             </button>
                                                         </div>
-                                                    ) : (
+                                                    ) : canManageRefunds ? (
                                                         <button
                                                             className="btn btn-delete btn-sm"
                                                             onClick={() => handleCancel(layaway)}
@@ -408,7 +425,7 @@ export default function LayawayModal({ show, onClose, customer, onUpdate }) {
                                                         >
                                                             <AlertTriangle size={16} style={{marginRight:5}} /> Cancelar Apartado
                                                         </button>
-                                                    )}
+                                                    ) : null}
                                                 </div>
                                             )}
                                         </div>
