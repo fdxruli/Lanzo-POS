@@ -46,6 +46,11 @@ const layawayData = {
   deadline: '2026-07-30'
 };
 
+const refundActorHandle = {
+  actorKey: 'staff:refunds',
+  assertCurrent: vi.fn(() => ({ actorKey: 'staff:refunds' }))
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getMode.mockReturnValue({ cloudEnabled: false, online: true });
@@ -59,6 +64,21 @@ beforeEach(() => {
 });
 
 describe('layawayFinancialService', () => {
+  it('denies direct cancellation before reading or mutating a layaway without refunds authority', async () => {
+    const denied = new Error('ACTOR_PERMISSION_DENIED');
+    denied.code = 'ACTOR_PERMISSION_DENIED';
+    const deniedHandle = { assertCurrent: vi.fn(() => { throw denied; }) };
+
+    await expect(layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      actorHandle: deniedHandle
+    })).rejects.toMatchObject({ code: 'ACTOR_PERMISSION_DENIED' });
+    expect(mocks.getById).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
   it('registers a Free initial deposit atomically through the canonical cash options', async () => {
     await layawayFinancialService.create({
       layawayData,
@@ -133,13 +153,22 @@ describe('layawayFinancialService', () => {
     });
     mocks.registerMovement.mockResolvedValue({ success: true, movement: { id: 'refund-movement-1' } });
 
-    await layawayFinancialService.cancel({ layawayId: 'layaway-1', reason: 'Cliente' });
+    await layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      actorHandle: refundActorHandle
+    });
 
     expect(mocks.registerMovement).toHaveBeenCalledWith(expect.objectContaining({
       type: 'salida',
       amount: 75,
       idempotencyKey: 'layaway:layaway-1:refund:refund-1'
     }));
-    expect(mocks.completeRefund).toHaveBeenCalledWith('layaway-1', 'Cliente', 'refund-movement-1');
+    expect(mocks.completeRefund).toHaveBeenCalledWith(
+      'layaway-1',
+      'Cliente',
+      'refund-movement-1',
+      expect.objectContaining({ assertActorCurrent: expect.any(Function) })
+    );
   });
 });

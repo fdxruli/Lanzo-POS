@@ -19,10 +19,15 @@ import { maintenanceTools } from '../../services/db';
 import { evaluator } from '../../services/BackupRiskEvaluator';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { showInputPromptModal } from '../common/InputPromptModal';
+import NoPermission from '../common/NoPermission';
+import {
+  useSettingsAccess,
+  useSettingsActionGuard
+} from '../../services/auth/useSettingsAccess';
 
 const DEFAULT_REBUILD_DAYS = 30;
 
-function MaintenanceHero({ isProcessing }) {
+function MaintenanceHero({ isProcessing, routineCount }) {
   return (
     <header className="maintenance-settings-hero">
       <div className="maintenance-hero-copy">
@@ -43,7 +48,7 @@ function MaintenanceHero({ isProcessing }) {
         </div>
         <div>
           <span>Rutinas</span>
-          <strong>4</strong>
+          <strong>{routineCount}</strong>
         </div>
       </div>
     </header>
@@ -101,8 +106,22 @@ export default function MaintenanceSettings() {
   const loadInitialProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const [showDataTransfer, setShowDataTransfer] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const settingsAccess = useSettingsAccess();
+  const captureSettingsAction = useSettingsActionGuard();
+  const canSync = settingsAccess.canAccessPermission('sync');
+  const canInventory = settingsAccess.canAccessPermission('inventory');
+  const canReadReports = settingsAccess.canAccessPermission('reports');
+  const canExportSales = canSync && canReadReports;
+  const routineCount = (canSync ? 2 : 0) + (canInventory ? 2 : 0);
 
   const handleArchive = async () => {
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('sync');
+    } catch {
+      return;
+    }
+
     const confirmed = await showConfirmModal(
       'Esto descargara y BORRARA las ventas de hace mas de 6 meses para acelerar el sistema. Continuar?',
       {
@@ -113,9 +132,11 @@ export default function MaintenanceSettings() {
     );
     if (!confirmed) return;
 
-    setIsProcessing(true);
     try {
+      actorHandle.assertCurrent('sync');
+      setIsProcessing(true);
       const oldSales = await archiveOldData(6);
+      actorHandle.assertCurrent('sync');
       if (oldSales.length > 0) {
         const blob = new Blob([JSON.stringify(oldSales)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -136,17 +157,31 @@ export default function MaintenanceSettings() {
         showMessageModal('No hay ventas con mas de 6 meses de antiguedad para archivar.', null, { type: 'warning' });
       }
     } catch (error) {
-      Logger.error('Error archivando datos:', error);
-      showMessageModal('Ocurrio un error al intentar archivar el historial.', null, { type: 'error' });
+      try {
+        actorHandle.assertCurrent('sync');
+        Logger.error('Error archivando datos:', error);
+        showMessageModal('Ocurrio un error al intentar archivar el historial.', null, { type: 'error' });
+      } catch {
+        // The actor changed while this operation was pending.
+      }
     } finally {
-      setIsProcessing(false);
+      try {
+        actorHandle.assertCurrent('sync');
+        setIsProcessing(false);
+      } catch {
+        // The replacement actor receives a fresh maintenance subtree.
+      }
     }
   };
 
   const handleFixStock = async () => {
-    setIsProcessing(true);
+    let actorHandle;
     try {
+      actorHandle = captureSettingsAction('inventory');
+      actorHandle.assertCurrent('inventory');
+      setIsProcessing(true);
       const result = await maintenanceTools.fixStock();
+      actorHandle.assertCurrent('inventory');
       if (result.success) {
         showMessageModal(result.message);
         if (result.details.length > 0) {
@@ -155,13 +190,30 @@ export default function MaintenanceSettings() {
         await loadInitialProducts();
       }
     } catch (error) {
-      showMessageModal(`Error: ${error?.message || error}`, null, { type: 'error' });
+      try {
+        actorHandle?.assertCurrent('inventory');
+        showMessageModal(`Error: ${error?.message || error}`, null, { type: 'error' });
+      } catch {
+        // The actor changed while this operation was pending.
+      }
     } finally {
-      setIsProcessing(false);
+      try {
+        actorHandle?.assertCurrent('inventory');
+        setIsProcessing(false);
+      } catch {
+        // The replacement actor receives a fresh maintenance subtree.
+      }
     }
   };
 
   const handleRebuildStats = async () => {
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('sync');
+    } catch {
+      return;
+    }
+
     const confirmation = await showInputPromptModal({
       title: 'Reconstruir reportes',
       message: [
@@ -177,26 +229,46 @@ export default function MaintenanceSettings() {
 
     if (confirmation === null) return;
 
+    try {
+      actorHandle.assertCurrent('sync');
+    } catch {
+      return;
+    }
+
     if (confirmation.trim() !== 'CONFIRMAR') {
       showMessageModal('Confirmacion invalida. Debes escribir exactamente CONFIRMAR para ejecutar esta accion.', null, { type: 'warning' });
       return;
     }
 
-    setIsProcessing(true);
     try {
+      setIsProcessing(true);
       const result = await maintenanceTools.rebuildStats({ days: DEFAULT_REBUILD_DAYS });
+      actorHandle.assertCurrent('sync');
       showMessageModal(result.message);
       await loadStats(false);
+      actorHandle.assertCurrent('sync');
     } catch (error) {
-      showMessageModal(`Error: ${error?.message || error}`, null, { type: 'error' });
+      try {
+        actorHandle.assertCurrent('sync');
+        showMessageModal(`Error: ${error?.message || error}`, null, { type: 'error' });
+      } catch {
+        // The actor changed while this operation was pending.
+      }
     } finally {
-      setIsProcessing(false);
+      try {
+        actorHandle.assertCurrent('sync');
+        setIsProcessing(false);
+      } catch {
+        // The replacement actor receives a fresh maintenance subtree.
+      }
     }
   };
 
+  if (!settingsAccess.canAccessSection('maintenance')) return <NoPermission />;
+
   return (
     <div className="maintenance-settings-shell">
-      <MaintenanceHero isProcessing={isProcessing} />
+      <MaintenanceHero isProcessing={isProcessing} routineCount={routineCount} />
 
       <section className="maintenance-settings-layout">
         <div className="maintenance-routines-panel">
@@ -211,77 +283,83 @@ export default function MaintenanceSettings() {
           </div>
 
           <div className="maintenance-tool-list">
-            <MaintenanceToolCard
-              Icon={BarChart2}
-              tone="info"
-              eyebrow="Reportes"
-              title="Reconstruir desde historial"
-              description="Recalcula los reportes usando lo cobrado en cada ticket historico."
-              details={[
-                `Limita el proceso a los ultimos ${DEFAULT_REBUILD_DAYS} dias.`,
-                'No actualiza los tickets a costos actuales.'
-              ]}
-              actionLabel={isProcessing ? 'Reconstruyendo...' : 'Reconstruir'}
-              buttonClassName="btn btn-secondary"
-              onClick={handleRebuildStats}
-              disabled={isProcessing}
-            />
+            {canSync && (
+              <MaintenanceToolCard
+                Icon={BarChart2}
+                tone="info"
+                eyebrow="Reportes"
+                title="Reconstruir desde historial"
+                description="Recalcula los reportes usando lo cobrado en cada ticket historico."
+                details={[
+                  `Limita el proceso a los ultimos ${DEFAULT_REBUILD_DAYS} dias.`,
+                  'No actualiza los tickets a costos actuales.'
+                ]}
+                actionLabel={isProcessing ? 'Reconstruyendo...' : 'Reconstruir'}
+                buttonClassName="btn btn-secondary"
+                onClick={handleRebuildStats}
+                disabled={isProcessing}
+              />
+            )}
 
-            <MaintenanceToolCard
-              Icon={Package}
-              tone="success"
-              eyebrow="Inventario"
-              title="Sincronizar stock"
-              description="Corrige diferencias visibles entre lotes disponibles y productos marcados como agotados."
-              details={[
-                'Revisa productos y lotes locales.',
-                'Actualiza la lista al terminar.'
-              ]}
-              actionLabel={isProcessing ? 'Procesando...' : 'Sincronizar'}
-              buttonClassName="btn btn-primary"
-              onClick={handleFixStock}
-              disabled={isProcessing}
-            />
+            {canInventory && (
+              <MaintenanceToolCard
+                Icon={Package}
+                tone="success"
+                eyebrow="Inventario"
+                title="Sincronizar stock"
+                description="Corrige diferencias visibles entre lotes disponibles y productos marcados como agotados."
+                details={[
+                  'Revisa productos y lotes locales.',
+                  'Actualiza la lista al terminar.'
+                ]}
+                actionLabel={isProcessing ? 'Procesando...' : 'Sincronizar'}
+                buttonClassName="btn btn-primary"
+                onClick={handleFixStock}
+                disabled={isProcessing}
+              />
+            )}
 
-            <MaintenanceToolCard
-              Icon={Archive}
-              tone="warning"
-              eyebrow="Historial"
-              title="Archivar ventas antiguas"
-              description="Descarga y retira ventas de mas de 6 meses para aligerar la base local."
-              details={[
-                'Genera un JSON antes de eliminar.',
-                'Recomendado como rutina semestral.'
-              ]}
-              actionLabel={isProcessing ? 'Archivando...' : 'Archivar'}
-              actionIcon={<Archive size={16} />}
-              buttonClassName="btn btn-secondary maintenance-button--archive"
-              onClick={handleArchive}
-              disabled={isProcessing}
-            />
+            {canSync && (
+              <MaintenanceToolCard
+                Icon={Archive}
+                tone="warning"
+                eyebrow="Historial"
+                title="Archivar ventas antiguas"
+                description="Descarga y retira ventas de mas de 6 meses para aligerar la base local."
+                details={[
+                  'Genera un JSON antes de eliminar.',
+                  'Recomendado como rutina semestral.'
+                ]}
+                actionLabel={isProcessing ? 'Archivando...' : 'Archivar'}
+                actionIcon={<Archive size={16} />}
+                buttonClassName="btn btn-secondary maintenance-button--archive"
+                onClick={handleArchive}
+                disabled={isProcessing}
+              />
+            )}
           </div>
         </div>
 
-        <aside className="maintenance-data-panel">
+        {(canInventory || canExportSales) && <aside className="maintenance-data-panel">
           <div className="maintenance-data-card">
             <span className="maintenance-data-icon" aria-hidden="true">
               <Database size={20} />
             </span>
             <div>
               <span className="maintenance-tool-eyebrow">Transferencia</span>
-              <h3>Respaldo y datos</h3>
-              <p>Centraliza exportaciones, importaciones y cargas masivas de productos.</p>
+              <h3>Transferencia de datos</h3>
+              <p>Abre solo las herramientas de inventario o reportes autorizadas para tu sesion.</p>
             </div>
 
             <div className="maintenance-data-actions">
-              <div>
+              {canExportSales && <div>
                 <strong>Base de datos</strong>
-                <span>Exporta o importa respaldos operativos.</span>
-              </div>
-              <div>
+                <span>Exporta reportes regulatorios cuando correspondan.</span>
+              </div>}
+              {canInventory && <div>
                 <strong>Productos</strong>
                 <span>Carga CSV o JSON sin salir de configuracion.</span>
-              </div>
+              </div>}
             </div>
 
             <button
@@ -299,18 +377,19 @@ export default function MaintenanceSettings() {
             <ShieldCheck size={18} />
             <span>Para acciones destructivas, el sistema pedira confirmacion antes de continuar.</span>
           </div>
-        </aside>
+        </aside>}
       </section>
 
       <DataTransferModal
-        show={showDataTransfer}
+        show={(canInventory || canExportSales) && showDataTransfer}
         onClose={() => setShowDataTransfer(false)}
+        allowInventory={canInventory}
+        allowSalesExport={canExportSales}
         onRefresh={async () => {
-          await Promise.all([
-            loadInitialProducts(),
-            maintenanceTools.rebuildStats({ fullHistory: true })
-          ]);
-          await loadStats(false);
+          const actorHandle = captureSettingsAction('inventory');
+          actorHandle.assertCurrent('inventory');
+          await loadInitialProducts();
+          actorHandle.assertCurrent('inventory');
         }}
       />
     </div>

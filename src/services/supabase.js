@@ -15,6 +15,10 @@ import {
     isLocalTenantAccessError,
     runWithLocalTenantSyncLease
 } from './tenant/localTenantGuard';
+import {
+    ActorRuntimeError,
+    ACTOR_RUNTIME_ERROR_CODES
+} from './auth/actorRuntimeController';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -163,6 +167,52 @@ export async function getActorSessionToken(deviceRole = null) {
     if (adminToken && staffToken) return null;
     return adminToken || staffToken || null;
 }
+
+const getActorSessionCredentialForHandle = async (actorHandle) => {
+    if (!actorHandle || typeof actorHandle.assertCurrent !== 'function') {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+    }
+
+    actorHandle.assertCurrent('settings');
+
+    const [adminToken, adminSessionId, staffToken, staffSessionId] = await Promise.all([
+        loadData(STORES.SYNC_CACHE, ADMIN_SESSION_TOKEN_KEY),
+        loadData(STORES.SYNC_CACHE, ADMIN_SESSION_ID_KEY),
+        loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY),
+        loadData(STORES.SYNC_CACHE, STAFF_SESSION_ID_KEY)
+    ]);
+    const evidence = {
+        admin: {
+            token: adminToken?.value || null,
+            sessionId: adminSessionId?.value || null
+        },
+        staff: {
+            token: staffToken?.value || null,
+            sessionId: staffSessionId?.value || null
+        }
+    };
+
+    if (evidence.admin.token && evidence.staff.token) {
+        throw new ActorRuntimeError('ACTOR_SESSION_AMBIGUOUS');
+    }
+
+    const selected = evidence[actorHandle.actorType];
+    if (!selected?.token || !selected?.sessionId) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+            actorType: actorHandle.actorType
+        });
+    }
+    if (String(selected.sessionId) !== String(actorHandle.sessionId)) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+            actorType: actorHandle.actorType,
+            capturedSessionId: actorHandle.sessionId,
+            persistedSessionId: selected.sessionId
+        });
+    }
+
+    actorHandle.assertCurrent('settings');
+    return selected.token;
+};
 
 function pickSecurityTokenFromLicense(license = {}) {
     const candidates = [
@@ -1031,7 +1081,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
     }
 };
 
-export const saveBusinessProfile = async function (licenseKey, profileData) {
+export const saveBusinessProfile = async function (licenseKey, profileData, { actorHandle } = {}) {
     try {
         if (!licenseKey) {
             return {
@@ -1047,6 +1097,7 @@ export const saveBusinessProfile = async function (licenseKey, profileData) {
             };
         }
 
+        const actorSessionToken = await getActorSessionCredentialForHandle(actorHandle);
         const deviceFingerprint = await getStableDeviceId();
         let securityToken = await getSecureCredentials();
 
@@ -1092,27 +1143,34 @@ export const saveBusinessProfile = async function (licenseKey, profileData) {
             business_type: businessType
         };
 
+        actorHandle.assertCurrent('settings');
+
         const { data, error } = await supabaseClient.rpc(
             'save_business_profile_secure',
             {
                 license_key_param: licenseKey,
                 device_fingerprint_param: deviceFingerprint,
                 security_token_param: securityToken,
+                actor_session_token_param: actorSessionToken,
                 profile_data: securePayload
             }
         );
 
         if (error) throw error;
+        actorHandle.assertCurrent('settings');
 
         if (!data?.success) {
             Logger.warn('[BusinessProfile] Guardado seguro rechazado:', data);
 
+            const responseCode = data?.code || data?.error || 'BUSINESS_PROFILE_SAVE_FAILED';
+
             return {
                 success: false,
+                code: responseCode,
                 message:
-                    data?.error === 'DEVICE_TOKEN_INVALID'
+                    responseCode === 'DEVICE_TOKEN_INVALID'
                         ? 'El token de seguridad del dispositivo no es válido. Vuelve a iniciar sesión.'
-                        : data?.error || 'No se pudo guardar el perfil del negocio.'
+                        : data?.message || responseCode
             };
         }
 
@@ -1122,6 +1180,7 @@ export const saveBusinessProfile = async function (licenseKey, profileData) {
 
         return {
             success: false,
+            code: error?.code || 'BUSINESS_PROFILE_SAVE_FAILED',
             message: error.message || 'No se pudo guardar el perfil del negocio.'
         };
     }

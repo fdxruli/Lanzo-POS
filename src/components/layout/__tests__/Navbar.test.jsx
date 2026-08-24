@@ -5,11 +5,21 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
-  app: null
+  app: null,
+  settingsAccess: { canEnterSettings: true },
+  actorRuntime: null
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(state.app))
+}));
+
+vi.mock('../../../services/auth/useSettingsAccess', () => ({
+  useSettingsAccess: () => state.settingsAccess
+}));
+
+vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
+  useActorRuntimeSnapshot: () => state.actorRuntime
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
@@ -64,6 +74,7 @@ const createAppState = (overrides = {}) => ({
     }
   },
   currentDeviceRole: 'admin',
+  currentAdminUser: { id: 'admin-1' },
   currentStaffUser: null,
   ecommerceOrderCounts: { new: 0 },
   ...overrides
@@ -97,6 +108,84 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   state.app = createAppState();
+  state.settingsAccess = { canEnterSettings: true };
+  state.actorRuntime = {
+    status: 'granted',
+    actorType: 'admin',
+    actorId: 'admin-1',
+    sessionId: 'admin-session-1',
+    permissions: ['*']
+  };
+});
+
+describe('Navbar Settings shell access', () => {
+  it('uses the canonical Settings policy instead of products permission', () => {
+    state.app = createAppState({
+      currentDeviceRole: 'staff',
+      currentAdminUser: null,
+      currentStaffUser: { id: 'staff-a', permissions: { products: true } },
+      canAccess: vi.fn((permission) => permission === 'products')
+    });
+    state.settingsAccess = { canEnterSettings: false };
+
+    renderNavbar();
+
+    expect(document.querySelector('.desktop-sidebar a[href="/productos"]')).not.toHaveAttribute('hidden');
+    expect(document.querySelector('.desktop-sidebar a[href="/configuracion"]')).toHaveAttribute('hidden');
+    openMobileDrawer();
+    expect(document.querySelector('#mobile-main-menu a[href="/configuracion"]')).toBeNull();
+  });
+
+  it('removes Settings immediately when the canonical actor snapshot locks', () => {
+    const view = renderNavbar();
+    expect(document.querySelector('.desktop-sidebar a[href="/configuracion"]')).not.toHaveAttribute('hidden');
+
+    state.settingsAccess = { canEnterSettings: false };
+    view.rerender(
+      <MemoryRouter initialEntries={['/']}>
+        <Navbar />
+      </MemoryRouter>
+    );
+
+    expect(document.querySelector('.desktop-sidebar a[href="/configuracion"]')).toHaveAttribute('hidden');
+  });
+});
+
+describe('Navbar sales report access', () => {
+  it('does not infer report navigation from refunds', () => {
+    state.actorRuntime = {
+      status: 'granted',
+      actorType: 'staff',
+      actorId: 'staff-refunds',
+      sessionId: 'staff-session-refunds',
+      permissions: ['refunds']
+    };
+
+    renderNavbar();
+
+    expect(document.querySelector('.mobile-bottom-nav a[href="/ventas"]')).toHaveAttribute('hidden');
+    expect(document.querySelector('.desktop-sidebar a[href="/ventas"]')).toHaveAttribute('hidden');
+  });
+
+  it('removes report navigation as soon as ActorRuntime locks', () => {
+    const view = renderNavbar();
+    expect(document.querySelector('.desktop-sidebar a[href="/ventas"]')).not.toHaveAttribute('hidden');
+
+    state.actorRuntime = {
+      status: 'locked',
+      actorType: null,
+      actorId: null,
+      sessionId: null,
+      permissions: []
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/']}>
+        <Navbar />
+      </MemoryRouter>
+    );
+
+    expect(document.querySelector('.desktop-sidebar a[href="/ventas"]')).toHaveAttribute('hidden');
+  });
 });
 
 describe('Navbar mobile menu', () => {

@@ -9,6 +9,9 @@ import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrde
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
+import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
+import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import Logo from '../common/Logo';
 import NotificationBell from '../notifications/NotificationBell';
 import {
@@ -32,6 +35,14 @@ import {
 } from 'lucide-react';
 import './Navbar.css';
 import './NavbarEcommerce.css';
+
+const ROUTE_PERMISSIONS = Object.freeze({
+  '/': 'pos',
+  '/caja': 'cash_register',
+  '/pedidos': 'orders',
+  '/productos': 'products',
+  '/clientes': 'customers'
+});
 
 function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -63,6 +74,9 @@ function Navbar() {
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const ecommerceNewCount = useAppStore((state) => state.ecommerceOrderCounts?.new || 0);
+  const settingsAccess = useSettingsAccess();
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canReadReports = canReadSalesReports(actorRuntime);
 
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
@@ -195,22 +209,13 @@ function Navbar() {
     }
   ];
 
-  const routePermissions = {
-    '/': 'pos',
-    '/caja': 'cash_register',
-    '/pedidos': 'orders',
-    '/productos': 'products',
-    '/clientes': 'customers',
-    '/ventas': 'reports',
-    // Configuración es la entrada general: requiere admin/settings.
-    // license/devices/sync/inventory solo habilitan tabs internos tras entrar.
-    '/configuracion': 'settings'
-  };
   const isRouteAllowed = (linkOrPath) => {
     const path = typeof linkOrPath === 'string'
       ? linkOrPath
       : linkOrPath.route || linkOrPath.to.split('?')[0];
-    return !routePermissions[path] || canAccess(routePermissions[path]);
+    if (path === '/configuracion') return settingsAccess.canEnterSettings;
+    if (path === '/ventas') return canReadReports;
+    return !ROUTE_PERMISSIONS[path] || canAccess(ROUTE_PERMISSIONS[path]);
   };
   const visibleDrawerLinks = drawerLinks.filter((link) => isRouteAllowed(link));
 

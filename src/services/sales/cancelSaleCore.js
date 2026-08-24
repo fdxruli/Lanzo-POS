@@ -112,6 +112,7 @@ export const cancelSaleCore = async (
     STORES,
     restoreStockFromCancellation,
     generateId,
+    assertActorCurrent,
     now = () => new Date().toISOString(),
     Logger = console
   } = deps;
@@ -120,6 +121,13 @@ export const cancelSaleCore = async (
   let transactionResult = null;
 
   try {
+    if (typeof assertActorCurrent !== 'function') {
+      throw new CancellationError(
+        'ACTOR_SESSION_REQUIRED',
+        'Se requiere una sesion vigente con permiso de devoluciones.'
+      );
+    }
+
     const stores = [
       STORES.SALES,
       STORES.PRODUCT_BATCHES,
@@ -130,6 +138,7 @@ export const cancelSaleCore = async (
     ].filter(Boolean);
 
     await db.transaction('rw', stores, async () => {
+      assertActorCurrent();
       const cachedSale = currentSales.find((sale) => (
         (saleId && sale?.id === saleId) ||
         (saleTimestamp && sale?.timestamp === saleTimestamp)
@@ -271,6 +280,7 @@ export const cancelSaleCore = async (
         timestamp: cancelledAt,
         disposition: normalizedPlan
       });
+      assertActorCurrent();
 
       transactionResult = {
         success: true,

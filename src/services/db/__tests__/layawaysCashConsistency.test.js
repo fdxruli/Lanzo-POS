@@ -24,6 +24,25 @@ beforeEach(async () => {
 afterEach(() => closeTestTenantRuntime());
 
 describe('layaway cash consistency in Free', () => {
+  it('fails closed at every refund repository boundary without actor evidence', async () => {
+    await db.table(STORES.LAYAWAYS).put({
+      ...baseLayaway(),
+      status: 'active',
+      paidAmount: 0,
+      payments: []
+    });
+
+    await expect(layawayRepository.beginRefund('layaway-1', { id: 'refund-1' }))
+      .rejects.toMatchObject({ code: 'ACTOR_SESSION_REQUIRED' });
+    await expect(layawayRepository.completeRefund('layaway-1', 'Cliente', null))
+      .rejects.toMatchObject({ code: 'ACTOR_SESSION_REQUIRED' });
+    await expect(layawayRepository.cancel('layaway-1'))
+      .rejects.toMatchObject({ code: 'ACTOR_SESSION_REQUIRED' });
+
+    expect(await db.table(STORES.LAYAWAYS).get('layaway-1'))
+      .toMatchObject({ status: 'active' });
+  });
+
   it('registers the initial deposit and installment exactly once in one cash ledger', async () => {
     await db.table(STORES.CAJAS).put({
       id: 'cash-1', estado: 'abierta', entradas_efectivo: '0', salidas_efectivo: '0'
@@ -84,6 +103,7 @@ describe('layaway cash consistency in Free', () => {
     });
 
     await layawayRepository.cancel('layaway-1', 'Cliente', false, 'cash-1', {
+      assertActorCurrent: () => {},
       cashMovement: {
         idempotencyKey: 'layaway:layaway-1:refund:refund-1',
         metadata: { source: 'layaway_refund', layawayId: 'layaway-1', refundId: 'refund-1' }

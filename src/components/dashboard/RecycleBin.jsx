@@ -10,6 +10,7 @@ import {
 import './RecycleBin.css';
 import { useSalesStore } from '../../store/useSalesStore';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
+import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 
 const formatDate = (dateString) => {
   if (!dateString) return '-';
@@ -28,9 +29,10 @@ const getTypeBadge = (type) => {
   }
 };
 
-const RecycleBin = () => {
+const RecycleBin = ({ canManageSaleRefunds = false }) => {
   const { 
-    deletedItems, 
+    deletedItems,
+    allDeletedItems,
     loadRecycleBin, 
     fetchRecycleBinPage,
     restoreItem, 
@@ -58,12 +60,21 @@ const RecycleBin = () => {
   );
 
   const handleRestore = async (item) => {
+    const isSale = item.type === 'Pedido';
+    if (isSale && !canManageSaleRefunds) return;
+    let actorHandle = null;
+    try {
+      actorHandle = isSale ? captureRefundsActorHandle() : null;
+    } catch {
+      showMessageModal('No tienes permiso vigente para restaurar esta venta.', null, { type: 'error' });
+      return;
+    }
     if (await showConfirmModal(`¿Restaurar "${item.mainLabel || item.name}" a su lugar original?`, {
       title: 'Restaurar elemento',
       confirmButtonText: 'Si, restaurar',
       cancelButtonText: 'Cancelar'
     })) {
-      const result = await restoreItem(item);
+      const result = await restoreItem(item, { actorHandle });
       if (result?.success === false) {
         showMessageModal(result.message || 'No se pudo restaurar el elemento.', null, { type: 'error' });
         return;
@@ -78,22 +89,43 @@ const RecycleBin = () => {
   };
 
   const handleDeleteForever = async (item) => {
+    const isSale = item.type === 'Pedido';
+    if (isSale && !canManageSaleRefunds) return;
+    let actorHandle = null;
+    try {
+      actorHandle = isSale ? captureRefundsActorHandle() : null;
+    } catch {
+      showMessageModal('No tienes permiso vigente para eliminar esta venta cancelada.', null, { type: 'error' });
+      return;
+    }
     if (await showConfirmModal('¿Estás seguro? Esta acción liberará espacio y no se puede deshacer.', {
       title: 'Eliminar permanentemente',
       confirmButtonText: 'Si, eliminar',
       cancelButtonText: 'Cancelar'
     })) {
-      await permanentlyDelete(item);
+      await permanentlyDelete(item, { actorHandle });
     }
   };
 
   const handleEmptyBin = async () => {
-    if (await showConfirmModal('¿Vaciar toda la papelera? Se eliminarán permanentemente todos los elementos.', {
+    const containsSales = allDeletedItems.some((item) => item.type === 'Pedido');
+    const includeSales = !containsSales || canManageSaleRefunds;
+    let actorHandle = null;
+    try {
+      actorHandle = containsSales && includeSales ? captureRefundsActorHandle() : null;
+    } catch {
+      showMessageModal('No tienes permiso vigente para eliminar ventas canceladas.', null, { type: 'error' });
+      return;
+    }
+    const confirmation = includeSales
+      ? '¿Vaciar toda la papelera? Se eliminarán permanentemente todos los elementos.'
+      : '¿Vaciar los elementos autorizados? Las ventas canceladas se conservarán porque requieren permiso de devoluciones.';
+    if (await showConfirmModal(confirmation, {
       title: 'Vaciar papelera',
       confirmButtonText: 'Si, vaciar',
       cancelButtonText: 'Cancelar'
     })) {
-      await emptyBin();
+      await emptyBin({ includeSales, actorHandle });
     }
   };
 
@@ -163,12 +195,12 @@ const RecycleBin = () => {
                   <td>{formatDate(item.deletedTimestamp || item.deletedAt)}</td>
                   <td>
                     <div className="action-group">
-                      <button 
+                      <button
                         type="button"
                         className="btn-icon btn-restore" 
                         onClick={() => handleRestore(item)}
-                        title="Restaurar"
-                        disabled={isLoading}
+                        title={item.type === 'Pedido' && !canManageSaleRefunds ? 'Requiere permiso de devoluciones' : 'Restaurar'}
+                        disabled={isLoading || (item.type === 'Pedido' && !canManageSaleRefunds)}
                       >
                         <RotateCcw size={16} />
                       </button>
@@ -176,8 +208,8 @@ const RecycleBin = () => {
                         type="button"
                         className="btn-icon btn-delete-forever" 
                         onClick={() => handleDeleteForever(item)}
-                        title="Eliminar permanentemente"
-                        disabled={isLoading}
+                        title={item.type === 'Pedido' && !canManageSaleRefunds ? 'Requiere permiso de devoluciones' : 'Eliminar permanentemente'}
+                        disabled={isLoading || (item.type === 'Pedido' && !canManageSaleRefunds)}
                       >
                         <Trash2 size={16} />
                       </button>

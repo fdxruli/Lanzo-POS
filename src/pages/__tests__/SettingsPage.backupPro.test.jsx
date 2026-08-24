@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+// @vitest-environment jsdom
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from '../SettingsPage';
 
 const appState = {
@@ -15,11 +16,31 @@ vi.mock('../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(appState))
 }));
 
+vi.mock('../../services/auth/useSettingsAccess', () => ({
+  useSettingsAccess: () => ({
+    actorKey: 'admin:admin-1',
+    generation: 1,
+    canEnterSettings: true,
+    visibleTabs: [
+      { key: 'general' },
+      { key: 'controls' },
+      { key: 'license' },
+      { key: 'devices' },
+      { key: 'maintenance' },
+      { key: 'backup' }
+    ]
+  })
+}));
+
 vi.mock('../../components/settings/GeneralSettings', () => ({
   default: () => <div />
 }));
 
 vi.mock('../../components/settings/LicenseSettings', () => ({
+  default: () => <div />
+}));
+
+vi.mock('../../components/settings/DevicesSettings', () => ({
   default: () => <div />
 }));
 
@@ -52,6 +73,8 @@ function renderBackupSettingsPage() {
 }
 
 describe('SettingsPage backup tab cloud UX', () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.clearAllMocks();
     appState.canAccess.mockReturnValue(true);

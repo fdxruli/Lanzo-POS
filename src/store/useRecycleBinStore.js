@@ -7,7 +7,10 @@ import {
   STORES
 } from '../services/database';
 import Logger from '../services/Logger';
-import { restoreDeletedSale } from '../services/salesService';
+import {
+  permanentlyDeleteCancelledSales,
+  restoreDeletedSale
+} from '../services/salesService';
 import { showMessageModal } from '../services/utils';
 
 const RECYCLE_BIN_LIMIT = 50;
@@ -106,11 +109,11 @@ export const useRecycleBinStore = create((set, get) => ({
     set(page);
   },
 
-  restoreItem: async (item) => {
+  restoreItem: async (item, { actorHandle = null } = {}) => {
     set({ isLoading: true });
     try {
       if (item.type === 'Pedido') {
-        const result = await restoreDeletedSale(item.id || item.timestamp);
+        const result = await restoreDeletedSale(item.id || item.timestamp, { actorHandle });
         if (!result.success) {
           throw new Error(result.message || 'No se pudo restaurar la venta.');
         }
@@ -162,13 +165,13 @@ export const useRecycleBinStore = create((set, get) => ({
       return { success: true };
     } catch (error) {
       Logger.error('Error restaurando:', error);
-      return { success: false, message: error.message || 'Error inesperado al restaurar.' };
+      return { success: false, code: error?.code || 'RESTORE_FAILED', message: error.message || 'Error inesperado al restaurar.' };
     } finally {
       set({ isLoading: false });
     }
   },
 
-  permanentlyDelete: async (item) => {
+  permanentlyDelete: async (item, { actorHandle = null } = {}) => {
     set({ isLoading: true });
     try {
       let trashStore = '';
@@ -192,17 +195,23 @@ export const useRecycleBinStore = create((set, get) => ({
           throw new Error('Tipo desconocido para eliminar');
       }
 
-      await deleteDataSafe(trashStore, key);
+      if (item.type === 'Pedido') {
+        await permanentlyDeleteCancelledSales([key], { actorHandle });
+      } else {
+        await deleteDataSafe(trashStore, key);
+      }
       set((state) => removeFromState(state, item));
+      return { success: true };
     } catch (error) {
       Logger.error('Error eliminando permanentemente', error);
       showMessageModal('Error al eliminar el archivo permanentemente.', null, { type: 'error' });
+      return { success: false, code: error?.code || 'DELETE_FAILED', message: error?.message };
     } finally {
       set({ isLoading: false });
     }
   },
 
-  emptyBin: async () => {
+  emptyBin: async ({ includeSales = true, actorHandle = null } = {}) => {
     set({ isLoading: true });
     try {
       const { allDeletedItems } = get();
@@ -234,23 +243,29 @@ export const useRecycleBinStore = create((set, get) => ({
         }
       });
 
+      const saleIds = itemsByStore[STORES.DELETED_SALES];
+      if (includeSales && saleIds.length > 0) {
+        await permanentlyDeleteCancelledSales(saleIds, { actorHandle });
+      }
+
       const deletePromises = Object.entries(itemsByStore)
-        .filter(([, keys]) => keys.length > 0)
+        .filter(([store, keys]) => store !== STORES.DELETED_SALES && keys.length > 0)
         .map(([store, keys]) => bulkDeleteSafe(store, keys));
 
       await Promise.all(deletePromises);
 
+      const remainingItems = includeSales
+        ? []
+        : allDeletedItems.filter((item) => item.type === 'Pedido');
       set({
-        allDeletedItems: [],
-        deletedItems: [],
-        currentPageIndex: 0,
-        totalItems: 0,
-        hasPrev: false,
-        hasMore: false
+        allDeletedItems: remainingItems,
+        ...paginateItems(remainingItems, 0)
       });
+      return { success: true, retainedSaleCount: remainingItems.length };
     } catch (error) {
       Logger.error('Error vaciando papelera', error);
       showMessageModal('Hubo un problema al intentar vaciar la papelera.', null, { type: 'error' });
+      return { success: false, code: error?.code || 'EMPTY_BIN_FAILED', message: error?.message };
     } finally {
       set({ isLoading: false });
     }

@@ -21,6 +21,7 @@ import {
   localTenantAccessController
 } from '../../services/tenant/localTenantPolicy';
 import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
+import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -43,6 +44,7 @@ const calculateOrderTotalExact = (order = []) => {
 };
 
 const EMPTY_ORDER_ITEMS = Object.freeze([]);
+const isActorAuthorityError = (error) => String(error?.code || '').startsWith('ACTOR_');
 
 export const selectCurrentOrder = (state) => (
   state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
@@ -436,7 +438,7 @@ export const useActiveOrders = create(
     /**
      * Cancela la orden actual completamente (vacía carrito, libera stock, borra pestaña y DB)
      */
-    cancelCurrentOrder: async () => {
+    cancelCurrentOrder: async ({ actorHandle = null } = {}) => {
       const state = get();
       const orderId = state.currentOrderId;
       if (!orderId) return;
@@ -462,18 +464,23 @@ export const useActiveOrders = create(
         }
 
         if (existsInDB && existing) {
+          const refundActorHandle = actorHandle || captureRefundsActorHandle();
+          const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
+          assertRefundActorCurrent();
           try {
             const itemsToRelease = getSellableItems(existing.items);
             if (itemsToRelease.length > 0) {
               if (typeof releaseCommittedStock === 'function') {
-                await releaseCommittedStock(itemsToRelease, { db, STORES });
+                await releaseCommittedStock(itemsToRelease, { db, STORES, assertActorCurrent: assertRefundActorCurrent });
               }
             }
           } catch (stockErr) {
+            if (isActorAuthorityError(stockErr)) throw stockErr;
             console.error("Error liberando stock en cancelCurrentOrder:", stockErr);
           }
 
           try {
+            assertRefundActorCurrent();
             const noteLine = "Sistema: Orden cancelada desde POS";
             const mergedNotes = existing.notes && String(existing.notes).trim()
               ? `${existing.notes}\n${noteLine}`
@@ -485,7 +492,9 @@ export const useActiveOrders = create(
               notes: mergedNotes,
               updatedAt: new Date().toISOString()
             });
+            assertRefundActorCurrent();
           } catch (dbErr) {
+            if (isActorAuthorityError(dbErr)) throw dbErr;
             console.error("Error actualizando DB en cancelCurrentOrder:", dbErr);
           }
         }
@@ -516,6 +525,7 @@ export const useActiveOrders = create(
         }
       } catch (error) {
         console.error("Error al cancelar la orden:", error);
+        if (isActorAuthorityError(error)) throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -526,7 +536,7 @@ export const useActiveOrders = create(
      * A diferencia de pauseOrder, persiste el cierre como cancelled para que no
      * vuelva a aparecer al recargar la pagina.
      */
-    cancelOrder: async (orderId) => {
+    cancelOrder: async (orderId, { actorHandle = null } = {}) => {
       if (!orderId) throw new Error("Se requiere el ID de la orden.");
       const state = get();
       const order = state.activeOrders.get(orderId);
@@ -552,18 +562,23 @@ export const useActiveOrders = create(
         }
 
         if (existsInDB && existing) {
+          const refundActorHandle = actorHandle || captureRefundsActorHandle();
+          const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
+          assertRefundActorCurrent();
           try {
             const itemsToRelease = getSellableItems(existing.items);
             if (itemsToRelease.length > 0) {
               if (typeof releaseCommittedStock === 'function') {
-                await releaseCommittedStock(itemsToRelease, { db, STORES });
+                await releaseCommittedStock(itemsToRelease, { db, STORES, assertActorCurrent: assertRefundActorCurrent });
               }
             }
           } catch (stockErr) {
+            if (isActorAuthorityError(stockErr)) throw stockErr;
             console.error("Error liberando stock en cancelOrder:", stockErr);
           }
 
           try {
+            assertRefundActorCurrent();
             const noteLine = "Sistema: Orden cancelada desde POS";
             const mergedNotes = existing.notes && String(existing.notes).trim()
               ? `${existing.notes}\n${noteLine}`
@@ -575,7 +590,9 @@ export const useActiveOrders = create(
               notes: mergedNotes,
               updatedAt: new Date().toISOString()
             });
+            assertRefundActorCurrent();
           } catch (dbErr) {
+            if (isActorAuthorityError(dbErr)) throw dbErr;
             console.error("Error actualizando DB en cancelOrder:", dbErr);
           }
         }
@@ -621,7 +638,7 @@ export const useActiveOrders = create(
      * Anula en BD una venta abierta por id aunque no esté en pestañas (p. ej. enviada a cocina
      * y rechazada allí). Libera stock comprometido y marca la venta como cancelada.
      */
-    cancelOpenSaleByIdFromPos: async (orderId) => {
+    cancelOpenSaleByIdFromPos: async (orderId, { actorHandle = null } = {}) => {
       set({ isLoading: true });
       try {
         if (!orderId) {
@@ -636,11 +653,16 @@ export const useActiveOrders = create(
           return { success: false, message: 'Solo se pueden anular ventas abiertas.' };
         }
 
+        const refundActorHandle = actorHandle || captureRefundsActorHandle();
+        const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
+        assertRefundActorCurrent();
+
         const itemsToRelease = getSellableItems(existing.items);
         if (itemsToRelease.length > 0) {
           try {
-            await releaseCommittedStock(itemsToRelease, { db, STORES });
-          } catch (stockErr) {
+            await releaseCommittedStock(itemsToRelease, { db, STORES, assertActorCurrent: assertRefundActorCurrent });
+        } catch (stockErr) {
+            if (isActorAuthorityError(stockErr)) throw stockErr;
             console.error('Error liberando stock en cancelOpenSaleByIdFromPos:', stockErr);
           }
         }
@@ -650,12 +672,14 @@ export const useActiveOrders = create(
           ? `${existing.notes}\n${noteLine}`
           : noteLine;
 
+        assertRefundActorCurrent();
         await db.table(STORES.SALES).update(orderId, {
           status: SALE_STATUS.CANCELLED,
           fulfillmentStatus: 'cancelled',
           notes: mergedNotes,
           updatedAt: new Date().toISOString()
         });
+        assertRefundActorCurrent();
 
         const state = get();
         const nextOrders = new Map(state.activeOrders);
@@ -686,7 +710,7 @@ export const useActiveOrders = create(
         return { success: true };
       } catch (error) {
         console.error('cancelOpenSaleByIdFromPos:', error);
-        return { success: false, message: error?.message || 'No se pudo anular la venta.' };
+        return { success: false, code: error?.code || 'OPEN_SALE_CANCEL_FAILED', message: error?.message || 'No se pudo anular la venta.' };
       } finally {
         set({ isLoading: false });
       }

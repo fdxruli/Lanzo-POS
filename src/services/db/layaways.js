@@ -7,8 +7,19 @@ import { getFinancialQuality } from '../sales/financialPolicy';
 import { Money } from '../../utils/moneyMath';
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
 import { auditLayawayFinancialLinks } from '../layawayFinancialProjection';
+import {
+    ACTOR_RUNTIME_ERROR_CODES,
+    ActorRuntimeError
+} from '../auth/actorRuntimeController';
 
 const nowIso = () => new Date().toISOString();
+
+const requireRefundActorAssertion = (assertActorCurrent, operation) => {
+    if (typeof assertActorCurrent !== 'function') {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, { operation });
+    }
+    return assertActorCurrent;
+};
 
 const buildPaymentRecord = (payment, fallbackAmount, fallbackType = 'installment') => ({
     id: payment?.id || generateID('pay'),
@@ -236,9 +247,12 @@ export const layawayRepository = {
         });
     },
 
-    async beginRefund(layawayId, refund) {
+    async beginRefund(layawayId, refund, { assertActorCurrent } = {}) {
+        const assertCurrent = requireRefundActorAssertion(assertActorCurrent, 'layaway.beginRefund');
         return db.transaction('rw', db.table(STORES.LAYAWAYS), async () => {
+            assertCurrent();
             const layaway = await db.table(STORES.LAYAWAYS).get(layawayId);
+            assertCurrent();
             if (!layaway) throw new Error('Apartado no encontrado');
             if (layaway.status === 'cancelled') return { success: true, duplicate: true, layaway };
             if (layaway.pendingRefund) return { success: true, pending: layaway.pendingRefund, layaway };
@@ -249,13 +263,17 @@ export const layawayRepository = {
                 createdAt: refund.createdAt || nowIso()
             };
             await db.table(STORES.LAYAWAYS).update(layawayId, { pendingRefund, updatedAt: nowIso() });
+            assertCurrent();
             return { success: true, pending: pendingRefund, layaway: { ...layaway, pendingRefund } };
         });
     },
 
-    async completeRefund(layawayId, reason, cashMovementId) {
+    async completeRefund(layawayId, reason, cashMovementId, { assertActorCurrent } = {}) {
+        const assertCurrent = requireRefundActorAssertion(assertActorCurrent, 'layaway.completeRefund');
         return db.transaction('rw', transactionTables({ stock: true }), async (tx) => {
+            assertCurrent();
             const layaway = await tx.table(STORES.LAYAWAYS).get(layawayId);
+            assertCurrent();
             if (!layaway) throw new Error('Apartado no encontrado');
             if (layaway.status === 'cancelled') return { success: true, duplicate: true, cashMovementId: layaway.refundCashMovementId };
             await restoreStock(layaway);
@@ -266,18 +284,26 @@ export const layawayRepository = {
                 pendingRefund: { ...(layaway.pendingRefund || {}), status: 'confirmed', cashMovementId },
                 refundCashMovementId: cashMovementId
             });
+            assertCurrent();
             return { success: true, cashMovementId };
         });
     },
 
     async cancel(layawayId, reason = 'Cancelacion por cliente', retainMoney = false, cajaId = null, options = {}) {
+        const assertActorCurrent = requireRefundActorAssertion(
+            options.assertActorCurrent,
+            'layaway.cancel'
+        );
         try {
             const cashMovement = options.cashMovement || null;
+            assertActorCurrent();
             if (Number((await db.table(STORES.LAYAWAYS).get(layawayId))?.paidAmount || 0) > 0 && !retainMoney && !cashMovement) {
                 throw new Error('El reembolso debe registrarse mediante la ruta canonica de Caja.');
             }
+            assertActorCurrent();
 
             return await db.transaction('rw', transactionTables({ cash: Boolean(cashMovement), stock: true }), async (tx) => {
+                assertActorCurrent();
                 const layaway = await tx.table(STORES.LAYAWAYS).get(layawayId);
                 if (!layaway) throw new Error('Apartado no encontrado');
                 if (!['active', 'ready'].includes(layaway.status)) {
@@ -306,6 +332,7 @@ export const layawayRepository = {
                     retainedPenaltyAmount: retainMoney ? Number(layaway.paidAmount || 0) : 0,
                     ...(cashMovementId ? { refundCashMovementId: cashMovementId } : {})
                 });
+                assertActorCurrent();
                 return { success: true, cashMovementId };
             });
         } catch (error) {

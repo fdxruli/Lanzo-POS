@@ -55,6 +55,10 @@ vi.mock('../components/common/PermissionRoute', () => ({
   default: ({ children }) => <>{children}</>
 }));
 
+vi.mock('../components/common/SettingsRoute', () => ({
+  default: ({ children }) => <>{children}</>
+}));
+
 vi.mock('../components/common/ServerStatusBanner', () => ({
   default: () => <div data-testid="server-status-banner" />
 }));

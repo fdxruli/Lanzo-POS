@@ -156,6 +156,26 @@ describe('ActorRuntimeController', () => {
     expect(controller.assertGranted('sales.create').actorKey).toBe('staff:staff-456');
   });
 
+  it('normalizes persisted boolean permission objects without granting false keys', () => {
+    controller.beginAuthentication({ actorType: 'staff', deviceRef: 'device-1' });
+    controller.beginHandoffCheck();
+    const state = controller.grant({
+      actorType: 'staff',
+      actorId: 'staff-object',
+      sessionId: 'session-object',
+      tenantOpaqueId: TENANT_A.opaqueId,
+      permissions: { reports: true, refunds: true, settings: false, admin: 'true' }
+    });
+
+    expect(state.permissions).toEqual(['reports', 'refunds']);
+    expect(() => controller.capture('settings')).toThrowError(
+      expect.objectContaining({ code: ACTOR_RUNTIME_ERROR_CODES.PERMISSION_DENIED })
+    );
+    expect(() => controller.capture('admin')).toThrowError(
+      expect.objectContaining({ code: ACTOR_RUNTIME_ERROR_CODES.PERMISSION_DENIED })
+    );
+  });
+
   it('does not change tenant opaque id or database when actors change', () => {
     const admin = grantAdmin();
     controller.lock('handoff');

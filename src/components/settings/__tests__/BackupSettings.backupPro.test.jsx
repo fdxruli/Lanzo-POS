@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BackupSettings from '../BackupSettings';
 
 const backupStatus = {
@@ -46,6 +47,13 @@ vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(appState))
 }));
 
+vi.mock('../../../services/auth/useSettingsAccess', () => ({
+  useSettingsAccess: () => ({
+    canAccessSection: (section) => section === 'backup'
+  }),
+  useSettingsActionGuard: () => () => ({ assertCurrent: vi.fn() })
+}));
+
 vi.mock('../../../services/googleDriveService', () => ({
   uploadBackup: vi.fn()
 }));
@@ -66,6 +74,8 @@ vi.mock('../GoogleDriveSettings', () => ({
 }));
 
 describe('BackupSettings copy by license mode', () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.clearAllMocks();
     Object.assign(backupStatus, {

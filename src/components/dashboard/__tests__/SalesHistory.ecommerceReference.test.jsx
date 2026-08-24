@@ -34,6 +34,43 @@ describe('SalesHistory ecommerce references', () => {
     expect(screen.getByText('Ecommerce')).toBeVisible();
   });
 
+  it('keeps report rows readable while hiding cancellation actions without refunds', () => {
+    render(
+      <SalesHistory
+        sales={[{
+          id: 'sale-report-only',
+          folio: 'V-000036',
+          timestamp: '2026-07-27T20:00:00.000Z',
+          status: 'closed',
+          total: 31,
+          items: []
+        }]}
+        canManageRefunds={false}
+      />
+    );
+
+    expect(screen.getByText('V-000036')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Cancelar venta/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the existing cancellation action when refunds authority is explicit', () => {
+    render(
+      <SalesHistory
+        sales={[{
+          id: 'sale-refunds',
+          folio: 'V-000037',
+          timestamp: '2026-07-27T20:00:00.000Z',
+          status: 'closed',
+          total: 31,
+          items: []
+        }]}
+        canManageRefunds
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /Cancelar venta/i })).toBeEnabled();
+  });
+
   it('keeps a local V folio as the only sale reference', () => {
     render(
       <SalesHistory

@@ -28,6 +28,8 @@ import {
 } from '../../services/restaurant/restaurantOrderAccountAdjustment';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
+import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import './TablesView.css';
 
 const getTableLabel = (order) => {
@@ -192,6 +194,7 @@ const TableCard = ({
   onCheckoutOrder,
   onSplitOrder,
   cancelledFromKitchen = false,
+  canManageRefunds = false,
   onAnnulKitchenRejected,
   annulSubmitting = false,
   onAdjustKitchenCancelled,
@@ -425,7 +428,7 @@ const TableCard = ({
       <div
         className={`table-card-actions${isKitchenCancelled ? ' table-card-actions--with-annul' : ''}`}
       >
-        {isKitchenCancelled && onAnnulKitchenRejected && (
+        {isKitchenCancelled && canManageRefunds && onAnnulKitchenRejected && (
           <button
             type="button"
             className="btn-annull-kitchen"
@@ -492,6 +495,8 @@ export default function TablesView({
   onAnnulKitchenRejectedOrder,
 }) {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canManageRefunds = canPerformRefunds(actorRuntime);
   const [openSalesRows, setOpenSalesRows] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -814,6 +819,7 @@ export default function TablesView({
                       key={order.id}
                       order={order}
                       cancelledFromKitchen
+                      canManageRefunds={canManageRefunds}
                       onSelectOrder={handleSelectAndClose}
                       onCheckoutOrder={handleCheckoutAndClose}
                       onSplitOrder={handleSplitAndClose}
@@ -837,6 +843,7 @@ export default function TablesView({
                     <TableCard
                       key={order.id}
                       order={order}
+                      canManageRefunds={canManageRefunds}
                       onSelectOrder={handleSelectAndClose}
                       onCheckoutOrder={handleCheckoutAndClose}
                       onSplitOrder={handleSplitAndClose}

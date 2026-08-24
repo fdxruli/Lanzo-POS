@@ -1,6 +1,5 @@
 // src/components/products/DataTransferModal.jsx
-import React, { useCallback, useState } from 'react';
-import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
+import { useCallback, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadInventorySmart, processImport, downloadFile, generatePharmacyReport, downloadTemplate } from '../../services/dataTransfer';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
@@ -8,11 +7,19 @@ import { loadData, STORES } from '../../services/database';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import Logger from '../../services/Logger';
+import { useSettingsActionGuard } from '../../services/auth/useSettingsAccess';
 
-export default function DataTransferModal({ show, onClose, onRefresh }) {
+export default function DataTransferModal({
+  show,
+  onClose,
+  onRefresh,
+  allowInventory = false,
+  allowSalesExport = false
+}) {
   const [activeTab, setActiveTab] = useState('export');
   const [isLoading, setIsLoading] = useState(false);
   const [importLog, setImportLog] = useState(null);
+  const captureSettingsAction = useSettingsActionGuard();
 
   // Hook de configuración para saber si mostrar opciones de Farmacia
   const features = useFeatureConfig();
@@ -24,8 +31,6 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
     if (typeof businessType === 'string' && businessType.trim()) return businessType.split(',')[0].trim();
     return null;
   })();
-
-  const categories = useInventoryCatalogStore(state => state.categories);
 
   const handleClose = useCallback(() => {
     if (isLoading) return;
@@ -39,21 +44,40 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
   });
 
   const handleExport = async () => {
-    setIsLoading(true);
+    let actorHandle;
     try {
+      actorHandle = captureSettingsAction('inventory');
+      setIsLoading(true);
       // Ya no cargamos datos aquí, la función 'smart' se encarga internamente
       await downloadInventorySmart(rubro);
-
+      actorHandle.assertCurrent('inventory');
       showMessageModal('✅ Archivo de inventario generado correctamente.');
     } catch (error) {
-      Logger.error(error);
-      showMessageModal('Error al generar la exportación.');
+      try {
+        actorHandle?.assertCurrent('inventory');
+        Logger.error(error);
+        showMessageModal('Error al generar la exportación.');
+      } catch {
+        // The actor changed while the export was pending.
+      }
     } finally {
-      setIsLoading(false);
+      try {
+        actorHandle?.assertCurrent('inventory');
+        setIsLoading(false);
+      } catch {
+        // The replacement actor receives a fresh modal subtree.
+      }
     }
   };
 
   const handleDownloadTemplate = () => {
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('inventory');
+      actorHandle.assertCurrent('inventory');
+    } catch {
+      return;
+    }
     if (!rubro) {
       showMessageModal('⚠️ No se pudo determinar tu tipo de negocio. Ve a Configuración y selecciona tu rubro antes de descargar la plantilla.');
       return;
@@ -69,9 +93,14 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
 
   // Manejador del reporte de Farmacia (Libro de Control)
   const handleExportPharmacy = async () => {
-    setIsLoading(true);
+    let actorHandle;
     try {
+      actorHandle = captureSettingsAction('sync');
+      actorHandle.assertCurrent('reports');
+      setIsLoading(true);
       const allSales = await loadData(STORES.SALES);
+      actorHandle.assertCurrent('sync');
+      actorHandle.assertCurrent('reports');
       const csvContent = generatePharmacyReport(allSales);
 
       if (csvContent.split('\n').length <= 1) {
@@ -82,16 +111,35 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
         showMessageModal('✅ Libro de Control generado correctamente.');
       }
     } catch (error) {
-      Logger.error(error);
-      showMessageModal('Error al generar reporte: ' + error.message);
+      try {
+        actorHandle?.assertCurrent('sync');
+        actorHandle?.assertCurrent('reports');
+        Logger.error(error);
+        showMessageModal('Error al generar reporte: ' + error.message);
+      } catch {
+        // The actor changed while the report was pending.
+      }
     } finally {
-      setIsLoading(false);
+      try {
+        actorHandle?.assertCurrent('sync');
+        actorHandle?.assertCurrent('reports');
+        setIsLoading(false);
+      } catch {
+        // The replacement actor receives a fresh modal subtree.
+      }
     }
   };
 
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    let actorHandle;
+    try {
+      actorHandle = captureSettingsAction('inventory');
+    } catch {
+      e.target.value = '';
+      return;
+    }
 
     const confirmed = await showConfirmModal(
       'IMPORTANTE: Esta acción agregará nuevos productos o actualizará los existentes si coinciden los IDs. ¿Deseas continuar?',
@@ -106,28 +154,47 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
       return;
     }
 
+    try {
+      actorHandle.assertCurrent('inventory');
+    } catch {
+      e.target.value = '';
+      return;
+    }
+
     setIsLoading(true);
     setImportLog(null);
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
+        actorHandle.assertCurrent('inventory');
         const content = evt.target.result;
         const result = await processImport(content);
-
+        actorHandle.assertCurrent('inventory');
         setImportLog(result);
 
         if (result.success && result.importedCount > 0) {
-          await onRefresh();
+          await onRefresh?.();
+          actorHandle.assertCurrent('inventory');
           showMessageModal(`¡Éxito! Se importaron ${result.importedCount} productos.`);
         } else if (result.importedCount === 0) {
           showMessageModal('No se encontraron productos válidos en el archivo.');
         }
       } catch (error) {
-        Logger.error(error);
-        showMessageModal(`Error crítico al importar: ${error.message}`);
+        try {
+          actorHandle.assertCurrent('inventory');
+          Logger.error(error);
+          showMessageModal(`Error crítico al importar: ${error.message}`);
+        } catch {
+          // The actor changed while the import was pending.
+        }
       } finally {
-        setIsLoading(false);
+        try {
+          actorHandle.assertCurrent('inventory');
+          setIsLoading(false);
+        } catch {
+          // The replacement actor receives a fresh modal subtree.
+        }
         e.target.value = '';
       }
     };
@@ -135,7 +202,7 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
     reader.readAsText(file);
   };
 
-  if (!show) return null;
+  if (!show || (!allowInventory && !allowSalesExport)) return null;
 
   return (
     <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
@@ -149,29 +216,37 @@ export default function DataTransferModal({ show, onClose, onRefresh }) {
           >
             📤 Exportar / Respaldo
           </button>
-          <button
-            className={`tab-btn ${activeTab === 'import' ? 'active' : ''}`}
-            onClick={() => setActiveTab('import')}
-          >
-            📥 Importar CSV
-          </button>
+          {allowInventory && (
+            <button
+              className={`tab-btn ${activeTab === 'import' ? 'active' : ''}`}
+              onClick={() => setActiveTab('import')}
+            >
+              📥 Importar CSV
+            </button>
+          )}
         </div>
 
         <div style={{ padding: '1rem 0' }}>
           {activeTab === 'export' ? (
             <div style={{ textAlign: 'center' }}>
-              <p>Descarga todo tu inventario en un archivo CSV (compatible con Excel).</p>
-              <p style={{ fontSize: '0.9rem', color: '#666' }}>
-                Incluye: Productos, Códigos, Precios, Costos, Stock actual y Configuraciones avanzadas.
-              </p>
+              {allowInventory && (
+                <>
+                  <p>Descarga todo tu inventario en un archivo CSV (compatible con Excel).</p>
+                  <p style={{ fontSize: '0.9rem', color: '#666' }}>
+                    Incluye: Productos, Códigos, Precios, Costos, Stock actual y Configuraciones avanzadas.
+                  </p>
+                </>
+              )}
 
               <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button className="btn btn-save" onClick={handleExport} disabled={isLoading}>
-                  {isLoading ? 'Generando...' : '⬇️ Descargar Inventario Completo'}
-                </button>
+                {allowInventory && (
+                  <button className="btn btn-save" onClick={handleExport} disabled={isLoading}>
+                    {isLoading ? 'Generando...' : '⬇️ Descargar Inventario Completo'}
+                  </button>
+                )}
 
                 {/* BOTÓN CONDICIONAL: SOLO VISIBLE SI ES FARMACIA */}
-                {features.hasLabFields && (
+                {allowSalesExport && features.hasLabFields && (
                   <button
                     className="btn btn-secondary"
                     onClick={handleExportPharmacy}

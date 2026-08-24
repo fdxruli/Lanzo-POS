@@ -48,11 +48,18 @@ export const restoreDeletedSaleCore = async (
     STORES,
     reapplyStockFromCancellation,
     generateId,
+    assertActorCurrent,
     now = () => new Date().toISOString(),
     Logger = console
   }
 ) => {
   try {
+    if (typeof assertActorCurrent !== 'function') {
+      const error = new Error('Se requiere una sesion vigente con permiso de devoluciones.');
+      error.code = 'ACTOR_SESSION_REQUIRED';
+      throw error;
+    }
+
     let result = null;
     const stores = [
       STORES.DELETED_SALES,
@@ -65,6 +72,7 @@ export const restoreDeletedSaleCore = async (
     ].filter(Boolean);
 
     await db.transaction('rw', stores, async () => {
+      assertActorCurrent();
       const deletedSale = await db.table(STORES.DELETED_SALES).get(saleId);
       if (!deletedSale) {
         const error = new Error('La venta ya no existe en la papelera.');
@@ -164,6 +172,7 @@ export const restoreDeletedSaleCore = async (
         operationId: restoreOperationId,
         timestamp: restoredAt
       });
+      assertActorCurrent();
 
       result = {
         success: true,

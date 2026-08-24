@@ -21,6 +21,7 @@ import {
     getEcommercePosBlockedResult,
     isEcommercePosEffectBlocked
 } from '../../services/ecommerce/ecommercePosDraftGuards';
+import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 
 const EMPTY_ORDER = [];
 
@@ -618,6 +619,17 @@ export function useTableManagement({
             };
         }
 
+        let actorHandle;
+        try {
+            actorHandle = captureRefundsActorHandle();
+        } catch (error) {
+            return {
+                success: false,
+                code: error?.code || 'ACTOR_PERMISSION_DENIED',
+                message: 'No tienes permiso vigente para anular esta venta.'
+            };
+        }
+
         const ok = await showConfirmModal('¿Anular esta venta en el sistema?', {
             title: 'Anular venta',
             type: 'warning',
@@ -629,7 +641,7 @@ export function useTableManagement({
 
         try {
             const { useActiveOrders: activeOrdersStore } = await import('./useActiveOrders.js');
-            const result = await activeOrdersStore.getState().cancelOpenSaleByIdFromPos(targetOrder.id);
+            const result = await activeOrdersStore.getState().cancelOpenSaleByIdFromPos(targetOrder.id, { actorHandle });
 
             if (result.success) {
                 showMessageModal('Venta anulada correctamente.', null, { type: 'success' });
