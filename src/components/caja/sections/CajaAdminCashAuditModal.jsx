@@ -98,35 +98,43 @@ const CajaAdminCashAuditModal = ({
         prefix: 'cash_admin_close'
       });
     }
-    const result = await cerrarCajaAdministrativamente({
-      cashSessionId: session.id,
-      closingMode: mode,
-      countedAmount: audited ? Money.toExactString(counted) : null,
-      nextShiftFund: audited ? Money.toExactString(nextFund) : null,
-      reasonCode,
-      comments: comments.trim(),
-      expectedVersion: session.serverVersion || session.server_version || null,
-      idempotencyKey: idempotencyKeyRef.current
-    });
-    if (result?.success) {
-      onClose({ closed: true });
-      return;
+    let closeResult = null;
+    try {
+      const result = await cerrarCajaAdministrativamente({
+        cashSessionId: session.id,
+        closingMode: mode,
+        countedAmount: audited ? Money.toExactString(counted) : null,
+        nextShiftFund: audited ? Money.toExactString(nextFund) : null,
+        reasonCode,
+        comments: comments.trim(),
+        expectedVersion: session.serverVersion || session.server_version || null,
+        idempotencyKey: idempotencyKeyRef.current
+      });
+      if (result?.success) {
+        closeResult = { closed: true, cashSessionId: session.id };
+      } else {
+        const response = result?.response;
+        const requiresReview = ['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'].includes(result?.code);
+        if (requiresReview && response?.cash_session) {
+          setDetail((current) => ({ ...current, cashSession: response.cash_session }));
+          setConfirming(false);
+          // The backend completed this attempt with a conflict response. A new human
+          // confirmation is a new operation and must not replay that completed key.
+          idempotencyKeyRef.current = null;
+          setError(result?.code === 'CASH_TOTALS_CHANGED'
+            ? 'El efectivo esperado cambió mientras revisabas la caja. Actualizamos los datos; revísalos antes de confirmar nuevamente.'
+            : 'La caja cambió desde que la revisaste. Actualizamos los datos; vuelve a confirmar el cierre.');
+        } else {
+          setError(result?.message || 'No se pudo cerrar administrativamente la caja.');
+        }
+      }
+    } catch (submitError) {
+      setError(submitError?.message || 'No se pudo cerrar administrativamente la caja. Intenta nuevamente.');
+    } finally {
+      setSubmitting(false);
     }
-    const response = result?.response;
-    const requiresReview = ['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'].includes(result?.code);
-    if (requiresReview && response?.cash_session) {
-      setDetail((current) => ({ ...current, cashSession: response.cash_session }));
-      setConfirming(false);
-      // The backend completed this attempt with a conflict response. A new human
-      // confirmation is a new operation and must not replay that completed key.
-      idempotencyKeyRef.current = null;
-      setError(result?.code === 'CASH_TOTALS_CHANGED'
-        ? 'La caja cambio mientras la revisabas. Actualizamos el efectivo esperado; revisa nuevamente los datos antes de confirmar.'
-        : 'La caja cambio desde que la revisaste. Actualizamos los datos; vuelve a confirmar el cierre.');
-    } else {
-      setError(result?.message || 'No se pudo cerrar administrativamente la caja.');
-    }
-    setSubmitting(false);
+
+    if (closeResult) onClose(closeResult);
   };
 
   if (!cashSessionId) return null;

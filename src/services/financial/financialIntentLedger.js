@@ -46,8 +46,157 @@ const secureKey = () => {
   return `financial:v1:${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 };
 
-const protocolCode = (error) => String(error?.code || error?.message || error || '').match(/(?:IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/)?.[0] || null;
-const isAmbiguousTransport = (error) => !protocolCode(error) || /(?:network|fetch|timeout|abort|offline|failed to fetch)/i.test(String(error?.message || error));
+const TRANSPORT_ERROR_CODES = new Set([
+  'ABORT_ERR',
+  'EAI_AGAIN',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ECANCELED',
+  'EHOSTDOWN',
+  'EHOSTUNREACH',
+  'ENETDOWN',
+  'ENETRESET',
+  'ENETUNREACH',
+  'EPIPE',
+  'ESOCKETTIMEDOUT',
+  'ETIME',
+  'ETIMEDOUT',
+  'ERR_ABORTED',
+  'ERR_NETWORK',
+  'ERR_NETWORK_CHANGED',
+  'ERR_CANCELED',
+  'ERR_CONNECTION_CLOSED',
+  'ERR_CONNECTION_RESET',
+  'ERR_INTERNET_DISCONNECTED',
+  'ERR_TIMED_OUT',
+  'FETCH_ERROR',
+  'NETWORK_ERR',
+  'NETWORK_ERROR',
+  'NETWORK_UNAVAILABLE',
+  'TIMEOUT_ERR',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET'
+]);
+const AMBIGUOUS_HTTP_STATUSES = new Set([502, 503, 504]);
+const CASH_ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
+const PROTOCOL_CODE_PATTERN = /(?:IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
+const TRANSPORT_MESSAGE_PATTERN = /(?:\bfailed to fetch\b|\bfetch failed\b|^load failed$|\bnetworkerror\b|\bnetwork (?:request )?(?:failed|failure|error|unavailable|offline|interrupted)\b|\b(?:network|request|connection|transport|fetch) (?:timed out|timeout|was aborted|aborted|was interrupted|interrupted)\b|\boperation (?:timed out|timeout)\b|\btimeout(?: of \S+)? (?:exceeded|expired)\b|^timeout$|\boffline\b|\bconnection (?:reset|aborted|interrupted|closed unexpectedly)\b|\bsocket hang up\b)/i;
+
+const safeRead = (value, key) => {
+  try {
+    return value !== null && (typeof value === 'object' || typeof value === 'function')
+      ? value[key]
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const safeText = (value) => {
+  if (value === null || value === undefined) return '';
+  try {
+    return String(value).trim();
+  } catch {
+    return '';
+  }
+};
+
+const validHttpStatus = (value) => {
+  const status = Number(value);
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+};
+
+const extractDispatchErrorEvidence = (error) => {
+  const cause = safeRead(error, 'cause');
+  const response = safeRead(error, 'response');
+  const directCode = safeText(safeRead(error, 'code')).toUpperCase();
+  const causeCode = safeText(safeRead(cause, 'code')).toUpperCase();
+  const texts = [
+    typeof error === 'string' || typeof error === 'number' ? error : null,
+    directCode,
+    safeRead(error, 'message'),
+    safeRead(error, 'details'),
+    safeRead(error, 'hint'),
+    causeCode,
+    safeRead(cause, 'message')
+  ].map(safeText).filter(Boolean);
+  const status = [
+    safeRead(error, 'status'),
+    safeRead(error, 'statusCode'),
+    safeRead(response, 'status'),
+    /^\d{3}$/.test(directCode) ? directCode : null
+  ].map(validHttpStatus).find((candidate) => candidate !== null) || null;
+  return {
+    codes: [directCode, causeCode].filter(Boolean),
+    name: safeText(safeRead(error, 'name')),
+    texts,
+    status,
+    deterministicServerResponse: safeRead(error, 'isDeterministicServerResponse') === true
+  };
+};
+
+const protocolCode = (evidence) => {
+  for (const text of evidence.texts) {
+    const match = text.match(PROTOCOL_CODE_PATTERN);
+    if (match) return match[0].toUpperCase();
+  }
+  return null;
+};
+
+const isDeterministicDatabaseCode = (code) => (
+  /^PGRST[0-9A-Z]{3}$/.test(code)
+  || (/^[0-9A-Z]{5}$/.test(code) && !TRANSPORT_ERROR_CODES.has(code))
+);
+
+const hasTransportEvidence = (evidence) => (
+  evidence.codes.some((code) => TRANSPORT_ERROR_CODES.has(code))
+  || /^(?:AbortError|NetworkError|TimeoutError)$/i.test(evidence.name)
+  || evidence.texts.some((text) => TRANSPORT_MESSAGE_PATTERN.test(text))
+);
+
+const classifyDispatchFailure = (error) => {
+  const evidence = extractDispatchErrorEvidence(error);
+  const code = protocolCode(evidence);
+  if (code === 'IDEMPOTENCY_CONFLICT') {
+    return { code, status: FINANCIAL_INTENT_STATUS.CONFLICT };
+  }
+  if (code) return { code, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+  if (evidence.codes.some(isDeterministicDatabaseCode)) {
+    return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+  }
+  if (evidence.status >= 400 && evidence.status <= 499) {
+    return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+  }
+  if (AMBIGUOUS_HTTP_STATUSES.has(evidence.status)) {
+    return { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT };
+  }
+  if (evidence.deterministicServerResponse) {
+    return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+  }
+  if (hasTransportEvidence(evidence)) return { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT };
+  return { code: null, status: FINANCIAL_INTENT_STATUS.BLOCKED };
+};
+
+const isCashAdminCloseReviewResponse = (operationType, result) => (
+  operationType === 'cash.admin_close'
+  && result?.success === false
+  && CASH_ADMIN_CLOSE_REVIEW_CODES.has(String(result?.code || '').trim().toUpperCase())
+);
+
+const rejectedFinancialResponseError = (result) => {
+  const rejected = new Error(result?.code || result?.message || 'FINANCIAL_OPERATION_REJECTED');
+  rejected.code = result?.code || null;
+  rejected.details = result?.details ?? null;
+  rejected.hint = result?.hint ?? null;
+  if (result?.cause) rejected.cause = result.cause;
+  const status = validHttpStatus(result?.status ?? result?.statusCode ?? result?.status_code);
+  if (status !== null) rejected.status = status;
+  rejected.isDeterministicServerResponse = true;
+  return rejected;
+};
 
 const assertSupabase = () => {
   if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED');
@@ -188,12 +337,14 @@ const resolveStation = async ({ auth, cashSessionId, operationType }) => {
   return stationId;
 };
 
-const recordReceipt = async ({ intentId, handle, receipt, status, code = null }) => {
+const recordReceipt = async ({ intentId, handle, receipt, status, code = null, preserveFullResponse = false }) => {
   await updateMutable(intentId, {
     status,
     lastReceiptStatus: receipt?.status || status,
     lastProtocolCode: code || receipt?.code || null,
-    ...(status === FINANCIAL_INTENT_STATUS.COMPLETED ? { responsePayload: receipt?.result || receipt, completedAt: now() } : {})
+    ...(status === FINANCIAL_INTENT_STATUS.COMPLETED
+      ? { responsePayload: preserveFullResponse ? receipt : (receipt?.result || receipt), completedAt: now() }
+      : {})
   }, handle);
 };
 
@@ -276,28 +427,33 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
     });
     if (error) throw error;
     const result = parseRpcPayload(data);
-    if (result?.success === false) {
-      const rejected = new Error(result.code || result.message || 'FINANCIAL_OPERATION_REJECTED');
-      rejected.code = result.code || null;
-      throw rejected;
+    const isAdminCloseReview = isCashAdminCloseReviewResponse(durableIntent.operationType, result);
+    if (result?.success === false && !isAdminCloseReview) {
+      throw rejectedFinancialResponseError(result);
     }
-    await recordReceipt({ intentId: durableIntent.id, handle, receipt: result, status: FINANCIAL_INTENT_STATUS.COMPLETED });
+    await recordReceipt({
+      intentId: durableIntent.id,
+      handle,
+      receipt: result,
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      preserveFullResponse: isAdminCloseReview
+    });
     return { intentId: durableIntent.id, response: result };
   } catch (error) {
-    const code = protocolCode(error);
-    if (code === 'IDEMPOTENCY_CONFLICT') await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.CONFLICT, code });
-    else if (code === 'FINANCIAL_REQUEST_HASH_INVALID' || code === 'FINANCIAL_OPERATION_ORIGIN_MISMATCH') await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.BLOCKED, code });
-    else if (isAmbiguousTransport(error)) {
+    const { code, status } = classifyDispatchFailure(error);
+    if (status === FINANCIAL_INTENT_STATUS.CONFLICT || status === FINANCIAL_INTENT_STATUS.BLOCKED) {
+      await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status, code });
+    } else {
       await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, code });
       try {
         const receipt = await receiptForCurrentOrigin({ intent: durableIntent, licenseKey, handle });
         if (receipt?.status === 'COMPLETED') await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.COMPLETED });
         else if (receipt?.status === 'CONFLICT') await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.CONFLICT, code: 'IDEMPOTENCY_CONFLICT' });
         else await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
-      } catch (receiptError) {
+      } catch {
         // The original ambiguous intent remains durable; 5B never resends it.
       }
-    } else await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.BLOCKED, code });
+    }
     throw error;
   }
 };
@@ -335,10 +491,8 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
     });
     if (error) throw error;
     const result = parseRpcPayload(data);
-    if (result?.success === false) {
-      const rejected = new Error(result.code || result.message || 'FINANCIAL_OPERATION_REJECTED');
-      rejected.code = result.code || null;
-      throw rejected;
+    if (result?.success === false && !isCashAdminCloseReviewResponse(durableIntent.operationType, result)) {
+      throw rejectedFinancialResponseError(result);
     }
     await updateFinancialIntentForRecovery(intentId, {
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
@@ -349,12 +503,7 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
     }, handle);
     return { intentId, response: result };
   } catch (error) {
-    const code = protocolCode(error);
-    const status = code === 'IDEMPOTENCY_CONFLICT'
-      ? FINANCIAL_INTENT_STATUS.CONFLICT
-      : ((code === 'FINANCIAL_REQUEST_HASH_INVALID' || code === 'FINANCIAL_OPERATION_ORIGIN_MISMATCH')
-        ? FINANCIAL_INTENT_STATUS.BLOCKED
-        : FINANCIAL_INTENT_STATUS.PENDING_RECEIPT);
+    const { code, status } = classifyDispatchFailure(error);
     await updateFinancialIntentForRecovery(intentId, { status, lastProtocolCode: code }, handle);
     throw error;
   }

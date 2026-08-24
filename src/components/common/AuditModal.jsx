@@ -107,7 +107,7 @@ export default function AuditModal({ show, onClose, onConfirmAudit, caja: _caja,
   return (
     <div className="ui-modal ui-modal--top audit-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="audit-modal-title">
       <div className="ui-modal__content ui-modal__content--md audit-modal">
-        <h2 id="audit-modal-title" className="ui-modal__title modal-title">Auditoria de Caja (Cierre)</h2>
+        <h2 id="audit-modal-title" className="ui-modal__title modal-title">Corte de caja</h2>
 
         {step === 1 ? (
           <>

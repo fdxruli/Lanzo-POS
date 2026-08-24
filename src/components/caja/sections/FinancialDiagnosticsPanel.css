@@ -11,6 +11,7 @@
 .financial-diagnostics__detail header,
 .financial-diagnostics__item,
 .financial-diagnostics__actions,
+.financial-diagnostics__header-actions,
 .financial-diagnostics__filters,
 .financial-diagnostics__summary {
   display: flex;
@@ -22,6 +23,7 @@
 .financial-diagnostics__item { justify-content: space-between; align-items: start; }
 .financial-diagnostics__header p, .financial-diagnostics__item p { margin: 0 0 .25rem; }
 .financial-diagnostics__header h2, .financial-diagnostics__detail h3 { margin: 0; }
+.financial-diagnostics__header-actions { flex-wrap: wrap; justify-content: end; }
 .financial-diagnostics__filters { flex-wrap: wrap; }
 .financial-diagnostics__filters .is-selected { font-weight: 700; text-decoration: underline; }
 .financial-diagnostics__summary { flex-wrap: wrap; }
@@ -36,4 +38,52 @@
 .financial-diagnostics__detail dt { font-size: .8rem; color: var(--text-muted, #5f6877); }
 .financial-diagnostics__detail dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
 .financial-diagnostics__message { margin: 0; color: var(--text-muted, #5f6877); }
-@media (max-width: 720px) { .financial-diagnostics__item { display: grid; } .financial-diagnostics__actions { justify-content: start; max-width: none; } }
+
+.financial-diagnostics--compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .85rem;
+  padding: .8rem 1rem;
+}
+
+.financial-diagnostics__compact-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: .65rem;
+  min-width: 0;
+}
+
+.financial-diagnostics__compact-copy p {
+  margin: .2rem 0 0;
+  color: var(--text-muted, #5f6877);
+  font-size: .82rem;
+}
+
+.financial-diagnostics__compact-indicator {
+  flex: 0 0 auto;
+  width: .65rem;
+  height: .65rem;
+  margin-top: .3rem;
+  background: var(--ui-text-success, #078768);
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px var(--ui-bg-success-soft, rgba(7, 135, 104, .12));
+}
+
+.financial-diagnostics__compact-indicator.is-attention {
+  background: var(--ui-text-warning, #9a6700);
+  box-shadow: 0 0 0 4px var(--ui-bg-warning-soft, rgba(154, 103, 0, .12));
+}
+
+.financial-diagnostics--compact > button {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .financial-diagnostics__item { display: grid; }
+  .financial-diagnostics__actions { justify-content: start; max-width: none; }
+  .financial-diagnostics__header { display: grid; }
+  .financial-diagnostics__header-actions { justify-content: start; }
+  .financial-diagnostics--compact { align-items: stretch; flex-direction: column; }
+  .financial-diagnostics--compact > button { width: 100%; }
+}
