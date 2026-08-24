@@ -104,6 +104,7 @@ describe('CajaAdminCashAuditModal', () => {
     const firstAttempt = closeAdmin.mock.calls[0][0];
     expect(firstAttempt).toMatchObject({ expectedVersion: 4 });
     expect(screen.getByText(/actualizamos los datos/i)).toBeVisible();
+    expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText(/\$1200\.00/)).toBeVisible();
     expect(screen.getByText(/\$-20\.00/)).toBeVisible();
     expect(screen.getByRole('button', { name: /revisar confirmacion/i })).toBeEnabled();
@@ -114,6 +115,50 @@ describe('CajaAdminCashAuditModal', () => {
     await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(2));
     const secondAttempt = closeAdmin.mock.calls[1][0];
     expect(secondAttempt).toMatchObject({ expectedVersion: 5 });
+    expect(secondAttempt.idempotencyKey).not.toBe(firstAttempt.idempotencyKey);
+    expect(onClose).toHaveBeenCalledWith({ closed: true, cashSessionId: 'cash-1196' });
+  });
+
+  it('refreshes totals and requires a new explicit confirmation/key after CASH_TOTALS_CHANGED', async () => {
+    const onClose = vi.fn();
+    const closeAdmin = vi.fn()
+      .mockResolvedValueOnce({
+        success: false,
+        code: 'CASH_TOTALS_CHANGED',
+        message: 'Los totales cambiaron.',
+        response: {
+          cash_session: {
+            ...detail.cashSession,
+            status: 'open',
+            server_version: 8,
+            expected_cash_total: '1210'
+          }
+        }
+      })
+      .mockResolvedValueOnce({ success: true });
+    renderModal({ onClose, cerrarCajaAdministrativamente: closeAdmin });
+
+    await screen.findByText('Caja sintetica');
+    fireEvent.click(screen.getByText(/conte fisicamente/i));
+    fireEvent.change(screen.getByLabelText(/efectivo contado/i), { target: { value: '1180' } });
+    fireEvent.change(screen.getByLabelText(/^motivo/i), { target: { value: 'operational_error' } });
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(1));
+    const firstAttempt = closeAdmin.mock.calls[0][0];
+    expect(screen.getByText(/efectivo esperado cambió/i)).toBeVisible();
+    expect(screen.getByText(/\$1210\.00/)).toBeVisible();
+    expect(screen.getByText(/\$-30\.00/)).toBeVisible();
+    expect(screen.getByRole('button', { name: /revisar confirmacion/i })).toBeEnabled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirmar cierre administrativo/i }));
+
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(2));
+    const secondAttempt = closeAdmin.mock.calls[1][0];
+    expect(secondAttempt).toMatchObject({ expectedVersion: 8 });
     expect(secondAttempt.idempotencyKey).not.toBe(firstAttempt.idempotencyKey);
     expect(onClose).toHaveBeenCalledWith({ closed: true, cashSessionId: 'cash-1196' });
   });

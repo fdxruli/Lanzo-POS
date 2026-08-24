@@ -41,6 +41,7 @@ const runtime = vi.hoisted(() => {
     handle: null,
     makeHandle,
     execute: async () => ({ success: true, receipt: 'server-result' }),
+    executeError: null,
     receipt: async () => ({ status: 'NOT_FOUND' }),
     rpcCalls: []
   };
@@ -66,7 +67,10 @@ vi.mock('../../supabase', () => ({
     rpc: async (name, args) => {
       runtime.rpcCalls.push({ name, args });
       if (name === 'pos_get_cash_station_state') return { data: { cash_station: { id: 'station-a' } }, error: null };
-      if (name === 'pos_execute_financial_operation_v1') return { data: await runtime.execute(args), error: null };
+      if (name === 'pos_execute_financial_operation_v1') {
+        if (runtime.executeError) return { data: null, error: runtime.executeError };
+        return { data: await runtime.execute(args), error: null };
+      }
       if (name === 'pos_get_financial_operation_receipt') return { data: await runtime.receipt(args), error: null };
       throw new Error(`Unexpected RPC ${name}`);
     }
@@ -98,6 +102,7 @@ describe('financial intent ledger', () => {
     runtime.rpcCalls.splice(0);
     runtime.handle = runtime.makeHandle();
     runtime.execute = async () => ({ success: true, receipt: 'server-result' });
+    runtime.executeError = null;
     runtime.receipt = async () => ({ status: 'NOT_FOUND' });
   });
 
@@ -173,6 +178,119 @@ describe('financial intent ledger', () => {
       .rejects.toThrow('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
   });
 
+  it.each(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'])('preserves the full cash.admin_close %s review response as terminal evidence', async (code) => {
+    const intent = await createOpenIntent({
+      operationType: 'cash.admin_close',
+      request: { cash_session_id: 'cash-session-1', expected_version: 7, close_mode: 'admin_audited' }
+    });
+    const reviewResponse = {
+      success: false,
+      code,
+      message: 'La caja cambió y requiere revisión administrativa.',
+      cash_session: {
+        id: 'cash-session-1',
+        actor_key: 'staff:historical-owner',
+        status: 'open',
+        server_version: 8,
+        closing_counted_amount: null
+      },
+      current_totals: { expected_cash: '75.00' },
+      result: { review_context: 'must-not-replace-the-envelope' }
+    };
+    runtime.execute = async () => reviewResponse;
+
+    const execution = await executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+
+    expect(execution.response).toEqual(reviewResponse);
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'COMPLETED',
+      responsePayload: reviewResponse,
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it('preserves an admin review response at the PREPARED zero-attempt recovery dispatch edge', async () => {
+    const intent = await createOpenIntent({
+      operationType: 'cash.admin_close',
+      request: { cash_session_id: 'cash-session-1', expected_version: 7, close_mode: 'admin_audited' }
+    });
+    const reviewResponse = {
+      success: false,
+      code: 'CASH_TOTALS_CHANGED',
+      message: 'Los totales cambiaron.',
+      cash_session: { id: 'cash-session-1', status: 'open', server_version: 8 },
+      current_totals: { expected_cash: '75.00' }
+    };
+    runtime.execute = async () => reviewResponse;
+
+    const execution = await executePreparedFinancialIntentForRecovery({
+      intentId: intent.id,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle
+    });
+
+    expect(execution.response).toEqual(reviewResponse);
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'COMPLETED',
+      responsePayload: reviewResponse,
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+  });
+
+  it.each([
+    ['cash.close', 'VERSION_CONFLICT'],
+    ['cash.admin_close', 'UNEXPECTED_ADMIN_CLOSE_REJECTION']
+  ])('does not grant the admin review exception to %s / %s', async (operationType, code) => {
+    const intent = await createOpenIntent({ operationType, request: { cash_session_id: 'cash-session-1' } });
+    runtime.execute = async () => ({
+      success: false,
+      code,
+      message: 'Deterministic server rejection',
+      cash_session: { id: 'cash-session-1', status: 'open' }
+    });
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toMatchObject({ code });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1,
+      responsePayload: null
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it('does not grant the admin review exception to another operation at the recovery dispatch edge', async () => {
+    const intent = await createOpenIntent({ operationType: 'cash.close', request: { cash_session_id: 'cash-session-1' } });
+    runtime.execute = async () => ({
+      success: false,
+      code: 'CASH_TOTALS_CHANGED',
+      message: 'Deterministic close rejection',
+      cash_session: { id: 'cash-session-1', status: 'open' }
+    });
+
+    await expect(executePreparedFinancialIntentForRecovery({
+      intentId: intent.id,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle
+    })).rejects.toMatchObject({ code: 'CASH_TOTALS_CHANGED' });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1,
+      responsePayload: null
+    });
+  });
+
   it('keeps an ambiguous dispatch pending, then records the authoritative completed receipt without resending', async () => {
     const intent = await createOpenIntent();
     runtime.execute = async () => { throw new TypeError('Failed to fetch'); };
@@ -209,12 +327,11 @@ describe('financial intent ledger', () => {
 
   it('fails closed on a structured PostgreSQL 42703 response without querying a receipt', async () => {
     const intent = await createOpenIntent();
-    runtime.execute = async () => {
-      throw Object.assign(new Error('column cash_sessions.closed_by_actor_key does not exist'), {
-        code: '42703',
-        details: null,
-        hint: null
-      });
+    runtime.executeError = {
+      code: '42703',
+      message: 'column cash_sessions.closed_by_actor_key does not exist',
+      details: null,
+      hint: 'Perhaps you meant cash_sessions.closed_by_admin_user_id'
     };
 
     await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
@@ -226,7 +343,139 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
     expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it.each([
+    ['message', 'IDEMPOTENCY_CONFLICT', FINANCIAL_INTENT_STATUS.CONFLICT],
+    ['details', 'FINANCIAL_REQUEST_HASH_INVALID', FINANCIAL_INTENT_STATUS.BLOCKED],
+    ['hint', 'FINANCIAL_OPERATION_ORIGIN_MISMATCH', FINANCIAL_INTENT_STATUS.BLOCKED],
+    ['causeCode', 'FINANCIAL_REQUEST_HASH_INVALID', FINANCIAL_INTENT_STATUS.BLOCKED],
+    ['causeMessage', 'IDEMPOTENCY_CONFLICT', FINANCIAL_INTENT_STATUS.CONFLICT]
+  ])('finds known protocol code %s inside a realistic P0001 envelope before SQLSTATE classification', async (field, code, expectedStatus) => {
+    const intent = await createOpenIntent();
+    const postgrestError = {
+      code: 'P0001',
+      message: 'cash operation rejected',
+      details: 'The server rejected this request',
+      hint: null
+    };
+    if (field === 'message' || field === 'details' || field === 'hint') postgrestError[field] = code;
+    if (field === 'causeCode') postgrestError.cause = { code, message: 'wrapped database rejection' };
+    if (field === 'causeMessage') postgrestError.cause = { code: 'WRAPPED_ERROR', message: code };
+    runtime.executeError = postgrestError;
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toBe(postgrestError);
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: expectedStatus,
+      dispatchAttemptCount: 1,
+      lastProtocolCode: code
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it.each([
+    ['P0001', { code: 'P0001', message: 'cash close implementation failed', details: 'raised by PL/pgSQL', hint: null }],
+    ['PGRST202', { code: 'PGRST202', message: 'Could not find the function in the schema cache', details: null, hint: null, status: 404 }],
+    ['PGRST003', { code: 'PGRST003', message: 'Timed out waiting for a database connection', details: null, hint: null, status: 504 }]
+  ])('fails closed on deterministic structured database error %s', async (label, postgrestError) => {
+    const intent = await createOpenIntent();
+    expect(postgrestError.code).toBe(label);
+    runtime.executeError = postgrestError;
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toBe(postgrestError);
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it('gives a deterministic HTTP 4xx response priority over transport-like text', async () => {
+    const intent = await createOpenIntent();
+    const clientError = { status: 400, message: 'Failed to fetch the requested deterministic resource' };
+    runtime.executeError = clientError;
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toBe(clientError);
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+  });
+
+  it.each(['ECONNRESET', 'EPIPE'])('treats cause transport code %s as ambiguous without mistaking five-character codes for SQLSTATE', async (transportCode) => {
+    const intent = await createOpenIntent();
+    const transportError = Object.assign(new Error('wrapped fetch transport failure'), {
+      cause: { code: transportCode, message: 'connection reset while awaiting the response' }
+    });
+    runtime.execute = async () => { throw transportError; };
+    runtime.receipt = async () => ({ status: 'NOT_FOUND' });
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toBe(transportError);
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'NOT_FOUND'
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+  });
+
+  it.each([502, 503, 504])('keeps HTTP %s gateway ambiguity receipt-first after exactly one execute attempt', async (status) => {
+    const intent = await createOpenIntent();
+    const gatewayError = Object.assign(new Error(`HTTP ${status} upstream gateway failure`), {
+      status,
+      isDeterministicServerResponse: true
+    });
+    runtime.execute = async () => { throw gatewayError; };
+    runtime.receipt = async () => ({ status: 'NOT_FOUND' });
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toBe(gatewayError);
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'NOT_FOUND',
+      idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+  });
+
+  it('lets an explicit gateway status outrank the deterministic success:false response marker', async () => {
+    const intent = await createOpenIntent();
+    runtime.execute = async () => ({
+      success: false,
+      status: 503,
+      message: 'Upstream service unavailable before an authoritative response'
+    });
+    runtime.receipt = async () => ({ status: 'NOT_FOUND' });
+
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .rejects.toMatchObject({ status: 503, isDeterministicServerResponse: true });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      dispatchAttemptCount: 1,
+      lastReceiptStatus: 'NOT_FOUND'
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
   });
 
   it('fails closed on a generic deterministic application exception', async () => {

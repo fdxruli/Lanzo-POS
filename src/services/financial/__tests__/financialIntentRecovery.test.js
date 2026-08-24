@@ -78,8 +78,13 @@ describe('financial receipt-first recovery', () => {
       licenseKey: 'transient',
       actorHandle: handle
     })).resolves.toMatchObject({ outcome: 'receipt_not_found_no_resend' });
+    await expect(recoverFinancialIntent({
+      intentId: 'intent-1',
+      licenseKey: 'transient',
+      actorHandle: handle
+    })).resolves.toMatchObject({ outcome: 'receipt_not_found_no_resend' });
 
-    expect(runtime.receipt).toHaveBeenCalledTimes(1);
+    expect(runtime.receipt).toHaveBeenCalledTimes(2);
     expect(runtime.execute).not.toHaveBeenCalled();
     expect(runtime.rows.size).toBe(1);
     expect(runtime.rows.get('intent-1')).toMatchObject({

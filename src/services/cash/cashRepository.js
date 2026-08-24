@@ -40,6 +40,8 @@ const fail = (message, code = 'CASH_ERROR', extra = {}) => ({
   ...extra
 });
 
+const ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
+
 const normalizeAmount = (value) => Money.toExactString(Money.init(value || 0));
 
 const showOfflineCashMessage = () => {
@@ -730,6 +732,13 @@ export const cashRepository = {
       return fail(normalized.message, normalized.code, { error: normalized });
     }
     if (response?.success === false) {
+      if (ADMIN_CLOSE_REVIEW_CODES.has(response.code) && response.cash_session) {
+        try {
+          await applyFinancialCloudResponse({ response, actorContext });
+        } catch (projectionError) {
+          Logger.warn('No se pudo actualizar la proyección local de la revisión administrativa; se conserva la respuesta del servidor.', projectionError);
+        }
+      }
       return fail(response.message || 'No se pudo cerrar administrativamente la caja.', response.code || 'ADMIN_CASH_CLOSE_FAILED', { response });
     }
     const applied = await applyFinancialCloudResponse({ response, actorContext });
