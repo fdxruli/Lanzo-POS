@@ -4,7 +4,7 @@ import { createLicenseSlice } from './slices/createLicenseSlice';
 import { createProfileSlice } from './slices/createProfileSlice';
 import { createPWASlice } from './slices/createPWASlice';
 import { createDriveSlice } from './slices/createDriveSlice';
-import { createNotificationSlice } from './slices/createNotificationSlice';
+import { createNotificationSlice } from './slices/createNotificationActorStateSlice';
 import { createEcommercePublishedStockAlertSlice } from './slices/createEcommercePublishedStockAlertSlice';
 import { localTenantAccessController } from '../services/tenant/localTenantPolicy';
 import { isUnsafeTenantStatePatch } from './tenantSafeState';
