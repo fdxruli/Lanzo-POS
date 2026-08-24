@@ -116,6 +116,7 @@ export const isCloudCashierCompatiblePayment = (paymentData = {}) => {
 
 const mapItem = (item = {}, index = 0, options = {}) => {
   const productId = firstText(item.productId, item.parentId, item.id);
+  const productIdSource = firstText(item.productId, item.parentId) ? 'explicit' : 'line_identity';
   const allowLocalBatches = options.allowLocalBatches !== false;
   const explicitBatchesUsed = getExplicitBatchesUsed(item, allowLocalBatches);
   const explicitBatchId = hasManualBatchSelection(item)
@@ -149,6 +150,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     rubro: firstText(item.rubro, item.categoryName, item.category),
     metadata: compactObject({
       parentId: item.parentId || null,
+      productIdSource,
       lineId: item.lineId || null,
       cartLineId: item.cartLineId || null,
       selectedModifiers: selectedModifiers.length > 0 ? selectedModifiers : undefined,
