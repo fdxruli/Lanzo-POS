@@ -37,6 +37,7 @@ const SAFE_MESSAGES: Record<string, string> = {
   DEVICE_TOKEN_INVALID: 'El token de este dispositivo no es válido.',
   STAFF_SESSION_REQUIRED: 'Se requiere una sesión staff válida para usar agentes de IA.',
   STAFF_SESSION_INVALID: 'La sesión staff expiró o ya no es válida.',
+  AI_AGENT_PERMISSION_REQUIRED: 'Tu usuario staff no tiene permiso para usar agentes de IA.',
   AI_RATE_LIMITED: 'Demasiadas consultas de uso de IA. Intenta de nuevo más tarde.',
   USAGE_LOOKUP_ERROR: 'No se pudo consultar el uso de agentes IA.',
   USAGE_RESERVATION_ERROR: 'No se pudo reservar o finalizar el uso del agente IA.',
@@ -61,6 +62,7 @@ const KNOWN_RPC_CODES = new Set([
   'DEVICE_TOKEN_INVALID',
   'STAFF_SESSION_REQUIRED',
   'STAFF_SESSION_INVALID',
+  'AI_AGENT_PERMISSION_REQUIRED',
   'AI_RATE_LIMITED'
 ]);
 

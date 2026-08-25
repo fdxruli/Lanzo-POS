@@ -7,6 +7,7 @@
 
 import { loadData, STORES } from './database';
 import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './supabase';
+import { actorRuntimeController } from './auth/actorRuntimeController';
 
 const EDGE_PROVIDER = 'edge';
 const EDGE_FUNCTION_NAME = import.meta.env.VITE_AI_EDGE_FUNCTION || 'lanzo-ai-agent';
@@ -57,12 +58,14 @@ const readSyncCacheValue = async (key) => {
 
 const buildAIAgentAuthContext = async (config = {}) => {
   const localLicense = readLocalLicense();
+  const actorType = actorRuntimeController.getState().actorType;
+  const sessionCacheKey = actorType === 'admin' ? 'admin_session_token' : 'staff_session_token';
 
   return {
     licenseKey: config.licenseKey || config.auth?.licenseKey || localLicense?.license_key || localLicense?.licenseKey || localLicense?.key || null,
     deviceFingerprint: config.deviceFingerprint || config.auth?.deviceFingerprint || await getStableDeviceId(),
     deviceSecurityToken: config.deviceSecurityToken || config.auth?.deviceSecurityToken || await getDeviceSecurityToken(),
-    staffSessionToken: config.staffSessionToken || config.auth?.staffSessionToken || await readSyncCacheValue('staff_session_token') || null
+    staffSessionToken: config.staffSessionToken || config.auth?.staffSessionToken || await readSyncCacheValue(sessionCacheKey) || null
   };
 };
 
@@ -100,6 +103,7 @@ const mapEdgeErrorMessage = (payload = {}) => {
     DEVICE_TOKEN_INVALID: 'El token de este dispositivo no es válido. Vuelve a iniciar sesión.',
     STAFF_SESSION_REQUIRED: 'Se requiere una sesión staff válida para usar agentes de IA.',
     STAFF_SESSION_INVALID: 'La sesión staff expiró o ya no es válida.',
+    AI_AGENT_PERMISSION_REQUIRED: 'Tu usuario staff no tiene permiso para usar agentes de IA.',
     USAGE_LOOKUP_ERROR: payload.message || 'No se pudo consultar el uso de agentes IA.',
     USAGE_RESERVATION_ERROR: payload.message || 'No se pudo reservar el uso del agente IA.',
     AI_KEY_MISSING: 'Falta configurar AI_API_KEY u OPENAI_API_KEY en Supabase Secrets.',
@@ -208,6 +212,8 @@ export const getAIAgentUsageStatus = async (config = {}) => {
     throw new AIApiError('Supabase no está configurado. Revisa VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.', 500, null, 'SUPABASE_NOT_CONFIGURED');
   }
 
+  actorRuntimeController.assertGranted('ai_agents');
+
   const auth = await buildAIAgentAuthContext(config);
   if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
     throw new AIApiError('Faltan datos seguros de licencia/dispositivo para consultar el uso de agentes IA.', 401, { auth }, 'AUTH_PAYLOAD_REQUIRED');
@@ -245,6 +251,8 @@ export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
   if (!supabaseClient) {
     throw new AIApiError('Supabase no está configurado. Revisa VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.', 500, null, 'SUPABASE_NOT_CONFIGURED');
   }
+
+  actorRuntimeController.assertGranted('ai_agents');
 
   const auth = await buildAIAgentAuthContext(config);
   if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {

@@ -1,5 +1,6 @@
 import { loadData, STORES } from './database';
 import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './supabase';
+import { actorRuntimeController } from './auth/actorRuntimeController';
 import {
   CLOUD_REQUEST_COOLDOWN,
   CLOUD_REQUEST_TAGS,
@@ -34,12 +35,14 @@ const readSyncCacheValue = async (key) => {
 
 const buildAIAgentAuthContext = async () => {
   const localLicense = readLocalLicense();
+  const actorType = actorRuntimeController.getState().actorType;
+  const sessionCacheKey = actorType === 'admin' ? 'admin_session_token' : 'staff_session_token';
 
   return {
     licenseKey: localLicense?.license_key || localLicense?.licenseKey || localLicense?.key || null,
     deviceFingerprint: await getStableDeviceId(),
     deviceSecurityToken: await getDeviceSecurityToken(),
-    staffSessionToken: await readSyncCacheValue('staff_session_token')
+    staffSessionToken: await readSyncCacheValue(sessionCacheKey)
   };
 };
 
@@ -102,6 +105,8 @@ export const getAIAgentUsage = async ({ force = false } = {}) => {
       message: 'Supabase no está configurado para consultar el uso de IA.'
     });
   }
+
+  actorRuntimeController.assertGranted('ai_agents');
 
   const auth = await buildAIAgentAuthContext();
 

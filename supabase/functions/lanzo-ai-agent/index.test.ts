@@ -312,6 +312,22 @@ Deno.test('begin rechazado impide llamar al proveedor', async () => {
   assertEquals(client.calls.length, 1);
 });
 
+Deno.test('ai_agents requerido antes del proveedor', async () => {
+  const client = fakeClient(async (name) => (
+    name === 'begin_ai_agent_analysis'
+      ? { data: { success: false, code: 'AI_AGENT_PERMISSION_REQUIRED' }, error: null }
+      : { data: null, error: null }
+  ));
+  let fetchCalls = 0;
+  const response = await makeHandler(client, {
+    fetchImpl: async () => { fetchCalls += 1; return chatResponse(); }
+  })(request({ auth, systemPrompt: 's', userPrompt: 'u' }));
+  assertEquals(response.status, 403);
+  assertEquals((await json(response)).code, 'AI_AGENT_PERMISSION_REQUIRED');
+  assertEquals(fetchCalls, 0);
+  assertEquals(client.calls.length, 1);
+});
+
 Deno.test('límite alcanzado devuelve 429 antes del proveedor', async () => {
   const client = fakeClient(async () => ({ data: { success: false, code: 'AI_AGENT_LIMIT_REACHED', limit: 15, used: 15, remaining: 0 }, error: null }));
   let fetchCalls = 0;
