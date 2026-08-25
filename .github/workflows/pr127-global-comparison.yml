@@ -105,8 +105,8 @@ jobs:
       - name: Normalize and compare failures
         env:
           PR_OUTCOME: ${{ steps.pr-suite.outcome }}
-        MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
-        PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
+          PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           node pr/scripts/ci/pr127-global-comparison.mjs classify \
             --phase comparison/phase-one.json \
