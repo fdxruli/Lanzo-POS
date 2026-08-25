@@ -124,89 +124,153 @@ PASS. Targeted ESLint passed. `npm run build` passed with only existing Vite/PWA
 
 PASS for the local differential suite: existing ledger baseline, admin cash-close contract, focused frontend/service tests, mapper tests, discount tests, price-security tests, e-commerce service tests, and cloud critical-RPC guard tests passed. The full repository Vitest invocation reported 20 files and 110 tests passed; the mapper target reported 4 files and 12 tests passed because repository OSS fixtures are included. No AI permission or granular product-RBAC behavior was modified.
 
-## 30. Remaining risks
+## 30. Closeout R1: final differential and idempotency blast-radius review
 
-Remote CI is not yet complete on the current PR head: Vercel is green and `PR127 Global Comparison` is in progress. Supabase CLI post-apply dry-run was blocked by temporary-role authentication failures, although pre-apply dry-run, migration ledger alignment, read-only function/grant checks, direct RPC tests, security-advisor filtering, and performance advisors passed. E-commerce tax semantics remain fail-closed rather than newly inferred. Independent review is required before any readiness or merge decision.
+This section supersedes the preliminary `PARTIAL` verdict above. Closeout date: `2026-08-24`. No production DML/DDL, fixture, migration apply, or migration reapply was performed during closeout.
 
-## 31. AI P0 explicitly deferred to R2C
-
-AI permissions, AI P0, and granular product-level RBAC are explicitly out of scope and were not started. `AI_PERMISSION_CHANGED = NO`; `GRANULAR_PRODUCT_RBAC_STARTED = NO`.
-
-## 32. Exact final verdict
-
-The server-authority closure is implemented and production-applied with no known bypass in the audited public online sale wrappers. Final status is initially `PARTIAL` pending remote CI and independent review; it is not `BLOCKED` because canonical price, cost, manual-item handling, replay classification, public wrapper authority, discount permission, arithmetic, cash, inventory, credit, tenant, and idempotency controls are determined and directly exercised.
-
-## Final deliverable
+### Exact refs and PR state
 
 BASE_SHA = `69c3fe376683d3bac2e5710ff5fcd072c676e72b`
 BRANCH = `codex/sale-price-discount-server-authority-r2b`
 PR_NUMBER = `227`
 PR_STATE = `OPEN / DRAFT / NOT MERGED`
-FINAL_HEAD_SHA = `615cd0c16747ad892c7c4b74cee198b83d7b9228` — implementation head; report metadata follows in the administrative commit
+IMPLEMENTATION_SHA = `615cd0c16747ad892c7c4b74cee198b83d7b9228`
+CLOSEOUT_EVIDENCE_HEAD_SHA = `a7590ee54265ce30e268c6e03253998d799d3d43`
+FINAL_REMOTE_HEAD_SHA = `a7590ee54265ce30e268c6e03253998d799d3d43` at the exact head used for the closeout evidence and CI status checks; the report-only closeout metadata update is intentionally tracked separately from the implementation SHA.
+COMMITS_AT_EVIDENCE_HEAD = `2`
+FILES_CHANGED_AT_EVIDENCE_HEAD = `7`
+FILES_CHANGED = `docs/reports/ADMIN.STAFF.RBAC.R2B.SALE.FINANCIAL.AUTHORITY.md; scripts/supabase/admin-staff-rbac-r2b-contract.node-test.mjs; src/services/salesCloud/salesCloudCashierMapper.js; src/services/salesCloud/salesCloudCashierService.js; supabase/migrations/20260824230045_admin_staff_rbac_r2b_sale_price_discount_server_authority.sql; supabase/tests/admin_staff_rbac_r2b_sale_financial_authority_test.sql; supabase/tests/cash_pro_admin_close_test.sql`
 
-COMMITS = `2 — 615cd0c16747ad892c7c4b74cee198b83d7b9228 implementation; report metadata update`
-FILES_CHANGED = `7 exact files listed in Section 5`
+### Workstream A: exact target differential
+
+Target file: `src/pages/__tests__/PublicStorePage.test.jsx`
+Target title: `PublicStorePage deduplicates a persisted pageshow followed immediately by focus`
+Evidence root: `C:\Users\pituf\AppData\Local\Temp\r2b-closeout-publicstore`
+
+| Matrix | BASE | Candidate |
+| --- | ---: | ---: |
+| Target, maxWorkers=4, 20 reps | 12 pass / 8 timeout | 13 pass / 7 timeout |
+| Target, maxWorkers=1, 20 reps | 13 pass / 7 timeout | 16 pass / 4 timeout |
+| Whole `PublicStorePage.test.jsx`, maxWorkers=4, 10 reps | 9 pass / 1 fail | 9 pass / 1 fail |
+
+Every exact-target failure was the same `Test timed out in 15000ms` at `PublicStorePage.test.jsx:499:3`, with `Dexie: handling persisted pageshow` in the raw output and no candidate-only assertion or stack signature. Classification: `PREEXISTING_FLAKY_BASELINE_FAILURE`. No test-specific allowlist was added. No comparator change was made because the requested target was not candidate-only.
+
+The original PR127 artifact was independently checked. In run `#412` at `615cd0c16747ad892c7c4b74cee198b83d7b9228`, the exact target passed on both PR and BASE. Its raw candidate-only failure was instead `PublicStoreCheckout.test.jsx::PublicStorePage checkout integration revalidates availability on focus and when the document becomes visible`; the comparator therefore did not establish a candidate-only failure for the requested target. A supplemental sample of that checkout test was `BASE 10/10 pass`; candidate `8/10 pass`, one actual 15-second target timeout, and one Vitest worker-pool environmental timeout. This raw candidate-only checkout result remains unresolved by the comparator and is blocking a PASS; it was not changed because no R2B source file touches that frontend path.
+
+### Workstream B: global idempotency inventory
+
+Production read-only cataloging found exactly `29` public functions calling `private.insert_pos_idempotency_processing`. Domains covered: cash open/movement/adjust/close/admin adoption; customer payment and customer CRUD; product/category/batch CRUD and status; inventory entry and expiration waste; online sale cashier/cashier-inventory/credit/shadow/cancellation; restaurant order upsert/status/item-status/checkout-close/archive.
+
+The production helper definition was read directly. Contract: a new row with a NULL or non-NULL hash returns `true`; an existing row returns `false`; a non-NULL incoming hash conflicts only when the stored hash is also non-NULL and different; a NULL stored hash is backfilled only while status is `processing`; legacy NULL-hash completed rows remain replay-compatible; caller-specific processing/completed response handling remains in each public wrapper.
+
+Current production state, read-only: `3417` total rows, all `3417` completed; `3196` completed rows with NULL `request_hash`; `221` completed rows with a non-NULL `request_hash`.
+
+`LEGACY_NULL_HASH_REPLAY = NOT EXECUTED IN CLOSEOUT`
+`NEW_HASH_REPLAY = NOT EXECUTED IN CLOSEOUT`
+`CASH_REPRESENTATIVE = BLOCKED`
+`CUSTOMER_REPRESENTATIVE = BLOCKED`
+`PRODUCT_REPRESENTATIVE = BLOCKED`
+`INVENTORY_REPRESENTATIVE = BLOCKED`
+`RESTAURANT_AND_CANCELLATION_REPRESENTATIVE = BLOCKED`
+`SALE_REPRESENTATIVE = BLOCKED`
+
+The required rollback-safe representative non-sale and sale executions could not run because the local Supabase database was unavailable: `supabase start --ignore-health-check` failed against the Docker Desktop Linux engine with HTTP 500. Production is explicitly read-only for this closeout, so no production fixtures or replay mutations were attempted. Prior R2B direct RPC tests remain recorded in Sections 26–27, but they do not substitute for this required closeout blast-radius matrix.
+
+### Supabase and migration ledger
+
+`SUPABASE_CHANGED_DURING_CLOSEOUT = NO`
+`NEW_MIGRATION = NO`
+`MIGRATION_APPLY_OR_REAPPLY_DURING_CLOSEOUT = NO`
+`PRODUCTION_LEDGER_VERSION = 20260824230045`
+`PRODUCTION_LEDGER_NAME = admin_staff_rbac_r2b_sale_price_discount_server_authority`
+`PRODUCTION_READ_ONLY_MUTATIONS = 0`
+`FIXTURE_RESIDUE = none from prior R2B rollback tests; no closeout fixtures created`
+
+### Verification and exact-head CI
+
+`GIT_DIFF_CHECK = PASS` before this report-only closeout update
+`LINT = PASS` on implementation commit
+`BUILD = PASS` on implementation commit
+`FOCUSED_TESTS = PASS WITH PREEXISTING FLAKY BASELINE FAILURES`
+`DIRECT_RPC_TESTS = PRIOR R2B PASS; CLOSEOUT BLAST-RADIUS MATRIX NOT EXECUTED`
+`VERCEL = PASS` at `a7590ee54265ce30e268c6e03253998d799d3d43`
+`PR127_GLOBAL_COMPARISON = FAIL` at exact head `a7590ee54265ce30e268c6e03253998d799d3d43`, run `#413`; `compare-global-suite` failed at `Normalize and compare failures`, while the PR and BASE global suites and focused evidence steps completed successfully.
+`REQUIRED_SHARED_WORKFLOWS = NOT OBSERVED FOR THE EXACT HEAD IN THE AVAILABLE COMMIT-RUN STATUS RESPONSE`: Shared Terminal Actor Runtime Validation; Shared Terminal Actor Scoped Storage Validation; Shared Terminal Device Actor Auth Validation; HOTFIX Dexie Recovery Validation.
+`DIFFERENTIAL_CLASSIFICATION = requested target A/PREEXISTING_FLAKY_BASELINE_FAILURE; PR127 raw checkout candidate-only result remains unresolved and blocks PASS`
+
+### Final deliverable
 
 SALE_RPC_ENTRY_POINTS = `public.pos_create_cloud_sale_cashier; public.pos_create_cloud_sale_cashier_inventory; public.pos_create_cloud_sale_credit; corresponding _unlimited wrappers; renamed *_legacy_r2b delegates; shared financial receipt dispatch; e-commerce conversion and offline shadow paths audited`
-
 ONLINE_VS_REPLAY_CLASSIFICATION = `online cloud wrappers are authoritative; offline shadow/outbox is separate; delayed e-commerce conversion is accepted-order-snapshot authoritative`
-
 MANUAL_PRICE_MODEL = `ambiguous/manual lines fail closed with MANUAL_ITEM_PRICE_POLICY_REQUIRED`
 WEIGHTED_PRICE_MODEL = `existing wholesale tiers and active batch/variant semantics preserved`
 PROMOTION_MODEL = `no separate authoritative promotion source found; no new promotion semantics introduced`
 DISCOUNT_MODEL = `existing amount/percent line and sale discounts with reason, bounds, permission, and arithmetic validation`
-
 CANONICAL_PRICE_SOURCE = `tenant-owned active product plus existing batch/variant, wholesale, modifier, or accepted e-commerce snapshot semantics`
 CANONICAL_COST_SOURCE = `tenant-owned product/batch/inventory movement semantics; client unit_cost ignored`
 CANONICAL_BATCH_SOURCE = `tenant-owned active batch related to the exact product, with required selection/allocation semantics`
-
 STAFF_POS_ONLY_NORMAL_SALE = PASS
 STAFF_DISCOUNTS_FALSE_EXPLICIT_DISCOUNT = PASS
 STAFF_DISCOUNTS_FALSE_PRICE_TAMPER = PASS
 STAFF_DISCOUNTS_FALSE_LINE_TOTAL_TAMPER = PASS
 STAFF_DISCOUNTS_TRUE_VALID_DISCOUNT = PASS
-STAFF_POS_FALSE = PASS — existing server `pos` permission gate remains fail closed
-
+STAFF_POS_FALSE = PASS
 ADMIN_NORMAL_SALE = PASS
 ADMIN_DISCOUNT = PASS
-
 UNIT_PRICE_AUTHORITY = PASS
 UNIT_COST_AUTHORITY = PASS
 ARITHMETIC_AUTHORITY = PASS
 PRODUCT_TENANT_AUTHORITY = PASS
 BATCH_AUTHORITY = PASS
-
-CASH_INTEGRATION = PASS
-INVENTORY_INTEGRATION = PASS
-CREDIT_INTEGRATION = PASS
-
 ACTOR_SWITCH = PASS
 PERMISSION_REVOCATION = PASS
-IDEMPOTENCY = PASS
-
-SUPABASE_CHANGED = YES
-MIGRATIONS = `20260824230045_admin_staff_rbac_r2b_sale_price_discount_server_authority.sql`
-PRODUCTION_APPLIED = YES
-PRODUCTION_LEDGER_VERSION = `20260824230045`
-PRODUCTION_VERIFIED = YES
-FIXTURE_RESIDUE = `none; all R2B and cash regression fixtures roll back`
-
-GIT_DIFF_CHECK = PASS
-LINT = PASS
-BUILD = PASS
-FOCUSED_TESTS = PASS
-DIRECT_RPC_TESTS = PASS
-REMOTE_CI = `Vercel PASS; PR127 Global Comparison IN_PROGRESS on PR #227`
-DIFFERENTIAL_REGRESSIONS = `PASS locally; PR127 Global Comparison pending`
-
 AI_PERMISSION_CHANGED = NO
 GRANULAR_PRODUCT_RBAC_STARTED = NO
+FINAL_STATUS = `BLOCKED`
 
-FINAL_STATUS = `PARTIAL`
-ADMIN.STAFF.RBAC.R2B: PARTIAL
+## 33. CLOSEOUT.R2 — generalized PR127 and static idempotency compatibility
+
+`BASE_SHA = 69c3fe376683d3bac2e5710ff5fcd072c676e72b`
+`R2B_IMPLEMENTATION_SHA = 615cd0c16747ad892c7c4b74cee198b83d7b9228`
+`R2B_PRE_CLOSEOUT_REMOTE_HEAD = a7590ee54265ce30e268c6e03253998d799d3d43`
+`FINAL_REMOTE_HEAD_SHA = verified after normal closeout push and recorded in the PR closeout receipt`
+
+The local CLOSEOUT.R1 section above was preserved before checkout work. R1 ended BLOCKED because PR127 only compared `file + title` and its focused evidence was hard-wired to a different historical assertion, while local Docker/Supabase was unavailable for replay execution. R2 changes neither the R2B migration nor application authority code, creates no migration, performs no production mutation, and does not merge or ready the PR.
+
+### Generalized PR127 evidence
+
+At the original remote head, PR127 run `32790650220` reported `113` shared failures, `1` raw candidate-only failure, and `1` new failure. Its target was `src/pages/__tests__/PublicStorePage.test.jsx :: PublicStorePage deduplicates a persisted pageshow followed immediately by focus`, with raw reporter signature `Error: STACK_TRACE_ERROR` at the exact assertion location.
+
+CLOSEOUT.R1 repeated equivalent evidence was retained: maxWorkers=4, BASE `8/20` failures / candidate `7/20`; maxWorkers=1, BASE `7/20` / candidate `4/20`; whole file at maxWorkers=4, BASE `1/10` / candidate `1/10`. The observed 15-second timeout/Vitest `STACK_TRACE_ERROR` is the same assertion behavior in both checkouts. `TARGET_CLASSIFICATION = PREEXISTING_FLAKY_BASELINE_FAILURE`; `SEMANTIC_SIGNATURE_MATCH = YES`.
+
+R2 replaces the fixed BFCache block with a bounded generic algorithm: parse full candidate/BASE JSON into `(file, exact test, error class, meaningful normalized error signature)`; derive shared/raw-candidate-only/resolved sets; pass immediately if raw is empty; otherwise rerun every safely extractable `src/` assertion twenty times on each checkout through Node argument vectors; classify preexisting only when BASE yields the same full semantic identity. More than ten targets fails closed. Paths, durations, timestamps, temp paths, and line/column noise normalize; `AssertionError`, `Timeout`, `TypeError`, `ReferenceError`, `ENOENT`, module/import, unhandled rejection, hook failure, and other error classes remain distinct. There is no PublicStorePage/BFCache test-name allowlist, suppression, or special branch.
+
+### Idempotency semantic delta — STATIC CONTRACT PROOF
+
+The historical helper (`20260623204046_fase1_fix_idempotency_insert_rowcount.sql`) already exposed optional `p_request_hash text default null`, inserted a new `processing` row and returned `true`, or returned `false` on conflict. R2B preserves all of that. It now locks the existing row, conflicts only when incoming and stored hashes are both non-NULL and different, and backfills a NULL stored hash only while status is `processing`.
+
+| Case | Old | R2B | Result |
+| --- | --- | --- | --- |
+| new NULL / new H1 | true | true | compatible |
+| processing NULL + NULL | false | false | compatible |
+| processing NULL + H1 | false | false, backfill H1 | compatible / strengthens replay |
+| processing H1 + H1 | false | false | compatible |
+| processing H1 + H2 | false | conflict | security improvement |
+| completed NULL + NULL / H1 | false | false, no rewrite | legacy compatible |
+| completed H1 + H1 | false | false | compatible |
+| completed H1 + H2 | false | conflict | security improvement |
+| failed NULL + H1 | false | false, no backfill | compatible |
+| failed H1 + H2 | false | conflict | security improvement |
+
+This proves a completed NULL-hash row cannot be rewritten into processing by a later hash: the only update is guarded by `v_existing_status = 'processing'`. Current read-only production counts: total `3417`; processing `0`; completed `3417`; failed `0`; NULL hash `3196`; non-NULL hash `221`.
+
+Production `pg_proc` / `pg_get_functiondef` inventory found exactly `29` public callers: CASH `7`; CUSTOMER `3`; PRODUCT `7`; INVENTORY `2`; RESTAURANT `5`; SALE `3`; CANCELLATION `1`; SYNC/SHADOW `1`. All current calls use six arguments, so the historic five-argument form remains syntactically compatible through the default. Hash callers use only deterministic canonical payload values: inventory entry, expiration waste, restaurant order/archive/status/checkout, sale cancellation, sale engines, or shadow payload. No hash expression includes a timestamp, randomness, or actor substitution. Representative CASH, CUSTOMER, PRODUCT, INVENTORY, RESTAURANT, and CANCELLATION functions all handle `false` by looking up the key, returning its completed response where present, otherwise returning processing: STATIC CONTRACT PROOF, not runtime replay proof.
+
+R2B sale hashing occurs after `r2b_authorize_sale_financial_request_v1` canonicalizes financial values. It hashes canonical sale/items/payments, cash session, and effective credit customer; `r2bClientUnitCostIgnored` proves forged client `unit_cost` does not alter the canonical hash, while a material canonical difference conflicts.
+
+Production ledger read-only check: `20260824230045 / admin_staff_rbac_r2b_sale_price_discount_server_authority` is present. `PRODUCTION_MUTATIONS = 0`; `NEW_MIGRATION = NO`; `R2B_MIGRATION_MODIFIED = NO`. Deterministic comparator tests cover identical assertion, timeout-versus-assertion, no BASE failure, workspace-path normalization, ENOENT-versus-assertion, no candidate-only failures, and the safety cap. Static contract tests cover helper signature/default, conflict predicate, processing-only backfill, caller arity, and canonical sale hash order. Required remote CI remains the final publication authority.
+ADMIN.STAFF.RBAC.R2B = `BLOCKED — no merge/readiness claim; required exact-head PR127 comparison is red, the raw checkout candidate-only result is unresolved, and required closeout idempotency replay executions were unavailable under the production read-only/local-DB constraints.`
 
 NO MERGE.
 PR REMAINS DRAFT.
 R2C NOT STARTED.
-
-Await independent review.

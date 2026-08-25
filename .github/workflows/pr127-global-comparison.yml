@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/ci/**'
       - '.github/workflows/hotfix-dexie-validation.yml'
       - '.github/workflows/pr127-global-comparison.yml'
       - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
@@ -18,6 +19,7 @@ on:
       - 'src/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/ci/**'
       - '.github/workflows/hotfix-dexie-validation.yml'
       - '.github/workflows/pr127-global-comparison.yml'
       - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
@@ -69,182 +71,48 @@ jobs:
         working-directory: main
         run: npm run test:ci -- --reporter=json --outputFile=global-main.json
 
-      - name: Run PR BFCache focused evidence
+      - name: Extract error-aware candidate-only failures
+        id: phase-one
         working-directory: pr
-        shell: bash
+        continue-on-error: true
         run: |
-          failures=0
-          for i in $(seq 1 20); do
-            echo "PR BFCache repetition ${i}"
-            set +e
-            npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
-              -t "rebuilds the first page on BFCache restore without clearing visible products" \
-              --maxWorkers=4 \
-              --reporter=json \
-              --outputFile="public-store-bfcache-${i}.json" \
-              > "public-store-bfcache-${i}.log" 2>&1
-            code=$?
-            set -e
-            echo "$code" > "public-store-bfcache-${i}.exit"
-            if [ "$code" -ne 0 ]; then
-              failures=$((failures + 1))
-              echo "PR BFCache repetition ${i} observational failure: exit ${code}"
-            fi
-          done
-          echo "PR BFCache observational failures: ${failures}/20"
+          mkdir -p ../comparison
+          node scripts/ci/pr127-global-comparison.mjs extract \
+            --candidate global-pr.json \
+            --base ../main/global-main.json \
+            --output ../comparison/phase-one.json
 
-      - name: Run main BFCache focused evidence
-        working-directory: main
-        shell: bash
+      - name: Run PR focused evidence for candidate-only failures
+        if: steps.phase-one.outcome == 'success'
+        working-directory: pr
         run: |
-          failures=0
-          for i in $(seq 1 20); do
-            echo "MAIN BFCache repetition ${i}"
-            set +e
-            npx vitest run src/pages/__tests__/PublicStorePage.test.jsx \
-              -t "rebuilds the first page on BFCache restore without clearing visible products" \
-              --maxWorkers=4 \
-              --reporter=json \
-              --outputFile="public-store-bfcache-${i}.json" \
-              > "public-store-bfcache-${i}.log" 2>&1
-            code=$?
-            set -e
-            echo "$code" > "public-store-bfcache-${i}.exit"
-            if [ "$code" -ne 0 ]; then
-              failures=$((failures + 1))
-              echo "MAIN BFCache repetition ${i} observational failure: exit ${code}"
-            fi
-          done
-          echo "MAIN BFCache observational failures: ${failures}/20"
+          node scripts/ci/pr127-focused-evidence.mjs \
+            --targets ../comparison/targets.json \
+            --output-dir ../comparison/focused/pr \
+            --repetitions 20 \
+            --max-workers 4
+
+      - name: Run base focused evidence for candidate-only failures
+        if: steps.phase-one.outcome == 'success'
+        working-directory: main
+        run: |
+          node ../pr/scripts/ci/pr127-focused-evidence.mjs \
+            --targets ../comparison/targets.json \
+            --output-dir ../comparison/focused/main \
+            --repetitions 20 \
+            --max-workers 4
 
       - name: Normalize and compare failures
         env:
           PR_OUTCOME: ${{ steps.pr-suite.outcome }}
-          MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
-          PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
+        PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
-          mkdir -p comparison/raw
-          cp pr/global-pr.json comparison/raw/global-pr.json 2>/dev/null || true
-          cp main/global-main.json comparison/raw/global-main.json 2>/dev/null || true
-          mkdir -p comparison/focused/pr comparison/focused/main
-          cp pr/public-store-bfcache-*.json comparison/focused/pr/
-          cp main/public-store-bfcache-*.json comparison/focused/main/
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-
-          const readReport = (file) => {
-            if (!fs.existsSync(file)) return null;
-            return JSON.parse(fs.readFileSync(file, 'utf8'));
-          };
-
-          const readFocusedReports = (directory, label) => {
-            const paths = fs.readdirSync(directory)
-              .filter((name) => /^public-store-bfcache-\d+\.json$/.test(name))
-              .sort()
-              .map((name) => path.join(directory, name));
-            if (paths.length < 10) throw new Error(`${label} focused evidence requires at least 10 repetitions; found ${paths.length}`);
-            return paths.map(readReport);
-          };
-
-          const normalizeFileName = (fileName) => {
-            const normalized = String(fileName || 'unknown file').replaceAll('\\', '/');
-            const checkoutMatch = normalized.match(/\/(?:pr|main)\/(.*)$/);
-            if (checkoutMatch) return checkoutMatch[1];
-            const sourceIndex = normalized.indexOf('/src/');
-            if (sourceIndex >= 0) return normalized.slice(sourceIndex + 1);
-            return normalized;
-          };
-
-          const normalizeAssertionName = (assertionName) => String(
-            assertionName || 'unknown test'
-          )
-            .replace(/\b\d+(?:\.\d+)?%/g, '<percentage>')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          const normalizeFailures = (report, source) => {
-            if (!report) return [`__${source}_RUNNER__:missing_json_report`];
-            const failures = new Set();
-            for (const file of report.testResults || []) {
-              const fileName = normalizeFileName(file.name);
-              const assertions = file.assertionResults || [];
-              for (const assertion of assertions) {
-                if (assertion.status === 'failed') {
-                  const name = normalizeAssertionName(
-                    assertion.fullName || assertion.title || 'unknown test'
-                  );
-                  failures.add(`${fileName}::${name}`);
-                }
-              }
-              if (file.status === 'failed' && assertions.length === 0) {
-                failures.add(`${fileName}::__FILE_FAILURE__`);
-              }
-            }
-            return [...failures].sort();
-          };
-
-          const prReport = readReport(path.join('pr', 'global-pr.json'));
-          const mainReport = readReport(path.join('main', 'global-main.json'));
-          const prFocusedReports = readFocusedReports(path.join('comparison', 'focused', 'pr'), 'PR');
-          const mainFocusedReports = readFocusedReports(path.join('comparison', 'focused', 'main'), 'MAIN');
-          const focusedFailures = (reports) => new Set(reports.flatMap((report) => normalizeFailures(report, 'FOCUSED')));
-          const prFailures = normalizeFailures(prReport, 'PR');
-          const mainFailures = normalizeFailures(mainReport, 'MAIN');
-          const prSet = new Set(prFailures);
-          const mainSet = new Set(mainFailures);
-          const sharedFailures = prFailures.filter((failure) => mainSet.has(failure));
-          const rawNewFailures = prFailures.filter((failure) => !mainSet.has(failure));
-          const mainFocusedFailures = focusedFailures(mainFocusedReports);
-          const preexistingFlakyFailures = rawNewFailures.filter((failure) => mainFocusedFailures.has(failure));
-          const preexistingFlakySet = new Set(preexistingFlakyFailures);
-          const newFailures = rawNewFailures.filter((failure) => !preexistingFlakySet.has(failure));
-          const resolvedFailures = mainFailures.filter((failure) => !prSet.has(failure));
-
-          const result = {
-            prSha: process.env.PR_SHA,
-            mainRef: 'main',
-            prOutcome: process.env.PR_OUTCOME,
-            mainOutcome: process.env.MAIN_OUTCOME,
-            prFailures,
-            mainFailures,
-            sharedFailures,
-            rawNewFailures,
-            preexistingFlakyFailures,
-            newFailures,
-            resolvedFailures
-          };
-          fs.writeFileSync('comparison/global-comparison.json', JSON.stringify(result, null, 2));
-
-          const lines = [
-            '# PR #127 global comparison',
-            '',
-            `- PR SHA: ${result.prSha}`,
-            `- PR outcome: ${result.prOutcome}`,
-            `- main outcome: ${result.mainOutcome}`,
-            `- shared failures: ${sharedFailures.length}`,
-            `- raw candidate-only failures: ${rawNewFailures.length}`,
-            `- preexisting flaky failures proven by focused BASE evidence: ${preexistingFlakyFailures.length}`,
-            `- new failures: ${newFailures.length}`,
-            `- resolved failures: ${resolvedFailures.length}`,
-            '',
-            '## Shared failures',
-            ...(sharedFailures.length ? sharedFailures.map((item) => `- ${item}`) : ['- None']),
-            '',
-            '## New failures',
-            ...(newFailures.length ? newFailures.map((item) => `- ${item}`) : ['- None']),
-            '',
-            '## Preexisting flaky failures proven by focused BASE evidence',
-            ...(preexistingFlakyFailures.length ? preexistingFlakyFailures.map((item) => `- ${item}`) : ['- None']),
-            '',
-            '## Resolved failures',
-            ...(resolvedFailures.length ? resolvedFailures.map((item) => `- ${item}`) : ['- None'])
-          ];
-          fs.writeFileSync('comparison/global-comparison.md', `${lines.join('\n')}\n`);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
-
-          if (!prReport || !mainReport || newFailures.length > 0) process.exit(1);
-          NODE
+          node pr/scripts/ci/pr127-global-comparison.mjs classify \
+            --phase comparison/phase-one.json \
+            --base-focused comparison/focused/main \
+            --candidate-focused comparison/focused/pr \
+            --output comparison/global-comparison.json
 
       - name: Upload normalized comparison
         if: always()
