@@ -8,7 +8,7 @@ Status at authoring: PARTIAL/BLOCKED pending canonical production migration gate
 - Expected and actual current remote main: 1c8d83ca657616d91dfcd1c0671b3a8d6972860b
 - Base: origin/main at 1c8d83ca657616d91dfcd1c0671b3a8d6972860b
 - Branch: codex/admin-staff-ai-agent-authority-r2c
-- PR: pending Draft PR creation at first report commit; this field is updated in the final report commit.
+- PR: #229, Draft, https://github.com/fdxruli/Lanzo-POS/pull/229
 - Historical R2B migration was not edited or reopened.
 
 ## Authority map before R2C
@@ -87,9 +87,9 @@ No rollback fixtures or production test rows were created. FIXTURE_RESIDUE=0. No
 
 - CURRENT_MAIN_SHA: 1c8d83ca657616d91dfcd1c0671b3a8d6972860b
 - BRANCH: codex/admin-staff-ai-agent-authority-r2c
-- PR_NUMBER: pending
-- FINAL_HEAD_SHA: pending
-- COMMITS: pending
+- PR_NUMBER: 229
+- FINAL_HEAD_SHA: c53de0f1d711998e47e0d3eaf9961ca934b7350c
+- COMMITS: 1 (c53de0f1d711998e47e0d3eaf9961ca934b7350c)
 - PR_STATE: Draft
 - SUPABASE_CHANGED: NO
 - PRODUCTION_APPLIED: NO
