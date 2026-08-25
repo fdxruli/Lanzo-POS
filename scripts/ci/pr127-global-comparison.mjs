@@ -36,6 +36,21 @@ export function errorClass(message) {
   return 'OtherError';
 }
 
+export function isOpaqueFailureSignature(message, detectedClass = errorClass(message)) {
+  const value = String(message || '').replace(/\u001b\[[0-9;]*m/g, '').trim();
+  if (!value || value === 'missing failure message') return true;
+  if (/\bSTACK_TRACE_ERROR\b/i.test(value)) return true;
+  if (detectedClass === 'RunnerError') return true;
+  const withoutInternalFrames = value
+    .replace(/^Error:\s*$/gim, '')
+    .replace(/^\s*at .*?(?:node_modules\/@vitest|vitest\/dist|@vitest\/runner).*$/gim, '')
+    .replace(/^\s*at (?:task|chain|runWithSuite|collectTests|startTests|run)\b.*$/gim, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (detectedClass === 'Error' || detectedClass === 'OtherError')
+    && (!withoutInternalFrames || /^(?:Error:?)$/i.test(withoutInternalFrames));
+}
+
 export function normalizeErrorSignature(message) {
   return String(message || 'missing failure message')
     .replaceAll('\\', '/')
@@ -48,6 +63,38 @@ export function normalizeErrorSignature(message) {
     .replace(/\b(?:tmp|vitest)-[A-Za-z0-9_-]+\b/g, '<temp>')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+const signatureLinePatterns = {
+  Timeout: /.*(?:Test timed out|timed out in).*/i,
+  AssertionError: /.*(?:AssertionError|expect\(|expected\b).*/i,
+  TypeError: /.*TypeError.*/i,
+  ReferenceError: /.*ReferenceError.*/i,
+  SyntaxError: /.*SyntaxError.*/i,
+  RangeError: /.*RangeError.*/i,
+  ENOENT: /.*ENOENT.*/i,
+  ModuleImportError: /.*(?:ERR_MODULE_NOT_FOUND|Cannot find module|Failed to load (?:url|module)|import .* failed).*/i,
+  UnhandledRejection: /.*(?:Unhandled(?: Promise)? Rejection|unhandledRejection).*/i,
+  HookFailure: /.*(?:beforeAll|afterAll|beforeEach|afterEach|hook).*?(?:failed|error).*/i,
+};
+
+export function deriveSemanticFailureFromLog(logText) {
+  const value = String(logText || '');
+  const detectedClass = errorClass(value);
+  if (isOpaqueFailureSignature(value, detectedClass)) {
+    return { semanticErrorClass: null, semanticSignature: null, semanticSource: 'UNRESOLVED' };
+  }
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const pattern = signatureLinePatterns[detectedClass];
+  const meaningfulLine = pattern ? lines.find((line) => pattern.test(line)) : lines.find((line) => !/\b(?:@vitest|vitest\/dist|node_modules)\b/i.test(line));
+  if (!meaningfulLine || isOpaqueFailureSignature(meaningfulLine, detectedClass)) {
+    return { semanticErrorClass: null, semanticSignature: null, semanticSource: 'UNRESOLVED' };
+  }
+  return {
+    semanticErrorClass: detectedClass,
+    semanticSignature: normalizeErrorSignature(meaningfulLine),
+    semanticSource: 'LOG',
+  };
 }
 
 const failureMessage = (assertion) => [
@@ -65,16 +112,23 @@ export function normalizeFailures(report, source = 'RUNNER') {
     for (const assertion of assertions) {
       if (assertion.status !== 'failed') continue;
       const message = failureMessage(assertion);
+      const jsonErrorClass = errorClass(message);
+      const jsonSignature = normalizeErrorSignature(message);
       failures.push({
         file: fileName,
         testName: normalizeTestName(assertion.fullName || assertion.title),
-        errorClass: errorClass(message),
-        signature: normalizeErrorSignature(message),
+        errorClass: jsonErrorClass,
+        signature: jsonSignature,
+        jsonErrorClass,
+        jsonSignature,
+        opaqueJson: isOpaqueFailureSignature(message, jsonErrorClass),
       });
     }
     if (file.status === 'failed' && assertions.length === 0) {
       const message = file.message || file.failureMessage || 'file-level failure';
-      failures.push({ file: fileName, testName: '__FILE_FAILURE__', errorClass: errorClass(message), signature: normalizeErrorSignature(message) });
+      const jsonErrorClass = errorClass(message);
+      const jsonSignature = normalizeErrorSignature(message);
+      failures.push({ file: fileName, testName: '__FILE_FAILURE__', errorClass: jsonErrorClass, signature: jsonSignature, jsonErrorClass, jsonSignature, opaqueJson: isOpaqueFailureSignature(message, jsonErrorClass) });
     }
   }
   return uniqueFailures(failures);
@@ -82,6 +136,7 @@ export function normalizeFailures(report, source = 'RUNNER') {
 
 export const failureKey = (failure) => [failure.file, failure.testName, failure.errorClass, failure.signature].join('::');
 export const targetKey = (failure) => [failure.file, failure.testName].join('::');
+const semanticKey = (failure) => [failure.file, failure.testName, failure.semanticErrorClass, failure.semanticSignature].join('::');
 const uniqueFailures = (failures) => [...new Map(failures.map((failure) => [failureKey(failure), failure])).values()].sort((a, b) => failureKey(a).localeCompare(failureKey(b)));
 
 export function compareFullReports(candidateReport, baseReport) {
@@ -98,40 +153,93 @@ export function compareFullReports(candidateReport, baseReport) {
   };
 }
 
-export function classifyFocusedEvidence(rawCandidateOnlyFailures, baseFocusedReports, candidateFocusedReports) {
+function focusedFailures(evidence, source) {
+  return evidence.flatMap(({ report, logText, jsonPath, logPath, exitCode }) => normalizeFailures(report, source).map((failure) => {
+    const semantic = failure.opaqueJson
+      ? deriveSemanticFailureFromLog(logText)
+      : { semanticErrorClass: failure.jsonErrorClass, semanticSignature: failure.jsonSignature, semanticSource: 'JSON' };
+    return { ...failure, ...semantic, jsonPath, logPath, exitCode };
+  }));
+}
+
+function rawSemanticIdentity(failure) {
+  return failure.opaqueJson
+    ? { semanticErrorClass: null, semanticSignature: null, semanticSource: 'UNRESOLVED' }
+    : { semanticErrorClass: failure.jsonErrorClass || failure.errorClass, semanticSignature: failure.jsonSignature || failure.signature, semanticSource: 'JSON' };
+}
+
+export function classifyFocusedEvidence(rawCandidateOnlyFailures, baseFocusedEvidence, candidateFocusedEvidence) {
   if (rawCandidateOnlyFailures.length > MAX_FOCUSED_FAILURES) {
     return { status: 'FAIL_CLOSED', diagnostic: `candidate-only failure count ${rawCandidateOnlyFailures.length} exceeds safe limit ${MAX_FOCUSED_FAILURES}`, classifications: [], newFailures: rawCandidateOnlyFailures };
   }
-  if (rawCandidateOnlyFailures.length > 0 && (baseFocusedReports.length < rawCandidateOnlyFailures.length * 10 || candidateFocusedReports.length < rawCandidateOnlyFailures.length * 10)) {
+  if (rawCandidateOnlyFailures.length > 0 && (baseFocusedEvidence.length < rawCandidateOnlyFailures.length * 10 || candidateFocusedEvidence.length < rawCandidateOnlyFailures.length * 10)) {
     return {
       status: 'FAIL_CLOSED',
-      diagnostic: `focused evidence requires at least 10 reports per target; found BASE=${baseFocusedReports.length}, CANDIDATE=${candidateFocusedReports.length}`,
+      diagnostic: `focused evidence requires at least 10 reports per target; found BASE=${baseFocusedEvidence.length}, CANDIDATE=${candidateFocusedEvidence.length}`,
       classifications: [],
       newFailures: rawCandidateOnlyFailures,
     };
   }
-  const baseFailures = baseFocusedReports.flatMap((report) => normalizeFailures(report, 'BASE_FOCUSED'));
-  const candidateFailures = candidateFocusedReports.flatMap((report) => normalizeFailures(report, 'CANDIDATE_FOCUSED'));
+  const baseFailures = focusedFailures(baseFocusedEvidence, 'BASE_FOCUSED');
+  const candidateFailures = focusedFailures(candidateFocusedEvidence, 'CANDIDATE_FOCUSED');
+  const unresolvedFailures = [];
   const classifications = rawCandidateOnlyFailures.map((failure) => {
-    const baseEvidence = baseFailures.filter((item) => failureKey(item) === failureKey(failure));
-    const candidateEvidence = candidateFailures.filter((item) => failureKey(item) === failureKey(failure));
+    const candidateEvidence = candidateFailures.filter((item) => targetKey(item) === targetKey(failure));
+    const baseTargetEvidence = baseFailures.filter((item) => targetKey(item) === targetKey(failure));
+    let semantic = rawSemanticIdentity(failure);
+    if (failure.opaqueJson) {
+      const resolvedCandidateEvidence = candidateEvidence.filter((item) => item.semanticSource !== 'UNRESOLVED');
+      const candidateSemanticKeys = [...new Set(resolvedCandidateEvidence.map(semanticKey))];
+      const candidateHasUnresolvedEvidence = candidateEvidence.some((item) => item.semanticSource === 'UNRESOLVED');
+      if (candidateHasUnresolvedEvidence || candidateSemanticKeys.length !== 1) {
+        unresolvedFailures.push(failure);
+        return { ...failure, classification: 'SEMANTIC_IDENTITY_UNRESOLVED', baseEvidenceCount: 0, candidateEvidenceCount: candidateEvidence.length, semanticSignatureMatch: false, semanticErrorClass: null, semanticSignature: null, semanticSource: 'UNRESOLVED' };
+      }
+      semantic = resolvedCandidateEvidence[0];
+    }
+    const baseHasUnresolvedEvidence = baseTargetEvidence.some((item) => item.semanticSource === 'UNRESOLVED');
+    const baseEvidence = baseTargetEvidence.filter((item) => semanticKey(item) === semanticKey({ ...failure, ...semantic }));
+    if (baseHasUnresolvedEvidence && baseEvidence.length === 0) {
+      unresolvedFailures.push(failure);
+      return { ...failure, ...semantic, classification: 'SEMANTIC_IDENTITY_UNRESOLVED', baseEvidenceCount: 0, candidateEvidenceCount: candidateEvidence.length, semanticSignatureMatch: false };
+    }
     return {
       ...failure,
+      ...semantic,
       classification: baseEvidence.length > 0 ? 'PREEXISTING_FLAKY_BASELINE_FAILURE' : 'NEW_FAILURE',
       baseEvidenceCount: baseEvidence.length,
       candidateEvidenceCount: candidateEvidence.length,
       semanticSignatureMatch: baseEvidence.length > 0,
     };
   });
-  return { status: 'OK', classifications, newFailures: classifications.filter((item) => item.classification === 'NEW_FAILURE') };
+  const newFailures = classifications.filter((item) => item.classification !== 'PREEXISTING_FLAKY_BASELINE_FAILURE');
+  return {
+    status: unresolvedFailures.length > 0 ? 'FAIL_CLOSED' : 'OK',
+    diagnostic: unresolvedFailures.length > 0 ? `semantic identity unresolved for ${unresolvedFailures.length} opaque candidate-only failure(s)` : undefined,
+    classifications,
+    newFailures,
+    unresolvedFailures,
+  };
 }
 
-function readFocusedReports(directory) {
+function readFocusedEvidence(directory) {
   if (!fs.existsSync(directory)) return [];
   return fs.readdirSync(directory)
     .filter((name) => /^focused-\d+(?:-\d+)?\.json$/.test(name))
     .sort()
-    .map((name) => readJson(path.join(directory, name)));
+    .map((name) => {
+      const jsonPath = path.join(directory, name);
+      const stem = name.replace(/\.json$/, '');
+      const logPath = path.join(directory, `${stem}.log`);
+      const exitPath = path.join(directory, `${stem}.exit`);
+      return {
+        report: readJson(jsonPath),
+        logText: fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '',
+        jsonPath,
+        logPath,
+        exitCode: fs.existsSync(exitPath) ? fs.readFileSync(exitPath, 'utf8').trim() : null,
+      };
+    });
 }
 
 function writeSummary(result, output) {
@@ -141,6 +249,7 @@ function writeSummary(result, output) {
     `- raw candidate-only failures: ${result.rawCandidateOnlyFailures.length}`,
     `- preexisting flaky baseline failures: ${result.preexistingFlakyFailures.length}`,
     `- new failures: ${result.newFailures.length}`,
+    `- unresolved semantic identities: ${result.unresolvedFailures?.length || 0}`,
     `- resolved failures: ${result.resolvedFailures.length}`,
     result.diagnostic ? `- diagnostic: ${result.diagnostic}` : '',
   ].filter(Boolean);
@@ -160,7 +269,7 @@ function extract({ candidate, base, output }) {
 
 function classify({ phase, baseFocused, candidateFocused, output }) {
   const initial = readJson(phase);
-  const focused = classifyFocusedEvidence(initial.rawCandidateOnlyFailures, readFocusedReports(baseFocused), readFocusedReports(candidateFocused));
+  const focused = classifyFocusedEvidence(initial.rawCandidateOnlyFailures, readFocusedEvidence(baseFocused), readFocusedEvidence(candidateFocused));
   const result = {
     ...initial,
     ...focused,

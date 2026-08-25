@@ -274,3 +274,36 @@ ADMIN.STAFF.RBAC.R2B = `BLOCKED — no merge/readiness claim; required exact-hea
 NO MERGE.
 PR REMAINS DRAFT.
 R2C NOT STARTED.
+
+## 34. CLOSEOUT.R3 — opaque failure semantic disambiguation and final receipt
+
+This section supersedes the stale preliminary BLOCKED wording in Sections 30–33. It does not alter the R2B financial-authority, idempotency, migration, or production evidence recorded above.
+
+`BASE_SHA = 69c3fe376683d3bac2e5710ff5fcd072c676e72b`
+`R2B_IMPLEMENTATION_SHA = 615cd0c16747ad892c7c4b74cee198b83d7b9228`
+`R2B_PRE_R3_HEAD = 310b33e29a1f22d54d3c7b8e22e25638207f1f23`
+`FINAL_REMOTE_HEAD_SHA = verified after normal R3 closeout push and recorded in the R3 PR receipt`
+
+The prior successful PR127 run was `32809575818`: `113` shared failures, `0` raw candidate-only failures, `0` preexisting flaky baseline failures, `0` new failures, and `0` resolved failures. A zero candidate-only set remains an immediate differential pass; R3 does not manufacture a flaky failure merely to exercise focused evidence.
+
+### Opaque JSON is no longer semantic evidence
+
+Vitest JSON values such as `Error: STACK_TRACE_ERROR`, an empty failure message, or a generic `Error` containing only internal Vitest frames are now explicitly `opaqueJson`. They cannot establish a semantic error identity by themselves. For a candidate-only opaque failure, the comparator loads the exact paired `focused-*.log` next to each `focused-*.json` artifact and derives a semantic class/signature only from meaningful explicit error text.
+
+Recognized log classes are Timeout, AssertionError, TypeError, ReferenceError, SyntaxError, RangeError, ENOENT, ModuleImportError, UnhandledRejection, HookFailure, and other meaningful errors. JSON retains precedence when it already supplies a meaningful non-opaque class. For opaque JSON, `semanticSource = LOG`; if the paired log cannot determine a cause, `semanticSource = UNRESOLVED` and classification is `SEMANTIC_IDENTITY_UNRESOLVED` with a fail-closed PR127 result.
+
+Preexisting-flake classification now requires equal file, exact test, semantic error class, and normalized meaningful semantic signature. Thus opaque Timeout versus opaque Timeout may be preexisting; opaque Timeout versus opaque AssertionError remains `NEW_FAILURE`; two opaque internal-only failures fail closed rather than being treated as equivalent. Exit codes and 15-second timing are recorded as occurrence evidence only and are never semantic identity.
+
+Deterministic comparator tests cover all three opaque cases, normal AssertionError behavior, AssertionError versus Timeout, ENOENT versus AssertionError, the empty candidate-only fast path, safety cap, and incomplete evidence. No PublicStorePage/BFCache filename, test title, known-flaky allowlist, or special suppression is present in classification logic.
+
+`OPAQUE_FAILURE_DETECTION = PASS`
+`LOG_SEMANTIC_FALLBACK = PASS`
+`UNRESOLVED_SEMANTIC_FAIL_CLOSED = PASS`
+`TEST_SPECIFIC_ALLOWLIST = NO`
+`HARDCODED_PUBLICSTORE_SUPPRESSION = NO`
+`SUPABASE_CHANGED = NO`
+`PRODUCTION_MUTATIONS = 0`
+`NEW_MIGRATION = NO`
+`R2B_MIGRATION_MODIFIED = NO`
+`AI_PERMISSION_CHANGED = NO`
+`R2C_STARTED = NO`
