@@ -20,6 +20,17 @@ const NOT_FOUND_TITLE = 'Tienda no disponible | Lanzo';
 const NOT_FOUND_DESCRIPTION = 'Esta tienda no está disponible. Consulta otras tiendas creadas con Lanzo.';
 const APPROVED_SOCIAL_METADATA = new WeakSet();
 
+const SOCIAL_COPY_MIN_COMBINATION_WORDS = 2;
+const SOCIAL_COPY_MIN_COMBINED_WORDS = 7;
+const SOCIAL_COPY_MIN_RICH_DESCRIPTION_WORDS = 5;
+const SOCIAL_COPY_TERSE_WORD_LIMIT = 2;
+const SOCIAL_COPY_TERSE_CHARACTER_LIMIT = 24;
+const SOCIAL_COPY_MATERIAL_WORD_ADVANTAGE = 2;
+const SOCIAL_COPY_MATERIAL_CHARACTER_ADVANTAGE = 12;
+const SOCIAL_COPY_RELATED_OVERLAP_RATIO = 0.5;
+const SOCIAL_COPY_DISTINCT_OVERLAP_RATIO = 0.34;
+const SOCIAL_COPY_TERMINAL_COMPARISON_PUNCTUATION = /[.!?…,:;]+$/gu;
+const SOCIAL_COPY_TERMINAL_SENTENCE_PUNCTUATION = /[.!?…,:;]$/u;
 const HTML_ESCAPE_PATTERN = /[&<>"']/g;
 const HTML_ESCAPE_ENTITIES = Object.freeze({
   '&': '&amp;',
@@ -132,15 +143,156 @@ export function buildSocialTitle(storeName) {
   );
 }
 
+function socialComparisonKey(value) {
+  return normalizeSocialText(value)
+    .toLowerCase()
+    .replace(SOCIAL_COPY_TERMINAL_COMPARISON_PUNCTUATION, '')
+    .trim();
+}
+
+function socialWords(value) {
+  return socialComparisonKey(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
+function socialTextProfile(value) {
+  const text = normalizeSocialText(value);
+  const words = socialWords(text);
+
+  return Object.freeze({
+    text,
+    comparisonKey: socialComparisonKey(text),
+    words: Object.freeze(words),
+    wordCount: words.length,
+    characterCount: Array.from(text).length,
+  });
+}
+
+function socialWordOverlapRatio(left, right) {
+  if (!left.words.length || !right.words.length) return 0;
+
+  const rightWords = new Set(right.words);
+  const sharedWords = new Set(left.words.filter((word) => rightWords.has(word)));
+  return sharedWords.size / Math.min(left.words.length, right.words.length);
+}
+
+function isMateriallyMoreInformative(candidate, other) {
+  return candidate.wordCount >= other.wordCount + SOCIAL_COPY_MATERIAL_WORD_ADVANTAGE
+    || candidate.characterCount >= other.characterCount + SOCIAL_COPY_MATERIAL_CHARACTER_ADVANTAGE;
+}
+
+function isTerseSocialText(profile) {
+  return profile.wordCount <= SOCIAL_COPY_TERSE_WORD_LIMIT
+    && profile.characterCount <= SOCIAL_COPY_TERSE_CHARACTER_LIMIT;
+}
+
+function strongerSocialCandidate(headline, description) {
+  if (headline.wordCount !== description.wordCount) {
+    return headline.wordCount > description.wordCount ? headline : description;
+  }
+  if (headline.characterCount !== description.characterCount) {
+    return headline.characterCount > description.characterCount ? headline : description;
+  }
+  return headline;
+}
+
+function combineSocialCandidates(headline, description) {
+  const separator = SOCIAL_COPY_TERMINAL_SENTENCE_PUNCTUATION.test(headline.text)
+    ? ' '
+    : '. ';
+  return `${headline.text}${separator}${description.text}`;
+}
+
 export function buildSocialDescription({ name, headline, description } = {}) {
-  const normalizedHeadline = normalizeSocialText(headline);
-  if (normalizedHeadline) {
-    return truncateSocialText(normalizedHeadline, MAX_SOCIAL_DESCRIPTION_LENGTH);
+  const headlineCandidate = socialTextProfile(headline);
+  const descriptionCandidate = socialTextProfile(description);
+
+  if (headlineCandidate.text && descriptionCandidate.text) {
+    const comparisonKeysAvailable = Boolean(
+      headlineCandidate.comparisonKey && descriptionCandidate.comparisonKey,
+    );
+
+    if (
+      comparisonKeysAvailable
+      && headlineCandidate.comparisonKey === descriptionCandidate.comparisonKey
+    ) {
+      return truncateSocialText(
+        strongerSocialCandidate(headlineCandidate, descriptionCandidate).text,
+        MAX_SOCIAL_DESCRIPTION_LENGTH,
+      );
+    }
+
+    if (
+      comparisonKeysAvailable
+      && descriptionCandidate.comparisonKey.includes(headlineCandidate.comparisonKey)
+    ) {
+      return truncateSocialText(descriptionCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+    }
+    if (
+      comparisonKeysAvailable
+      && headlineCandidate.comparisonKey.includes(descriptionCandidate.comparisonKey)
+    ) {
+      return truncateSocialText(headlineCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+    }
+
+    const overlapRatio = socialWordOverlapRatio(headlineCandidate, descriptionCandidate);
+    if (
+      overlapRatio >= SOCIAL_COPY_RELATED_OVERLAP_RATIO
+      && isMateriallyMoreInformative(descriptionCandidate, headlineCandidate)
+    ) {
+      return truncateSocialText(descriptionCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+    }
+    if (
+      overlapRatio >= SOCIAL_COPY_RELATED_OVERLAP_RATIO
+      && isMateriallyMoreInformative(headlineCandidate, descriptionCandidate)
+    ) {
+      return truncateSocialText(headlineCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+    }
+
+    if (
+      isTerseSocialText(descriptionCandidate)
+      && isMateriallyMoreInformative(headlineCandidate, descriptionCandidate)
+    ) {
+      return truncateSocialText(headlineCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+    }
+
+    const combinedText = combineSocialCandidates(headlineCandidate, descriptionCandidate);
+    const combinedWordCount = headlineCandidate.wordCount + descriptionCandidate.wordCount;
+    const combinedFits = Array.from(combinedText).length <= MAX_SOCIAL_DESCRIPTION_LENGTH;
+    const supportsConciseLead = headlineCandidate.wordCount >= SOCIAL_COPY_MIN_COMBINATION_WORDS
+      && descriptionCandidate.wordCount >= SOCIAL_COPY_MIN_RICH_DESCRIPTION_WORDS;
+    const supportsBalancedCombination = headlineCandidate.wordCount > SOCIAL_COPY_TERSE_WORD_LIMIT
+      && descriptionCandidate.wordCount > SOCIAL_COPY_TERSE_WORD_LIMIT
+      && !isMateriallyMoreInformative(headlineCandidate, descriptionCandidate)
+      && !isMateriallyMoreInformative(descriptionCandidate, headlineCandidate);
+
+    if (
+      overlapRatio <= SOCIAL_COPY_DISTINCT_OVERLAP_RATIO
+      && combinedWordCount >= SOCIAL_COPY_MIN_COMBINED_WORDS
+      && combinedFits
+      && (supportsConciseLead || supportsBalancedCombination)
+    ) {
+      return combinedText;
+    }
+
+    if (
+      isTerseSocialText(headlineCandidate)
+      && isMateriallyMoreInformative(descriptionCandidate, headlineCandidate)
+    ) {
+      return truncateSocialText(descriptionCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+    }
+
+    return truncateSocialText(
+      strongerSocialCandidate(headlineCandidate, descriptionCandidate).text,
+      MAX_SOCIAL_DESCRIPTION_LENGTH,
+    );
   }
 
-  const normalizedDescription = normalizeSocialText(description);
-  if (normalizedDescription) {
-    return truncateSocialText(normalizedDescription, MAX_SOCIAL_DESCRIPTION_LENGTH);
+  if (headlineCandidate.text) {
+    return truncateSocialText(headlineCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
+  }
+
+  if (descriptionCandidate.text) {
+    return truncateSocialText(descriptionCandidate.text, MAX_SOCIAL_DESCRIPTION_LENGTH);
   }
 
   const normalizedName = normalizeStoreName(name);
