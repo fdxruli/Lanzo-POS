@@ -115,3 +115,60 @@ No rollback fixtures or production test rows were created. FIXTURE_RESIDUE=0. No
 Implementation is ready for independent review as a Draft PR, but it is not a production closure. The final status is BLOCKED until canonical Supabase dry-run/apply, direct RPC/fixture matrix, Edge Function runtime tests, remote CI, and exact final differential verification can be run.
 
 NO MERGE. PR REMAINS DRAFT. NO FORCE PUSH. NO HISTORICAL MIGRATION EDIT. R2B NOT REOPENED. R2D NOT STARTED.
+
+
+## CLOSEOUT.R1
+
+Closeout run date: 2026-08-25. Existing PR #229 remains the only PR; no merge, force-push, historical migration edit, R2B reopen, or R2D start was performed.
+
+### Closeout identity
+
+- Starting PR head: 48638115253d4c6899616c92d25767351409696a
+- Closeout source head before this report update: 7f2486f9c7935f4837e972b037f1817b1a3d030f
+- Base/main: 1c8d83ca657616d91dfcd1c0671b3a8d6972860b
+- Branch: codex/admin-staff-ai-agent-authority-r2c
+- PR: #229, Draft, open, not merged
+- Closeout commit: 7f2486f9c7935f4837e972b037f1817b1a3d030f (tenant-scoped AI history)
+
+### AI history tenant-isolation closeout
+
+- AI_HISTORY_OLD_DB: LanzoDB1_ai_history. It is legacy/unresolved storage; the service no longer opens, imports, assigns, surfaces, or deletes it.
+- AI_HISTORY_NEW_STORAGE: tenant-derived companion Dexie database runtime.databaseName + _ai_history, keyed by the canonical TenantRuntime opaqueId/databaseName/generation; no per-actor database is created.
+- AI_HISTORY_SCOPE: TENANT.
+- Tenant A save/read: PASS.
+- Tenant A -> B absent: PASS.
+- Tenant B -> A persistence: PASS.
+- Same-tenant Admin/Staff shared history: PASS.
+- TenantRuntime not-ready fail-closed: PASS.
+- Legacy global history unresolved/not surfaced/not deleted: PASS.
+- Stale async A write after B switch: PASS; stale write rejects with TENANT_RUNTIME_STALE and cannot write B.
+- Focused history suite: 6/6.
+- Affected tenant/runtime suite: 53/53.
+- ESLint for changed history files: PASS.
+- Production build: PASS; existing Vite dynamic-import warnings only.
+
+### Production migration closeout
+
+- Pre-apply canonical ledger comparison: PASS for the checked remote list: local 243, remote 242, remote-only 0, only pending version 20260825090000.
+- The exact repository SQL was sent through the Supabase apply_migration operation and the function/default/ACL checks completed.
+- Production project: odlrhijtfyavryeqivaa.
+- Production migration ledger result: BLOCKED. The connector recorded version 20260825214805 with name 20260825090000_admin_staff_rbac_r2c_ai_agent_authority instead of the required exact canonical version 20260825090000. No manual schema_migrations edit or noncanonical repair was attempted.
+- Post-apply read-only checks: default permissions include ai_agents=false; normalization accepts only boolean ai_agents; get_ai_agent_usage_unlimited(text,text,text,text) is SECURITY DEFINER with public/anon/authenticated execute=false and service_role execute=true; Staff gate is present before period lookup.
+- Production Staff read-only counts after apply: active 6; explicit ai_agents key 0; ai_agents=true 0; ai_agents=false 0.
+- R2C fixture matrix: missing key PASS; null PASS; boolean false PASS; malformed JSON string "true" FAIL because jsonb ->> text comparison treats it as true and the function reached AI_AGENT_LIMIT_DISABLED. This is a security-correctness blocker requiring an authorized forward-only correction; the already-applied R2C migration was not edited.
+- Real production Staff permission mutations: 0.
+- Real production AI/provider calls: 0.
+- Fixture residue: 0 licenses, 0 Staff rows, 0 devices, 0 sessions with the fixture prefix; AI usage remains completed 13, failed 1, reserved 0.
+
+### Edge and CI closeout
+
+- Edge Function: lanzo-ai-agent source was not deployed in this closeout. Local Deno is unavailable, the production denial matrix has the malformed-string failure above, and deployment was not attempted without a passing runtime gate.
+- Existing production Edge Function remains unchanged at the pre-closeout version 10.
+- Exact final-head remote CI was pending at source head 7f2486f9: Vercel pending; PR127 Global Comparison in progress; Shared Terminal Actor Runtime Validation in progress.
+- No real provider call was made.
+
+### CLOSEOUT.R1 verdict
+
+BLOCKED. The local tenant history boundary is closed and verified, and the R2C SQL behavior is partially applied and read-only verified, but closure cannot be PASS because the production migration ledger version is not the exact canonical version and malformed Staff ai_agents string input fails open to period/quota work. The Edge Function was intentionally left undeployed pending an authorized correction and passing runtime matrix.
+
+NO MERGE. PR REMAINS DRAFT. NO FORCE PUSH. NO HISTORICAL MIGRATION EDIT. R2B NOT REOPENED. R2D NOT STARTED.
