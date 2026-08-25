@@ -159,6 +159,7 @@ Closeout run date: 2026-08-25. Existing PR #229 remains the only PR; no merge, f
 - Real production Staff permission mutations: 0.
 - Real production AI/provider calls: 0.
 - Fixture residue: 0 licenses, 0 Staff rows, 0 devices, 0 sessions with the fixture prefix; AI usage remains completed 13, failed 1, reserved 0.
+- begin_ai_agent_analysis with Staff ai_agents=false: PASS; returned AI_AGENT_PERMISSION_REQUIRED before reservation and fixture usage delta was 0.
 
 ### Edge and CI closeout
 
