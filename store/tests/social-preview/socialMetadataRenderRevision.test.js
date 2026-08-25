@@ -54,7 +54,30 @@ describe('revisión independiente del renderizador Open Graph', () => {
     );
   });
 
-  it('propaga exactamente la misma URL a Open Graph y Twitter', () => {
+  it('produce URLs distintas para rv=3 y rv=4 con el mismo slug y versión', () => {
+    const rv3 = buildOpenGraphImageUrl({
+      publicOrigin: PUBLIC_ORIGIN,
+      slug: 'mi-tienda',
+      siteVersionNumber: 7,
+      renderRevision: 3,
+    });
+    const rv4 = buildOpenGraphImageUrl({
+      publicOrigin: PUBLIC_ORIGIN,
+      slug: 'mi-tienda',
+      siteVersionNumber: 7,
+      renderRevision: 4,
+    });
+
+    expect(rv3.imageUrl).toBe(
+      `${PUBLIC_ORIGIN}/api/og/store?slug=mi-tienda&v=7&rv=3`,
+    );
+    expect(rv4.imageUrl).toBe(
+      `${PUBLIC_ORIGIN}/api/og/store?slug=mi-tienda&v=7&rv=4`,
+    );
+    expect(rv4.imageUrl).not.toBe(rv3.imageUrl);
+  });
+
+  it('propaga exactamente la misma URL rv=4 a Open Graph y Twitter', () => {
     const metadata = buildStoreSocialMetadata({
       publicOrigin: PUBLIC_ORIGIN,
       slug: 'mi-tienda',
@@ -63,11 +86,11 @@ describe('revisión independiente del renderizador Open Graph', () => {
         headline: 'Compra en línea',
       },
       siteVersionNumber: 7,
-      renderRevision: 2,
+      renderRevision: 4,
     });
 
     expect(metadata.imageUrl).toBe(
-      `${PUBLIC_ORIGIN}/api/og/store?slug=mi-tienda&v=7&rv=2`,
+      `${PUBLIC_ORIGIN}/api/og/store?slug=mi-tienda&v=7&rv=4`,
     );
     expect(metadata.openGraph.image).toBe(metadata.imageUrl);
     expect(metadata.twitter.image).toBe(metadata.imageUrl);

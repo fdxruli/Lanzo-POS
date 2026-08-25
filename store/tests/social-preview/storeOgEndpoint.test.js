@@ -32,6 +32,7 @@ const okResult = {
     name: 'Tienda Segura',
     headline: 'Compra en línea',
     description: 'Descripción pública',
+    templateCode: 'classic',
     theme: {
       primaryColor: '#112233',
       secondaryColor: '#aabbcc',
@@ -132,6 +133,28 @@ describe('estados, imágenes y privacidad', () => {
     expect(imageLoader).toHaveBeenNthCalledWith(2, okResult.portal.coverImageUrl);
   });
 
+  it.each(['compact', 'classic', 'showcase'])(
+    'enruta una tienda %s por V2 sin renderizar URLs remotas',
+    async (templateCode) => {
+      const result = structuredClone(okResult);
+      result.portal.templateCode = templateCode;
+      const imageLoader = vi.fn(async (url) => (
+        url.includes('logo') ? LOGO_IMAGE : COVER_IMAGE
+      ));
+      const { handler } = createHandler({ result, imageLoader });
+
+      await handler(new Request(ENDPOINT));
+
+      const tree = imageCalls[0].element;
+      const serialized = JSON.stringify(tree);
+      expect(tree.props['data-og-v2-layout']).toBe(templateCode);
+      expect(serialized).toContain(LOGO_IMAGE);
+      expect(serialized).toContain(COVER_IMAGE);
+      expect(serialized).not.toContain(result.portal.logoUrl);
+      expect(serialized).not.toContain(result.portal.coverImageUrl);
+    },
+  );
+
   it.each([
     ['logo', (url) => (url.includes('logo') ? null : 'data:image/png;base64,Y292ZXI=')],
     ['portada', (url) => (url.includes('cover') ? null : 'data:image/png;base64,bG9nbw==')],
@@ -153,10 +176,14 @@ describe('estados, imágenes y privacidad', () => {
   ])('construye la matriz progresiva para logo=%s portada=%s', (logoImage, coverImage, names) => {
     const attempts = buildStoreOgRenderAttempts({ result: okResult, logoImage, coverImage });
     expect(attempts.map((attempt) => attempt.name)).toEqual(names);
+    expect(new Set(attempts.map((attempt) => attempt.model)).size).toBe(1);
     attempts.forEach((attempt) => {
-      expect(attempt.model.name).toBe('Tienda Segura');
-      expect(attempt.model.description).toBe('Compra en línea');
-      expect(attempt.model.initial).toBe('T');
+      expect(attempt.model.version).toBe(2);
+      expect(attempt.model.content.name).toBe('Tienda Segura');
+      expect(attempt.model.content.shortDescription).toBe('Compra en línea');
+      expect(attempt.model.layout.variant).toBe('classic');
+      expect(attempt.model.branding.logoUrl).toBe(okResult.portal.logoUrl);
+      expect(attempt.model.branding.coverImageUrl).toBe(okResult.portal.coverImageUrl);
     });
   });
 
@@ -242,7 +269,8 @@ describe('resiliencia del renderer', () => {
     expect(response.status).toBe(200);
     expect(imageCalls).toHaveLength(2);
     expect(degraded).toContain('Tienda Segura');
-    expect(degraded).toContain('Compra en línea');
+    expect(degraded).toContain('data-og-v2-layout');
+    expect(degraded).not.toContain('Compra en línea');
     expect(degraded).toContain(COVER_IMAGE);
     expect(degraded).not.toContain(LOGO_IMAGE);
     expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
@@ -251,7 +279,7 @@ describe('resiliencia del renderer', () => {
     expect(JSON.stringify(logger.warn.mock.calls)).not.toMatch(/private details|tienda-segura|credential/iu);
   });
 
-  it('si fallan todas las variantes con imágenes, conserva nombre, inicial, colores y descripción', async () => {
+  it('si fallan todas las variantes con imágenes, conserva la identidad V2 sin imágenes', async () => {
     class FailEmbeddedImagesResponse {
       constructor(element, options) {
         const serialized = JSON.stringify(element);
@@ -275,10 +303,10 @@ describe('resiliencia del renderer', () => {
     expect(response.status).toBe(200);
     expect(imageCalls).toHaveLength(4);
     expect(finalAttempt).toContain('Tienda Segura');
-    expect(finalAttempt).toContain('Compra en línea');
+    expect(finalAttempt).toContain('data-og-v2-layout');
+    expect(finalAttempt).not.toContain('Compra en línea');
     expect(finalAttempt).toContain('T');
     expect(finalAttempt).not.toContain('data:image/');
-    expect(finalAttempt).not.toContain('Consulta productos y realiza tu pedido con Lanzo.');
     expect(response.headers.get('cache-control')).toBe(TEMPORARY_CACHE);
     expect(logger.warn.mock.calls.map(([message]) => message)).toEqual([
       '[store-og] render_failed:logo_and_cover',
