@@ -11,6 +11,8 @@ import {
   StoreOgCard,
   buildStoreOgCardModel,
 } from '../_storeOgCard.js';
+import { StoreOgCardV2 } from '../_storeOgCardV2.js';
+import { buildStoreOgCardV2Model } from '../_storeOgCardV2Model.js';
 
 export const VERSIONED_CACHE = 'public, max-age=31536000, immutable';
 export const REVALIDATED_CACHE = 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400';
@@ -102,6 +104,19 @@ function reportRenderFailure(logger, attempt) {
   }
 }
 
+function buildSuccessfulStoreOgV2Model(result) {
+  const portal = result?.portal || {};
+  return buildStoreOgCardV2Model({
+    name: portal.name,
+    headline: portal.headline,
+    description: portal.description,
+    templateCode: portal.templateCode,
+    theme: portal.theme,
+    logoUrl: portal.logoUrl,
+    coverImageUrl: portal.coverImageUrl,
+  });
+}
+
 export function buildStoreOgRenderAttempts({
   result,
   logoImage = null,
@@ -116,6 +131,7 @@ export function buildStoreOgRenderAttempts({
     ]);
   }
 
+  const model = buildSuccessfulStoreOgV2Model(result);
   const attempts = [];
   const seen = new Set();
   const addAttempt = (name, nextLogoImage, nextCoverImage) => {
@@ -124,11 +140,9 @@ export function buildStoreOgRenderAttempts({
     seen.add(signature);
     attempts.push(Object.freeze({
       name,
-      model: buildStoreOgCardModel({
-        result,
-        logoImage: nextLogoImage,
-        coverImage: nextCoverImage,
-      }),
+      model,
+      logoImage: nextLogoImage,
+      coverImage: nextCoverImage,
     }));
   };
 
@@ -146,10 +160,16 @@ export function buildStoreOgRenderAttempts({
 export function renderStoreOgImage({
   ImageResponseImpl,
   model,
+  logoImage = null,
+  coverImage = null,
   status,
 }) {
+  const card = model?.version === 2
+    ? StoreOgCardV2({ model, logoImage, coverImage })
+    : StoreOgCard({ model });
+
   return new ImageResponseImpl(
-    StoreOgCard({ model }),
+    card,
     {
       width: OPEN_GRAPH_IMAGE_WIDTH,
       height: OPEN_GRAPH_IMAGE_HEIGHT,
@@ -174,10 +194,18 @@ export function validateNonEmptyPng(bytes) {
 export async function materializeStoreOgImage({
   ImageResponseImpl,
   model,
+  logoImage = null,
+  coverImage = null,
   status,
   headers,
 }) {
-  const imageResponse = renderStoreOgImage({ ImageResponseImpl, model, status });
+  const imageResponse = renderStoreOgImage({
+    ImageResponseImpl,
+    model,
+    logoImage,
+    coverImage,
+    status,
+  });
   const bytes = validateNonEmptyPng(new Uint8Array(await imageResponse.arrayBuffer()));
   return new Response(bytes, { status, headers });
 }
@@ -254,6 +282,8 @@ export function createStoreOgHandler({
         return await materializeStoreOgImage({
           ImageResponseImpl: ResolvedImageResponseImpl,
           model: attempt.model,
+          logoImage: attempt.logoImage,
+          coverImage: attempt.coverImage,
           status: responseStatus,
           headers: degraded ? responseHeaders(TEMPORARY_CACHE) : headers,
         });

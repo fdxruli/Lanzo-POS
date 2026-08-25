@@ -17,7 +17,7 @@ import {
 export const REVALIDATED_HTML_CACHE = 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400';
 export const NOT_FOUND_HTML_CACHE = 'public, max-age=0, s-maxage=300';
 export const TEMPORARY_HTML_CACHE = 'public, max-age=0, s-maxage=60';
-export const OPEN_GRAPH_RENDER_REVISION = 3;
+export const OPEN_GRAPH_RENDER_REVISION = 4;
 
 const NO_STORE = 'no-store';
 const ROBOTS_POLICY = 'noindex, nofollow, noarchive';

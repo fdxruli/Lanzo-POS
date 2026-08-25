@@ -122,9 +122,9 @@ describe('metadatos, fallbacks y caché', () => {
     expect(count(html, /property="og:type"/gu)).toBe(1);
     expect(count(html, /name="twitter:card"/gu)).toBe(1);
     expect(html).toContain('https://store.example.test/tienda/mi-tienda');
-    expect(OPEN_GRAPH_RENDER_REVISION).toBe(3);
+    expect(OPEN_GRAPH_RENDER_REVISION).toBe(4);
     expect(html).toContain(
-      'https://store.example.test/api/og/store?slug=mi-tienda&amp;v=7&amp;rv=3',
+      'https://store.example.test/api/og/store?slug=mi-tienda&amp;v=7&amp;rv=4',
     );
   });
 

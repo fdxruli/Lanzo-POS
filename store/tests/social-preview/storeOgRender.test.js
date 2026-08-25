@@ -39,6 +39,7 @@ const demoStoreResult = {
     name: 'Negocio de Ejemplo',
     headline: 'Productos seleccionados para tu día',
     description: 'Compra productos de ejemplo con entrega local.',
+    templateCode: 'classic',
     theme: {
       primaryColor: '#166534',
       secondaryColor: '#bef264',
@@ -176,8 +177,12 @@ describe('render real con @vercel/og ImageResponse', () => {
     ]));
   });
 
-  it('materializa una tienda de ejemplo con logo y portada sin degradar a identidad textual', async () => {
+  it('materializa una tienda de ejemplo con V2, logo y portada sin usar red en el renderer', async () => {
     const logoImage = await normalizedWebpLogo();
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('El renderer de producción V2 no debe utilizar red.');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
     const logger = { warn: vi.fn() };
     const imageLoader = vi.fn()
       .mockResolvedValueOnce(logoImage)
@@ -197,7 +202,9 @@ describe('render real con @vercel/og ImageResponse', () => {
     expect(response.headers.get('content-type')).toBe('image/png');
     expect(bytes.byteLength).toBeGreaterThan(1_000);
     expect(Array.from(bytes.slice(0, PNG_SIGNATURE.length))).toEqual(PNG_SIGNATURE);
+    expect(readPngDimensions(bytes)).toEqual({ width: 1200, height: 630 });
     expect(imageLoader).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   }, 30_000);
 });

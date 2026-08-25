@@ -166,6 +166,129 @@ describe('construcción semántica de título y descripción', () => {
     })).toBe('Compra con nosotros');
   });
 
+  it('mantiene headline útil cuando no existe description', () => {
+    expect(buildSocialDescription({
+      name: 'Tienda Artesanal',
+      headline: 'Catálogo artesanal para tu hogar',
+    })).toBe('Catálogo artesanal para tu hogar');
+  });
+
+  it('mantiene description útil cuando no existe headline', () => {
+    expect(buildSocialDescription({
+      name: 'Tienda Artesanal',
+      description: 'Productos hechos en México',
+    })).toBe('Productos hechos en México');
+  });
+
+  it.each([
+    ['Ropa para toda la familia', 'Ropa para toda la familia', 'exacta'],
+    ['Ropa   para toda la familia', ' Ropa para toda la familia ', 'espacios'],
+    ['Ropa para toda la familia', 'ROPA PARA TODA LA FAMILIA', 'capitalización'],
+    ['Ropa para toda la familia', 'Ropa para toda la familia.', 'puntuación terminal'],
+  ])('no duplica copy equivalente por %s', (headline, description) => {
+    const result = buildSocialDescription({ headline, description });
+    expect(result.toLowerCase().match(/ropa para toda la familia/gu)).toHaveLength(1);
+  });
+
+  it('prefiere description materialmente más rica para headline muy breve y relacionado', () => {
+    expect(buildSocialDescription({
+      name: 'Farmacia Gary Chrome',
+      headline: 'Hay medicamentos',
+      description: 'Tenemos medicamentos para vender',
+    })).toBe('Tenemos medicamentos para vender');
+  });
+
+  it('prefiere el candidato expandido cuando contiene el headline', () => {
+    expect(buildSocialDescription({
+      name: 'Café Lanzo',
+      headline: 'Café mexicano',
+      description: 'Compra café mexicano recién tostado',
+    })).toBe('Compra café mexicano recién tostado');
+  });
+
+  it('conserva headline rico cuando description es claramente más breve', () => {
+    expect(buildSocialDescription({
+      headline: 'Descubre productos artesanales para tu hogar',
+      description: 'Hechos localmente',
+    })).toBe('Descubre productos artesanales para tu hogar');
+  });
+
+  it('combina señales distintas cuando ambas agregan información y caben completas', () => {
+    expect(buildSocialDescription({
+      headline: 'Productos artesanales',
+      description: 'Hechos localmente en pequeñas colecciones',
+    })).toBe('Productos artesanales. Hechos localmente en pequeñas colecciones');
+  });
+
+  it('no produce puntuación duplicada al combinar', () => {
+    expect(buildSocialDescription({
+      headline: 'Productos artesanales:',
+      description: 'Hechos localmente en pequeñas colecciones',
+    })).toBe('Productos artesanales: Hechos localmente en pequeñas colecciones');
+  });
+
+  it('mantiene combinación cercana al máximo sin excederla', () => {
+    const headline = `Colecciones ${'artesanales '.repeat(7)}`.trim();
+    const description = `Diseños ${'locales '.repeat(10)}`.trim();
+    const result = buildSocialDescription({ headline, description });
+
+    expect(Array.from(result).length).toBeLessThanOrEqual(MAX_SOCIAL_DESCRIPTION_LENGTH);
+    expect(result).toContain('Colecciones');
+    expect(result).toContain('Diseños');
+  });
+
+  it('elige un solo candidato cuando la combinación completa excedería el máximo', () => {
+    const headline = `Colecciones ${'artesanales '.repeat(15)}`.trim();
+    const description = `Diseños ${'locales '.repeat(20)}`.trim();
+    const result = buildSocialDescription({ headline, description });
+
+    expect(Array.from(result).length).toBeLessThanOrEqual(MAX_SOCIAL_DESCRIPTION_LENGTH);
+    expect(result.includes('. Diseños')).toBe(false);
+  });
+
+  it('preserva Unicode, emoji, acentos y ñ con salida acotada', () => {
+    const result = buildSocialDescription({
+      headline: 'Café mexicano ☕',
+      description: 'Selección de piñatas, jalapeño y diseño artesanal 🎉',
+    });
+
+    expect(result).toContain('Café');
+    expect(result).toContain('ñ');
+    expect(Array.from(result).length).toBeLessThanOrEqual(MAX_SOCIAL_DESCRIPTION_LENGTH);
+  });
+
+  it('normaliza controles antes de comparar y componer', () => {
+    expect(buildSocialDescription({
+      headline: 'Productos\u0000 artesanales',
+      description: 'Hechos\u0007 localmente en pequeñas colecciones',
+    })).toBe('Productos artesanales. Hechos localmente en pequeñas colecciones');
+  });
+
+  it('es determinista byte por byte para la misma entrada', () => {
+    const input = {
+      name: 'Tienda Determinista',
+      headline: 'Productos artesanales',
+      description: 'Hechos localmente en pequeñas colecciones',
+    };
+    const first = buildSocialDescription(input);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expect(buildSocialDescription(input)).toBe(first);
+    }
+  });
+
+  it('no inventa copy de marketing al mejorar la selección', () => {
+    const result = buildSocialDescription({
+      headline: 'Hay medicamentos',
+      description: 'Tenemos medicamentos para vender',
+    });
+
+    expect(result).not.toContain('mejores');
+    expect(result).not.toContain('precio');
+    expect(result).not.toContain('envío');
+    expect(result).not.toContain('descuento');
+  });
+
   it('genera fallback con nombre válido', () => {
     expect(buildSocialDescription({ name: 'Mi Tienda' }))
       .toBe('Consulta el catálogo de Mi Tienda y realiza tu pedido en línea.');
@@ -357,6 +480,7 @@ describe('buildStoreSocialMetadata', () => {
       'https://externo.test/logo.png',
       'https://externo.test/cover.png',
       'theme-privado',
+      'apparel',
     ];
     const portal = {
       name: 'Tienda Pública',
@@ -382,6 +506,7 @@ describe('buildStoreSocialMetadata', () => {
       logoUrl: privateValues[15],
       coverImageUrl: privateValues[16],
       theme: privateValues[17],
+      businessType: [privateValues[18]],
     };
     const metadata = buildStoreSocialMetadata({
       publicOrigin: PUBLIC_ORIGIN,
@@ -405,5 +530,64 @@ describe('buildStoreSocialMetadata', () => {
       'openGraph',
       'twitter',
     ]);
+  });
+
+  it('businessType no puede influir en título ni descripción', () => {
+    const baseInput = {
+      publicOrigin: PUBLIC_ORIGIN,
+      slug: 'farmacia-gary-chrome',
+      portal: {
+        name: 'Farmacia Gary Chrome',
+        headline: 'Hay medicamentos',
+        description: 'Tenemos medicamentos para vender',
+      },
+    };
+    const withoutBusinessType = buildStoreSocialMetadata(baseInput);
+    const withBusinessType = buildStoreSocialMetadata({
+      ...baseInput,
+      portal: {
+        ...baseInput.portal,
+        businessType: ['apparel'],
+      },
+    });
+
+    expect(withBusinessType.title).toBe(withoutBusinessType.title);
+    expect(withBusinessType.description).toBe(withoutBusinessType.description);
+    expect(JSON.stringify(withBusinessType)).not.toContain('apparel');
+  });
+
+  it('no muta el portal de entrada', () => {
+    const portal = {
+      name: 'Tienda Inmutable',
+      headline: 'Productos artesanales',
+      description: 'Hechos localmente en pequeñas colecciones',
+      businessType: ['apparel'],
+    };
+    const before = JSON.stringify(portal);
+
+    buildStoreSocialMetadata({
+      publicOrigin: PUBLIC_ORIGIN,
+      slug: 'tienda-inmutable',
+      portal,
+    });
+
+    expect(JSON.stringify(portal)).toBe(before);
+  });
+
+  it('mantiene copy canónico sincronizado con Open Graph y Twitter', () => {
+    const metadata = buildStoreSocialMetadata({
+      publicOrigin: PUBLIC_ORIGIN,
+      slug: 'copy-consistente',
+      portal: {
+        name: 'Copy Consistente',
+        headline: 'Productos artesanales',
+        description: 'Hechos localmente en pequeñas colecciones',
+      },
+    });
+
+    expect(metadata.openGraph.title).toBe(metadata.title);
+    expect(metadata.twitter.title).toBe(metadata.title);
+    expect(metadata.openGraph.description).toBe(metadata.description);
+    expect(metadata.twitter.description).toBe(metadata.description);
   });
 });
