@@ -38,7 +38,10 @@ const normalizeOriginActor = (originActor) => {
 
 const isActorBoundOutboxRow = (row) => (
   row?.actorSensitivity === 'actor_bound'
-  || (!row?.actorSensitivity && LEGACY_ACTOR_BOUND_ENTITY_TYPES.has(row?.entityType))
+  || (
+    !row?.actorSensitivity
+    && LEGACY_ACTOR_BOUND_ENTITY_TYPES.has(row?.entityType)
+  )
 );
 
 const hasBoundActorOrigin = (row) => (

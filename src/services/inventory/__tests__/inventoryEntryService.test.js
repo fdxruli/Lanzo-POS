@@ -1,9 +1,29 @@
 import 'fake-indexeddb/auto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { addInventoryEntry } from '../inventoryEntryService';
+vi.mock('../../auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_ERROR_CODES: { CONTEXT_STALE: 'ACTOR_CONTEXT_STALE' },
+  ActorRuntimeError: class ActorRuntimeError extends Error {
+    constructor(code, details = {}) {
+      super(code);
+      this.code = code;
+      this.details = details;
+    }
+  },
+  actorRuntimeController: {
+    subscribe: vi.fn(),
+    capture: vi.fn(() => ({
+      actorType: 'admin',
+      actorId: 'admin-test',
+      actorKey: 'admin:admin-test',
+      generation: 1,
+      assertCurrent: vi.fn()
+    }))
+  }
+}));
 
 const product = (overrides = {}) => ({
   id: 'product-1', name: 'Producto', stock: 10, cost: 4, price: 12,

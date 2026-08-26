@@ -23,6 +23,12 @@ import { notifyProductsChanged } from './productEvents';
 import { serializeProductCatalogSyncError } from './productCatalogSyncDiagnostics';
 import { markInventoryEntrySynced } from '../inventory/inventoryEntryService';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import {
+  assertProductInventoryMutationCurrent,
+  assertProductInventoryOperationActorCurrent,
+  captureProductInventoryMutation,
+  getProductInventoryMutationRequirements
+} from '../auth/productInventoryAuthority';
 
 let registered = false;
 
@@ -265,6 +271,28 @@ export const productSyncHandler = {
     const expectedVersion = getExpectedVersion(operation);
     const idempotencyKey = operation.idempotencyKey || operation.id;
     const op = operation.operation;
+    const mutationRequirements = getProductInventoryMutationRequirements(operation);
+    const actorRequirementFlags = { products: mutationRequirements.includes('products'), inventory: mutationRequirements.includes('inventory') };
+    let actorHandle = null;
+    // R2D rows carry an immutable actor origin. Pre-R2D catalog/inventory rows
+    // intentionally have no actorSensitivity and retain their historical
+    // tenant-scoped replay semantics; they must not be assigned currentActor
+    // during replay. The cloud repository still validates the current request
+    // context at the RPC boundary without persisting it into the old row.
+    if (mutationRequirements.length > 0 && operation.actorSensitivity === 'actor_bound') {
+      try {
+        assertProductInventoryOperationActorCurrent(operation);
+        actorHandle = captureProductInventoryMutation(actorRequirementFlags);
+        assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
+      } catch (error) {
+        if (String(error?.code || '').startsWith('ACTOR_')) {
+          const actorConflict = { success: false, code: error.code, message: 'La operacion local no puede ejecutarse con el actor actual.', entityType: operation.entityType || null, entityId: operation.entityId || null, operationId: operation.id || operation.idempotencyKey || null };
+          await saveStaleConflict(operation, actorConflict, 'actor_context');
+          return { conflict: actorConflict, success: false };
+        }
+        throw error;
+      }
+    }
 
     const currentBeforeRpc = await getCurrentCatalogRecord(operation);
     if (isPreRpcSupersededMutation(operation, currentBeforeRpc)) {
@@ -278,12 +306,14 @@ export const productSyncHandler = {
     if (operation.entityType === SYNC_ENTITY_TYPES.CATEGORY) {
       response = op === SYNC_OPERATIONS.DELETE
         ? await productCloudRepository.deleteCategory({
+          actorHandle,
           licenseKey,
           categoryId: payload.categoryId || operation.entityId,
           expectedVersion,
           idempotencyKey
         })
         : await productCloudRepository.upsertCategory({
+          actorHandle,
           licenseKey,
           category: payload.category,
           expectedVersion,
@@ -291,6 +321,7 @@ export const productSyncHandler = {
         });
     } else if (operation.entityType === SYNC_ENTITY_TYPES.INVENTORY_ENTRY) {
       response = await productCloudRepository.addInventoryEntry({
+        actorHandle,
         licenseKey,
         entry: payload.entry,
         idempotencyKey
@@ -298,12 +329,14 @@ export const productSyncHandler = {
     } else if (operation.entityType === SYNC_ENTITY_TYPES.PRODUCT_BATCH) {
       response = op === SYNC_OPERATIONS.DELETE
         ? await productCloudRepository.deleteProductBatch({
+          actorHandle,
           licenseKey,
           batchId: payload.batchId || operation.entityId,
           expectedVersion,
           idempotencyKey
         })
         : await productCloudRepository.upsertProductBatch({
+          actorHandle,
           licenseKey,
           batch: payload.batch,
           expectedVersion,
@@ -311,6 +344,7 @@ export const productSyncHandler = {
         });
     } else if (op === SYNC_OPERATIONS.DELETE) {
       response = await productCloudRepository.deleteProduct({
+        actorHandle,
         licenseKey,
         productId: payload.productId || operation.entityId,
         expectedVersion,
@@ -318,6 +352,7 @@ export const productSyncHandler = {
       });
     } else if (op === SYNC_OPERATIONS.TOGGLE_STATUS) {
       response = await productCloudRepository.toggleProductStatus({
+        actorHandle,
         licenseKey,
         productId: payload.productId || operation.entityId,
         isActive: payload.isActive,
@@ -326,13 +361,17 @@ export const productSyncHandler = {
       });
     } else {
       response = await productCloudRepository.upsertProduct({
+        actorHandle,
         licenseKey,
         product: payload.product,
         initialBatches: payload.initialBatches || [],
+        isNewProduct: payload.isNewProduct === true || operation.operation === SYNC_OPERATIONS.CREATE,
         expectedVersion,
         idempotencyKey
       });
     }
+
+    if (actorHandle) assertProductInventoryMutationCurrent(actorHandle, actorRequirementFlags);
 
     if (productConflictService.isConflictResponse(response)) {
       await productConflictService.saveConflict({

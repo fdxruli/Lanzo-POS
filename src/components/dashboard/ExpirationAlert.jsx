@@ -186,6 +186,7 @@ export default function ExpirationAlert() {
 
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const canAccess = useAppStore((state) => state.canAccess);
+  const canManageInventory = typeof canAccess === 'function' && canAccess('inventory') === true;
   const refreshProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const licenseKey = React.useMemo(() => getLicenseKeyFromDetails(licenseDetails), [licenseDetails]);
 
@@ -311,7 +312,7 @@ export default function ExpirationAlert() {
         showMessageModal('No hay conexión para regularizar inventario en la nube. No se guardó nada local para evitar inconsistencias.', null, { type: 'warning' });
         return;
       }
-      if (typeof canAccess === 'function' && canAccess('products') !== true) {
+      if (typeof canAccess === 'function' && canAccess('inventory') !== true) {
         showMessageModal(REGULARIZATION_MESSAGES.PERMISSION_DENIED, null, { type: 'error' });
         return;
       }
@@ -395,7 +396,7 @@ export default function ExpirationAlert() {
       return;
     }
 
-    if (typeof canAccess === 'function' && canAccess('products') !== true) {
+    if (typeof canAccess === 'function' && canAccess('inventory') !== true) {
       showMessageModal(REGULARIZATION_MESSAGES.PERMISSION_DENIED, null, { type: 'error' });
       return;
     }
@@ -596,6 +597,7 @@ export default function ExpirationAlert() {
                   <div className="card-actions">
                     {isBatch ? (
                       <>
+                        {canManageInventory && (
                         <button
                           className="btn-action btn-edit"
                           onClick={() => openEditModal(item)}
@@ -605,7 +607,8 @@ export default function ExpirationAlert() {
                           <CalendarCheck size={18} />
                           <span className="btn-label">Editar</span>
                         </button>
-                        {item.canMoveToWaste !== false && (
+                        )}
+                        {canManageInventory && item.canMoveToWaste !== false && (
                           <button
                             className="btn-action btn-waste"
                             onClick={() => handleMoveToWaste(item)}
@@ -619,7 +622,7 @@ export default function ExpirationAlert() {
                       </>
                     ) : (
                       <>
-                        {item.canCreateBatchFromStock === true && (
+                        {canManageInventory && item.canCreateBatchFromStock === true && (
                           <button
                             className="btn-action btn-create-batch"
                             onClick={() => handleOpenCreateBatch(item)}
@@ -630,7 +633,7 @@ export default function ExpirationAlert() {
                             <span className="btn-label">Crear lote</span>
                           </button>
                         )}
-                        {item.canAdjustStock === true && (
+                        {canManageInventory && item.canAdjustStock === true && (
                           <button
                             className="btn-action btn-adjust-stock"
                             onClick={() => handleAdjustStockToZero(item)}

@@ -40,7 +40,7 @@ const ROUTE_PERMISSIONS = Object.freeze({
   '/': 'pos',
   '/caja': 'cash_register',
   '/pedidos': 'orders',
-  '/productos': 'products',
+  '/productos': ['products', 'inventory'],
   '/clientes': 'customers'
 });
 
@@ -215,7 +215,10 @@ function Navbar() {
       : linkOrPath.route || linkOrPath.to.split('?')[0];
     if (path === '/configuracion') return settingsAccess.canEnterSettings;
     if (path === '/ventas') return canReadReports;
-    return !ROUTE_PERMISSIONS[path] || canAccess(ROUTE_PERMISSIONS[path]);
+    const requiredPermissions = ROUTE_PERMISSIONS[path];
+    return !requiredPermissions || (Array.isArray(requiredPermissions)
+      ? requiredPermissions.some((permission) => canAccess(permission))
+      : canAccess(requiredPermissions));
   };
   const visibleDrawerLinks = drawerLinks.filter((link) => isRouteAllowed(link));
 
