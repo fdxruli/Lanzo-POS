@@ -213,4 +213,3 @@ La implementación está en el commit `f236c1ce20757b5b856b603601f1db1bea9129b7`
 La prueba de contrato Node ejecutada localmente quedó en `8/8`; `git diff --check` pasó para los cuatro archivos del commit. La prueba SQL de contrato está escrita como bloque transaccional con `ROLLBACK`, pero no se ejecutó localmente porque este entorno no tiene `supabase` CLI ni `psql`. El dry-run canónico de migración permanece `BLOCKED_PREMERGE_BY_MAIN_ONLY_WORKFLOW`; no se sustituyó por una aplicación productiva.
 
 Verificación read-only final de Supabase: el último migration aplicado es `20260825233834` (`20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority`); `20260826010000` no está aplicado. `PRODUCTION_APPLIED=NO`, `PRODUCTION_DDL_DML=0`, `FIXTURE_RESIDUE=0`. El PR conserva estado Draft/open/unmerged para revisión independiente.
-
