@@ -26,7 +26,8 @@ vi.mock('./db/tenantRuntimeRouter', () => ({
 import {
   getLocalAIAnalysisHistory,
   getLocalAIAnalysisDetail,
-  saveLocalAIAnalysis
+  saveLocalAIAnalysis,
+  closeLocalAIAnalysisHistoryDatabasesForTests
 } from './aiAnalysisLocalHistoryService';
 
 const makeOpaqueId = (hex) => 't_' + hex.repeat(32).slice(0, 32);
@@ -60,6 +61,7 @@ const deleteHistoryDatabases = async () => {
 afterEach(async () => {
   tenantState.ready = false;
   tenantState.runtime = null;
+  closeLocalAIAnalysisHistoryDatabasesForTests();
   await deleteHistoryDatabases();
 });
 
