@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Save, UserCheck, UserX } from 'lucide-react';
+import { Plus, RefreshCw, Save, UserCheck, UserX, X } from 'lucide-react';
 import {
   createStaffUserService,
   listStaffUsersService,
   updateStaffUserService
 } from '../../services/licenseService';
 import { showMessageModal } from '../../services/utils';
+import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 
 const NOTIFICATION_DETAIL_PERMISSIONS = [
   'notifications_ecommerce',
@@ -80,6 +81,10 @@ const PERMISSION_GROUPS = [
     ]
   }
 ];
+
+const getPermissionGroupTitle = (permission) => PERMISSION_GROUPS.find((group) => (
+  group.permissions.includes(permission)
+))?.title;
 
 const EMPTY_PERMISSIONS = Object.fromEntries(
   Object.keys(PERMISSION_LABELS).map((permission) => [permission, false])
@@ -169,6 +174,8 @@ export default function StaffUsersSettings({ licenseKey }) {
   const [staffUsers, setStaffUsers] = useState([]);
   const [form, setForm] = useState(createEmptyForm);
   const [editing, setEditing] = useState(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [openPermissionGroups, setOpenPermissionGroups] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -206,9 +213,17 @@ export default function StaffUsersSettings({ licenseKey }) {
       role_name: roleName,
       permissions: normalizePermissions(ROLE_TEMPLATES[roleName] || current.permissions)
     }));
+    setOpenPermissionGroups(roleName === 'custom'
+      ? Object.fromEntries(PERMISSION_GROUPS.map((group) => [group.title, true]))
+      : {});
   };
 
   const togglePermission = (permission) => {
+    const groupTitle = getPermissionGroupTitle(permission);
+    if (groupTitle) {
+      setOpenPermissionGroups((current) => ({ ...current, [groupTitle]: true }));
+    }
+
     setForm((current) => {
       const nextValue = current.permissions?.[permission] !== true;
       const nextPermissions = {
@@ -241,15 +256,48 @@ export default function StaffUsersSettings({ licenseKey }) {
       password: '',
       permissions: normalizePermissions(staffUser.permissions)
     });
+    setOpenPermissionGroups(staffUser.role_name === 'custom'
+      ? Object.fromEntries(PERMISSION_GROUPS.map((group) => [group.title, true]))
+      : {});
+    setErrorMessage('');
+    setIsFormOpen(true);
   };
 
-  const resetForm = () => {
+  const openCreate = () => {
     setEditing(null);
     setForm(createEmptyForm());
+    setOpenPermissionGroups({});
+    setErrorMessage('');
+    setIsFormOpen(true);
   };
+
+  const closeForm = useCallback(() => {
+    setIsFormOpen(false);
+    setEditing(null);
+    setForm(createEmptyForm());
+    setOpenPermissionGroups({});
+  }, []);
+
+  const dismissForm = useDismissibleHistoryLayer({
+    isOpen: isFormOpen,
+    onDismiss: closeForm,
+    layerId: 'staff-user-form'
+  });
+
+  useEffect(() => {
+    if (!isFormOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape' && !isSaving) dismissForm();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [dismissForm, isFormOpen, isSaving]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (isSaving) return;
     setIsSaving(true);
     setErrorMessage('');
 
@@ -273,7 +321,7 @@ export default function StaffUsersSettings({ licenseKey }) {
 
     if (result.success) {
       showMessageModal(editing ? 'Usuario staff actualizado.' : 'Usuario staff creado.', null, { type: 'success' });
-      resetForm();
+      dismissForm();
       await loadStaffUsers();
     } else {
       setErrorMessage(result.message || 'No se pudo guardar usuario staff.');
@@ -301,127 +349,28 @@ export default function StaffUsersSettings({ licenseKey }) {
   return (
     <section className="staff-users-section" aria-labelledby="staff-users-title">
       <div className="staff-users-header">
-        <div>
+        <div className="staff-users-header-copy">
           <h4 id="staff-users-title">Usuarios staff</h4>
-          <p>Administra usuarios y permisos por modulo para dispositivos staff.</p>
+          <p>Administra el acceso de los dispositivos staff.</p>
         </div>
-        <button type="button" className="btn btn-cancel" onClick={loadStaffUsers} disabled={isLoading}>
-          <RefreshCw size={16} />
-          Actualizar
-        </button>
+        <div className="staff-users-header-actions">
+          <span className="staff-users-count" aria-live="polite">{staffUsers.length} usuarios</span>
+          <button type="button" className="btn btn-cancel" onClick={loadStaffUsers} disabled={isLoading}>
+            <RefreshCw size={16} aria-hidden="true" />
+            Actualizar
+          </button>
+          <button type="button" className="btn btn-primary staff-new-user-button" onClick={openCreate}>
+            <Plus size={16} aria-hidden="true" />
+            Nuevo staff
+          </button>
+        </div>
       </div>
 
-      {errorMessage && (
+      {errorMessage && !isFormOpen && (
         <div className="staff-users-error" role="alert">
           {errorMessage}
         </div>
       )}
-
-      <form className="staff-user-form" onSubmit={handleSubmit}>
-        <div className="settings-grid">
-          <div className="form-group">
-            <label className="form-label" htmlFor="staff-username">Usuario</label>
-            <input
-              id="staff-username"
-              className="form-input"
-              value={form.username}
-              onChange={(event) => updateForm('username', event.target.value)}
-              disabled={Boolean(editing) || isSaving}
-              required={!editing}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="staff-display-name">Nombre</label>
-            <input
-              id="staff-display-name"
-              className="form-input"
-              value={form.display_name}
-              onChange={(event) => updateForm('display_name', event.target.value)}
-              disabled={isSaving}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="staff-role">Rol</label>
-            <select
-              id="staff-role"
-              className="form-input"
-              value={form.role_name}
-              onChange={(event) => applyRoleTemplate(event.target.value)}
-              disabled={isSaving}
-            >
-              {ROLE_OPTIONS.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role] || role}
-                </option>
-              ))}
-            </select>
-            {ROLE_DESCRIPTIONS[form.role_name] && (
-              <small className="form-help-text">{ROLE_DESCRIPTIONS[form.role_name]}</small>
-            )}
-          </div>
-          <div className="form-group">
-            <label className="form-label" htmlFor="staff-password">
-              {editing ? 'Nueva contrasena' : 'Contrasena temporal'}
-            </label>
-            <input
-              id="staff-password"
-              className="form-input"
-              type="password"
-              value={form.password}
-              onChange={(event) => updateForm('password', event.target.value)}
-              disabled={isSaving}
-              required={!editing}
-              minLength={6}
-            />
-          </div>
-        </div>
-
-        <div className="staff-permissions-groups">
-          {permissionGroups.map((group) => (
-            <fieldset key={group.title} className="staff-permissions-group">
-              <legend>{group.title}</legend>
-              <div className="staff-permissions-grid">
-                {group.permissions.map((permission) => {
-                  const isNotificationDetail = NOTIFICATION_DETAIL_PERMISSIONS.includes(permission);
-                  const isDisabled = isSaving || (
-                    isNotificationDetail && form.permissions?.notifications !== true
-                  );
-
-                  return (
-                    <label key={permission} className="staff-permission-toggle">
-                      <input
-                        type="checkbox"
-                        checked={form.permissions?.[permission] === true}
-                        onChange={() => togglePermission(permission)}
-                        disabled={isDisabled}
-                      />
-                      <span>
-                        {PERMISSION_LABELS[permission]}
-                        {PERMISSION_DESCRIPTIONS[permission] && (
-                          <small>{PERMISSION_DESCRIPTIONS[permission]}</small>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
-          ))}
-        </div>
-
-        <div className="staff-user-form-actions">
-          {editing && (
-            <button type="button" className="btn btn-cancel" onClick={resetForm} disabled={isSaving}>
-              Cancelar
-            </button>
-          )}
-          <button type="submit" className="btn btn-primary" disabled={isSaving}>
-            {editing ? <Save size={16} /> : <Plus size={16} />}
-            {isSaving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Crear staff'}
-          </button>
-        </div>
-      </form>
 
       <div className="staff-users-list">
         {isLoading ? (
@@ -448,7 +397,9 @@ export default function StaffUsersSettings({ licenseKey }) {
                   Editar
                 </button>
                 <button type="button" className="btn btn-cancel" onClick={() => toggleActive(staffUser)}>
-                  {staffUser.is_active === false ? <UserCheck size={16} /> : <UserX size={16} />}
+                  {staffUser.is_active === false
+                    ? <UserCheck size={16} aria-hidden="true" />
+                    : <UserX size={16} aria-hidden="true" />}
                   {staffUser.is_active === false ? 'Activar' : 'Desactivar'}
                 </button>
               </div>
@@ -456,6 +407,186 @@ export default function StaffUsersSettings({ licenseKey }) {
           ))
         )}
       </div>
+
+      {isFormOpen && (
+        <div
+          className="ui-modal ui-modal--high staff-user-modal-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isSaving) dismissForm();
+          }}
+        >
+          <div
+            className="ui-modal__content ui-modal__content--lg staff-user-modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="staff-user-form-title"
+            aria-describedby="staff-user-form-help"
+            aria-busy={isSaving}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="ui-modal__header staff-user-modal-header">
+              <div>
+                <h2 id="staff-user-form-title" className="ui-modal__title">
+                  {editing ? 'Editar usuario staff' : 'Nuevo usuario staff'}
+                </h2>
+                <p id="staff-user-form-help" className="ui-modal__subtitle">
+                  {editing
+                    ? 'Actualiza los datos y permisos de este usuario.'
+                    : 'Crea un acceso para un dispositivo staff.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="ui-icon-button staff-user-modal-close"
+                onClick={dismissForm}
+                disabled={isSaving}
+                aria-label="Cerrar formulario de usuario staff"
+              >
+                <X size={20} aria-hidden="true" />
+              </button>
+            </header>
+
+            {errorMessage && (
+              <div className="staff-users-error staff-user-modal-error" role="alert">
+                {errorMessage}
+              </div>
+            )}
+
+            <form className="staff-user-modal-form" onSubmit={handleSubmit}>
+              <div className="ui-modal__body staff-user-modal-body">
+                <div className="settings-grid">
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="staff-username">Usuario</label>
+                    <input
+                      id="staff-username"
+                      name="username"
+                      className="form-input"
+                      value={form.username}
+                      onChange={(event) => updateForm('username', event.target.value)}
+                      disabled={Boolean(editing) || isSaving}
+                      required={!editing}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="staff-display-name">Nombre</label>
+                    <input
+                      id="staff-display-name"
+                      name="display_name"
+                      className="form-input"
+                      value={form.display_name}
+                      onChange={(event) => updateForm('display_name', event.target.value)}
+                      disabled={isSaving}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="staff-role">Rol</label>
+                    <select
+                      id="staff-role"
+                      name="role_name"
+                      className="form-input"
+                      value={form.role_name}
+                      onChange={(event) => applyRoleTemplate(event.target.value)}
+                      disabled={isSaving}
+                    >
+                      {ROLE_OPTIONS.map((role) => (
+                        <option key={role} value={role}>
+                          {ROLE_LABELS[role] || role}
+                        </option>
+                      ))}
+                    </select>
+                    {ROLE_DESCRIPTIONS[form.role_name] && (
+                      <small className="form-help-text">{ROLE_DESCRIPTIONS[form.role_name]}</small>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="staff-password">
+                      {editing ? 'Nueva contrasena' : 'Contrasena temporal'}
+                    </label>
+                    <input
+                      id="staff-password"
+                      name="password"
+                      className="form-input"
+                      type="password"
+                      value={form.password}
+                      onChange={(event) => updateForm('password', event.target.value)}
+                      disabled={isSaving}
+                      required={!editing}
+                      minLength={6}
+                    />
+                  </div>
+                </div>
+
+                <div className="staff-permissions-groups">
+                  {permissionGroups.map((group) => {
+                    const enabledPermissions = group.permissions.filter((permission) => (
+                      form.permissions?.[permission] === true
+                    )).length;
+
+                    return (
+                      <details
+                        key={group.title}
+                        className="staff-permissions-disclosure"
+                        open={Boolean(openPermissionGroups[group.title])}
+                        onToggle={(event) => setOpenPermissionGroups((current) => ({
+                          ...current,
+                          [group.title]: event.currentTarget.open
+                        }))}
+                      >
+                        <summary className="staff-permissions-summary">
+                          <span>
+                            <strong>{group.title}</strong>
+                            <small>{enabledPermissions} de {group.permissions.length} permisos activos</small>
+                          </span>
+                        </summary>
+                        <fieldset className="staff-permissions-group">
+                          <legend className="sr-only">{group.title}</legend>
+                          <div className="staff-permissions-grid">
+                            {group.permissions.map((permission) => {
+                              const isNotificationDetail = NOTIFICATION_DETAIL_PERMISSIONS.includes(permission);
+                              const isDisabled = isSaving || (
+                                isNotificationDetail && form.permissions?.notifications !== true
+                              );
+
+                              return (
+                                <label key={permission} className="staff-permission-toggle">
+                                  <input
+                                    type="checkbox"
+                                    checked={form.permissions?.[permission] === true}
+                                    onChange={() => togglePermission(permission)}
+                                    disabled={isDisabled}
+                                  />
+                                  <span>
+                                    {PERMISSION_LABELS[permission]}
+                                    {PERMISSION_DESCRIPTIONS[permission] && (
+                                      <small>{PERMISSION_DESCRIPTIONS[permission]}</small>
+                                    )}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+                      </details>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <footer className="ui-modal__actions staff-user-modal-actions">
+                <button type="button" className="btn btn-cancel" onClick={dismissForm} disabled={isSaving}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={isSaving}>
+                  {editing ? <Save size={16} aria-hidden="true" /> : <Plus size={16} aria-hidden="true" />}
+                  {isSaving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Crear staff'}
+                </button>
+              </footer>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

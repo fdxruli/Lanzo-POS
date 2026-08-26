@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
@@ -72,7 +72,9 @@ describe('LicenseSettings sibling isolation', () => {
     render(<LicenseSettings />);
 
     expect(screen.getByText('Informacion de licencia')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByText('Configuracion de modulos')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Equipo' })).not.toBeInTheDocument();
     expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
   });
 
@@ -81,7 +83,10 @@ describe('LicenseSettings sibling isolation', () => {
 
     render(<LicenseSettings />);
 
+    expect(screen.getByRole('tab', { name: 'Rubros' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Rubros' }));
     expect(screen.getByText('Configuracion de modulos')).toBeInTheDocument();
+    expect(screen.queryByText('Informacion de licencia')).not.toBeInTheDocument();
   });
 
   it('keeps Staff management Admin-only', () => {
@@ -95,7 +100,52 @@ describe('LicenseSettings sibling isolation', () => {
 
     render(<LicenseSettings />);
 
+    expect(screen.getByRole('tab', { name: 'Equipo' })).toBeInTheDocument();
+    expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
     expect(screen.getByText('Administracion de Staff')).toBeInTheDocument();
     expect(state.staffSettingsRender).toHaveBeenCalledWith('LIC-1');
+  });
+
+  it('does not expose Staff management when the license lacks staff_roles', () => {
+    state.app.currentStaffUser = null;
+    state.app.licenseDetails.features.staff_roles = false;
+    state.access = {
+      isAdmin: true,
+      isStaff: false,
+      canAccessSection: (section) => section === 'license',
+      canAccessPermission: () => true
+    };
+
+    render(<LicenseSettings />);
+
+    expect(screen.queryByRole('tab', { name: 'Equipo' })).not.toBeInTheDocument();
+  });
+
+  it('falls back to Summary immediately when the active Staff section loses authority', () => {
+    state.app.currentStaffUser = null;
+    state.access = {
+      isAdmin: true,
+      isStaff: false,
+      canAccessSection: (section) => section === 'license',
+      canAccessPermission: () => true
+    };
+
+    const view = render(<LicenseSettings />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
+    expect(screen.getByText('Administracion de Staff')).toBeInTheDocument();
+
+    state.access = {
+      isAdmin: false,
+      isStaff: true,
+      canAccessSection: (section) => section === 'license',
+      canAccessPermission: (permission) => permission === 'license'
+    };
+    state.app.currentStaffUser = { id: 'staff-b', username: 'staff-b', permissions: { license: true } };
+    view.rerender(<LicenseSettings />);
+
+    expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('tab', { name: 'Equipo' })).not.toBeInTheDocument();
   });
 });
