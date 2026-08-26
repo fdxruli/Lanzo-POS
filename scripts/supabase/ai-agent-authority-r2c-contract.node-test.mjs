@@ -23,7 +23,7 @@ const usageService = readFileSync(resolve(root, 'src/services/aiAgentUsageServic
 
 test('R2C has one canonical migration and fail-closed ai_agents defaults', () => {
   const candidates = readdirSync(migrationDir)
-    .filter((name) => name.includes('r2c_ai_agent_authority'));
+    .filter((name) => name.includes('r2c_ai_agent_authority') || name.includes('r2c_strict_ai_agent_boolean_authority'));
   assert.deepEqual(candidates, [migrationName, strictMigrationName]);
   assert.ok(migration.includes("and (v_actor->'actor_permissions')->>'ai_agents' is distinct from 'true'"));
   assert.ok(strictMigration.includes("and not coalesce("));
