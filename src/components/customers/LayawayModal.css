@@ -553,6 +553,10 @@
     gap: var(--ui-space-2xs);
   }
 
+  .customer-layaway-card__table {
+    display: none;
+  }
+
   .customer-layaway-card__mobile-item {
     display: flex;
     align-items: center;

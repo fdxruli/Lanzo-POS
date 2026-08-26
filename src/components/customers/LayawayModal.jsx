@@ -255,6 +255,7 @@ export default function LayawayModal({
                                 const daysElapsed = getDaysElapsed(layaway.createdAt);
                                 const isOverdue = checkIsOverdue(layaway.deadline);
                                 const isPayingThis = activePaymentId === layaway.id;
+                                const paymentInputId = `customer-layaway-payment-${layaway.id}`;
 
                                 return (
                                     <div key={layaway.id} className="customer-layaway-card">
@@ -375,10 +376,16 @@ export default function LayawayModal({
                                             {/* B) Modo Abono: Formulario Expandido */}
                                             {isPayingThis && (
                                                 <div className="customer-layaway-payment">
-                                                    <label className="customer-layaway-payment__label">¿Cuánto desea abonar?</label>
+                                                    <label
+                                                        htmlFor={paymentInputId}
+                                                        className="customer-layaway-payment__label"
+                                                    >
+                                                        ¿Cuánto desea abonar?
+                                                    </label>
                                                     <div className="customer-layaway-payment__input-row">
                                                         <span className="customer-layaway-payment__currency">$</span>
                                                         <input 
+                                                            id={paymentInputId}
                                                             type="number" 
                                                             className="customer-layaway-payment__input"
                                                             placeholder="0.00"
