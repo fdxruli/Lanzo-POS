@@ -129,3 +129,39 @@ La revision independiente debe confirmar:
 - offline/replay conserva actor origin y falla cerrado ante stale;
 - ventas/ecommerce permanecen fuera de alcance;
 - PR final queda Draft, sin merge, sin Ready y sin force-push.
+
+## CLOSEOUT.R1 — Legacy outbox provenance compatibility + CI regression closure
+
+La revision independiente detecto que el handoff original habia reportado PASS de forma incorrecta. El bloqueo reproducible estaba en `src/services/sync/__tests__/syncOutboxService.tenantIsolation.test.js`, test `returns only explicitly scoped operations for the active tenant`: BASE PASS y CANDIDATE FAIL (`expected [] to deeply equal ['operation-b']`). Los runs originales fueron PR127 `32942292727`, Actor Runtime `32942292660` y Actor Scoped Storage `32942292664`. La falla no era PublicStore.
+
+La causa fue que R2D agrego `CATEGORY`, `PRODUCT`, `PRODUCT_BATCH` e `INVENTORY_ENTRY` a la clasificacion implicita `ACTOR_SENSITIVE_ENTITY_TYPES`. Eso convirtio retroactivamente filas pre-R2D, sin `actorSensitivity` ni origen inmutable, en filas actor-bound; `hasBoundActorOrigin` las retuvo y desaparecieron de la cola tenant-scoped. CLOSEOUT.R1 elimina esa inferencia por tipo. Solo `SALE` conserva la regla legacy implicita.
+
+Compatibilidad resultante:
+
+- Las filas historicas `PRODUCT`, `CATEGORY`, `PRODUCT_BATCH` e `INVENTORY_ENTRY` sin `actorSensitivity` siguen siendo candidatas de replay para su tenant, sin inventar ni persistir `currentActor`.
+- Las nuevas mutaciones R2D de producto/inventario siguen usando `actorSensitive: true` y capturan `originActorType`, `originActorId`, `originActorKey`, `originActorGeneration` y `actorOwnershipStatus = bound` al crear/enqueuear la operacion.
+- Una fila explicitamente `actor_bound` sin origen valido queda retenida fail-closed; no se sustituye el actor actual ni se repara el origen.
+- Actor switch, generacion stale, tenant mismatch, sesion invalida y revocacion de `products` o `inventory` bloquean el replay. Las colisiones de idempotencia no reescriben el origen historico.
+- La semantica legacy de `SALE` sin metadata permanece actor-bound.
+
+Evidencia permanente agregada: fixtures para las cuatro clases legacy, producto actor-bound sin origen, producto e inventory-entry con origen completo, switch/generacion, revocaciones, tenant mismatch, colision de idempotencia; prueba de replay del handler; contrato de permisos Staff products/inventory; y prueba SQL rollback-safe de round-trip con cuatro combinaciones y valores no booleanos. La prueba SQL remota completo `BEGIN`/verificacion/`ROLLBACK` y el chequeo posterior devolvio `r2d_fixture_licenses = 0`, `r2d_fixture_staff = 0`.
+
+Validacion local del cierre: contratos Node `26/26`; ActorRuntime/auth `168/168`; tenant/DB/sync `648/648`; producto/inventario `72/72`; `syncOutboxService.tenantIsolation.test.js` y actor-origin PASS; ESLint de archivos modificados PASS sin errores; `git diff --check` PASS; `npm run build`, `npm run build:store` y `npm run build:store:vercel` PASS. El lint global y la suite global siguen teniendo fallos preexistentes fuera del alcance del cierre; se conservaron y no se suprimieron.
+
+Estado remoto del cierre:
+
+- `BASE_SHA = 9843d69c3d17f7126b8f8857a48365b2d48db411`.
+- `PREVIOUS_HEAD_SHA = f45b0c9f0db4fdfc1dad22bcbf48e5a46060c249`.
+- El nuevo arbol de reparacion fue publicado como `6c04ece1acd918fe8534c5ed3651eadf8b27b2a5` mediante avance normal de la ref; no hubo force-push.
+- PR #230 continua abierto, Draft y no mergeado.
+- Vercel check del nuevo SHA: run/check `98228683544`, PASS.
+- El conector no emitio nuevos runs `pull_request` para el SHA `6c04ece1acd918fe8534c5ed3651eadf8b27b2a5` tras el avance de ref, y no existe una herramienta de `workflow_dispatch` disponible en esta sesion. Por ello PR127, Actor Runtime, Actor Scoped Storage, Device Actor Auth y Dexie Recovery no pueden marcarse PASS para el nuevo SHA; los runs originales se conservan solo como evidencia del bloqueo, no como validacion del arreglo. El diferencial remoto queda `NOT_VERIFIED_FOR_FINAL_HEAD`.
+
+Migracion y produccion:
+
+- `supabase/migrations/20260826010000_admin_staff_rbac_r2d_product_inventory_authority.sql` no fue modificada ni aplicada.
+- El ledger remoto permanece en `20260825233834 / 20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority`.
+- La CLI Supabase local no esta disponible y no se pudo ejecutar el camino canonico de dry-run para este branch sin merge. `MIGRATION_DRY_RUN = BLOCKED`; no se fabrica PASS.
+- Diagnosticos Supabase fueron read-only salvo la prueba sintetica transaccional con rollback. `REAL_STAFF_MUTATIONS = 0`, `REAL_PRODUCTION_PRODUCT_MUTATIONS = 0`, `REAL_PRODUCTION_INVENTORY_MUTATIONS = 0`, `FIXTURE_RESIDUE = 0`.
+
+Este cierre queda bloqueado unicamente por la falta de dry-run canonico y de runs remotos del SHA final; no se mergea, no se marca Ready, no se edita ninguna migracion historica, no se repara el ledger y no se aplica R2D a produccion. R2B, R2C, ventas, caja y ecommerce no fueron reabiertos.
