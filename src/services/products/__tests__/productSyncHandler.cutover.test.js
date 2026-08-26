@@ -19,6 +19,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: mocks.getState }
 }));
+vi.mock('../../auth/productInventoryAuthority', () => ({
+  getProductInventoryMutationRequirements: vi.fn(() => []),
+  assertProductInventoryOperationActorCurrent: vi.fn(),
+  captureProductInventoryMutation: vi.fn(),
+  assertProductInventoryMutationCurrent: vi.fn(),
+  actorOriginFromHandle: vi.fn()
+}));
 vi.mock('../../sync/posSyncOrchestrator', () => ({
   posSyncOrchestrator: { registerEntitySyncHandler: vi.fn() }
 }));

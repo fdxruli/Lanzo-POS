@@ -10,6 +10,7 @@ import {
   invalidateCloudCacheAfterCatalogMutation
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
+import { assertProductInventoryMutationCurrent, captureProductInventoryMutation, hasInitialProductStock } from '../auth/productInventoryAuthority';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 
 const parseRpcPayload = (data) => {
@@ -51,8 +52,33 @@ const callRpc = async (name, args) => {
 };
 
 // IMPORTANTE: las mutaciones/migraciones de catálogo son críticas y NO deben pasar por CloudRequestManager.
-const callCatalogMutationRpc = async (name, licenseKey, args) => {
-  const response = await callRpc(name, args);
+const getMutationRequirementsForRpc = (rpcName, args = {}) => {
+  if (rpcName === 'pos_upsert_category' || rpcName === 'pos_delete_category' || rpcName === 'pos_toggle_product_status') {
+    return { products: true };
+  }
+  if (rpcName === 'pos_upsert_product') {
+    return { products: true, inventory: Array.isArray(args.p_initial_batches) && args.p_initial_batches.length > 0 };
+  }
+  if (rpcName === 'pos_delete_product') return { products: true, inventory: true };
+  if (
+    rpcName === 'pos_upsert_product_batch'
+    || rpcName === 'pos_delete_product_batch'
+    || rpcName === 'pos_add_inventory_entry'
+  ) {
+    return { inventory: true };
+  }
+  if (rpcName === 'pos_migrate_local_product_catalog') {
+    return { products: true, inventory: (Array.isArray(args.p_batches) && args.p_batches.length > 0) || (Array.isArray(args.p_products) && args.p_products.some(hasInitialProductStock)) };
+  }
+  return {};
+};
+
+const callCatalogMutationRpc = async (rpcName, licenseKey, args, actorHandle = null, requirementsOverride = null) => {
+  const requirements = { ...getMutationRequirementsForRpc(rpcName, args), ...(requirementsOverride || {}) };
+  const handle = actorHandle || captureProductInventoryMutation(requirements);
+  assertProductInventoryMutationCurrent(handle, requirements);
+  const response = await callRpc(rpcName, args);
+  assertProductInventoryMutationCurrent(handle, requirements);
   if (response?.success !== false) invalidateCloudCacheAfterCatalogMutation(licenseKey);
   return response;
 };
@@ -75,72 +101,72 @@ const cachedProductRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = 
 });
 
 export const productCloudRepository = {
-  async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey }) {
+  async upsertCategory({ licenseKey, category, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_upsert_category', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_category: category,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
-  async deleteCategory({ licenseKey, categoryId, expectedVersion = null, idempotencyKey }) {
+  async deleteCategory({ licenseKey, categoryId, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_delete_category', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_category_id: categoryId,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
-  async upsertProduct({ licenseKey, product, initialBatches = [], expectedVersion = null, idempotencyKey }) {
+  async upsertProduct({ licenseKey, product, initialBatches = [], expectedVersion = null, idempotencyKey, actorHandle = null, isNewProduct = false }) {
     return callCatalogMutationRpc('pos_upsert_product', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product: product,
       p_initial_batches: initialBatches,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle, { inventory: (Array.isArray(initialBatches) && initialBatches.length > 0) || (isNewProduct && hasInitialProductStock(product)) });
   },
 
-  async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey }) {
+  async deleteProduct({ licenseKey, productId, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_delete_product', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product_id: productId,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
-  async toggleProductStatus({ licenseKey, productId, isActive, expectedVersion = null, idempotencyKey }) {
+  async toggleProductStatus({ licenseKey, productId, isActive, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_toggle_product_status', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product_id: productId,
       p_is_active: Boolean(isActive),
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
-  async upsertProductBatch({ licenseKey, batch, expectedVersion = null, idempotencyKey }) {
+  async upsertProductBatch({ licenseKey, batch, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_upsert_product_batch', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_batch: batch,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
-  async deleteProductBatch({ licenseKey, batchId, expectedVersion = null, idempotencyKey }) {
+  async deleteProductBatch({ licenseKey, batchId, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_delete_product_batch', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_batch_id: batchId,
       p_expected_version: expectedVersion,
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
-  async addInventoryEntry({ licenseKey, entry, idempotencyKey }) {
+  async addInventoryEntry({ licenseKey, entry, idempotencyKey, actorHandle = null }) {
     return callCatalogMutationRpc('pos_add_inventory_entry', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_product_id: entry.productId,
@@ -157,7 +183,7 @@ export const productCloudRepository = {
       p_entry_kind: entry.entryKind || 'restock',
       p_metadata: entry.metadata || {},
       p_idempotency_key: idempotencyKey
-    });
+    }, actorHandle);
   },
 
   async pullCatalogSnapshot({
@@ -196,14 +222,14 @@ export const productCloudRepository = {
     });
   },
 
-  async migrateLocalCatalog({ licenseKey, categories = [], products = [], batches = [], batchId }) {
+  async migrateLocalCatalog({ licenseKey, categories = [], products = [], batches = [], batchId, actorHandle = null }) {
     return callCatalogMutationRpc('pos_migrate_local_product_catalog', licenseKey, {
       ...(await buildBaseRpcArgs(licenseKey)),
       p_categories: categories,
       p_products: products,
       p_batches: batches,
       p_batch_id: batchId
-    });
+    }, actorHandle);
   }
 };
 

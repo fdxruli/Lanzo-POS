@@ -163,14 +163,14 @@ describe('syncOutboxService actor origin', () => {
     expect(await database.table('sync_outbox').get('legacy-unresolved')).toMatchObject({ status: 'pending' });
   });
 
-  it('holds pre-phase legacy sale rows but keeps tenant-wide product work processable', async () => {
+  it('holds pre-phase legacy sale and product rows without immutable actor origin', async () => {
     await database.table('sync_outbox').bulkPut([
       legacyRow({ id: 'legacy-sale', entityType: 'sale' }),
       legacyRow({ id: 'tenant-product', entityType: 'product' })
     ]);
 
     const pending = await syncOutboxService.getPendingOperations({ licenseKey: 'TENANT-A' });
-    expect(pending.map((row) => row.id)).toEqual(['tenant-product']);
+    expect(pending.map((row) => row.id)).toEqual([]);
     expect(await database.table('sync_outbox').get('legacy-sale')).toMatchObject({
       id: 'legacy-sale',
       status: 'pending'

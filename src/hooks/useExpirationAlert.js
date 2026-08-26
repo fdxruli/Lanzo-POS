@@ -389,7 +389,7 @@ export const useExpirationAlert = () => {
         };
       }
 
-      if (typeof canAccess === 'function' && canAccess('products') !== true) {
+      if (typeof canAccess === 'function' && canAccess('inventory') !== true) {
         return { success: false, error: CLOUD_WASTE_MESSAGES.PERMISSION_DENIED };
       }
     }

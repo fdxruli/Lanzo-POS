@@ -10,6 +10,7 @@ import {
   invalidateCloudCacheAfterCatalogMutation
 } from '../cloud';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
+import { assertProductInventoryMutationCurrent, captureProductInventoryMutation } from '../auth/productInventoryAuthority';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -75,7 +76,10 @@ const callRpc = async (rpcName, args) => {
 };
 
 const callCatalogMutationRpc = async (rpcName, licenseKey, args) => {
+  const actorHandle = captureProductInventoryMutation({ inventory: true });
+  assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
   const response = await callRpc(rpcName, args);
+  assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
   if (response?.success !== false && response?.ok !== false) {
     invalidateCloudCacheAfterCatalogMutation(licenseKey);
   }

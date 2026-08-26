@@ -4,6 +4,7 @@ import { buildSyncOutboxRecord } from '../sync/syncOutboxService';
 import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
+import { actorOriginFromHandle, captureProductInventoryMutation } from '../auth/productInventoryAuthority';
 
 const EPSILON = 0.000001;
 const nowIso = () => new Date().toISOString();
@@ -135,11 +136,14 @@ export const addInventoryEntry = async ({
   const resolvedLicenseKey = licenseKey || getRuntimeLicenseKey();
 
   if (!productId) throw domainError('PRODUCT_NOT_FOUND');
+  const actorHandle = captureProductInventoryMutation({ inventory: true });
+  actorHandle.assertCurrent('inventory');
   if (!db.isOpen()) await db.open();
 
   return db.transaction('rw', [
     db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.INVENTORY_EVENTS), db.table(POS_SYNC_STORES.OUTBOX)
   ], async () => {
+    actorHandle.assertCurrent('inventory');
     const eventId = `inventory-entry:${resolvedOperationId}`;
     const eventTable = db.table(STORES.INVENTORY_EVENTS);
     const existingEvent = await eventTable.get(eventId);
@@ -191,8 +195,10 @@ export const addInventoryEntry = async ({
         status: 'active',
         updatedAt: timestamp
       };
+      actorHandle.assertCurrent('inventory');
       await batchTable.put(updatedBatch);
       const projected = buildProjection({ product, batches: [...batches.filter((batch) => batch.id !== updatedBatch.id), updatedBatch], timestamp });
+      actorHandle.assertCurrent('inventory');
       await productTable.put(projected);
       parent = projected;
       previousStock = asNumber(product.stock, 0);
@@ -201,21 +207,26 @@ export const addInventoryEntry = async ({
       entry.batchId = updatedBatch.id;
     } else {
       const updatedProduct = { ...product, stock: newStock, updatedAt: timestamp };
+      actorHandle.assertCurrent('inventory');
       await productTable.put(updatedProduct);
       parent = updatedProduct;
     }
 
     const result = { success: true, operationId: resolvedOperationId, product: parent, batch: batchResult, previousStock, newStock, pending: true };
+    actorHandle.assertCurrent('inventory');
     await eventTable.put({
       id: eventId, type: 'INVENTORY_ENTRY', operationId: resolvedOperationId, productId: product.id,
       batchId: entry.batchId, delta: normalizedBaseQuantity, previousStock, newStock,
       timestamp, occurredAt: entry.occurredAt, entryKind, metadata: entry.metadata,
       requestHash, synced: false, result
     });
+    actorHandle.assertCurrent('inventory');
     await db.table(POS_SYNC_STORES.OUTBOX).put(buildSyncOutboxRecord({
       licenseKey: resolvedLicenseKey, entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
       operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id,
       payload: { entry }, idempotencyKey: resolvedOperationId,
+      actorSensitive: true,
+      originActor: actorOriginFromHandle(actorHandle),
       metadata: { source: 'inventoryEntryService', operationId: resolvedOperationId }
     }));
     return result;

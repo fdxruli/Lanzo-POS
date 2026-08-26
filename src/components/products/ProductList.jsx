@@ -47,7 +47,7 @@ const formatDate = (value) => {
   return `${day}/${month}/${year}`;
 };
 
-export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice }) {
+export default function ProductList({ products, categories, isLoading, onEdit, onDelete, onToggleStatus, onManageBatches, onOpenDailyPrice, canManageProducts = true, canManageInventory = true, canDeleteProducts = true }) {
   const features = useFeatureConfig();
 
   // Acciones del Store (solo paginacion/cache)
@@ -191,7 +191,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
             <option value="inactive">Solo Inactivos</option>
           </select>
 
-          {features.hasDailyPricing && (
+          {canManageProducts && features.hasDailyPricing && (
             <button
                 className="ui-button ui-button--secondary btn-update-price"
                 onClick={onOpenDailyPrice}
@@ -267,7 +267,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                   </div>
 
                   <div className="actions-area">
-                    {isTracked && (
+                    {isTracked && canManageInventory && (
                       <button
                         className="ui-button ui-button--neutral ui-button--sm btn-action btn-batches"
                         onClick={() => onManageBatches(item.id)}
@@ -277,7 +277,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         <Icons.Layers /> <span>Lotes</span>
                       </button>
                     )}
-                    {isTracked && !Array.isArray(item.recipe) && (
+                    {isTracked && canManageInventory && !Array.isArray(item.recipe) && (
                       <button
                         className="ui-button ui-button--primary ui-button--sm btn-action"
                         onClick={() => setProductForInventoryEntry(item)}
@@ -287,12 +287,16 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                         <span>＋</span> <span>Agregar existencia</span>
                       </button>
                     )}
+                    {canManageProducts && (
                     <button className="ui-button ui-button--ghost ui-button--sm btn-action btn-edit" onClick={() => onEdit(item)} title="Editar" disabled={!isActive}>
                       <Icons.Edit /> <span>Editar</span>
                     </button>
+                    )}
+                    {canDeleteProducts && (
                     <button className="ui-button ui-button--danger ui-button--sm btn-action btn-delete" onClick={() => onDelete(item)} title="Eliminar" disabled={!isActive}>
                       <Icons.Delete /> <span>Eliminar</span>
                     </button>
+                    )}
                   </div>
                 </div>
 
@@ -387,12 +391,14 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
 
                 {/* 5. Footer con Switch de Estado y Acciones Secundarias */}
                 <div className="complex-footer">
+                  {canManageProducts && (
                   <div className="status-switch-container" onClick={() => onToggleStatus(item)} title={isActive ? "Desactivar" : "Activar"}>
                     <div className={`switch-track ${isActive ? 'checked' : ''}`}>
                       <div className="switch-thumb"></div>
                     </div>
                     <span className="switch-label">{isActive ? 'Activo' : 'Inactivo'}</span>
                   </div>
+                  )}
 
                   <div className="footer-actions">
                     {/* Badges Informativos */}
@@ -404,7 +410,7 @@ export default function ProductList({ products, categories, isLoading, onEdit, o
                     )}
 
                     {/* Botón de Merma (Solo visible si el rubro lo permite y está activo) */}
-                    {features.hasWaste && isActive && (
+                    {features.hasWaste && canManageInventory && isActive && (
                       <button className="ui-button ui-button--warning ui-button--sm btn-waste-text" onClick={() => handleOpenWaste(item)}>
                         <Icons.Waste /> Merma
                       </button>

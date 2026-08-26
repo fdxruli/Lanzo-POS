@@ -23,6 +23,12 @@ import {
 
 const nowIso = () => new Date().toISOString();
 const LEGACY_ACTOR_BOUND_ENTITY_TYPES = new Set([SYNC_ENTITY_TYPES.SALE]);
+const ACTOR_SENSITIVE_ENTITY_TYPES = new Set([
+  SYNC_ENTITY_TYPES.CATEGORY,
+  SYNC_ENTITY_TYPES.PRODUCT,
+  SYNC_ENTITY_TYPES.PRODUCT_BATCH,
+  SYNC_ENTITY_TYPES.INVENTORY_ENTRY
+]);
 
 const normalizeOriginActor = (originActor) => {
   if (!originActor?.actorKey) return null;
@@ -38,7 +44,13 @@ const normalizeOriginActor = (originActor) => {
 
 const isActorBoundOutboxRow = (row) => (
   row?.actorSensitivity === 'actor_bound'
-  || (!row?.actorSensitivity && LEGACY_ACTOR_BOUND_ENTITY_TYPES.has(row?.entityType))
+  || (
+    !row?.actorSensitivity
+    && (
+      LEGACY_ACTOR_BOUND_ENTITY_TYPES.has(row?.entityType)
+      || ACTOR_SENSITIVE_ENTITY_TYPES.has(row?.entityType)
+    )
+  )
 );
 
 const hasBoundActorOrigin = (row) => (

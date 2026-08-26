@@ -50,6 +50,10 @@ export default function ProductsPage() {
     const companyProfile = useAppStore(state => state.companyProfile);
     const licenseDetails = useAppStore(state => state.licenseDetails);
     const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+    const canAccess = useAppStore(state => state.canAccess);
+    const canManageProducts = canAccess('products');
+    const canManageInventory = canAccess('inventory');
+    const canDeleteProducts = canManageProducts && canManageInventory;
     const cloudProductImagesEnabled = Boolean(
         licenseKey && isCloudProductsSyncEnabled(licenseDetails)
     );
@@ -193,19 +197,49 @@ export default function ProductsPage() {
             list: 'view-products'
         };
 
-        if (currentTabParam && paramToTabMap[currentTabParam]) {
-            if (paramToTabMap[currentTabParam] === 'restaurant' && !hasRestaurantProductSettings) {
-                setActiveTab('view-products');
-                return;
-            }
-            setActiveTab(paramToTabMap[currentTabParam]);
-        } else {
+        const requestedTab = currentTabParam ? paramToTabMap[currentTabParam] : null;
+        const tabPermissions = {
+            'add-product': 'products',
+            'view-products': null,
+            batches: 'inventory',
+            ingredients: 'products',
+            'variants-view': 'inventory',
+            categories: 'products',
+            restaurant: 'products'
+        };
+        const requestedPermission = tabPermissions[requestedTab];
+        const requestedAllowed = requestedTab === 'restaurant'
+            ? hasRestaurantProductSettings && canAccess('products')
+            : Boolean(requestedTab) && (!requestedPermission || canAccess(requestedPermission));
+
+        if (requestedAllowed) {
+            setActiveTab(requestedTab);
+        } else if (canManageProducts || canManageInventory) {
             setActiveTab('view-products');
+        } else {
+            setActiveTab(null);
         }
-    }, [searchParams, hasRestaurantProductSettings]);
+    }, [searchParams, hasRestaurantProductSettings, canAccess, canManageProducts, canManageInventory]);
 
     const handleTabChange = (tabKey) => {
         if (tabKey === activeTab) return;
+
+        const tabPermissions = {
+            'add-product': 'products',
+            'view-products': null,
+            batches: 'inventory',
+            ingredients: 'products',
+            'variants-view': 'inventory',
+            categories: 'products',
+            restaurant: 'products'
+        };
+        const requiredPermission = tabPermissions[tabKey];
+        if (requiredPermission && !canAccess(requiredPermission)) {
+            showMessageModal(requiredPermission === 'inventory'
+                ? 'No tienes permiso para gestionar inventario.'
+                : 'No tienes permiso para gestionar productos.', null, { type: 'warning' });
+            return;
+        }
 
         const urlMap = {
             'add-product': 'add',
@@ -221,7 +255,6 @@ export default function ProductsPage() {
         if (paramValue === 'list') setSearchParams({});
         else setSearchParams({ tab: paramValue });
     };
-
     const productsForSale = products;
     const ingredientsOnly = products;
 
@@ -462,16 +495,18 @@ export default function ProductsPage() {
 
             <section className="ui-section products-tabs-section" aria-label="Secciones de productos">
             <div className="tabs-container products-tabs" id="product-tabs">
-                <button
-                    className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
-                    onClick={() => {
-                        if (activeTab === 'add-product') return;
-                        setEditingProduct(null);
-                        handleTabChange('add-product');
-                    }}
-                >
-                    {editingProduct && !editingProduct.id ? 'Nuevo Insumo' : (editingProduct ? 'Editar Item' : 'Añadir Producto')}
-                </button>
+                {canManageProducts && (
+                    <button
+                        className={`tab-btn ${activeTab === 'add-product' ? 'active' : ''}`}
+                        onClick={() => {
+                            if (activeTab === 'add-product') return;
+                            setEditingProduct(null);
+                            handleTabChange('add-product');
+                        }}
+                    >
+                        {editingProduct && !editingProduct.id ? 'Nuevo Insumo' : (editingProduct ? 'Editar Item' : 'Agregar Producto')}
+                    </button>
+                )}
 
                 <button
                     className={`tab-btn ${activeTab === 'view-products' ? 'active' : ''}`}
@@ -480,14 +515,16 @@ export default function ProductsPage() {
                     Productos (Venta)
                 </button>
 
-                <button
-                    className={`tab-btn ${activeTab === 'batches' ? 'active' : ''}`}
-                    onClick={() => handleTabChange('batches')}
-                >
-                    Gestionar Lotes
-                </button>
+                {canManageInventory && (
+                    <button
+                        className={`tab-btn ${activeTab === 'batches' ? 'active' : ''}`}
+                        onClick={() => handleTabChange('batches')}
+                    >
+                        Gestionar Lotes
+                    </button>
+                )}
 
-                {features.hasRecipes && (
+                {canManageProducts && features.hasRecipes && (
                     <button
                         className={`tab-btn ${activeTab === 'ingredients' ? 'active' : ''}`}
                         onClick={() => handleTabChange('ingredients')}
@@ -496,7 +533,7 @@ export default function ProductsPage() {
                     </button>
                 )}
 
-                {features.hasVariants && isApparel && (
+                {canManageInventory && features.hasVariants && isApparel && (
                     <button
                         className={`tab-btn ${activeTab === 'variants-view' ? 'active' : ''}`}
                         onClick={() => handleTabChange('variants-view')}
@@ -505,14 +542,16 @@ export default function ProductsPage() {
                     </button>
                 )}
 
-                <button
-                    className={`tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
-                    onClick={() => handleTabChange('categories')}
-                >
-                    Categorías
-                </button>
+                {canManageProducts && (
+                    <button
+                        className={`tab-btn ${activeTab === 'categories' ? 'active' : ''}`}
+                        onClick={() => handleTabChange('categories')}
+                    >
+                        Categorias
+                    </button>
+                )}
 
-                {hasRestaurantProductSettings && (
+                {canManageProducts && hasRestaurantProductSettings && (
                     <button
                         className={`tab-btn ${activeTab === 'restaurant' ? 'active' : ''}`}
                         onClick={() => handleTabChange('restaurant')}
@@ -524,7 +563,7 @@ export default function ProductsPage() {
             </section>
 
             <section className="ui-section products-workspace">
-            {activeTab === 'add-product' && (
+            {activeTab === 'add-product' && canManageProducts && (
                 <ProductForm
                     onSave={handleSaveProduct}
                     onCancel={() => handleTabChange('view-products')}
@@ -546,10 +585,13 @@ export default function ProductsPage() {
                     onToggleStatus={handleToggleStatus}
                     onManageBatches={handleManageBatches}
                     onOpenDailyPrice={() => setShowDailyPrice(true)}
+                    canManageProducts={canManageProducts}
+                    canManageInventory={canManageInventory}
+                    canDeleteProducts={canDeleteProducts}
                 />
             )}
 
-            {activeTab === 'ingredients' && features.hasRecipes && (
+            {activeTab === 'ingredients' && canManageProducts && features.hasRecipes && (
                 <IngredientManager
                     ingredients={ingredientsOnly}
                     onSave={handleSaveProduct}
@@ -559,7 +601,7 @@ export default function ProductsPage() {
                 />
             )}
 
-            {activeTab === 'categories' && (
+            {activeTab === 'categories' && canManageProducts && (
                 <CategoryManager
                     categories={categories}
                     onSave={handleSaveCategory}
@@ -568,25 +610,26 @@ export default function ProductsPage() {
                 />
             )}
 
-            {activeTab === 'batches' && (
+            {activeTab === 'batches' && canManageInventory && (
                 <BatchManager
                     selectedProductId={selectedBatchProductId}
+                    canManageInventory={canManageInventory}
                     onProductSelect={setSelectedBatchProductId}
                 />
             )}
 
-            {activeTab === 'variants-view' && features.hasVariants && isApparel && (
+            {activeTab === 'variants-view' && canManageInventory && features.hasVariants && isApparel && (
                 <VariantInventoryView />
             )}
 
-            {activeTab === 'restaurant' && hasRestaurantProductSettings && (
+            {activeTab === 'restaurant' && canManageProducts && hasRestaurantProductSettings && (
                 <PreparationStationsSettings />
             )}
             </section>
             </main>
 
             <CategoryManagerModal
-                show={showCategoryModal}
+                show={showCategoryModal && canManageProducts}
                 onClose={() => setShowCategoryModal(false)}
                 categories={categories}
                 onSave={handleSaveCategory}
@@ -595,7 +638,7 @@ export default function ProductsPage() {
             />
 
             <DailyPriceModal
-                show={showDailyPrice}
+                show={showDailyPrice && canManageProducts}
                 onClose={() => setShowDailyPrice(false)}
                 products={products}
                 onRefresh={() => refreshData()}

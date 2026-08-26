@@ -20,7 +20,25 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../Logger', () => ({
   default: { warn: vi.fn(), error: vi.fn() }
 }));
-vi.mock('../../utils', () => ({ generateID: vi.fn(() => 'generated-id') }));
+vi.mock('../../utils', () => ({ generateID: vi.fn(() => 'generated-id') }));vi.mock('../../auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_ERROR_CODES: { CONTEXT_STALE: 'ACTOR_CONTEXT_STALE' },
+  ActorRuntimeError: class ActorRuntimeError extends Error {
+    constructor(code, details = {}) {
+      super(code);
+      this.code = code;
+      this.details = details;
+    }
+  },
+  actorRuntimeController: {
+    capture: vi.fn(() => ({
+      actorType: 'admin',
+      actorId: 'admin-test',
+      actorKey: 'admin:admin-test',
+      generation: 1,
+      assertCurrent: vi.fn()
+    }))
+  }
+}));
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: () => ({ licenseDetails: {}, appStatus: 'active' }) }
 }));

@@ -21,6 +21,12 @@ import { productMigrationService } from './productMigrationService';
 import { pullCatalogChanges } from './productSyncHandler';
 import { PRODUCT_CLOUD_PHASE, PRODUCT_SYNC_STATUS } from './productConstants';
 import { notifyProductsChanged } from './productEvents';
+import {
+  actorOriginFromHandle,
+  assertProductInventoryMutationCurrent,
+  captureProductInventoryMutation,
+  getProductInventoryMutationRequirements
+} from '../auth/productInventoryAuthority';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const nowIso = () => new Date().toISOString();
@@ -105,20 +111,30 @@ const enqueueProductOperation = ({
   operation,
   entityId,
   payload,
-  idempotencyKey
-}) => syncOutboxService.enqueueOperation({
-  licenseKey,
-  entityType,
-  operation,
-  entityId,
-  payload,
   idempotencyKey,
-  metadata: {
-    source: 'productRepository',
-    phase: PRODUCT_CLOUD_PHASE,
-    queuedAt: nowIso()
-  }
-});
+  actorHandle
+}) => {
+  const requirements = getProductInventoryMutationRequirements({ entityType, operation, payload });
+  assertProductInventoryMutationCurrent(actorHandle, {
+    products: requirements.includes('products'),
+    inventory: requirements.includes('inventory')
+  });
+  return syncOutboxService.enqueueOperation({
+    licenseKey,
+    entityType,
+    operation,
+    entityId,
+    payload,
+    idempotencyKey,
+    actorSensitive: true,
+    originActor: actorOriginFromHandle(actorHandle),
+    metadata: {
+      source: 'productRepository',
+      phase: PRODUCT_CLOUD_PHASE,
+      queuedAt: nowIso()
+    }
+  });
+};
 
 const saveConflictIfNeeded = async ({ operation, response, localPayload }) => {
   if (!productConflictService.isConflictResponse(response)) return;
@@ -224,8 +240,10 @@ export const productRepository = {
       updatedAt: nowIso(),
       isActive: true
     };
+    const actorHandle = captureProductInventoryMutation({ products: true });
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       return productLocalRepository.saveCategoryLocal(category, { syncStatus: PRODUCT_SYNC_STATUS.LOCAL });
     }
 
@@ -239,8 +257,10 @@ export const productRepository = {
     const outboxPayload = { category: cloudPayload, expectedVersion };
 
     const savePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       const local = await productLocalRepository.saveCategoryLocal(category, pendingSync(idempotencyKey));
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.CATEGORY,
         operation: SYNC_OPERATIONS.UPSERT,
@@ -257,7 +277,9 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       const response = await productCloudRepository.upsertCategory({
+        actorHandle,
         licenseKey: mode.licenseKey,
         category: cloudPayload,
         expectedVersion,
@@ -273,6 +295,7 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'CATEGORY_SYNC_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       await applyResponseAndNotify(response, {
         operation: 'updated',
         source: 'productRepository.saveCategory'
@@ -289,8 +312,10 @@ export const productRepository = {
 
   async deleteCategory(categoryId, options = {}) {
     const mode = getMode();
+    const actorHandle = captureProductInventoryMutation({ products: true });
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       return productLocalRepository.deleteCategoryLocal(categoryId);
     }
 
@@ -304,9 +329,11 @@ export const productRepository = {
     const outboxPayload = { categoryId, expectedVersion };
 
     const deletePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       const result = await productLocalRepository.deleteCategoryLocal(categoryId, pendingSync(idempotencyKey));
       if (!result?.success) return result;
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.CATEGORY,
         operation: SYNC_OPERATIONS.DELETE,
@@ -323,7 +350,9 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       const response = await productCloudRepository.deleteCategory({
+        actorHandle,
         licenseKey: mode.licenseKey,
         categoryId,
         expectedVersion,
@@ -339,6 +368,7 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'CATEGORY_DELETE_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       await applyResponseAndNotify(response, {
         operation: 'deleted',
         source: 'productRepository.deleteCategory'
@@ -359,13 +389,31 @@ export const productRepository = {
     const mode = getMode();
 
     const operation = prepared.editing ? 'updated' : 'created';
+    const productMutationPayload = {
+      product: productToCloudPayload(prepared.product),
+      initialBatches: prepared.editing ? [] : prepared.batches.map(batchToCloudPayload),
+      isNewProduct: !prepared.editing
+    };
+    const productRequirements = getProductInventoryMutationRequirements({
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPSERT,
+      payload: productMutationPayload
+    });
+    const mutationRequirements = {
+      products: productRequirements.includes('products'),
+      inventory: productRequirements.includes('inventory')
+        || Boolean(prepared.apparelVariantDelta && Object.values(prepared.apparelVariantDelta).some((items) => Array.isArray(items) && items.length > 0))
+    };
+    const actorHandle = captureProductInventoryMutation(mutationRequirements);
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const result = await productLocalRepository.savePreparedProductLocal(
         prepared,
         { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
       );
       if (result?.success) {
+        assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
         const variants = await saveApparelVariantDelta(prepared);
         if (!variants?.success) return variants;
         notifyProductMutation({
@@ -383,16 +431,13 @@ export const productRepository = {
       entityId: prepared.productId
     });
     const expectedVersion = options.expectedVersion ?? (prepared.editing ? prepared.product?.serverVersion || null : null);
-    const payload = {
-      product: productToCloudPayload(prepared.product),
-      initialBatches: prepared.editing ? [] : prepared.batches.map(batchToCloudPayload),
-      expectedVersion
-    };
-
+    const payload = { ...productMutationPayload, expectedVersion };
     const savePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const result = await productLocalRepository.savePreparedProductLocal(prepared, pendingSync(idempotencyKey));
       if (!result?.success) return result;
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.PRODUCT,
         operation: SYNC_OPERATIONS.UPSERT,
@@ -405,6 +450,7 @@ export const productRepository = {
         operation,
         source: 'productRepository.saveProduct.pending'
       });
+      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const variants = await saveApparelVariantDelta(prepared);
       if (!variants?.success) return variants;
       return { ...result, pending: true, message };
@@ -415,10 +461,13 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const response = await productCloudRepository.upsertProduct({
+        actorHandle,
         licenseKey: mode.licenseKey,
         product: payload.product,
         initialBatches: payload.initialBatches,
+        isNewProduct: payload.isNewProduct === true,
         expectedVersion,
         idempotencyKey
       });
@@ -432,12 +481,14 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'PRODUCT_SYNC_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       await applyResponseAndNotify(response, {
         productId: prepared.productId,
         productIds: [prepared.productId],
         operation,
         source: 'productRepository.saveProduct'
       });
+      assertProductInventoryMutationCurrent(actorHandle, mutationRequirements);
       const variants = await saveApparelVariantDelta(prepared);
       if (!variants?.success) {
         return {
@@ -463,8 +514,10 @@ export const productRepository = {
       ? await productLocalRepository.getProductById(productId)
       : productOrId;
     const mode = getMode();
+    const actorHandle = captureProductInventoryMutation({ products: true, inventory: true });
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true, inventory: true });
       const result = await productLocalRepository.deleteProductLocal(product || productId);
       if (result?.success) {
         notifyProductMutation({
@@ -485,9 +538,11 @@ export const productRepository = {
     const payload = { productId, expectedVersion };
 
     const deletePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true, inventory: true });
       const result = await productLocalRepository.deleteProductLocal(product || productId, pendingSync(idempotencyKey));
       if (!result?.success) return result;
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.PRODUCT,
         operation: SYNC_OPERATIONS.DELETE,
@@ -508,7 +563,9 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true, inventory: true });
       const response = await productCloudRepository.deleteProduct({
+        actorHandle,
         licenseKey: mode.licenseKey,
         productId,
         expectedVersion,
@@ -524,6 +581,7 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'PRODUCT_DELETE_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, { products: true, inventory: true });
       await applyResponseAndNotify(response, {
         productId,
         productIds: [productId],
@@ -547,10 +605,12 @@ export const productRepository = {
       : productOrId;
     const isActive = isActiveOverride === undefined ? !(product?.isActive !== false) : Boolean(isActiveOverride);
     const mode = getMode();
+    const actorHandle = captureProductInventoryMutation({ products: true });
 
     const operation = isActive ? 'activated' : 'deactivated';
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       const result = await productLocalRepository.toggleProductStatusLocal(product || productId, isActive);
       if (result?.success) {
         notifyProductMutation({
@@ -570,14 +630,15 @@ export const productRepository = {
     const expectedVersion = options.expectedVersion ?? product?.serverVersion ?? null;
     const payload = { productId, isActive, expectedVersion };
 
-    await productLocalRepository.markProductPending(productId, {
-      ...pendingSync(idempotencyKey),
-      isActive,
-      updatedAt: nowIso()
-    });
-
     const enqueuePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
+      await productLocalRepository.markProductPending(productId, {
+        ...pendingSync(idempotencyKey),
+        isActive,
+        updatedAt: nowIso()
+      });
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.PRODUCT,
         operation: SYNC_OPERATIONS.TOGGLE_STATUS,
@@ -598,7 +659,9 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       const response = await productCloudRepository.toggleProductStatus({
+        actorHandle,
         licenseKey: mode.licenseKey,
         productId,
         isActive,
@@ -615,6 +678,7 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'PRODUCT_TOGGLE_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, { products: true });
       await applyResponseAndNotify(response, {
         productId,
         productIds: [productId],
@@ -633,8 +697,10 @@ export const productRepository = {
 
   async saveBatch(batchData, { existingBatch = null, ...options } = {}) {
     const mode = getMode();
+    const actorHandle = captureProductInventoryMutation({ inventory: true });
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
       const result = await productLocalRepository.saveBatchLocal(
         batchData,
         { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
@@ -657,11 +723,12 @@ export const productRepository = {
     const expectedVersion = options.expectedVersion ?? existingBatch?.serverVersion ?? batchData.serverVersion ?? null;
     const payload = { batch: batchToCloudPayload(batchData), expectedVersion };
 
-    const local = await productLocalRepository.saveBatchLocal(batchData, pendingSync(idempotencyKey));
-    if (!local?.success) return local;
-
     const enqueuePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
+      const local = await productLocalRepository.saveBatchLocal(batchData, pendingSync(idempotencyKey));
+      if (!local?.success) return local;
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
         operation: SYNC_OPERATIONS.UPSERT,
@@ -682,7 +749,9 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
       const response = await productCloudRepository.upsertProductBatch({
+        actorHandle,
         licenseKey: mode.licenseKey,
         batch: payload.batch,
         expectedVersion,
@@ -698,13 +767,14 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'BATCH_SYNC_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
       await applyResponseAndNotify(response, {
         productId: batchData.productId,
         productIds: batchData.productId ? [batchData.productId] : [],
         operation: 'updated',
         source: 'productRepository.saveBatch'
       });
-      return { ...local, response };
+      return { success: true, response };
     } catch (error) {
       Logger.warn('[Products] Upsert batch cloud fallo:', error);
       if (isRetryableCloudError(error)) {
@@ -720,8 +790,10 @@ export const productRepository = {
       ? await productLocalRepository.getBatchById(batchId)
       : batchOrId;
     const mode = getMode();
+    const actorHandle = captureProductInventoryMutation({ inventory: true });
 
     if (!mode.cloudEnabled) {
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
       const result = await productLocalRepository.deleteBatchLocal(
         batch || { id: batchId },
         { syncStatus: PRODUCT_SYNC_STATUS.LOCAL }
@@ -743,11 +815,13 @@ export const productRepository = {
     });
     const expectedVersion = options.expectedVersion ?? batch?.serverVersion ?? null;
     const payload = { batchId, expectedVersion };
-    const local = await productLocalRepository.deleteBatchLocal(batch || { id: batchId }, pendingSync(idempotencyKey));
-    if (!local?.success) return local;
 
     const enqueuePending = async (message) => {
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
+      const local = await productLocalRepository.deleteBatchLocal(batch || { id: batchId }, pendingSync(idempotencyKey));
+      if (!local?.success) return local;
       await enqueueProductOperation({
+        actorHandle,
         licenseKey: mode.licenseKey,
         entityType: SYNC_ENTITY_TYPES.PRODUCT_BATCH,
         operation: SYNC_OPERATIONS.DELETE,
@@ -768,7 +842,9 @@ export const productRepository = {
     }
 
     try {
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
       const response = await productCloudRepository.deleteProductBatch({
+        actorHandle,
         licenseKey: mode.licenseKey,
         batchId,
         expectedVersion,
@@ -784,6 +860,7 @@ export const productRepository = {
         return normalizeCloudFailure(response, 'BATCH_DELETE_FAILED');
       }
 
+      assertProductInventoryMutationCurrent(actorHandle, { inventory: true });
       await applyResponseAndNotify(response, {
         productId: batch?.productId || batch?.product_id || null,
         productIds: [batch?.productId || batch?.product_id].filter(Boolean),
