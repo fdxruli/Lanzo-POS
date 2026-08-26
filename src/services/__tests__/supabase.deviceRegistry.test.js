@@ -165,6 +165,45 @@ describe('pre-tenant device registry', () => {
     expect(mocks.saveData).not.toHaveBeenCalled();
   });
 
+  it('blocks activation locally before the RPC when browser IndexedDB is unavailable', async () => {
+    const { supabase } = await freshModules();
+    const nativeError = new DOMException('Internal error.', 'UnknownError');
+    vi.stubGlobal('indexedDB', {
+      open: vi.fn(() => { throw nativeError; })
+    });
+
+    try {
+      await expect(supabase.activateLicense('LANZO-IDB-UNAVAILABLE')).rejects.toMatchObject({
+        name: 'BrowserStorageUnavailableError',
+        code: 'DB_BROWSER_STORAGE_UNAVAILABLE',
+        cause: nativeError
+      });
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps activation available when persistence is denied but IndexedDB works', async () => {
+    const { supabase } = await freshModules();
+    const storageDescriptor = Object.getOwnPropertyDescriptor(navigator, 'storage');
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: { persist: vi.fn().mockResolvedValue(false) }
+    });
+
+    try {
+      await expect(supabase.activateLicense('LANZO-PERSISTENCE-DENIED')).resolves.toMatchObject({
+        valid: false,
+        code: 'LICENSE_NOT_FOUND'
+      });
+      expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    } finally {
+      if (storageDescriptor) Object.defineProperty(navigator, 'storage', storageDescriptor);
+      else delete navigator.storage;
+    }
+  });
+
   it('rejects every key and value outside the closed device-owned allowlist', async () => {
     const { registry } = await freshModules();
 

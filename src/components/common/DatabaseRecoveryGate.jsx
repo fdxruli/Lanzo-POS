@@ -95,6 +95,15 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
     };
   }
 
+  if (state.errorCode === 'DB_BROWSER_STORAGE_UNAVAILABLE') {
+    return {
+      title: 'No se pudo abrir el almacenamiento local del navegador',
+      body: 'Lanzo requiere IndexedDB para operar de forma segura. El sistema permanece bloqueado para proteger los datos del negocio.',
+      advice: 'Cierra otras pestañas de Lanzo y vuelve a intentar. No borres los datos del navegador ni dependas de otorgar almacenamiento persistente para resolver este diagnóstico.',
+      icon: 'warning'
+    };
+  }
+
   if (
     state.errorCode === 'DB_PRIMARY_KEY_MISMATCH'
     || state.errorCode === 'DB_CLOSED_AFTER_STRUCTURAL_ERROR'
@@ -180,7 +189,13 @@ export default function DatabaseRecoveryGate({
   const operationActive = retrying
     || hasActiveNativeRequest
     || isLocalDatabasePreparationActive();
-  const canRetry = recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
+  const canRetry = (
+    recovery.status === DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED
+    || (
+      recovery.status === DATABASE_RECOVERY_STATUS.FAILED
+      && recovery.errorCode === 'DB_BROWSER_STORAGE_UNAVAILABLE'
+    )
+  )
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
   const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT'

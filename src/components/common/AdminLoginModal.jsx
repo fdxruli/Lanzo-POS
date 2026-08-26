@@ -26,6 +26,9 @@ const describeLoginError = (error, result = null) => {
   if (code === 'DB_OPEN_TIMEOUT' || error?.name === 'DatabaseOpenTimeoutError') {
     return 'La base local tardó demasiado en responder. Cierra otras pestañas de Lanzo y vuelve a intentarlo.';
   }
+  if (code === 'DB_BROWSER_STORAGE_UNAVAILABLE') {
+    return 'No se pudo abrir el almacenamiento local del navegador. Lanzo requiere IndexedDB para operar de forma segura. Cierra otras pestañas de Lanzo y vuelve a intentarlo.';
+  }
   if (!navigator.onLine || /network|fetch|Failed to fetch/i.test(error?.message || result?.message || '')) {
     return 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo nuevamente.';
   }

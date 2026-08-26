@@ -24,6 +24,7 @@ import {
     isLocalTenantAccessError
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
+import { isBrowserStorageUnavailableError } from '../../../services/db/databaseRecoveryState';
 
 const completeValidLicenseSession = async (set, get, licenseData, profileOptions) => {
     await assertLocalTenantAccess(licenseData, { reason: profileOptions?.reason || 'activation_complete' });
@@ -245,6 +246,14 @@ export const createLicenseActivationActions = ({
                 message: result.message || 'Licencia no válida'
             };
         } catch (error) {
+            if (isBrowserStorageUnavailableError(error)) {
+                return {
+                    success: false,
+                    code: error.code,
+                    message: error.message
+                };
+            }
+
             if (isLocalTenantAccessError(error)) {
                 enterLocalTenantIsolationFailure(set, error);
                 return {

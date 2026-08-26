@@ -29,6 +29,7 @@ import {
   lockLocalTenantAccess
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
+import { isBrowserStorageUnavailableError } from '../../../services/db/databaseRecoveryState';
 
 export const hasStaffValidationContext = async (state = {}, licenseDetails = {}) => {
   const routingDecision = resolveStaffAuthRoutingDecision(state, licenseDetails);
@@ -93,6 +94,9 @@ export const createLicenseStaffActions = ({
       beginActorRuntimeAuthentication('staff');
     } catch (error) {
       lockActorRuntime('staff_login_tenant_rejected');
+      if (isBrowserStorageUnavailableError(error)) {
+        return { success: false, code: error.code, message: error.message };
+      }
       if (!isLocalTenantAccessError(error)) throw error;
       enterLocalTenantIsolationFailure(set, error);
       return {
@@ -115,6 +119,9 @@ export const createLicenseStaffActions = ({
       });
     } catch (error) {
       lockActorRuntime('staff_login_failed');
+      if (isBrowserStorageUnavailableError(error)) {
+        return { success: false, code: error.code, message: error.message };
+      }
       if (!isLocalTenantAccessError(error)) throw error;
       enterLocalTenantIsolationFailure(set, error);
       return {
