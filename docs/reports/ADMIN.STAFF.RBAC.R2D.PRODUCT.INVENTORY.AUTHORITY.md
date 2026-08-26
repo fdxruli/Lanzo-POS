@@ -152,10 +152,14 @@ Estado remoto del cierre:
 
 - `BASE_SHA = 9843d69c3d17f7126b8f8857a48365b2d48db411`.
 - `PREVIOUS_HEAD_SHA = f45b0c9f0db4fdfc1dad22bcbf48e5a46060c249`.
-- El nuevo arbol de reparacion fue publicado como `6c04ece1acd918fe8534c5ed3651eadf8b27b2a5` mediante avance normal de la ref; no hubo force-push.
+- El arbol de reparacion fue publicado como `6c04ece1acd918fe8534c5ed3651eadf8b27b2a5` mediante avance normal de la ref; el SHA observado para el candidato con este reporte fue `e6a31b10080774fc6326c375c59fc63cc5d2c963`; no hubo force-push.
 - PR #230 continua abierto, Draft y no mergeado.
-- Vercel check del nuevo SHA: run/check `98228683544`, PASS.
-- El conector no emitio nuevos runs `pull_request` para el SHA `6c04ece1acd918fe8534c5ed3651eadf8b27b2a5` tras el avance de ref, y no existe una herramienta de `workflow_dispatch` disponible en esta sesion. Por ello PR127, Actor Runtime, Actor Scoped Storage, Device Actor Auth y Dexie Recovery no pueden marcarse PASS para el nuevo SHA; los runs originales se conservan solo como evidencia del bloqueo, no como validacion del arreglo. El diferencial remoto queda `NOT_VERIFIED_FOR_FINAL_HEAD`.
+- Vercel check del candidato `e6a31b10080774fc6326c375c59fc63cc5d2c963`: `98229048058`, PASS.
+- PR127 para el candidato: run `32984769891`, `startup_failure` en los intentos 1 y 2; no hubo jobs, pasos ni artefactos funcionales. El reintento de job fue aceptado por GitHub pero volvió a fallar al arrancar.
+- Actor Runtime para el candidato: run `32984767723`, `queued` sin pasos ejecutados al cierre de esta evidencia.
+- Actor Scoped Storage para el candidato: run `32984767339`, `queued` sin pasos ejecutados al cierre de esta evidencia.
+- HOTFIX Dexie Recovery para el candidato: run `32984700625`, `queued` con sus ocho jobs sin pasos ejecutados al cierre de esta evidencia.
+- Device Actor Auth no se activo porque ningun path protegido de device-auth cambio. Al no existir ejecucion funcional del comparador sobre el candidato, el diferencial remoto queda `NOT_VERIFIED_FOR_FINAL_HEAD`; los runs originales se conservan solo como evidencia del bloqueo, no como validacion del arreglo.
 
 Migracion y produccion:
 
