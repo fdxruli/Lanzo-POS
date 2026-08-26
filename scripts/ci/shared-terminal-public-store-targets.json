@@ -1,0 +1,12 @@
+[
+  {
+    "slug": "bfcache",
+    "file": "src/pages/__tests__/PublicStorePage.test.jsx",
+    "testName": "rebuilds the first page on BFCache restore without clearing visible products"
+  },
+  {
+    "slug": "site-version",
+    "file": "src/pages/__tests__/PublicStorePage.siteVersion.test.jsx",
+    "testName": "keeps v1 while only the draft changes, then renders v2 without changing catalogRevision"
+  }
+]
