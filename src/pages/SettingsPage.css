@@ -1971,37 +1971,6 @@ input[type="radio"]:checked + .theme-radio-text {
   overflow-wrap: anywhere;
 }
 
-.license-hero-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.license-hero-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 7px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  color: var(--secondary-color);
-  background: var(--card-background-color);
-  font-size: 0.8rem;
-  font-weight: 800;
-  cursor: pointer;
-  transition: border-color var(--ui-transition-fast), background var(--ui-transition-fast), color var(--ui-transition-fast);
-}
-
-.license-hero-action:hover {
-  color: var(--text-dark);
-  border-color: var(--secondary-color);
-  background: var(--light-background);
-}
-
-.license-hero-action:focus-visible,
 .license-section-tab:focus-visible,
 .staff-permissions-summary:focus-visible {
   outline: 2px solid var(--primary-color);
@@ -2572,8 +2541,7 @@ input[type="radio"]:checked + .theme-radio-text {
   }
 
   .license-hero-right,
-  .license-hero-summary,
-  .license-hero-actions {
+  .license-hero-summary {
     width: 100%;
     justify-items: start;
     justify-content: flex-start;

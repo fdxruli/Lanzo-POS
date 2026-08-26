@@ -529,10 +529,18 @@ export default function StaffUsersSettings({ licenseKey }) {
                         key={group.title}
                         className="staff-permissions-disclosure"
                         open={Boolean(openPermissionGroups[group.title])}
-                        onToggle={(event) => setOpenPermissionGroups((current) => ({
-                          ...current,
-                          [group.title]: event.currentTarget.open
-                        }))}
+                        onToggle={(event) => {
+                          const isOpen = event.currentTarget.open;
+
+                          setOpenPermissionGroups((current) => {
+                            if (Boolean(current[group.title]) === isOpen) return current;
+
+                            return {
+                              ...current,
+                              [group.title]: isOpen
+                            };
+                          });
+                        }}
                       >
                         <summary className="staff-permissions-summary">
                           <span>

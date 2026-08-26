@@ -130,10 +130,7 @@ function LicenseHero({
     selectedCount,
     maxRubrosAllowed,
     planName,
-    licenseStatus,
-    canEditBusinessProfile,
-    canManageStaff,
-    onNavigate
+    licenseStatus
 }) {
     const statusLabel = licenseStatus === 'active' ? 'Activa' : licenseStatus || 'Inactiva';
 
@@ -166,32 +163,6 @@ function LicenseHero({
                     </span>
                 </div>
 
-                {(canManageStaff || canEditBusinessProfile) && (
-                    <div className="license-hero-actions" aria-label="Acciones rapidas">
-                        {canManageStaff && (
-                            <button
-                                type="button"
-                                className="license-hero-action"
-                                onClick={() => onNavigate('staff')}
-                                aria-controls="license-panel-staff"
-                            >
-                                <Users size={16} aria-hidden="true" />
-                                Equipo staff
-                            </button>
-                        )}
-                        {canEditBusinessProfile && (
-                            <button
-                                type="button"
-                                className="license-hero-action"
-                                onClick={() => onNavigate('rubros')}
-                                aria-controls="license-panel-rubros"
-                            >
-                                <Layers3 size={16} aria-hidden="true" />
-                                Rubros
-                            </button>
-                        )}
-                    </div>
-                )}
             </div>
         </header>
     );
@@ -704,9 +675,6 @@ export default function LicenseSettings() {
                 maxRubrosAllowed={maxRubrosAllowed}
                 planName={commercialPlanName}
                 licenseStatus={licenseDetails?.status}
-                canEditBusinessProfile={canEditBusinessProfile}
-                canManageStaff={canManageStaff && licenseDetails?.valid}
-                onNavigate={setActiveSection}
             />
 
             <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">
