@@ -235,7 +235,8 @@ No real Staff row was changed. No provider request was made.
   - src/pages/__tests__/PublicStorePage.siteVersion.test.jsx > PublicStorePage published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision — Error: STACK_TRACE_ERROR, line 107.
   - src/pages/__tests__/PublicStorePage.test.jsx > PublicStorePage deduplicates a persisted pageshow followed immediately by focus — Error: STACK_TRACE_ERROR, line 499.
 - The 20-repetition focused candidate evidence reproduced neither failure; the full-suite-only ordering/scheduling behavior is classified ENVIRONMENTAL_VARIANCE, not an application regression. No comparator change and no test-specific allowlist were made.
-- The new final-head runs were still in progress at this report append: Shared Terminal Actor Runtime Validation #138 / ID 32913499375 and PR127 Global Comparison #427 / ID 32913499309. The focused job for #138 passed diff check, ActorRuntime tests, tenant isolation, authentication regression, ESLint, and both builds. The repeated full-suite and global comparison jobs remained unresolved at append time.
+- Final-head Shared Terminal Actor Runtime Validation #138 / ID 32913499375 completed SUCCESS. Its focused job passed diff check, ActorRuntime tests, tenant isolation, authentication regression, ESLint, and both builds. BASE repeated full-suite results were 3175 passed / 85 failed / 51 skipped / 3311 total in both repetitions; CANDIDATE results were 3185 passed / 85 failed / 51 skipped / 3321 total in both repetitions. The differential gate reproduced every candidate failure in BASE and reported zero differential regressions.
+- Final-head PR127 Global Comparison #427 / ID 32913499309 completed SUCCESS, including candidate/base suites, focused evidence, normalization, and comparison.
 
 ### Edge and verification gates
 
@@ -265,6 +266,6 @@ No real Staff row was changed. No provider request was made.
 
 ### CLOSEOUT.R2 verdict
 
-BLOCKED. The strict boolean Staff authority correction is applied and runtime-verified in production with zero real Staff or provider mutations, and the required history cleanup is verified. Closure remains blocked because Edge runtime tests cannot be run through an available canonical Deno path, the changed Edge Function was intentionally not deployed, and the final repeated global/differential CI run had not completed at report append time.
+BLOCKED. The strict boolean Staff authority correction is applied and runtime-verified in production with zero real Staff or provider mutations, the required history cleanup is verified, and all available remote CI gates are green. Closure remains blocked because Edge runtime tests cannot be run through an available canonical Deno path; the changed Edge Function was therefore intentionally not deployed.
 
 NO MERGE. PR #229 REMAINS DRAFT. NO FORCE PUSH. NO MANUAL MIGRATION LEDGER REPAIR. NO HISTORICAL APPLIED SQL EDIT. NO REAL PRODUCTION AI PROVIDER CALL. R2B NOT REOPENED. R2D NOT STARTED.
