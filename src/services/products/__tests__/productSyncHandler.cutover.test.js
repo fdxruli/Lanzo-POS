@@ -13,17 +13,21 @@ const mocks = vi.hoisted(() => ({
   saveConflict: vi.fn(),
   applyCloudCatalog: vi.fn(),
   getCatalogRecordForSync: vi.fn(),
-  setMeta: vi.fn()
+  setMeta: vi.fn(),
+  getProductInventoryMutationRequirements: vi.fn(),
+  assertProductInventoryOperationActorCurrent: vi.fn(),
+  captureProductInventoryMutation: vi.fn(),
+  assertProductInventoryMutationCurrent: vi.fn()
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: mocks.getState }
 }));
 vi.mock('../../auth/productInventoryAuthority', () => ({
-  getProductInventoryMutationRequirements: vi.fn(() => []),
-  assertProductInventoryOperationActorCurrent: vi.fn(),
-  captureProductInventoryMutation: vi.fn(),
-  assertProductInventoryMutationCurrent: vi.fn(),
+  getProductInventoryMutationRequirements: mocks.getProductInventoryMutationRequirements,
+  assertProductInventoryOperationActorCurrent: mocks.assertProductInventoryOperationActorCurrent,
+  captureProductInventoryMutation: mocks.captureProductInventoryMutation,
+  assertProductInventoryMutationCurrent: mocks.assertProductInventoryMutationCurrent,
   actorOriginFromHandle: vi.fn()
 }));
 vi.mock('../../sync/posSyncOrchestrator', () => ({
@@ -70,6 +74,7 @@ import { productSyncHandler } from '../productSyncHandler';
 describe('product sync repeated cutover safety', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getProductInventoryMutationRequirements.mockImplementation(() => []);
     mocks.getState.mockReturnValue({
       canAccess: () => true,
       licenseDetails: { license_key: 'CUTOVER-HANDLER' }
@@ -81,6 +86,55 @@ describe('product sync repeated cutover safety', () => {
     mocks.runRecovery.mockResolvedValue({ success: true, skipped: true, reason: 'no_unsynced_catalog' });
     mocks.applyCloudCatalog.mockResolvedValue({ categories: 0, products: 1, batches: 0, rejected: [] });
     mocks.getCatalogRecordForSync.mockResolvedValue(null);
+  });
+
+  it('replays a historical product row without inventing or persisting current actor provenance', async () => {
+    const response = { success: true, product: { id: 'legacy-product' } };
+    mocks.getProductInventoryMutationRequirements.mockReturnValue(['products']);
+    mocks.upsertProduct.mockResolvedValue(response);
+
+    await expect(productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPDATE,
+      entityId: 'legacy-product',
+      id: 'legacy-product-operation',
+      idempotencyKey: 'legacy-product-operation',
+      payload: { product: { id: 'legacy-product', name: 'Legacy' } }
+    })).resolves.toEqual(response);
+
+    expect(mocks.assertProductInventoryOperationActorCurrent).not.toHaveBeenCalled();
+    expect(mocks.captureProductInventoryMutation).not.toHaveBeenCalled();
+    expect(mocks.upsertProduct).toHaveBeenCalledWith(expect.objectContaining({ actorHandle: null }));
+  });
+
+  it('holds an explicit actor-bound product row when its origin is unresolved', async () => {
+    mocks.getProductInventoryMutationRequirements.mockReturnValue(['products']);
+    const actorError = Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' });
+    mocks.assertProductInventoryOperationActorCurrent.mockImplementationOnce(() => {
+      throw actorError;
+    });
+
+    const result = await productSyncHandler.pushOperation({
+      licenseKey: 'CUTOVER-HANDLER',
+      entityType: SYNC_ENTITY_TYPES.PRODUCT,
+      operation: SYNC_OPERATIONS.UPDATE,
+      entityId: 'actor-bound-product',
+      id: 'actor-bound-product-operation',
+      idempotencyKey: 'actor-bound-product-operation',
+      actorSensitivity: 'actor_bound',
+      actorOwnershipStatus: 'legacy_unresolved',
+      payload: { product: { id: 'actor-bound-product', name: 'Held' } }
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      conflict: { code: 'ACTOR_CONTEXT_STALE' }
+    });
+    expect(mocks.upsertProduct).not.toHaveBeenCalled();
+    expect(mocks.saveConflict).toHaveBeenCalledWith(expect.objectContaining({
+      response: expect.objectContaining({ code: 'ACTOR_CONTEXT_STALE' })
+    }));
   });
 
   it('does not double-submit recovery when migration already returned its recovery result', async () => {

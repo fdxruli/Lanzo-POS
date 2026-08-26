@@ -163,12 +163,43 @@ test('client matrix captures actor provenance and fails closed during offline re
   assert.match(cloud, /isNewProduct = false/u);
   assert.match(inventoryEntry, /actorSensitive: true/u);
   assert.match(inventoryEntry, /originActor: actorOriginFromHandle\(actorHandle\)/u);
-  assert.match(outbox, /ACTOR_SENSITIVE_ENTITY_TYPES/u);
+  assert.match(outbox, /LEGACY_ACTOR_BOUND_ENTITY_TYPES = new Set\(\[SYNC_ENTITY_TYPES\.SALE\]\)/u);
+  assert.doesNotMatch(outbox, /ACTOR_SENSITIVE_ENTITY_TYPES/u, 'entity type alone must not classify historical R2D rows');
   assert.match(outbox, /actorOwnershipStatus === 'bound'/u);
   assert.match(replay, /assertProductInventoryOperationActorCurrent\(operation\)/u);
+  assert.match(replay, /operation\.actorSensitivity === 'actor_bound'/u);
   assert.match(replay, /La operacion local no puede ejecutarse con el actor actual/u);
   assert.doesNotMatch(authority, /INVENTORY_MOVEMENT/u, 'sale-time inventory movements remain frozen outside R2D');
-  assert.doesNotMatch(outbox, /ACTOR_SENSITIVE_ENTITY_TYPES[\s\S]*INVENTORY_MOVEMENT/u);
+});
+
+test('Staff products/inventory permission round-trip remains strict and transactional', () => {
+  const r2c = readProjectFile('supabase/migrations/20260825233834_20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority.sql');
+  const staffAdmin = readProjectFile('supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql');
+  const sqlTest = readProjectFile('supabase/tests/admin_staff_rbac_r2d_staff_permission_roundtrip_test.sql');
+  const normalizer = extractFunction(r2c, 'create or replace function private.normalize_staff_permissions(');
+  const updateImpl = extractFunction(staffAdmin, 'create or replace function private.admin_update_staff_user_impl(');
+
+  assert.match(r2c, /'products', false/u);
+  assert.match(r2c, /'inventory', false/u);
+  assert.match(normalizer, /jsonb_typeof\(p_permissions -> v_key\) = 'boolean'/u);
+  assert.match(normalizer, /'products'/u);
+  assert.match(normalizer, /'inventory'/u);
+  assert.match(updateImpl, /private\.normalize_staff_permissions\(p_permissions\)/u);
+  assert.match(updateImpl, /permissions = v_new_permissions/u);
+  for (const [products, inventory] of [
+    ['true', 'false'],
+    ['false', 'true'],
+    ['true', 'true'],
+    ['false', 'false']
+  ]) {
+    assert.ok(
+      sqlTest.includes(`{"products":${products},"inventory":${inventory}`),
+      `missing Staff round-trip case products=${products}, inventory=${inventory}`
+    );
+  }
+  assert.match(sqlTest, /malformed values instead of truthifying them/u);
+  assert.match(sqlTest, /begin;/u);
+  assert.match(sqlTest, /rollback;/u);
 });
 
 test('UI and route matrix exposes products and inventory independently', () => {

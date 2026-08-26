@@ -163,17 +163,69 @@ describe('syncOutboxService actor origin', () => {
     expect(await database.table('sync_outbox').get('legacy-unresolved')).toMatchObject({ status: 'pending' });
   });
 
-  it('holds pre-phase legacy sale and product rows without immutable actor origin', async () => {
+  it('keeps pre-R2D catalog and inventory rows tenant-scoped while preserving legacy SALE hold behavior', async () => {
+    const historicalRows = [
+      legacyRow({ id: 'legacy-category', entityType: 'category' }),
+      legacyRow({ id: 'legacy-product', entityType: 'product' }),
+      legacyRow({ id: 'legacy-batch', entityType: 'product_batch' }),
+      legacyRow({ id: 'legacy-inventory-entry', entityType: 'inventory_entry' })
+    ];
     await database.table('sync_outbox').bulkPut([
       legacyRow({ id: 'legacy-sale', entityType: 'sale' }),
-      legacyRow({ id: 'tenant-product', entityType: 'product' })
+      ...historicalRows
     ]);
 
     const pending = await syncOutboxService.getPendingOperations({ licenseKey: 'TENANT-A' });
-    expect(pending.map((row) => row.id)).toEqual([]);
+    expect(pending.map((row) => row.id).sort()).toEqual(historicalRows.map((row) => row.id).sort());
     expect(await database.table('sync_outbox').get('legacy-sale')).toMatchObject({
       id: 'legacy-sale',
       status: 'pending'
     });
+    expect(await database.table('sync_outbox').get('legacy-product')).toMatchObject({
+      id: 'legacy-product',
+      status: 'pending'
+    });
+  });
+
+  it('holds an explicitly actor-bound product row when immutable origin is unresolved', async () => {
+    await database.table('sync_outbox').put({
+      ...legacyRow({ id: 'actor-bound-product', entityType: 'product' }),
+      actorSensitivity: 'actor_bound',
+      actorOwnershipStatus: 'legacy_unresolved'
+    });
+
+    const pending = await syncOutboxService.getPendingOperations({ licenseKey: 'TENANT-A' });
+
+    expect(pending).toEqual([]);
+    expect(await database.table('sync_outbox').get('actor-bound-product')).toMatchObject({
+      status: 'pending',
+      actorSensitivity: 'actor_bound',
+      actorOwnershipStatus: 'legacy_unresolved'
+    });
+  });
+
+  it('does not backfill a historical product row during an idempotency collision', async () => {
+    const historical = legacyRow({ id: 'historical-product-collision', entityType: 'product' });
+    await database.table('sync_outbox').put(historical);
+
+    currentActor = {
+      actorType: 'staff',
+      actorId: 'staff-b',
+      actorKey: 'staff:staff-b',
+      generation: 7
+    };
+
+    await syncOutboxService.enqueueOperation({
+      licenseKey: 'TENANT-A',
+      entityType: 'product',
+      operation: 'upsert',
+      entityId: 'product-1',
+      idempotencyKey: historical.id,
+      actorSensitive: true,
+      captureCurrentActor: true,
+      payload: { id: 'product-1' }
+    });
+
+    expect(await database.table('sync_outbox').get(historical.id)).toEqual(historical);
   });
 });

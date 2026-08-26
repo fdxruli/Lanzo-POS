@@ -274,7 +274,12 @@ export const productSyncHandler = {
     const mutationRequirements = getProductInventoryMutationRequirements(operation);
     const actorRequirementFlags = { products: mutationRequirements.includes('products'), inventory: mutationRequirements.includes('inventory') };
     let actorHandle = null;
-    if (mutationRequirements.length > 0) {
+    // R2D rows carry an immutable actor origin. Pre-R2D catalog/inventory rows
+    // intentionally have no actorSensitivity and retain their historical
+    // tenant-scoped replay semantics; they must not be assigned currentActor
+    // during replay. The cloud repository still validates the current request
+    // context at the RPC boundary without persisting it into the old row.
+    if (mutationRequirements.length > 0 && operation.actorSensitivity === 'actor_bound') {
       try {
         assertProductInventoryOperationActorCurrent(operation);
         actorHandle = captureProductInventoryMutation(actorRequirementFlags);
