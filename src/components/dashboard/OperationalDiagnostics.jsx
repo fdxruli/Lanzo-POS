@@ -29,6 +29,8 @@ import {
   Bot
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { canCurrentActorUseAIAgents } from '../../services/auth/aiAgentAuthorization';
 import { useRestaurantDiagnostics } from '../../hooks/diagnostics/useRestaurantDiagnostics';
 import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagnostics';
 import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
@@ -105,24 +107,6 @@ const metricLabel = (key) => {
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (letter) => letter.toUpperCase())
     .trim();
-};
-
-const hasAIAgentsEntitlement = (licenseDetails) => {
-  if (!licenseDetails?.valid) return false;
-
-  const features = licenseDetails.features || {};
-  const planCode = String(
-    licenseDetails.plan_code ||
-    licenseDetails.planCode ||
-    licenseDetails.plan ||
-    ''
-  ).toLowerCase();
-
-  return (
-    features.ai_agents === true ||
-    licenseDetails.ai_agents === true ||
-    planCode.includes('pro')
-  );
 };
 
 const DiagnosticSkeleton = () => (
@@ -277,6 +261,7 @@ export default function OperationalDiagnostics({
 
   const companyProfile = useAppStore(state => state.companyProfile);
   const licenseDetails = useAppStore(state => state.licenseDetails);
+  const actorSnapshot = useActorRuntimeSnapshot();
 
   const businessTypeString = useMemo(() => {
     if (rubroOverride) return normalizeBusinessType(rubroOverride, 'abarrotes');
@@ -287,7 +272,10 @@ export default function OperationalDiagnostics({
   const diagnosticType = BUSINESS_TYPE_MAPPING[businessTypeString]?.diagnosticType || 'retail';
   const DiagnosticHook = DIAGNOSTIC_HOOKS[diagnosticType] || DIAGNOSTIC_HOOKS.retail;
   const diagnostics = DiagnosticHook(lastRefresh);
-  const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
+  const canUseAIAgents = useMemo(() => canCurrentActorUseAIAgents({
+    licenseDetails,
+    actorSnapshot
+  }), [actorSnapshot, licenseDetails]);
   const effectiveShowAIAgent = Boolean(showAIAgent && canUseAIAgents);
 
   const handleNavigate = useCallback((link) => {

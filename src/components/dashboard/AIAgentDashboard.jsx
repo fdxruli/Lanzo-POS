@@ -17,6 +17,8 @@ import {
 import { buildAgentPayload, DATE_RANGES, formatDateRangeLabel } from '../../utils/buildAgentPayload';
 import { buildPrompt, validateAgentData } from '../../utils/aiPromptBuilder';
 import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } from '../../services/aiService';
+import { assertCurrentAIAgentActor, hasCurrentActorAIAgentPermission } from '../../services/auth/aiAgentAuthorization';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import {
   getLocalAIAnalysisDetail,
   getLocalAIAnalysisHistory,
@@ -109,6 +111,8 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
   const [historyError, setHistoryError] = useState(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState({ isOnline: isBrowserOnline(), isApiReady: false, isChecking: true, error: null, provider: null, model: null });
+  const actorSnapshot = useActorRuntimeSnapshot();
+  const currentActorCanUseAIAgents = hasCurrentActorAIAgentPermission(actorSnapshot);
 
   const normalizedBusinessTypes = useMemo(() => normalizeBusinessTypes(businessType, 'abarrotes'), [businessType]);
   const activeAgent = useMemo(() => AGENTS.find(agent => agent.id === selectedAgent), [selectedAgent]);
@@ -139,6 +143,17 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
 
   const validateConnection = useCallback(async () => {
     setConnectionStatus(prev => ({ ...prev, isChecking: true }));
+    if (!currentActorCanUseAIAgents) {
+      setConnectionStatus({
+        isOnline: isBrowserOnline(),
+        isApiReady: false,
+        isChecking: false,
+        error: 'El usuario actual no tiene permiso para usar agentes de IA.',
+        provider: null,
+        model: null
+      });
+      return;
+    }
     const configStatus = getAIConfigStatus();
     if (!configStatus.hasKey) {
       setConnectionStatus({ isOnline: isBrowserOnline(), isApiReady: false, isChecking: false, error: `Falta API Key para ${configStatus.provider.toUpperCase()}`, provider: configStatus.provider, model: configStatus.model });
@@ -150,7 +165,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
     } catch (error) {
       setConnectionStatus({ isOnline: isBrowserOnline(), isApiReady: false, isChecking: false, error: `Error de API: ${error.message}`, provider: configStatus.provider, model: configStatus.model });
     }
-  }, []);
+  }, [currentActorCanUseAIAgents]);
 
   useEffect(() => {
     const handleOnline = () => { setConnectionStatus(prev => ({ ...prev, isOnline: true })); validateConnection(); };
@@ -184,6 +199,10 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
 
   const handleAnalyze = useCallback(async () => {
     if (!selectedAgent || !selectedDateRange) return;
+    if (!currentActorCanUseAIAgents) {
+      setAnalysisError('El usuario actual no tiene permiso para usar agentes de IA.');
+      return;
+    }
     if (!connectionStatus.isOnline) { setAnalysisError('Sin conexion. Verifica tu conexion a internet para analisis con IA.'); return; }
     if (!connectionStatus.isApiReady) { setAnalysisError(`API no disponible: ${connectionStatus.error || 'Error de configuracion'}`); return; }
 
@@ -198,6 +217,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
 
     try {
       const aggregatedPayload = await buildAgentPayload(selectedAgent, selectedDateRange, { menu, wasteLogs, sales, customers });
+      assertCurrentAIAgentActor();
       const validation = validateAgentData(selectedAgent, aggregatedPayload);
       if (!validation.valid) throw new Error(validation.reason);
 
@@ -238,7 +258,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
     } finally {
       setIsAnalyzing(false);
     }
-  }, [activeAgent, availableTools.length, connectionStatus, customers, loadLocalHistory, menu, normalizedBusinessTypes, sales, selectedAgent, selectedDateRange, wasteLogs]);
+  }, [activeAgent, availableTools.length, connectionStatus, currentActorCanUseAIAgents, customers, loadLocalHistory, menu, normalizedBusinessTypes, sales, selectedAgent, selectedDateRange, wasteLogs]);
 
   const handleOpenSavedAnalysis = useCallback(async (analysisId) => {
     setIsHistoryLoading(true);
@@ -274,7 +294,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
     setSelectedSavedAnalysis(null);
   }, [selectedSavedAnalysis]);
 
-  const isButtonDisabled = isAnalyzing || !connectionStatus.isApiReady || isPreviewLoading || isDataEmpty;
+  const isButtonDisabled = isAnalyzing || !currentActorCanUseAIAgents || !connectionStatus.isApiReady || isPreviewLoading || isDataEmpty;
   const hasReadySelection = Boolean(selectedAgent && selectedDateRange);
   const selectedDateRangeLabel = formatDateRangeLabel(selectedDateRange);
   const currentAgentTitle = activeAgent?.name || 'Elige un agente';
@@ -283,7 +303,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
   return (
     <div className="ai-agent-dashboard">
       <AIAgentUsageLegend
-        enabled
+        enabled={currentActorCanUseAIAgents}
         connectionStatus={connectionStatus}
         onRefreshStatus={validateConnection}
       />
