@@ -17,10 +17,9 @@ const readProjectFile = (relativePath) => readFileSync(join(repoRoot, relativePa
 function extractFunction(source, marker) {
   const start = source.indexOf(marker);
   assert.notEqual(start, -1, 'missing function marker: ' + marker);
-  const functionTag = source.indexOf('\n$function$;', start);
-  const dollarTag = source.indexOf('\n$$;', start);
-  const end = functionTag >= 0 ? functionTag + '\n$function$;'.length : dollarTag + '\n$$;'.length;
-  assert.ok(end > start, 'incomplete function body: ' + marker);
+  const closingTag = source.slice(start).match(/\n[ \\t]*\$(?:function)?\$;/u);
+  assert.ok(closingTag, 'incomplete function body: ' + marker);
+  const end = start + closingTag.index + closingTag[0].length;
   return source.slice(start, end);
 }
 
@@ -74,6 +73,86 @@ const inventorySignatures = [
   'public.pos_create_product_batch_from_parent_stock(text, text, text, text, text, timestamptz, numeric, text, text)',
   'public.pos_adjust_product_stock_without_batch_zero(text, text, text, text, text, text, text, text)'
 ];
+
+
+const unlimitedAuthorities = [
+  ['pos_upsert_category_unlimited', 'products'],
+  ['pos_delete_category_unlimited', 'products'],
+  ['pos_upsert_product_unlimited', 'products+inventory'],
+  ['pos_delete_product_unlimited', 'products+inventory'],
+  ['pos_toggle_product_status_unlimited', 'products'],
+  ['pos_upsert_product_batch_unlimited', 'inventory'],
+  ['pos_delete_product_batch_unlimited', 'inventory'],
+  ['pos_migrate_local_product_catalog_unlimited', 'products+inventory-if-batches'],
+  ['pos_register_expiration_waste_unlimited', 'inventory'],
+  ['pos_create_product_batch_from_parent_stock_unlimited', 'inventory'],
+  ['pos_adjust_product_stock_without_batch_zero_unlimited', 'inventory']
+];
+
+const unlimitedSignatures = [
+  'public.pos_upsert_category_unlimited(text, text, text, text, jsonb, integer, text)',
+  'public.pos_delete_category_unlimited(text, text, text, text, text, integer, text)',
+  'public.pos_upsert_product_unlimited(text, text, text, text, jsonb, jsonb, integer, text)',
+  'public.pos_delete_product_unlimited(text, text, text, text, text, integer, text)',
+  'public.pos_toggle_product_status_unlimited(text, text, text, text, text, boolean, integer, text)',
+  'public.pos_upsert_product_batch_unlimited(text, text, text, text, jsonb, integer, text)',
+  'public.pos_delete_product_batch_unlimited(text, text, text, text, text, integer, text)',
+  'public.pos_migrate_local_product_catalog_unlimited(text, text, text, text, jsonb, jsonb, jsonb, text)',
+  'public.pos_register_expiration_waste_unlimited(text, text, text, text, text, numeric, text, text, text)',
+  'public.pos_create_product_batch_from_parent_stock_unlimited(text, text, text, text, text, timestamp with time zone, numeric, text, text)',
+  'public.pos_adjust_product_stock_without_batch_zero_unlimited(text, text, text, text, text, text, text, text)'
+];
+
+const closeoutRateLimitedFunctions = [
+  'pos_register_expiration_waste',
+  'pos_create_product_batch_from_parent_stock',
+  'pos_adjust_product_stock_without_batch_zero'
+];
+
+test('R2D closeout moves exact authority to every unlimited mutation path', () => {
+  for (const [name, requirement] of unlimitedAuthorities) {
+    const fn = extractFunction(migration, 'create or replace function public.' + name + '(');
+    assert.match(fn, /private\.validate_product_inventory_actor\(/u, name + ' must validate the current actor');
+    assert.doesNotMatch(fn, /private\.validate_pos_sync_context\(/u, name + ' must not use the legacy context validator');
+    assert.doesNotMatch(fn, /private\.assert_pos_products_write_permission\(v_context\)/u, name + ' must not retain legacy products authority');
+    assert.doesNotMatch(fn, /private\.assert_pos_permission\(v_context,\s*'products'\s*\)/u, name + ' must not retain legacy products permission');
+    if (requirement.includes('products')) assert.match(fn, /private\.assert_product_actor_authority\(v_context\)/u, name + ' must require products');
+    if (requirement === 'inventory') assert.match(fn, /private\.assert_inventory_actor_authority\(v_context\)/u, name + ' must require inventory');
+    if (requirement === 'products+inventory') {
+      assert.match(fn, /private\.assert_product_actor_authority\(v_context\)/u, name + ' must require products');
+      assert.match(fn, /private\.assert_inventory_actor_authority\(v_context\)/u, name + ' must require inventory');
+    }
+    if (requirement === 'products+inventory-if-batches') {
+      assert.match(fn, /jsonb_array_length\(coalesce\(p_batches/u, name + ' must inspect migrated batches');
+      assert.match(fn, /jsonb_array_elements\(coalesce\(p_products/u, name + ' must inspect migrated products');
+      assert.match(fn, /product_item\.item->>'stock'/u, name + ' must detect migrated initial stock');
+      assert.match(fn, /private\.assert_inventory_actor_authority\(v_context\)/u, name + ' must require inventory for combined payloads');
+    }
+    if (name === 'pos_upsert_product_unlimited') {
+      assert.match(fn, /jsonb_array_length\(coalesce\(p_initial_batches/u);
+      assert.match(fn, /existing\.deleted_at is null/u);
+      assert.match(fn, /p_product->>'committedStock'/u);
+    }
+  }
+  for (const signature of unlimitedSignatures) {
+    assert.ok(migration.includes('revoke all on function ' + signature + ' from public, anon, authenticated, service_role;'), 'internal unlimited path must be deny-by-default: ' + signature);
+    assert.ok(migration.includes('grant execute on function ' + signature + ' to service_role;'), 'service_role compatibility grant missing: ' + signature);
+    assert.ok(!migration.includes('grant execute on function ' + signature + ' to anon, authenticated, service_role;'), 'unlimited path must not be public API: ' + signature);
+  }
+});
+
+test('R2D closeout preserves the public rate-limit wrappers', () => {
+  for (const name of closeoutRateLimitedFunctions) {
+    const fn = extractFunction(migration, 'create or replace function public.' + name + '(');
+    assert.match(fn, /enforce_pos_rpc_rate_limit_v2\(/u, name + ' must retain the rate limiter');
+    assert.match(fn, new RegExp("p_rpc_name := '" + name + "'", 'u'));
+    assert.match(fn, new RegExp('public\\.' + name + '_unlimited\\(', 'u'));
+    assert.match(fn, /p_max_attempts := 120/u, name + ' must retain max attempts');
+    assert.match(fn, /p_window_seconds := 600/u, name + ' must retain the rate window');
+    assert.match(fn, /p_block_seconds := 300/u, name + ' must retain the block duration');
+    assert.doesNotMatch(fn, /\b(?:insert into|update|delete from)\s+public\./iu, name + ' must remain a wrapper');
+  }
+});
 
 test('R2D migration is forward-only and installs strict actor helpers', () => {
   assert.match(migration, /create or replace function private\.validate_product_inventory_actor\(/u);
@@ -133,8 +212,16 @@ test('standalone inventory mutations require inventory and retain their historic
   ]) {
     const fn = extractFunction(migration, 'create or replace function public.' + name + '(');
     assert.match(fn, /returns jsonb\s+language plpgsql\s+security definer\s+set search_path (?:=|to) ''/u, name + ' must remain hardened');
-    assert.match(fn, /private\.validate_product_inventory_actor\(/u, name + ' must use strict context');
-    assert.match(fn, /private\.assert_inventory_actor_authority\(v_context\)/u, name + ' must require inventory');
+    if (name === 'pos_add_inventory_entry') {
+      assert.match(fn, /private\.validate_product_inventory_actor\(/u, name + ' must use strict context');
+      assert.match(fn, /private\.assert_inventory_actor_authority\(v_context\)/u, name + ' must require inventory');
+    } else {
+      assert.match(fn, /enforce_pos_rpc_rate_limit_v2\(/u, name + ' must retain its public rate limiter');
+      assert.match(fn, new RegExp('public\\.' + name + '_unlimited\\(', 'u'));
+      const unlimited = extractFunction(migration, 'create or replace function public.' + name + '_unlimited(');
+      assert.match(unlimited, /private\.validate_product_inventory_actor\(/u, name + ' unlimited path must use strict context');
+      assert.match(unlimited, /private\.assert_inventory_actor_authority\(v_context\)/u, name + ' unlimited path must require inventory');
+    }
     assert.doesNotMatch(fn, /private\.validate_pos_sync_context\(/u);
     assert.doesNotMatch(fn, /private\.assert_pos_permission\(v_context, 'pos'/u);
     assert.doesNotMatch(fn, /private\.assert_pos_products_write_permission\(v_context\)/u);

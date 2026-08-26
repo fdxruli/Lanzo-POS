@@ -169,3 +169,32 @@ Migracion y produccion:
 - Diagnosticos Supabase fueron read-only salvo la prueba sintetica transaccional con rollback. `REAL_STAFF_MUTATIONS = 0`, `REAL_PRODUCTION_PRODUCT_MUTATIONS = 0`, `REAL_PRODUCTION_INVENTORY_MUTATIONS = 0`, `FIXTURE_RESIDUE = 0`.
 
 Este cierre queda bloqueado unicamente por la falta de dry-run canonico y de runs remotos del SHA final; no se mergea, no se marca Ready, no se edita ninguna migracion historica, no se repara el ledger y no se aplica R2D a produccion. R2B, R2C, ventas, caja y ecommerce no fueron reabiertos.
+
+## CLOSEOUT.R2 — Unlimited server authority + rate-limit preservation
+
+Este cierre responde a los tres P1 confirmados por la revisión independiente:
+
+1. Los caminos *_unlimited de lotes, merma, regularización y lote desde stock conservaban la autorización histórica de products; por eso un Staff con solo inventory=true era autorizado por el wrapper nuevo y rechazado en el choke point profundo.
+2. Los caminos *_unlimited eran ejecutables por service_role y no resolvían por sí mismos la autoridad del actor Staff de la solicitud.
+3. Las tres RPC públicas de caducidad/regularización habían sido reemplazadas por cuerpos de mutación y perdían enforce_pos_rpc_rate_limit_v2.
+
+La solución R2D-CLOSEOUT.R2 mantiene una sola autoridad final por función: cada *_unlimited relevante valida el contexto actual con private.validate_product_inventory_actor y aplica exactamente la matriz products, inventory o ambas. Esto también se ejecuta cuando la entrada llega mediante service_role; el rol SQL conserva únicamente el transporte compatible y no sustituye al actor autenticado. Las funciones internas siguen revocadas para public, anon y authenticated.
+
+Las RPC públicas pos_register_expiration_waste, pos_create_product_batch_from_parent_stock y pos_adjust_product_stock_without_batch_zero vuelven a conservar la arquitectura histórica:
+
+PUBLIC RPC -> enforce_pos_rpc_rate_limit_v2 -> *_unlimited -> actor/session + R2D authority -> mutation
+
+Se conservan los límites observados en producción: 120 intentos por ventana de 600 segundos y bloqueo de 300 segundos para las tres funciones. Los wrappers no contienen lógica de mutación.
+
+| Choke point | Autoridad final |
+|---|---|
+| pos_upsert_category_unlimited, pos_delete_category_unlimited, pos_toggle_product_status_unlimited | products |
+| pos_upsert_product_unlimited | products; agrega inventory para lotes iniciales o stock inicial positivo de un producto nuevo |
+| pos_delete_product_unlimited | products + inventory |
+| pos_upsert_product_batch_unlimited, pos_delete_product_batch_unlimited | inventory |
+| pos_migrate_local_product_catalog_unlimited | products; agrega inventory si hay lotes o stock inicial positivo de productos nuevos |
+| pos_register_expiration_waste_unlimited, pos_create_product_batch_from_parent_stock_unlimited, pos_adjust_product_stock_without_batch_zero_unlimited | inventory |
+
+Se agregan controles de contrato Node para el choke point *_unlimited, ACL interna y preservación de rate limits, además de supabase/tests/admin_staff_rbac_r2d_server_authority_contract_test.sql para verificar definiciones instaladas, matriz booleana, ACL de service_role y ausencia de exposición API. La prueba SQL es transaccional y termina en ROLLBACK.
+
+Producción permanece sin mutaciones: la migración R2D no fue aplicada, no se modificó el ledger y no se ejecutó DDL/DML productivo. R2B, R2C, outbox, UI, ventas, caja y ecommerce quedan fuera de este closeout.
