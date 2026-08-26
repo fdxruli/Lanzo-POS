@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Package, Calendar, DollarSign, CheckCircle, XCircle,
-    AlertTriangle, Clock, ShoppingBag, ChevronRight
+    Package, X, Calendar, DollarSign, CheckCircle, XCircle,
+    AlertTriangle, ShoppingBag
 } from 'lucide-react';
 import { layawayRepository } from '../../services/db/layaways';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
@@ -200,38 +200,53 @@ export default function LayawayModal({
 };
 
     return (
-        <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-high)' }}>
-            <div className="modal-content layaway-modal-content">
+        <div className="ui-modal ui-modal--high customer-layaway-modal" role="presentation">
+            <div
+                className="ui-modal__content ui-modal__content--lg customer-layaway-modal__content"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="customer-layaway-modal-title"
+                aria-busy={loading}
+            >
                 
                 {/* Header */}
-                <div className="modal-header">
-                    <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.2rem' }}>
-                        <Package className="text-primary" size={24} />
-                        <div>
-                            <span>Apartados</span>
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 'normal', display: 'block' }}>
-                                {customer.name}
-                            </span>
-                        </div>
+                <div className="ui-modal__header customer-layaway-modal__header">
+                    <h2 id="customer-layaway-modal-title" className="ui-modal__title customer-layaway-modal__title">
+                        <Package className="customer-layaway-modal__title-icon" size={22} aria-hidden="true" />
+                        <span className="customer-layaway-modal__title-copy">
+                            <span className="customer-layaway-modal__title-label">Apartados</span>
+                            <span className="customer-layaway-modal__title-customer">{customer.name}</span>
+                        </span>
                     </h2>
-                    <button className="close-btn" onClick={onClose}>&times;</button>
+                    <button
+                        type="button"
+                        className="ui-icon-button customer-layaway-modal__close"
+                        onClick={onClose}
+                        aria-label="Cerrar apartados"
+                    >
+                        <X size={20} aria-hidden="true" />
+                    </button>
                 </div>
 
                 {/* Body */}
-                <div className="layaway-modal-body">
+                <div className="ui-modal__body customer-layaway-modal__body">
                     {loading ? (
-                        <div className="layaway-empty-state">
-                            <div className="spinner"></div>
-                            <p>Cargando...</p>
+                        <div className="customer-layaway-empty-state customer-layaway-empty-state--loading" role="status" aria-live="polite">
+                            <span className="customer-layaway-modal__spinner" aria-hidden="true"></span>
+                            <p className="customer-layaway-empty-state__copy">Cargando...</p>
                         </div>
                     ) : layaways.length === 0 ? (
-                        <div className="layaway-empty-state">
-                            <Package size={64} strokeWidth={1} />
-                            <h3>Sin Apartados</h3>
-                            <p>Este cliente no tiene apartados activos.</p>
+                        <div className="customer-layaway-empty-state" role="status">
+                            <div className="customer-layaway-empty-state__icon" aria-hidden="true">
+                                <Package size={28} strokeWidth={1.75} />
+                            </div>
+                            <div className="customer-layaway-empty-state__content">
+                                <h3 className="customer-layaway-empty-state__title">Sin apartados</h3>
+                                <p className="customer-layaway-empty-state__copy">Este cliente no tiene apartados activos.</p>
+                            </div>
                         </div>
                     ) : (
-                        <div className="layaways-list">
+                        <div className="customer-layaway-list">
                             {layaways.map(layaway => {
                                 const pending = layaway.totalAmount - (layaway.paidAmount || 0);
                                 const progress = Math.min((layaway.paidAmount / layaway.totalAmount) * 100, 100);
@@ -242,39 +257,32 @@ export default function LayawayModal({
                                 const isPayingThis = activePaymentId === layaway.id;
 
                                 return (
-                                    <div key={layaway.id} className="layaway-card">
+                                    <div key={layaway.id} className="customer-layaway-card">
                                         
                                         {/* 1. Header de Tarjeta */}
-                                        <div className="layaway-card-header">
-    <div className="layaway-meta">
-        <div className="layaway-date">
-            <Calendar size={16} />
+                                        <div className="customer-layaway-card__header">
+    <div className="customer-layaway-card__meta">
+        <div className="customer-layaway-card__date">
+            <Calendar size={16} aria-hidden="true" />
             {new Date(layaway.createdAt).toLocaleDateString()}
         </div>
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>
+        <span className="customer-layaway-card__deadline">
             Límite: {layaway.deadline ? new Date(layaway.deadline).toLocaleDateString() : 'Sin definir'}
         </span>
     </div>
-    <div className={`layaway-status-badge ${isReady ? 'ready' : (isOverdue ? 'overdue' : 'pending')}`}>
+    <div className={`customer-layaway-status ${isReady ? 'customer-layaway-status--ready' : (isOverdue ? 'customer-layaway-status--overdue' : 'customer-layaway-status--pending')}`}>
         {isReady ? 'Listo' : (isOverdue ? 'Vencido' : 'Pendiente')}
     </div>
 </div>
 
-                                        {/* ✅ FIX 4: Banner de alerta para apartados vencidos */}
+                                        {/* Banner de alerta para apartados vencidos */}
                                         {isOverdue && !isReady && (
-                                            <div style={{
-                                                background: '#fff5f5',
-                                                border: '1px solid #fc8181',
-                                                borderRadius: '8px',
-                                                padding: '10px 14px',
-                                                marginBottom: '10px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '10px',
-                                                fontSize: '0.85rem',
-                                                color: '#c53030'
-                                            }}>
-                                                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                                            <div className="customer-layaway-card__overdue-alert">
+                                                <AlertTriangle
+                                                    className="customer-layaway-card__overdue-icon"
+                                                    size={18}
+                                                    aria-hidden="true"
+                                                />
                                                 <div>
                                                     <strong>Apartado vencido.</strong>{' '}
                                                     Venció el {layaway.deadline ? new Date(layaway.deadline).toLocaleDateString() : 'fecha desconocida'}.
@@ -284,14 +292,14 @@ export default function LayawayModal({
                                         )}
 
                                         {/* 2. Productos (Diseño Híbrido) */}
-                                        <div className="layaway-products-container">
+                                        <div className="customer-layaway-card__products">
                                             {/* Versión Escritorio */}
-                                            <table className="desktop-table">
+                                            <table className="customer-layaway-card__table">
                                                 <thead>
                                                     <tr>
                                                         <th>Producto</th>
-                                                        <th style={{textAlign: 'center'}}>Cant.</th>
-                                                        <th style={{textAlign: 'right'}}>Total</th>
+                                                        <th className="customer-layaway-card__quantity-heading">Cant.</th>
+                                                        <th className="customer-layaway-card__total-heading">Total</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -299,80 +307,80 @@ export default function LayawayModal({
                                                         <tr key={idx}>
                                                             <td>
                                                                 {item.name}
-                                                                {item.variantName && <small style={{display:'block', color:'gray'}}>{item.variantName}</small>}
+                                                                {item.variantName && <small className="customer-layaway-card__variant">{item.variantName}</small>}
                                                             </td>
-                                                            <td style={{textAlign: 'center'}}>x{item.quantity}</td>
-                                                            <td style={{textAlign: 'right'}}>${(item.price * item.quantity).toFixed(2)}</td>
+                                                            <td className="customer-layaway-card__quantity">x{item.quantity}</td>
+                                                            <td className="customer-layaway-card__total">${(item.price * item.quantity).toFixed(2)}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
                                             </table>
 
                                             {/* Versión Móvil */}
-                                            <div className="mobile-product-list">
+                                            <div className="customer-layaway-card__mobile-products">
                                                 {layaway.items.map((item, idx) => (
-                                                    <div key={idx} className="mobile-item">
-                                                        <div className="m-item-info">
-                                                            <span className="m-item-name">{item.name} {item.variantName ? `(${item.variantName})` : ''}</span>
-                                                            <span className="m-item-qty">{item.quantity} ud. a ${item.price}</span>
+                                                    <div key={idx} className="customer-layaway-card__mobile-item">
+                                                        <div className="customer-layaway-card__item-info">
+                                                            <span className="customer-layaway-card__item-name">{item.name} {item.variantName ? `(${item.variantName})` : ''}</span>
+                                                            <span className="customer-layaway-card__item-quantity">{item.quantity} ud. a ${item.price}</span>
                                                         </div>
-                                                        <span className="m-item-total">${(item.price * item.quantity).toFixed(2)}</span>
+                                                        <span className="customer-layaway-card__item-total">${(item.price * item.quantity).toFixed(2)}</span>
                                                     </div>
                                                 ))}
                                             </div>
                                         </div>
 
                                         {/* 3. Finanzas (Grid) */}
-                                        <div className="layaway-financial-section">
-                                            <div className="financial-grid">
-                                                <div className="finance-block">
-                                                    <span className="finance-label">Total</span>
-                                                    <span className="finance-value total">${layaway.totalAmount.toFixed(2)}</span>
+                                        <div className="customer-layaway-card__financial">
+                                            <div className="customer-layaway-financial-grid">
+                                                <div className="customer-layaway-financial-block">
+                                                    <span className="customer-layaway-financial-label">Total</span>
+                                                    <span className="customer-layaway-financial-value customer-layaway-financial-value--total">${layaway.totalAmount.toFixed(2)}</span>
                                                 </div>
-                                                <div className="finance-block">
-                                                    <span className="finance-label">Abonado</span>
-                                                    <span className="finance-value paid">${layaway.paidAmount.toFixed(2)}</span>
+                                                <div className="customer-layaway-financial-block">
+                                                    <span className="customer-layaway-financial-label">Abonado</span>
+                                                    <span className="customer-layaway-financial-value customer-layaway-financial-value--paid">${layaway.paidAmount.toFixed(2)}</span>
                                                 </div>
-                                                <div className="finance-block">
-                                                    <span className="finance-label">Resta</span>
-                                                    <span className="finance-value debt">${pending.toFixed(2)}</span>
+                                                <div className="customer-layaway-financial-block">
+                                                    <span className="customer-layaway-financial-label">Resta</span>
+                                                    <span className="customer-layaway-financial-value customer-layaway-financial-value--debt">${pending.toFixed(2)}</span>
                                                 </div>
                                             </div>
-                                            <div className="progress-container">
+                                            <div className="customer-layaway-progress">
                                                 <div 
-                                                    className={`progress-fill ${isReady ? 'ready' : 'pending'}`}
+                                                    className={`customer-layaway-progress__fill ${isReady ? 'customer-layaway-progress__fill--ready' : 'customer-layaway-progress__fill--pending'}`}
                                                     style={{ width: `${progress}%` }}
                                                 ></div>
                                             </div>
                                         </div>
 
                                         {/* 4. Footer de Acciones */}
-                                        <div className="layaway-card-footer">
+                                        <div className="customer-layaway-card__footer">
                                             
                                             {/* A) Modo Normal: Botón de Abonar grande y Botones de gestión */}
                                             {!isPayingThis && !isReady && (
     <button 
-        className="btn-start-payment"
+        className="ui-button ui-button--primary ui-button--block customer-layaway-card__start-payment"
+        type="button"
         onClick={() => {
             setActivePaymentId(layaway.id);
             setPaymentAmount('');
         }}
         disabled={isOverdue} // <-- BLOQUEO
-        style={isOverdue ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
     >
-        <DollarSign size={20} /> {isOverdue ? 'Abonos Bloqueados (Vencido)' : 'Registrar Nuevo Abono'}
+        <DollarSign size={20} aria-hidden="true" /> {isOverdue ? 'Abonos Bloqueados (Vencido)' : 'Registrar Nuevo Abono'}
     </button>
 )}
 
                                             {/* B) Modo Abono: Formulario Expandido */}
                                             {isPayingThis && (
-                                                <div className="payment-zone">
-                                                    <label style={{fontWeight:'600', fontSize:'0.9rem'}}>¿Cuánto desea abonar?</label>
-                                                    <div className="payment-input-row">
-                                                        <span className="payment-currency">$</span>
+                                                <div className="customer-layaway-payment">
+                                                    <label className="customer-layaway-payment__label">¿Cuánto desea abonar?</label>
+                                                    <div className="customer-layaway-payment__input-row">
+                                                        <span className="customer-layaway-payment__currency">$</span>
                                                         <input 
                                                             type="number" 
-                                                            className="payment-input-large"
+                                                            className="customer-layaway-payment__input"
                                                             placeholder="0.00"
                                                             autoFocus
                                                             value={paymentAmount}
@@ -380,19 +388,21 @@ export default function LayawayModal({
                                                             onKeyDown={(e) => e.key === 'Enter' && handleAddPayment(layaway)}
                                                         />
                                                     </div>
-                                                    <div className="payment-actions-row">
+                                                    <div className="customer-layaway-payment__actions">
                                                         <button 
-                                                            className="btn btn-primary"
+                                                            className="ui-button ui-button--primary customer-layaway-payment__action"
+                                                            type="button"
                                                             onClick={() => handleAddPayment(layaway)}
                                                             disabled={processingId === layaway.id}
                                                         >
-                                                            <CheckCircle size={18} style={{marginRight:5}} /> Confirmar
+                                                            <CheckCircle size={18} aria-hidden="true" /> Confirmar
                                                         </button>
                                                         <button 
-                                                            className="btn btn-secondary"
+                                                            className="ui-button ui-button--secondary customer-layaway-payment__action"
+                                                            type="button"
                                                             onClick={() => setActivePaymentId(null)}
                                                         >
-                                                            <XCircle size={18} style={{marginRight:5}} /> Cancelar
+                                                            <XCircle size={18} aria-hidden="true" /> Cancelar
                                                         </button>
                                                     </div>
                                                 </div>
@@ -401,29 +411,29 @@ export default function LayawayModal({
                                             {/* C) Acciones Generales (Entregar / Cancelar) */}
                                             {/* Solo mostramos cancelar si NO estamos abonando para evitar ruido visual, o siempre abajo */}
                                             {!isPayingThis && (
-                                                <div className="layaway-main-actions">
+                                                <div className="customer-layaway-card__actions">
                                                     {isReady ? (
-                                                        <div style={{flex:1, display:'flex', gap:'10px', flexDirection: 'column'}}>
-                                                            <div style={{textAlign:'center', color:'var(--success-color)', fontWeight:'bold', marginBottom:'5px'}}>
+                                                        <div className="customer-layaway-card__ready-actions">
+                                                            <div className="customer-layaway-card__ready-message">
                                                                 Apartado liquidado. Falta confirmar entrega para reconocer la venta.
                                                             </div>
                                                             <button
-                                                                className="btn btn-success"
-                                                                style={{justifyContent:'center'}}
+                                                                className="ui-button ui-button--success ui-button--block customer-layaway-card__deliver"
+                                                                type="button"
                                                                 onClick={() => handleDeliver(layaway)}
                                                                 disabled={processingId === layaway.id}
                                                             >
-                                                                <ShoppingBag size={18} style={{marginRight:5}} /> Confirmar entrega y reconocer venta
+                                                                <ShoppingBag size={18} aria-hidden="true" /> Confirmar entrega y reconocer venta
                                                             </button>
                                                         </div>
                                                     ) : canManageRefunds ? (
                                                         <button
-                                                            className="btn btn-delete btn-sm"
+                                                            className="ui-button ui-button--danger ui-button--sm customer-layaway-card__cancel"
+                                                            type="button"
                                                             onClick={() => handleCancel(layaway)}
                                                             disabled={processingId === layaway.id}
-                                                            style={{border:'1px solid transparent'}} // Estilo sutil
                                                         >
-                                                            <AlertTriangle size={16} style={{marginRight:5}} /> Cancelar Apartado
+                                                            <AlertTriangle size={16} aria-hidden="true" /> Cancelar Apartado
                                                         </button>
                                                     ) : null}
                                                 </div>
