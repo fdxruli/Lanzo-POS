@@ -198,3 +198,19 @@ Se conservan los límites observados en producción: 120 intentos por ventana de
 Se agregan controles de contrato Node para el choke point *_unlimited, ACL interna y preservación de rate limits, además de supabase/tests/admin_staff_rbac_r2d_server_authority_contract_test.sql para verificar definiciones instaladas, matriz booleana, ACL de service_role y ausencia de exposición API. La prueba SQL es transaccional y termina en ROLLBACK.
 
 Producción permanece sin mutaciones: la migración R2D no fue aplicada, no se modificó el ledger y no se ejecutó DDL/DML productivo. R2B, R2C, outbox, UI, ventas, caja y ecommerce quedan fuera de este closeout.
+
+## CLOSEOUT.R2 validation receipt
+
+La implementación está en el commit `f236c1ce20757b5b856b603601f1db1bea9129b7`, hijo directo del HEAD anterior `a4553540fc362abbcc43a89203c4e437c4a34997`. Los resultados remotos del commit de implementación fueron:
+
+- `PR127 Global Comparison`: PASS — run `33006532881`, job `98301613847`.
+- `Shared Terminal Actor Runtime Validation`: PASS — run `33006532889`; gate focalizado `98301614170` y observaciones BASE/CANDIDATE `98301614261`/`98301613884`.
+- `Shared Terminal Actor Scoped Storage Validation`: PASS — run `33006532882`; gate focalizado `98301614004` y observaciones BASE/CANDIDATE `98301614052`/`98301613668`.
+- `Store Git Runtime Validation`: PASS — run `33006532880`.
+- `HOTFIX Dexie Recovery Validation`: PASS — run `33006532923`.
+- Check Vercel `Vercel – lanzo-pos`: PASS.
+
+La prueba de contrato Node ejecutada localmente quedó en `8/8`; `git diff --check` pasó para los cuatro archivos del commit. La prueba SQL de contrato está escrita como bloque transaccional con `ROLLBACK`, pero no se ejecutó localmente porque este entorno no tiene `supabase` CLI ni `psql`. El dry-run canónico de migración permanece `BLOCKED_PREMERGE_BY_MAIN_ONLY_WORKFLOW`; no se sustituyó por una aplicación productiva.
+
+Verificación read-only final de Supabase: el último migration aplicado es `20260825233834` (`20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority`); `20260826010000` no está aplicado. `PRODUCTION_APPLIED=NO`, `PRODUCTION_DDL_DML=0`, `FIXTURE_RESIDUE=0`. El PR conserva estado Draft/open/unmerged para revisión independiente.
+
