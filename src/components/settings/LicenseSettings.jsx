@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     BadgeCheck,
     BriefcaseBusiness,
@@ -126,33 +126,72 @@ function getExpirationInfo(licenseDetails) {
     return { label: formattedDate, tone: 'neutral', note: '' };
 }
 
-function LicenseHero({ selectedCount, maxRubrosAllowed, planName, licenseStatus }) {
+function LicenseHero({
+    selectedCount,
+    maxRubrosAllowed,
+    planName,
+    licenseStatus,
+    canEditBusinessProfile,
+    canManageStaff,
+    onNavigate
+}) {
+    const statusLabel = licenseStatus === 'active' ? 'Activa' : licenseStatus || 'Inactiva';
+
     return (
         <header className="license-settings-hero">
             <div className="license-hero-copy">
                 <span className="license-kicker">
-                    <ShieldCheck size={15} />
-                    Licencia y rubros
+                    <ShieldCheck size={15} aria-hidden="true" />
+                    Configuracion
                 </span>
                 <div>
-                    <h2>Permisos del sistema</h2>
-                    <p>Consulta tu licencia, controla los giros activos y administra accesos vinculados.</p>
+                    <h2>Licencia y rubros</h2>
+                    <p>Consulta tu licencia y administra sus capacidades.</p>
                 </div>
             </div>
 
-            <div className="license-hero-metrics" aria-label="Resumen de licencia">
-                <div>
-                    <span>Estado</span>
-                    <strong>{licenseStatus === 'active' ? 'Activa' : licenseStatus || 'Inactiva'}</strong>
+            <div className="license-hero-right">
+                <div className="license-hero-summary" aria-label="Resumen de licencia">
+                    <span>
+                        <small>Plan</small>
+                        <strong>{planName}</strong>
+                    </span>
+                    <span>
+                        <small>Estado</small>
+                        <strong>{statusLabel}</strong>
+                    </span>
+                    <span>
+                        <small>Rubros</small>
+                        <strong>{selectedCount}/{maxRubrosAllowed === 999 ? '∞' : maxRubrosAllowed}</strong>
+                    </span>
                 </div>
-                <div>
-                    <span>Plan</span>
-                    <strong>{planName}</strong>
-                </div>
-                <div>
-                    <span>Rubros</span>
-                    <strong>{selectedCount}/{maxRubrosAllowed === 999 ? '∞' : maxRubrosAllowed}</strong>
-                </div>
+
+                {(canManageStaff || canEditBusinessProfile) && (
+                    <div className="license-hero-actions" aria-label="Acciones rapidas">
+                        {canManageStaff && (
+                            <button
+                                type="button"
+                                className="license-hero-action"
+                                onClick={() => onNavigate('staff')}
+                                aria-controls="license-panel-staff"
+                            >
+                                <Users size={16} aria-hidden="true" />
+                                Equipo staff
+                            </button>
+                        )}
+                        {canEditBusinessProfile && (
+                            <button
+                                type="button"
+                                className="license-hero-action"
+                                onClick={() => onNavigate('rubros')}
+                                aria-controls="license-panel-rubros"
+                            >
+                                <Layers3 size={16} aria-hidden="true" />
+                                Rubros
+                            </button>
+                        )}
+                    </div>
+                )}
             </div>
         </header>
     );
@@ -187,7 +226,15 @@ function RubroCard({ rubro, stateKind, onToggle }) {
     );
 }
 
-function RubroSelector({ selectedRubros, selectedRubrosSet, maxRubrosAllowed, allowedRubrosList, isAllAllowed, onToggle }) {
+function RubroSelector({
+    selectedRubros,
+    selectedRubrosSet,
+    maxRubrosAllowed,
+    allowedRubrosList,
+    isAllAllowed,
+    activeRubroLabels,
+    onToggle
+}) {
     const isHardLocked = maxRubrosAllowed === 1;
     const isLimitReached = selectedRubros.length >= maxRubrosAllowed;
     const getRubroState = (rubro) => {
@@ -205,6 +252,9 @@ function RubroSelector({ selectedRubros, selectedRubrosSet, maxRubrosAllowed, al
                 <div>
                     <h3>Configuracion de modulos</h3>
                     <p>Selecciona los giros que activan herramientas especificas dentro del POS.</p>
+                    <span className="license-rubros-active-summary">
+                        Activos: {activeRubroLabels}
+                    </span>
                 </div>
                 <span className="license-panel-badge">
                     {maxRubrosAllowed === 999 ? 'Ilimitado' : `${selectedRubros.length}/${maxRubrosAllowed}`}
@@ -247,10 +297,72 @@ function LicenseDetail({ label, value, children }) {
     );
 }
 
+function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, isUpdatingFree, freeUpdateError, onFreeCompatibilityUpdate }) {
+    const expirationInfo = getExpirationInfo(licenseDetails);
+    const hasExpirationAlert = expirationInfo.tone === 'warning' || expirationInfo.tone === 'danger';
+
+    if (!hasExpirationAlert && !showFreeCompatibilityUpdate && !freeUpdateError) return null;
+
+    return (
+        <div className="license-critical-alerts" aria-label="Alertas de licencia">
+            {hasExpirationAlert && (
+                <div className={`license-expiration-alert is-${expirationInfo.tone}`} role="alert">
+                    <Clock3 size={18} aria-hidden="true" />
+                    <span>
+                        <strong>{expirationInfo.label}</strong>
+                        {expirationInfo.note && <small>{expirationInfo.note}</small>}
+                    </span>
+                </div>
+            )}
+
+            {showFreeCompatibilityUpdate && (
+                <div className="license-renewal-panel" role="note">
+                    <div className="license-renewal-copy">
+                        <strong>Actualizacion Lanzo Local disponible</strong>
+                        <span>Esta licencia se actualizara a Lanzo Local permanente.</span>
+                    </div>
+                    <button type="button" className="btn btn-primary license-renewal-button" onClick={onFreeCompatibilityUpdate} disabled={isUpdatingFree}>
+                        <RefreshCw size={18} aria-hidden="true" />
+                        <span>{isUpdatingFree ? 'Actualizando...' : 'Actualizar a Lanzo Local permanente'}</span>
+                    </button>
+                </div>
+            )}
+
+            {freeUpdateError && <div className="license-renewal-error" role="alert">{freeUpdateError}</div>}
+        </div>
+    );
+}
+
+function LicenseSummaryPanel({ licenseDetails, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
+    const expirationInfo = getExpirationInfo(licenseDetails);
+
+    return (
+        <section className="license-panel license-summary-panel">
+            <div className="license-panel-heading">
+                <div>
+                    <h3>Resumen</h3>
+                    <p>La informacion que necesitas para revisar el estado de tu operacion.</p>
+                </div>
+            </div>
+
+            <div className="license-summary-grid">
+                <div className={`license-summary-item license-summary-item--${expirationInfo.tone}`}>
+                    <span>Vencimiento</span>
+                    <strong>{expirationInfo.label}</strong>
+                    {expirationInfo.note && <small>{expirationInfo.note}</small>}
+                </div>
+                <div className="license-summary-item license-summary-item--wide">
+                    <span>Rubros activos ({selectedCount}/{maxRubrosAllowed === 999 ? '∞' : maxRubrosAllowed})</span>
+                    <strong>{activeRubroLabels}</strong>
+                </div>
+            </div>
+        </section>
+    );
+}
+
 function LicenseInfoPanel({
     licenseDetails,
     licenseContext,
-    onFreeCompatibilityUpdate,
     onLogout
 }) {
     const {
@@ -258,10 +370,7 @@ function LicenseInfoPanel({
         isProLicense,
         isStaffDevice,
         currentStaffUser,
-        staffRolesEnabled,
-        showFreeCompatibilityUpdate,
-        isUpdatingFree,
-        freeUpdateError
+        staffRolesEnabled
     } = licenseContext;
     const expirationInfo = getExpirationInfo(licenseDetails);
     const [copiedLicense, setCopiedLicense] = useState(false);
@@ -297,7 +406,7 @@ function LicenseInfoPanel({
     if (!licenseDetails || !licenseDetails.valid) {
         return (
             <section className="license-panel license-info-empty">
-                <KeyRound size={34} />
+                <KeyRound size={34} aria-hidden="true" />
                 <strong>No hay licencia activa</strong>
                 <span>Activa una licencia para consultar permisos, rubros y dispositivos.</span>
             </section>
@@ -306,89 +415,78 @@ function LicenseInfoPanel({
 
     return (
         <section className="license-panel license-info-panel">
-            <div className="license-panel-heading">
-                <div>
-                    <h3>Informacion de licencia</h3>
-                    <p>Datos de activacion, vigencia y capacidades disponibles.</p>
-                </div>
-                <span className={`license-status-pill ${licenseDetails.status === 'active' ? 'is-active' : 'is-expired'}`}>
-                    {licenseDetails.status === 'active' ? 'Activa' : licenseDetails.status || 'Inactiva'}
-                </span>
-            </div>
-
-            <dl className="license-detail-grid">
-                <LicenseDetail label="ID de licencia">
-                    <span className="license-id-value license-id-value--copyable">
-                        <span className="license-value license-key-value license-key-text">{getFullLicense(licenseDetails)}</span>
-                        <button
-                            type="button"
-                            className={`license-copy-button ${copiedLicense ? 'is-copied' : ''}`}
-                            onClick={handleCopyLicense}
-                            disabled={!licenseDetails?.license_key}
-                            aria-label="Copiar ID de licencia"
-                            title="Copiar ID de licencia"
-                        >
-                            {copiedLicense ? <Check size={15} /> : <Copy size={15} />}
-                            <span>{copiedLicense ? 'Copiado' : 'Copiar'}</span>
-                        </button>
-                        <span className={`license-plan-badge ${isProLicense ? 'license-plan-badge--pro' : ''}`}>
-                            {commercialPlanShortName}
-                        </span>
+            <details className="license-details-disclosure">
+                <summary className="license-details-summary">
+                    <span className="license-details-summary-copy">
+                        <strong>Informacion de licencia</strong>
+                        <small>Ver detalles de licencia · Datos de activacion, vigencia y capacidades.</small>
                     </span>
-                </LicenseDetail>
-                <LicenseDetail label="Producto" value="Lanzo POS" />
-                <LicenseDetail label="Plan" value={commercialPlanName} />
-                <LicenseDetail label="Dispositivo">
-                    <span className="license-id-value">
-                        <span>{isStaffDevice ? 'Staff' : 'Administrador'}</span>
-                        {!isStaffDevice && <span className="license-plan-badge license-plan-badge--admin">Admin</span>}
+                    <span className={`license-status-pill ${licenseDetails.status === 'active' ? 'is-active' : 'is-expired'}`}>
+                        {licenseDetails.status === 'active' ? 'Activa' : licenseDetails.status || 'Inactiva'}
                     </span>
-                </LicenseDetail>
-                <LicenseDetail label="Vencimiento">
-                    <span className={`license-expiration-chip is-${expirationInfo.tone}`}>
-                        <Clock3 size={15} />
-                        <span>
-                            <strong>{expirationInfo.label}</strong>
-                            {expirationInfo.note && <small>{expirationInfo.note}</small>}
-                        </span>
-                    </span>
-                </LicenseDetail>
-                <LicenseDetail label="Dispositivos" value={licenseDetails.max_devices ? `${licenseDetails.max_devices} dispositivo(s)` : '1'} />
-                <LicenseDetail label="Limite de rubros" value={maxRubrosAllowed === 999 ? 'Ilimitado' : maxRubrosAllowed} />
+                </summary>
 
-                {isStaffDevice && currentStaffUser && (
-                    <>
-                        <LicenseDetail label="Staff" value={currentStaffUser.display_name || currentStaffUser.username} />
-                        <LicenseDetail label="Usuario" value={`@${currentStaffUser.username}`} />
-                        <LicenseDetail label="Rol" value={currentStaffUser.role_name || 'staff'} />
-                    </>
-                )}
-            </dl>
+                <div className="license-details-disclosure-body">
+                    <dl className="license-detail-grid">
+                        <LicenseDetail label="ID de licencia">
+                            <span className="license-id-value license-id-value--copyable">
+                                <span className="license-value license-key-value license-key-text">{getFullLicense(licenseDetails)}</span>
+                                <button
+                                    type="button"
+                                    className={`license-copy-button ${copiedLicense ? 'is-copied' : ''}`}
+                                    onClick={handleCopyLicense}
+                                    disabled={!licenseDetails?.license_key}
+                                    aria-label="Copiar ID de licencia"
+                                    title="Copiar ID de licencia"
+                                >
+                                    {copiedLicense ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+                                    <span>{copiedLicense ? 'Copiado' : 'Copiar'}</span>
+                                </button>
+                                <span className={`license-plan-badge ${isProLicense ? 'license-plan-badge--pro' : ''}`}>
+                                    {commercialPlanShortName}
+                                </span>
+                            </span>
+                        </LicenseDetail>
+                        <LicenseDetail label="Producto" value="Lanzo POS" />
+                        <LicenseDetail label="Plan" value={commercialPlanName} />
+                        <LicenseDetail label="Dispositivo">
+                            <span className="license-id-value">
+                                <span>{isStaffDevice ? 'Staff' : 'Administrador'}</span>
+                                {!isStaffDevice && <span className="license-plan-badge license-plan-badge--admin">Admin</span>}
+                            </span>
+                        </LicenseDetail>
+                        <LicenseDetail label="Vencimiento">
+                            <span className={`license-expiration-chip is-${expirationInfo.tone}`}>
+                                <Clock3 size={15} aria-hidden="true" />
+                                <span>
+                                    <strong>{expirationInfo.label}</strong>
+                                    {expirationInfo.note && <small>{expirationInfo.note}</small>}
+                                </span>
+                            </span>
+                        </LicenseDetail>
+                        <LicenseDetail label="Dispositivos" value={licenseDetails.max_devices ? `${licenseDetails.max_devices} dispositivo(s)` : '1'} />
+                        <LicenseDetail label="Limite de rubros" value={maxRubrosAllowed === 999 ? 'Ilimitado' : maxRubrosAllowed} />
 
-            {showFreeCompatibilityUpdate && (
-                <div className="license-renewal-panel">
-                    <div className="license-renewal-copy">
-                        <strong>Actualizacion Lanzo Local disponible</strong>
-                        <span>Esta licencia se actualizara a Lanzo Local permanente.</span>
+                        {isStaffDevice && currentStaffUser && (
+                            <>
+                                <LicenseDetail label="Staff" value={currentStaffUser.display_name || currentStaffUser.username} />
+                                <LicenseDetail label="Usuario" value={`@${currentStaffUser.username}`} />
+                                <LicenseDetail label="Rol" value={currentStaffUser.role_name || 'staff'} />
+                            </>
+                        )}
+                    </dl>
+
+                    <div className={`license-staff-access ${staffRolesEnabled ? 'is-enabled' : 'is-disabled'}`}>
+                        <Users size={18} aria-hidden="true" />
+                        <span>{staffRolesEnabled ? 'Roles staff disponibles en esta licencia.' : 'Este plan no incluye usuarios staff.'}</span>
                     </div>
-                    <button type="button" className="btn btn-primary license-renewal-button" onClick={onFreeCompatibilityUpdate} disabled={isUpdatingFree}>
-                        <RefreshCw size={18} />
-                        <span>{isUpdatingFree ? 'Actualizando...' : 'Actualizar a Lanzo Local permanente'}</span>
+
+                    <button type="button" className="btn btn-cancel license-logout-button" onClick={onLogout}>
+                        <LogOut size={16} aria-hidden="true" />
+                        {isStaffDevice ? 'Cerrar sesion staff' : 'Cerrar sesion admin'}
                     </button>
                 </div>
-            )}
-
-            {freeUpdateError && <div className="license-renewal-error">{freeUpdateError}</div>}
-
-            <div className={`license-staff-access ${staffRolesEnabled ? 'is-enabled' : 'is-disabled'}`}>
-                <Users size={18} />
-                <span>{staffRolesEnabled ? 'Roles staff disponibles en esta licencia.' : 'Este plan no incluye usuarios staff.'}</span>
-            </div>
-
-            <button type="button" className="btn btn-cancel license-logout-button" onClick={onLogout}>
-                <LogOut size={16} />
-                {isStaffDevice ? 'Cerrar sesion staff' : 'Cerrar sesion admin'}
-            </button>
+            </details>
         </section>
     );
 }
@@ -449,6 +547,24 @@ export default function LicenseSettings() {
         isUpdatingFree,
         freeUpdateError
     ]);
+
+    const internalSections = useMemo(() => {
+        const sections = [{ key: 'summary', label: 'Resumen' }];
+
+        if (canEditBusinessProfile) sections.push({ key: 'rubros', label: 'Rubros' });
+        if (canManageStaff && licenseDetails?.valid) sections.push({ key: 'staff', label: 'Equipo' });
+
+        return sections;
+    }, [canEditBusinessProfile, canManageStaff, licenseDetails?.valid]);
+    const [activeSection, setActiveSection] = useState('summary');
+    const activeSectionIsValid = internalSections.some(({ key }) => key === activeSection);
+    const effectiveActiveSection = activeSectionIsValid
+        ? activeSection
+        : internalSections[0]?.key || 'summary';
+
+    useEffect(() => {
+        if (!activeSectionIsValid) setActiveSection(effectiveActiveSection);
+    }, [activeSectionIsValid, effectiveActiveSection]);
 
     const handleRubroToggle = async (rubroId) => {
         let actorHandle;
@@ -588,37 +704,93 @@ export default function LicenseSettings() {
                 maxRubrosAllowed={maxRubrosAllowed}
                 planName={commercialPlanName}
                 licenseStatus={licenseDetails?.status}
+                canEditBusinessProfile={canEditBusinessProfile}
+                canManageStaff={canManageStaff && licenseDetails?.valid}
+                onNavigate={setActiveSection}
             />
 
-            <div className="license-settings-layout">
-                {canEditBusinessProfile && (
+            <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">
+                {internalSections.map(({ key, label }) => {
+                    const isActive = effectiveActiveSection === key;
+                    return (
+                        <button
+                            key={key}
+                            id={`license-tab-${key}`}
+                            type="button"
+                            className={`license-section-tab ${isActive ? 'is-active' : ''}`}
+                            role="tab"
+                            aria-selected={isActive}
+                            aria-controls={`license-panel-${key}`}
+                            onClick={() => setActiveSection(key)}
+                        >
+                            {label}
+                        </button>
+                    );
+                })}
+            </nav>
+
+            <LicenseCriticalAlerts
+                licenseDetails={licenseDetails}
+                showFreeCompatibilityUpdate={showFreeCompatibilityUpdate}
+                isUpdatingFree={isUpdatingFree}
+                freeUpdateError={freeUpdateError}
+                onFreeCompatibilityUpdate={handleFreeCompatibilityUpdate}
+            />
+
+            {effectiveActiveSection === 'summary' && (
+                <div
+                    id="license-panel-summary"
+                    className="license-section-panel license-summary-layout"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-summary"
+                    tabIndex="0"
+                >
+                    <LicenseSummaryPanel
+                        licenseDetails={licenseDetails}
+                        selectedCount={selectedRubros.length}
+                        maxRubrosAllowed={maxRubrosAllowed}
+                        activeRubroLabels={activeRubroLabels}
+                    />
+                    <LicenseInfoPanel
+                        licenseDetails={licenseDetails}
+                        licenseContext={licenseContext}
+                        onLogout={isStaffDevice ? handleStaffLogout : handleLogout}
+                    />
+                </div>
+            )}
+
+            {effectiveActiveSection === 'rubros' && canEditBusinessProfile && (
+                <div
+                    id="license-panel-rubros"
+                    className="license-section-panel"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-rubros"
+                    tabIndex="0"
+                >
                     <RubroSelector
                         selectedRubros={selectedRubros}
                         selectedRubrosSet={selectedRubrosSet}
                         maxRubrosAllowed={maxRubrosAllowed}
                         allowedRubrosList={allowedRubrosList}
                         isAllAllowed={isAllAllowed}
+                        activeRubroLabels={activeRubroLabels}
                         onToggle={handleRubroToggle}
                     />
-                )}
+                </div>
+            )}
 
-                <LicenseInfoPanel
-                    licenseDetails={licenseDetails}
-                    licenseContext={licenseContext}
-                    onFreeCompatibilityUpdate={handleFreeCompatibilityUpdate}
-                    onLogout={isStaffDevice ? handleStaffLogout : handleLogout}
-                />
-            </div>
-
-            <section className="license-panel license-active-rubros" aria-label="Rubros activos">
-                <span>Rubros activos</span>
-                <strong>{activeRubroLabels}</strong>
-            </section>
-
-            {canManageStaff && licenseDetails?.valid && (
-                <section className="license-panel license-staff-panel">
-                    <StaffUsersSettings licenseKey={licenseDetails.license_key} />
-                </section>
+            {effectiveActiveSection === 'staff' && canManageStaff && licenseDetails?.valid && (
+                <div
+                    id="license-panel-staff"
+                    className="license-section-panel"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-staff"
+                    tabIndex="0"
+                >
+                    <section className="license-panel license-staff-panel">
+                        <StaffUsersSettings licenseKey={licenseDetails.license_key} />
+                    </section>
+                </div>
             )}
         </div>
     );
