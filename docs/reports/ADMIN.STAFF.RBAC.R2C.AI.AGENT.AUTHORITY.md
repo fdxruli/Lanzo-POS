@@ -173,3 +173,98 @@ Closeout run date: 2026-08-25. Existing PR #229 remains the only PR; no merge, f
 BLOCKED. The local tenant history boundary is closed and verified, and the R2C SQL behavior is partially applied and read-only verified, but closure cannot be PASS because the production migration ledger version is not the exact canonical version and malformed Staff ai_agents string input fails open to period/quota work. The Edge Function was intentionally left undeployed pending an authorized correction and passing runtime matrix.
 
 NO MERGE. PR REMAINS DRAFT. NO FORCE PUSH. NO HISTORICAL MIGRATION EDIT. R2B NOT REOPENED. R2D NOT STARTED.
+
+## CLOSEOUT.R2
+
+Closeout run date: 2026-08-25. This closeout used the existing PR #229 and existing branch only. No merge, force-push, historical applied-SQL edit, R2B reopen, or R2D start occurred.
+
+### Closeout identity
+
+- Repository: fdxruli/Lanzo-POS
+- Project: odlrhijtfyavryeqivaa
+- Base SHA: 1c8d83ca657616d91dfcd1c0671b3a8d6972860b
+- Starting PR head SHA: b4d89e78ef77217d465d66abd681e004f79f388c
+- Branch: codex/admin-staff-ai-agent-authority-r2c
+- PR: #229, OPEN, DRAFT, not merged
+- Remote head before this report append: e0b5356a7757aa76b97c208f982c01a373b608e6
+- Closeout commits before this report append: 637e6f24f19218b45156245b62de76e669000c3c, f8b98c094158ffac787048d215208b5b44503420, 81cf250302057c1c81c45d96b9599a00baa4d039, a56f2ea40a0cac176abdbaca8a3d91a3a5f75e51, 1a6d7fda83654a12250becf3c3219348fccf8c26, e0b5356a7757aa76b97c208f982c01a373b608e6
+- The last two commits contain the test-only AI-history connection cleanup hook and its test cleanup call. Production still reuses per-tenant connections.
+
+### Canonical migration identity and production apply
+
+- The originally applied repository migration was preserved byte-for-byte and renamed from 20260825090000_admin_staff_rbac_r2c_ai_agent_authority.sql to 20260825214805_20260825090000_admin_staff_rbac_r2c_ai_agent_authority.sql. The pre/post repository SQL hash was E1C0499F6645A5AF1C072EEDEDF85F7A2D382CECC98E5B76CF261DD5C18D8A1F.
+- Production already recorded that original SQL under version 20260825214805 and name 20260825090000_admin_staff_rbac_r2c_ai_agent_authority. No schema_migrations row was edited.
+- The strict correction is a separate forward-only migration: 20260825233834_20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority.sql.
+- The correction requires jsonb_typeof(actor_permissions.ai_agents) = boolean and the JSONB value true. The old text comparison remains only in the historical applied migration; the strict migration uses the boolean-only predicate.
+- The exact correction SQL was applied through the Supabase migration operation. The connector recorded version 20260825233834 with name 20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority. No manual ledger repair was performed.
+- Canonical ledger dry-run before apply: only the strict correction was pending, remote-only count 0. Final ledger verification: no pending migrations and remote-only count 0.
+- Production read-only Staff counts after correction: active 6; explicit ai_agents key 0; boolean true 0; boolean false 0; malformed 0.
+- Global AI usage after correction: completed 13; failed 1; reserved 0.
+
+### Runtime authority matrix
+
+All generated fixtures were cleaned in the same controlled run. Every listed case passed:
+
+- AI_MISSING, AI_NULL, AI_FALSE, AI_TRUE_STRING, AI_FALSE_STRING, AI_NUMBER_1, AI_NUMBER_0, AI_OBJECT, and AI_ARRAY: AI_AGENT_PERMISSION_REQUIRED.
+- AI_TRUE_BOOLEAN: success=true.
+- NORMALIZATION_BOOLEAN_TRUE: PASS.
+- NORMALIZATION_BOOLEAN_FALSE: PASS.
+- NORMALIZATION_STRING_TRUE: PASS and normalized to false.
+- STAFF_PLAN_TRUE_AI_FALSE, STAFF_PLAN_TRUE_AI_MISSING, and STAFF_PLAN_TRUE_AI_MALFORMED: denied.
+- STAFF_PLAN_TRUE_AI_TRUE: allowed.
+- STAFF_PLAN_FALSE_AI_TRUE: denied by AI_AGENTS_NOT_AVAILABLE.
+- STAFF_OTHER_PERMS_AI_FALSE: denied.
+- STAFF_AI_TRUE_POS_FALSE: allowed; unrelated POS permission did not grant or remove AI authority.
+- ADMIN_PLAN_TRUE: allowed through Admin actor/session authority.
+- ADMIN_PLAN_FALSE: denied by AI_AGENTS_NOT_AVAILABLE.
+- INVALID_STAFF_SESSION, EXPIRED_STAFF_SESSION, TENANT_MISMATCH, and AMBIGUOUS_ACTOR: all denied fail-closed.
+- STAFF_PERMISSION_ROUND_TRIP: Admin update returned normalized boolean true.
+- PERMISSION_REVOCATION: Admin update returned normalized boolean false and subsequent Staff use was denied.
+- DIRECT_PUBLIC_RPC_AUTHORITY: public wrapper allowed valid boolean Staff authority and denied missing session.
+- INTERNAL_SERVICE_ROLE_AUTHORITY: service_role could invoke the internal helper and valid Staff authority still governed the result.
+- BEGIN_DENIAL_BEFORE_RESERVATION: AI_AGENT_PERMISSION_REQUIRED with usage delta 0.
+- UNAUTHORIZED_RESERVATION_MUTATION: 0.
+- AUTHORIZED_CLEANUP_AFTER_REVOCATION: begin reserved once, revocation disabled the Staff authority, and completion finalized the row as failed with no reserved residue.
+
+No real Staff row was changed. No provider request was made.
+
+### Exact differential evidence
+
+- Original actor-runtime workflow: run #132, ID 32904544213. Focused validation passed; the differential gate reported two candidate-only rows in the full-suite artifact.
+- Exact candidate-only rows were:
+  - src/pages/__tests__/PublicStorePage.siteVersion.test.jsx > PublicStorePage published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision — Error: STACK_TRACE_ERROR, line 107.
+  - src/pages/__tests__/PublicStorePage.test.jsx > PublicStorePage deduplicates a persisted pageshow followed immediately by focus — Error: STACK_TRACE_ERROR, line 499.
+- The 20-repetition focused candidate evidence reproduced neither failure; the full-suite-only ordering/scheduling behavior is classified ENVIRONMENTAL_VARIANCE, not an application regression. No comparator change and no test-specific allowlist were made.
+- The new final-head runs were still in progress at this report append: Shared Terminal Actor Runtime Validation #138 / ID 32913499375 and PR127 Global Comparison #427 / ID 32913499309. The focused job for #138 passed diff check, ActorRuntime tests, tenant isolation, authentication regression, ESLint, and both builds. The repeated full-suite and global comparison jobs remained unresolved at append time.
+
+### Edge and verification gates
+
+- Edge Function: lanzo-ai-agent.
+- Changed Edge source has the stable AI_AGENT_PERMISSION_REQUIRED mapping and the provider-before-reservation denial test.
+- Local Deno is unavailable and the repository has no canonical Edge/Deno CI workflow. The production Edge Function was therefore not deployed; production remains version 10. EDGE_FUNCTION_TESTS=NOT_RUN and EDGE_FUNCTION_DEPLOYED=NO.
+- Repository static R2C contract verification was performed against the final branch contents: canonical migration names, historical predicate preservation, strict boolean predicate/order, ACL, and history cleanup hook all passed.
+- Earlier affected local Vitest evidence passed: combined PublicStore/AI-history/AI-authorization run 30/30; affected tenant/runtime suite 53/53. The full local suite retained known baseline failures plus one PublicStore STACK_TRACE_ERROR variance and was not represented as green.
+- The remote focused workflow passed git diff --check, lint, builds, and its scoped tests. Final global/differential status was still pending at append time.
+
+### Safety and scope register
+
+- REAL_PRODUCTION_STAFF_PERMISSION_MUTATIONS=0.
+- REAL_PRODUCTION_AI_USAGE_MUTATIONS=0.
+- REAL_PRODUCTION_AI_PROVIDER_CALLS=0.
+- REAL_STAFF_AUTO_GRANTED_AI=0.
+- FIXTURE_RESIDUE=0: zero generated licenses, Staff/Admin users, devices, sessions, usage rows, rate limits, usage logs, audit rows, or license events remain.
+- AI_HISTORY_TENANT_ISOLATION=PASS.
+- LEGACY_AI_HISTORY_AUTO_ASSIGNED=NO.
+- LEGACY_AI_HISTORY_DELETED=NO.
+- R2B_SALE_AUTHORITY_CHANGED=NO.
+- R2B_MIGRATION_CHANGED=NO.
+- IDEMPOTENCY_ARCHITECTURE_CHANGED=NO.
+- OG_V2_CHANGED=NO.
+- GRANULAR_PRODUCT_RBAC_STARTED=NO.
+- R2D_STARTED=NO.
+
+### CLOSEOUT.R2 verdict
+
+BLOCKED. The strict boolean Staff authority correction is applied and runtime-verified in production with zero real Staff or provider mutations, and the required history cleanup is verified. Closure remains blocked because Edge runtime tests cannot be run through an available canonical Deno path, the changed Edge Function was intentionally not deployed, and the final repeated global/differential CI run had not completed at report append time.
+
+NO MERGE. PR #229 REMAINS DRAFT. NO FORCE PUSH. NO MANUAL MIGRATION LEDGER REPAIR. NO HISTORICAL APPLIED SQL EDIT. NO REAL PRODUCTION AI PROVIDER CALL. R2B NOT REOPENED. R2D NOT STARTED.
