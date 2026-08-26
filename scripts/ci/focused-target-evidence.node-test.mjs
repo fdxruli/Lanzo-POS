@@ -46,7 +46,9 @@ test('opaque JSON uses deterministic log semantics', () => {
   const opaque = report('failed');
   opaque.testResults[0].assertionResults[0].failureMessages = ['Error: STACK_TRACE_ERROR'];
   const result = classifyFocusedTargetReport(opaque, target, 'Test timed out in 15000ms.');
-  assert.deepEqual(result.failures[0], { errorClass: 'Timeout', signature: 'Test timed out in <duration>.' });
+  assert.deepEqual(result.failures[0], {
+    errorClass: 'Timeout', signature: 'Test timed out in <duration>.', semanticResolved: true, semanticSource: 'LOG',
+  });
 });
 test('50/50 comparison accepts equivalent executed evidence', () => {
   const runs = Array.from({ length: 50 }, (_, index) => ({ slug: target.slug, repetition: index + 1, status: TARGET_EXECUTED_PASS, failures: [] }));
@@ -64,11 +66,23 @@ test('comparison detects a materially higher candidate failure frequency', () =>
     slug: target.slug,
     repetition: index + 1,
     status: index < failureCount ? TARGET_EXECUTED_FAIL : TARGET_EXECUTED_PASS,
-    failures: index < failureCount ? [{ errorClass: 'Timeout', signature: 'Test timed out in <duration>.' }] : [],
+    failures: index < failureCount ? [{ errorClass: 'Timeout', signature: 'Test timed out in <duration>.', semanticResolved: true, semanticSource: 'JSON' }] : [],
   }));
   const base = summarizeFocusedRuns([target], makeRuns(1), 50, 4);
   const candidate = summarizeFocusedRuns([target], makeRuns(10), 50, 4);
   const comparison = compareFocusedSummaries(base, candidate);
   assert.equal(comparison.candidateOnlySemanticRegressionCount, 0);
   assert.equal(comparison.candidateFailureRateRegressionCount, 1);
+});
+test('comparison fails closed when opaque failure semantics remain unresolved', () => {
+  const opaque = report('failed');
+  opaque.testResults[0].assertionResults[0].failureMessages = ['Error: STACK_TRACE_ERROR'];
+  const classified = classifyFocusedTargetReport(opaque, target, 'JSON report written to /tmp/result.json');
+  assert.equal(classified.failures[0].semanticResolved, false);
+  const runs = Array.from({ length: 50 }, (_, index) => ({
+    slug: target.slug, repetition: index + 1,
+    ...(index ? { status: TARGET_EXECUTED_PASS, failures: [] } : classified),
+  }));
+  const summary = summarizeFocusedRuns([target], runs, 50, 4);
+  assert.throws(() => compareFocusedSummaries(summary, summary), /SEMANTIC_IDENTITY_UNRESOLVED/);
 });

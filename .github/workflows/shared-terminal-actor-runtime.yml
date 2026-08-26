@@ -197,21 +197,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - name: Checkout exact candidate evidence tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHARED_TERMINAL_CANDIDATE_SHA }}
+          path: evidence-tools
+
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
           ref: ${{ env.SHARED_TERMINAL_CANDIDATE_SHA }}
+          path: subject
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: subject/package-lock.json
 
       - name: Install dependencies
+        working-directory: subject
         run: npm ci
 
       - name: Build CANDIDATE validation artifacts
+        working-directory: subject
         run: |
           npm run build
           npm run build:store
@@ -219,23 +229,24 @@ jobs:
 
       - name: CANDIDATE PublicStore focused repetitions (fail-closed evidence)
         run: >-
-          node scripts/ci/focused-target-evidence.mjs
-          --targets scripts/ci/shared-terminal-public-store-targets.json
-          --subject-dir .
+          node evidence-tools/scripts/ci/focused-target-evidence.mjs
+          --targets evidence-tools/scripts/ci/shared-terminal-public-store-targets.json
+          --subject-dir subject
           --output-dir .
           --repetitions 50
           --max-workers 4
 
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
+        working-directory: subject
         run: |
           set -o pipefail
           for i in 1 2; do
             set +e
-            npm run test:ci -- --reporter=json --outputFile="full-suite-${i}.json" 2>&1 | tee "full-suite-${i}.log"
+            npm run test:ci -- --reporter=json --outputFile="../full-suite-${i}.json" 2>&1 | tee "../full-suite-${i}.log"
             code=${PIPESTATUS[0]}
             set -e
-            echo "$code" > "full-suite-${i}.exit"
+            echo "$code" > "../full-suite-${i}.exit"
             echo "CANDIDATE repetition ${i} raw exit code: ${code}"
           done
 

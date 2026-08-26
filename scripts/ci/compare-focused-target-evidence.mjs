@@ -18,6 +18,7 @@ const lines = [
   '',
   `- FOCUSED_TARGET_NOT_EXECUTED: 0`,
   `- EVIDENCE_UNREADABLE: 0`,
+  `- SEMANTIC_IDENTITY_UNRESOLVED: 0`,
   `- CANDIDATE-ONLY SEMANTIC REGRESSIONS: ${result.candidateOnlySemanticRegressionCount}`,
   `- CANDIDATE FAILURE-RATE REGRESSIONS: ${result.candidateFailureRateRegressionCount}`,
   '',

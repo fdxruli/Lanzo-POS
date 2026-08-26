@@ -48,11 +48,12 @@ export function semanticFailure(message = '') {
 
 const semanticEvidence = (message, logText) => {
   const json = semanticFailure(message);
-  if (!/STACK_TRACE_ERROR|missing failure message/i.test(json.signature)) return json;
+  if (!/STACK_TRACE_ERROR|missing failure message/i.test(json.signature)) return { ...json, semanticResolved: true, semanticSource: 'JSON' };
   const log = deriveSemanticFailureFromLog(logText);
-  return log.semanticSource === 'UNRESOLVED'
-    ? json
-    : { errorClass: log.semanticErrorClass, signature: log.semanticSignature };
+  const unresolved = log.semanticSource === 'UNRESOLVED' || (log.semanticErrorClass === 'OtherError' && /^JSON report written/i.test(log.semanticSignature || ''));
+  return unresolved
+    ? { errorClass: null, signature: null, semanticResolved: false, semanticSource: 'UNRESOLVED', rawErrorClass: json.errorClass, rawSignature: json.signature }
+    : { errorClass: log.semanticErrorClass, signature: log.semanticSignature, semanticResolved: true, semanticSource: 'LOG' };
 };
 
 export function classifyFocusedTargetReport(report, target, logText = '') {
@@ -130,6 +131,9 @@ export function compareFocusedSummaries(base, candidate, minimumRepetitions = 50
       if (target.runs.length !== base.repetitions) throw new Error(`${label} ${target.slug} has ${target.runs.length}/${base.repetitions} runs`);
       if (target.counts.notExecuted) throw new Error(`FOCUSED_TARGET_NOT_EXECUTED: ${label} ${target.slug}=${target.counts.notExecuted}`);
       if (target.counts.unreadable) throw new Error(`EVIDENCE_UNREADABLE: ${label} ${target.slug}=${target.counts.unreadable}`);
+      if (target.runs.some((run) => run.status === TARGET_EXECUTED_FAIL && (run.failures || []).some((failure) => !failure.semanticResolved))) {
+        throw new Error(`SEMANTIC_IDENTITY_UNRESOLVED: ${label} ${target.slug}`);
+      }
     }
     const semantics = (target) => new Set(target.runs.flatMap((run) => (run.failures || []).map((failure) => `${failure.errorClass}::${failure.signature}`)));
     const baseSemantics = semantics(baseTarget);
@@ -174,7 +178,7 @@ function main() {
     const jsonPath = path.join(outputDir, `${stem}.json`);
     const result = spawnSync(process.execPath, [
       './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', target.testName,
-      `--maxWorkers=${maxWorkers}`, '--reporter=json', `--outputFile=${jsonPath}`,
+      `--maxWorkers=${maxWorkers}`, '--reporter=default', '--reporter=json', `--outputFile.json=${jsonPath}`,
     ], { cwd: subjectDir, encoding: 'utf8' });
     fs.writeFileSync(path.join(outputDir, `${stem}.log`), `${result.stdout || ''}${result.stderr || ''}`);
     fs.writeFileSync(path.join(outputDir, `${stem}.exit`), `${result.status ?? 1}\n`);
