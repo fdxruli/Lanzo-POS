@@ -88,6 +88,13 @@ const getTenantHistoryDatabase = (context) => {
   return database;
 };
 
+export const closeLocalAIAnalysisHistoryDatabasesForTests = () => {
+  for (const database of tenantHistoryDatabases.values()) {
+    database.close();
+  }
+  tenantHistoryDatabases.clear();
+};
+
 const openTenantHistory = async () => {
   const context = captureTenantHistoryContext();
   const database = getTenantHistoryDatabase(context);
