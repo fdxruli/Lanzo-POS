@@ -244,6 +244,7 @@ No real Staff row was changed. No provider request was made.
 - Changed Edge source has the stable AI_AGENT_PERMISSION_REQUIRED mapping and the provider-before-reservation denial test.
 - Local Deno is unavailable and the repository has no canonical Edge/Deno CI workflow. The production Edge Function was therefore not deployed; production remains version 10. EDGE_FUNCTION_TESTS=NOT_RUN and EDGE_FUNCTION_DEPLOYED=NO.
 - Repository static R2C contract verification was performed against the final branch contents: canonical migration names, historical predicate preservation, strict boolean predicate/order, ACL, and history cleanup hook all passed.
+- The first final local contract run exposed only a generic filename-filter omission; commit 1ccc1f99b730f69abb434b7f8e7f1590417c93c5 corrected that non-test-specific filter. The final synchronized local contract suite passed 20/20.
 - Earlier affected local Vitest evidence passed: combined PublicStore/AI-history/AI-authorization run 30/30; affected tenant/runtime suite 53/53. The full local suite retained known baseline failures plus one PublicStore STACK_TRACE_ERROR variance and was not represented as green.
 - The remote focused workflow passed git diff --check, lint, builds, and its scoped tests. Final global/differential status was still pending at append time.
 
