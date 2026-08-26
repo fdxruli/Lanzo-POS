@@ -1,5 +1,6 @@
 import {
   BROWSER_STORAGE_UNAVAILABLE_MESSAGE,
+  DATABASE_RECOVERY_CODES,
   createBrowserStorageUnavailableError
 } from './databaseRecoveryState';
 
@@ -23,15 +24,23 @@ const nextProbeDatabaseName = () => {
 const createTimeoutError = (databaseName) => {
   const error = new Error(`IndexedDB capability probe timed out for ${databaseName}.`);
   error.name = 'DatabaseOpenTimeoutError';
+  error.code = DATABASE_RECOVERY_CODES.OPEN_TIMEOUT;
   return error;
+};
+
+const closeDatabaseQuietly = (database) => {
+  try { database?.close?.(); } catch { /* best effort */ }
 };
 
 const openProbeDatabase = (factory, databaseName, timeoutMs) => new Promise((resolve, reject) => {
   let request;
   let settled = false;
+  let timedOut = false;
   const timeoutId = setTimeout(() => {
     if (settled) return;
+    timedOut = true;
     settled = true;
+    clearTimeout(timeoutId);
     reject(createTimeoutError(databaseName));
   }, timeoutMs);
 
@@ -64,7 +73,17 @@ const openProbeDatabase = (factory, databaseName, timeoutMs) => new Promise((res
     // No other Lanzo database is touched. The bounded timeout converts a
     // permanently blocked probe into the same actionable local condition.
   };
-  request.onsuccess = () => settle(resolve, request.result);
+  request.onsuccess = () => {
+    const database = request.result;
+    if (timedOut || settled) {
+      // IndexedDB open requests cannot be cancelled once started. If the
+      // native request succeeds after the public operation settled, close the
+      // late handle immediately so it cannot block probe cleanup.
+      closeDatabaseQuietly(database);
+      return;
+    }
+    settle(resolve, database);
+  };
 });
 
 const runProbeTransaction = (database, timeoutMs) => new Promise((resolve, reject) => {
@@ -163,12 +182,19 @@ const executeCapabilityProbe = async ({
     await runProbeTransaction(database, timeoutMs);
     return { status: 'pass' };
   } catch (error) {
+    if (
+      error?.code === DATABASE_RECOVERY_CODES.OPEN_TIMEOUT
+      || error?.name === 'DatabaseOpenTimeoutError'
+      || error?.diagnostic?.errorCode === DATABASE_RECOVERY_CODES.OPEN_TIMEOUT
+    ) {
+      throw error;
+    }
     throw createBrowserStorageUnavailableError(error, {
       databaseName,
       message: BROWSER_STORAGE_UNAVAILABLE_MESSAGE
     });
   } finally {
-    try { database?.close(); } catch { /* best effort */ }
+    closeDatabaseQuietly(database);
     await cleanupProbeDatabase(factory, databaseName, timeoutMs);
   }
 };

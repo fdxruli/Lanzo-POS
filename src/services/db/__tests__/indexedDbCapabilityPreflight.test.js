@@ -22,6 +22,7 @@ const deleteDatabase = (databaseName) => new Promise((resolve, reject) => {
 
 afterEach(() => {
   resetIndexedDbCapabilityPreflightForTests();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -82,6 +83,87 @@ describe('browser IndexedDB capability preflight', () => {
       });
 
     expect(factory.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a native connection that succeeds after the bounded open timeout', async () => {
+    vi.useFakeTimers();
+    const databaseName = `${INDEXED_DB_CAPABILITY_PROBE_DATABASE_PREFIX}_late-success`;
+    const request = {};
+    const lateDatabase = { close: vi.fn() };
+    const factory = {
+      open: vi.fn(() => request),
+      deleteDatabase: vi.fn(() => {
+        const cleanupRequest = {};
+        Object.defineProperty(cleanupRequest, 'onsuccess', {
+          configurable: true,
+          set: (handler) => { handler(); }
+        });
+        return cleanupRequest;
+      })
+    };
+    const outcomes = [];
+    const pending = preflightIndexedDbCapability({
+      factory,
+      databaseName,
+      timeoutMs: 25
+    }).then(
+      (value) => outcomes.push({ type: 'resolved', value }),
+      (error) => outcomes.push({ type: 'rejected', error })
+    );
+
+    await vi.advanceTimersByTimeAsync(24);
+    expect(outcomes).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toMatchObject({
+      type: 'rejected',
+      error: {
+        name: 'DatabaseOpenTimeoutError',
+        code: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT
+      }
+    });
+    expect(normalizeBrowserStorageError(outcomes[0].error)).toBeNull();
+    expect(classifyDatabaseError(outcomes[0].error)).toMatchObject({
+      structural: true,
+      code: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT
+    });
+
+    request.result = lateDatabase;
+    request.onsuccess();
+
+    expect(lateDatabase.close).toHaveBeenCalledTimes(1);
+    expect(outcomes).toHaveLength(1);
+    expect(factory.deleteDatabase).toHaveBeenCalledTimes(1);
+    expect(factory.deleteDatabase).toHaveBeenCalledWith(databaseName);
+  });
+
+  it('preserves DB_OPEN_TIMEOUT instead of normalizing it as browser storage failure', async () => {
+    vi.useFakeTimers();
+    const request = {};
+    const factory = { open: vi.fn(() => request) };
+    const pending = preflightIndexedDbCapability({
+      factory,
+      databaseName: `${INDEXED_DB_CAPABILITY_PROBE_DATABASE_PREFIX}_timeout-classification`,
+      timeoutMs: 15
+    }).then(() => null, (reason) => reason);
+
+    await vi.advanceTimersByTimeAsync(15);
+    const error = await pending;
+
+    expect(error).toMatchObject({
+      name: 'DatabaseOpenTimeoutError',
+      code: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT
+    });
+    expect(error.code).not.toBe(DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE);
+    expect(normalizeBrowserStorageError(error)).toBeNull();
+    expect(classifyDatabaseError(error)).toMatchObject({
+      structural: true,
+      code: DATABASE_RECOVERY_CODES.OPEN_TIMEOUT,
+      retryable: true
+    });
   });
 
   it('shares concurrent probes and releases the failed operation for a safe retry', async () => {
