@@ -8,6 +8,11 @@ describe('shared scanner engine contract', () => {
     expect(posModalsSource).toContain("import ScannerModal from '../scanner/ScannerModal';");
     expect(productFormSource).toContain("import ScannerModal from '../../scanner/ScannerModal';");
     expect(scannerModalSource).toContain("import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';");
+    expect(scannerModalSource).toContain("import { COMMERCIAL_BARCODE_SCAN_HINTS } from './commercialBarcodeFormats';");
+    expect(scannerModalSource).toContain('hints: COMMERCIAL_BARCODE_SCAN_HINTS');
+    expect(scannerModalSource).not.toContain('const SCAN_HINTS');
+    expect(posModalsSource).not.toContain('POSSIBLE_FORMATS');
+    expect(productFormSource).not.toContain('POSSIBLE_FORMATS');
     expect(scannerModalSource).toContain('<ScannerModal');
   });
 });
