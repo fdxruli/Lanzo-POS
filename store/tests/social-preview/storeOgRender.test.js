@@ -5,32 +5,10 @@ import {
   createStoreOgHandler,
   renderStoreOgImage,
 } from '../../api/og/store.js';
-import {
-  StoreOgCard,
-  buildStoreOgCardModel,
-} from '../../api/_storeOgCard.js';
+import { buildStoreOgFallbackCardModel } from '../../api/_storeOgFallbackCard.js';
 import { normalizePublicImageForOg } from '../../api/_safePublicImage.js';
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-
-const personalizedResult = {
-  status: 'ok',
-  portal: {
-    slug: 'tienda-render',
-    name: 'Tienda Render',
-    headline: 'Productos seleccionados para ti',
-    description: 'Descripción pública',
-    theme: {
-      primaryColor: '#112233',
-      secondaryColor: '#aabbcc',
-      cornerStyle: 'soft',
-      fontStyle: 'editorial',
-    },
-    logoUrl: '',
-    coverImageUrl: '',
-  },
-  siteVersionNumber: 1,
-};
 
 const demoStoreResult = {
   status: 'ok',
@@ -62,15 +40,6 @@ function readPngDimensions(bytes) {
   };
 }
 
-function collectImageElements(node, result = []) {
-  if (!node || typeof node !== 'object') return result;
-  if (node.type === 'img') result.push(node);
-  const children = node.props?.children;
-  const childList = Array.isArray(children) ? children : [children];
-  childList.forEach((child) => collectImageElements(child, result));
-  return result;
-}
-
 async function normalizedWebpLogo() {
   const source = Buffer.from(TWO_PIXEL_WEBP_BASE64, 'base64');
   const normalized = await normalizePublicImageForOg({
@@ -91,27 +60,13 @@ describe('render real con @vercel/og ImageResponse', () => {
   it.each([
     [
       'tarjeta genérica sin imágenes',
-      buildStoreOgCardModel({
-        result: { status: 'unavailable', reason: 'configuration_missing' },
-      }),
-    ],
-    [
-      'tarjeta con nombre y tema',
-      buildStoreOgCardModel({ result: personalizedResult }),
-    ],
-    [
-      'tarjeta con portada y logo PNG normalizados',
-      buildStoreOgCardModel({
-        result: personalizedResult,
-        logoImage: ONE_PIXEL_PNG,
-        coverImage: ONE_PIXEL_PNG,
-      }),
+      buildStoreOgFallbackCardModel({ status: 'unavailable' }),
     ],
     [
       'fallback de tienda inexistente',
-      buildStoreOgCardModel({ result: { status: 'not_found' } }),
+      buildStoreOgFallbackCardModel({ status: 'not_found' }),
     ],
-  ])('produce PNG real para %s', async (label, model) => {
+  ])('produce PNG real para %s', async (_label, model) => {
     const fetchSpy = vi.fn(async () => {
       throw new Error('El render no debe utilizar red.');
     });
@@ -135,47 +90,8 @@ describe('render real con @vercel/og ImageResponse', () => {
     expect(Array.from(bytes.slice(0, PNG_SIGNATURE.length))).toEqual(PNG_SIGNATURE);
     expect(readPngDimensions(bytes)).toEqual({ width: 1200, height: 630 });
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(JSON.stringify(model)).not.toMatch(/https?:\/\/|data:font|fontFamily|Arial|Georgia/iu);
+    expect(JSON.stringify(model)).not.toMatch(/https?:\/\/|data:image|data:font|fontFamily|Arial|Georgia|businessType/iu);
   }, 30_000);
-
-  it('convierte un logo WebP a PNG antes de entregarlo a ImageResponse', async () => {
-    const logoImage = await normalizedWebpLogo();
-    const model = buildStoreOgCardModel({
-      result: personalizedResult,
-      logoImage,
-      coverImage: ONE_PIXEL_PNG,
-    });
-    const response = renderStoreOgImage({
-      ImageResponseImpl: ImageResponse,
-      model,
-      status: 200,
-      headers: { 'Cache-Control': 'no-store' },
-    });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-
-    expect(response.status).toBe(200);
-    expect(Array.from(bytes.slice(0, PNG_SIGNATURE.length))).toEqual(PNG_SIGNATURE);
-    expect(readPngDimensions(bytes)).toEqual({ width: 1200, height: 630 });
-  }, 30_000);
-
-  it('declara dimensiones intrínsecas para portada y logo', () => {
-    const model = buildStoreOgCardModel({
-      result: personalizedResult,
-      logoImage: ONE_PIXEL_PNG,
-      coverImage: ONE_PIXEL_PNG,
-    });
-    const images = collectImageElements(StoreOgCard({ model }));
-
-    expect(images).toHaveLength(2);
-    expect(images).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        props: expect.objectContaining({ width: 112, height: 112 }),
-      }),
-      expect.objectContaining({
-        props: expect.objectContaining({ width: 1200, height: 630 }),
-      }),
-    ]));
-  });
 
   it('materializa una tienda de ejemplo con V2, logo y portada sin usar red en el renderer', async () => {
     const logoImage = await normalizedWebpLogo();
