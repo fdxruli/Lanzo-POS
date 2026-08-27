@@ -23,7 +23,8 @@ vi.mock('../../../services/db/databaseRuntime', () => gateRuntimeMocks);
 vi.mock('../../../services/Logger', () => ({ default: loggerMocks }));
 
 import PosApplicationBootstrap, {
-  resetPosApplicationBootstrapForTests
+  resetPosApplicationBootstrapForTests,
+  runStorageManagerBestEffort
 } from '../PosApplicationBootstrap';
 import {
   DATABASE_RECOVERY_STATUS,
@@ -387,6 +388,41 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     await waitFor(() => expect(readyRuntime.initializeStorage).toHaveBeenCalledTimes(1));
     expect(getDatabaseRecoveryState().status).toBe(DATABASE_RECOVERY_STATUS.READY);
     expect(screen.queryByText(/recuperación automática no pudo completarse/i)).not.toBeInTheDocument();
+  });
+
+  it('logs expected denied persistence at info without a boot warning', async () => {
+    runStorageManagerBestEffort({
+      initialize: vi.fn().mockResolvedValue({
+        canStart: true,
+        isVolatile: true,
+        persistenceState: 'denied',
+        recommendation: []
+      })
+    });
+
+    await waitFor(() => expect(loggerMocks.info).toHaveBeenCalledWith(
+      '[Boot] Almacenamiento local en modo best-effort.',
+      { persistenceState: 'denied', recommendation: [] }
+    ));
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
+    expect(loggerMocks.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps a boot warning for a non-denied volatile storage state', async () => {
+    runStorageManagerBestEffort({
+      initialize: vi.fn().mockResolvedValue({
+        canStart: true,
+        isVolatile: true,
+        persistenceState: 'volatile',
+        recommendation: []
+      })
+    });
+
+    await waitFor(() => expect(loggerMocks.warn).toHaveBeenCalledWith(
+      '[Boot] Almacenamiento local en modo best-effort.',
+      { persistenceState: 'volatile', recommendation: [] }
+    ));
+    expect(loggerMocks.info).not.toHaveBeenCalled();
   });
 
   it('stops boot explicitly when development cleanup requests a reload', async () => {

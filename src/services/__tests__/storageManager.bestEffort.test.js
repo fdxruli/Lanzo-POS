@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const loggerMocks = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn()
+}));
+
+vi.mock('../Logger', () => ({ default: loggerMocks }));
+
 const installNavigator = ({ persisted, persist, estimate, permissionState = 'prompt' }) => {
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
@@ -25,6 +33,7 @@ const loadManager = async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.clearAllMocks();
 });
 
 describe('StorageManager best-effort persistence', () => {
@@ -43,6 +52,8 @@ describe('StorageManager best-effort persistence', () => {
     expect(result.persistenceState).toBe('granted');
     expect(result.isVolatile).toBe(false);
     expect(persist).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
+    expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
   it('keeps boot available when persist returns false and does not retry', async () => {
@@ -62,6 +73,11 @@ describe('StorageManager best-effort persistence', () => {
     expect(first.isVolatile).toBe(true);
     expect(second.canStart).toBe(true);
     expect(persist).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.warn).not.toHaveBeenCalled();
+    expect(loggerMocks.error).not.toHaveBeenCalled();
+    expect(loggerMocks.info).toHaveBeenCalledWith(
+      '[StorageManager] Persistencia no concedida; IndexedDB continuará en modo best-effort. El navegador puede administrar o liberar estos datos según su política de almacenamiento.'
+    );
   });
 
   it('keeps boot available when persist rejects', async () => {
@@ -79,6 +95,9 @@ describe('StorageManager best-effort persistence', () => {
     expect(result.isVolatile).toBe(true);
     expect(manager.getState().lastPersistenceError).toBe('permission request failed');
     expect(persist).toHaveBeenCalledTimes(1);
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      '[StorageManager] La solicitud de persistencia falló. Se continúa en modo best-effort sin bloquear IndexedDB.'
+    );
   });
 
   it('keeps boot available when the Storage API is unavailable', async () => {
