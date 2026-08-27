@@ -14,21 +14,33 @@ import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { buildSupportMailtoUrl, copyTextToClipboard, getSupportEmail } from '../../services/support/supportContact';
+import { mapLicenseActivationResult } from './licenseActivationErrorMapper';
 
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorTitle, setErrorTitle] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const handleLogin = useAppStore((state) => state.handleLogin);
   const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
 
+  const clearError = () => {
+    setErrorTitle('');
+    setErrorMessage('');
+  };
+
+  const showError = (message, title = '') => {
+    setErrorTitle(title);
+    setErrorMessage(message);
+  };
+
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      setErrorMessage('');
+      clearError();
       Logger.info('Conexión restaurada');
     };
 
@@ -50,32 +62,35 @@ export default function WelcomeModal() {
     e.preventDefault();
 
     if (!isOnline) {
-      setErrorMessage('Sin conexión a internet. Conéctate para continuar.');
+      const feedback = mapLicenseActivationResult({ code: 'OFFLINE_PRECHECK' }, { isOnline: false });
+      showError(feedback.message, feedback.title);
       return;
     }
 
     if (!licenseKey.trim()) {
-      setErrorMessage('Por favor, ingresa una clave de licencia válida.');
+      showError('Por favor, ingresa una clave de licencia válida.');
       return;
     }
 
     setIsLoading(true);
-    setErrorMessage('');
+    clearError();
 
     try {
       const result = await handleLogin(licenseKey.trim());
 
-      if (!result.success && !result.accessChoiceRequired && !result.adminEnrollmentRequired && !result.staffLoginRequired) {
-        setErrorMessage(result.message || 'Licencia inválida o expirada');
+      if (!result?.success) {
+        const feedback = mapLicenseActivationResult(result, { isOnline });
+
+        if (feedback.kind === 'error') {
+          showError(feedback.message, feedback.title);
+        } else {
+          clearError();
+        }
       }
     } catch (error) {
       Logger.error("Error crítico al validar licencia:", error);
-
-      if (error.message?.includes('fetch') || error.message?.includes('Network')) {
-        setErrorMessage('Error de conexión. Verifica tu internet e intenta nuevamente.');
-      } else {
-        setErrorMessage('Error inesperado. Por favor, contacta a soporte.');
-      }
+      const feedback = mapLicenseActivationResult(error, { isOnline });
+      showError(feedback.message, feedback.title);
     } finally {
       setIsLoading(false);
     }
@@ -83,26 +98,26 @@ export default function WelcomeModal() {
 
   const handleTrialClick = async () => {
     if (!isOnline) {
-      setErrorMessage('Se requiere conexión a internet para crear tu licencia gratuita.');
+      showError('Se requiere conexión a internet para crear tu licencia gratuita.');
       return;
     }
 
     setIsLoading(true);
-    setErrorMessage('');
+    clearError();
 
     try {
       const result = await handleFreeTrial();
 
       if (!result.success) {
-        setErrorMessage(result.message || 'No se pudo crear la licencia Lanzo Local.');
+        showError(result.message || 'No se pudo crear la licencia Lanzo Local.');
       }
     } catch (error) {
       Logger.error("Error al crear licencia Lanzo Local:", error);
 
       if (error.message?.includes('fetch') || error.message?.includes('Network')) {
-        setErrorMessage('Error de red. Verifica tu conexión.');
+        showError('Error de red. Verifica tu conexión.');
       } else {
-        setErrorMessage(`Error: ${error.message || 'Intenta nuevamente'}`);
+        showError(`Error: ${error.message || 'Intenta nuevamente'}`);
       }
     } finally {
       setIsLoading(false);
@@ -299,7 +314,10 @@ DESCRIBE TU PROBLEMA:
           {errorMessage && (
             <div className="error-toast" role="alert">
               <span className="error-icon" aria-hidden="true">!</span>
-              <p>{errorMessage}</p>
+              <div className="error-toast-content">
+                {errorTitle && <strong>{errorTitle}</strong>}
+                <p>{errorMessage}</p>
+              </div>
             </div>
           )}
 
