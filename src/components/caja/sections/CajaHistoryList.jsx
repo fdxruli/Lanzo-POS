@@ -43,7 +43,11 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
         isCuadrada,
         cierre: c.monto_cierre !== null && c.monto_cierre !== undefined ? `$${Money.toNumber(c.monto_cierre).toFixed(2)}` : 'No contado',
         dif: hasPhysicalCount ? `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}` : 'No calculada',
-        difTone: diffSafe.gt(0) ? 'positive' : 'negative'
+        difTone: !hasPhysicalCount || isCuadrada
+          ? 'neutral'
+          : diffSafe.gt(0)
+            ? 'positive'
+            : 'negative'
       };
     });
   }, [historial, paginaActual, itemsPerPage, isCloudCash]);

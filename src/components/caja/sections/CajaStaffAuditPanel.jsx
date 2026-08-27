@@ -276,32 +276,50 @@ const CajaStaffAuditPanel = ({
                 <div className="staff-audit-item-header">
                   <div>
                     <strong>{getResponsibleName(session)}</strong>
-                    <div className="movement-details">
-                      {staffLabel && <span>Staff: {staffLabel}</span>}
-                      {deviceLabel && <span>Dispositivo: {deviceLabel}</span>}
-                    </div>
                   </div>
                   <span className={`status-badge ${statusTone}`}>
                     {statusLabel}
                   </span>
                 </div>
 
-                <div className="staff-audit-grid">
-                  <span><small>Apertura</small><strong>{formatDate(session.fecha_apertura)}</strong></span>
-                  <span><small>Cierre</small><strong>{formatDate(session.fecha_cierre)}</strong></span>
-                  <span><small>Monto inicial</small><strong>{formatMoney(session.monto_inicial)}</strong></span>
-                  <span><small>Entradas</small><strong>{formatMoney(session.entradas_efectivo)}</strong></span>
-                  <span><small>Salidas</small><strong>{formatMoney(session.salidas_efectivo)}</strong></span>
-                  <span><small>Abonos/clientes</small><strong>{formatMoney(session.abonos_fiado || session.customer_payments_total)}</strong></span>
-                  <span><small>Efectivo esperado</small><strong>{formatMoney(getExpectedCash(session))}</strong></span>
-                  <span><small>Diferencia</small><strong className={difference.eq(0) ? '' : difference.gt(0) ? 'amount positive' : 'amount negative'}>{formatMoney(difference)}</strong></span>
-                  <span><small>Movimientos</small><strong>{getMovementCount(session)}</strong></span>
+                <div className="staff-audit-primary">
+                  <span className="staff-audit-primary-field">
+                    <small>Apertura</small>
+                    <strong>{formatDate(session.fecha_apertura)}</strong>
+                  </span>
+                  <span className="staff-audit-primary-field staff-audit-primary-field--expected">
+                    <small>Efectivo esperado</small>
+                    <strong>{formatMoney(getExpectedCash(session))}</strong>
+                  </span>
+                  <span className="staff-audit-primary-field staff-audit-primary-field--difference">
+                    <small>Diferencia</small>
+                    <strong className={difference.eq(0) ? '' : difference.gt(0) ? 'amount positive' : 'amount negative'}>{formatMoney(difference)}</strong>
+                  </span>
+                  <span className="staff-audit-primary-field">
+                    <small>Movimientos</small>
+                    <strong>{getMovementCount(session)}</strong>
+                  </span>
                 </div>
-                {onReviewSession && (
-                  <button type="button" className="business-cash-review" onClick={() => onReviewSession(session)} disabled={isReadOnly}>
-                    {isReadOnly ? 'Sin conexion' : 'Revisar'}
-                  </button>
-                )}
+
+                <div className="staff-audit-actions">
+                  {onReviewSession && (
+                    <button type="button" className="business-cash-review" onClick={() => onReviewSession(session)} disabled={isReadOnly}>
+                      {isReadOnly ? 'Sin conexion' : 'Revisar'}
+                    </button>
+                  )}
+                  <details className="caja-disclosure staff-audit-details">
+                    <summary>Detalles</summary>
+                    <div className="staff-audit-secondary">
+                      <span><small>Cierre</small><strong>{formatDate(session.fecha_cierre)}</strong></span>
+                      <span><small>Monto inicial</small><strong>{formatMoney(session.monto_inicial)}</strong></span>
+                      <span><small>Entradas</small><strong>{formatMoney(session.entradas_efectivo)}</strong></span>
+                      <span><small>Salidas</small><strong>{formatMoney(session.salidas_efectivo)}</strong></span>
+                      <span><small>Abonos/clientes</small><strong>{formatMoney(session.abonos_fiado || session.customer_payments_total)}</strong></span>
+                      {staffLabel && <span><small>Staff</small><strong>{staffLabel}</strong></span>}
+                      {deviceLabel && <span><small>Dispositivo</small><strong>{deviceLabel}</strong></span>}
+                    </div>
+                  </details>
+                </div>
               </article>
             );
           })

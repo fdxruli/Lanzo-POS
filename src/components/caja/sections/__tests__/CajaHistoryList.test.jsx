@@ -40,8 +40,48 @@ describe('CajaHistoryList', () => {
 
     expect(screen.getByText('Cuadrada')).toBeVisible();
     expect(screen.getByText('Cierre: $0.00')).toBeVisible();
+    const difference = screen.getByText('Dif: $0.00');
+    expect(difference).toHaveClass('history-difference', 'neutral');
+    expect(difference).not.toHaveClass('positive', 'negative');
   });
 
+  it('keeps a small Cuadrada difference neutral', () => {
+    render(<CajaHistoryList historial={[{
+      ...baseSession,
+      monto_cierre: '100.50',
+      diferencia: '0.50',
+      closingMode: 'admin_audited'
+    }]} />);
+
+    const difference = screen.getByText('Dif: +$0.50');
+    expect(screen.getByText('Cuadrada')).toBeVisible();
+    expect(difference).toHaveClass('history-difference', 'neutral');
+    expect(difference).not.toHaveClass('positive', 'negative');
+  });
+
+  it('keeps real positive and negative differences toned by direction', () => {
+    const { rerender } = render(<CajaHistoryList historial={[{
+      ...baseSession,
+      id: 'positive-difference',
+      monto_cierre: '102',
+      diferencia: '2',
+      closingMode: 'admin_audited'
+    }]} />);
+
+    expect(screen.getByText('Descuadre')).toBeVisible();
+    expect(screen.getByText('Dif: +$2.00')).toHaveClass('history-difference', 'positive');
+
+    rerender(<CajaHistoryList historial={[{
+      ...baseSession,
+      id: 'negative-difference',
+      monto_cierre: '98',
+      diferencia: '-2',
+      closingMode: 'admin_audited'
+    }]} />);
+
+    expect(screen.getByText('Descuadre')).toBeVisible();
+    expect(screen.getByText('Dif: $-2.00')).toHaveClass('history-difference', 'negative');
+  });
   it('keeps technical history traceability behind Detalles', () => {
     render(<CajaHistoryList historial={[{
       ...baseSession,
