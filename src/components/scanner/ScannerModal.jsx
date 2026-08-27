@@ -11,8 +11,8 @@ import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
 import { useScannerCart } from '../../hooks/scanner/useScannerCart';
 import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { CameraViewport } from './CameraViewport';
+import { COMMERCIAL_BARCODE_SCAN_HINTS } from './commercialBarcodeFormats';
 import { ScannerCartList } from './ScannerCartList';
 import { UnknownCodesBanner } from './UnknownCodesBanner';
 import './ScannerModal.css';
@@ -25,18 +25,6 @@ const CAMERA_CONSTRAINTS = {
   },
   audio: false,
 };
-
-const SCAN_HINTS = new Map([
-  [
-    DecodeHintType.POSSIBLE_FORMATS,
-    [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.CODE_128,
-      BarcodeFormat.QR_CODE,
-    ],
-  ],
-]);
 
 const REACTIVATION_DELAY_MS = 500;
 const FEEDBACK_CLEAR_DELAY_MS = 800;
@@ -267,7 +255,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     onDecodeResult: handleDecodeResult,
     onError: handleError,
     constraints: CAMERA_CONSTRAINTS,
-    hints: SCAN_HINTS,
+    hints: COMMERCIAL_BARCODE_SCAN_HINTS,
     timeBetweenDecodingAttempts: 150,
   });
 

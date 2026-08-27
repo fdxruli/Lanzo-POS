@@ -84,12 +84,12 @@
 .scanner-video-container {
   position: relative;
   width: 100%;
-  height: 30%;
-  /* <-- Reducido de 55% a 30% */
-  min-height: 30%;
-  /* <-- Reducido de 55% a 30% */
-  flex: 0 0 30%;
-  /* <-- Reducido de 55% a 30% */
+  height: clamp(180px, 34vh, 360px);
+  height: clamp(180px, 34dvh, 360px);
+  min-height: clamp(160px, 24vh, 280px);
+  min-height: clamp(160px, 24dvh, 280px);
+  flex: 0 1 clamp(180px, 34vh, 360px);
+  flex: 0 1 clamp(180px, 34dvh, 360px);
   background-color: #000;
   overflow: hidden;
   border-radius: 0;
@@ -98,13 +98,32 @@
   justify-content: center;
 }
 
-/* El video llena el contenedor */
-.scanner-video-container video,
-#scanner-video {
+/* El viewport y el stage mantienen el fondo neutro de la cámara. */
+.scanner-video-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scanner-video-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  /* Llena el área sin distorsionar */
+  overflow: hidden;
+  background-color: #000;
+  isolation: isolate;
+}
+
+/* El video conserva su relación nativa y nunca recorta la fuente. */
+.scanner-video-container video,
+#scanner-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* Botón de cierre flotante (X) - Posicionado sobre el video */
@@ -540,7 +559,8 @@
     min-height: 350px;
     flex: 1 1 50%;
     border-radius: var(--border-radius, 8px);
-    aspect-ratio: 4 / 3;
+    /* La relación de la fuente la determina el metadata del video. */
+    aspect-ratio: auto;
   }
 
   /* Botón de cierre reposicionado */
@@ -641,7 +661,8 @@
     width: 100%;
     max-width: 500px;
     height: 350px;
-    aspect-ratio: 4 / 3;
+    min-height: 350px;
+    aspect-ratio: auto;
   }
 
   /* Banner de errores más espacioso */
@@ -739,7 +760,7 @@
 }
 
 /* ============================================
-     12. RETÍCULA DE ESCANEO (FASE 2)
+     12. RETÍCULA DE ESCANEO (FASE 3)
      ============================================
      Reemplaza el hack de box-shadow con SVG corners
      y animación láser optimizada por hardware
@@ -750,8 +771,8 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 70%;
-  height: 40%;
+  width: 80%;
+  height: 25%;
   pointer-events: none;
   z-index: 5;
 }
@@ -761,7 +782,7 @@
   filter: drop-shadow(0 0 4px rgba(40, 167, 69, 0.6));
 }
 
-/* Línea láser animada - translateY para aceleración por hardware */
+/* Línea láser animada dentro de la geometría de la retícula. */
 .scanner-laser {
   position: absolute;
   left: 5%;
@@ -775,7 +796,6 @@
       transparent);
   box-shadow: 0 0 8px rgba(40, 167, 69, 0.8), 0 0 16px rgba(40, 167, 69, 0.4);
   opacity: 0;
-  transform: translateY(0);
   top: 0;
 }
 
@@ -785,16 +805,14 @@
 }
 
 @keyframes laserScan {
-
   0%,
   100% {
-    transform: translateY(0);
+    top: 0;
     opacity: 0.6;
   }
 
   50% {
-    /* Cambiamos 0.4 por 0.3 para que no baje más allá de la cámara */
-    transform: translateY(calc(100dvh * 0.3 - 2px));
+    top: calc(100% - 2px);
     opacity: 1;
   }
 }
@@ -802,7 +820,7 @@
 /* Texto de estado debajo de la retícula */
 .scanner-status-text {
   position: absolute;
-  bottom: -40px;
+  top: calc(100% + 12px);
   left: 50%;
   transform: translateX(-50%);
   color: white;
@@ -1058,31 +1076,15 @@
 }
 
 /* ============================================
-     15. MEDIA QUERY ADICIONALES PARA FASE 2
+     15. MEDIA QUERY ADICIONALES PARA FASE 3
      ============================================ */
 
 @media (min-width: 768px) {
 
   /* Retícula más grande en escritorio */
   .scanner-reticle {
-    width: 60%;
-    height: 50%;
-  }
-
-  /* Láser con altura ajustada para escritorio */
-  @keyframes laserScan {
-
-    0%,
-    100% {
-      transform: translateY(0);
-      opacity: 0.6;
-    }
-
-    50% {
-      transform: translateY(calc(50vh - 2px));
-      /* Aproximado para escritorio */
-      opacity: 1;
-    }
+    width: 80%;
+    height: 25%;
   }
 
   /* Toast más grande en escritorio */
@@ -1100,7 +1102,6 @@
   /* Texto de estado más grande */
   .scanner-status-text {
     font-size: 1rem;
-    bottom: -50px;
     padding: 8px 16px;
   }
 
@@ -1138,8 +1139,8 @@
 /* Ajustes específicos para móviles pequeños */
 @media (max-width: 375px) {
   .scanner-reticle {
-    width: 80%;
-    height: 35%;
+    width: 85%;
+    height: 25%;
   }
 
   .scanned-item {

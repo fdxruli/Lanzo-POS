@@ -1,4 +1,96 @@
 // src/components/scanner/CameraViewport.jsx
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getContainedVideoRect } from './scannerGeometry';
+
+const EMPTY_SIZE = Object.freeze({ width: 0, height: 0 });
+
+const sizesAreEqual = (first, second) => (
+  first.width === second.width && first.height === second.height
+);
+
+const readElementSize = (element) => {
+  if (!element) return EMPTY_SIZE;
+
+  const rect = typeof element.getBoundingClientRect === 'function'
+    ? element.getBoundingClientRect()
+    : null;
+
+  return {
+    width: Number(rect?.width) || Number(element.clientWidth) || 0,
+    height: Number(rect?.height) || Number(element.clientHeight) || 0,
+  };
+};
+
+const readVideoSize = (videoElement) => ({
+  width: Number(videoElement?.videoWidth) || 0,
+  height: Number(videoElement?.videoHeight) || 0,
+});
+
+const useCameraViewportGeometry = (videoRef, enabled) => {
+  const containerRef = useRef(null);
+  const [containerSize, setContainerSize] = useState(EMPTY_SIZE);
+  const [videoSize, setVideoSize] = useState(EMPTY_SIZE);
+
+  const measure = useCallback(() => {
+    const nextContainerSize = readElementSize(containerRef.current);
+    const nextVideoSize = readVideoSize(videoRef?.current);
+
+    setContainerSize((currentSize) => (
+      sizesAreEqual(currentSize, nextContainerSize) ? currentSize : nextContainerSize
+    ));
+    setVideoSize((currentSize) => (
+      sizesAreEqual(currentSize, nextVideoSize) ? currentSize : nextVideoSize
+    ));
+  }, [videoRef]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+
+    measure();
+
+    const videoElement = videoRef?.current;
+    const refreshGeometry = () => measure();
+
+    videoElement?.addEventListener('loadedmetadata', refreshGeometry);
+    videoElement?.addEventListener('loadeddata', refreshGeometry);
+    videoElement?.addEventListener('resize', refreshGeometry);
+
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver(refreshGeometry);
+      resizeObserver.observe(containerRef.current);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', refreshGeometry);
+      window.addEventListener('orientationchange', refreshGeometry);
+    }
+
+    return () => {
+      videoElement?.removeEventListener('loadedmetadata', refreshGeometry);
+      videoElement?.removeEventListener('loadeddata', refreshGeometry);
+      videoElement?.removeEventListener('resize', refreshGeometry);
+      resizeObserver?.disconnect();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('resize', refreshGeometry);
+        window.removeEventListener('orientationchange', refreshGeometry);
+      }
+    };
+  }, [enabled, measure, videoRef]);
+
+  const geometry = useMemo(() => getContainedVideoRect({
+    containerWidth: containerSize.width,
+    containerHeight: containerSize.height,
+    videoWidth: videoSize.width,
+    videoHeight: videoSize.height,
+  }), [containerSize, videoSize]);
+
+  return {
+    containerRef,
+    geometry,
+    geometryReady: !geometry.isFallback,
+  };
+};
 /**
  * Icono de menos/menos (stroke-width: 2, fill: none)
  */
@@ -165,7 +257,7 @@ const ScannerReticle = ({ isScanning, isConfirming }) => {
         {isConfirming
           ? 'Guardando carrito temporal...'
           : isScanning
-            ? 'Centra el codigo aqui'
+            ? 'Centra el código de barras'
             : 'Procesando...'}
       </div>
     </div>
@@ -208,6 +300,12 @@ export function CameraViewport({
   isConfirming,
   onRetryCamera,
 }) {
+  const {
+    containerRef,
+    geometry,
+    geometryReady,
+  } = useCameraViewportGeometry(videoRef, !cameraError);
+
   if (cameraError) {
     return (
       <div className="camera-error-feedback">
@@ -226,28 +324,45 @@ export function CameraViewport({
     );
   }
 
+  const stageStyle = geometryReady
+    ? {
+      width: `${geometry.width}px`,
+      height: `${geometry.height}px`,
+      left: `${geometry.x}px`,
+      top: `${geometry.y}px`,
+    }
+    : undefined;
+
   return (
-    <>
-      <video
-        ref={videoRef}
-        id="scanner-video"
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden',
-          filter: isScanning ? 'none' : 'brightness(0.6)',
-          transition: 'filter 0.2s ease',
-        }}
-      />
+    <div
+      ref={containerRef}
+      className="scanner-video-viewport"
+      data-geometry-ready={geometryReady ? 'true' : 'false'}
+    >
+      <div className="scanner-video-stage" style={stageStyle}>
+        <video
+          ref={videoRef}
+          id="scanner-video"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            transform: 'translateZ(0)',
+            backfaceVisibility: 'hidden',
+            filter: isScanning ? 'none' : 'brightness(0.6)',
+            transition: 'filter 0.2s ease',
+          }}
+        />
 
-      {/* Toast de feedback no invasivo */}
+        {/* La retícula aparece cuando la imagen visible ya es medible. */}
+        {geometryReady && (
+          <ScannerReticle isScanning={isScanning} isConfirming={isConfirming} />
+        )}
+      </div>
+
+      {/* El feedback permanece relativo al viewport completo, no a las barras. */}
       <ScanFeedbackToast message={scanFeedback} />
-
-      {/* Retícula moderna con corners SVG y láser animado */}
-      <ScannerReticle isScanning={isScanning} isConfirming={isConfirming} />
-    </>
+    </div>
   );
 }
 
