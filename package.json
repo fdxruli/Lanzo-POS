@@ -59,7 +59,6 @@
     "react-router-dom": "^7.9.6",
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^2.2.3",
-    "react-zxing": "^2.1.0",
     "recharts": "^3.8.1",
     "sharp": "^0.34.5",
     "zod": "^4.1.13",
