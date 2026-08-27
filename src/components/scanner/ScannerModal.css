@@ -760,7 +760,7 @@
 }
 
 /* ============================================
-     12. RETÍCULA DE ESCANEO (FASE 2)
+     12. RETÍCULA DE ESCANEO (FASE 3)
      ============================================
      Reemplaza el hack de box-shadow con SVG corners
      y animación láser optimizada por hardware
@@ -771,8 +771,8 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 70%;
-  height: 40%;
+  width: 80%;
+  height: 25%;
   pointer-events: none;
   z-index: 5;
 }
@@ -1076,15 +1076,15 @@
 }
 
 /* ============================================
-     15. MEDIA QUERY ADICIONALES PARA FASE 2
+     15. MEDIA QUERY ADICIONALES PARA FASE 3
      ============================================ */
 
 @media (min-width: 768px) {
 
   /* Retícula más grande en escritorio */
   .scanner-reticle {
-    width: 60%;
-    height: 50%;
+    width: 80%;
+    height: 25%;
   }
 
   /* Toast más grande en escritorio */
@@ -1139,8 +1139,8 @@
 /* Ajustes específicos para móviles pequeños */
 @media (max-width: 375px) {
   .scanner-reticle {
-    width: 80%;
-    height: 35%;
+    width: 85%;
+    height: 25%;
   }
 
   .scanned-item {

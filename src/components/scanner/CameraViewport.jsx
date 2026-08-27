@@ -257,7 +257,7 @@ const ScannerReticle = ({ isScanning, isConfirming }) => {
         {isConfirming
           ? 'Guardando carrito temporal...'
           : isScanning
-            ? 'Centra el codigo aqui'
+            ? 'Centra el código de barras'
             : 'Procesando...'}
       </div>
     </div>
