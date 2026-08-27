@@ -46,7 +46,7 @@
     "@react-oauth/google": "^0.13.5",
     "@supabase/supabase-js": "^2.87.1",
     "@vercel/og": "^0.11.1",
-    "@zxing/library": "^0.21.3",
+    "@zxing/library": "^0.22.0",
     "big.js": "^7.0.1",
     "dexie": "^4.3.0",
     "dexie-export-import": "^4.4.0",
