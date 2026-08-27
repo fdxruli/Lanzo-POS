@@ -320,9 +320,18 @@ export const createLicenseActivationActions = ({
 
             return {
                 success: false,
-                message: result.error || 'No se pudo crear la licencia Lanzo Local.'
+                ...(result.code ? { code: result.code } : {}),
+                message: result.message || result.error || 'No se pudo crear la licencia Lanzo Local.'
             };
         } catch (error) {
+            if (isBrowserStorageUnavailableError(error)) {
+                return {
+                    success: false,
+                    code: error.code,
+                    message: error.message
+                };
+            }
+
             if (isLocalTenantAccessError(error)) {
                 enterLocalTenantIsolationFailure(set, error);
                 return {

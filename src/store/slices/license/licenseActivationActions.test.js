@@ -254,4 +254,19 @@ describe('createLicenseActivationActions.handleLogin', () => {
         });
         expect(state._loadProfile).not.toHaveBeenCalled();
     });
+
+    it('preserves a typed browser-storage failure from free-license creation', async () => {
+        const { state } = createActionState();
+        const error = new Error('No se pudo abrir el almacenamiento local del navegador.');
+        error.name = 'BrowserStorageUnavailableError';
+        error.code = 'DB_BROWSER_STORAGE_UNAVAILABLE';
+        mocks.createFreeTrial.mockRejectedValueOnce(error);
+
+        await expect(state.handleFreeTrial()).resolves.toEqual({
+            success: false,
+            code: 'DB_BROWSER_STORAGE_UNAVAILABLE',
+            message: 'No se pudo abrir el almacenamiento local del navegador.'
+        });
+        expect(mocks.saveLicenseToStorage).not.toHaveBeenCalled();
+    });
 });

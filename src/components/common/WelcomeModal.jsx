@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
-import { getStableDeviceId } from '../../services/supabase';
 import { showMessageModal } from '../../services/utils';
 import { buildSupportMailtoUrl, copyTextToClipboard, getSupportEmail } from '../../services/support/supportContact';
 
@@ -40,18 +39,6 @@ export default function WelcomeModal() {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
-    const prewarmIdentity = async () => {
-      if (!navigator.onLine) return;
-      try {
-        await getStableDeviceId();
-        Logger.info("Identificador de dispositivo pre-cargado");
-      } catch (error) {
-        Logger.error("Error al pre-cargar identificador:", error);
-      }
-    };
-
-    prewarmIdentity();
 
     return () => {
       window.removeEventListener('online', handleOnline);
