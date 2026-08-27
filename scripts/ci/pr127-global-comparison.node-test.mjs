@@ -6,12 +6,13 @@ import {
   compareFullReports,
   deriveSemanticFailureFromLog,
   isOpaqueFailureSignature,
+  normalizeErrorSignature,
 } from './pr127-global-comparison.mjs';
 
-const report = (message, status = 'failed') => ({
+const report = (message, status = 'failed', { name = '/home/runner/work/Lanzo-POS/pr/src/example.test.jsx', fullName = 'example assertion' } = {}) => ({
   testResults: [{
-    name: '/home/runner/work/Lanzo-POS/pr/src/example.test.jsx',
-    assertionResults: [{ status, fullName: 'example assertion', failureMessages: [message] }],
+    name,
+    assertionResults: [{ status, fullName, failureMessages: [message] }],
   }],
 });
 const assertion = report('AssertionError: expected 1 to be 2\n    at C:\\work\\pr\\src\\example.test.jsx:10:3');
@@ -85,6 +86,48 @@ test('does not collapse meaningful assertion and timeout errors', () => {
 test('does not collapse ENOENT and assertion errors', () => {
   const comparison = compareFullReports(assertion, report('ENOENT: no such file or directory, open /tmp/file'));
   assert.equal(comparison.rawCandidateOnlyFailures.length, 1);
+  assert.equal(comparison.candidateFailures[0].errorClass, 'AssertionError');
+  assert.equal(comparison.baseFailures[0].errorClass, 'ENOENT');
+});
+
+test('normalizes volatile Promise.all stack indices without changing failure identity', () => {
+  const comparison = compareFullReports(
+    report('ENOENT: no such file or directory, open /tmp/file\n    at Promise.all (index 0)'),
+    report('ENOENT: no such file or directory, open /tmp/file\n    at Promise.all (index 1)'),
+  );
+  assert.equal(comparison.rawCandidateOnlyFailures.length, 0);
+  assert.equal(comparison.sharedFailures.length, 1);
+});
+
+test('preserves genuinely different assertion messages', () => {
+  const comparison = compareFullReports(
+    report('AssertionError: expected 1 to be 2\n    at Promise.all (index 0)'),
+    report('AssertionError: expected 1 to be 3\n    at Promise.all (index 1)'),
+  );
+  assert.equal(comparison.rawCandidateOnlyFailures.length, 1);
+  assert.equal(comparison.rawCandidateOnlyFailures[0].signature.includes('expected 1 to be 2'), true);
+});
+
+test('preserves different test and file identities', () => {
+  const fileComparison = compareFullReports(
+    report('AssertionError: expected 1 to be 2', 'failed', { name: '/home/runner/work/Lanzo-POS/pr/src/first.test.jsx' }),
+    report('AssertionError: expected 1 to be 2', 'failed', { name: '/home/runner/work/Lanzo-POS/main/src/second.test.jsx' }),
+  );
+  assert.equal(fileComparison.rawCandidateOnlyFailures.length, 1);
+
+  const testComparison = compareFullReports(
+    report('AssertionError: expected 1 to be 2', 'failed', { fullName: 'first assertion' }),
+    report('AssertionError: expected 1 to be 2', 'failed', { fullName: 'second assertion' }),
+  );
+  assert.equal(testComparison.rawCandidateOnlyFailures.length, 1);
+});
+
+test('preserves existing path and line/column normalization', () => {
+  assert.equal(
+    normalizeErrorSignature('Error at C:\\work\\pr\\src\\example.test.jsx:10:3'),
+    normalizeErrorSignature('Error at /home/runner/work/Lanzo-POS/pr/src/example.test.jsx:42:9'),
+  );
+  assert.equal(normalizeErrorSignature('Error at helper:10:3'), 'Error at helper:<line>:<column>');
 });
 
 test('an empty candidate-only set needs no focused semantic parsing', () => {

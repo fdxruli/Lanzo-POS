@@ -61,6 +61,7 @@ export function normalizeErrorSignature(message) {
     .replace(/\b\d+(?:\.\d+)?(?:ms|s)\b/gi, '<duration>')
     .replace(/\b(?:20\d{2}-\d{2}-\d{2}[T ][^\s]+|\d{2}:\d{2}:\d{2}\.\d{3})\b/g, '<timestamp>')
     .replace(/\b(?:tmp|vitest)-[A-Za-z0-9_-]+\b/g, '<temp>')
+    .replace(/Promise\.all \(index \d+\)/g, 'Promise.all (index <index>)')
     .replace(/\s+/g, ' ')
     .trim();
 }
