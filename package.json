@@ -3,6 +3,9 @@
   "private": true,
   "version": "4.0.0",
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "vite",
     "dev:store": "vite --config vite.store.config.js",

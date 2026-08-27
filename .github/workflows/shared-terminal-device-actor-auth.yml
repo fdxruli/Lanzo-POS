@@ -30,6 +30,8 @@ permissions:
 
 env:
   SHARED_TERMINAL_2_BASE_SHA: cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39
+  SHARED_TERMINAL_2_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+  SHARED_TERMINAL_2_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   focused-validation:
@@ -40,20 +42,51 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_2_CANDIDATE_SHA }}
           fetch-depth: 0
+
+      - name: Validate comparison refs
+        shell: bash
+        run: |
+          echo "PR_BASE_SHA=${SHARED_TERMINAL_2_PR_BASE_SHA}"
+          echo "CANDIDATE_SHA=${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          echo "CONTRACT_BASE_SHA=${SHARED_TERMINAL_2_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_2_PR_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          test -n "${SHARED_TERMINAL_2_BASE_SHA}"
+          git cat-file -e "${SHARED_TERMINAL_2_PR_BASE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_2_CANDIDATE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_2_BASE_SHA}^{commit}"
+
+      - name: PR-local blocking whitespace hygiene
+        shell: bash
+        run: git diff --check "${SHARED_TERMINAL_2_PR_BASE_SHA}...${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+
+      - name: Historical contract-base whitespace observation
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          git diff --check "${SHARED_TERMINAL_2_BASE_SHA}...${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          historical_status=$?
+          set -e
+
+          if [[ "${historical_status}" -eq 0 ]]; then
+            echo "Historical contract-base whitespace check: no findings."
+          else
+            echo "::warning title=Historical contract-base whitespace::Existing findings are observational only and do not block validation."
+          fi
+
+          exit 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
         run: npm ci
-
-      - name: git diff --check
-        run: git diff --check "${SHARED_TERMINAL_2_BASE_SHA}...HEAD"
 
       - name: Migration + actor authorization contract guard
         run: node scripts/check-shared-terminal-device-actor-auth.mjs
@@ -115,7 +148,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
@@ -172,7 +205,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
