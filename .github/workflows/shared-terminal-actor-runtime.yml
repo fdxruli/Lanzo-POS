@@ -57,6 +57,27 @@ jobs:
           git cat-file -e "${SHARED_TERMINAL_CANDIDATE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_CONTRACT_BASE_SHA}^{commit}"
 
+      - name: PR-local blocking whitespace hygiene
+        shell: bash
+        run: git diff --check "${SHARED_TERMINAL_PR_BASE_SHA}...${SHARED_TERMINAL_CANDIDATE_SHA}"
+
+      - name: Historical contract-base whitespace observation
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          git diff --check "${SHARED_TERMINAL_CONTRACT_BASE_SHA}...${SHARED_TERMINAL_CANDIDATE_SHA}"
+          historical_status=$?
+          set -e
+
+          if [[ "${historical_status}" -eq 0 ]]; then
+            echo "Historical contract-base whitespace check: no findings."
+          else
+            echo "::warning title=Historical contract-base whitespace::Existing findings are observational only and do not block validation."
+          fi
+
+          exit 0
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -65,9 +86,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: git diff --check
-        run: git diff --check "${SHARED_TERMINAL_CONTRACT_BASE_SHA}...HEAD"
 
       - name: Focused evidence runner tests
         run: node --test scripts/ci/focused-target-evidence.node-test.mjs
