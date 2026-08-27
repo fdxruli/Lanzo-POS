@@ -145,8 +145,8 @@ class StorageManagerService {
         }
 
         this._setPersistenceState(StorageState.DENIED);
-        Logger.warn(
-          '[StorageManager] Persistencia no concedida. IndexedDB puede seguir funcionando en modo best-effort; esto no bloquea login ni bootstrap.'
+        Logger.info(
+          '[StorageManager] Persistencia no concedida; IndexedDB continuará en modo best-effort. El navegador puede administrar o liberar estos datos según su política de almacenamiento.'
         );
         return false;
       } catch (error) {

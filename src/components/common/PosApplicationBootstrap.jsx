@@ -34,13 +34,16 @@ const useDatabaseRecoveryState = () => useSyncExternalStore(
   getDatabaseRecoveryState
 );
 
-const runStorageManagerBestEffort = (storageManager) => {
+export const runStorageManagerBestEffort = (storageManager) => {
   if (!storageManager?.initialize) return;
 
   Promise.resolve(storageManager.initialize())
     .then((conditions) => {
       if (conditions?.isVolatile) {
-        Logger.warn('[Boot] Almacenamiento en modo best-effort.', {
+        const isExpectedBestEffort = conditions.persistenceState === 'denied'
+          && conditions.canStart !== false;
+        const log = isExpectedBestEffort ? Logger.info : Logger.warn;
+        log('[Boot] Almacenamiento local en modo best-effort.', {
           persistenceState: conditions.persistenceState,
           recommendation: conditions.recommendation || []
         });
