@@ -1,5 +1,5 @@
 // src/components/common/DeviceManager.jsx
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './DeviceManager.css';
 import { getLicenseDevicesSmart, deactivateDeviceSmart } from '../../services/licenseService';
 import { setDeviceModeSmart } from '../../services/deviceModeService';
@@ -26,6 +26,7 @@ export default function DeviceManager({ licenseKey }) {
   const [isOfflineData, setIsOfflineData] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [modeUpdatingDeviceId, setModeUpdatingDeviceId] = useState(null);
+  const modeMutationLockRef = useRef(null);
 
   const fetchDevices = useCallback(async (silent = false) => {
     if (!licenseKey) return;
@@ -99,6 +100,9 @@ export default function DeviceManager({ licenseKey }) {
       return;
     }
 
+    if (modeMutationLockRef.current) return;
+    modeMutationLockRef.current = device.device_id;
+
     const isCurrentDevice = Boolean(device.is_current_device);
     const nextLabel = getDeviceModeLabel(nextMode);
     const currentLabel = getDeviceModeLabel(currentMode);
@@ -106,7 +110,8 @@ export default function DeviceManager({ licenseKey }) {
       ? '\n\nEste es el dispositivo actual. Al dejarlo como Solo Staff, la sesion Admin actual se cerrara y deberas iniciar sesion Staff.'
       : '';
 
-    if (!(await showConfirmModal(
+    try {
+      if (!(await showConfirmModal(
       `Cambiar ${device.device_name || 'este dispositivo'} de ${currentLabel} a ${nextLabel}?${sessionWarning}`,
       {
         title: 'Cambiar modo del dispositivo',
@@ -115,7 +120,6 @@ export default function DeviceManager({ licenseKey }) {
       }
     ))) return;
 
-    try {
       actorHandle.assertCurrent('devices');
       setModeUpdatingDeviceId(device.device_id);
       const result = await setDeviceModeSmart(device.device_id, nextMode, licenseKey);
@@ -146,6 +150,9 @@ export default function DeviceManager({ licenseKey }) {
         // The actor changed while the request was pending.
       }
     } finally {
+      if (modeMutationLockRef.current === device.device_id) {
+        modeMutationLockRef.current = null;
+      }
       try {
         actorHandle.assertCurrent('devices');
         setModeUpdatingDeviceId(null);
@@ -156,6 +163,7 @@ export default function DeviceManager({ licenseKey }) {
   };
 
   const handleRelease = async (device) => {
+    if (modeMutationLockRef.current === device.device_id) return;
     let actorHandle;
     try {
       actorHandle = captureSettingsAction('devices', { adminOnly: true });
