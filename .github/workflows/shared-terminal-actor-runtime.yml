@@ -81,7 +81,11 @@ jobs:
           echo "MANUAL_BASE_SHA=N/A"
           echo "MANUAL_CANDIDATE_SHA=${SHARED_TERMINAL_CANDIDATE_SHA}"
           echo "WHITESPACE_GATE_MODE=NOT_APPLICABLE"
+          echo "FULL_SUITE_BASE_MODE=NOT_APPLICABLE"
+          echo "FULL_SUITE_CANDIDATE_MODE=NOT_APPLICABLE"
+          echo "BASE_CANDIDATE_DIFFERENTIAL_MODE=NOT_APPLICABLE"
           echo "PR-local blocking whitespace hygiene is not applicable without pull_request attribution."
+          echo "Full-suite regression attribution requires BASE/CANDIDATE evidence and is not applicable to current-state manual diagnostics."
 
       - name: Historical contract-base whitespace observation
         if: always()
@@ -235,6 +239,7 @@ jobs:
 
   full-suite-candidate:
     name: Full suite CANDIDATE repeated (observational)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
