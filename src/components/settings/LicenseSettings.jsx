@@ -533,9 +533,31 @@ export default function LicenseSettings() {
         ? activeSection
         : internalSections[0]?.key || 'summary';
 
+    const licenseIdentity = licenseDetails?.license_key || '';
+    const actorIdentity = settingsAccess.actorKey
+        || `${settingsAccess.actorType || 'unknown'}:${settingsAccess.actorId || 'unknown'}`;
+    const staffContextKey = `${licenseIdentity}:${actorIdentity}:${settingsAccess.generation ?? 'unknown'}`;
+    const [visitedStaffContextKey, setVisitedStaffContextKey] = useState(null);
+    const staffPanelAuthorized = Boolean(canManageStaff && licenseDetails?.valid && licenseIdentity);
+    const hasVisitedStaff = visitedStaffContextKey === staffContextKey;
+    const shouldRenderStaffPanel = staffPanelAuthorized && (
+        effectiveActiveSection === 'staff' || hasVisitedStaff
+    );
+
     useEffect(() => {
         if (!activeSectionIsValid) setActiveSection(effectiveActiveSection);
     }, [activeSectionIsValid, effectiveActiveSection]);
+
+    useEffect(() => {
+        if (!staffPanelAuthorized) {
+            setVisitedStaffContextKey(null);
+            return;
+        }
+
+        if (effectiveActiveSection === 'staff') {
+            setVisitedStaffContextKey(staffContextKey);
+        }
+    }, [effectiveActiveSection, staffContextKey, staffPanelAuthorized]);
 
     const handleRubroToggle = async (rubroId) => {
         let actorHandle;
@@ -747,16 +769,20 @@ export default function LicenseSettings() {
                 </div>
             )}
 
-            {effectiveActiveSection === 'staff' && canManageStaff && licenseDetails?.valid && (
+            {shouldRenderStaffPanel && (
                 <div
                     id="license-panel-staff"
                     className="license-section-panel"
                     role="tabpanel"
                     aria-labelledby="license-tab-staff"
                     tabIndex="0"
+                    hidden={effectiveActiveSection !== 'staff'}
                 >
                     <section className="license-panel license-staff-panel">
-                        <StaffUsersSettings licenseKey={licenseDetails.license_key} />
+                        <StaffUsersSettings
+                            key={staffContextKey}
+                            licenseKey={licenseDetails.license_key}
+                        />
                     </section>
                 </div>
             )}

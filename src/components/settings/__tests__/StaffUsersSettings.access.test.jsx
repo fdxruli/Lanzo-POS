@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -44,6 +45,50 @@ const existingUser = {
   }
 };
 
+const createDeferred = () => {
+  let resolve;
+  const promise = new Promise((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+};
+
+const createdUser = {
+  id: 'staff-2',
+  username: 'nuevo',
+  display_name: 'Nuevo Staff',
+  role_name: 'cashier',
+  is_active: true,
+  last_login_at: null,
+  permissions: {
+    pos: true,
+    cash_register: true
+  }
+};
+
+const canonicalUpdatedUser = {
+  id: existingUser.id,
+  username: existingUser.username,
+  display_name: 'Ana Actualizada',
+  role_name: 'cashier',
+  permissions: {
+    ...existingUser.permissions,
+    reports: true
+  },
+  is_active: true,
+  updated_at: '2026-08-27T00:00:00.000Z'
+};
+
+const canonicalDeactivatedUser = {
+  id: existingUser.id,
+  username: existingUser.username,
+  display_name: existingUser.display_name,
+  role_name: existingUser.role_name,
+  permissions: existingUser.permissions,
+  is_active: false,
+  updated_at: '2026-08-27T00:00:00.000Z'
+};
+
 describe('StaffUsersSettings list-first administration', () => {
   afterEach(cleanup);
 
@@ -68,6 +113,148 @@ describe('StaffUsersSettings list-first administration', () => {
     expect(screen.getByText('Activo')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Editar' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Desactivar/ })).toBeInTheDocument();
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves loaded rows during an explicit refresh and performs one list call', async () => {
+    const refresh = createDeferred();
+    mocks.listStaffUsersService.mockReset();
+    mocks.listStaffUsersService
+      .mockResolvedValueOnce({ success: true, data: [existingUser] })
+      .mockReturnValueOnce(refresh.promise);
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Ana Garcia')).toBeInTheDocument();
+    expect(screen.queryByText('Cargando usuarios staff...')).not.toBeInTheDocument();
+
+    refresh.resolve({ success: true, data: [existingUser] });
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+  });
+
+  it('deduplicates the initial list request under StrictMode effect replay', async () => {
+    render(
+      <StrictMode>
+        <StaffUsersSettings licenseKey="LIC-1" />
+      </StrictMode>
+    );
+
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+  });
+
+  it('upserts a canonical created Staff row without reconciliation', async () => {
+    mocks.createStaffUserService.mockResolvedValue({ success: true, staff_user: createdUser });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
+
+    fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'nuevo' } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nuevo Staff' } });
+    fireEvent.change(screen.getByLabelText('Contrasena temporal'), { target: { value: 'secret1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear staff' }));
+
+    await waitFor(() => expect(screen.getByText('Nuevo Staff')).toBeInTheDocument());
+    expect(mocks.createStaffUserService).toHaveBeenCalledTimes(1);
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+  });
+
+  it('upserts a canonical edited Staff row without reconciliation', async () => {
+    mocks.updateStaffUserService.mockResolvedValue({ success: true, staff_user: canonicalUpdatedUser });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    const originalLastLogin = screen.getByText(/Ultimo login:/).textContent;
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ana Actualizada' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    await waitFor(() => expect(screen.getByText('Ana Actualizada')).toBeInTheDocument());
+    expect(screen.getByText(originalLastLogin)).toBeInTheDocument();
+    expect(screen.queryByText('Ultimo login: Sin login')).not.toBeInTheDocument();
+    expect(mocks.updateStaffUserService).toHaveBeenCalledTimes(1);
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+  });
+
+  it('upserts canonical activation changes without reconciliation', async () => {
+    mocks.updateStaffUserService.mockResolvedValue({ success: true, staff_user: canonicalDeactivatedUser });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    const originalLastLogin = screen.getByText(/Ultimo login:/).textContent;
+    fireEvent.click(screen.getByRole('button', { name: /Desactivar/ }));
+
+    await waitFor(() => expect(screen.getByText('Inactivo')).toBeInTheDocument());
+    expect(screen.getByText(originalLastLogin)).toBeInTheDocument();
+    expect(screen.queryByText('Ultimo login: Sin login')).not.toBeInTheDocument();
+    expect(mocks.updateStaffUserService).toHaveBeenCalledTimes(1);
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an explicit canonical null replace a previously known field', async () => {
+    mocks.updateStaffUserService.mockResolvedValue({
+      success: true,
+      staff_user: {
+        ...canonicalUpdatedUser,
+        last_login_at: null
+      }
+    });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Ana Actualizada' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    await waitFor(() => expect(screen.getByText('Ultimo login: Sin login')).toBeInTheDocument());
+    expect(mocks.updateStaffUserService).toHaveBeenCalledTimes(1);
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+  });
+
+  it('performs exactly one reconciliation when a successful mutation lacks a canonical row', async () => {
+    mocks.listStaffUsersService.mockReset();
+    mocks.listStaffUsersService
+      .mockResolvedValueOnce({ success: true, data: [existingUser] })
+      .mockResolvedValueOnce({ success: true, data: [existingUser, createdUser] });
+    mocks.createStaffUserService.mockResolvedValue({ success: true, staff_user: null });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
+    fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'nuevo' } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nuevo Staff' } });
+    fireEvent.change(screen.getByLabelText('Contrasena temporal'), { target: { value: 'secret1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear staff' }));
+
+    await waitFor(() => expect(screen.getByText('Nuevo Staff')).toBeInTheDocument());
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an older list response overwrite a newer canonical mutation', async () => {
+    const initialList = createDeferred();
+    mocks.listStaffUsersService.mockReset();
+    mocks.listStaffUsersService.mockReturnValueOnce(initialList.promise);
+    mocks.createStaffUserService.mockResolvedValue({ success: true, staff_user: createdUser });
+
+    render(<StaffUsersSettings licenseKey="LIC-1" />);
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
+    fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'nuevo' } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Nuevo Staff' } });
+    fireEvent.change(screen.getByLabelText('Contrasena temporal'), { target: { value: 'secret1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Crear staff' }));
+
+    await waitFor(() => expect(screen.getByText('Nuevo Staff')).toBeInTheDocument());
+    initialList.resolve({ success: true, data: [existingUser] });
+
+    await waitFor(() => expect(screen.getByText('Nuevo Staff')).toBeInTheDocument());
+    expect(mocks.listStaffUsersService).toHaveBeenCalledTimes(1);
   });
 
   it('opens the create form on demand in an accessible canonical modal', async () => {

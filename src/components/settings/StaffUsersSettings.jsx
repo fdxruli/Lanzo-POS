@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, RefreshCw, Save, UserCheck, UserX, X } from 'lucide-react';
 import {
   createStaffUserService,
@@ -162,6 +162,29 @@ const normalizePermissions = (permissions = {}) => {
   return normalized;
 };
 
+const hasStableStaffUserId = (staffUser) => (
+  staffUser
+  && (typeof staffUser.id === 'string' || typeof staffUser.id === 'number')
+  && String(staffUser.id).trim().length > 0
+);
+
+const upsertStaffUser = (currentUsers, canonicalStaffUser) => {
+  if (!hasStableStaffUserId(canonicalStaffUser)) return currentUsers;
+
+  const canonicalId = String(canonicalStaffUser.id);
+  const existingIndex = currentUsers.findIndex((staffUser) => (
+    hasStableStaffUserId(staffUser) && String(staffUser.id) === canonicalId
+  ));
+
+  if (existingIndex === -1) return [...currentUsers, canonicalStaffUser];
+
+  return currentUsers.map((staffUser, index) => (
+    index === existingIndex
+      ? { ...staffUser, ...canonicalStaffUser }
+      : staffUser
+  ));
+};
+
 const createEmptyForm = () => ({
   username: '',
   display_name: '',
@@ -179,24 +202,97 @@ export default function StaffUsersSettings({ licenseKey }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const mountedRef = useRef(true);
+  const listRequestSequenceRef = useRef(0);
+  const mutationVersionRef = useRef(0);
+  const inFlightListRef = useRef(null);
+  const contextGenerationRef = useRef(0);
+  const licenseKeyRef = useRef(licenseKey);
+
+  if (licenseKeyRef.current !== licenseKey) {
+    licenseKeyRef.current = licenseKey;
+    contextGenerationRef.current += 1;
+    listRequestSequenceRef.current += 1;
+    mutationVersionRef.current += 1;
+    inFlightListRef.current = null;
+  }
 
   const permissionGroups = useMemo(() => PERMISSION_GROUPS, []);
 
-  const loadStaffUsers = useCallback(async () => {
-    if (!licenseKey) return;
+  const loadStaffUsers = useCallback(async ({ force = false } = {}) => {
+    if (!licenseKey) return null;
+    if (inFlightListRef.current && !force) return inFlightListRef.current;
+
+    const requestId = ++listRequestSequenceRef.current;
+    const requestContextGeneration = contextGenerationRef.current;
+    const requestMutationVersion = mutationVersionRef.current;
 
     setIsLoading(true);
     setErrorMessage('');
 
-    const result = await listStaffUsersService(licenseKey);
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && licenseKeyRef.current === licenseKey
+      && contextGenerationRef.current === requestContextGeneration
+      && listRequestSequenceRef.current === requestId
+      && mutationVersionRef.current === requestMutationVersion
+    );
 
-    if (result.success) {
-      setStaffUsers(result.data || []);
-    } else {
-      setErrorMessage(result.message || 'No se pudieron cargar usuarios staff.');
-    }
+    const request = (async () => {
+      try {
+        const result = await listStaffUsersService(licenseKey);
 
+        if (isCurrentRequest()) {
+          setHasLoaded(true);
+          if (result.success) {
+            setStaffUsers(Array.isArray(result.data) ? result.data : []);
+          } else {
+            setErrorMessage(result.message || 'No se pudieron cargar usuarios staff.');
+          }
+        }
+
+        return result;
+      } catch (error) {
+        if (isCurrentRequest()) {
+          setHasLoaded(true);
+          setErrorMessage(error?.message || 'No se pudieron cargar usuarios staff.');
+        }
+        throw error;
+      } finally {
+        if (
+          mountedRef.current
+          && licenseKeyRef.current === licenseKey
+          && contextGenerationRef.current === requestContextGeneration
+          && listRequestSequenceRef.current === requestId
+        ) {
+          setIsLoading(false);
+          inFlightListRef.current = null;
+        }
+      }
+    })();
+
+    inFlightListRef.current = request;
+    return request;
+  }, [licenseKey]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setStaffUsers([]);
+    setHasLoaded(false);
     setIsLoading(false);
+    setErrorMessage('');
+    setIsFormOpen(false);
+    setEditing(null);
+    setForm(createEmptyForm());
+    setOpenPermissionGroups({});
   }, [licenseKey]);
 
   useEffect(() => {
@@ -295,11 +391,32 @@ export default function StaffUsersSettings({ licenseKey }) {
     return () => document.removeEventListener('keydown', handleEscape);
   }, [dismissForm, isFormOpen, isSaving]);
 
+  const commitSuccessfulMutation = async (result, mutationContextGeneration, mutationLicenseKey) => {
+    const isCurrentContext = () => (
+      mountedRef.current
+      && licenseKeyRef.current === mutationLicenseKey
+      && contextGenerationRef.current === mutationContextGeneration
+    );
+
+    if (!isCurrentContext()) return;
+
+    mutationVersionRef.current += 1;
+    if (hasStableStaffUserId(result?.staff_user)) {
+      setStaffUsers((currentUsers) => upsertStaffUser(currentUsers, result.staff_user));
+      setErrorMessage('');
+      return;
+    }
+
+    await loadStaffUsers({ force: true });
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (isSaving) return;
     setIsSaving(true);
     setErrorMessage('');
+    const mutationContextGeneration = contextGenerationRef.current;
+    const mutationLicenseKey = licenseKey;
 
     const payload = {
       username: form.username.trim(),
@@ -319,18 +436,34 @@ export default function StaffUsersSettings({ licenseKey }) {
       })
       : await createStaffUserService(licenseKey, payload);
 
-    if (result.success) {
-      showMessageModal(editing ? 'Usuario staff actualizado.' : 'Usuario staff creado.', null, { type: 'success' });
-      dismissForm();
-      await loadStaffUsers();
-    } else {
-      setErrorMessage(result.message || 'No se pudo guardar usuario staff.');
-    }
+    try {
+      if (
+        !mountedRef.current
+        || licenseKeyRef.current !== mutationLicenseKey
+        || contextGenerationRef.current !== mutationContextGeneration
+      ) return;
 
-    setIsSaving(false);
+      if (result.success) {
+        showMessageModal(editing ? 'Usuario staff actualizado.' : 'Usuario staff creado.', null, { type: 'success' });
+        dismissForm();
+        await commitSuccessfulMutation(result, mutationContextGeneration, mutationLicenseKey);
+      } else {
+        setErrorMessage(result.message || 'No se pudo guardar usuario staff.');
+      }
+    } finally {
+      if (
+        mountedRef.current
+        && licenseKeyRef.current === mutationLicenseKey
+        && contextGenerationRef.current === mutationContextGeneration
+      ) {
+        setIsSaving(false);
+      }
+    }
   };
 
   const toggleActive = async (staffUser) => {
+    const mutationContextGeneration = contextGenerationRef.current;
+    const mutationLicenseKey = licenseKey;
     const result = await updateStaffUserService(licenseKey, staffUser.id, {
       display_name: staffUser.display_name,
       role_name: staffUser.role_name || 'staff',
@@ -339,12 +472,20 @@ export default function StaffUsersSettings({ licenseKey }) {
       new_password: null
     });
 
+    if (
+      !mountedRef.current
+      || licenseKeyRef.current !== mutationLicenseKey
+      || contextGenerationRef.current !== mutationContextGeneration
+    ) return;
+
     if (result.success) {
-      await loadStaffUsers();
+      await commitSuccessfulMutation(result, mutationContextGeneration, mutationLicenseKey);
     } else {
       showMessageModal(result.message || 'No se pudo actualizar estado staff.', null, { type: 'error' });
     }
   };
+
+  const isInitialLoading = isLoading && !hasLoaded && staffUsers.length === 0;
 
   return (
     <section className="staff-users-section" aria-labelledby="staff-users-title">
@@ -355,7 +496,13 @@ export default function StaffUsersSettings({ licenseKey }) {
         </div>
         <div className="staff-users-header-actions">
           <span className="staff-users-count" aria-live="polite">{staffUsers.length} usuarios</span>
-          <button type="button" className="btn btn-cancel" onClick={loadStaffUsers} disabled={isLoading}>
+          <button
+            type="button"
+            className="btn btn-cancel"
+            onClick={loadStaffUsers}
+            disabled={isLoading}
+            aria-busy={isLoading}
+          >
             <RefreshCw size={16} aria-hidden="true" />
             Actualizar
           </button>
@@ -373,7 +520,7 @@ export default function StaffUsersSettings({ licenseKey }) {
       )}
 
       <div className="staff-users-list">
-        {isLoading ? (
+        {isInitialLoading ? (
           <p className="form-help-text">Cargando usuarios staff...</p>
         ) : staffUsers.length === 0 ? (
           <p className="form-help-text">Aun no hay usuarios staff.</p>

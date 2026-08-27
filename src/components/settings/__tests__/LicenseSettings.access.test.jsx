@@ -2,11 +2,14 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEffect } from 'react';
 
 const state = vi.hoisted(() => ({
   access: null,
   app: null,
-  staffSettingsRender: vi.fn()
+  staffSettingsRender: vi.fn(),
+  staffSettingsMount: vi.fn(),
+  staffSettingsUnmount: vi.fn()
 }));
 
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
@@ -18,12 +21,18 @@ vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(state.app))
 }));
 
-vi.mock('../StaffUsersSettings', () => ({
-  default: ({ licenseKey }) => {
+vi.mock('../StaffUsersSettings', () => {
+  function MockStaffUsersSettings({ licenseKey }) {
     state.staffSettingsRender(licenseKey);
+    useEffect(() => {
+      state.staffSettingsMount(licenseKey);
+      return () => state.staffSettingsUnmount(licenseKey);
+    }, [licenseKey]);
     return <div>Administracion de Staff</div>;
   }
-}));
+
+  return { default: MockStaffUsersSettings };
+});
 
 vi.mock('../../../services/utils', () => ({
   showConfirmModal: vi.fn(),
@@ -151,5 +160,87 @@ describe('LicenseSettings sibling isolation', () => {
     expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Resumen' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('tab', { name: 'Equipo' })).not.toBeInTheDocument();
+  });
+
+  it('mounts Staff lazily and keeps the same panel alive across tab changes', () => {
+    state.app.currentStaffUser = null;
+    state.access = {
+      isAdmin: true,
+      isStaff: false,
+      actorKey: 'admin:1',
+      generation: 1,
+      canAccessSection: (section) => section === 'license',
+      canAccessPermission: () => true
+    };
+
+    render(<LicenseSettings />);
+
+    expect(state.staffSettingsMount).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
+    expect(state.staffSettingsMount).toHaveBeenCalledTimes(1);
+    const staffPanel = document.getElementById('license-panel-staff');
+    expect(staffPanel).not.toHaveAttribute('hidden');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Rubros' }));
+    expect(state.staffSettingsUnmount).not.toHaveBeenCalled();
+    expect(staffPanel).toHaveAttribute('hidden');
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
+    expect(state.staffSettingsMount).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('license-panel-staff')).toBe(staffPanel);
+    expect(staffPanel).not.toHaveAttribute('hidden');
+  });
+
+  it('resets the retained Staff instance when the Admin actor changes', () => {
+    state.app.currentStaffUser = null;
+    state.access = {
+      isAdmin: true,
+      isStaff: false,
+      actorKey: 'admin:1',
+      generation: 1,
+      canAccessSection: (section) => section === 'license',
+      canAccessPermission: () => true
+    };
+
+    const view = render(<LicenseSettings />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
+    expect(state.staffSettingsMount).toHaveBeenCalledTimes(1);
+
+    state.access = {
+      ...state.access,
+      actorKey: 'admin:2',
+      generation: 2
+    };
+    view.rerender(<LicenseSettings />);
+
+    expect(state.staffSettingsUnmount).toHaveBeenCalledWith('LIC-1');
+    expect(state.staffSettingsMount).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not carry Staff state into a different license identity', () => {
+    state.app.currentStaffUser = null;
+    state.access = {
+      isAdmin: true,
+      isStaff: false,
+      actorKey: 'admin:1',
+      generation: 1,
+      canAccessSection: (section) => section === 'license',
+      canAccessPermission: () => true
+    };
+
+    const view = render(<LicenseSettings />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
+    expect(state.staffSettingsMount).toHaveBeenCalledWith('LIC-1');
+
+    state.app.licenseDetails = {
+      ...state.app.licenseDetails,
+      license_key: 'LIC-2'
+    };
+    view.rerender(<LicenseSettings />);
+
+    expect(state.staffSettingsUnmount).toHaveBeenCalledWith('LIC-1');
+    expect(state.staffSettingsMount).toHaveBeenCalledWith('LIC-2');
+    expect(state.staffSettingsMount).toHaveBeenCalledTimes(2);
   });
 });
