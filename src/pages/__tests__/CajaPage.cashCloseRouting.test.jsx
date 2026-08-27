@@ -79,7 +79,8 @@ vi.mock('../../components/caja/sections', () => ({
   ) : null,
   CajaOpeningPanel: () => null,
   CajaLegacyCashTransition: () => null,
-  FinancialDiagnosticsPanel: () => null
+  FinancialDiagnosticsPanel: () => null,
+  CajaSectionTabs: () => null
 }));
 
 import CajaPage, { isCashSessionOwnedByActor } from '../CajaPage';

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import CajaHistoryList from '../CajaHistoryList';
 
@@ -40,5 +40,18 @@ describe('CajaHistoryList', () => {
 
     expect(screen.getByText('Cuadrada')).toBeVisible();
     expect(screen.getByText('Cierre: $0.00')).toBeVisible();
+  });
+
+  it('keeps technical history traceability behind Detalles', () => {
+    render(<CajaHistoryList historial={[{
+      ...baseSession,
+      staffUserId: 'staff-123456789',
+      actorKey: 'staff:traceable'
+    }]} />);
+
+    expect(screen.getByText('Actor: staff:traceable')).not.toBeVisible();
+    fireEvent.click(screen.getByText('Detalles'));
+    expect(screen.getByText('Actor: staff:traceable')).toBeVisible();
+    expect(screen.getByText('Staff ID: staff-12')).toBeVisible();
   });
 });

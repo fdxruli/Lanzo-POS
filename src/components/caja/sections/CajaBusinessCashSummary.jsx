@@ -51,14 +51,16 @@ const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null, on
         <span><small>Cajas staff</small><strong>{formatMoney(summary.staffTotal)}</strong></span>
       </div>
 
-      <div className="business-cash-components" aria-label="Componentes del efectivo teórico">
-        <span>Fondo inicial <strong>{formatMoney(summary.openingTotal)}</strong></span>
-        <span>Ventas efectivo <strong>{formatMoney(summary.cashSalesTotal)}</strong></span>
-        <span>Abonos <strong>{formatMoney(summary.customerPaymentsTotal)}</strong></span>
-        <span>Entradas <strong>{formatMoney(summary.entriesTotal)}</strong></span>
-        <span>Salidas <strong>- {formatMoney(summary.exitsTotal)}</strong></span>
-      </div>
-
+      <details className="caja-disclosure business-cash-components-disclosure">
+        <summary>Ver composición del efectivo</summary>
+        <div className="business-cash-components" aria-label="Componentes del efectivo teórico">
+          <span>Fondo inicial <strong>{formatMoney(summary.openingTotal)}</strong></span>
+          <span>Ventas efectivo <strong>{formatMoney(summary.cashSalesTotal)}</strong></span>
+          <span>Abonos <strong>{formatMoney(summary.customerPaymentsTotal)}</strong></span>
+          <span>Entradas <strong>{formatMoney(summary.entriesTotal)}</strong></span>
+          <span>Salidas <strong>- {formatMoney(summary.exitsTotal)}</strong></span>
+        </div>
+      </details>
       <div className="business-cash-list" aria-label="Cajas abiertas de la licencia">
         <h3>Cajas abiertas</h3>
         {summary.sessions.map((session) => {

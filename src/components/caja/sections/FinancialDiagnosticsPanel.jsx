@@ -65,7 +65,7 @@ const writeClipboard = async (text) => {
 };
 
 /** A presentation-only consumer of the sanitized financial DTO. */
-const FinancialDiagnosticsPanel = ({ enabled = false }) => {
+const FinancialDiagnosticsPanel = ({ enabled = false, initiallyExpanded = false }) => {
   const cashMode = getCashMode();
   const isStaff = Boolean(cashMode.actor?.isStaff);
   const [filter, setFilter] = useState('attention');
@@ -75,7 +75,7 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
   const [loading, setLoading] = useState(false);
   const [busyIntentId, setBusyIntentId] = useState(null);
   const [message, setMessage] = useState('');
-  const [expanded, setExpanded] = useState(() => !isStaff);
+  const [expanded, setExpanded] = useState(() => Boolean(initiallyExpanded && !isStaff));
 
   const reload = useCallback(async () => {
     if (!enabled || !getCashMode().cloudEnabled) return;
@@ -101,9 +101,9 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
   useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
-    setExpanded(!isStaff);
+    setExpanded(Boolean(initiallyExpanded && !isStaff));
     setSelectedId(null);
-  }, [cashMode.actor?.actorKey, isStaff]);
+  }, [cashMode.actor?.actorKey, initiallyExpanded, isStaff]);
 
   const selected = useMemo(() => diagnostics.find((diagnostic) => diagnostic.intentId === selectedId) || null, [diagnostics, selectedId]);
 
@@ -150,7 +150,7 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
 
   const attentionCount = Number(summary?.requiringAttention || 0);
   const staffStatusUnavailable = !loading && !summary;
-  if (isStaff && !expanded) {
+  if (!expanded) {
     return (
       <section className="financial-diagnostics financial-diagnostics--compact" aria-label="Verificación financiera">
         <div className="financial-diagnostics__compact-copy">
@@ -187,7 +187,7 @@ const FinancialDiagnosticsPanel = ({ enabled = false }) => {
         <div><p>Control local de reconciliación</p><h2 id="financial-diagnostics-title">Diagnóstico financiero</h2></div>
         <div className="financial-diagnostics__header-actions">
           <button type="button" onClick={reload} disabled={loading || Boolean(busyIntentId)}>Actualizar vista</button>
-          {isStaff && <button type="button" aria-expanded="true" onClick={() => setExpanded(false)}>Ocultar detalles</button>}
+          <button type="button" aria-expanded="true" onClick={() => setExpanded(false)}>Ocultar detalles</button>
         </div>
       </header>
       {summary && (

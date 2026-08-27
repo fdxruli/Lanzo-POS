@@ -182,13 +182,20 @@ const CajaMovementsList = ({ movimientos, initialFilterType = 'todos', isCloudCa
                 <div className="movement-details">
                   {mov.secondaryReference && <small className="movement-reference-secondary">{mov.secondaryReference}</small>}
                   <small>{mov.hora}</small>
-                  {mov.actor && <small>Actor: {mov.actor}</small>}
-                  {mov.staff && <small>Staff: {mov.staff}</small>}
-                  {mov.actorKey && <small>Actor key: {mov.actorKey}</small>}
-                  {mov.origen && <small>Origen: {mov.origen}</small>}
+                  {mov.actor && <small>Responsable: {mov.actor}</small>}
                   {mov.badge && <span className="ui-badge ui-badge--neutral ui-badge--sm movement-badge">{mov.badge}</span>}
                   {mov.salesChannel === 'ecommerce' && <span className="ui-badge ui-badge--info ui-badge--sm movement-badge">Ecommerce</span>}
                 </div>
+                {(mov.staff || mov.actorKey || mov.origen) && (
+                  <details className="movement-technical-details">
+                    <summary>Detalles</summary>
+                    <div className="movement-technical-meta">
+                      {mov.staff && <small>Staff ID: {mov.staff}</small>}
+                      {mov.actorKey && <small>Actor key: {mov.actorKey}</small>}
+                      {mov.origen && <small>Origen: {mov.origen}</small>}
+                     </div>
+                  </details>
+                )}
               </div>
             </div>
           ))
