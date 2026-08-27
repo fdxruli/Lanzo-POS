@@ -11,4 +11,3 @@ describe('shared scanner engine contract', () => {
     expect(scannerModalSource).toContain('<ScannerModal');
   });
 });
-
