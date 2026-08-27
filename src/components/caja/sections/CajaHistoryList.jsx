@@ -43,7 +43,11 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
         isCuadrada,
         cierre: c.monto_cierre !== null && c.monto_cierre !== undefined ? `$${Money.toNumber(c.monto_cierre).toFixed(2)}` : 'No contado',
         dif: hasPhysicalCount ? `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}` : 'No calculada',
-        difTone: diffSafe.gt(0) ? 'positive' : 'negative'
+        difTone: !hasPhysicalCount || isCuadrada
+          ? 'neutral'
+          : diffSafe.gt(0)
+            ? 'positive'
+            : 'negative'
       };
     });
   }, [historial, paginaActual, itemsPerPage, isCloudCash]);
@@ -100,15 +104,20 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
               <div className="movement-details">
                 <span>Estado: {c.estado}</span>
                 <span>Cierre: {c.cierre}</span>
+                <span className={`history-difference ${c.difTone}`}>Dif: {c.dif}</span>
                 {c.responsible && <span><UserRound size={12} aria-hidden="true" /> {c.responsible}</span>}
                 {c.actor && <span>{c.actor}</span>}
-                {c.staffUserId && <span>Staff ID: {String(c.staffUserId).slice(0, 8)}</span>}
-                {c.actorKey && <span>Actor: {c.actorKey}</span>}
-                {c.cierreFecha && <span>Cerrada: {c.cierreFecha}</span>}
-                {!c.isCuadrada && (
-                  <span className={`history-difference ${c.difTone}`}>Dif: {c.dif}</span>
-                )}
               </div>
+              {(c.staffUserId || c.actorKey || c.cierreFecha) && (
+                <details className="history-technical-details">
+                  <summary>Detalles</summary>
+                  <div className="history-technical-meta">
+                    {c.staffUserId && <span>Staff ID: {String(c.staffUserId).slice(0, 8)}</span>}
+                    {c.actorKey && <span>Actor: {c.actorKey}</span>}
+                    {c.cierreFecha && <span>Cerrada: {c.cierreFecha}</span>}
+                  </div>
+                </details>
+              )}
             </div>
           </div>
         ))}

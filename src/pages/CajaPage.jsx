@@ -30,7 +30,8 @@ import {
   CajaAdminCashAuditModal,
   CajaOpeningPanel,
   CajaLegacyCashTransition,
-  FinancialDiagnosticsPanel
+  FinancialDiagnosticsPanel,
+  CajaSectionTabs
 } from '../components/caja/sections';
 
 // Componentes de modales
@@ -145,6 +146,10 @@ export default function CajaPage() {
   const [resumenData, setResumenData] = useState(null);
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [reviewCashSessionId, setReviewCashSessionId] = useState(null);
+  const [activeSection, setActiveSection] = useState('turno');
+  const [visitedSections, setVisitedSections] = useState(() => new Set(['turno']));
+  const [sectionContextKey, setSectionContextKey] = useState(null);
+  const [hasOpenedStaffAudit, setHasOpenedStaffAudit] = useState(false);
 
   // Hooks de modales para cada modal
   const editInitialModal = useModal();
@@ -190,6 +195,43 @@ export default function CajaPage() {
     cashActor,
     adminOpenSessions: adminCashSessions
   });
+  const cajaSections = [
+    { id: 'turno', label: 'Turno' },
+    { id: 'movimientos', label: 'Movimientos' },
+    { id: 'historial', label: 'Historial' },
+    ...(showBusinessCashSummary ? [{ id: 'negocio', label: 'Negocio' }] : [])
+  ];
+  const cajaSectionContextKey = [
+    cashActor?.actorKey || 'no-actor',
+    isCloudCash ? 'cloud' : 'local',
+    showBusinessCashSummary ? 'business' : 'standard'
+  ].join(':');
+  const hasSectionContextChanged = sectionContextKey !== cajaSectionContextKey;
+  const visibleVisitedSections = hasSectionContextChanged
+    ? new Set(['turno'])
+    : visitedSections;
+  const activeCajaSection = hasSectionContextChanged
+    ? 'turno'
+    : cajaSections.some((section) => section.id === activeSection) ? activeSection : 'turno';
+
+  useEffect(() => {
+    if (!hasSectionContextChanged) return;
+    setSectionContextKey(cajaSectionContextKey);
+    setActiveSection('turno');
+    setVisitedSections(new Set(['turno']));
+    setHasOpenedStaffAudit(false);
+  }, [cajaSectionContextKey, hasSectionContextChanged]);
+
+  const handleSectionChange = (nextSection) => {
+    if (!cajaSections.some((section) => section.id === nextSection)) return;
+    setActiveSection(nextSection);
+    setVisitedSections((previous) => {
+      if (previous.has(nextSection)) return previous;
+      const nextVisited = new Set(previous);
+      nextVisited.add(nextSection);
+      return nextVisited;
+    });
+  };
 
   const handleAdoptLegacyCashSession = async (session) => {
     if (!session || isCloudCashReadOnly) return;
@@ -641,8 +683,7 @@ export default function CajaPage() {
   }
 
   // ============================================================
-  // RENDER PRINCIPAL (< 50 líneas de JSX)
-  // ============================================================
+  // RENDER PRINCIPAL (progressive disclosure)
   return (
     <main className="ui-page caja-page" aria-label="Caja">
       {isCloudCashReadOnly && (
@@ -652,119 +693,188 @@ export default function CajaPage() {
           </div>
         </header>
       )}
-    <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
-      {/* 1. TARJETA DE ESTADO */}
-      <CajaStatusCard
-        cajaActual={cajaActual}
-        totalesTurno={totalesTurno}
-        excesoLiquidez={excesoLiquidez}
-        porcentajeLiquidez={porcentajeLiquidez}
-        lastSyncTime={lastSyncTime}
-        lastActivity={lastActivity}
-        isActive={isActive}
-        CAJA_CONFIG={CAJA_CONFIG}
-        isBackupLoading={isBackupLoading}
-        isCloudCash={isCloudCash}
-        isReadOnly={isCloudCashReadOnly}
-        cashActor={cashActor}
-        onEditarFondoInicial={editInitialModal.open}
-        onBackup={handleBackup}
-        onReporte={descargarReporteCaja}
-        onResumen={handleVerResumen}
-        onImprimir={() => window.print()}
-      />
-
-      {showBusinessCashSummary && (
-        <CajaBusinessCashSummary adminOpenSessions={adminCashSessions} cajaActual={cajaActual} onReviewSession={(session) => setReviewCashSessionId(session.id)} isReadOnly={isCloudCashReadOnly} />
-      )}
-
-      <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} />
-
-      <CajaLegacyCashTransition sessions={legacyAdminCashSessions} isReadOnly={isCloudCashReadOnly} onAdopt={handleAdoptLegacyCashSession} onReview={(session) => setReviewCashSessionId(session.id)} />
-
-      {/* 2. TARJETA DE ACCIONES */}
-      <CajaActionsCard
-        isBackupLoading={isBackupLoading}
-        isCloudCash={isCloudCash}
-        isReadOnly={isCloudCashReadOnly}
-        cashActor={cashActor}
-        readOnlyMessage={CLOUD_CASH_READ_ONLY_MESSAGE}
-        onCorte={handlePrimaryCashClose}
-        onEntrada={cashEntryModal.open}
-        onSalida={cashExitModal.open}
-        onAjuste={cashAdjustmentModal.open}
-      />
-
-      {/* 3. MOVIMIENTOS DEL TURNO (con filtros encapsulados) */}
-      <CajaMovementsList movimientos={movimientosCaja} isCloudCash={isCloudCash} />
-
-      {/* 4. HISTORIAL DE CORTES (con paginación encapsulada) */}
-      <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
-
-      {showAdminAuditPanel && (
-        <CajaStaffAuditPanel
-          adminCashSessions={adminCashSessions}
-          listCashSessionsForAudit={listCashSessionsForAudit}
-          isReadOnly={isCloudCashReadOnly}
-          onReviewSession={(session) => setReviewCashSessionId(session.id)}
+      <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
+        <CajaSectionTabs
+          sections={cajaSections}
+          activeSection={activeCajaSection}
+          onChange={handleSectionChange}
         />
-      )}
 
-      {/* MODALES */}
-      <EditInitialModal
-        show={editInitialModal.isOpen}
-        onClose={editInitialModal.close}
-        onSave={ajustarMontoInicial}
-        currentAmount={cajaActual?.monto_inicial}
-        isDisabled={operationDisabled}
-      />
+        <div
+          id="caja-section-turno"
+          role="tabpanel"
+          aria-labelledby="caja-tab-turno"
+          hidden={activeCajaSection !== 'turno'}
+          className="caja-section-panel caja-section-panel--turno"
+        >
+          <div className="caja-turno-layout">
+            <CajaStatusCard
+              cajaActual={cajaActual}
+              totalesTurno={totalesTurno}
+              excesoLiquidez={excesoLiquidez}
+              porcentajeLiquidez={porcentajeLiquidez}
+              lastSyncTime={lastSyncTime}
+              lastActivity={lastActivity}
+              isActive={isActive}
+              CAJA_CONFIG={CAJA_CONFIG}
+              isBackupLoading={isBackupLoading}
+              isCloudCash={isCloudCash}
+              isReadOnly={isCloudCashReadOnly}
+              cashActor={cashActor}
+              onEditarFondoInicial={editInitialModal.open}
+              onBackup={handleBackup}
+              onReporte={descargarReporteCaja}
+              onResumen={handleVerResumen}
+              onImprimir={() => window.print()}
+            />
 
-      <CashEntryModal
-        show={cashEntryModal.isOpen}
-        onClose={cashEntryModal.close}
-        onSubmit={handleEntradaSubmit}
-        isDisabled={operationDisabled}
-      />
+            <CajaActionsCard
+              cajaActual={cajaActual}
+              estadoCaja={estadoCaja}
+              isBackupLoading={isBackupLoading}
+              isCloudCash={isCloudCash}
+              isReadOnly={isCloudCashReadOnly}
+              cashActor={cashActor}
+              readOnlyMessage={CLOUD_CASH_READ_ONLY_MESSAGE}
+              onCorte={handlePrimaryCashClose}
+              onEntrada={cashEntryModal.open}
+              onSalida={cashExitModal.open}
+              onAjuste={cashAdjustmentModal.open}
+            />
 
-      <CashExitModal
-        show={cashExitModal.isOpen}
-        onClose={cashExitModal.close}
-        onSubmit={handleSalidaSubmit}
-        isDisabled={operationDisabled}
-      />
+            <CajaLegacyCashTransition
+              sessions={legacyAdminCashSessions}
+              isReadOnly={isCloudCashReadOnly}
+              onAdopt={handleAdoptLegacyCashSession}
+              onReview={(session) => setReviewCashSessionId(session.id)}
+            />
 
-      <CashAdjustmentModal
-        show={cashAdjustmentModal.isOpen}
-        onClose={cashAdjustmentModal.close}
-        onConfirm={handleAjusteSubmit}
-        totalTeorico={totalTeorico}
-        isDisabled={operationDisabled}
-      />
+            {isCloudCash && cashActor?.isStaff && (
+              <FinancialDiagnosticsPanel enabled />
+            )}
+          </div>
+        </div>
 
-      <AuditModal
-        show={isAuditOpen}
-        onClose={() => !operationDisabled && setIsAuditOpen(false)}
-        onConfirmAudit={handleAuditConfirm}
-        caja={cajaActual}
-        calcularTeorico={calcularTotalTeorico}
-        isProcessing={isBackupLoading}
-      />
-      <CajaAdminCashAuditModal
-        cashSessionId={reviewCashSessionId}
-        onClose={handleAdminCashAuditClose}
-        getCashSessionDetailForAudit={getCashSessionDetailForAudit}
-        cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
-        isReadOnly={isCloudCashReadOnly}
-      />
+        <div
+          id="caja-section-movimientos"
+          role="tabpanel"
+          aria-labelledby="caja-tab-movimientos"
+          hidden={activeCajaSection !== 'movimientos'}
+          className="caja-section-panel caja-section-panel--list"
+        >
+          {visibleVisitedSections.has('movimientos') && (
+            <CajaMovementsList movimientos={movimientosCaja} isCloudCash={isCloudCash} />
+          )}
+        </div>
 
-      <ResumenEstadisticoModal
-        show={showResumen}
-        onClose={() => setShowResumen(false)}
-        resumenData={resumenData}
-        maxCashThreshold={CAJA_CONFIG?.MAX_CASH_THRESHOLD}
-        isDisabled={isBackupLoading}
-      />
-    </section>
+        <div
+          id="caja-section-historial"
+          role="tabpanel"
+          aria-labelledby="caja-tab-historial"
+          hidden={activeCajaSection !== 'historial'}
+          className="caja-section-panel caja-section-panel--list"
+        >
+          {visibleVisitedSections.has('historial') && (
+            <CajaHistoryList historial={historialCajas} isCloudCash={isCloudCash} />
+          )}
+        </div>
+
+        {showBusinessCashSummary && (
+          <div
+            id="caja-section-negocio"
+            role="tabpanel"
+            aria-labelledby="caja-tab-negocio"
+            hidden={activeCajaSection !== 'negocio'}
+            className="caja-section-panel caja-section-panel--business"
+          >
+            {visibleVisitedSections.has('negocio') && (
+              <div className="caja-business-layout">
+                <CajaBusinessCashSummary
+                  adminOpenSessions={adminCashSessions}
+                  cajaActual={cajaActual}
+                  onReviewSession={(session) => setReviewCashSessionId(session.id)}
+                  isReadOnly={isCloudCashReadOnly}
+                />
+
+                {showAdminAuditPanel && (
+                  <details
+                    className="caja-disclosure caja-audit-disclosure"
+                    onToggle={(event) => {
+                      if (event.currentTarget.open) setHasOpenedStaffAudit(true);
+                    }}
+                  >
+                    <summary>Auditoría de cajas</summary>
+                    {hasOpenedStaffAudit && (
+                      <CajaStaffAuditPanel
+                        adminCashSessions={adminCashSessions}
+                        listCashSessionsForAudit={listCashSessionsForAudit}
+                        isReadOnly={isCloudCashReadOnly}
+                        onReviewSession={(session) => setReviewCashSessionId(session.id)}
+                      />
+                    )}
+                  </details>
+                )}
+
+                <FinancialDiagnosticsPanel enabled={Boolean(isCloudCash)} initiallyExpanded={false} />
+              </div>
+            )}
+          </div>
+        )}
+
+        <EditInitialModal
+          show={editInitialModal.isOpen}
+          onClose={editInitialModal.close}
+          onSave={ajustarMontoInicial}
+          currentAmount={cajaActual?.monto_inicial}
+          isDisabled={operationDisabled}
+        />
+
+        <CashEntryModal
+          show={cashEntryModal.isOpen}
+          onClose={cashEntryModal.close}
+          onSubmit={handleEntradaSubmit}
+          isDisabled={operationDisabled}
+        />
+
+        <CashExitModal
+          show={cashExitModal.isOpen}
+          onClose={cashExitModal.close}
+          onSubmit={handleSalidaSubmit}
+          isDisabled={operationDisabled}
+        />
+
+        <CashAdjustmentModal
+          show={cashAdjustmentModal.isOpen}
+          onClose={cashAdjustmentModal.close}
+          onConfirm={handleAjusteSubmit}
+          totalTeorico={totalTeorico}
+          isDisabled={operationDisabled}
+        />
+
+        <AuditModal
+          show={isAuditOpen}
+          onClose={() => !operationDisabled && setIsAuditOpen(false)}
+          onConfirmAudit={handleAuditConfirm}
+          caja={cajaActual}
+          calcularTeorico={calcularTotalTeorico}
+          isProcessing={isBackupLoading}
+        />
+        <CajaAdminCashAuditModal
+          cashSessionId={reviewCashSessionId}
+          onClose={handleAdminCashAuditClose}
+          getCashSessionDetailForAudit={getCashSessionDetailForAudit}
+          cerrarCajaAdministrativamente={cerrarCajaAdministrativamente}
+          isReadOnly={isCloudCashReadOnly}
+        />
+
+        <ResumenEstadisticoModal
+          show={showResumen}
+          onClose={() => setShowResumen(false)}
+          resumenData={resumenData}
+          maxCashThreshold={CAJA_CONFIG?.MAX_CASH_THRESHOLD}
+          isDisabled={isBackupLoading}
+        />
+      </section>
     </main>
   );
 }

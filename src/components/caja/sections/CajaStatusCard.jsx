@@ -52,6 +52,7 @@ const CajaStatusCard = ({
     Money.init(0)
   );
   const invalidCashMovementLinks = reconciliation?.paymentsWithInvalidCashMovementLink || [];
+  const hasIntegrityWarning = Boolean(reconciliation && hasHistoricalIntegrityWarning(reconciliation));
 
   const liquidityLevel = porcentajeLiquidez >= 100
     ? 'danger'
@@ -125,47 +126,50 @@ const CajaStatusCard = ({
           </div>
         </div>
 
-        <div className="status-utilities" aria-label="Utilidades de caja">
-          <button type="button"
-            className="ui-button ui-button--primary utility-button utility-button-primary"
-            onClick={onBackup}
-            disabled={isBackupLoading}
-            title="Guardar copia de seguridad ahora"
-          >
-            {isBackupLoading ? (
-              <><span className="spinner-small" aria-hidden="true" /><span>Respaldo</span></>
-            ) : (
-              <><Save size={17} aria-hidden="true" /><span>Respaldo</span></>
-            )}
-          </button>
-          <button type="button"
-            className="ui-button ui-button--neutral utility-button"
-            onClick={onReporte}
-            disabled={isBackupLoading || !onReporte}
-            title="Descargar reporte del turno en CSV"
-          >
-            <FileDown size={17} aria-hidden="true" />
-            <span>Reporte</span>
-          </button>
-          <button type="button"
-            className="ui-button ui-button--neutral utility-button"
-            onClick={onResumen}
-            disabled={isBackupLoading || !onResumen}
-            title="Ver resumen estadístico del turno"
-          >
-            <BarChart3 size={17} aria-hidden="true" />
-            <span>Resumen</span>
-          </button>
-          <button type="button"
-            className="ui-button ui-button--neutral utility-button"
-            onClick={onImprimir}
-            disabled={isBackupLoading}
-            title="Imprimir vista actual"
-          >
-            <Printer size={17} aria-hidden="true" />
-            <span>Imprimir</span>
-          </button>
-        </div>
+        <details className="caja-disclosure status-utilities-disclosure">
+          <summary>Más herramientas</summary>
+          <div className="status-utilities" aria-label="Utilidades de caja">
+            <button type="button"
+              className="ui-button ui-button--primary utility-button utility-button-primary"
+              onClick={onBackup}
+              disabled={isBackupLoading}
+              title="Guardar copia de seguridad ahora"
+            >
+              {isBackupLoading ? (
+                <><span className="spinner-small" aria-hidden="true" /><span>Respaldo</span></>
+              ) : (
+                <><Save size={17} aria-hidden="true" /><span>Respaldo</span></>
+              )}
+            </button>
+            <button type="button"
+              className="ui-button ui-button--neutral utility-button"
+              onClick={onReporte}
+              disabled={isBackupLoading || !onReporte}
+              title="Descargar reporte del turno en CSV"
+            >
+              <FileDown size={17} aria-hidden="true" />
+              <span>Reporte</span>
+            </button>
+            <button type="button"
+              className="ui-button ui-button--neutral utility-button"
+              onClick={onResumen}
+              disabled={isBackupLoading || !onResumen}
+              title="Ver resumen estadístico del turno"
+            >
+              <BarChart3 size={17} aria-hidden="true" />
+              <span>Resumen</span>
+            </button>
+            <button type="button"
+              className="ui-button ui-button--neutral utility-button"
+              onClick={onImprimir}
+              disabled={isBackupLoading}
+              title="Imprimir vista actual"
+            >
+              <Printer size={17} aria-hidden="true" />
+              <span>Imprimir</span>
+            </button>
+          </div>
+        </details>
       </div>
 
       <div className="cash-hero">
@@ -209,102 +213,128 @@ const CajaStatusCard = ({
         </div>
       </div>
 
-      <div className="cash-breakdown" aria-label="Desglose del efectivo">
-        <div className="cash-metric">
-          <div className="cash-metric-label">
-            <span>Fondo inicial</span>
-            <button type="button"
-              className="btn-icon-small"
-              onClick={onEditarFondoInicial}
-              title="Corregir fondo inicial calculado"
-              aria-label="Editar fondo inicial"
-              disabled={isReadOnly || isBackupLoading}
-            >
-              <Pencil size={15} aria-hidden="true" />
-            </button>
-          </div>
-          <strong className="amount neutral">
-            ${Money.toNumber(cashAmounts?.fondoInicial || 0).toFixed(2)}
-          </strong>
-        </div>
-
-        <div className="cash-metric">
-          <span className="cash-metric-label">Ventas en efectivo</span>
-          <strong className="amount positive">
-            + ${Money.toNumber(ventasTurnoSafe).toFixed(2)}
-          </strong>
-        </div>
-
-        {abonosTurnoSafe.gt(0) && (
-          <div className="cash-metric">
-            <span className="cash-metric-label">Abonos</span>
-            <strong className="amount warning">
-              + ${Money.toNumber(abonosTurnoSafe).toFixed(2)}
-            </strong>
-          </div>
-        )}
-
-        {reconciliation ? (
-          <>
-            <div className="cash-metric">
-              <span className="cash-metric-label">Cobros de apartados respaldados por Caja</span>
-              <strong className="amount warning">+ ${Money.toNumber(reconciliation.layawayCashCollected ?? reconciliation.layawayPaymentsCollected).toFixed(2)}</strong>
+      {hasIntegrityWarning && (
+        <div className="ui-alert ui-alert--warning caja-integrity-warning" role="alert">
+          <div className="caja-integrity-warning__heading">
+            <AlertTriangle size={19} aria-hidden="true" />
+            <div>
+              <strong>Advertencia de integridad histórica</strong>
+              <p>Hay información histórica de caja que requiere atención. Los valores financieros no fueron modificados.</p>
             </div>
-            <div className="cash-metric">
-              <span className="cash-metric-label">Cobros de clientes / fiado</span>
-              <strong className="amount positive">+ ${Money.toNumber(reconciliation.customerCreditCollections).toFixed(2)}</strong>
-            </div>
-            <div className="cash-metric">
-              <span className="cash-metric-label">Entradas manuales y ajustes</span>
-              <strong className="amount positive">+ ${Money.toNumber(Money.add(reconciliation.manualEntries, reconciliation.positiveAdjustments)).toFixed(2)}</strong>
-            </div>
-          </>
-        ) : (
-          <div className="cash-metric">
-            <span className="cash-metric-label">Entradas</span>
-            <strong className="amount positive">+ ${Money.toNumber(entradasTotalesSafe).toFixed(2)}</strong>
           </div>
-        )}
-
-        <div className="cash-metric">
-          <span className="cash-metric-label">Salidas</span>
-          <strong className="amount negative">
-            - ${Money.toNumber(salidasTotalesSafe).toFixed(2)}
-          </strong>
+          <div className="caja-integrity-warning__summary">
+            {unlinkedTechnicalPaymentsCount > 0 && (
+              <span>Pagos sin vínculo técnico: {unlinkedTechnicalPaymentsCount} por ${Money.toNumber(reconciliation.unlinkedTechnicalPaymentsAmount).toFixed(2)}</span>
+            )}
+            {missingCashMovementRecords.length > 0 && (
+              <span>Pagos con movimiento de Caja no localizado: {missingCashMovementRecords.length} por ${Money.toNumber(missingCashMovementRecordsAmount).toFixed(2)}</span>
+            )}
+            {invalidCashMovementLinks.length > 0 && (
+              <span>Pagos con vínculo de Caja inválido: {invalidCashMovementLinks.length} por ${Money.toNumber(reconciliation.paymentsWithInvalidCashMovementLinkAmount).toFixed(2)}</span>
+            )}
+            {Number(reconciliation.probableLegacyCashBackingAmount || 0) > 0 && (
+              <span>Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>
+            )}
+            {Number(reconciliation.unverifiedHistoricalPaymentsAmount || 0) > 0 && (
+              <strong>Monto sin respaldo verificable: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {reconciliation && (
-        <div className="cash-breakdown" aria-label="Conciliación de ingresos">
-          <p className="cash-hero-eyebrow" style={{ gridColumn: '1 / -1', margin: 0 }}>Conciliación de ingresos</p>
-          <div className="cash-metric"><span className="cash-metric-label">Ventas reconocidas</span><strong className="amount positive">${Money.toNumber(reconciliation.recognizedSales).toFixed(2)}</strong></div>
-          <div className="cash-metric"><span className="cash-metric-label">Apartados entregados</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedRevenue).toFixed(2)}</strong></div>
-          <div className="cash-metric"><span className="cash-metric-label">Anticipos pendientes</span><strong className="amount warning">${Money.toNumber(reconciliation.layawayPendingAdvances).toFixed(2)}</strong></div>
-          <div className="cash-metric"><span className="cash-metric-label">Ganancia bruta reconocida (apartados)</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedGrossProfit).toFixed(2)}</strong></div>
-          <div className="cash-metric"><span className="cash-metric-label">Diferencia sin clasificar</span><strong className="amount neutral">${Money.toNumber(reconciliation.unclassifiedDifference).toFixed(2)}</strong></div>
-          {hasHistoricalIntegrityWarning(reconciliation) && (
-            <div className="cash-metric" style={{ gridColumn: '1 / -1' }} role="status">
-              <span className="cash-metric-label">Advertencia de integridad histórica</span>
-              {unlinkedTechnicalPaymentsCount > 0 && (
-                <span className="cash-metric-label">Pagos sin vínculo técnico: {unlinkedTechnicalPaymentsCount} por ${Money.toNumber(reconciliation.unlinkedTechnicalPaymentsAmount).toFixed(2)}</span>
+      <details className="caja-disclosure caja-breakdown-disclosure">
+        <summary>Ver desglose del turno</summary>
+        <div className="caja-disclosure__body">
+          <div className="cash-breakdown" aria-label="Desglose del efectivo">
+            <div className="cash-metric">
+              <div className="cash-metric-label">
+                <span>Fondo inicial</span>
+                <button type="button"
+                  className="btn-icon-small"
+                  onClick={onEditarFondoInicial}
+                  title="Corregir fondo inicial calculado"
+                  aria-label="Editar fondo inicial"
+                  disabled={isReadOnly || isBackupLoading}
+                >
+                  <Pencil size={15} aria-hidden="true" />
+                </button>
+              </div>
+              <strong className="amount neutral">
+                ${Money.toNumber(cashAmounts?.fondoInicial || 0).toFixed(2)}
+              </strong>
+            </div>
+
+            <div className="cash-metric">
+              <span className="cash-metric-label">Ventas en efectivo</span>
+              <strong className="amount positive">
+                + ${Money.toNumber(ventasTurnoSafe).toFixed(2)}
+              </strong>
+            </div>
+
+            {abonosTurnoSafe.gt(0) && (
+              <div className="cash-metric">
+                <span className="cash-metric-label">Abonos</span>
+                <strong className="amount warning">
+                  + ${Money.toNumber(abonosTurnoSafe).toFixed(2)}
+                </strong>
+              </div>
+            )}
+
+            {reconciliation ? (
+              <>
+                <div className="cash-metric">
+                  <span className="cash-metric-label">Cobros de apartados respaldados por Caja</span>
+                  <strong className="amount warning">+ ${Money.toNumber(reconciliation.layawayCashCollected ?? reconciliation.layawayPaymentsCollected).toFixed(2)}</strong>
+                </div>
+                <div className="cash-metric">
+                  <span className="cash-metric-label">Cobros de clientes / fiado</span>
+                  <strong className="amount positive">+ ${Money.toNumber(reconciliation.customerCreditCollections).toFixed(2)}</strong>
+                </div>
+                <div className="cash-metric">
+                  <span className="cash-metric-label">Entradas manuales y ajustes</span>
+                  <strong className="amount positive">+ ${Money.toNumber(Money.add(reconciliation.manualEntries, reconciliation.positiveAdjustments)).toFixed(2)}</strong>
+                </div>
+              </>
+            ) : (
+              <div className="cash-metric">
+                <span className="cash-metric-label">Entradas</span>
+                <strong className="amount positive">+ ${Money.toNumber(entradasTotalesSafe).toFixed(2)}</strong>
+              </div>
+            )}
+
+            <div className="cash-metric">
+              <span className="cash-metric-label">Salidas</span>
+              <strong className="amount negative">
+                - ${Money.toNumber(salidasTotalesSafe).toFixed(2)}
+              </strong>
+            </div>
+          </div>
+
+          {reconciliation && (
+            <div className="cash-breakdown" aria-label="Conciliación de ingresos">
+              <p className="cash-breakdown-heading">Conciliación de ingresos</p>
+              <div className="cash-metric"><span className="cash-metric-label">Ventas reconocidas</span><strong className="amount positive">${Money.toNumber(reconciliation.recognizedSales).toFixed(2)}</strong></div>
+              <div className="cash-metric"><span className="cash-metric-label">Apartados entregados</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedRevenue).toFixed(2)}</strong></div>
+              <div className="cash-metric"><span className="cash-metric-label">Anticipos pendientes</span><strong className="amount warning">${Money.toNumber(reconciliation.layawayPendingAdvances).toFixed(2)}</strong></div>
+              <div className="cash-metric"><span className="cash-metric-label">Ganancia bruta reconocida (apartados)</span><strong className="amount positive">${Money.toNumber(reconciliation.layawayCompletedGrossProfit).toFixed(2)}</strong></div>
+              <div className="cash-metric"><span className="cash-metric-label">Diferencia sin clasificar</span><strong className="amount neutral">${Money.toNumber(reconciliation.unclassifiedDifference).toFixed(2)}</strong></div>
+              {hasIntegrityWarning && (
+                <details className="caja-subdisclosure">
+                  <summary>Ver detalles técnicos de integridad</summary>
+                  <div className="caja-integrity-details" role="status">
+                    {unlinkedTechnicalPaymentsCount > 0 && <span>Pagos sin vínculo técnico: {unlinkedTechnicalPaymentsCount} por ${Money.toNumber(reconciliation.unlinkedTechnicalPaymentsAmount).toFixed(2)}</span>}
+                    {missingCashMovementRecords.length > 0 && <span>Pagos con movimiento de Caja no localizado: {missingCashMovementRecords.length} por ${Money.toNumber(missingCashMovementRecordsAmount).toFixed(2)}</span>}
+                    {invalidCashMovementLinks.length > 0 && <span>Pagos con vínculo de Caja inválido: {invalidCashMovementLinks.length} por ${Money.toNumber(reconciliation.paymentsWithInvalidCashMovementLinkAmount).toFixed(2)}</span>}
+                    {Number(reconciliation.probableLegacyCashBackingAmount || 0) > 0 && <span>Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>}
+                    {Number(reconciliation.unverifiedHistoricalPaymentsAmount || 0) > 0 && <strong>Monto sin respaldo verificable: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>}
+                    <span>Los movimientos históricos no fueron modificados ni vinculados automáticamente.</span>
+                  </div>
+                </details>
               )}
-              {missingCashMovementRecords.length > 0 && (
-                <span className="cash-metric-label">Pagos con movimiento de Caja no localizado: {missingCashMovementRecords.length} por ${Money.toNumber(missingCashMovementRecordsAmount).toFixed(2)}</span>
-              )}
-              {invalidCashMovementLinks.length > 0 && (
-                <span className="cash-metric-label">Pagos con vínculo de Caja inválido: {invalidCashMovementLinks.length} por ${Money.toNumber(reconciliation.paymentsWithInvalidCashMovementLinkAmount).toFixed(2)}</span>
-              )}
-              {Number(reconciliation.probableLegacyCashBackingAmount || 0) > 0 && (
-                <span className="cash-metric-label">Probable respaldo en movimientos históricos: ${Money.toNumber(reconciliation.probableLegacyCashBackingAmount).toFixed(2)}</span>
-              )}
-              {Number(reconciliation.unverifiedHistoricalPaymentsAmount || 0) > 0 && (
-                <strong className="amount warning">Monto sin respaldo verificable: ${Money.toNumber(reconciliation.unverifiedHistoricalPaymentsAmount).toFixed(2)}</strong>
-              )}
-              <span className="cash-metric-label">Los movimientos históricos no fueron modificados ni vinculados automáticamente.</span>
             </div>
           )}
         </div>
-      )}
+      </details>
     </section>
   );
 };

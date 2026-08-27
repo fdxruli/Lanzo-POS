@@ -81,7 +81,7 @@ describe('FinancialDiagnosticsPanel', () => {
 
     expect(await screen.findByText('Hay una operación pendiente de verificar')).toBeVisible();
     expect(screen.queryByText('Venta de cajero')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Revisar detalles' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Revisar detalles' }));
     expect(await screen.findByText('Venta de cajero')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Consultar recibo' })).toBeDisabled();
   });
@@ -90,6 +90,7 @@ describe('FinancialDiagnosticsPanel', () => {
     fixtures.list.mockResolvedValue([diagnostic()]);
     fixtures.summary.mockResolvedValue({ requiringAttention: 1, pendingReceipt: 0, pendingProlonged: 0, conflict: 0, blocked: 0, projectionFailed: 1 });
     render(<FinancialDiagnosticsPanel enabled />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Revisar detalles' }));
     await waitFor(() => expect(screen.getByText('Venta de cajero')).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Consultar recibo' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reintentar actualización local' })).toBeDisabled();
@@ -107,6 +108,7 @@ describe('FinancialDiagnosticsPanel', () => {
     fixtures.receipt.mockResolvedValue({ outcome: 'receipt_completed' });
     fixtures.projection.mockResolvedValue({ outcome: 'projection_applied' });
     render(<FinancialDiagnosticsPanel enabled />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Revisar detalles' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Consultar recibo' })).not.toBeDisabled());
     fireEvent.click(screen.getByRole('button', { name: 'Consultar recibo' }));
     await waitFor(() => expect(fixtures.receipt).toHaveBeenCalledWith({ intentId: 'intent-own', licenseKey: 'transient-only' }));

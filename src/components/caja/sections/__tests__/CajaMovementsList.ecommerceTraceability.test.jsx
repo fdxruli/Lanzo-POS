@@ -70,4 +70,22 @@ describe('CajaMovementsList ecommerce traceability', () => {
     expect(screen.getByText('Venta local')).toBeVisible();
     expect(screen.queryByText('Ecommerce')).not.toBeInTheDocument();
   });
+
+  it('keeps technical movement traceability behind Detalles', () => {
+    render(<CajaMovementsList movimientos={[{
+      id: 'mov-traceable',
+      tipo: 'entrada',
+      monto: '10',
+      concepto: 'Fondo de cambio',
+      fecha: '2026-07-27T20:00:00.000Z',
+      staffUserId: 'staff-123456789',
+      actorKey: 'staff:traceable',
+      origen: 'cash_rpc'
+    }]} />);
+
+    expect(screen.getByText('Actor key: staff:traceable')).not.toBeVisible();
+    fireEvent.click(screen.getByText('Detalles'));
+    expect(screen.getByText('Actor key: staff:traceable')).toBeVisible();
+    expect(screen.getByText('Origen: cash_rpc')).toBeVisible();
+  });
 });

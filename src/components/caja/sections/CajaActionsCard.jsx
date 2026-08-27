@@ -98,16 +98,18 @@ const CajaActionsCard = ({
       </div>
 
       <div className="shortcuts-help">
-        <p>
-          <Keyboard size={15} aria-hidden="true" />
-          Atajos de teclado
-        </p>
-        <div className="shortcuts-grid">
-          <span><kbd>Alt+R</kbd><span>Refrescar</span></span>
-          <span><kbd>Ctrl+Shift+E</kbd><span>Entrada</span></span>
-          <span><kbd>Ctrl+Shift+S</kbd><span>Salida</span></span>
-          <span><kbd>ESC</kbd><span>Cerrar modal</span></span>
-        </div>
+        <details className="caja-disclosure shortcuts-disclosure">
+          <summary>
+            <Keyboard size={15} aria-hidden="true" />
+            Atajos de teclado
+          </summary>
+          <div className="shortcuts-grid">
+            <span><kbd>Alt+R</kbd><span>Refrescar</span></span>
+            <span><kbd>Ctrl+Shift+E</kbd><span>Entrada</span></span>
+            <span><kbd>Ctrl+Shift+S</kbd><span>Salida</span></span>
+            <span><kbd>ESC</kbd><span>Cerrar modal</span></span>
+          </div>
+        </details>
       </div>
     </section>
   );

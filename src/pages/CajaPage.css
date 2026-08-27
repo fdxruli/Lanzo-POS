@@ -1662,3 +1662,407 @@
     overflow: visible !important;
   }
 }
+
+/* Progressive disclosure layout for Caja open state */
+.caja-grid .caja-section-navigation {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.caja-grid .caja-section-tabs {
+  display: flex;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.25rem;
+  overflow-x: auto;
+  background: var(--light-background);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  scrollbar-width: thin;
+}
+
+.caja-grid .caja-section-tab {
+  min-width: max-content;
+  min-height: 44px;
+  padding: 0.55rem 0.85rem;
+  color: var(--text-light);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.caja-grid .caja-section-tab:hover {
+  color: var(--primary-color);
+}
+
+.caja-grid .caja-section-tab.is-active {
+  color: var(--primary-color);
+  background: var(--card-background-color);
+  border-color: color-mix(in srgb, var(--primary-color) 28%, var(--border-color));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-color) 12%, transparent);
+}
+
+.caja-grid .caja-section-panel {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+
+.caja-grid .caja-section-panel[hidden] {
+  display: none;
+}
+
+.caja-grid .caja-turno-layout,
+.caja-grid .caja-business-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+.caja-grid .caja-turno-layout > *,
+.caja-grid .caja-business-layout > * {
+  min-width: 0;
+}
+
+.caja-grid .caja-disclosure {
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--light-background);
+}
+
+.caja-grid .caja-disclosure > summary,
+.caja-grid .caja-subdisclosure > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.65rem 0.8rem;
+  color: var(--text-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.caja-grid .caja-disclosure > summary:focus-visible,
+.caja-grid .caja-subdisclosure > summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+  outline-offset: -3px;
+}
+
+.caja-grid .caja-disclosure[open] > summary,
+.caja-grid .caja-subdisclosure[open] > summary {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.caja-grid .caja-disclosure__body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.caja-grid .status-utilities-disclosure {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  min-width: min(100%, 280px);
+  background: var(--card-background-color);
+}
+
+.caja-grid .status-utilities-disclosure > summary {
+  justify-content: center;
+}
+
+.caja-grid .status-utilities-disclosure .status-utilities {
+  padding: 0.65rem;
+  border-top: 0;
+}
+
+.caja-grid .caja-breakdown-disclosure {
+  background: var(--card-background-color);
+}
+
+.caja-grid .caja-breakdown-disclosure .cash-breakdown {
+  margin: 0;
+}
+
+.caja-grid .cash-breakdown-heading {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  color: var(--text-light);
+  background: var(--card-background-color);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.caja-grid .caja-integrity-warning {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+}
+
+.caja-grid .caja-integrity-warning__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.caja-grid .caja-integrity-warning__heading > svg {
+  flex: 0 0 auto;
+}
+
+.caja-grid .caja-integrity-warning p {
+  margin: 0.25rem 0 0;
+  line-height: 1.4;
+}
+
+.caja-grid .caja-integrity-warning__summary,
+.caja-grid .caja-integrity-details,
+.caja-grid .movement-technical-meta,
+.caja-grid .history-technical-meta {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--text-light);
+  font-size: 0.72rem;
+}
+
+.caja-grid .caja-subdisclosure {
+  grid-column: 1 / -1;
+  background: var(--light-background);
+}
+
+.caja-grid .caja-integrity-details {
+  padding: 0.65rem 0.8rem 0.8rem;
+}
+
+.caja-grid .shortcuts-help {
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.caja-grid .shortcuts-disclosure {
+  background: transparent;
+  border: 0;
+}
+
+.caja-grid .shortcuts-disclosure > summary {
+  justify-content: flex-start;
+  padding: 0;
+  min-height: 40px;
+  color: var(--text-light);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.caja-grid .shortcuts-disclosure .shortcuts-grid {
+  padding-top: 0.65rem;
+}
+
+.caja-grid .movement-technical-details,
+.caja-grid .history-technical-details {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: 0.15rem;
+}
+
+.caja-grid .movement-technical-details > summary,
+.caja-grid .history-technical-details > summary {
+  width: fit-content;
+  min-height: 34px;
+  padding: 0.35rem 0;
+  color: var(--primary-color);
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.caja-grid .movement-technical-meta,
+.caja-grid .history-technical-meta {
+  padding: 0.55rem 0.7rem;
+  background: var(--light-background);
+  border-radius: 8px;
+}
+
+.caja-grid .business-cash-components-disclosure {
+  background: var(--light-background);
+}
+
+.caja-grid .business-cash-components-disclosure .business-cash-components {
+  padding: 0.7rem;
+}
+
+.caja-grid .caja-audit-disclosure {
+  background: var(--card-background-color);
+}
+
+.caja-grid .caja-audit-disclosure > .staff-audit-card {
+  margin: 0.75rem;
+  box-shadow: none;
+}
+
+@media (min-width: 900px) {
+  .caja-grid .caja-turno-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+    align-items: start;
+  }
+
+  .caja-grid .caja-turno-layout > .status-card {
+    grid-area: auto;
+    grid-column: 1;
+  }
+
+  .caja-grid .caja-turno-layout > .actions-card {
+    grid-area: auto;
+    grid-column: 2;
+  }
+
+  .caja-grid .caja-turno-layout > .caja-card:not(.status-card):not(.actions-card),
+  .caja-grid .caja-turno-layout > .financial-diagnostics {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .caja-grid .caja-section-tabs {
+    margin-inline: 0;
+  }
+
+  .caja-grid .caja-section-tab {
+    flex: 1 0 auto;
+  }
+
+  .caja-grid .caja-integrity-warning__summary {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media print {
+  .caja-grid .caja-section-navigation {
+    display: none !important;
+  }
+
+  .caja-grid details > :not(summary) {
+    display: block !important;
+  }
+
+  .caja-grid details > summary {
+    display: none !important;
+  }
+}
+
+/* Staff audit primary summary and secondary detail hierarchy */
+.caja-grid .staff-audit-primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.caja-grid .staff-audit-primary-field {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.65rem;
+  background: var(--card-background-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.caja-grid .staff-audit-primary-field small,
+.caja-grid .staff-audit-secondary small {
+  color: var(--text-light);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.caja-grid .staff-audit-primary-field strong,
+.caja-grid .staff-audit-secondary strong {
+  color: var(--text-dark);
+  overflow-wrap: anywhere;
+}
+
+.caja-grid .staff-audit-primary-field--expected strong,
+.caja-grid .staff-audit-primary-field--difference strong {
+  font-size: 0.98rem;
+}
+
+.caja-grid .staff-audit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.caja-grid .staff-audit-actions .business-cash-review {
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.caja-grid .staff-audit-details {
+  min-width: min(100%, 220px);
+  flex: 1 1 220px;
+  background: var(--card-background-color);
+}
+
+.caja-grid .staff-audit-details > summary {
+  min-height: 44px;
+  justify-content: center;
+  color: var(--primary-color);
+  font-weight: 800;
+}
+
+.caja-grid .staff-audit-details > summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+  outline-offset: -3px;
+}
+
+.caja-grid .staff-audit-secondary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.caja-grid .staff-audit-secondary > span {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+@media (min-width: 760px) {
+  .caja-grid .staff-audit-primary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .caja-grid .staff-audit-primary,
+  .caja-grid .staff-audit-secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .caja-grid .staff-audit-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .caja-grid .staff-audit-actions .business-cash-review,
+  .caja-grid .staff-audit-details {
+    width: 100%;
+  }
+}
