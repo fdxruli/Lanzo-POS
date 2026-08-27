@@ -8,9 +8,9 @@ import {
 } from '../_socialMetadata.js';
 import { createSafePublicImageLoader } from '../_safePublicImage.js';
 import {
-  StoreOgCard,
-  buildStoreOgCardModel,
-} from '../_storeOgCard.js';
+  StoreOgFallbackCard,
+  buildStoreOgFallbackCardModel,
+} from '../_storeOgFallbackCard.js';
 import { StoreOgCardV2 } from '../_storeOgCardV2.js';
 import { buildStoreOgCardV2Model } from '../_storeOgCardV2Model.js';
 
@@ -126,7 +126,7 @@ export function buildStoreOgRenderAttempts({
     return Object.freeze([
       Object.freeze({
         name: 'status_fallback',
-        model: buildStoreOgCardModel({ result, logoImage: null, coverImage: null }),
+        model: buildStoreOgFallbackCardModel({ status: result?.status }),
       }),
     ]);
   }
@@ -164,9 +164,14 @@ export function renderStoreOgImage({
   coverImage = null,
   status,
 }) {
-  const card = model?.version === 2
-    ? StoreOgCardV2({ model, logoImage, coverImage })
-    : StoreOgCard({ model });
+  let card;
+  if (model?.version === 2) {
+    card = StoreOgCardV2({ model, logoImage, coverImage });
+  } else if (model?.renderer === 'fallback') {
+    card = StoreOgFallbackCard({ model });
+  } else {
+    throw new TypeError('Unknown Open Graph card model.');
+  }
 
   return new ImageResponseImpl(
     card,
