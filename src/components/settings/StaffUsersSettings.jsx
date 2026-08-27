@@ -179,7 +179,9 @@ const upsertStaffUser = (currentUsers, canonicalStaffUser) => {
   if (existingIndex === -1) return [...currentUsers, canonicalStaffUser];
 
   return currentUsers.map((staffUser, index) => (
-    index === existingIndex ? canonicalStaffUser : staffUser
+    index === existingIndex
+      ? { ...staffUser, ...canonicalStaffUser }
+      : staffUser
   ));
 };
 
