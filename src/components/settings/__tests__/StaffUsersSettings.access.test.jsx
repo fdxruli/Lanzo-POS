@@ -154,7 +154,7 @@ describe('StaffUsersSettings list-first administration', () => {
     ));
   });
 
-  it('keeps permission groups collapsed until requested and preserves notification master/detail behavior', async () => {
+  it('toggles both permission groups safely and preserves notification master/detail behavior', async () => {
     render(<StaffUsersSettings licenseKey="LIC-1" />);
     await waitFor(() => expect(screen.getByText('Ana Garcia')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /Nuevo staff/ }));
@@ -162,6 +162,22 @@ describe('StaffUsersSettings list-first administration', () => {
     const operationDetails = screen.getByText('Operacion', { selector: 'strong' }).closest('details');
     const cloudDetails = screen.getByText('Lanzo Nube', { selector: 'strong' }).closest('details');
     expect(operationDetails).not.toHaveAttribute('open');
+    expect(cloudDetails).not.toHaveAttribute('open');
+
+    fireEvent.click(screen.getByText('Operacion', { selector: 'strong' }));
+    expect(operationDetails).toHaveAttribute('open');
+    expect(screen.getByRole('checkbox', { name: 'Punto de venta' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Operacion', { selector: 'strong' }));
+    expect(operationDetails).not.toHaveAttribute('open');
+
+    fireEvent.click(screen.getByText('Operacion', { selector: 'strong' }));
+    expect(operationDetails).toHaveAttribute('open');
+
+    fireEvent.click(screen.getByText('Lanzo Nube', { selector: 'strong' }));
+    expect(cloudDetails).toHaveAttribute('open');
+
+    fireEvent.click(screen.getByText('Lanzo Nube', { selector: 'strong' }));
     expect(cloudDetails).not.toHaveAttribute('open');
 
     fireEvent.click(screen.getByText('Lanzo Nube', { selector: 'strong' }));

@@ -100,7 +100,11 @@ describe('LicenseSettings sibling isolation', () => {
 
     render(<LicenseSettings />);
 
+    expect(screen.getByRole('tab', { name: 'Resumen' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Equipo' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Rubros' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Equipo staff' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rubros' })).not.toBeInTheDocument();
     expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
     expect(screen.getByText('Administracion de Staff')).toBeInTheDocument();
