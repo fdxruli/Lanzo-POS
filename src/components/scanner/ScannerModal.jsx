@@ -95,6 +95,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Refs para control de flujo sin causar re-renders
   const processingLockRef = useRef(false);
+  const decodeRegionRef = useRef(null);
   const pauseTimeoutRef = useRef(null);
   const isMountedRef = useRef(true);
 
@@ -158,6 +159,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     setScanFeedback('');
     setCameraError(null);
     setScanCount(0);
+    decodeRegionRef.current = null;
     onClose();
   }, [clearCart, onClose]);
 
@@ -256,8 +258,13 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     onError: handleError,
     constraints: CAMERA_CONSTRAINTS,
     hints: COMMERCIAL_BARCODE_SCAN_HINTS,
+    decodeRegionRef,
     timeBetweenDecodingAttempts: 150,
   });
+
+  const handleDecodeRegionChange = useCallback((region) => {
+    decodeRegionRef.current = region;
+  }, []);
 
   // Retry de cámara
   const handleRetryCamera = useCallback(() => {
@@ -369,6 +376,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       setScanFeedback('');
       setCameraError(null);
       setScanCount(0);
+      decodeRegionRef.current = null;
       processingLockRef.current = false;
       setIsProcessing(false);
       setIsConfirming(false);
@@ -404,6 +412,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
               isScanning={!isProcessing && !isConfirming}
               isConfirming={isConfirming}
               onRetryCamera={handleRetryCamera}
+              onDecodeRegionChange={handleDecodeRegionChange}
             />
           </div>
 

@@ -1,6 +1,17 @@
 // src/components/scanner/CameraViewport.jsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getContainedVideoRect } from './scannerGeometry';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import {
+  expandNormalizedRoi,
+  getContainedVideoRect,
+  normalizeChildRectWithinStage,
+} from './scannerGeometry';
 
 const EMPTY_SIZE = Object.freeze({ width: 0, height: 0 });
 
@@ -26,14 +37,43 @@ const readVideoSize = (videoElement) => ({
   height: Number(videoElement?.videoHeight) || 0,
 });
 
-const useCameraViewportGeometry = (videoRef, enabled) => {
+const useCameraViewportGeometry = (
+  videoRef,
+  enabled,
+  onDecodeRegionChange,
+) => {
   const containerRef = useRef(null);
+  const stageRef = useRef(null);
+  const reticleRef = useRef(null);
+  const containerSizeRef = useRef(EMPTY_SIZE);
+  const videoSizeRef = useRef(EMPTY_SIZE);
   const [containerSize, setContainerSize] = useState(EMPTY_SIZE);
   const [videoSize, setVideoSize] = useState(EMPTY_SIZE);
+
+  const refreshDecodeRegion = useCallback(() => {
+    if (!enabled) {
+      onDecodeRegionChange?.(null);
+      return;
+    }
+
+    const measuredRegion = normalizeChildRectWithinStage({
+      stageRect: stageRef.current?.getBoundingClientRect?.(),
+      childRect: reticleRef.current?.getBoundingClientRect?.(),
+    });
+
+    onDecodeRegionChange?.(expandNormalizedRoi(measuredRegion));
+  }, [enabled, onDecodeRegionChange]);
 
   const measure = useCallback(() => {
     const nextContainerSize = readElementSize(containerRef.current);
     const nextVideoSize = readVideoSize(videoRef?.current);
+    const containerSizeChanged = !sizesAreEqual(
+      containerSizeRef.current,
+      nextContainerSize,
+    );
+    const videoSizeChanged = !sizesAreEqual(videoSizeRef.current, nextVideoSize);
+    containerSizeRef.current = nextContainerSize;
+    videoSizeRef.current = nextVideoSize;
 
     setContainerSize((currentSize) => (
       sizesAreEqual(currentSize, nextContainerSize) ? currentSize : nextContainerSize
@@ -41,7 +81,14 @@ const useCameraViewportGeometry = (videoRef, enabled) => {
     setVideoSize((currentSize) => (
       sizesAreEqual(currentSize, nextVideoSize) ? currentSize : nextVideoSize
     ));
-  }, [videoRef]);
+
+    // Size changes are reflected by React and refreshed in the layout effect
+    // after the stage style has committed. If only DOM position changed, the
+    // existing stage can be measured synchronously without another render.
+    if (!containerSizeChanged && !videoSizeChanged) {
+      refreshDecodeRegion();
+    }
+  }, [refreshDecodeRegion, videoRef]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -85,8 +132,24 @@ const useCameraViewportGeometry = (videoRef, enabled) => {
     videoHeight: videoSize.height,
   }), [containerSize, videoSize]);
 
+  useLayoutEffect(() => {
+    if (!enabled) {
+      refreshDecodeRegion();
+      return;
+    }
+
+    if (geometry.isFallback) {
+      refreshDecodeRegion();
+      return;
+    }
+
+    refreshDecodeRegion();
+  }, [enabled, geometry, refreshDecodeRegion]);
+
   return {
     containerRef,
+    stageRef,
+    reticleRef,
     geometry,
     geometryReady: !geometry.isFallback,
   };
@@ -176,12 +239,12 @@ const AlertIcon = () => (
  * Componente de Retícula de Escaneo (SVG Corners + Láser)
  * Reemplaza el hack de box-shadow con un enfoque de bajo impacto
  */
-const ScannerReticle = ({ isScanning, isConfirming }) => {
+const ScannerReticle = ({ isScanning, isConfirming, reticleRef }) => {
   const cornerSize = 24;
   const strokeWidth = 3;
 
   return (
-    <div className="scanner-reticle">
+    <div ref={reticleRef} className="scanner-reticle">
       {/* Esquina superior izquierda */}
       <svg
         className="reticle-corner reticle-corner-tl"
@@ -299,12 +362,19 @@ export function CameraViewport({
   isScanning,
   isConfirming,
   onRetryCamera,
+  onDecodeRegionChange,
 }) {
   const {
     containerRef,
+    stageRef,
+    reticleRef,
     geometry,
     geometryReady,
-  } = useCameraViewportGeometry(videoRef, !cameraError);
+  } = useCameraViewportGeometry(
+    videoRef,
+    !cameraError,
+    onDecodeRegionChange,
+  );
 
   if (cameraError) {
     return (
@@ -339,7 +409,7 @@ export function CameraViewport({
       className="scanner-video-viewport"
       data-geometry-ready={geometryReady ? 'true' : 'false'}
     >
-      <div className="scanner-video-stage" style={stageStyle}>
+      <div ref={stageRef} className="scanner-video-stage" style={stageStyle}>
         <video
           ref={videoRef}
           id="scanner-video"
@@ -356,7 +426,11 @@ export function CameraViewport({
 
         {/* La retícula aparece cuando la imagen visible ya es medible. */}
         {geometryReady && (
-          <ScannerReticle isScanning={isScanning} isConfirming={isConfirming} />
+          <ScannerReticle
+            isScanning={isScanning}
+            isConfirming={isConfirming}
+            reticleRef={reticleRef}
+          />
         )}
       </div>
 
