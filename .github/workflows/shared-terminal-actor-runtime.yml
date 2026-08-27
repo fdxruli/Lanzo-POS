@@ -28,8 +28,8 @@ permissions:
 env:
   # Immutable SHARED.TERMINAL.1 ActorRuntime contract baseline.
   SHARED_TERMINAL_CONTRACT_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
-  # Current PR refs drive new-regression attribution.
-  SHARED_TERMINAL_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+  # Current PR refs drive new-regression attribution. Manual runs have no PR base.
+  SHARED_TERMINAL_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
   SHARED_TERMINAL_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
 jobs:
@@ -47,19 +47,41 @@ jobs:
       - name: Validate comparison refs
         shell: bash
         run: |
-          echo "PR_BASE_SHA=${SHARED_TERMINAL_PR_BASE_SHA}"
+          echo "EVENT_MODE=${GITHUB_EVENT_NAME}"
           echo "CANDIDATE_SHA=${SHARED_TERMINAL_CANDIDATE_SHA}"
           echo "CONTRACT_BASE_SHA=${SHARED_TERMINAL_CONTRACT_BASE_SHA}"
-          test -n "${SHARED_TERMINAL_PR_BASE_SHA}"
           test -n "${SHARED_TERMINAL_CANDIDATE_SHA}"
           test -n "${SHARED_TERMINAL_CONTRACT_BASE_SHA}"
-          git cat-file -e "${SHARED_TERMINAL_PR_BASE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_CANDIDATE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_CONTRACT_BASE_SHA}^{commit}"
 
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            echo "PR_BASE_SHA=${SHARED_TERMINAL_PR_BASE_SHA}"
+            test -n "${SHARED_TERMINAL_PR_BASE_SHA}"
+            git cat-file -e "${SHARED_TERMINAL_PR_BASE_SHA}^{commit}"
+            echo "WHITESPACE_GATE_MODE=BLOCKING_COMPARISON"
+            echo "BASE_CANDIDATE_DIFFERENTIAL_MODE=BLOCKING_COMPARISON"
+          else
+            echo "MANUAL_BASE_SHA=N/A"
+            echo "MANUAL_CANDIDATE_SHA=${SHARED_TERMINAL_CANDIDATE_SHA}"
+            echo "WHITESPACE_GATE_MODE=NOT_APPLICABLE"
+            echo "BASE_CANDIDATE_DIFFERENTIAL_MODE=NOT_APPLICABLE"
+          fi
+
       - name: PR-local blocking whitespace hygiene
+        if: github.event_name == 'pull_request'
         shell: bash
         run: git diff --check "${SHARED_TERMINAL_PR_BASE_SHA}...${SHARED_TERMINAL_CANDIDATE_SHA}"
+
+      - name: Manual whitespace hygiene classification
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          echo "EVENT_MODE=workflow_dispatch"
+          echo "MANUAL_BASE_SHA=N/A"
+          echo "MANUAL_CANDIDATE_SHA=${SHARED_TERMINAL_CANDIDATE_SHA}"
+          echo "WHITESPACE_GATE_MODE=NOT_APPLICABLE"
+          echo "PR-local blocking whitespace hygiene is not applicable without pull_request attribution."
 
       - name: Historical contract-base whitespace observation
         if: always()
@@ -131,6 +153,7 @@ jobs:
 
   full-suite-baseline:
     name: Full suite BASE repeated (observational)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -293,7 +316,7 @@ jobs:
 
   differential-regression-gate:
     name: Differential repeated full-suite regression gate
-    if: always()
+    if: ${{ always() && github.event_name == 'pull_request' }}
     needs:
       - full-suite-baseline
       - full-suite-candidate
