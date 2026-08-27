@@ -24,11 +24,18 @@ import { isBrowserStorageUnavailableError } from './db/databaseRecoveryState';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_MAIN_AUTH_OPTIONS = Object.freeze({
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+});
 
 // Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos 
 // que App.jsx lance el error para que sea capturado por el ErrorBoundary visual.
 export const supabaseClient = (supabaseUrl && supabaseKey)
-    ? createClient(supabaseUrl, supabaseKey)
+    ? createClient(supabaseUrl, supabaseKey, {
+        auth: SUPABASE_MAIN_AUTH_OPTIONS
+    })
     : null;
 
 const runAuthenticatedLocalPersistence = async ({
