@@ -1279,6 +1279,10 @@ export const deactivateCurrentDevice = async (licenseKey) => {
 
 export const createFreeTrial = async function (options = {}) {
     try {
+        // Free-license creation also needs the minimum local IndexedDB
+        // capability required by the tenant runtime before any device-owned
+        // state or remote license mutation is touched.
+        await preflightIndexedDbCapability();
         await checkRateLimit();
 
         const deviceFingerprint = await getStableDeviceId();
@@ -1329,7 +1333,8 @@ export const createFreeTrial = async function (options = {}) {
         }
 
     } catch (error) {
-        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')
+            || isBrowserStorageUnavailableError(error)) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
         if (!isRateLimit) {
             Logger.error('❌ Error creando trial:', error);

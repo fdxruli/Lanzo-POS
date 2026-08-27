@@ -45,6 +45,16 @@ afterEach(() => {
 });
 
 describe('WelcomeModal support contact', () => {
+  it('does not request stable device identity when the welcome screen mounts', async () => {
+    render(<WelcomeModal />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mocks.getStableDeviceId).not.toHaveBeenCalled();
+  });
+
   it('shows copy success only when the shared helper returns true', async () => {
     mocks.copyTextToClipboard.mockResolvedValue(true);
 
