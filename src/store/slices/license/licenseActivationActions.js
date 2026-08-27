@@ -26,6 +26,30 @@ import {
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 import { isBrowserStorageUnavailableError } from '../../../services/db/databaseRecoveryState';
 
+const readActivationValue = (source, key) => {
+    if (source && source[key] !== undefined) return source[key];
+    if (source?.details && source.details[key] !== undefined) return source.details[key];
+    return undefined;
+};
+
+const preserveActivationFailure = (source = {}, overrides = {}) => {
+    const failure = { success: false };
+    const code = readActivationValue(source, 'code');
+    const message = readActivationValue(source, 'message');
+    const retryAfterSeconds = source?.retry_after_seconds ??
+        source?.retryAfterSeconds ??
+        source?.details?.retry_after_seconds ??
+        source?.details?.retryAfterSeconds;
+
+    if (code !== undefined && code !== null) failure.code = code;
+    if (message !== undefined && message !== null) failure.message = message;
+    if (retryAfterSeconds !== undefined && retryAfterSeconds !== null) {
+        failure.retry_after_seconds = retryAfterSeconds;
+    }
+
+    return { ...failure, ...overrides };
+};
+
 const completeValidLicenseSession = async (set, get, licenseData, profileOptions) => {
     await assertLocalTenantAccess(licenseData, { reason: profileOptions?.reason || 'activation_complete' });
     await saveLicenseToStorage(licenseData);
@@ -106,11 +130,13 @@ export const createLicenseActivationActions = ({
                         }
                     );
 
-                    return {
-                        success: false,
-                        licenseChangeRequired: true,
-                        message: 'Esta licencia ya no incluye usuarios staff.'
-                    };
+                    return preserveActivationFailure(
+                        result,
+                        {
+                            licenseChangeRequired: true,
+                            message: 'Esta licencia ya no incluye usuarios staff.'
+                        }
+                    );
                 }
 
                 await completeValidLicenseSession(set, get, licenseDataToSave, {
@@ -130,11 +156,13 @@ export const createLicenseActivationActions = ({
                     result
                 );
 
-                return {
-                    success: false,
-                    licenseChangeRequired: true,
-                    message: result.message || 'Esta licencia requiere cambiarse en este dispositivo.'
-                };
+                return preserveActivationFailure(
+                    result,
+                    {
+                        licenseChangeRequired: true,
+                        message: result.message || 'Esta licencia requiere cambiarse en este dispositivo.'
+                    }
+                );
             }
 
             if (result.staff_login_required) {
@@ -154,11 +182,13 @@ export const createLicenseActivationActions = ({
                     staffLoginError: null
                 });
 
-                return {
-                    success: false,
-                    staffLoginRequired: true,
-                    message: result.message || 'Este dispositivo requiere login staff.'
-                };
+                return preserveActivationFailure(
+                    result,
+                    {
+                        staffLoginRequired: true,
+                        message: result.message || 'Este dispositivo requiere login staff.'
+                    }
+                );
             }
 
             if (result.access_choice_required) {
@@ -174,7 +204,7 @@ export const createLicenseActivationActions = ({
                     adminLoginMessage: result.message || 'Elige como deseas ingresar.',
                     adminLoginError: null
                 });
-                return { success: false, accessChoiceRequired: true };
+                return preserveActivationFailure(result, { accessChoiceRequired: true });
             }
 
             if (result.admin_enrollment_required) {
@@ -189,7 +219,7 @@ export const createLicenseActivationActions = ({
                     adminLoginError: null,
                     adminEnrollmentRequired: true
                 });
-                return { success: false, adminEnrollmentRequired: true };
+                return preserveActivationFailure(result, { adminEnrollmentRequired: true });
             }
 
             if (
@@ -205,11 +235,13 @@ export const createLicenseActivationActions = ({
                     device_role: 'staff'
                 }, result);
 
-                return {
-                    success: false,
-                    staffLoginRequired: true,
-                    message: getStaffLoginMessage(result)
-                };
+                return preserveActivationFailure(
+                    result,
+                    {
+                        staffLoginRequired: true,
+                        message: getStaffLoginMessage(result)
+                    }
+                );
             }
 
             const errorMsg = (result.message || '').toLowerCase();
@@ -241,35 +273,22 @@ export const createLicenseActivationActions = ({
                 }
             }
 
-            return {
-                success: false,
+            return preserveActivationFailure(result, {
                 message: result.message || 'Licencia no válida'
-            };
+            });
         } catch (error) {
             if (isBrowserStorageUnavailableError(error)) {
-                return {
-                    success: false,
-                    code: error.code,
-                    message: error.message
-                };
+                return preserveActivationFailure(error);
             }
 
             if (isLocalTenantAccessError(error)) {
                 enterLocalTenantIsolationFailure(set, error);
-                return {
-                    success: false,
-                    localTenantMismatch: true,
-                    code: error.code,
-                    message: error.message
-                };
+                return preserveActivationFailure(error, { localTenantMismatch: true });
             }
 
             Logger.error('Error en login:', error);
 
-            return {
-                success: false,
-                message: error.message
-            };
+            return preserveActivationFailure(error);
         }
     },
 
