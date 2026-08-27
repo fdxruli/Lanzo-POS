@@ -17,8 +17,10 @@ import {
 import { getTenantStorageState, registerTenantStorageHydrator } from '../../tenant/tenantScopedStorage';
 import {
   closeTenantRuntime,
+  configureTenantRuntimeDatabaseFactory,
   db,
   getActiveTenantRuntime,
+  getTenantRuntimeReadiness,
   markTenantRuntimeReady,
   openTenantRuntime,
   resolveTenantRuntimeDirectory
@@ -233,6 +235,43 @@ describe('tenant runtime router', () => {
       requiresMigration: false
     });
     expect(getActiveTenantRuntime()).toBeNull();
+  });
+
+  it('normalizes a browser storage failure during the physical tenant open and remains fail-closed', async () => {
+    const identity = await resolveActiveTenantIdentity({ license_key: `BROWSER-STORAGE-OPEN-${crypto.randomUUID()}` });
+    const opaqueId = await resolveTenantRuntimeDirectory(identity);
+    const databaseName = `LanzoDB_t_${opaqueId}`;
+    await createBoundOperationalTenantDatabase(identity, databaseName);
+    const nativeError = new DOMException('Internal error.', 'UnknownError');
+    localTenantAccessController.enable('browser-storage-test');
+
+    configureTenantRuntimeDatabaseFactory((name) => {
+      const database = createOperationalLanzoDatabase(name);
+      vi.spyOn(database, 'open').mockRejectedValueOnce(nativeError);
+      return database;
+    });
+
+    try {
+      await expect(openTenantRuntime(identity)).rejects.toMatchObject({
+        name: 'BrowserStorageUnavailableError',
+        code: 'DB_BROWSER_STORAGE_UNAVAILABLE',
+        cause: nativeError
+      });
+
+      expect(getActiveTenantRuntime()).toBeNull();
+      expect(getTenantRuntimeReadiness()).toMatchObject({ ready: false, runtime: null });
+      expect(getDatabaseRecoveryState()).toMatchObject({
+        status: DATABASE_RECOVERY_STATUS.FAILED,
+        errorCode: 'DB_BROWSER_STORAGE_UNAVAILABLE',
+        databaseName,
+        isRetryable: true
+      });
+      expect((await Dexie.getDatabaseNames()).filter((name) => name === 'LanzoDB1')).toEqual([]);
+      expect((await Dexie.getDatabaseNames()).filter((name) => name.startsWith('LanzoDB_t_'))).toContain(databaseName);
+    } finally {
+      configureTenantRuntimeDatabaseFactory(createOperationalLanzoDatabase);
+      await deletePhysicalDatabase(databaseName);
+    }
   });
 
   it('keeps successful compatible tenant opens READY through A to B to A', async () => {

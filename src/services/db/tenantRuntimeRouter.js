@@ -13,6 +13,7 @@ import { preflightAndRepairIndexedDb } from './indexedDbPreflightCoordinator';
 import {
   DATABASE_RECOVERY_STATUS,
   classifyDatabaseError,
+  normalizeBrowserStorageError,
   reportStructuralDatabaseErrorOnce,
   setDatabaseRecoveryState
 } from './databaseRecoveryState';
@@ -471,7 +472,7 @@ export const getTenantRuntimeReadiness = () => {
 // logging, but only this boundary may replace runtime state with recovery.
 const publishTenantDatabaseRecovery = (error, databaseName) => {
   const classification = classifyDatabaseError(error);
-  if (!classification.structural) return false;
+  if (!classification.structural && !classification.browserStorageUnavailable) return false;
 
   const diagnostic = error?.diagnostic && typeof error.diagnostic === 'object'
     ? error.diagnostic
@@ -484,7 +485,9 @@ const publishTenantDatabaseRecovery = (error, databaseName) => {
 
   setDatabaseRecoveryState({
     ...diagnostic,
-    status: isRetryable === false
+    status: classification.browserStorageUnavailable
+      ? DATABASE_RECOVERY_STATUS.FAILED
+      : isRetryable === false
       ? DATABASE_RECOVERY_STATUS.FAILED
       : DATABASE_RECOVERY_STATUS.RECOVERY_REQUIRED,
     errorCode: diagnostic.errorCode || classification.code,
@@ -532,10 +535,24 @@ export const openTenantRuntime = async (identity) => {
     });
     await database.open();
   } catch (error) {
-    if (publishTenantDatabaseRecovery(error, database.name)) {
-      reportStructuralDatabaseErrorOnce(error, 'preflight');
+    const browserStorageError = normalizeBrowserStorageError(error, {
+      databaseName: database.name
+    });
+    const effectiveError = browserStorageError || error;
+
+    if (browserStorageError) {
+      // A failed physical open must never leave a closed previous handle
+      // looking like an active runtime, nor leave the tenant controller
+      // granted while the browser storage boundary is unavailable.
+      try { database.close(); } catch { /* best effort */ }
+      localTenantAccessController.lock('browser_storage_unavailable');
+      closeTenantRuntime();
     }
-    throw error;
+
+    if (publishTenantDatabaseRecovery(effectiveError, database.name)) {
+      reportStructuralDatabaseErrorOnce(effectiveError, 'preflight');
+    }
+    throw effectiveError;
   }
   active = { opaqueId, database, generation: ++generation, identity };
   // A recovery state is cleared only after this tenant's complete

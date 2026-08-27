@@ -19,6 +19,8 @@ import {
     ActorRuntimeError,
     ACTOR_RUNTIME_ERROR_CODES
 } from './auth/actorRuntimeController';
+import { preflightIndexedDbCapability } from './db/indexedDbCapabilityPreflight';
+import { isBrowserStorageUnavailableError } from './db/databaseRecoveryState';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -475,6 +477,10 @@ export const activateLicense = async function (licenseKey, options = {}) {
             };
         }
 
+        // Remote activation must not mutate device state when this browser
+        // cannot perform the minimum local IndexedDB cycle required by the
+        // tenant runtime.
+        await preflightIndexedDbCapability();
         await checkRateLimit();
 
         const deviceFingerprint = await getStableDeviceId();
@@ -570,7 +576,8 @@ export const activateLicense = async function (licenseKey, options = {}) {
             details: data?.details || data || null
         };
     } catch (error) {
-        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')
+            || isBrowserStorageUnavailableError(error)) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
 
         if (!isRateLimit) {
@@ -595,6 +602,7 @@ export const activateLicenseLegacy = async function (licenseKey) {
             };
         }
 
+        await preflightIndexedDbCapability();
         await checkRateLimit();
 
         const deviceFingerprint = await getStableDeviceId();
@@ -648,7 +656,7 @@ export const activateLicenseLegacy = async function (licenseKey) {
         }
 
     } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
+        if (isLocalTenantAccessError(error) || isBrowserStorageUnavailableError(error)) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
 
         if (!isRateLimit) {

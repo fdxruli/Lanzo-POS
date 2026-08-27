@@ -19,9 +19,13 @@ export {
 export {
   DATABASE_RECOVERY_CODES,
   DATABASE_RECOVERY_STATUS,
+  BROWSER_STORAGE_UNAVAILABLE_MESSAGE,
   classifyDatabaseError,
+  createBrowserStorageUnavailableError,
   getDatabaseRecoveryState,
   isDatabaseRecoveryPending,
+  isBrowserStorageUnavailableError,
+  normalizeBrowserStorageError,
   isStructuralDatabaseError,
   subscribeDatabaseRecoveryState
 } from './db/databaseRecoveryState';

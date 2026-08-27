@@ -17,8 +17,11 @@ export const DATABASE_RECOVERY_CODES = Object.freeze({
   UNSUPPORTED_VERSION: 'DB_UNSUPPORTED_NATIVE_VERSION',
   NOT_INSPECTABLE: 'DB_NOT_INSPECTABLE',
   MIGRATION_COLLISION: 'DB_MIGRATION_ID_COLLISION',
-  MIGRATION_FAILED: 'DB_MIGRATION_FAILED'
+  MIGRATION_FAILED: 'DB_MIGRATION_FAILED',
+  BROWSER_STORAGE_UNAVAILABLE: 'DB_BROWSER_STORAGE_UNAVAILABLE'
 });
+
+export const BROWSER_STORAGE_UNAVAILABLE_MESSAGE = 'No se pudo abrir el almacenamiento local del navegador. Lanzo requiere IndexedDB para operar de forma segura. Cierra otras pestañas de Lanzo y vuelve a intentarlo.';
 
 const listeners = new Set();
 const loggedFingerprints = new Set();
@@ -117,7 +120,72 @@ const walkErrorChain = (error) => {
   return chain;
 };
 
+const isNativeUnknownError = (error) => {
+  if (String(error?.name || '') !== 'UnknownError') return false;
+  return error?.constructor?.name === 'DOMException'
+    || /internal error|unknownerror/i.test(String(error?.message || ''));
+};
+
+export const isBrowserStorageUnavailableError = (error) => {
+  const chain = walkErrorChain(error);
+  if (chain.some((item) => item?.code === DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE)) {
+    return true;
+  }
+
+  const names = chain.map((item) => String(item?.name || '')).join(' ');
+  const messages = chain.map((item) => String(item?.message || '')).join(' ');
+  const hasDexieClosedError = /DatabaseClosedError/i.test(`${names} ${messages}`);
+  const hasUnknownError = /UnknownError/i.test(`${names} ${messages}`)
+    || chain.some(isNativeUnknownError);
+
+  // This is intentionally narrower than treating every IndexedDB exception
+  // as browser-wide storage failure. The observed incident is the Dexie
+  // DatabaseClosedError wrapping the native UnknownError boundary.
+  return hasUnknownError && (
+    hasDexieClosedError
+    || chain.some(isNativeUnknownError)
+  );
+};
+
+export const createBrowserStorageUnavailableError = (
+  cause = null,
+  { databaseName = null, message = BROWSER_STORAGE_UNAVAILABLE_MESSAGE } = {}
+) => {
+  if (cause?.code === DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE) return cause;
+
+  const error = new Error(message);
+  error.name = 'BrowserStorageUnavailableError';
+  error.code = DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE;
+  error.cause = cause || null;
+  error.inner = cause || null;
+  error.diagnostic = sanitizeDiagnostic({
+    status: DATABASE_RECOVERY_STATUS.FAILED,
+    errorCode: DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE,
+    databaseName,
+    isRetryable: true,
+    requiresMigration: false,
+    message
+  });
+  return error;
+};
+
+export const normalizeBrowserStorageError = (error, options = {}) => {
+  if (error?.code === DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE) return error;
+  if (!options.force && !isBrowserStorageUnavailableError(error)) return null;
+  return createBrowserStorageUnavailableError(error, options);
+};
+
 export const classifyDatabaseError = (error) => {
+  if (isBrowserStorageUnavailableError(error)) {
+    return {
+      structural: false,
+      browserStorageUnavailable: true,
+      code: DATABASE_RECOVERY_CODES.BROWSER_STORAGE_UNAVAILABLE,
+      retryable: true,
+      requiresMigration: false
+    };
+  }
+
   const chain = walkErrorChain(error);
   const names = chain.map((item) => String(item?.name || '')).join(' ');
   const messages = chain.map((item) => String(item?.message || '')).join(' ');

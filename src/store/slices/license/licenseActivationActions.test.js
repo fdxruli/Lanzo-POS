@@ -120,6 +120,23 @@ describe('createLicenseActivationActions.handleLogin', () => {
         expect(state._loadProfile).not.toHaveBeenCalled();
     });
 
+    it('returns a typed actionable browser-storage failure without finalizing local login', async () => {
+        const { state } = createActionState();
+        const error = new Error('native IndexedDB failure');
+        error.code = 'DB_BROWSER_STORAGE_UNAVAILABLE';
+        error.name = 'BrowserStorageUnavailableError';
+        error.message = 'No se pudo abrir el almacenamiento local del navegador.';
+        mocks.activateLicense.mockRejectedValueOnce(error);
+
+        await expect(state.handleLogin('LANZO-TEST-IDB-FAILURE')).resolves.toEqual({
+            success: false,
+            code: 'DB_BROWSER_STORAGE_UNAVAILABLE',
+            message: 'No se pudo abrir el almacenamiento local del navegador.'
+        });
+        expect(mocks.saveLicenseToStorage).not.toHaveBeenCalled();
+        expect(state._loadProfile).not.toHaveBeenCalled();
+    });
+
     it('preserves the staff-login-required transition', async () => {
         const { state } = createActionState();
         mocks.activateLicense.mockResolvedValue({
