@@ -395,26 +395,31 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
         </h2>
 
         <div className="scanner-main-container">
-          <div className="scanner-video-container">
-            <button
-              className="scanner-close-btn"
-              onClick={handleClose}
-              disabled={isConfirming}
-              aria-label="Cerrar escaner"
-              title="Cerrar"
-            >
-              <CloseIcon />
-            </button>
+          <div className="scanner-camera-panel">
+            <div className="scanner-camera-controls">
+              <span className="scanner-camera-label">Cámara</span>
+              <button
+                className="scanner-close-btn"
+                onClick={handleClose}
+                disabled={isConfirming}
+                aria-label="Cerrar escaner"
+                title="Cerrar"
+              >
+                <CloseIcon />
+              </button>
+            </div>
 
-            <CameraViewport
-              videoRef={videoRef}
-              cameraError={cameraError}
-              scanFeedback={scanFeedback}
-              isScanning={!isProcessing && !isConfirming}
-              isConfirming={isConfirming}
-              onRetryCamera={handleRetryCamera}
-              onDecodeRegionChange={handleDecodeRegionChange}
-            />
+            <div className="scanner-video-container">
+              <CameraViewport
+                videoRef={videoRef}
+                cameraError={cameraError}
+                scanFeedback={scanFeedback}
+                isScanning={!isProcessing && !isConfirming}
+                isConfirming={isConfirming}
+                onRetryCamera={handleRetryCamera}
+                onDecodeRegionChange={handleDecodeRegionChange}
+              />
+            </div>
           </div>
 
           {mode === 'pos' && (

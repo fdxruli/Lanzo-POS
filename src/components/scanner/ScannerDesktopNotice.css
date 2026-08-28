@@ -1,17 +1,17 @@
 /* Desktop webcam guidance is intentionally presentation-only. */
 @media (min-width: 768px) {
   .scanner-modal-content .modal-title::after {
-    content: "Escaneo con cámara en computadora: la webcam puede tener dificultades para leer códigos por enfoque o reflejos. Para una operación rápida, usa un dispositivo móvil. El soporte dedicado para lectores físicos se integrará en una fase posterior.";
+    content: "En desktop, la cámara puede ser menos eficiente. Para una operación rápida, usa móvil.";
     display: block;
-    margin-top: var(--spacing-sm, 8px);
-    padding: 10px 12px;
+    margin-top: var(--spacing-xs, 4px);
+    padding: 6px 10px;
     border: 1px solid var(--border-color, #d1d5db);
-    border-radius: var(--border-radius, 8px);
+    border-radius: var(--border-radius-sm, 4px);
     background-color: var(--light-background, #f5f5f5);
     color: var(--text-color, #333);
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-weight: 400;
-    line-height: 1.4;
-    white-space: normal;
+    line-height: 1.25;
+    white-space: nowrap;
   }
 }
