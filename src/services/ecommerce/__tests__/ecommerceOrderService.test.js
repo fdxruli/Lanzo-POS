@@ -269,6 +269,47 @@ describe('ecommerceOrderService', () => {
     expect(detailResult.order.contact.whatsappUrl).toBe('https://wa.me/529610000000');
   });
 
+  it('normalizes structured delivery data in the admin detail contract', () => {
+    const normalized = ecommerceOrderServiceInternals.normalizeDetail({
+      ...orderDetail,
+      fulfillmentMethod: 'delivery',
+      customer: {
+        ...orderDetail.customer,
+        deliveryAddress: {
+          street: ' Calle Central ',
+          exteriorNumber: '24',
+          interiorNumber: 'B',
+          neighborhood: 'Centro',
+          municipality: 'Tuxtla',
+          state: 'Chiapas',
+          postalCode: '29000',
+          reference: 'Frente al parque',
+          secret: 'not-allowed'
+        }
+      }
+    });
+
+    expect(normalized.customer.deliveryAddress).toEqual({
+      street: 'Calle Central',
+      exteriorNumber: '24',
+      interiorNumber: 'B',
+      neighborhood: 'Centro',
+      municipality: 'Tuxtla',
+      state: 'Chiapas',
+      postalCode: '29000',
+      reference: 'Frente al parque'
+    });
+    expect(JSON.stringify(normalized.customer)).not.toContain('secret');
+    expect(ecommerceOrderServiceInternals.normalizeDetail({
+      ...orderDetail,
+      fulfillmentMethod: 'pickup',
+      customer: {
+        ...orderDetail.customer,
+        deliveryAddress: { municipality: 'No debe mostrarse' }
+      }
+    }).customer).not.toHaveProperty('deliveryAddress');
+  });
+
   it('uses exact auth-only RPC contracts for claim, confirm and release', async () => {
     mocks.rpc.mockResolvedValue({
       data: { success: true, changed: true, order: { ...orderDetail, posDraft: { status: 'claimed', claimToken: 'claim-token' } } },

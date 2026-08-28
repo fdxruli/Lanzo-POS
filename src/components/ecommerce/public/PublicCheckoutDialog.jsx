@@ -5,6 +5,11 @@ import {
   lockPublicDocumentScroll,
   unlockPublicDocumentScroll
 } from '../../../utils/publicDocumentScroll';
+import {
+  createEmptyEcommerceDeliveryAddress,
+  formatEcommerceDeliveryAddress,
+  normalizeEcommerceDeliveryAddress
+} from '../../../utils/ecommerceDeliveryAddress';
 
 const STALE_CART_CODES = new Set([
   'ECOMMERCE_PRODUCT_NOT_FOUND',
@@ -31,18 +36,22 @@ const createEmptyForm = (portal) => ({
   name: '',
   phone: '',
   fulfillmentMethod: getInitialFulfillmentMethod(portal),
-  address: '',
+  deliveryAddress: createEmptyEcommerceDeliveryAddress(),
   notes: '',
 });
 
 const normalizeForm = (form) => {
   const fulfillmentMethod = form.fulfillmentMethod;
+  const deliveryAddress = fulfillmentMethod === 'delivery'
+    ? normalizeEcommerceDeliveryAddress(form.deliveryAddress)
+    : null;
   return {
     name: form.name.trim().slice(0, 120),
     phone: form.phone.trim().slice(0, 40),
-    address: fulfillmentMethod === 'delivery' ? form.address.trim().slice(0, 500) : '',
+    address: deliveryAddress ? formatEcommerceDeliveryAddress(deliveryAddress) : '',
     notes: form.notes.trim().slice(0, 1000),
     fulfillmentMethod,
+    ...(deliveryAddress ? { deliveryAddress } : {})
   };
 };
 
@@ -60,8 +69,17 @@ function validateCheckout(form, portal, cart) {
   );
   if (!methodAvailable) errors.fulfillmentMethod = 'Selecciona una modalidad disponible.';
 
-  if (normalized.fulfillmentMethod === 'delivery' && normalized.address.length < 5) {
-    errors.address = 'Escribe una dirección de al menos 5 caracteres.';
+  if (normalized.fulfillmentMethod === 'delivery') {
+    const address = normalized.deliveryAddress;
+    if (!address.street) errors['deliveryAddress.street'] = 'Escribe la calle, avenida o camino.';
+    if (!address.neighborhood) errors['deliveryAddress.neighborhood'] = 'Escribe la colonia, barrio, ejido o localidad.';
+    if (address.municipality.length < 2) errors['deliveryAddress.municipality'] = 'Escribe el municipio o ciudad.';
+    if (!address.state) errors['deliveryAddress.state'] = 'Escribe el estado.';
+    if (!address.postalCode) {
+      errors['deliveryAddress.postalCode'] = 'Escribe el código postal.';
+    } else if (!/^\d{5}$/.test(address.postalCode)) {
+      errors['deliveryAddress.postalCode'] = 'Escribe un código postal de 5 dígitos.';
+    }
   }
 
   if (!cart?.isReconciled) errors.cart = 'El carrito todavía se está actualizando.';
@@ -144,7 +162,7 @@ function PublicCheckoutDialog({
       return {
         ...current,
         fulfillmentMethod: getInitialFulfillmentMethod(fulfillmentPortal),
-        address: '',
+        deliveryAddress: createEmptyEcommerceDeliveryAddress(),
       };
     });
   }, [deliveryEnabled, fulfillmentPortal, isConfirmed, isOpen, pickupEnabled]);
@@ -154,11 +172,38 @@ function PublicCheckoutDialog({
   const updateField = (field, value) => {
     setForm((current) => {
       if (field === 'fulfillmentMethod' && value === 'pickup') {
-        return { ...current, fulfillmentMethod: value, address: '' };
+        return {
+          ...current,
+          fulfillmentMethod: value,
+          deliveryAddress: createEmptyEcommerceDeliveryAddress()
+        };
       }
       return { ...current, [field]: value };
     });
-    setFieldErrors((current) => ({ ...current, [field]: undefined, cart: undefined }));
+    setFieldErrors((current) => {
+      const next = { ...current, [field]: undefined, cart: undefined };
+      if (field === 'fulfillmentMethod' && value === 'pickup') {
+        Object.keys(createEmptyEcommerceDeliveryAddress()).forEach((addressField) => {
+          next[`deliveryAddress.${addressField}`] = undefined;
+        });
+      }
+      return next;
+    });
+  };
+
+  const updateDeliveryAddressField = (field, value) => {
+    setForm((current) => ({
+      ...current,
+      deliveryAddress: {
+        ...current.deliveryAddress,
+        [field]: value
+      }
+    }));
+    setFieldErrors((current) => ({
+      ...current,
+      [`deliveryAddress.${field}`]: undefined,
+      cart: undefined
+    }));
   };
 
   const submit = async (event) => {
@@ -322,21 +367,126 @@ function PublicCheckoutDialog({
               </fieldset>
 
               {form.fulfillmentMethod === 'delivery' ? (
-                <label className="public-checkout-field">
-                  <span><MapPin aria-hidden="true" size={17} /> Dirección *</span>
-                  <textarea
-                    name="address"
-                    autoComplete="street-address"
-                    maxLength={500}
-                    rows={3}
-                    value={form.address}
-                    onChange={(event) => updateField('address', event.target.value)}
-                    aria-invalid={Boolean(fieldErrors.address)}
-                    aria-describedby={fieldErrors.address ? 'public-checkout-address-error' : undefined}
-                    disabled={isSubmitting}
-                  />
-                  {fieldErrors.address ? <small id="public-checkout-address-error">{fieldErrors.address}</small> : null}
-                </label>
+                <fieldset className="public-checkout-address-fields" disabled={isSubmitting}>
+                  <legend><MapPin aria-hidden="true" size={17} /> Dirección de entrega</legend>
+                  <div className="public-checkout-address-grid">
+                    <label className="public-checkout-field public-checkout-field--wide">
+                      <span>Calle / avenida / camino *</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.street"
+                        autoComplete="address-line1"
+                        maxLength={160}
+                        placeholder={portal?.addressStreet ? `Ej. ${portal.addressStreet}` : undefined}
+                        value={form.deliveryAddress.street}
+                        onChange={(event) => updateDeliveryAddressField('street', event.target.value)}
+                        aria-invalid={Boolean(fieldErrors['deliveryAddress.street'])}
+                        aria-describedby={fieldErrors['deliveryAddress.street'] ? 'public-checkout-delivery-street-error' : undefined}
+                      />
+                      {fieldErrors['deliveryAddress.street'] ? <small id="public-checkout-delivery-street-error">{fieldErrors['deliveryAddress.street']}</small> : null}
+                    </label>
+
+                    <label className="public-checkout-field">
+                      <span>Número exterior</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.exteriorNumber"
+                        autoComplete="address-line2"
+                        maxLength={40}
+                        placeholder="Número o S/N"
+                        value={form.deliveryAddress.exteriorNumber}
+                        onChange={(event) => updateDeliveryAddressField('exteriorNumber', event.target.value)}
+                      />
+                    </label>
+
+                    <label className="public-checkout-field">
+                      <span>Número interior</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.interiorNumber"
+                        maxLength={40}
+                        value={form.deliveryAddress.interiorNumber}
+                        onChange={(event) => updateDeliveryAddressField('interiorNumber', event.target.value)}
+                      />
+                    </label>
+
+                    <label className="public-checkout-field public-checkout-field--wide">
+                      <span>Colonia / barrio / ejido / localidad *</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.neighborhood"
+                        autoComplete="address-line2"
+                        maxLength={160}
+                        placeholder={portal?.addressNeighborhood ? `Ej. ${portal.addressNeighborhood}` : undefined}
+                        value={form.deliveryAddress.neighborhood}
+                        onChange={(event) => updateDeliveryAddressField('neighborhood', event.target.value)}
+                        aria-invalid={Boolean(fieldErrors['deliveryAddress.neighborhood'])}
+                        aria-describedby={fieldErrors['deliveryAddress.neighborhood'] ? 'public-checkout-delivery-neighborhood-error' : undefined}
+                      />
+                      {fieldErrors['deliveryAddress.neighborhood'] ? <small id="public-checkout-delivery-neighborhood-error">{fieldErrors['deliveryAddress.neighborhood']}</small> : null}
+                    </label>
+
+                    <label className="public-checkout-field">
+                      <span>Municipio / ciudad *</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.municipality"
+                        autoComplete="address-level2"
+                        maxLength={120}
+                        placeholder={portal?.addressMunicipality ? `Ej. ${portal.addressMunicipality}` : undefined}
+                        value={form.deliveryAddress.municipality}
+                        onChange={(event) => updateDeliveryAddressField('municipality', event.target.value)}
+                        aria-invalid={Boolean(fieldErrors['deliveryAddress.municipality'])}
+                        aria-describedby={fieldErrors['deliveryAddress.municipality'] ? 'public-checkout-delivery-municipality-error' : undefined}
+                      />
+                      {fieldErrors['deliveryAddress.municipality'] ? <small id="public-checkout-delivery-municipality-error">{fieldErrors['deliveryAddress.municipality']}</small> : null}
+                    </label>
+
+                    <label className="public-checkout-field">
+                      <span>Estado *</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.state"
+                        autoComplete="address-level1"
+                        maxLength={80}
+                        placeholder={portal?.addressState ? `Ej. ${portal.addressState}` : undefined}
+                        value={form.deliveryAddress.state}
+                        onChange={(event) => updateDeliveryAddressField('state', event.target.value)}
+                        aria-invalid={Boolean(fieldErrors['deliveryAddress.state'])}
+                        aria-describedby={fieldErrors['deliveryAddress.state'] ? 'public-checkout-delivery-state-error' : undefined}
+                      />
+                      {fieldErrors['deliveryAddress.state'] ? <small id="public-checkout-delivery-state-error">{fieldErrors['deliveryAddress.state']}</small> : null}
+                    </label>
+
+                    <label className="public-checkout-field">
+                      <span>Código postal *</span>
+                      <input
+                        type="text"
+                        name="deliveryAddress.postalCode"
+                        autoComplete="postal-code"
+                        inputMode="numeric"
+                        maxLength={5}
+                        placeholder={portal?.addressPostalCode ? `Ej. ${portal.addressPostalCode}` : undefined}
+                        value={form.deliveryAddress.postalCode}
+                        onChange={(event) => updateDeliveryAddressField('postalCode', event.target.value)}
+                        aria-invalid={Boolean(fieldErrors['deliveryAddress.postalCode'])}
+                        aria-describedby={fieldErrors['deliveryAddress.postalCode'] ? 'public-checkout-delivery-postal-code-error' : undefined}
+                      />
+                      {fieldErrors['deliveryAddress.postalCode'] ? <small id="public-checkout-delivery-postal-code-error">{fieldErrors['deliveryAddress.postalCode']}</small> : null}
+                    </label>
+
+                    <label className="public-checkout-field public-checkout-field--wide">
+                      <span>Referencia para llegar</span>
+                      <textarea
+                        name="deliveryAddress.reference"
+                        maxLength={500}
+                        rows={2}
+                        value={form.deliveryAddress.reference}
+                        onChange={(event) => updateDeliveryAddressField('reference', event.target.value)}
+                      />
+                    </label>
+                  </div>
+                </fieldset>
               ) : null}
 
               <label className="public-checkout-field">

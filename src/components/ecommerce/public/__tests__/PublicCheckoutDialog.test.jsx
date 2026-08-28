@@ -91,13 +91,77 @@ describe('PublicCheckoutDialog', () => {
     });
 
     expect(screen.getByRole('radio', { name: /Domicilio/ })).toBeChecked();
-    expect(screen.getByLabelText(/Dirección/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Calle / avenida / camino *')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Nombre *'), 'Cliente QA');
     await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
 
-    expect(screen.getByText('Escribe una dirección de al menos 5 caracteres.')).toBeInTheDocument();
+    expect(screen.getByText('Escribe la calle, avenida o camino.')).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('submits normalized structured delivery data and a compatible formatted address', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderDialog({
+      portal: { slug: 'delivery-only', pickupEnabled: false, deliveryEnabled: true },
+      onSubmit,
+    });
+
+    await user.type(screen.getByLabelText('Nombre *'), 'Cliente QA');
+    await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+    await user.type(screen.getByLabelText('Calle / avenida / camino *'), ' Avenida Central ');
+    await user.type(screen.getByLabelText('Número exterior'), ' 24 ');
+    await user.type(screen.getByLabelText('Número interior'), ' B ');
+    await user.type(screen.getByLabelText('Colonia / barrio / ejido / localidad *'), ' Centro ');
+    await user.type(screen.getByLabelText('Municipio / ciudad *'), ' Tuxtla Gutiérrez ');
+    await user.type(screen.getByLabelText('Estado *'), ' Chiapas ');
+    await user.type(screen.getByLabelText('Código postal *'), '29000');
+    await user.type(screen.getByLabelText('Referencia para llegar'), ' Frente al parque ');
+    await user.type(screen.getByLabelText('Notas'), ' Tocar la puerta ');
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: 'Cliente QA',
+      phone: '9610000000',
+      address: 'Avenida Central #24 Int. B, Centro, Tuxtla Gutiérrez, Chiapas, CP 29000',
+      deliveryAddress: {
+        street: 'Avenida Central',
+        exteriorNumber: '24',
+        interiorNumber: 'B',
+        neighborhood: 'Centro',
+        municipality: 'Tuxtla Gutiérrez',
+        state: 'Chiapas',
+        postalCode: '29000',
+        reference: 'Frente al parque'
+      },
+      notes: 'Tocar la puerta',
+      fulfillmentMethod: 'delivery'
+    });
+  });
+
+  it('accepts S/N for rural-compatible delivery addresses', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderDialog({
+      portal: { slug: 'delivery-only', pickupEnabled: false, deliveryEnabled: true },
+      onSubmit,
+    });
+
+    await user.type(screen.getByLabelText('Nombre *'), 'Cliente rural');
+    await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+    await user.type(screen.getByLabelText('Calle / avenida / camino *'), 'Camino al ejido');
+    await user.type(screen.getByLabelText('Número exterior'), 'S/N');
+    await user.type(screen.getByLabelText('Colonia / barrio / ejido / localidad *'), 'Ejido La Esperanza');
+    await user.type(screen.getByLabelText('Municipio / ciudad *'), 'Ocosingo');
+    await user.type(screen.getByLabelText('Estado *'), 'Chiapas');
+    await user.type(screen.getByLabelText('Código postal *'), '29950');
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      address: 'Camino al ejido #S/N, Ejido La Esperanza, Ocosingo, Chiapas, CP 29950',
+      deliveryAddress: expect.objectContaining({ exteriorNumber: 'S/N' })
+    }));
   });
 
   it('preselects pickup when it is the only method', () => {
@@ -149,7 +213,7 @@ describe('PublicCheckoutDialog', () => {
     await user.type(screen.getByLabelText('Nombre *'), 'Cliente compartido');
     await user.type(screen.getByLabelText('Teléfono *'), '9611112233');
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    await user.type(screen.getByLabelText(/Dirección/), 'Calle de prueba 123');
+    await user.type(screen.getByLabelText('Calle / avenida / camino *'), 'Calle de prueba 123');
     await user.type(screen.getByLabelText('Notas'), 'Sin cebolla');
 
     view.rerenderDialog({
@@ -159,21 +223,21 @@ describe('PublicCheckoutDialog', () => {
 
     expect(screen.getByLabelText('Nombre *')).toHaveValue('Cliente compartido');
     expect(screen.getByLabelText('Teléfono *')).toHaveValue('9611112233');
-    expect(screen.getByLabelText(/Dirección/)).toHaveValue('Calle de prueba 123');
+    expect(screen.getByLabelText('Calle / avenida / camino *')).toHaveValue('Calle de prueba 123');
     expect(screen.getByLabelText('Notas')).toHaveValue('Sin cebolla');
   });
 
-  it('clears the address immediately when changing delivery to pickup', async () => {
+  it('clears the structured address immediately when changing delivery to pickup', async () => {
     const user = userEvent.setup();
     renderDialog();
 
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    await user.type(screen.getByLabelText(/Dirección/), 'Dirección temporal');
+    await user.type(screen.getByLabelText('Calle / avenida / camino *'), 'Dirección temporal');
     await user.click(screen.getByRole('radio', { name: /Recoger/ }));
-    expect(screen.queryByLabelText(/Dirección/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Calle / avenida / camino *')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    expect(screen.getByLabelText(/Dirección/)).toHaveValue('');
+    expect(screen.getByLabelText('Calle / avenida / camino *')).toHaveValue('');
   });
 
   it('clears personal data and recalculates the method when the portal changes', async () => {
@@ -194,7 +258,7 @@ describe('PublicCheckoutDialog', () => {
     expect(screen.getByLabelText('Teléfono *')).toHaveValue('');
     expect(screen.getByLabelText('Notas')).toHaveValue('');
     expect(screen.getByRole('radio', { name: /Domicilio/ })).toBeChecked();
-    expect(screen.getByLabelText(/Dirección/)).toHaveValue('');
+    expect(screen.getByLabelText('Calle / avenida / camino *')).toHaveValue('');
   });
 
   it('clears the form after success while keeping server confirmation intact', async () => {
@@ -205,7 +269,7 @@ describe('PublicCheckoutDialog', () => {
     await user.type(screen.getByLabelText('Nombre *'), 'Cliente exitoso');
     await user.type(screen.getByLabelText('Teléfono *'), '9619998877');
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    await user.type(screen.getByLabelText(/Dirección/), 'Avenida confirmada 20');
+    await user.type(screen.getByLabelText('Calle / avenida / camino *'), 'Avenida confirmada 20');
     await user.type(screen.getByLabelText('Notas'), 'Tocar puerta');
 
     view.rerenderDialog({ status: 'confirmed', confirmedOrder });

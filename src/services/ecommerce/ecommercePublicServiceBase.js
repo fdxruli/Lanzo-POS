@@ -10,6 +10,11 @@ import {
   canonicalizeEcommerceSelections,
   normalizePublicProductConfiguration
 } from '../../utils/ecommerceConfiguredProduct';
+import {
+  formatEcommerceDeliveryAddress,
+  isEcommerceDeliveryAddressRecord,
+  normalizeEcommerceDeliveryAddress
+} from '../../utils/ecommerceDeliveryAddress';
 import { normalizeEcommerceSiteDocument } from '../../utils/ecommerceSiteDocument';
 
 const PUBLIC_RPC_TIMEOUT_MS = 12_000;
@@ -30,6 +35,13 @@ const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_CUSTOMER_PHONE_REQUIRED: 'Escribe un teléfono válido para continuar.',
   ECOMMERCE_INVALID_FULFILLMENT_METHOD: 'Selecciona una modalidad válida para recibir tu pedido.',
   ECOMMERCE_DELIVERY_ADDRESS_REQUIRED: 'Escribe la dirección de entrega para continuar.',
+  ECOMMERCE_DELIVERY_STREET_REQUIRED: 'Escribe la calle, avenida o camino de entrega.',
+  ECOMMERCE_DELIVERY_NEIGHBORHOOD_REQUIRED: 'Escribe la colonia, barrio, ejido o localidad.',
+  ECOMMERCE_DELIVERY_MUNICIPALITY_REQUIRED: 'Escribe el municipio o ciudad de entrega.',
+  ECOMMERCE_DELIVERY_STATE_REQUIRED: 'Escribe el estado de entrega.',
+  ECOMMERCE_DELIVERY_POSTAL_CODE_REQUIRED: 'Escribe el código postal de entrega.',
+  ECOMMERCE_DELIVERY_POSTAL_CODE_INVALID: 'Escribe un código postal válido de 5 dígitos.',
+  ECOMMERCE_DELIVERY_ADDRESS_INVALID: 'Revisa los datos de la dirección de entrega.',
   ECOMMERCE_DELIVERY_NOT_AVAILABLE: 'Este negocio no tiene entrega a domicilio disponible.',
   ECOMMERCE_PICKUP_NOT_AVAILABLE: 'Este negocio no tiene recolección disponible.',
   ECOMMERCE_EMPTY_CART: 'Agrega al menos un producto para continuar.',
@@ -396,12 +408,25 @@ function normalizeOrderResult(data) {
 function normalizeCustomer(customer) {
   const source = asObject(customer);
   const fulfillmentMethod = asText(source.fulfillmentMethod).toLowerCase();
+  const hasStructuredAddress = Object.prototype.hasOwnProperty.call(source, 'deliveryAddress');
+  const deliveryAddress = fulfillmentMethod === 'delivery' && hasStructuredAddress
+    ? (isEcommerceDeliveryAddressRecord(source.deliveryAddress)
+      ? normalizeEcommerceDeliveryAddress(source.deliveryAddress)
+      : null)
+    : null;
   return {
     name: asText(source.name).slice(0, 120),
     phone: asText(source.phone).slice(0, 40),
-    address: fulfillmentMethod === 'delivery' ? asText(source.address).slice(0, 500) : '',
+    address: fulfillmentMethod === 'delivery'
+      ? deliveryAddress
+        ? formatEcommerceDeliveryAddress(deliveryAddress)
+        : asText(source.address).slice(0, 500)
+      : '',
     notes: asText(source.notes).slice(0, 1000),
-    fulfillmentMethod
+    fulfillmentMethod,
+    ...(fulfillmentMethod === 'delivery' && hasStructuredAddress
+      ? { deliveryAddress }
+      : {})
   };
 }
 
@@ -782,6 +807,7 @@ export const ecommercePublicServiceInternals = Object.freeze({
   normalizeCatalogConfiguration,
   normalizeOrderResult,
   normalizeRpcFailure,
+  normalizeCustomer,
   normalizeOrderItems,
   isLegacyCatalogSignatureError,
   normalizeCatalogCacheStrategy

@@ -1,6 +1,10 @@
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import Logger from '../Logger';
+import {
+  isEcommerceDeliveryAddressRecord,
+  normalizeEcommerceDeliveryAddress
+} from '../../utils/ecommerceDeliveryAddress';
 
 const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDERS_ACCESS_DENIED: 'No tienes permiso para administrar pedidos online.',
@@ -133,56 +137,76 @@ const normalizeFulfillment = (fulfillment = {}) => ({
   paymentRegistered: Boolean(fulfillment?.paymentRegistered)
 });
 
-const normalizeDetail = (order = {}) => ({
-  id: safeText(order.id),
-  code: safeText(order.code),
-  licenseIdentity: safeText(order.licenseIdentity),
-  status: safeText(order.status, 'new'),
-  channel: safeText(order.channel, 'public_store'),
-  fulfillmentMethod: safeText(order.fulfillmentMethod, 'pickup'),
-  customer: {
-    name: safeText(order.customer?.name),
-    phone: safeText(order.customer?.phone),
-    address: order.customer?.address || null,
-    notes: order.customer?.notes || null
-  },
-  totals: {
-    subtotal: safeNumber(order.totals?.subtotal),
-    deliveryFee: safeNumber(order.totals?.deliveryFee),
-    discountTotal: safeNumber(order.totals?.discountTotal),
-    taxTotal: safeNumber(order.totals?.taxTotal),
-    total: safeNumber(order.totals?.total),
-    currency: safeText(order.totals?.currency, 'MXN')
-  },
-  payment: {
-    method: safeText(order.payment?.method, 'on_delivery'),
-    status: safeText(order.payment?.status, 'pending')
-  },
-  timestamps: {
-    createdAt: order.timestamps?.createdAt || null,
-    updatedAt: order.timestamps?.updatedAt || null,
-    seenAt: order.timestamps?.seenAt || null,
-    acceptedAt: order.timestamps?.acceptedAt || null,
-    rejectedAt: order.timestamps?.rejectedAt || null
-  },
-  items: Array.isArray(order.items) ? order.items.map(normalizeItem) : [],
-  events: Array.isArray(order.events) ? order.events.map(normalizeEvent) : [],
-  contact: {
-    whatsappUrl: typeof order.contact?.whatsappUrl === 'string' && order.contact.whatsappUrl.startsWith('https://wa.me/')
-      ? order.contact.whatsappUrl
-      : null
-  },
-  posDraft: {
-    status: safeText(order.posDraft?.status, 'none'),
-    draftId: safeText(order.posDraft?.draftId) || null,
-    claimedAt: order.posDraft?.claimedAt || null,
-    expiresAt: order.posDraft?.expiresAt || null,
-    preparedAt: order.posDraft?.preparedAt || null,
-    isClaimedByCurrentActor: Boolean(order.posDraft?.isClaimedByCurrentActor),
-    claimToken: safeText(order.posDraft?.claimToken) || null
-  },
-  fulfillment: normalizeFulfillment(order.fulfillment)
-});
+const normalizeOrderDeliveryAddress = (value) => {
+  if (!isEcommerceDeliveryAddressRecord(value)) return null;
+  const address = normalizeEcommerceDeliveryAddress(value);
+  return address.street || address.neighborhood || address.municipality
+    || address.state || address.postalCode || address.reference
+    ? address
+    : null;
+};
+
+const normalizeCustomer = (customer = {}, fulfillmentMethod = 'pickup') => {
+  const deliveryAddress = fulfillmentMethod === 'delivery'
+    ? normalizeOrderDeliveryAddress(customer?.deliveryAddress)
+    : null;
+  return {
+    name: safeText(customer?.name).slice(0, 120),
+    phone: safeText(customer?.phone).slice(0, 40),
+    address: safeText(customer?.address).slice(0, 500) || null,
+    notes: safeText(customer?.notes).slice(0, 1000) || null,
+    ...(deliveryAddress ? { deliveryAddress } : {})
+  };
+};
+
+const normalizeDetail = (order = {}) => {
+  const fulfillmentMethod = safeText(order.fulfillmentMethod, 'pickup');
+  return {
+    id: safeText(order.id),
+    code: safeText(order.code),
+    licenseIdentity: safeText(order.licenseIdentity),
+    status: safeText(order.status, 'new'),
+    channel: safeText(order.channel, 'public_store'),
+    fulfillmentMethod,
+    customer: normalizeCustomer(order.customer, fulfillmentMethod),
+    totals: {
+      subtotal: safeNumber(order.totals?.subtotal),
+      deliveryFee: safeNumber(order.totals?.deliveryFee),
+      discountTotal: safeNumber(order.totals?.discountTotal),
+      taxTotal: safeNumber(order.totals?.taxTotal),
+      total: safeNumber(order.totals?.total),
+      currency: safeText(order.totals?.currency, 'MXN')
+    },
+    payment: {
+      method: safeText(order.payment?.method, 'on_delivery'),
+      status: safeText(order.payment?.status, 'pending')
+    },
+    timestamps: {
+      createdAt: order.timestamps?.createdAt || null,
+      updatedAt: order.timestamps?.updatedAt || null,
+      seenAt: order.timestamps?.seenAt || null,
+      acceptedAt: order.timestamps?.acceptedAt || null,
+      rejectedAt: order.timestamps?.rejectedAt || null
+    },
+    items: Array.isArray(order.items) ? order.items.map(normalizeItem) : [],
+    events: Array.isArray(order.events) ? order.events.map(normalizeEvent) : [],
+    contact: {
+      whatsappUrl: typeof order.contact?.whatsappUrl === 'string' && order.contact.whatsappUrl.startsWith('https://wa.me/')
+        ? order.contact.whatsappUrl
+        : null
+    },
+    posDraft: {
+      status: safeText(order.posDraft?.status, 'none'),
+      draftId: safeText(order.posDraft?.draftId) || null,
+      claimedAt: order.posDraft?.claimedAt || null,
+      expiresAt: order.posDraft?.expiresAt || null,
+      preparedAt: order.posDraft?.preparedAt || null,
+      isClaimedByCurrentActor: Boolean(order.posDraft?.isClaimedByCurrentActor),
+      claimToken: safeText(order.posDraft?.claimToken) || null
+    },
+    fulfillment: normalizeFulfillment(order.fulfillment)
+  };
+};
 
 const getLicenseKey = (licenseDetails = {}) => (
   licenseDetails.license_key ||
