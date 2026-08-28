@@ -12,11 +12,35 @@ const renderForm = (props = {}) => render(<ProductFormV2 activeRubroContext="aba
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   queryBatchesByProductIdAndActive.mockReset();
   queryBatchesByProductIdAndActive.mockResolvedValue([]);
 });
 
 describe('ProductFormV2', () => {
+  it('captures a rapid physical scanner burst only in the explicit barcode field', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    renderForm();
+
+    const barcode = screen.getByRole('textbox', { name: /Código de barras/i });
+    [...'Sku-9A'].forEach((key) => {
+      fireEvent.keyDown(barcode, { key });
+      vi.advanceTimersByTime(20);
+    });
+    fireEvent.keyDown(barcode, { key: 'Enter' });
+
+    expect(barcode).toHaveValue('Sku-9A');
+
+    const name = screen.getByLabelText(/Nombre del producto/i);
+    [...'ABC9'].forEach((key) => {
+      fireEvent.keyDown(name, { key });
+      vi.advanceTimersByTime(20);
+    });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    expect(barcode).toHaveValue('Sku-9A');
+  });
+
   it('renders main fields and hides only inventory fields when stock control is disabled', () => {
     renderForm();
     expect(screen.getByLabelText(/Nombre del producto/i)).toBeInTheDocument();

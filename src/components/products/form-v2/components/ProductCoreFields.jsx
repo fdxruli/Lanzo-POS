@@ -16,7 +16,7 @@ export default function ProductCoreFields({ values, errors, onFieldChange, onCos
     </div>
     <div className="product-form-v2__field product-form-v2__barcode">
       <label htmlFor="product-v2-barcode">Código de barras</label>
-      <div><input id="product-v2-barcode" value={values.barcode} onChange={(event) => onFieldChange('barcode', event.target.value)} inputMode="numeric" /><button type="button" onClick={onScan} aria-label="Escanear código de barras"><ScanLine size={18} aria-hidden="true" /></button></div>
+      <div><input id="product-v2-barcode" data-scanner-physical-capture="true" value={values.barcode} onChange={(event) => onFieldChange('barcode', event.target.value)} inputMode="numeric" /><button type="button" onClick={onScan} aria-label="Escanear código de barras"><ScanLine size={18} aria-hidden="true" /></button></div>
     </div>
     {saleSetup && <div className="product-form-v2__primary-sale-setup">{saleSetup}</div>}
     <div className="product-form-v2__pricing">
