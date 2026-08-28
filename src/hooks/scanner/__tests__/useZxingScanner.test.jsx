@@ -51,17 +51,46 @@ const createResult = (text = '7501234567890') => ({
   getText: () => text,
 });
 
+const createDeferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+};
+
 const createTrack = ({
   focusMode,
   includeCapabilities = true,
   applyConstraints = vi.fn(),
 } = {}) => {
+  const listeners = new Map();
   const track = {
     kind: 'video',
     readyState: 'live',
     stop: vi.fn(() => { track.readyState = 'ended'; }),
     applyConstraints,
     getSettings: vi.fn(() => ({ facingMode: 'environment' })),
+    addEventListener: vi.fn((type, handler) => {
+      const handlers = listeners.get(type) || new Set();
+      handlers.add(handler);
+      listeners.set(type, handlers);
+    }),
+    removeEventListener: vi.fn((type, handler) => {
+      listeners.get(type)?.delete(handler);
+    }),
+    dispatchEvent: vi.fn((event) => {
+      listeners.get(event.type)?.forEach((handler) => handler(event));
+      return true;
+    }),
+  };
+
+  track.emitEnded = () => {
+    track.readyState = 'ended';
+    track.dispatchEvent(new Event('ended'));
   };
 
   if (includeCapabilities) {
@@ -78,6 +107,8 @@ const createStream = (track) => ({
 
 const getNormalReader = () => zxing.instances.find((reader) => !reader.hard);
 const getHardReader = () => zxing.instances.find((reader) => reader.hard);
+const getLatestNormalReader = () => [...zxing.instances].reverse()
+  .find((reader) => !reader.hard);
 const queueMisses = (count, kind = 'normal') => {
   zxing.queues[kind].push(...Array.from({ length: count }, () => ({
     name: 'NotFoundException',
@@ -85,9 +116,19 @@ const queueMisses = (count, kind = 'normal') => {
   })));
 };
 
-const renderScanner = async ({ track, videoSize = { width: 1920, height: 1080 }, ...props } = {}) => {
-  const stream = createStream(track);
-  navigator.mediaDevices.getUserMedia.mockResolvedValue(stream);
+const renderScanner = async ({
+  track,
+  stream: providedStream,
+  getUserMediaImplementation,
+  videoSize = { width: 1920, height: 1080 },
+  ...props
+} = {}) => {
+  const stream = providedStream || createStream(track);
+  if (getUserMediaImplementation) {
+    navigator.mediaDevices.getUserMedia.mockImplementation(getUserMediaImplementation);
+  } else {
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(stream);
+  }
   const view = render(<ScannerHarness paused={false} {...props} />);
   const video = view.container.querySelector('video');
 
@@ -107,6 +148,13 @@ const renderScanner = async ({ track, videoSize = { width: 1920, height: 1080 },
 const flushTimers = async (milliseconds) => {
   await act(async () => {
     vi.advanceTimersByTime(milliseconds);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+};
+
+const flushPromises = async () => {
+  await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
   });
@@ -482,6 +530,347 @@ describe('useZxingScanner camera enhancement', () => {
     });
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
     expect(nextTrack.readyState).toBe('live');
+  });
+
+  it('does not let stale autofocus cleanup stop a newer session', async () => {
+    const autofocus = createDeferred();
+    const trackA = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const trackB = createTrack();
+    const streamA = createStream(trackA);
+    const streamB = createStream(trackB);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streamA)
+      .mockResolvedValueOnce(streamB);
+    const { view, video } = await renderScanner({
+      track: trackA,
+      stream: streamA,
+      getUserMediaImplementation: getUserMedia,
+    });
+
+    expect(trackA.applyConstraints).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.rerender(<ScannerHarness paused={false} deviceId="new-camera" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const readerB = getLatestNormalReader();
+    await waitFor(() => expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1));
+    expect(video.srcObject).toBe(streamB);
+    expect(trackB.stop).not.toHaveBeenCalled();
+
+    autofocus.resolve();
+    await flushPromises();
+
+    expect(video.srcObject).toBe(streamB);
+    expect(trackB.stop).not.toHaveBeenCalled();
+    expect(readerB.reset).not.toHaveBeenCalled();
+  });
+
+  it('does not let stale autofocus completion invalidate new session ownership', async () => {
+    vi.useFakeTimers();
+    const autofocus = createDeferred();
+    const trackA = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const trackB = createTrack();
+    const streamA = createStream(trackA);
+    const streamB = createStream(trackB);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streamA)
+      .mockResolvedValueOnce(streamB);
+    const { view, video } = await renderScanner({
+      track: trackA,
+      stream: streamA,
+      getUserMediaImplementation: getUserMedia,
+    });
+
+    await act(async () => {
+      view.rerender(<ScannerHarness paused={false} deviceId="new-camera" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const readerB = getLatestNormalReader();
+    await flushTimers(1);
+    expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(streamB);
+
+    autofocus.resolve();
+    await flushPromises();
+    await flushTimers(1000);
+
+    expect(video.srcObject).toBe(streamB);
+    expect(trackB.stop).not.toHaveBeenCalled();
+    expect(readerB.reset).not.toHaveBeenCalled();
+  });
+
+  it('does not let stale cleanup clear a newer session timer', async () => {
+    vi.useFakeTimers();
+    const autofocus = createDeferred();
+    const trackA = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const trackB = createTrack();
+    const streamA = createStream(trackA);
+    const streamB = createStream(trackB);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streamA)
+      .mockResolvedValueOnce(streamB);
+    const { view } = await renderScanner({
+      track: trackA,
+      stream: streamA,
+      getUserMediaImplementation: getUserMedia,
+    });
+
+    await act(async () => {
+      view.rerender(<ScannerHarness paused={false} deviceId="new-camera" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const readerB = getLatestNormalReader();
+    autofocus.resolve();
+    await flushPromises();
+    expect(readerB.decodeBitmap).not.toHaveBeenCalled();
+
+    await flushTimers(1);
+    expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a late session finish clear a newer in-flight lock', async () => {
+    vi.useFakeTimers();
+    const decodeA = createDeferred();
+    const decodeB = createDeferred();
+    zxing.queues.normal.push(
+      () => decodeA.promise,
+      () => decodeB.promise,
+    );
+    const trackA = createTrack();
+    const trackB = createTrack();
+    const streamA = createStream(trackA);
+    const streamB = createStream(trackB);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streamA)
+      .mockResolvedValueOnce(streamB);
+    const { view } = await renderScanner({
+      track: trackA,
+      stream: streamA,
+      getUserMediaImplementation: getUserMedia,
+    });
+    const readerA = getLatestNormalReader();
+
+    await flushTimers(1);
+    expect(readerA.decodeBitmap).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.rerender(<ScannerHarness paused={false} deviceId="new-camera" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const readerB = getLatestNormalReader();
+    await flushTimers(1);
+    expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1);
+
+    decodeA.resolve(createResult('STALE'));
+    await flushPromises();
+    await flushTimers(5000);
+
+    expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1);
+    decodeB.resolve(createResult('CURRENT'));
+    await flushPromises();
+  });
+
+  it('does not let stale cleanup reset a newer session reader', async () => {
+    const autofocus = createDeferred();
+    const trackA = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const trackB = createTrack();
+    const streamA = createStream(trackA);
+    const streamB = createStream(trackB);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streamA)
+      .mockResolvedValueOnce(streamB);
+    const { view } = await renderScanner({
+      track: trackA,
+      stream: streamA,
+      getUserMediaImplementation: getUserMedia,
+    });
+
+    await act(async () => {
+      view.rerender(<ScannerHarness paused={false} deviceId="new-camera" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const readerB = getLatestNormalReader();
+    await waitFor(() => expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1));
+    autofocus.resolve();
+    await flushPromises();
+
+    expect(readerB.reset).not.toHaveBeenCalled();
+  });
+
+  it('aborts startup when video.play throws synchronously', async () => {
+    vi.useFakeTimers();
+    const playError = new Error('play threw');
+    HTMLMediaElement.prototype.play.mockImplementation(() => {
+      throw playError;
+    });
+    const onError = vi.fn();
+    const track = createTrack();
+    const { video } = await renderScanner({ track, onError });
+
+    await flushPromises();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(playError);
+    expect(video.srcObject).toBe(null);
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+
+    await flushTimers(1000);
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+  });
+
+  it('aborts startup and cleans owned media when video.play rejects', async () => {
+    vi.useFakeTimers();
+    const play = createDeferred();
+    HTMLMediaElement.prototype.play.mockImplementation(() => play.promise);
+    const playError = new Error('play rejected');
+    const onError = vi.fn();
+    const track = createTrack();
+    const { video } = await renderScanner({ track, onError });
+
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+    play.reject(playError);
+    await flushPromises();
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(playError);
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(null);
+    await flushTimers(1000);
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+  });
+
+  it('does not let stale play rejection affect a newer session', async () => {
+    vi.useFakeTimers();
+    const playA = createDeferred();
+    HTMLMediaElement.prototype.play
+      .mockImplementationOnce(() => playA.promise)
+      .mockImplementation(() => Promise.resolve());
+    const onError = vi.fn();
+    const trackA = createTrack();
+    const trackB = createTrack();
+    const streamA = createStream(trackA);
+    const streamB = createStream(trackB);
+    const getUserMedia = vi.fn()
+      .mockResolvedValueOnce(streamA)
+      .mockResolvedValueOnce(streamB);
+    const { view, video } = await renderScanner({
+      track: trackA,
+      stream: streamA,
+      getUserMediaImplementation: getUserMedia,
+      onError,
+    });
+
+    await act(async () => {
+      view.rerender(<ScannerHarness paused={false} deviceId="new-camera" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const readerB = getLatestNormalReader();
+    await flushTimers(1);
+    expect(readerB.decodeBitmap).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(streamB);
+
+    playA.reject(new Error('stale play rejected'));
+    await flushPromises();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(trackB.stop).not.toHaveBeenCalled();
+    expect(video.srcObject).toBe(streamB);
+    expect(readerB.reset).not.toHaveBeenCalled();
+  });
+
+  it('does not attach or decode after a track ends during autofocus', async () => {
+    const autofocus = createDeferred();
+    const track = createTrack({
+      focusMode: ['continuous'],
+      applyConstraints: vi.fn(() => autofocus.promise),
+    });
+    const onError = vi.fn();
+    const { video } = await renderScanner({ track, onError });
+
+    track.emitEnded();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(video.srcObject ?? null).toBe(null);
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+
+    autofocus.resolve();
+    await flushPromises();
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+  });
+
+  it('cancels the first decode timer when a track ends after play', async () => {
+    vi.useFakeTimers();
+    const onError = vi.fn();
+    const track = createTrack();
+    const { video } = await renderScanner({ track, onError });
+
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+    track.emitEnded();
+    expect(onError).toHaveBeenCalledTimes(1);
+    await flushTimers(1000);
+
+    expect(getNormalReader().decodeBitmap).not.toHaveBeenCalled();
+    expect(video.srcObject).toBe(null);
+  });
+
+  it('ignores a decode result when the track ends in flight', async () => {
+    vi.useFakeTimers();
+    const decode = createDeferred();
+    zxing.queues.normal.push(() => decode.promise);
+    const onDecodeResult = vi.fn();
+    const onError = vi.fn();
+    const track = createTrack();
+    const { video } = await renderScanner({ track, onDecodeResult, onError });
+    const reader = getNormalReader();
+
+    await flushTimers(1);
+    expect(reader.decodeBitmap).toHaveBeenCalledTimes(1);
+    track.emitEnded();
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    decode.resolve(createResult('STALE_TRACK_RESULT'));
+    await flushPromises();
+    await flushTimers(5000);
+
+    expect(onDecodeResult).not.toHaveBeenCalled();
+    expect(reader.decodeBitmap).toHaveBeenCalledTimes(1);
+    expect(video.srcObject).toBe(null);
+  });
+
+  it('reports an ended active track at most once', async () => {
+    const onError = vi.fn();
+    const track = createTrack();
+    await renderScanner({ track, onError });
+
+    track.emitEnded();
+    track.emitEnded();
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 
   it('routes unexpected decoder errors to onError without treating them as misses', async () => {

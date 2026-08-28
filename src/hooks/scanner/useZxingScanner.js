@@ -226,7 +226,7 @@ const captureVideoFrame = ({ videoElement, canvasRefs, kind, sourceRect }) => {
   return canvasCapture.canvas;
 };
 
-const attachStreamToVideo = (videoElement, stream, onPlayError) => {
+const attachStreamToVideo = async (videoElement, stream) => {
   // These are standard HTMLMediaElement properties and keep the existing
   // mobile autoplay/inline behavior when stream ownership is manual.
   videoElement.autoplay = true;
@@ -236,17 +236,7 @@ const attachStreamToVideo = (videoElement, stream, onPlayError) => {
 
   if (typeof videoElement.play !== 'function') return;
 
-  let playPromise;
-  try {
-    playPromise = videoElement.play();
-  } catch (error) {
-    onPlayError(error);
-    return;
-  }
-
-  if (playPromise && typeof playPromise.catch === 'function') {
-    playPromise.catch(onPlayError);
-  }
+  await videoElement.play();
 };
 
 const readNormalizedDecodeRegion = (decodeRegionRef) => {
@@ -290,24 +280,12 @@ export function useZxingScanner({
   onError = () => {},
 } = {}) {
   const videoRef = useRef(null);
-  const activeVideoElementRef = useRef(null);
-  const activeStreamRef = useRef(null);
-  const activeTrackRef = useRef(null);
+  const activeSessionRef = useRef(null);
   const sessionIdRef = useRef(0);
-  const pendingTimerRef = useRef(null);
-  const pipelineInFlightRef = useRef(false);
-  const completeMissCountRef = useRef(0);
-  const canvasRefs = useRef({ roi: null, full: null });
 
   const decodeResultHandlerRef = useRef(onDecodeResult);
   const decodeErrorHandlerRef = useRef(onDecodeError);
   const errorHandlerRef = useRef(onError);
-
-  const readers = useMemo(() => {
-    const normalReader = new BrowserMultiFormatReader(hints);
-    const hardReader = new BrowserMultiFormatReader(getHardHints(hints));
-    return { normalReader, hardReader };
-  }, [hints]);
 
   const missDelay = useMemo(
     () => getSafeMissDelay(timeBetweenDecodingAttempts),
@@ -326,41 +304,58 @@ export function useZxingScanner({
     errorHandlerRef.current = onError;
   }, [onError]);
 
-  const stopDecoding = useCallback(() => {
-    sessionIdRef.current += 1;
+  const cleanupSession = useCallback((session) => {
+    if (!session || session.cancelled) return;
 
-    if (pendingTimerRef.current !== null) {
-      clearTimeout(pendingTimerRef.current);
-      pendingTimerRef.current = null;
+    session.cancelled = true;
+
+    if (session.timer !== null) {
+      clearTimeout(session.timer);
+      session.timer = null;
     }
 
-    pipelineInFlightRef.current = false;
-    completeMissCountRef.current = 0;
+    session.pipelineInFlight = false;
+    session.completeMissCount = 0;
 
-    const videoElement = videoRef.current || activeVideoElementRef.current;
-    const activeStream = activeStreamRef.current;
-    const attachedStream = videoElement?.srcObject;
-    const activeTrack = activeTrackRef.current;
-    activeStreamRef.current = null;
-    activeTrackRef.current = null;
-    activeVideoElementRef.current = null;
+    const {
+      videoElement,
+      stream,
+      track,
+      trackEndedHandler,
+      readers,
+    } = session;
 
-    if (typeof activeTrack?.stop === 'function' && activeTrack.readyState !== 'ended') {
-      activeTrack.stop();
+    if (
+      track
+      && trackEndedHandler
+      && typeof track.removeEventListener === 'function'
+    ) {
+      track.removeEventListener('ended', trackEndedHandler);
+    }
+    session.trackEndedHandler = null;
+
+    if (typeof track?.stop === 'function' && track.readyState !== 'ended') {
+      track.stop();
     }
 
-    stopStreamTracks(activeStream, activeTrack);
-    if (attachedStream && attachedStream !== activeStream) {
-      stopStreamTracks(attachedStream);
-    }
+    stopStreamTracks(stream, track);
 
-    safelyResetReader(readers.normalReader);
-    safelyResetReader(readers.hardReader);
+    safelyResetReader(readers?.normalReader);
+    safelyResetReader(readers?.hardReader);
 
-    if (videoElement && videoElement.srcObject === attachedStream) {
+    if (videoElement && videoElement.srcObject === stream) {
       videoElement.srcObject = null;
     }
-  }, [readers]);
+
+    if (activeSessionRef.current === session) {
+      activeSessionRef.current = null;
+    }
+  }, []);
+
+  const stopDecoding = useCallback(() => {
+    const session = activeSessionRef.current;
+    cleanupSession(session);
+  }, [cleanupSession]);
 
   useEffect(() => {
     const videoElement = videoRef.current;
@@ -370,36 +365,89 @@ export function useZxingScanner({
       return undefined;
     }
 
-    const sessionId = sessionIdRef.current + 1;
-    sessionIdRef.current = sessionId;
-    activeVideoElementRef.current = videoElement;
-    let didCancel = false;
+    const session = {
+      id: sessionIdRef.current + 1,
+      cancelled: false,
+      videoElement,
+      stream: null,
+      track: null,
+      trackEndedHandler: null,
+      timer: null,
+      pipelineInFlight: false,
+      completeMissCount: 0,
+      readers: {
+        normalReader: new BrowserMultiFormatReader(hints),
+        hardReader: new BrowserMultiFormatReader(getHardHints(hints)),
+      },
+      canvasRefs: { roi: null, full: null },
+      errorReported: false,
+    };
+    sessionIdRef.current = session.id;
 
-    completeMissCountRef.current = 0;
-    pipelineInFlightRef.current = false;
+    const previousSession = activeSessionRef.current;
+    activeSessionRef.current = session;
+    if (previousSession && previousSession !== session) {
+      cleanupSession(previousSession);
+    }
 
-    const isSessionActive = () => (
-      !didCancel && sessionId === sessionIdRef.current
+    const isSessionActive = (candidateSession = session) => (
+      !candidateSession.cancelled
+      && activeSessionRef.current === candidateSession
+      && sessionIdRef.current === candidateSession.id
     );
 
-    const scheduleNextCycle = (delay) => {
-      if (!isSessionActive()) return;
+    const reportUnexpectedError = (error) => {
+      if (!isSessionActive() || session.errorReported) return false;
 
-      if (pendingTimerRef.current !== null) {
-        clearTimeout(pendingTimerRef.current);
-      }
-
-      pendingTimerRef.current = setTimeout(() => {
-        pendingTimerRef.current = null;
-        if (!isSessionActive()) return;
-        void runDecodeCycle();
-      }, delay);
+      session.errorReported = true;
+      errorHandlerRef.current(error);
+      return true;
     };
 
-    const reportUnexpectedError = (error) => {
-      if (isSessionActive()) {
-        errorHandlerRef.current(error);
+    const handleSessionFailure = (error) => {
+      if (!isSessionActive()) return false;
+
+      reportUnexpectedError(error);
+      cleanupSession(session);
+      return false;
+    };
+
+    const ensureSessionCanContinue = ({ requireAttachedStream = false } = {}) => {
+      if (!isSessionActive()) return false;
+
+      if (session.track?.readyState === 'ended') {
+        return handleSessionFailure(new Error('Camera video track ended unexpectedly.'));
       }
+
+      if (
+        requireAttachedStream
+        && session.stream
+        && videoElement.srcObject !== session.stream
+      ) {
+        return handleSessionFailure(new Error('Camera video stream was detached unexpectedly.'));
+      }
+
+      return true;
+    };
+
+    const handleTrackEnded = () => {
+      if (!isSessionActive()) return;
+
+      handleSessionFailure(new Error('Camera video track ended unexpectedly.'));
+    };
+
+    const scheduleNextCycle = (delay) => {
+      if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
+
+      if (session.timer !== null) {
+        clearTimeout(session.timer);
+      }
+
+      session.timer = setTimeout(() => {
+        session.timer = null;
+        if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
+        void runDecodeCycle();
+      }, delay);
     };
 
     const decodeCanvas = async (reader, canvas) => {
@@ -414,7 +462,7 @@ export function useZxingScanner({
 
       return captureVideoFrame({
         videoElement,
-        canvasRefs: canvasRefs.current,
+        canvasRefs: session.canvasRefs,
         kind: 'full',
         sourceRect: {
           x: 0,
@@ -435,22 +483,22 @@ export function useZxingScanner({
 
       return captureVideoFrame({
         videoElement,
-        canvasRefs: canvasRefs.current,
+        canvasRefs: session.canvasRefs,
         kind: 'roi',
         sourceRect,
       });
     };
 
     const deliverSuccess = (result) => {
-      if (!isSessionActive()) return false;
+      if (!ensureSessionCanContinue({ requireAttachedStream: true })) return false;
 
-      completeMissCountRef.current = 0;
+      session.completeMissCount = 0;
       decodeResultHandlerRef.current(result);
       return true;
     };
 
     const deliverCompleteMiss = (error) => {
-      if (!isSessionActive()) return;
+      if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
       // A ROI miss is internal. Only this completed ROI+full-frame pipeline
       // miss reaches the hook's optional public callback, exactly once.
@@ -458,22 +506,28 @@ export function useZxingScanner({
     };
 
     const runDecodeCycle = async () => {
-      if (!isSessionActive() || pipelineInFlightRef.current) return;
+      if (
+        !ensureSessionCanContinue({ requireAttachedStream: true })
+        || session.pipelineInFlight
+      ) return;
 
-      pipelineInFlightRef.current = true;
+      session.pipelineInFlight = true;
 
       try {
         const region = readNormalizedDecodeRegion(decodeRegionRef);
 
         if (region) {
-          if (!isSessionActive()) return;
+          if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
           const roiFrame = captureRoiFrame(region);
-          if (!isSessionActive()) return;
+          if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
           if (roiFrame) {
             try {
-              const roiResult = await decodeCanvas(readers.normalReader, roiFrame);
-              if (!isSessionActive()) return;
+              const roiResult = await decodeCanvas(
+                session.readers.normalReader,
+                roiFrame,
+              );
+              if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
               if (roiResult) {
                 deliverSuccess(roiResult);
@@ -481,7 +535,7 @@ export function useZxingScanner({
                 return;
               }
             } catch (error) {
-              if (!isSessionActive()) return;
+              if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
               if (!isRecoverableDecodeError(error)) {
                 reportUnexpectedError(error);
@@ -491,9 +545,9 @@ export function useZxingScanner({
           }
         }
 
-        if (!isSessionActive()) return;
+        if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
         const fullFrame = captureFullFrame();
-        if (!isSessionActive()) return;
+        if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
         // Metadata can lag stream attachment. Wait for a usable intrinsic
         // frame without exposing a camera error or creating a tight loop.
@@ -504,8 +558,11 @@ export function useZxingScanner({
 
         let fullNormalError = null;
         try {
-          const fullNormalResult = await decodeCanvas(readers.normalReader, fullFrame);
-          if (!isSessionActive()) return;
+          const fullNormalResult = await decodeCanvas(
+            session.readers.normalReader,
+            fullFrame,
+          );
+          if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
           if (fullNormalResult) {
             deliverSuccess(fullNormalResult);
@@ -515,7 +572,7 @@ export function useZxingScanner({
 
           fullNormalError = createSyntheticNotFoundError();
         } catch (error) {
-          if (!isSessionActive()) return;
+          if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
           if (!isRecoverableDecodeError(error)) {
             reportUnexpectedError(error);
@@ -525,9 +582,9 @@ export function useZxingScanner({
           fullNormalError = error;
         }
 
-        completeMissCountRef.current += 1;
+        session.completeMissCount += 1;
         const shouldTryHarder = (
-          completeMissCountRef.current >= TRY_HARDER_AFTER_COMPLETE_MISSES
+          session.completeMissCount >= TRY_HARDER_AFTER_COMPLETE_MISSES
         );
 
         if (!shouldTryHarder) {
@@ -540,11 +597,14 @@ export function useZxingScanner({
         // pass. No second capture occurs in this cycle.
         let hardError = null;
         try {
-          const hardResult = await decodeCanvas(readers.hardReader, fullFrame);
-          if (!isSessionActive()) return;
+          const hardResult = await decodeCanvas(
+            session.readers.hardReader,
+            fullFrame,
+          );
+          if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
           // The threshold window ends regardless of hard success or miss.
-          completeMissCountRef.current = 0;
+          session.completeMissCount = 0;
 
           if (hardResult) {
             deliverSuccess(hardResult);
@@ -554,9 +614,9 @@ export function useZxingScanner({
 
           hardError = createSyntheticNotFoundError();
         } catch (error) {
-          if (!isSessionActive()) return;
+          if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
-          completeMissCountRef.current = 0;
+          session.completeMissCount = 0;
           if (!isRecoverableDecodeError(error)) {
             reportUnexpectedError(error);
             return;
@@ -570,7 +630,7 @@ export function useZxingScanner({
       } catch (error) {
         reportUnexpectedError(error);
       } finally {
-        pipelineInFlightRef.current = false;
+        session.pipelineInFlight = false;
       }
     };
 
@@ -589,51 +649,48 @@ export function useZxingScanner({
           return;
         }
 
-        activeStreamRef.current = stream;
-        const activeTrack = getActiveVideoTrackFromStream(stream);
-        if (activeTrack) {
-          activeTrackRef.current = activeTrack;
-          await applyContinuousAutofocus(activeTrack);
+        session.stream = stream;
+        session.track = getActiveVideoTrackFromStream(stream);
+
+        if (session.track && typeof session.track.addEventListener === 'function') {
+          session.track.addEventListener('ended', handleTrackEnded);
+          session.trackEndedHandler = handleTrackEnded;
         }
 
-        if (
-          !isSessionActive()
-          || activeTrackRef.current !== activeTrack
-          || activeTrack?.readyState === 'ended'
-        ) {
-          stopDecoding();
-          return;
+        if (session.track) {
+          await applyContinuousAutofocus(session.track);
         }
 
-        attachStreamToVideo(videoElement, stream, (error) => {
-          reportUnexpectedError(error);
-        });
+        if (!ensureSessionCanContinue()) return;
 
-        if (!isSessionActive()) return;
+        await attachStreamToVideo(videoElement, stream);
+
+        if (!ensureSessionCanContinue({ requireAttachedStream: true })) return;
 
         // Initial work is deferred to the event loop; subsequent work always
         // uses the bounded success/miss cadence above.
         scheduleNextCycle(1);
       } catch (error) {
         if (isSessionActive()) {
-          errorHandlerRef.current(error);
+          reportUnexpectedError(error);
         }
+        cleanupSession(session);
       }
     };
 
     void startDecoding();
 
     return () => {
-      didCancel = true;
-      stopDecoding();
+      cleanupSession(session);
     };
   }, [
     constraints,
     decodeRegionRef,
     deviceId,
+    hints,
     missDelay,
     paused,
-    readers,
+    cleanupSession,
     stopDecoding,
   ]);
 
