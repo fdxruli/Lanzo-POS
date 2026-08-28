@@ -12,6 +12,7 @@ import Logger from '../../services/Logger';
 import { useScannerCart } from '../../hooks/scanner/useScannerCart';
 import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
 import { isRecoverableDecodeError } from '../../hooks/scanner/useZxingScanner';
+import { createBarcodeScanEvent } from '../../services/scanner/barcodeScanEvent';
 import { CameraViewport } from './CameraViewport';
 import { COMMERCIAL_BARCODE_SCAN_HINTS } from './commercialBarcodeFormats';
 import { ScannerCartList } from './ScannerCartList';
@@ -166,9 +167,10 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Procesar código escaneado con protección contra race conditions
   const processScannedCode = useCallback(
-    async (code) => {
+    async (scanEvent) => {
       if (!isMountedRef.current) return;
 
+      const code = scanEvent.code;
       setScanFeedback(`Buscando: ${code}...`);
 
       try {
@@ -210,7 +212,13 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
         return;
       }
 
-      const code = result.getText();
+      const scanEvent = createBarcodeScanEvent({
+        source: 'camera',
+        code: result.getText(),
+        timestamp: Date.now()
+      });
+      if (!scanEvent) return;
+
       processingLockRef.current = true;
       setIsProcessing(true);
       setScanCount((count) => count + 1);
@@ -219,7 +227,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       if (mode === 'single' && onScanSuccess) {
         playBeep(1200, 'sine');
         if (navigator.vibrate) navigator.vibrate(50);
-        onScanSuccess(code);
+        onScanSuccess(scanEvent);
         handleClose();
         return;
       }
@@ -227,7 +235,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       // Modo POS: procesar y mantener abierto
       playBeep(1000, 'sine');
       if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
-      processScannedCode(code);
+      processScannedCode(scanEvent);
     },
     [isConfirming, mode, onScanSuccess, processScannedCode, handleClose]
   );

@@ -9,7 +9,10 @@ import PosFloatingBar from './PosFloatingBar';
 import OrderTabs from './OrderTabs';
 import EcommercePosConversionPanel from './EcommercePosConversionPanel';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
-import { useState, useEffect } from 'react';
+import { usePhysicalBarcodeScanner } from '../../hooks/scanner/usePhysicalBarcodeScanner';
+import { resolveWithCache } from '../../services/barcodeCache';
+import { playBeep, playErrorBeep } from '../../services/audioBeep';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
 import './RestaurantCloudStatus.css';
@@ -67,6 +70,8 @@ const ActiveOrderControls = () => {
 const PosPageContent = ({ data, ui, actions, features }) => {
     const createOrder = useActiveOrders((state) => state.createOrder);
     const loadOrdersFromDB = useActiveOrders((state) => state.loadOrdersFromDB);
+    const addMultipleScannedProducts = useActiveOrders((state) => state.addMultipleScannedProducts);
+    const isCurrentOrderLocked = useActiveOrders((state) => Boolean(state.isCurrentOrderLocked));
     const currentOrder = useActiveOrders((state) => (
         state.currentOrderId
             ? state.activeOrders.get(state.currentOrderId) || null
@@ -74,6 +79,55 @@ const PosPageContent = ({ data, ui, actions, features }) => {
     ));
     const [isInitializing, setIsInitializing] = useState(true);
     const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
+    const physicalScannerEnabled = Boolean(
+        !isInitializing
+        && currentOrder
+        && !isCurrentOrderLocked
+        && !currentOrder.isLockedForCheckout
+        && !ui.activeModal
+        && !ui.isMobileCartOpen
+    );
+    const physicalScannerEnabledRef = useRef(false);
+    const activeOrderIdRef = useRef(null);
+    physicalScannerEnabledRef.current = physicalScannerEnabled;
+    activeOrderIdRef.current = currentOrder?.id || null;
+
+    const handlePhysicalScan = useCallback(async (scanEvent) => {
+        if (!physicalScannerEnabledRef.current) return;
+        const orderIdAtScan = activeOrderIdRef.current;
+
+        let product;
+        try {
+            product = await resolveWithCache(scanEvent.code);
+        } catch {
+            if (!physicalScannerEnabledRef.current || activeOrderIdRef.current !== orderIdAtScan) return;
+            void playErrorBeep();
+            showMessageModal('No se pudo resolver el código escaneado.', null, { type: 'error', duration: 1500 });
+            return;
+        }
+
+        if (!physicalScannerEnabledRef.current || activeOrderIdRef.current !== orderIdAtScan) return;
+
+        if (!product) {
+            void playErrorBeep();
+            showMessageModal(`⚠️ Producto no encontrado: ${scanEvent.code}`, null, { type: 'error', duration: 1500 });
+            return;
+        }
+
+        const result = addMultipleScannedProducts?.([product]);
+        if (!result?.success) {
+            void playErrorBeep();
+            showMessageModal('No se pudo agregar el producto escaneado.', null, { type: 'error', duration: 1500 });
+            return;
+        }
+
+        void playBeep(1000, 'sine');
+    }, [addMultipleScannedProducts]);
+
+    usePhysicalBarcodeScanner({
+        enabled: physicalScannerEnabled,
+        onScan: handlePhysicalScan
+    });
 
     useEffect(() => {
         const initializeOrders = async () => {

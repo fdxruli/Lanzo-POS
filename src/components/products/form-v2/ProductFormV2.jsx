@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PackagePlus } from 'lucide-react';
 import ScannerModal from '../../scanner/ScannerModal';
 import RecipeBuilderModal from '../RecipeBuilderModal';
 import WholesaleManagerModal from '../WholesaleManagerModal';
 import { CANONICAL_BUSINESS_TYPES, normalizeBusinessTypes } from '../../../utils/businessType';
 import { useFeatureConfig } from '../../../hooks/useFeatureConfig';
+import { usePhysicalBarcodeScanner } from '../../../hooks/scanner/usePhysicalBarcodeScanner';
 import { getProductRubroConfig, normalizeProductRubro } from './config/productRubroConfig';
 import { useProductFormV2 } from './hooks/useProductFormV2';
 import ProductCoreFields from './components/ProductCoreFields';
@@ -48,6 +49,22 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
   const isRestaurant = activeRubro === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE;
   const classificationValue = isRestaurant ? form.values.restaurantType : form.values.saleMode;
   const selectClassification = isRestaurant ? form.setRestaurantType : form.setSaleMode;
+  const { setField } = form;
+  const handlePhysicalScan = useCallback((scanEvent) => {
+    setField('barcode', scanEvent.code);
+  }, [setField]);
+  const isExplicitPhysicalCaptureTarget = useCallback(
+    (target) => target?.dataset?.scannerPhysicalCapture === 'true',
+    []
+  );
+
+  usePhysicalBarcodeScanner({
+    enabled: !isScannerOpen && !isRecipeModalOpen && !isWholesaleModalOpen,
+    onScan: handlePhysicalScan,
+    isExplicitCaptureTarget: isExplicitPhysicalCaptureTarget,
+    requireExplicitCaptureTarget: true
+  });
+
   const switchRubro = (rubro) => {
     if (isEditing) return;
     const normalized = normalizeProductRubro(rubro);
@@ -85,7 +102,7 @@ export default function ProductFormV2({ onSave, onCancel, onDirtyChange, product
     {form.values.trackStock && config.supports.alerts && <ProductFormAccordion id="product-v2-alerts" title="Alertas y almacenamiento" description="Existencias máximas, ubicación y proveedor." summary={form.values.location || form.values.maxStock !== '' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'alerts'} onToggle={() => setOpenAccordion(openAccordion === 'alerts' ? null : 'alerts')}><div className="product-form-v2__field-grid"><div className="product-form-v2__field"><label htmlFor="product-v2-max-stock">Stock máximo</label><input id="product-v2-max-stock" type="number" min="0" value={form.values.maxStock} onChange={(event) => form.setField('maxStock', event.target.value)} aria-invalid={Boolean(form.errors.fieldErrors.maxStock)} />{form.errors.fieldErrors.maxStock && <small className="product-form-v2__error">{form.errors.fieldErrors.maxStock}</small>}</div><div className="product-form-v2__field"><label htmlFor="product-v2-location">Ubicación</label><input id="product-v2-location" value={form.values.location} onChange={(event) => form.setField('location', event.target.value)} /></div></div></ProductFormAccordion>}
     <ProductFormAccordion id="product-v2-specific" title={config.detailTitle} description={`Configuración específica para ${config.label.toLowerCase()}.`} summary={form.values.hasVariants ? 'Variantes' : form.values.expirationMode !== 'NONE' ? 'Configurado' : 'Opcional'} isOpen={openAccordion === 'specific'} onToggle={() => setOpenAccordion(openAccordion === 'specific' ? null : 'specific')}><RubroFields values={form.values} errors={form.errors.fieldErrors} onFieldChange={form.setField} onSaleMode={form.setSaleMode} onTrackStock={form.setTrackStock} onExpirationMode={form.setExpirationMode} onManageRecipe={() => setIsRecipeModalOpen(true)} isEditing={isEditing} productId={productToEdit?.id} onOpenBatches={() => onOpenBatches?.(productToEdit)} onBatchSummary={form.setBatchSummary} features={features} onOpenWholesale={() => setIsWholesaleModalOpen(true)} /></ProductFormAccordion>
     <ProductFormActions isSaving={form.isSaving} onCancel={onCancel} onSave={() => form.submit()} onSaveAndAddAnother={saveAndAddAnother} />
-    <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={(barcode) => { form.setField('barcode', barcode); setIsScannerOpen(false); }} />
+    <ScannerModal show={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={(scanEvent) => { form.setField('barcode', scanEvent.code); setIsScannerOpen(false); }} />
     <RecipeBuilderModal show={isRecipeModalOpen} onClose={() => setIsRecipeModalOpen(false)} existingRecipe={form.values.recipe} onSave={(recipe) => form.setField('recipe', recipe)} productName={form.values.name} />
     <WholesaleManagerModal show={isWholesaleModalOpen} onClose={() => setIsWholesaleModalOpen(false)} tiers={form.values.wholesaleTiers} onSave={(wholesaleTiers) => form.setField('wholesaleTiers', wholesaleTiers)} basePrice={Number.parseFloat(form.values.price)} />
   </form>;
