@@ -50,11 +50,14 @@ begin
   insert into public.ecommerce_portals(
     id, license_id, slug, status, name, ordering_enabled, pickup_enabled,
     delivery_enabled, min_order_total, max_order_items, max_item_quantity,
-    stock_mode, business_hours_enabled, timezone
+    stock_mode, business_hours_enabled, timezone, address_street,
+    address_neighborhood, address_municipality, address_state,
+    address_postal_code
   ) values (
     v_portal, v_license, 'ecom-delivery-address-rollback', 'published',
     'Structured delivery test', true, true, true, 0, 30, 99, 'hidden',
-    false, 'America/Mexico_City'
+    false, 'America/Mexico_City', 'Avenida Comercio 100', 'Centro', 'Tuxtla',
+    'Chiapas', '29000'
   );
 
   insert into public.ecommerce_published_products(
