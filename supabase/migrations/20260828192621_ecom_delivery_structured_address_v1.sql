@@ -108,7 +108,7 @@ begin
     v_street_line := v_street_line || ' #' || v_exterior_number;
   end if;
   if v_interior_number <> '' then
-    v_street_line := v_street_line || ', Int. ' || v_interior_number;
+    v_street_line := v_street_line || ' Int. ' || v_interior_number;
   end if;
   v_formatted := concat_ws(
     ', ',
