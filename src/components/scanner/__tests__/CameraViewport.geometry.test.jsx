@@ -11,19 +11,19 @@ const scannerModalCssSource = readFileSync(
   'utf8',
 );
 
-const createRect = (width, height) => ({
+const createRect = (width, height, left = 0, top = 0) => ({
   width,
   height,
-  top: 0,
-  right: width,
-  bottom: height,
-  left: 0,
-  x: 0,
-  y: 0,
+  top,
+  right: left + width,
+  bottom: top + height,
+  left,
+  x: left,
+  y: top,
   toJSON: () => ({}),
 });
 
-const renderViewport = (videoRef) => render(
+const renderViewport = (videoRef, onDecodeRegionChange) => render(
   <CameraViewport
     videoRef={videoRef}
     cameraError={null}
@@ -31,6 +31,7 @@ const renderViewport = (videoRef) => render(
     isScanning
     isConfirming={false}
     onRetryCamera={vi.fn()}
+    onDecodeRegionChange={onDecodeRegionChange}
   />
 );
 
@@ -99,5 +100,132 @@ describe('CameraViewport geometry integration', () => {
     expect(scannerModalCssSource).not.toContain('object-fit: cover');
     expect(scannerModalCssSource).not.toContain('100dvh * 0.3');
     expect(scannerModalCssSource).not.toContain('aspect-ratio: 4 / 3');
+  });
+
+  it('emits a padded normalized decode region from the measured reticle', async () => {
+    const regionChanges = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function getBoundingClientRect() {
+        if (this.classList?.contains('scanner-video-viewport')) {
+          return createRect(400, 800);
+        }
+        if (this.classList?.contains('scanner-video-stage')) {
+          return createRect(400, 225, 0, 287.5);
+        }
+        if (this.classList?.contains('scanner-reticle')) {
+          return createRect(320, 56.25, 40, 371.875);
+        }
+        return createRect(0, 0);
+      });
+
+    const videoRef = { current: null };
+    const view = renderViewport(videoRef, regionChanges);
+    const video = view.container.querySelector('#scanner-video');
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    await waitFor(() => {
+      const region = regionChanges.mock.lastCall?.[0];
+      expect(region).toEqual(expect.any(Object));
+      expect(region.x).toBeCloseTo(0.06);
+      expect(region.y).toBeCloseTo(0.3625);
+      expect(region.width).toBeCloseTo(0.88);
+      expect(region.height).toBeCloseTo(0.275);
+    });
+  });
+
+  it('emits null while stage or reticle geometry is invalid', async () => {
+    const regionChanges = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function getBoundingClientRect() {
+        if (this.classList?.contains('scanner-video-viewport')) {
+          return createRect(400, 800);
+        }
+        if (this.classList?.contains('scanner-video-stage')) {
+          return createRect(400, 225, 0, 287.5);
+        }
+        return createRect(0, 0);
+      });
+
+    const videoRef = { current: null };
+    const view = renderViewport(videoRef, regionChanges);
+    const video = view.container.querySelector('#scanner-video');
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    await waitFor(() => expect(regionChanges).toHaveBeenLastCalledWith(null));
+  });
+
+  it('refreshes the normalized region after a resize/orientation geometry trigger', async () => {
+    const regionChanges = vi.fn();
+    let reticle = { left: 40, top: 371.875, width: 320, height: 56.25 };
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function getBoundingClientRect() {
+        if (this.classList?.contains('scanner-video-viewport')) {
+          return createRect(400, 800);
+        }
+        if (this.classList?.contains('scanner-video-stage')) {
+          return createRect(400, 225, 0, 287.5);
+        }
+        if (this.classList?.contains('scanner-reticle')) {
+          return createRect(reticle.width, reticle.height, reticle.left, reticle.top);
+        }
+        return createRect(0, 0);
+      });
+
+    const videoRef = { current: null };
+    const view = renderViewport(videoRef, regionChanges);
+    const video = view.container.querySelector('#scanner-video');
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    fireEvent(video, new Event('loadedmetadata'));
+    await waitFor(() => expect(regionChanges).toHaveBeenLastCalledWith(expect.any(Object)));
+
+    reticle = { left: 80, top: 365, width: 240, height: 70 };
+    fireEvent(window, new Event('orientationchange'));
+
+    await waitFor(() => {
+      const region = regionChanges.mock.lastCall?.[0];
+      expect(region).toEqual(expect.any(Object));
+      expect(region.x).toBeCloseTo(0.17);
+      expect(region.y).toBeCloseTo(0.3288888889);
+      expect(region.width).toBeCloseTo(0.66);
+      expect(region.height).toBeCloseTo(0.3422222222);
+    });
+  });
+
+  it('keeps the reticle measured inside the visible stage', async () => {
+    const stageRect = createRect(800, 400);
+    const reticleRect = createRect(640, 100, 80, 150);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function getBoundingClientRect() {
+        if (this.classList?.contains('scanner-video-viewport')) return createRect(800, 400);
+        if (this.classList?.contains('scanner-video-stage')) return stageRect;
+        if (this.classList?.contains('scanner-reticle')) return reticleRect;
+        return createRect(0, 0);
+      });
+
+    const videoRef = { current: null };
+    const view = renderViewport(videoRef);
+    const video = view.container.querySelector('#scanner-video');
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 640 },
+      videoHeight: { configurable: true, value: 480 },
+    });
+    fireEvent(video, new Event('loadedmetadata'));
+
+    await waitFor(() => expect(view.container.querySelector('.scanner-reticle')).toBeTruthy());
+    expect(reticleRect.left).toBeGreaterThanOrEqual(stageRect.left);
+    expect(reticleRect.top).toBeGreaterThanOrEqual(stageRect.top);
+    expect(reticleRect.right).toBeLessThanOrEqual(stageRect.right);
+    expect(reticleRect.bottom).toBeLessThanOrEqual(stageRect.bottom);
   });
 });

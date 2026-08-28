@@ -1,3 +1,4 @@
+import './ScannerDesktopNotice.css';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 
 export const COMMERCIAL_BARCODE_FORMATS = Object.freeze([

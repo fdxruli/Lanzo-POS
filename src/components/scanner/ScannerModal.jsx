@@ -11,6 +11,7 @@ import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
 import { useScannerCart } from '../../hooks/scanner/useScannerCart';
 import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
+import { isRecoverableDecodeError } from '../../hooks/scanner/useZxingScanner';
 import { CameraViewport } from './CameraViewport';
 import { COMMERCIAL_BARCODE_SCAN_HINTS } from './commercialBarcodeFormats';
 import { ScannerCartList } from './ScannerCartList';
@@ -95,6 +96,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Refs para control de flujo sin causar re-renders
   const processingLockRef = useRef(false);
+  const decodeRegionRef = useRef(null);
   const pauseTimeoutRef = useRef(null);
   const isMountedRef = useRef(true);
 
@@ -158,6 +160,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     setScanFeedback('');
     setCameraError(null);
     setScanCount(0);
+    decodeRegionRef.current = null;
     onClose();
   }, [clearCart, onClose]);
 
@@ -231,7 +234,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Manejo de errores de cámara
   const handleError = useCallback((error) => {
-    if (error.name === 'NotFoundException') {
+    if (isRecoverableDecodeError(error)) {
       return;
     }
 
@@ -256,8 +259,13 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
     onError: handleError,
     constraints: CAMERA_CONSTRAINTS,
     hints: COMMERCIAL_BARCODE_SCAN_HINTS,
+    decodeRegionRef,
     timeBetweenDecodingAttempts: 150,
   });
+
+  const handleDecodeRegionChange = useCallback((region) => {
+    decodeRegionRef.current = region;
+  }, []);
 
   // Retry de cámara
   const handleRetryCamera = useCallback(() => {
@@ -369,6 +377,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
       setScanFeedback('');
       setCameraError(null);
       setScanCount(0);
+      decodeRegionRef.current = null;
       processingLockRef.current = false;
       setIsProcessing(false);
       setIsConfirming(false);
@@ -386,25 +395,31 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
         </h2>
 
         <div className="scanner-main-container">
-          <div className="scanner-video-container">
-            <button
-              className="scanner-close-btn"
-              onClick={handleClose}
-              disabled={isConfirming}
-              aria-label="Cerrar escaner"
-              title="Cerrar"
-            >
-              <CloseIcon />
-            </button>
+          <div className="scanner-camera-panel">
+            <div className="scanner-camera-controls">
+              <span className="scanner-camera-label">Cámara</span>
+              <button
+                className="scanner-close-btn"
+                onClick={handleClose}
+                disabled={isConfirming}
+                aria-label="Cerrar escaner"
+                title="Cerrar"
+              >
+                <CloseIcon />
+              </button>
+            </div>
 
-            <CameraViewport
-              videoRef={videoRef}
-              cameraError={cameraError}
-              scanFeedback={scanFeedback}
-              isScanning={!isProcessing && !isConfirming}
-              isConfirming={isConfirming}
-              onRetryCamera={handleRetryCamera}
-            />
+            <div className="scanner-video-container">
+              <CameraViewport
+                videoRef={videoRef}
+                cameraError={cameraError}
+                scanFeedback={scanFeedback}
+                isScanning={!isProcessing && !isConfirming}
+                isConfirming={isConfirming}
+                onRetryCamera={handleRetryCamera}
+                onDecodeRegionChange={handleDecodeRegionChange}
+              />
+            </div>
           </div>
 
           {mode === 'pos' && (
