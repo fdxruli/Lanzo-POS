@@ -11,6 +11,7 @@ import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import Logger from '../../services/Logger';
 import { useScannerCart } from '../../hooks/scanner/useScannerCart';
 import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
+import { isRecoverableDecodeError } from '../../hooks/scanner/useZxingScanner';
 import { CameraViewport } from './CameraViewport';
 import { COMMERCIAL_BARCODE_SCAN_HINTS } from './commercialBarcodeFormats';
 import { ScannerCartList } from './ScannerCartList';
@@ -233,7 +234,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
 
   // Manejo de errores de cámara
   const handleError = useCallback((error) => {
-    if (error.name === 'NotFoundException') {
+    if (isRecoverableDecodeError(error)) {
       return;
     }
 

@@ -2,8 +2,14 @@
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserMultiFormatReader, DecodeHintType } from '@zxing/library';
-import { useZxingScanner } from '../useZxingScanner';
+import {
+  BrowserMultiFormatReader,
+  ChecksumException,
+  DecodeHintType,
+  FormatException,
+  NotFoundException,
+} from '@zxing/library';
+import { isRecoverableDecodeError, useZxingScanner } from '../useZxingScanner';
 
 const zxing = vi.hoisted(() => ({
   instances: [],
@@ -28,7 +34,7 @@ vi.mock('@zxing/library', async () => {
           const queue = zxing.queues[hard ? 'hard' : 'normal'];
           const next = queue.length > 0
             ? queue.shift()
-            : { name: 'NotFoundException', message: 'miss' };
+            : actual.NotFoundException.getNotFoundInstance();
 
           if (typeof next === 'function') return next();
           if (next?.type === 'result') return next.value;
@@ -50,6 +56,8 @@ const ScannerHarness = (props) => {
 const createResult = (text = '7501234567890') => ({
   getText: () => text,
 });
+
+const createNotFoundError = () => NotFoundException.getNotFoundInstance();
 
 const createDeferred = () => {
   let resolve;
@@ -110,10 +118,7 @@ const getHardReader = () => zxing.instances.find((reader) => reader.hard);
 const getLatestNormalReader = () => [...zxing.instances].reverse()
   .find((reader) => !reader.hard);
 const queueMisses = (count, kind = 'normal') => {
-  zxing.queues[kind].push(...Array.from({ length: count }, () => ({
-    name: 'NotFoundException',
-    message: 'miss',
-  })));
+  zxing.queues[kind].push(...Array.from({ length: count }, createNotFoundError));
 };
 
 const renderScanner = async ({
@@ -159,6 +164,26 @@ const flushPromises = async () => {
     await Promise.resolve();
   });
 };
+
+describe('recoverable ZXing error classification', () => {
+  it.each([
+    ['NotFoundException', NotFoundException, () => NotFoundException.getNotFoundInstance()],
+    ['ChecksumException', ChecksumException, () => ChecksumException.getChecksumInstance()],
+    ['FormatException', FormatException, () => FormatException.getFormatInstance()],
+  ])('recognizes a real %s instance', (_label, ErrorType, createError) => {
+    const error = createError();
+
+    expect(error).toBeInstanceOf(ErrorType);
+    expect(error.getKind()).toBe(ErrorType.kind);
+    expect(isRecoverableDecodeError(error)).toBe(true);
+  });
+
+  it('does not treat constructor names or ordinary errors as authoritative', () => {
+    expect(isRecoverableDecodeError({ name: 'NotFoundException' })).toBe(false);
+    expect(isRecoverableDecodeError(new Error('decoder broke'))).toBe(false);
+    expect(isRecoverableDecodeError({ getKind: () => NotFoundException.kind })).toBe(true);
+  });
+});
 
 beforeEach(() => {
   zxing.instances.length = 0;
@@ -320,7 +345,7 @@ describe('useZxingScanner camera enhancement', () => {
   it('runs full-frame normal after a recoverable ROI miss', async () => {
     const decodeRegionRef = { current: { x: 0.1, y: 0.35, width: 0.8, height: 0.3 } };
     zxing.queues.normal.push(
-      { name: 'NotFoundException', message: 'roi miss' },
+      createNotFoundError(),
       { type: 'result', value: createResult('FULL') },
     );
     const track = createTrack();
@@ -334,7 +359,7 @@ describe('useZxingScanner camera enhancement', () => {
     const decodeRegionRef = { current: { x: 0.4, y: 0.35, width: 0.2, height: 0.3 } };
     const onDecodeResult = vi.fn();
     zxing.queues.normal.push(
-      { name: 'NotFoundException' },
+      createNotFoundError(),
       { type: 'result', value: createResult('OUTSIDE') },
     );
     const track = createTrack();
@@ -359,16 +384,32 @@ describe('useZxingScanner camera enhancement', () => {
     const decodeRegionRef = { current: { x: 0.1, y: 0.35, width: 0.8, height: 0.3 } };
     const onDecodeError = vi.fn();
     zxing.queues.normal.push(
-      { name: 'NotFoundException', message: 'roi miss' },
-      { name: 'NotFoundException', message: 'full miss' },
+      createNotFoundError(),
+      createNotFoundError(),
     );
     const track = createTrack();
     await renderScanner({ track, decodeRegionRef, onDecodeError });
 
     await waitFor(() => expect(onDecodeError).toHaveBeenCalledTimes(1));
-    expect(onDecodeError).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'NotFoundException',
-    }));
+    expect(onDecodeError.mock.calls[0][0]).toBeInstanceOf(NotFoundException);
+    expect(onDecodeError.mock.calls[0][0].getKind()).toBe(NotFoundException.kind);
+  });
+
+  it('keeps the retry cadence after real ROI and full-frame NotFound instances', async () => {
+    vi.useFakeTimers();
+    const decodeRegionRef = { current: { x: 0.1, y: 0.35, width: 0.8, height: 0.3 } };
+    const onError = vi.fn();
+    queueMisses(4, 'normal');
+    const track = createTrack();
+    await renderScanner({ track, decodeRegionRef, onError });
+
+    await flushTimers(1);
+    expect(getNormalReader().decodeBitmap).toHaveBeenCalledTimes(2);
+    expect(onError).not.toHaveBeenCalled();
+
+    await flushTimers(150);
+    expect(getNormalReader().decodeBitmap).toHaveBeenCalledTimes(4);
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it('keeps TRY_HARDER off during the first seven complete misses', async () => {
@@ -899,7 +940,7 @@ describe('useZxingScanner camera enhancement', () => {
     const decodeRegionRef = { current: { x: 0.1, y: 0.35, width: 0.8, height: 0.3 } };
     const onDecodeError = vi.fn();
     zxing.queues.normal.push(
-      { name: 'NotFoundException' },
+      createNotFoundError(),
       { type: 'result', value: createResult('FULL') },
     );
     const track = createTrack();

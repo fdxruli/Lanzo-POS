@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   BinaryBitmap,
   BrowserMultiFormatReader,
+  ChecksumException,
   DecodeHintType,
+  FormatException,
   HTMLCanvasElementLuminanceSource,
   HybridBinarizer,
+  NotFoundException,
 } from '@zxing/library';
 import { mapNormalizedRegionToSource } from '../../components/scanner/scannerGeometry';
 
@@ -20,11 +23,11 @@ const DEFAULT_MISS_DELAY_MS = 150;
 const SUCCESS_DELAY_MS = 500;
 const TRY_HARDER_AFTER_COMPLETE_MISSES = 8;
 
-const RECOVERABLE_DECODE_ERROR_NAMES = new Set([
-  'NotFoundException',
-  'ChecksumException',
-  'FormatException',
-]);
+const RECOVERABLE_DECODE_ERROR_TYPES = [
+  NotFoundException,
+  ChecksumException,
+  FormatException,
+];
 
 const getVideoTracks = (stream) => {
   if (!stream || typeof stream.getVideoTracks !== 'function') {
@@ -134,14 +137,22 @@ const safelyResetReader = (reader) => {
   }
 };
 
-export const isRecoverableDecodeError = (error) => (
-  RECOVERABLE_DECODE_ERROR_NAMES.has(error?.name)
-);
+export const isRecoverableDecodeError = (error) => {
+  if (RECOVERABLE_DECODE_ERROR_TYPES.some((ErrorType) => error instanceof ErrorType)) {
+    return true;
+  }
 
-const createSyntheticNotFoundError = () => ({
-  name: 'NotFoundException',
-  message: 'No barcode found in captured frame.',
-});
+  let kind = null;
+  try {
+    kind = error?.getKind?.() ?? null;
+  } catch {
+    kind = null;
+  }
+
+  return RECOVERABLE_DECODE_ERROR_TYPES.some((ErrorType) => kind === ErrorType.kind);
+};
+
+const createSyntheticNotFoundError = () => NotFoundException.getNotFoundInstance();
 
 /**
  * Build the public ZXing bitmap surface from a reusable canvas. Decoding still
@@ -153,9 +164,10 @@ export const createBinaryBitmapFromCanvas = (canvas) => {
     throw new Error('A capture canvas is required for barcode decoding.');
   }
 
-  // Keep the alternating inversion behavior used by ZXing's video capture
-  // path while still supplying our own reusable canvas pixels.
-  const luminanceSource = new HTMLCanvasElementLuminanceSource(canvas, true);
+  // Lanzo owns multiple decode passes per logical frame. Use deterministic
+  // normal-polarity luminance for each pass instead of ZXing's static global
+  // auto-invert frame parity.
+  const luminanceSource = new HTMLCanvasElementLuminanceSource(canvas, false);
   const hybridBinarizer = new HybridBinarizer(luminanceSource);
   return new BinaryBitmap(hybridBinarizer);
 };
