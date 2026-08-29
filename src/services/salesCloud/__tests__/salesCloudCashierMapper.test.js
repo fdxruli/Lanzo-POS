@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { mapLocalCheckoutToCloudSale } from '../salesCloudCashierMapper';
+import {
+  mapLocalCheckoutToCloudSale,
+  mapLocalCreditCheckoutToCloudSale
+} from '../salesCloudCashierMapper';
 
 describe('salesCloudCashierMapper discounts', () => {
   it('maps line discount as net line_total', () => {
@@ -43,5 +46,71 @@ describe('salesCloudCashierMapper discounts', () => {
     expect(payload.items[0].selected_modifiers).toEqual(selectedModifiers);
     expect(payload.items[0].metadata.selectedModifiers).toEqual(selectedModifiers);
     expect(payload.items[0].line_total).toBe(200);
+  });
+});
+
+describe('salesCloudCashierMapper batch allocation compatibility', () => {
+  const baseSale = { id: 'batch-sale-1', timestamp: '2026-07-03T12:00:00.000Z', subtotal: 25, total: 25 };
+  const baseItem = { id: 'product-1', lineId: 'line-1', name: 'Producto', price: 25, quantity: 1, exactTotal: 25, lineTotal: 25 };
+  const mapCheckout = (item, options = {}) => mapLocalCheckoutToCloudSale({
+    sale: baseSale,
+    processedItems: [item],
+    paymentData: { paymentMethod: 'efectivo', amountPaid: 25 },
+    total: 25,
+    ...options
+  });
+
+  it('omits batchesUsed when the item has no batch allocation property', () => {
+    const payload = mapCheckout({ ...baseItem });
+
+    expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
+    expect(JSON.stringify(payload.items[0])).not.toContain('"batchesUsed":null');
+  });
+
+  it('treats batchesUsed null as no explicit allocation', () => {
+    const payload = mapCheckout({ ...baseItem, batchesUsed: null });
+
+    expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
+    expect(JSON.stringify(payload.items[0])).not.toContain('"batchesUsed":null');
+  });
+
+  it('keeps the canonical no-allocation shape for an empty array', () => {
+    const payload = mapCheckout({ ...baseItem, batchesUsed: [] });
+
+    expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
+  });
+
+  it('preserves a valid explicit batch allocation array', () => {
+    const batchesUsed = [{ batchId: 'batch-1', usedQuantity: 1 }];
+    const payload = mapCheckout({ ...baseItem, batchesUsed });
+
+    expect(payload.items[0].metadata.batchesUsed).toEqual(batchesUsed);
+  });
+
+  it('preserves manually selected batch and allocation semantics with cloud inventory', () => {
+    const batchesUsed = [{ batchId: 'batch-1', usedQuantity: 1 }];
+    const payload = mapCheckout({
+      ...baseItem,
+      batchesUsed,
+      manualBatchSelection: true,
+      batchId: 'batch-1',
+      batchSku: 'BATCH-1'
+    }, { inventoryEnabled: true });
+
+    expect(payload.items[0].batch_id).toBe('batch-1');
+    expect(payload.items[0].metadata.batchesUsed).toEqual(batchesUsed);
+    expect(payload.items[0].metadata.batchSelectionSource).toBe('manual');
+  });
+
+  it('applies the same null omission to credit-sale mapping', () => {
+    const payload = mapLocalCreditCheckoutToCloudSale({
+      sale: { ...baseSale, id: 'credit-batch-sale-1' },
+      processedItems: [{ ...baseItem, batchesUsed: null }],
+      paymentData: { amountPaid: 0, saldoPendiente: 25 },
+      total: 25
+    });
+
+    expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
+    expect(JSON.stringify(payload.items[0])).not.toContain('"batchesUsed":null');
   });
 });

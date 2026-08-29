@@ -23,8 +23,11 @@ declare
   v_admin_cash_session text := 'r2b-admin-cash-' || v_suffix;
   v_staff_station text := 'r2b-staff-station-' || v_suffix;
   v_admin_station text := 'r2b-admin-station-' || v_suffix;
+  v_batch_id text := 'r2b-batch-' || v_suffix;
   v_result jsonb;
+  v_authorized jsonb;
   v_saved_cost numeric;
+  v_case record;
 begin
   insert into public.licenses(
     id, license_key, license_type, status, expires_at, max_devices,
@@ -75,6 +78,13 @@ begin
   ) values (
     v_product_id, v_license_id, 'R2B product', v_product_id, 25, 8, 0, 0,
     false, true, 'sellable', 'unit', '{"enabled":false}'::jsonb, 'NONE', 1
+  );
+  insert into public.pos_product_batches(
+    id, license_id, product_id, sku, stock, committed_stock, cost, price,
+    track_stock, is_active, status, active_stock_status
+  ) values (
+    v_batch_id, v_license_id, v_product_id, 'R2B-BATCH-' || v_suffix, 10, 0, 8, 25,
+    false, true, 'active', 1
   );
   insert into public.pos_customers(id, license_id, name, phone, credit_limit)
   values (v_customer_id, v_license_id, 'R2B customer', '555-R2B-' || v_suffix, 1000);
@@ -204,6 +214,67 @@ begin
   if coalesce((v_result->>'success')::boolean, false) is not true then
     raise exception 'R2B_CREDIT_AUTHORITY_FAILED: %', v_result;
   end if;
+
+  -- The batch boundary must treat only absent/JSON-null aliases as empty;
+  -- malformed values remain fail-closed and valid allocations remain strict.
+  for v_case in
+    select *
+    from (values
+      ('S1_ABSENT', '{}'::jsonb, null::text),
+      ('S2_TOP_LEVEL_SNAKE_NULL', jsonb_build_object('batches_used', 'null'::jsonb), null::text),
+      ('S3_TOP_LEVEL_CAMEL_NULL', jsonb_build_object('batchesUsed', 'null'::jsonb), null::text),
+      ('S4_METADATA_SNAKE_NULL', jsonb_build_object('metadata', jsonb_build_object('batches_used', 'null'::jsonb)), null::text),
+      ('S5_METADATA_CAMEL_NULL', jsonb_build_object('metadata', jsonb_build_object('batchesUsed', 'null'::jsonb)), null::text),
+      ('S6_EMPTY_ARRAY', jsonb_build_object('batches_used', '[]'::jsonb), null::text),
+      ('S7_OBJECT_DENIED', jsonb_build_object('batches_used', '{}'::jsonb), 'BATCH_ALLOCATION_INVALID'),
+      ('S8_STRING_DENIED', jsonb_build_object('batches_used', 'invalid'::text), 'BATCH_ALLOCATION_INVALID'),
+      ('S9_NUMBER_DENIED', jsonb_build_object('batches_used', 123), 'BATCH_ALLOCATION_INVALID'),
+      ('S10_INVALID_ARRAY_ITEM_DENIED', jsonb_build_object('batches_used', jsonb_build_array(jsonb_build_object('quantity', 1))), 'BATCH_ALLOCATION_INVALID'),
+      ('S11_VALID_BATCH_ARRAY', jsonb_build_object('batches_used', jsonb_build_array(jsonb_build_object('batch_id', v_batch_id, 'quantity', 1))), null::text),
+      ('S12_ALLOCATION_MISMATCH', jsonb_build_object('batches_used', jsonb_build_array(jsonb_build_object('batch_id', v_batch_id, 'quantity', 2))), 'CLOUD_BATCH_ALLOCATION_MISMATCH')
+    ) as cases(case_name, item_patch, expected_error)
+  loop
+    begin
+      v_authorized := private.r2b_authorize_sale_financial_request_v1(
+        'sale.cashier', v_admin_key, v_admin_fingerprint, v_admin_security_token, v_admin_session_token,
+        jsonb_build_object(
+          'id', 'r2b-batch-' || v_case.case_name || '-' || v_suffix,
+          'local_sale_id', 'r2b-batch-' || v_case.case_name || '-' || v_suffix,
+          'total', 25, 'subtotal', 25, 'amount_paid', 25, 'payment_method', 'cash'
+        ),
+        jsonb_build_array(
+          jsonb_build_object(
+            'id', 'r2b-batch-item-' || v_case.case_name || '-' || v_suffix,
+            'product_id', v_product_id, 'quantity', 1, 'unit_price', 25,
+            'line_subtotal', 25, 'line_total', 25
+          ) || v_case.item_patch
+        ),
+        jsonb_build_array(jsonb_build_object(
+          'id', 'r2b-batch-payment-' || v_case.case_name || '-' || v_suffix,
+          'method', 'cash', 'amount', 25, 'received_amount', 25, 'change_amount', 0
+        )),
+        v_admin_cash_session, null, 'r2b-batch-idem-' || v_case.case_name || '-' || v_suffix
+      );
+      if v_case.expected_error is not null then
+        raise exception 'R2B_BATCH_CASE_ACCEPTED:%:%', v_case.case_name, v_authorized;
+      end if;
+      if v_case.case_name = 'S11_VALID_BATCH_ARRAY'
+         and v_authorized->'items'->0->'batches_used' is distinct from jsonb_build_array(jsonb_build_object('batch_id', v_batch_id, 'quantity', 1)) then
+        raise exception 'R2B_VALID_BATCH_NOT_CANONICAL:%:%', v_case.case_name, v_authorized;
+      end if;
+      if v_case.case_name <> 'S11_VALID_BATCH_ARRAY'
+         and (v_authorized->'items'->0) ? 'batches_used' then
+        raise exception 'R2B_EMPTY_BATCH_NOT_CANONICAL:%:%', v_case.case_name, v_authorized;
+      end if;
+    exception when others then
+      if v_case.expected_error is null then
+        raise;
+      end if;
+      if sqlerrm <> v_case.expected_error then
+        raise exception 'R2B_BATCH_CASE_WRONG_ERROR:%:%:%', v_case.case_name, v_case.expected_error, sqlerrm;
+      end if;
+    end;
+  end loop;
 end;
 $test$;
 

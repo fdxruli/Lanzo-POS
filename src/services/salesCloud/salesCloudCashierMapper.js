@@ -154,7 +154,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
       lineId: item.lineId || null,
       cartLineId: item.cartLineId || null,
       selectedModifiers: selectedModifiers.length > 0 ? selectedModifiers : undefined,
-      batchesUsed: explicitBatchesUsed,
+      batchesUsed: explicitBatchesUsed ?? undefined,
       stockDeducted: item.stockDeducted ?? null,
       requiresPrescription: item.requiresPrescription || false,
       inventoryReservation: allowLocalBatches ? item.inventoryReservation || null : null,
