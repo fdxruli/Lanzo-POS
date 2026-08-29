@@ -131,6 +131,34 @@
   font-weight: 700;
 }
 
+.public-checkout-address-fields {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.public-checkout-address-fields legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.1rem;
+  color: var(--ui-text-strong);
+  font-weight: 800;
+}
+
+.public-checkout-address-grid {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.public-checkout-field--wide {
+  min-width: 0;
+}
+
 .public-checkout-methods {
   display: grid;
   gap: 0.65rem;
@@ -279,6 +307,14 @@
 
   .public-order-confirmation__actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-checkout-address-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-checkout-field--wide {
+    grid-column: 1 / -1;
   }
 }
 

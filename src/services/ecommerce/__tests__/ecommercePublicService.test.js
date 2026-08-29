@@ -156,6 +156,60 @@ describe('ecommercePublicService', () => {
     expect(result.order).toMatchObject({ code: 'PED-1001', total: 100 });
   });
 
+  it('sends only the bounded structured delivery address and a compatible legacy address', async () => {
+    const deliveryResponse = orderResponse();
+    deliveryResponse.order.fulfillmentMethod = 'delivery';
+    const rpc = vi.fn().mockResolvedValue({
+      data: deliveryResponse,
+      error: null
+    });
+    const service = createEcommercePublicService({ rpc });
+
+    await service.createPublicOrder('mi-negocio', {
+      customer: {
+        name: 'Cliente',
+        phone: '9610000000',
+        address: 'legacy value must not win',
+        deliveryAddress: {
+          street: ' Avenida Central ',
+          exteriorNumber: ' 24 ',
+          interiorNumber: ' B ',
+          neighborhood: ' Centro ',
+          municipality: ' Tuxtla Gutiérrez ',
+          state: ' Chiapas ',
+          postalCode: '29000',
+          reference: ' Frente al parque ',
+          secret: 'must not be sent'
+        },
+        notes: 'Notas',
+        fulfillmentMethod: 'delivery'
+      },
+      items: [{ productId: 'product-1', quantity: 1 }],
+      idempotencyKey: 'web-structured-address'
+    });
+
+    expect(rpc).toHaveBeenCalledWith('ecommerce_create_order', expect.objectContaining({
+      p_customer: {
+        name: 'Cliente',
+        phone: '9610000000',
+        address: 'Avenida Central #24 Int. B, Centro, Tuxtla Gutiérrez, Chiapas, CP 29000',
+        deliveryAddress: {
+          street: 'Avenida Central',
+          exteriorNumber: '24',
+          interiorNumber: 'B',
+          neighborhood: 'Centro',
+          municipality: 'Tuxtla Gutiérrez',
+          state: 'Chiapas',
+          postalCode: '29000',
+          reference: 'Frente al parque'
+        },
+        notes: 'Notas',
+        fulfillmentMethod: 'delivery'
+      }
+    }));
+    expect(JSON.stringify(rpc.mock.calls[0][1].p_customer)).not.toContain('secret');
+  });
+
   it('rejects a WhatsApp URL outside https://wa.me without losing confirmation', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: orderResponse({
@@ -197,6 +251,9 @@ describe('ecommercePublicService', () => {
 
   it.each([
     ['ECOMMERCE_MIN_ORDER_NOT_REACHED', 'El pedido no alcanza el'],
+    ['ECOMMERCE_DELIVERY_MUNICIPALITY_REQUIRED', 'Escribe el municipio o ciudad'],
+    ['ECOMMERCE_DELIVERY_POSTAL_CODE_INVALID', 'código postal válido'],
+    ['ECOMMERCE_DELIVERY_ADDRESS_INVALID', 'Revisa los datos de la dirección'],
     ['ECOMMERCE_CATALOG_REVISION_CHANGED', 'No se pudo confirmar el pedido.'],
     ['ECOMMERCE_PRODUCT_NOT_AVAILABLE', 'Uno de los productos ya no est'],
     ['ECOMMERCE_RATE_LIMITED', 'Se realizaron demasiados intentos.'],

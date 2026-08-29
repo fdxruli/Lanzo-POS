@@ -32,6 +32,7 @@ import { useActiveOrders } from '../hooks/pos/useActiveOrders';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import EcommerceFulfillmentPanel from '../components/ecommerce/orders/EcommerceFulfillmentPanel';
 import EcommerceOrderStatusBadge from '../components/ecommerce/orders/EcommerceOrderStatusBadge';
+import { formatEcommerceDeliveryAddress } from '../utils/ecommerceDeliveryAddress';
 import './EcommerceOrdersPage.css';
 
 const FILTERS = Object.freeze([
@@ -487,6 +488,16 @@ function OrderDetail({
     order?.status === 'accepted'
     && !KNOWN_POS_DRAFT_STATES.has(posDraftStatus)
   );
+  const deliveryAddress = order?.customer?.deliveryAddress;
+  const customerAddress = order?.customer?.address
+    || (deliveryAddress ? formatEcommerceDeliveryAddress(deliveryAddress) : '');
+  const deliveryLocation = deliveryAddress
+    ? [
+      deliveryAddress.municipality,
+      deliveryAddress.state,
+      deliveryAddress.postalCode ? `CP ${deliveryAddress.postalCode}` : ''
+    ].filter(Boolean).join(' · ')
+    : '';
 
   return (
     <div
@@ -534,7 +545,9 @@ function OrderDetail({
               <dl className="ecommerce-order-detail__definition-list">
                 <div><dt>Nombre</dt><dd>{order.customer?.name || 'Sin nombre'}</dd></div>
                 <div><dt>Teléfono</dt><dd>{order.customer?.phone || 'Sin teléfono'}</dd></div>
-                {order.customer?.address && <div><dt>Dirección</dt><dd>{order.customer.address}</dd></div>}
+                {customerAddress && <div><dt>Dirección</dt><dd>{customerAddress}</dd></div>}
+                {deliveryLocation && <div><dt>Municipio / estado / CP</dt><dd>{deliveryLocation}</dd></div>}
+                {deliveryAddress?.reference && <div><dt>Referencia para llegar</dt><dd>{deliveryAddress.reference}</dd></div>}
                 {order.customer?.notes && <div><dt>Notas</dt><dd>{order.customer.notes}</dd></div>}
               </dl>
             </DetailSection>

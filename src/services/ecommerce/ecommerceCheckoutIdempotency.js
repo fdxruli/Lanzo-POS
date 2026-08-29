@@ -1,3 +1,9 @@
+import {
+  formatEcommerceDeliveryAddress,
+  isEcommerceDeliveryAddressRecord,
+  normalizeEcommerceDeliveryAddress
+} from '../../utils/ecommerceDeliveryAddress';
+
 const ATTEMPT_VERSION = 1;
 const ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 160;
@@ -37,6 +43,12 @@ export function getCheckoutAttemptStorageKey(slug) {
 
 export function normalizeCheckoutPayload({ slug, customer, items }) {
   const fulfillmentMethod = asText(customer?.fulfillmentMethod, 20).toLowerCase();
+  const hasStructuredAddress = Object.prototype.hasOwnProperty.call(customer || {}, 'deliveryAddress');
+  const deliveryAddress = fulfillmentMethod === 'delivery' && hasStructuredAddress
+    ? (isEcommerceDeliveryAddressRecord(customer.deliveryAddress)
+      ? normalizeEcommerceDeliveryAddress(customer.deliveryAddress)
+      : null)
+    : null;
   const normalizedItems = asArray(items)
     .map((item) => {
       const productId = asText(item?.productId || item?.product?.id, 80);
@@ -67,9 +79,16 @@ export function normalizeCheckoutPayload({ slug, customer, items }) {
     customer: {
       name: asText(customer?.name, 120),
       phone: asText(customer?.phone, 40),
-      address: fulfillmentMethod === 'delivery' ? asText(customer?.address, 500) : '',
+      address: fulfillmentMethod === 'delivery'
+        ? deliveryAddress
+          ? formatEcommerceDeliveryAddress(deliveryAddress)
+          : asText(customer?.address, 500)
+        : '',
       notes: asText(customer?.notes, 1000),
-      fulfillmentMethod
+      fulfillmentMethod,
+      ...(fulfillmentMethod === 'delivery' && hasStructuredAddress
+        ? { deliveryAddress }
+        : {})
     },
     items: normalizedItems
   };

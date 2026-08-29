@@ -143,6 +143,19 @@ async function openAndFillCheckout(user) {
   await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
 }
 
+async function fillDeliveryAddress(user, {
+  street = 'Calle de prueba 10',
+  reference = 'Frente al parque'
+} = {}) {
+  await user.type(screen.getByLabelText('Calle / avenida / camino *'), street);
+  await user.type(screen.getByLabelText('Número exterior'), '10');
+  await user.type(screen.getByLabelText('Colonia / barrio / ejido / localidad *'), 'Centro');
+  await user.type(screen.getByLabelText('Municipio / ciudad *'), 'Tuxtla Gutiérrez');
+  await user.type(screen.getByLabelText('Estado *'), 'Chiapas');
+  await user.type(screen.getByLabelText('Código postal *'), '29000');
+  await user.type(screen.getByLabelText('Referencia para llegar'), reference);
+}
+
 describe('PublicStorePage checkout integration', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
@@ -381,17 +394,28 @@ describe('PublicStorePage checkout integration', () => {
     renderPage();
     await openAndFillCheckout(user);
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    await user.type(screen.getByLabelText(/Dirección/), 'Calle de recuperación 10');
+    await fillDeliveryAddress(user, { street: 'Calle de recuperación 10' });
     await user.type(screen.getByLabelText('Notas'), 'Conservar estos datos');
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar el pedido');
     expect(screen.getByLabelText('Nombre *')).toHaveValue('Cliente QA');
     expect(screen.getByLabelText('Teléfono *')).toHaveValue('9610000000');
-    expect(screen.getByLabelText(/Dirección/)).toHaveValue('Calle de recuperación 10');
+    expect(screen.getByLabelText('Calle / avenida / camino *')).toHaveValue('Calle de recuperación 10');
+    expect(screen.getByLabelText('Referencia para llegar')).toHaveValue('Frente al parque');
     expect(screen.getByLabelText('Notas')).toHaveValue('Conservar estos datos');
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
     const firstKey = serviceMocks.createPublicOrder.mock.calls[0][1].idempotencyKey;
+    expect(serviceMocks.createPublicOrder.mock.calls[0][1].customer).toMatchObject({
+      address: 'Calle de recuperación 10 #10, Centro, Tuxtla Gutiérrez, Chiapas, CP 29000',
+      deliveryAddress: {
+        street: 'Calle de recuperación 10',
+        municipality: 'Tuxtla Gutiérrez',
+        postalCode: '29000',
+        reference: 'Frente al parque'
+      },
+      fulfillmentMethod: 'delivery'
+    });
 
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
     expect(await screen.findByText('PED-1001')).toBeInTheDocument();
@@ -452,7 +476,7 @@ describe('PublicStorePage checkout integration', () => {
     renderPage();
     await openAndFillCheckout(user);
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    await user.type(screen.getByLabelText(/Dirección/), 'Avenida primera 25');
+    await fillDeliveryAddress(user, { street: 'Avenida primera 25', reference: 'Junto a la farmacia' });
     await user.type(screen.getByLabelText('Notas'), 'Pedido anterior');
     await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
 
@@ -470,7 +494,7 @@ describe('PublicStorePage checkout integration', () => {
     expect(screen.getByLabelText('Notas')).toHaveValue('');
     expect(screen.getByRole('radio', { name: /Recoger/ })).toBeChecked();
     await user.click(screen.getByRole('radio', { name: /Domicilio/ }));
-    expect(screen.getByLabelText(/Dirección/)).toHaveValue('');
+    expect(screen.getByLabelText('Calle / avenida / camino *')).toHaveValue('');
   });
 
   it('offers cart refresh for a stale product error without clearing the cart', async () => {

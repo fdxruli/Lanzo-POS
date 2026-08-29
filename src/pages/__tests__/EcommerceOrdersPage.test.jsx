@@ -166,6 +166,34 @@ describe('EcommerceOrdersPage', () => {
     expect(screen.getByRole('button', { name: 'Marcar como listo' })).toBeInTheDocument();
   });
 
+  it('shows structured delivery location and reference while keeping the formatted address', () => {
+    const order = selectedOrder(orderId, 'accepted');
+    order.fulfillmentMethod = 'delivery';
+    order.customer = {
+      ...order.customer,
+      address: 'Calle Central #24, Centro, Tuxtla, Chiapas, CP 29000',
+      deliveryAddress: {
+        street: 'Calle Central',
+        exteriorNumber: '24',
+        interiorNumber: '',
+        neighborhood: 'Centro',
+        municipality: 'Tuxtla',
+        state: 'Chiapas',
+        postalCode: '29000',
+        reference: 'Frente al parque'
+      }
+    };
+    store.state = { ...baseState(), selectedEcommerceOrder: order };
+
+    renderPage();
+
+    expect(screen.getByText('Calle Central #24, Centro, Tuxtla, Chiapas, CP 29000')).toBeInTheDocument();
+    expect(screen.getByText('Municipio / estado / CP')).toBeInTheDocument();
+    expect(screen.getByText('Tuxtla · Chiapas · CP 29000')).toBeInTheDocument();
+    expect(screen.getByText('Referencia para llegar')).toBeInTheDocument();
+    expect(screen.getByText('Frente al parque')).toBeInTheDocument();
+  });
+
   it('keeps secondary mobile detail sections collapsed until requested', () => {
     store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
 

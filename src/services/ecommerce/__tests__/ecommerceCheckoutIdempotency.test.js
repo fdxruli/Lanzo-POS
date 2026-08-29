@@ -5,6 +5,7 @@ import {
   clearCheckoutAttempt,
   getCheckoutAttemptStorageKey,
   getOrCreateCheckoutAttempt,
+  normalizeCheckoutPayload,
 } from '../ecommerceCheckoutIdempotency';
 
 const payload = (overrides = {}) => ({
@@ -51,6 +52,46 @@ describe('ecommerceCheckoutIdempotency', () => {
     const first = await getOrCreateCheckoutAttempt('mi-negocio', payload());
     const second = await getOrCreateCheckoutAttempt('mi-negocio', payload({
       customer: { phone: '9619999999' },
+    }));
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
+  });
+
+  it('includes structured delivery fields in the hash and ignores them for pickup', async () => {
+    const delivery = {
+      name: 'Cliente',
+      phone: '9610000000',
+      address: 'legacy value',
+      fulfillmentMethod: 'delivery',
+      deliveryAddress: {
+        street: 'Calle Central',
+        exteriorNumber: '24',
+        interiorNumber: '',
+        neighborhood: 'Centro',
+        municipality: 'Tuxtla',
+        state: 'Chiapas',
+        postalCode: '29000',
+        reference: 'Frente al parque'
+      }
+    };
+
+    expect(normalizeCheckoutPayload({ slug: 'mi-negocio', customer: delivery, items: [] })).toMatchObject({
+      customer: {
+        address: 'Calle Central #24, Centro, Tuxtla, Chiapas, CP 29000',
+        deliveryAddress: delivery.deliveryAddress
+      }
+    });
+    expect(normalizeCheckoutPayload({
+      slug: 'mi-negocio',
+      customer: { ...delivery, fulfillmentMethod: 'pickup' },
+      items: []
+    }).customer).not.toHaveProperty('deliveryAddress');
+
+    const first = await getOrCreateCheckoutAttempt('mi-negocio', payload({ customer: delivery }));
+    const second = await getOrCreateCheckoutAttempt('mi-negocio', payload({
+      customer: {
+        ...delivery,
+        deliveryAddress: { ...delivery.deliveryAddress, municipality: 'San Cristóbal' }
+      }
     }));
     expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
   });
