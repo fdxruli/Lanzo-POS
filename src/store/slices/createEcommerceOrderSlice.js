@@ -674,8 +674,14 @@ export const createEcommerceOrderSlice = (set, get) => ({
     if (get().ecommerceOrdersFilter === resolvedFilter) return;
 
     listIntentEpoch += 1;
+    const currentPagination = get().ecommerceOrdersPagination || {};
     set({
       ecommerceOrdersFilter: resolvedFilter,
+      ecommerceOrdersPagination: {
+        limit: normalizeLimit(currentPagination.limit),
+        offset: 0,
+        hasMore: false
+      },
       ecommerceOrdersStale: true,
       ecommerceOrdersActiveRequestKey: null
     });

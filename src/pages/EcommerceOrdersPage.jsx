@@ -78,11 +78,26 @@ const ORDER_GROUPS = Object.freeze([
 
 const KNOWN_POS_DRAFT_STATES = new Set(['none', 'released', 'claimed', 'prepared']);
 const MOBILE_ORDER_BATCH_SIZE = 6;
+const DEFAULT_ORDER_PAGE_SIZE = 50;
+const MAX_ORDER_PAGE_SIZE = 100;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   dateStyle: 'medium',
   timeStyle: 'short'
 });
+
+const normalizeOrderPagination = (pagination = {}) => {
+  const rawLimit = Number(pagination.limit);
+  const rawOffset = Number(pagination.offset);
+  return {
+    limit: Math.min(
+      Math.max(Number.isFinite(rawLimit) ? rawLimit : DEFAULT_ORDER_PAGE_SIZE, 1),
+      MAX_ORDER_PAGE_SIZE
+    ),
+    offset: Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0),
+    hasMore: Boolean(pagination.hasMore)
+  };
+};
 
 const formatMoney = (value, currency = 'MXN') => {
   try {
@@ -333,6 +348,10 @@ function OrdersControls({
         </label>
       </section>
 
+      <small className="ecommerce-orders-search-scope">
+        La búsqueda aplica a la página actual.
+      </small>
+
       <nav className="ecommerce-orders-mobile-nav" aria-label="Grupos de pedidos">
         <div role="tablist" aria-label="Cambiar grupo de pedidos">
           {mobileGroups.map((group) => {
@@ -359,6 +378,36 @@ function OrdersControls({
   );
 }
 
+function OrdersPagination({ pagination, loading, refreshing, onPageChange }) {
+  const { limit, offset, hasMore } = normalizeOrderPagination(pagination);
+  const pageNumber = Math.floor(offset / limit) + 1;
+  const busy = Boolean(loading || refreshing);
+
+  return (
+    <nav className="ecommerce-orders-pagination" aria-label="Paginación de pedidos">
+      <button
+        type="button"
+        className="ui-button ui-button--secondary"
+        onClick={() => onPageChange?.('previous')}
+        disabled={busy || offset === 0}
+      >
+        Anterior
+      </button>
+      <span className="ecommerce-orders-pagination__page" aria-current="page">
+        Página {pageNumber}
+      </span>
+      <button
+        type="button"
+        className="ui-button ui-button--secondary"
+        onClick={() => onPageChange?.('next')}
+        disabled={busy || !hasMore}
+      >
+        Siguiente
+      </button>
+    </nav>
+  );
+}
+
 function OrdersInbox({
   loading,
   refreshing,
@@ -377,7 +426,9 @@ function OrdersInbox({
   handleMobileGroup,
   expandedMobileGroups,
   handleToggleMobileExpanded,
-  handleOpenOrder
+  handleOpenOrder,
+  pagination,
+  handlePageChange
 }) {
   return (
     <>
@@ -408,6 +459,13 @@ function OrdersInbox({
         mobileGroups={mobileGroups}
         mobileGroup={mobileGroup}
         onMobileGroup={handleMobileGroup}
+      />
+
+      <OrdersPagination
+        pagination={pagination}
+        loading={loading}
+        refreshing={refreshing}
+        onPageChange={handlePageChange}
       />
 
       {error && orders.length > 0 && <div className="ecommerce-orders-inline-error" role="alert">{error}</div>}
@@ -813,6 +871,7 @@ export default function EcommerceOrdersPage() {
   const refreshing = useAppStore((state) => state.ecommerceOrdersRefreshing);
   const error = useAppStore((state) => state.ecommerceOrdersError);
   const filter = useAppStore((state) => state.ecommerceOrdersFilter);
+  const pagination = useAppStore((state) => state.ecommerceOrdersPagination);
   const selectedOrder = useAppStore((state) => state.selectedEcommerceOrder);
   const selectedLoading = useAppStore((state) => state.selectedEcommerceOrderLoading);
   const selectedError = useAppStore((state) => state.selectedEcommerceOrderError);
@@ -894,6 +953,8 @@ export default function EcommerceOrdersPage() {
   const handleFilter = async (nextFilter) => {
     if (nextFilter === filter) return;
 
+    const { limit } = normalizeOrderPagination(pagination);
+
     setDialogMode(null);
     clearSelectedOrder?.();
 
@@ -904,7 +965,24 @@ export default function EcommerceOrdersPage() {
     }
 
     setFilter?.(nextFilter);
-    await loadOrders?.({ filter: nextFilter, force: true });
+    await loadOrders?.({ filter: nextFilter, limit, offset: 0, force: true });
+  };
+
+  const handlePageChange = async (direction) => {
+    const { limit, offset, hasMore } = normalizeOrderPagination(pagination);
+    if (loading || refreshing) return;
+    if (direction === 'next' && !hasMore) return;
+    if (direction === 'previous' && offset === 0) return;
+
+    const nextOffset = direction === 'next'
+      ? offset + limit
+      : Math.max(offset - limit, 0);
+    await loadOrders?.({
+      filter,
+      limit,
+      offset: nextOffset,
+      force: true
+    });
   };
 
   const handleMobileGroup = (groupKey) => {
@@ -1051,6 +1129,8 @@ export default function EcommerceOrdersPage() {
         expandedMobileGroups={expandedMobileGroups}
         handleToggleMobileExpanded={handleToggleMobileExpanded}
         handleOpenOrder={handleOpenOrder}
+        pagination={pagination}
+        handlePageChange={handlePageChange}
       />
 
       <OrderDetail

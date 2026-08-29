@@ -122,13 +122,58 @@ begin
       'id', v_portal_id,
       'license_id', v_license_id,
       'slug', v_slug,
+      'slug_source', 'system',
       'status', 'published',
+      'name', 'ECOM Lifecycle Fixture',
+      'headline', 'Pedidos online de prueba',
+      'description', 'Portal transaccional para pruebas de ciclo de vida.',
+      'template_code', 'classic',
+      'customization_level', 'basic',
+      'theme', '{}'::jsonb,
+      'whatsapp_phone', '9610000000',
+      'contact_email', null,
+      'address', 'Avenida Comercio 100, Centro, Tuxtla, Chiapas, CP 29000',
+      'address_street', 'Avenida Comercio 100',
+      'address_neighborhood', 'Centro',
+      'address_municipality', 'Tuxtla',
+      'address_state', 'Chiapas',
+      'address_postal_code', '29000',
+      'ordering_enabled', true,
+      'pickup_enabled', true,
+      'delivery_enabled', true,
+      'scheduled_orders_enabled', false,
+      'min_order_total', 0,
+      'max_order_items', 50,
+      'max_item_quantity', 10,
+      'stock_mode', 'status',
+      'settings', '{}'::jsonb,
+      'metadata', jsonb_build_object('source', 'ecom-lifecycle-test'),
+      'catalog_revision', 1,
+      'timezone', 'America/Mexico_City',
       'deleted_at', null,
       'created_at', now(),
       'updated_at', now()
     )
   );
   insert into public.ecommerce_portals select (v_portal).*;
+  if v_portal.name <> 'ECOM Lifecycle Fixture'
+     or v_portal.slug_source <> 'system'
+     or v_portal.status <> 'published'
+     or v_portal.timezone <> 'America/Mexico_City'
+     or v_portal.catalog_revision <> 1
+     or v_portal.customization_level <> 'basic'
+     or v_portal.stock_mode <> 'status'
+     or v_portal.max_order_items <> 50
+     or v_portal.max_item_quantity <> 10
+     or v_portal.min_order_total <> 0
+     or v_portal.address_street <> 'Avenida Comercio 100'
+     or v_portal.address_neighborhood <> 'Centro'
+     or v_portal.address_municipality <> 'Tuxtla'
+     or v_portal.address_state <> 'Chiapas'
+     or v_portal.address_postal_code <> '29000'
+     or v_portal.whatsapp_phone <> '9610000000' then
+    raise exception 'published portal fixture is not deterministic: %', v_portal;
+  end if;
 
   perform private.ecom_lifecycle_insert_fixture_v1(to_jsonb(v_source_order) || jsonb_build_object(
     'id', v_delivery_unpaid,
@@ -234,7 +279,9 @@ begin
     'idempotency_key', v_prefix || '-cancelled',
     'status', 'accepted',
     'fulfillment_method', 'pickup',
+    'customer_address', 'Legacy cancelled address',
     'customer_delivery_address', null,
+    'customer_notes', 'Cancelled note',
     'payment_status', 'pending',
     'pos_visibility_status', 'archived',
     'pos_draft_status', 'none',
@@ -412,7 +459,11 @@ begin
   v_detail := public.ecommerce_admin_get_order(
     v_key, v_fingerprint, v_security_token, v_delivery_unpaid, null
   );
-  if v_detail#>>'{order,customer,deliveryAddress,municipality}' <> 'Tuxtla'
+  if coalesce((v_detail->>'success')::boolean, false) is not true
+     or position('ECOMMERCE_ORDER_NOT_FOUND' in coalesce(v_detail::text, '')) > 0
+     or v_detail#>>'{order,customer,address}' <> 'Calle Terminal #125, Centro, Tuxtla, Chiapas, CP 29000'
+     or v_detail#>>'{order,customer,deliveryAddress,street}' <> 'Calle Terminal'
+     or v_detail#>>'{order,customer,deliveryAddress,municipality}' <> 'Tuxtla'
      or v_detail#>>'{order,customer,deliveryAddress,state}' <> 'Chiapas'
      or v_detail#>>'{order,customer,deliveryAddress,postalCode}' <> '29000'
      or v_detail#>>'{order,customer,deliveryAddress,reference}' <> 'Frente al parque'
@@ -423,9 +474,22 @@ begin
   end if;
 
   v_detail := public.ecommerce_admin_get_order(
+    v_key, v_fingerprint, v_security_token, v_cancelled, null
+  );
+  if coalesce((v_detail->>'success')::boolean, false) is not true
+     or position('ECOMMERCE_ORDER_NOT_FOUND' in coalesce(v_detail::text, '')) > 0
+     or v_detail#>>'{order,customer,address}' <> 'Legacy cancelled address'
+     or v_detail#>>'{order,customer,notes}' <> 'Cancelled note'
+     or v_detail#>>'{order,fulfillment,internalStatus}' <> 'cancelled' then
+    raise exception 'cancelled legacy detail is no longer readable: %', v_detail;
+  end if;
+
+  v_detail := public.ecommerce_admin_get_order(
     v_key, v_fingerprint, v_security_token, v_rejected, null
   );
-  if v_detail#>>'{order,customer,address}' <> 'Legacy address only'
+  if coalesce((v_detail->>'success')::boolean, false) is not true
+     or position('ECOMMERCE_ORDER_NOT_FOUND' in coalesce(v_detail::text, '')) > 0
+     or v_detail#>>'{order,customer,address}' <> 'Legacy address only'
      or v_detail#>>'{order,customer,notes}' <> 'Legacy note' then
     raise exception 'legacy detail is no longer readable: %', v_detail;
   end if;

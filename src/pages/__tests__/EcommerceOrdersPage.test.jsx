@@ -124,6 +124,7 @@ const baseState = () => ({
   ecommerceOrdersRefreshing: false,
   ecommerceOrdersError: null,
   ecommerceOrdersFilter: 'all',
+  ecommerceOrdersPagination: { limit: 50, offset: 0, hasMore: false },
   selectedEcommerceOrder: null,
   selectedEcommerceOrderLoading: false,
   selectedEcommerceOrderError: null,
@@ -324,7 +325,12 @@ describe('EcommerceOrdersPage', () => {
 
     await waitFor(() => expect(store.clearSelectedEcommerceOrder).toHaveBeenCalled());
     expect(store.setEcommerceOrdersFilter).toHaveBeenCalledWith('pending');
-    expect(store.loadEcommerceOrders).toHaveBeenCalledWith({ filter: 'pending', force: true });
+    expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
+      filter: 'pending',
+      limit: 50,
+      offset: 0,
+      force: true
+    });
     expect(screen.getByTestId('location')).not.toHaveTextContent('?order=');
   });
 
@@ -332,6 +338,7 @@ describe('EcommerceOrdersPage', () => {
     renderPage();
 
     expect(screen.getByRole('heading', { name: 'Pedidos en línea' })).toBeInTheDocument();
+    expect(screen.getByText('La búsqueda aplica a la página actual.')).toBeInTheDocument();
     expect(screen.queryByText('Tienda online')).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Requieren atención' }))
       .toContainElement(screen.getByText('EC-00000011'));
@@ -452,8 +459,93 @@ describe('EcommerceOrdersPage', () => {
 
     await waitFor(() => expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
       filter: 'closed',
+      limit: 50,
+      offset: 0,
       force: true
     }));
+  });
+
+  it('navigates bounded pages and replaces the visible rows without mixing results', () => {
+    const firstPageOrder = baseState().ecommerceOrders[0];
+    const secondPageOrder = baseState().ecommerceOrders[1];
+    store.state = {
+      ...baseState(),
+      ecommerceOrders: [firstPageOrder],
+      ecommerceOrdersPagination: { limit: 1, offset: 0, hasMore: true }
+    };
+    const view = renderPage();
+
+    expect(screen.getByText('Página 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anterior' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Siguiente' })).not.toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
+      filter: 'all',
+      limit: 1,
+      offset: 1,
+      force: true
+    });
+
+    store.state = {
+      ...store.state,
+      ecommerceOrders: [secondPageOrder],
+      ecommerceOrdersPagination: { limit: 1, offset: 1, hasMore: false }
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/pedidos-online']}>
+        <Routes><Route path="/pedidos-online" element={<><EcommerceOrdersPage /><LocationProbe /></>} /></Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Página 2')).toBeInTheDocument();
+    expect(screen.queryByText('EC-00000011')).not.toBeInTheDocument();
+    expect(screen.getByText('EC-00000012')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Anterior' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Anterior' }));
+    expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
+      filter: 'all',
+      limit: 1,
+      offset: 0,
+      force: true
+    });
+  });
+
+  it('resets the pagination offset when the filter changes', async () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrdersPagination: { limit: 25, offset: 50, hasMore: true }
+    };
+    renderPage();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Estado' }), {
+      target: { value: 'closed' }
+    });
+
+    await waitFor(() => expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
+      filter: 'closed',
+      limit: 25,
+      offset: 0,
+      force: true
+    }));
+  });
+
+  it('keeps search page-local while the pagination scope remains explicit', () => {
+    store.state = {
+      ...baseState(),
+      ecommerceOrders: [baseState().ecommerceOrders[0]],
+      ecommerceOrdersPagination: { limit: 1, offset: 0, hasMore: true }
+    };
+    renderPage();
+
+    expect(screen.getByText('La búsqueda aplica a la página actual.')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar pedidos' }), {
+      target: { value: 'EC-00000012' }
+    });
+
+    expect(screen.getByText('No encontramos pedidos')).toBeInTheDocument();
   });
 
   it('labels the terminal unpaid POS action as Cobrar en Punto de Venta', () => {
