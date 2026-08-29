@@ -13,6 +13,13 @@ const asStringAmount = (value, fallback = '0') => {
   return String(value);
 };
 
+const asIdentifier = (value) => {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+};
+
+const firstIdentifier = (...values) => values.map(asIdentifier).find(Boolean) || null;
+
 const normalizeStatus = (status) => {
   if (status === 'open') return 'abierta';
   if (status === 'closed') return 'cerrada';
@@ -24,6 +31,14 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
   if (!session?.id) return null;
 
   const syncedAt = nowIso();
+  const serverCashStationId = firstIdentifier(
+    session.cash_station_id,
+    session.cashStationId,
+    session.metadata?.cash_station_id,
+    session.metadata?.cashStationId
+  );
+  const cashStationId = serverCashStationId
+    || firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
   const local = {
     ...(existing || {}),
     id: session.id,
@@ -60,7 +75,7 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     reconciliationStatus: session.reconciliation_status || null,
     closureReasonCode: session.closure_reason_code || null,
     closedByAdminUserId: session.closed_by_admin_user_id || null,
-    metadata: session.metadata || {},
+    metadata: session.metadata || existing?.metadata || {},
     updatedAt: session.updated_at || session.created_at || syncedAt,
     syncStatus: CASH_SYNC_STATUS.SYNCED,
     serverVersion: Number(session.server_version || existing?.serverVersion || 1),
@@ -76,10 +91,10 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     adminUserId: session.admin_user_id || null,
     deviceId: session.device_id || null,
     deviceRole: session.device_role || null,
-    cashStationId: session.cash_station_id || session.cashStationId || null,
-    cashIdentityState: session.cash_identity_state || session.cashIdentityState || (
-      session.cash_station_id || session.cashStationId ? 'canonical' : 'legacy_unresolved'
-    ),
+    cashStationId,
+    cashIdentityState: serverCashStationId
+      ? 'canonical'
+      : session.cash_identity_state || session.cashIdentityState || existing?.cashIdentityState || 'legacy_unresolved',
     scope: session.scope || 'actor',
     cloudCash: true,
     deletedAt: session.deleted_at || null
@@ -93,6 +108,14 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
 
   const syncedAt = nowIso();
   const metadata = movement.metadata || existing?.metadata || {};
+  const cashStationId = firstIdentifier(
+    movement.cash_station_id,
+    movement.cashStationId,
+    metadata.cash_station_id,
+    metadata.cashStationId,
+    existing?.cashStationId,
+    existing?.cash_station_id
+  );
   const referenceType = movement.reference_type
     || movement.referenceType
     || existing?.referenceType
@@ -140,7 +163,7 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
     performedByActorKey: movement.performed_by_actor_key || null,
     staffUserId: movement.staff_user_id || null,
     deviceId: movement.device_id || null,
-    cashStationId: movement.cash_station_id || movement.cashStationId || null,
+    cashStationId,
     idempotencyKey: movement.idempotency_key || movement.idempotencyKey || existing?.idempotencyKey || null,
     cloudCash: true,
     deletedAt: movement.deleted_at || null

@@ -1114,13 +1114,15 @@ export function usePosCheckout({
             ? CLOUD_TURN_REQUIRED_PAYMENT_METHODS.has(paymentMethod)
             : hasCashComponent;
 
-        if (requiresOpenCashSession && !hasOpenCashSession(pos.cajaActual)) {
+        let cashSessionForSale = null;
+        if (requiresOpenCashSession) {
             const beforeCajaSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
             if (beforeCajaSnapshotError) return beforeCajaSnapshotError;
 
             try {
                 const ensuredCashSession = await asegurarCajaAbierta?.();
                 if (!hasOpenCashSession(ensuredCashSession)) throw buildCashNeedsOpeningError();
+                cashSessionForSale = ensuredCashSession;
             } catch (cashError) {
                 if (cashError?.code === 'CAJA_NEEDS_OPENING') {
                     const beforeQuickCajaSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
@@ -1167,8 +1169,8 @@ export function usePosCheckout({
                 order: snapshot.order,
                 paymentData: {
                     ...paymentData,
-                    cashSessionId: pos.cajaActual?.id || paymentData.cashSessionId || null,
-                    cashStationId: pos.cajaActual?.cashStationId || paymentData.cashStationId || null
+                    cashSessionId: cashSessionForSale?.id || null,
+                    cashStationId: cashSessionForSale?.cashStationId || cashSessionForSale?.cash_station_id || null
                 },
                 total: snapshot.total,
                 allProducts: posSearch.menuVisual,
@@ -1333,7 +1335,6 @@ export function usePosCheckout({
         invalidateCheckoutSnapshot,
         mobileCart,
         modal,
-        pos.cajaActual,
         posSearch,
         persistCheckoutAttemptOwnership,
         prescription,

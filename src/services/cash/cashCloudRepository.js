@@ -49,6 +49,17 @@ const invalidateAfterCashSuccess = (licenseKey, response) => {
   return response;
 };
 
+const withResolvedCashStation = (licenseKey, result) => ({
+  ...invalidateAfterCashSuccess(licenseKey, result.response),
+  financialIntentId: result.intentId,
+  // The station is resolved from the authenticated device before dispatch.
+  // Propagate that server-side value so responses whose session projection
+  // omits cash_station_id remain unambiguous at the repository boundary.
+  resolvedCashStationId: result.intent?.cashStationId
+    || result.response?.resolvedCashStationId
+    || null
+});
+
 const cachedCashRpc = ({
   rpcName,
   licenseKey,
@@ -119,7 +130,7 @@ export const cashCloudRepository = {
   // IMPORTANTE: estas RPCs de caja son transaccionales y NO deben pasar por CloudRequestManager.
   async openCashSession({ licenseKey, opening, idempotencyKey, actorHandle = null }) {
     const result = await executeNewFinancialIntent({ operationType: 'cash.open', request: opening || {}, licenseKey, idempotencyKey, actorHandle });
-    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+    return withResolvedCashStation(licenseKey, result);
   },
 
   async registerCashMovement({ licenseKey, cashSessionId, type, amount, concept, idempotencyKey, metadata = {}, actorHandle = null }) {
@@ -131,17 +142,17 @@ export const cashCloudRepository = {
       metadata
     };
     const result = await executeNewFinancialIntent({ operationType: 'cash.movement', request, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+    return withResolvedCashStation(licenseKey, result);
   },
 
   async adjustInitialCashFund({ licenseKey, cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     const result = await executeNewFinancialIntent({ operationType: 'cash.adjust_initial_fund', request: { cash_session_id: cashSessionId, new_opening_amount: newAmount, reason, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+    return withResolvedCashStation(licenseKey, result);
   },
 
   async closeCashSession({ licenseKey, cashSessionId, closing, expectedVersion = null, idempotencyKey, actorHandle = null }) {
     const result = await executeNewFinancialIntent({ operationType: 'cash.close', request: { ...(closing || {}), cash_session_id: cashSessionId, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+    return withResolvedCashStation(licenseKey, result);
   },
 
   async adminCloseCashSession({
@@ -157,7 +168,7 @@ export const cashCloudRepository = {
     actorHandle = null
   }) {
     const result = await executeNewFinancialIntent({ operationType: 'cash.admin_close', request: { cash_session_id: cashSessionId, closing_mode: closingMode, counted_amount: countedAmount, next_shift_fund: nextShiftFund, reason_code: reasonCode, comments, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterCashSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+    return withResolvedCashStation(licenseKey, result);
   },
 
   async adoptLegacyCashSession({ licenseKey, cashSessionId, expectedVersion = null, idempotencyKey }) {

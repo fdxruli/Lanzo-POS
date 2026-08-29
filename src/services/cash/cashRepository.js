@@ -10,7 +10,11 @@ import {
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { cashCloudRepository } from './cashCloudRepository';
 import { cashLocalRepository } from './cashLocalRepository';
-import { getCashStationIdentity } from './cashStation';
+import {
+  areCashStationsEquivalent,
+  getCashStationIdFromCloudResponse,
+  getCashStationIdentity
+} from './cashStation';
 import {
   CASH_FINANCIAL_CODES,
   CASH_FINANCIAL_STATUS,
@@ -88,17 +92,94 @@ const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = 
   };
 };
 
-const assertResponseOwnSession = (response, mode) => {
+const getSessionStationId = (session) => session?.cash_station_id
+  || session?.cashStationId
+  || session?.metadata?.cash_station_id
+  || session?.metadata?.cashStationId
+  || null;
+
+const withStationEvidence = (session, cashStationId) => (
+  session && !getSessionStationId(session) && cashStationId
+    ? { ...session, cash_station_id: cashStationId }
+    : session
+);
+
+const assertSessionForStation = (session, cashStationId, message = 'La respuesta cloud contiene una sesión de otra estación.') => {
+  if (!session || !cashStationId) return session;
+  const sessionWithEvidence = withStationEvidence(session, cashStationId);
+  const sessionStationId = getSessionStationId(sessionWithEvidence);
+  if (!areCashStationsEquivalent(sessionStationId, cashStationId)) {
+    throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, message, {
+      sessionStationId,
+      cashStationId
+    });
+  }
+  return sessionWithEvidence;
+};
+
+const assertResponseOwnSession = (response, mode, cashStationId = null) => {
   const session = response?.cash_session || response?.cashSession || null;
   const owner = session?.actor_key || session?.actorKey || null;
-  if (session && owner && owner !== mode.actor.actorKey) {
+  if (session && owner !== mode.actor.actorKey) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La respuesta cloud contiene una sesión de otro actor.', {
       ownerActorKey: owner,
       actorKey: mode.actor.actorKey
     });
   }
-  return session;
+  const responseStationId = getCashStationIdFromCloudResponse(response);
+  if (responseStationId && cashStationId && !areCashStationsEquivalent(responseStationId, cashStationId)) {
+    throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La respuesta cloud contiene una estación de otra estación.', {
+      responseStationId,
+      cashStationId
+    });
+  }
+  return assertSessionForStation(
+    session,
+    responseStationId || cashStationId,
+    undefined
+  );
 };
+
+const assertCloudResponseStation = ({ response, localStation } = {}) => {
+  const serverCashStationId = getCashStationIdFromCloudResponse(response);
+  if (!serverCashStationId) {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+      'La respuesta cloud no contiene una estación financiera canónica.',
+      { response }
+    );
+  }
+
+  const resolvedCashStationId = response?.resolvedCashStationId || null;
+  if (resolvedCashStationId && !areCashStationsEquivalent(serverCashStationId, resolvedCashStationId)) {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.STATION_MISMATCH,
+      'La respuesta cloud contiene una estación financiera inconsistente.',
+      { serverCashStationId, resolvedCashStationId }
+    );
+  }
+
+  // `resolvedCashStationId` is the server-side preflight result produced by
+  // the financial intent ledger. When it is available it is the authority;
+  // the local id is only a legacy-compatible fallback for older responses.
+  if (!resolvedCashStationId && localStation?.cashStationId
+    && !areCashStationsEquivalent(serverCashStationId, localStation.cashStationId)) {
+    throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La respuesta cloud contiene una sesión de otra estación.', {
+      serverCashStationId,
+      localCashStationId: localStation.cashStationId
+    });
+  }
+
+  const session = response?.cash_session || response?.cashSession || null;
+  if (session) assertSessionForStation(session, serverCashStationId);
+  return serverCashStationId;
+};
+
+export const cashRepositoryInternals = Object.freeze({
+  assertSessionForStation,
+  assertResponseOwnSession,
+  assertCloudResponseStation
+});
 
 const assertCurrentFinancialSessionForMutation = async ({
   mode,
@@ -138,12 +219,22 @@ const applyCloudResponse = async (response = {}) => {
     movements: []
   };
 
+  const serverCashStationId = getCashStationIdFromCloudResponse(response);
+  const withServerCashStation = (record) => {
+    if (!record || !serverCashStationId || getSessionStationId(record)) return record;
+    return { ...record, cash_station_id: serverCashStationId };
+  };
+
   if (response.cash_session) {
-    applied.cashSession = await cashLocalRepository.applyCloudCashSession(response.cash_session);
+    applied.cashSession = await cashLocalRepository.applyCloudCashSession(
+      withServerCashStation(response.cash_session)
+    );
   }
 
   if (response.movement) {
-    applied.movement = await cashLocalRepository.applyCloudCashMovement(response.movement);
+    applied.movement = await cashLocalRepository.applyCloudCashMovement(
+      withServerCashStation(response.movement)
+    );
   }
 
   if (Array.isArray(response.cash_sessions)) {
@@ -268,17 +359,19 @@ export const cashRepository = {
           { stationState }
         );
       }
-      const currentSession = assertResponseOwnSession(response, mode);
-      const stationOpenCashSession = stationState?.station_open_cash_session
+      const stationId = stationState.cash_station.id;
+      const currentSession = assertResponseOwnSession(response, mode, stationId);
+      const stationOpenCashSession = assertSessionForStation(stationState?.station_open_cash_session
         || stationState?.stationOpenCashSession
-        || null;
+        || null, stationId);
 
       const applied = await applyCloudResponse(response);
       if (stationOpenCashSession && stationOpenCashSession.id !== currentSession?.id) {
         await cashLocalRepository.applyCloudCashSession(stationOpenCashSession);
       }
       const cashSession = applied.cashSession && (
-        (applied.cashSession.actorKey || response.actor_key) === mode.actor.actorKey
+        (applied.cashSession.actorKey || applied.cashSession.actor_key || response.actor_key) === mode.actor.actorKey
+        && areCashStationsEquivalent(getSessionStationId(applied.cashSession), stationId)
       ) ? applied.cashSession : null;
       const projection = cashSession
         ? await cashLocalRepository.loadProjection(cashSession)
@@ -301,7 +394,7 @@ export const cashRepository = {
       return buildFinancialResult({
         mode,
         station: (stationState?.cash_station ? {
-          cashStationId: stationState.cash_station.id,
+          cashStationId: stationId,
           deviceId: stationState.cash_station.device_id || null
         } : station),
         cashSession,
@@ -392,6 +485,7 @@ export const cashRepository = {
     }
 
     if (response?.cash_session) {
+      const serverCashStationId = assertCloudResponseStation({ response, localStation: station });
       const owner = response.cash_session.actor_key || response.cash_session.actorKey || null;
       if (response.code === CASH_FINANCIAL_CODES.HANDOFF_REQUIRED || (owner && owner !== mode.actor.actorKey)) {
         return fail('La estación financiera requiere reconciliación antes de cambiar de actor.', CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, {
@@ -408,6 +502,7 @@ export const cashRepository = {
           && owner === mode.actor.actorKey
         ),
         cashSession: applied.cashSession,
+        cashStationId: serverCashStationId,
         response
       };
     }

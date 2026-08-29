@@ -162,15 +162,16 @@ begin
     raise exception 'LEGACY_IDENTITY_ADOPT_UNSELECTED_CHANGED';
   end if;
 
-  -- Both authenticated admin devices resolve the single canonical post-adoption cash session.
+  -- Each authenticated admin device resolves only the canonical session at its
+  -- own station; the administrative list still exposes open sessions globally.
   v_result := public.pos_get_current_cash_session(v_admin_key, v_fingerprint, v_device_token, v_admin_token);
   if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,id}' <> 'cash-legacy-adopt-' || v_suffix or v_result->>'actor_key' <> 'admin:' || v_admin_user::text then
     raise exception 'LEGACY_IDENTITY_ADOPT_DEVICE_A_RESOLUTION_FAILED: %', v_result;
   end if;
   v_result := public.pos_get_current_cash_session(v_admin_key, v_second_fingerprint, v_second_device_token, v_second_admin_token);
-  if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,id}' <> 'cash-legacy-adopt-' || v_suffix or v_result->>'actor_key' <> 'admin:' || v_admin_user::text
+  if coalesce((v_result->>'success')::boolean, false) is not true or v_result#>>'{cash_session,id}' is not null or v_result->>'cash_station_id' <> 'cash-station-stale-' || v_suffix or v_result->>'actor_key' <> 'admin:' || v_admin_user::text
      or (select count(*) from public.pos_cash_sessions where license_id=v_license_id and admin_user_id=v_admin_user and status='open' and deleted_at is null) <> 1 then
-    raise exception 'LEGACY_IDENTITY_ADOPT_MULTI_DEVICE_FAILED: %', v_result;
+    raise exception 'LEGACY_IDENTITY_ADOPT_STATION_SCOPING_FAILED: %', v_result;
   end if;
 
   -- Sale then close: the actual cashier-sale RPC locks and updates the same cash session before the close snapshot.
