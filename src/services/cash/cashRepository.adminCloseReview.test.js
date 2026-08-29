@@ -42,10 +42,31 @@ vi.mock('./cashLocalRepository', () => ({
     applyCloudCashSession: (...args) => runtime.applyCloudCashSession(...args)
   }
 }));
-vi.mock('./cashStation', () => ({ getCashStationIdentity: vi.fn() }));
+vi.mock('./cashStation', () => ({
+  getCashStationIdentity: vi.fn(),
+  areCashStationsEquivalent: (left, right) => {
+    const normalize = (value) => String(value || '').trim();
+    const leftId = normalize(left);
+    const rightId = normalize(right);
+    if (!leftId || !rightId) return false;
+    if (leftId === rightId) return true;
+    const suffix = (value) => value.startsWith('local:device:')
+      ? value.slice('local:device:'.length)
+      : value.startsWith('cash_station_device_')
+        ? value.slice('cash_station_device_'.length)
+        : null;
+    return suffix(leftId) !== null && suffix(leftId) === suffix(rightId);
+  },
+  getCashStationIdFromCloudResponse: (response = {}) => response?.cash_station?.id
+    || response?.cash_station_id
+    || response?.resolvedCashStationId
+    || response?.cash_session?.cash_station_id
+    || null
+}));
 vi.mock('./cashFinancialGate', () => ({
   CASH_FINANCIAL_CODES: {
     HANDOFF_REQUIRED: 'CASH_HANDOFF_REQUIRED',
+    STATION_UNRESOLVED: 'CASH_STATION_UNRESOLVED',
     STATION_MISMATCH: 'CASH_SESSION_STATION_MISMATCH',
     SESSION_REQUIRED: 'CASH_SESSION_REQUIRED'
   },

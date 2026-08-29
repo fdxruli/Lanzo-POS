@@ -91,4 +91,28 @@ describe('cashCloudRepository close financial operation types', () => {
       actorHandle
     });
   });
+
+  it('propagates the canonical station resolved before the financial dispatch', async () => {
+    fixtures.executeFinancialIntent.mockResolvedValue({
+      intentId: 'intent-open',
+      intent: { cashStationId: 'cash_station_device_A' },
+      response: {
+        success: true,
+        cash_session: { id: 'cash-a', status: 'open' }
+      }
+    });
+
+    const result = await cashCloudRepository.openCashSession({
+      licenseKey: 'license-test',
+      opening: { opening_amount: '100' },
+      idempotencyKey: null,
+      actorHandle: { actorKey: 'admin:owner' }
+    });
+
+    expect(result).toMatchObject({
+      financialIntentId: 'intent-open',
+      resolvedCashStationId: 'cash_station_device_A',
+      cash_session: { id: 'cash-a' }
+    });
+  });
 });

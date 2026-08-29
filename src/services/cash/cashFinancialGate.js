@@ -4,6 +4,7 @@ import {
   ActorRuntimeError,
   actorRuntimeController
 } from '../auth/actorRuntimeController';
+import { areCashStationsEquivalent } from './cashStation';
 
 /**
  * Financial access is deliberately narrower than application access.  A
@@ -39,7 +40,11 @@ export class CashFinancialError extends Error {
 }
 
 const sessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
-const sessionStationId = (session) => session?.cashStationId || session?.cash_station_id || null;
+const sessionStationId = (session) => session?.cashStationId
+  || session?.cash_station_id
+  || session?.metadata?.cashStationId
+  || session?.metadata?.cash_station_id
+  || null;
 const isOpen = (session) => session?.estado === 'abierta' || session?.status === 'open';
 
 export const isCashFinancialStatusReady = (status) => (
@@ -167,7 +172,7 @@ export const assertCashFinancialWriteAccess = ({
   }
 
   const station = sessionStationId(session);
-  if (cashStationId && station && cashStationId !== station) {
+  if (cashStationId && station && !areCashStationsEquivalent(cashStationId, station)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, `${operation} no corresponde a la estación financiera actual.`, {
       status: CASH_FINANCIAL_STATUS.BLOCKED,
       state

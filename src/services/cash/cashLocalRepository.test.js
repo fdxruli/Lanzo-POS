@@ -52,6 +52,54 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
     expect(await db.table(STORES.CAJAS).where('cashStationId').equals(stationId).toArray()).toHaveLength(1);
   });
 
+  it('reads a canonical cloud projection through an existing legacy station alias', async () => {
+    const projected = await cashLocalRepository.applyCloudCashSession({
+      id: 'cash-canonical-a',
+      status: 'open',
+      actor_key: 'admin:shared',
+      metadata: { cash_station_id: 'cash_station_device_station-a' }
+    });
+
+    expect(projected).toMatchObject({
+      id: 'cash-canonical-a',
+      cashStationId: 'cash_station_device_station-a',
+      cashIdentityState: 'canonical'
+    });
+    await expect(cashLocalRepository.getCurrentCashSession({
+      actorKey: 'admin:shared',
+      cashStationId: 'local:device:station-a'
+    })).resolves.toMatchObject({
+      id: 'cash-canonical-a',
+      cashStationId: 'cash_station_device_station-a'
+    });
+
+    const state = await cashLocalRepository.getFinancialState({
+      actorKey: 'admin:shared',
+      cashStationId: 'local:device:station-a',
+      cloudEnabled: false
+    });
+    expect(state).toMatchObject({
+      status: 'OWN_SESSION_OPEN',
+      cashSession: { id: 'cash-canonical-a' }
+    });
+  });
+
+  it('keeps Staff limited to one open session per actor across stations', async () => {
+    await cashLocalRepository.openCashSession({
+      actorKey: 'staff:shared',
+      deviceRole: 'staff',
+      cashStationId: 'local:device:station-a',
+      montoInicial: '10'
+    });
+
+    await expect(cashLocalRepository.openCashSession({
+      actorKey: 'staff:shared',
+      deviceRole: 'staff',
+      cashStationId: 'local:device:station-b',
+      montoInicial: '20'
+    })).rejects.toMatchObject({ code: 'CASH_SESSION_ALREADY_OPEN' });
+  });
+
   it('keeps the previous owner, blocks takeover, and permits a new session only after explicit close', async () => {
     const first = await cashLocalRepository.openCashSession({
       actorKey: 'admin:a',

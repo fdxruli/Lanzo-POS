@@ -78,4 +78,22 @@ describe('cash financial gate', () => {
     expect(error).toBeInstanceOf(CashFinancialError);
     expect(error.code).toBe(CASH_FINANCIAL_CODES.STATION_MISMATCH);
   });
+
+  it('accepts the canonical server station for a legacy local station alias', () => {
+    const state = deriveCashFinancialState({
+      actorKey: 'admin:a',
+      cashStationId: 'local:device:A',
+      cashSession: {
+        ...session('admin:a'),
+        cashStationId: 'cash_station_device_A'
+      }
+    });
+
+    expect(assertCashFinancialWriteAccess({
+      state,
+      actorKey: 'admin:a',
+      cashStationId: 'local:device:A',
+      cashSessionId: 'c1'
+    })).toMatchObject({ cashStationId: 'cash_station_device_A' });
+  });
 });

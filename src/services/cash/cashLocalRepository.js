@@ -3,7 +3,7 @@ import { generateID } from '../utils';
 import { registrarMovimientoCaja } from '../cajaService';
 import { loadCashSessionProjection, loadCashSessionTotals } from '../cajaProjection';
 import { Money } from '../../utils/moneyMath';
-import { getCashStationIdentity } from './cashStation';
+import { areCashStationsEquivalent, getCashStationIdentity } from './cashStation';
 import {
   CASH_FINANCIAL_CODES,
   CASH_FINANCIAL_STATUS,
@@ -41,7 +41,7 @@ const matchesActor = (record, { actorKey = null, staffUserId = null } = {}) => {
   if (staffUserId && record?.staffUserId === staffUserId) return true;
   // `isAdmin` is an audit scope hint, never an ownership grant.  A normal
   // current-session read with no actor can only return legacy records.
-  return !actorKey && !staffUserId && !record?.actorKey && !record?.cashStationId;
+  return !actorKey && !staffUserId && !record?.actorKey && !getSessionStationId(record);
 };
 
 const createCashError = (code, message = code, details = {}) => (
@@ -49,7 +49,15 @@ const createCashError = (code, message = code, details = {}) => (
 );
 
 const getSessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
-const getSessionStationId = (session) => session?.cashStationId || session?.cash_station_id || null;
+const getSessionStationId = (session) => session?.cashStationId
+  || session?.cash_station_id
+  || session?.metadata?.cashStationId
+  || session?.metadata?.cash_station_id
+  || null;
+const matchesStation = (session, cashStationId) => areCashStationsEquivalent(
+  getSessionStationId(session),
+  cashStationId
+);
 const isOpenSession = (session) => session?.estado === 'abierta' || session?.status === 'open';
 
 const assertLocalSessionOwnership = async ({
@@ -80,7 +88,7 @@ const assertLocalSessionOwnership = async ({
       actorKey
     });
   }
-  if (!cashStationId || station !== cashStationId) {
+  if (!cashStationId || !areCashStationsEquivalent(station, cashStationId)) {
     throw createCashError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La sesión no pertenece a la estación financiera actual.', {
       operation,
       sessionStationId: station,
@@ -100,7 +108,7 @@ export const cashLocalRepository = {
           ? true
           : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
       ))
-      .filter((cashSession) => !cashStationId || cashSession.cashStationId === cashStationId);
+      .filter((cashSession) => !cashStationId || matchesStation(cashSession, cashStationId));
 
     return sortByOpenedDesc(openSessions)[0] || null;
   },
@@ -127,10 +135,10 @@ export const cashLocalRepository = {
     const openSessions = sessions.filter(isOpenSession);
     const ownSession = openSessions.find((session) => (
       getSessionActorKey(session) === actorKey
-      && (!cashStationId || getSessionStationId(session) === cashStationId)
+      && (!cashStationId || matchesStation(session, cashStationId))
     )) || null;
     const stationOpenCashSession = cashStationId
-      ? openSessions.find((session) => getSessionStationId(session) === cashStationId) || null
+      ? openSessions.find((session) => matchesStation(session, cashStationId)) || null
       : null;
     const unresolvedOpen = openSessions.find((session) => !getSessionStationId(session)) || null;
 
@@ -224,7 +232,7 @@ export const cashLocalRepository = {
 
     return db.transaction('rw', db.table(STORES.CAJAS), async () => {
       const openSessions = await db.table(STORES.CAJAS).where('estado').equals('abierta').toArray();
-      const stationOpen = openSessions.find((session) => session.cashStationId === station.cashStationId) || null;
+      const stationOpen = openSessions.find((session) => matchesStation(session, station.cashStationId)) || null;
       if (stationOpen) {
         if (getSessionActorKey(stationOpen) === actorKey) return stationOpen;
         throw createCashError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La estación financiera requiere cierre y reconciliación antes de cambiar de actor.', {
@@ -244,7 +252,7 @@ export const cashLocalRepository = {
         }
       }
 
-      const unresolvedOpen = openSessions.find((session) => !session.cashStationId);
+      const unresolvedOpen = openSessions.find((session) => !getSessionStationId(session));
       if (unresolvedOpen) {
         throw createCashError(CASH_FINANCIAL_CODES.STATION_UNRESOLVED, 'Existe una caja abierta legacy cuya estación no puede determinarse de forma segura.', {
           cashSession: unresolvedOpen
@@ -394,7 +402,7 @@ export const cashLocalRepository = {
     if (initialSession && !isOpenSession(initialSession)) {
       if (initialSession.estado === 'cerrada'
         && initialSession.closedByActorKey === actorKey
-        && initialSession.cashStationId === cashStationId) {
+        && areCashStationsEquivalent(getSessionStationId(initialSession), cashStationId)) {
         if (actorContext) assertCashActorContextCurrent(actorContext);
         return {
           success: true,
@@ -416,7 +424,7 @@ export const cashLocalRepository = {
       if (cashSession.estado !== 'abierta') {
         if (cashSession.estado === 'cerrada'
           && cashSession.closedByActorKey === actorKey
-          && cashSession.cashStationId === cashStationId) {
+          && areCashStationsEquivalent(getSessionStationId(cashSession), cashStationId)) {
           return {
             success: true,
             alreadyClosed: true,
