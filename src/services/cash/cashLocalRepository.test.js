@@ -16,6 +16,42 @@ beforeEach(async () => {
 afterEach(() => closeTestTenantRuntime());
 
 describe('cashLocalRepository shared-terminal financial ownership', () => {
+  it('allows the same Admin actor to open independent sessions on different stations', async () => {
+    const stationA = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:shared',
+      deviceRole: 'admin',
+      cashStationId: 'local:device:station-a',
+      deviceId: 'device-a',
+      montoInicial: '100'
+    });
+    const stationB = await cashLocalRepository.openCashSession({
+      actorKey: 'admin:shared',
+      deviceRole: 'admin',
+      cashStationId: 'local:device:station-b',
+      deviceId: 'device-b',
+      montoInicial: '200'
+    });
+
+    expect(stationA.id).not.toBe(stationB.id);
+    expect(stationA).toMatchObject({ actorKey: 'admin:shared', cashStationId: 'local:device:station-a' });
+    expect(stationB).toMatchObject({ actorKey: 'admin:shared', cashStationId: 'local:device:station-b' });
+    await expect(cashLocalRepository.getCurrentCashSession({ actorKey: 'admin:shared', cashStationId: 'local:device:station-a' }))
+      .resolves.toMatchObject({ id: stationA.id, cashStationId: stationA.cashStationId });
+    await expect(cashLocalRepository.getCurrentCashSession({ actorKey: 'admin:shared', cashStationId: 'local:device:station-b' }))
+      .resolves.toMatchObject({ id: stationB.id, cashStationId: stationB.cashStationId });
+  });
+
+  it('keeps one open session per station when two Admin actors race', async () => {
+    const results = await Promise.allSettled([
+      cashLocalRepository.openCashSession({ actorKey: 'admin:a', deviceRole: 'admin', cashStationId: stationId, montoInicial: '10' }),
+      cashLocalRepository.openCashSession({ actorKey: 'admin:b', deviceRole: 'admin', cashStationId: stationId, montoInicial: '20' })
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')[0].reason.code).toBe('CASH_HANDOFF_REQUIRED');
+    expect(await db.table(STORES.CAJAS).where('cashStationId').equals(stationId).toArray()).toHaveLength(1);
+  });
+
   it('keeps the previous owner, blocks takeover, and permits a new session only after explicit close', async () => {
     const first = await cashLocalRepository.openCashSession({
       actorKey: 'admin:a',

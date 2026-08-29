@@ -23,6 +23,19 @@ const isOpenCashSession = (cashSession) => (
   cashSession?.estado === 'abierta' || cashSession?.status === 'open'
 );
 
+const getSessionStationId = (cashSession) => (
+  cashSession?.cashStationId || cashSession?.cash_station_id || null
+);
+
+const isSessionForStation = (cashSession, cashStationId) => (
+  Boolean(
+    isOpenCashSession(cashSession)
+    && cashStationId
+    && getSessionStationId(cashSession)
+    && getSessionStationId(cashSession) === cashStationId
+  )
+);
+
 const createCajaNeedsOpeningError = (message = 'La caja requiere apertura manual. Confirma el fondo inicial.') => {
   const error = new Error(message);
   error.code = 'CAJA_NEEDS_OPENING';
@@ -96,7 +109,9 @@ export function useCaja() {
 
   const applyCashState = useCallback((rawResult = {}) => {
     const result = normalizeRepositoryResult(rawResult);
-    const current = result.cashSession && isOpenCashSession(result.cashSession) ? result.cashSession : null;
+    const current = isSessionForStation(result.cashSession, result.cashStationId)
+      ? result.cashSession
+      : null;
     const history = (result.cashSessions || [])
       .filter(Boolean)
       .filter((cashSession) => !current || cashSession.id !== current.id);
@@ -265,8 +280,6 @@ export function useCaja() {
   }, [aperturaPendiente, ensureMutableCloudCash, sincronizarEstadoCaja]);
 
   const asegurarCajaAbierta = useCallback(async () => {
-    if (isOpenCashSession(cajaActual)) return cajaActual;
-
     const mode = cashRepository.getMode();
     setCashMode(mode);
     setCashActor(mode.actor);
@@ -304,26 +317,38 @@ export function useCaja() {
       applyCashState(result);
 
       const current = result.cashSession || result.cash_session || null;
-      if (isOpenCashSession(current)) return current;
+      if (isSessionForStation(current, result.cashStationId)) return current;
 
       throw createCajaNeedsOpeningError();
     }
 
+    const localState = await cashRepository.getCurrentCashSession({ force: true });
+    if (localState?.success === false) {
+      const error = new Error(localState.message || 'No se pudo verificar la caja local.');
+      error.code = localState.code || 'CASH_CURRENT_FAILED';
+      throw error;
+    }
+    if (localState?.financialStatus === 'HANDOFF_REQUIRED' || localState?.financialCode === 'CASH_HANDOFF_REQUIRED') {
+      throw createCashFinancialGateError(
+        'CASH_HANDOFF_REQUIRED',
+        'La caja anterior sigue abierta y requiere reconciliación.'
+      );
+    }
+    if (localState?.financialStatus === 'BLOCKED') {
+      throw createCashFinancialGateError(
+        localState.financialCode || 'CASH_STATION_UNRESOLVED',
+        'No se puede determinar de forma segura la estación financiera.'
+      );
+    }
+
+    const localCurrent = localState?.cashSession || localState?.cash_session || null;
+    if (isSessionForStation(localCurrent, localState?.cashStationId)) {
+      applyCashState(localState);
+      return localCurrent;
+    }
+    applyCashState(localState);
+
     if (getCashOpeningPolicy() !== CASH_OPENING_POLICY.AUTOMATIC) {
-      const localState = await cashRepository.getCurrentCashSession();
-      if (localState?.financialStatus === 'HANDOFF_REQUIRED' || localState?.financialCode === 'CASH_HANDOFF_REQUIRED') {
-        throw createCashFinancialGateError(
-          'CASH_HANDOFF_REQUIRED',
-          'La caja anterior sigue abierta y requiere reconciliación.'
-        );
-      }
-      if (localState?.financialStatus === 'BLOCKED') {
-        throw createCashFinancialGateError(
-          localState.financialCode || 'CASH_STATION_UNRESOLVED',
-          'No se puede determinar de forma segura la estación financiera.'
-        );
-      }
-      await sincronizarEstadoCaja();
       throw createCajaNeedsOpeningError('La caja requiere apertura manual. Confirma el fondo, el conteo y el empleado responsable.');
     }
 
@@ -354,7 +379,7 @@ export function useCaja() {
     await sincronizarEstadoCaja();
     if (response?.success === false) throw new Error(response.message || 'No se pudo abrir caja automaticamente.');
     return response.cashSession || null;
-  }, [aperturaPendiente, applyCashState, cajaActual, sincronizarEstadoCaja]);
+  }, [aperturaPendiente, applyCashState, sincronizarEstadoCaja]);
 
   const registrarMovimiento = useCallback(async (tipo, monto, concepto) => {
     if (!cajaActual) {

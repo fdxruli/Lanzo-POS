@@ -46,6 +46,7 @@ vi.mock('./cashStation', () => ({ getCashStationIdentity: vi.fn() }));
 vi.mock('./cashFinancialGate', () => ({
   CASH_FINANCIAL_CODES: {
     HANDOFF_REQUIRED: 'CASH_HANDOFF_REQUIRED',
+    STATION_MISMATCH: 'CASH_SESSION_STATION_MISMATCH',
     SESSION_REQUIRED: 'CASH_SESSION_REQUIRED'
   },
   CASH_FINANCIAL_STATUS: {
@@ -84,7 +85,7 @@ vi.mock('../financial/financialProjectionRegistry', () => ({
 }));
 vi.mock('./cashSyncHandler', () => ({}));
 
-import { cashRepository } from './cashRepository';
+import { cashRepository, cashRepositoryInternals } from './cashRepository';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,6 +98,21 @@ beforeEach(() => {
 });
 
 describe('cashRepository administrative close review delivery', () => {
+  it('rejects a current-session payload that belongs to another station', () => {
+    const mode = { actor: { actorKey: 'admin:reviewer' } };
+
+    expect(() => cashRepositoryInternals.assertResponseOwnSession({
+      cash_session: {
+        id: 'cash-station-a',
+        actor_key: 'admin:reviewer',
+        cash_station_id: 'station-a',
+        status: 'open'
+      }
+    }, mode, 'station-b')).toThrowError(expect.objectContaining({
+      code: 'CASH_SESSION_STATION_MISMATCH'
+    }));
+  });
+
   it.each(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'])(
     'projects and surfaces the complete %s response without claiming closure',
     async (code) => {

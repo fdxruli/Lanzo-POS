@@ -233,12 +233,15 @@ export const cashLocalRepository = {
         });
       }
 
-      const actorOpen = openSessions.find((session) => getSessionActorKey(session) === actorKey) || null;
-      if (actorOpen) {
-        throw createCashError('CASH_SESSION_ALREADY_OPEN', 'El actor ya tiene una sesión de caja abierta en otra estación.', {
-          cashSession: actorOpen,
-          cashStationId: actorOpen.cashStationId || null
-        });
+      const isStaffActor = openingData.deviceRole === 'staff' || String(actorKey).startsWith('staff:');
+      if (isStaffActor) {
+        const actorOpen = openSessions.find((session) => getSessionActorKey(session) === actorKey) || null;
+        if (actorOpen) {
+          throw createCashError('CASH_SESSION_ALREADY_OPEN', 'El actor ya tiene una sesión de caja abierta en otra estación.', {
+            cashSession: actorOpen,
+            cashStationId: actorOpen.cashStationId || null
+          });
+        }
       }
 
       const unresolvedOpen = openSessions.find((session) => !session.cashStationId);

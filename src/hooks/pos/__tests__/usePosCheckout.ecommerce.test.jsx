@@ -496,6 +496,36 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(mocks.broadcastDBChange).toHaveBeenCalledWith({ action: 'sale-completed', saleId: 'sale-1' });
   });
 
+  it('uses the freshly ensured station session instead of a stale cajaActual snapshot', async () => {
+    setOrders([makeOrder({ id: 'order-a' })]);
+    const deps = makeDeps();
+    deps.pos.cajaActual = {
+      id: 'cash-station-a',
+      estado: 'abierta',
+      cashStationId: 'station-a'
+    };
+    deps.pos.asegurarCajaAbierta.mockResolvedValue({
+      id: 'cash-station-b',
+      status: 'open',
+      cashStationId: 'station-b'
+    });
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    await initiateCheckout(result);
+    await act(async () => {
+      await result.current.handleProcessOrder({ paymentMethod: 'efectivo' });
+    });
+
+    expect(deps.pos.asegurarCajaAbierta).toHaveBeenCalledTimes(1);
+    expect(mocks.processSale).toHaveBeenCalledWith(expect.objectContaining({
+      paymentData: expect.objectContaining({
+        cashSessionId: 'cash-station-b',
+        cashStationId: 'station-b'
+      })
+    }));
+    expect(mocks.processSale.mock.calls[0][0].paymentData.cashSessionId).not.toBe('cash-station-a');
+  });
+
   it('keeps a failed unlock recoverable and retries only A when the modal closes', async () => {
     const orderA = makeOrder({ id: 'order-a' });
     const orderC = makeOrder({ id: 'order-c' });
