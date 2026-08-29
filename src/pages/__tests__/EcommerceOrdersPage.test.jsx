@@ -171,6 +171,36 @@ beforeEach(() => {
 });
 
 describe('EcommerceOrdersPage', () => {
+  it('renders the loading detail safely while the selected order is temporarily null', () => {
+    store.state = {
+      ...baseState(),
+      selectedEcommerceOrder: null,
+      selectedEcommerceOrderLoading: true
+    };
+
+    const view = renderPage();
+
+    expect(screen.getByRole('dialog', { name: 'Detalle del pedido online' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByText('Cargando detalle…')).toBeInTheDocument();
+
+    store.state = {
+      ...store.state,
+      selectedEcommerceOrder: selectedOrder(orderId, 'completed'),
+      selectedEcommerceOrderLoading: false
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/pedidos-online']}>
+        <Routes>
+          <Route path="/pedidos-online" element={<><EcommerceOrdersPage /><LocationProbe /></>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('dialog', { name: 'Detalle del pedido online' }))
+      .toHaveTextContent('EC-00000011');
+    expect(screen.queryByText('Cargando detalle…')).not.toBeInTheDocument();
+  });
+
   it('renders fulfillment actions inside the opened order detail', () => {
     store.state = { ...baseState(), selectedEcommerceOrder: selectedOrder(orderId, 'accepted') };
 

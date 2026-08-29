@@ -7,6 +7,7 @@ vi.mock('../../sync/posSyncClient', () => ({
 
 import { buildPosSyncAuthContext } from '../../sync/posSyncClient';
 import {
+  ecommerceOrderFulfillmentInternals,
   getEcommerceFulfillmentActions,
   getEcommerceOrderFulfillment,
   isEcommerceFulfillmentPaymentRequired,
@@ -23,6 +24,16 @@ beforeEach(() => {
 });
 
 describe('ecommerce fulfillment controls', () => {
+  it('treats nullish and partial orders as safe no-op inputs', () => {
+    expect(isEcommerceFulfillmentPaymentRequired(null)).toBe(false);
+    expect(isEcommerceFulfillmentPaymentRequired(undefined)).toBe(false);
+    expect(isEcommerceFulfillmentPaymentRequired({})).toBe(false);
+    expect(getEcommerceFulfillmentActions(null)).toEqual([]);
+    expect(getEcommerceFulfillmentActions(undefined)).toEqual([]);
+    expect(ecommerceOrderFulfillmentInternals.isPaymentRegistered(null)).toBe(false);
+    expect(ecommerceOrderFulfillmentInternals.isPaymentRegistered(undefined)).toBe(false);
+  });
+
   it('blocks unpaid pickup completion at ready', () => {
     const actions = getEcommerceFulfillmentActions({
       status: 'accepted',
@@ -38,13 +49,15 @@ describe('ecommerce fulfillment controls', () => {
   });
 
   it('allows paid pickup completion at ready', () => {
-    const actions = getEcommerceFulfillmentActions({
+    const order = {
       status: 'accepted',
       fulfillmentMethod: 'pickup',
       fulfillment: { internalStatus: 'ready', paymentRegistered: true }
-    });
+    };
+    const actions = getEcommerceFulfillmentActions(order);
     expect(actions.map((action) => action.transition)).toEqual(['completed', 'cancelled']);
     expect(actions.some((action) => action.transition === 'out_for_delivery')).toBe(false);
+    expect(isEcommerceFulfillmentPaymentRequired(order)).toBe(false);
   });
 
   it('shows delivery transitions with En camino', () => {

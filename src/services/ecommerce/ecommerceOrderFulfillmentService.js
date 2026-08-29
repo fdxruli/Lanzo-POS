@@ -156,26 +156,35 @@ export const FULFILLMENT_LABELS = Object.freeze({
   attention: 'Requiere atención'
 });
 
-const isPaymentRegistered = (order = {}) => (
-  Boolean(order.fulfillment?.paymentRegistered)
-  || order.payment?.status === 'paid'
+const normalizeOrderInput = (order) => (
+  order && typeof order === 'object' ? order : {}
 );
 
-export function isEcommerceFulfillmentPaymentRequired(order = {}) {
-  const state = order.fulfillment?.internalStatus || order.fulfillment?.status;
-  const method = order.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
+const isPaymentRegistered = (order) => {
+  const safeOrder = normalizeOrderInput(order);
+  return (
+    Boolean(safeOrder.fulfillment?.paymentRegistered)
+    || safeOrder.payment?.status === 'paid'
+  );
+};
+
+export function isEcommerceFulfillmentPaymentRequired(order) {
+  const safeOrder = normalizeOrderInput(order);
+  const state = safeOrder.fulfillment?.internalStatus || safeOrder.fulfillment?.status;
+  const method = safeOrder.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
   const isCompletionStage = (
     (state === 'ready' && method === 'pickup')
     || (state === 'out_for_delivery' && method === 'delivery')
   );
 
-  return isCompletionStage && !isPaymentRegistered(order);
+  return isCompletionStage && !isPaymentRegistered(safeOrder);
 }
 
-export function getEcommerceFulfillmentActions(order = {}) {
-  if (!['accepted', 'converted_to_sale'].includes(order.status)) return [];
-  const state = order.fulfillment?.internalStatus || order.fulfillment?.status;
-  const method = order.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
+export function getEcommerceFulfillmentActions(order) {
+  const safeOrder = normalizeOrderInput(order);
+  if (!['accepted', 'converted_to_sale'].includes(safeOrder.status)) return [];
+  const state = safeOrder.fulfillment?.internalStatus || safeOrder.fulfillment?.status;
+  const method = safeOrder.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
   const cancel = { transition: 'cancelled', label: 'Cancelar pedido', destructive: true };
 
   if (state === 'accepted') {
@@ -188,12 +197,12 @@ export function getEcommerceFulfillmentActions(order = {}) {
     return [{ transition: 'out_for_delivery', label: 'Marcar en camino' }, cancel];
   }
   if (state === 'ready' && method === 'pickup') {
-    return isPaymentRegistered(order)
+    return isPaymentRegistered(safeOrder)
       ? [{ transition: 'completed', label: 'Completar pedido' }, cancel]
       : [cancel];
   }
   if (state === 'out_for_delivery' && method === 'delivery') {
-    return isPaymentRegistered(order)
+    return isPaymentRegistered(safeOrder)
       ? [{ transition: 'completed', label: 'Completar pedido' }, cancel]
       : [cancel];
   }
