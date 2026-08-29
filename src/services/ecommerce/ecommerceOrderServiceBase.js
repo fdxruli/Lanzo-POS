@@ -16,6 +16,7 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDERS_RATE_LIMITED: 'Hay demasiadas solicitudes. Espera un momento e intenta de nuevo.',
   ECOMMERCE_ORDER_NOT_FOUND: 'El pedido no existe o no está disponible.',
   ECOMMERCE_ORDER_INVALID_TRANSITION: 'El pedido ya no permite esta acción.',
+  ECOMMERCE_ORDER_PAYMENT_REQUIRED: 'Registra el pago en Punto de Venta antes de completar el pedido.',
   ECOMMERCE_REJECTION_REASON_REQUIRED: 'Escribe un motivo de rechazo de al menos 3 caracteres.',
   ECOMMERCE_REJECTION_REASON_TOO_LONG: 'El motivo de rechazo no puede superar 300 caracteres.',
   ECOMMERCE_POS_DRAFT_IN_PROGRESS: 'Este pedido ya está siendo preparado en otro dispositivo.',
@@ -86,7 +87,12 @@ const normalizeOrderSummary = (order = {}) => ({
   createdAt: order.createdAt || null,
   seenAt: order.seenAt || null,
   acceptedAt: order.acceptedAt || null,
-  rejectedAt: order.rejectedAt || null
+  rejectedAt: order.rejectedAt || null,
+  fulfillmentStatus: safeText(order.fulfillmentStatus),
+  paymentStatus: safeText(order.paymentStatus, 'pending'),
+  paymentRegistered: Boolean(order.paymentRegistered),
+  posConversionStatus: safeText(order.posConversionStatus, 'idle'),
+  posVisibilityStatus: safeText(order.posVisibilityStatus)
 });
 
 const normalizeCounts = (counts = {}) => ({
@@ -95,6 +101,7 @@ const normalizeCounts = (counts = {}) => ({
   pending: safeNumber(counts.pending),
   accepted: safeNumber(counts.accepted),
   rejected: safeNumber(counts.rejected),
+  closed: safeNumber(counts.closed),
   total: safeNumber(counts.total)
 });
 
@@ -203,6 +210,11 @@ const normalizeDetail = (order = {}) => {
       preparedAt: order.posDraft?.preparedAt || null,
       isClaimedByCurrentActor: Boolean(order.posDraft?.isClaimedByCurrentActor),
       claimToken: safeText(order.posDraft?.claimToken) || null
+    },
+    posConversion: {
+      status: safeText(order.posConversion?.status, 'idle'),
+      convertedSaleId: safeText(order.posConversion?.convertedSaleId) || null,
+      convertedAt: order.posConversion?.convertedAt || null
     },
     fulfillment: normalizeFulfillment(order.fulfillment)
   };

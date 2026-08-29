@@ -5,6 +5,7 @@ import {
   FULFILLMENT_LABELS,
   getEcommerceFulfillmentActions,
   getEcommerceOrderFulfillment,
+  isEcommerceFulfillmentPaymentRequired,
   updateEcommerceOrderFulfillment
 } from '../../../services/ecommerce/ecommerceOrderFulfillmentService';
 import './EcommerceFulfillmentPanel.css';
@@ -64,7 +65,7 @@ const getPanelContextIdentity = (state = {}) => {
   ].join(':');
 };
 
-export default function EcommerceFulfillmentPanel() {
+export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
   const pendingRef = useRef(null);
   const loadEpochRef = useRef(0);
   const mountedRef = useRef(true);
@@ -294,6 +295,7 @@ export default function EcommerceFulfillmentPanel() {
     await refreshOrders?.({ background: true });
 
     if (TERMINAL_STATES.has(nextState)) {
+      onTerminalSuccess?.(nextState, confirmedOrder);
       const latestSelection = useAppStore.getState().selectedEcommerceOrderRequestId;
       if (latestSelection === operation.orderId) clearSelectedOrder?.();
       return;
@@ -322,6 +324,7 @@ export default function EcommerceFulfillmentPanel() {
   }
 
   const state = fulfillment.internalStatus || fulfillment.status || 'accepted';
+  const paymentRequired = isEcommerceFulfillmentPaymentRequired(operationalOrder);
 
   return (
     <aside className="ecommerce-fulfillment-panel" aria-labelledby="ecommerce-fulfillment-title">
@@ -386,7 +389,16 @@ export default function EcommerceFulfillmentPanel() {
           ))}
         </div>
       ) : (
-        <p className="ecommerce-fulfillment-terminal">Este estado no tiene acciones operativas disponibles.</p>
+        <p className="ecommerce-fulfillment-terminal">
+          {paymentRequired
+            ? 'Registra el pago en Punto de Venta antes de completar el pedido.'
+            : 'Este estado no tiene acciones operativas disponibles.'}
+        </p>
+      )}
+      {paymentRequired && actions.length > 0 && (
+        <p className="ecommerce-fulfillment-terminal">
+          El pedido seguirá en este estado hasta que el pago quede registrado.
+        </p>
       )}
     </aside>
   );

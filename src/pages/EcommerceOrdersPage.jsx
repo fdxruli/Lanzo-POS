@@ -24,6 +24,7 @@ import {
   canPrepareEcommerceOrderInPos
 } from '../services/ecommerce/ecommerceOrderCapabilities';
 import { releaseEcommerceOrderPosDraft } from '../services/ecommerce/ecommerceOrderService';
+import { isEcommerceFulfillmentPaymentRequired } from '../services/ecommerce/ecommerceOrderFulfillmentService';
 import {
   getEcommercePosDraftId,
   prepareEcommerceOrderPosDraft
@@ -41,7 +42,8 @@ const FILTERS = Object.freeze([
   { key: 'new', label: 'Nuevos' },
   { key: 'seen', label: 'Vistos' },
   { key: 'accepted', label: 'Aceptados' },
-  { key: 'rejected', label: 'Rechazados' }
+  { key: 'rejected', label: 'Rechazados' },
+  { key: 'closed', label: 'Cerrados' }
 ]);
 
 const ORDER_GROUPS = Object.freeze([
@@ -61,7 +63,7 @@ const ORDER_GROUPS = Object.freeze([
     emptyTitle: 'Sin pedidos en proceso',
     emptyDescription: 'Los pedidos vistos o aceptados aparecerán aquí.',
     icon: Clock3,
-    statuses: new Set(['seen', 'accepted', 'preparing', 'ready'])
+    statuses: new Set(['seen', 'accepted', 'preparing', 'ready', 'converted_to_sale'])
   },
   {
     key: 'closed',
@@ -70,17 +72,32 @@ const ORDER_GROUPS = Object.freeze([
     emptyTitle: 'Sin pedidos cerrados',
     emptyDescription: 'Los pedidos resueltos aparecerán aquí.',
     icon: Archive,
-    statuses: new Set(['rejected', 'cancelled', 'completed', 'converted_to_sale'])
+    statuses: new Set(['rejected', 'cancelled', 'completed'])
   }
 ]);
 
 const KNOWN_POS_DRAFT_STATES = new Set(['none', 'released', 'claimed', 'prepared']);
 const MOBILE_ORDER_BATCH_SIZE = 6;
+const DEFAULT_ORDER_PAGE_SIZE = 50;
+const MAX_ORDER_PAGE_SIZE = 100;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   dateStyle: 'medium',
   timeStyle: 'short'
 });
+
+const normalizeOrderPagination = (pagination = {}) => {
+  const rawLimit = Number(pagination.limit);
+  const rawOffset = Number(pagination.offset);
+  return {
+    limit: Math.min(
+      Math.max(Number.isFinite(rawLimit) ? rawLimit : DEFAULT_ORDER_PAGE_SIZE, 1),
+      MAX_ORDER_PAGE_SIZE
+    ),
+    offset: Math.max(Number.isFinite(rawOffset) ? rawOffset : 0, 0),
+    hasMore: Boolean(pagination.hasMore)
+  };
+};
 
 const formatMoney = (value, currency = 'MXN') => {
   try {
@@ -106,15 +123,26 @@ const fulfillmentLabel = (method) => (
   method === 'delivery' ? 'Entrega a domicilio' : 'Recoger en el negocio'
 );
 
-const getOrderGroup = (status) => (
-  ORDER_GROUPS.find((group) => group.statuses.has(status)) || ORDER_GROUPS[1]
+const getFulfillmentStatus = (order = {}) => (
+  order.fulfillmentStatus || order.fulfillment?.internalStatus || order.fulfillment?.status || ''
 );
+
+const isClosedOrder = (order = {}) => (
+  order.status === 'rejected'
+  || ['completed', 'cancelled'].includes(getFulfillmentStatus(order))
+  || ['completed', 'cancelled'].includes(order.status)
+);
+
+const getOrderGroup = (order = {}) => {
+  if (isClosedOrder(order)) return ORDER_GROUPS[2];
+  return ORDER_GROUPS.find((group) => group.statuses.has(order.status)) || ORDER_GROUPS[1];
+};
 
 const getNextMobileGroup = (orders, currentGroup, { preferFirstMatch = false } = {}) => {
   if (orders.length === 0) return currentGroup;
 
-  const groupsWithOrders = new Set(orders.map((order) => getOrderGroup(order.status).key));
-  if (preferFirstMatch) return getOrderGroup(orders[0].status).key;
+  const groupsWithOrders = new Set(orders.map((order) => getOrderGroup(order).key));
+  if (preferFirstMatch) return getOrderGroup(orders[0]).key;
   if (groupsWithOrders.has(currentGroup)) return currentGroup;
 
   return ORDER_GROUPS.find((group) => groupsWithOrders.has(group.key))?.key || currentGroup;
@@ -254,7 +282,7 @@ function OrderBoard({
 
   const groupedOrders = ORDER_GROUPS.map((group) => ({
     ...group,
-    orders: orders.filter((order) => getOrderGroup(order.status).key === group.key)
+    orders: orders.filter((order) => getOrderGroup(order).key === group.key)
   }));
 
   return (
@@ -320,6 +348,10 @@ function OrdersControls({
         </label>
       </section>
 
+      <small className="ecommerce-orders-search-scope">
+        La búsqueda aplica a la página actual.
+      </small>
+
       <nav className="ecommerce-orders-mobile-nav" aria-label="Grupos de pedidos">
         <div role="tablist" aria-label="Cambiar grupo de pedidos">
           {mobileGroups.map((group) => {
@@ -346,6 +378,36 @@ function OrdersControls({
   );
 }
 
+function OrdersPagination({ pagination, loading, refreshing, onPageChange }) {
+  const { limit, offset, hasMore } = normalizeOrderPagination(pagination);
+  const pageNumber = Math.floor(offset / limit) + 1;
+  const busy = Boolean(loading || refreshing);
+
+  return (
+    <nav className="ecommerce-orders-pagination" aria-label="Paginación de pedidos">
+      <button
+        type="button"
+        className="ui-button ui-button--secondary"
+        onClick={() => onPageChange?.('previous')}
+        disabled={busy || offset === 0}
+      >
+        Anterior
+      </button>
+      <span className="ecommerce-orders-pagination__page" aria-current="page">
+        Página {pageNumber}
+      </span>
+      <button
+        type="button"
+        className="ui-button ui-button--secondary"
+        onClick={() => onPageChange?.('next')}
+        disabled={busy || !hasMore}
+      >
+        Siguiente
+      </button>
+    </nav>
+  );
+}
+
 function OrdersInbox({
   loading,
   refreshing,
@@ -364,7 +426,9 @@ function OrdersInbox({
   handleMobileGroup,
   expandedMobileGroups,
   handleToggleMobileExpanded,
-  handleOpenOrder
+  handleOpenOrder,
+  pagination,
+  handlePageChange
 }) {
   return (
     <>
@@ -395,6 +459,13 @@ function OrdersInbox({
         mobileGroups={mobileGroups}
         mobileGroup={mobileGroup}
         onMobileGroup={handleMobileGroup}
+      />
+
+      <OrdersPagination
+        pagination={pagination}
+        loading={loading}
+        refreshing={refreshing}
+        onPageChange={handlePageChange}
       />
 
       {error && orders.length > 0 && <div className="ecommerce-orders-inline-error" role="alert">{error}</div>}
@@ -467,7 +538,8 @@ function OrderDetail({
   canPrepareInPos,
   isAdmin,
   actionLoading,
-  posActionLoading
+  posActionLoading,
+  onFulfillmentTerminalSuccess
 }) {
   if (!order && !loading && !error) return null;
 
@@ -498,6 +570,13 @@ function OrderDetail({
       deliveryAddress.postalCode ? `CP ${deliveryAddress.postalCode}` : ''
     ].filter(Boolean).join(' · ')
     : '';
+  const isPaymentRequired = isEcommerceFulfillmentPaymentRequired(order);
+  const paymentLabel = order?.payment?.status === 'paid'
+    ? 'Pagado'
+    : order?.fulfillment?.paymentRegistered
+      ? 'Registrado en Punto de Venta'
+      : 'Pendiente al entregar';
+  const posConversion = order?.posConversion;
 
   return (
     <div
@@ -578,11 +657,21 @@ function OrderDetail({
                 {Number(order.totals?.discountTotal || 0) !== 0 && <div><dt>Descuento</dt><dd>-{formatMoney(order.totals.discountTotal, order.totals.currency)}</dd></div>}
                 {Number(order.totals?.taxTotal || 0) !== 0 && <div><dt>Impuestos</dt><dd>{formatMoney(order.totals.taxTotal, order.totals.currency)}</dd></div>}
                 <div className="is-total"><dt>Total</dt><dd>{formatMoney(order.totals?.total, order.totals?.currency)}</dd></div>
-                <div><dt>Pago</dt><dd>{order.payment?.status === 'paid' ? 'Pagado' : 'Pendiente al entregar'}</dd></div>
+                <div><dt>Pago</dt><dd>{paymentLabel}</dd></div>
+                {posConversion && (
+                  <div>
+                    <dt>Conversión POS</dt>
+                    <dd>
+                      {posConversion.status === 'completed'
+                        ? `Registrada${posConversion.convertedSaleId ? ` · ${posConversion.convertedSaleId}` : ''}`
+                        : posConversion.status === 'reserved' ? 'En revisión' : 'Sin conversión'}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </DetailSection>
 
-            <EcommerceFulfillmentPanel />
+            <EcommerceFulfillmentPanel onTerminalSuccess={onFulfillmentTerminalSuccess} />
 
             <DetailSection
               title="Historial"
@@ -643,7 +732,9 @@ function OrderDetail({
                   disabled={Boolean(actionLoading) || Boolean(posActionLoading) || loading}
                 >
                   <Store size={17} />
-                  {posActionLoading === 'prepare' ? 'Preparando…' : 'Preparar en Punto de Venta'}
+                  {posActionLoading === 'prepare'
+                    ? 'Preparando…'
+                    : isPaymentRequired ? 'Cobrar en Punto de Venta' : 'Preparar en Punto de Venta'}
                 </button>
               )}
 
@@ -780,6 +871,7 @@ export default function EcommerceOrdersPage() {
   const refreshing = useAppStore((state) => state.ecommerceOrdersRefreshing);
   const error = useAppStore((state) => state.ecommerceOrdersError);
   const filter = useAppStore((state) => state.ecommerceOrdersFilter);
+  const pagination = useAppStore((state) => state.ecommerceOrdersPagination);
   const selectedOrder = useAppStore((state) => state.selectedEcommerceOrder);
   const selectedLoading = useAppStore((state) => state.selectedEcommerceOrderLoading);
   const selectedError = useAppStore((state) => state.selectedEcommerceOrderError);
@@ -816,7 +908,7 @@ export default function EcommerceOrdersPage() {
   );
   const mobileGroups = useMemo(() => ORDER_GROUPS.map((group) => ({
     ...group,
-    count: visibleOrders.filter((order) => getOrderGroup(order.status).key === group.key).length
+    count: visibleOrders.filter((order) => getOrderGroup(order).key === group.key).length
   })), [visibleOrders]);
 
   useEffect(() => {
@@ -861,6 +953,8 @@ export default function EcommerceOrdersPage() {
   const handleFilter = async (nextFilter) => {
     if (nextFilter === filter) return;
 
+    const { limit } = normalizeOrderPagination(pagination);
+
     setDialogMode(null);
     clearSelectedOrder?.();
 
@@ -871,7 +965,24 @@ export default function EcommerceOrdersPage() {
     }
 
     setFilter?.(nextFilter);
-    await loadOrders?.({ filter: nextFilter, force: true });
+    await loadOrders?.({ filter: nextFilter, limit, offset: 0, force: true });
+  };
+
+  const handlePageChange = async (direction) => {
+    const { limit, offset, hasMore } = normalizeOrderPagination(pagination);
+    if (loading || refreshing) return;
+    if (direction === 'next' && !hasMore) return;
+    if (direction === 'previous' && offset === 0) return;
+
+    const nextOffset = direction === 'next'
+      ? offset + limit
+      : Math.max(offset - limit, 0);
+    await loadOrders?.({
+      filter,
+      limit,
+      offset: nextOffset,
+      force: true
+    });
   };
 
   const handleMobileGroup = (groupKey) => {
@@ -927,6 +1038,14 @@ export default function EcommerceOrdersPage() {
     } finally {
       setPosAction((current) => current?.orderId === visibleOrderId ? null : current);
     }
+  };
+
+  const handleFulfillmentTerminalSuccess = (nextState) => {
+    showMessageModal(
+      nextState === 'completed' ? 'Pedido completado' : 'Pedido cancelado',
+      null,
+      { type: 'success' }
+    );
   };
 
   const handleReleaseDraft = async ({ administrative = false } = {}) => {
@@ -1010,6 +1129,8 @@ export default function EcommerceOrdersPage() {
         expandedMobileGroups={expandedMobileGroups}
         handleToggleMobileExpanded={handleToggleMobileExpanded}
         handleOpenOrder={handleOpenOrder}
+        pagination={pagination}
+        handlePageChange={handlePageChange}
       />
 
       <OrderDetail
@@ -1029,6 +1150,7 @@ export default function EcommerceOrdersPage() {
         }}
         onPrepare={handlePrepareInPos}
         onRelease={handleReleaseDraft}
+        onFulfillmentTerminalSuccess={handleFulfillmentTerminalSuccess}
       />
 
       {dialogMode && selectedOrder && !selectedLoading && (

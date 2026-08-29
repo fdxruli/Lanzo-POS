@@ -238,6 +238,24 @@ describe('createEcommerceOrderSlice', () => {
     expect(get().ecommerceOrdersPagination.offset).toBe(50);
   });
 
+  it('resets the list offset and pending-page state when the filter changes', async () => {
+    mocks.listEcommerceOrders.mockResolvedValueOnce(listResult(
+      'license-a',
+      'page-2',
+      'new',
+      { limit: 25, offset: 50, hasMore: true }
+    ));
+    const { get } = createHarness();
+
+    await get().loadEcommerceOrders({ filter: 'all', limit: 25, offset: 50, force: true });
+    expect(get().ecommerceOrdersPagination).toEqual({ limit: 25, offset: 50, hasMore: true });
+
+    get().setEcommerceOrdersFilter('closed');
+
+    expect(get().ecommerceOrdersFilter).toBe('closed');
+    expect(get().ecommerceOrdersPagination).toEqual({ limit: 25, offset: 0, hasMore: false });
+  });
+
   it('forces refresh after realtime invalidation', async () => {
     const { get } = createHarness();
 

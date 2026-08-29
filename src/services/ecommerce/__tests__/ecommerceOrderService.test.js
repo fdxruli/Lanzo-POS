@@ -152,7 +152,12 @@ describe('ecommerceOrderService', () => {
           customerName: 'Cliente',
           itemCount: '2',
           total: '20.50',
-          currency: 'MXN'
+          currency: 'MXN',
+          fulfillmentStatus: 'completed',
+          paymentStatus: 'pending',
+          paymentRegistered: false,
+          posConversionStatus: 'idle',
+          posVisibilityStatus: 'archived'
         }],
         counts: { new: '1', total: '1' },
         pagination: { limit: '50', offset: '0', hasMore: false }
@@ -240,6 +245,11 @@ describe('ecommerceOrderService', () => {
             itemCount: '2',
             total: '20.50',
             currency: 'MXN',
+            fulfillmentStatus: 'completed',
+            paymentStatus: 'pending',
+            paymentRegistered: false,
+            posConversionStatus: 'idle',
+            posVisibilityStatus: 'archived',
             secret: 'not-allowed'
           }],
           counts: { new: '1', total: '1' },
@@ -255,7 +265,11 @@ describe('ecommerceOrderService', () => {
     expect(listResult.orders[0]).toEqual(expect.objectContaining({
       id: orderDetail.id,
       itemCount: 2,
-      total: 20.5
+      total: 20.5,
+      fulfillmentStatus: 'completed',
+      paymentStatus: 'pending',
+      posConversionStatus: 'idle',
+      posVisibilityStatus: 'archived'
     }));
     expect(listResult.orders[0]).not.toHaveProperty('secret');
     expect(detailResult.order).not.toHaveProperty('secret');
@@ -308,6 +322,25 @@ describe('ecommerceOrderService', () => {
         deliveryAddress: { municipality: 'No debe mostrarse' }
       }
     }).customer).not.toHaveProperty('deliveryAddress');
+  });
+
+  it('normalizes POS conversion evidence without exposing conversion secrets', () => {
+    const normalized = ecommerceOrderServiceInternals.normalizeDetail({
+      ...orderDetail,
+      posConversion: {
+        status: 'completed',
+        convertedSaleId: 'sale-125',
+        convertedAt: '2026-07-10T12:05:00Z',
+        conversionKey: 'must-not-be-forwarded'
+      }
+    });
+
+    expect(normalized.posConversion).toEqual({
+      status: 'completed',
+      convertedSaleId: 'sale-125',
+      convertedAt: '2026-07-10T12:05:00Z'
+    });
+    expect(JSON.stringify(normalized)).not.toContain('must-not-be-forwarded');
   });
 
   it('uses exact auth-only RPC contracts for claim, confirm and release', async () => {

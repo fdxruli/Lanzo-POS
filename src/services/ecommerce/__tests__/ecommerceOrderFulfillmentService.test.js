@@ -9,6 +9,7 @@ import { buildPosSyncAuthContext } from '../../sync/posSyncClient';
 import {
   getEcommerceFulfillmentActions,
   getEcommerceOrderFulfillment,
+  isEcommerceFulfillmentPaymentRequired,
   updateEcommerceOrderFulfillment
 } from '../ecommerceOrderFulfillmentService';
 
@@ -22,11 +23,25 @@ beforeEach(() => {
 });
 
 describe('ecommerce fulfillment controls', () => {
-  it('shows pickup transitions without En camino', () => {
+  it('blocks unpaid pickup completion at ready', () => {
     const actions = getEcommerceFulfillmentActions({
       status: 'accepted',
       fulfillmentMethod: 'pickup',
       fulfillment: { internalStatus: 'ready' }
+    });
+    expect(actions.map((action) => action.transition)).toEqual(['cancelled']);
+    expect(isEcommerceFulfillmentPaymentRequired({
+      status: 'accepted',
+      fulfillmentMethod: 'pickup',
+      fulfillment: { internalStatus: 'ready', paymentRegistered: false }
+    })).toBe(true);
+  });
+
+  it('allows paid pickup completion at ready', () => {
+    const actions = getEcommerceFulfillmentActions({
+      status: 'accepted',
+      fulfillmentMethod: 'pickup',
+      fulfillment: { internalStatus: 'ready', paymentRegistered: true }
     });
     expect(actions.map((action) => action.transition)).toEqual(['completed', 'cancelled']);
     expect(actions.some((action) => action.transition === 'out_for_delivery')).toBe(false);
@@ -55,9 +70,35 @@ describe('ecommerce fulfillment controls', () => {
     const actions = getEcommerceFulfillmentActions({
       status: 'converted_to_sale',
       fulfillmentMethod: 'delivery',
-      fulfillment: { internalStatus: 'out_for_delivery' }
+      fulfillment: { internalStatus: 'out_for_delivery', paymentRegistered: true }
     });
     expect(actions.map((action) => action.transition)).toEqual(['completed', 'cancelled']);
+  });
+
+  it('blocks unpaid delivery completion at out_for_delivery', () => {
+    const order = {
+      status: 'accepted',
+      fulfillmentMethod: 'delivery',
+      fulfillment: { internalStatus: 'out_for_delivery', paymentRegistered: false }
+    };
+    const actions = getEcommerceFulfillmentActions(order);
+
+    expect(actions.map((action) => action.transition)).toEqual(['cancelled']);
+    expect(actions.some((action) => action.transition === 'completed')).toBe(false);
+    expect(isEcommerceFulfillmentPaymentRequired(order)).toBe(true);
+  });
+
+  it('allows a directly paid delivery completion without POS conversion', () => {
+    const order = {
+      status: 'accepted',
+      fulfillmentMethod: 'delivery',
+      payment: { status: 'paid' },
+      fulfillment: { internalStatus: 'out_for_delivery', paymentRegistered: false }
+    };
+
+    expect(getEcommerceFulfillmentActions(order).map((action) => action.transition))
+      .toEqual(['completed', 'cancelled']);
+    expect(isEcommerceFulfillmentPaymentRequired(order)).toBe(false);
   });
 
   it('does not expose controls for completed, cancelled or unaccepted orders', () => {
@@ -172,6 +213,10 @@ describe('ecommerce fulfillment controls', () => {
     [
       'ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS',
       'Existe un cobro reservado o en progreso. Verifica la venta antes de completar o cancelar el pedido.'
+    ],
+    [
+      'ECOMMERCE_ORDER_PAYMENT_REQUIRED',
+      'Registra el pago en Punto de Venta antes de completar el pedido.'
     ]
   ])('maps %s to a controlled visible message', async (code, message) => {
     const client = {

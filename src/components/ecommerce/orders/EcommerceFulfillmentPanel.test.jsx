@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   state: {},
   getFulfillment: vi.fn(),
   updateFulfillment: vi.fn(),
-  getActions: vi.fn()
+  getActions: vi.fn(),
+  onTerminalSuccess: vi.fn()
 }));
 
 vi.mock('../../../store/useAppStore', () => {
@@ -26,6 +27,15 @@ vi.mock('../../../services/ecommerce/ecommerceOrderFulfillmentService', () => ({
   },
   getEcommerceFulfillmentActions: mocks.getActions,
   getEcommerceOrderFulfillment: mocks.getFulfillment,
+  isEcommerceFulfillmentPaymentRequired: (order) => {
+    const status = order?.fulfillment?.internalStatus;
+    const method = order?.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
+    return (
+      ((status === 'ready' && method === 'pickup')
+        || (status === 'out_for_delivery' && method === 'delivery'))
+      && !order?.fulfillment?.paymentRegistered
+    );
+  },
   updateEcommerceOrderFulfillment: mocks.updateFulfillment
 }));
 
@@ -97,14 +107,20 @@ beforeEach(() => {
       ];
     }
     if (status === 'ready') {
-      return [
-        { transition: 'completed', label: 'Completar pedido' },
-        { transition: 'cancelled', label: 'Cancelar pedido', destructive: true }
-      ];
+      return order?.fulfillment?.paymentRegistered
+        ? [
+          { transition: 'completed', label: 'Completar pedido' },
+          { transition: 'cancelled', label: 'Cancelar pedido', destructive: true }
+        ]
+        : [{ transition: 'cancelled', label: 'Cancelar pedido', destructive: true }];
     }
     return [];
   });
   vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('EcommerceFulfillmentPanel', () => {
@@ -243,7 +259,7 @@ describe('EcommerceFulfillmentPanel', () => {
 
   it('removes operational actions after a remote terminal refresh', async () => {
     mocks.getFulfillment
-      .mockResolvedValueOnce({ success: true, order: fulfillmentOrder('ready', { version: 2 }) })
+      .mockResolvedValueOnce({ success: true, order: fulfillmentOrder('ready', { version: 2, paymentRegistered: true }) })
       .mockResolvedValueOnce({ success: true, order: fulfillmentOrder('completed', { version: 3 }) });
     const view = render(<EcommerceFulfillmentPanel />);
     expect(await screen.findByRole('button', { name: 'Completar pedido' })).toBeInTheDocument();
@@ -259,7 +275,7 @@ describe('EcommerceFulfillmentPanel', () => {
   });
 
   it('does not duplicate a manual transition when its realtime confirmation arrives', async () => {
-    const readyOrder = fulfillmentOrder('ready', { version: 3 });
+    const readyOrder = fulfillmentOrder('ready', { version: 3, paymentRegistered: true });
     mocks.getFulfillment
       .mockResolvedValueOnce({ success: true, order: fulfillmentOrder('preparing', { version: 2 }) })
       .mockResolvedValue({ success: true, order: readyOrder });
@@ -328,6 +344,13 @@ describe('EcommerceFulfillmentPanel', () => {
   });
 
   it('refreshes counts and closes the detail after a terminal transition', async () => {
+    const onTerminalSuccess = vi.fn();
+    const paidReadyOrder = operationalOrder({
+      fulfillment: {
+        ...operationalOrder().fulfillment,
+        paymentRegistered: true
+      }
+    });
     mocks.updateFulfillment.mockResolvedValue({
       success: true,
       changed: true,
@@ -337,17 +360,22 @@ describe('EcommerceFulfillmentPanel', () => {
           ...operationalOrder().fulfillment,
           status: 'completed',
           internalStatus: 'completed',
-          version: 3
+          version: 3,
+          paymentRegistered: true
         }
       })
     });
+    mocks.getFulfillment.mockResolvedValueOnce({ success: true, order: paidReadyOrder });
 
-    render(<EcommerceFulfillmentPanel />);
+    render(<EcommerceFulfillmentPanel onTerminalSuccess={onTerminalSuccess} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Completar pedido' }));
 
     await waitFor(() => {
       expect(mocks.state.refreshEcommerceOrders).toHaveBeenCalledWith({ background: true });
       expect(mocks.state.clearSelectedEcommerceOrder).toHaveBeenCalledTimes(1);
+      expect(onTerminalSuccess).toHaveBeenCalledWith('completed', expect.objectContaining({
+        id: 'order-1'
+      }));
     });
     expect(mocks.updateFulfillment).toHaveBeenCalledWith(expect.objectContaining({
       orderId: 'order-1',
@@ -391,5 +419,18 @@ describe('EcommerceFulfillmentPanel', () => {
     expect(await screen.findByText('Cancelado')).toBeInTheDocument();
     expect(screen.getByText('Este estado no tiene acciones operativas disponibles.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Completar pedido' })).not.toBeInTheDocument();
+  });
+
+  it('does not expose completion for an unpaid pickup ready state', async () => {
+    mocks.getFulfillment.mockResolvedValue({
+      success: true,
+      order: fulfillmentOrder('ready', { version: 2, paymentRegistered: false })
+    });
+
+    render(<EcommerceFulfillmentPanel />);
+
+    expect(await screen.findByRole('button', { name: 'Cancelar pedido' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Completar pedido' })).not.toBeInTheDocument();
+    expect(screen.getByText(/El pedido seguirá en este estado hasta que el pago quede registrado/)).toBeInTheDocument();
   });
 });
