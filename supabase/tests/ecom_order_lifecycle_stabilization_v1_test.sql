@@ -40,17 +40,22 @@ declare
   v_source_order public.ecommerce_orders%rowtype;
   v_source_portal public.ecommerce_portals%rowtype;
   v_source_license public.licenses%rowtype;
+  v_source_admin public.license_admin_users%rowtype;
   v_license public.licenses%rowtype;
   v_portal public.ecommerce_portals%rowtype;
+  v_admin public.license_admin_users%rowtype;
   v_order public.ecommerce_orders%rowtype;
   v_before_updated_at timestamptz;
   v_result jsonb;
   v_list jsonb;
   v_detail jsonb;
+  v_session jsonb;
+  v_actor_token text;
 
   v_license_id uuid := extensions.gen_random_uuid();
   v_portal_id uuid := extensions.gen_random_uuid();
   v_device_id uuid := extensions.gen_random_uuid();
+  v_admin_user_id uuid := extensions.gen_random_uuid();
   v_key text := 'ECOM-LIFECYCLE-' || replace(extensions.gen_random_uuid()::text, '-', '');
   v_slug text := 'ecom-lifecycle-' || left(replace(extensions.gen_random_uuid()::text, '-', ''), 18);
   v_fingerprint text := 'ecom-lifecycle-device';
@@ -90,6 +95,24 @@ begin
   select l.* into v_source_license
   from public.licenses l
   where l.id = v_source_order.license_id;
+  select u.* into v_source_admin
+  from public.license_admin_users u
+  where u.license_id = v_source_license.id
+    and u.is_owner is true
+    and u.is_active is true
+  order by u.created_at
+  limit 1;
+  if v_source_admin.id is null then
+    select u.* into v_source_admin
+    from public.license_admin_users u
+    where u.is_owner is true
+      and u.is_active is true
+    order by u.created_at
+    limit 1;
+  end if;
+  if v_source_admin.id is null then
+    raise exception 'lifecycle fixture source admin unavailable';
+  end if;
 
   v_license := jsonb_populate_record(
     null::public.licenses,
@@ -110,11 +133,37 @@ begin
 
   insert into public.license_devices(
     id, license_id, device_fingerprint, device_name,
-    is_active, security_token, device_role, activated_at, last_used_at
+    is_active, security_token, device_role, device_mode, activated_at, last_used_at
   ) values (
     v_device_id, v_license_id, v_fingerprint, 'ECOM lifecycle fixture',
-    true, v_security_token, 'admin', now(), now()
+    true, v_security_token, 'admin', 'admin_only', now(), now()
   );
+
+  v_admin := jsonb_populate_record(
+    null::public.license_admin_users,
+    to_jsonb(v_source_admin) || jsonb_build_object(
+      'id', v_admin_user_id,
+      'license_id', v_license_id,
+      'username', 'ecom_lifecycle_admin',
+      'display_name', 'ECOM Lifecycle Admin',
+      'is_owner', true,
+      'is_active', true,
+      'created_at', now(),
+      'updated_at', now()
+    )
+  );
+  insert into public.license_admin_users select (v_admin).*;
+
+  v_session := private.create_admin_session(
+    v_license_id,
+    v_admin_user_id,
+    v_device_id,
+    'ECOM lifecycle fixture'
+  );
+  v_actor_token := nullif(v_session->>'session_token', '');
+  if v_actor_token is null then
+    raise exception 'lifecycle fixture admin session unavailable';
+  end if;
 
   v_portal := jsonb_populate_record(
     null::public.ecommerce_portals,
@@ -261,6 +310,14 @@ begin
     'payment_status', 'pending',
     'pos_visibility_status', 'archived',
     'pos_draft_status', 'prepared',
+    'pos_draft_id', 'ecom-lifecycle-draft-pickup',
+    'pos_claim_token', extensions.gen_random_uuid(),
+    'pos_claim_request_key', 'ecom-lifecycle-claim-pickup',
+    'pos_claimed_at', now() - interval '6 minutes',
+    'pos_claim_expires_at', now() + interval '30 minutes',
+    'pos_claim_actor_type', 'admin',
+    'pos_claim_actor_ref', v_device_id::text,
+    'pos_draft_prepared_at', now() - interval '5 minutes',
     'pos_conversion_status', 'completed',
     'converted_sale_id', 'sale-pickup-converted',
     'converted_at', now(),
@@ -332,6 +389,14 @@ begin
     'payment_status', 'pending',
     'pos_visibility_status', 'archived',
     'pos_draft_status', 'prepared',
+    'pos_draft_id', 'ecom-lifecycle-draft-active',
+    'pos_claim_token', extensions.gen_random_uuid(),
+    'pos_claim_request_key', 'ecom-lifecycle-claim-active',
+    'pos_claimed_at', now() - interval '6 minutes',
+    'pos_claim_expires_at', now() + interval '30 minutes',
+    'pos_claim_actor_type', 'admin',
+    'pos_claim_actor_ref', v_device_id::text,
+    'pos_draft_prepared_at', now() - interval '5 minutes',
     'pos_conversion_status', 'completed',
     'converted_sale_id', 'sale-active-converted',
     'converted_at', now(),
@@ -347,7 +412,7 @@ begin
   select fulfillment_updated_at into v_before_updated_at
   from public.ecommerce_orders where id = v_delivery_unpaid;
   v_result := public.ecommerce_admin_update_order_fulfillment(
-    v_key, v_fingerprint, v_security_token, null,
+    v_key, v_fingerprint, v_security_token, v_actor_token,
     v_delivery_unpaid, 'completed', 11, 'complete-unpaid-delivery', null
   );
   if v_result->>'code' <> 'ECOMMERCE_ORDER_PAYMENT_REQUIRED' then
@@ -370,7 +435,7 @@ begin
   set payment_status = 'paid'
   where id = v_delivery_unpaid;
   v_result := public.ecommerce_admin_update_order_fulfillment(
-    v_key, v_fingerprint, v_security_token, null,
+    v_key, v_fingerprint, v_security_token, v_actor_token,
     v_delivery_unpaid, 'completed', 11, 'complete-paid-delivery-retry', null
   );
   if coalesce((v_result->>'success')::boolean, false) is not true then
@@ -385,7 +450,7 @@ begin
 
   -- B. A directly paid delivery can complete without a POS conversion.
   v_result := public.ecommerce_admin_update_order_fulfillment(
-    v_key, v_fingerprint, v_security_token, null,
+    v_key, v_fingerprint, v_security_token, v_actor_token,
     v_delivery_paid, 'completed', 21, 'complete-paid-delivery', null
   );
   if coalesce((v_result->>'success')::boolean, false) is not true then
@@ -394,7 +459,7 @@ begin
 
   -- C. Unpaid pickup is blocked at ready.
   v_result := public.ecommerce_admin_update_order_fulfillment(
-    v_key, v_fingerprint, v_security_token, null,
+    v_key, v_fingerprint, v_security_token, v_actor_token,
     v_pickup_unpaid, 'completed', 31, 'complete-unpaid-pickup', null
   );
   if v_result->>'code' <> 'ECOMMERCE_ORDER_PAYMENT_REQUIRED' then
@@ -410,7 +475,7 @@ begin
 
   -- D. A converted pickup is payment-registered but fulfillment remains separate.
   v_result := public.ecommerce_admin_update_order_fulfillment(
-    v_key, v_fingerprint, v_security_token, null,
+    v_key, v_fingerprint, v_security_token, v_actor_token,
     v_pickup_converted, 'completed', 41, 'complete-converted-pickup', null
   );
   if coalesce((v_result->>'success')::boolean, false) is not true then
@@ -426,7 +491,7 @@ begin
   -- H/I/J/M. Closed history is bounded and includes terminal/rejected rows,
   -- while an archived converted order with active fulfillment stays active.
   v_list := public.ecommerce_admin_list_orders(
-    v_key, v_fingerprint, v_security_token, null, 'closed', 2, 0
+    v_key, v_fingerprint, v_security_token, v_actor_token, 'closed', 2, 0
   );
   if coalesce((v_list#>>'{pagination,limit}')::integer, 0) <> 2
      or jsonb_array_length(v_list->'orders') > 2
@@ -435,7 +500,7 @@ begin
   end if;
 
   v_list := public.ecommerce_admin_list_orders(
-    v_key, v_fingerprint, v_security_token, null, 'closed', 100, 0
+    v_key, v_fingerprint, v_security_token, v_actor_token, 'closed', 100, 0
   );
   if not exists (select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_delivery_unpaid::text)
      or not exists (select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_delivery_paid::text)
@@ -448,7 +513,7 @@ begin
   end if;
 
   v_list := public.ecommerce_admin_list_orders(
-    v_key, v_fingerprint, v_security_token, null, 'all', 100, 0
+    v_key, v_fingerprint, v_security_token, v_actor_token, 'all', 100, 0
   );
   if not exists (select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_active_converted::text)
      or not exists (select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_delivery_unpaid::text) then
@@ -457,7 +522,7 @@ begin
 
   -- L. Terminal structured delivery and legacy address-only detail remain readable.
   v_detail := public.ecommerce_admin_get_order(
-    v_key, v_fingerprint, v_security_token, v_delivery_unpaid, null
+    v_key, v_fingerprint, v_security_token, v_delivery_unpaid, v_actor_token
   );
   if coalesce((v_detail->>'success')::boolean, false) is not true
      or position('ECOMMERCE_ORDER_NOT_FOUND' in coalesce(v_detail::text, '')) > 0
@@ -474,7 +539,7 @@ begin
   end if;
 
   v_detail := public.ecommerce_admin_get_order(
-    v_key, v_fingerprint, v_security_token, v_cancelled, null
+    v_key, v_fingerprint, v_security_token, v_cancelled, v_actor_token
   );
   if coalesce((v_detail->>'success')::boolean, false) is not true
      or position('ECOMMERCE_ORDER_NOT_FOUND' in coalesce(v_detail::text, '')) > 0
@@ -485,7 +550,7 @@ begin
   end if;
 
   v_detail := public.ecommerce_admin_get_order(
-    v_key, v_fingerprint, v_security_token, v_rejected, null
+    v_key, v_fingerprint, v_security_token, v_rejected, v_actor_token
   );
   if coalesce((v_detail->>'success')::boolean, false) is not true
      or position('ECOMMERCE_ORDER_NOT_FOUND' in coalesce(v_detail::text, '')) > 0
