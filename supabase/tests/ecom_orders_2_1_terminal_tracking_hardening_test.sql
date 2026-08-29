@@ -416,18 +416,19 @@ begin
   end if;
   update public.ecommerce_portals set deleted_at = null where id = v_portal_id;
 
-  -- Operational list and counts exclude terminal orders but retain converted non-terminal orders.
+  -- The bounded all list now includes historical terminal rows and retains
+  -- converted orders whose independent fulfillment lifecycle is still active.
   v_list := public.ecommerce_admin_list_orders(
     v_key, v_fingerprint, v_security_token, null, 'all', 50, 0
   );
   if coalesce((v_list->>'success')::boolean, false) is not true then
     raise exception 'administrative list failed: %', v_list;
   end if;
-  if exists (
+  if not exists (
     select 1 from jsonb_array_elements(v_list->'orders') e
     where e->>'id' in (v_no_claim::text, v_claimed::text, v_completed::text, v_cancelled::text)
   ) then
-    raise exception 'terminal order leaked into operational list';
+    raise exception 'terminal order missing from bounded all list';
   end if;
   if not exists (
     select 1 from jsonb_array_elements(v_list->'orders') e
@@ -435,8 +436,32 @@ begin
   ) then
     raise exception 'converted non-terminal order missing from operational list';
   end if;
+  if (v_list#>>'{counts,closed}')::integer < 4 then
+    raise exception 'closed history count does not include terminal fixtures';
+  end if;
   if (v_list#>>'{counts,total}')::integer <> jsonb_array_length(v_list->'orders') then
-    raise exception 'operational counts do not match fixture list';
+    raise exception 'bounded all counts do not match fixture list';
+  end if;
+
+  v_list := public.ecommerce_admin_list_orders(
+    v_key, v_fingerprint, v_security_token, null, 'closed', 50, 0
+  );
+  if not exists (
+    select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_no_claim::text
+  ) or not exists (
+    select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_claimed::text
+  ) or not exists (
+    select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_completed::text
+  ) or not exists (
+    select 1 from jsonb_array_elements(v_list->'orders') e where e->>'id' = v_cancelled::text
+  ) then
+    raise exception 'explicit closed history scope is incorrect';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(v_list->'orders') e
+    where e->>'id' = v_converted::text
+  ) then
+    raise exception 'active converted order leaked into explicit closed history';
   end if;
 end
 $test$;

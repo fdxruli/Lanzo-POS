@@ -24,6 +24,7 @@ import {
   canPrepareEcommerceOrderInPos
 } from '../services/ecommerce/ecommerceOrderCapabilities';
 import { releaseEcommerceOrderPosDraft } from '../services/ecommerce/ecommerceOrderService';
+import { isEcommerceFulfillmentPaymentRequired } from '../services/ecommerce/ecommerceOrderFulfillmentService';
 import {
   getEcommercePosDraftId,
   prepareEcommerceOrderPosDraft
@@ -41,7 +42,8 @@ const FILTERS = Object.freeze([
   { key: 'new', label: 'Nuevos' },
   { key: 'seen', label: 'Vistos' },
   { key: 'accepted', label: 'Aceptados' },
-  { key: 'rejected', label: 'Rechazados' }
+  { key: 'rejected', label: 'Rechazados' },
+  { key: 'closed', label: 'Cerrados' }
 ]);
 
 const ORDER_GROUPS = Object.freeze([
@@ -61,7 +63,7 @@ const ORDER_GROUPS = Object.freeze([
     emptyTitle: 'Sin pedidos en proceso',
     emptyDescription: 'Los pedidos vistos o aceptados aparecerán aquí.',
     icon: Clock3,
-    statuses: new Set(['seen', 'accepted', 'preparing', 'ready'])
+    statuses: new Set(['seen', 'accepted', 'preparing', 'ready', 'converted_to_sale'])
   },
   {
     key: 'closed',
@@ -70,7 +72,7 @@ const ORDER_GROUPS = Object.freeze([
     emptyTitle: 'Sin pedidos cerrados',
     emptyDescription: 'Los pedidos resueltos aparecerán aquí.',
     icon: Archive,
-    statuses: new Set(['rejected', 'cancelled', 'completed', 'converted_to_sale'])
+    statuses: new Set(['rejected', 'cancelled', 'completed'])
   }
 ]);
 
@@ -106,15 +108,26 @@ const fulfillmentLabel = (method) => (
   method === 'delivery' ? 'Entrega a domicilio' : 'Recoger en el negocio'
 );
 
-const getOrderGroup = (status) => (
-  ORDER_GROUPS.find((group) => group.statuses.has(status)) || ORDER_GROUPS[1]
+const getFulfillmentStatus = (order = {}) => (
+  order.fulfillmentStatus || order.fulfillment?.internalStatus || order.fulfillment?.status || ''
 );
+
+const isClosedOrder = (order = {}) => (
+  order.status === 'rejected'
+  || ['completed', 'cancelled'].includes(getFulfillmentStatus(order))
+  || ['completed', 'cancelled'].includes(order.status)
+);
+
+const getOrderGroup = (order = {}) => {
+  if (isClosedOrder(order)) return ORDER_GROUPS[2];
+  return ORDER_GROUPS.find((group) => group.statuses.has(order.status)) || ORDER_GROUPS[1];
+};
 
 const getNextMobileGroup = (orders, currentGroup, { preferFirstMatch = false } = {}) => {
   if (orders.length === 0) return currentGroup;
 
-  const groupsWithOrders = new Set(orders.map((order) => getOrderGroup(order.status).key));
-  if (preferFirstMatch) return getOrderGroup(orders[0].status).key;
+  const groupsWithOrders = new Set(orders.map((order) => getOrderGroup(order).key));
+  if (preferFirstMatch) return getOrderGroup(orders[0]).key;
   if (groupsWithOrders.has(currentGroup)) return currentGroup;
 
   return ORDER_GROUPS.find((group) => groupsWithOrders.has(group.key))?.key || currentGroup;
@@ -254,7 +267,7 @@ function OrderBoard({
 
   const groupedOrders = ORDER_GROUPS.map((group) => ({
     ...group,
-    orders: orders.filter((order) => getOrderGroup(order.status).key === group.key)
+    orders: orders.filter((order) => getOrderGroup(order).key === group.key)
   }));
 
   return (
@@ -467,7 +480,8 @@ function OrderDetail({
   canPrepareInPos,
   isAdmin,
   actionLoading,
-  posActionLoading
+  posActionLoading,
+  onFulfillmentTerminalSuccess
 }) {
   if (!order && !loading && !error) return null;
 
@@ -498,6 +512,13 @@ function OrderDetail({
       deliveryAddress.postalCode ? `CP ${deliveryAddress.postalCode}` : ''
     ].filter(Boolean).join(' · ')
     : '';
+  const isPaymentRequired = isEcommerceFulfillmentPaymentRequired(order);
+  const paymentLabel = order?.payment?.status === 'paid'
+    ? 'Pagado'
+    : order?.fulfillment?.paymentRegistered
+      ? 'Registrado en Punto de Venta'
+      : 'Pendiente al entregar';
+  const posConversion = order?.posConversion;
 
   return (
     <div
@@ -578,11 +599,21 @@ function OrderDetail({
                 {Number(order.totals?.discountTotal || 0) !== 0 && <div><dt>Descuento</dt><dd>-{formatMoney(order.totals.discountTotal, order.totals.currency)}</dd></div>}
                 {Number(order.totals?.taxTotal || 0) !== 0 && <div><dt>Impuestos</dt><dd>{formatMoney(order.totals.taxTotal, order.totals.currency)}</dd></div>}
                 <div className="is-total"><dt>Total</dt><dd>{formatMoney(order.totals?.total, order.totals?.currency)}</dd></div>
-                <div><dt>Pago</dt><dd>{order.payment?.status === 'paid' ? 'Pagado' : 'Pendiente al entregar'}</dd></div>
+                <div><dt>Pago</dt><dd>{paymentLabel}</dd></div>
+                {posConversion && (
+                  <div>
+                    <dt>Conversión POS</dt>
+                    <dd>
+                      {posConversion.status === 'completed'
+                        ? `Registrada${posConversion.convertedSaleId ? ` · ${posConversion.convertedSaleId}` : ''}`
+                        : posConversion.status === 'reserved' ? 'En revisión' : 'Sin conversión'}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </DetailSection>
 
-            <EcommerceFulfillmentPanel />
+            <EcommerceFulfillmentPanel onTerminalSuccess={onFulfillmentTerminalSuccess} />
 
             <DetailSection
               title="Historial"
@@ -643,7 +674,9 @@ function OrderDetail({
                   disabled={Boolean(actionLoading) || Boolean(posActionLoading) || loading}
                 >
                   <Store size={17} />
-                  {posActionLoading === 'prepare' ? 'Preparando…' : 'Preparar en Punto de Venta'}
+                  {posActionLoading === 'prepare'
+                    ? 'Preparando…'
+                    : isPaymentRequired ? 'Cobrar en Punto de Venta' : 'Preparar en Punto de Venta'}
                 </button>
               )}
 
@@ -816,7 +849,7 @@ export default function EcommerceOrdersPage() {
   );
   const mobileGroups = useMemo(() => ORDER_GROUPS.map((group) => ({
     ...group,
-    count: visibleOrders.filter((order) => getOrderGroup(order.status).key === group.key).length
+    count: visibleOrders.filter((order) => getOrderGroup(order).key === group.key).length
   })), [visibleOrders]);
 
   useEffect(() => {
@@ -929,6 +962,14 @@ export default function EcommerceOrdersPage() {
     }
   };
 
+  const handleFulfillmentTerminalSuccess = (nextState) => {
+    showMessageModal(
+      nextState === 'completed' ? 'Pedido completado' : 'Pedido cancelado',
+      null,
+      { type: 'success' }
+    );
+  };
+
   const handleReleaseDraft = async ({ administrative = false } = {}) => {
     const visibleOrder = selectedOrder;
     if (!visibleOrder?.id || selectedLoading || actionLoading || posAction) return;
@@ -1029,6 +1070,7 @@ export default function EcommerceOrdersPage() {
         }}
         onPrepare={handlePrepareInPos}
         onRelease={handleReleaseDraft}
+        onFulfillmentTerminalSuccess={handleFulfillmentTerminalSuccess}
       />
 
       {dialogMode && selectedOrder && !selectedLoading && (

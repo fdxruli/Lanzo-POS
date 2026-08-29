@@ -47,11 +47,25 @@ vi.mock('../../services/utils', () => ({
 }));
 
 vi.mock('../../components/ecommerce/orders/EcommerceFulfillmentPanel', () => ({
-  default: () => (
-    <section data-testid="embedded-fulfillment-panel">
-      <button type="button">Marcar como listo</button>
-    </section>
-  )
+  default: ({ onTerminalSuccess } = {}) => {
+    const order = store.state?.selectedEcommerceOrder;
+    const fulfillment = order?.fulfillment || {};
+    const isCompletionStage = (
+      (order?.fulfillmentMethod === 'delivery' && fulfillment.internalStatus === 'out_for_delivery')
+      || (order?.fulfillmentMethod !== 'delivery' && fulfillment.internalStatus === 'ready')
+    );
+    const paymentRegistered = Boolean(fulfillment.paymentRegistered || order?.payment?.status === 'paid');
+    return (
+      <section data-testid="embedded-fulfillment-panel">
+        <button type="button">Marcar como listo</button>
+        {isCompletionStage && paymentRegistered && (
+          <button type="button" onClick={() => onTerminalSuccess?.('completed', order)}>
+            Completar pedido
+          </button>
+        )}
+      </section>
+    );
+  }
 }));
 
 import EcommerceOrdersPage from '../EcommerceOrdersPage';
@@ -105,7 +119,7 @@ const baseState = () => ({
     currency: 'MXN',
     createdAt: '2026-07-10T12:05:00Z'
   }],
-  ecommerceOrderCounts: { new: 1, seen: 1, pending: 2, accepted: 0, rejected: 0, total: 2 },
+  ecommerceOrderCounts: { new: 1, seen: 1, pending: 2, accepted: 0, rejected: 0, closed: 0, total: 2 },
   ecommerceOrdersLoading: false,
   ecommerceOrdersRefreshing: false,
   ecommerceOrdersError: null,
@@ -394,18 +408,114 @@ describe('EcommerceOrdersPage', () => {
     expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('selects closed when accepted results only contain converted sales', () => {
+  it('keeps converted-to-sale orders in process while fulfillment is active', () => {
     store.state = {
       ...baseState(),
       ecommerceOrdersFilter: 'accepted',
-      ecommerceOrders: [{ ...baseState().ecommerceOrders[0], status: 'converted_to_sale' }]
+      ecommerceOrders: [{
+        ...baseState().ecommerceOrders[0],
+        status: 'converted_to_sale',
+        fulfillmentStatus: 'out_for_delivery'
+      }]
     };
     renderPage();
 
-    expect(screen.getByRole('tab', { name: 'Cerrados, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('prioritizes process when accepted results include accepted and converted sales', () => {
+  it('groups terminal fulfillment and rejected orders under Cerrados', () => {
+    const orders = [
+      { ...baseState().ecommerceOrders[0], id: 'completed-order', code: 'EC-COMPLETE', status: 'accepted', fulfillmentStatus: 'completed' },
+      { ...baseState().ecommerceOrders[1], id: 'cancelled-order', code: 'EC-CANCELLED', status: 'accepted', fulfillmentStatus: 'cancelled' },
+      { ...baseState().ecommerceOrders[0], id: 'rejected-order', code: 'EC-REJECTED', status: 'rejected' }
+    ];
+    store.state = {
+      ...baseState(),
+      ecommerceOrders: orders,
+      ecommerceOrderCounts: { ...baseState().ecommerceOrderCounts, closed: 3, total: 3 }
+    };
+
+    renderPage();
+
+    const closed = screen.getByRole('region', { name: 'Cerrados' });
+    expect(closed).toContainElement(screen.getByText('EC-COMPLETE'));
+    expect(closed).toContainElement(screen.getByText('EC-CANCELLED'));
+    expect(closed).toContainElement(screen.getByText('EC-REJECTED'));
+  });
+
+  it('uses the closed backend scope when the history filter is selected', async () => {
+    renderPage();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Estado' }), {
+      target: { value: 'closed' }
+    });
+
+    await waitFor(() => expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
+      filter: 'closed',
+      force: true
+    }));
+  });
+
+  it('labels the terminal unpaid POS action as Cobrar en Punto de Venta', () => {
+    const order = selectedOrder(orderId, 'accepted');
+    order.fulfillmentMethod = 'delivery';
+    order.fulfillment = {
+      internalStatus: 'out_for_delivery',
+      status: 'out_for_delivery',
+      paymentRegistered: false,
+      version: 4
+    };
+    store.state = { ...baseState(), selectedEcommerceOrder: order };
+
+    renderPage();
+
+    expect(screen.getByRole('button', { name: 'Cobrar en Punto de Venta' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Completar pedido' })).not.toBeInTheDocument();
+  });
+
+  it('exposes completion in the detail once payment is registered', () => {
+    const order = selectedOrder(orderId, 'accepted');
+    order.fulfillmentMethod = 'delivery';
+    order.fulfillment = {
+      internalStatus: 'out_for_delivery',
+      status: 'out_for_delivery',
+      paymentRegistered: true,
+      version: 4
+    };
+    store.state = { ...baseState(), selectedEcommerceOrder: order };
+
+    renderPage();
+
+    expect(screen.getByRole('button', { name: 'Completar pedido' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cobrar en Punto de Venta' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Completar pedido' }));
+    expect(store.showMessageModal).toHaveBeenCalledWith('Pedido completado', null, { type: 'success' });
+  });
+
+  it('shows paid and POS conversion evidence in the terminal detail', () => {
+    const order = selectedOrder(orderId, 'converted_to_sale');
+    order.fulfillmentMethod = 'delivery';
+    order.payment = { method: 'cash', status: 'pending' };
+    order.fulfillment = {
+      internalStatus: 'out_for_delivery',
+      status: 'out_for_delivery',
+      paymentRegistered: true,
+      version: 4
+    };
+    order.posConversion = {
+      status: 'completed',
+      convertedSaleId: 'sale-125'
+    };
+    store.state = { ...baseState(), selectedEcommerceOrder: order };
+
+    renderPage();
+
+    expect(screen.getByText('Registrado en Punto de Venta')).toBeInTheDocument();
+    expect(screen.getByText('Registrada · sale-125')).toBeInTheDocument();
+  });
+
+  it('keeps accepted and active converted sales in process', () => {
     store.state = {
       ...baseState(),
       ecommerceOrdersFilter: 'accepted',
@@ -416,7 +526,7 @@ describe('EcommerceOrdersPage', () => {
     };
     renderPage();
 
-    expect(screen.getByRole('tab', { name: 'En proceso, 1 pedido' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'En proceso, 2 pedidos' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('keeps the active mobile group when it still has visible orders', () => {

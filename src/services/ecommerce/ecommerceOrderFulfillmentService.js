@@ -12,6 +12,7 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDER_STATUS_INVALID_TRANSITION: 'Esta acción ya no corresponde al estado actual del pedido.',
   ECOMMERCE_ORDER_STATUS_IDEMPOTENCY_REQUIRED: 'No se pudo preparar una transición segura.',
   ECOMMERCE_ORDER_PUBLIC_MESSAGE_INVALID: 'El mensaje público debe ser texto plano de hasta 280 caracteres.',
+  ECOMMERCE_ORDER_PAYMENT_REQUIRED: 'Registra el pago en Punto de Venta antes de completar el pedido.',
   ECOMMERCE_ORDER_FULFILLMENT_TERMINAL: 'Este pedido ya fue completado o cancelado. No admite nuevas acciones operativas ni de Punto de Venta.',
   ECOMMERCE_ORDER_POS_DRAFT_PREPARED: 'Existe un borrador preparado en Punto de Venta. Resuélvelo antes de completar o cancelar el pedido.',
   ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS: 'Existe un cobro reservado o en progreso. Verifica la venta antes de completar o cancelar el pedido.',
@@ -155,6 +156,22 @@ export const FULFILLMENT_LABELS = Object.freeze({
   attention: 'Requiere atención'
 });
 
+const isPaymentRegistered = (order = {}) => (
+  Boolean(order.fulfillment?.paymentRegistered)
+  || order.payment?.status === 'paid'
+);
+
+export function isEcommerceFulfillmentPaymentRequired(order = {}) {
+  const state = order.fulfillment?.internalStatus || order.fulfillment?.status;
+  const method = order.fulfillmentMethod === 'delivery' ? 'delivery' : 'pickup';
+  const isCompletionStage = (
+    (state === 'ready' && method === 'pickup')
+    || (state === 'out_for_delivery' && method === 'delivery')
+  );
+
+  return isCompletionStage && !isPaymentRegistered(order);
+}
+
 export function getEcommerceFulfillmentActions(order = {}) {
   if (!['accepted', 'converted_to_sale'].includes(order.status)) return [];
   const state = order.fulfillment?.internalStatus || order.fulfillment?.status;
@@ -171,10 +188,14 @@ export function getEcommerceFulfillmentActions(order = {}) {
     return [{ transition: 'out_for_delivery', label: 'Marcar en camino' }, cancel];
   }
   if (state === 'ready' && method === 'pickup') {
-    return [{ transition: 'completed', label: 'Completar pedido' }, cancel];
+    return isPaymentRegistered(order)
+      ? [{ transition: 'completed', label: 'Completar pedido' }, cancel]
+      : [cancel];
   }
   if (state === 'out_for_delivery' && method === 'delivery') {
-    return [{ transition: 'completed', label: 'Completar pedido' }, cancel];
+    return isPaymentRegistered(order)
+      ? [{ transition: 'completed', label: 'Completar pedido' }, cancel]
+      : [cancel];
   }
   return [];
 }
@@ -184,5 +205,6 @@ export const ecommerceOrderFulfillmentInternals = Object.freeze({
   normalizeFulfillment,
   normalizeResult,
   getLicenseKey,
-  buildAuthArgs
+  buildAuthArgs,
+  isPaymentRegistered
 });
