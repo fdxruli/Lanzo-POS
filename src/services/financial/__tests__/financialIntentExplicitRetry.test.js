@@ -511,7 +511,7 @@ describe('explicit retry of an already-owned sale financial intent', () => {
     expect(executeCalls()).toHaveLength(0);
   });
 
-  it('returns a completed duplicate without letting synchronous retry project it twice', async () => {
+  it('projects a completed duplicate exactly once without a financial execute', async () => {
     const response = { success: true, sale: { id: 'cloud-sale-already-complete' } };
     const intent = await seedIntent({ changes: {
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
@@ -528,16 +528,17 @@ describe('explicit retry of an already-owned sale financial intent', () => {
       idempotencyKey: 'sale-retry-k',
       cashSessionId: 'session-a',
       actorHandle: runtime.handle,
-      projectionRequired: true
+      projectionRequired: true,
+      project
     });
 
     expect(result).toMatchObject({ intentId: intent.id, response });
-    expect(project).not.toHaveBeenCalled();
+    expect(project).toHaveBeenCalledOnce();
     expect(receiptCalls()).toHaveLength(0);
     expect(executeCalls()).toHaveLength(0);
     expect(await getFinancialIntent(intent.id)).toMatchObject({
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
-      projectionStatus: FINANCIAL_PROJECTION_STATUS.PENDING
+      projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED
     });
   });
 

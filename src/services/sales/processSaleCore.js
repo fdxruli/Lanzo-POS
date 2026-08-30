@@ -52,6 +52,17 @@ const resolveStableSaleTimestamp = async ({
     fallback,
     Logger
 }) => {
+    if (activeOrderId && STORES?.SALES && typeof loadData === 'function') {
+        try {
+            const persistedSale = await loadData(STORES.SALES, activeOrderId);
+            const stablePersistedTimestamp = normalizeStableSaleTimestamp(persistedSale?.timestamp)
+                || normalizeStableSaleTimestamp(persistedSale?.createdAt);
+            if (stablePersistedTimestamp) return stablePersistedTimestamp;
+        } catch (error) {
+            Logger?.warn('No se pudo leer la marca temporal durable de la orden.', error);
+        }
+    }
+
     const explicitTimestamp = [saleTimestamp, activeOrderCreatedAt, createdAt]
         .map(normalizeStableSaleTimestamp)
         .find(Boolean);
@@ -60,20 +71,6 @@ const resolveStableSaleTimestamp = async ({
     if (!activeOrderId) {
         const normalizedFallback = normalizeStableSaleTimestamp(fallback);
         if (normalizedFallback) return normalizedFallback;
-        throw stableSaleTimestampRequiredError();
-    }
-
-    if (!STORES?.SALES || typeof loadData !== 'function') {
-        throw stableSaleTimestampRequiredError();
-    }
-
-    try {
-        const persistedSale = await loadData(STORES.SALES, activeOrderId);
-        const persistedTimestamp = persistedSale?.timestamp || persistedSale?.createdAt || null;
-        const stablePersistedTimestamp = normalizeStableSaleTimestamp(persistedTimestamp);
-        if (stablePersistedTimestamp) return stablePersistedTimestamp;
-    } catch (error) {
-        Logger?.warn('No se pudo leer la marca temporal durable de la orden.', error);
     }
 
     throw stableSaleTimestampRequiredError();

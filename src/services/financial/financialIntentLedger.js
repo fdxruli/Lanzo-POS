@@ -386,19 +386,6 @@ export const assertFinancialIntentRetryEquivalence = (existingIntent, retryInten
   return true;
 };
 
-const updateMutable = async (intentId, changes, handle) => {
-  const keys = Object.keys(changes || {});
-  if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
-  handle.assertCurrent();
-  const table = db.table(STORES.FINANCIAL_INTENTS);
-  const row = await table.get(intentId);
-  if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-  assertFinancialIntentExecutionAuthority(row, handle);
-  handle.assertCurrent();
-  const updated = await table.update(intentId, { ...changes, updatedAt: now() });
-  if (updated === 0) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-};
-
 /**
  * Cross-boot recovery mutation boundary. Every recovery write is a fenced
  * compare-and-swap inside one Dexie transaction. A lease id is mandatory:
@@ -499,6 +486,186 @@ export const releaseFinancialIntentRecoveryClaim = async ({ intentId, leaseId, a
     });
     if (released === 0) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   });
+};
+
+const projectionStatusNeedsWork = (intent) => (
+  intent?.status === FINANCIAL_INTENT_STATUS.COMPLETED
+  && [FINANCIAL_PROJECTION_STATUS.PENDING, FINANCIAL_PROJECTION_STATUS.FAILED].includes(intent.projectionStatus)
+);
+
+const isRecoveryLeaseFailure = (error) => [
+  'FINANCIAL_RECOVERY_LEASE_HELD',
+  'FINANCIAL_RECOVERY_LEASE_LOST',
+  'FINANCIAL_RECOVERY_LEASE_EXPIRED'
+].includes(error?.code || error?.message);
+
+const assertSuppliedProjectionLease = async ({ intentId, actorHandle, recoveryLeaseId, currentTime = null }) => {
+  const row = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+  if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(row, actorHandle, {
+    allowLegacyNullDevice: projectionStatusNeedsWork(row)
+  });
+  if (row.recoveryLeaseId !== recoveryLeaseId) {
+    const error = new Error(
+      row.recoveryLeaseId && !leaseExpired(row, effectiveCurrentTime(currentTime))
+        ? 'FINANCIAL_RECOVERY_LEASE_HELD'
+        : 'FINANCIAL_RECOVERY_LEASE_LOST'
+    );
+    error.code = error.message;
+    throw error;
+  }
+  if (leaseExpired(row, effectiveCurrentTime(currentTime))) {
+    const error = new Error('FINANCIAL_RECOVERY_LEASE_EXPIRED');
+    error.code = error.message;
+    throw error;
+  }
+  return row;
+};
+
+/**
+ * Shared durable ownership boundary for every completed financial response
+ * that still needs local projection. Synchronous checkout and background
+ * repair both enter here; the lease remains held through the handler and the
+ * fenced lifecycle write.
+ */
+export const runFinancialProjectionUnderLease = async ({
+  intentId,
+  actorHandle = null,
+  recoveryLeaseId = null,
+  project,
+  leaseMs,
+  currentTime = null
+} = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  handle.assertCurrent?.();
+  let intent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+  if (!intent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(intent, handle, {
+    allowLegacyNullDevice: projectionStatusNeedsWork(intent)
+  });
+  if (intent.status !== FINANCIAL_INTENT_STATUS.COMPLETED) {
+    throw new Error('FINANCIAL_PROJECTION_REQUIRES_COMPLETED');
+  }
+  if (!projectionStatusNeedsWork(intent)) {
+    return { intentId, outcome: 'projection_not_required' };
+  }
+  if (typeof project !== 'function') {
+    return { intentId, outcome: 'projection_deferred' };
+  }
+
+  let claim = null;
+  let ownedLeaseId = recoveryLeaseId;
+  if (ownedLeaseId) {
+    await assertSuppliedProjectionLease({
+      intentId,
+      actorHandle: handle,
+      recoveryLeaseId: ownedLeaseId,
+      currentTime
+    });
+  } else {
+    claim = await claimFinancialIntentRecovery({
+      intentId,
+      actorHandle: handle,
+      leaseMs,
+      currentTime
+    });
+    ownedLeaseId = claim.recoveryLeaseId;
+  }
+
+  try {
+    intent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+    if (!intent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+    assertFinancialIntentRecoveryAuthority(intent, handle, {
+      allowLegacyNullDevice: projectionStatusNeedsWork(intent)
+    });
+    if (intent.status !== FINANCIAL_INTENT_STATUS.COMPLETED) {
+      throw new Error('FINANCIAL_PROJECTION_REQUIRES_COMPLETED');
+    }
+    if (!projectionStatusNeedsWork(intent)) {
+      return { intentId, outcome: 'projection_not_required' };
+    }
+
+    try {
+      handle.assertCurrent?.();
+      const result = await project({ intent, actorHandle: handle });
+      handle.assertCurrent?.();
+      await updateFinancialIntentForRecovery(intentId, {
+        projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED,
+        projectionErrorCode: null,
+        lastRecoveryCode: 'FINANCIAL_RECOVERY_PROJECTION_APPLIED'
+      }, handle, {
+        recoveryLeaseId: ownedLeaseId,
+        currentTime,
+        expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED
+      });
+      return { intentId, outcome: 'projection_applied', result };
+    } catch (error) {
+      // A lease loss/expiry is a hard fence: the stale owner must not turn
+      // another owner's projection into FAILED or otherwise write the row.
+      if (isRecoveryLeaseFailure(error)) throw error;
+      await updateFinancialIntentForRecovery(intentId, {
+        projectionStatus: FINANCIAL_PROJECTION_STATUS.FAILED,
+        projectionErrorCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED',
+        lastRecoveryCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED'
+      }, handle, {
+        recoveryLeaseId: ownedLeaseId,
+        currentTime,
+        expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED
+      });
+      return { intentId, outcome: 'projection_failed', error };
+    }
+  } finally {
+    if (claim) {
+      try {
+        await releaseFinancialIntentRecoveryClaim({
+          intentId,
+          leaseId: claim.recoveryLeaseId,
+          actorHandle: handle
+        });
+      } catch {
+        // A stale owner cannot clear a newer lease.
+      }
+    }
+  }
+};
+
+const updateProjectionStatusUnderLease = async ({
+  intentId,
+  actorHandle,
+  recoveryLeaseId = null,
+  changes
+}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  let claim = null;
+  let ownedLeaseId = recoveryLeaseId;
+  if (ownedLeaseId) {
+    await assertSuppliedProjectionLease({
+      intentId,
+      actorHandle: handle,
+      recoveryLeaseId: ownedLeaseId
+    });
+  } else {
+    claim = await claimFinancialIntentRecovery({ intentId, actorHandle: handle });
+    ownedLeaseId = claim.recoveryLeaseId;
+  }
+  try {
+    await updateFinancialIntentForRecovery(intentId, changes, handle, {
+      recoveryLeaseId: ownedLeaseId,
+      expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED
+    });
+  } finally {
+    if (claim) {
+      try {
+        await releaseFinancialIntentRecoveryClaim({
+          intentId,
+          leaseId: claim.recoveryLeaseId,
+          actorHandle: handle
+        });
+      } catch {
+        // A stale owner cannot clear a newer lease.
+      }
+    }
+  }
 };
 
 const resolveStation = async ({ auth, cashSessionId, operationType }) => {
@@ -636,13 +803,14 @@ export const executeNewFinancialIntent = async (options) => {
       candidateIntent: prepared.intent,
       licenseKey: options.licenseKey,
       actorHandle: prepared.handle,
-      project: null,
+      project: options?.project,
       leaseMs: options.leaseMs
     });
     return {
       intent: retry.intent,
       intentId: retry.intentId,
-      response: retry.response
+      response: retry.response,
+      projection: retry.projection
     };
   }
 
@@ -656,7 +824,8 @@ export const executeNewFinancialIntent = async (options) => {
         expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
         recoveryLeaseId: initialLease.leaseId,
         lastRecoveryCode: 'FINANCIAL_RECOVERY_INITIAL_DISPATCH',
-        resolveAmbiguousReceipt: true
+        resolveAmbiguousReceipt: true,
+        project: options?.project
       }))
     };
   } finally {
@@ -722,7 +891,8 @@ const executeDurableFinancialIntentForRecovery = async ({
   expectedStatus,
   recoveryLeaseId = null,
   lastRecoveryCode,
-  resolveAmbiguousReceipt = false
+  resolveAmbiguousReceipt = false,
+  project = null
 }) => {
   if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
   const handle = actorHandle || actorRuntimeController.capture();
@@ -763,6 +933,7 @@ const executeDurableFinancialIntentForRecovery = async ({
     lastDispatchAt: now(),
     lastRecoveryCode
   }, handle, { recoveryLeaseId, expectedStatus });
+  let result;
   try {
     const auth = await buildAuth(licenseKey);
     handle.assertCurrent();
@@ -774,18 +945,10 @@ const executeDurableFinancialIntentForRecovery = async ({
       p_request: durableIntent.requestPayload
     });
     if (error) throw error;
-    const result = parseRpcPayload(data);
+    result = parseRpcPayload(data);
     if (result?.success === false && !isCashAdminCloseReviewResponse(durableIntent.operationType, result)) {
       throw rejectedFinancialResponseError(result);
     }
-    await updateFinancialIntentForRecovery(intentId, {
-      status: FINANCIAL_INTENT_STATUS.COMPLETED,
-      lastReceiptStatus: 'COMPLETED',
-      lastProtocolCode: null,
-      responsePayload: result,
-      completedAt: now()
-    }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
-    return { intentId, response: result };
   } catch (error) {
     const { code, status } = classifyDispatchFailure(error);
     await updateFinancialIntentForRecovery(intentId, {
@@ -805,6 +968,14 @@ const executeDurableFinancialIntentForRecovery = async ({
             responsePayload: receipt?.result || receipt,
             completedAt: now()
           }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
+          if (typeof project === 'function') {
+            await runFinancialProjectionUnderLease({
+              intentId,
+              actorHandle: handle,
+              recoveryLeaseId,
+              project
+            });
+          }
         } else if (receipt?.status === 'CONFLICT') {
           await updateFinancialIntentForRecovery(intentId, {
             status: FINANCIAL_INTENT_STATUS.CONFLICT,
@@ -822,6 +993,23 @@ const executeDurableFinancialIntentForRecovery = async ({
     }
     throw error;
   }
+
+  await updateFinancialIntentForRecovery(intentId, {
+    status: FINANCIAL_INTENT_STATUS.COMPLETED,
+    lastReceiptStatus: 'COMPLETED',
+    lastProtocolCode: null,
+    responsePayload: result,
+    completedAt: now()
+  }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
+  const projection = typeof project === 'function'
+    ? await runFinancialProjectionUnderLease({
+      intentId,
+      actorHandle: handle,
+      recoveryLeaseId,
+      project
+    })
+    : null;
+  return { intentId, response: result, projection };
 };
 
 /**
@@ -889,8 +1077,18 @@ export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licen
   });
 };
 
-export const markFinancialIntentProjectionApplied = async ({ intentId, actorHandle = null }) => updateMutable(intentId, { projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED, projectionErrorCode: null }, actorHandle || actorRuntimeController.capture());
-export const markFinancialIntentProjectionFailed = async ({ intentId, errorCode = 'LOCAL_PROJECTION_FAILED', actorHandle = null }) => updateMutable(intentId, { projectionStatus: FINANCIAL_PROJECTION_STATUS.FAILED, projectionErrorCode: errorCode }, actorHandle || actorRuntimeController.capture());
+export const markFinancialIntentProjectionApplied = async ({ intentId, actorHandle = null, recoveryLeaseId = null }) => updateProjectionStatusUnderLease({
+  intentId,
+  actorHandle: actorHandle || actorRuntimeController.capture(),
+  recoveryLeaseId,
+  changes: { projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED, projectionErrorCode: null }
+});
+export const markFinancialIntentProjectionFailed = async ({ intentId, errorCode = 'LOCAL_PROJECTION_FAILED', actorHandle = null, recoveryLeaseId = null }) => updateProjectionStatusUnderLease({
+  intentId,
+  actorHandle: actorHandle || actorRuntimeController.capture(),
+  recoveryLeaseId,
+  changes: { projectionStatus: FINANCIAL_PROJECTION_STATUS.FAILED, projectionErrorCode: errorCode }
+});
 export const listUnresolvedFinancialIntents = async () => db.table(STORES.FINANCIAL_INTENTS).where('status').anyOf(FINANCIAL_INTENT_STATUS.PREPARED, FINANCIAL_INTENT_STATUS.DISPATCHING, FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, FINANCIAL_INTENT_STATUS.BLOCKED).toArray();
 export const getFinancialIntent = async (intentId) => db.table(STORES.FINANCIAL_INTENTS).get(intentId);
 
@@ -916,4 +1114,4 @@ export const listFinancialIntentsForRecovery = async ({ actorHandle = null, limi
     .slice(0, Math.min(Math.max(Number(limit) || 25, 1), 50));
 };
 
-export const financialIntentLedgerInternals = Object.freeze({ canonicalFinancialRequestV1, assertNoSecretPayload, secureKey, updateMutable, resolveStation, hasCapturedOrigin });
+export const financialIntentLedgerInternals = Object.freeze({ canonicalFinancialRequestV1, assertNoSecretPayload, secureKey, resolveStation, hasCapturedOrigin });

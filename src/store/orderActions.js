@@ -19,6 +19,7 @@ import {
 import { isCommercialVariantProduct } from '../services/products/commercialVariants';
 import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
+import { resolveImmutableOrderCreatedAt } from '../services/sales/stableSaleTimestamp';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -731,7 +732,10 @@ export const createOrderActions = (set, get) => ({
               const openSaleRecord = {
                 ...(existingSale || {}),
                 id: currentSaleId,
-                timestamp: existingSale?.timestamp || nowIso,
+                timestamp: resolveImmutableOrderCreatedAt({
+                  durableOrder: existingSale,
+                  activeOrder: currentOrder
+                }),
                 ...persistedVersion,
                 items: committedCurrentItems,
                 total: calculateOrderTotalExact(committedCurrentItems),

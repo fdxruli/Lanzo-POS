@@ -26,6 +26,19 @@ vi.mock('../financialIntentLedger', () => {
     async updateFinancialIntentForRecovery(id, values, current) { current.assertCurrent(); const row = runtime.rows.get(id); if (!owned(row, current)) throw new Error('FINANCIAL_RECOVERY_ORIGIN_MISMATCH'); runtime.rows.set(id, { ...row, ...structuredClone(values) }); },
     async claimFinancialIntentRecovery({ intentId, actorHandle }) { actorHandle.assertCurrent(); if (runtime.claimed.has(intentId)) { const error = new Error('FINANCIAL_RECOVERY_LEASE_HELD'); error.code = error.message; throw error; } runtime.claimed.add(intentId); return { ...runtime.rows.get(intentId), recoveryLeaseId: `lease:${intentId}` }; },
     async releaseFinancialIntentRecoveryClaim({ intentId }) { runtime.claimed.delete(intentId); },
+    async runFinancialProjectionUnderLease({ intentId, actorHandle, project }) {
+      actorHandle.assertCurrent();
+      const intent = structuredClone(runtime.rows.get(intentId));
+      if (!intent || intent.status !== STATUS.COMPLETED || ![PROJECTION.PENDING, PROJECTION.FAILED].includes(intent.projectionStatus)) return { intentId, outcome: 'projection_not_required' };
+      try {
+        const result = await project({ intent, actorHandle });
+        runtime.rows.set(intentId, { ...runtime.rows.get(intentId), projectionStatus: PROJECTION.APPLIED, projectionErrorCode: null });
+        return { intentId, outcome: 'projection_applied', result };
+      } catch (error) {
+        runtime.rows.set(intentId, { ...runtime.rows.get(intentId), projectionStatus: PROJECTION.FAILED, projectionErrorCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED' });
+        return { intentId, outcome: 'projection_failed', error };
+      }
+    },
     async getFinancialIntentReceiptForRecovery({ intent, actorHandle }) { actorHandle.assertCurrent(); return runtime.receipt(intent); },
     async executePreparedFinancialIntentForRecovery({ intentId, actorHandle }) { actorHandle.assertCurrent(); const row = runtime.rows.get(intentId); if (row.status !== STATUS.PREPARED || row.dispatchAttemptCount !== 0) throw new Error('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE'); const response = await runtime.execute(row); runtime.rows.set(intentId, { ...row, status: STATUS.COMPLETED, dispatchAttemptCount: 1, responsePayload: response }); return { intentId, response }; }
   };

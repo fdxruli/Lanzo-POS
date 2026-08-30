@@ -10,6 +10,7 @@ import {
   getFinancialIntentReceiptForRecovery,
   isExplicitSaleFinancialRetry,
   releaseFinancialIntentRecoveryClaim,
+  runFinancialProjectionUnderLease,
   updateFinancialIntentForRecovery
 } from './financialIntentLedger';
 import { applyFinancialProjection } from './financialProjectionRegistry';
@@ -34,28 +35,12 @@ const persistReceipt = async ({ intentId, actorHandle, receipt, status, code = n
 );
 
 const recoverProjectionOnly = async ({ intent, actorHandle, project = applyFinancialProjection, recoveryLeaseId }) => {
-  if (![FINANCIAL_PROJECTION_STATUS.PENDING, FINANCIAL_PROJECTION_STATUS.FAILED].includes(intent.projectionStatus)) {
-    return { intentId: intent.id, outcome: 'projection_not_required' };
-  }
-  if (typeof project !== 'function') {
-    return { intentId: intent.id, outcome: 'projection_deferred' };
-  }
-  try {
-    await project({ intent, actorHandle });
-    await updateFinancialIntentForRecovery(intent.id, {
-      projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED,
-      projectionErrorCode: null,
-      lastRecoveryCode: 'FINANCIAL_RECOVERY_PROJECTION_APPLIED'
-    }, actorHandle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED });
-    return { intentId: intent.id, outcome: 'projection_applied' };
-  } catch (error) {
-    await updateFinancialIntentForRecovery(intent.id, {
-      projectionStatus: FINANCIAL_PROJECTION_STATUS.FAILED,
-      projectionErrorCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED',
-      lastRecoveryCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED'
-    }, actorHandle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED });
-    return { intentId: intent.id, outcome: 'projection_failed', error };
-  }
+  return runFinancialProjectionUnderLease({
+    intentId: intent.id,
+    actorHandle,
+    project,
+    recoveryLeaseId
+  });
 };
 
 /**

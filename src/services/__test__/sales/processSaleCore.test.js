@@ -163,6 +163,40 @@ describe('processSaleCore', () => {
         );
     });
 
+    it('does not let a newer checkout snapshot replace the durable order timestamp', async () => {
+        const deps = makeDeps({
+            loadData: vi.fn(async (store, id) => {
+                if (store === 'sales' && id === 'active-order-1') {
+                    return { id, timestamp: '2026-08-29T12:34:56.000Z' };
+                }
+                if (store === 'menu') {
+                    return {
+                        id,
+                        name: 'Producto 1',
+                        price: 10,
+                        cost: 4,
+                        stock: 100,
+                        trackStock: true,
+                        batchManagement: { enabled: false }
+                    };
+                }
+                return null;
+            })
+        });
+
+        const result = await processSaleCore(makeParams({
+            activeOrderId: 'active-order-1',
+            saleTimestamp: '2026-08-30T10:10:00.000Z',
+            activeOrderCreatedAt: '2026-08-30T10:10:00.000Z'
+        }), deps);
+
+        expect(result.success).toBe(true);
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
+            expect.objectContaining({ timestamp: '2026-08-29T12:34:56.000Z' }),
+            expect.any(Array)
+        );
+    });
+
     it('fails closed when an active order has no stable timestamp', async () => {
         const deps = makeDeps();
         const result = await processSaleCore(makeParams({ activeOrderId: 'active-order-without-timestamp' }), deps);
@@ -190,7 +224,7 @@ describe('processSaleCore', () => {
 
             expect(first.success).toBe(true);
             expect(second.success).toBe(true);
-            expect(deps.loadData.mock.calls.some(([store]) => store === 'sales')).toBe(false);
+            expect(deps.loadData.mock.calls.filter(([store]) => store === 'sales')).toHaveLength(2);
             const [firstSale, secondSale] = deps.executeSaleTransactionSafe.mock.calls.map(([sale]) => sale);
             expect(secondSale.id).toBe(firstSale.id);
             expect(secondSale.timestamp).toBe(firstSale.timestamp);

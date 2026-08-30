@@ -179,7 +179,7 @@ describe('financial intent ledger', () => {
     });
     expect(runtime.rpcCalls.find((call) => call.name === 'pos_execute_financial_operation_v1')?.args.p_request.opening_amount).toBe('100');
     await expect(markFinancialIntentProjectionFailed({ intentId: intent.id, actorHandle: runtime.makeHandle('admin:actor-b') }))
-      .rejects.toThrow('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
+      .rejects.toThrow('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
   });
 
   it.each(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'])('preserves the full cash.admin_close %s review response as terminal evidence', async (code) => {

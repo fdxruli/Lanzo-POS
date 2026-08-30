@@ -200,6 +200,53 @@ describe('useActiveOrders unified store', () => {
     expect(useActiveOrders.getState().activeOrders.get(orderId)?.createdAt).toBe(stableCreatedAt);
   });
 
+  it.each([
+    {
+      name: 'the newer persisted draft wins mutable fields',
+      durableRevision: 1,
+      draftRevision: 2,
+      expectedItem: 'draft-item'
+    },
+    {
+      name: 'the durable SALES row wins mutable fields',
+      durableRevision: 2,
+      draftRevision: 1,
+      expectedItem: 'durable-item'
+    }
+  ])('keeps the durable creation timestamp when $name', async ({ durableRevision, draftRevision, expectedItem }) => {
+    const orderId = 'order-divergent-timestamp';
+    const durableTimestamp = '2026-08-30T10:00:00.000Z';
+    const draftTimestamp = '2026-08-30T10:10:00.000Z';
+    dbState.sales.set(orderId, {
+      id: orderId,
+      status: 'open',
+      timestamp: durableTimestamp,
+      updatedAt: durableRevision > draftRevision ? '2026-08-30T10:20:00.000Z' : durableTimestamp,
+      revision: durableRevision,
+      items: [{ id: 'durable-item', price: 10, quantity: 1 }],
+      total: 10
+    });
+    useActiveOrders.setState({
+      activeOrders: new Map([[
+        orderId,
+        {
+          ...makeOrder(orderId, [{ id: 'draft-item', price: 20, quantity: 1 }]),
+          createdAt: draftTimestamp,
+          updatedAt: draftRevision > durableRevision ? '2026-08-30T10:20:00.000Z' : draftTimestamp,
+          revision: draftRevision,
+          total: 20
+        }
+      ]]),
+      currentOrderId: orderId
+    });
+
+    await useActiveOrders.getState().loadOrdersFromDB();
+
+    const merged = useActiveOrders.getState().activeOrders.get(orderId);
+    expect(merged.createdAt).toBe(durableTimestamp);
+    expect(merged.items[0].id).toBe(expectedItem);
+  });
+
   it('keeps the local ecommerce draft when remote release fails and removes it after success', async () => {
     const id = 'ecom-11111111-1111-4111-8111-111111111111';
     useActiveOrders.getState().upsertEcommerceDraft({

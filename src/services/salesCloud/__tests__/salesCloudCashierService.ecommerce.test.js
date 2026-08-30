@@ -103,6 +103,22 @@ const makeResponse = () => ({
   payments: []
 });
 
+const projectResponse = async (options, response, operationType = 'sale.cashier_inventory') => {
+  const result = await options.project({
+    intent: {
+      operationType,
+      requestPayload: {
+        sale: options.sale,
+        items: options.items,
+        payments: options.payments
+      },
+      responsePayload: response
+    },
+    actorHandle: options.actorHandle
+  });
+  return { ...response, projection: { outcome: 'projection_applied', result } };
+};
+
 describe('salesCloudCashierService ecommerce idempotency', () => {
   it('uses the ecommerce business key without a device suffix', () => {
     const result = salesCloudCashierServiceInternals.buildCloudSaleIdempotencyKey({
@@ -213,7 +229,7 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
       mocks.recoveryTrace.push('BLOCKED', 'NOT_FOUND');
       mocks.executeFinancialOperation(options);
       mocks.recoveryTrace.push('SUCCESS');
-      return response;
+      return projectResponse(options, response);
     });
 
     const result = await salesCloudCashierService.processCloudCashierSale({
@@ -228,14 +244,14 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     expect(mocks.executeFinancialOperation).toHaveBeenCalledTimes(1);
     expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.applyCloudSalesPayload).toHaveBeenCalledTimes(1);
-    expect(mocks.markProjectionApplied).toHaveBeenCalledTimes(1);
+    expect(mocks.markProjectionApplied).not.toHaveBeenCalled();
     expect(mocks.markProjectionFailed).not.toHaveBeenCalled();
   });
 
   it('projects a completed receipt exactly once without a second financial execute', async () => {
     const response = makeResponse();
     mocks.recoveryTrace.push('COMPLETED_RECEIPT');
-    mocks.createCloudCashierInventorySale.mockResolvedValue(response);
+    mocks.createCloudCashierInventorySale.mockImplementation((options) => projectResponse(options, response));
 
     const result = await salesCloudCashierService.processCloudCashierSale({
       sale: makeSale(),
@@ -249,6 +265,6 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     expect(mocks.executeFinancialOperation).toHaveBeenCalledTimes(0);
     expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.applyCloudSalesPayload).toHaveBeenCalledTimes(1);
-    expect(mocks.markProjectionApplied).toHaveBeenCalledTimes(1);
+    expect(mocks.markProjectionApplied).not.toHaveBeenCalled();
   });
 });
