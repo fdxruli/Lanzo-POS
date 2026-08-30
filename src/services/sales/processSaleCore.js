@@ -35,6 +35,20 @@ const getLineId = (item = {}, index = 0) => (
     item.lineId || item.uniqueLineId || item.ecommerceOrderItemId || `${item.parentId || item.id || 'item'}-${index}`
 );
 
+const resolveStableSaleTimestamp = async ({ activeOrderId, loadData, STORES, fallback, Logger }) => {
+    if (!activeOrderId || !STORES?.SALES || typeof loadData !== 'function') return fallback;
+
+    try {
+        const persistedSale = await loadData(STORES.SALES, activeOrderId);
+        const persistedTimestamp = persistedSale?.timestamp || persistedSale?.createdAt || null;
+        if (persistedTimestamp && Number.isFinite(Date.parse(persistedTimestamp))) return persistedTimestamp;
+    } catch (error) {
+        Logger?.warn('No se pudo leer la marca temporal durable de la orden; se conservará el flujo actual.', error);
+    }
+
+    return fallback;
+};
+
 const getEcommerceCheckout = (paymentData = {}) => {
     const checkout = paymentData?.__ecommerceCheckout;
     return checkout?.origin === 'ecommerce' && checkout?.snapshot ? checkout : null;
@@ -314,6 +328,13 @@ export const processSaleCore = async ({
         });
 
         const currentIsoTime = new Date().toISOString();
+        const stableSaleTimestamp = await resolveStableSaleTimestamp({
+            activeOrderId,
+            loadData,
+            STORES,
+            fallback: currentIsoTime,
+            Logger
+        });
         const discountTotal = Money.toExactString(financialTotals.discountTotal);
         const subtotal = Money.toExactString(financialTotals.subtotal);
         const saleDiscountAudit = financialTotals.saleDiscount || null;
@@ -332,7 +353,7 @@ export const processSaleCore = async ({
 
         const sale = {
             id: activeOrderId || generateID('sal'),
-            timestamp: currentIsoTime,
+            timestamp: stableSaleTimestamp,
             salesChannel: isEcommerceSale ? 'ecommerce' : 'local',
             ecommerceOrderId: isEcommerceSale ? ecommerceCheckout.ecommerceOrderId : null,
             ecommerceOrderCode: isEcommerceSale ? ecommerceCheckout.ecommerceOrderCode || null : null,
@@ -543,5 +564,6 @@ export const processSaleCoreInternals = Object.freeze({
     sanitizePaymentData,
     applyAndValidateEcommerceSnapshot,
     getLineId,
-    toCents
+    toCents,
+    resolveStableSaleTimestamp
 });

@@ -11,7 +11,7 @@ const makeParams = (overrides = {}) => ({
         sendReceipt: true
     },
     total: 10,
-    allProducts: [{ id: 'prod-1', name: 'Producto 1', trackStock: true, cost: 4, price: 10 }],
+    allProducts: [{ id: 'prod-1', name: 'Producto 1', trackStock: true, stock: 100, cost: 4, price: 10 }],
     features: { hasRecipes: false, hasKDS: false, hasLabFields: false },
     companyName: 'Mi Negocio',
     tempPrescriptionData: null,
@@ -29,6 +29,7 @@ const makeDeps = (overrides = {}) => {
                     name: 'Producto 1',
                     price: 10,
                     cost: 4,
+                    stock: 100,
                     trackStock: true,
                     batchManagement: { enabled: false }
                 };
@@ -44,7 +45,8 @@ const makeDeps = (overrides = {}) => {
         STORES: {
             MENU: 'menu',
             PRODUCT_BATCHES: 'product_batches',
-            CUSTOMERS: 'customers'
+            CUSTOMERS: 'customers',
+            SALES: 'sales'
         },
         queryBatchesByProductIdAndActive: vi.fn(async () => []),
         queryByIndex: vi.fn(async () => []),
@@ -129,5 +131,35 @@ describe('processSaleCore', () => {
         );
         expect(deps.saveData).not.toHaveBeenCalled();
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
+    });
+
+    it('reuses the durable order timestamp when retrying the same active order', async () => {
+        const deps = makeDeps({
+            loadData: vi.fn(async (store, id) => {
+                if (store === 'sales' && id === 'active-order-1') {
+                    return { id, timestamp: '2026-08-29T12:34:56.000Z' };
+                }
+                if (store === 'menu') {
+                    return {
+                        id,
+                        name: 'Producto 1',
+                        price: 10,
+                        cost: 4,
+                        stock: 100,
+                        trackStock: true,
+                        batchManagement: { enabled: false }
+                    };
+                }
+                return null;
+            })
+        });
+
+        const result = await processSaleCore(makeParams({ activeOrderId: 'active-order-1' }), deps);
+
+        expect(result.success).toBe(true);
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
+            expect.objectContaining({ timestamp: '2026-08-29T12:34:56.000Z' }),
+            expect.any(Array)
+        );
     });
 });

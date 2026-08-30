@@ -2,10 +2,13 @@ import {
   FINANCIAL_INTENT_STATUS,
   FINANCIAL_PROJECTION_STATUS,
   assertFinancialIntentRecoveryAuthority,
+  assertFinancialIntentRetryEquivalence,
   claimFinancialIntentRecovery,
+  executeBlockedFinancialIntentForRecovery,
   executePreparedFinancialIntentForRecovery,
   getFinancialIntent,
   getFinancialIntentReceiptForRecovery,
+  isExplicitSaleFinancialRetry,
   releaseFinancialIntentRecoveryClaim,
   updateFinancialIntentForRecovery
 } from './financialIntentLedger';
@@ -49,15 +52,34 @@ const recoverProjectionOnly = async ({ intent, actorHandle, project = applyFinan
 };
 
 /**
- * Receipt-first state machine for exactly one durable intent.  The only
- * execution edge is PREPARED + dispatchAttemptCount === 0 after NOT_FOUND.
+ * Receipt-first state machine for exactly one durable intent. Background
+ * recovery only executes the existing PREPARED + zero-attempt edge; the
+ * BLOCKED redispatch edge is available only to an explicit sale retry.
  */
-export const recoverFinancialIntent = async ({ intentId, licenseKey, actorHandle, project = applyFinancialProjection, leaseMs } = {}) => {
+export const recoverFinancialIntent = async ({
+  intentId,
+  licenseKey,
+  actorHandle,
+  project = applyFinancialProjection,
+  leaseMs,
+  explicitRetry = false,
+  candidateIntent = null
+} = {}) => {
   let intent = await getFinancialIntent(intentId);
   if (!intent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   assertFinancialIntentRecoveryAuthority(intent, actorHandle);
 
-  if ([FINANCIAL_INTENT_STATUS.CONFLICT, FINANCIAL_INTENT_STATUS.BLOCKED].includes(intent.status)) {
+  if (explicitRetry) {
+    if (!isExplicitSaleFinancialRetry(intent.operationType)) {
+      throw new Error('FINANCIAL_RECOVERY_EXPLICIT_RETRY_UNSUPPORTED');
+    }
+    if (!candidateIntent) throw new Error('FINANCIAL_RECOVERY_RETRY_EVIDENCE_REQUIRED');
+    assertFinancialIntentRetryEquivalence(intent, candidateIntent, actorHandle);
+  }
+
+  if (intent.status === FINANCIAL_INTENT_STATUS.CONFLICT || (
+    intent.status === FINANCIAL_INTENT_STATUS.BLOCKED && !explicitRetry
+  )) {
     return { intentId, outcome: 'terminal_skipped' };
   }
 
@@ -74,11 +96,14 @@ export const recoverFinancialIntent = async ({ intentId, licenseKey, actorHandle
   try {
     intent = await getFinancialIntent(intentId);
     assertFinancialIntentRecoveryAuthority(intent, actorHandle);
+    if (explicitRetry) assertFinancialIntentRetryEquivalence(intent, candidateIntent, actorHandle);
 
     if (intent.status === FINANCIAL_INTENT_STATUS.COMPLETED) {
       return recoverProjectionOnly({ intent, actorHandle, project });
     }
-    if ([FINANCIAL_INTENT_STATUS.CONFLICT, FINANCIAL_INTENT_STATUS.BLOCKED].includes(intent.status)) {
+    if (intent.status === FINANCIAL_INTENT_STATUS.CONFLICT || (
+      intent.status === FINANCIAL_INTENT_STATUS.BLOCKED && !explicitRetry
+    )) {
       return { intentId, outcome: 'terminal_skipped' };
     }
     if (intent.status === FINANCIAL_INTENT_STATUS.PREPARED && Number(intent.dispatchAttemptCount || 0) > 0) {
@@ -119,6 +144,17 @@ export const recoverFinancialIntent = async ({ intentId, licenseKey, actorHandle
           const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project });
           return { ...execution, outcome: 'first_dispatch', projection };
         }
+        if (intent.status === FINANCIAL_INTENT_STATUS.BLOCKED && explicitRetry) {
+          const execution = await executeBlockedFinancialIntentForRecovery({
+            intentId,
+            licenseKey,
+            actorHandle,
+            recoveryLeaseId: claim.recoveryLeaseId
+          });
+          const completed = await getFinancialIntent(intentId);
+          const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project });
+          return { ...execution, outcome: 'blocked_redispatch', projection };
+        }
         // An attempted request can be ambiguous even when a receipt currently
         // says NOT_FOUND.  It remains receipt-required; never resend it.
         await updateFinancialIntentForRecovery(intentId, {
@@ -142,4 +178,61 @@ export const recoverFinancialIntent = async ({ intentId, licenseKey, actorHandle
       }
     }
   }
+};
+
+const explicitRetryFailure = ({ intent, result }) => {
+  if (result?.outcome === 'lease_held') return 'FINANCIAL_RECOVERY_LEASE_HELD';
+  if (intent?.status === FINANCIAL_INTENT_STATUS.CONFLICT || result?.outcome === 'receipt_conflict') {
+    return 'IDEMPOTENCY_CONFLICT';
+  }
+  if (
+    intent?.status === FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
+    || ['receipt_processing', 'receipt_not_found_no_resend', 'inconsistent_prepared_receipt_required'].includes(result?.outcome)
+  ) {
+    return 'FINANCIAL_RECOVERY_RECEIPT_PENDING';
+  }
+  if (result?.outcome === 'receipt_unavailable' || result?.outcome === 'receipt_unrecognized') {
+    return 'FINANCIAL_RECOVERY_RECEIPT_UNAVAILABLE';
+  }
+  return 'FINANCIAL_RECOVERY_RETRY_NOT_COMPLETED';
+};
+
+/**
+ * Entry point used only by an explicit high-level sale retry after the strict
+ * allocator reports that the stable K already has a durable owner.
+ */
+export const retryExistingFinancialIntentExplicitly = async ({
+  intentId,
+  candidateIntent,
+  licenseKey,
+  actorHandle,
+  project = applyFinancialProjection,
+  leaseMs
+} = {}) => {
+  const initial = await getFinancialIntent(intentId);
+  if (!initial) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  if (!['sale.cashier', 'sale.cashier_inventory', 'sale.credit'].includes(initial.operationType)) {
+    throw new Error('FINANCIAL_RECOVERY_EXPLICIT_RETRY_UNSUPPORTED');
+  }
+  assertFinancialIntentRetryEquivalence(initial, candidateIntent, actorHandle);
+
+  const result = await recoverFinancialIntent({
+    intentId,
+    licenseKey,
+    actorHandle,
+    project,
+    leaseMs,
+    explicitRetry: true,
+    candidateIntent
+  });
+  const intent = await getFinancialIntent(intentId);
+  if (intent?.status === FINANCIAL_INTENT_STATUS.COMPLETED && intent.responsePayload) {
+    return { ...result, intentId, intent, response: intent.responsePayload };
+  }
+
+  const code = explicitRetryFailure({ intent, result });
+  const error = new Error(code);
+  error.code = code;
+  error.recovery = result;
+  throw error;
 };

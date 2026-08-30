@@ -62,4 +62,37 @@ describe('financial V1 canonical request and hash compatibility', () => {
     });
     expect(canonical.items[0]).toMatchObject({ batch_allocations: [], selected_modifiers: [] });
   });
+
+  it('keeps the PR257 old-null and current-omitted empty batch requests equivalent', async () => {
+    const shared = {
+      sale: { id: 'sale-batch-retry', total: '10', sold_at: '2026-08-30T00:00:00.000Z' },
+      items: [{ product_id: 'product-a', quantity: '1', unit_price: '10' }],
+      payments: [{ method: 'cash', amount: '10' }],
+      cash_session_id: 'session-a',
+      customer_id: null
+    };
+    const oldRequest = {
+      ...shared,
+      items: [{ ...shared.items[0], metadata: { batchesUsed: null } }]
+    };
+    const currentRequest = structuredClone(shared);
+
+    const old = await financialRequestHashV1({
+      operationType: 'sale.cashier_inventory',
+      request: oldRequest,
+      actorKey: 'admin:a',
+      cashSessionId: 'session-a',
+      cashStationId: 'station-a'
+    });
+    const current = await financialRequestHashV1({
+      operationType: 'sale.cashier_inventory',
+      request: currentRequest,
+      actorKey: 'admin:a',
+      cashSessionId: 'session-a',
+      cashStationId: 'station-a'
+    });
+
+    expect(old.canonicalRequest).toEqual(current.canonicalRequest);
+    expect(old.requestHash).toBe(current.requestHash);
+  });
 });

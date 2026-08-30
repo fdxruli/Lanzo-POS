@@ -2,7 +2,12 @@ import { db, STORES } from '../db/dexie';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
-import { canonicalFinancialRequestV1, financialRequestHashV1 } from './financialCanonicalV1';
+import {
+  canonicalFinancialRequestV1,
+  canonicalJsonV1,
+  financialRequestHashV1
+} from './financialCanonicalV1';
+import { retryExistingFinancialIntentExplicitly } from './financialIntentRecovery';
 
 export const FINANCIAL_INTENT_STATUS = Object.freeze({
   PREPARED: 'PREPARED',
@@ -82,6 +87,7 @@ const TRANSPORT_ERROR_CODES = new Set([
 ]);
 const AMBIGUOUS_HTTP_STATUSES = new Set([502, 503, 504]);
 const CASH_ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
+const EXPLICIT_SALE_RETRY_OPERATION_TYPES = new Set(['sale.cashier', 'sale.cashier_inventory', 'sale.credit']);
 const PROTOCOL_CODE_PATTERN = /(?:IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
 const TRANSPORT_MESSAGE_PATTERN = /(?:\bfailed to fetch\b|\bfetch failed\b|^load failed$|\bnetworkerror\b|\bnetwork (?:request )?(?:failed|failure|error|unavailable|offline|interrupted)\b|\b(?:network|request|connection|transport|fetch) (?:timed out|timeout|was aborted|aborted|was interrupted|interrupted)\b|\boperation (?:timed out|timeout)\b|\btimeout(?: of \S+)? (?:exceeded|expired)\b|^timeout$|\boffline\b|\bconnection (?:reset|aborted|interrupted|closed unexpectedly)\b|\bsocket hang up\b)/i;
 
@@ -222,6 +228,20 @@ const hasCapturedOrigin = (row, handle) => (
   && row?.originTenantGeneration === handle.tenant.generation
 );
 
+const sameNullableIdentity = (left, right) => (
+  (left === null || left === undefined) && (right === null || right === undefined)
+  || (left !== null && left !== undefined && right !== null && right !== undefined && left === right)
+);
+
+const sameCanonicalValue = (left, right) => canonicalJsonV1(left) === canonicalJsonV1(right);
+
+const financialIntentOwnershipError = () => {
+  const error = new Error('FINANCIAL_IDEMPOTENCY_KEY_ALREADY_OWNED');
+  error.code = 'FINANCIAL_IDEMPOTENCY_KEY_ALREADY_OWNED';
+  error.isFinancialIntentOwnershipError = true;
+  return error;
+};
+
 // Recovery deliberately has a narrower authority rule than normal execution.
 // A new login for the *same* actor has a new session/generation, but must never
 // be allowed to adopt another actor's durable financial evidence.
@@ -238,6 +258,67 @@ export const assertFinancialIntentRecoveryAuthority = (row, handle) => {
   if (row.originDeviceRef && handle?.deviceRef && row.originDeviceRef !== handle.deviceRef) {
     throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
   }
+  return true;
+};
+
+/**
+ * Validate that a newly calculated checkout is allowed to adopt an existing
+ * durable owner. Session/generation fields are deliberately excluded here:
+ * the recovery authority permits a later session of the same actor to recover
+ * the original evidence. The request, tenant, device and cash identity are
+ * still exact gates.
+ */
+export const assertFinancialIntentRetryEquivalence = (existingIntent, retryIntent, handle) => {
+  assertFinancialIntentRecoveryAuthority(existingIntent, handle);
+
+  if (!retryIntent || existingIntent?.idempotencyKey !== retryIntent.idempotencyKey) {
+    throw new Error('FINANCIAL_REQUEST_HASH_INVALID');
+  }
+
+  if (
+    existingIntent.operationType !== retryIntent.operationType
+    || existingIntent.requestContractVersion !== retryIntent.requestContractVersion
+    || existingIntent.requestHash !== retryIntent.requestHash
+    || !sameCanonicalValue(existingIntent.canonicalRequest, retryIntent.canonicalRequest)
+  ) {
+    throw new Error('FINANCIAL_REQUEST_HASH_INVALID');
+  }
+
+  let durableCanonicalRequest;
+  let retryCanonicalRequest;
+  try {
+    durableCanonicalRequest = canonicalFinancialRequestV1(existingIntent.operationType, existingIntent.requestPayload);
+    retryCanonicalRequest = canonicalFinancialRequestV1(retryIntent.operationType, retryIntent.requestPayload);
+  } catch {
+    throw new Error('FINANCIAL_REQUEST_HASH_INVALID');
+  }
+  if (
+    !sameCanonicalValue(existingIntent.canonicalRequest, durableCanonicalRequest)
+    || !sameCanonicalValue(retryIntent.canonicalRequest, retryCanonicalRequest)
+  ) {
+    throw new Error('FINANCIAL_REQUEST_HASH_INVALID');
+  }
+
+  const exactOriginFields = [
+    'originActorKey',
+    'originActorType',
+    'originActorId',
+    'originTenantOpaqueId',
+    'originTenantDatabaseName',
+    'cashSessionId',
+    'cashStationId'
+  ];
+  if (exactOriginFields.some((field) => !sameNullableIdentity(existingIntent?.[field], retryIntent?.[field]))) {
+    throw new Error('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
+  }
+
+  if (existingIntent.originDeviceRef && !sameNullableIdentity(existingIntent.originDeviceRef, retryIntent.originDeviceRef)) {
+    throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
+  }
+  if (existingIntent.originDeviceRef && !sameNullableIdentity(existingIntent.originDeviceRef, handle?.deviceRef)) {
+    throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
+  }
+
   return true;
 };
 
@@ -259,7 +340,7 @@ const updateMutable = async (intentId, changes, handle) => {
  * execution: normal execution intentionally keeps its exact captured-origin
  * session/generation checks above.
  */
-export const updateFinancialIntentForRecovery = async (intentId, changes, handle) => {
+export const updateFinancialIntentForRecovery = async (intentId, changes, handle, { recoveryLeaseId = null } = {}) => {
   const keys = Object.keys(changes || {});
   if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
   handle?.assertCurrent?.();
@@ -267,6 +348,9 @@ export const updateFinancialIntentForRecovery = async (intentId, changes, handle
   const row = await table.get(intentId);
   if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   assertFinancialIntentRecoveryAuthority(row, handle);
+  if (recoveryLeaseId && row.recoveryLeaseId !== recoveryLeaseId) {
+    throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
+  }
   // Recheck immediately before the write: an async receipt must never land
   // under a later actor/tenant runtime.
   handle?.assertCurrent?.();
@@ -381,7 +465,7 @@ const initialIntent = ({ operationType, request, idempotencyKey, requestHash, ca
   projectionStatus, projectionErrorCode: null, createdAt: now(), updatedAt: now(), completedAt: null
 });
 
-export const createFinancialIntent = async ({ operationType, request, licenseKey, idempotencyKey = null, cashSessionId = null, actorHandle = null, projectionRequired = true }) => {
+const prepareFinancialIntent = async ({ operationType, request, licenseKey, idempotencyKey = null, cashSessionId = null, actorHandle = null, projectionRequired = true }) => {
   assertSupabase();
   const immutableRequest = JSON.parse(JSON.stringify(request));
   assertNoSecretPayload(immutableRequest);
@@ -394,13 +478,74 @@ export const createFinancialIntent = async ({ operationType, request, licenseKey
   const { canonicalRequest, requestHash } = await financialRequestHashV1({ operationType, request: immutableRequest, actorKey: handle.actorKey, cashSessionId, cashStationId: stationId });
   const intent = initialIntent({ operationType, request: immutableRequest, idempotencyKey: idempotencyKey || secureKey(), requestHash, canonicalRequest, handle, cashSessionId, cashStationId: stationId, projectionStatus: projectionRequired ? FINANCIAL_PROJECTION_STATUS.PENDING : FINANCIAL_PROJECTION_STATUS.NOT_REQUIRED });
   handle.assertCurrent();
+  return { intent, handle };
+};
+
+const persistPreparedFinancialIntent = async (intent) => {
   try {
     await db.table(STORES.FINANCIAL_INTENTS).add(intent);
   } catch (error) {
-    if (error?.name === 'ConstraintError') throw new Error('FINANCIAL_IDEMPOTENCY_KEY_ALREADY_OWNED');
+    if (error?.name === 'ConstraintError') throw financialIntentOwnershipError();
     throw error;
   }
+};
+
+export const createFinancialIntent = async (options) => {
+  const { intent } = await prepareFinancialIntent(options);
+  await persistPreparedFinancialIntent(intent);
   return Object.freeze(intent);
+};
+
+export const getFinancialIntentByIdempotencyKey = async ({ idempotencyKey, actorHandle = null } = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  handle.assertCurrent();
+  if (!idempotencyKey) return null;
+  const intent = await db.table(STORES.FINANCIAL_INTENTS)
+    .where('idempotencyKey')
+    .equals(idempotencyKey)
+    .first();
+  handle.assertCurrent();
+  return intent || null;
+};
+
+export const isExplicitSaleFinancialRetry = (operationType) => EXPLICIT_SALE_RETRY_OPERATION_TYPES.has(operationType);
+
+/*
+ * The low-level allocator remains strict. Only the higher-level explicit sale
+ * retry path below is allowed to look up an existing owner after this write.
+ */
+export const executeNewFinancialIntent = async (options) => {
+  const prepared = await prepareFinancialIntent(options);
+
+  try {
+    await persistPreparedFinancialIntent(prepared.intent);
+  } catch (error) {
+    if (
+      !error?.isFinancialIntentOwnershipError
+      || !options?.idempotencyKey
+      || !isExplicitSaleFinancialRetry(prepared.intent.operationType)
+    ) throw error;
+
+    const existingIntent = await getFinancialIntentByIdempotencyKey({
+      idempotencyKey: prepared.intent.idempotencyKey,
+      actorHandle: prepared.handle
+    });
+    if (!existingIntent) throw error;
+
+    const retry = await retryExistingFinancialIntentExplicitly({
+      intentId: existingIntent.id,
+      candidateIntent: prepared.intent,
+      licenseKey: options.licenseKey,
+      actorHandle: prepared.handle
+    });
+    return {
+      intent: retry.intent,
+      intentId: retry.intentId,
+      response: retry.response
+    };
+  }
+
+  return { intent: prepared.intent, ...(await executeFinancialIntent({ intent: prepared.intent, licenseKey: options.licenseKey, actorHandle: prepared.handle })) };
 };
 
 export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle = null }) => {
@@ -458,27 +603,51 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
   }
 };
 
-/**
- * The only recovery execution path.  It is intentionally restricted to an
- * immutable PREPARED row that has never crossed the durable dispatch boundary.
- */
-export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null } = {}) => {
+const executeDurableFinancialIntentForRecovery = async ({
+  intentId,
+  licenseKey,
+  actorHandle,
+  expectedStatus,
+  recoveryLeaseId = null,
+  lastRecoveryCode
+}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
   const table = db.table(STORES.FINANCIAL_INTENTS);
   const durableIntent = await table.get(intentId);
   if (!durableIntent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   assertFinancialIntentRecoveryAuthority(durableIntent, handle);
-  if (durableIntent.status !== FINANCIAL_INTENT_STATUS.PREPARED || Number(durableIntent.dispatchAttemptCount || 0) !== 0) {
+  if (expectedStatus && durableIntent.status !== expectedStatus) {
+    throw new Error(
+      expectedStatus === FINANCIAL_INTENT_STATUS.PREPARED
+        ? 'FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE'
+        : 'FINANCIAL_RECOVERY_BLOCKED_STATE_INVALID'
+    );
+  }
+  if (
+    expectedStatus === FINANCIAL_INTENT_STATUS.PREPARED
+    && Number(durableIntent.dispatchAttemptCount || 0) !== 0
+  ) {
     throw new Error('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
   }
+  if (
+    expectedStatus === FINANCIAL_INTENT_STATUS.BLOCKED
+    && Number(durableIntent.dispatchAttemptCount || 0) < 1
+  ) {
+    throw new Error('FINANCIAL_RECOVERY_BLOCKED_STATE_INVALID');
+  }
+  if (recoveryLeaseId && durableIntent.recoveryLeaseId !== recoveryLeaseId) {
+    throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
+  }
+
+  const dispatchAttemptCount = Number(durableIntent.dispatchAttemptCount || 0) + 1;
   await updateFinancialIntentForRecovery(intentId, {
     status: FINANCIAL_INTENT_STATUS.DISPATCHING,
-    dispatchAttemptCount: 1,
+    dispatchAttemptCount,
     firstDispatchAt: durableIntent.firstDispatchAt || now(),
     lastDispatchAt: now(),
-    lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH'
-  }, handle);
+    lastRecoveryCode
+  }, handle, { recoveryLeaseId });
   try {
     const auth = await buildAuth(licenseKey);
     handle.assertCurrent();
@@ -500,18 +669,65 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
       lastProtocolCode: null,
       responsePayload: result,
       completedAt: now()
-    }, handle);
+    }, handle, { recoveryLeaseId });
     return { intentId, response: result };
   } catch (error) {
     const { code, status } = classifyDispatchFailure(error);
-    await updateFinancialIntentForRecovery(intentId, { status, lastProtocolCode: code }, handle);
+    await updateFinancialIntentForRecovery(intentId, {
+      status,
+      lastReceiptStatus: status,
+      lastProtocolCode: code
+    }, handle, { recoveryLeaseId });
     throw error;
   }
 };
 
-export const executeNewFinancialIntent = async (options) => {
-  const intent = await createFinancialIntent(options);
-  return { intent, ...(await executeFinancialIntent({ intent, licenseKey: options.licenseKey, actorHandle: options.actorHandle })) };
+/**
+ * The first-dispatch recovery path is intentionally restricted to an
+ * immutable PREPARED row that has never crossed the durable dispatch boundary.
+ */
+export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null } = {}) => {
+  const handle = actorHandle || actorRuntimeController.capture();
+  handle.assertCurrent();
+  const durableIntent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+  if (!durableIntent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(durableIntent, handle);
+  if (durableIntent.status !== FINANCIAL_INTENT_STATUS.PREPARED || Number(durableIntent.dispatchAttemptCount || 0) !== 0) {
+    throw new Error('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
+  }
+  return executeDurableFinancialIntentForRecovery({
+    intentId,
+    licenseKey,
+    actorHandle: handle,
+    expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
+    lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH'
+  });
+};
+
+/**
+ * Controlled redispatch for an explicitly retried sale. The caller must have
+ * already validated the immutable retry evidence, acquired the recovery lease
+ * and obtained an authoritative NOT_FOUND receipt.
+ */
+export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null } = {}) => {
+  if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
+  const handle = actorHandle || actorRuntimeController.capture();
+  handle.assertCurrent();
+  const durableIntent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
+  if (!durableIntent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  assertFinancialIntentRecoveryAuthority(durableIntent, handle);
+  if (durableIntent.status !== FINANCIAL_INTENT_STATUS.BLOCKED || Number(durableIntent.dispatchAttemptCount || 0) < 1) {
+    throw new Error('FINANCIAL_RECOVERY_BLOCKED_STATE_INVALID');
+  }
+  if (durableIntent.recoveryLeaseId !== recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
+  return executeDurableFinancialIntentForRecovery({
+    intentId,
+    licenseKey,
+    actorHandle: handle,
+    expectedStatus: FINANCIAL_INTENT_STATUS.BLOCKED,
+    recoveryLeaseId,
+    lastRecoveryCode: 'FINANCIAL_RECOVERY_BLOCKED_REDISPATCH'
+  });
 };
 
 export const markFinancialIntentProjectionApplied = async ({ intentId, actorHandle = null }) => updateMutable(intentId, { projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED, projectionErrorCode: null }, actorHandle || actorRuntimeController.capture());
