@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   return {
     get,
     tenantRuntimeDb,
+    getStableDeviceId: vi.fn(async () => 'device-a'),
     readiness: vi.fn(),
     hydrateTenantStorageConsumers: vi.fn(async () => []),
     resumeTenantStorageWrites: vi.fn(),
@@ -29,6 +30,10 @@ const mocks = vi.hoisted(() => {
 vi.mock('../../db/tenantRuntimeRouter', () => ({
   db: mocks.tenantRuntimeDb,
   getTenantRuntimeReadiness: vi.fn(() => mocks.readiness())
+}));
+
+vi.mock('../../supabase', () => ({
+  getStableDeviceId: mocks.getStableDeviceId
 }));
 
 vi.mock('../../tenant/tenantScopedStorage', () => ({
@@ -143,7 +148,8 @@ describe('actor session runtime bridge', () => {
     expect(restored).toMatchObject({
       status: ACTOR_RUNTIME_STATUS.GRANTED,
       actorKey: 'admin:admin-1',
-      sessionId: 'admin-session'
+      sessionId: 'admin-session',
+      deviceRef: 'device-a'
     });
     expect(mocks.configureActorOperationalPersistence).toHaveBeenCalledWith({
       db: mocks.tenantRuntimeDb,
@@ -180,6 +186,7 @@ describe('actor session runtime bridge', () => {
       status: ACTOR_RUNTIME_STATUS.GRANTED,
       actorKey: 'staff:staff-2',
       sessionId: 'staff-session',
+      deviceRef: 'device-a',
       permissions: ['sales.create', 'cash.read']
     });
     expect(restored.permissions).not.toContain('*');

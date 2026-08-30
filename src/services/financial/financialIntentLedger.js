@@ -51,6 +51,20 @@ const secureKey = () => {
   return `financial:v1:${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 };
 
+const DEFAULT_RECOVERY_LEASE_MS = 30_000;
+const boundedLeaseMs = (leaseMs = DEFAULT_RECOVERY_LEASE_MS) => (
+  Math.min(Math.max(Number(leaseMs) || DEFAULT_RECOVERY_LEASE_MS, 1_000), 120_000)
+);
+
+const createRecoveryLease = ({ leaseMs = DEFAULT_RECOVERY_LEASE_MS, currentTime = Date.now() } = {}) => {
+  const leaseUntil = new Date(currentTime + boundedLeaseMs(leaseMs)).toISOString();
+  return Object.freeze({
+    leaseId: secureKey(),
+    leaseUntil,
+    currentTime
+  });
+};
+
 const TRANSPORT_ERROR_CODES = new Set([
   'ABORT_ERR',
   'EAI_AGAIN',
@@ -219,6 +233,12 @@ const buildAuth = async (licenseKey) => {
   };
 };
 
+const normalizeDeviceRef = (value) => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized || null;
+};
+
 const hasCapturedOrigin = (row, handle) => (
   row?.originActorKey === handle.actorKey
   && row?.originActorSessionId === handle.sessionId
@@ -226,6 +246,8 @@ const hasCapturedOrigin = (row, handle) => (
   && row?.originTenantOpaqueId === handle.tenant.opaqueId
   && row?.originTenantDatabaseName === handle.tenant.databaseName
   && row?.originTenantGeneration === handle.tenant.generation
+  && normalizeDeviceRef(row?.originDeviceRef) !== null
+  && normalizeDeviceRef(row?.originDeviceRef) === normalizeDeviceRef(handle.deviceRef)
 );
 
 const sameNullableIdentity = (left, right) => (
@@ -242,10 +264,51 @@ const financialIntentOwnershipError = () => {
   return error;
 };
 
+const isProjectionOnlyIntent = (row) => (
+  row?.status === FINANCIAL_INTENT_STATUS.COMPLETED
+  && [FINANCIAL_PROJECTION_STATUS.PENDING, FINANCIAL_PROJECTION_STATUS.FAILED].includes(row.projectionStatus)
+);
+
+const isProjectionOnlyMutation = (row, changes = {}) => (
+  isProjectionOnlyIntent(row)
+  && Object.keys(changes || {}).every((key) => ['projectionStatus', 'projectionErrorCode', 'lastRecoveryCode'].includes(key))
+);
+
+const leaseExpired = (row, currentTime = Date.now()) => {
+  const leaseUntil = Date.parse(row?.recoveryLeaseUntil || '');
+  const nowTime = Number(currentTime);
+  return !Number.isFinite(leaseUntil) || !Number.isFinite(nowTime) || leaseUntil <= nowTime;
+};
+
+const effectiveCurrentTime = (currentTime) => {
+  if (currentTime === null || currentTime === undefined) return Date.now();
+  const numericTime = Number(currentTime);
+  return Number.isFinite(numericTime) ? numericTime : Date.now();
+};
+
+const assertFinancialIntentDeviceAuthority = (row, handle, { allowLegacyNullDevice = false } = {}) => {
+  const durableDeviceRef = normalizeDeviceRef(row?.originDeviceRef);
+  const currentDeviceRef = normalizeDeviceRef(handle?.deviceRef);
+
+  if (!durableDeviceRef) {
+    if (allowLegacyNullDevice) return true;
+    throw new Error('FINANCIAL_RECOVERY_DEVICE_UNRESOLVED');
+  }
+  if (!currentDeviceRef) throw new Error('FINANCIAL_RECOVERY_DEVICE_UNRESOLVED');
+  if (durableDeviceRef !== currentDeviceRef) throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
+  return true;
+};
+
+const assertFinancialIntentExecutionAuthority = (row, handle) => {
+  assertFinancialIntentDeviceAuthority(row, handle);
+  if (!hasCapturedOrigin(row, handle)) throw new Error('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
+  return true;
+};
+
 // Recovery deliberately has a narrower authority rule than normal execution.
 // A new login for the *same* actor has a new session/generation, but must never
 // be allowed to adopt another actor's durable financial evidence.
-export const assertFinancialIntentRecoveryAuthority = (row, handle) => {
+export const assertFinancialIntentRecoveryAuthority = (row, handle, { allowLegacyNullDevice = false } = {}) => {
   handle?.assertCurrent?.();
   if (
     !row
@@ -255,9 +318,7 @@ export const assertFinancialIntentRecoveryAuthority = (row, handle) => {
     || row.originTenantOpaqueId !== handle?.tenant?.opaqueId
     || row.originTenantDatabaseName !== handle?.tenant?.databaseName
   ) throw new Error('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
-  if (row.originDeviceRef && handle?.deviceRef && row.originDeviceRef !== handle.deviceRef) {
-    throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
-  }
+  assertFinancialIntentDeviceAuthority(row, handle, { allowLegacyNullDevice });
   return true;
 };
 
@@ -312,10 +373,13 @@ export const assertFinancialIntentRetryEquivalence = (existingIntent, retryInten
     throw new Error('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
   }
 
-  if (existingIntent.originDeviceRef && !sameNullableIdentity(existingIntent.originDeviceRef, retryIntent.originDeviceRef)) {
+  if (!normalizeDeviceRef(existingIntent.originDeviceRef) || !normalizeDeviceRef(retryIntent.originDeviceRef)) {
+    throw new Error('FINANCIAL_RECOVERY_DEVICE_UNRESOLVED');
+  }
+  if (!sameNullableIdentity(existingIntent.originDeviceRef, retryIntent.originDeviceRef)) {
     throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
   }
-  if (existingIntent.originDeviceRef && !sameNullableIdentity(existingIntent.originDeviceRef, handle?.deviceRef)) {
+  if (!sameNullableIdentity(existingIntent.originDeviceRef, handle?.deviceRef)) {
     throw new Error('FINANCIAL_RECOVERY_DEVICE_MISMATCH');
   }
 
@@ -326,40 +390,56 @@ const updateMutable = async (intentId, changes, handle) => {
   const keys = Object.keys(changes || {});
   if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
   handle.assertCurrent();
-  const row = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
-  if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-  if (!hasCapturedOrigin(row, handle)) {
-    throw new Error('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
-  }
-  handle.assertCurrent();
-  await db.table(STORES.FINANCIAL_INTENTS).update(intentId, { ...changes, updatedAt: now() });
-};
-
-/**
- * Cross-boot recovery mutation boundary.  Do not use this for ordinary 5B
- * execution: normal execution intentionally keeps its exact captured-origin
- * session/generation checks above.
- */
-export const updateFinancialIntentForRecovery = async (intentId, changes, handle, { recoveryLeaseId = null } = {}) => {
-  const keys = Object.keys(changes || {});
-  if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
-  handle?.assertCurrent?.();
   const table = db.table(STORES.FINANCIAL_INTENTS);
   const row = await table.get(intentId);
   if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-  assertFinancialIntentRecoveryAuthority(row, handle);
-  if (recoveryLeaseId && row.recoveryLeaseId !== recoveryLeaseId) {
-    throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
-  }
-  // Recheck immediately before the write: an async receipt must never land
-  // under a later actor/tenant runtime.
-  handle?.assertCurrent?.();
-  await table.update(intentId, { ...changes, updatedAt: now() });
+  assertFinancialIntentExecutionAuthority(row, handle);
+  handle.assertCurrent();
+  const updated = await table.update(intentId, { ...changes, updatedAt: now() });
+  if (updated === 0) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
 };
 
-const leaseExpired = (row, currentTime) => !row?.recoveryLeaseUntil || Date.parse(row.recoveryLeaseUntil) <= currentTime;
+/**
+ * Cross-boot recovery mutation boundary. Every recovery write is a fenced
+ * compare-and-swap inside one Dexie transaction. A lease id is mandatory:
+ * neither an expired owner nor a stale owner can overwrite a newer owner.
+ */
+export const updateFinancialIntentForRecovery = async (
+  intentId,
+  changes,
+  handle,
+  { recoveryLeaseId = null, currentTime = null, expectedStatus = null } = {}
+) => {
+  const keys = Object.keys(changes || {});
+  if (keys.some((key) => IMMUTABLE_FIELDS.has(key))) throw new Error('FINANCIAL_INTENT_IMMUTABILITY_VIOLATION');
+  if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
+  handle?.assertCurrent?.();
+  const table = db.table(STORES.FINANCIAL_INTENTS);
+  await db.transaction('rw', table, async () => {
+    handle?.assertCurrent?.();
+    const row = await table.get(intentId);
+    if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+    assertFinancialIntentRecoveryAuthority(row, handle, {
+      allowLegacyNullDevice: isProjectionOnlyMutation(row, changes)
+    });
+    if (expectedStatus && row.status !== expectedStatus) {
+      throw new Error('FINANCIAL_RECOVERY_STATE_CHANGED');
+    }
+    if (row.recoveryLeaseId !== recoveryLeaseId) {
+      throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
+    }
+    if (leaseExpired(row, effectiveCurrentTime(currentTime))) {
+      throw new Error('FINANCIAL_RECOVERY_LEASE_EXPIRED');
+    }
+    // Recheck immediately before the write: an async receipt must never land
+    // under a later actor/tenant runtime.
+    handle?.assertCurrent?.();
+    const updated = await table.update(intentId, { ...changes, updatedAt: now() });
+    if (updated === 0) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
+  });
+};
 
-export const claimFinancialIntentRecovery = async ({ intentId, actorHandle, leaseMs = 30_000, currentTime = Date.now() } = {}) => {
+export const claimFinancialIntentRecovery = async ({ intentId, actorHandle, leaseMs = 30_000, currentTime = null } = {}) => {
   const table = db.table(STORES.FINANCIAL_INTENTS);
   const safeLeaseMs = Math.min(Math.max(Number(leaseMs) || 30_000, 1_000), 120_000);
   const leaseId = secureKey();
@@ -368,22 +448,26 @@ export const claimFinancialIntentRecovery = async ({ intentId, actorHandle, leas
     actorHandle?.assertCurrent?.();
     const row = await table.get(intentId);
     if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-    assertFinancialIntentRecoveryAuthority(row, actorHandle);
-    if (row.recoveryLeaseId && !leaseExpired(row, currentTime)) {
+    assertFinancialIntentRecoveryAuthority(row, actorHandle, {
+      allowLegacyNullDevice: isProjectionOnlyIntent(row)
+    });
+    const claimTime = effectiveCurrentTime(currentTime);
+    if (row.recoveryLeaseId && !leaseExpired(row, claimTime)) {
       const error = new Error('FINANCIAL_RECOVERY_LEASE_HELD');
       error.code = 'FINANCIAL_RECOVERY_LEASE_HELD';
       throw error;
     }
     actorHandle?.assertCurrent?.();
-    const leaseUntil = new Date(currentTime + safeLeaseMs).toISOString();
-    await table.update(intentId, {
+    const leaseUntil = new Date(claimTime + safeLeaseMs).toISOString();
+    const claimedRows = await table.update(intentId, {
       recoveryLeaseId: leaseId,
       recoveryLeaseUntil: leaseUntil,
       recoveryAttemptCount: Number(row.recoveryAttemptCount || 0) + 1,
-      lastRecoveryAt: new Date(currentTime).toISOString(),
+      lastRecoveryAt: new Date(claimTime).toISOString(),
       lastRecoveryCode: null,
       updatedAt: now()
     });
+    if (claimedRows === 0) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
     claimed = { ...row, recoveryLeaseId: leaseId, recoveryLeaseUntil: leaseUntil };
   });
   return Object.freeze(claimed);
@@ -395,15 +479,25 @@ export const releaseFinancialIntentRecoveryClaim = async ({ intentId, leaseId, a
     actorHandle?.assertCurrent?.();
     const row = await table.get(intentId);
     if (!row) return;
-    assertFinancialIntentRecoveryAuthority(row, actorHandle);
-    if (row.recoveryLeaseId !== leaseId) return;
+    assertFinancialIntentRecoveryAuthority(row, actorHandle, {
+      // Clearing a lease is safe for a legacy completed projection even after
+      // the projection status has been marked APPLIED. Financial redispatch
+      // still requires a durable device below every other mutation boundary.
+      allowLegacyNullDevice: isProjectionOnlyIntent(row)
+        || (row.status === FINANCIAL_INTENT_STATUS.COMPLETED && !normalizeDeviceRef(row.originDeviceRef))
+    });
+    if (row.recoveryLeaseId !== leaseId) {
+      throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
+    }
+    if (leaseExpired(row, Date.now())) throw new Error('FINANCIAL_RECOVERY_LEASE_EXPIRED');
     actorHandle?.assertCurrent?.();
-    await table.update(intentId, {
+    const released = await table.update(intentId, {
       recoveryLeaseId: null,
       recoveryLeaseUntil: null,
       lastRecoveryCode: code || row.lastRecoveryCode || null,
       updatedAt: now()
     });
+    if (released === 0) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   });
 };
 
@@ -419,17 +513,6 @@ const resolveStation = async ({ auth, cashSessionId, operationType }) => {
     if (!open?.id || String(open.id) !== String(cashSessionId)) throw new Error('CASH_SESSION_STATION_MISMATCH');
   }
   return stationId;
-};
-
-const recordReceipt = async ({ intentId, handle, receipt, status, code = null, preserveFullResponse = false }) => {
-  await updateMutable(intentId, {
-    status,
-    lastReceiptStatus: receipt?.status || status,
-    lastProtocolCode: code || receipt?.code || null,
-    ...(status === FINANCIAL_INTENT_STATUS.COMPLETED
-      ? { responsePayload: preserveFullResponse ? receipt : (receipt?.result || receipt), completedAt: now() }
-      : {})
-  }, handle);
 };
 
 const receiptForCurrentOrigin = async ({ intent, licenseKey, handle }) => {
@@ -458,7 +541,7 @@ const initialIntent = ({ operationType, request, idempotencyKey, requestHash, ca
   originActorKey: handle.actorKey, originActorType: handle.actorType, originActorId: handle.actorId,
   originActorSessionId: handle.sessionId, originActorGeneration: handle.generation,
   originTenantOpaqueId: handle.tenant.opaqueId, originTenantDatabaseName: handle.tenant.databaseName,
-  originTenantGeneration: handle.tenant.generation, originDeviceRef: handle.deviceRef || null,
+  originTenantGeneration: handle.tenant.generation, originDeviceRef: normalizeDeviceRef(handle.deviceRef),
   cashSessionId: cashSessionId || null, cashStationId: cashStationId || null,
   status: FINANCIAL_INTENT_STATUS.PREPARED, dispatchAttemptCount: 0, firstDispatchAt: null, lastDispatchAt: null,
   lastReceiptStatus: null, lastProtocolCode: null, responsePayload: null,
@@ -471,6 +554,7 @@ const prepareFinancialIntent = async ({ operationType, request, licenseKey, idem
   assertNoSecretPayload(immutableRequest);
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
+  if (!normalizeDeviceRef(handle.deviceRef)) throw new Error('FINANCIAL_ORIGIN_DEVICE_REQUIRED');
   const auth = await buildAuth(licenseKey);
   handle.assertCurrent();
   const stationId = await resolveStation({ auth, cashSessionId, operationType });
@@ -482,8 +566,11 @@ const prepareFinancialIntent = async ({ operationType, request, licenseKey, idem
 };
 
 const persistPreparedFinancialIntent = async (intent) => {
+  const table = db.table(STORES.FINANCIAL_INTENTS);
   try {
-    await db.table(STORES.FINANCIAL_INTENTS).add(intent);
+    await db.transaction('rw', table, async () => {
+      await table.add(intent);
+    });
   } catch (error) {
     if (error?.name === 'ConstraintError') throw financialIntentOwnershipError();
     throw error;
@@ -516,9 +603,21 @@ export const isExplicitSaleFinancialRetry = (operationType) => EXPLICIT_SALE_RET
  */
 export const executeNewFinancialIntent = async (options) => {
   const prepared = await prepareFinancialIntent(options);
+  const initialLease = createRecoveryLease({ leaseMs: options?.leaseMs });
+  const leasedIntent = {
+    ...prepared.intent,
+    recoveryLeaseId: initialLease.leaseId,
+    recoveryLeaseUntil: initialLease.leaseUntil,
+    recoveryAttemptCount: 1,
+    lastRecoveryAt: new Date(initialLease.currentTime).toISOString(),
+    lastRecoveryCode: 'FINANCIAL_RECOVERY_INITIAL_CLAIM'
+  };
 
   try {
-    await persistPreparedFinancialIntent(prepared.intent);
+    // The initial owner is written together with the intent. A duplicate
+    // allocator can therefore observe an active lease immediately after the
+    // unique-K winner exists; it cannot race the first dispatch.
+    await persistPreparedFinancialIntent(leasedIntent);
   } catch (error) {
     if (
       !error?.isFinancialIntentOwnershipError
@@ -536,7 +635,9 @@ export const executeNewFinancialIntent = async (options) => {
       intentId: existingIntent.id,
       candidateIntent: prepared.intent,
       licenseKey: options.licenseKey,
-      actorHandle: prepared.handle
+      actorHandle: prepared.handle,
+      project: null,
+      leaseMs: options.leaseMs
     });
     return {
       intent: retry.intent,
@@ -545,7 +646,30 @@ export const executeNewFinancialIntent = async (options) => {
     };
   }
 
-  return { intent: prepared.intent, ...(await executeFinancialIntent({ intent: prepared.intent, licenseKey: options.licenseKey, actorHandle: prepared.handle })) };
+  try {
+    return {
+      intent: prepared.intent,
+      ...(await executeDurableFinancialIntentForRecovery({
+        intentId: prepared.intent.id,
+        licenseKey: options.licenseKey,
+        actorHandle: prepared.handle,
+        expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
+        recoveryLeaseId: initialLease.leaseId,
+        lastRecoveryCode: 'FINANCIAL_RECOVERY_INITIAL_DISPATCH',
+        resolveAmbiguousReceipt: true
+      }))
+    };
+  } finally {
+    try {
+      await releaseFinancialIntentRecoveryClaim({
+        intentId: prepared.intent.id,
+        leaseId: initialLease.leaseId,
+        actorHandle: prepared.handle
+      });
+    } catch {
+      // A stale actor or expired lease cannot clear a newer owner.
+    }
+  }
 };
 
 export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle = null }) => {
@@ -562,44 +686,32 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
   ) {
     throw new Error('FINANCIAL_OPERATION_ORIGIN_MISMATCH');
   }
-  await updateMutable(durableIntent.id, { status: FINANCIAL_INTENT_STATUS.DISPATCHING, dispatchAttemptCount: Number(durableIntent.dispatchAttemptCount || 0) + 1, firstDispatchAt: durableIntent.firstDispatchAt || now(), lastDispatchAt: now() }, handle);
+  assertFinancialIntentExecutionAuthority(durableIntent, handle);
+
+  const claim = await claimFinancialIntentRecovery({
+    intentId: durableIntent.id,
+    actorHandle: handle
+  });
   try {
-    const auth = await buildAuth(licenseKey);
-    handle.assertCurrent();
-    const { data, error } = await supabaseClient.rpc('pos_execute_financial_operation_v1', {
-      ...auth, p_idempotency_key: intent.idempotencyKey, p_request_hash: intent.requestHash,
-      p_operation_type: durableIntent.operationType, p_request: durableIntent.requestPayload
-    });
-    if (error) throw error;
-    const result = parseRpcPayload(data);
-    const isAdminCloseReview = isCashAdminCloseReviewResponse(durableIntent.operationType, result);
-    if (result?.success === false && !isAdminCloseReview) {
-      throw rejectedFinancialResponseError(result);
-    }
-    await recordReceipt({
+    return await executeDurableFinancialIntentForRecovery({
       intentId: durableIntent.id,
-      handle,
-      receipt: result,
-      status: FINANCIAL_INTENT_STATUS.COMPLETED,
-      preserveFullResponse: isAdminCloseReview
+      licenseKey,
+      actorHandle: handle,
+      expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
+      recoveryLeaseId: claim.recoveryLeaseId,
+      lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH',
+      resolveAmbiguousReceipt: true
     });
-    return { intentId: durableIntent.id, response: result };
-  } catch (error) {
-    const { code, status } = classifyDispatchFailure(error);
-    if (status === FINANCIAL_INTENT_STATUS.CONFLICT || status === FINANCIAL_INTENT_STATUS.BLOCKED) {
-      await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status, code });
-    } else {
-      await recordReceipt({ intentId: durableIntent.id, handle, receipt: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, code });
-      try {
-        const receipt = await receiptForCurrentOrigin({ intent: durableIntent, licenseKey, handle });
-        if (receipt?.status === 'COMPLETED') await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.COMPLETED });
-        else if (receipt?.status === 'CONFLICT') await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.CONFLICT, code: 'IDEMPOTENCY_CONFLICT' });
-        else await recordReceipt({ intentId: durableIntent.id, handle, receipt, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
-      } catch {
-        // The original ambiguous intent remains durable; 5B never resends it.
-      }
+  } finally {
+    try {
+      await releaseFinancialIntentRecoveryClaim({
+        intentId: durableIntent.id,
+        leaseId: claim.recoveryLeaseId,
+        actorHandle: handle
+      });
+    } catch {
+      // A stale actor or expired lease cannot clear a newer owner.
     }
-    throw error;
   }
 };
 
@@ -609,14 +721,17 @@ const executeDurableFinancialIntentForRecovery = async ({
   actorHandle,
   expectedStatus,
   recoveryLeaseId = null,
-  lastRecoveryCode
+  lastRecoveryCode,
+  resolveAmbiguousReceipt = false
 }) => {
+  if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
   const table = db.table(STORES.FINANCIAL_INTENTS);
   const durableIntent = await table.get(intentId);
   if (!durableIntent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   assertFinancialIntentRecoveryAuthority(durableIntent, handle);
+  assertFinancialIntentDeviceAuthority(durableIntent, handle);
   if (expectedStatus && durableIntent.status !== expectedStatus) {
     throw new Error(
       expectedStatus === FINANCIAL_INTENT_STATUS.PREPARED
@@ -636,7 +751,7 @@ const executeDurableFinancialIntentForRecovery = async ({
   ) {
     throw new Error('FINANCIAL_RECOVERY_BLOCKED_STATE_INVALID');
   }
-  if (recoveryLeaseId && durableIntent.recoveryLeaseId !== recoveryLeaseId) {
+  if (durableIntent.recoveryLeaseId !== recoveryLeaseId) {
     throw new Error('FINANCIAL_RECOVERY_LEASE_LOST');
   }
 
@@ -647,7 +762,7 @@ const executeDurableFinancialIntentForRecovery = async ({
     firstDispatchAt: durableIntent.firstDispatchAt || now(),
     lastDispatchAt: now(),
     lastRecoveryCode
-  }, handle, { recoveryLeaseId });
+  }, handle, { recoveryLeaseId, expectedStatus });
   try {
     const auth = await buildAuth(licenseKey);
     handle.assertCurrent();
@@ -669,7 +784,7 @@ const executeDurableFinancialIntentForRecovery = async ({
       lastProtocolCode: null,
       responsePayload: result,
       completedAt: now()
-    }, handle, { recoveryLeaseId });
+    }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
     return { intentId, response: result };
   } catch (error) {
     const { code, status } = classifyDispatchFailure(error);
@@ -677,7 +792,34 @@ const executeDurableFinancialIntentForRecovery = async ({
       status,
       lastReceiptStatus: status,
       lastProtocolCode: code
-    }, handle, { recoveryLeaseId });
+    }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
+
+    if (resolveAmbiguousReceipt && status === FINANCIAL_INTENT_STATUS.PENDING_RECEIPT) {
+      try {
+        const receipt = await receiptForCurrentOrigin({ intent: durableIntent, licenseKey, handle });
+        if (receipt?.status === 'COMPLETED') {
+          await updateFinancialIntentForRecovery(intentId, {
+            status: FINANCIAL_INTENT_STATUS.COMPLETED,
+            lastReceiptStatus: 'COMPLETED',
+            lastProtocolCode: null,
+            responsePayload: receipt?.result || receipt,
+            completedAt: now()
+          }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
+        } else if (receipt?.status === 'CONFLICT') {
+          await updateFinancialIntentForRecovery(intentId, {
+            status: FINANCIAL_INTENT_STATUS.CONFLICT,
+            lastReceiptStatus: 'CONFLICT',
+            lastProtocolCode: 'IDEMPOTENCY_CONFLICT'
+          }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
+        } else {
+          await updateFinancialIntentForRecovery(intentId, {
+            lastReceiptStatus: receipt?.status || FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
+          }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
+        }
+      } catch {
+        // The original ambiguous intent remains durable; it is never resent.
+      }
+    }
     throw error;
   }
 };
@@ -686,7 +828,7 @@ const executeDurableFinancialIntentForRecovery = async ({
  * The first-dispatch recovery path is intentionally restricted to an
  * immutable PREPARED row that has never crossed the durable dispatch boundary.
  */
-export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null } = {}) => {
+export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, leaseMs } = {}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
   const durableIntent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
@@ -695,13 +837,30 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
   if (durableIntent.status !== FINANCIAL_INTENT_STATUS.PREPARED || Number(durableIntent.dispatchAttemptCount || 0) !== 0) {
     throw new Error('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
   }
-  return executeDurableFinancialIntentForRecovery({
-    intentId,
-    licenseKey,
-    actorHandle: handle,
-    expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
-    lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH'
-  });
+  let claim = null;
+  if (!recoveryLeaseId) {
+    claim = await claimFinancialIntentRecovery({ intentId, actorHandle: handle, leaseMs });
+    recoveryLeaseId = claim.recoveryLeaseId;
+  }
+
+  try {
+    return await executeDurableFinancialIntentForRecovery({
+      intentId,
+      licenseKey,
+      actorHandle: handle,
+      expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
+      recoveryLeaseId,
+      lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH'
+    });
+  } finally {
+    if (claim) {
+      try {
+        await releaseFinancialIntentRecoveryClaim({ intentId, leaseId: claim.recoveryLeaseId, actorHandle: handle });
+      } catch {
+        // A stale actor or expired lease cannot clear a newer owner.
+      }
+    }
+  }
 };
 
 /**

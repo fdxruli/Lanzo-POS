@@ -15,7 +15,8 @@ export const ACTOR_RUNTIME_ERROR_CODES = Object.freeze({
   TENANT_NOT_READY: 'ACTOR_TENANT_NOT_READY',
   TENANT_MISMATCH: 'ACTOR_TENANT_MISMATCH',
   HANDOFF_REQUIRED: 'ACTOR_HANDOFF_REQUIRED',
-  PERMISSION_DENIED: 'ACTOR_PERMISSION_DENIED'
+  PERMISSION_DENIED: 'ACTOR_PERMISSION_DENIED',
+  DEVICE_REQUIRED: 'ACTOR_DEVICE_REQUIRED'
 });
 
 const ACTOR_TYPES = new Set(['admin', 'staff']);
@@ -269,7 +270,8 @@ export const createActorRuntimeController = ({
             actorKey: captured.actorKey,
             sessionId: captured.sessionId,
             generation: captured.generation,
-            tenant: captured.tenant
+            tenant: captured.tenant,
+            deviceRef: captured.deviceRef
           }, requiredPermission);
         }
       });
@@ -281,6 +283,7 @@ export const createActorRuntimeController = ({
         || captured?.generation !== state.generation
         || captured?.actorKey !== state.actorKey
         || captured?.sessionId !== state.sessionId
+        || captured?.deviceRef !== state.deviceRef
       ) {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
           capturedGeneration: captured?.generation ?? null,

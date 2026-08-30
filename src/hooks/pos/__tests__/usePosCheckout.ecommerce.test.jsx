@@ -115,12 +115,14 @@ const makeOrder = ({
   ecommerceDraftStatus,
   isSaved = true,
   isLockedForCheckout = false,
+  createdAt = '2026-08-30T00:00:00.000Z',
   ...overrides
 } = {}) => ({
   id,
   origin,
   ...(ecommerceDraftStatus === undefined ? {} : { ecommerceDraftStatus }),
   isSaved,
+  createdAt,
   isLockedForCheckout,
   lockedAt: isLockedForCheckout ? '2026-07-11T12:00:00.000Z' : null,
   items: [{ id: 'product-1', name: 'Producto', quantity: 1, price: 20 }],
@@ -266,7 +268,8 @@ beforeEach(() => {
     removeOrder: vi.fn(async (orderId) => {
       mocks.activeState.activeOrders.delete(orderId);
       return { success: true };
-    })
+    }),
+    ensureOrderCreationTimestamp: vi.fn((orderId) => mocks.activeState.activeOrders.get(orderId)?.createdAt || null)
   };
   mocks.showConfirmModal.mockResolvedValue(true);
   mocks.fefo.mockResolvedValue({ blocked: false, warnings: [] });
@@ -441,7 +444,11 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
 
     expect(mocks.activeState.lockOrderForCheckout).toHaveBeenCalledTimes(1);
     expect(mocks.processSale).toHaveBeenCalledTimes(2);
-    expect(mocks.processSale.mock.calls[1][0]).toMatchObject({ ignoreStock: true, activeOrderId: 'order-a' });
+    expect(mocks.processSale.mock.calls[1][0]).toMatchObject({
+      ignoreStock: true,
+      activeOrderId: 'order-a',
+      createdAt: '2026-08-30T00:00:00.000Z'
+    });
     expect(mocks.activeState.removeOrder).toHaveBeenCalledWith('order-a');
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
   });

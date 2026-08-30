@@ -1,4 +1,5 @@
 import { db as tenantRuntimeDb, getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
+import { getStableDeviceId } from '../supabase';
 import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
 import {
   activateActorScopedStorage,
@@ -125,6 +126,18 @@ const requireTenantRuntime = () => {
   return readiness.runtime;
 };
 
+const resolveCanonicalDeviceRef = async () => {
+  try {
+    const deviceRef = await getStableDeviceId();
+    if (typeof deviceRef === 'string' && deviceRef.trim().length > 0) return deviceRef.trim();
+  } catch {
+    // Device identity is an authority input. Do not substitute an actor id,
+    // browser session, or generic placeholder when the canonical registry is
+    // unavailable.
+  }
+  throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.DEVICE_REQUIRED);
+};
+
 export const grantAuthenticatedActorRuntime = async ({
   actorType,
   actor,
@@ -139,6 +152,7 @@ export const grantAuthenticatedActorRuntime = async ({
   }
 
   const tenant = requireTenantRuntime();
+  const deviceRef = await resolveCanonicalDeviceRef();
   const actorKey = createActorKey(actorType, actorId);
   const nextActorGeneration = stateBeforeHandoff.generation + 1;
 
@@ -177,7 +191,8 @@ export const grantAuthenticatedActorRuntime = async ({
       actorId,
       sessionId: binding.sessionId,
       permissions: permissions ?? getExplicitActorPermissions(actorType, actor),
-      tenantOpaqueId: tenant.opaqueId
+      tenantOpaqueId: tenant.opaqueId,
+      deviceRef
     });
 
     // A checkout can survive a same-actor reauthentication, but its immutable

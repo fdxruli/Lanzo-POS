@@ -38,7 +38,10 @@ const getRuntimeContext = async () => {
   const state = useAppStore.getState();
   const licenseDetails = state?.licenseDetails || null;
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
-  const deviceId = await getStableDeviceId().catch(() => 'device');
+  const deviceId = await getStableDeviceId();
+  if (typeof deviceId !== 'string' || deviceId.trim().length === 0) {
+    throw new Error('DEVICE_ID_REQUIRED');
+  }
 
   return {
     licenseDetails,
@@ -112,6 +115,7 @@ const friendlyCloudCashierError = (error) => {
     CLOUD_SALES_CREDIT_DISABLED: 'Venta fiada cloud aún no está activa para esta licencia.',
     CLOUD_SALES_INVENTORY_DISABLED: 'Venta cloud con inventario aún no está activa para esta licencia.',
     POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
+    DEVICE_ID_REQUIRED: 'No se pudo identificar este dispositivo de forma segura. No se registró la venta cloud.',
     OFFLINE: 'Sin conexión. Esta venta cloud necesita internet para proteger caja, inventario y crédito.',
     INSUFFICIENT_CLOUD_STOCK: 'No hay suficiente stock en la nube para completar esta venta. No se creó el movimiento.',
     PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está listo para venta cloud. Sincroniza el catálogo antes de venderlo.',

@@ -59,6 +59,7 @@ const setOrder = ({ origin = 'ecommerce', ecommerceDraftStatus } = {}) => {
       id: 'active-order',
       items: [{ id: 'product-1', quantity: 1, price: 20 }],
       total: 20,
+      createdAt: '2026-08-30T00:00:00.000Z',
       origin,
       ...(ecommerceDraftStatus === undefined ? {} : { ecommerceDraftStatus })
     }
@@ -78,7 +79,8 @@ beforeEach(() => {
   mocks.activeState = {
     currentOrderId: null,
     activeOrders: new Map(),
-    removeOrder: vi.fn()
+    removeOrder: vi.fn(),
+    ensureOrderCreationTimestamp: vi.fn((orderId) => mocks.activeState.activeOrders.get(orderId)?.createdAt || null)
   };
   setOrder({ ecommerceDraftStatus: 'prepared' });
   mocks.processSale.mockResolvedValue({ success: false, message: 'fixture' });
@@ -142,7 +144,7 @@ describe('useCheckoutFlow ecommerce guard', () => {
   });
 
   it('does not change checkout behavior for a normal POS order', async () => {
-    setOrder({ origin: undefined, ecommerceDraftStatus: undefined });
+    setOrder({ origin: 'local', ecommerceDraftStatus: undefined });
     const deps = makeDeps();
     const { result } = renderHook(() => useCheckoutFlow(deps));
 

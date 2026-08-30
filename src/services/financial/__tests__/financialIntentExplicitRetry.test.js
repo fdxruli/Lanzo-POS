@@ -391,6 +391,46 @@ describe('explicit retry of an already-owned sale financial intent', () => {
     expect(executeCalls()).toHaveLength(0);
   });
 
+  it('rejects a retry when the current actor device identity is missing', async () => {
+    await seedIntent({ changes: { status: FINANCIAL_INTENT_STATUS.BLOCKED, dispatchAttemptCount: 1 } });
+    const missingDevice = runtime.makeHandle({ deviceRef: null });
+
+    await expect(executeNewFinancialIntent({
+      operationType: SALE_OPERATION,
+      request: saleRequest(),
+      licenseKey: 'fixture-license',
+      idempotencyKey: 'sale-retry-k',
+      cashSessionId: 'session-a',
+      actorHandle: missingDevice,
+      projectionRequired: false
+    })).rejects.toThrow('FINANCIAL_ORIGIN_DEVICE_REQUIRED');
+
+    expect(receiptCalls()).toHaveLength(0);
+    expect(executeCalls()).toHaveLength(0);
+  });
+
+  it('rejects redispatch when durable device evidence is missing', async () => {
+    const intent = await seedIntent({ changes: {
+      status: FINANCIAL_INTENT_STATUS.BLOCKED,
+      dispatchAttemptCount: 1,
+      originDeviceRef: null
+    } });
+
+    await expect(executeNewFinancialIntent({
+      operationType: SALE_OPERATION,
+      request: saleRequest(),
+      licenseKey: 'fixture-license',
+      idempotencyKey: 'sale-retry-k',
+      cashSessionId: 'session-a',
+      actorHandle: runtime.handle,
+      projectionRequired: false
+    })).rejects.toThrow('FINANCIAL_RECOVERY_DEVICE_UNRESOLVED');
+
+    expect(receiptCalls()).toHaveLength(0);
+    expect(executeCalls()).toHaveLength(0);
+    expect(await getFinancialIntent(intent.id)).toMatchObject({ originDeviceRef: null });
+  });
+
   it('rejects a different tenant before receipt or execute', async () => {
     await seedIntent({ changes: { status: FINANCIAL_INTENT_STATUS.BLOCKED, dispatchAttemptCount: 1 } });
     const otherTenant = runtime.makeHandle({ tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 1 } });
@@ -469,6 +509,36 @@ describe('explicit retry of an already-owned sale financial intent', () => {
     expect(result).toMatchObject({ intentId: intent.id, response });
     expect(receiptCalls()).toHaveLength(0);
     expect(executeCalls()).toHaveLength(0);
+  });
+
+  it('returns a completed duplicate without letting synchronous retry project it twice', async () => {
+    const response = { success: true, sale: { id: 'cloud-sale-already-complete' } };
+    const intent = await seedIntent({ changes: {
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      dispatchAttemptCount: 1,
+      responsePayload: response,
+      projectionStatus: FINANCIAL_PROJECTION_STATUS.PENDING
+    } });
+    const project = vi.fn().mockResolvedValue({ ok: true });
+
+    const result = await executeNewFinancialIntent({
+      operationType: SALE_OPERATION,
+      request: saleRequest(),
+      licenseKey: 'fixture-license',
+      idempotencyKey: 'sale-retry-k',
+      cashSessionId: 'session-a',
+      actorHandle: runtime.handle,
+      projectionRequired: true
+    });
+
+    expect(result).toMatchObject({ intentId: intent.id, response });
+    expect(project).not.toHaveBeenCalled();
+    expect(receiptCalls()).toHaveLength(0);
+    expect(executeCalls()).toHaveLength(0);
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.COMPLETED,
+      projectionStatus: FINANCIAL_PROJECTION_STATUS.PENDING
+    });
   });
 
   it('returns BLOCKED after a controlled deterministic rejection and does not auto-execute again', async () => {

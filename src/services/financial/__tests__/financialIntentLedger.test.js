@@ -38,6 +38,10 @@ const runtime = vi.hoisted(() => {
   return {
     rows,
     table,
+    db: {
+      table: () => table,
+      transaction: async (...args) => args.at(-1)()
+    },
     handle: null,
     makeHandle,
     execute: async () => ({ success: true, receipt: 'server-result' }),
@@ -49,7 +53,7 @@ const runtime = vi.hoisted(() => {
 
 vi.mock('../../db/dexie', () => ({
   STORES: { FINANCIAL_INTENTS: 'financial_intents' },
-  db: { table: () => runtime.table }
+  db: runtime.db
 }));
 vi.mock('../../auth/actorRuntimeController', () => ({
   actorRuntimeController: { capture: () => runtime.handle }

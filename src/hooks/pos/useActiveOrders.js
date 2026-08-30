@@ -22,6 +22,7 @@ import {
 } from '../../services/tenant/localTenantPolicy';
 import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { normalizeStableSaleTimestamp } from '../../services/sales/stableSaleTimestamp';
 
 const normalizeTableData = (value) => {
   if (typeof value !== 'string') return null;
@@ -142,6 +143,29 @@ export const useActiveOrders = create(
       return id;
     },
 
+    /**
+     * Establish the immutable creation timestamp for an active order once.
+     * Checkout snapshots consume this value even when the order has never
+     * been written to SALES; the financial core must not mint a new timestamp
+     * on every retry.
+     */
+    ensureOrderCreationTimestamp: (orderId = get().currentOrderId) => {
+      const state = get();
+      const order = orderId ? state.activeOrders.get(orderId) : null;
+      if (!order) return null;
+
+      const existingTimestamp = normalizeStableSaleTimestamp(order.createdAt);
+      const stableTimestamp = existingTimestamp || new Date().toISOString();
+      if (order.createdAt === stableTimestamp) return stableTimestamp;
+
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.set(orderId, { ...order, createdAt: stableTimestamp });
+      set({ activeOrders: nextOrders });
+
+      const persistedOrder = get().activeOrders.get(orderId);
+      return persistedOrder?.createdAt === stableTimestamp ? stableTimestamp : null;
+    },
+
     upsertEcommerceDraft: (draft) => {
       const state = get();
       const draftId = typeof draft?.id === 'string' ? draft.id.trim() : '';
@@ -173,7 +197,7 @@ export const useActiveOrders = create(
         items,
         customer: null,
         tableData: null,
-        createdAt: draft.createdAt || nowIso,
+        createdAt: normalizeStableSaleTimestamp(draft.createdAt) || nowIso,
         updatedAt: nowIso,
         revision: 0,
         deviceId: getOrderDeviceId(),
@@ -291,7 +315,7 @@ export const useActiveOrders = create(
           items: normalizeCartItems(sale.items),
           customer: sale.customerId ? { id: sale.customerId } : null,
           tableData: normalizeTableData(sale.tableData),
-          createdAt: sale.timestamp || new Date().toISOString(),
+          createdAt: normalizeStableSaleTimestamp(sale.timestamp || sale.createdAt) || new Date().toISOString(),
           total: sale.total || calculateOrderTotalExact(sale.items),
           isSaved: true,
           folio: sale.folio || null,
@@ -914,7 +938,7 @@ export const useActiveOrders = create(
             items: normalizeCartItems(sale.items),
             customer: sale.customerId ? { id: sale.customerId } : null,
             tableData: normalizeTableData(sale.tableData),
-            createdAt: sale.timestamp || new Date().toISOString(),
+            createdAt: normalizeStableSaleTimestamp(sale.timestamp || sale.createdAt) || new Date().toISOString(),
             total: sale.total || 0,
             isSaved: true,
             folio: sale.folio || null,
@@ -936,6 +960,13 @@ export const useActiveOrders = create(
               ...selectedOrder,
               items: normalizeCartItems(selectedOrder.items),
               tableData: normalizeTableData(selectedOrder.tableData ?? null),
+              // Preserve a valid timestamp from either side of the merge;
+              // the checkout retry identity belongs to the order, not to the
+              // freshness winner selected for its cart contents.
+              createdAt: normalizeStableSaleTimestamp(draftOrder.createdAt)
+                || normalizeStableSaleTimestamp(selectedOrder.createdAt)
+                || normalizeStableSaleTimestamp(existing.createdAt)
+                || new Date().toISOString(),
               total: selectedOrder.total ?? calculateOrderTotalExact(selectedOrder.items),
               isSaved: true,
               folio: selectedOrder.folio ?? existing.folio ?? null,
@@ -957,6 +988,7 @@ export const useActiveOrders = create(
               ...draftOrder,
               items: isActiveInCart && cartHasItems && draftItems.length === 0 ? currentActiveItems : draftItems,
               tableData: normalizeTableData(draftOrder.tableData ?? null),
+              createdAt: normalizeStableSaleTimestamp(draftOrder.createdAt) || new Date().toISOString(),
               isSaved: false,
               folio: draftOrder.folio ?? null,
               revision: normalizeOrderRevision(draftOrder.revision),

@@ -47,7 +47,7 @@ export const refreshFinancialIntentReceipt = async ({ intentId, licenseKey, acto
     } catch (error) {
       await updateFinancialIntentForRecovery(intentId, {
         lastRecoveryCode: error?.code || 'FINANCIAL_RECEIPT_REFRESH_UNAVAILABLE'
-      }, handle);
+      }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
       return { intentId, outcome: 'receipt_unavailable', error };
     }
 
@@ -60,7 +60,7 @@ export const refreshFinancialIntentReceipt = async ({ intentId, licenseKey, acto
           lastRecoveryCode: 'FINANCIAL_RECEIPT_REFRESH_COMPLETED',
           responsePayload: completedPayload(receipt),
           completedAt: now()
-        }, handle);
+        }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_completed' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.PROCESSING:
         await updateFinancialIntentForRecovery(intentId, {
@@ -68,7 +68,7 @@ export const refreshFinancialIntentReceipt = async ({ intentId, licenseKey, acto
           lastReceiptStatus: 'PROCESSING',
           lastProtocolCode: receipt?.code || null,
           lastRecoveryCode: 'FINANCIAL_RECEIPT_REFRESH_PROCESSING'
-        }, handle);
+        }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_processing' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.CONFLICT:
         await updateFinancialIntentForRecovery(intentId, {
@@ -76,7 +76,7 @@ export const refreshFinancialIntentReceipt = async ({ intentId, licenseKey, acto
           lastReceiptStatus: 'CONFLICT',
           lastProtocolCode: receipt?.code || 'IDEMPOTENCY_CONFLICT',
           lastRecoveryCode: 'FINANCIAL_RECEIPT_REFRESH_CONFLICT'
-        }, handle);
+        }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_conflict' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.NOT_FOUND:
         if (intent.status === FINANCIAL_INTENT_STATUS.PREPARED && Number(intent.dispatchAttemptCount || 0) === 0) {
@@ -84,7 +84,7 @@ export const refreshFinancialIntentReceipt = async ({ intentId, licenseKey, acto
             lastReceiptStatus: 'NOT_FOUND',
             lastProtocolCode: receipt?.code || null,
             lastRecoveryCode: 'FINANCIAL_RECEIPT_REFRESH_NOT_FOUND_PREPARED'
-          }, handle);
+          }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
           return { intentId, outcome: 'receipt_not_found_prepared_no_dispatch' };
         }
         await updateFinancialIntentForRecovery(intentId, {
@@ -92,14 +92,14 @@ export const refreshFinancialIntentReceipt = async ({ intentId, licenseKey, acto
           lastReceiptStatus: 'NOT_FOUND',
           lastProtocolCode: receipt?.code || null,
           lastRecoveryCode: 'FINANCIAL_RECEIPT_REFRESH_NOT_FOUND_AFTER_ATTEMPT'
-        }, handle);
+        }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_not_found_no_resend' };
       default:
         await updateFinancialIntentForRecovery(intentId, {
           lastReceiptStatus: receipt?.status || null,
           lastProtocolCode: receipt?.code || null,
           lastRecoveryCode: 'FINANCIAL_RECEIPT_REFRESH_UNRECOGNIZED'
-        }, handle);
+        }, handle, { recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_unrecognized' };
     }
   } finally {

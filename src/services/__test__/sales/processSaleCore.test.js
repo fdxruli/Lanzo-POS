@@ -162,4 +162,42 @@ describe('processSaleCore', () => {
             expect.any(Array)
         );
     });
+
+    it('fails closed when an active order has no stable timestamp', async () => {
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({ activeOrderId: 'active-order-without-timestamp' }), deps);
+
+        expect(result).toMatchObject({ success: false, code: 'SALE_TIMESTAMP_REQUIRED' });
+        expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
+    });
+
+    it('carries one active-order creation timestamp when SALES has no row', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-08-30T10:00:00.000Z'));
+            const deps = makeDeps();
+            const stableCreatedAt = '2026-08-29T12:34:56.000Z';
+            const first = await processSaleCore(makeParams({
+                activeOrderId: 'active-order-without-sales-row',
+                activeOrderCreatedAt: stableCreatedAt
+            }), deps);
+
+            vi.setSystemTime(new Date('2026-08-30T10:10:00.000Z'));
+            const second = await processSaleCore(makeParams({
+                activeOrderId: 'active-order-without-sales-row',
+                activeOrderCreatedAt: stableCreatedAt
+            }), deps);
+
+            expect(first.success).toBe(true);
+            expect(second.success).toBe(true);
+            expect(deps.loadData.mock.calls.some(([store]) => store === 'sales')).toBe(false);
+            const [firstSale, secondSale] = deps.executeSaleTransactionSafe.mock.calls.map(([sale]) => sale);
+            expect(secondSale.id).toBe(firstSale.id);
+            expect(secondSale.timestamp).toBe(firstSale.timestamp);
+            expect(firstSale.id).toBe('active-order-without-sales-row');
+            expect(firstSale.timestamp).toBe(stableCreatedAt);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });

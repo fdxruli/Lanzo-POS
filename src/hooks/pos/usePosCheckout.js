@@ -889,6 +889,16 @@ export function usePosCheckout({
             return undefined;
         }
 
+        const stableSaleTimestamp = useActiveOrders.getState().ensureOrderCreationTimestamp?.(activeOrderId);
+        if (!stableSaleTimestamp) {
+            showMessageModal(
+                'No se pudo fijar la fecha de creación de la orden. No se inició el cobro.',
+                null,
+                { type: 'warning' }
+            );
+            return { success: false, code: 'SALE_TIMESTAMP_REQUIRED' };
+        }
+
         const checkoutAttemptId = createCheckoutAttemptId();
         const lockResult = await useActiveOrders.getState().lockOrderForCheckout(activeOrderId);
         if (!lockResult.success) {
@@ -928,7 +938,9 @@ export function usePosCheckout({
             consumed: false,
             order: null,
             total: null,
-            tableData: null
+            tableData: null,
+            saleTimestamp: stableSaleTimestamp,
+            createdAt: stableSaleTimestamp
         };
 
         const existingSnapshot = checkoutSnapshotRef.current;
@@ -1178,7 +1190,9 @@ export function usePosCheckout({
                 companyName: useAppStore.getState().companyProfile?.name || 'Tu Negocio',
                 tempPrescriptionData: prescription.tempPrescriptionData,
                 ignoreStock: forceSale,
-                activeOrderId: snapshot.orderId
+                activeOrderId: snapshot.orderId,
+                saleTimestamp: snapshot.saleTimestamp,
+                createdAt: snapshot.createdAt
             });
 
             if (result.success) {

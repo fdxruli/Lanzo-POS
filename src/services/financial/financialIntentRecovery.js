@@ -17,8 +17,12 @@ import { FINANCIAL_RECEIPT_CLASSIFICATION, classifyFinancialReceipt } from './fi
 
 const completedPayload = (receipt) => receipt?.result || receipt?.response || receipt;
 const receiptStatus = (receipt) => String(receipt?.status || '').toUpperCase();
+const isProjectionRepair = (intent) => (
+  intent?.status === FINANCIAL_INTENT_STATUS.COMPLETED
+  && [FINANCIAL_PROJECTION_STATUS.PENDING, FINANCIAL_PROJECTION_STATUS.FAILED].includes(intent.projectionStatus)
+);
 
-const persistReceipt = async ({ intentId, actorHandle, receipt, status, code = null }) => (
+const persistReceipt = async ({ intentId, actorHandle, receipt, status, code = null, recoveryLeaseId }) => (
   updateFinancialIntentForRecovery(intentId, {
     status,
     lastReceiptStatus: receiptStatus(receipt) || status,
@@ -26,12 +30,15 @@ const persistReceipt = async ({ intentId, actorHandle, receipt, status, code = n
     ...(status === FINANCIAL_INTENT_STATUS.COMPLETED
       ? { responsePayload: completedPayload(receipt), completedAt: new Date().toISOString() }
       : {})
-  }, actorHandle)
+  }, actorHandle, { recoveryLeaseId })
 );
 
-const recoverProjectionOnly = async ({ intent, actorHandle, project = applyFinancialProjection }) => {
+const recoverProjectionOnly = async ({ intent, actorHandle, project = applyFinancialProjection, recoveryLeaseId }) => {
   if (![FINANCIAL_PROJECTION_STATUS.PENDING, FINANCIAL_PROJECTION_STATUS.FAILED].includes(intent.projectionStatus)) {
     return { intentId: intent.id, outcome: 'projection_not_required' };
+  }
+  if (typeof project !== 'function') {
+    return { intentId: intent.id, outcome: 'projection_deferred' };
   }
   try {
     await project({ intent, actorHandle });
@@ -39,14 +46,14 @@ const recoverProjectionOnly = async ({ intent, actorHandle, project = applyFinan
       projectionStatus: FINANCIAL_PROJECTION_STATUS.APPLIED,
       projectionErrorCode: null,
       lastRecoveryCode: 'FINANCIAL_RECOVERY_PROJECTION_APPLIED'
-    }, actorHandle);
+    }, actorHandle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED });
     return { intentId: intent.id, outcome: 'projection_applied' };
   } catch (error) {
     await updateFinancialIntentForRecovery(intent.id, {
       projectionStatus: FINANCIAL_PROJECTION_STATUS.FAILED,
       projectionErrorCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED',
       lastRecoveryCode: error?.code || 'FINANCIAL_RECOVERY_LOCAL_PROJECTION_FAILED'
-    }, actorHandle);
+    }, actorHandle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.COMPLETED });
     return { intentId: intent.id, outcome: 'projection_failed', error };
   }
 };
@@ -67,7 +74,9 @@ export const recoverFinancialIntent = async ({
 } = {}) => {
   let intent = await getFinancialIntent(intentId);
   if (!intent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-  assertFinancialIntentRecoveryAuthority(intent, actorHandle);
+  assertFinancialIntentRecoveryAuthority(intent, actorHandle, {
+    allowLegacyNullDevice: !explicitRetry && isProjectionRepair(intent)
+  });
 
   if (explicitRetry) {
     if (!isExplicitSaleFinancialRetry(intent.operationType)) {
@@ -95,11 +104,13 @@ export const recoverFinancialIntent = async ({
 
   try {
     intent = await getFinancialIntent(intentId);
-    assertFinancialIntentRecoveryAuthority(intent, actorHandle);
+    assertFinancialIntentRecoveryAuthority(intent, actorHandle, {
+      allowLegacyNullDevice: !explicitRetry && isProjectionRepair(intent)
+    });
     if (explicitRetry) assertFinancialIntentRetryEquivalence(intent, candidateIntent, actorHandle);
 
     if (intent.status === FINANCIAL_INTENT_STATUS.COMPLETED) {
-      return recoverProjectionOnly({ intent, actorHandle, project });
+      return await recoverProjectionOnly({ intent, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
     }
     if (intent.status === FINANCIAL_INTENT_STATUS.CONFLICT || (
       intent.status === FINANCIAL_INTENT_STATUS.BLOCKED && !explicitRetry
@@ -110,7 +121,7 @@ export const recoverFinancialIntent = async ({
       await updateFinancialIntentForRecovery(intentId, {
         status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
         lastRecoveryCode: 'FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE'
-      }, actorHandle);
+      }, actorHandle, { recoveryLeaseId: claim.recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED });
       return { intentId, outcome: 'inconsistent_prepared_receipt_required' };
     }
 
@@ -121,27 +132,27 @@ export const recoverFinancialIntent = async ({
       // An unavailable receipt never authorizes a dispatch.
       await updateFinancialIntentForRecovery(intentId, {
         lastRecoveryCode: error?.code || 'FINANCIAL_RECOVERY_RECEIPT_PENDING'
-      }, actorHandle);
+      }, actorHandle, { recoveryLeaseId: claim.recoveryLeaseId });
       return { intentId, outcome: 'receipt_unavailable', error };
     }
 
     switch (classifyFinancialReceipt(receipt)) {
       case FINANCIAL_RECEIPT_CLASSIFICATION.COMPLETED: {
-        await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.COMPLETED });
+        await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.COMPLETED, recoveryLeaseId: claim.recoveryLeaseId });
         const completed = await getFinancialIntent(intentId);
-        return recoverProjectionOnly({ intent: completed, actorHandle, project });
+        return await recoverProjectionOnly({ intent: completed, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
       }
       case FINANCIAL_RECEIPT_CLASSIFICATION.PROCESSING:
-        await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
+        await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_processing' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.CONFLICT:
-        await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.CONFLICT, code: 'IDEMPOTENCY_CONFLICT' });
+        await persistReceipt({ intentId, actorHandle, receipt, status: FINANCIAL_INTENT_STATUS.CONFLICT, code: 'IDEMPOTENCY_CONFLICT', recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_conflict' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.NOT_FOUND:
         if (intent.status === FINANCIAL_INTENT_STATUS.PREPARED && Number(intent.dispatchAttemptCount || 0) === 0) {
-          const execution = await executePreparedFinancialIntentForRecovery({ intentId, licenseKey, actorHandle });
+          const execution = await executePreparedFinancialIntentForRecovery({ intentId, licenseKey, actorHandle, recoveryLeaseId: claim.recoveryLeaseId });
           const completed = await getFinancialIntent(intentId);
-          const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project });
+          const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
           return { ...execution, outcome: 'first_dispatch', projection };
         }
         if (intent.status === FINANCIAL_INTENT_STATUS.BLOCKED && explicitRetry) {
@@ -152,7 +163,7 @@ export const recoverFinancialIntent = async ({
             recoveryLeaseId: claim.recoveryLeaseId
           });
           const completed = await getFinancialIntent(intentId);
-          const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project });
+          const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
           return { ...execution, outcome: 'blocked_redispatch', projection };
         }
         // An attempted request can be ambiguous even when a receipt currently
@@ -161,12 +172,12 @@ export const recoverFinancialIntent = async ({
           status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
           lastReceiptStatus: 'NOT_FOUND',
           lastRecoveryCode: 'FINANCIAL_RECOVERY_RECEIPT_NOT_FOUND_AFTER_ATTEMPT'
-        }, actorHandle);
+        }, actorHandle, { recoveryLeaseId: claim.recoveryLeaseId, expectedStatus: intent.status });
         return { intentId, outcome: 'receipt_not_found_no_resend' };
       default:
         await updateFinancialIntentForRecovery(intentId, {
           lastRecoveryCode: 'FINANCIAL_RECOVERY_RECEIPT_PENDING'
-        }, actorHandle);
+        }, actorHandle, { recoveryLeaseId: claim.recoveryLeaseId });
         return { intentId, outcome: 'receipt_unrecognized' };
     }
   } finally {
