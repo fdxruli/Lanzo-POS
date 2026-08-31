@@ -275,6 +275,32 @@ describe('active-order cloud retry transport', () => {
     expect(runtime.payloadCalls).toBe(1);
   });
 
+  it('maps a changed payment retry to a safe message without executing again', async () => {
+    await useActiveOrders.getState().loadOrdersFromDB();
+    const firstCheckout = checkoutTransport();
+
+    await expect(salesCloudCashierService.processCloudCashierSale(firstCheckout))
+      .rejects.toMatchObject({ code: 'BATCH_ALLOCATION_INVALID' });
+
+    const changedCheckout = {
+      ...firstCheckout,
+      paymentData: {
+        ...firstCheckout.paymentData,
+        receivedAmount: 20,
+        changeAmount: 10
+      }
+    };
+
+    await expect(salesCloudCashierService.processCloudCashierSale(changedCheckout))
+      .rejects.toMatchObject({
+        code: 'FINANCIAL_REQUEST_HASH_INVALID',
+        message: 'El intento anterior de esta venta tiene datos financieros distintos. No se repitió para evitar un cobro duplicado; verifica el estado antes de iniciar un cobro nuevo.'
+      });
+
+    expect(runtime.executeCalls).toBe(1);
+    expect(runtime.receiptCalls).toBe(0);
+  });
+
   it('projects a BLOCKED intent from a COMPLETED receipt without redispatch', async () => {
     await useActiveOrders.getState().loadOrdersFromDB();
     const checkout = checkoutTransport();
