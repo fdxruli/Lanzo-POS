@@ -91,7 +91,9 @@ export const applySalesFinancialResponseProjection = async ({ operationType, req
 
 const friendlyCloudCashierError = (error) => {
   const raw = String(error?.message || error?.code || error || '');
-  const code = raw.match(/[A-Z0-9_]+(?::[a-z_]+)?/)?.[0] || raw;
+  const rawCode = String(error?.code || '').trim();
+  const semanticCode = raw.match(/[A-Z0-9_]+(?::[a-z_]+)?/)?.[0] || '';
+  const code = /^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw;
 
   const messages = {
     CLOUD_CASH_SESSION_REQUIRED: 'Para recibir abono inicial en efectivo necesitas abrir caja primero.',
@@ -133,6 +135,7 @@ const friendlyCloudCashierError = (error) => {
     DISCOUNT_PERCENT_INVALID: 'El porcentaje de descuento no puede superar el 100%.',
     SALE_ARITHMETIC_MISMATCH: 'Los importes de la venta no cuadran. Revisa precios, descuentos y pagos.',
     SALE_PAYMENT_ARITHMETIC_MISMATCH: 'Los importes recibidos y el cambio no cuadran con el pago.',
+    '57014': 'El servidor tardó demasiado en responder. El cobro quedó protegido; verifica el estado antes de volver a intentarlo.',
     SALE_PAYMENT_METHOD_MISMATCH: 'El método de pago no coincide con el desglose capturado.',
     SALE_TAX_SOURCE_UNRESOLVED: 'La venta contiene impuestos sin una fuente fiscal server-side configurada.',
     ECOMMERCE_CONVERSION_AUTHORITY_REQUIRED: 'La conversión ecommerce ya no está reservada para este cobro.',

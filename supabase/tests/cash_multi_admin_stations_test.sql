@@ -53,6 +53,8 @@ declare
   v_before_customer_ledger bigint;
   v_before_financial_operations bigint;
   v_before_folio bigint;
+  v_read_updated_at timestamptz;
+  v_read_server_version integer;
 begin
   v_license_key := 'TEST-CASH-MULTI-ADMIN-' || v_suffix;
   v_fingerprint_a := 'cash-multi-admin-a-' || v_suffix;
@@ -236,6 +238,13 @@ begin
   end if;
 
   -- Current-session reads remain station-scoped in both directions.
+  select s.updated_at, s.server_version
+    into v_read_updated_at, v_read_server_version
+    from public.pos_cash_sessions s
+   where s.license_id = v_license_id
+     and s.id = v_session_a
+   limit 1;
+
   v_result := public.pos_get_current_cash_session(
     v_license_key, v_fingerprint_a, v_device_token_a, v_admin_token_a
   );
@@ -243,6 +252,12 @@ begin
      or v_result#>>'{cash_session,cash_station_id}' <> v_station_a then
     raise exception 'MULTI_ADMIN_CURRENT_A_SCOPING_FAILED: %', v_result;
   end if;
+
+  if (select s.updated_at from public.pos_cash_sessions s where s.license_id = v_license_id and s.id = v_session_a limit 1) is distinct from v_read_updated_at
+     or (select s.server_version from public.pos_cash_sessions s where s.license_id = v_license_id and s.id = v_session_a limit 1) is distinct from v_read_server_version then
+    raise exception 'CASH_CURRENT_SESSION_READ_MUTATED_SESSION_ROW';
+  end if;
+
   v_result := public.pos_get_current_cash_session(
     v_license_key, v_fingerprint_b, v_device_token_b, v_admin_token_b
   );

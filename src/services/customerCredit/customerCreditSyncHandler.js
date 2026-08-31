@@ -16,6 +16,7 @@ import { customerCreditCloudRepository } from './customerCreditCloudRepository';
 import { customerCreditLocalRepository } from './customerCreditLocalRepository';
 import { customerCreditMigrationService } from './customerCreditMigrationService';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
 
 const CREDIT_LAST_CHANGE_SEQ_KEY = 'customer_credit_last_change_seq';
 let registered = false;
@@ -28,6 +29,7 @@ const notifyCreditChanged = () => {
 };
 
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+const canSyncCustomerCredit = () => hasCurrentActorPermission('customers');
 
 const normalizeChangeSeq = (response, fallback = 0) => {
   const value = Number(response?.latest_change_seq ?? response?.latestChangeSeq ?? response?.change_seq ?? fallback);
@@ -62,6 +64,9 @@ export const customerCreditSyncHandler = {
     const resolvedLicenseKey = licenseKey || getLicenseKeyFromDetails(licenseDetails);
     if (!resolvedLicenseKey || !isBrowserOnline() || !isCloudCustomerCreditSyncEnabled(licenseDetails)) {
       return { skipped: true };
+    }
+    if (!canSyncCustomerCredit()) {
+      return { skipped: true, reason: 'actor_permission_missing' };
     }
 
     if (shouldDeferPosBootstrapStartHook(reason, { force })) {
@@ -100,6 +105,7 @@ export const customerCreditSyncHandler = {
   async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isBrowserOnline()) return { applied: 0, skipped: true };
+    if (!canSyncCustomerCredit()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
 
     const hasCreditEvents = events.some((event) => {
       const entityType = event.entity_type || event.entityType;
