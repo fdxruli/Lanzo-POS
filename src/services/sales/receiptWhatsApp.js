@@ -2,6 +2,7 @@ import { Money } from '../../utils/moneyMath';
 import {
     getSaleEcommerceOrderCode,
     getSaleFinancialFolio,
+    getSaleOperationalFolio,
     isEcommerceSale
 } from './saleReference';
 
@@ -84,7 +85,12 @@ export async function sendReceiptWhatsApp({
             if (isEcommerceSale(sale)) {
                 receiptText += `*Pedido online:* ${getSaleEcommerceOrderCode(sale) || 'Sin código normalizado'}\n`;
             }
-            receiptText += `*Folio de venta:* ${getSaleFinancialFolio(sale) || 'Sin folio'}\n\n`;
+            const operationalFolio = getSaleOperationalFolio(sale);
+            const financialFolio = getSaleFinancialFolio(sale);
+            if (operationalFolio && operationalFolio !== financialFolio) {
+                receiptText += `*Folio POS:* ${operationalFolio}\n`;
+            }
+            receiptText += `*Folio de venta:* ${financialFolio || 'Sin folio'}\n\n`;
 
             if (sale.prescriptionDetails) {
                 receiptText += '*--- DATOS DE DISPENSACIÓN ---*\n';
