@@ -144,6 +144,7 @@ const friendlyCloudCashierError = (error) => {
     ECOMMERCE_DISCOUNT_NOT_IN_ORDER: 'El descuento de la línea no pertenece al pedido ecommerce aceptado.',
     ECOMMERCE_TAX_LINE_UNRESOLVED: 'El impuesto ecommerce no tiene un desglose de línea seguro.',
     IDEMPOTENCY_CONFLICT: 'La clave de cobro ya fue usada con datos distintos. No se repitió la venta.',
+    FINANCIAL_REQUEST_HASH_INVALID: 'El intento anterior de esta venta tiene datos financieros distintos. No se repitió para evitar un cobro duplicado; verifica el estado antes de iniciar un cobro nuevo.',
     BATCH_SELECTION_REQUIRED: 'Selecciona un lote o variante vigente antes de cobrar.',
     BATCH_ALLOCATION_INVALID: 'Las asignaciones de lote no son válidas.',
     MODIFIER_NOT_AUTHORIZED: 'Una opción seleccionada ya no pertenece a la configuración vigente del producto.',
