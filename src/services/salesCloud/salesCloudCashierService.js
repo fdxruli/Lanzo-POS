@@ -10,7 +10,6 @@ import {
 import { pullCatalogChanges } from '../products/productSyncHandler';
 import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
-import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
 import { registerFinancialProjectionHandler } from '../financial/financialProjectionRegistry';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import {
@@ -38,7 +37,10 @@ const getRuntimeContext = async () => {
   const state = useAppStore.getState();
   const licenseDetails = state?.licenseDetails || null;
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
-  const deviceId = await getStableDeviceId().catch(() => 'device');
+  const deviceId = await getStableDeviceId();
+  if (typeof deviceId !== 'string' || deviceId.trim().length === 0) {
+    throw new Error('DEVICE_ID_REQUIRED');
+  }
 
   return {
     licenseDetails,
@@ -55,15 +57,17 @@ const getRuntimeContext = async () => {
 // Reuses the same committed-snapshot + payload projection sequence as normal
 // execution.  It receives only durable request/response evidence and never
 // invokes a financial RPC.
-export const applySalesFinancialResponseProjection = async ({ operationType, requestPayload, responsePayload, actorHandle }) => {
+export const applySalesFinancialResponseProjection = async ({ operationType, requestPayload, responsePayload, intent, actorHandle }) => {
   actorHandle?.assertCurrent?.();
-  const inventoryEnabled = operationType === 'sale.cashier_inventory';
-  const creditSale = operationType === 'sale.credit';
-  const response = responsePayload || {};
-  await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+  const resolvedOperationType = operationType || intent?.operationType;
+  const resolvedRequestPayload = requestPayload || intent?.requestPayload || {};
+  const response = responsePayload || intent?.responsePayload || {};
+  const inventoryEnabled = resolvedOperationType === 'sale.cashier_inventory';
+  const creditSale = resolvedOperationType === 'sale.credit';
+  const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
     localSale: {
-      ...(requestPayload?.sale || {}),
-      items: Array.isArray(requestPayload?.items) ? requestPayload.items : [],
+      ...(resolvedRequestPayload.sale || {}),
+      items: Array.isArray(resolvedRequestPayload.items) ? resolvedRequestPayload.items : [],
       syncStatus: 'SYNCED',
       cloudSalesSyncStatus: 'synced',
       sourceMode: 'cloud_committed',
@@ -77,7 +81,8 @@ export const applySalesFinancialResponseProjection = async ({ operationType, req
     response
   });
   actorHandle?.assertCurrent?.();
-  return salesCloudLocalRepository.applyCloudSalesPayload(response);
+  const appliedPayload = await salesCloudLocalRepository.applyCloudSalesPayload(response);
+  return { localSale, appliedPayload };
 };
 
 ['sale.cashier', 'sale.cashier_inventory', 'sale.credit'].forEach((operationType) => {
@@ -105,10 +110,14 @@ const friendlyCloudCashierError = (error) => {
     CUSTOMER_DELETED: 'Este cliente ya no está activo en la nube. No se registró la venta para evitar deuda incorrecta.',
     CUSTOMER_DEBT_RECALC_MISMATCH: 'No se pudo registrar la deuda del cliente. La venta no fue confirmada para evitar duplicados.',
     IDEMPOTENCY_PROCESSING: 'La venta ya está en proceso. Evita presionar cobrar otra vez.',
+    FINANCIAL_RECOVERY_RECEIPT_PENDING: 'El cobro anterior todavía no tiene confirmación. Revisa el estado de la venta antes de volver a intentarlo.',
+    FINANCIAL_RECOVERY_RECEIPT_UNAVAILABLE: 'No se pudo confirmar el cobro anterior. La venta permanece protegida; revisa tu conexión e inténtalo de nuevo.',
+    FINANCIAL_RECOVERY_LEASE_HELD: 'Este cobro ya está siendo reintentado. Espera un momento y revisa el resultado.',
     CLOUD_SALES_CASHIER_DISABLED: 'Venta cloud con caja aún no está activa para esta licencia.',
     CLOUD_SALES_CREDIT_DISABLED: 'Venta fiada cloud aún no está activa para esta licencia.',
     CLOUD_SALES_INVENTORY_DISABLED: 'Venta cloud con inventario aún no está activa para esta licencia.',
     POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
+    DEVICE_ID_REQUIRED: 'No se pudo identificar este dispositivo de forma segura. No se registró la venta cloud.',
     OFFLINE: 'Sin conexión. Esta venta cloud necesita internet para proteger caja, inventario y crédito.',
     INSUFFICIENT_CLOUD_STOCK: 'No hay suficiente stock en la nube para completar esta venta. No se creó el movimiento.',
     PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE: 'Este producto aún no está listo para venta cloud. Sincroniza el catálogo antes de venderlo.',
@@ -442,7 +451,8 @@ export const salesCloudCashierService = {
         cashSessionId: paymentData.cashSessionId || paymentData.cash_session_id || null,
         customerId: payload.customerId || paymentData.customerId || sale?.customerId || null,
         idempotencyKey,
-        actorHandle
+        actorHandle,
+        project: applySalesFinancialResponseProjection
       });
 
       if (response?.success === false) {
@@ -452,42 +462,19 @@ export const salesCloudCashierService = {
         throw error;
       }
 
-      try {
-        actorHandle.assertCurrent();
-        const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
-          localSale: {
-            ...sale,
-            items: processedItems,
-            syncStatus: 'SYNCED',
-            cloudSalesSyncStatus: 'synced',
-            sourceMode: 'cloud_committed',
-            effectsStatus: response.sale?.effects_status || (creditSale ? 'credit_applied' : 'payment_recorded'),
-            inventoryEffectStatus: response.sale?.inventory_effect_status || (inventoryEnabled ? 'applied' : 'not_applied'),
-            creditEffectStatus: response.sale?.credit_effect_status || (creditSale ? 'applied' : 'not_applied'),
-            creditLedgerChargeId: response.sale?.credit_ledger_charge_id || response.ledger_charge?.id || null,
-            creditLedgerPaymentId: response.sale?.credit_ledger_payment_id || response.ledger_payment?.id || null,
-            customerLedgerId: response.sale?.customer_ledger_id || response.ledger_charge?.id || null
-          },
-          response
-        });
-
-        actorHandle.assertCurrent();
-        await salesCloudLocalRepository.applyCloudSalesPayload(response);
-        if (response.financialIntentId) await markFinancialIntentProjectionApplied({ intentId: response.financialIntentId, actorHandle });
-
-        if (inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
-          pullCatalogChanges(context.licenseKey).catch((pullError) => {
-            Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras venta cloud inventory:', pullError);
-          });
-        }
-
-        return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled, creditSale };
-      } catch (projectionError) {
-        if (response.financialIntentId) {
-          await markFinancialIntentProjectionFailed({ intentId: response.financialIntentId, errorCode: projectionError?.code || 'SALE_LOCAL_PROJECTION_FAILED', actorHandle });
-        }
-        throw projectionError;
+      const projection = response?.projection || null;
+      if (projection?.outcome === 'projection_failed') {
+        throw projection.error || Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
       }
+      const localSale = projection?.result?.localSale || null;
+
+      if (inventoryEnabled && ['applied', 'not_required'].includes(response.sale?.inventory_effect_status)) {
+        pullCatalogChanges(context.licenseKey).catch((pullError) => {
+          Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras venta cloud inventory:', pullError);
+        });
+      }
+
+      return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled, creditSale };
     } catch (error) {
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
       throw friendlyCloudCashierError(error);

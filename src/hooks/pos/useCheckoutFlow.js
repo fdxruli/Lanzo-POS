@@ -155,6 +155,18 @@ export function useCheckoutFlow({
         try {
             closeModal('payment');
 
+            const stableSaleTimestamp = useActiveOrders.getState().ensureOrderCreationTimestamp?.(activeOrderId)
+                || liveOrder?.createdAt
+                || null;
+            if (activeOrderId && !stableSaleTimestamp) {
+                showMessageModal(
+                    'No se pudo fijar la fecha de creación de la orden. No se inició el cobro.',
+                    null,
+                    { type: 'warning' }
+                );
+                return { success: false, code: 'SALE_TIMESTAMP_REQUIRED' };
+            }
+
             const result = await processSale({
                 order,
                 paymentData: {
@@ -169,6 +181,7 @@ export function useCheckoutFlow({
                 tempPrescriptionData: null, // Se pasa desde el componente padre
                 ignoreStock: forceSale,
                 activeOrderId,
+                activeOrderCreatedAt: stableSaleTimestamp
             });
 
             if (result.success) {

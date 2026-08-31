@@ -137,19 +137,19 @@ export const salesCloudRepository = {
     return invalidateAfterSaleSuccess(licenseKey, parseRpcPayload(data));
   },
 
-  async createCloudCashierSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null, actorHandle = null }) {
-    const result = await executeNewFinancialIntent({ operationType: 'sale.cashier', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+  async createCloudCashierSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null, actorHandle = null, project = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.cashier', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null }, licenseKey, idempotencyKey, cashSessionId, actorHandle, project });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
   },
 
-  async createCloudCashierInventorySale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null, actorHandle = null }) {
-    const result = await executeNewFinancialIntent({ operationType: 'sale.cashier_inventory', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+  async createCloudCashierInventorySale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, idempotencyKey = null, actorHandle = null, project = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.cashier_inventory', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: null }, licenseKey, idempotencyKey, cashSessionId, actorHandle, project });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
   },
 
-  async createCloudCreditSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, customerId = null, idempotencyKey = null, actorHandle = null }) {
-    const result = await executeNewFinancialIntent({ operationType: 'sale.credit', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: customerId || sale?.customer_id || sale?.customerId || null }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
-    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId };
+  async createCloudCreditSale({ licenseKey, sale, items = [], payments = [], cashSessionId = null, customerId = null, idempotencyKey = null, actorHandle = null, project = null }) {
+    const result = await executeNewFinancialIntent({ operationType: 'sale.credit', request: { sale: sale || {}, items: Array.isArray(items) ? items : [], payments: Array.isArray(payments) ? payments : [], cash_session_id: cashSessionId, customer_id: customerId || sale?.customer_id || sale?.customerId || null }, licenseKey, idempotencyKey, cashSessionId, actorHandle, project });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
   },
 
   async previewCloudSaleCancellation({ licenseKey, saleId, reason = null }) {

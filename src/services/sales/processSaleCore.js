@@ -13,6 +13,7 @@ import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { calculateDiscountedTotals } from './discounts';
+import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
 
 const requiresPrescriptionControl = (product = {}) => (
     product?.requiresPrescription === true ||
@@ -34,6 +35,46 @@ const toCents = (value) => Math.round((toFiniteNumber(value) + Number.EPSILON) *
 const getLineId = (item = {}, index = 0) => (
     item.lineId || item.uniqueLineId || item.ecommerceOrderItemId || `${item.parentId || item.id || 'item'}-${index}`
 );
+
+const stableSaleTimestampRequiredError = () => {
+    const error = new Error('SALE_TIMESTAMP_REQUIRED');
+    error.code = 'SALE_TIMESTAMP_REQUIRED';
+    return error;
+};
+
+const resolveStableSaleTimestamp = async ({
+    activeOrderId,
+    saleTimestamp = null,
+    activeOrderCreatedAt = null,
+    createdAt = null,
+    loadData,
+    STORES,
+    fallback,
+    Logger
+}) => {
+    if (activeOrderId && STORES?.SALES && typeof loadData === 'function') {
+        try {
+            const persistedSale = await loadData(STORES.SALES, activeOrderId);
+            const stablePersistedTimestamp = normalizeStableSaleTimestamp(persistedSale?.timestamp)
+                || normalizeStableSaleTimestamp(persistedSale?.createdAt);
+            if (stablePersistedTimestamp) return stablePersistedTimestamp;
+        } catch (error) {
+            Logger?.warn('No se pudo leer la marca temporal durable de la orden.', error);
+        }
+    }
+
+    const explicitTimestamp = [saleTimestamp, activeOrderCreatedAt, createdAt]
+        .map(normalizeStableSaleTimestamp)
+        .find(Boolean);
+    if (explicitTimestamp) return explicitTimestamp;
+
+    if (!activeOrderId) {
+        const normalizedFallback = normalizeStableSaleTimestamp(fallback);
+        if (normalizedFallback) return normalizedFallback;
+    }
+
+    throw stableSaleTimestampRequiredError();
+};
 
 const getEcommerceCheckout = (paymentData = {}) => {
     const checkout = paymentData?.__ecommerceCheckout;
@@ -157,6 +198,9 @@ export const processSaleCore = async ({
     tempPrescriptionData,
     ignoreStock = false,
     activeOrderId,
+    saleTimestamp = null,
+    activeOrderCreatedAt = null,
+    createdAt = null,
     actorContext = null
 }, {
     loadData,
@@ -313,7 +357,16 @@ export const processSaleCore = async ({
             enforceExpiryStrict: !isCloudInventorySale
         });
 
-        const currentIsoTime = new Date().toISOString();
+        const stableSaleTimestamp = await resolveStableSaleTimestamp({
+            activeOrderId,
+            saleTimestamp,
+            activeOrderCreatedAt,
+            createdAt,
+            loadData,
+            STORES,
+            fallback: new Date().toISOString(),
+            Logger
+        });
         const discountTotal = Money.toExactString(financialTotals.discountTotal);
         const subtotal = Money.toExactString(financialTotals.subtotal);
         const saleDiscountAudit = financialTotals.saleDiscount || null;
@@ -332,7 +385,7 @@ export const processSaleCore = async ({
 
         const sale = {
             id: activeOrderId || generateID('sal'),
-            timestamp: currentIsoTime,
+            timestamp: stableSaleTimestamp,
             salesChannel: isEcommerceSale ? 'ecommerce' : 'local',
             ecommerceOrderId: isEcommerceSale ? ecommerceCheckout.ecommerceOrderId : null,
             ecommerceOrderCode: isEcommerceSale ? ecommerceCheckout.ecommerceOrderCode || null : null,
@@ -543,5 +596,7 @@ export const processSaleCoreInternals = Object.freeze({
     sanitizePaymentData,
     applyAndValidateEcommerceSnapshot,
     getLineId,
-    toCents
+    toCents,
+    resolveStableSaleTimestamp,
+    normalizeStableSaleTimestamp
 });
