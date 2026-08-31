@@ -260,6 +260,7 @@ export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
   paymentMethod: cloudSale.payment_method || undefined,
   paymentStatus: cloudSale.payment_status || undefined,
   folio: cloudSale.cloud_folio || cloudSale.folio || undefined,
+  posFolio: cloudSale.pos_folio || cloudSale.posFolio || cloudSale.operational_folio || cloudSale.operationalFolio || undefined,
   cloudFolio: cloudSale.cloud_folio || undefined,
   salesChannel: cloudSale.sales_channel || cloudSale.salesChannel || undefined,
   ecommerceOrderId: cloudSale.ecommerce_order_id || cloudSale.ecommerceOrderId
