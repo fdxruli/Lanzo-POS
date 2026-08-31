@@ -5,6 +5,7 @@ import {
   getSaleDisplayReference,
   getSaleEcommerceOrderCode,
   getSaleFinancialFolio,
+  getSaleOperationalFolio,
   getSaleOriginLabel,
   getSaleSecondaryReference,
   isEcommerceSale,
@@ -290,10 +291,11 @@ export default function SalesHistory({
   };
 
   const exportCsv = () => {
-    const header = ['id', 'cloud_sale_id', 'folio_venta', 'pedido_ecommerce', 'canal', 'fecha', 'cliente', 'metodo_pago', 'estado', 'source_mode', 'total'];
+    const header = ['id', 'cloud_sale_id', 'folio_pos', 'folio_venta', 'pedido_ecommerce', 'canal', 'fecha', 'cliente', 'metodo_pago', 'estado', 'source_mode', 'total'];
     const rows = filteredSales.map((sale) => [
       sale.id,
       sale.cloudSaleId || sale.cloud_sale_id,
+      getSaleOperationalFolio(sale),
       getSaleFinancialFolio(sale),
       getSaleEcommerceOrderCode(sale),
       getSaleOriginLabel(sale),
@@ -319,6 +321,7 @@ export default function SalesHistory({
   const printPdf = () => {
     const rows = filteredSales.map((sale) => `
       <tr>
+        <td>${getSaleOperationalFolio(sale) || ''}</td>
         <td>${getSaleFinancialFolio(sale) || ''}</td>
         <td>${getSaleEcommerceOrderCode(sale) || ''}</td>
         <td>${getSaleOriginLabel(sale)}</td>
@@ -347,7 +350,7 @@ export default function SalesHistory({
           <h1>Historial de ventas</h1>
           <table>
             <thead>
-              <tr><th>Folio de venta</th><th>Pedido ecommerce</th><th>Canal</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th>Fuente</th><th>Total</th></tr>
+              <tr><th>Folio POS</th><th>Folio de venta</th><th>Pedido ecommerce</th><th>Canal</th><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Estado</th><th>Fuente</th><th>Total</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
