@@ -482,6 +482,7 @@ export const processSaleCore = async ({
                 cloudSaleId: cloudResult.response?.sale?.id || null,
                 timestamp: cloudSale.timestamp,
                 folio: cloudSale.folio,
+                posFolio: cloudSale.posFolio || cloudSale.pos_folio || cloudResult.response?.sale?.pos_folio || cloudResult.response?.sale?.posFolio || null,
                 sourceMode: 'cloud_committed',
                 effectsStatus: cloudSale.effectsStatus || cloudResult.response?.sale?.effects_status || 'payment_recorded',
                 inventoryEffectStatus: cloudSale.inventoryEffectStatus || cloudResult.response?.sale?.inventory_effect_status || 'not_applied',
