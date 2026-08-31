@@ -130,8 +130,8 @@ begin
   ) values
     (v_admin_session_a, v_license_id, v_admin_user, v_device_a, extensions.crypt(v_admin_token_a, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
     (v_admin_session_b, v_license_id, v_admin_user, v_device_b, extensions.crypt(v_admin_token_b, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
-    (v_admin_session_c, v_license_id, v_other_admin_user, v_device_c, extensions.crypt(v_admin_token_c, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
-    (v_admin_session_d, v_license_id, v_other_admin_user, v_device_d, extensions.crypt(v_admin_token_d, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
+    (v_admin_session_c, v_license_id, v_admin_user, v_device_c, extensions.crypt(v_admin_token_c, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
+    (v_admin_session_d, v_license_id, v_admin_user, v_device_d, extensions.crypt(v_admin_token_d, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
 
   insert into public.pos_products(
     id, license_id, name, name_key, price, cost, stock, committed_stock,
@@ -226,15 +226,15 @@ begin
       where license_id = v_license_id
         and status = 'open'
         and deleted_at is null
-        and actor_key = 'admin:' || v_admin_user::text) <> 2 then
+        and actor_key = 'admin:' || v_admin_user::text) <> 3 then
     raise exception 'MULTI_ADMIN_OPEN_SESSION_COUNT_FAILED';
   end if;
   if (select count(*) from public.pos_cash_sessions
       where license_id = v_license_id
         and status = 'open'
         and deleted_at is null
-        and actor_key = 'admin:' || v_other_admin_user::text) <> 1 then
-    raise exception 'MULTI_ADMIN_SECOND_ADMIN_OPEN_SESSION_COUNT_FAILED';
+        and actor_key = 'admin:' || v_other_admin_user::text) <> 0 then
+    raise exception 'MULTI_ADMIN_NON_OWNER_SESSION_CREATED_UNEXPECTEDLY';
   end if;
 
   -- Current-session reads remain station-scoped in both directions.
@@ -281,7 +281,7 @@ begin
     raise exception 'MULTI_ADMIN_STATE_B_FAILED: %', v_result;
   end if;
 
-  -- A different Admin actor bound to A cannot open a second session there.
+  -- A second authenticated device bound to A cannot open a second session there for the same actor.
   insert into public.pos_cash_station_bindings(
     license_id, cash_station_id, device_id, binding_mode, status
   ) values (v_license_id, v_station_a, v_device_c, 'explicit', 'active');
@@ -295,7 +295,7 @@ begin
       'cash-multi-open-conflict-' || v_suffix
     );
     if coalesce((v_result->>'success')::boolean, false) is not false
-       or v_result->>'code' <> 'CASH_HANDOFF_REQUIRED' then
+       or v_result->>'code' <> 'CASH_SESSION_ALREADY_OPEN' then
       raise exception 'MULTI_ADMIN_SAME_STATION_ACCEPTED: %', v_result;
     end if;
   exception when others then
