@@ -1,0 +1,420 @@
+name: PR258 Exact Base PublicStore Flake Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-base-publicstore-flake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BASE_SHA: 743e760e972b87dbc47a01bd32b08d6a0e99ab90
+      CANDIDATE_SHA: 0cff506dd8257b78fbcc46d33c98cf978db77476
+      TARGET_FILE: src/pages/__tests__/PublicStorePage.siteVersion.test.jsx
+      TARGET_NAME: keeps v1 while only the draft changes, then renders v2 without changing catalogRevision
+
+    steps:
+      - name: Checkout exact BASE
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: base
+          fetch-depth: 1
+
+      - name: Checkout exact CANDIDATE
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+          fetch-depth: 0
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Verify exact heads and runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          BASE_HEAD="$(git -C base rev-parse HEAD)"
+          CANDIDATE_HEAD="$(git -C candidate rev-parse HEAD)"
+          printf 'BASE_HEAD=%s\nCANDIDATE_HEAD=%s\n' "$BASE_HEAD" "$CANDIDATE_HEAD" | tee evidence/head-verification.txt
+          test "$BASE_HEAD" = "$BASE_SHA"
+          test "$CANDIDATE_HEAD" = "$CANDIDATE_SHA"
+          {
+            echo "RUNNER_OS=$(uname -a)"
+            echo "NODE_VERSION=$(node --version)"
+            echo "NPM_VERSION=$(npm --version)"
+          } | tee evidence/runtime.txt
+
+      - name: Install BASE dependencies
+        working-directory: base
+        run: npm ci
+
+      - name: Install CANDIDATE dependencies
+        working-directory: candidate
+        run: npm ci
+
+      - name: Phase A - focused BASE 50x
+        shell: bash
+        run: |
+          set -u
+          mkdir -p evidence/base-focused
+          for i in $(seq 1 50); do
+            echo "BASE focused repetition ${i}"
+            set +e
+            (
+              cd base
+              npx vitest run "$TARGET_FILE" \
+                --maxWorkers=1 \
+                --reporter=json \
+                --outputFile="../evidence/base-focused/run-${i}.json"
+            ) > "evidence/base-focused/run-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "evidence/base-focused/run-${i}.exit"
+          done
+
+      - name: Summarize focused BASE
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const side = 'base';
+          const root = `evidence/${side}-focused`;
+          const target = process.env.TARGET_NAME;
+          const runs = [];
+          const norm = (text='') => {
+            const s = String(text).replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
+            if (/STACK_TRACE_ERROR/i.test(s) || /timed out in \d+ms/i.test(s) || /timeout/i.test(s)) return 'TIMEOUT_OR_STACK_TRACE_ERROR';
+            return s.split('\n')[0].slice(0, 500) || null;
+          };
+          for (let i=1; i<=50; i++) {
+            const jsonPath = path.join(root, `run-${i}.json`);
+            const exitPath = path.join(root, `run-${i}.exit`);
+            const exitCode = Number(fs.readFileSync(exitPath, 'utf8').trim());
+            let doc = null;
+            if (fs.existsSync(jsonPath)) {
+              try { doc = JSON.parse(fs.readFileSync(jsonPath, 'utf8')); } catch {}
+            }
+            let assertion = null;
+            let suite = null;
+            for (const item of doc?.testResults || []) {
+              const found = (item.assertionResults || []).find(a => String(a.fullName || a.title || '').includes(target));
+              if (found) { assertion = found; suite = item; break; }
+            }
+            const duration = Number(assertion?.duration ?? ((suite?.endTime && suite?.startTime) ? suite.endTime-suite.startTime : 0)) || null;
+            const failureMessage = [
+              ...(assertion?.failureMessages || []),
+              ...(doc?.failureMessages || [])
+            ].join('\n');
+            const failed = exitCode !== 0 || doc?.numFailedTests > 0 || assertion?.status === 'failed';
+            runs.push({
+              run: i,
+              exit_code: exitCode,
+              passed: !failed,
+              failed,
+              duration_ms: duration,
+              error_signature: failed ? norm(failureMessage) : null,
+              timeout_failure: failed && ((duration !== null && duration >= 14900) || /STACK_TRACE_ERROR|timed out|timeout/i.test(failureMessage))
+            });
+          }
+          const durations = runs.map(r => r.duration_ms).filter(Number.isFinite).sort((a,b)=>a-b);
+          const percentile = (xs, p) => xs.length ? xs[Math.max(0, Math.ceil(xs.length*p)-1)] : null;
+          const median = xs => xs.length ? (xs.length % 2 ? xs[(xs.length-1)/2] : (xs[xs.length/2-1]+xs[xs.length/2])/2) : null;
+          const failures = runs.filter(r=>r.failed).length;
+          const summary = {
+            runs: runs.length,
+            passes: runs.length - failures,
+            failures,
+            failure_rate: failures / runs.length,
+            durations: { min: durations.length ? durations[0] : null, median: median(durations), p95: percentile(durations, 0.95), max: durations.length ? durations[durations.length-1] : null },
+            timeout_failures: runs.filter(r=>r.timeout_failure).length,
+            failure_signatures: [...new Set(runs.map(r=>r.error_signature).filter(Boolean))],
+            repetitions: runs
+          };
+          fs.writeFileSync('evidence/base-focused-summary.json', JSON.stringify(summary, null, 2));
+          fs.writeFileSync('evidence/base-focused-summary.txt', `runs=${summary.runs}\npasses=${summary.passes}\nfailures=${summary.failures}\nfailure_rate=${summary.failure_rate}\nmin_ms=${summary.durations.min}\nmedian_ms=${summary.durations.median}\np95_ms=${summary.durations.p95}\nmax_ms=${summary.durations.max}\ntimeout_failures=${summary.timeout_failures}\n`);
+          NODE
+
+      - name: Phase B - focused CANDIDATE 50x
+        shell: bash
+        run: |
+          set -u
+          mkdir -p evidence/candidate-focused
+          for i in $(seq 1 50); do
+            echo "CANDIDATE focused repetition ${i}"
+            set +e
+            (
+              cd candidate
+              npx vitest run "$TARGET_FILE" \
+                --maxWorkers=1 \
+                --reporter=json \
+                --outputFile="../evidence/candidate-focused/run-${i}.json"
+            ) > "evidence/candidate-focused/run-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "evidence/candidate-focused/run-${i}.exit"
+          done
+
+      - name: Summarize focused CANDIDATE
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const side = 'candidate';
+          const root = `evidence/${side}-focused`;
+          const target = process.env.TARGET_NAME;
+          const runs = [];
+          const norm = (text='') => {
+            const s = String(text).replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
+            if (/STACK_TRACE_ERROR/i.test(s) || /timed out in \d+ms/i.test(s) || /timeout/i.test(s)) return 'TIMEOUT_OR_STACK_TRACE_ERROR';
+            return s.split('\n')[0].slice(0, 500) || null;
+          };
+          for (let i=1; i<=50; i++) {
+            const jsonPath = path.join(root, `run-${i}.json`);
+            const exitPath = path.join(root, `run-${i}.exit`);
+            const exitCode = Number(fs.readFileSync(exitPath, 'utf8').trim());
+            let doc = null;
+            if (fs.existsSync(jsonPath)) {
+              try { doc = JSON.parse(fs.readFileSync(jsonPath, 'utf8')); } catch {}
+            }
+            let assertion = null;
+            let suite = null;
+            for (const item of doc?.testResults || []) {
+              const found = (item.assertionResults || []).find(a => String(a.fullName || a.title || '').includes(target));
+              if (found) { assertion = found; suite = item; break; }
+            }
+            const duration = Number(assertion?.duration ?? ((suite?.endTime && suite?.startTime) ? suite.endTime-suite.startTime : 0)) || null;
+            const failureMessage = [
+              ...(assertion?.failureMessages || []),
+              ...(doc?.failureMessages || [])
+            ].join('\n');
+            const failed = exitCode !== 0 || doc?.numFailedTests > 0 || assertion?.status === 'failed';
+            runs.push({
+              run: i,
+              exit_code: exitCode,
+              passed: !failed,
+              failed,
+              duration_ms: duration,
+              error_signature: failed ? norm(failureMessage) : null,
+              timeout_failure: failed && ((duration !== null && duration >= 14900) || /STACK_TRACE_ERROR|timed out|timeout/i.test(failureMessage))
+            });
+          }
+          const durations = runs.map(r => r.duration_ms).filter(Number.isFinite).sort((a,b)=>a-b);
+          const percentile = (xs, p) => xs.length ? xs[Math.max(0, Math.ceil(xs.length*p)-1)] : null;
+          const median = xs => xs.length ? (xs.length % 2 ? xs[(xs.length-1)/2] : (xs[xs.length/2-1]+xs[xs.length/2])/2) : null;
+          const failures = runs.filter(r=>r.failed).length;
+          const summary = {
+            runs: runs.length,
+            passes: runs.length - failures,
+            failures,
+            failure_rate: failures / runs.length,
+            durations: { min: durations.length ? durations[0] : null, median: median(durations), p95: percentile(durations, 0.95), max: durations.length ? durations[durations.length-1] : null },
+            timeout_failures: runs.filter(r=>r.timeout_failure).length,
+            failure_signatures: [...new Set(runs.map(r=>r.error_signature).filter(Boolean))],
+            repetitions: runs
+          };
+          fs.writeFileSync('evidence/candidate-focused-summary.json', JSON.stringify(summary, null, 2));
+          fs.writeFileSync('evidence/candidate-focused-summary.txt', `runs=${summary.runs}\npasses=${summary.passes}\nfailures=${summary.failures}\nfailure_rate=${summary.failure_rate}\nmin_ms=${summary.durations.min}\nmedian_ms=${summary.durations.median}\np95_ms=${summary.durations.p95}\nmax_ms=${summary.durations.max}\ntimeout_failures=${summary.timeout_failures}\n`);
+          NODE
+
+      - name: Phase C - full suite BASE 3x
+        shell: bash
+        run: |
+          set -u
+          mkdir -p evidence/base-full-suite
+          for i in 1 2 3; do
+            echo "BASE full-suite repetition ${i}"
+            set +e
+            (
+              cd base
+              npm run test:ci -- --reporter=json --outputFile="../evidence/base-full-suite/full-suite-${i}.json"
+            ) > "evidence/base-full-suite/full-suite-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "evidence/base-full-suite/full-suite-${i}.exit"
+          done
+
+      - name: Phase D - full suite CANDIDATE 3x
+        shell: bash
+        run: |
+          set -u
+          mkdir -p evidence/candidate-full-suite
+          for i in 1 2 3; do
+            echo "CANDIDATE full-suite repetition ${i}"
+            set +e
+            (
+              cd candidate
+              npm run test:ci -- --reporter=json --outputFile="../evidence/candidate-full-suite/full-suite-${i}.json"
+            ) > "evidence/candidate-full-suite/full-suite-${i}.log" 2>&1
+            code=$?
+            set -e
+            echo "$code" > "evidence/candidate-full-suite/full-suite-${i}.exit"
+          done
+
+      - name: Summarize full suites
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const targetFile = process.env.TARGET_FILE;
+          const targetName = process.env.TARGET_NAME;
+          const norm = (text='') => {
+            const s = String(text).replace(/\x1b\[[0-9;]*m/g, '').replace(/\s+/g, ' ').trim();
+            if (/STACK_TRACE_ERROR/i.test(s) || /timed out in \d+ms/i.test(s) || /timeout/i.test(s)) return 'TIMEOUT_OR_STACK_TRACE_ERROR';
+            return s.split('\n')[0].slice(0, 500) || null;
+          };
+          for (const side of ['base', 'candidate']) {
+            const root = `evidence/${side}-full-suite`;
+            const repetitions = [];
+            for (let i=1; i<=3; i++) {
+              const jsonPath = path.join(root, `full-suite-${i}.json`);
+              const exitCode = Number(fs.readFileSync(path.join(root, `full-suite-${i}.exit`), 'utf8').trim());
+              let doc = null;
+              if (fs.existsSync(jsonPath)) {
+                try { doc = JSON.parse(fs.readFileSync(jsonPath, 'utf8')); } catch {}
+              }
+              let suite = null;
+              let assertion = null;
+              for (const item of doc?.testResults || []) {
+                const name = String(item.name || item.testFilePath || '');
+                const found = (item.assertionResults || []).find(a => String(a.fullName || a.title || '').includes(targetName));
+                if (found || name.endsWith(targetFile)) {
+                  suite = item;
+                  assertion = found || (item.assertionResults || [])[0] || null;
+                  if (found) break;
+                }
+              }
+              const failureMessage = [...(assertion?.failureMessages || []), ...(suite?.failureMessage ? [suite.failureMessage] : [])].join('\n');
+              const targetFailed = assertion?.status === 'failed' || suite?.status === 'failed';
+              repetitions.push({
+                run: i,
+                exit_code: exitCode,
+                numPassedTests: doc?.numPassedTests ?? null,
+                numFailedTests: doc?.numFailedTests ?? null,
+                numTotalTests: doc?.numTotalTests ?? null,
+                target_executed: Boolean(assertion || suite),
+                target_passed: Boolean(assertion || suite) && !targetFailed,
+                target_failed: Boolean(targetFailed),
+                target_duration_ms: Number(assertion?.duration ?? ((suite?.endTime && suite?.startTime) ? suite.endTime-suite.startTime : 0)) || null,
+                target_failure_message: targetFailed ? failureMessage : null,
+                target_error_signature: targetFailed ? norm(failureMessage) : null
+              });
+            }
+            const summary = {
+              runs: repetitions.length,
+              target_passes: repetitions.filter(r=>r.target_passed).length,
+              target_failures: repetitions.filter(r=>r.target_failed).length,
+              failure_signatures: [...new Set(repetitions.map(r=>r.target_error_signature).filter(Boolean))],
+              repetitions
+            };
+            fs.writeFileSync(`evidence/${side}-full-suite-summary.json`, JSON.stringify(summary, null, 2));
+          }
+          NODE
+
+      - name: Phase F - verify code identity and causal path
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_TEST_SHA="$(git -C base hash-object "$TARGET_FILE")"
+          CANDIDATE_TEST_SHA="$(git -C candidate hash-object "$TARGET_FILE")"
+          BASE_PAGE_SHA="$(git -C base hash-object src/pages/PublicStorePage.jsx)"
+          CANDIDATE_PAGE_SHA="$(git -C candidate hash-object src/pages/PublicStorePage.jsx)"
+          git -C candidate diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" > evidence/pr258-changed-files.txt
+          printf 'BASE_TEST_SHA=%s\nCANDIDATE_TEST_SHA=%s\nBASE_PAGE_SHA=%s\nCANDIDATE_PAGE_SHA=%s\n' "$BASE_TEST_SHA" "$CANDIDATE_TEST_SHA" "$BASE_PAGE_SHA" "$CANDIDATE_PAGE_SHA" | tee evidence/blob-identity.txt
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const changed = new Set(fs.readFileSync('evidence/pr258-changed-files.txt','utf8').split(/\r?\n/).filter(Boolean));
+          const testFile = process.env.TARGET_FILE;
+          const pageFile = 'src/pages/PublicStorePage.jsx';
+          const extensions = ['', '.js', '.jsx', '.mjs', '.cjs', '/index.js', '/index.jsx'];
+          function directImports(file) {
+            const text = fs.readFileSync(path.join('base', file), 'utf8');
+            const specs = [];
+            const re = /(?:import\s+(?:[^'\"]+?\s+from\s+)?|import\s*\()\s*['\"]([^'\"]+)['\"]/g;
+            let m;
+            while ((m = re.exec(text))) specs.push(m[1]);
+            const out = [];
+            for (const spec of specs) {
+              if (!spec.startsWith('.')) continue;
+              const raw = path.posix.normalize(path.posix.join(path.posix.dirname(file), spec));
+              for (const ext of extensions) {
+                const candidate = raw + ext;
+                if (fs.existsSync(path.join('base', candidate))) { out.push(candidate); break; }
+              }
+            }
+            return out;
+          }
+          const deps = [...new Set([...directImports(testFile), ...directImports(pageFile)])];
+          const changedDirect = deps.filter(d => changed.has(d));
+          const identities = Object.fromEntries(fs.readFileSync('evidence/blob-identity.txt','utf8').trim().split(/\r?\n/).map(line => line.split('=',2)));
+          const result = {
+            test_file_byte_identical: identities.BASE_TEST_SHA === identities.CANDIDATE_TEST_SHA,
+            publicstore_page_byte_identical: identities.BASE_PAGE_SHA === identities.CANDIDATE_PAGE_SHA,
+            pr258_touches_publicstore: changed.has(testFile) || changed.has(pageFile),
+            pr258_touches_direct_dependency: changedDirect.length > 0,
+            changed_direct_dependencies: changedDirect,
+            direct_dependencies_checked: deps,
+            plausible_pr258_causal_path: changed.has(testFile) || changed.has(pageFile) || changedDirect.length > 0
+          };
+          fs.writeFileSync('evidence/causal-path.json', JSON.stringify(result, null, 2));
+          fs.writeFileSync('evidence/causal-path.txt', `test_file_byte_identical=${result.test_file_byte_identical}\npublicstore_page_byte_identical=${result.publicstore_page_byte_identical}\npr258_touches_publicstore=${result.pr258_touches_publicstore}\npr258_touches_direct_dependency=${result.pr258_touches_direct_dependency}\nplausible_pr258_causal_path=${result.plausible_pr258_causal_path}\n`);
+          NODE
+
+      - name: Phase E - statistical comparison and classification
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const base = JSON.parse(fs.readFileSync('evidence/base-focused-summary.json','utf8'));
+          const cand = JSON.parse(fs.readFileSync('evidence/candidate-focused-summary.json','utf8'));
+          const baseFull = JSON.parse(fs.readFileSync('evidence/base-full-suite-summary.json','utf8'));
+          const candFull = JSON.parse(fs.readFileSync('evidence/candidate-full-suite-summary.json','utf8'));
+          const causal = JSON.parse(fs.readFileSync('evidence/causal-path.json','utf8'));
+          function logFact(n) { let s=0; for (let i=2;i<=n;i++) s+=Math.log(i); return s; }
+          function logChoose(n,k) { return (k<0||k>n) ? -Infinity : logFact(n)-logFact(k)-logFact(n-k); }
+          function hyper(a,row1,col1,total) { return Math.exp(logChoose(col1,a)+logChoose(total-col1,row1-a)-logChoose(total,row1)); }
+          function fisherTwoSided(a,b,c,d) {
+            const row1=a+b, col1=a+c, total=a+b+c+d;
+            const min=Math.max(0,row1-(total-col1)), max=Math.min(row1,col1), observed=hyper(a,row1,col1,total);
+            let p=0;
+            for (let x=min;x<=max;x++) { const px=hyper(x,row1,col1,total); if (px<=observed+1e-12) p+=px; }
+            return Math.min(1,p);
+          }
+          const p=fisherTwoSided(base.failures,base.passes,cand.failures,cand.passes);
+          const delta=cand.failure_rate-base.failure_rate;
+          const materiallyWorse=cand.failure_rate>base.failure_rate && p<0.05;
+          const baseKnown=[...base.failure_signatures,...baseFull.failure_signatures].includes('TIMEOUT_OR_STACK_TRACE_ERROR');
+          const candKnown=[...cand.failure_signatures,...candFull.failure_signatures].includes('TIMEOUT_OR_STACK_TRACE_ERROR');
+          const bothIntermittent=base.failures>0 && cand.failures>0 && p>=0.05;
+          const allTargetPass=base.failures===0 && cand.failures===0 && baseFull.target_failures===0 && candFull.target_failures===0 && baseFull.target_passes===3 && candFull.target_passes===3;
+          let classification='UNKNOWN';
+          if (materiallyWorse && causal.plausible_pr258_causal_path) classification='CANDIDATE_ONLY_REGRESSION';
+          else if (baseKnown && !materiallyWorse) classification='EXACT_BASE_FLAKE';
+          else if (bothIntermittent) classification='STATISTICALLY_INDISTINGUISHABLE_FLAKE';
+          else if (allTargetPass) classification='NO_REPRODUCED_FLAKE';
+          const safe=['EXACT_BASE_FLAKE','STATISTICALLY_INDISTINGUISHABLE_FLAKE','NO_REPRODUCED_FLAKE'].includes(classification) && !causal.plausible_pr258_causal_path;
+          const r3Blocking=!safe;
+          const sourceFixJustified=classification==='CANDIDATE_ONLY_REGRESSION' && causal.plausible_pr258_causal_path;
+          fs.writeFileSync('evidence/statistical-comparison.txt', `BASE_FOCUSED_FAILURES=${base.failures}/50\nCANDIDATE_FOCUSED_FAILURES=${cand.failures}/50\nFAILURE_RATE_DELTA=${delta}\nFISHER_EXACT_P_VALUE=${p}\nBASE_FULL_SUITE_TARGET_FAILURES=${baseFull.target_failures}/3\nCANDIDATE_FULL_SUITE_TARGET_FAILURES=${candFull.target_failures}/3\nSAME_FAILURE_SIGNATURE_BASE=${baseKnown?'YES':'NO'}\nSAME_FAILURE_SIGNATURE_CANDIDATE=${candKnown?'YES':'NO'}\n`);
+          fs.writeFileSync('evidence/final-classification.txt', `CLASSIFICATION=${classification}\nCANDIDATE_ONLY_REGRESSION=${classification==='CANDIDATE_ONLY_REGRESSION'?'YES':'NO'}\nEXACT_BASE_FLAKE=${classification==='EXACT_BASE_FLAKE'?'YES':'NO'}\nSTATISTICALLY_INDISTINGUISHABLE_FLAKE=${classification==='STATISTICALLY_INDISTINGUISHABLE_FLAKE'?'YES':'NO'}\nNO_REPRODUCED_FLAKE=${classification==='NO_REPRODUCED_FLAKE'?'YES':'NO'}\nUNKNOWN=${classification==='UNKNOWN'?'YES':'NO'}\nPLAUSIBLE_PR258_CAUSAL_PATH=${causal.plausible_pr258_causal_path?'YES':'NO'}\nR3_CI_BLOCKING=${r3Blocking?'YES':'NO'}\nPR258_SOURCE_FIX_JUSTIFIED=${sourceFixJustified?'YES':'NO'}\n`);
+          NODE
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr258-exact-base-publicstore-flake-evidence
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 14
