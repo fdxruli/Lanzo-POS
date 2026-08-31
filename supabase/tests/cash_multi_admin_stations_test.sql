@@ -118,12 +118,12 @@ begin
     );
 
   insert into public.license_devices(
-    id, license_id, device_fingerprint, device_name, security_token, is_active, device_role, staff_user_id
+    id, license_id, device_fingerprint, device_name, security_token, is_active, device_role, device_mode, staff_user_id
   ) values
-    (v_device_a, v_license_id, v_fingerprint_a, 'Admin station A', v_device_token_a, true, 'admin', null),
-    (v_device_b, v_license_id, v_fingerprint_b, 'Admin station B', v_device_token_b, true, 'admin', null),
-    (v_device_c, v_license_id, v_fingerprint_c, 'Second admin conflict station', v_device_token_c, true, 'admin', null),
-    (v_device_d, v_license_id, v_fingerprint_d, 'Second admin station D', v_device_token_d, true, 'admin', null);
+    (v_device_a, v_license_id, v_fingerprint_a, 'Admin station A', v_device_token_a, true, 'admin', 'admin_only', null),
+    (v_device_b, v_license_id, v_fingerprint_b, 'Admin station B', v_device_token_b, true, 'admin', 'admin_only', null),
+    (v_device_c, v_license_id, v_fingerprint_c, 'Second admin conflict station', v_device_token_c, true, 'admin', 'admin_only', null),
+    (v_device_d, v_license_id, v_fingerprint_d, 'Second admin station D', v_device_token_d, true, 'admin', 'admin_only', null);
 
   insert into public.license_admin_sessions(
     id, license_id, admin_user_id, device_id, session_token_hash, expires_at
