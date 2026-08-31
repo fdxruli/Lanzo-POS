@@ -1,7 +1,9 @@
 name: PR258 Exact Base PublicStore Flake Diagnostic
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - diagnostic/pr258-exact-base-publicstore-flake
 
 permissions:
   contents: read
