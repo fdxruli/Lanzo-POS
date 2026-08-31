@@ -73,6 +73,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const isFiado = paymentMethod === 'fiado';
   const hasInitialCreditPayment = isFiado && safePaid.gt(0);
   const change = isEfectivo ? Money.subtract(safePaid, safeTotal) : Money.init('0');
+  const safeChange = change.gte(0) ? change : Money.init('0');
   const saldoPendiente = isFiado ? Money.subtract(safeTotal, safePaid) : Money.init('0');
   const currentCustomer = customers.find((customer) => customer.id === selectedCustomerId);
   const limit = Money.init(currentCustomer?.creditLimit || 0);
@@ -102,6 +103,8 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
     try {
       await onConfirm({
         amountPaid: Money.toExactString(safePaid),
+        receivedAmount: isEfectivo || (hasInitialCreditPayment && initialPaymentMethod === 'efectivo') ? Money.toExactString(safePaid) : null,
+        changeAmount: isEfectivo ? Money.toExactString(safeChange) : '0',
         customerId: selectedCustomerId,
         paymentMethod,
         initialPaymentMethod: hasInitialCreditPayment ? initialPaymentMethod : null,
@@ -212,7 +215,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
                   {isEfectivo && <div className="quick-cash-options">{CASH_DENOMINATIONS.map((amount) => <button key={amount} type="button" className="btn-cash-option" onClick={() => handleDenominationClick(amount)}>${amount}</button>)}<button type="button" className="btn-cash-option btn-cash-option-exact" onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}>Exacto (${Money.toNumber(safeTotal).toFixed(2)})</button></div>}
 
-                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${change.gte(0) ? Money.toNumber(change).toFixed(2) : '0.00'}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
+                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
                 </div>
 
                 <div className="payment-actions">
