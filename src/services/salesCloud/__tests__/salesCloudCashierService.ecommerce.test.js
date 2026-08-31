@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   markProjectionFailed: vi.fn(),
   pullCatalogChanges: vi.fn(),
   recoveryTrace: [],
+  cloudCashierEnabled: true,
   actorHandle: { assertCurrent: vi.fn() }
 }));
 
@@ -28,7 +29,7 @@ vi.mock('../../../store/useAppStore', () => ({
 
 vi.mock('../../sync/syncConstants', () => ({
   getLicenseKeyFromDetails: vi.fn((details) => details?.license_key || null),
-  isCloudSalesCashierEnabled: vi.fn(() => true),
+  isCloudSalesCashierEnabled: vi.fn(() => mocks.cloudCashierEnabled),
   isCloudSalesCreditEnabled: vi.fn(() => true),
   isCloudSalesInventoryEnabled: vi.fn(() => true)
 }));
@@ -66,6 +67,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('VITE_ENABLE_CLOUD_CASHIER_SALES', 'true');
   mocks.recoveryTrace.splice(0);
+  mocks.cloudCashierEnabled = true;
   mocks.saveCloudCommittedSaleSnapshot.mockResolvedValue({ id: 'sale-1', status: 'closed' });
   mocks.applyCloudSalesPayload.mockResolvedValue({ success: true });
   mocks.markProjectionApplied.mockResolvedValue(undefined);
@@ -120,6 +122,18 @@ const projectResponse = async (options, response, operationType = 'sale.cashier_
 };
 
 describe('salesCloudCashierService ecommerce idempotency', () => {
+  it('routes Local/Free feature-disabled licenses to the local checkout path', async () => {
+    mocks.cloudCashierEnabled = false;
+
+    await expect(salesCloudCashierService.shouldUseCloudCashierSale({
+      paymentData: { paymentMethod: 'cash' },
+      cart: [{ id: 'product-1', quantity: 1 }]
+    })).resolves.toEqual({
+      useCloud: false,
+      reason: 'feature_disabled'
+    });
+  });
+
   it('uses the ecommerce business key without a device suffix', () => {
     const result = salesCloudCashierServiceInternals.buildCloudSaleIdempotencyKey({
       sale: {
