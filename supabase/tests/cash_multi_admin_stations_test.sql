@@ -507,6 +507,6 @@ begin
     raise exception 'MULTI_ADMIN_CROSS_STATION_FOLIO_ADVANCED';
   end if;
 end;
-$$;
+$test$;
 
 rollback;
