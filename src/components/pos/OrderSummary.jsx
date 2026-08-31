@@ -16,7 +16,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
@@ -46,18 +46,6 @@ import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
 import './OrderSummaryRestInv2.css';
-
-const generateStoreCode = (companyName) => {
-  if (!companyName || typeof companyName !== 'string') return 'LZ';
-  const nameParts = companyName.trim().toUpperCase().split(/\s+/).filter(Boolean);
-  if (nameParts.length === 0) return 'LZ';
-  if (nameParts.length >= 2) {
-    return nameParts[0][0] + nameParts[1][0];
-  }
-
-  const word = nameParts[0];
-  return word.length === 1 ? `${word}X` : word.substring(0, 2);
-};
 
 const normalizeRestaurantItemStatus = (status) => {
   const normalized = String(status || 'pending').trim().toLowerCase();
@@ -152,7 +140,6 @@ export default function OrderSummary({
     return itemsByLineId;
   }, [cloudItems]);
 
-  const [estimatedFolio, setEstimatedFolio] = useState('');
   const [isAdjustingKitchenCancelledItems, setIsAdjustingKitchenCancelledItems] = useState(false);
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
   const cancelledKitchenAdjustmentPreview = useMemo(
@@ -168,36 +155,6 @@ export default function OrderSummary({
     && cancelledKitchenAdjustmentPreview.success
     && !cancelledKitchenAdjustmentPreview.changed
   );
-  useEffect(() => {
-    const fetchEstimatedFolio = async () => {
-      try {
-        let nextSeq = 1;
-        const seqRecord = await db.table(STORES.SEQUENCES).get('sale_folio');
-        if (seqRecord) {
-          nextSeq = seqRecord.value + 1;
-        }
-
-        let storeCode = 'LZ';
-        let terminalId = '01';
-
-        const companies = await db.table(STORES.COMPANY).toArray();
-        if (companies.length > 0) {
-          const company = companies[0];
-          const companyName = company.name || company.business_name || '';
-
-          storeCode = company.storeCode || generateStoreCode(companyName);
-          terminalId = company.terminalId || '01';
-        }
-
-        setEstimatedFolio(`${storeCode}-${terminalId}-${String(nextSeq).padStart(6, '0')}`);
-      } catch (error) {
-        console.error('Error fetching estimated folio:', error);
-      }
-    };
-
-    fetchEstimatedFolio();
-  }, [order.length]);
-
   const total = getTotalPrice();
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
   const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
@@ -414,9 +371,9 @@ export default function OrderSummary({
               : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))}
           </h2>
 
-          {estimatedFolio && !isEditMode && (
+          {!isEditMode && (
             <p className="summary-folio">
-              Folio estimado: <strong>{estimatedFolio}</strong>
+              Folio POS: <strong>{currentOrder?.posFolio || currentOrder?.pos_folio || 'se asigna al confirmar'}</strong>
             </p>
           )}
 
