@@ -111,9 +111,9 @@ begin
       v_other_admin_user,
       v_license_id,
       'cash_multi_other_' || substr(v_suffix, 1, 6),
-      'Second admin',
+      'Second owner-capable admin',
       extensions.crypt('password-other-' || v_suffix, extensions.gen_salt('bf', 4)),
-      false,
+      true,
       true
     );
 
