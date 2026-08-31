@@ -76,6 +76,7 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   saldoPendiente: String(cloudSale.balance_due ?? 0),
   status: cloudSale.status || localSale.status || 'closed',
   folio: cloudSale.cloud_folio || cloudSale.folio || localSale.folio,
+  posFolio: cloudSale.pos_folio || cloudSale.posFolio || localSale.posFolio || localSale.pos_folio || null,
   cloudFolio: cloudSale.cloud_folio || null,
   salesChannel: cloudSale.sales_channel || cloudSale.salesChannel || localSale.salesChannel
     || (cloudSale.ecommerce_order_id || cloudSale.ecommerce_order_code ? 'ecommerce' : 'local'),
