@@ -111,6 +111,7 @@ const normalizeSalesFinalHistoryRow = (row = {}) => {
     cloud_sale_id: cloudSaleId,
     localSaleId,
     folio: pick(row, ['folio', 'cloud_folio', 'cloudFolio'], cloudSaleId),
+    posFolio: pick(row, ['posFolio', 'pos_folio', 'operationalFolio', 'operational_folio'], null),
     cloudFolio: pick(row, ['cloudFolio', 'cloud_folio', 'folio'], null),
     salesChannel: traceability.salesChannel,
     ecommerceOrderId: traceability.ecommerceOrderId,
