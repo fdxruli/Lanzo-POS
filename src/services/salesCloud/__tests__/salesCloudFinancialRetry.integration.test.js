@@ -102,7 +102,17 @@ vi.mock('../../sync/syncConstants', () => ({
   getLicenseKeyFromDetails: vi.fn((details) => details?.license_key || null),
   isCloudSalesCashierEnabled: vi.fn(() => true),
   isCloudSalesCreditEnabled: vi.fn(() => true),
-  isCloudSalesInventoryEnabled: vi.fn(() => false)
+  isCloudSalesInventoryEnabled: vi.fn(() => false),
+  SYNC_ENTITY_TYPES: {
+    CASH: 'cash',
+    CASH_SESSION: 'cash_session',
+    CASH_MOVEMENT: 'cash_movement'
+  },
+  SYNC_OPERATIONS: {
+    MOVEMENT: 'movement',
+    OPEN: 'open',
+    CLOSE: 'close'
+  }
 }));
 
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: vi.fn() }));
