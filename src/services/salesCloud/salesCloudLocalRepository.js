@@ -221,6 +221,31 @@ export const salesCloudLocalRepository = {
     return localSnapshot;
   },
 
+  async markLocalSplitParentSettled({ parentOrderId, splitGroupId = null, childSaleIds = [] } = {}) {
+    if (!parentOrderId) throw new Error('SPLIT_PARENT_ID_REQUIRED');
+    await ensureOpen();
+
+    const existing = await db.table(STORES.SALES).get(parentOrderId);
+    if (!existing) throw new Error('SPLIT_PARENT_LOCAL_NOT_FOUND');
+
+    const settledAt = nowIso();
+    const patch = {
+      status: 'cancelled',
+      fulfillmentStatus: 'completed',
+      splitGroupId: splitGroupId || existing.splitGroupId || null,
+      splitChildIds: Array.isArray(childSaleIds) ? childSaleIds : [],
+      splitSettledAt: settledAt,
+      splitSettlementSource: 'cloud_committed',
+      cloudSalesSyncStatus: 'synced',
+      cloudSalesLastSyncAt: settledAt,
+      cloudSalesSyncError: null,
+      syncStatus: 'SYNCED'
+    };
+
+    await db.table(STORES.SALES).update(parentOrderId, patch);
+    return { ...existing, ...patch };
+  },
+
   async getSaleById(saleId) {
     if (!saleId) return null;
     await ensureOpen();
