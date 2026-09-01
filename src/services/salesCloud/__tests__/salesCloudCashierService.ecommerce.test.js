@@ -31,12 +31,25 @@ vi.mock('../../sync/syncConstants', () => ({
   getLicenseKeyFromDetails: vi.fn((details) => details?.license_key || null),
   isCloudSalesCashierEnabled: vi.fn(() => mocks.cloudCashierEnabled),
   isCloudSalesCreditEnabled: vi.fn(() => true),
-  isCloudSalesInventoryEnabled: vi.fn(() => true)
+  isCloudSalesInventoryEnabled: vi.fn(() => true),
+  SYNC_ENTITY_TYPES: {
+    CASH: 'cash',
+    CASH_SESSION: 'cash_session',
+    CASH_MOVEMENT: 'cash_movement'
+  },
+  SYNC_OPERATIONS: {
+    MOVEMENT: 'movement',
+    OPEN: 'open',
+    CLOSE: 'close'
+  }
 }));
 
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: mocks.pullCatalogChanges }));
 vi.mock('../../auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: () => mocks.actorHandle }
+  actorRuntimeController: {
+    capture: () => mocks.actorHandle,
+    subscribe: () => () => {}
+  }
 }));
 vi.mock('../../financial/financialIntentLedger', () => ({
   markFinancialIntentProjectionApplied: (...args) => mocks.markProjectionApplied(...args),
