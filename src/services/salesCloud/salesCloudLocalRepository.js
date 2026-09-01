@@ -1,4 +1,5 @@
 import { db, STORES } from '../db/dexie';
+import { getCommittedStock, normalizeStock } from '../db/utils';
 import { cloudSaleToLocalSyncPatch } from './salesCloudMapper';
 
 const CLOUD_SALE_CACHE_PREFIX = 'cloud_sale:';
@@ -11,6 +12,138 @@ const ensureOpen = async () => {
 const stringifyError = (error) => (
   error?.message || error?.code || String(error || 'Error desconocido')
 );
+
+const isTableReservation = (item = {}) => item?.inventoryReservation?.source === 'table';
+
+/**
+ * A table order reserves stock locally before its cloud split is committed.
+ * The cloud transaction becomes the inventory authority, so the local parent
+ * must release only its reservation. This is intentionally idempotent and
+ * never changes physical stock; catalog sync remains responsible for the
+ * authoritative cloud quantities.
+ */
+const reconcileLocalTableReservations = async ({ items = [], settledAt }) => {
+  const tableItems = (Array.isArray(items) ? items : []).filter(isTableReservation);
+  if (tableItems.length === 0) return { status: 'completed', warnings: [] };
+
+  const batchIds = new Set();
+  for (const item of tableItems) {
+    const committedBatches = Array.isArray(item.inventoryReservation?.committedBatches)
+      ? item.inventoryReservation.committedBatches
+      : [];
+    committedBatches.forEach((usage) => {
+      if (usage?.batchId) batchIds.add(usage.batchId);
+    });
+  }
+
+  const warnings = [];
+  const updatedBatches = new Map();
+  const updatedProducts = new Map();
+  const batchProductIds = new Set();
+  const batchMap = new Map();
+
+  if (batchIds.size > 0) {
+    const loadedBatches = await db.table(STORES.PRODUCT_BATCHES).bulkGet(Array.from(batchIds));
+    loadedBatches.filter(Boolean).forEach((batch) => batchMap.set(batch.id, batch));
+  }
+
+  for (const item of tableItems) {
+    const reservation = item.inventoryReservation || {};
+    const committedBatches = Array.isArray(reservation.committedBatches)
+      ? reservation.committedBatches
+      : [];
+
+    if (committedBatches.length > 0) {
+      for (const usage of committedBatches) {
+        const quantity = normalizeStock(usage?.quantity || 0);
+        if (quantity <= 0) continue;
+
+        const batch = batchMap.get(usage?.batchId);
+        if (!batch) {
+          warnings.push('batch:' + (usage?.batchId || 'unknown') + ':not_found');
+          continue;
+        }
+
+        const committedStock = getCommittedStock(batch);
+        if (committedStock < quantity) {
+          warnings.push('batch:' + batch.id + ':underflow:' + committedStock + ':' + quantity);
+        }
+        batch.committedStock = normalizeStock(Math.max(0, committedStock - quantity));
+        batch.updatedAt = settledAt;
+        updatedBatches.set(batch.id, batch);
+        const productId = batch.productId || usage?.ingredientId;
+        if (productId) batchProductIds.add(productId);
+      }
+      continue;
+    }
+
+    const quantity = normalizeStock(reservation.committedQuantity || 0);
+    if (quantity <= 0) continue;
+
+    // Current reservations identify the order product. Newer reservation
+    // writers may provide targetProductId/productId for recipe components.
+    const productId = reservation.productId
+      || reservation.targetProductId
+      || item.parentId
+      || item.id;
+    if (!productId) {
+      warnings.push('product:unknown:not_found');
+      continue;
+    }
+
+    const product = updatedProducts.get(productId)
+      || await db.table(STORES.MENU).get(productId);
+    if (!product) {
+      warnings.push('product:' + productId + ':not_found');
+      continue;
+    }
+
+    const committedStock = getCommittedStock(product);
+    if (committedStock < quantity) {
+      warnings.push('product:' + productId + ':underflow:' + committedStock + ':' + quantity);
+    }
+    const updatedProduct = {
+      ...product,
+      committedStock: normalizeStock(Math.max(0, committedStock - quantity)),
+      updatedAt: settledAt
+    };
+    updatedProducts.set(productId, updatedProduct);
+  }
+
+  if (updatedBatches.size > 0) {
+    await db.table(STORES.PRODUCT_BATCHES).bulkPut(Array.from(updatedBatches.values()));
+  }
+
+  // Batch parent products derive committedStock from their batches. Recompute
+  // after the batch updates so local availability cannot retain a phantom hold.
+  for (const productId of batchProductIds) {
+    const product = await db.table(STORES.MENU).get(productId);
+    if (!product) {
+      warnings.push('product:' + productId + ':batch_parent_not_found');
+      continue;
+    }
+    const batches = await db.table(STORES.PRODUCT_BATCHES)
+      .where('productId')
+      .equals(productId)
+      .toArray();
+    updatedProducts.set(productId, {
+      ...product,
+      committedStock: normalizeStock(
+        batches.reduce((sum, batch) => sum + getCommittedStock(batch), 0)
+      ),
+      updatedAt: settledAt
+    });
+  }
+
+  if (updatedProducts.size > 0) {
+    await db.table(STORES.MENU).bulkPut(Array.from(updatedProducts.values()));
+  }
+
+  return {
+    status: warnings.length > 0 ? 'completed_with_warnings' : 'completed',
+    warnings
+  };
+};
 
 const getLocalSaleId = (cloudSale = {}) => cloudSale.local_sale_id || cloudSale.localSaleId || cloudSale.id || null;
 const isCloudCommitted = (sale = {}) => (sale.source_mode || sale.sourceMode) === 'cloud_committed';
@@ -225,25 +358,46 @@ export const salesCloudLocalRepository = {
     if (!parentOrderId) throw new Error('SPLIT_PARENT_ID_REQUIRED');
     await ensureOpen();
 
-    const existing = await db.table(STORES.SALES).get(parentOrderId);
-    if (!existing) throw new Error('SPLIT_PARENT_LOCAL_NOT_FOUND');
+    return db.transaction(
+      'rw',
+      [db.table(STORES.SALES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)],
+      async () => {
+        const existing = await db.table(STORES.SALES).get(parentOrderId);
+        if (!existing) throw new Error('SPLIT_PARENT_LOCAL_NOT_FOUND');
 
-    const settledAt = nowIso();
-    const patch = {
-      status: 'cancelled',
-      fulfillmentStatus: 'completed',
-      splitGroupId: splitGroupId || existing.splitGroupId || null,
-      splitChildIds: Array.isArray(childSaleIds) ? childSaleIds : [],
-      splitSettledAt: settledAt,
-      splitSettlementSource: 'cloud_committed',
-      cloudSalesSyncStatus: 'synced',
-      cloudSalesLastSyncAt: settledAt,
-      cloudSalesSyncError: null,
-      syncStatus: 'SYNCED'
-    };
+        const settledAt = nowIso();
+        const reconciliation = existing.splitReservationReconciledAt
+          ? {
+            status: existing.splitReservationReconcileStatus || 'completed',
+            warnings: Array.isArray(existing.splitReservationReconcileWarnings)
+              ? existing.splitReservationReconcileWarnings
+              : []
+          }
+          : await reconcileLocalTableReservations({
+            items: existing.items,
+            settledAt
+          });
 
-    await db.table(STORES.SALES).update(parentOrderId, patch);
-    return { ...existing, ...patch };
+        const patch = {
+          status: 'cancelled',
+          fulfillmentStatus: 'completed',
+          splitGroupId: splitGroupId || existing.splitGroupId || null,
+          splitChildIds: Array.isArray(childSaleIds) ? childSaleIds : [],
+          splitSettledAt: existing.splitSettledAt || settledAt,
+          splitSettlementSource: 'cloud_committed',
+          splitReservationReconciledAt: existing.splitReservationReconciledAt || settledAt,
+          splitReservationReconcileStatus: reconciliation.status,
+          splitReservationReconcileWarnings: reconciliation.warnings,
+          cloudSalesSyncStatus: 'synced',
+          cloudSalesLastSyncAt: settledAt,
+          cloudSalesSyncError: null,
+          syncStatus: 'SYNCED'
+        };
+
+        await db.table(STORES.SALES).update(parentOrderId, patch);
+        return { ...existing, ...patch };
+      }
+    );
   },
 
   async getSaleById(saleId) {
