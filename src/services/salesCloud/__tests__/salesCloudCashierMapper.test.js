@@ -68,6 +68,52 @@ describe('salesCloudCashierMapper discounts', () => {
   });
 });
 
+describe('salesCloudCashierMapper split rounding contract', () => {
+  it('keeps the catalog unit price while carrying the one-cent split adjustment', () => {
+    const payload = mapLocalCheckoutToCloudSale({
+      sale: {
+        id: 'split-rounding-sale',
+        timestamp: '2026-07-03T12:00:00.000Z',
+        subtotal: 10.01,
+        total: 10.01,
+        metadata: {
+          source: 'split_bill_child',
+          splitGroupId: 'split-1',
+          splitParentId: 'parent-1',
+          splitRoundingAdjustment: '0.01'
+        }
+      },
+      processedItems: [{
+        id: 'product-1',
+        lineId: 'line-1',
+        name: 'Producto',
+        price: 10.01,
+        splitBasePrice: 10,
+        splitRoundingAdjustment: '0.01',
+        quantity: 1,
+        exactTotal: 10.01,
+        lineTotal: 10.01
+      }],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 10.01 },
+      total: 10.01
+    });
+
+    expect(payload.items[0]).toMatchObject({
+      unit_price: 10,
+      line_subtotal: 10.01,
+      line_total: 10.01
+    });
+    expect(payload.items[0].metadata).toMatchObject({
+      splitBasePrice: 10,
+      splitRoundingAdjustment: 0.01
+    });
+    expect(payload.sale.metadata).toMatchObject({
+      source: 'split_bill_child',
+      splitRoundingAdjustment: '0.01'
+    });
+  });
+});
+
 describe('salesCloudCashierMapper batch allocation compatibility', () => {
   const baseSale = { id: 'batch-sale-1', timestamp: '2026-07-03T12:00:00.000Z', subtotal: 25, total: 25 };
   const baseItem = { id: 'product-1', lineId: 'line-1', name: 'Producto', price: 25, quantity: 1, exactTotal: 25, lineTotal: 25 };
