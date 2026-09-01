@@ -278,7 +278,7 @@ const friendlyCloudCashierError = (error) => {
     RESTAURANT_ORDER_ALREADY_CANCELLED: 'La comanda de esta mesa ya fue cerrada o cancelada. Actualiza las mesas.',
     RESTAURANT_SPLIT_TOTAL_MISMATCH: 'El total de los tickets no coincide con el total vigente de la comanda. Actualiza la mesa y vuelve a dividir.',
     RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.',
-    SPLIT_ROUNDING_INVALID: 'La distribución de centavos de la cuenta dividida no es válida. Vuelve a abrir Separar pago.',
+    SPLIT_ROUNDING_INVALID: 'El reparto cloud solo admite diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.',
     SPLIT_ROUNDING_MISMATCH: 'Los centavos distribuidos en la cuenta dividida no coinciden con el total. Vuelve a abrir Separar pago.',
     CASH_SESSION_STATION_MISMATCH: 'La caja abierta pertenece a otra estación. Selecciona la caja de este dispositivo.',
     CASH_SESSION_NOT_OPEN: 'No hay una caja abierta en esta estación. Abre Caja antes de dividir o cobrar.',
