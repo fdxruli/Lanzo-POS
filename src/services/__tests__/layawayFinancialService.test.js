@@ -39,6 +39,25 @@ vi.mock('../cash/cashRepository', () => ({
   }
 }));
 
+vi.mock('../cash/cashFinancialGate', () => ({
+  CASH_FINANCIAL_CODES: {
+    HANDOFF_REQUIRED: 'CASH_HANDOFF_REQUIRED',
+    STATION_UNRESOLVED: 'CASH_STATION_UNRESOLVED',
+    STATION_MISMATCH: 'CASH_SESSION_STATION_MISMATCH',
+    SESSION_REQUIRED: 'CASH_SESSION_REQUIRED'
+  },
+  captureCashActorContext: () => ({
+    actorKey: 'admin:1',
+    generation: 1,
+    assertCurrent: vi.fn()
+  })
+}));
+
+vi.mock('../cash/cashStation', () => ({
+  getCashStationIdentity: vi.fn(async () => ({ cashStationId: 'local:device:1' })),
+  areCashStationsEquivalent: (left, right) => Boolean(left && right && left === right)
+}));
+
 vi.mock('../salesCloud/salesCloudCashierService', () => ({
   salesCloudCashierService: {
     canUseCloudLayawayCompletion: mocks.canUseCloudLayawayCompletion,
@@ -64,12 +83,25 @@ const refundActorHandle = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getMode.mockReturnValue({ cloudEnabled: false, online: true });
+  mocks.getMode.mockReturnValue({
+    cloudEnabled: false,
+    online: true,
+    readOnly: false,
+    actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+  });
   mocks.getCurrentCashSession.mockResolvedValue({
-    cashSession: { id: 'cash-1', estado: 'abierta' },
+    cashSession: {
+      id: 'cash-1',
+      estado: 'abierta',
+      actorKey: 'admin:1',
+      cashStationId: 'local:device:1'
+    },
+    cashStationId: 'local:device:1',
+    financialState: { status: 'OWN_SESSION_OPEN' },
     readOnly: false
   });
   mocks.create.mockResolvedValue({ success: true, layaway: layawayData });
+  mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 0, payments: [] });
   mocks.addPaymentWithCash.mockResolvedValue({ success: true, newPaidAmount: 175 });
   mocks.confirmPayment.mockResolvedValue({ success: true, newPaidAmount: 75 });
   mocks.canUseCloudLayawayCompletion.mockResolvedValue(false);
@@ -97,7 +129,8 @@ describe('layawayFinancialService', () => {
     await layawayFinancialService.create({
       layawayData,
       initialPayment: 75,
-      paymentId: 'payment-1'
+      paymentId: 'payment-1',
+      expectedCashSessionId: 'cash-1'
     });
 
     expect(mocks.create).toHaveBeenCalledTimes(1);
@@ -111,6 +144,111 @@ describe('layawayFinancialService', () => {
       paymentId: 'payment-1',
       paymentType: 'initial_deposit'
     });
+  });
+
+  it('resolves the current session when the expected session is null', async () => {
+    await layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-null-session',
+      expectedCashSessionId: null
+    });
+
+    const [, , cashSessionId] = mocks.create.mock.calls[0];
+    expect(cashSessionId).toBe('cash-1');
+    expect(mocks.getCurrentCashSession).toHaveBeenCalledWith({ force: false });
+  });
+
+  it('blocks a stale expected session before creating the layaway or touching Caja', async () => {
+    mocks.getCurrentCashSession.mockResolvedValue({
+      cashSession: {
+        id: 'cash-2',
+        estado: 'abierta',
+        actorKey: 'admin:1',
+        cashStationId: 'local:device:1'
+      },
+      cashStationId: 'local:device:1',
+      financialState: { status: 'OWN_SESSION_OPEN' },
+      readOnly: false
+    });
+
+    await expect(layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-stale',
+      expectedCashSessionId: 'cash-1'
+    })).rejects.toMatchObject({
+      code: 'CASH_SESSION_CHANGED',
+      message: 'La caja cambió mientras confirmabas el apartado. Vuelve a abrir la ventana y reintenta.'
+    });
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('never uses the interface session id as a selector when it points to another session', async () => {
+    await expect(layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-wrong-session',
+      expectedCashSessionId: 'cash-foreign'
+    })).rejects.toMatchObject({ code: 'CASH_SESSION_CHANGED' });
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+    expect(mocks.getCurrentCashSession).toHaveBeenCalledWith({ force: false });
+  });
+
+  it('blocks a current session with another actor or station evidence', async () => {
+    mocks.getCurrentCashSession.mockResolvedValueOnce({
+      cashSession: {
+        id: 'cash-foreign-actor',
+        estado: 'abierta',
+        actorKey: 'admin:other',
+        cashStationId: 'local:device:1'
+      },
+      cashStationId: 'local:device:1',
+      financialState: { status: 'OWN_SESSION_OPEN' },
+      readOnly: false
+    });
+
+    await expect(layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-foreign-actor'
+    })).rejects.toMatchObject({ code: 'CASH_HANDOFF_REQUIRED' });
+
+    mocks.getCurrentCashSession.mockResolvedValueOnce({
+      cashSession: {
+        id: 'cash-foreign-station',
+        estado: 'abierta',
+        actorKey: 'admin:1',
+        cashStationId: 'local:device:2'
+      },
+      cashStationId: 'local:device:1',
+      financialState: { status: 'OWN_SESSION_OPEN' },
+      readOnly: false
+    });
+
+    await expect(layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-foreign-station'
+    })).rejects.toMatchObject({ code: 'CASH_SESSION_STATION_MISMATCH' });
+
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('creates a layaway without consulting Caja when there is no initial payment', async () => {
+    await layawayFinancialService.create({
+      layawayData,
+      initialPayment: 0,
+      expectedCashSessionId: 'stale-session-ignored'
+    });
+
+    expect(mocks.create).toHaveBeenCalledWith(layawayData, 0, null);
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
   });
 
   it('fails closed instead of creating a hybrid cloud layaway', async () => {
@@ -146,8 +284,50 @@ describe('layawayFinancialService', () => {
     });
 
     expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.getById).not.toHaveBeenCalled();
     expect(mocks.addPayment).not.toHaveBeenCalled();
     expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('registers a subsequent payment only against the resolved current session', async () => {
+    await layawayFinancialService.addPayment({
+      layawayId: 'layaway-1',
+      amount: 75,
+      paymentId: 'payment-installment',
+      expectedCashSessionId: 'cash-1'
+    });
+
+    expect(mocks.addPaymentWithCash).toHaveBeenCalledWith(
+      'layaway-1',
+      expect.objectContaining({ id: 'payment-installment', amount: 75 }),
+      'cash-1',
+      expect.objectContaining({ idempotencyKey: 'layaway:layaway-1:payment:payment-installment' })
+    );
+  });
+
+  it('does not create a payment when the current session changed', async () => {
+    mocks.getCurrentCashSession.mockResolvedValue({
+      cashSession: {
+        id: 'cash-2',
+        estado: 'abierta',
+        actorKey: 'admin:1',
+        cashStationId: 'local:device:1'
+      },
+      cashStationId: 'local:device:1',
+      financialState: { status: 'OWN_SESSION_OPEN' },
+      readOnly: false
+    });
+
+    await expect(layawayFinancialService.addPayment({
+      layawayId: 'layaway-1',
+      amount: 75,
+      paymentId: 'payment-stale-installment',
+      expectedCashSessionId: 'cash-1'
+    })).rejects.toMatchObject({ code: 'CASH_SESSION_CHANGED' });
+
+    expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
+    expect(mocks.addPayment).not.toHaveBeenCalled();
     expect(mocks.registerMovement).not.toHaveBeenCalled();
   });
 
@@ -181,16 +361,41 @@ describe('layawayFinancialService', () => {
     expect(mocks.canUseCloudLayawayCompletion).not.toHaveBeenCalled();
     expect(mocks.convertToSale).not.toHaveBeenCalled();
     expect(mocks.processCloudLayawayCompletion).not.toHaveBeenCalled();
+    expect(mocks.getById).not.toHaveBeenCalled();
   });
 
-  it('records a cloud cancellation refund as one canonical exit', async () => {
-    mocks.getMode.mockReturnValue({ cloudEnabled: true, online: true });
-    mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 75, status: 'active', payments: [] });
-    mocks.beginRefund.mockResolvedValue({
-      success: true,
-      pending: { refundId: 'refund-1', amount: 75, idempotencyKey: 'layaway:layaway-1:refund:refund-1' }
+  it.each([
+    ['paid layaway refund', { retainMoney: false, refundId: 'refund-paid' }],
+    ['retained funds', { retainMoney: true, refundId: 'refund-retained' }],
+    ['zero-payment layaway', { retainMoney: false, refundId: 'refund-zero' }],
+    ['pending-refund retry', { retainMoney: false, refundId: 'refund-pending' }]
+  ])('blocks cloud cancellation before any repository or Caja access (%s)', async (_scenario, options) => {
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
     });
-    mocks.registerMovement.mockResolvedValue({ success: true, movement: { id: 'refund-movement-1' } });
+
+    await expect(layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      actorHandle: refundActorHandle,
+      ...options
+    })).rejects.toMatchObject({ code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED' });
+
+    expect(mocks.getMode).toHaveBeenCalledTimes(1);
+    expect(mocks.getById).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.beginRefund).not.toHaveBeenCalled();
+    expect(mocks.completeRefund).not.toHaveBeenCalled();
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('cancels a local layaway without payment without consulting Caja', async () => {
+    mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 0, status: 'active', payments: [] });
+    mocks.cancel.mockResolvedValue({ success: true, cashMovementId: null });
 
     await layawayFinancialService.cancel({
       layawayId: 'layaway-1',
@@ -198,16 +403,128 @@ describe('layawayFinancialService', () => {
       actorHandle: refundActorHandle
     });
 
-    expect(mocks.registerMovement).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'salida',
-      amount: 75,
-      idempotencyKey: 'layaway:layaway-1:refund:refund-1'
-    }));
-    expect(mocks.completeRefund).toHaveBeenCalledWith(
+    expect(mocks.cancel).toHaveBeenCalledWith(
       'layaway-1',
       'Cliente',
-      'refund-movement-1',
+      false,
+      null,
       expect.objectContaining({ assertActorCurrent: expect.any(Function) })
     );
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.beginRefund).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('cancels a local paid layaway retaining funds without consulting Caja', async () => {
+    mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 75, status: 'active', payments: [] });
+    mocks.cancel.mockResolvedValue({ success: true, cashMovementId: null });
+
+    await layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      retainMoney: true,
+      actorHandle: refundActorHandle
+    });
+
+    expect(mocks.cancel).toHaveBeenCalledWith(
+      'layaway-1',
+      'Cliente',
+      true,
+      null,
+      expect.objectContaining({ assertActorCurrent: expect.any(Function) })
+    );
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.beginRefund).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('registers a local refund through one canonical cash exit', async () => {
+    mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 75, status: 'active', payments: [] });
+    mocks.beginRefund.mockResolvedValue({
+      success: true,
+      pending: {
+        refundId: 'refund-1',
+        amount: 75,
+        idempotencyKey: 'layaway:layaway-1:refund:refund-1',
+        createdAt: '2026-07-20T10:00:00.000Z'
+      }
+    });
+    mocks.cancel.mockResolvedValue({ success: true, cashMovementId: 'refund-movement-1' });
+
+    await layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      actorHandle: refundActorHandle,
+      expectedCashSessionId: 'cash-1'
+    });
+
+    expect(mocks.getCurrentCashSession).toHaveBeenCalledWith({ force: false });
+    expect(mocks.beginRefund).toHaveBeenCalledTimes(1);
+    expect(mocks.cancel).toHaveBeenCalledWith(
+      'layaway-1',
+      'Cliente',
+      false,
+      'cash-1',
+      expect.objectContaining({
+        assertActorCurrent: expect.any(Function),
+        cashMovement: expect.objectContaining({
+          cashSessionId: 'cash-1',
+          idempotencyKey: 'layaway:layaway-1:refund:refund-1',
+          createdAt: '2026-07-20T10:00:00.000Z'
+        })
+      })
+    );
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+    expect(mocks.completeRefund).not.toHaveBeenCalled();
+  });
+
+  it('blocks a local refund before creating pendingRefund when the expected session is stale', async () => {
+    mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 75, status: 'active', payments: [] });
+    mocks.getCurrentCashSession.mockResolvedValue({
+      cashSession: {
+        id: 'cash-2',
+        estado: 'abierta',
+        actorKey: 'admin:1',
+        cashStationId: 'local:device:1'
+      },
+      cashStationId: 'local:device:1',
+      financialState: { status: 'OWN_SESSION_OPEN' },
+      readOnly: false
+    });
+
+    await expect(layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      actorHandle: refundActorHandle,
+      expectedCashSessionId: 'cash-1'
+    })).rejects.toMatchObject({ code: 'CASH_SESSION_CHANGED' });
+
+    expect(mocks.beginRefund).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+    expect(mocks.completeRefund).not.toHaveBeenCalled();
+  });
+
+  it('replays an already completed local refund without a second cash exit', async () => {
+    mocks.getById.mockResolvedValue({ ...layawayData, paidAmount: 75, status: 'active', payments: [] });
+    mocks.beginRefund.mockResolvedValue({
+      success: true,
+      duplicate: true,
+      layaway: { ...layawayData, paidAmount: 75, status: 'cancelled' },
+      cashMovementId: 'refund-movement-1'
+    });
+
+    const result = await layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      actorHandle: refundActorHandle,
+      expectedCashSessionId: 'cash-1'
+    });
+
+    expect(result).toMatchObject({ success: true, duplicate: true });
+    expect(mocks.beginRefund).toHaveBeenCalledTimes(1);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+    expect(mocks.completeRefund).not.toHaveBeenCalled();
   });
 });

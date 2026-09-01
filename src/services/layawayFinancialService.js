@@ -1,7 +1,10 @@
 import { layawayRepository } from './db/layaways';
 import { cashRepository } from './cash/cashRepository';
-import { getCashStationIdentity } from './cash/cashStation';
-import { captureCashActorContext } from './cash/cashFinancialGate';
+import { areCashStationsEquivalent, getCashStationIdentity } from './cash/cashStation';
+import {
+    CASH_FINANCIAL_CODES,
+    captureCashActorContext
+} from './cash/cashFinancialGate';
 import { runRefundsActorOperation } from './auth/refundsActorAuthorization';
 import { Money } from '../utils/moneyMath';
 import { salesCloudCashierService } from './salesCloud/salesCloudCashierService';
@@ -20,6 +23,32 @@ const assertCloudLayawayUnavailable = (mode) => {
 const paymentReference = (layawayId, paymentId) => `layaway:${layawayId}:payment:${paymentId}`;
 const refundReference = (layawayId, refundId) => `layaway:${layawayId}:refund:${refundId}`;
 
+const CASH_SESSION_CHANGED_MESSAGE =
+    'La caja cambió mientras confirmabas el apartado. Vuelve a abrir la ventana y reintenta.';
+
+const getSessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
+const getSessionStationId = (session) => (
+    session?.cashStationId
+    || session?.cash_station_id
+    || session?.metadata?.cashStationId
+    || session?.metadata?.cash_station_id
+    || null
+);
+const isOpenCashSession = (session) => session?.estado === 'abierta' || session?.status === 'open';
+
+const layawayCashError = (code, message, details = {}) => {
+    const error = new Error(message);
+    error.code = code;
+    error.details = details;
+    return error;
+};
+
+const hasExpectedCashSessionId = (value) => (
+    value !== null
+    && value !== undefined
+    && String(value).trim() !== ''
+);
+
 const getMovementId = (response) => (
     response?.movement?.id
     || response?.response?.movement?.id
@@ -27,14 +56,99 @@ const getMovementId = (response) => (
     || null
 );
 
-const requireOpenCashSession = async () => {
+/**
+ * Resolves the financial session from the current cash repository scope.
+ * `expectedCashSessionId` is only a stale-modal guard; it is never used to
+ * select or transfer the session used by a cash mutation.
+ */
+export const resolveLayawayCashSession = async ({
+    expectedCashSessionId = null,
+    operation = 'layaway cash operation'
+} = {}) => {
     const mode = cashRepository.getMode();
     const result = await cashRepository.getCurrentCashSession({ force: mode.cloudEnabled });
-    const session = result?.cashSession;
-    if (!session || session.estado !== 'abierta' || (mode.cloudEnabled && (result.readOnly || !mode.online))) {
-        throw new Error(OPEN_CASH_MESSAGE);
+
+    if (!result || result.success === false) {
+        throw layawayCashError(
+            result?.code || CASH_FINANCIAL_CODES.SESSION_REQUIRED,
+            result?.message || OPEN_CASH_MESSAGE,
+            { operation, result }
+        );
     }
-    return session;
+
+    if (mode.cloudEnabled && (!mode.online || mode.readOnly || result.readOnly)) {
+        throw layawayCashError(
+            !mode.online ? 'CLOUD_CASH_OFFLINE' : 'CLOUD_CASH_READ_ONLY',
+            !mode.online
+                ? 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Revisa tu conexión e intenta de nuevo.'
+                : 'La Caja cloud está en modo de solo lectura. Espera la sincronización y reintenta.',
+            { operation, result }
+        );
+    }
+
+    const session = result.cashSession || result.cash_session || null;
+    if (!session?.id || !isOpenCashSession(session)) {
+        throw layawayCashError(
+            CASH_FINANCIAL_CODES.SESSION_REQUIRED,
+            OPEN_CASH_MESSAGE,
+            { operation, result }
+        );
+    }
+
+    const financialState = result.financialState || {};
+    const financialCode = result.financialCode || financialState.code || null;
+    const stationId = result.cashStationId
+        || result.cash_station_id
+        || getSessionStationId(session);
+    if (!stationId || financialCode === CASH_FINANCIAL_CODES.STATION_UNRESOLVED) {
+        throw layawayCashError(
+            CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+            'No se pudo resolver la estación financiera actual. Abre Caja desde este dispositivo y reintenta.',
+            { operation, result }
+        );
+    }
+
+    if (financialState.status === 'HANDOFF_REQUIRED' || financialState.status === 'BLOCKED') {
+        throw layawayCashError(
+            financialCode || CASH_FINANCIAL_CODES.SESSION_REQUIRED,
+            `La operación financiera está bloqueada: ${financialCode || 'estado no disponible'}.`,
+            { operation, result }
+        );
+    }
+
+    const actorKey = mode.actor?.actorKey || null;
+    const sessionActorKey = getSessionActorKey(session);
+    if (!actorKey || !sessionActorKey || sessionActorKey !== actorKey) {
+        throw layawayCashError(
+            CASH_FINANCIAL_CODES.HANDOFF_REQUIRED,
+            'La sesión de Caja pertenece a otro actor o no tiene una identidad válida. Vuelve a abrir Caja y reintenta.',
+            { operation, actorKey, sessionActorKey, sessionId: session.id }
+        );
+    }
+
+    const sessionStationId = getSessionStationId(session);
+    if (!sessionStationId || !areCashStationsEquivalent(sessionStationId, stationId)) {
+        throw layawayCashError(
+            CASH_FINANCIAL_CODES.STATION_MISMATCH,
+            'La sesión de Caja no pertenece a la estación financiera actual. Vuelve a abrir Caja y reintenta.',
+            { operation, sessionStationId, cashStationId: stationId, sessionId: session.id }
+        );
+    }
+
+    if (hasExpectedCashSessionId(expectedCashSessionId)
+        && String(session.id) !== String(expectedCashSessionId).trim()) {
+        throw layawayCashError(
+            'CASH_SESSION_CHANGED',
+            CASH_SESSION_CHANGED_MESSAGE,
+            {
+                operation,
+                expectedCashSessionId: String(expectedCashSessionId).trim(),
+                currentCashSessionId: session.id
+            }
+        );
+    }
+
+    return { mode, result, session, cashStationId: stationId };
 };
 
 const cashMetadata = ({ layawayId, paymentId, paymentType, customerId, idempotencyKey }) => ({
@@ -135,14 +249,16 @@ const buildCloudLayawayCompletionRequest = (layaway = {}) => {
     };
 };
 
-const getLocalCashMutationContext = async () => {
-    const actor = cashRepository.getMode()?.actor || null;
+const getLocalCashMutationContext = async (mode = cashRepository.getMode()) => {
+    const actor = mode?.actor || null;
     if (!actor?.actorKey) return {};
     const station = await getCashStationIdentity();
+    const actorContext = captureCashActorContext();
     return {
         actorKey: actor.actorKey,
         cashStationId: station.cashStationId,
-        actorContext: captureCashActorContext()
+        originActorGeneration: actorContext.generation ?? null,
+        actorContext
     };
 };
 
@@ -164,14 +280,26 @@ const stablePayment = ({ layawayId, amount, paymentId, paymentType, customerId }
 };
 
 export const layawayFinancialService = {
-    async create({ layawayData, initialPayment = 0, paymentId = null, paymentType = 'initial_deposit' }) {
+    async create({
+        layawayData,
+        initialPayment = 0,
+        paymentId = null,
+        paymentType = 'initial_deposit',
+        expectedCashSessionId = null
+    }) {
         const mode = cashRepository.getMode();
         assertCloudLayawayUnavailable(mode);
 
         const amount = Number(initialPayment) || 0;
         if (amount <= 0) return layawayRepository.create(layawayData, 0, null);
 
-        const session = await requireOpenCashSession();
+        const resolvedCash = await resolveLayawayCashSession({
+            expectedCashSessionId,
+            operation: 'layaway.create.initial_payment'
+        });
+        const currentMode = resolvedCash.mode;
+        assertCloudLayawayUnavailable(currentMode);
+        const session = resolvedCash.session;
         const payment = stablePayment({
             layawayId: layawayData.id,
             amount,
@@ -179,11 +307,12 @@ export const layawayFinancialService = {
             paymentType,
             customerId: layawayData.customerId
         });
-        if (!mode.cloudEnabled) {
-            const cashContext = await getLocalCashMutationContext();
+        if (!currentMode.cloudEnabled) {
+            const cashContext = await getLocalCashMutationContext(currentMode);
             return layawayRepository.create(layawayData, amount, session.id, {
                 payment,
                 cashMovement: {
+                    cashSessionId: session.id,
                     idempotencyKey: payment.idempotencyKey,
                     metadata: cashMetadata({ ...payment, layawayId: layawayData.id }),
                     ...cashContext,
@@ -226,12 +355,24 @@ export const layawayFinancialService = {
         return layawayRepository.confirmPayment(layawayData.id, resolvedPayment.id, cashMovementId, session.id);
     },
 
-    async addPayment({ layawayId, amount, paymentId = null, customerId = null }) {
-        const layaway = await layawayRepository.getById(layawayId);
-        if (!layaway) throw new Error('Apartado no encontrado');
+    async addPayment({
+        layawayId,
+        amount,
+        paymentId = null,
+        customerId = null,
+        expectedCashSessionId = null
+    }) {
         const mode = cashRepository.getMode();
         assertCloudLayawayUnavailable(mode);
-        const session = await requireOpenCashSession();
+        const layaway = await layawayRepository.getById(layawayId);
+        if (!layaway) throw new Error('Apartado no encontrado');
+        const resolvedCash = await resolveLayawayCashSession({
+            expectedCashSessionId,
+            operation: 'layaway.add_payment'
+        });
+        const currentMode = resolvedCash.mode;
+        assertCloudLayawayUnavailable(currentMode);
+        const session = resolvedCash.session;
         const pending = (layaway.payments || []).find((payment) => payment.status === 'pending' && Number(payment.amount) === Number(amount));
         const payment = pending || stablePayment({
             layawayId,
@@ -241,9 +382,10 @@ export const layawayFinancialService = {
             customerId: customerId || layaway.customerId
         });
 
-        if (!mode.cloudEnabled) {
-            const cashContext = await getLocalCashMutationContext();
+        if (!currentMode.cloudEnabled) {
+            const cashContext = await getLocalCashMutationContext(currentMode);
             return layawayRepository.addPaymentWithCash(layawayId, payment, session.id, {
+                cashSessionId: session.id,
                 idempotencyKey: payment.idempotencyKey,
                 metadata: cashMetadata({ ...payment, layawayId }),
                 ...cashContext,
@@ -269,6 +411,8 @@ export const layawayFinancialService = {
     },
 
     async complete({ layawayId, cashierId = 'system' }) {
+        const mode = cashRepository.getMode();
+        assertCloudLayawayUnavailable(mode);
         const layaway = await layawayRepository.getById(layawayId);
         if (!layaway) throw new Error('Apartado no encontrado');
 
@@ -282,8 +426,6 @@ export const layawayFinancialService = {
             throw new Error('El apartado debe estar liquidado para entregar.');
         }
 
-        const mode = cashRepository.getMode();
-        assertCloudLayawayUnavailable(mode);
         if (mode.cloudEnabled && !mode.online) {
             throw new Error('OFFLINE');
         }
@@ -324,13 +466,24 @@ export const layawayFinancialService = {
         });
     },
 
-    async cancel({ layawayId, reason, retainMoney = false, refundId = null, actorHandle = null }) {
+    async cancel({
+        layawayId,
+        reason,
+        retainMoney = false,
+        refundId = null,
+        actorHandle = null,
+        expectedCashSessionId = null
+    }) {
       return runRefundsActorOperation({
         actorHandle,
         label: 'layaway.cancelOrRefund',
         operation: async ({ assertCurrent }) => {
+        const mode = cashRepository.getMode();
+        assertCloudLayawayUnavailable(mode);
         const layaway = await layawayRepository.getById(layawayId);
         assertCurrent();
+        const currentMode = cashRepository.getMode();
+        assertCloudLayawayUnavailable(currentMode);
         if (!layaway) throw new Error('Apartado no encontrado');
         if (retainMoney || Number(layaway.paidAmount || 0) <= 0) {
             return layawayRepository.cancel(layawayId, reason, retainMoney, null, {
@@ -338,8 +491,12 @@ export const layawayFinancialService = {
             });
         }
 
-        const session = await requireOpenCashSession();
-        const mode = cashRepository.getMode();
+        const resolvedCash = await resolveLayawayCashSession({
+            expectedCashSessionId,
+            operation: 'layaway.cancel.refund'
+        });
+        const { mode: resolvedMode, session } = resolvedCash;
+        assertCloudLayawayUnavailable(resolvedMode);
         const id = refundId || layaway.pendingRefund?.refundId || crypto.randomUUID();
         const idempotencyKey = refundReference(layawayId, id);
         const pendingResult = await layawayRepository.beginRefund(layawayId, {
@@ -352,11 +509,12 @@ export const layawayFinancialService = {
         if (pendingResult.duplicate && pendingResult.layaway?.status === 'cancelled') return pendingResult;
         const pendingRefund = pendingResult.pending || layaway.pendingRefund;
 
-        if (!mode.cloudEnabled) {
-            const cashContext = await getLocalCashMutationContext();
+        if (!resolvedMode.cloudEnabled) {
+            const cashContext = await getLocalCashMutationContext(resolvedMode);
             return layawayRepository.cancel(layawayId, reason, false, session.id, {
                 assertActorCurrent: assertCurrent,
                 cashMovement: {
+                    cashSessionId: session.id,
                     idempotencyKey: pendingRefund.idempotencyKey,
                     metadata: refundMetadata({ layawayId, ...pendingRefund }),
                     ...cashContext,
@@ -390,5 +548,6 @@ export {
     OPEN_CASH_MESSAGE,
     paymentReference,
     refundReference,
-    buildCloudLayawayCompletionRequest
+    buildCloudLayawayCompletionRequest,
+    CASH_SESSION_CHANGED_MESSAGE
 };

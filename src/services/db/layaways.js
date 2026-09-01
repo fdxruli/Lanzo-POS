@@ -31,6 +31,33 @@ const buildPaymentRecord = (payment, fallbackAmount, fallbackType = 'installment
     ...payment
 });
 
+const buildCashPaymentLink = (cashSessionId, evidence = {}) => {
+    const cashStationId = evidence.cashStationId
+        || evidence.cash_station_id
+        || evidence.metadata?.cashStationId
+        || evidence.metadata?.cash_station_id
+        || null;
+    const actorKey = evidence.actorKey
+        || evidence.actor_key
+        || evidence.metadata?.actorKey
+        || evidence.metadata?.actor_key
+        || null;
+    const originActorGeneration = evidence.originActorGeneration
+        ?? evidence.metadata?.originActorGeneration
+        ?? evidence.metadata?.origin_actor_generation
+        ?? null;
+
+    return {
+        cashSessionId,
+        // Retained for historical report/reconciliation compatibility.
+        cajaId: cashSessionId,
+        cash_session_id: cashSessionId,
+        ...(cashStationId ? { cashStationId } : {}),
+        ...(actorKey ? { actorKey } : {}),
+        ...(originActorGeneration !== null ? { originActorGeneration } : {})
+    };
+};
+
 const transactionTables = ({ cash = false, stock = false } = {}) => [
     db.table(STORES.LAYAWAYS),
     ...(stock ? [db.table(STORES.PRODUCT_BATCHES), db.table(STORES.MENU)] : []),
@@ -107,7 +134,7 @@ const restoreStock = async (layaway) => {
 };
 
 export const layawayRepository = {
-    async create(layawayData, initialPayment = 0, cajaId = null, options = {}) {
+    async create(layawayData, initialPayment = 0, cashSessionId = null, options = {}) {
         try {
             const cashMovement = options.cashMovement || null;
             if (initialPayment > 0 && !cashMovement) {
@@ -133,7 +160,7 @@ export const layawayRepository = {
                     const payment = buildPaymentRecord(options.payment, initialPayment, 'initial_deposit');
                     const movementResult = await registrarMovimientoCajaEnTransaccion(
                         tx,
-                        cajaId,
+                        cashSessionId,
                         'entrada',
                         initialPayment,
                         `Anticipo Apartado #${layawayData.id.slice(-4)} - ${layawayData.customerName}`,
@@ -144,8 +171,7 @@ export const layawayRepository = {
                         amount: initialPayment,
                         status: 'confirmed',
                         cashMovementId: movementResult.movimiento.id,
-                        cajaId,
-                        cash_session_id: cajaId
+                        ...buildCashPaymentLink(cashSessionId, cashMovement)
                     });
                 }
 
@@ -157,10 +183,10 @@ export const layawayRepository = {
         }
     },
 
-    async addPayment(layawayId, paymentOrAmount, cajaId = null) {
+    async addPayment(layawayId, paymentOrAmount, cashSessionId = null) {
         const payment = typeof paymentOrAmount === 'object'
             ? buildPaymentRecord(paymentOrAmount, paymentOrAmount.amount)
-            : buildPaymentRecord({ amount: paymentOrAmount, cajaId }, paymentOrAmount);
+            : buildPaymentRecord({ amount: paymentOrAmount, cashSessionId }, paymentOrAmount);
 
         try {
             return await db.transaction('rw', db.table(STORES.LAYAWAYS), async () => {
@@ -209,9 +235,12 @@ export const layawayRepository = {
                 `Abono Apartado #${layawayId.slice(-4)} - ${layaway.customerName}`,
                 cashMovement
             );
+            const cashPaymentLink = buildCashPaymentLink(cashSessionId, cashMovement);
             const payments = existing
-                ? (layaway.payments || []).map((item) => item.id === payment.id ? { ...payment, cashMovementId: movementResult.movimiento.id, cajaId: cashSessionId, cash_session_id: cashSessionId } : item)
-                : [...(layaway.payments || []), { ...payment, cashMovementId: movementResult.movimiento.id, cajaId: cashSessionId, cash_session_id: cashSessionId }];
+                ? (layaway.payments || []).map((item) => item.id === payment.id
+                    ? { ...payment, cashMovementId: movementResult.movimiento.id, ...cashPaymentLink }
+                    : item)
+                : [...(layaway.payments || []), { ...payment, cashMovementId: movementResult.movimiento.id, ...cashPaymentLink }];
             const updated = {
                 paidAmount: newPaidAmount,
                 payments,
@@ -233,8 +262,9 @@ export const layawayRepository = {
 
             const amount = Number(current.amount);
             const paidAmount = Number(layaway.paidAmount || 0) + amount;
+            const cashPaymentLink = buildCashPaymentLink(cashSessionId, current);
             const payments = (layaway.payments || []).map((payment) => payment.id === paymentId
-                ? { ...payment, status: 'confirmed', cashMovementId, cajaId: cashSessionId, cash_session_id: cashSessionId }
+                ? { ...payment, status: 'confirmed', cashMovementId, ...cashPaymentLink }
                 : payment);
             const updated = {
                 paidAmount,
@@ -289,7 +319,7 @@ export const layawayRepository = {
         });
     },
 
-    async cancel(layawayId, reason = 'Cancelacion por cliente', retainMoney = false, cajaId = null, options = {}) {
+    async cancel(layawayId, reason = 'Cancelacion por cliente', retainMoney = false, cashSessionId = null, options = {}) {
         const assertActorCurrent = requireRefundActorAssertion(
             options.assertActorCurrent,
             'layaway.cancel'
@@ -315,7 +345,7 @@ export const layawayRepository = {
                 if (layaway.paidAmount > 0 && !retainMoney) {
                     const result = await registrarMovimientoCajaEnTransaccion(
                         tx,
-                        cajaId,
+                        cashSessionId,
                         'salida',
                         layaway.paidAmount,
                         `Reembolso cancelacion de Apartado #${layawayId.slice(-4)}`,
@@ -417,7 +447,9 @@ export const layawayRepository = {
                 amount: payment.amount,
                 date: payment.date || payment.createdAt || layaway.createdAt || null,
                 paymentType: payment.paymentType || payment.type || null,
-                cajaId: payment.cajaId || payment.cash_session_id || null,
+                // The report keeps its historical field name, but reads the
+                // canonical session link first for new payments.
+                cajaId: payment.cashSessionId || payment.cash_session_id || payment.cajaId || null,
                 customerId: layaway.customerId || null,
                 status: 'needs_reconciliation'
             })));

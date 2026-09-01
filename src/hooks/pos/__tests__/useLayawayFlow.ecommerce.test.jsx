@@ -97,7 +97,7 @@ describe('useLayawayFlow ecommerce guard', () => {
       response = await result.current.handleConfirmLayaway({
         initialPayment: 10,
         deadline: '2026-07-20',
-        cajaId: 'caja-1'
+        expectedCashSessionId: 'caja-1'
       });
     });
 
@@ -124,11 +124,14 @@ describe('useLayawayFlow ecommerce guard', () => {
       await result.current.handleConfirmLayaway({
         initialPayment: 10,
         deadline: '2026-07-20',
-        cajaId: 'caja-1'
+        expectedCashSessionId: 'caja-1'
       });
     });
 
     expect(mocks.createLayaway).toHaveBeenCalledTimes(1);
+    expect(mocks.createLayaway).toHaveBeenCalledWith(expect.objectContaining({
+      expectedCashSessionId: 'caja-1'
+    }));
     expect(deps.clearOrder).toHaveBeenCalledTimes(1);
     expect(deps.closeModal).toHaveBeenCalledWith('layaway');
   });
