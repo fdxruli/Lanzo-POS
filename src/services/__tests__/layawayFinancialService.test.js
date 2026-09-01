@@ -180,7 +180,27 @@ describe('layawayFinancialService', () => {
     expect(mocks.processCloudLayawayCompletion).not.toHaveBeenCalled();
   });
 
-  it('uses the cloud completion operation once when a PRO apart​​ado is fully paid', async () => {
+  it('fails closed when cloud layaway capability is disabled', async () => {
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      licenseDetails: { license_key: 'license-1' }
+    });
+    mocks.getById.mockResolvedValue({
+      ...layawayData,
+      status: 'ready',
+      paidAmount: 175
+    });
+    mocks.canUseCloudLayawayCompletion.mockResolvedValue(false);
+
+    await expect(layawayFinancialService.complete({ layawayId: 'layaway-1' }))
+      .rejects.toMatchObject({ code: 'CLOUD_LAYAWAY_COMPLETION_REQUIRED' });
+
+    expect(mocks.convertToSale).not.toHaveBeenCalled();
+    expect(mocks.processCloudLayawayCompletion).not.toHaveBeenCalled();
+  });
+
+  it('uses the cloud completion operation once when a PRO apartado is fully paid', async () => {
     mocks.getMode.mockReturnValue({
       cloudEnabled: true,
       online: true,
