@@ -622,6 +622,20 @@ export const splitOpenTableOrderCore = async ({
             baseCentsArray
         });
 
+        // The server-side financial contract only permits controlled cent
+        // rounding. Equal splits can otherwise manufacture large price
+        // adjustments when tickets contain products with different values.
+        // Stop before creating a cloud intent; manual/local behavior remains
+        // available where the caller is not using the cloud special-flow path.
+        if (cloudSpecialFlows && adjustments.some((adjustment) => Math.abs(adjustment) > 1)) {
+            return {
+                success: false,
+                errorType: 'SPLIT_ROUNDING_INVALID',
+                code: 'SPLIT_ROUNDING_INVALID',
+                message: 'El reparto cloud solo puede corregir diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.'
+            };
+        }
+
         const childDefinitions = [];
         const customerDebtAccumulator = new Map();
         const splitGroupId = buildStableSplitGroupId({
