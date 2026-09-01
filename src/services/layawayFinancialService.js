@@ -51,7 +51,9 @@ const refundMetadata = ({ layawayId, refundId, customerId, idempotencyKey }) => 
 
 const buildCloudLayawayCompletionRequest = (layaway = {}) => {
     const saleId = layaway.conversionSaleId || `layaway_sale_${layaway.id}`;
-    const timestamp = layaway.deliveredAt || layaway.updatedAt || layaway.createdAt || new Date().toISOString();
+    const timestamp = layaway.status === 'completed' && layaway.deliveredAt
+        ? layaway.deliveredAt
+        : new Date().toISOString();
     const total = Money.toExactString(Money.init(layaway.totalAmount || 0));
     const items = (Array.isArray(layaway.items) ? layaway.items : []).map((item, index) => {
         const quantity = Number(item.quantity || 0);
