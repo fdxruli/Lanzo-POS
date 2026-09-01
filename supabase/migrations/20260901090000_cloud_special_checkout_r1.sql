@@ -181,6 +181,758 @@ begin
 end;
 $function$;
 
+-- R1: split tickets may carry one controlled +/-$0.01 allocation cent.
+CREATE OR REPLACE FUNCTION private.r2b_authorize_sale_financial_request_v1(p_operation_type text, p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_context jsonb;
+  v_license_id uuid;
+  v_device_id uuid;
+  v_sale_id text;
+  v_local_sale_id text;
+  v_idempotency_key text;
+  v_request_hash text;
+  v_idem jsonb;
+  v_sale jsonb := coalesce(p_sale, '{}'::jsonb);
+  v_item_payload jsonb;
+  v_payment_payload jsonb;
+  v_item record;
+  v_payment record;
+  v_product public.pos_products;
+  v_selected_batch public.pos_product_batches;
+  v_batch public.pos_product_batches;
+  v_batch_payload jsonb;
+  v_ecom_order public.ecommerce_orders;
+  v_ecom_item record;
+  v_ecom_order_id text;
+  v_ecom_conversion_key text;
+  v_seen_ecom_items text[] := array[]::text[];
+  v_product_id text;
+  v_batch_id text;
+  v_batch_quantity numeric;
+  v_quantity numeric;
+  v_raw_unit_price numeric;
+  v_raw_unit_cost numeric;
+  v_raw_line_subtotal numeric;
+  v_raw_line_total numeric;
+  v_raw_discount_amount numeric;
+  v_raw_tax_amount numeric;
+  v_batch_count integer := 0;
+  v_batches_used jsonb := '[]'::jsonb;
+  v_batch_cost_total numeric := 0;
+  v_batch_price_total numeric := 0;
+  v_price_base_total numeric := 0;
+  v_price_base_unit numeric := 0;
+  v_price_reference_cost numeric := 0;
+  v_selected_modifier_result jsonb;
+  v_selected_modifiers jsonb := '[]'::jsonb;
+  v_modifier_unit_total numeric := 0;
+  v_is_variant boolean := false;
+  v_inventory_mode boolean := false;
+  v_server_unit_cost numeric;
+  v_gross_line numeric;
+  v_line_discount_result jsonb;
+  v_line_discount numeric := 0;
+  v_line_discount_total numeric := 0;
+  v_gross_subtotal numeric := 0;
+  v_sale_discount_result jsonb;
+  v_sale_discount jsonb;
+  v_sale_discount_amount numeric := 0;
+  v_tax_total numeric := 0;
+  v_delivery_fee numeric := 0;
+  v_total numeric := 0;
+  v_incoming_sale_value numeric;
+  v_raw_sale_discount jsonb;
+  v_raw_item_discount jsonb;
+  v_raw_batches jsonb;
+  v_tier jsonb;
+  v_tier_min numeric;
+  v_tier_price numeric;
+  v_best_tier_min numeric := null;
+  v_best_tier_price numeric := null;
+  v_canonical_items jsonb := '[]'::jsonb;
+  v_canonical_payments jsonb := '[]'::jsonb;
+  v_canonical_batches jsonb;
+  v_canonical_item jsonb;
+  v_canonical_payment jsonb;
+  v_item_id text;
+  v_method text;
+  v_requested_method text;
+  v_seen_method text;
+  v_payment_amount numeric;
+  v_received_amount numeric;
+  v_payment_change numeric;
+  v_payment_sum numeric := 0;
+  v_change_sum numeric := 0;
+  v_cash_sum numeric := 0;
+  v_non_cash_sum numeric := 0;
+  v_customer public.pos_customers;
+  v_effective_customer_id text;
+  v_has_discount_permission boolean;
+  v_raw_sale_total_text text;
+  v_is_split_child boolean := false;
+  v_split_adjustment_expected numeric := 0;
+  v_split_adjustment_sum numeric := 0;
+  v_split_item_adjustment numeric := 0;
+  v_split_adjustment_item_count integer := 0;
+begin
+  if p_operation_type not in ('sale.cashier', 'sale.cashier_inventory', 'sale.credit') then
+    raise exception 'SALE_OPERATION_UNSUPPORTED' using errcode = 'P0001';
+  end if;
+  if jsonb_typeof(v_sale) <> 'object' then
+    raise exception 'SALE_PAYLOAD_INVALID' using errcode = 'P0001';
+  end if;
+  if jsonb_typeof(coalesce(p_items, '[]'::jsonb)) <> 'array' then
+    raise exception 'SALE_ITEMS_PAYLOAD_INVALID' using errcode = 'P0001';
+  end if;
+  if jsonb_typeof(coalesce(p_payments, '[]'::jsonb)) <> 'array' then
+    raise exception 'SALE_PAYMENTS_PAYLOAD_INVALID' using errcode = 'P0001';
+  end if;
+
+  v_context := private.validate_pos_sync_context(
+    p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token
+  );
+  perform private.assert_pos_permission(v_context, 'pos');
+  if p_operation_type = 'sale.credit' then
+    perform private.assert_pos_permission(v_context, 'customers');
+  end if;
+  v_license_id := (v_context->>'license_id')::uuid;
+  v_device_id := (v_context->>'device_id')::uuid;
+
+  v_sale_id := coalesce(
+    private.pos_sale_jsonb_text(v_sale, array['id','cloud_sale_id','cloudSaleId']),
+    'sale_' || replace(extensions.gen_random_uuid()::text, '-', '')
+  );
+  v_local_sale_id := coalesce(
+    private.pos_sale_jsonb_text(v_sale, array['local_sale_id','localSaleId']), v_sale_id
+  );
+
+  v_is_split_child := lower(coalesce(v_sale->'metadata'->>'source', '')) = 'split_bill_child'
+    and nullif(btrim(coalesce(v_sale->'metadata'->>'splitGroupId', v_sale->'metadata'->>'split_group_id', '')), '') is not null
+    and nullif(btrim(coalesce(v_sale->'metadata'->>'splitParentId', v_sale->'metadata'->>'split_parent_id', '')), '') is not null;
+  if v_is_split_child then
+    v_split_adjustment_expected := coalesce(private.pos_sale_jsonb_numeric(
+      coalesce(v_sale->'metadata', '{}'::jsonb),
+      array['splitRoundingAdjustment','split_rounding_adjustment','roundingAdjustment','rounding_adjustment'],
+      0
+    ), 0);
+    if abs(v_split_adjustment_expected) > 0.01
+       or abs(v_split_adjustment_expected - round(v_split_adjustment_expected, 2)) > 0.000001 then
+      raise exception 'SPLIT_ROUNDING_INVALID' using errcode = 'P0001';
+    end if;
+  end if;
+  v_idempotency_key := coalesce(
+    nullif(btrim(p_idempotency_key), ''),
+    case p_operation_type
+      when 'sale.cashier_inventory' then 'sales.cloud_commit.inventory:' || v_local_sale_id || ':' || v_device_id::text
+      when 'sale.credit' then 'sales.cloud_credit:' || v_local_sale_id || ':' || v_device_id::text
+      else 'sales.cloud_commit:' || v_local_sale_id || ':' || v_device_id::text
+    end
+  );
+  v_inventory_mode := p_operation_type = 'sale.cashier_inventory';
+  if p_operation_type = 'sale.cashier'
+     and coalesce((v_sale->'metadata'->>'cloudInventoryEffects')::boolean, false) then
+    v_inventory_mode := true;
+  end if;
+
+  v_ecom_order_id := coalesce(
+    private.pos_sale_jsonb_text(v_sale, array['ecommerce_order_id','ecommerceOrderId']),
+    v_sale->'metadata'->>'ecommerceOrderId', v_sale->'metadata'->>'ecommerce_order_id'
+  );
+  if lower(coalesce(private.pos_sale_jsonb_text(v_sale, array['sales_channel','salesChannel']), '' )) = 'ecommerce'
+     or lower(coalesce(v_sale->'metadata'->>'origin', '')) = 'ecommerce'
+     or v_ecom_order_id is not null then
+    if nullif(btrim(v_ecom_order_id), '') is null then
+      raise exception 'ECOMMERCE_CONVERSION_AUTHORITY_REQUIRED' using errcode = 'P0001';
+    end if;
+    v_ecom_order_id := btrim(v_ecom_order_id);
+    select * into v_ecom_order
+    from public.ecommerce_orders o
+    where o.license_id = v_license_id
+      and o.id::text = v_ecom_order_id
+    for update;
+    if v_ecom_order.id is null then
+      raise exception 'ECOMMERCE_ORDER_NOT_FOUND' using errcode = 'P0001';
+    end if;
+    v_ecom_conversion_key := coalesce(
+      v_sale->'metadata'->>'ecommerceConversionKey',
+      v_sale->'metadata'->>'idempotencyKey'
+    );
+    if v_ecom_order.pos_conversion_status <> 'reserved'
+       or v_ecom_order.pos_conversion_sale_id is distinct from v_sale_id
+       or v_ecom_order.pos_conversion_key is distinct from v_ecom_conversion_key
+       or v_ecom_order.pos_draft_status <> 'prepared' then
+      raise exception 'ECOMMERCE_CONVERSION_AUTHORITY_REQUIRED' using errcode = 'P0001';
+    end if;
+    if coalesce(v_ecom_order.discount_total, 0) > 0 then
+      v_has_discount_permission := private.has_pos_permission(v_context, 'discounts');
+      if not v_has_discount_permission then
+        raise exception 'DISCOUNT_PERMISSION_REQUIRED' using errcode = 'P0001';
+      end if;
+    end if;
+  end if;
+
+  v_has_discount_permission := private.has_pos_permission(v_context, 'discounts');
+
+  if jsonb_array_length(coalesce(p_items, '[]'::jsonb)) = 0 then
+    raise exception 'SALE_ITEMS_REQUIRED' using errcode = 'P0001';
+  end if;
+
+  for v_item in
+    select value as payload, ordinality
+    from jsonb_array_elements(p_items) with ordinality
+  loop
+    v_item_payload := v_item.payload;
+    if jsonb_typeof(v_item_payload) <> 'object' then
+      raise exception 'SALE_ITEM_PAYLOAD_INVALID' using errcode = 'P0001';
+    end if;
+    v_product_id := nullif(btrim(private.pos_sale_jsonb_text(v_item_payload, array['product_id','productId','parentId'])), '');
+    if v_product_id is null then
+      raise exception 'MANUAL_ITEM_PRICE_POLICY_REQUIRED' using errcode = 'P0001';
+    end if;
+    v_quantity := private.pos_sale_jsonb_numeric(v_item_payload, array['quantity','qty'], null);
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'SALE_ITEM_QUANTITY_INVALID' using errcode = 'P0001';
+    end if;
+
+    if v_ecom_order.id is not null then
+      select i.*,
+             coalesce(nullif(i.source_product_id, ''), ep.product_id, ep.local_product_ref) as resolved_source_product_id
+      into v_ecom_item
+      from public.ecommerce_order_items i
+      left join public.ecommerce_published_products ep on ep.id = i.published_product_id
+      where i.order_id = v_ecom_order.id
+        and (
+          i.id::text = coalesce(v_item_payload->>'ecommerce_order_item_id', '')
+          or i.id::text = coalesce(v_item_payload->'metadata'->>'ecommerceOrderItemId', '')
+          or ('ecom-' || v_ecom_order.id::text || '-' || i.id::text) = coalesce(v_item_payload->>'id', '')
+          or ('ecom-' || v_ecom_order.id::text || '-' || i.id::text) = coalesce(v_item_payload->'metadata'->>'lineId', '')
+        )
+      limit 1;
+      if v_ecom_item.id is null or v_ecom_item.id::text = any(v_seen_ecom_items) then
+        raise exception 'ECOMMERCE_CHECKOUT_SNAPSHOT_MISMATCH' using errcode = 'P0001';
+      end if;
+      v_seen_ecom_items := array_append(v_seen_ecom_items, v_ecom_item.id::text);
+      if v_ecom_item.resolved_source_product_id is null
+         or v_ecom_item.resolved_source_product_id <> v_product_id
+         or abs(v_ecom_item.quantity - v_quantity) > 0.0005
+         or abs(v_ecom_item.line_total - round(v_ecom_item.unit_price * v_ecom_item.quantity, 2)) > 0.005 then
+        raise exception 'ECOMMERCE_CHECKOUT_SNAPSHOT_MISMATCH' using errcode = 'P0001';
+      end if;
+    end if;
+
+    select * into v_product
+    from public.pos_products p
+    where p.license_id = v_license_id and p.id = v_product_id
+    for update;
+    if v_product.id is null then
+      if v_item_payload->'metadata'->>'productIdSource' = 'line_identity' then
+        raise exception 'MANUAL_ITEM_PRICE_POLICY_REQUIRED' using errcode = 'P0001';
+      end if;
+      raise exception 'PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE:%', v_product_id using errcode = 'P0001';
+    end if;
+    if v_product.deleted_at is not null or v_product.is_active is not true then
+      raise exception 'CLOUD_PRODUCT_NOT_AVAILABLE:%', v_product_id using errcode = 'P0001';
+    end if;
+
+    -- SALE_BATCH_ALLOCATION_NULL_COMPAT_R1: JSONB null means no explicit allocation.
+    v_raw_batches := coalesce(
+      nullif(v_item_payload->'batches_used', 'null'::jsonb),
+      nullif(v_item_payload->'batchesUsed', 'null'::jsonb),
+      nullif(v_item_payload->'metadata'->'batches_used', 'null'::jsonb),
+      nullif(v_item_payload->'metadata'->'batchesUsed', 'null'::jsonb),
+      '[]'::jsonb
+    );
+    if jsonb_typeof(v_raw_batches) <> 'array' then
+      raise exception 'BATCH_ALLOCATION_INVALID' using errcode = 'P0001';
+    end if;
+    v_canonical_batches := '[]'::jsonb;
+    v_batch_count := 0;
+    v_batch_cost_total := 0;
+    v_batch_price_total := 0;
+    for v_batch_payload in select value from jsonb_array_elements(v_raw_batches) loop
+      v_batch_id := nullif(btrim(private.pos_sale_jsonb_text(v_batch_payload, array['batch_id','batchId','id'])), '');
+      v_batch_quantity := private.pos_sale_jsonb_numeric(v_batch_payload, array['quantity','qty','usedQuantity','used_quantity'], null);
+      if v_batch_id is null or v_batch_quantity is null or v_batch_quantity <= 0 then
+        raise exception 'BATCH_ALLOCATION_INVALID' using errcode = 'P0001';
+      end if;
+      select * into v_batch
+      from public.pos_product_batches b
+      where b.license_id = v_license_id
+        and b.product_id = v_product_id
+        and b.id = v_batch_id
+        and b.deleted_at is null
+        and b.is_active is true
+        and b.status = 'active'
+      for update;
+      if v_batch.id is null then
+        raise exception 'CLOUD_BATCH_NOT_AVAILABLE:%', v_batch_id using errcode = 'P0001';
+      end if;
+      v_batch_count := v_batch_count + 1;
+      v_batch_cost_total := v_batch_cost_total + (v_batch.cost * v_batch_quantity);
+      v_batch_price_total := v_batch_price_total + (v_batch.price * v_batch_quantity);
+      v_canonical_batches := v_canonical_batches || jsonb_build_array(jsonb_build_object(
+        'batch_id', v_batch.id, 'quantity', v_batch_quantity
+      ));
+    end loop;
+    if v_batch_count > 0 and abs((select coalesce(sum((x->>'quantity')::numeric), 0) from jsonb_array_elements(v_canonical_batches) x) - v_quantity) > 0.0005 then
+      raise exception 'CLOUD_BATCH_ALLOCATION_MISMATCH' using errcode = 'P0001';
+    end if;
+
+    v_batch_id := nullif(btrim(private.pos_sale_jsonb_text(v_item_payload, array['batch_id','batchId'])), '');
+    v_selected_batch := null;
+    if v_batch_id is not null then
+      select * into v_selected_batch
+      from public.pos_product_batches b
+      where b.license_id = v_license_id
+        and b.product_id = v_product_id
+        and b.id = v_batch_id
+        and b.deleted_at is null
+        and b.is_active is true
+        and b.status = 'active'
+      for update;
+      if v_selected_batch.id is null then
+        raise exception 'CLOUD_BATCH_NOT_AVAILABLE:%', v_batch_id using errcode = 'P0001';
+      end if;
+    end if;
+
+    select exists (
+      select 1 from public.pos_product_batches b
+      where b.license_id = v_license_id and b.product_id = v_product_id
+        and b.deleted_at is null and b.is_active is true and b.status = 'active'
+        and (coalesce(b.attributes, '{}'::jsonb) ? 'talla'
+          or coalesce(b.attributes, '{}'::jsonb) ? 'color')
+    ) into v_is_variant;
+
+    v_selected_modifier_result := private.r2b_authoritative_modifiers_v1(v_product, v_item_payload);
+    v_selected_modifiers := coalesce(v_selected_modifier_result->'modifiers', '[]'::jsonb);
+    v_modifier_unit_total := coalesce((v_selected_modifier_result->>'unit_total')::numeric, 0);
+
+    if v_ecom_order.id is not null then
+      v_price_base_total := v_ecom_item.unit_price * v_quantity;
+      v_gross_line := round(v_ecom_item.line_total, 2);
+      v_price_base_unit := v_ecom_item.unit_price;
+      v_server_unit_cost := case
+        when v_selected_batch.id is not null then v_selected_batch.cost
+        when v_batch_count > 0 then round(v_batch_cost_total / v_quantity, 4)
+        else v_product.cost
+      end;
+    else
+      v_price_reference_cost := case
+        when v_selected_batch.id is not null then v_selected_batch.cost
+        when v_batch_count > 0 then v_batch_cost_total / v_quantity
+        else v_product.cost
+      end;
+      v_best_tier_min := null;
+      v_best_tier_price := null;
+      if jsonb_typeof(coalesce(v_product.wholesale_tiers, '[]'::jsonb)) = 'array' then
+        for v_tier in select value from jsonb_array_elements(coalesce(v_product.wholesale_tiers, '[]'::jsonb)) loop
+          begin
+            v_tier_min := coalesce(nullif(btrim(coalesce(v_tier->>'min', v_tier->>'minQty', v_tier->>'min_qty', '')), '')::numeric, 0);
+            v_tier_price := nullif(btrim(coalesce(v_tier->>'price', '')), '')::numeric;
+          exception when others then
+            raise exception 'WHOLESALE_TIER_INVALID' using errcode = 'P0001';
+          end;
+          if v_tier_price is not null and v_tier_min >= 0 and v_quantity >= v_tier_min
+             and not (v_price_reference_cost > 0 and v_tier_price < v_price_reference_cost)
+             and (v_best_tier_min is null or v_tier_min > v_best_tier_min) then
+            v_best_tier_min := v_tier_min;
+            v_best_tier_price := v_tier_price;
+          end if;
+        end loop;
+      end if;
+
+      if v_is_variant then
+        if v_batch_count > 0 then
+          v_price_base_total := v_batch_price_total;
+        elsif v_selected_batch.id is not null then
+          v_price_base_total := v_selected_batch.price * v_quantity;
+        else
+          raise exception 'BATCH_SELECTION_REQUIRED' using errcode = 'P0001';
+        end if;
+      else
+        v_price_base_total := v_product.price * v_quantity;
+      end if;
+      if v_best_tier_price is not null then
+        v_price_base_total := v_best_tier_price * v_quantity;
+      end if;
+      v_price_base_unit := round(v_price_base_total / v_quantity + v_modifier_unit_total, 4);
+      v_gross_line := round(v_price_base_total + v_modifier_unit_total * v_quantity, 2);
+      v_server_unit_cost := case
+        when v_batch_count > 0 then round(v_batch_cost_total / v_quantity, 4)
+        when v_selected_batch.id is not null then v_selected_batch.cost
+        else v_product.cost
+      end;
+    end if;
+
+    v_split_item_adjustment := 0;
+    if v_is_split_child then
+      v_split_item_adjustment := coalesce(private.pos_sale_jsonb_numeric(
+        coalesce(v_item_payload->'metadata', '{}'::jsonb),
+        array['splitRoundingAdjustment','split_rounding_adjustment','roundingAdjustment','rounding_adjustment'],
+        0
+      ), 0);
+      if abs(v_split_item_adjustment) > 0.01
+         or abs(v_split_item_adjustment - round(v_split_item_adjustment, 2)) > 0.000001 then
+        raise exception 'SPLIT_ROUNDING_INVALID' using errcode = 'P0001';
+      end if;
+      if abs(v_split_item_adjustment) > 0.005 then
+        v_split_adjustment_item_count := v_split_adjustment_item_count + 1;
+        if v_split_adjustment_item_count > 1 then
+          raise exception 'SPLIT_ROUNDING_INVALID' using errcode = 'P0001';
+        end if;
+      end if;
+      v_split_adjustment_sum := v_split_adjustment_sum + v_split_item_adjustment;
+      v_gross_line := round(v_gross_line + v_split_item_adjustment, 2);
+      if v_gross_line < -0.005 then
+        raise exception 'SPLIT_ROUNDING_INVALID' using errcode = 'P0001';
+      end if;
+    end if;
+
+    v_raw_unit_price := private.pos_sale_jsonb_numeric(v_item_payload, array['unit_price','unitPrice','price'], null);
+    if v_raw_unit_price is null or abs(v_raw_unit_price - v_price_base_unit) > 0.005 then
+      raise exception 'SALE_PRICE_MISMATCH:%', v_product_id using errcode = 'P0001';
+    end if;
+    v_raw_unit_cost := private.pos_sale_jsonb_numeric(v_item_payload, array['unit_cost','unitCost','cost'], null);
+    -- Deliberately read but never use v_raw_unit_cost.  The authoritative cost
+    -- is selected from the locked product/batch rows above.
+    if v_raw_unit_cost is not null and v_raw_unit_cost < 0 then
+      raise exception 'SALE_ITEM_AMOUNT_INVALID' using errcode = 'P0001';
+    end if;
+
+    v_raw_item_discount := coalesce(v_item_payload->'discount', v_item_payload->'discountAmount', v_item_payload->'discount_amount');
+    if v_raw_item_discount is null or jsonb_typeof(v_raw_item_discount) = 'null' then
+      v_raw_discount_amount := private.pos_sale_jsonb_numeric(v_item_payload, array['discount_amount','discountAmount'], null);
+      if v_raw_discount_amount is not null and v_raw_discount_amount <> 0 then
+        v_raw_item_discount := jsonb_build_object(
+          'type', 'amount', 'value', v_raw_discount_amount,
+          'reason', coalesce(v_item_payload->>'discountReason', v_item_payload->>'discount_reason')
+        );
+      end if;
+    end if;
+    v_line_discount_result := private.r2b_normalize_discount_v1(v_raw_item_discount, v_gross_line, 'line');
+    v_line_discount := coalesce((v_line_discount_result->>'amount')::numeric, 0);
+    if v_line_discount > 0 and not v_has_discount_permission then
+      raise exception 'DISCOUNT_PERMISSION_REQUIRED' using errcode = 'P0001';
+    end if;
+    if v_ecom_order.id is not null and v_line_discount > 0 then
+      raise exception 'ECOMMERCE_DISCOUNT_NOT_IN_ORDER' using errcode = 'P0001';
+    end if;
+    v_raw_line_subtotal := private.pos_sale_jsonb_numeric(v_item_payload, array['line_subtotal','lineSubtotal','subtotal','exactTotal'], null);
+    v_raw_line_total := private.pos_sale_jsonb_numeric(v_item_payload, array['line_total','lineTotal','total'], null);
+    if v_raw_line_subtotal is not null and abs(v_raw_line_subtotal - v_gross_line) > 0.005 then
+      raise exception 'SALE_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+    end if;
+    if v_raw_line_total is not null and abs(v_raw_line_total - round(v_gross_line - v_line_discount, 2)) > 0.005 then
+      raise exception 'SALE_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+    end if;
+    v_raw_tax_amount := private.pos_sale_jsonb_numeric(v_item_payload, array['tax_amount','taxAmount','tax'], 0);
+    if v_raw_tax_amount < 0 then
+      raise exception 'SALE_TAX_INVALID' using errcode = 'P0001';
+    end if;
+    if v_ecom_order.id is null and v_raw_tax_amount > 0.005 then
+      raise exception 'SALE_TAX_SOURCE_UNRESOLVED' using errcode = 'P0001';
+    end if;
+    if v_ecom_order.id is not null and v_raw_tax_amount > 0.005 then
+      raise exception 'ECOMMERCE_TAX_LINE_UNRESOLVED' using errcode = 'P0001';
+    end if;
+
+    v_gross_subtotal := v_gross_subtotal + v_gross_line;
+    v_line_discount_total := v_line_discount_total + v_line_discount;
+    if v_inventory_mode and v_product.track_stock is true
+       and (v_product.batch_management is not null or v_batch_count > 0 or v_selected_batch.id is not null) then
+      v_server_unit_cost := null;
+    end if;
+    v_canonical_item := (
+      v_item_payload
+      - 'price' - 'unitPrice' - 'unit_price'
+      - 'cost' - 'unitCost' - 'unit_cost'
+      - 'discount' - 'discountAmount' - 'discount_amount'
+      - 'tax' - 'taxAmount' - 'tax_amount'
+      - 'lineSubtotal' - 'line_subtotal' - 'lineTotal' - 'line_total'
+      - 'batchesUsed' - 'batches_used'
+    ) || jsonb_strip_nulls(jsonb_build_object(
+      'id', coalesce(v_item_payload->>'id', v_sale_id || ':item:' || v_item.ordinality::text),
+      'product_id', v_product.id,
+      'product_name', v_product.name,
+      'product_sku', v_product.sku,
+      'barcode', v_product.barcode,
+      'category_id', v_product.category_id,
+      'quantity', v_quantity,
+      'unit_price', v_price_base_unit,
+      'unit_cost', v_server_unit_cost,
+      'discount', v_line_discount_result->'discount',
+      'discount_amount', v_line_discount,
+      'tax_amount', 0,
+      'line_subtotal', v_gross_line,
+      'line_total', round(v_gross_line - v_line_discount, 2),
+      'selected_modifiers', v_selected_modifiers,
+      'batch_id', v_batch_id,
+      'batch_sku', case when v_selected_batch.id is not null then v_selected_batch.sku end,
+      'batch_expiry_date', case when v_selected_batch.id is not null then v_selected_batch.expiry_date end,
+      'batches_used', case when v_batch_count > 0 then v_canonical_batches end,
+      'metadata', coalesce(v_item_payload->'metadata', '{}'::jsonb) || jsonb_build_object(
+        'r2bPriceAuthority', case when v_ecom_order.id is not null then 'ecommerce_order_item' else 'pos_product_catalog' end,
+        'r2bCostAuthority', case when v_server_unit_cost is null then 'inventory_effects' else 'pos_product_or_batch' end,
+        'r2bClientUnitCostIgnored', true
+      )
+    ));
+    v_canonical_items := v_canonical_items || jsonb_build_array(v_canonical_item);
+  end loop;
+
+  if v_is_split_child and abs(v_split_adjustment_sum - v_split_adjustment_expected) > 0.005 then
+    raise exception 'SPLIT_ROUNDING_MISMATCH' using errcode = 'P0001';
+  end if;
+
+  if v_ecom_order.id is not null then
+    v_sale_discount_amount := round(coalesce(v_ecom_order.discount_total, 0), 2);
+    v_sale_discount := case when v_sale_discount_amount > 0 then jsonb_build_object(
+      'type', 'amount', 'value', v_sale_discount_amount, 'amount', v_sale_discount_amount,
+      'reason', 'ecommerce_order_snapshot', 'scope', 'sale'
+    ) else null end;
+    v_tax_total := round(coalesce(v_ecom_order.tax_total, 0), 2);
+    v_delivery_fee := round(coalesce(v_ecom_order.delivery_fee, 0), 2);
+    v_total := round(v_gross_subtotal - v_line_discount_total + v_delivery_fee + v_tax_total - v_sale_discount_amount, 2);
+    if abs(v_gross_subtotal - v_ecom_order.subtotal) > 0.005
+       or abs(v_total - v_ecom_order.total) > 0.005 then
+      raise exception 'ECOMMERCE_TOTAL_MISMATCH' using errcode = 'P0001';
+    end if;
+  else
+    v_raw_sale_discount := coalesce(
+      v_sale->'saleDiscount', v_sale->'discount', v_sale->'metadata'->'discount'
+    );
+    if v_raw_sale_discount is null or jsonb_typeof(v_raw_sale_discount) = 'null' then
+      v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['discount_total','discountTotal'], null);
+      if v_incoming_sale_value is not null and v_incoming_sale_value <> 0 then
+        v_raw_sale_discount := jsonb_build_object(
+          'type', 'amount', 'value', v_incoming_sale_value,
+          'reason', coalesce(v_sale->>'discountReason', v_sale->'metadata'->>'discountReason')
+        );
+      end if;
+    end if;
+    v_sale_discount_result := private.r2b_normalize_discount_v1(
+      v_raw_sale_discount, round(v_gross_subtotal - v_line_discount_total, 2), 'sale'
+    );
+    v_sale_discount_amount := coalesce((v_sale_discount_result->>'amount')::numeric, 0);
+    v_sale_discount := v_sale_discount_result->'discount';
+    if v_sale_discount_amount > 0 and not v_has_discount_permission then
+      raise exception 'DISCOUNT_PERMISSION_REQUIRED' using errcode = 'P0001';
+    end if;
+    v_tax_total := 0;
+    v_delivery_fee := 0;
+    v_total := round(v_gross_subtotal - v_line_discount_total - v_sale_discount_amount, 2);
+  end if;
+
+  if v_total < 0 then
+    raise exception 'SALE_TOTAL_INVALID' using errcode = 'P0001';
+  end if;
+  v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['subtotal'], null);
+  if v_incoming_sale_value is not null and abs(v_incoming_sale_value - round(v_gross_subtotal, 2)) > 0.005 then
+    raise exception 'SALE_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+  end if;
+  v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['discount_total','discountTotal'], null);
+  if v_incoming_sale_value is not null and abs(v_incoming_sale_value - round(v_line_discount_total + v_sale_discount_amount, 2)) > 0.005 then
+    raise exception 'SALE_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+  end if;
+  v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['tax_total','taxTotal'], null);
+  if v_incoming_sale_value is not null and abs(v_incoming_sale_value - v_tax_total) > 0.005 then
+    raise exception 'SALE_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+  end if;
+  v_raw_sale_total_text := private.pos_sale_jsonb_text(v_sale, array['total']);
+  if v_raw_sale_total_text is not null then
+    begin
+      if abs(v_raw_sale_total_text::numeric - v_total) > 0.005 then
+        raise exception 'SALE_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+      end if;
+    exception when invalid_text_representation or numeric_value_out_of_range then
+      raise exception 'SALE_TOTAL_INVALID' using errcode = 'P0001';
+    end;
+  end if;
+
+  v_effective_customer_id := nullif(btrim(coalesce(p_customer_id, private.pos_sale_jsonb_text(v_sale, array['customer_id','customerId']))), '');
+  if p_operation_type = 'sale.credit' then
+    if v_effective_customer_id is null then
+      raise exception 'CREDIT_SALE_CUSTOMER_REQUIRED' using errcode = 'P0001';
+    end if;
+    select * into v_customer
+    from public.pos_customers c
+    where c.license_id = v_license_id and c.id = v_effective_customer_id
+    for update;
+    if v_customer.id is null then raise exception 'CUSTOMER_NOT_FOUND' using errcode = 'P0001'; end if;
+    if v_customer.deleted_at is not null then raise exception 'CUSTOMER_DELETED' using errcode = 'P0001'; end if;
+  end if;
+
+  for v_payment in
+    select value as payload, ordinality
+    from jsonb_array_elements(p_payments) with ordinality
+  loop
+    v_payment_payload := v_payment.payload;
+    if jsonb_typeof(v_payment_payload) <> 'object' then
+      raise exception 'SALE_PAYMENT_PAYLOAD_INVALID' using errcode = 'P0001';
+    end if;
+    v_method := private.normalize_pos_sale_payment_method(
+      private.pos_sale_jsonb_text(v_payment_payload, array['method','payment_method','paymentMethod'], 'cash')
+    );
+    if v_method in ('mixed_credit', 'partial_credit') then v_method := 'credit'; end if;
+    if p_operation_type = 'sale.credit' and v_method = 'credit' then
+      v_canonical_payment := jsonb_build_object(
+        'id', coalesce(v_payment_payload->>'id', v_sale_id || ':payment:' || v_payment.ordinality::text),
+        'method', 'credit', 'amount', 0, 'received_amount', 0, 'change_amount', 0
+      );
+      v_canonical_payments := v_canonical_payments || jsonb_build_array(v_canonical_payment);
+      continue;
+    end if;
+    if v_method not in ('cash', 'card', 'transfer') then
+      raise exception 'SALE_PAYMENT_METHOD_NOT_ALLOWED' using errcode = 'P0001';
+    end if;
+    v_payment_amount := private.pos_sale_jsonb_numeric(v_payment_payload, array['amount','total'], null);
+    if v_payment_amount is null or v_payment_amount <= 0 then
+      raise exception 'SALE_PAYMENT_AMOUNT_INVALID' using errcode = 'P0001';
+    end if;
+    v_received_amount := coalesce(private.pos_sale_jsonb_numeric(v_payment_payload, array['received_amount','receivedAmount'], null), v_payment_amount);
+    v_payment_change := coalesce(private.pos_sale_jsonb_numeric(v_payment_payload, array['change_amount','changeAmount'], null), 0);
+    if v_received_amount < v_payment_amount - 0.005 or v_payment_change < -0.005 then
+      raise exception 'SALE_PAYMENT_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+    end if;
+    if v_method = 'cash' then
+      if abs(v_payment_change - greatest(v_received_amount - v_payment_amount, 0)) > 0.005 then
+        raise exception 'SALE_PAYMENT_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+      end if;
+      v_cash_sum := v_cash_sum + v_payment_amount;
+    else
+      if abs(v_payment_change) > 0.005 or abs(v_received_amount - v_payment_amount) > 0.005 then
+        raise exception 'SALE_PAYMENT_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+      end if;
+      v_non_cash_sum := v_non_cash_sum + v_payment_amount;
+    end if;
+    v_payment_sum := v_payment_sum + v_payment_amount;
+    v_change_sum := v_change_sum + v_payment_change;
+    v_canonical_payment := (
+      v_payment_payload - 'amount' - 'total' - 'receivedAmount' - 'received_amount' - 'changeAmount' - 'change_amount'
+    ) || jsonb_build_object(
+      'id', coalesce(v_payment_payload->>'id', v_sale_id || ':payment:' || v_payment.ordinality::text),
+      'method', v_method, 'amount', round(v_payment_amount, 2),
+      'received_amount', round(v_received_amount, 2), 'change_amount', round(v_payment_change, 2),
+      'cash_session_id', coalesce(v_payment_payload->>'cash_session_id', v_payment_payload->>'cashSessionId', p_cash_session_id)
+    );
+    v_canonical_payments := v_canonical_payments || jsonb_build_array(v_canonical_payment);
+    if v_seen_method is null then v_seen_method := v_method; elsif v_seen_method <> v_method then v_seen_method := 'mixed'; end if;
+  end loop;
+
+  if p_operation_type = 'sale.credit' then
+    if v_payment_sum > v_total + 0.005 then
+      raise exception 'INITIAL_PAYMENT_EXCEEDS_TOTAL' using errcode = 'P0001';
+    end if;
+    if v_payment_sum <= 0 then
+      v_requested_method := 'credit';
+    else
+      v_requested_method := 'mixed_credit';
+    end if;
+  else
+    if v_payment_sum <= 0 or abs(v_payment_sum - v_total) > 0.005 then
+      raise exception 'SALE_PAYMENT_TOTAL_MISMATCH' using errcode = 'P0001';
+    end if;
+    v_requested_method := coalesce(v_seen_method, 'cash');
+  end if;
+
+  v_method := private.normalize_pos_sale_payment_method(
+    private.pos_sale_jsonb_text(v_sale, array['payment_method','paymentMethod'], v_requested_method)
+  );
+  if p_operation_type = 'sale.credit' then
+    if v_method not in ('credit', 'mixed', 'mixed_credit', 'partial_credit') and v_method is not null then
+      raise exception 'SALE_PAYMENT_METHOD_NOT_CREDIT' using errcode = 'P0001';
+    end if;
+    v_method := v_requested_method;
+  else
+    if v_method not in ('cash', 'card', 'transfer', 'mixed') then
+      raise exception 'SALE_PAYMENT_METHOD_NOT_ALLOWED' using errcode = 'P0001';
+    end if;
+    if v_method <> 'mixed' and v_requested_method <> 'mixed' and v_method <> v_requested_method then
+      raise exception 'SALE_PAYMENT_METHOD_MISMATCH' using errcode = 'P0001';
+    end if;
+    v_method := v_requested_method;
+  end if;
+
+  v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['amount_paid','amountPaid','abono'], null);
+  if v_incoming_sale_value is not null and abs(v_incoming_sale_value - v_payment_sum) > 0.005 then
+    raise exception 'SALE_PAYMENT_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+  end if;
+  v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['change_amount','changeAmount'], null);
+  if v_incoming_sale_value is not null and abs(v_incoming_sale_value - v_change_sum) > 0.005 then
+    raise exception 'SALE_PAYMENT_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+  end if;
+  v_incoming_sale_value := private.pos_sale_jsonb_numeric(v_sale, array['balance_due','balanceDue','saldoPendiente'], null);
+  if v_incoming_sale_value is not null and abs(v_incoming_sale_value - (v_total - v_payment_sum)) > 0.005 then
+    raise exception 'SALE_PAYMENT_ARITHMETIC_MISMATCH' using errcode = 'P0001';
+  end if;
+
+  v_sale := (
+    v_sale
+    - 'subtotal' - 'discount' - 'discountTotal' - 'discount_total'
+    - 'taxTotal' - 'tax_total' - 'total'
+    - 'amountPaid' - 'amount_paid' - 'abono'
+    - 'changeAmount' - 'change_amount' - 'balanceDue' - 'balance_due' - 'saldoPendiente'
+    - 'paymentMethod' - 'payment_method'
+  ) || jsonb_strip_nulls(jsonb_build_object(
+    'id', v_sale_id,
+    'local_sale_id', v_local_sale_id,
+    'subtotal', round(v_gross_subtotal, 2),
+    'discount_total', round(v_line_discount_total + v_sale_discount_amount, 2),
+    'discount', v_sale_discount,
+    'tax_total', v_tax_total,
+    'delivery_fee', v_delivery_fee,
+    'total', v_total,
+    'amount_paid', round(v_payment_sum, 2),
+    'change_amount', round(v_change_sum, 2),
+    'balance_due', round(v_total - v_payment_sum, 2),
+    'payment_method', v_method,
+    'customer_id', v_effective_customer_id,
+    'customer_name', case when v_customer.id is not null then v_customer.name end,
+    'customer_phone', case when v_customer.id is not null then v_customer.phone end,
+    'cash_session_id', p_cash_session_id,
+    'metadata', coalesce(v_sale->'metadata', '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+      'r2bFinancialAuthority', true,
+      'r2bPriceAuthority', case when v_ecom_order.id is not null then 'ecommerce_order_items' else 'pos_products_and_batches' end,
+      'r2bDiscountAuthority', case when v_ecom_order.id is not null then 'ecommerce_order_snapshot' else 'server_discount_semantics' end,
+      'r2bTaxAuthority', case when v_ecom_order.id is not null then 'ecommerce_order' else 'none' end,
+      'ecommerceAcceptedDeliveryFee', case when v_ecom_order.id is not null then v_delivery_fee end
+     ))
+  ));
+
+  -- Hash the canonical request, exactly as the legacy effect engine does.  The
+  -- comparison is deliberately after normalization so harmless client aliases
+  -- and ignored unit_cost values do not turn a legitimate replay into a false
+  -- conflict, while changed authoritative values still fail closed.
+  v_request_hash := pg_catalog.md5(
+    coalesce(v_sale::text, '') || coalesce(v_canonical_items::text, '') ||
+    coalesce(v_canonical_payments::text, '') || coalesce(p_cash_session_id, '') ||
+    case when p_operation_type = 'sale.credit' then coalesce(v_effective_customer_id, p_customer_id, '') else '' end
+  );
+  v_idem := private.r2b_assert_sale_idempotency_v1(v_license_id, v_idempotency_key, v_request_hash);
+  if v_idem->>'status' = 'completed' then
+    return jsonb_build_object('idempotent_response', v_idem->'response', 'idempotency_key', v_idempotency_key);
+  elsif v_idem->>'status' = 'processing' then
+    return jsonb_build_object('idempotency_processing', true, 'idempotency_key', v_idempotency_key);
+  end if;
+
+  return jsonb_build_object(
+    'license_id', v_license_id,
+    'idempotency_key', v_idempotency_key,
+    'request_hash', v_request_hash,
+    'sale', v_sale,
+    'items', v_canonical_items,
+    'payments', v_canonical_payments,
+    'customer_id', v_effective_customer_id,
+    'inventory_mode', v_inventory_mode
+  );
+end;
+$function$
+
+
 create or replace function private.execute_split_sale_financial_v1(
   p_license_key text,
   p_device_fingerprint text,
@@ -202,6 +954,7 @@ declare
   v_parent_order_id text;
   v_split_group_id text;
   v_cash_session_id text;
+  v_parent_order_version text;
   v_child_count integer;
   v_child_index integer := 0;
   v_child jsonb;
@@ -226,6 +979,7 @@ declare
   v_sale_ids text[] := array[]::text[];
   v_latest_change_seq bigint;
   v_primary_sale_id text;
+  v_primary_sale_folio text;
 begin
   if jsonb_typeof(coalesce(p_split, '{}'::jsonb)) <> 'object' then
     raise exception 'FINANCIAL_SPLIT_CONTRACT_INVALID' using errcode = 'P0001';
@@ -240,6 +994,7 @@ begin
   v_parent_order_id := nullif(btrim(coalesce(p_split->>'parent_order_id', p_split->>'parentOrderId', '')), '');
   v_split_group_id := nullif(btrim(coalesce(p_split->>'split_group_id', p_split->>'splitGroupId', '')), '');
   v_cash_session_id := nullif(btrim(coalesce(p_split->>'cash_session_id', p_split->>'cashSessionId', '')), '');
+  v_parent_order_version := nullif(btrim(coalesce(p_split->>'parent_order_version', p_split->>'parentOrderVersion', '')), '');
   if v_parent_order_id is null then
     raise exception 'RESTAURANT_PARENT_ORDER_REQUIRED' using errcode = 'P0001';
   end if;
@@ -279,6 +1034,16 @@ begin
 
   if v_order.id is null then
     raise exception 'RESTAURANT_ORDER_NOT_FOUND' using errcode = 'P0001';
+  end if;
+  if v_parent_order_version is not null then
+    begin
+      if v_order.updated_at <> v_parent_order_version::timestamptz then
+        raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
+      end if;
+    exception
+      when invalid_text_representation or datetime_field_overflow then
+        raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
+    end;
   end if;
   if v_order.status = 'cancelled' then
     raise exception 'RESTAURANT_ORDER_ALREADY_CANCELLED' using errcode = 'P0001';
@@ -423,8 +1188,8 @@ begin
     raise exception 'RESTAURANT_SPLIT_TOTAL_MISMATCH' using errcode = 'P0001';
   end if;
 
-  select value->>'id'
-    into v_primary_sale_id
+  select value->>'id', coalesce(value->>'pos_folio', value->>'folio')
+    into v_primary_sale_id, v_primary_sale_folio
     from jsonb_array_elements(v_sales)
    limit 1;
 
@@ -445,7 +1210,7 @@ begin
     p_staff_session_token,
     v_parent_order_id,
     coalesce(v_primary_sale_id, 'SPLIT-' || v_split_group_id),
-    'SPLIT-' || v_split_group_id,
+    coalesce(v_primary_sale_folio, 'SPLIT-' || v_split_group_id),
     round(v_total, 2),
     v_payment_summary,
     p_internal_idempotency_key || ':restaurant-close'
@@ -510,6 +1275,10 @@ declare
   v_item_count integer;
   v_item_index integer := 0;
   v_payment_count integer;
+  v_payment_method text;
+  v_payment_amount numeric;
+  v_received_amount numeric;
+  v_change_amount numeric;
   v_item_total numeric := 0;
   v_line_total numeric;
   v_qty numeric;
@@ -660,6 +1429,25 @@ begin
 
   if abs(round(v_item_total, 2) - v_total) > 0.005 then
     raise exception 'LAYAWAY_TOTAL_MISMATCH' using errcode = 'P0001';
+  end if;
+
+  if jsonb_array_length(v_payments_payload) = 1 then
+    v_payment := v_payments_payload->0;
+    v_payment_method := lower(coalesce(private.pos_sale_jsonb_text(v_payment, array['method','payment_method','paymentMethod']), ''));
+    v_payment_amount := private.pos_sale_jsonb_numeric(v_payment, array['amount','total'], null);
+    v_received_amount := coalesce(private.pos_sale_jsonb_numeric(v_payment, array['received_amount','receivedAmount'], null), v_payment_amount);
+    v_change_amount := coalesce(private.pos_sale_jsonb_numeric(v_payment, array['change_amount','changeAmount'], null), 0);
+    if v_payment_method <> 'layaway_completed'
+       or v_payment_amount is null
+       or v_payment_amount <= 0
+       or v_received_amount is null
+       or v_received_amount < v_payment_amount - 0.005
+       or v_change_amount < -0.005
+       or abs(v_payment_amount - v_total) > 0.005
+       or abs(v_received_amount - v_payment_amount) > 0.005
+       or abs(v_change_amount) > 0.005 then
+      raise exception 'FINANCIAL_LAYAWAY_PAYMENTS_INVALID' using errcode = 'P0001';
+    end if;
   end if;
 
   select coalesce(sum(m.amount), 0)
