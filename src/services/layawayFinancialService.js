@@ -7,6 +7,15 @@ import { Money } from '../utils/moneyMath';
 import { salesCloudCashierService } from './salesCloud/salesCloudCashierService';
 
 const OPEN_CASH_MESSAGE = 'Debes abrir Caja antes de registrar un pago de apartado.';
+const CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED_MESSAGE =
+    'Los apartados multi-dispositivo todavía no están habilitados para cuentas cloud. Usa una cuenta local/FREE o espera la sincronización cloud completa.';
+
+const assertCloudLayawayUnavailable = (mode) => {
+    if (!mode?.cloudEnabled) return;
+    const error = new Error(CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED_MESSAGE);
+    error.code = 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED';
+    throw error;
+};
 
 const paymentReference = (layawayId, paymentId) => `layaway:${layawayId}:payment:${paymentId}`;
 const refundReference = (layawayId, refundId) => `layaway:${layawayId}:refund:${refundId}`;
@@ -156,6 +165,9 @@ const stablePayment = ({ layawayId, amount, paymentId, paymentType, customerId }
 
 export const layawayFinancialService = {
     async create({ layawayData, initialPayment = 0, paymentId = null, paymentType = 'initial_deposit' }) {
+        const mode = cashRepository.getMode();
+        assertCloudLayawayUnavailable(mode);
+
         const amount = Number(initialPayment) || 0;
         if (amount <= 0) return layawayRepository.create(layawayData, 0, null);
 
@@ -167,8 +179,6 @@ export const layawayFinancialService = {
             paymentType,
             customerId: layawayData.customerId
         });
-        const mode = cashRepository.getMode();
-
         if (!mode.cloudEnabled) {
             const cashContext = await getLocalCashMutationContext();
             return layawayRepository.create(layawayData, amount, session.id, {
@@ -219,8 +229,9 @@ export const layawayFinancialService = {
     async addPayment({ layawayId, amount, paymentId = null, customerId = null }) {
         const layaway = await layawayRepository.getById(layawayId);
         if (!layaway) throw new Error('Apartado no encontrado');
-        const session = await requireOpenCashSession();
         const mode = cashRepository.getMode();
+        assertCloudLayawayUnavailable(mode);
+        const session = await requireOpenCashSession();
         const pending = (layaway.payments || []).find((payment) => payment.status === 'pending' && Number(payment.amount) === Number(amount));
         const payment = pending || stablePayment({
             layawayId,
@@ -272,6 +283,7 @@ export const layawayFinancialService = {
         }
 
         const mode = cashRepository.getMode();
+        assertCloudLayawayUnavailable(mode);
         if (mode.cloudEnabled && !mode.online) {
             throw new Error('OFFLINE');
         }
