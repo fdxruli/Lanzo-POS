@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getSaleDisplayReference,
+  getSaleFinancialFolio,
   getSaleSecondaryReference,
   getSaleOperationalFolio,
   normalizeSaleTraceability,
