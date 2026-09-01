@@ -136,6 +136,8 @@ const friendlyCloudCashierError = (error) => {
     SALE_ARITHMETIC_MISMATCH: 'Los importes de la venta no cuadran. Revisa precios, descuentos y pagos.',
     SALE_PAYMENT_ARITHMETIC_MISMATCH: 'Los importes recibidos y el cambio no cuadran con el pago.',
     '57014': 'El servidor tardó demasiado en responder. El cobro quedó protegido; verifica el estado antes de volver a intentarlo.',
+    '55P03': 'La caja está ocupada por otra operación. Espera unos segundos y verifica el estado antes de volver a cobrar.',
+    POS_OPERATIONAL_FOLIO_UNRESOLVED: 'No se pudo asignar el folio POS global. La venta no se registró; actualiza y vuelve a intentarlo.',
     SALE_PAYMENT_METHOD_MISMATCH: 'El método de pago no coincide con el desglose capturado.',
     SALE_TAX_SOURCE_UNRESOLVED: 'La venta contiene impuestos sin una fuente fiscal server-side configurada.',
     ECOMMERCE_CONVERSION_AUTHORITY_REQUIRED: 'La conversión ecommerce ya no está reservada para este cobro.',
