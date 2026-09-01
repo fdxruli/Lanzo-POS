@@ -32,9 +32,13 @@ permissions:
   contents: read
 
 env:
-  SHARED_TERMINAL_3_BASE_SHA: 06f42bcbbc4282c6f8f5d4e0b9065437d16f19ab
+  SHARED_TERMINAL_3_HISTORICAL_BASE_SHA: 06f42bcbbc4282c6f8f5d4e0b9065437d16f19ab
   SHARED_TERMINAL_3_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
   SHARED_TERMINAL_3_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '06f42bcbbc4282c6f8f5d4e0b9065437d16f19ab' }}
+  SHARED_TERMINAL_3_BASE_ARTIFACT: shared-terminal-3-base-full-suite-${{ github.run_id }}
+  SHARED_TERMINAL_3_CANDIDATE_ARTIFACT: shared-terminal-3-candidate-full-suite-${{ github.run_id }}
+  SHARED_TERMINAL_3_DIFFERENTIAL_ARTIFACT: shared-terminal-3-full-suite-differential-${{ github.run_id }}
 
 jobs:
   focused-validation:
@@ -53,13 +57,19 @@ jobs:
         run: |
           echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
           echo "CANDIDATE_SHA=${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          echo "CONTRACT_BASE_SHA=${SHARED_TERMINAL_3_BASE_SHA}"
+          echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          echo "HISTORICAL_BASE_SHA=${SHARED_TERMINAL_3_HISTORICAL_BASE_SHA}"
           test -n "${SHARED_TERMINAL_3_PR_BASE_SHA}"
           test -n "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          test -n "${SHARED_TERMINAL_3_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_3_HISTORICAL_BASE_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
+          fi
           git cat-file -e "${SHARED_TERMINAL_3_PR_BASE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_3_CANDIDATE_SHA}^{commit}"
-          git cat-file -e "${SHARED_TERMINAL_3_BASE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_3_HISTORICAL_BASE_SHA}^{commit}"
 
       - name: PR-local blocking whitespace hygiene
         shell: bash
@@ -70,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          git diff --check "${SHARED_TERMINAL_3_BASE_SHA}...${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          git diff --check "${SHARED_TERMINAL_3_HISTORICAL_BASE_SHA}...${SHARED_TERMINAL_3_CANDIDATE_SHA}"
           historical_status=$?
           set -e
 
@@ -188,10 +198,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
-      - name: Checkout exact BASE SHA
+      - name: Checkout exact PR comparison BASE SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SHARED_TERMINAL_3_BASE_SHA }}
+          ref: ${{ env.SHARED_TERMINAL_3_COMPARISON_BASE_SHA }}
+          fetch-depth: 0
+
+      - name: Validate BASE checkout
+        shell: bash
+        run: |
+          echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
+          echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -273,7 +294,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shared-terminal-3-base-full-suite
+          name: ${{ env.SHARED_TERMINAL_3_BASE_ARTIFACT }}
           path: |
             full-suite-*.json
             full-suite-*.log
@@ -282,6 +303,7 @@ jobs:
             public-store-bfcache-*.log
             public-store-bfcache-*.exit
           if-no-files-found: error
+          overwrite: true
 
   full-suite-candidate:
     name: Full suite CANDIDATE repeated (observational)
@@ -291,7 +313,14 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_3_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Validate CANDIDATE checkout
+        shell: bash
+        run: |
+          echo "CANDIDATE_SHA=${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -373,7 +402,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shared-terminal-3-candidate-full-suite
+          name: ${{ env.SHARED_TERMINAL_3_CANDIDATE_ARTIFACT }}
           path: |
             full-suite-*.json
             full-suite-*.log
@@ -382,6 +411,7 @@ jobs:
             public-store-bfcache-*.log
             public-store-bfcache-*.exit
           if-no-files-found: error
+          overwrite: true
 
   differential-regression-gate:
     name: Differential repeated full-suite regression gate
@@ -395,18 +425,33 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_3_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Validate differential refs
+        shell: bash
+        run: |
+          echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
+          echo "CANDIDATE_SHA=${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          echo "BASE_ARTIFACT=${SHARED_TERMINAL_3_BASE_ARTIFACT}"
+          echo "CANDIDATE_ARTIFACT=${SHARED_TERMINAL_3_CANDIDATE_ARTIFACT}"
+          echo "DIFFERENTIAL_ARTIFACT=${SHARED_TERMINAL_3_DIFFERENTIAL_ARTIFACT}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
+          fi
 
       - name: Download BASE evidence
         uses: actions/download-artifact@v4
         with:
-          name: shared-terminal-3-base-full-suite
+          name: ${{ env.SHARED_TERMINAL_3_BASE_ARTIFACT }}
           path: differential/base
 
       - name: Download CANDIDATE evidence
         uses: actions/download-artifact@v4
         with:
-          name: shared-terminal-3-candidate-full-suite
+          name: ${{ env.SHARED_TERMINAL_3_CANDIDATE_ARTIFACT }}
           path: differential/candidate
 
       - name: Compare repeated BASE vs CANDIDATE failure envelope
@@ -422,8 +467,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: shared-terminal-3-full-suite-differential
+          name: ${{ env.SHARED_TERMINAL_3_DIFFERENTIAL_ARTIFACT }}
           path: |
             differential/full-suite-differential.md
             differential/full-suite-differential.json
           if-no-files-found: error
+          overwrite: true
