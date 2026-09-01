@@ -742,7 +742,8 @@ export const createOrderActions = (set, get) => ({
                 status: SALE_STATUS.OPEN,
                 orderType: TABLE_ORDER_TYPE,
                 fulfillmentStatus: existingSale?.fulfillmentStatus || OPEN_FULFILLMENT_STATUS,
-                tableData: finalTableData
+                tableData: finalTableData,
+                checkoutDraft: false
               };
 
               await salesTable.put(openSaleRecord);
