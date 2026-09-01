@@ -225,6 +225,7 @@ declare
   v_labels text[] := array[]::text[];
   v_sale_ids text[] := array[]::text[];
   v_latest_change_seq bigint;
+  v_primary_sale_id text;
 begin
   if jsonb_typeof(coalesce(p_split, '{}'::jsonb)) <> 'object' then
     raise exception 'FINANCIAL_SPLIT_CONTRACT_INVALID' using errcode = 'P0001';
@@ -422,6 +423,11 @@ begin
     raise exception 'RESTAURANT_SPLIT_TOTAL_MISMATCH' using errcode = 'P0001';
   end if;
 
+  select value->>'id'
+    into v_primary_sale_id
+    from jsonb_array_elements(v_sales)
+   limit 1;
+
   v_payment_summary := jsonb_build_object(
     'source', 'split_bill',
     'splitGroupId', v_split_group_id,
@@ -438,7 +444,7 @@ begin
     p_security_token,
     p_staff_session_token,
     v_parent_order_id,
-    v_split_group_id,
+    coalesce(v_primary_sale_id, 'SPLIT-' || v_split_group_id),
     'SPLIT-' || v_split_group_id,
     round(v_total, 2),
     v_payment_summary,
@@ -517,6 +523,7 @@ declare
   v_folio jsonb;
   v_cloud_folio text;
   v_folio_sequence bigint;
+  v_pos_folio text;
   v_sold_at timestamptz;
   v_created_at timestamptz;
   v_item_id text;
@@ -674,6 +681,7 @@ begin
 
   v_folio := private.next_pos_sale_folio(v_license_id);
   v_cloud_folio := v_folio->>'folio';
+  v_pos_folio := v_folio->>'pos_folio';
   v_folio_sequence := (v_folio->>'sequence')::bigint;
 
   begin
@@ -710,7 +718,7 @@ begin
   insert into public.pos_sales (
     id, license_id, local_sale_id, device_id, staff_user_id, device_role, actor_key, actor_name,
     origin, source_mode, effects_status, status, fulfillment_status,
-    payment_method, payment_status, folio, local_folio, cloud_folio, folio_sequence,
+    payment_method, payment_status, folio, local_folio, cloud_folio, pos_folio, folio_sequence,
     sale_number, customer_id, customer_name, customer_phone,
     subtotal, discount_total, tax_total, total, amount_paid, change_amount, balance_due, currency,
     sold_at, created_at, updated_at, committed_at,
@@ -725,7 +733,7 @@ begin
     'cloud', 'cloud_committed', 'payment_recorded', 'closed', 'fulfilled',
     'layaway_completed', 'paid', v_cloud_folio,
     private.pos_sale_jsonb_text(v_sale_payload, array['local_folio','localFolio','folio']),
-    v_cloud_folio, v_folio_sequence, v_folio_sequence,
+    v_cloud_folio, v_pos_folio, v_folio_sequence, v_folio_sequence,
     private.pos_sale_jsonb_text(v_sale_payload, array['customer_id','customerId']),
     private.pos_sale_jsonb_text(v_sale_payload, array['customer_name','customerName']),
     private.pos_sale_jsonb_text(v_sale_payload, array['customer_phone','customerPhone']),
