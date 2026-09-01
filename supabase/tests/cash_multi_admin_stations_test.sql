@@ -329,6 +329,9 @@ begin
      or v_result#>>'{cash_session,cash_station_id}' <> v_station_a then
     raise exception 'MULTI_ADMIN_SALE_A_CROSSING_FAILED: %', v_result;
   end if;
+  if v_result#>>'{sale,pos_folio}' <> 'LZ-01-000001' then
+    raise exception 'MULTI_ADMIN_GLOBAL_POS_FOLIO_A_FAILED: %', v_result;
+  end if;
 
   v_result := public.pos_create_cloud_sale_cashier(
     v_license_key,
@@ -346,6 +349,9 @@ begin
      or v_result#>>'{sale,cash_session_id}' <> v_session_b
      or v_result#>>'{cash_session,cash_station_id}' <> v_station_b then
     raise exception 'MULTI_ADMIN_SALE_B_CROSSING_FAILED: %', v_result;
+  end if;
+  if v_result#>>'{sale,pos_folio}' <> 'LZ-01-000002' then
+    raise exception 'MULTI_ADMIN_GLOBAL_POS_FOLIO_B_FAILED: %', v_result;
   end if;
 
   -- Replaying A's idempotency key must not create a second sale or movement.
