@@ -2,7 +2,7 @@ const handlers = new Map();
 
 export const FINANCIAL_RECOVERY_OPERATIONS = Object.freeze([
   'cash.open', 'cash.movement', 'cash.adjust_initial_fund', 'cash.close', 'cash.admin_close',
-  'sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.cancel'
+  'sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete', 'sale.cancel'
 ]);
 
 // Registration is deliberately side-effect safe: it stores a function only.

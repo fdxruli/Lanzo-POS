@@ -152,6 +152,36 @@ export const salesCloudRepository = {
     return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
   },
 
+  async createCloudSplitTableSale({ licenseKey, split = {}, cashSessionId = null, idempotencyKey = null, actorHandle = null, project = null }) {
+    const request = {
+      ...(split || {}),
+      cash_session_id: cashSessionId || split?.cash_session_id || split?.cashSessionId || null
+    };
+    const result = await executeNewFinancialIntent({
+      operationType: 'sale.split',
+      request,
+      licenseKey,
+      idempotencyKey,
+      cashSessionId: request.cash_session_id,
+      actorHandle,
+      project
+    });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
+  },
+
+  async createCloudLayawayCompletion({ licenseKey, request = {}, idempotencyKey = null, actorHandle = null, project = null }) {
+    const result = await executeNewFinancialIntent({
+      operationType: 'sale.layaway_complete',
+      request: request || {},
+      licenseKey,
+      idempotencyKey,
+      cashSessionId: null,
+      actorHandle,
+      project
+    });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
+  },
+
   async previewCloudSaleCancellation({ licenseKey, saleId, reason = null }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);

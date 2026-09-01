@@ -53,6 +53,8 @@ declare
   v_before_customer_ledger bigint;
   v_before_financial_operations bigint;
   v_before_folio bigint;
+  v_read_updated_at timestamptz;
+  v_read_server_version integer;
 begin
   v_license_key := 'TEST-CASH-MULTI-ADMIN-' || v_suffix;
   v_fingerprint_a := 'cash-multi-admin-a-' || v_suffix;
@@ -109,27 +111,27 @@ begin
       v_other_admin_user,
       v_license_id,
       'cash_multi_other_' || substr(v_suffix, 1, 6),
-      'Second admin',
+      'Non-owner admin (not used for cash)',
       extensions.crypt('password-other-' || v_suffix, extensions.gen_salt('bf', 4)),
       false,
       true
     );
 
   insert into public.license_devices(
-    id, license_id, device_fingerprint, device_name, security_token, is_active, device_role, staff_user_id
+    id, license_id, device_fingerprint, device_name, security_token, is_active, device_role, device_mode, staff_user_id
   ) values
-    (v_device_a, v_license_id, v_fingerprint_a, 'Admin station A', v_device_token_a, true, 'admin', null),
-    (v_device_b, v_license_id, v_fingerprint_b, 'Admin station B', v_device_token_b, true, 'admin', null),
-    (v_device_c, v_license_id, v_fingerprint_c, 'Second admin conflict station', v_device_token_c, true, 'admin', null),
-    (v_device_d, v_license_id, v_fingerprint_d, 'Second admin station D', v_device_token_d, true, 'admin', null);
+    (v_device_a, v_license_id, v_fingerprint_a, 'Admin station A', v_device_token_a, true, 'admin', 'admin_only', null),
+    (v_device_b, v_license_id, v_fingerprint_b, 'Admin station B', v_device_token_b, true, 'admin', 'admin_only', null),
+    (v_device_c, v_license_id, v_fingerprint_c, 'Second admin conflict station', v_device_token_c, true, 'admin', 'admin_only', null),
+    (v_device_d, v_license_id, v_fingerprint_d, 'Second admin station D', v_device_token_d, true, 'admin', 'admin_only', null);
 
   insert into public.license_admin_sessions(
     id, license_id, admin_user_id, device_id, session_token_hash, expires_at
   ) values
     (v_admin_session_a, v_license_id, v_admin_user, v_device_a, extensions.crypt(v_admin_token_a, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
     (v_admin_session_b, v_license_id, v_admin_user, v_device_b, extensions.crypt(v_admin_token_b, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
-    (v_admin_session_c, v_license_id, v_other_admin_user, v_device_c, extensions.crypt(v_admin_token_c, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
-    (v_admin_session_d, v_license_id, v_other_admin_user, v_device_d, extensions.crypt(v_admin_token_d, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
+    (v_admin_session_c, v_license_id, v_admin_user, v_device_c, extensions.crypt(v_admin_token_c, extensions.gen_salt('bf', 4)), now() + interval '1 hour'),
+    (v_admin_session_d, v_license_id, v_admin_user, v_device_d, extensions.crypt(v_admin_token_d, extensions.gen_salt('bf', 4)), now() + interval '1 hour');
 
   insert into public.pos_products(
     id, license_id, name, name_key, price, cost, stock, committed_stock,
@@ -224,18 +226,25 @@ begin
       where license_id = v_license_id
         and status = 'open'
         and deleted_at is null
-        and actor_key = 'admin:' || v_admin_user::text) <> 2 then
+        and actor_key = 'admin:' || v_admin_user::text) <> 3 then
     raise exception 'MULTI_ADMIN_OPEN_SESSION_COUNT_FAILED';
   end if;
   if (select count(*) from public.pos_cash_sessions
       where license_id = v_license_id
         and status = 'open'
         and deleted_at is null
-        and actor_key = 'admin:' || v_other_admin_user::text) <> 1 then
-    raise exception 'MULTI_ADMIN_SECOND_ADMIN_OPEN_SESSION_COUNT_FAILED';
+        and actor_key = 'admin:' || v_other_admin_user::text) <> 0 then
+    raise exception 'MULTI_ADMIN_NON_OWNER_SESSION_CREATED_UNEXPECTEDLY';
   end if;
 
   -- Current-session reads remain station-scoped in both directions.
+  select s.updated_at, s.server_version
+    into v_read_updated_at, v_read_server_version
+    from public.pos_cash_sessions s
+   where s.license_id = v_license_id
+     and s.id = v_session_a
+   limit 1;
+
   v_result := public.pos_get_current_cash_session(
     v_license_key, v_fingerprint_a, v_device_token_a, v_admin_token_a
   );
@@ -243,6 +252,12 @@ begin
      or v_result#>>'{cash_session,cash_station_id}' <> v_station_a then
     raise exception 'MULTI_ADMIN_CURRENT_A_SCOPING_FAILED: %', v_result;
   end if;
+
+  if (select s.updated_at from public.pos_cash_sessions s where s.license_id = v_license_id and s.id = v_session_a limit 1) is distinct from v_read_updated_at
+     or (select s.server_version from public.pos_cash_sessions s where s.license_id = v_license_id and s.id = v_session_a limit 1) is distinct from v_read_server_version then
+    raise exception 'CASH_CURRENT_SESSION_READ_MUTATED_SESSION_ROW';
+  end if;
+
   v_result := public.pos_get_current_cash_session(
     v_license_key, v_fingerprint_b, v_device_token_b, v_admin_token_b
   );
@@ -266,7 +281,7 @@ begin
     raise exception 'MULTI_ADMIN_STATE_B_FAILED: %', v_result;
   end if;
 
-  -- A different Admin actor bound to A cannot open a second session there.
+  -- A second authenticated device bound to A cannot open a second session there for the same actor.
   insert into public.pos_cash_station_bindings(
     license_id, cash_station_id, device_id, binding_mode, status
   ) values (v_license_id, v_station_a, v_device_c, 'explicit', 'active');
@@ -280,7 +295,7 @@ begin
       'cash-multi-open-conflict-' || v_suffix
     );
     if coalesce((v_result->>'success')::boolean, false) is not false
-       or v_result->>'code' <> 'CASH_HANDOFF_REQUIRED' then
+       or v_result->>'code' <> 'CASH_SESSION_ALREADY_OPEN' then
       raise exception 'MULTI_ADMIN_SAME_STATION_ACCEPTED: %', v_result;
     end if;
   exception when others then
@@ -314,6 +329,9 @@ begin
      or v_result#>>'{cash_session,cash_station_id}' <> v_station_a then
     raise exception 'MULTI_ADMIN_SALE_A_CROSSING_FAILED: %', v_result;
   end if;
+  if v_result#>>'{sale,pos_folio}' <> 'LZ-01-000001' then
+    raise exception 'MULTI_ADMIN_GLOBAL_POS_FOLIO_A_FAILED: %', v_result;
+  end if;
 
   v_result := public.pos_create_cloud_sale_cashier(
     v_license_key,
@@ -331,6 +349,9 @@ begin
      or v_result#>>'{sale,cash_session_id}' <> v_session_b
      or v_result#>>'{cash_session,cash_station_id}' <> v_station_b then
     raise exception 'MULTI_ADMIN_SALE_B_CROSSING_FAILED: %', v_result;
+  end if;
+  if v_result#>>'{sale,pos_folio}' <> 'LZ-01-000002' then
+    raise exception 'MULTI_ADMIN_GLOBAL_POS_FOLIO_B_FAILED: %', v_result;
   end if;
 
   -- Replaying A's idempotency key must not create a second sale or movement.
@@ -492,6 +513,6 @@ begin
     raise exception 'MULTI_ADMIN_CROSS_STATION_FOLIO_ADVANCED';
   end if;
 end;
-$$;
+$test$;
 
 rollback;

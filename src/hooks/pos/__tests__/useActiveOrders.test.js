@@ -342,6 +342,53 @@ describe('useActiveOrders unified store', () => {
     expect(selectCurrentOrderTableData(after)).toBe(selectedTableData);
   });
 
+  it('rotates an unsaved order identity when payment is cancelled', () => {
+    const oldOrder = makeOrder('sale-old', [
+      { id: 'product-1', lineId: 'line-1', name: 'Producto', quantity: 1, price: 25 }
+    ]);
+
+    useActiveOrders.setState({
+      activeOrders: new Map([['sale-old', oldOrder]]),
+      currentOrderId: 'sale-old'
+    });
+
+    const result = useActiveOrders.getState().rotateCurrentOrderForNewSaleAttempt('sale-old');
+    const state = useActiveOrders.getState();
+    const rotated = state.activeOrders.get('sal-generated');
+
+    expect(result).toMatchObject({
+      success: true,
+      rotated: true,
+      oldOrderId: 'sale-old',
+      orderId: 'sal-generated'
+    });
+    expect(state.currentOrderId).toBe('sal-generated');
+    expect(state.activeOrders.has('sale-old')).toBe(false);
+    expect(rotated).toMatchObject({
+      id: 'sal-generated',
+      items: oldOrder.items,
+      total: 0,
+      folio: null,
+      isSaved: false,
+      isLockedForCheckout: false,
+      checkoutAttemptId: null
+    });
+  });
+
+  it('keeps saved and ecommerce order identities stable when payment is cancelled', () => {
+    const savedOrder = { ...makeOrder('saved-order'), isSaved: true };
+    useActiveOrders.setState({
+      activeOrders: new Map([['saved-order', savedOrder]]),
+      currentOrderId: 'saved-order'
+    });
+
+    const result = useActiveOrders.getState().rotateCurrentOrderForNewSaleAttempt('saved-order');
+
+    expect(result).toMatchObject({ success: true, rotated: false, reason: 'persistent_order' });
+    expect(useActiveOrders.getState().currentOrderId).toBe('saved-order');
+    expect(useActiveOrders.getState().activeOrders.has('saved-order')).toBe(true);
+  });
+
   it('applies the same cart rules to a non-current order', async () => {
     useActiveOrders.setState({
       activeOrders: new Map([

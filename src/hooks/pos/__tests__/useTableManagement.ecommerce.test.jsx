@@ -28,7 +28,7 @@ vi.mock('../../../services/salesService', () => ({
 }));
 
 vi.mock('../../../services/Logger', () => ({
-  default: { warn: vi.fn(), error: vi.fn() }
+  default: { log: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }));
 
 vi.mock('../../../services/utils', () => ({
@@ -75,7 +75,67 @@ vi.mock('../../../services/restaurant/restaurantOrderReconciliation', () => ({
 
 vi.mock('../../../services/sync/syncConstants', () => ({
   getLicenseKeyFromDetails: () => 'license-key',
-  isRestaurantOrdersCloudEnabled: () => true
+  isRestaurantOrdersCloudEnabled: () => true,
+  SYNC_ENTITY_TYPES: {
+    CUSTOMER: 'customer',
+    CUSTOMER_LEDGER: 'customer_ledger',
+    CUSTOMER_CREDIT: 'customer_credit',
+    CUSTOMER_PAYMENT: 'customer_payment',
+    CATEGORY: 'category',
+    PRODUCT: 'product',
+    PRODUCT_BATCH: 'product_batch',
+    INVENTORY_ENTRY: 'inventory_entry',
+    PREPARATION_STATION: 'preparation_station',
+    RESTAURANT_ORDER: 'restaurant_order',
+    RESTAURANT_ORDER_ITEM: 'restaurant_order_item',
+    INVENTORY_MOVEMENT: 'inventory_movement',
+    CASH: 'cash',
+    CASH_SESSION: 'cash_session',
+    CASH_MOVEMENT: 'cash_movement',
+    SALE: 'sale',
+    SALE_ITEM: 'sale_item',
+    SALE_PAYMENT: 'sale_payment',
+    SALE_CANCELLATION: 'sale_cancellation',
+    REPORT: 'report',
+    GENERIC: 'generic'
+  },
+  SYNC_OPERATIONS: {
+    CREATE: 'create',
+    UPDATE: 'update',
+    DELETE: 'delete',
+    RESTORE: 'restore',
+    UPSERT: 'upsert',
+    UPSERT_SHADOW: 'upsert_shadow',
+    CLOUD_COMMIT: 'cloud_commit',
+    CANCEL: 'cancel',
+    PULL_SNAPSHOT: 'pull_snapshot',
+    PULL_CHANGES: 'pull_changes',
+    TOGGLE_STATUS: 'toggle_status',
+    STATUS_UPDATE: 'status_update',
+    OPEN: 'open',
+    CLOSE: 'close',
+    MOVEMENT: 'movement',
+    ADJUST: 'adjust',
+    INVENTORY_ENTRY: 'inventory_entry',
+    UNKNOWN: 'unknown'
+  },
+  SYNC_STATUS: {
+    DISABLED: 'disabled',
+    ONLINE: 'online',
+    OFFLINE: 'offline',
+    DEGRADED: 'degraded',
+    ERROR: 'error'
+  },
+  SYNC_LIMITS: {
+    DEFAULT_PULL_LIMIT: 500,
+    MAX_PULL_LIMIT: 500,
+    DEFAULT_OUTBOX_LIMIT: 50,
+    STUCK_PROCESSING_MS: 120000
+  },
+  POS_SYNC_FOCUS_PULL_COOLDOWN_MS: 60000,
+  POS_SYNC_REALTIME_PULL_DEBOUNCE_MS: 1000,
+  shouldDeferPosBootstrapStartHook: vi.fn(() => false),
+  isCloudPosSyncEnabled: vi.fn(() => true)
 }));
 
 vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   getSaleDisplayReference,
+  getSaleFinancialFolio,
   getSaleSecondaryReference,
+  getSaleOperationalFolio,
   normalizeSaleTraceability,
   saleMatchesReference
 } from '../saleReference';
@@ -16,6 +18,20 @@ describe('saleReference', () => {
       ecommerceOrderId: null,
       ecommerceOrderCode: null
     });
+  });
+
+  it('uses the server-assigned POS folio while preserving the financial folio', () => {
+    const sale = {
+      folio: 'V-000048',
+      cloud_folio: 'V-000048',
+      pos_folio: 'FG-01-000048'
+    };
+
+    expect(getSaleOperationalFolio(sale)).toBe('FG-01-000048');
+    expect(getSaleDisplayReference(sale)).toBe('FG-01-000048');
+    expect(getSaleFinancialFolio(sale)).toBe('V-000048');
+    expect(saleMatchesReference(sale, 'FG-01-000048')).toBe(true);
+    expect(saleMatchesReference(sale, 'V-000048')).toBe(true);
   });
 
   it('uses the ecommerce code as primary and the financial folio as secondary', () => {

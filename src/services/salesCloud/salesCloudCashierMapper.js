@@ -1,7 +1,14 @@
+const isMissingNumber = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+
 const toNumber = (value, fallback = 0) => {
-  const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
+  if (isMissingNumber(value)) return fallback;
+  const normalized = String(value).replace(/[^0-9.-]/g, '');
+  if (normalized === '' || normalized === '-' || normalized === '.' || normalized === '-.') return fallback;
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+const toNullableNumber = (value) => (isMissingNumber(value) ? null : toNumber(value, null));
 
 const roundMoney = (value) => Math.round((toNumber(value, 0) + Number.EPSILON) * 100) / 100;
 const toIsoString = (value, fallback = new Date().toISOString()) => {
@@ -10,6 +17,7 @@ const toIsoString = (value, fallback = new Date().toISOString()) => {
   return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
 };
 const compactObject = (value = {}) => Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
+const firstValue = (...values) => values.find((value) => !isMissingNumber(value));
 const firstText = (...values) => values.map((value) => String(value ?? '').trim()).find(Boolean) || null;
 
 const getSaleTraceability = (sale = {}) => {
@@ -127,6 +135,8 @@ const mapItem = (item = {}, index = 0, options = {}) => {
   const lineSubtotal = getLineSubtotal(item);
   const lineTotal = getLineTotal(item);
   const selectedModifiers = getSelectedModifiers(item);
+  const splitBasePrice = item.splitBasePrice ?? item.split_base_price;
+  const splitRoundingAdjustment = item.splitRoundingAdjustment ?? item.split_rounding_adjustment;
 
   return compactObject({
     id: firstText(item.lineId, item.cartLineId) || (productId ? `${productId}:${index + 1}` : null),
@@ -137,7 +147,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     category_id: firstText(item.categoryId, item.category_id),
     category_name: firstText(item.categoryName, item.category, item.rubro),
     quantity: toNumber(item.quantity, 0),
-    unit_price: toNumber(item.price ?? item.unitPrice, 0),
+    unit_price: toNumber(splitBasePrice ?? item.price ?? item.unitPrice, 0),
     unit_cost: item.cost === undefined && item.unitCost === undefined ? null : toNumber(item.cost ?? item.unitCost, 0),
     discount_amount: discountAmount,
     tax_amount: toNumber(item.taxAmount ?? item.tax, 0),
@@ -164,6 +174,8 @@ const mapItem = (item = {}, index = 0, options = {}) => {
       discountAmount,
       lineSubtotal,
       lineTotal,
+      splitBasePrice: splitBasePrice === undefined ? undefined : toNumber(splitBasePrice, 0),
+      splitRoundingAdjustment: splitRoundingAdjustment === undefined ? undefined : roundMoney(splitRoundingAdjustment),
       snapshotOnly: true
     })
   });
@@ -172,15 +184,21 @@ const mapItem = (item = {}, index = 0, options = {}) => {
 const buildSyntheticPayment = (sale = {}) => {
   const method = normalizeCloudCashierPaymentMethod(sale.paymentMethod);
   const total = toNumber(sale.total, 0);
-  const amountPaid = toNumber(sale.abono ?? sale.amountPaid, method === 'credit' ? 0 : total);
-  const balanceDue = toNumber(sale.saldoPendiente ?? sale.balanceDue, 0);
+  const amountPaid = toNumber(firstValue(sale.abono, sale.amountPaid, sale.amount_paid), method === 'credit' ? 0 : total);
+  const balanceDue = toNumber(firstValue(sale.saldoPendiente, sale.balanceDue, sale.balance_due), 0);
+  const amount = method === 'credit' ? amountPaid : Math.max(amountPaid, total - balanceDue);
+  const receivedAmount = toNumber(firstValue(sale.receivedAmount, sale.received_amount), amount);
+  const changeAmount = toNumber(
+    firstValue(sale.changeAmount, sale.change_amount),
+    method === 'cash' ? Math.max(receivedAmount - amount, 0) : 0
+  );
 
   return compactObject({
     id: `${sale.id}:payment:main`,
     method,
-    amount: method === 'credit' ? amountPaid : Math.max(amountPaid, total - balanceDue),
-    received_amount: toNumber(sale.receivedAmount, amountPaid || null),
-    change_amount: toNumber(sale.changeAmount, 0),
+    amount,
+    received_amount: receivedAmount,
+    change_amount: changeAmount,
     reference: firstText(sale.paymentReference, sale.reference),
     cash_session_id: firstText(sale.cash_session_id, sale.cashSessionId),
     cash_station_id: firstText(sale.cash_station_id, sale.cashStationId),
@@ -190,19 +208,31 @@ const buildSyntheticPayment = (sale = {}) => {
   });
 };
 
-const mapPayment = (payment = {}, sale = {}, index = 0) => compactObject({
-  id: firstText(payment.id) || `${sale.id}:payment:${index + 1}`,
-  method: normalizeCloudCashierPaymentMethod(payment.method || payment.paymentMethod || sale.paymentMethod),
-  amount: toNumber(payment.amount ?? payment.total, 0),
-  received_amount: payment.receivedAmount === undefined && payment.received_amount === undefined ? null : toNumber(payment.receivedAmount ?? payment.received_amount, 0),
-  change_amount: payment.changeAmount === undefined && payment.change_amount === undefined ? null : toNumber(payment.changeAmount ?? payment.change_amount, 0),
-  reference: firstText(payment.reference, payment.ref),
-  cash_session_id: firstText(payment.cash_session_id, payment.cashSessionId, sale.cash_session_id, sale.cashSessionId),
-  cash_station_id: firstText(payment.cash_station_id, payment.cashStationId, sale.cash_station_id, sale.cashStationId),
-  cash_movement_id: firstText(payment.cash_movement_id, payment.cashMovementId),
-  customer_ledger_id: firstText(payment.customer_ledger_id, payment.customerLedgerId),
-  metadata: compactObject({ ...(payment.metadata || {}), snapshotOnly: true })
-});
+const mapPayment = (payment = {}, sale = {}, index = 0) => {
+  const method = normalizeCloudCashierPaymentMethod(payment.method || payment.paymentMethod || sale.paymentMethod);
+  const amount = toNumber(firstValue(payment.amount, payment.total), 0);
+  const receivedAmount = toNullableNumber(firstValue(payment.receivedAmount, payment.received_amount));
+  const explicitChangeAmount = toNullableNumber(firstValue(payment.changeAmount, payment.change_amount));
+  const changeAmount = explicitChangeAmount ?? (
+    method === 'cash' && receivedAmount !== null
+      ? roundMoney(Math.max(receivedAmount - amount, 0))
+      : null
+  );
+
+  return compactObject({
+    id: firstText(payment.id) || `${sale.id}:payment:${index + 1}`,
+    method,
+    amount,
+    received_amount: receivedAmount,
+    change_amount: changeAmount,
+    reference: firstText(payment.reference, payment.ref),
+    cash_session_id: firstText(payment.cash_session_id, payment.cashSessionId, sale.cash_session_id, sale.cashSessionId),
+    cash_station_id: firstText(payment.cash_station_id, payment.cashStationId, sale.cash_station_id, sale.cashStationId),
+    cash_movement_id: firstText(payment.cash_movement_id, payment.cashMovementId),
+    customer_ledger_id: firstText(payment.customer_ledger_id, payment.customerLedgerId),
+    metadata: compactObject({ ...(payment.metadata || {}), snapshotOnly: true })
+  });
+};
 
 const extractPayments = (sale = {}) => {
   const explicitPayments = sale.payments || sale.paymentBreakdown || sale.paymentDetails?.payments;
@@ -222,8 +252,8 @@ const extractInitialCreditPayments = ({ sale = {}, paymentData = {}, amountPaid 
     id: `${sale.id}:payment:initial`,
     method,
     amount: amountPaid,
-    received_amount: method === 'cash' ? toNumber(paymentData.receivedAmount, amountPaid) : amountPaid,
-    change_amount: method === 'cash' ? toNumber(paymentData.changeAmount, 0) : 0,
+    received_amount: method === 'cash' ? toNumber(firstValue(paymentData.receivedAmount, paymentData.received_amount), amountPaid) : amountPaid,
+    change_amount: method === 'cash' ? toNumber(firstValue(paymentData.changeAmount, paymentData.change_amount), 0) : 0,
     reference: firstText(paymentData.paymentReference, paymentData.reference),
     cash_session_id: firstText(paymentData.cashSessionId, paymentData.cash_session_id),
     metadata: compactObject({ source: 'initial_credit_payment_from_checkout', phase: 'fase6d_cloud_sales_credit_ledger' })
@@ -300,10 +330,38 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
   const soldAt = toIsoString(sale.timestamp || sale.soldAt || sale.sold_at, now);
   const saleTotal = roundMoney(total ?? sale.total);
   const paymentMethod = normalizeCloudCashierPaymentMethod(paymentData.paymentMethod || sale.paymentMethod || 'cash');
-  const amountPaid = paymentMethod === 'cash' ? toNumber(paymentData.amountPaid ?? sale.abono ?? sale.amountPaid, saleTotal) : saleTotal;
+  const requestedAmountPaid = toNumber(
+    firstValue(paymentData.amountPaid, paymentData.amount_paid, sale.abono, sale.amountPaid, sale.amount_paid),
+    saleTotal
+  );
+  const receivedAmount = toNumber(
+    firstValue(paymentData.receivedAmount, paymentData.received_amount, sale.receivedAmount, sale.received_amount),
+    requestedAmountPaid
+  );
   const discount = getSaleDiscountObject(sale, paymentData);
   const discountTotal = getSaleDiscountTotal(sale, paymentData, processedItems);
   const traceability = getSaleTraceability(sale);
+
+  const itemMapOptions = { allowLocalBatches: !inventoryEnabled };
+  const payments = extractPayments({
+    ...sale,
+    ...paymentData,
+    id: sale.id,
+    paymentMethod,
+    total: saleTotal,
+    amountPaid: saleTotal,
+    abono: saleTotal,
+    saldoPendiente: 0,
+    receivedAmount
+  })
+    .filter((payment) => ['cash', 'card', 'transfer'].includes(payment.method) && toNumber(payment.amount, 0) > 0);
+  const paymentChangeTotal = roundMoney(
+    payments.reduce((sum, payment) => sum + toNumber(payment.change_amount, 0), 0)
+  );
+  const changeAmount = toNumber(
+    firstValue(paymentData.changeAmount, paymentData.change_amount, sale.changeAmount, sale.change_amount),
+    paymentChangeTotal
+  );
 
   const cloudSale = compactObject({
     id: sale.id,
@@ -326,7 +384,7 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
     tax_total: toNumber(sale.taxTotal ?? sale.tax_total, 0),
     total: saleTotal,
     amount_paid: saleTotal,
-    change_amount: toNumber(paymentData.changeAmount ?? sale.changeAmount ?? sale.change_amount, paymentMethod === 'cash' ? Math.max(amountPaid - saleTotal, 0) : 0),
+    change_amount: changeAmount,
     balance_due: 0,
     currency: sale.currency || 'MXN',
     cash_session_id: firstText(paymentData.cashSessionId, paymentData.cash_session_id, sale.cashSessionId, sale.cash_session_id),
@@ -335,10 +393,6 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
     origin_actor_generation: sale.cashOriginActorGeneration ?? sale.originActorGeneration ?? paymentData.originActorGeneration ?? null,
     metadata: buildSaleMetadata({ sale, paymentData, discount, discountTotal, inventoryEnabled, origin: 'cloud_checkout', phase: inventoryEnabled ? 'fase6c_cloud_sales_inventory' : 'fase6b_cloud_cashier_sales' })
   });
-
-  const itemMapOptions = { allowLocalBatches: !inventoryEnabled };
-  const payments = extractPayments({ ...sale, ...paymentData, id: sale.id, paymentMethod, total: saleTotal, amountPaid: saleTotal, abono: saleTotal, saldoPendiente: 0 })
-    .filter((payment) => ['cash', 'card', 'transfer'].includes(payment.method) && toNumber(payment.amount, 0) > 0);
 
   return { sale: cloudSale, items: (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, itemMapOptions)), payments, idempotencyKey: inventoryEnabled ? `sales.cloud_commit.inventory:${sale.id}` : `sales.cloud_commit:${sale.id}` };
 };

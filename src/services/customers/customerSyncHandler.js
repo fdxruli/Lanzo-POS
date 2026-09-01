@@ -14,6 +14,7 @@ import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { customerMigrationService } from './customerMigrationService';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
 
 const CUSTOMER_LAST_CHANGE_SEQ_KEY = 'customers_last_change_seq';
 const CONFLICT_CODES = new Set(['VERSION_CONFLICT', 'CUSTOMER_DELETED', 'DUPLICATE_PHONE']);
@@ -28,6 +29,7 @@ const notifyCustomersChanged = () => {
 };
 
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
+const canSyncCustomers = () => hasCurrentActorPermission('customers');
 
 const normalizeChangeSeq = (response, fallback = 0) => {
   const value = Number(response?.latest_change_seq ?? response?.latestChangeSeq ?? response?.change_seq ?? fallback);
@@ -69,6 +71,7 @@ const savePushConflict = async ({ operation, response }) => {
 export const customerSyncHandler = {
   async onStart({ licenseKey, reason = 'manual', force = false } = {}) {
     if (!licenseKey || !isOnline()) return { skipped: true };
+    if (!canSyncCustomers()) return { skipped: true, reason: 'actor_permission_missing' };
 
     if (shouldDeferPosBootstrapStartHook(reason, { force })) {
       Logger.log('[Customers/Sync] Migracion inicial diferida por bootstrap inteligente.');
@@ -91,6 +94,7 @@ export const customerSyncHandler = {
   async onEvents(events = [], { licenseKey: capturedLicenseKey = null } = {}) {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
+    if (!canSyncCustomers()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
 
     const hasCustomerEvents = events.some((event) => (event.entity_type || event.entityType) === SYNC_ENTITY_TYPES.CUSTOMER);
     if (events.length > 0 && !hasCustomerEvents) {

@@ -430,6 +430,87 @@ export const useActiveOrders = create(
 
     updateCurrentOrder: (updates) => get().updateOrder(get().currentOrderId, updates),
 
+    rotateCurrentOrderForNewSaleAttempt: (orderId = get().currentOrderId) => {
+      const state = get();
+      if (!orderId || state.currentOrderId !== orderId) {
+        return { success: false, code: 'ACTIVE_ORDER_CHANGED', reason: 'La orden activa cambió.' };
+      }
+
+      const order = state.activeOrders.get(orderId);
+      if (!order) {
+        return { success: false, code: 'ACTIVE_ORDER_NOT_FOUND', reason: 'La orden activa ya no existe.' };
+      }
+
+      if (order.isLockedForCheckout) {
+        return { success: false, code: 'ACTIVE_ORDER_LOCKED', reason: 'La orden aún está bloqueada por un cobro.' };
+      }
+
+      // Las órdenes guardadas y ecommerce tienen identidad remota propia.
+      // Nunca se clonan silenciosamente al cancelar su modal de pago.
+      if (
+        order.isSaved === true
+        || order.origin === 'ecommerce'
+        || order.ecommerceOrderId
+        || order.ecommerce_order_id
+      ) {
+        return {
+          success: true,
+          rotated: false,
+          reason: 'persistent_order',
+          orderId
+        };
+      }
+
+      let nextOrderId = generateID('sal');
+      if (!nextOrderId || nextOrderId === orderId || state.activeOrders.has(nextOrderId)) {
+        nextOrderId = `${orderId}-retry-${Date.now().toString(36)}`;
+        while (state.activeOrders.has(nextOrderId)) {
+          nextOrderId = `${nextOrderId}-r`;
+        }
+      }
+
+      const now = new Date().toISOString();
+      const nextOrder = {
+        ...order,
+        id: nextOrderId,
+        folio: null,
+        posFolio: null,
+        cloudFolio: null,
+        cloudSaleId: null,
+        isSaved: false,
+        isLockedForCheckout: false,
+        lockedAt: null,
+        checkoutAttemptId: null,
+        updatedAt: now,
+        revision: 0
+      };
+
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.delete(orderId);
+      nextOrders.set(nextOrderId, nextOrder);
+
+      const nextPendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
+      const pendingResolutionCount = nextPendingInventoryResolutions.get(orderId);
+      nextPendingInventoryResolutions.delete(orderId);
+      if (pendingResolutionCount) {
+        nextPendingInventoryResolutions.set(nextOrderId, pendingResolutionCount);
+      }
+
+      set({
+        activeOrders: nextOrders,
+        currentOrderId: nextOrderId,
+        isCurrentOrderLocked: false,
+        pendingInventoryResolutions: nextPendingInventoryResolutions
+      });
+
+      return {
+        success: true,
+        rotated: true,
+        oldOrderId: orderId,
+        orderId: nextOrderId
+      };
+    },
+
     /**
      * Actualiza los items de la orden activa y recalcula el total
      * @param {Array|Function} updater - Nueva lista de productos o función
@@ -1097,7 +1178,8 @@ export const useActiveOrders = create(
           if (existing) {
             await db.table(STORES.SALES).update(orderId, {
               isLockedForCheckout: true,
-              lockedAt
+              lockedAt,
+              checkoutDraft: existing.checkoutDraft ?? !order.isSaved
             });
           } else {
             // La orden aún no fue persistida: la insertamos con el lock ya puesto.
@@ -1112,7 +1194,8 @@ export const useActiveOrders = create(
               revision: normalizeOrderRevision(order.revision),
               deviceId: order.deviceId || getOrderDeviceId(),
               isLockedForCheckout: true,
-              lockedAt
+              lockedAt,
+              checkoutDraft: !order.isSaved
             });
           }
 
@@ -1164,7 +1247,11 @@ export const useActiveOrders = create(
       try {
         // Liberar en BD
         const existing = await db.table(STORES.SALES).get(orderId);
-        if (existing) {
+        if (existing?.checkoutDraft === true && existing.status === (SALE_STATUS.OPEN || 'open')) {
+          // Esta fila se creó solo para coordinar el lock del checkout; no debe
+          // reaparecer como una mesa guardada después de Cancelar.
+          await db.table(STORES.SALES).delete(orderId);
+        } else if (existing) {
           await db.table(STORES.SALES).update(orderId, {
             isLockedForCheckout: false,
             lockedAt: null

@@ -12,6 +12,8 @@ import { salesCloudRepository } from './salesCloudRepository';
 import { salesCloudLocalRepository } from './salesCloudLocalRepository';
 import { registerFinancialProjectionHandler } from '../financial/financialProjectionRegistry';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { cashRepository } from '../cash/cashRepository';
+import { layawayRepository } from '../db/layaways';
 import {
   isCloudCashierCompatiblePayment,
   isCreditLikePaymentMethod,
@@ -85,18 +87,167 @@ export const applySalesFinancialResponseProjection = async ({ operationType, req
   return { localSale, appliedPayload };
 };
 
+const localSaleSeedFromCloudRequest = ({ sale = {}, items = [], paymentData = {} } = {}) => ({
+  ...sale,
+  id: sale.id || sale.local_sale_id || sale.localSaleId || null,
+  timestamp: sale.timestamp || sale.sold_at || sale.soldAt || null,
+  soldAt: sale.soldAt || sale.sold_at || sale.timestamp || null,
+  items: Array.isArray(items) ? items : [],
+  paymentMethod: sale.paymentMethod || sale.payment_method || null,
+  paymentStatus: sale.paymentStatus || sale.payment_status || null,
+  customerId: sale.customerId || sale.customer_id || paymentData.customerId || null,
+  customerName: sale.customerName || sale.customer_name || null,
+  customerPhone: sale.customerPhone || sale.customer_phone || null,
+  total: sale.total ?? null,
+  abono: sale.abono ?? sale.amountPaid ?? sale.amount_paid ?? null,
+  saldoPendiente: sale.saldoPendiente ?? sale.balanceDue ?? sale.balance_due ?? null
+});
+
+export const applySplitSalesFinancialResponseProjection = async ({ requestPayload, responsePayload, intent, actorHandle }) => {
+  actorHandle?.assertCurrent?.();
+  const request = requestPayload || intent?.requestPayload || {};
+  const response = responsePayload || intent?.responsePayload || {};
+  const requestChildren = Array.isArray(request.children) ? request.children : [];
+  const responseChildren = Array.isArray(response.children) ? response.children : [];
+
+  if (requestChildren.length < 2 || responseChildren.length !== requestChildren.length) {
+    throw Object.assign(new Error('FINANCIAL_SPLIT_RESPONSE_INVALID'), { code: 'FINANCIAL_SPLIT_RESPONSE_INVALID' });
+  }
+
+  const localSales = [];
+  const cloudSales = [];
+  const cloudItems = [];
+  const cloudPayments = [];
+
+  for (let index = 0; index < requestChildren.length; index += 1) {
+    const requestChild = requestChildren[index] || {};
+    const responseChild = responseChildren[index] || {};
+    const cloudSale = responseChild.sale || response.sales?.[index] || null;
+    if (!cloudSale?.id) {
+      throw Object.assign(new Error('FINANCIAL_SPLIT_RESPONSE_INVALID'), { code: 'FINANCIAL_SPLIT_RESPONSE_INVALID' });
+    }
+
+    const childItems = Array.isArray(responseChild.items)
+      ? responseChild.items
+      : (Array.isArray(response.items)
+        ? response.items.filter((item) => item.sale_id === cloudSale.id || item.saleId === cloudSale.id)
+        : []);
+    const childPayments = Array.isArray(responseChild.payments)
+      ? responseChild.payments
+      : (Array.isArray(response.payments)
+        ? response.payments.filter((payment) => payment.sale_id === cloudSale.id || payment.saleId === cloudSale.id)
+        : []);
+    const localItems = Array.isArray(requestChild.local_items)
+      ? requestChild.local_items
+      : (Array.isArray(requestChild.items) ? requestChild.items : []);
+    const localPaymentData = requestChild.payment_data && typeof requestChild.payment_data === 'object'
+      ? requestChild.payment_data
+      : {};
+
+    const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+      localSale: {
+        ...localSaleSeedFromCloudRequest({
+          sale: requestChild.sale || {},
+          items: localItems,
+          paymentData: localPaymentData
+        }),
+        splitGroupId: request.split_group_id || request.splitGroupId || null,
+        splitParentId: request.parent_order_id || request.parentOrderId || null,
+        splitLabel: requestChild.label || responseChild.label || null,
+        sourceMode: 'cloud_committed',
+        syncStatus: 'SYNCED'
+      },
+      response: {
+        ...response,
+        sale: cloudSale,
+        items: childItems,
+        payments: childPayments
+      }
+    });
+
+    if (!localSale) {
+      throw Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
+    }
+
+    localSales.push(localSale);
+    cloudSales.push(cloudSale);
+    cloudItems.push(...childItems);
+    cloudPayments.push(...childPayments);
+  }
+
+  actorHandle?.assertCurrent?.();
+  const appliedPayload = await salesCloudLocalRepository.applyCloudSalesPayload({
+    ...response,
+    sales: cloudSales,
+    items: cloudItems,
+    payments: cloudPayments
+  });
+  const parentOrderId = request.parent_order_id || request.parentOrderId || null;
+  const parent = await salesCloudLocalRepository.markLocalSplitParentSettled({
+    parentOrderId,
+    splitGroupId: request.split_group_id || request.splitGroupId || null,
+    childSaleIds: localSales.map((sale) => sale.id)
+  });
+
+  actorHandle?.assertCurrent?.();
+  return {
+    localSales,
+    localSale: localSales[0] || null,
+    parent,
+    appliedPayload
+  };
+};
+
+export const applyLayawayFinancialResponseProjection = async ({ requestPayload, responsePayload, intent, actorHandle }) => {
+  actorHandle?.assertCurrent?.();
+  const request = requestPayload || intent?.requestPayload || {};
+  const response = responsePayload || intent?.responsePayload || {};
+  const layawayId = request.layaway_id || request.layawayId || null;
+  const localItems = Array.isArray(request.local_items) ? request.local_items : (Array.isArray(request.items) ? request.items : []);
+  const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
+    localSale: {
+      ...localSaleSeedFromCloudRequest({
+        sale: request.sale || {},
+        items: localItems,
+        paymentData: {}
+      }),
+      isLayawayConversion: true,
+      originalLayawayId: layawayId,
+      sourceMode: 'cloud_committed',
+      syncStatus: 'SYNCED'
+    },
+    response
+  });
+
+  if (!localSale) {
+    throw Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
+  }
+
+  actorHandle?.assertCurrent?.();
+  const appliedPayload = await salesCloudLocalRepository.applyCloudSalesPayload(response);
+  const conversion = layawayId
+    ? await layawayRepository.convertToSale(layawayId)
+    : null;
+
+  actorHandle?.assertCurrent?.();
+  return { localSale, conversion, appliedPayload };
+};
+
 ['sale.cashier', 'sale.cashier_inventory', 'sale.credit'].forEach((operationType) => {
   registerFinancialProjectionHandler(operationType, applySalesFinancialResponseProjection);
 });
+registerFinancialProjectionHandler('sale.split', applySplitSalesFinancialResponseProjection);
+registerFinancialProjectionHandler('sale.layaway_complete', applyLayawayFinancialResponseProjection);
 
 const friendlyCloudCashierError = (error) => {
   const raw = String(error?.message || error?.code || error || '');
-  const code = raw.match(/[A-Z0-9_]+(?::[a-z_]+)?/)?.[0] || raw;
+  const rawCode = String(error?.code || '').trim();
+  const semanticCode = raw.match(/[A-Z0-9_]+(?::[a-z_]+)?/)?.[0] || '';
+  const code = /^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw;
 
   const messages = {
     CLOUD_CASH_SESSION_REQUIRED: 'Para recibir abono inicial en efectivo necesitas abrir caja primero.',
     CASH_SESSION_NOT_FOUND: 'No se encontró la caja seleccionada. Abre tu caja e intenta de nuevo.',
-    CASH_SESSION_NOT_OPEN: 'La caja seleccionada ya no está abierta. Revisa Caja e intenta de nuevo.',
     CASH_SESSION_FORBIDDEN: 'Esta caja pertenece a otro usuario o dispositivo.',
     SALE_CREDIT_NOT_IMPLEMENTED_IN_6B: 'La venta fiada seguirá en modo local por ahora. Crédito cloud se activará en Fase 6D.',
     SALE_PAYMENT_TOTAL_MISMATCH: 'Los pagos no cuadran con el total de la venta. Revisa el cobro antes de intentarlo de nuevo.',
@@ -116,6 +267,32 @@ const friendlyCloudCashierError = (error) => {
     CLOUD_SALES_CASHIER_DISABLED: 'Venta cloud con caja aún no está activa para esta licencia.',
     CLOUD_SALES_CREDIT_DISABLED: 'Venta fiada cloud aún no está activa para esta licencia.',
     CLOUD_SALES_INVENTORY_DISABLED: 'Venta cloud con inventario aún no está activa para esta licencia.',
+    FINANCIAL_SPLIT_RESPONSE_INVALID: 'La respuesta cloud del cobro dividido no fue válida. La operación quedó protegida; revisa el estado antes de reintentar.',
+    FINANCIAL_SPLIT_CONTRACT_INVALID: 'Los datos de la cuenta dividida no son válidos. Vuelve a abrir Separar pago y revisa los tickets.',
+    FINANCIAL_SPLIT_CHILD_COUNT_INVALID: 'La cuenta dividida debe contener entre 2 y 8 tickets válidos.',
+    FINANCIAL_SPLIT_CHILD_INVALID: 'Uno de los tickets de la cuenta dividida no es válido.',
+    FINANCIAL_SPLIT_LABEL_DUPLICATE: 'Los tickets de la cuenta dividida deben tener nombres únicos.',
+    FINANCIAL_SPLIT_SALE_ID_DUPLICATE: 'La cuenta dividida generó identificadores repetidos. Vuelve a abrir Separar pago.',
+    RESTAURANT_ORDER_NOT_FOUND: 'No se encontró la comanda cloud de la mesa. Actualiza las mesas antes de cobrar.',
+    RESTAURANT_ORDER_ALREADY_PAID: 'La comanda de esta mesa ya fue cobrada en otro dispositivo. Actualiza las mesas.',
+    RESTAURANT_ORDER_ALREADY_CANCELLED: 'La comanda de esta mesa ya fue cerrada o cancelada. Actualiza las mesas.',
+    RESTAURANT_SPLIT_TOTAL_MISMATCH: 'El total de los tickets no coincide con el total vigente de la comanda. Actualiza la mesa y vuelve a dividir.',
+    RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.',
+    SPLIT_ROUNDING_INVALID: 'El reparto cloud solo admite diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.',
+    SPLIT_ROUNDING_MISMATCH: 'Los centavos distribuidos en la cuenta dividida no coinciden con el total. Vuelve a abrir Separar pago.',
+    CASH_SESSION_STATION_MISMATCH: 'La caja abierta pertenece a otra estación. Selecciona la caja de este dispositivo.',
+    CASH_SESSION_NOT_OPEN: 'No hay una caja abierta en esta estación. Abre Caja antes de dividir o cobrar.',
+    LAYAWAY_NOT_FULLY_PAID: 'El apartado todavía no está liquidado en Caja cloud. No se entregó la mercancía.',
+    LAYAWAY_PAYMENT_TOTAL_MISMATCH: 'Los abonos cloud del apartado no coinciden con su total. La entrega quedó protegida.',
+    LAYAWAY_TOTAL_MISMATCH: 'Los artículos del apartado no coinciden con el importe de la entrega. La entrega quedó protegida.',
+    LAYAWAY_ALREADY_CONVERTED_CLOUD: 'Este apartado ya fue convertido en una venta cloud con otro identificador. Revisa Ventas antes de reintentar.',
+    CLOUD_LAYAWAY_COMPLETION_REQUIRED: 'Este apartado requiere entrega cloud. Verifica conexión, permisos y funciones cloud antes de reintentar.',
+    CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED: 'Los apartados multi-dispositivo todavía no están habilitados para cuentas cloud. Usa una cuenta local/FREE o espera la sincronización cloud completa.',
+    FINANCIAL_LAYAWAY_PAYMENTS_INVALID: 'La entrega del apartado debe llevar un único comprobante de liquidación.',
+    LAYAWAY_ITEMS_REQUIRED: 'El apartado no tiene artículos válidos para generar la venta de entrega.',
+    SPLIT_PARENT_ID_REQUIRED: 'No se encontró la orden local de la mesa para proyectar el cobro.',
+    SPLIT_PARENT_LOCAL_NOT_FOUND: 'La mesa cobrada cloud no existe ya en el almacenamiento local. Sincroniza y revisa Ventas.',
+    'POS_PERMISSION_DENIED:customers': 'Tu perfil no tiene permiso para consultar clientes; un administrador debe habilitar customers para vender fiado.',
     POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
     DEVICE_ID_REQUIRED: 'No se pudo identificar este dispositivo de forma segura. No se registró la venta cloud.',
     OFFLINE: 'Sin conexión. Esta venta cloud necesita internet para proteger caja, inventario y crédito.',
@@ -133,6 +310,9 @@ const friendlyCloudCashierError = (error) => {
     DISCOUNT_PERCENT_INVALID: 'El porcentaje de descuento no puede superar el 100%.',
     SALE_ARITHMETIC_MISMATCH: 'Los importes de la venta no cuadran. Revisa precios, descuentos y pagos.',
     SALE_PAYMENT_ARITHMETIC_MISMATCH: 'Los importes recibidos y el cambio no cuadran con el pago.',
+    '57014': 'El servidor tardó demasiado en responder. El cobro quedó protegido; verifica el estado antes de volver a intentarlo.',
+    '55P03': 'La caja está ocupada por otra operación. Espera unos segundos y verifica el estado antes de volver a cobrar.',
+    POS_OPERATIONAL_FOLIO_UNRESOLVED: 'No se pudo asignar el folio POS global. La venta no se registró; actualiza y vuelve a intentarlo.',
     SALE_PAYMENT_METHOD_MISMATCH: 'El método de pago no coincide con el desglose capturado.',
     SALE_TAX_SOURCE_UNRESOLVED: 'La venta contiene impuestos sin una fuente fiscal server-side configurada.',
     ECOMMERCE_CONVERSION_AUTHORITY_REQUIRED: 'La conversión ecommerce ya no está reservada para este cobro.',
@@ -141,6 +321,7 @@ const friendlyCloudCashierError = (error) => {
     ECOMMERCE_DISCOUNT_NOT_IN_ORDER: 'El descuento de la línea no pertenece al pedido ecommerce aceptado.',
     ECOMMERCE_TAX_LINE_UNRESOLVED: 'El impuesto ecommerce no tiene un desglose de línea seguro.',
     IDEMPOTENCY_CONFLICT: 'La clave de cobro ya fue usada con datos distintos. No se repitió la venta.',
+    FINANCIAL_REQUEST_HASH_INVALID: 'El intento anterior de esta venta tiene datos financieros distintos. No se repitió para evitar un cobro duplicado; verifica el estado antes de iniciar un cobro nuevo.',
     BATCH_SELECTION_REQUIRED: 'Selecciona un lote o variante vigente antes de cobrar.',
     BATCH_ALLOCATION_INVALID: 'Las asignaciones de lote no son válidas.',
     MODIFIER_NOT_AUTHORIZED: 'Una opción seleccionada ya no pertenece a la configuración vigente del producto.',
@@ -318,6 +499,29 @@ const findAndRecoverCloudSale = async ({ localSaleId, idempotencyKey, startedAt,
 };
 
 export const salesCloudCashierService = {
+  async canUseCloudSplitTableSale({ tickets = [], licenseDetails = null } = {}) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    if (!context.online || !context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
+      return false;
+    }
+    const hasCredit = (Array.isArray(tickets) ? tickets : []).some((ticket) => (
+      isCreditLikePaymentMethod(ticket?.paymentData?.paymentMethod || ticket?.paymentData?.method)
+    ));
+    return !hasCredit || isCloudSalesCreditEnabled(details);
+  },
+
+  async canUseCloudLayawayCompletion(licenseDetails = null) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    return Boolean(
+      context.online &&
+      context.experimentalEnabled &&
+      context.licenseKey &&
+      isCloudSalesCashierEnabled(details)
+    );
+  },
+
   async canUseCloudCashierSale(licenseDetails = null) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
@@ -409,6 +613,198 @@ export const salesCloudCashierService = {
         message: 'No se pudo confirmar todavía si la venta cloud fue registrada.',
         error
       };
+    }
+  },
+
+  async processCloudSplitTableSale({
+    parentOrderId,
+    parentExpectedVersion = null,
+    splitGroupId,
+    childDefinitions = [],
+    total,
+    licenseDetails = null,
+    cashSessionId = null
+  } = {}) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    const hasCredit = childDefinitions.some((child) => (
+      isCreditLikePaymentMethod(child?.paymentData?.paymentMethod || child?.paymentData?.method)
+    ));
+
+    if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
+    if (!context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
+    }
+    if (hasCredit && !isCloudSalesCreditEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_SALES_CREDIT_DISABLED'));
+    }
+    if (!parentOrderId || !splitGroupId || !Array.isArray(childDefinitions) || childDefinitions.length < 2) {
+      throw friendlyCloudCashierError(new Error('FINANCIAL_SPLIT_CONTRACT_INVALID'));
+    }
+
+    const actorHandle = actorRuntimeController.capture();
+
+    try {
+      const current = await cashRepository.getCurrentCashSession({ force: true });
+      actorHandle.assertCurrent?.();
+      const currentSession = current?.cashSession || null;
+      if (current?.success === false || !currentSession || currentSession.estado !== 'abierta' || current.readOnly || current.stateKnown === false) {
+        throw new Error('CASH_SESSION_NOT_OPEN');
+      }
+      const resolvedCashSessionId = cashSessionId || currentSession.id;
+      if (!resolvedCashSessionId || String(resolvedCashSessionId) !== String(currentSession.id)) {
+        throw new Error('CASH_SESSION_STATION_MISMATCH');
+      }
+
+      const inventoryEnabled = isCloudSalesInventoryEnabled(details);
+      const children = childDefinitions.map((child) => {
+        const paymentData = {
+          ...(child.paymentData || {}),
+          cashSessionId: resolvedCashSessionId
+        };
+        const credit = isCreditLikePaymentMethod(paymentData.paymentMethod || paymentData.method);
+        const mapped = credit
+          ? mapLocalCreditCheckoutToCloudSale({
+            sale: child.sale,
+            processedItems: child.processedItems || [],
+            paymentData,
+            total: child.sale?.total,
+            inventoryEnabled
+          })
+          : mapLocalCheckoutToCloudSale({
+            sale: child.sale,
+            processedItems: child.processedItems || [],
+            paymentData,
+            total: child.sale?.total,
+            inventoryEnabled
+          });
+        const mappedSale = {
+          ...mapped.sale,
+          metadata: {
+            ...(mapped.sale?.metadata || {}),
+            source: 'split_bill_child',
+            splitGroupId,
+            splitParentId: parentOrderId,
+            splitLabel: child.label || null
+          }
+        };
+        return {
+          label: child.label,
+          sale: mappedSale,
+          items: mapped.items,
+          payments: mapped.payments,
+          customer_id: mapped.customerId || mappedSale.customer_id || child.paymentData?.customerId || null,
+          local_items: child.processedItems || [],
+          payment_data: paymentData
+        };
+      });
+
+      const request = {
+        parent_order_id: parentOrderId,
+        parent_order_version: parentExpectedVersion || null,
+        split_group_id: splitGroupId,
+        cash_session_id: resolvedCashSessionId,
+        children
+      };
+      const idempotencyKey = 'sales.cloud_split:' + splitGroupId;
+
+      const response = await salesCloudRepository.createCloudSplitTableSale({
+        licenseKey: context.licenseKey,
+        split: request,
+        cashSessionId: resolvedCashSessionId,
+        idempotencyKey,
+        actorHandle,
+        project: applySplitSalesFinancialResponseProjection
+      });
+
+      if (response?.success === false) {
+        const error = new Error(response.message || response.code || 'CLOUD_SPLIT_FAILED');
+        error.code = response.code;
+        error.response = response;
+        throw error;
+      }
+
+      const projection = response?.projection || null;
+      if (projection?.outcome === 'projection_failed') {
+        throw projection.error || Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
+      }
+
+      if (inventoryEnabled && children.some((child) => child.sale?.metadata?.cloudInventoryEffects === true)) {
+        pullCatalogChanges(context.licenseKey).catch((pullError) => {
+          Logger.warn('[SalesCloud/Cashier] No se pudo refrescar catalogo tras split cloud inventory:', pullError);
+        });
+      }
+
+      const projectedSales = projection?.result?.localSales || [];
+      return {
+        success: true,
+        sourceMode: 'cloud_committed',
+        cloudCommitted: true,
+        parentOrderId,
+        splitGroupId,
+        childSaleIds: projectedSales.map((sale) => sale.id).filter(Boolean),
+        childSales: projectedSales,
+        total: total ?? response.total ?? null,
+        response,
+        projection,
+        idempotencyKey,
+        inventoryEnabled,
+        creditSale: hasCredit,
+        pendingSyncRequired: false
+      };
+    } catch (error) {
+      Logger.error('[SalesCloud/Cashier] Split cloud no confirmado:', error);
+      throw friendlyCloudCashierError(error);
+    }
+  },
+
+  async processCloudLayawayCompletion({ request, licenseDetails = null } = {}) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
+    if (!context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
+    }
+
+    const actorHandle = actorRuntimeController.capture();
+    const idempotencyKey = 'sales.layaway_complete:' + (request?.layaway_id || request?.layawayId || 'unknown');
+
+    try {
+      const response = await salesCloudRepository.createCloudLayawayCompletion({
+        licenseKey: context.licenseKey,
+        request,
+        idempotencyKey,
+        actorHandle,
+        project: applyLayawayFinancialResponseProjection
+      });
+      if (response?.success === false) {
+        const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_COMPLETION_FAILED');
+        error.code = response.code;
+        error.response = response;
+        throw error;
+      }
+      const projection = response?.projection || null;
+      if (projection?.outcome === 'projection_failed') {
+        throw projection.error || Object.assign(new Error('SALE_LOCAL_PROJECTION_FAILED'), { code: 'SALE_LOCAL_PROJECTION_FAILED' });
+      }
+      const localSale = projection?.result?.localSale || null;
+      return {
+        success: true,
+        sourceMode: 'cloud_committed',
+        cloudCommitted: true,
+        saleId: localSale?.id || response.sale?.id || request?.sale?.id || null,
+        cloudSaleId: response.sale?.id || null,
+        folio: localSale?.folio || response.sale?.folio || null,
+        posFolio: localSale?.posFolio || response.sale?.pos_folio || null,
+        total: request?.sale?.total || response.sale?.total || null,
+        response,
+        projection,
+        idempotencyKey,
+        pendingSyncRequired: false
+      };
+    } catch (error) {
+      Logger.error('[SalesCloud/Cashier] Layaway cloud no confirmado:', error);
+      throw friendlyCloudCashierError(error);
     }
   },
 

@@ -22,6 +22,8 @@ import {
     isEcommercePosEffectBlocked
 } from '../../services/ecommerce/ecommercePosDraftGuards';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCashierService';
+import { cashRepository } from '../../services/cash/cashRepository';
 
 const EMPTY_ORDER = [];
 
@@ -106,6 +108,20 @@ export function useTableManagement({
                     message: response.message || response.code || 'No se pudo enviar a cocina cloud.',
                     response
                 };
+            }
+
+            const remoteOrder = response?.order || response?.restaurantOrder || null;
+            const remoteUpdatedAt = remoteOrder?.updatedAt || remoteOrder?.updated_at || null;
+            if (remoteUpdatedAt) {
+                try {
+                    await db.table(STORES.SALES).update(orderId, {
+                        updatedAt: remoteUpdatedAt,
+                        cloudRestaurantOrderUpdatedAt: remoteUpdatedAt,
+                        cloudRestaurantOrderServerVersion: remoteOrder?.serverVersion ?? remoteOrder?.server_version ?? null
+                    });
+                } catch (localTokenError) {
+                    Logger.warn('[REST.2] La comanda cloud se guardó, pero no se pudo actualizar el token local:', localTokenError);
+                }
             }
 
             return { success: true, response };
@@ -708,11 +724,11 @@ export function useTableManagement({
             return;
         }
 
-        const hasCashPayment = splitPayload?.tickets?.some(
-            (ticket) => ticket?.paymentData?.paymentMethod === 'efectivo'
-        );
+        const hasCashBackedPayment = splitPayload?.tickets?.some((ticket) => (
+            ['efectivo', 'fiado'].includes(String(ticket?.paymentData?.paymentMethod || '').trim().toLowerCase())
+        ));
 
-        if (hasCashPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
+        if (hasCashBackedPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
             if (typeof asegurarCajaAbierta !== 'function') {
                 showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
                 return;
@@ -727,6 +743,44 @@ export function useTableManagement({
             }
         }
 
+        let cloudSpecialFlows = false;
+        let resolvedCashSessionId = cajaActual?.id || null;
+        if (isCloudRestaurantOrdersEnabled && licenseKey) {
+            try {
+                cloudSpecialFlows = await salesCloudCashierService.canUseCloudSplitTableSale({
+                    tickets: splitPayload?.tickets || [],
+                    licenseDetails
+                });
+            } catch (cloudSpecialFlowError) {
+                Logger.error('[SalesCloud/Cashier] No se pudo verificar la capacidad del split cloud:', cloudSpecialFlowError);
+                showMessageModal(
+                    'No se pudo verificar el cobro cloud de la mesa. La cuenta no se cobró; revisa conexión y vuelve a intentarlo.',
+                    null,
+                    { type: 'error' }
+                );
+                return {
+                    success: false,
+                    errorType: 'CLOUD_SPECIAL_FLOW_UNAVAILABLE',
+                    message: 'No se pudo verificar el cobro cloud de la mesa.'
+                };
+            }
+        }
+
+        if (cloudSpecialFlows) {
+            try {
+                const currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                const currentCashSession = currentCashState?.cashSession || null;
+                if (currentCashState?.success === false || !currentCashSession || currentCashSession.estado !== 'abierta' || currentCashState.readOnly || currentCashState.stateKnown === false) {
+                    throw new Error('CASH_SESSION_NOT_OPEN');
+                }
+                resolvedCashSessionId = currentCashSession.id;
+            } catch (cashStateError) {
+                Logger.error('[SalesCloud/Cashier] No se pudo resolver la caja antes del split cloud:', cashStateError);
+                showMessageModal(cashStateError?.message || 'No se pudo verificar la caja abierta antes de cobrar.', null, { type: 'error' });
+                return { success: false, errorType: 'CASH_SESSION_NOT_OPEN', message: cashStateError?.message || 'No se pudo verificar la caja abierta antes de cobrar.' };
+            }
+        }
+
         try {
             const result = await splitOpenTableOrder({
                 parentOrderId: activeOrderId,
@@ -734,13 +788,16 @@ export function useTableManagement({
                 mode: splitPayload.mode,
                 tickets: splitPayload.tickets,
                 features,
-                companyName
+                companyName,
+                cloudSpecialFlows,
+                licenseDetails,
+                cashSessionId: resolvedCashSessionId
             });
 
             if (result.success) {
                 let cloudCloseResult = { success: true, skipped: true };
 
-                if (isCloudRestaurantOrdersEnabled) {
+                if (isCloudRestaurantOrdersEnabled && !result.cloudCommitted) {
                     try {
                         cloudCloseResult = await closeRestaurantCloudOrderAfterSuccessfulSplitPayment({
                             localOrderId: activeOrderId,
@@ -805,8 +862,10 @@ export function useTableManagement({
         fetchActiveTablesCount,
         cajaActual,
         asegurarCajaAbierta,
+        cashRepository,
         isCloudRestaurantOrdersEnabled,
-        licenseDetails
+        licenseDetails,
+        licenseKey
     ]);
 
     return {

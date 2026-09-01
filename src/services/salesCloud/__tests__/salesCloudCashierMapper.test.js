@@ -3,6 +3,25 @@ import {
   mapLocalCheckoutToCloudSale,
   mapLocalCreditCheckoutToCloudSale
 } from '../salesCloudCashierMapper';
+import { cloudSaleToLocalSyncPatch } from '../salesCloudMapper';
+
+describe('salesCloudMapper operational folio', () => {
+  it('maps the server-assigned POS folio without replacing the financial folio', () => {
+    const patch = cloudSaleToLocalSyncPatch({
+      id: 'sale-48',
+      folio: 'V-000048',
+      cloud_folio: 'V-000048',
+      pos_folio: 'FG-01-000048',
+      source_mode: 'cloud_committed'
+    });
+
+    expect(patch).toMatchObject({
+      folio: 'V-000048',
+      cloudFolio: 'V-000048',
+      posFolio: 'FG-01-000048'
+    });
+  });
+});
 
 describe('salesCloudCashierMapper discounts', () => {
   it('maps line discount as net line_total', () => {
@@ -46,6 +65,52 @@ describe('salesCloudCashierMapper discounts', () => {
     expect(payload.items[0].selected_modifiers).toEqual(selectedModifiers);
     expect(payload.items[0].metadata.selectedModifiers).toEqual(selectedModifiers);
     expect(payload.items[0].line_total).toBe(200);
+  });
+});
+
+describe('salesCloudCashierMapper split rounding contract', () => {
+  it('keeps the catalog unit price while carrying the one-cent split adjustment', () => {
+    const payload = mapLocalCheckoutToCloudSale({
+      sale: {
+        id: 'split-rounding-sale',
+        timestamp: '2026-07-03T12:00:00.000Z',
+        subtotal: 10.01,
+        total: 10.01,
+        metadata: {
+          source: 'split_bill_child',
+          splitGroupId: 'split-1',
+          splitParentId: 'parent-1',
+          splitRoundingAdjustment: '0.01'
+        }
+      },
+      processedItems: [{
+        id: 'product-1',
+        lineId: 'line-1',
+        name: 'Producto',
+        price: 10.01,
+        splitBasePrice: 10,
+        splitRoundingAdjustment: '0.01',
+        quantity: 1,
+        exactTotal: 10.01,
+        lineTotal: 10.01
+      }],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 10.01 },
+      total: 10.01
+    });
+
+    expect(payload.items[0]).toMatchObject({
+      unit_price: 10,
+      line_subtotal: 10.01,
+      line_total: 10.01
+    });
+    expect(payload.items[0].metadata).toMatchObject({
+      splitBasePrice: 10,
+      splitRoundingAdjustment: 0.01
+    });
+    expect(payload.sale.metadata).toMatchObject({
+      source: 'split_bill_child',
+      splitRoundingAdjustment: '0.01'
+    });
   });
 });
 
@@ -112,5 +177,72 @@ describe('salesCloudCashierMapper batch allocation compatibility', () => {
 
     expect(payload.items[0].metadata).not.toHaveProperty('batchesUsed');
     expect(JSON.stringify(payload.items[0])).not.toContain('"batchesUsed":null');
+  });
+});
+
+
+describe('salesCloudCashierMapper payment arithmetic contract', () => {
+  const mapCheckout = (paymentData, options = {}) => mapLocalCheckoutToCloudSale({
+    sale: { id: 'payment-contract-sale', timestamp: '2026-07-03T12:00:00.000Z', subtotal: 100, total: 100 },
+    processedItems: [{ id: 'product-1', lineId: 'line-1', name: 'Producto', price: 100, quantity: 1, exactTotal: 100, lineTotal: 100 }],
+    paymentData,
+    total: 100,
+    ...options
+  });
+
+  it('defaults an omitted cash receipt to the amount paid instead of zero', () => {
+    const payload = mapCheckout({ paymentMethod: 'efectivo', amountPaid: 100 });
+
+    expect(payload.sale).toMatchObject({ amount_paid: 100, change_amount: 0, balance_due: 0 });
+    expect(payload.payments).toHaveLength(1);
+    expect(payload.payments[0]).toMatchObject({ method: 'cash', amount: 100, received_amount: 100, change_amount: 0 });
+  });
+
+  it('preserves cash overpayment and derives the correct change', () => {
+    const payload = mapCheckout({ paymentMethod: 'efectivo', amountPaid: 150 });
+
+    expect(payload.sale.change_amount).toBe(50);
+    expect(payload.payments[0]).toMatchObject({ amount: 100, received_amount: 150, change_amount: 50 });
+  });
+
+  it('preserves an explicit cash receipt/change contract', () => {
+    const payload = mapCheckout({
+      paymentMethod: 'cash',
+      amountPaid: 100,
+      receivedAmount: 150,
+      changeAmount: 50
+    });
+
+    expect(payload.sale.change_amount).toBe(50);
+    expect(payload.payments[0]).toMatchObject({ amount: 100, received_amount: 150, change_amount: 50 });
+  });
+
+  it('does not mask an underpayment as a fully paid sale', () => {
+    const payload = mapCheckout({ paymentMethod: 'efectivo', amountPaid: 90 });
+
+    expect(payload.sale.amount_paid).toBe(100);
+    expect(payload.payments[0]).toMatchObject({ amount: 100, received_amount: 90, change_amount: 0 });
+  });
+
+  it('treats blank receipt/change fields as omitted values', () => {
+    const payload = mapCheckout({ paymentMethod: 'efectivo', amountPaid: 100, receivedAmount: '', changeAmount: '' });
+
+    expect(payload.payments[0]).toMatchObject({ received_amount: 100, change_amount: 0 });
+  });
+
+  it('defaults non-cash payment receipt to the sale total with zero change', () => {
+    const payload = mapCheckout({ paymentMethod: 'tarjeta', amountPaid: 100 });
+
+    expect(payload.payments[0]).toMatchObject({ method: 'card', amount: 100, received_amount: 100, change_amount: 0 });
+  });
+
+  it('derives change for an explicit cash payment when only receipt is supplied', () => {
+    const payload = mapCheckout({
+      paymentMethod: 'mixed',
+      payments: [{ method: 'cash', amount: 100, receivedAmount: 150 }]
+    });
+
+    expect(payload.sale.change_amount).toBe(50);
+    expect(payload.payments[0]).toMatchObject({ method: 'cash', amount: 100, received_amount: 150, change_amount: 50 });
   });
 });

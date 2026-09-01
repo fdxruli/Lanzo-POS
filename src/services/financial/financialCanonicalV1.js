@@ -123,6 +123,32 @@ const salePayment = (operationType, payment = {}) => compact({
   reference: text(firstNonblank(payment, ['reference', 'ref']))
 });
 
+const splitChildOperationType = (child = {}) => {
+  const method = String(firstNonblank(child.sale, ['payment_method', 'paymentMethod']) || '').trim().toLowerCase();
+  if (['credit', 'fiado', 'mixed_credit', 'partial_credit', 'credito', 'crédito', 'credito_parcial', 'crédito_parcial'].includes(method)) {
+    return 'sale.credit';
+  }
+  return child.sale?.metadata?.cloudInventoryEffects === true
+    ? 'sale.cashier_inventory'
+    : 'sale.cashier';
+};
+
+const canonicalSplitChild = (child = {}) => {
+  const operationType = splitChildOperationType(child);
+  const saleRecord = child.sale && typeof child.sale === 'object' && !Array.isArray(child.sale)
+    ? child.sale
+    : {};
+  const items = Array.isArray(child.items) ? child.items : [];
+  const payments = Array.isArray(child.payments) ? child.payments : [];
+  return {
+    label: text(firstNonblank(child, ['label'])),
+    sale: sale(operationType, saleRecord),
+    items: items.map(saleItem),
+    payments: payments.map((item) => salePayment(operationType, item)),
+    customer_id: text(firstNonblank(child, ['customer_id']) || firstNonblank(saleRecord, ['customer_id', 'customerId']))
+  };
+};
+
 const sale = (operationType, record = {}) => compact({
   id: text(firstNonblank(record, ['id', 'cloud_sale_id', 'cloudSaleId'])),
   local_sale_id: text(firstNonblank(record, ['local_sale_id', 'localSaleId'])),
@@ -175,7 +201,30 @@ export const canonicalFinancialRequestV1 = (operationType, request = {}) => {
     };
     case 'sale.cashier': case 'sale.cashier_inventory': case 'sale.credit':
       if (!request.sale || !Array.isArray(request.items) || !Array.isArray(request.payments)) throw new Error('FINANCIAL_SALE_CONTRACT_INVALID');
-      return { sale: sale(operationType, request.sale), items: request.items.map(saleItem), payments: request.payments.map((item) => salePayment(operationType, item)), cash_session_id: text(request.cash_session_id), customer_id: text(request.customer_id) };
+      return { sale: sale(operationType, request.sale), items: request.items.map(saleItem), payments: request.payments.map((item) => salePayment(operationType, item)), cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])), customer_id: text(firstNonblank(request, ['customer_id', 'customerId'])) };
+    case 'sale.split': {
+      if (!Array.isArray(request.children) || request.children.length < 2 || request.children.length > 8) {
+        throw new Error('FINANCIAL_SPLIT_CONTRACT_INVALID');
+      }
+      return {
+        parent_order_id: text(firstNonblank(request, ['parent_order_id', 'parentOrderId'])),
+        parent_order_version: text(firstNonblank(request, ['parent_order_version', 'parentOrderVersion'])),
+        split_group_id: text(firstNonblank(request, ['split_group_id', 'splitGroupId'])),
+        cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])),
+        children: request.children.map(canonicalSplitChild)
+      };
+    }
+    case 'sale.layaway_complete': {
+      if (!request.sale || !Array.isArray(request.items) || !Array.isArray(request.payments)) {
+        throw new Error('FINANCIAL_LAYAWAY_CONTRACT_INVALID');
+      }
+      return {
+        layaway_id: text(firstNonblank(request, ['layaway_id', 'layawayId'])),
+        sale: sale('sale.layaway_complete', request.sale),
+        items: request.items.map(saleItem),
+        payments: request.payments.map((item) => salePayment('sale.layaway_complete', item))
+      };
+    }
     case 'sale.cancel': return { sale_id: request.sale_id ?? null, reason: request.reason ?? null };
     default: throw new Error('FINANCIAL_OPERATION_TYPE_UNSUPPORTED');
   }

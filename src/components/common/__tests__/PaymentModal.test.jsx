@@ -76,4 +76,30 @@ describe('PaymentModal', () => {
     });
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it('envía el efectivo recibido y el cambio al confirmar', async () => {
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([]);
+
+    render(
+      <PaymentModal
+        show
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+        total={57}
+      />
+    );
+
+    const amountInput = await screen.findByLabelText('Monto Recibido:');
+    fireEvent.change(amountInput, { target: { value: '100' } });
+    const confirmButton = await screen.findByRole('button', { name: 'Confirmar Pago' });
+    await waitFor(() => expect(confirmButton).toBeEnabled());
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    const paymentData = onConfirm.mock.calls[0][0];
+    expect(Number(paymentData.amountPaid)).toBe(100);
+    expect(Number(paymentData.receivedAmount)).toBe(100);
+    expect(Number(paymentData.changeAmount)).toBe(43);
+  });
 });

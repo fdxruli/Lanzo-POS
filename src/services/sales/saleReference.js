@@ -15,6 +15,13 @@ export const getSaleFinancialFolio = (sale = {}) => firstText(
   sale.id
 );
 
+export const getSaleOperationalFolio = (sale = {}) => firstText(
+  sale.posFolio,
+  sale.pos_folio,
+  sale.operationalFolio,
+  sale.operational_folio
+);
+
 export const getSaleEcommerceOrderId = (sale = {}) => firstText(
   sale.ecommerceOrderId,
   sale.ecommerce_order_id,
@@ -63,9 +70,13 @@ export const normalizeSaleTraceability = (sale = {}) => {
   };
 };
 
-export const getSaleDisplayReference = (sale = {}) => (
-  getSaleEcommerceOrderCode(sale) || getSaleFinancialFolio(sale)
-);
+export const getSaleDisplayReference = (sale = {}) => {
+  if (isEcommerceSale(sale)) {
+    return getSaleEcommerceOrderCode(sale) || getSaleFinancialFolio(sale);
+  }
+
+  return getSaleOperationalFolio(sale) || getSaleFinancialFolio(sale);
+};
 
 export const getSaleSecondaryReference = (sale = {}, { includeOrigin = true } = {}) => {
   if (!isEcommerceSale(sale)) return includeOrigin ? 'Venta local' : null;
@@ -85,6 +96,7 @@ export const saleMatchesReference = (sale = {}, query = '') => {
   return [
     ...getSaleIdentityReferences(sale),
     getSaleDisplayReference(sale),
+    getSaleOperationalFolio(sale),
     getSaleFinancialFolio(sale),
     getSaleEcommerceOrderCode(sale),
     getSaleEcommerceOrderId(sale)
@@ -96,6 +108,7 @@ export default {
   getSaleSecondaryReference,
   getSaleOriginLabel,
   getSaleFinancialFolio,
+  getSaleOperationalFolio,
   getSaleEcommerceOrderId,
   getSaleEcommerceOrderCode,
   getSaleIdentityReferences,

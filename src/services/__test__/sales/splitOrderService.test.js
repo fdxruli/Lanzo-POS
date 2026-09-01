@@ -10,6 +10,12 @@ vi.mock('../../salesCloud/salesCloudShadowService', () => ({
   }
 }));
 
+vi.mock('../../salesCloud/salesCloudCashierService', () => ({
+  salesCloudCashierService: {
+    processCloudSplitTableSale: vi.fn(async () => ({ success: true, childSales: [] }))
+  }
+}));
+
 import { splitOpenTableOrderCore } from '../../sales/splitOrderService';
 import { runPostSaleEffects } from '../../sales/postSaleEffects';
 import { salesCloudShadowService } from '../../salesCloud/salesCloudShadowService';
@@ -380,6 +386,67 @@ describe('splitOpenTableOrderCore', () => {
       0
     );
     expect(totalBatchQty).toBe(6);
+  });
+
+  it('blocks an unequal-value equal split before creating a cloud intent', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '600',
+      items: [
+        {
+          id: 'prod-1',
+          name: 'Producto caro',
+          quantity: 1,
+          price: 500,
+          inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] }
+        },
+        {
+          id: 'prod-2',
+          name: 'Producto barato',
+          quantity: 1,
+          price: 100,
+          inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] }
+        }
+      ]
+    };
+    const deps = makeDeps(parentSale, {
+      loadMultipleData: vi.fn(async (store) => (
+        store === 'customers'
+          ? []
+          : [
+            { id: 'prod-1', name: 'Producto caro', trackStock: true, cost: 250 },
+            { id: 'prod-2', name: 'Producto barato', trackStock: true, cost: 50 }
+          ]
+      ))
+    });
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, {
+        mode: 'equal',
+        cloudSpecialFlows: true,
+        tickets: [
+          {
+            label: 'A',
+            paymentData: { paymentMethod: 'efectivo', amountPaid: '300', sendReceipt: false },
+            lines: [{ lineIndex: 0, quantity: 1 }]
+          },
+          {
+            label: 'B',
+            paymentData: { paymentMethod: 'efectivo', amountPaid: '300', sendReceipt: false },
+            lines: [{ lineIndex: 1, quantity: 1 }]
+          }
+        ]
+      }),
+      deps
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorType: 'SPLIT_ROUNDING_INVALID',
+      code: 'SPLIT_ROUNDING_INVALID'
+    });
+    expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
+    expect(runPostSaleEffects).not.toHaveBeenCalled();
   });
 
   it('does not block successful split when post-sale effects fail for a child', async () => {

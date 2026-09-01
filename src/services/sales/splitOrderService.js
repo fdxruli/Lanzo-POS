@@ -3,8 +3,9 @@ import { Money } from '../../utils/moneyMath';
 import { normalizeStock } from '../db/utils';
 import { SALE_STATUS } from './financialStats';
 import { buildProcessedItemsAndDeductions } from './inventoryFlow';
-import { runPostSaleEffects } from './postSaleEffects';
+import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './postSaleEffects';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
+import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 
 const TABLE_ORDER_TYPE = 'table';
 const OPEN_STATUS = SALE_STATUS.OPEN;
@@ -165,6 +166,29 @@ const splitInventoryReservationByQuantity = ({ reservation, quantitiesPerTicket,
     }));
 };
 
+const stableHash = (value) => {
+    let hash = 2166136261;
+    for (const character of String(value || '')) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+};
+
+const buildStableSplitGroupId = ({ parentOrderId, parentSale, mode, tickets, orderSnapshot }) => (
+    `spl_${stableHash(JSON.stringify({
+        parentOrderId,
+        parentVersion: buildParentSnapshotVersion(parentSale),
+        mode,
+        tickets: (Array.isArray(tickets) ? tickets : []).map((ticket) => ({
+            label: toLabel(ticket?.label),
+            lines: Array.isArray(ticket?.lines) ? ticket.lines : [],
+            paymentData: ticket?.paymentData || {}
+        })),
+        orderSnapshot: normalizeOrderSnapshotItems(orderSnapshot || [])
+    }))}`
+);
+
 const toLabel = (value) => String(value || '').trim();
 
 const getTicketDefinitionByLabel = (tickets = [], label) =>
@@ -303,21 +327,26 @@ const buildTicketAdjustments = ({ mode, parentTotalCents, baseCentsArray }) => {
     const totalBase = baseCentsArray.reduce((a, b) => a + b, 0);
     const remainder = parentTotalCents - totalBase;
 
-    // Distribute the remainder fairly across tickets that have items, or fallback to first
-    let remainingAdjustment = remainder;
+    // Distribute the remainder fairly across tickets that have items, or fallback to first.
+    // Use quotient/remainder arithmetic so large totals do not depend on an
+    // arbitrary iteration cap.
     const adjustments = baseCentsArray.map(() => 0);
-    
-    // We try to give 1 cent at a time to tickets until remainder is 0
-    let idx = 0;
-    while (remainingAdjustment !== 0 && idx < n * 10) { // arbitrary safe loop
-        const ticketIdx = idx % n;
-        if (baseCentsArray[ticketIdx] > 0 || totalBase === 0) {
-            const step = remainingAdjustment > 0 ? 1 : -1;
-            adjustments[ticketIdx] += step;
-            remainingAdjustment -= step;
-        }
-        idx++;
+    const eligibleTicketIndices = baseCentsArray
+        .map((base, index) => (base > 0 || totalBase === 0 ? index : null))
+        .filter((index) => index !== null);
+
+    if (remainder === 0 || eligibleTicketIndices.length === 0) {
+        return adjustments;
     }
+
+    const direction = remainder > 0 ? 1 : -1;
+    const absoluteRemainder = Math.abs(remainder);
+    const perTicket = Math.floor(absoluteRemainder / eligibleTicketIndices.length);
+    const extraCents = absoluteRemainder % eligibleTicketIndices.length;
+
+    eligibleTicketIndices.forEach((ticketIdx, eligibleIdx) => {
+        adjustments[ticketIdx] = direction * (perTicket + (eligibleIdx < extraCents ? 1 : 0));
+    });
 
     return adjustments;
 };
@@ -455,9 +484,10 @@ const buildChildSaleRecord = ({
     ticketAdjustmentCents,
     normalizedPayment,
     processedItems,
-    currentIsoTime
+    currentIsoTime,
+    saleId = null
 }) => ({
-    id: generateID('sal'),
+    id: saleId || generateID('sal'),
     timestamp: currentIsoTime,
     items: processedItems,
     total: centsToMoneyString(ticketTotalCents),
@@ -474,6 +504,7 @@ const buildChildSaleRecord = ({
     splitParentId: parentSale.id,
     splitLabel: label,
     roundingAdjustment: centsToMoneyString(ticketAdjustmentCents),
+    splitRoundingAdjustment: centsToMoneyString(ticketAdjustmentCents),
     sourceMode: 'shadow',
     syncStatus: 'PENDING',
     metadata: {
@@ -481,11 +512,12 @@ const buildChildSaleRecord = ({
         orderType: parentSale.orderType || TABLE_ORDER_TYPE,
         splitGroupId,
         splitParentId: parentSale.id,
-        splitLabel: label
+        splitLabel: label,
+        splitRoundingAdjustment: centsToMoneyString(ticketAdjustmentCents)
     }
 });
 
-const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinitions = [], totalChildrenCents }) => {
+const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinitions = [], totalChildrenCents, sourceMode = 'shadow/local_applied' }) => {
     const tickets = childDefinitions.map((child) => ({
         label: child.label,
         saleId: child.sale.id,
@@ -510,7 +542,7 @@ const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinition
         amountPaidTotal: Money.toExactString(amountPaidTotal),
         balanceDueTotal: Money.toExactString(balanceDueTotal),
         total: centsToMoneyString(totalChildrenCents),
-        sourceMode: 'shadow/local_applied'
+        sourceMode
     };
 };
 
@@ -520,7 +552,10 @@ export const splitOpenTableOrderCore = async ({
     mode,
     tickets,
     features,
-    companyName
+    companyName,
+    cloudSpecialFlows = false,
+    licenseDetails = null,
+    cashSessionId = null
 }, {
     loadData,
     loadMultipleData,
@@ -592,10 +627,30 @@ export const splitOpenTableOrderCore = async ({
             baseCentsArray
         });
 
+        // The server-side financial contract only permits controlled cent
+        // rounding. Equal splits can otherwise manufacture large price
+        // adjustments when tickets contain products with different values.
+        // Stop before creating a cloud intent; manual/local behavior remains
+        // available where the caller is not using the cloud special-flow path.
+        if (cloudSpecialFlows && adjustments.some((adjustment) => Math.abs(adjustment) > 1)) {
+            return {
+                success: false,
+                errorType: 'SPLIT_ROUNDING_INVALID',
+                code: 'SPLIT_ROUNDING_INVALID',
+                message: 'El reparto cloud solo puede corregir diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.'
+            };
+        }
+
         const childDefinitions = [];
         const customerDebtAccumulator = new Map();
-        const splitGroupId = generateID('spl');
-        const currentIsoTime = new Date().toISOString();
+        const splitGroupId = buildStableSplitGroupId({
+            parentOrderId,
+            parentSale,
+            mode,
+            tickets,
+            orderSnapshot
+        });
+        const currentIsoTime = parentSale.updatedAt || parentSale.timestamp || new Date().toISOString();
 
         // Precargar todos los clientes que usarán método de pago 'fiado' en paralelo
         const customerIdsToLoad = new Set();
@@ -629,6 +684,8 @@ export const splitOpenTableOrderCore = async ({
             if (ticketAdjustmentCents !== 0 && ticketItems.length > 0) {
                 // Buscamos el primer ítem para absorber la diferencia
                 const itemToAdjust = ticketItems[0];
+                itemToAdjust.splitBasePrice = itemToAdjust.splitBasePrice ?? itemToAdjust.price;
+                itemToAdjust.splitRoundingAdjustment = centsToMoneyString(ticketAdjustmentCents);
                 const currentItemTotalCents = Money.toCents(Money.multiply(itemToAdjust.price, itemToAdjust.quantity));
                 const adjustedItemTotalCents = currentItemTotalCents + ticketAdjustmentCents;
                 
@@ -661,7 +718,8 @@ export const splitOpenTableOrderCore = async ({
                 ticketAdjustmentCents,
                 normalizedPayment,
                 processedItems,
-                currentIsoTime
+                currentIsoTime,
+                saleId: `sale_split_${stableHash(`${splitGroupId}:${label}`)}`
             });
 
             childDefinitions.push({
@@ -680,6 +738,54 @@ export const splitOpenTableOrderCore = async ({
 
         if (totalChildrenCents !== parentTotalCents) {
             throw new Error('La suma de tickets no cuadra con el total de la orden padre.');
+        }
+
+        if (cloudSpecialFlows) {
+            const cloudResult = await salesCloudCashierService.processCloudSplitTableSale({
+                parentOrderId,
+                parentExpectedVersion: buildParentSnapshotVersion(parentSale),
+                splitGroupId,
+                childDefinitions,
+                total: centsToMoneyString(totalChildrenCents),
+                licenseDetails,
+                cashSessionId
+            });
+
+            if (!cloudResult?.success) return cloudResult;
+
+            await Promise.all(childDefinitions.map(async (child, index) => {
+                const projectedSale = cloudResult.childSales?.[index] || child.sale;
+                await runPostSaleEffectsForCloudCommittedSale({
+                    sale: projectedSale,
+                    processedItems: child.processedItems,
+                    paymentData: child.paymentData,
+                    total: child.sale.total,
+                    companyName,
+                    features,
+                    loadData,
+                    saveData: async () => true,
+                    STORES,
+                    useStatsStore,
+                    roundCurrency,
+                    sendReceiptWhatsApp,
+                    Logger
+                });
+            }));
+
+            const paymentSummary = buildSplitPaymentSummary({
+                splitGroupId,
+                parentOrderId,
+                childDefinitions,
+                totalChildrenCents,
+                sourceMode: 'cloud_committed'
+            });
+
+            return {
+                ...cloudResult,
+                paymentSummary,
+                sourceMode: 'cloud_committed',
+                cloudCommitted: true
+            };
         }
 
         const transactionResult = await executeSplitOpenTableOrderTransactionSafe({

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   markProjectionFailed: vi.fn(),
   pullCatalogChanges: vi.fn(),
   recoveryTrace: [],
+  cloudCashierEnabled: true,
   actorHandle: { assertCurrent: vi.fn() }
 }));
 
@@ -28,14 +29,77 @@ vi.mock('../../../store/useAppStore', () => ({
 
 vi.mock('../../sync/syncConstants', () => ({
   getLicenseKeyFromDetails: vi.fn((details) => details?.license_key || null),
-  isCloudSalesCashierEnabled: vi.fn(() => true),
+  isCloudSalesCashierEnabled: vi.fn(() => mocks.cloudCashierEnabled),
   isCloudSalesCreditEnabled: vi.fn(() => true),
-  isCloudSalesInventoryEnabled: vi.fn(() => true)
+  isCloudSalesInventoryEnabled: vi.fn(() => true),
+  SYNC_ENTITY_TYPES: {
+    CUSTOMER: 'customer',
+    CUSTOMER_LEDGER: 'customer_ledger',
+    CUSTOMER_CREDIT: 'customer_credit',
+    CUSTOMER_PAYMENT: 'customer_payment',
+    CATEGORY: 'category',
+    PRODUCT: 'product',
+    PRODUCT_BATCH: 'product_batch',
+    INVENTORY_ENTRY: 'inventory_entry',
+    PREPARATION_STATION: 'preparation_station',
+    RESTAURANT_ORDER: 'restaurant_order',
+    RESTAURANT_ORDER_ITEM: 'restaurant_order_item',
+    INVENTORY_MOVEMENT: 'inventory_movement',
+    CASH: 'cash',
+    CASH_SESSION: 'cash_session',
+    CASH_MOVEMENT: 'cash_movement',
+    SALE: 'sale',
+    SALE_ITEM: 'sale_item',
+    SALE_PAYMENT: 'sale_payment',
+    SALE_CANCELLATION: 'sale_cancellation',
+    REPORT: 'report',
+    GENERIC: 'generic'
+  },
+  SYNC_OPERATIONS: {
+    CREATE: 'create',
+    UPDATE: 'update',
+    DELETE: 'delete',
+    RESTORE: 'restore',
+    UPSERT: 'upsert',
+    UPSERT_SHADOW: 'upsert_shadow',
+    CLOUD_COMMIT: 'cloud_commit',
+    CANCEL: 'cancel',
+    PULL_SNAPSHOT: 'pull_snapshot',
+    PULL_CHANGES: 'pull_changes',
+    TOGGLE_STATUS: 'toggle_status',
+    STATUS_UPDATE: 'status_update',
+    OPEN: 'open',
+    CLOSE: 'close',
+    MOVEMENT: 'movement',
+    ADJUST: 'adjust',
+    INVENTORY_ENTRY: 'inventory_entry',
+    UNKNOWN: 'unknown'
+  },
+  SYNC_STATUS: {
+    DISABLED: 'disabled',
+    ONLINE: 'online',
+    OFFLINE: 'offline',
+    DEGRADED: 'degraded',
+    ERROR: 'error'
+  },
+  SYNC_LIMITS: {
+    DEFAULT_PULL_LIMIT: 500,
+    MAX_PULL_LIMIT: 500,
+    DEFAULT_OUTBOX_LIMIT: 50,
+    STUCK_PROCESSING_MS: 120000
+  },
+  POS_SYNC_FOCUS_PULL_COOLDOWN_MS: 60000,
+  POS_SYNC_REALTIME_PULL_DEBOUNCE_MS: 1000,
+  shouldDeferPosBootstrapStartHook: vi.fn(() => false),
+  isCloudPosSyncEnabled: vi.fn(() => true)
 }));
 
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: mocks.pullCatalogChanges }));
 vi.mock('../../auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: () => mocks.actorHandle }
+  actorRuntimeController: {
+    capture: () => mocks.actorHandle,
+    subscribe: () => () => {}
+  }
 }));
 vi.mock('../../financial/financialIntentLedger', () => ({
   markFinancialIntentProjectionApplied: (...args) => mocks.markProjectionApplied(...args),
@@ -66,6 +130,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('VITE_ENABLE_CLOUD_CASHIER_SALES', 'true');
   mocks.recoveryTrace.splice(0);
+  mocks.cloudCashierEnabled = true;
   mocks.saveCloudCommittedSaleSnapshot.mockResolvedValue({ id: 'sale-1', status: 'closed' });
   mocks.applyCloudSalesPayload.mockResolvedValue({ success: true });
   mocks.markProjectionApplied.mockResolvedValue(undefined);
@@ -120,6 +185,18 @@ const projectResponse = async (options, response, operationType = 'sale.cashier_
 };
 
 describe('salesCloudCashierService ecommerce idempotency', () => {
+  it('routes Local/Free feature-disabled licenses to the local checkout path', async () => {
+    mocks.cloudCashierEnabled = false;
+
+    await expect(salesCloudCashierService.shouldUseCloudCashierSale({
+      paymentData: { paymentMethod: 'cash' },
+      cart: [{ id: 'product-1', quantity: 1 }]
+    })).resolves.toEqual({
+      useCloud: false,
+      reason: 'feature_disabled'
+    });
+  });
+
   it('uses the ecommerce business key without a device suffix', () => {
     const result = salesCloudCashierServiceInternals.buildCloudSaleIdempotencyKey({
       sale: {
