@@ -499,6 +499,7 @@ const buildChildSaleRecord = ({
     splitParentId: parentSale.id,
     splitLabel: label,
     roundingAdjustment: centsToMoneyString(ticketAdjustmentCents),
+    splitRoundingAdjustment: centsToMoneyString(ticketAdjustmentCents),
     sourceMode: 'shadow',
     syncStatus: 'PENDING',
     metadata: {
@@ -506,7 +507,8 @@ const buildChildSaleRecord = ({
         orderType: parentSale.orderType || TABLE_ORDER_TYPE,
         splitGroupId,
         splitParentId: parentSale.id,
-        splitLabel: label
+        splitLabel: label,
+        splitRoundingAdjustment: centsToMoneyString(ticketAdjustmentCents)
     }
 });
 
@@ -663,6 +665,8 @@ export const splitOpenTableOrderCore = async ({
             if (ticketAdjustmentCents !== 0 && ticketItems.length > 0) {
                 // Buscamos el primer ítem para absorber la diferencia
                 const itemToAdjust = ticketItems[0];
+                itemToAdjust.splitBasePrice = itemToAdjust.splitBasePrice ?? itemToAdjust.price;
+                itemToAdjust.splitRoundingAdjustment = centsToMoneyString(ticketAdjustmentCents);
                 const currentItemTotalCents = Money.toCents(Money.multiply(itemToAdjust.price, itemToAdjust.quantity));
                 const adjustedItemTotalCents = currentItemTotalCents + ticketAdjustmentCents;
                 
