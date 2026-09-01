@@ -277,10 +277,17 @@ export const layawayFinancialService = {
         }
 
         let useCloud = false;
+        let cloudCapabilityError = null;
         try {
             useCloud = await salesCloudCashierService.canUseCloudLayawayCompletion(mode.licenseDetails);
-        } catch {
-            useCloud = false;
+        } catch (error) {
+            cloudCapabilityError = error;
+        }
+
+        // In PRO/cloud mode an unresolved capability is not permission to
+        // reinterpret a cloud-funded delivery as a local sale.
+        if (cloudCapabilityError && mode.cloudEnabled) {
+            throw cloudCapabilityError;
         }
 
         if (!useCloud) {
