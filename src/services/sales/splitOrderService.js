@@ -3,8 +3,9 @@ import { Money } from '../../utils/moneyMath';
 import { normalizeStock } from '../db/utils';
 import { SALE_STATUS } from './financialStats';
 import { buildProcessedItemsAndDeductions } from './inventoryFlow';
-import { runPostSaleEffects } from './postSaleEffects';
+import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './postSaleEffects';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
+import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 
 const TABLE_ORDER_TYPE = 'table';
 const OPEN_STATUS = SALE_STATUS.OPEN;
@@ -164,6 +165,29 @@ const splitInventoryReservationByQuantity = ({ reservation, quantitiesPerTicket,
         committedBatches: splitBatchesPerTicket[idx]
     }));
 };
+
+const stableHash = (value) => {
+    let hash = 2166136261;
+    for (const character of String(value || '')) {
+        hash ^= character.charCodeAt(0);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+};
+
+const buildStableSplitGroupId = ({ parentOrderId, parentSale, mode, tickets, orderSnapshot }) => (
+    `spl_${stableHash(JSON.stringify({
+        parentOrderId,
+        parentVersion: buildParentSnapshotVersion(parentSale),
+        mode,
+        tickets: (Array.isArray(tickets) ? tickets : []).map((ticket) => ({
+            label: toLabel(ticket?.label),
+            lines: Array.isArray(ticket?.lines) ? ticket.lines : [],
+            paymentData: ticket?.paymentData || {}
+        })),
+        orderSnapshot: normalizeOrderSnapshotItems(orderSnapshot || [])
+    }))}`
+);
 
 const toLabel = (value) => String(value || '').trim();
 
@@ -455,9 +479,10 @@ const buildChildSaleRecord = ({
     ticketAdjustmentCents,
     normalizedPayment,
     processedItems,
-    currentIsoTime
+    currentIsoTime,
+    saleId = null
 }) => ({
-    id: generateID('sal'),
+    id: saleId || generateID('sal'),
     timestamp: currentIsoTime,
     items: processedItems,
     total: centsToMoneyString(ticketTotalCents),
@@ -485,7 +510,7 @@ const buildChildSaleRecord = ({
     }
 });
 
-const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinitions = [], totalChildrenCents }) => {
+const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinitions = [], totalChildrenCents, sourceMode = 'shadow/local_applied' }) => {
     const tickets = childDefinitions.map((child) => ({
         label: child.label,
         saleId: child.sale.id,
@@ -510,7 +535,7 @@ const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, childDefinition
         amountPaidTotal: Money.toExactString(amountPaidTotal),
         balanceDueTotal: Money.toExactString(balanceDueTotal),
         total: centsToMoneyString(totalChildrenCents),
-        sourceMode: 'shadow/local_applied'
+        sourceMode
     };
 };
 
@@ -520,7 +545,10 @@ export const splitOpenTableOrderCore = async ({
     mode,
     tickets,
     features,
-    companyName
+    companyName,
+    cloudSpecialFlows = false,
+    licenseDetails = null,
+    cashSessionId = null
 }, {
     loadData,
     loadMultipleData,
@@ -594,8 +622,14 @@ export const splitOpenTableOrderCore = async ({
 
         const childDefinitions = [];
         const customerDebtAccumulator = new Map();
-        const splitGroupId = generateID('spl');
-        const currentIsoTime = new Date().toISOString();
+        const splitGroupId = buildStableSplitGroupId({
+            parentOrderId,
+            parentSale,
+            mode,
+            tickets,
+            orderSnapshot
+        });
+        const currentIsoTime = parentSale.updatedAt || parentSale.timestamp || new Date().toISOString();
 
         // Precargar todos los clientes que usarán método de pago 'fiado' en paralelo
         const customerIdsToLoad = new Set();
@@ -661,7 +695,8 @@ export const splitOpenTableOrderCore = async ({
                 ticketAdjustmentCents,
                 normalizedPayment,
                 processedItems,
-                currentIsoTime
+                currentIsoTime,
+                saleId: `sale_split_${stableHash(`${splitGroupId}:${label}`)}`
             });
 
             childDefinitions.push({
@@ -680,6 +715,54 @@ export const splitOpenTableOrderCore = async ({
 
         if (totalChildrenCents !== parentTotalCents) {
             throw new Error('La suma de tickets no cuadra con el total de la orden padre.');
+        }
+
+        if (cloudSpecialFlows) {
+            const cloudResult = await salesCloudCashierService.processCloudSplitTableSale({
+                parentOrderId,
+                parentExpectedVersion: buildParentSnapshotVersion(parentSale),
+                splitGroupId,
+                childDefinitions,
+                total: centsToMoneyString(totalChildrenCents),
+                licenseDetails,
+                cashSessionId
+            });
+
+            if (!cloudResult?.success) return cloudResult;
+
+            await Promise.all(childDefinitions.map(async (child, index) => {
+                const projectedSale = cloudResult.childSales?.[index] || child.sale;
+                await runPostSaleEffectsForCloudCommittedSale({
+                    sale: projectedSale,
+                    processedItems: child.processedItems,
+                    paymentData: child.paymentData,
+                    total: child.sale.total,
+                    companyName,
+                    features,
+                    loadData,
+                    saveData: async () => true,
+                    STORES,
+                    useStatsStore,
+                    roundCurrency,
+                    sendReceiptWhatsApp,
+                    Logger
+                });
+            }));
+
+            const paymentSummary = buildSplitPaymentSummary({
+                splitGroupId,
+                parentOrderId,
+                childDefinitions,
+                totalChildrenCents,
+                sourceMode: 'cloud_committed'
+            });
+
+            return {
+                ...cloudResult,
+                paymentSummary,
+                sourceMode: 'cloud_committed',
+                cloudCommitted: true
+            };
         }
 
         const transactionResult = await executeSplitOpenTableOrderTransactionSafe({
