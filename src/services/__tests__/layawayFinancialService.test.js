@@ -227,8 +227,8 @@ describe('layawayFinancialService', () => {
         layaway_id: 'layaway-1',
         payments: [expect.objectContaining({
           method: 'layaway_completed',
-          amount: '175.00',
-          received_amount: '175.00',
+          amount: '175',
+          received_amount: '175',
           change_amount: '0'
         })]
       })
