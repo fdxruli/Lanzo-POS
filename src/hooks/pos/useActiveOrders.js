@@ -1178,7 +1178,8 @@ export const useActiveOrders = create(
           if (existing) {
             await db.table(STORES.SALES).update(orderId, {
               isLockedForCheckout: true,
-              lockedAt
+              lockedAt,
+              checkoutDraft: existing.checkoutDraft ?? !order.isSaved
             });
           } else {
             // La orden aún no fue persistida: la insertamos con el lock ya puesto.
