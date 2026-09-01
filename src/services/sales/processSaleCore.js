@@ -438,6 +438,8 @@ export const processSaleCore = async ({
                 return {
                     success: false,
                     errorType: 'CLOUD_CASHIER_FAILED',
+                    code: cloudCashierError.code || null,
+                    cloudErrorCode: cloudCashierError.code || null,
                     message: cloudCashierError.message || 'No se pudo confirmar la venta cloud. No se cobró localmente para evitar duplicados.'
                 };
             }
