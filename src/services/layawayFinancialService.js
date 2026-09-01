@@ -290,6 +290,17 @@ export const layawayFinancialService = {
             throw cloudCapabilityError;
         }
 
+        // A cloud-funded layaway must finish through the same cloud authority
+        // that recorded its deposits. Never create a local sale if a feature
+        // flag, capability, or permission temporarily makes that path unavailable.
+        if (mode.cloudEnabled && !useCloud) {
+            const error = new Error(
+                'Este apartado requiere entrega cloud. Verifica conexión, permisos y funciones cloud antes de reintentar.'
+            );
+            error.code = 'CLOUD_LAYAWAY_COMPLETION_REQUIRED';
+            throw error;
+        }
+
         if (!useCloud) {
             return layawayRepository.convertToSale(layawayId, cashierId);
         }
