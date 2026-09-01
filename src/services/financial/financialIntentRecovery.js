@@ -207,7 +207,7 @@ export const retryExistingFinancialIntentExplicitly = async ({
 } = {}) => {
   const initial = await getFinancialIntent(intentId);
   if (!initial) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
-  if (!['sale.cashier', 'sale.cashier_inventory', 'sale.credit'].includes(initial.operationType)) {
+  if (!['sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete'].includes(initial.operationType)) {
     throw new Error('FINANCIAL_RECOVERY_EXPLICIT_RETRY_UNSUPPORTED');
   }
   assertFinancialIntentRetryEquivalence(initial, candidateIntent, actorHandle);
