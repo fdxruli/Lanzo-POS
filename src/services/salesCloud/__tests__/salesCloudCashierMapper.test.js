@@ -3,6 +3,25 @@ import {
   mapLocalCheckoutToCloudSale,
   mapLocalCreditCheckoutToCloudSale
 } from '../salesCloudCashierMapper';
+import { cloudSaleToLocalSyncPatch } from '../salesCloudMapper';
+
+describe('salesCloudMapper operational folio', () => {
+  it('maps the server-assigned POS folio without replacing the financial folio', () => {
+    const patch = cloudSaleToLocalSyncPatch({
+      id: 'sale-48',
+      folio: 'V-000048',
+      cloud_folio: 'V-000048',
+      pos_folio: 'FG-01-000048',
+      source_mode: 'cloud_committed'
+    });
+
+    expect(patch).toMatchObject({
+      folio: 'V-000048',
+      cloudFolio: 'V-000048',
+      posFolio: 'FG-01-000048'
+    });
+  });
+});
 
 describe('salesCloudCashierMapper discounts', () => {
   it('maps line discount as net line_total', () => {
