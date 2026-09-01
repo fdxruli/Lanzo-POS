@@ -68,7 +68,12 @@ describe('layaway cash consistency in Free', () => {
     const movements = await db.table(STORES.MOVIMIENTOS_CAJA).toArray();
 
     expect(created.layaway.payments[0]).toMatchObject({
-      id: 'payment-1', paymentType: 'initial_deposit', cashMovementId: expect.any(String)
+      id: 'payment-1',
+      paymentType: 'initial_deposit',
+      cashMovementId: expect.any(String),
+      cashSessionId: 'cash-1',
+      cash_session_id: 'cash-1',
+      cajaId: 'cash-1'
     });
     expect(layaway.paidAmount).toBe(175);
     expect(layaway.payments).toHaveLength(2);
@@ -76,6 +81,51 @@ describe('layaway cash consistency in Free', () => {
     expect(movements.map((movement) => movement.monto).sort()).toEqual(['100', '75']);
     expect(movements.every((movement) => movement.cash_session_id === 'cash-1')).toBe(true);
     expect(cash.entradas_efectivo).toBe('175');
+  });
+
+  it('replays the same installment identity without duplicating payment or movement', async () => {
+    await db.table(STORES.CAJAS).put({
+      id: 'cash-1',
+      estado: 'abierta',
+      entradas_efectivo: '0',
+      salidas_efectivo: '0'
+    });
+    await layawayRepository.create(baseLayaway(), 75, 'cash-1', {
+      payment: { id: 'payment-1' },
+      cashMovement: { idempotencyKey: 'layaway:layaway-1:payment:payment-1' }
+    });
+
+    const cashMovement = {
+      idempotencyKey: 'layaway:layaway-1:payment:payment-2',
+      metadata: { source: 'layaway_payment', layawayId: 'layaway-1', paymentId: 'payment-2' }
+    };
+    const first = await layawayRepository.addPaymentWithCash(
+      'layaway-1',
+      { id: 'payment-2', amount: 100, paymentType: 'installment' },
+      'cash-1',
+      cashMovement
+    );
+    const second = await layawayRepository.addPaymentWithCash(
+      'layaway-1',
+      { id: 'payment-2', amount: 100, paymentType: 'installment' },
+      'cash-1',
+      cashMovement
+    );
+
+    const layaway = await layawayRepository.getById('layaway-1');
+    const movements = await db.table(STORES.MOVIMIENTOS_CAJA).toArray();
+
+    expect(first).toMatchObject({ success: true, newPaidAmount: 175 });
+    expect(second).toMatchObject({ success: true, duplicate: true, newPaidAmount: 175 });
+    expect(layaway.payments).toHaveLength(2);
+    expect(layaway.payments[1]).toMatchObject({
+      id: 'payment-2',
+      cashSessionId: 'cash-1',
+      cash_session_id: 'cash-1',
+      cajaId: 'cash-1'
+    });
+    expect(movements).toHaveLength(2);
+    expect(movements.filter((movement) => movement.idempotencyKey === cashMovement.idempotencyKey)).toHaveLength(1);
   });
 
   it('rolls back the initial deposit when Caja is closed', async () => {

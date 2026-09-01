@@ -133,7 +133,7 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
             initialPayment: initialAmount,
             deadline,
             customer: selectedCustomer,
-            cajaId: cajaActual?.id || null
+            expectedCashSessionId: cajaActual?.id || null
         });
     };
 

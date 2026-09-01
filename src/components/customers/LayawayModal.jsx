@@ -73,7 +73,8 @@ export default function LayawayModal({
             const result = await layawayFinancialService.addPayment({
                 layawayId: layaway.id,
                 amount,
-                customerId: customer.id
+                customerId: customer.id,
+                expectedCashSessionId: cajaActual?.id || null
             });
 
             showMessageModal(result?.isFullyPaid
@@ -181,7 +182,8 @@ export default function LayawayModal({
             layawayId: layaway.id,
             reason: 'Cancelado por usuario/vencimiento',
             retainMoney: retenerDinero,
-            actorHandle
+            actorHandle,
+            expectedCashSessionId: cajaActual?.id || null
         });
         
         let msg = 'Apartado cancelado y stock restaurado.';

@@ -44,7 +44,12 @@ export function useLayawayFlow({
     }, [order.length, features?.hasLayaway, openModal, showToast]);
 
     // ── Confirmar apartado ─────────────────────────────────────────
-    const handleConfirmLayaway = useCallback(async ({ initialPayment, deadline, customer: customerFromModal, cajaId }) => {
+    const handleConfirmLayaway = useCallback(async ({
+        initialPayment,
+        deadline,
+        customer: customerFromModal,
+        expectedCashSessionId
+    }) => {
         try {
             if (submittingRef.current) return { success: false, duplicate: true };
             submittingRef.current = true;
@@ -67,7 +72,7 @@ export function useLayawayFlow({
                 initialPayment,
                 paymentId: crypto.randomUUID(),
                 paymentType: 'initial_deposit',
-                cajaId
+                expectedCashSessionId
             });
 
             if (result.success) {
@@ -79,7 +84,7 @@ export function useLayawayFlow({
             }
         } catch (error) {
             Logger.error('Layaway Error', error);
-            showMessageModal('Error inesperado al crear apartado.');
+            showMessageModal(`Error al crear apartado: ${error?.message || 'No se pudo crear el apartado.'}`);
         } finally {
             submittingRef.current = false;
         }
