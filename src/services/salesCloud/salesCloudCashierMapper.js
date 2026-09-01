@@ -135,6 +135,8 @@ const mapItem = (item = {}, index = 0, options = {}) => {
   const lineSubtotal = getLineSubtotal(item);
   const lineTotal = getLineTotal(item);
   const selectedModifiers = getSelectedModifiers(item);
+  const splitBasePrice = item.splitBasePrice ?? item.split_base_price;
+  const splitRoundingAdjustment = item.splitRoundingAdjustment ?? item.split_rounding_adjustment;
 
   return compactObject({
     id: firstText(item.lineId, item.cartLineId) || (productId ? `${productId}:${index + 1}` : null),
@@ -145,7 +147,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     category_id: firstText(item.categoryId, item.category_id),
     category_name: firstText(item.categoryName, item.category, item.rubro),
     quantity: toNumber(item.quantity, 0),
-    unit_price: toNumber(item.price ?? item.unitPrice, 0),
+    unit_price: toNumber(splitBasePrice ?? item.price ?? item.unitPrice, 0),
     unit_cost: item.cost === undefined && item.unitCost === undefined ? null : toNumber(item.cost ?? item.unitCost, 0),
     discount_amount: discountAmount,
     tax_amount: toNumber(item.taxAmount ?? item.tax, 0),
@@ -172,6 +174,8 @@ const mapItem = (item = {}, index = 0, options = {}) => {
       discountAmount,
       lineSubtotal,
       lineTotal,
+      splitBasePrice: splitBasePrice === undefined ? undefined : toNumber(splitBasePrice, 0),
+      splitRoundingAdjustment: splitRoundingAdjustment === undefined ? undefined : roundMoney(splitRoundingAdjustment),
       snapshotOnly: true
     })
   });
