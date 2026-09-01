@@ -28,7 +28,7 @@ vi.mock('../../../services/salesService', () => ({
 }));
 
 vi.mock('../../../services/Logger', () => ({
-  default: { warn: vi.fn(), error: vi.fn() }
+  default: { log: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }));
 
 vi.mock('../../../services/utils', () => ({
