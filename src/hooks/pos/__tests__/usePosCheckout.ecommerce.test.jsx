@@ -265,6 +265,7 @@ beforeEach(() => {
       }
       return { success: true };
     }),
+    rotateCurrentOrderForNewSaleAttempt: vi.fn(() => ({ success: true, rotated: false })),
     removeOrder: vi.fn(async (orderId) => {
       mocks.activeState.activeOrders.delete(orderId);
       return { success: true };
