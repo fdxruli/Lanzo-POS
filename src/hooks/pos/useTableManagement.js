@@ -22,6 +22,7 @@ import {
     isEcommercePosEffectBlocked
 } from '../../services/ecommerce/ecommercePosDraftGuards';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCashierService';
 
 const EMPTY_ORDER = [];
 
@@ -708,11 +709,11 @@ export function useTableManagement({
             return;
         }
 
-        const hasCashPayment = splitPayload?.tickets?.some(
-            (ticket) => ticket?.paymentData?.paymentMethod === 'efectivo'
-        );
+        const hasCashBackedPayment = splitPayload?.tickets?.some((ticket) => (
+            ['efectivo', 'fiado'].includes(String(ticket?.paymentData?.paymentMethod || '').trim().toLowerCase())
+        ));
 
-        if (hasCashPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
+        if (hasCashBackedPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
             if (typeof asegurarCajaAbierta !== 'function') {
                 showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
                 return;
@@ -727,6 +728,18 @@ export function useTableManagement({
             }
         }
 
+        let cloudSpecialFlows = false;
+        if (isCloudRestaurantOrdersEnabled && licenseKey) {
+            try {
+                cloudSpecialFlows = await salesCloudCashierService.canUseCloudSplitTableSale({
+                    tickets: splitPayload?.tickets || [],
+                    licenseDetails
+                });
+            } catch (cloudSpecialFlowError) {
+                Logger.warn('[SalesCloud/Cashier] No se pudo evaluar el split cloud; se mantiene la ruta local segura:', cloudSpecialFlowError);
+            }
+        }
+
         try {
             const result = await splitOpenTableOrder({
                 parentOrderId: activeOrderId,
@@ -734,13 +747,16 @@ export function useTableManagement({
                 mode: splitPayload.mode,
                 tickets: splitPayload.tickets,
                 features,
-                companyName
+                companyName,
+                cloudSpecialFlows,
+                licenseDetails,
+                cashSessionId: cajaActual?.id || null
             });
 
             if (result.success) {
                 let cloudCloseResult = { success: true, skipped: true };
 
-                if (isCloudRestaurantOrdersEnabled) {
+                if (isCloudRestaurantOrdersEnabled && !result.cloudCommitted) {
                     try {
                         cloudCloseResult = await closeRestaurantCloudOrderAfterSuccessfulSplitPayment({
                             localOrderId: activeOrderId,
@@ -806,7 +822,8 @@ export function useTableManagement({
         cajaActual,
         asegurarCajaAbierta,
         isCloudRestaurantOrdersEnabled,
-        licenseDetails
+        licenseDetails,
+        licenseKey
     ]);
 
     return {
