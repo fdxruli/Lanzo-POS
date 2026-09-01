@@ -40,8 +40,26 @@ vi.mock('../../sync/syncConstants', () => ({
   SYNC_OPERATIONS: {
     MOVEMENT: 'movement',
     OPEN: 'open',
-    CLOSE: 'close'
-  }
+    CLOSE: 'close',
+    ADJUST: 'adjust'
+  },
+  SYNC_STATUS: {
+    DISABLED: 'disabled',
+    ONLINE: 'online',
+    OFFLINE: 'offline',
+    DEGRADED: 'degraded',
+    ERROR: 'error'
+  },
+  SYNC_LIMITS: {
+    DEFAULT_PULL_LIMIT: 500,
+    MAX_PULL_LIMIT: 500,
+    DEFAULT_OUTBOX_LIMIT: 50,
+    STUCK_PROCESSING_MS: 120000
+  },
+  POS_SYNC_FOCUS_PULL_COOLDOWN_MS: 60000,
+  POS_SYNC_REALTIME_PULL_DEBOUNCE_MS: 1000,
+  shouldDeferPosBootstrapStartHook: vi.fn(() => false),
+  isCloudPosSyncEnabled: vi.fn(() => true)
 }));
 
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: mocks.pullCatalogChanges }));
