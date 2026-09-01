@@ -254,9 +254,9 @@ begin
   v_staff_user_id := nullif(v_context->>'staff_user_id', '')::uuid;
 
   perform private.assert_cash_session_station(
-    p_license_key := v_license_id::text,
-    p_device_fingerprint := p_device_fingerprint,
-    p_cash_session_id := v_cash_session_id
+    v_license_id,
+    v_device_id,
+    v_cash_session_id
   );
 
   -- Per-license + parent advisory lock prevents two devices from settling the
@@ -299,6 +299,7 @@ begin
       from jsonb_array_elements(p_split->'children')
   loop
     v_child_index := v_child_index + 1;
+    v_child_key := p_internal_idempotency_key || ':child:' || v_child_index::text;
     if jsonb_typeof(v_child) <> 'object' then
       raise exception 'FINANCIAL_SPLIT_CHILD_INVALID' using errcode = 'P0001';
     end if;
@@ -331,7 +332,7 @@ begin
 
     if v_is_credit then
       perform private.assert_cloud_sales_credit_enabled(v_context);
-      v_child_response := public.pos_create_cloud_sale_credit(
+      v_child_response := public.pos_create_cloud_sale_credit_unlimited(
         p_license_key,
         p_device_fingerprint,
         p_security_token,
@@ -349,7 +350,7 @@ begin
       );
     elsif v_inventory then
       perform private.assert_cloud_sales_inventory_enabled(v_context);
-      v_child_response := public.pos_create_cloud_sale_cashier_inventory(
+      v_child_response := public.pos_create_cloud_sale_cashier_inventory_unlimited(
         p_license_key,
         p_device_fingerprint,
         p_security_token,
@@ -362,7 +363,7 @@ begin
       );
     else
       perform private.assert_cloud_sales_cashier_enabled(v_context);
-      v_child_response := public.pos_create_cloud_sale_cashier(
+      v_child_response := public.pos_create_cloud_sale_cashier_unlimited(
         p_license_key,
         p_device_fingerprint,
         p_security_token,
@@ -417,6 +418,9 @@ begin
   if v_child_index <> v_child_count then
     raise exception 'FINANCIAL_SPLIT_CHILD_COUNT_INVALID' using errcode = 'P0001';
   end if;
+  if abs(round(v_total, 2) - round(coalesce(v_order.total, 0), 2)) > 0.005 then
+    raise exception 'RESTAURANT_SPLIT_TOTAL_MISMATCH' using errcode = 'P0001';
+  end if;
 
   v_payment_summary := jsonb_build_object(
     'source', 'split_bill',
@@ -428,7 +432,7 @@ begin
     'sourceMode', 'cloud_committed'
   );
 
-  v_close_response := public.pos_close_restaurant_order_after_checkout(
+  v_close_response := public.pos_close_restaurant_order_after_checkout_unlimited(
     p_license_key,
     p_device_fingerprint,
     p_security_token,
@@ -498,6 +502,7 @@ declare
   v_sale public.pos_sales;
   v_existing public.pos_sales;
   v_item_count integer;
+  v_item_index integer := 0;
   v_payment_count integer;
   v_item_total numeric := 0;
   v_line_total numeric;
@@ -554,6 +559,9 @@ begin
      or jsonb_typeof(v_items_payload) <> 'array'
      or jsonb_typeof(v_payments_payload) <> 'array' then
     raise exception 'FINANCIAL_LAYAWAY_CONTRACT_INVALID' using errcode = 'P0001';
+  end if;
+  if jsonb_array_length(v_payments_payload) > 1 then
+    raise exception 'FINANCIAL_LAYAWAY_PAYMENTS_INVALID' using errcode = 'P0001';
   end if;
 
   v_sale_id := nullif(btrim(coalesce(v_sale_payload->>'id', v_sale_payload->>'cloud_sale_id', v_sale_payload->>'cloudSaleId', '')), '');
@@ -735,9 +743,10 @@ begin
     select value
       from jsonb_array_elements(v_items_payload)
   loop
+    v_item_index := v_item_index + 1;
     v_item_id := coalesce(
       private.pos_sale_jsonb_text(v_item, array['id']),
-      v_sale.id || ':item:' || v_item_count::text
+      v_sale.id || ':item:' || v_item_index::text
     );
     v_qty := private.pos_sale_jsonb_numeric(v_item, array['quantity','qty'], 0);
     v_unit_price := private.pos_sale_jsonb_numeric(v_item, array['unit_price','unitPrice','price'], 0);
@@ -809,7 +818,7 @@ begin
     );
   end loop;
 
-  perform private.record_pos_sync_event(
+  v_event := private.record_pos_sync_event(
     v_license_id, 'sale', v_sale.id, 'cloud_commit', v_device_id, v_staff_user_id,
     p_idempotency_key,
     jsonb_build_object(
@@ -823,7 +832,7 @@ begin
       'credit_effect_status', 'not_applied'
     ),
     v_sale.server_version::integer
-  ) into v_event;
+  );
 
   perform private.record_pos_sync_event(
     v_license_id, 'report', 'overview', 'update', v_device_id, v_staff_user_id,
@@ -919,7 +928,7 @@ begin
   v_actor_key := private.resolve_cash_actor_key(v_context);
 
   if p_operation_type in ('sale.cashier','sale.cashier_inventory','sale.credit','sale.split') then
-    v_cash_session_id := nullif(btrim(p_request->>'cash_session_id'), '');
+    v_cash_session_id := nullif(btrim(coalesce(p_request->>'cash_session_id', p_request->>'cashSessionId')), '');
     if v_cash_session_id is null then
       raise exception 'FINANCIAL_CASH_SESSION_ID_REQUIRED' using errcode = 'P0001';
     end if;
@@ -945,7 +954,7 @@ begin
   end if;
 
   if p_operation_type in ('sale.cashier','sale.cashier_inventory','sale.credit','sale.split')
-     and nullif(btrim(p_request->>'cash_session_id'),'') is null then
+     and nullif(btrim(coalesce(p_request->>'cash_session_id', p_request->>'cashSessionId')),'') is null then
     raise exception 'FINANCIAL_CASH_SESSION_ID_REQUIRED' using errcode = 'P0001';
   end if;
 
