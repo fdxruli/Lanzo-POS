@@ -752,7 +752,17 @@ export function useTableManagement({
                     licenseDetails
                 });
             } catch (cloudSpecialFlowError) {
-                Logger.warn('[SalesCloud/Cashier] No se pudo evaluar el split cloud; se mantiene la ruta local segura:', cloudSpecialFlowError);
+                Logger.error('[SalesCloud/Cashier] No se pudo verificar la capacidad del split cloud:', cloudSpecialFlowError);
+                showMessageModal(
+                    'No se pudo verificar el cobro cloud de la mesa. La cuenta no se cobró; revisa conexión y vuelve a intentarlo.',
+                    null,
+                    { type: 'error' }
+                );
+                return {
+                    success: false,
+                    errorType: 'CLOUD_SPECIAL_FLOW_UNAVAILABLE',
+                    message: 'No se pudo verificar el cobro cloud de la mesa.'
+                };
             }
         }
 
