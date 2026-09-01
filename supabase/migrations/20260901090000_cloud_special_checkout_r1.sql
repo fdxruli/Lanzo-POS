@@ -930,7 +930,7 @@ begin
     'inventory_mode', v_inventory_mode
   );
 end;
-$function$
+$function$;
 
 
 create or replace function private.execute_split_sale_financial_v1(
