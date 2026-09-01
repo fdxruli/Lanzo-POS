@@ -290,7 +290,7 @@ const friendlyCloudCashierError = (error) => {
     LAYAWAY_ITEMS_REQUIRED: 'El apartado no tiene artículos válidos para generar la venta de entrega.',
     SPLIT_PARENT_ID_REQUIRED: 'No se encontró la orden local de la mesa para proyectar el cobro.',
     SPLIT_PARENT_LOCAL_NOT_FOUND: 'La mesa cobrada cloud no existe ya en el almacenamiento local. Sincroniza y revisa Ventas.',
-    POS_PERMISSION_DENIED_CUSTOMERS: 'Tu perfil no tiene permiso para consultar clientes; un administrador debe habilitar customers para vender fiado.',
+    'POS_PERMISSION_DENIED:customers': 'Tu perfil no tiene permiso para consultar clientes; un administrador debe habilitar customers para vender fiado.',
     POS_SYNC_AUTH_CONTEXT_INCOMPLETE: 'No se pudo validar la licencia de este dispositivo. Revisa conexión y licencia.',
     DEVICE_ID_REQUIRED: 'No se pudo identificar este dispositivo de forma segura. No se registró la venta cloud.',
     OFFLINE: 'Sin conexión. Esta venta cloud necesita internet para proteger caja, inventario y crédito.',
