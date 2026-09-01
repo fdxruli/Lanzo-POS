@@ -286,6 +286,7 @@ const friendlyCloudCashierError = (error) => {
     LAYAWAY_PAYMENT_TOTAL_MISMATCH: 'Los abonos cloud del apartado no coinciden con su total. La entrega quedó protegida.',
     LAYAWAY_TOTAL_MISMATCH: 'Los artículos del apartado no coinciden con el importe de la entrega. La entrega quedó protegida.',
     LAYAWAY_ALREADY_CONVERTED_CLOUD: 'Este apartado ya fue convertido en una venta cloud con otro identificador. Revisa Ventas antes de reintentar.',
+    CLOUD_LAYAWAY_COMPLETION_REQUIRED: 'Este apartado requiere entrega cloud. Verifica conexión, permisos y funciones cloud antes de reintentar.',
     FINANCIAL_LAYAWAY_PAYMENTS_INVALID: 'La entrega del apartado debe llevar un único comprobante de liquidación.',
     LAYAWAY_ITEMS_REQUIRED: 'El apartado no tiene artículos válidos para generar la venta de entrega.',
     SPLIT_PARENT_ID_REQUIRED: 'No se encontró la orden local de la mesa para proyectar el cobro.',
