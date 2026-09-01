@@ -108,7 +108,7 @@ export default function LayawayModal({
 
         setProcessingId(layaway.id);
         try {
-            await layawayRepository.convertToSale(layaway.id);
+            await layawayFinancialService.complete({ layawayId: layaway.id });
             showMessageModal('🎉 ¡Mercancía entregada! Apartado finalizado.');
             loadLayaways();
             if (onUpdate) onUpdate();
