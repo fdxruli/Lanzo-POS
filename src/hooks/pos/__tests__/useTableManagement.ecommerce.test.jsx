@@ -75,7 +75,17 @@ vi.mock('../../../services/restaurant/restaurantOrderReconciliation', () => ({
 
 vi.mock('../../../services/sync/syncConstants', () => ({
   getLicenseKeyFromDetails: () => 'license-key',
-  isRestaurantOrdersCloudEnabled: () => true
+  isRestaurantOrdersCloudEnabled: () => true,
+  SYNC_ENTITY_TYPES: {
+    CASH: 'cash',
+    CASH_SESSION: 'cash_session',
+    CASH_MOVEMENT: 'cash_movement'
+  },
+  SYNC_OPERATIONS: {
+    MOVEMENT: 'movement',
+    OPEN: 'open',
+    CLOSE: 'close'
+  }
 }));
 
 vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({
