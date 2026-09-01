@@ -103,7 +103,7 @@ const localSaleSeedFromCloudRequest = ({ sale = {}, items = [], paymentData = {}
   saldoPendiente: sale.saldoPendiente ?? sale.balanceDue ?? sale.balance_due ?? null
 });
 
-export const applySplitSalesFinancialResponseProjection = async ({ operationType, requestPayload, responsePayload, intent, actorHandle }) => {
+export const applySplitSalesFinancialResponseProjection = async ({ requestPayload, responsePayload, intent, actorHandle }) => {
   actorHandle?.assertCurrent?.();
   const request = requestPayload || intent?.requestPayload || {};
   const response = responsePayload || intent?.responsePayload || {};
@@ -198,7 +198,7 @@ export const applySplitSalesFinancialResponseProjection = async ({ operationType
   };
 };
 
-export const applyLayawayFinancialResponseProjection = async ({ operationType, requestPayload, responsePayload, intent, actorHandle }) => {
+export const applyLayawayFinancialResponseProjection = async ({ requestPayload, responsePayload, intent, actorHandle }) => {
   actorHandle?.assertCurrent?.();
   const request = requestPayload || intent?.requestPayload || {};
   const response = responsePayload || intent?.responsePayload || {};
@@ -278,10 +278,14 @@ const friendlyCloudCashierError = (error) => {
     RESTAURANT_ORDER_ALREADY_PAID: 'La comanda de esta mesa ya fue cobrada en otro dispositivo. Actualiza las mesas.',
     RESTAURANT_ORDER_ALREADY_CANCELLED: 'La comanda de esta mesa ya fue cerrada o cancelada. Actualiza las mesas.',
     RESTAURANT_SPLIT_TOTAL_MISMATCH: 'El total de los tickets no coincide con el total vigente de la comanda. Actualiza la mesa y vuelve a dividir.',
+    RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.',
+    SPLIT_ROUNDING_INVALID: 'La distribución de centavos de la cuenta dividida no es válida. Vuelve a abrir Separar pago.',
+    SPLIT_ROUNDING_MISMATCH: 'Los centavos distribuidos en la cuenta dividida no coinciden con el total. Vuelve a abrir Separar pago.',
     CASH_SESSION_STATION_MISMATCH: 'La caja abierta pertenece a otra estación. Selecciona la caja de este dispositivo.',
     CASH_SESSION_NOT_OPEN: 'No hay una caja abierta en esta estación. Abre Caja antes de dividir o cobrar.',
     LAYAWAY_NOT_FULLY_PAID: 'El apartado todavía no está liquidado en Caja cloud. No se entregó la mercancía.',
     LAYAWAY_PAYMENT_TOTAL_MISMATCH: 'Los abonos cloud del apartado no coinciden con su total. La entrega quedó protegida.',
+    LAYAWAY_TOTAL_MISMATCH: 'Los artículos del apartado no coinciden con el importe de la entrega. La entrega quedó protegida.',
     LAYAWAY_ALREADY_CONVERTED_CLOUD: 'Este apartado ya fue convertido en una venta cloud con otro identificador. Revisa Ventas antes de reintentar.',
     FINANCIAL_LAYAWAY_PAYMENTS_INVALID: 'La entrega del apartado debe llevar un único comprobante de liquidación.',
     LAYAWAY_ITEMS_REQUIRED: 'El apartado no tiene artículos válidos para generar la venta de entrega.',
