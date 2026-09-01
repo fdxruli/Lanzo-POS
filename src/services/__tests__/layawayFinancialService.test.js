@@ -113,54 +113,55 @@ describe('layawayFinancialService', () => {
     });
   });
 
-  it('registers a cloud initial deposit once and confirms the pending payment', async () => {
+  it('fails closed instead of creating a hybrid cloud layaway', async () => {
     mocks.getMode.mockReturnValue({ cloudEnabled: true, online: true });
-    mocks.getById.mockResolvedValue(null);
-    mocks.create.mockResolvedValue({ success: true, layaway: { ...layawayData, paidAmount: 0, payments: [] } });
-    mocks.registerMovement.mockResolvedValue({
-      success: true,
-      movement: { id: 'cloud-movement-1' }
+
+    await expect(layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-1'
+    })).rejects.toMatchObject({
+      code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED'
     });
 
-    await layawayFinancialService.create({ layawayData, initialPayment: 75, paymentId: 'payment-1' });
-
-    expect(mocks.registerMovement).toHaveBeenCalledTimes(1);
-    expect(mocks.registerMovement).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'entrada',
-      amount: 75,
-      idempotencyKey: 'layaway:layaway-1:payment:payment-1',
-      metadata: expect.objectContaining({ layawayId: 'layaway-1', paymentId: 'payment-1' })
-    }));
-    expect(mocks.confirmPayment).toHaveBeenCalledWith('layaway-1', 'payment-1', 'cloud-movement-1', 'cash-1');
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
   });
 
-  it('reuses the pending payment identity on a cloud retry', async () => {
+  it('fails closed before mutating a cloud layaway payment', async () => {
     mocks.getMode.mockReturnValue({ cloudEnabled: true, online: true });
     mocks.getById.mockResolvedValue({
       ...layawayData,
       paidAmount: 0,
-      payments: [{ id: 'payment-1', amount: 75, status: 'pending', idempotencyKey: 'layaway:layaway-1:payment:payment-1' }]
+      payments: []
     });
-    mocks.registerMovement.mockResolvedValue({ success: true, movement: { id: 'cloud-movement-1' } });
 
-    await layawayFinancialService.create({ layawayData, initialPayment: 75, paymentId: 'new-ui-id' });
+    await expect(layawayFinancialService.addPayment({
+      layawayId: 'layaway-1',
+      amount: 75,
+      paymentId: 'payment-1'
+    })).rejects.toMatchObject({
+      code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED'
+    });
 
-    expect(mocks.registerMovement.mock.calls[0][0].idempotencyKey).toBe('layaway:layaway-1:payment:payment-1');
-    expect(mocks.confirmPayment).toHaveBeenCalledWith('layaway-1', 'payment-1', 'cloud-movement-1', 'cash-1');
-  });
-
-  it('rejects payments before touching the layaway when Caja is closed', async () => {
-    mocks.getCurrentCashSession.mockResolvedValue({ cashSession: null, readOnly: false });
-
-    await expect(layawayFinancialService.addPayment({ layawayId: 'layaway-1', amount: 100 })).rejects.toThrow('Debes abrir Caja');
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
     expect(mocks.addPayment).not.toHaveBeenCalled();
     expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
     expect(mocks.registerMovement).not.toHaveBeenCalled();
   });
 
-  it('fails closed instead of converting locally when a cloud capability check errors', async () => {
-    const capabilityError = new Error('DEVICE_ID_REQUIRED');
-    capabilityError.code = 'DEVICE_ID_REQUIRED';
+  it('rejects payments before touching the layaway when Caja is closed', async () => {
+    mocks.getCurrentCashSession.mockResolvedValue({ cashSession: null, readOnly: false });
+
+    await expect(layawayFinancialService.addPayment({ layawayId: 'layaway-1', amount: 100 }))
+      .rejects.toThrow('Debes abrir Caja');
+    expect(mocks.addPayment).not.toHaveBeenCalled();
+    expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('fails closed instead of completing a cloud layaway without a cloud entity', async () => {
     mocks.getMode.mockReturnValue({
       cloudEnabled: true,
       online: true,
@@ -171,69 +172,15 @@ describe('layawayFinancialService', () => {
       status: 'ready',
       paidAmount: 175
     });
-    mocks.canUseCloudLayawayCompletion.mockRejectedValue(capabilityError);
 
     await expect(layawayFinancialService.complete({ layawayId: 'layaway-1' }))
-      .rejects.toMatchObject({ code: 'DEVICE_ID_REQUIRED' });
+      .rejects.toMatchObject({
+        code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED'
+      });
 
+    expect(mocks.canUseCloudLayawayCompletion).not.toHaveBeenCalled();
     expect(mocks.convertToSale).not.toHaveBeenCalled();
     expect(mocks.processCloudLayawayCompletion).not.toHaveBeenCalled();
-  });
-
-  it('fails closed when cloud layaway capability is disabled', async () => {
-    mocks.getMode.mockReturnValue({
-      cloudEnabled: true,
-      online: true,
-      licenseDetails: { license_key: 'license-1' }
-    });
-    mocks.getById.mockResolvedValue({
-      ...layawayData,
-      status: 'ready',
-      paidAmount: 175
-    });
-    mocks.canUseCloudLayawayCompletion.mockResolvedValue(false);
-
-    await expect(layawayFinancialService.complete({ layawayId: 'layaway-1' }))
-      .rejects.toMatchObject({ code: 'CLOUD_LAYAWAY_COMPLETION_REQUIRED' });
-
-    expect(mocks.convertToSale).not.toHaveBeenCalled();
-    expect(mocks.processCloudLayawayCompletion).not.toHaveBeenCalled();
-  });
-
-  it('uses the cloud completion operation once when a PRO apartado is fully paid', async () => {
-    mocks.getMode.mockReturnValue({
-      cloudEnabled: true,
-      online: true,
-      licenseDetails: { license_key: 'license-1' }
-    });
-    mocks.getById.mockResolvedValue({
-      ...layawayData,
-      status: 'ready',
-      paidAmount: 175,
-      items: [{
-        id: 'product-1',
-        name: 'Producto',
-        quantity: 1,
-        price: 175
-      }]
-    });
-    mocks.canUseCloudLayawayCompletion.mockResolvedValue(true);
-
-    await layawayFinancialService.complete({ layawayId: 'layaway-1' });
-
-    expect(mocks.processCloudLayawayCompletion).toHaveBeenCalledWith(expect.objectContaining({
-      licenseDetails: { license_key: 'license-1' },
-      request: expect.objectContaining({
-        layaway_id: 'layaway-1',
-        payments: [expect.objectContaining({
-          method: 'layaway_completed',
-          amount: '175',
-          received_amount: '175',
-          change_amount: '0'
-        })]
-      })
-    }));
-    expect(mocks.convertToSale).not.toHaveBeenCalled();
   });
 
   it('records a cloud cancellation refund as one canonical exit', async () => {
