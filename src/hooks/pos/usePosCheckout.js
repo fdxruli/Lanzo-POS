@@ -686,6 +686,12 @@ export function usePosCheckout({
             });
             if (releaseResult.staleAttempt) return releaseResult;
             if (!releaseResult.success) return releaseResult;
+
+            const rotationResult = useActiveOrders.getState().rotateCurrentOrderForNewSaleAttempt(snapshot.orderId);
+            if (!rotationResult.success && rotationResult.code !== 'ACTIVE_ORDER_NOT_FOUND') {
+                return rotationResult;
+            }
+
             clearCheckoutSnapshotIfResolved(snapshot);
         }
 
@@ -702,7 +708,13 @@ export function usePosCheckout({
         }
 
         modal.closeModal('payment');
-        return { success: true, closed: true };
+        return {
+            success: true,
+            closed: true,
+            rotated: snapshot?.orderId
+                ? useActiveOrders.getState().activeOrders.has(snapshot.orderId) === false
+                : false
+        };
     }, [clearCheckoutSnapshotIfResolved, modal, releaseCheckoutSnapshotLock]);
 
     const handleQuickCajaClose = useCallback(async ({
