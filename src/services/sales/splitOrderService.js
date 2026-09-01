@@ -327,21 +327,26 @@ const buildTicketAdjustments = ({ mode, parentTotalCents, baseCentsArray }) => {
     const totalBase = baseCentsArray.reduce((a, b) => a + b, 0);
     const remainder = parentTotalCents - totalBase;
 
-    // Distribute the remainder fairly across tickets that have items, or fallback to first
-    let remainingAdjustment = remainder;
+    // Distribute the remainder fairly across tickets that have items, or fallback to first.
+    // Use quotient/remainder arithmetic so large totals do not depend on an
+    // arbitrary iteration cap.
     const adjustments = baseCentsArray.map(() => 0);
-    
-    // We try to give 1 cent at a time to tickets until remainder is 0
-    let idx = 0;
-    while (remainingAdjustment !== 0 && idx < n * 10) { // arbitrary safe loop
-        const ticketIdx = idx % n;
-        if (baseCentsArray[ticketIdx] > 0 || totalBase === 0) {
-            const step = remainingAdjustment > 0 ? 1 : -1;
-            adjustments[ticketIdx] += step;
-            remainingAdjustment -= step;
-        }
-        idx++;
+    const eligibleTicketIndices = baseCentsArray
+        .map((base, index) => (base > 0 || totalBase === 0 ? index : null))
+        .filter((index) => index !== null);
+
+    if (remainder === 0 || eligibleTicketIndices.length === 0) {
+        return adjustments;
     }
+
+    const direction = remainder > 0 ? 1 : -1;
+    const absoluteRemainder = Math.abs(remainder);
+    const perTicket = Math.floor(absoluteRemainder / eligibleTicketIndices.length);
+    const extraCents = absoluteRemainder % eligibleTicketIndices.length;
+
+    eligibleTicketIndices.forEach((ticketIdx, eligibleIdx) => {
+        adjustments[ticketIdx] = direction * (perTicket + (eligibleIdx < extraCents ? 1 : 0));
+    });
 
     return adjustments;
 };
