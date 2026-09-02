@@ -101,7 +101,10 @@ const TRANSPORT_ERROR_CODES = new Set([
 ]);
 const AMBIGUOUS_HTTP_STATUSES = new Set([502, 503, 504]);
 const CASH_ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
-const EXPLICIT_SALE_RETRY_OPERATION_TYPES = new Set(['sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete']);
+const EXPLICIT_SALE_RETRY_OPERATION_TYPES = new Set([
+  'sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete',
+  'layaway.create', 'layaway.payment', 'layaway.cancel'
+]);
 const PROTOCOL_CODE_PATTERN = /(?:IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
 const TRANSPORT_MESSAGE_PATTERN = /(?:\bfailed to fetch\b|\bfetch failed\b|^load failed$|\bnetworkerror\b|\bnetwork (?:request )?(?:failed|failure|error|unavailable|offline|interrupted)\b|\b(?:network|request|connection|transport|fetch) (?:timed out|timeout|was aborted|aborted|was interrupted|interrupted)\b|\boperation (?:timed out|timeout)\b|\btimeout(?: of \S+)? (?:exceeded|expired)\b|^timeout$|\boffline\b|\bconnection (?:reset|aborted|interrupted|closed unexpectedly)\b|\bsocket hang up\b)/i;
 

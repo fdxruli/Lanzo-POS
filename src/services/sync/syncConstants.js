@@ -136,6 +136,12 @@ export const RETRY_CONFIG = Object.freeze({
 export const ENABLE_CLOUD_SALE_CANCELLATIONS =
   import.meta.env.VITE_ENABLE_CLOUD_SALE_CANCELLATIONS !== 'false';
 
+// Layaways remain local/FREE until both the build flag and the server
+// capability are explicitly enabled. The migration intentionally grants the
+// server capability to no plan by default.
+export const ENABLE_CLOUD_LAYAWAYS =
+  import.meta.env.VITE_ENABLE_CLOUD_LAYAWAYS === 'true';
+
 export const isFeatureEnabled = (features = {}, featureName) => (
   features?.[featureName] === true || features?.[featureName] === 'true'
 );
@@ -213,6 +219,21 @@ export const isCloudSalesCancellationEnabled = (licenseDetails = {}) => {
     && isFeatureEnabled(features, 'cloud_cash_sync')
     && isFeatureEnabled(features, 'cloud_sales_cashier')
     && isFeatureEnabled(features, 'cloud_sales_cancellations');
+};
+
+export const isCloudLayawaysFeatureEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'cloud_layaways');
+};
+
+export const isCloudLayawaysEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return ENABLE_CLOUD_LAYAWAYS
+    && isFeatureEnabled(features, 'cloud_pos_sync')
+    && isFeatureEnabled(features, 'cloud_sales_sync_base')
+    && isFeatureEnabled(features, 'cloud_cash_sync')
+    && isFeatureEnabled(features, 'cloud_products_sync')
+    && isFeatureEnabled(features, 'cloud_layaways');
 };
 
 export const isCloudSalesReportsFinalEnabled = (licenseDetails = {}) => {

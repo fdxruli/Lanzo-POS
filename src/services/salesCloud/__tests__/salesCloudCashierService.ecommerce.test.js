@@ -91,7 +91,8 @@ vi.mock('../../sync/syncConstants', () => ({
   POS_SYNC_FOCUS_PULL_COOLDOWN_MS: 60000,
   POS_SYNC_REALTIME_PULL_DEBOUNCE_MS: 1000,
   shouldDeferPosBootstrapStartHook: vi.fn(() => false),
-  isCloudPosSyncEnabled: vi.fn(() => true)
+  isCloudPosSyncEnabled: vi.fn(() => true),
+  isCloudLayawaysEnabled: vi.fn(() => false)
 }));
 
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: mocks.pullCatalogChanges }));

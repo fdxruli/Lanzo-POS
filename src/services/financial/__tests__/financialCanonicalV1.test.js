@@ -95,4 +95,90 @@ describe('financial V1 canonical request and hash compatibility', () => {
     expect(old.canonicalRequest).toEqual(current.canonicalRequest);
     expect(old.requestHash).toBe(current.requestHash);
   });
+
+  it('converges layaway create aliases, date-only deadlines, and ignores client station fields', () => {
+    const first = canonicalFinancialRequestV1('layaway.create', {
+      layawayData: {
+        id: 'layaway-1',
+        customerId: 'customer-1',
+        customerName: 'Cliente',
+        totalAmount: 175,
+        currency: 'mxn',
+        deadline: '2026-07-30',
+        items: [{
+          id: 'item-1',
+          parentId: 'product-1',
+          name: 'Camisa',
+          sku: 'SKU-1',
+          variantAttributes: { size: 'M', color: 'Azul' },
+          quantity: 1,
+          price: '175.00',
+          cost: 80,
+          total: 175
+        }]
+      },
+      initialPayment: {
+        paymentId: 'payment-1',
+        total: '25.00',
+        paymentMethod: 'efectivo',
+        paymentType: 'initial_deposit',
+        cashSessionId: 'cash-1'
+      },
+      cash_station_id: 'attacker-station'
+    });
+    const second = canonicalFinancialRequestV1('layaway.create', {
+      layaway: {
+        id: 'layaway-1',
+        customer_id: 'customer-1',
+        customer_name: 'Cliente',
+        total_amount: '175.0',
+        currency: 'MXN',
+        deadline: '2026-07-30T00:00:00Z',
+        items: [{
+          id: 'item-1',
+          product_id: 'product-1',
+          product_name: 'Camisa',
+          product_sku: 'SKU-1',
+          variant_attributes: { size: 'M', color: 'Azul' },
+          quantity: '1.0',
+          unit_price: 175,
+          unit_cost: '80.00',
+          line_total: '175.00'
+        }]
+      },
+      initial_payment: {
+        id: 'payment-1',
+        amount: 25,
+        method: 'cash',
+        payment_type: 'initial_deposit',
+        cash_session_id: 'cash-1'
+      },
+      cashSessionId: 'cash-1',
+      cash_station_id: 'different-attacker-station'
+    });
+
+    expect(first).toEqual(second);
+    expect(first.cash_station_id).toBeUndefined();
+    expect(first.layaway.deadline).toBe('2026-07-30T00:00:00.000000Z');
+  });
+
+  it('converges layaway payment and cancellation session aliases', () => {
+    expect(canonicalFinancialRequestV1('layaway.payment', {
+      layawayId: 'layaway-1',
+      payment: { paymentId: 'payment-2', total: '50.00', paymentMethod: 'efectivo', paymentType: 'installment' },
+      cajaId: 'cash-2',
+      cash_station_id: 'attacker-station'
+    })).toEqual(canonicalFinancialRequestV1('layaway.payment', {
+      layaway_id: 'layaway-1',
+      payment: { id: 'payment-2', amount: 50, method: 'cash', payment_type: 'installment', cash_session_id: 'cash-2' },
+      cashSessionId: 'cash-2',
+      cash_station_id: 'another-attacker-station'
+    }));
+
+    expect(canonicalFinancialRequestV1('layaway.cancel', {
+      layawayId: 'layaway-1', reason: 'Cliente', retainMoney: false, refundId: 'refund-1', cajaId: 'cash-2'
+    })).toEqual(canonicalFinancialRequestV1('layaway.cancel', {
+      layaway_id: 'layaway-1', reason: 'Cliente', retain_money: false, refund_id: 'refund-1', cash_session_id: 'cash-2'
+    }));
+  });
 });

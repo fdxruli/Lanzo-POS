@@ -8,15 +8,17 @@ import {
 import { runRefundsActorOperation } from './auth/refundsActorAuthorization';
 import { Money } from '../utils/moneyMath';
 import { salesCloudCashierService } from './salesCloud/salesCloudCashierService';
+import { salesCloudRepository } from './salesCloud/salesCloudRepository';
+import { getLicenseKeyFromDetails, isCloudLayawaysEnabled } from './sync/syncConstants';
 
 const OPEN_CASH_MESSAGE = 'Debes abrir Caja antes de registrar un pago de apartado.';
-const CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED_MESSAGE =
-    'Los apartados multi-dispositivo todavía no están habilitados para cuentas cloud. Usa una cuenta local/FREE o espera la sincronización cloud completa.';
+const CLOUD_LAYAWAYS_DISABLED_MESSAGE =
+    'Los apartados cloud aún no están activos para esta licencia.';
 
-const assertCloudLayawayUnavailable = (mode) => {
-    if (!mode?.cloudEnabled) return;
-    const error = new Error(CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED_MESSAGE);
-    error.code = 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED';
+const assertCloudLayawaysEnabled = (mode) => {
+    if (!mode?.cloudEnabled || isCloudLayawaysEnabled(mode.licenseDetails)) return;
+    const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+    error.code = 'CLOUD_LAYAWAYS_DISABLED';
     throw error;
 };
 
@@ -47,13 +49,6 @@ const hasExpectedCashSessionId = (value) => (
     value !== null
     && value !== undefined
     && String(value).trim() !== ''
-);
-
-const getMovementId = (response) => (
-    response?.movement?.id
-    || response?.response?.movement?.id
-    || response?.response?.cash_movement?.id
-    || null
 );
 
 /**
@@ -172,25 +167,60 @@ const refundMetadata = ({ layawayId, refundId, customerId, idempotencyKey }) => 
     idempotencyKey
 });
 
+const getLayawayLineDiscountAmount = (item = {}, lineSubtotal) => {
+    const explicitAmount = item.discountAmount ?? item.discount_amount;
+    if (explicitAmount !== null && explicitAmount !== undefined && explicitAmount !== '') {
+        return Math.max(0, Money.toNumber(explicitAmount));
+    }
+    const discount = item.discount;
+    if (!discount || typeof discount !== 'object' || Array.isArray(discount)) return 0;
+    const value = Number(discount.value ?? discount.amount ?? discount.percent ?? discount.percentage ?? 0);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    const type = String(discount.type ?? discount.discountType ?? discount.discount_type ?? 'amount').toLowerCase();
+    return Math.min(
+        lineSubtotal,
+        Money.toNumber(type === 'percent' || type === 'percentage' || type === 'porcentaje' || type === '%'
+            ? Money.divide(Money.multiply(lineSubtotal, value), 100)
+            : value)
+    );
+};
+
 const buildCloudLayawayCompletionRequest = (layaway = {}) => {
-    const saleId = layaway.conversionSaleId || `layaway_sale_${layaway.id}`;
+    const saleId = layaway.conversionSaleId || layaway.conversion_sale_id || `layaway_sale_${layaway.id}`;
     const timestamp = layaway.status === 'completed' && layaway.deliveredAt
         ? layaway.deliveredAt
         : new Date().toISOString();
-    const total = Money.toExactString(Money.init(layaway.totalAmount || 0));
+    const total = Money.toExactString(Money.init(layaway.totalAmount ?? layaway.total_amount ?? 0));
     const items = (Array.isArray(layaway.items) ? layaway.items : []).map((item, index) => {
         const quantity = Number(item.quantity || 0);
         const unitPrice = Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0);
+        const lineSubtotal = Money.toNumber(Money.multiply(unitPrice, quantity));
+        const discountAmount = getLayawayLineDiscountAmount(item, lineSubtotal);
+        const lineTotal = Money.toNumber(Money.subtract(lineSubtotal, discountAmount));
         return {
             id: item.id || `${saleId}:item:${index + 1}`,
             product_id: item.productId || item.product_id || item.parentId || item.id || null,
-            product_name: item.name || item.productName || 'Producto',
+            product_name: item.name || item.productName || item.product_name || 'Producto',
             product_sku: item.sku || item.productSku || item.product_sku || null,
+            barcode: item.barcode || item.barCode || null,
+            category_id: item.categoryId || item.category_id || null,
+            category_name: item.categoryName || item.category_name || item.rubro || item.category || null,
+            rubro: item.rubro || item.category || item.categoryName || null,
             quantity,
             unit_price: unitPrice,
             unit_cost: item.cost ?? item.unitCost ?? item.unit_cost ?? null,
-            line_total: Money.toNumber(Money.multiply(unitPrice, quantity)),
+            line_subtotal: lineSubtotal,
+            line_total: lineTotal,
             batch_id: item.batchId || item.batch_id || null,
+            batch_sku: item.batchSku || item.batch_sku || null,
+            batch_expiry_date: item.batchExpiryDate || item.batch_expiry_date || item.expiryDate || null,
+            variant_id: item.variantId || item.variant_id || null,
+            size: item.size || item.talla || null,
+            color: item.color || item.colorName || null,
+            attributes: item.attributes || null,
+            variant_attributes: item.variantAttributes || item.variant_attributes || null,
+            discount_amount: discountAmount,
+            tax_amount: item.taxAmount ?? item.tax_amount ?? 0,
             metadata: {
                 layawayId: layaway.id,
                 snapshotOnly: true
@@ -288,9 +318,43 @@ export const layawayFinancialService = {
         expectedCashSessionId = null
     }) {
         const mode = cashRepository.getMode();
-        assertCloudLayawayUnavailable(mode);
-
         const amount = Number(initialPayment) || 0;
+
+        if (mode.cloudEnabled) {
+            assertCloudLayawaysEnabled(mode);
+            let cashSessionId = null;
+            if (amount > 0) {
+                const resolvedCash = await resolveLayawayCashSession({
+                    expectedCashSessionId,
+                    operation: 'layaway.create.initial_payment'
+                });
+                assertCloudLayawaysEnabled(resolvedCash.mode);
+                if (!resolvedCash.mode.cloudEnabled) {
+                    const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+                    error.code = 'CLOUD_LAYAWAYS_DISABLED';
+                    throw error;
+                }
+                cashSessionId = resolvedCash.session.id;
+            }
+            const payment = amount > 0
+                ? stablePayment({
+                    layawayId: layawayData.id,
+                    amount,
+                    paymentId,
+                    paymentType,
+                    customerId: layawayData.customerId
+                })
+                : null;
+            return salesCloudCashierService.processCloudLayawayCreate({
+                layawayData,
+                initialPayment: payment,
+                cashSessionId,
+                paymentId,
+                paymentType,
+                licenseDetails: mode.licenseDetails
+            });
+        }
+
         if (amount <= 0) return layawayRepository.create(layawayData, 0, null);
 
         const resolvedCash = await resolveLayawayCashSession({
@@ -298,7 +362,6 @@ export const layawayFinancialService = {
             operation: 'layaway.create.initial_payment'
         });
         const currentMode = resolvedCash.mode;
-        assertCloudLayawayUnavailable(currentMode);
         const session = resolvedCash.session;
         const payment = stablePayment({
             layawayId: layawayData.id,
@@ -307,52 +370,29 @@ export const layawayFinancialService = {
             paymentType,
             customerId: layawayData.customerId
         });
-        if (!currentMode.cloudEnabled) {
-            const cashContext = await getLocalCashMutationContext(currentMode);
-            return layawayRepository.create(layawayData, amount, session.id, {
-                payment,
-                cashMovement: {
-                    cashSessionId: session.id,
-                    idempotencyKey: payment.idempotencyKey,
-                    metadata: cashMetadata({ ...payment, layawayId: layawayData.id }),
-                    ...cashContext,
-                    createdAt: payment.date
-                }
+        if (currentMode.cloudEnabled) {
+            assertCloudLayawaysEnabled(currentMode);
+            return salesCloudCashierService.processCloudLayawayCreate({
+                layawayData,
+                initialPayment: payment,
+                cashSessionId: session.id,
+                paymentId,
+                paymentType,
+                licenseDetails: currentMode.licenseDetails
             });
         }
 
-        let layaway = await layawayRepository.getById(layawayData.id);
-        if (!layaway) {
-            const pendingResult = await layawayRepository.create(layawayData, 0, null, { pendingPayment: payment });
-            layaway = pendingResult.layaway;
-        }
-        const currentPayment = (layaway.payments || []).find((item) => item.id === payment.id)
-            || (layaway.payments || []).find((item) => item.status === 'pending' && Number(item.amount) === amount)
-            || payment;
-        const resolvedPayment = {
-            ...payment,
-            ...currentPayment,
-            idempotencyKey: currentPayment.idempotencyKey || payment.idempotencyKey
-        };
-
-        if (resolvedPayment.status === 'confirmed' && resolvedPayment.cashMovementId) {
-            return { success: true, duplicate: true, layaway };
-        }
-
-        const response = await cashRepository.registerMovement({
-            cashSessionId: session.id,
-            type: 'entrada',
-            amount,
-            concept: `Abono inicial Apartado - ${layawayData.customerName}`,
-            idempotencyKey: resolvedPayment.idempotencyKey,
-            referenceId: layawayData.id,
-            metadata: cashMetadata({ ...resolvedPayment, layawayId: layawayData.id })
+        const cashContext = await getLocalCashMutationContext(currentMode);
+        return layawayRepository.create(layawayData, amount, session.id, {
+            payment,
+            cashMovement: {
+                cashSessionId: session.id,
+                idempotencyKey: payment.idempotencyKey,
+                metadata: cashMetadata({ ...payment, layawayId: layawayData.id }),
+                ...cashContext,
+                createdAt: payment.date
+            }
         });
-        if (!response || response.success === false) throw new Error(response?.message || 'No se pudo registrar el movimiento de Caja.');
-
-        const cashMovementId = getMovementId(response);
-        if (!cashMovementId) throw new Error('Caja confirmo el movimiento, pero no devolvio su identificador.');
-        return layawayRepository.confirmPayment(layawayData.id, resolvedPayment.id, cashMovementId, session.id);
     },
 
     async addPayment({
@@ -363,7 +403,33 @@ export const layawayFinancialService = {
         expectedCashSessionId = null
     }) {
         const mode = cashRepository.getMode();
-        assertCloudLayawayUnavailable(mode);
+        if (mode.cloudEnabled) {
+            assertCloudLayawaysEnabled(mode);
+            const resolvedCash = await resolveLayawayCashSession({
+                expectedCashSessionId,
+                operation: 'layaway.add_payment'
+            });
+            assertCloudLayawaysEnabled(resolvedCash.mode);
+            if (!resolvedCash.mode.cloudEnabled) {
+                const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+                error.code = 'CLOUD_LAYAWAYS_DISABLED';
+                throw error;
+            }
+            const payment = stablePayment({
+                layawayId,
+                amount,
+                paymentId,
+                paymentType: 'installment',
+                customerId
+            });
+            return salesCloudCashierService.processCloudLayawayPayment({
+                layawayId,
+                payment,
+                cashSessionId: resolvedCash.session.id,
+                licenseDetails: mode.licenseDetails
+            });
+        }
+
         const layaway = await layawayRepository.getById(layawayId);
         if (!layaway) throw new Error('Apartado no encontrado');
         const resolvedCash = await resolveLayawayCashSession({
@@ -371,7 +437,6 @@ export const layawayFinancialService = {
             operation: 'layaway.add_payment'
         });
         const currentMode = resolvedCash.mode;
-        assertCloudLayawayUnavailable(currentMode);
         const session = resolvedCash.session;
         const pending = (layaway.payments || []).find((payment) => payment.status === 'pending' && Number(payment.amount) === Number(amount));
         const payment = pending || stablePayment({
@@ -382,40 +447,67 @@ export const layawayFinancialService = {
             customerId: customerId || layaway.customerId
         });
 
-        if (!currentMode.cloudEnabled) {
-            const cashContext = await getLocalCashMutationContext(currentMode);
-            return layawayRepository.addPaymentWithCash(layawayId, payment, session.id, {
+        if (currentMode.cloudEnabled) {
+            assertCloudLayawaysEnabled(currentMode);
+            return salesCloudCashierService.processCloudLayawayPayment({
+                layawayId,
+                payment,
                 cashSessionId: session.id,
-                idempotencyKey: payment.idempotencyKey,
-                metadata: cashMetadata({ ...payment, layawayId }),
-                ...cashContext,
-                createdAt: payment.date
+                licenseDetails: currentMode.licenseDetails
             });
         }
 
-        if (payment.status !== 'pending') return { success: true, duplicate: true, payment };
-        await layawayRepository.addPayment(layawayId, payment);
-        const response = await cashRepository.registerMovement({
+        const cashContext = await getLocalCashMutationContext(currentMode);
+        return layawayRepository.addPaymentWithCash(layawayId, payment, session.id, {
             cashSessionId: session.id,
-            type: 'entrada',
-            amount: payment.amount,
-            concept: `Abono Apartado #${layawayId.slice(-4)} - ${layaway.customerName}`,
             idempotencyKey: payment.idempotencyKey,
-            referenceId: layawayId,
-            metadata: cashMetadata({ ...payment, layawayId })
+            metadata: cashMetadata({ ...payment, layawayId }),
+            ...cashContext,
+            createdAt: payment.date
         });
-        if (!response || response.success === false) throw new Error(response?.message || 'No se pudo registrar el movimiento de Caja.');
-        const cashMovementId = getMovementId(response);
-        if (!cashMovementId) throw new Error('Caja confirmo el movimiento, pero no devolvio su identificador.');
-        return layawayRepository.confirmPayment(layawayId, payment.id, cashMovementId, session.id);
     },
 
     async complete({ layawayId, cashierId = 'system' }) {
         const mode = cashRepository.getMode();
-        assertCloudLayawayUnavailable(mode);
+        if (mode.cloudEnabled) {
+            assertCloudLayawaysEnabled(mode);
+            if (!mode.online) throw new Error('OFFLINE');
+
+            const useCloud = await salesCloudCashierService.canUseCloudLayawayCompletion(mode.licenseDetails);
+            if (!useCloud) {
+                const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+                error.code = 'CLOUD_LAYAWAYS_DISABLED';
+                throw error;
+            }
+
+            const licenseKey = getLicenseKeyFromDetails(mode.licenseDetails);
+            const snapshot = await salesCloudRepository.getLayaway({
+                licenseKey,
+                layawayId,
+                force: true
+            });
+            const layaway = snapshot?.layaway || null;
+            if (!layaway) throw new Error('Apartado no encontrado');
+            if (layaway.status === 'cancelled') {
+                throw new Error('No se puede entregar un apartado cancelado.');
+            }
+            if (!['active', 'ready', 'completed'].includes(layaway.status)) {
+                throw new Error('Solo se puede entregar un apartado activo o listo.');
+            }
+            if (Number(layaway.total_amount ?? layaway.totalAmount ?? 0)
+                - Number(layaway.paid_amount ?? layaway.paidAmount ?? 0) > 0.01) {
+                throw new Error('El apartado debe estar liquidado para entregar.');
+            }
+
+            const request = buildCloudLayawayCompletionRequest(layaway);
+            return salesCloudCashierService.processCloudLayawayCompletion({
+                request,
+                licenseDetails: mode.licenseDetails
+            });
+        }
+
         const layaway = await layawayRepository.getById(layawayId);
         if (!layaway) throw new Error('Apartado no encontrado');
-
         if (layaway.status === 'cancelled') {
             throw new Error('No se puede entregar un apartado cancelado.');
         }
@@ -425,45 +517,7 @@ export const layawayFinancialService = {
         if (Number(layaway.totalAmount || 0) - Number(layaway.paidAmount || 0) > 0.01) {
             throw new Error('El apartado debe estar liquidado para entregar.');
         }
-
-        if (mode.cloudEnabled && !mode.online) {
-            throw new Error('OFFLINE');
-        }
-
-        let useCloud = false;
-        let cloudCapabilityError = null;
-        try {
-            useCloud = await salesCloudCashierService.canUseCloudLayawayCompletion(mode.licenseDetails);
-        } catch (error) {
-            cloudCapabilityError = error;
-        }
-
-        // In PRO/cloud mode an unresolved capability is not permission to
-        // reinterpret a cloud-funded delivery as a local sale.
-        if (cloudCapabilityError && mode.cloudEnabled) {
-            throw cloudCapabilityError;
-        }
-
-        // A cloud-funded layaway must finish through the same cloud authority
-        // that recorded its deposits. Never create a local sale if a feature
-        // flag, capability, or permission temporarily makes that path unavailable.
-        if (mode.cloudEnabled && !useCloud) {
-            const error = new Error(
-                'Este apartado requiere entrega cloud. Verifica conexión, permisos y funciones cloud antes de reintentar.'
-            );
-            error.code = 'CLOUD_LAYAWAY_COMPLETION_REQUIRED';
-            throw error;
-        }
-
-        if (!useCloud) {
-            return layawayRepository.convertToSale(layawayId, cashierId);
-        }
-
-        const request = buildCloudLayawayCompletionRequest(layaway);
-        return salesCloudCashierService.processCloudLayawayCompletion({
-            request,
-            licenseDetails: mode.licenseDetails
-        });
+        return layawayRepository.convertToSale(layawayId, cashierId);
     },
 
     async cancel({
@@ -477,18 +531,56 @@ export const layawayFinancialService = {
       return runRefundsActorOperation({
         actorHandle,
         label: 'layaway.cancelOrRefund',
-        operation: async ({ assertCurrent }) => {
+        operation: async ({ assertCurrent, handle }) => {
         const mode = cashRepository.getMode();
-        assertCloudLayawayUnavailable(mode);
+        if (mode.cloudEnabled) {
+          assertCloudLayawaysEnabled(mode);
+          const licenseKey = getLicenseKeyFromDetails(mode.licenseDetails);
+          const snapshot = await salesCloudRepository.getLayaway({
+            licenseKey,
+            layawayId,
+            force: true
+          });
+          assertCurrent();
+          const layaway = snapshot?.layaway || null;
+          if (!layaway) throw new Error('Apartado no encontrado');
+          const paidAmount = Number(layaway.paid_amount ?? layaway.paidAmount ?? 0);
+          let cashSessionId = null;
+          if (!retainMoney && paidAmount > 0) {
+            const resolvedCash = await resolveLayawayCashSession({
+              expectedCashSessionId,
+              operation: 'layaway.cancel.refund'
+            });
+            assertCurrent();
+            cashSessionId = resolvedCash.session.id;
+          }
+          const result = await salesCloudCashierService.processCloudLayawayCancel({
+            layawayId,
+            reason,
+            retainMoney,
+            refundId,
+            cashSessionId,
+            licenseDetails: mode.licenseDetails,
+            actorHandle: handle
+          });
+          assertCurrent();
+          return result;
+        }
+
         const layaway = await layawayRepository.getById(layawayId);
         assertCurrent();
         const currentMode = cashRepository.getMode();
-        assertCloudLayawayUnavailable(currentMode);
+        if (currentMode.cloudEnabled) {
+          assertCloudLayawaysEnabled(currentMode);
+          const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+          error.code = 'CLOUD_LAYAWAYS_DISABLED';
+          throw error;
+        }
         if (!layaway) throw new Error('Apartado no encontrado');
         if (retainMoney || Number(layaway.paidAmount || 0) <= 0) {
-            return layawayRepository.cancel(layawayId, reason, retainMoney, null, {
-              assertActorCurrent: assertCurrent
-            });
+          return layawayRepository.cancel(layawayId, reason, retainMoney, null, {
+            assertActorCurrent: assertCurrent
+          });
         }
 
         const resolvedCash = await resolveLayawayCashSession({
@@ -496,7 +588,11 @@ export const layawayFinancialService = {
             operation: 'layaway.cancel.refund'
         });
         const { mode: resolvedMode, session } = resolvedCash;
-        assertCloudLayawayUnavailable(resolvedMode);
+        if (resolvedMode.cloudEnabled) {
+            const error = new Error(CLOUD_LAYAWAYS_DISABLED_MESSAGE);
+            error.code = 'CLOUD_LAYAWAYS_DISABLED';
+            throw error;
+        }
         const id = refundId || layaway.pendingRefund?.refundId || crypto.randomUUID();
         const idempotencyKey = refundReference(layawayId, id);
         const pendingResult = await layawayRepository.beginRefund(layawayId, {
@@ -509,35 +605,16 @@ export const layawayFinancialService = {
         if (pendingResult.duplicate && pendingResult.layaway?.status === 'cancelled') return pendingResult;
         const pendingRefund = pendingResult.pending || layaway.pendingRefund;
 
-        if (!resolvedMode.cloudEnabled) {
-            const cashContext = await getLocalCashMutationContext(resolvedMode);
-            return layawayRepository.cancel(layawayId, reason, false, session.id, {
-                assertActorCurrent: assertCurrent,
-                cashMovement: {
-                    cashSessionId: session.id,
-                    idempotencyKey: pendingRefund.idempotencyKey,
-                    metadata: refundMetadata({ layawayId, ...pendingRefund }),
-                    ...cashContext,
-                    createdAt: pendingRefund.createdAt
-                }
-            });
-        }
-
-        const response = await cashRepository.registerMovement({
+        const cashContext = await getLocalCashMutationContext(resolvedMode);
+        return layawayRepository.cancel(layawayId, reason, false, session.id, {
+          assertActorCurrent: assertCurrent,
+          cashMovement: {
             cashSessionId: session.id,
-            type: 'salida',
-            amount: pendingRefund.amount,
-            concept: `Reembolso cancelacion de Apartado #${layawayId.slice(-4)}`,
             idempotencyKey: pendingRefund.idempotencyKey,
-            referenceId: layawayId,
-            metadata: refundMetadata({ layawayId, ...pendingRefund })
-        });
-        assertCurrent();
-        if (!response || response.success === false) throw new Error(response?.message || 'No se pudo registrar el reembolso en Caja.');
-        const cashMovementId = getMovementId(response);
-        if (!cashMovementId) throw new Error('Caja confirmo el reembolso, pero no devolvio su identificador.');
-        return layawayRepository.completeRefund(layawayId, reason, cashMovementId, {
-          assertActorCurrent: assertCurrent
+            metadata: refundMetadata({ layawayId, ...pendingRefund }),
+            ...cashContext,
+            createdAt: pendingRefund.createdAt
+          }
         });
         }
       });

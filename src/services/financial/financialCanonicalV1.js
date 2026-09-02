@@ -170,9 +170,134 @@ const sale = (operationType, record = {}) => compact({
   created_at: timestamp(firstNonblank(record, ['created_at', 'createdAt', 'timestamp']))
 });
 
+const layawayItem = (item = {}) => compact({
+  id: text(firstNonblank(item, ['id'])),
+  product_id: text(firstNonblank(item, ['product_id', 'productId', 'parentId'])),
+  product_name: text(firstNonblank(item, ['product_name', 'productName', 'name'])),
+  product_sku: text(firstNonblank(item, ['product_sku', 'productSku', 'sku'])),
+  barcode: text(firstNonblank(item, ['barcode', 'barCode'])),
+  category_id: text(firstNonblank(item, ['category_id', 'categoryId'])),
+  category_name: text(firstNonblank(item, ['category_name', 'categoryName', 'rubro', 'category'])),
+  rubro: text(firstNonblank(item, ['rubro', 'category', 'categoryName'])),
+  batch_id: text(firstNonblank(item, ['batch_id', 'batchId'])),
+  batch_sku: text(firstNonblank(item, ['batch_sku', 'batchSku'])),
+  batch_expiry_date: text(firstNonblank(item, ['batch_expiry_date', 'batchExpiryDate', 'expiryDate'])),
+  variant_id: text(firstNonblank(item, ['variant_id', 'variantId'])),
+  size: text(firstNonblank(item, ['size', 'talla'])),
+  color: text(firstNonblank(item, ['color', 'colorName'])),
+  attributes: item?.attributes && typeof item.attributes === 'object' && !Array.isArray(item.attributes)
+    ? item.attributes
+    : null,
+  variant_attributes: item?.variant_attributes && typeof item.variant_attributes === 'object' && !Array.isArray(item.variant_attributes)
+    ? item.variant_attributes
+    : (item?.variantAttributes && typeof item.variantAttributes === 'object' && !Array.isArray(item.variantAttributes)
+      ? item.variantAttributes
+      : null),
+  quantity: decimal(firstNonblank(item, ['quantity', 'qty'])),
+  unit_price: decimal(firstNonblank(item, ['unit_price', 'unitPrice', 'price'])),
+  unit_cost: decimal(firstNonblank(item, ['unit_cost', 'unitCost', 'cost'])),
+  line_total: decimal(firstNonblank(item, ['line_total', 'lineTotal', 'total', 'exactTotal'])),
+  discount_amount: decimal(firstNonblank(item, ['discount_amount', 'discountAmount'])) || '0',
+  tax_amount: decimal(firstNonblank(item, ['tax_amount', 'taxAmount'])) || '0'
+});
+
+const layawayPayment = (payment = {}, fallbackCashSessionId = null) => {
+  const rawMethod = String(firstNonblank(payment, ['method', 'payment_method', 'paymentMethod']) || 'cash')
+    .trim()
+    .toLowerCase();
+  return compact({
+    id: text(firstNonblank(payment, ['id', 'payment_id', 'paymentId'])),
+    method: rawMethod === 'efectivo' ? 'cash' : rawMethod,
+    amount: decimal(firstNonblank(payment, ['amount', 'total'])),
+    payment_type: text(firstNonblank(payment, ['payment_type', 'paymentType', 'type'])),
+    reference: text(firstNonblank(payment, ['reference', 'ref'])),
+    customer_id: text(firstNonblank(payment, ['customer_id', 'customerId'])),
+    cash_session_id: text(firstNonblank(payment, ['cash_session_id', 'cashSessionId', 'cajaId'])) || text(fallbackCashSessionId)
+  });
+};
+
+const layawayPaymentPayload = (request = {}) => {
+  if (request.payment && typeof request.payment === 'object' && !Array.isArray(request.payment)) return request.payment;
+  if (request.initial_payment && typeof request.initial_payment === 'object' && !Array.isArray(request.initial_payment)) return request.initial_payment;
+  if (request.initialPayment && typeof request.initialPayment === 'object' && !Array.isArray(request.initialPayment)) return request.initialPayment;
+  return {};
+};
+
+const layawayCashSessionId = (request = {}) => text(
+  firstNonblank(request, ['cash_session_id', 'cashSessionId', 'cajaId'])
+  || firstNonblank(layawayPaymentPayload({ initial_payment: request.initial_payment }), ['cash_session_id', 'cashSessionId', 'cajaId'])
+  || firstNonblank(layawayPaymentPayload({ initialPayment: request.initialPayment }), ['cash_session_id', 'cashSessionId', 'cajaId'])
+  || firstNonblank(request.payment, ['cash_session_id', 'cashSessionId', 'cajaId'])
+  || firstNonblank(request.refund, ['cash_session_id', 'cashSessionId', 'cajaId'])
+);
+
+const layawayRecord = (request = {}) => (
+  request.layaway && typeof request.layaway === 'object' && !Array.isArray(request.layaway)
+    ? request.layaway
+    : (request.layawayData && typeof request.layawayData === 'object' && !Array.isArray(request.layawayData)
+      ? request.layawayData
+      : {})
+);
+
+const layawayDeadline = (layaway = {}) => {
+  const raw = text(firstNonblank(layaway, ['deadline', 'due_date', 'dueDate']));
+  if (!raw) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? timestamp(`${raw}T00:00:00.000000Z`)
+    : timestamp(raw);
+};
+
+const canonicalLayawayRequest = (operationType, request = {}) => {
+  if (operationType === 'layaway.create') {
+    const layaway = layawayRecord(request);
+    const items = Array.isArray(layaway.items) ? layaway.items : [];
+    const payment = layawayPaymentPayload(request);
+    const cashSessionId = layawayCashSessionId(request);
+    return compact({
+      layaway: compact({
+        id: text(firstNonblank(layaway, ['id', 'layaway_id', 'layawayId'])),
+        customer_id: text(firstNonblank(layaway, ['customer_id', 'customerId'])),
+        customer_name: text(firstNonblank(layaway, ['customer_name', 'customerName'])),
+        customer_phone: text(firstNonblank(layaway, ['customer_phone', 'customerPhone'])),
+        total_amount: decimal(firstNonblank(layaway, ['total_amount', 'totalAmount', 'total'])),
+        currency: text(firstNonblank(layaway, ['currency']) || 'MXN')?.toUpperCase() || null,
+        deadline: layawayDeadline(layaway),
+        items: items.map(layawayItem)
+      }),
+      initial_payment: Object.keys(payment).length > 0 ? layawayPayment(payment, cashSessionId) : null,
+      cash_session_id: cashSessionId
+    });
+  }
+
+  if (operationType === 'layaway.payment') {
+    const cashSessionId = layawayCashSessionId(request);
+    return compact({
+      layaway_id: text(firstNonblank(request, ['layaway_id', 'layawayId', 'id'])),
+      payment: layawayPayment(layawayPaymentPayload(request), cashSessionId),
+      cash_session_id: cashSessionId
+    });
+  }
+
+  if (operationType === 'layaway.cancel') {
+    return compact({
+      layaway_id: text(firstNonblank(request, ['layaway_id', 'layawayId', 'id'])),
+      reason: text(firstNonblank(request, ['reason', 'motivo'])) || 'Cancelación de apartado',
+      retain_money: Boolean(request.retain_money ?? request.retainMoney ?? request.retained_money ?? false),
+      refund_id: text(firstNonblank(request, ['refund_id', 'refundId'])),
+      cash_session_id: layawayCashSessionId(request)
+    });
+  }
+
+  throw new Error('FINANCIAL_OPERATION_TYPE_UNSUPPORTED');
+};
+
 export const canonicalFinancialRequestV1 = (operationType, request = {}) => {
   if (!request || typeof request !== 'object' || Array.isArray(request)) throw new Error('FINANCIAL_REQUEST_CONTRACT_INVALID');
   switch (operationType) {
+    case 'layaway.create':
+    case 'layaway.payment':
+    case 'layaway.cancel':
+      return canonicalLayawayRequest(operationType, request);
     case 'cash.open': return { opening: {
       opening_amount: decimal(firstNonblank(request, ['opening_amount', 'montoInicial'])) || '0',
       opening_counted_amount: decimal(firstNonblank(request, ['opening_counted_amount', 'montoContado', 'montoContadoInicial'])),
