@@ -159,14 +159,6 @@ revoke all on public.pos_layaways from anon, authenticated;
 revoke all on public.pos_layaway_payments from anon, authenticated;
 revoke all on public.pos_layaway_inventory_reservations from anon, authenticated;
 
-do $$
-begin
-  drop policy if exists pos_layaways_no_direct_client_select on public.pos_layaways;
-  drop policy if exists pos_layaway_payments_no_direct_client_select on public.pos_layaway_payments;
-  drop policy if exists pos_layaway_reservations_no_direct_client_select on public.pos_layaway_inventory_reservations;
-end;
-$$;
-
 create policy pos_layaways_no_direct_client_select
   on public.pos_layaways for select to anon, authenticated using (false);
 create policy pos_layaway_payments_no_direct_client_select
