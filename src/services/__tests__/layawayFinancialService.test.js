@@ -14,7 +14,12 @@ const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
   convertToSale: vi.fn(),
   canUseCloudLayawayCompletion: vi.fn(),
-  processCloudLayawayCompletion: vi.fn()
+  processCloudLayawayCompletion: vi.fn(),
+  processCloudLayawayCreate: vi.fn(),
+  processCloudLayawayPayment: vi.fn(),
+  processCloudLayawayCancel: vi.fn(),
+  getLayaway: vi.fn(),
+  isCloudLayawaysEnabled: vi.fn()
 }));
 
 vi.mock('../db/layaways', () => ({
@@ -61,8 +66,22 @@ vi.mock('../cash/cashStation', () => ({
 vi.mock('../salesCloud/salesCloudCashierService', () => ({
   salesCloudCashierService: {
     canUseCloudLayawayCompletion: mocks.canUseCloudLayawayCompletion,
-    processCloudLayawayCompletion: mocks.processCloudLayawayCompletion
+    processCloudLayawayCompletion: mocks.processCloudLayawayCompletion,
+    processCloudLayawayCreate: mocks.processCloudLayawayCreate,
+    processCloudLayawayPayment: mocks.processCloudLayawayPayment,
+    processCloudLayawayCancel: mocks.processCloudLayawayCancel
   }
+}));
+
+vi.mock('../salesCloud/salesCloudRepository', () => ({
+  salesCloudRepository: {
+    getLayaway: mocks.getLayaway
+  }
+}));
+
+vi.mock('../sync/syncConstants', () => ({
+  getLicenseKeyFromDetails: vi.fn((details) => details?.license_key || details?.licenseKey || null),
+  isCloudLayawaysEnabled: mocks.isCloudLayawaysEnabled
 }));
 
 import { layawayFinancialService } from '../layawayFinancialService';
@@ -106,6 +125,11 @@ beforeEach(() => {
   mocks.confirmPayment.mockResolvedValue({ success: true, newPaidAmount: 75 });
   mocks.canUseCloudLayawayCompletion.mockResolvedValue(false);
   mocks.processCloudLayawayCompletion.mockResolvedValue({ success: true });
+  mocks.processCloudLayawayCreate.mockResolvedValue({ success: true, cloudCommitted: true });
+  mocks.processCloudLayawayPayment.mockResolvedValue({ success: true, cloudCommitted: true });
+  mocks.processCloudLayawayCancel.mockResolvedValue({ success: true, cloudCommitted: true });
+  mocks.getLayaway.mockResolvedValue({ layaway: { ...layawayData, status: 'active', total_amount: 175, paid_amount: 75 } });
+  mocks.isCloudLayawaysEnabled.mockReturnValue(false);
   mocks.convertToSale.mockResolvedValue({ success: true, saleId: 'local-sale-1' });
 });
 
@@ -259,7 +283,7 @@ describe('layawayFinancialService', () => {
       initialPayment: 75,
       paymentId: 'payment-1'
     })).rejects.toMatchObject({
-      code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED'
+      code: 'CLOUD_LAYAWAYS_DISABLED'
     });
 
     expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
@@ -280,13 +304,168 @@ describe('layawayFinancialService', () => {
       amount: 75,
       paymentId: 'payment-1'
     })).rejects.toMatchObject({
-      code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED'
+      code: 'CLOUD_LAYAWAYS_DISABLED'
     });
 
     expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
     expect(mocks.getById).not.toHaveBeenCalled();
     expect(mocks.addPayment).not.toHaveBeenCalled();
     expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('routes a cloud layaway without an initial payment exclusively through the cloud adapter', async () => {
+    const licenseDetails = { license_key: 'license-1' };
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      licenseDetails,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+    });
+    mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+
+    await layawayFinancialService.create({ layawayData, initialPayment: 0, paymentId: 'payment-1' });
+
+    expect(mocks.processCloudLayawayCreate).toHaveBeenCalledWith(expect.objectContaining({
+      layawayData,
+      initialPayment: null,
+      cashSessionId: null,
+      licenseDetails
+    }));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.getCurrentCashSession).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('routes a cloud initial payment with the resolved session and never creates a local pending record', async () => {
+    const licenseDetails = { license_key: 'license-1' };
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      licenseDetails,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+    });
+    mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+
+    await layawayFinancialService.create({
+      layawayData,
+      initialPayment: 75,
+      paymentId: 'payment-cloud-1',
+      expectedCashSessionId: 'cash-1'
+    });
+
+    expect(mocks.processCloudLayawayCreate).toHaveBeenCalledWith(expect.objectContaining({
+      layawayData,
+      cashSessionId: 'cash-1',
+      licenseDetails,
+      initialPayment: expect.objectContaining({
+        id: 'payment-cloud-1',
+        amount: 75,
+        status: 'pending'
+      })
+    }));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('routes a cloud installment through the atomic adapter using the current cash session', async () => {
+    const licenseDetails = { license_key: 'license-1' };
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      licenseDetails,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+    });
+    mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+
+    await layawayFinancialService.addPayment({
+      layawayId: 'layaway-1',
+      amount: 75,
+      paymentId: 'payment-cloud-2',
+      expectedCashSessionId: 'cash-1'
+    });
+
+    expect(mocks.processCloudLayawayPayment).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-1',
+      cashSessionId: 'cash-1',
+      licenseDetails,
+      payment: expect.objectContaining({ id: 'payment-cloud-2', amount: 75 })
+    }));
+    expect(mocks.getById).not.toHaveBeenCalled();
+    expect(mocks.addPaymentWithCash).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('cancels a cloud layaway from the authoritative snapshot without a local refund path', async () => {
+    const licenseDetails = { license_key: 'license-1' };
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      licenseDetails,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+    });
+    mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+    mocks.getLayaway.mockResolvedValue({
+      layaway: { ...layawayData, total_amount: 175, paid_amount: 75, status: 'active' }
+    });
+
+    await layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      retainMoney: true,
+      refundId: 'refund-cloud-1',
+      actorHandle: refundActorHandle
+    });
+
+    expect(mocks.getLayaway).toHaveBeenCalledWith({ licenseKey: 'license-1', layawayId: 'layaway-1', force: true });
+    expect(mocks.processCloudLayawayCancel).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      retainMoney: true,
+      refundId: 'refund-cloud-1',
+      cashSessionId: null,
+      actorHandle: refundActorHandle,
+      licenseDetails
+    }));
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.beginRefund).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('requires and forwards the resolved cash session for a cloud refund', async () => {
+    const licenseDetails = { license_key: 'license-1' };
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      licenseDetails,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+    });
+    mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+    mocks.getLayaway.mockResolvedValue({
+      layaway: { ...layawayData, total_amount: 175, paid_amount: 75, status: 'active' }
+    });
+
+    await layawayFinancialService.cancel({
+      layawayId: 'layaway-1',
+      reason: 'Cliente',
+      refundId: 'refund-cloud-2',
+      actorHandle: refundActorHandle,
+      expectedCashSessionId: 'cash-1'
+    });
+
+    expect(mocks.processCloudLayawayCancel).toHaveBeenCalledWith(expect.objectContaining({
+      layawayId: 'layaway-1',
+      retainMoney: false,
+      refundId: 'refund-cloud-2',
+      cashSessionId: 'cash-1'
+    }));
+    expect(mocks.cancel).not.toHaveBeenCalled();
     expect(mocks.registerMovement).not.toHaveBeenCalled();
   });
 
@@ -355,13 +534,52 @@ describe('layawayFinancialService', () => {
 
     await expect(layawayFinancialService.complete({ layawayId: 'layaway-1' }))
       .rejects.toMatchObject({
-        code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED'
+        code: 'CLOUD_LAYAWAYS_DISABLED'
       });
 
     expect(mocks.canUseCloudLayawayCompletion).not.toHaveBeenCalled();
     expect(mocks.convertToSale).not.toHaveBeenCalled();
     expect(mocks.processCloudLayawayCompletion).not.toHaveBeenCalled();
     expect(mocks.getById).not.toHaveBeenCalled();
+  });
+
+  it('delivers a cloud layaway from the server snapshot without a second cash movement', async () => {
+    const licenseDetails = { license_key: 'license-1' };
+    const cloudLayaway = {
+      id: 'layaway-1',
+      status: 'ready',
+      customer_id: 'customer-1',
+      customer_name: 'Cliente',
+      total_amount: '175.00',
+      paid_amount: '175.00',
+      currency: 'MXN',
+      deadline: '2026-07-30T00:00:00.000000Z',
+      items: [{ id: 'item-1', product_id: 'product-1', product_name: 'Producto server', quantity: 1, unit_price: '175.00' }]
+    };
+    mocks.getMode.mockReturnValue({
+      cloudEnabled: true,
+      online: true,
+      readOnly: false,
+      licenseDetails,
+      actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
+    });
+    mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+    mocks.canUseCloudLayawayCompletion.mockResolvedValue(true);
+    mocks.getLayaway.mockResolvedValue({ layaway: cloudLayaway });
+
+    await layawayFinancialService.complete({ layawayId: 'layaway-1' });
+
+    expect(mocks.getLayaway).toHaveBeenCalledWith({ licenseKey: 'license-1', layawayId: 'layaway-1', force: true });
+    expect(mocks.processCloudLayawayCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      licenseDetails,
+      request: expect.objectContaining({
+        layaway_id: 'layaway-1',
+        items: [expect.objectContaining({ product_name: 'Producto server' })],
+        payments: [expect.objectContaining({ method: 'layaway_completed', amount: '175' })]
+      })
+    }));
+    expect(mocks.convertToSale).not.toHaveBeenCalled();
+    expect(mocks.registerMovement).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -382,7 +600,7 @@ describe('layawayFinancialService', () => {
       reason: 'Cliente',
       actorHandle: refundActorHandle,
       ...options
-    })).rejects.toMatchObject({ code: 'CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED' });
+    })).rejects.toMatchObject({ code: 'CLOUD_LAYAWAYS_DISABLED' });
 
     expect(mocks.getMode).toHaveBeenCalledTimes(1);
     expect(mocks.getById).not.toHaveBeenCalled();

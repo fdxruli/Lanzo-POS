@@ -427,6 +427,98 @@ export const layawayRepository = {
         });
     },
 
+    // Cloud layaways are already committed by the server. This projection
+    // stores the server snapshot for UI/recovery only; it never reserves,
+    // releases, consumes stock, or creates a local cash movement.
+    async upsertCloudSnapshot(response = {}) {
+        const cloudLayaway = response?.layaway || response;
+        const id = cloudLayaway?.id || cloudLayaway?.layaway_id || null;
+        if (!id) throw new Error('CLOUD_LAYAWAY_SNAPSHOT_INVALID');
+
+        const table = db.table(STORES.LAYAWAYS);
+        const existing = await table.get(id);
+        const numberOr = (value, fallback = 0) => {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        };
+        const localItems = Array.isArray(cloudLayaway.items)
+            ? cloudLayaway.items.map((item) => ({
+                ...item,
+                id: item.id || null,
+                productId: item.product_id || item.productId || item.parentId || null,
+                productName: item.product_name || item.productName || item.name || null,
+                productSku: item.product_sku || item.productSku || item.sku || null,
+                quantity: numberOr(item.quantity ?? item.qty, 0),
+                price: numberOr(item.unit_price ?? item.unitPrice ?? item.price, 0),
+                cost: item.unit_cost ?? item.unitCost ?? item.cost ?? null,
+                lineTotal: numberOr(item.line_total ?? item.lineTotal ?? item.total, 0),
+                batchId: item.batch_id || item.batchId || null
+            }))
+            : (existing?.items || []);
+        const cloudPayments = Array.isArray(response?.payments)
+            ? response.payments
+            : (Array.isArray(cloudLayaway.payments) ? cloudLayaway.payments : null);
+        const payments = cloudPayments
+            ? cloudPayments.map((payment) => ({
+                ...payment,
+                id: payment.id,
+                amount: numberOr(payment.amount, 0),
+                date: payment.created_at || payment.createdAt || payment.date || nowIso(),
+                type: payment.payment_type || payment.paymentType || payment.metadata?.payment_type || 'installment',
+                paymentType: payment.payment_type || payment.paymentType || payment.metadata?.payment_type || 'installment',
+                status: payment.status || 'confirmed',
+                paymentMethod: payment.payment_method || payment.paymentMethod || 'cash',
+                cashMovementId: payment.cash_movement_id || payment.cashMovementId || null,
+                cashSessionId: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
+                cash_session_id: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
+                cajaId: payment.cash_session_id || payment.cashSessionId || payment.cajaId || null,
+                cashStationId: payment.cash_station_id || payment.cashStationId || null,
+                actorKey: payment.actor_key || payment.actorKey || null
+            }))
+            : (existing?.payments || []);
+        const updatedAt = cloudLayaway.updated_at || cloudLayaway.updatedAt || nowIso();
+        const createdAt = cloudLayaway.created_at || cloudLayaway.createdAt || existing?.createdAt || updatedAt;
+        const projected = {
+            ...existing,
+            id,
+            customerId: cloudLayaway.customer_id ?? cloudLayaway.customerId ?? existing?.customerId ?? null,
+            customerName: cloudLayaway.customer_name ?? cloudLayaway.customerName ?? existing?.customerName ?? null,
+            customerPhone: cloudLayaway.customer_phone ?? cloudLayaway.customerPhone ?? existing?.customerPhone ?? null,
+            totalAmount: numberOr(cloudLayaway.total_amount ?? cloudLayaway.totalAmount, existing?.totalAmount || 0),
+            paidAmount: numberOr(cloudLayaway.paid_amount ?? cloudLayaway.paidAmount, existing?.paidAmount || 0),
+            balanceDue: numberOr(cloudLayaway.balance_due ?? cloudLayaway.balanceDue, 0),
+            currency: cloudLayaway.currency || existing?.currency || 'MXN',
+            deadline: cloudLayaway.deadline || cloudLayaway.due_date || existing?.deadline || null,
+            status: cloudLayaway.status || existing?.status || 'active',
+            items: localItems,
+            payments,
+            sourceMode: 'cloud_committed',
+            cloudLayaway: true,
+            cloudServerVersion: cloudLayaway.server_version ?? cloudLayaway.serverVersion ?? null,
+            cloudLastIdempotencyKey: cloudLayaway.last_idempotency_key || cloudLayaway.lastIdempotencyKey || null,
+            cloudInventoryReservations: Array.isArray(response?.inventory_reservations)
+                ? response.inventory_reservations
+                : (existing?.cloudInventoryReservations || []),
+            cloudCashMovements: Array.isArray(response?.cash_movements)
+                ? response.cash_movements
+                : (existing?.cloudCashMovements || []),
+            cloudInventoryMovements: Array.isArray(response?.inventory_movements)
+                ? response.inventory_movements
+                : (existing?.cloudInventoryMovements || []),
+            conversionSaleId: cloudLayaway.conversion_sale_id || cloudLayaway.conversionSaleId || existing?.conversionSaleId || null,
+            refundId: cloudLayaway.refund_id || cloudLayaway.refundId || existing?.refundId || null,
+            refundCashMovementId: cloudLayaway.refund_cash_movement_id || cloudLayaway.refundCashMovementId || existing?.refundCashMovementId || null,
+            retainedMoney: Boolean(cloudLayaway.retained_money ?? cloudLayaway.retainedMoney ?? existing?.retainedMoney ?? false),
+            retainedPenaltyAmount: numberOr(cloudLayaway.retained_amount ?? cloudLayaway.retainedPenaltyAmount, existing?.retainedPenaltyAmount || 0),
+            createdAt,
+            updatedAt,
+            deliveredAt: cloudLayaway.completed_at || cloudLayaway.completedAt || existing?.deliveredAt || null
+        };
+
+        await table.put(projected);
+        return projected;
+    },
+
     async getByCustomer(customerId, onlyActive = true) {
         if (onlyActive) return db.table(STORES.LAYAWAYS).where('customerId').equals(customerId)
             .filter((layaway) => ['active', 'ready'].includes(layaway.status)).toArray();

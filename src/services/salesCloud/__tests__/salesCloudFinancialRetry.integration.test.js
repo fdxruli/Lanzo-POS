@@ -103,6 +103,7 @@ vi.mock('../../sync/syncConstants', () => ({
   isCloudSalesCashierEnabled: vi.fn(() => true),
   isCloudSalesCreditEnabled: vi.fn(() => true),
   isCloudSalesInventoryEnabled: vi.fn(() => false),
+  isCloudLayawaysEnabled: vi.fn(() => false),
   SYNC_ENTITY_TYPES: {
     CUSTOMER: 'customer',
     CUSTOMER_LEDGER: 'customer_ledger',

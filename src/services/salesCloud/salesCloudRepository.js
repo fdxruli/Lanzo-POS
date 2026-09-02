@@ -16,6 +16,7 @@ import {
   isCloudSalesCashierEnabled,
   isCloudSalesCreditEnabled,
   isCloudSalesInventoryEnabled,
+  isCloudLayawaysEnabled,
   SYNC_LIMITS
 } from '../sync/syncConstants';
 import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
@@ -120,6 +121,10 @@ export const salesCloudRepository = {
     return isCloudSalesCancellationEnabled(licenseDetails);
   },
 
+  isCloudLayawaysEnabled(licenseDetails = {}) {
+    return isCloudLayawaysEnabled(licenseDetails);
+  },
+
   // IMPORTANTE: estas RPCs son transaccionales/críticas y NO deben pasar por CloudRequestManager.
   async upsertSaleShadow({ licenseKey, sale, items = [], payments = [], idempotencyKey }) {
     assertSupabase();
@@ -182,6 +187,99 @@ export const salesCloudRepository = {
     return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
   },
 
+  async createCloudLayaway({
+    licenseKey,
+    layaway = {},
+    initialPayment = null,
+    cashSessionId = null,
+    idempotencyKey = null,
+    actorHandle = null,
+    project = null
+  }) {
+    const payment = initialPayment && typeof initialPayment === 'object' ? initialPayment : null;
+    const resolvedCashSessionId = cashSessionId
+      || payment?.cash_session_id
+      || payment?.cashSessionId
+      || payment?.cajaId
+      || null;
+    const request = {
+      layaway: layaway || {},
+      initial_payment: payment,
+      cash_session_id: resolvedCashSessionId
+    };
+    const result = await executeNewFinancialIntent({
+      operationType: 'layaway.create',
+      request,
+      licenseKey,
+      idempotencyKey,
+      cashSessionId: resolvedCashSessionId,
+      actorHandle,
+      project
+    });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
+  },
+
+  async addCloudLayawayPayment({
+    licenseKey,
+    layawayId,
+    payment = {},
+    cashSessionId = null,
+    idempotencyKey = null,
+    actorHandle = null,
+    project = null
+  }) {
+    const resolvedCashSessionId = cashSessionId
+      || payment?.cash_session_id
+      || payment?.cashSessionId
+      || payment?.cajaId
+      || null;
+    const request = {
+      layaway_id: layawayId,
+      payment: payment || {},
+      cash_session_id: resolvedCashSessionId
+    };
+    const result = await executeNewFinancialIntent({
+      operationType: 'layaway.payment',
+      request,
+      licenseKey,
+      idempotencyKey,
+      cashSessionId: resolvedCashSessionId,
+      actorHandle,
+      project
+    });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
+  },
+
+  async cancelCloudLayaway({
+    licenseKey,
+    layawayId,
+    reason = null,
+    retainMoney = false,
+    refundId = null,
+    cashSessionId = null,
+    idempotencyKey = null,
+    actorHandle = null,
+    project = null
+  }) {
+    const request = {
+      layaway_id: layawayId,
+      reason,
+      retain_money: Boolean(retainMoney),
+      refund_id: refundId,
+      cash_session_id: cashSessionId
+    };
+    const result = await executeNewFinancialIntent({
+      operationType: 'layaway.cancel',
+      request,
+      licenseKey,
+      idempotencyKey,
+      cashSessionId,
+      actorHandle,
+      project
+    });
+    return { ...invalidateAfterSaleSuccess(licenseKey, result.response), financialIntentId: result.intentId, projection: result.projection || null };
+  },
+
   async previewCloudSaleCancellation({ licenseKey, saleId, reason = null }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
@@ -230,6 +328,26 @@ export const salesCloudRepository = {
     });
   },
 
+  async getLayaway({ licenseKey, layawayId, force = false }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const params = { p_layaway_id: layawayId };
+    return cachedSalesRpc({
+      rpcName: 'pos_get_layaway',
+      licenseKey,
+      baseArgs,
+      params,
+      ttlMs: CLOUD_REQUEST_TTL.VERY_SHORT,
+      cooldownMs: CLOUD_REQUEST_COOLDOWN.VERY_SHORT,
+      force,
+      fn: async () => {
+        const { data, error } = await supabaseClient.rpc('pos_get_layaway', { ...baseArgs, ...params });
+        if (error) throw error;
+        return parseRpcPayload(data);
+      }
+    });
+  },
+
   async pullSalesSnapshot({ licenseKey, limit = 500, offset = 0, dateFrom = null, dateTo = null, includeDeleted = false, force = false }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
@@ -261,6 +379,18 @@ export const salesCloudRepository = {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const { data, error } = await supabaseClient.rpc('pos_pull_sales_changes', {
+      ...baseArgs,
+      p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0),
+      p_limit: normalizeLimit(limit)
+    });
+    if (error) throw error;
+    return parseRpcPayload(data);
+  },
+
+  async pullLayawayChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_pull_layaway_changes', {
       ...baseArgs,
       p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0),
       p_limit: normalizeLimit(limit)

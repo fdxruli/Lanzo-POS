@@ -3,6 +3,7 @@ import { getStableDeviceId } from '../supabase';
 import { useAppStore } from '../../store/useAppStore';
 import {
   getLicenseKeyFromDetails,
+  isCloudLayawaysEnabled,
   isCloudSalesCashierEnabled,
   isCloudSalesCreditEnabled,
   isCloudSalesInventoryEnabled
@@ -35,6 +36,14 @@ const isExperimentalFlagEnabled = () => {
   }
 };
 
+const isCloudLayawaysFlagEnabled = () => {
+  try {
+    return import.meta.env?.VITE_ENABLE_CLOUD_LAYAWAYS === 'true';
+  } catch {
+    return false;
+  }
+};
+
 const getRuntimeContext = async () => {
   const state = useAppStore.getState();
   const licenseDetails = state?.licenseDetails || null;
@@ -52,7 +61,9 @@ const getRuntimeContext = async () => {
     featureEnabled: Boolean(licenseKey && isCloudSalesCashierEnabled(licenseDetails)),
     creditFeatureEnabled: Boolean(licenseKey && isCloudSalesCreditEnabled(licenseDetails)),
     inventoryFeatureEnabled: Boolean(licenseKey && isCloudSalesInventoryEnabled(licenseDetails)),
-    experimentalEnabled: isExperimentalFlagEnabled()
+    experimentalEnabled: isExperimentalFlagEnabled(),
+    layawaysFeatureEnabled: Boolean(licenseKey && isCloudLayawaysEnabled(licenseDetails)),
+    layawaysExperimentalEnabled: isCloudLayawaysFlagEnabled()
   };
 };
 
@@ -202,7 +213,7 @@ export const applyLayawayFinancialResponseProjection = async ({ requestPayload, 
   actorHandle?.assertCurrent?.();
   const request = requestPayload || intent?.requestPayload || {};
   const response = responsePayload || intent?.responsePayload || {};
-  const layawayId = request.layaway_id || request.layawayId || null;
+  const layawayId = request.layaway_id || request.layawayId || response.layaway?.id || null;
   const localItems = Array.isArray(request.local_items) ? request.local_items : (Array.isArray(request.items) ? request.items : []);
   const localSale = await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({
     localSale: {
@@ -224,13 +235,20 @@ export const applyLayawayFinancialResponseProjection = async ({ requestPayload, 
   }
 
   actorHandle?.assertCurrent?.();
+  const layaway = await layawayRepository.upsertCloudSnapshot(response);
+  actorHandle?.assertCurrent?.();
   const appliedPayload = await salesCloudLocalRepository.applyCloudSalesPayload(response);
-  const conversion = layawayId
-    ? await layawayRepository.convertToSale(layawayId)
-    : null;
 
   actorHandle?.assertCurrent?.();
-  return { localSale, conversion, appliedPayload };
+  return { localSale, layaway, conversion: { success: true, saleId: localSale.id }, appliedPayload };
+};
+
+export const applyCloudLayawayMutationProjection = async ({ responsePayload, intent, actorHandle }) => {
+  actorHandle?.assertCurrent?.();
+  const response = responsePayload || intent?.responsePayload || {};
+  const layaway = await layawayRepository.upsertCloudSnapshot(response);
+  actorHandle?.assertCurrent?.();
+  return { layaway, appliedPayload: response };
 };
 
 ['sale.cashier', 'sale.cashier_inventory', 'sale.credit'].forEach((operationType) => {
@@ -238,11 +256,14 @@ export const applyLayawayFinancialResponseProjection = async ({ requestPayload, 
 });
 registerFinancialProjectionHandler('sale.split', applySplitSalesFinancialResponseProjection);
 registerFinancialProjectionHandler('sale.layaway_complete', applyLayawayFinancialResponseProjection);
+registerFinancialProjectionHandler('layaway.create', applyCloudLayawayMutationProjection);
+registerFinancialProjectionHandler('layaway.payment', applyCloudLayawayMutationProjection);
+registerFinancialProjectionHandler('layaway.cancel', applyCloudLayawayMutationProjection);
 
 const friendlyCloudCashierError = (error) => {
   const raw = String(error?.message || error?.code || error || '');
   const rawCode = String(error?.code || '').trim();
-  const semanticCode = raw.match(/[A-Z0-9_]+(?::[a-z_]+)?/)?.[0] || '';
+  const semanticCode = raw.match(/[A-Z][A-Z0-9_]*(?=:|$)/)?.[0] || '';
   const code = /^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw;
 
   const messages = {
@@ -282,12 +303,30 @@ const friendlyCloudCashierError = (error) => {
     SPLIT_ROUNDING_MISMATCH: 'Los centavos distribuidos en la cuenta dividida no coinciden con el total. Vuelve a abrir Separar pago.',
     CASH_SESSION_STATION_MISMATCH: 'La caja abierta pertenece a otra estación. Selecciona la caja de este dispositivo.',
     CASH_SESSION_NOT_OPEN: 'No hay una caja abierta en esta estación. Abre Caja antes de dividir o cobrar.',
+    CLOUD_LAYAWAYS_DISABLED: 'Apartados cloud aún no están activos para esta licencia.',
+    LAYAWAY_NOT_FOUND: 'No se encontró el apartado en la nube. Actualiza Apartados e intenta de nuevo.',
+    LAYAWAY_ALREADY_CANCELLED: 'Este apartado ya fue cancelado en otro dispositivo. Actualiza Apartados.',
+    LAYAWAY_ALREADY_COMPLETED: 'Este apartado ya fue entregado en otro dispositivo. Actualiza Ventas.',
+    LAYAWAY_PAYMENT_ID_CONFLICT: 'El identificador del abono ya fue usado con datos distintos. No se repitió el cobro.',
+    LAYAWAY_PAYMENT_EXCEEDS_BALANCE: 'El abono excede el saldo vigente del apartado.',
+    LAYAWAY_PAYMENT_METHOD_NOT_ALLOWED: 'Los apartados cloud solo aceptan abonos en efectivo por ahora.',
+    LAYAWAY_PRODUCT_REQUIRED: 'Uno de los artículos del apartado no tiene un producto válido.',
+    LAYAWAY_PRODUCT_NOT_SYNCED: 'Un artículo del apartado todavía no está sincronizado en la nube.',
+    LAYAWAY_BATCH_REQUIRED: 'Selecciona un lote o variante vigente para este artículo.',
+    LAYAWAY_BATCH_NOT_AVAILABLE: 'El lote o variante del apartado ya no está disponible en la nube.',
+    LAYAWAY_BATCH_MISMATCH: 'El lote del apartado no coincide con el SKU vigente en la nube.',
+    LAYAWAY_VARIANT_MISMATCH: 'La talla, color o variante del apartado no coincide con el lote vigente.',
+    LAYAWAY_BATCH_STOCK_UNSAFE: 'La variante seleccionada no tiene una política de stock segura en la nube.',
+    LAYAWAY_PRICE_MISMATCH: 'El precio del apartado no coincide con el catálogo cloud vigente. Actualiza el apartado y revisa el precio.',
+    LAYAWAY_PRICE_SOURCE_INVALID: 'El producto del apartado no tiene un precio cloud válido. Revisa el catálogo antes de continuar.',
+    LAYAWAY_TAX_SOURCE_UNRESOLVED: 'El apartado contiene impuestos sin una fuente fiscal cloud configurada.',
+    LAYAWAY_ITEM_TOTAL_MISMATCH: 'Los importes de un artículo del apartado no cuadran. Revisa precios y descuentos antes de continuar.',
+    CASH_INSUFFICIENT_FOR_LAYAWAY_REFUND: 'La caja no tiene efectivo suficiente para reembolsar este apartado.',
     LAYAWAY_NOT_FULLY_PAID: 'El apartado todavía no está liquidado en Caja cloud. No se entregó la mercancía.',
     LAYAWAY_PAYMENT_TOTAL_MISMATCH: 'Los abonos cloud del apartado no coinciden con su total. La entrega quedó protegida.',
     LAYAWAY_TOTAL_MISMATCH: 'Los artículos del apartado no coinciden con el importe de la entrega. La entrega quedó protegida.',
     LAYAWAY_ALREADY_CONVERTED_CLOUD: 'Este apartado ya fue convertido en una venta cloud con otro identificador. Revisa Ventas antes de reintentar.',
     CLOUD_LAYAWAY_COMPLETION_REQUIRED: 'Este apartado requiere entrega cloud. Verifica conexión, permisos y funciones cloud antes de reintentar.',
-    CLOUD_LAYAWAY_MULTI_DEVICE_UNSUPPORTED: 'Los apartados multi-dispositivo todavía no están habilitados para cuentas cloud. Usa una cuenta local/FREE o espera la sincronización cloud completa.',
     FINANCIAL_LAYAWAY_PAYMENTS_INVALID: 'La entrega del apartado debe llevar un único comprobante de liquidación.',
     LAYAWAY_ITEMS_REQUIRED: 'El apartado no tiene artículos válidos para generar la venta de entrega.',
     SPLIT_PARENT_ID_REQUIRED: 'No se encontró la orden local de la mesa para proyectar el cobro.',
@@ -516,9 +555,9 @@ export const salesCloudCashierService = {
     const details = licenseDetails || context.licenseDetails;
     return Boolean(
       context.online &&
-      context.experimentalEnabled &&
       context.licenseKey &&
-      isCloudSalesCashierEnabled(details)
+      context.layawaysExperimentalEnabled &&
+      isCloudLayawaysEnabled(details)
     );
   },
 
@@ -613,6 +652,179 @@ export const salesCloudCashierService = {
         message: 'No se pudo confirmar todavía si la venta cloud fue registrada.',
         error
       };
+    }
+  },
+
+  async processCloudLayawayCreate({
+    layawayData,
+    initialPayment = null,
+    cashSessionId = null,
+    paymentId = null,
+    paymentType = 'initial_deposit',
+    licenseDetails = null
+  } = {}) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
+    if (!context.licenseKey || !context.layawaysExperimentalEnabled || !isCloudLayawaysEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_LAYAWAYS_DISABLED'));
+    }
+    if (!layawayData?.id) throw friendlyCloudCashierError(new Error('LAYAWAY_ID_REQUIRED'));
+
+    const actorHandle = actorRuntimeController.capture();
+    const payment = initialPayment && typeof initialPayment === 'object'
+      ? initialPayment
+      : (Number(initialPayment) > 0 ? {
+        id: paymentId,
+        amount: Number(initialPayment),
+        type: paymentType,
+        paymentType,
+        method: 'cash'
+      } : null);
+    const idempotencyKey = `layaway.create:${layawayData.id}`;
+
+    try {
+      const response = await salesCloudRepository.createCloudLayaway({
+        licenseKey: context.licenseKey,
+        layaway: layawayData,
+        initialPayment: payment,
+        cashSessionId,
+        idempotencyKey,
+        actorHandle,
+        project: applyCloudLayawayMutationProjection
+      });
+      if (response?.success === false) {
+        const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_CREATE_FAILED');
+        error.code = response.code;
+        error.response = response;
+        throw error;
+      }
+      const projection = response?.projection || null;
+      if (projection?.outcome === 'projection_failed') {
+        throw projection.error || Object.assign(new Error('CLOUD_LAYAWAY_LOCAL_PROJECTION_FAILED'), { code: 'CLOUD_LAYAWAY_LOCAL_PROJECTION_FAILED' });
+      }
+      return {
+        success: true,
+        sourceMode: 'cloud_committed',
+        cloudCommitted: true,
+        layaway: projection?.result?.layaway || response.layaway || null,
+        response,
+        projection,
+        idempotencyKey,
+        pendingSyncRequired: false
+      };
+    } catch (error) {
+      Logger.error('[SalesCloud/Cashier] Apartado cloud no confirmado:', error);
+      throw friendlyCloudCashierError(error);
+    }
+  },
+
+  async processCloudLayawayPayment({
+    layawayId,
+    payment,
+    cashSessionId = null,
+    licenseDetails = null
+  } = {}) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
+    if (!context.licenseKey || !context.layawaysExperimentalEnabled || !isCloudLayawaysEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_LAYAWAYS_DISABLED'));
+    }
+    if (!layawayId || !payment?.id) throw friendlyCloudCashierError(new Error('LAYAWAY_PAYMENT_ID_REQUIRED'));
+
+    const actorHandle = actorRuntimeController.capture();
+    const idempotencyKey = `layaway.payment:${layawayId}:${payment.id}`;
+    try {
+      const response = await salesCloudRepository.addCloudLayawayPayment({
+        licenseKey: context.licenseKey,
+        layawayId,
+        payment: { ...payment, method: payment.method || 'cash' },
+        cashSessionId,
+        idempotencyKey,
+        actorHandle,
+        project: applyCloudLayawayMutationProjection
+      });
+      if (response?.success === false) {
+        const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_PAYMENT_FAILED');
+        error.code = response.code;
+        error.response = response;
+        throw error;
+      }
+      const projection = response?.projection || null;
+      if (projection?.outcome === 'projection_failed') {
+        throw projection.error || Object.assign(new Error('CLOUD_LAYAWAY_LOCAL_PROJECTION_FAILED'), { code: 'CLOUD_LAYAWAY_LOCAL_PROJECTION_FAILED' });
+      }
+      return {
+        success: true,
+        sourceMode: 'cloud_committed',
+        cloudCommitted: true,
+        layaway: projection?.result?.layaway || response.layaway || null,
+        response,
+        projection,
+        idempotencyKey,
+        pendingSyncRequired: false
+      };
+    } catch (error) {
+      Logger.error('[SalesCloud/Cashier] Abono cloud no confirmado:', error);
+      throw friendlyCloudCashierError(error);
+    }
+  },
+
+  async processCloudLayawayCancel({
+    layawayId,
+    reason = null,
+    retainMoney = false,
+    refundId = null,
+    cashSessionId = null,
+    licenseDetails = null,
+    actorHandle: providedActorHandle = null
+  } = {}) {
+    const context = await getRuntimeContext();
+    const details = licenseDetails || context.licenseDetails;
+    if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
+    if (!context.licenseKey || !context.layawaysExperimentalEnabled || !isCloudLayawaysEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_LAYAWAYS_DISABLED'));
+    }
+    if (!layawayId) throw friendlyCloudCashierError(new Error('LAYAWAY_ID_REQUIRED'));
+
+    const actorHandle = providedActorHandle || actorRuntimeController.capture();
+    const idempotencyKey = `layaway.cancel:${layawayId}`;
+    try {
+      const response = await salesCloudRepository.cancelCloudLayaway({
+        licenseKey: context.licenseKey,
+        layawayId,
+        reason,
+        retainMoney,
+        refundId,
+        cashSessionId,
+        idempotencyKey,
+        actorHandle,
+        project: applyCloudLayawayMutationProjection
+      });
+      if (response?.success === false) {
+        const error = new Error(response.message || response.code || 'CLOUD_LAYAWAY_CANCEL_FAILED');
+        error.code = response.code;
+        error.response = response;
+        throw error;
+      }
+      const projection = response?.projection || null;
+      if (projection?.outcome === 'projection_failed') {
+        throw projection.error || Object.assign(new Error('CLOUD_LAYAWAY_LOCAL_PROJECTION_FAILED'), { code: 'CLOUD_LAYAWAY_LOCAL_PROJECTION_FAILED' });
+      }
+      return {
+        success: true,
+        sourceMode: 'cloud_committed',
+        cloudCommitted: true,
+        layaway: projection?.result?.layaway || response.layaway || null,
+        response,
+        projection,
+        idempotencyKey,
+        pendingSyncRequired: false
+      };
+    } catch (error) {
+      Logger.error('[SalesCloud/Cashier] Cancelación cloud no confirmada:', error);
+      throw friendlyCloudCashierError(error);
     }
   },
 
@@ -762,8 +974,8 @@ export const salesCloudCashierService = {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
     if (!context.online) throw friendlyCloudCashierError(new Error('OFFLINE'));
-    if (!context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
-      throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
+    if (!context.layawaysExperimentalEnabled || !context.licenseKey || !isCloudLayawaysEnabled(details)) {
+      throw friendlyCloudCashierError(new Error('CLOUD_LAYAWAYS_DISABLED'));
     }
 
     const actorHandle = actorRuntimeController.capture();
