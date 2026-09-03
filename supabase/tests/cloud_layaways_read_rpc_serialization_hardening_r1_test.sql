@@ -143,6 +143,8 @@ begin
       'product_name', 'Public Product A',
       'product_sku', 'SKU-A',
       'barcode', 'BAR-A',
+      'category_id', 'category-a',
+      'variant_id', 'variant-a',
       'batch_id', 'batch-a',
       'batch_sku', 'BATCH-SKU-A',
       'quantity', 1,
@@ -342,6 +344,8 @@ begin
      or v_get->'layaway'->>'customer_name' <> 'Public Customer A'
      or v_get->'layaway'->>'total_amount' <> '10'
      or v_get->'layaway'->'items'->0->>'product_id' <> 'product-a'
+     or v_get->'layaway'->'items'->0->>'category_id' <> 'category-a'
+     or v_get->'layaway'->'items'->0->>'variant_id' <> 'variant-a'
      or v_get->'layaway'->'items'->0->>'unit_price' <> '10'
      or v_get->'payments'->0->>'payment_type' <> 'initial_deposit'
      or v_get->'payments'->0->>'amount' <> '10'
