@@ -75,8 +75,9 @@ test('explicit projections contain the public allowlist and exclude internal fie
       'updated_at', 'completed_at', 'cancelled_at', 'server_version'
     ],
     item: [
-      'id', 'product_id', 'product_name', 'product_sku', 'barcode', 'category_name',
-      'rubro', 'batch_id', 'batch_sku', 'batch_expiry_date', 'size', 'color',
+      'id', 'product_id', 'product_name', 'product_sku', 'barcode', 'category_id',
+      'category_name', 'rubro', 'batch_id', 'batch_sku', 'batch_expiry_date',
+      'variant_id', 'size', 'color',
       'quantity', 'unit_price', 'line_subtotal', 'line_total', 'discount_amount',
       'tax_amount'
     ],
@@ -121,6 +122,11 @@ test('explicit projections contain the public allowlist and exclude internal fie
   assert.doesNotMatch(bodies.item, /item\s*\|\|/u, 'items must not spread arbitrary client JSON');
   assert.doesNotMatch(bodies.item, /attributes|variant_attributes|selected_modifiers/u);
   assert.match(bodies.payment, /case\s+lower\(/u, 'payment type must be normalized, not copied from metadata');
+
+  const canonical = functionBody(migration, 'create or replace function private.canonical_layaway_item_v1(');
+  assert.match(canonical, /'category_id'/u);
+  assert.match(canonical, /'variant_id'/u);
+  assert.doesNotMatch(canonical, /'attributes'|'variant_attributes'|'unit_cost'/u);
 });
 
 test('read RPCs keep tenant predicates and use only explicit movement projections', () => {
