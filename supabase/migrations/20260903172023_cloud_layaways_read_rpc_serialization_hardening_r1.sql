@@ -379,4 +379,9 @@ begin
 end;
 $function$;
 
+grant execute on function public.pos_get_layaway(text, text, text, text, text)
+  to anon, authenticated;
+grant execute on function public.pos_pull_layaway_changes(text, text, text, text, bigint, integer)
+  to anon, authenticated;
+
 commit;
