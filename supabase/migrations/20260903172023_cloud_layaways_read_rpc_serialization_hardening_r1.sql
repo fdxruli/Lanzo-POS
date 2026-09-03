@@ -10,6 +10,46 @@
 
 begin;
 
+-- The server already validates variant selection during reservation and
+-- recomputes unit cost from reservations/products during completion.  Keeping
+-- free-form attributes and unit cost out of this canonical comparison lets a
+-- redacted read snapshot be replayed without echoing client-controlled JSON
+-- or margin data back to the device.
+create or replace function private.canonical_layaway_item_v1(p_item jsonb)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $function$
+begin
+  if jsonb_typeof(p_item) <> 'object' then
+    raise exception 'LAYAWAY_ITEM_INVALID' using errcode = 'P0001';
+  end if;
+
+  return jsonb_strip_nulls(jsonb_build_object(
+    'id', private.layaway_request_text_v1(p_item, array['id']),
+    'product_id', private.layaway_request_text_v1(p_item, array['product_id','productId','parentId']),
+    'product_name', private.layaway_request_text_v1(p_item, array['product_name','productName','name']),
+    'product_sku', private.layaway_request_text_v1(p_item, array['product_sku','productSku','sku']),
+    'barcode', private.layaway_request_text_v1(p_item, array['barcode','barCode']),
+    'category_id', private.layaway_request_text_v1(p_item, array['category_id','categoryId']),
+    'category_name', private.layaway_request_text_v1(p_item, array['category_name','categoryName','rubro','category']),
+    'rubro', private.layaway_request_text_v1(p_item, array['rubro','category','categoryName']),
+    'batch_id', private.layaway_request_text_v1(p_item, array['batch_id','batchId']),
+    'batch_sku', private.layaway_request_text_v1(p_item, array['batch_sku','batchSku']),
+    'batch_expiry_date', private.layaway_request_text_v1(p_item, array['batch_expiry_date','batchExpiryDate','expiryDate']),
+    'variant_id', private.layaway_request_text_v1(p_item, array['variant_id','variantId']),
+    'size', private.layaway_request_text_v1(p_item, array['size','talla']),
+    'color', private.layaway_request_text_v1(p_item, array['color','colorName']),
+    'quantity', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['quantity','qty'])),
+    'unit_price', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['unit_price','unitPrice','price'])),
+    'line_total', private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['line_total','lineTotal','total','exactTotal'])),
+    'discount_amount', coalesce(private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['discount_amount','discountAmount'])), '0'),
+    'tax_amount', coalesce(private.financial_decimal_v1(private.financial_first_nonblank_scalar_v1(p_item, array['tax_amount','taxAmount'])), '0')
+  ));
+end;
+$function$;
+
 create or replace function private.pos_layaway_public_items_to_jsonb_v1(p_items jsonb)
 returns jsonb
 language sql
@@ -26,11 +66,13 @@ as $function$
             'product_name', nullif(btrim(coalesce(item->>'product_name', item->>'productName', item->>'name', '')), ''),
             'product_sku', nullif(btrim(coalesce(item->>'product_sku', item->>'productSku', item->>'sku', '')), ''),
             'barcode', nullif(btrim(coalesce(item->>'barcode', item->>'barCode', '')), ''),
+            'category_id', nullif(btrim(coalesce(item->>'category_id', item->>'categoryId', '')), ''),
             'category_name', nullif(btrim(coalesce(item->>'category_name', item->>'categoryName', item->>'rubro', item->>'category', '')), ''),
             'rubro', nullif(btrim(coalesce(item->>'rubro', item->>'category', item->>'categoryName', '')), ''),
             'batch_id', nullif(btrim(coalesce(item->>'batch_id', item->>'batchId', '')), ''),
             'batch_sku', nullif(btrim(coalesce(item->>'batch_sku', item->>'batchSku', '')), ''),
             'batch_expiry_date', nullif(btrim(coalesce(item->>'batch_expiry_date', item->>'batchExpiryDate', item->>'expiryDate', '')), ''),
+            'variant_id', nullif(btrim(coalesce(item->>'variant_id', item->>'variantId', '')), ''),
             'size', nullif(btrim(coalesce(item->>'size', item->>'talla', '')), ''),
             'color', nullif(btrim(coalesce(item->>'color', item->>'colorName', '')), ''),
             'quantity', nullif(btrim(coalesce(item->>'quantity', item->>'qty', '')), ''),
