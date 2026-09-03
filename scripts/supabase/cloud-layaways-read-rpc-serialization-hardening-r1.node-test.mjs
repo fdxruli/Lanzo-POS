@@ -161,10 +161,10 @@ test('auth, signatures, and client RPC parameters remain compatible', () => {
     assert.ok(migration.includes(signature), 'RPC signature changed: ' + signature.split('\n')[0]);
   }
 
-  assert.match(migration, /grant execute on function public\.pos_get_layaway\(text, text, text, text, text\) to anon, authenticated;/u);
-  assert.match(migration, /grant execute on function public\.pos_pull_layaway_changes\(text, text, text, text, bigint, integer\) to anon, authenticated;/u);
+  assert.match(migration, /grant execute on function public\.pos_get_layaway\(text, text, text, text, text\)\s+to anon, authenticated;/u);
+  assert.match(migration, /grant execute on function public\.pos_pull_layaway_changes\(text, text, text, text, bigint, integer\)\s+to anon, authenticated;/u);
 
-  assert.match(repository, /rpc\('pos_get_layaway',\s*\{\.\.\.baseArgs, \.\.\.params\}\)/u);
+  assert.match(repository, /rpc\('pos_get_layaway',\s*\{\s*\.\.\.baseArgs,\s*\.\.\.params\s*\}\)/u);
   assert.match(repository, /p_layaway_id:\s*layawayId/u);
   assert.match(repository, /rpc\('pos_pull_layaway_changes',/u);
   assert.match(repository, /p_since_change_seq:/u);
@@ -192,7 +192,7 @@ test('invalid-token rejection and safe search_path are preserved by the auth bou
   ]) {
     assert.match(authMigration, new RegExp(code, 'u'));
   }
-  assert.match(authMigration, /extensions\.crypt\(p_actor_token, ss\.session_token_hash\)/u);
+  assert.match(authMigration, /extensions\.crypt\((?:p_actor_token|v_actor_token), ss\.session_token_hash\)/u);
   assert.match(authMigration, /d\.license_id\s*=\s*v_license\.id/u);
   assert.match(authMigration, /ss\.license_id\s*=\s*v_license\.id/u);
   assert.match(authMigration, /security definer[\s\S]*set search_path\s*=\s*''/u);
