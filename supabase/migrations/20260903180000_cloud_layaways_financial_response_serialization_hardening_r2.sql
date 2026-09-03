@@ -538,7 +538,6 @@ begin
   elsif p_operation_type = 'sale.layaway_complete' then
     return jsonb_build_object(
       'success', p_response->'success',
-      'duplicate', p_response->'duplicate',
       'mode', p_response->'mode',
       'layaway', private.financial_layaway_allowlist_v2(p_response->'layaway'),
       'sale', private.financial_sale_allowlist_v2(p_response->'sale'),
@@ -551,10 +550,19 @@ begin
       'inventory_movements', private.financial_inventory_movements_allowlist_v2(p_response->'inventory_movements'),
       'folio', p_response->'folio',
       'event', private.financial_event_allowlist_v2(p_response->'event'),
-      'server_version', p_response->'server_version',
       'change_seq', p_response->'change_seq',
       'latest_change_seq', p_response->'latest_change_seq'
-    );
+    )
+      || case
+        when p_response ? 'duplicate'
+          then jsonb_build_object('duplicate', p_response->'duplicate')
+        else '{}'::jsonb
+      end
+      || case
+        when p_response ? 'server_version'
+          then jsonb_build_object('server_version', p_response->'server_version')
+        else '{}'::jsonb
+      end;
   else
     raise exception 'FINANCIAL_RESPONSE_ALLOWLIST_UNSUPPORTED' using errcode = 'P0001';
   end if;
