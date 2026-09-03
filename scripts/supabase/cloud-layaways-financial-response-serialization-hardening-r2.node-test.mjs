@@ -362,7 +362,10 @@ test('safe projections preserve the client contract and permitted effects', () =
     'layaway.cancel',
     'sale.layaway_complete'
   ]) {
-    assert.match(repository, new RegExp('operationType:\\s*' + operation.replace('.', '\\.'), 'u'));
+    assert.ok(
+      repository.includes("operationType: '" + operation + "'"),
+      'repository route is missing ' + operation
+    );
   }
   assert.match(repository, /executeNewFinancialIntent\(/u);
   assert.match(repository, /sale\.layaway_complete/u);
