@@ -11,6 +11,39 @@ import Logger from '../../services/Logger';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import './LayawayModal.css';
 
+const CALENDAR_DATE_PATTERN = /^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:T|$)/;
+
+const getCalendarDateParts = (value) => {
+    if (value === null || value === undefined) return null;
+    const match = String(value).trim().match(CALENDAR_DATE_PATTERN);
+    if (!match) return null;
+
+    const [, yearText, monthText, dayText] = match;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const probe = new Date(0);
+    probe.setUTCFullYear(year, month - 1, day);
+    probe.setUTCHours(0, 0, 0, 0);
+
+    return probe.getUTCFullYear() === year
+        && probe.getUTCMonth() === month - 1
+        && probe.getUTCDate() === day
+        ? { year, month, day }
+        : null;
+};
+
+const calendarDateKey = (parts) => parts && (parts.year * 10000 + parts.month * 100 + parts.day);
+
+const formatCalendarDate = (value) => {
+    const parts = getCalendarDateParts(value);
+    if (!parts) return 'Fecha inválida';
+    const date = new Date(0);
+    date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+    date.setUTCHours(0, 0, 0, 0);
+    return date.toLocaleDateString(undefined, { timeZone: 'UTC' });
+};
+
 export default function LayawayModal({
     show,
     onClose,
@@ -131,12 +164,15 @@ export default function LayawayModal({
     if (!show || !customer) return null;
 
     const checkIsOverdue = (deadline) => {
-        if (!deadline) return false;
+        const deadlineParts = getCalendarDateParts(deadline);
+        if (!deadlineParts) return false;
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const limit = new Date(deadline);
-        limit.setHours(0, 0, 0, 0);
-        return today > limit;
+        const todayParts = {
+            year: today.getFullYear(),
+            month: today.getMonth() + 1,
+            day: today.getDate()
+        };
+        return calendarDateKey(todayParts) > calendarDateKey(deadlineParts);
     };
 
     const handleCancel = async (layaway) => {
@@ -270,7 +306,7 @@ export default function LayawayModal({
             {new Date(layaway.createdAt).toLocaleDateString()}
         </div>
         <span className="customer-layaway-card__deadline">
-            Límite: {layaway.deadline ? new Date(layaway.deadline).toLocaleDateString() : 'Sin definir'}
+            Límite: {layaway.deadline ? formatCalendarDate(layaway.deadline) : 'Sin definir'}
         </span>
     </div>
     <div className={`customer-layaway-status ${isReady ? 'customer-layaway-status--ready' : (isOverdue ? 'customer-layaway-status--overdue' : 'customer-layaway-status--pending')}`}>
@@ -288,7 +324,7 @@ export default function LayawayModal({
                                                 />
                                                 <div>
                                                     <strong>Apartado vencido.</strong>{' '}
-                                                    Venció el {layaway.deadline ? new Date(layaway.deadline).toLocaleDateString() : 'fecha desconocida'}.
+                                                    Venció el {layaway.deadline ? formatCalendarDate(layaway.deadline) : 'fecha desconocida'}.
                                                     {' '}Los abonos están bloqueados. Cancela el apartado para devolver el stock al inventario.
                                                 </div>
                                             </div>

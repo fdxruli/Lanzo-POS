@@ -19,6 +19,12 @@ import {
 import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 import './LayawayModal.css';
 
+const formatLocalDateInputValue = (date) => [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0')
+].join('-');
+
 export default function LayawayModal({ show, onClose, onConfirm, total, customer: preSelectedCustomer }) {
     const [initialPayment, setInitialPayment] = useState('');
     const [deadline, setDeadline] = useState('');
@@ -35,7 +41,9 @@ export default function LayawayModal({ show, onClose, onConfirm, total, customer
         if (show) {
             const date = new Date();
             date.setDate(date.getDate() + 30);
-            setDeadline(date.toISOString().split('T')[0]);
+            // A date input is a calendar date, not an instant. Formatting it
+            // with toISOString() can move it one day around local midnight.
+            setDeadline(formatLocalDateInputValue(date));
             setInitialPayment('');
 
             const fetchCustomers = async () => {

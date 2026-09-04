@@ -44,6 +44,15 @@ const integer = (value) => {
   return negative && normalized !== '0' ? `-${normalized}` : normalized;
 };
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const isLeapYear = (year) => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+
+const daysInMonth = (year, month) => {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+};
+
 const timestamp = (value) => {
   if (value === null || value === undefined) return null;
   const raw = String(value);
@@ -51,10 +60,42 @@ const timestamp = (value) => {
   if (!match) {
     throw new Error('FINANCIAL_TIMESTAMP_INVALID');
   }
-  const [, year, month, day, hour, minute, second, fraction = '', timezone] = match;
-  const offset = timezone === 'Z' ? 0 : ((Number(timezone.slice(1, 3)) * 60 + Number(timezone.slice(4, 6))) * (timezone.startsWith('+') ? 1 : -1));
-  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute) - offset, Number(second)));
-  if (Number.isNaN(date.getTime())) throw new Error('FINANCIAL_TIMESTAMP_INVALID');
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = '', timezone] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHours = timezone === 'Z' ? 0 : Number(timezone.slice(1, 3));
+  const offsetMinutes = timezone === 'Z' ? 0 : Number(timezone.slice(4, 6));
+
+  // Date.UTC normalizes overflow (2026-02-30 becomes March 2). Validate the
+  // calendar and clock components before constructing the instant so malformed
+  // financial timestamps cannot be silently rewritten.
+  if (
+    year < 1
+    || year > 9999
+    || month < 1
+    || month > 12
+    || day < 1
+    || day > daysInMonth(year, month)
+    || hour > 23
+    || minute > 59
+    || second > 59
+    || (timezone !== 'Z' && (offsetHours > 23 || offsetMinutes > 59))
+  ) {
+    throw new Error('FINANCIAL_TIMESTAMP_INVALID');
+  }
+
+  const offset = (offsetHours * 60 + offsetMinutes) * (timezone === 'Z' || timezone.startsWith('+') ? 1 : -1);
+  // setUTCFullYear avoids Date.UTC's special 1900 offset for years 0..99.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute - offset, second, 0);
+  if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1 || date.getUTCFullYear() > 9999) {
+    throw new Error('FINANCIAL_TIMESTAMP_INVALID');
+  }
   // PostgreSQL's to_char(...US...) preserves microseconds and always emits six.
   return `${date.toISOString().slice(0, 19)}.${fraction.slice(0, 6).padEnd(6, '0')}Z`;
 };
@@ -241,8 +282,8 @@ const layawayRecord = (request = {}) => (
 
 const layawayDeadline = (layaway = {}) => {
   const raw = text(firstNonblank(layaway, ['deadline', 'due_date', 'dueDate']));
-  if (!raw) return null;
-  return /^\d{4}-\d{2}-\d{2}$/.test(raw)
+  if (!raw) throw new Error('LAYAWAY_DEADLINE_REQUIRED');
+  return DATE_ONLY_PATTERN.test(raw)
     ? timestamp(`${raw}T00:00:00.000000Z`)
     : timestamp(raw);
 };
