@@ -162,6 +162,33 @@ describe('financial V1 canonical request and hash compatibility', () => {
     expect(first.layaway.deadline).toBe('2026-07-30T00:00:00.000000Z');
   });
 
+  it.each([
+    ['2026-2-4', 'FINANCIAL_TIMESTAMP_INVALID'],
+    ['2026-02-30', 'FINANCIAL_TIMESTAMP_INVALID'],
+    ['2026-13-01', 'FINANCIAL_TIMESTAMP_INVALID'],
+    ['', 'LAYAWAY_DEADLINE_REQUIRED'],
+    [null, 'LAYAWAY_DEADLINE_REQUIRED'],
+    ['2026-07-30T10:20:30', 'FINANCIAL_TIMESTAMP_INVALID'],
+    ['2026-07-30T25:20:30.000000Z', 'FINANCIAL_TIMESTAMP_INVALID']
+  ])('rejects invalid layaway deadline %s before hashing it', (deadline, code) => {
+    expect(() => canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-invalid', total_amount: '10', deadline, items: [] },
+      initial_payment: null
+    })).toThrow(code);
+  });
+
+  it('validates timestamp calendar components instead of allowing Date.UTC overflow', () => {
+    expect(canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-valid', total_amount: '10', deadline: '2024-02-29', items: [] },
+      initial_payment: null
+    }).layaway.deadline).toBe('2024-02-29T00:00:00.000000Z');
+
+    expect(() => canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-invalid-leap', total_amount: '10', deadline: '2026-02-29', items: [] },
+      initial_payment: null
+    })).toThrow('FINANCIAL_TIMESTAMP_INVALID');
+  });
+
   it('converges layaway payment and cancellation session aliases', () => {
     expect(canonicalFinancialRequestV1('layaway.payment', {
       layawayId: 'layaway-1',
