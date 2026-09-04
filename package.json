@@ -28,7 +28,7 @@
     "test:admin-cash-close-contract": "node --test scripts/supabase/admin-cash-close-contract.node-test.mjs",
     "test:admin-close-financial-terminal-contract": "node --test scripts/supabase/admin-close-financial-terminal-contract.node-test.mjs",
     "test:admin-staff-product-inventory-authority-contract": "node --test scripts/supabase/admin-staff-product-inventory-authority-contract.node-test.mjs",
-    "test:cloud-layaways-contract": "node --test scripts/supabase/cloud-layaways-server-contract-r1.node-test.mjs",
+    "test:cloud-layaways-contract": "node --test scripts/supabase/cloud-layaways-server-contract-r1.node-test.mjs scripts/supabase/cloud-layaways-read-rpc-serialization-hardening-r1.node-test.mjs scripts/supabase/cloud-layaways-financial-response-serialization-hardening-r2.node-test.mjs",
     "test:button-css-scope": "node --test scripts/audit-button-css-scope.node-test.mjs",
     "lint": "eslint src/**/*.{js,jsx}",
     "preview": "vite preview",
