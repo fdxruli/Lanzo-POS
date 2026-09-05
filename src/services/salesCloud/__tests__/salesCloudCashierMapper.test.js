@@ -3,7 +3,7 @@ import {
   mapLocalCheckoutToCloudSale,
   mapLocalCreditCheckoutToCloudSale
 } from '../salesCloudCashierMapper';
-import { cloudSaleToLocalSyncPatch } from '../salesCloudMapper';
+import { localSaleToCloudShadowPayload, cloudSaleToLocalSyncPatch } from '../salesCloudMapper';
 
 describe('salesCloudMapper operational folio', () => {
   it('maps the server-assigned POS folio without replacing the financial folio', () => {
@@ -65,6 +65,37 @@ describe('salesCloudCashierMapper discounts', () => {
     expect(payload.items[0].selected_modifiers).toEqual(selectedModifiers);
     expect(payload.items[0].metadata.selectedModifiers).toEqual(selectedModifiers);
     expect(payload.items[0].line_total).toBe(200);
+  });
+});
+
+describe('salesCloudMapper product and line identity', () => {
+  it('keeps an explicit product reference separate from the cart line id', () => {
+    const item = {
+      id: 'product-1',
+      lineId: 'line-1',
+      productId: 'product-1',
+      name: 'Producto',
+      price: 20,
+      quantity: 1,
+      exactTotal: 20,
+      lineTotal: 20
+    };
+
+    const cashierPayload = mapLocalCheckoutToCloudSale({
+      sale: { id: 'identity-sale-1', timestamp: '2026-07-03T12:00:00.000Z', total: 20 },
+      processedItems: [item],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 20 },
+      total: 20
+    });
+    const shadowPayload = localSaleToCloudShadowPayload({
+      id: 'identity-sale-1',
+      timestamp: '2026-07-03T12:00:00.000Z',
+      total: 20,
+      items: [item]
+    });
+
+    expect(cashierPayload.items[0]).toMatchObject({ id: 'line-1', product_id: 'product-1' });
+    expect(shadowPayload.items[0]).toMatchObject({ id: 'line-1', product_id: 'product-1' });
   });
 });
 

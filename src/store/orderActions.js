@@ -7,8 +7,10 @@ import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
 import {
   createCartLineId,
+  ensureCartProductReference,
   ensureCartLineId,
   getCartLineId,
+  getCartProductId,
   isCartLineMatch,
   shouldCreateSeparateCartLine
 } from '../utils/cartLineIdentity';
@@ -103,10 +105,16 @@ const findScannedProductIndex = (items, product) =>
     return item.id === product.id;
   });
 
-const buildScannedLineId = (product) =>
-  product?.lineId ||
-  product?.uniqueLineId ||
-  createCartLineId(product);
+const buildScannedLineId = (product, existingItems = []) => {
+  const explicitLineId = product?.lineId || product?.uniqueLineId;
+  const isAlreadyUsed = explicitLineId && existingItems.some((item, index) => (
+    getCartLineId(item, index) === explicitLineId
+  ));
+
+  return !isAlreadyUsed && explicitLineId
+    ? explicitLineId
+    : createCartLineId(product);
+};
 
 const getInventoryReservationKey = (item) => {
   if (!item) return null;
@@ -145,31 +153,32 @@ export const summarizeScannedProducts = (items = []) => {
   const groupedItems = [];
 
   for (const item of items) {
-    if (!item?.id) {
+    const normalizedItem = ensureCartProductReference(item, { allowIdFallback: true });
+    if (!normalizedItem?.id) {
       continue;
     }
 
-    const quantity = Math.max(1, Number(item.quantity) || 1);
+    const quantity = Math.max(1, Number(normalizedItem.quantity) || 1);
 
-    if (!shouldAggregateScannedProduct(item)) {
+    if (!shouldAggregateScannedProduct(normalizedItem)) {
       for (let index = 0; index < quantity; index += 1) {
-        const lineId = buildScannedLineId(item);
+        const lineId = buildScannedLineId(normalizedItem, groupedItems);
         groupedItems.push({
-          ...item,
+          ...normalizedItem,
           quantity: 1,
           lineId,
-          uniqueLineId: item.uniqueLineId || lineId,
+          uniqueLineId: index === 0 ? normalizedItem.uniqueLineId || lineId : lineId,
         });
       }
 
       continue;
     }
 
-    const existingIndex = findScannedProductIndex(groupedItems, item);
+    const existingIndex = findScannedProductIndex(groupedItems, normalizedItem);
 
     if (existingIndex === -1) {
       groupedItems.push({
-        ...item,
+        ...normalizedItem,
         quantity,
       });
       continue;
@@ -201,12 +210,15 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
     const quantity = Math.max(1, Number(groupedItem.quantity) || 1);
 
     if (!shouldAggregateScannedProduct(groupedItem)) {
-      const lineId = buildScannedLineId(groupedItem);
+      const lineId = buildScannedLineId(groupedItem, nextOrder);
       const newItem = {
         ...groupedItem,
+        productId: groupedItem.productId,
         quantity: 1,
         lineId,
-        uniqueLineId: groupedItem.uniqueLineId || lineId,
+        uniqueLineId: groupedItem.uniqueLineId && lineId === groupedItem.lineId
+          ? groupedItem.uniqueLineId
+          : lineId,
         exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock || 99999),
       };
 
@@ -224,6 +236,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
 
       nextOrder[existingItemIndex] = {
         ...existingItem,
+        productId: getCartProductId(existingItem) ?? groupedItem.productId,
         quantity: newQuantity,
         exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999),
       };
@@ -233,10 +246,15 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
       continue;
     }
 
+    const lineId = buildScannedLineId(groupedItem, nextOrder);
     const newItem = {
       ...groupedItem,
+      productId: groupedItem.productId,
       quantity,
-      lineId: buildScannedLineId(groupedItem),
+      lineId,
+      uniqueLineId: groupedItem.uniqueLineId && lineId === groupedItem.lineId
+        ? groupedItem.uniqueLineId
+        : lineId,
       exceedsStock: groupedItem.trackStock && quantity > (groupedItem.stock || 99999),
     };
 
@@ -343,6 +361,7 @@ export const createOrderActions = (set, get) => ({
       },
 
       addItem: (product, orderId = get().currentOrderId) => {
+        const productForCart = ensureCartProductReference(product, { allowIdFallback: true });
         get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const canAggregateProduct = !shouldCreateSeparateCartLine(product);
@@ -454,6 +473,7 @@ export const createOrderActions = (set, get) => ({
             const updatedOrder = [...order];
             updatedOrder[existingItemIndex] = {
               ...currentItem,
+              productId: getCartProductId(currentItem) ?? productForCart.productId,
               quantity: newQuantity,
               price: finalPrice,
               exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock || 99999),
@@ -467,7 +487,8 @@ export const createOrderActions = (set, get) => ({
               ? getSessionAvailableStock(get(), product, orderId)
               : product.stock;
             const newItem = {
-              ...product,
+              ...productForCart,
+              productId: productForCart.productId,
               lineId: targetLineId,
               quantity: 1,
               price: initialPrice,
@@ -489,6 +510,7 @@ export const createOrderActions = (set, get) => ({
           return { success: false, action: null, item: null };
         }
 
+        const productForCart = ensureCartProductReference(resolvedProduct, { allowIdFallback: true });
         const result = { success: false, action: null, item: null };
 
         get().updateOrderItems(orderId, (prevOrder) => {
@@ -508,6 +530,7 @@ export const createOrderActions = (set, get) => ({
               const newOrder = [...order];
               newOrder[existingItemIndex] = {
                 ...existingItem,
+                productId: getCartProductId(existingItem) ?? productForCart.productId,
                 quantity: newQuantity,
                 exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999)
               };
@@ -520,10 +543,14 @@ export const createOrderActions = (set, get) => ({
               const sessionAvailableStock = resolvedProduct.trackStock
                 ? getSessionAvailableStock(get(), resolvedProduct, orderId)
                 : resolvedProduct.stock;
+              const lineId = buildScannedLineId(productForCart, order);
               const newItem = {
-                ...resolvedProduct,
-                lineId: createCartLineId(resolvedProduct),
-                uniqueLineId: `${resolvedProduct.id}-${Date.now()}`,
+                ...productForCart,
+                productId: productForCart.productId,
+                lineId,
+                uniqueLineId: productForCart.uniqueLineId && lineId === productForCart.lineId
+                  ? productForCart.uniqueLineId
+                  : lineId,
                 quantity: 1,
                 stock: sessionAvailableStock,
                 exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
@@ -538,9 +565,11 @@ export const createOrderActions = (set, get) => ({
             const sessionAvailableStock = resolvedProduct.trackStock
               ? getSessionAvailableStock(get(), resolvedProduct, orderId)
               : resolvedProduct.stock;
+            const lineId = buildScannedLineId(productForCart, order);
             const newItem = {
-              ...resolvedProduct,
-              lineId: createCartLineId(resolvedProduct),
+              ...productForCart,
+              productId: productForCart.productId,
+              lineId,
               quantity: 1,
               stock: sessionAvailableStock,
               exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock

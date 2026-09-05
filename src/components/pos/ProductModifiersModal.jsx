@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Check, AlertCircle, Info, ShoppingCart, StickyNote } from 'lucide-react';
-import { createCartLineId } from '../../utils/cartLineIdentity';
+import { createCartLineId, ensureCartProductReference } from '../../utils/cartLineIdentity';
 import {
     getModifierOptionLabel,
     normalizeModifierGroups,
@@ -105,7 +105,7 @@ export default function ProductModifiersModal({ show, onClose, product, onConfir
         });
 
         const modifiedProduct = {
-            ...product,
+            ...ensureCartProductReference(product, { allowIdFallback: true }),
             price: finalPrice,
             originalPrice: finalPrice,
             selectedModifiers: cleanedModifiers,
