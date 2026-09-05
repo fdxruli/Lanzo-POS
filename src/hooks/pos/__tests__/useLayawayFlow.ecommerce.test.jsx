@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   activeState: null,
@@ -64,6 +64,28 @@ const setActiveOrder = (origin) => {
   };
 };
 
+const mountedHooks = new Set();
+
+const renderLayawayHook = (deps) => {
+  const hook = renderHook(() => useLayawayFlow(deps));
+  mountedHooks.add(hook);
+  return hook;
+};
+
+afterEach(() => {
+  try {
+    for (const hook of mountedHooks) {
+      hook.unmount();
+    }
+  } finally {
+    mountedHooks.clear();
+    cleanup();
+    mocks.activeState = null;
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  }
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   setActiveOrder('ecommerce');
@@ -73,7 +95,7 @@ beforeEach(() => {
 describe('useLayawayFlow ecommerce guard', () => {
   it('does not open the layaway modal for an ecommerce draft', () => {
     const deps = makeDeps();
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     let response;
     act(() => {
@@ -90,7 +112,7 @@ describe('useLayawayFlow ecommerce guard', () => {
 
   it('blocks confirmation before creating the layaway, payment or caja movement', async () => {
     const deps = makeDeps();
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     let response;
     await act(async () => {
@@ -113,7 +135,7 @@ describe('useLayawayFlow ecommerce guard', () => {
   it('preserves the normal POS layaway flow', async () => {
     setActiveOrder(undefined);
     const deps = makeDeps();
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     act(() => {
       result.current.handleInitiateLayaway();
@@ -140,7 +162,7 @@ describe('useLayawayFlow ecommerce guard', () => {
     setActiveOrder(undefined);
     const deps = makeDeps();
     deps.order = [{ id: 'line-1', [field]: 'product-1', quantity: 1, price: 20 }];
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     await act(async () => {
       await result.current.handleConfirmLayaway({
@@ -156,7 +178,7 @@ describe('useLayawayFlow ecommerce guard', () => {
     setActiveOrder(undefined);
     const deps = makeDeps();
     deps.order = [{ id: 'line-only', quantity: 1, price: 20 }];
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     let response;
     await act(async () => {
