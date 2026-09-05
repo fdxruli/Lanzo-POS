@@ -493,16 +493,21 @@ describe('useActiveOrders unified store', () => {
     }]);
     await addPromise;
 
-    expect(useActiveOrders.getState().activeOrders.get('one')?.items).toMatchObject([{
+    const items = useActiveOrders.getState().activeOrders.get('one')?.items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
       id: 'product-batch',
+      productId: 'product-batch',
+      lineId: expect.any(String),
       batchId: 'batch-1',
-      price: 25,
+      price: 20,
       cost: 10,
       stock: 3,
       quantity: 1,
-      isVariant: true,
+      isVariant: false,
       skuDetected: 'BATCH-1'
-    }]);
+    });
+    expect(items[0].lineId).not.toBe(items[0].id);
     expect(useActiveOrders.getState().pendingInventoryResolutions.has('one')).toBe(false);
   });
 
