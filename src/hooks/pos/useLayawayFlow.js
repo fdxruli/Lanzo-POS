@@ -13,6 +13,20 @@ import {
     isEcommercePosEffectBlocked
 } from '../../services/ecommerce/ecommercePosDraftGuards';
 
+const LAYAWAY_PRODUCT_FIELDS = ['product_id', 'productId', 'parentId'];
+const LAYAWAY_PRODUCT_REQUIRED_MESSAGE =
+    'Uno de los artículos del apartado no tiene un producto válido. Revisa el carrito y corrige o elimina esa línea antes de confirmar.';
+
+const hasValidLayawayProductReference = (item = {}) => LAYAWAY_PRODUCT_FIELDS.some((field) => {
+    const value = item?.[field];
+    if (typeof value === 'string') return value.trim() !== '';
+    return typeof value === 'number' && Number.isFinite(value);
+});
+
+const findInvalidLayawayItemIndex = (items = []) => (
+    items.findIndex((item) => !hasValidLayawayProductReference(item))
+);
+
 /**
  * Hook para manejar los apartados (layaway) del POS.
  * Encapsula la lógica de iniciar y confirmar un apartado.
@@ -77,6 +91,17 @@ export function useLayawayFlow({
                 const targetCustomer = customerFromModal || customer;
                 if (!targetCustomer) {
                     throw new Error('No se ha identificado al cliente para el apartado.');
+                }
+
+                const invalidItemIndex = findInvalidLayawayItemIndex(order);
+                if (invalidItemIndex !== -1) {
+                    showMessageModal(LAYAWAY_PRODUCT_REQUIRED_MESSAGE, null, { type: 'warning' });
+                    return {
+                        success: false,
+                        code: 'LAYAWAY_PRODUCT_REQUIRED',
+                        message: LAYAWAY_PRODUCT_REQUIRED_MESSAGE,
+                        itemIndex: invalidItemIndex
+                    };
                 }
 
                 const layawayData = {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   activeState: null,
@@ -44,7 +44,7 @@ const makeDeps = () => ({
   openModal: vi.fn(),
   closeModal: vi.fn(),
   showToast: vi.fn(),
-  order: [{ id: 'product-1', quantity: 1, price: 20 }],
+  order: [{ id: 'line-1', productId: 'product-1', quantity: 1, price: 20 }],
   customer: { id: 'customer-1', name: 'Cliente' },
   total: 20,
   clearOrder: vi.fn()
@@ -58,11 +58,33 @@ const setActiveOrder = (origin) => {
       {
         id: 'active-order',
         origin,
-        items: [{ id: 'product-1', quantity: 1, price: 20 }]
+        items: [{ id: 'line-1', productId: 'product-1', quantity: 1, price: 20 }]
       }
     ]])
   };
 };
+
+const mountedHooks = new Set();
+
+const renderLayawayHook = (deps) => {
+  const hook = renderHook(() => useLayawayFlow(deps));
+  mountedHooks.add(hook);
+  return hook;
+};
+
+afterEach(() => {
+  try {
+    for (const hook of mountedHooks) {
+      hook.unmount();
+    }
+  } finally {
+    mountedHooks.clear();
+    cleanup();
+    mocks.activeState = null;
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  }
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -73,7 +95,7 @@ beforeEach(() => {
 describe('useLayawayFlow ecommerce guard', () => {
   it('does not open the layaway modal for an ecommerce draft', () => {
     const deps = makeDeps();
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     let response;
     act(() => {
@@ -90,7 +112,7 @@ describe('useLayawayFlow ecommerce guard', () => {
 
   it('blocks confirmation before creating the layaway, payment or caja movement', async () => {
     const deps = makeDeps();
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     let response;
     await act(async () => {
@@ -113,7 +135,7 @@ describe('useLayawayFlow ecommerce guard', () => {
   it('preserves the normal POS layaway flow', async () => {
     setActiveOrder(undefined);
     const deps = makeDeps();
-    const { result } = renderHook(() => useLayawayFlow(deps));
+    const { result } = renderLayawayHook(deps);
 
     act(() => {
       result.current.handleInitiateLayaway();
@@ -134,5 +156,50 @@ describe('useLayawayFlow ecommerce guard', () => {
     }));
     expect(deps.clearOrder).toHaveBeenCalledTimes(1);
     expect(deps.closeModal).toHaveBeenCalledWith('layaway');
+  });
+
+  it.each(['product_id', 'productId', 'parentId'])('accepts a valid product alias: %s', async (field) => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    deps.order = [{ id: 'line-1', [field]: 'product-1', quantity: 1, price: 20 }];
+    const { result } = renderLayawayHook(deps);
+
+    await act(async () => {
+      await result.current.handleConfirmLayaway({
+        initialPayment: 0,
+        deadline: '2026-07-20'
+      });
+    });
+
+    expect(mocks.createLayaway).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a line without a product reference before the financial RPC', async () => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    deps.order = [{ id: 'line-only', quantity: 1, price: 20 }];
+    const { result } = renderLayawayHook(deps);
+
+    let response;
+    await act(async () => {
+      response = await result.current.handleConfirmLayaway({
+        initialPayment: 0,
+        deadline: '2026-07-20'
+      });
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      code: 'LAYAWAY_PRODUCT_REQUIRED',
+      itemIndex: 0
+    });
+    expect(mocks.createLayaway).not.toHaveBeenCalled();
+    expect(deps.clearOrder).not.toHaveBeenCalled();
+    expect(deps.closeModal).not.toHaveBeenCalled();
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      expect.stringContaining('no tiene un producto válido'),
+      null,
+      { type: 'warning' }
+    );
   });
 });
