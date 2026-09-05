@@ -597,6 +597,18 @@ describe('layawayFinancialService', () => {
     ]);
   });
 
+  it('maps an explicit cart productId to product_id while preserving the line id', () => {
+    const request = buildCloudLayawayCompletionRequest({
+      id: 'layaway-1',
+      totalAmount: '20.00',
+      items: [{ id: 'product-1', lineId: 'line-1', productId: 'product-1', quantity: 1, price: 20 }]
+    });
+
+    expect(request.items).toEqual([
+      expect.objectContaining({ id: 'product-1', product_id: 'product-1', quantity: 1, unit_price: 20 })
+    ]);
+  });
+
   it.each([
     ['paid layaway refund', { retainMoney: false, refundId: 'refund-paid' }],
     ['retained funds', { retainMoney: true, refundId: 'refund-retained' }],

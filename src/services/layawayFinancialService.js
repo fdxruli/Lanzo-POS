@@ -10,6 +10,7 @@ import { Money } from '../utils/moneyMath';
 import { salesCloudCashierService } from './salesCloud/salesCloudCashierService';
 import { salesCloudRepository } from './salesCloud/salesCloudRepository';
 import { getLicenseKeyFromDetails, isCloudLayawaysEnabled } from './sync/syncConstants';
+import { getCartProductId } from '../utils/cartLineIdentity';
 
 const OPEN_CASH_MESSAGE = 'Debes abrir Caja antes de registrar un pago de apartado.';
 const CLOUD_LAYAWAYS_DISABLED_MESSAGE =
@@ -199,7 +200,7 @@ const buildCloudLayawayCompletionRequest = (layaway = {}) => {
         const lineTotal = Money.toNumber(Money.subtract(lineSubtotal, discountAmount));
         return {
             id: item.id || `${saleId}:item:${index + 1}`,
-            product_id: item.productId || item.product_id || item.parentId || null,
+            product_id: getCartProductId(item),
             product_name: item.name || item.productName || item.product_name || 'Producto',
             product_sku: item.sku || item.productSku || item.product_sku || null,
             barcode: item.barcode || item.barCode || null,

@@ -5,7 +5,7 @@ import './VariantSelectorModal.css';
 import './VariantSelectorFefo.css';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
-import { createCartLineId } from '../../utils/cartLineIdentity';
+import { createCartLineId, ensureCartProductReference } from '../../utils/cartLineIdentity';
 import { getAvailableVariantBatches } from './variantUtils';
 import {
   getAvailableBatchStock,
@@ -155,7 +155,7 @@ export default function VariantSelectorModal({ show, onClose, product, onConfirm
     }
 
     const variantItem = {
-      ...product,
+      ...ensureCartProductReference(product, { allowIdFallback: true }),
       id: product.id,
       parentId: product.id,
       name: `${product.name} (${batch.displayColor} ${batch.displayTalla})`,

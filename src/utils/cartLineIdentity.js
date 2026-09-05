@@ -1,5 +1,41 @@
 const getEntropy = () => Math.random().toString(36).slice(2, 8);
 
+const isUsableCartProductId = (value) => (
+  (typeof value === 'string' && value.trim() !== '') ||
+  (typeof value === 'number' && Number.isFinite(value))
+);
+
+/**
+ * Returns only explicit product references.  `id` is intentionally excluded:
+ * persisted cart lines may use it for the line identity.
+ */
+export const getCartProductId = (item = {}) => {
+  for (const value of [item.productId, item.product_id, item.parentId]) {
+    if (isUsableCartProductId(value)) return value;
+  }
+  return null;
+};
+
+/**
+ * Adds the canonical product reference when the input is known to be a
+ * catalog product or a scanner-resolved product.  The `id` fallback is opt-in
+ * so arbitrary persisted lines can never be promoted accidentally.
+ */
+export const ensureCartProductReference = (product, { allowIdFallback = false } = {}) => {
+  if (!product || typeof product !== 'object') return product;
+
+  const productId = getCartProductId(product) ?? (
+    allowIdFallback && isUsableCartProductId(product.id) ? product.id : null
+  );
+
+  if (productId === null || product.productId === productId) return product;
+
+  return {
+    ...product,
+    productId
+  };
+};
+
 export const createCartLineId = (item = {}) => {
   const productId = item?.id || item?.parentId || item?.productId || 'item';
   const batchId = item?.batchId || item?.variantId || 'base';
