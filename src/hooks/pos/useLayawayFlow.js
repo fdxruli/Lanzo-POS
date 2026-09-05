@@ -12,16 +12,12 @@ import {
     getEcommercePosBlockedResult,
     isEcommercePosEffectBlocked
 } from '../../services/ecommerce/ecommercePosDraftGuards';
+import { getCartProductId } from '../../utils/cartLineIdentity';
 
-const LAYAWAY_PRODUCT_FIELDS = ['product_id', 'productId', 'parentId'];
 const LAYAWAY_PRODUCT_REQUIRED_MESSAGE =
     'Uno de los artículos del apartado no tiene un producto válido. Revisa el carrito y corrige o elimina esa línea antes de confirmar.';
 
-const hasValidLayawayProductReference = (item = {}) => LAYAWAY_PRODUCT_FIELDS.some((field) => {
-    const value = item?.[field];
-    if (typeof value === 'string') return value.trim() !== '';
-    return typeof value === 'number' && Number.isFinite(value);
-});
+const hasValidLayawayProductReference = (item = {}) => getCartProductId(item) !== null;
 
 const findInvalidLayawayItemIndex = (items = []) => (
     items.findIndex((item) => !hasValidLayawayProductReference(item))

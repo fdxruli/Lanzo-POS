@@ -55,6 +55,10 @@ describe('ProductModifiersModal selection rules', () => {
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      id: 'taco-1',
+      lineId: expect.any(String),
+      productId: 'taco-1',
+      parentId: 'taco-1',
       price: 65,
       selectedModifiers: [
         { id: 'queso', name: 'Queso extra', price: 10 },

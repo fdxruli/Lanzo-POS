@@ -2,6 +2,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
+import userEvent from '@testing-library/user-event';
 
 const loadBatchesForProductMock = vi.hoisted(() => vi.fn(async () => []));
 
@@ -64,5 +65,31 @@ describe('VariantSelectorModal', () => {
 
     expect(screen.getByText(/2 disponibles · Stock crítico/i)).toBeInTheDocument();
     expect(screen.getByText(/4 disponibles · Stock bajo/i)).toBeInTheDocument();
+  });
+
+  it('keeps the variant product reference separate from its cart line id', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const { container } = render(
+      <VariantSelectorModal
+        show
+        onClose={vi.fn()}
+        product={product}
+        onConfirm={onConfirm}
+        preloadedBatches={[
+          { id: 'batch-m', isActive: true, stock: 3, price: 160, cost: 80, sku: 'PLAYERA-M', attributes: { talla: 'M', color: 'Negro' } }
+        ]}
+      />
+    );
+
+    await user.click(container.querySelector('.size-card'));
+
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'product-1',
+      parentId: 'product-1',
+      productId: 'product-1',
+      lineId: expect.any(String),
+      batchId: 'batch-m'
+    }));
   });
 });

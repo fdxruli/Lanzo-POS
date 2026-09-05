@@ -532,6 +532,101 @@ describe('useActiveOrders unified store', () => {
     ]);
   });
 
+  it('stores explicit productId for catalog, variant, modifier, and scanner lines', () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([['one', makeOrder('one')]]),
+      currentOrderId: 'one'
+    });
+
+    useActiveOrders.getState().addItem({
+      id: 'product-1',
+      lineId: 'line-1',
+      name: 'Producto',
+      price: 20,
+      quantity: 1,
+      saleType: 'unit',
+      trackStock: false
+    });
+    useActiveOrders.getState().addItem({
+      id: 'product-2',
+      parentId: 'product-2',
+      lineId: 'line-2',
+      name: 'Variante',
+      price: 25,
+      quantity: 1,
+      saleType: 'unit',
+      isVariant: true,
+      batchId: 'batch-2',
+      trackStock: false
+    });
+    useActiveOrders.getState().addItem({
+      id: 'product-3',
+      lineId: 'line-3',
+      name: 'Producto con modificadores',
+      price: 30,
+      quantity: 1,
+      saleType: 'unit',
+      selectedModifiers: [{ id: 'extra', name: 'Extra', price: 5 }],
+      trackStock: false
+    });
+    useActiveOrders.getState().addScannedProduct({
+      id: 'product-4',
+      lineId: 'scan-line-4',
+      name: 'Producto escaneado',
+      price: 40,
+      saleType: 'unit',
+      trackStock: false
+    });
+
+    const items = useActiveOrders.getState().activeOrders.get('one')?.items;
+    expect(items).toHaveLength(4);
+    expect(items).toMatchObject([
+      { id: 'product-1', lineId: 'line-1', productId: 'product-1' },
+      { id: 'product-2', lineId: 'line-2', productId: 'product-2', parentId: 'product-2' },
+      { id: 'product-3', lineId: 'line-3', productId: 'product-3', selectedModifiers: [{ id: 'extra' }] },
+      { id: 'product-4', lineId: 'scan-line-4', productId: 'product-4' }
+    ]);
+  });
+
+  it('normalizes multiple scanner lines while preserving line identity', () => {
+    useActiveOrders.setState({
+      activeOrders: new Map([['one', makeOrder('one')]]),
+      currentOrderId: 'one'
+    });
+
+    const result = useActiveOrders.getState().addMultipleScannedProducts([
+      {
+        id: 'scan-product-1',
+        lineId: 'scan-line-1',
+        name: 'Escaneado',
+        price: 12.5,
+        quantity: 2,
+        saleType: 'unit',
+        trackStock: false
+      },
+      {
+        id: 'scan-product-2',
+        lineId: 'scan-line-2',
+        name: 'Escaneado por peso',
+        price: 9.5,
+        quantity: 2,
+        saleType: 'bulk',
+        trackStock: false
+      }
+    ]);
+
+    expect(result).toMatchObject({ success: true, addedCount: 4 });
+    const items = useActiveOrders.getState().activeOrders.get('one')?.items;
+    expect(items).toHaveLength(3);
+    expect(items).toMatchObject([
+      { id: 'scan-product-1', lineId: 'scan-line-1', productId: 'scan-product-1', quantity: 2 },
+      { id: 'scan-product-2', productId: 'scan-product-2', quantity: 1 },
+      { id: 'scan-product-2', productId: 'scan-product-2', quantity: 1 }
+    ]);
+    expect(items[1].lineId).not.toBe(items[2].lineId);
+    expect(items[1].lineId).toBe('scan-line-2');
+  });
+
   it('authorizes below-cost wholesale on the target lineId only', () => {
     useActiveOrders.setState({
       activeOrders: new Map([[

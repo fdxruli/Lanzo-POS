@@ -174,10 +174,44 @@ describe('useLayawayFlow ecommerce guard', () => {
     expect(mocks.createLayaway).toHaveBeenCalledTimes(1);
   });
 
+  it('passes the explicit productId through the layaway payload without changing line identity', async () => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    deps.order = [{
+      id: 'product-1',
+      lineId: 'line-1',
+      productId: 'product-1',
+      name: 'Producto',
+      price: 20,
+      quantity: 1
+    }];
+    const { result } = renderLayawayHook(deps);
+
+    await act(async () => {
+      await result.current.handleConfirmLayaway({
+        initialPayment: 0,
+        deadline: '2026-07-20'
+      });
+    });
+
+    expect(mocks.createLayaway).toHaveBeenCalledWith(expect.objectContaining({
+      layawayData: expect.objectContaining({
+        items: [{
+          id: 'product-1',
+          lineId: 'line-1',
+          productId: 'product-1',
+          name: 'Producto',
+          price: 20,
+          quantity: 1
+        }]
+      })
+    }));
+  });
+
   it('blocks a line without a product reference before the financial RPC', async () => {
     setActiveOrder(undefined);
     const deps = makeDeps();
-    deps.order = [{ id: 'line-only', quantity: 1, price: 20 }];
+    deps.order = [{ id: 'product-1', lineId: 'line-1', quantity: 1, price: 20 }];
     const { result } = renderLayawayHook(deps);
 
     let response;
