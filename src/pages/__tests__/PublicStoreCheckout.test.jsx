@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import PublicStorePage from '../PublicStorePage';
 import { getPublicCartStorageKey } from '../../hooks/ecommerce/usePublicCart';
 import { EcommercePublicError } from '../../services/ecommerce/ecommercePublicService';
+
+const originalCrypto = globalThis.crypto;
 
 const serviceMocks = vi.hoisted(() => ({
   getPublicPortalBySlug: vi.fn(),
@@ -167,12 +169,22 @@ describe('PublicStorePage checkout integration', () => {
   });
 
   afterEach(() => {
-    setNavigatorOnline(true);
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      value: 'visible'
-    });
-    cleanup();
+    try {
+      cleanup();
+    } finally {
+      setNavigatorOnline(true);
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: 'visible'
+      });
+      window.sessionStorage.clear();
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        value: originalCrypto
+      });
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
   });
 
   it('blocks checkout when ordering is disabled', async () => {
@@ -459,13 +471,25 @@ describe('PublicStorePage checkout integration', () => {
 
   it('revalidates availability on focus and when the document becomes visible', async () => {
     renderPage();
+    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(1));
     await screen.findByRole('button', { name: 'Agregar Alitas BBQ' });
     expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(1);
 
+    vi.useFakeTimers();
     window.dispatchEvent(new Event('focus'));
-    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await vi.advanceTimersToNextTimerAsync();
+      await serviceMocks.getPublicPortalBySlug.mock.results[1].value;
+      await Promise.resolve();
+    });
+    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
     document.dispatchEvent(new Event('visibilitychange'));
-    await waitFor(() => expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      await vi.advanceTimersToNextTimerAsync();
+      await serviceMocks.getPublicPortalBySlug.mock.results[2].value;
+      await Promise.resolve();
+    });
+    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(3);
   });
 
   it('opens a second checkout without personal data after success', async () => {
