@@ -208,4 +208,42 @@ describe('financial V1 canonical request and hash compatibility', () => {
       layaway_id: 'layaway-1', reason: 'Cliente', retain_money: false, refund_id: 'refund-1', cash_session_id: 'cash-2'
     }));
   });
+
+  it('keeps financial layaway item fields and nested nulls in the canonical contract', () => {
+    const canonical = canonicalFinancialRequestV1('layaway.create', {
+      layaway: {
+        id: 'layaway-null-nested',
+        total_amount: '175.00',
+        deadline: '2026-07-30',
+        items: [{
+          parentId: 'product-1',
+          name: 'Camisa',
+          variantAttributes: { size: 'M', color: null },
+          attributes: { material: 'Algodón', size: null, nested: { value: null } },
+          qty: '2.00',
+          price: '87.5000',
+          cost: '40.0000',
+          total: '175.0000'
+        }]
+      },
+      initial_payment: null,
+      cashSessionId: 'cash-1'
+    });
+
+    expect(canonical.layaway.items[0]).toMatchObject({
+      product_id: 'product-1',
+      product_name: 'Camisa',
+      variant_attributes: { size: 'M', color: null },
+      attributes: { material: 'Algodón', size: null, nested: { value: null } },
+      quantity: '2',
+      unit_price: '87.5',
+      unit_cost: '40',
+      line_total: '175',
+      discount_amount: '0',
+      tax_amount: '0'
+    });
+    expect(canonical.layaway.items[0].attributes.size).toBeNull();
+    expect(canonical.layaway.items[0].attributes.nested.value).toBeNull();
+    expect(canonical.layaway.deadline).toBe('2026-07-30T00:00:00.000000Z');
+  });
 });
