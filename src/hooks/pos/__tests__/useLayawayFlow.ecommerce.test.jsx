@@ -44,7 +44,7 @@ const makeDeps = () => ({
   openModal: vi.fn(),
   closeModal: vi.fn(),
   showToast: vi.fn(),
-  order: [{ id: 'product-1', quantity: 1, price: 20 }],
+  order: [{ id: 'line-1', productId: 'product-1', quantity: 1, price: 20 }],
   customer: { id: 'customer-1', name: 'Cliente' },
   total: 20,
   clearOrder: vi.fn()
@@ -58,7 +58,7 @@ const setActiveOrder = (origin) => {
       {
         id: 'active-order',
         origin,
-        items: [{ id: 'product-1', quantity: 1, price: 20 }]
+        items: [{ id: 'line-1', productId: 'product-1', quantity: 1, price: 20 }]
       }
     ]])
   };
@@ -134,5 +134,50 @@ describe('useLayawayFlow ecommerce guard', () => {
     }));
     expect(deps.clearOrder).toHaveBeenCalledTimes(1);
     expect(deps.closeModal).toHaveBeenCalledWith('layaway');
+  });
+
+  it.each(['product_id', 'productId', 'parentId'])('accepts a valid product alias: %s', async (field) => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    deps.order = [{ id: 'line-1', [field]: 'product-1', quantity: 1, price: 20 }];
+    const { result } = renderHook(() => useLayawayFlow(deps));
+
+    await act(async () => {
+      await result.current.handleConfirmLayaway({
+        initialPayment: 0,
+        deadline: '2026-07-20'
+      });
+    });
+
+    expect(mocks.createLayaway).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a line without a product reference before the financial RPC', async () => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    deps.order = [{ id: 'line-only', quantity: 1, price: 20 }];
+    const { result } = renderHook(() => useLayawayFlow(deps));
+
+    let response;
+    await act(async () => {
+      response = await result.current.handleConfirmLayaway({
+        initialPayment: 0,
+        deadline: '2026-07-20'
+      });
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      code: 'LAYAWAY_PRODUCT_REQUIRED',
+      itemIndex: 0
+    });
+    expect(mocks.createLayaway).not.toHaveBeenCalled();
+    expect(deps.clearOrder).not.toHaveBeenCalled();
+    expect(deps.closeModal).not.toHaveBeenCalled();
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      expect.stringContaining('no tiene un producto válido'),
+      null,
+      { type: 'warning' }
+    );
   });
 });

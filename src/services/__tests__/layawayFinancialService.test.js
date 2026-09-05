@@ -84,7 +84,10 @@ vi.mock('../sync/syncConstants', () => ({
   isCloudLayawaysEnabled: mocks.isCloudLayawaysEnabled
 }));
 
-import { layawayFinancialService } from '../layawayFinancialService';
+import {
+  buildCloudLayawayCompletionRequest,
+  layawayFinancialService
+} from '../layawayFinancialService';
 
 const layawayData = {
   id: 'layaway-1',
@@ -580,6 +583,18 @@ describe('layawayFinancialService', () => {
     }));
     expect(mocks.convertToSale).not.toHaveBeenCalled();
     expect(mocks.registerMovement).not.toHaveBeenCalled();
+  });
+
+  it('does not promote a layaway line id into a product reference during completion', () => {
+    const request = buildCloudLayawayCompletionRequest({
+      id: 'layaway-1',
+      totalAmount: '20.00',
+      items: [{ id: 'line-only', quantity: 1, price: 20 }]
+    });
+
+    expect(request.items).toEqual([
+      expect.objectContaining({ id: 'line-only', product_id: null })
+    ]);
   });
 
   it.each([

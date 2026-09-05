@@ -162,6 +162,48 @@ describe('financial V1 canonical request and hash compatibility', () => {
     expect(first.layaway.deadline).toBe('2026-07-30T00:00:00.000000Z');
   });
 
+  it('accepts decimal layaway totals through every supported alias without weakening numeric syntax', () => {
+    for (const [field, value, expected] of [
+      ['total_amount', 20, '20'],
+      ['totalAmount', '20.00', '20'],
+      ['total', 1750.50, '1750.5'],
+      ['totalAmount', '1750.50', '1750.5'],
+      ['total_amount', '0.50', '0.5']
+    ]) {
+      const canonical = canonicalFinancialRequestV1('layaway.create', {
+        layaway: { id: `layaway-${field}-${String(value)}`, [field]: value, deadline: '2026-07-30', items: [] },
+        initial_payment: null
+      });
+      expect(canonical.layaway.total_amount).toBe(expected);
+    }
+
+    for (const invalid of ['abc', '20..00', '1,000', '$20', 'NaN', 'Infinity']) {
+      expect(() => canonicalFinancialRequestV1('layaway.create', {
+        layaway: { id: 'layaway-invalid-total', totalAmount: invalid, deadline: '2026-07-30', items: [] },
+        initial_payment: null
+      })).toThrow('FINANCIAL_NUMERIC_INVALID');
+    }
+
+    expect(canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-empty-total', totalAmount: '', deadline: '2026-07-30', items: [] },
+      initial_payment: null
+    }).layaway.total_amount).toBeUndefined();
+
+    expect(canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-null-total', totalAmount: null, deadline: '2026-07-30', items: [] },
+      initial_payment: null
+    }).layaway.total_amount).toBeUndefined();
+
+    expect(canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-negative-total', totalAmount: '-20', deadline: '2026-07-30', items: [] },
+      initial_payment: null
+    }).layaway.total_amount).toBe('-20');
+    expect(canonicalFinancialRequestV1('layaway.create', {
+      layaway: { id: 'layaway-negative-decimal-total', total: '-0.50', deadline: '2026-07-30', items: [] },
+      initial_payment: null
+    }).layaway.total_amount).toBe('-0.5');
+  });
+
   it.each([
     ['2026-2-4', 'FINANCIAL_TIMESTAMP_INVALID'],
     ['2026-02-30', 'FINANCIAL_TIMESTAMP_INVALID'],
