@@ -4,24 +4,38 @@ import {
   CLOUD_REQUEST_CACHE,
   ENABLE_CLOUD_REQUEST_DEBUG
 } from './cloudRequestConstants';
+import { hashCloudContextPart } from './cloudRequestKeys';
 
 const cache = new Map();
 const inFlight = new Map();
 const backoff = new Map();
 const versions = new Map();
 const lastStartedAt = new Map();
+const responseAudit = [];
 
 const stats = {
   requestsStarted: 0,
   cacheHits: 0,
   deduped: 0,
   errors: 0,
-  backoffHits: 0
+  backoffHits: 0,
+  staleDiscarded: 0
 };
 
 let lastCleanupAt = 0;
+let requestSequence = 0;
 
 const RATE_LIMITED_ERROR_CODE = 'RATE_LIMITED';
+export const CLOUD_REQUEST_RESPONSE_STALE_CODE = 'CLOUD_REQUEST_RESPONSE_STALE';
+export const CLOUD_RESPONSE_ORIGINS = Object.freeze({
+  NETWORK: 'network',
+  CACHE: 'cache',
+  IN_FLIGHT: 'in-flight',
+  STALE: 'stale/discarded'
+});
+const STALE_RESPONSE_ERROR_CODE = CLOUD_REQUEST_RESPONSE_STALE_CODE;
+const RESPONSE_ORIGINS = CLOUD_RESPONSE_ORIGINS;
+const MAX_RESPONSE_AUDIT_ENTRIES = 250;
 
 const CRITICAL_ERROR_CODES = new Set([
   'LICENSE_REQUIRED',
@@ -42,6 +56,12 @@ const CRITICAL_ERROR_CODES = new Set([
 
 const now = () => Date.now();
 
+const isBrowserOnline = () => (
+  typeof navigator === 'undefined' || navigator.onLine !== false
+);
+
+const keyHash = (key) => hashCloudContextPart(key);
+
 const debug = (message, payload = {}) => {
   if (!ENABLE_CLOUD_REQUEST_DEBUG) return;
   try {
@@ -50,6 +70,97 @@ const debug = (message, payload = {}) => {
   } catch {
     // noop
   }
+};
+
+const recordResponseOrigin = ({
+  requestKey,
+  rpcName = null,
+  requestId,
+  generation,
+  connectionGeneration,
+  origin,
+  reason = null,
+  sourceRequestId = null,
+  startedAt = null,
+  startedOnline = null,
+  completedAt = now(),
+  errorCode = null
+} = {}) => {
+  const entry = Object.freeze({
+    requestId: requestId || null,
+    generation: Number(generation) || 0,
+    connectionGeneration: Number(connectionGeneration) || 0,
+    origin: origin || null,
+    reason: reason || null,
+    sourceRequestId: sourceRequestId || null,
+    rpcName: rpcName || null,
+    keyHash: requestKey ? keyHash(requestKey) : null,
+    startedAt: startedAt || null,
+    startedOnline: startedOnline === null ? null : Boolean(startedOnline),
+    completedAt,
+    errorCode: errorCode || null
+  });
+
+  responseAudit.push(entry);
+  if (responseAudit.length > MAX_RESPONSE_AUDIT_ENTRIES) responseAudit.shift();
+  debug('response', entry);
+  return entry;
+};
+
+const attachResponseMetadata = (value, metadata) => {
+  if (!value || typeof value !== 'object') return value;
+
+  const decorated = Array.isArray(value) ? [...value] : { ...value };
+  Object.defineProperty(decorated, 'cloudRequestMeta', {
+    value: Object.freeze({ ...metadata }),
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
+  return decorated;
+};
+
+const attachErrorMetadata = (error, metadata) => {
+  const decorated = error instanceof Error ? error : new Error(String(error || 'Cloud request failed'));
+  try {
+    decorated.requestId = metadata.requestId;
+    decorated.generation = metadata.generation;
+    decorated.connectionGeneration = metadata.connectionGeneration;
+    decorated.origin = metadata.origin;
+    decorated.responseOrigin = metadata.origin;
+    decorated.cloudRequestMeta = metadata;
+  } catch {
+    // Some third-party errors can be immutable. The audit entry still keeps
+    // the redacted request evidence for diagnostics.
+  }
+  return decorated;
+};
+
+const isStaleResponseError = (error) => error?.code === STALE_RESPONSE_ERROR_CODE;
+
+const buildStaleResponseError = (record, reason) => {
+  stats.staleDiscarded += 1;
+  const metadata = recordResponseOrigin({
+    requestKey: record.requestKey,
+    rpcName: record.rpcName,
+    requestId: record.requestId,
+    generation: record.generation,
+    connectionGeneration: record.connectionGeneration,
+    origin: RESPONSE_ORIGINS.STALE,
+    reason,
+    startedAt: record.startedAt,
+    startedOnline: record.startedOnline,
+    errorCode: STALE_RESPONSE_ERROR_CODE
+  });
+  const error = new Error(STALE_RESPONSE_ERROR_CODE);
+  error.code = STALE_RESPONSE_ERROR_CODE;
+  error.origin = RESPONSE_ORIGINS.STALE;
+  error.requestId = record.requestId;
+  error.generation = record.generation;
+  error.connectionGeneration = record.connectionGeneration;
+  error.reason = reason;
+  error.cloudRequestMeta = metadata;
+  return error;
 };
 
 const normalizeKey = (key) => {
@@ -129,6 +240,20 @@ const stringifyError = (error) => {
   }).join(' ').toLowerCase();
 };
 
+const getErrorChain = (error) => {
+  const chain = [];
+  const visited = new Set();
+  let current = error;
+
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    chain.push(current);
+    current = current.cause || current.originalError || current.error || null;
+  }
+
+  return chain;
+};
+
 const isCriticalOrBusinessError = (error) => {
   const code = getErrorCode(error);
   if (CRITICAL_ERROR_CODES.has(code)) return true;
@@ -168,6 +293,43 @@ export const isTemporaryCloudRequestError = (error) => {
     message.includes('503') ||
     message.includes('504')
   );
+};
+
+// This narrower predicate advances the shared connectivity generation. A
+// 429 is retryable but is not evidence that an older successful response is
+// unsafe, so it deliberately does not advance the generation.
+const isTransportUnavailableError = (error) => {
+  if (!isBrowserOnline()) return true;
+
+  return getErrorChain(error).some((candidate) => {
+    const status = Number(candidate?.status || candidate?.statusCode || candidate?.response?.status || 0);
+    if (status === 408 || (status >= 500 && status <= 599)) return true;
+
+    const text = stringifyError(candidate);
+    return (
+      candidate?.name === 'TypeError'
+      || text.includes('err_connection_closed')
+      || text.includes('failed to fetch')
+      || text.includes('networkerror')
+      || text.includes('network request failed')
+      || text.includes('fetch failed')
+      || text.includes('load failed')
+      || text.includes('connection closed')
+      || text.includes('connection reset')
+      || text.includes('cash_network_unavailable')
+    );
+  });
+};
+
+let connectionGeneration = 0;
+
+const advanceConnectionGeneration = (reason) => {
+  connectionGeneration += 1;
+  debug('connection generation advanced', {
+    connectionGeneration,
+    reason
+  });
+  return connectionGeneration;
 };
 
 const bumpVersion = (key) => {
@@ -223,7 +385,7 @@ const registerBackoff = (key, error) => {
     error
   });
 
-  debug('backoff', { key, attempts, delayMs });
+  debug('backoff', { keyHash: keyHash(key), attempts, delayMs });
 };
 
 const getFreshCache = (key, time) => {
@@ -244,7 +406,7 @@ const maybeReturnCooldownCache = ({ key, cooldownMs, force, time }) => {
 
   entry.lastAccessedAt = time;
   stats.cacheHits += 1;
-  debug('cooldown cache hit', { key, cooldownMs });
+  debug('cooldown cache hit', { keyHash: keyHash(key), cooldownMs });
   return entry.value;
 };
 
@@ -260,7 +422,7 @@ const assertCanStartRequest = ({ key, force, time }) => {
   error.retryAfterMs = backoffRecord.until - time;
   error.retryAfterSeconds = Math.ceil(error.retryAfterMs / 1000);
   error.cause = backoffRecord.error;
-  debug('backoff hit', { key, retryAfterMs: error.retryAfterMs });
+  debug('backoff hit', { keyHash: keyHash(key), retryAfterMs: error.retryAfterMs });
   throw error;
 };
 
@@ -280,6 +442,7 @@ export const cloudRequestManager = {
     cooldownMs = 0,
     dedupe = true,
     force = false,
+    allowCache = true,
     tags = [],
     fn
   } = {}) {
@@ -288,60 +451,166 @@ export const cloudRequestManager = {
     const requestKey = normalizeKey(key);
     if (typeof fn !== 'function') throw new Error('CLOUD_REQUEST_FN_REQUIRED');
 
+    // `force` is a generation boundary, not merely a cache bypass. The old
+    // in-flight entry intentionally remains reachable by its caller so it
+    // can settle, but it can no longer be deduped or write into this key.
+    if (force) invalidateKey(requestKey);
+
     const time = now();
     cleanupCache(false);
+    const requestGeneration = currentVersion(requestKey);
+    const requestId = `cloud-${++requestSequence}`;
+    const requestConnectionGeneration = connectionGeneration;
 
-    const freshCache = !force ? getFreshCache(requestKey, time) : null;
+    const freshCache = allowCache && !force ? getFreshCache(requestKey, time) : null;
     if (freshCache) {
       stats.cacheHits += 1;
-      debug('cache hit', { key: requestKey });
-      return freshCache.value;
+      const metadata = recordResponseOrigin({
+        requestKey,
+        rpcName,
+        requestId,
+        generation: requestGeneration,
+        connectionGeneration: requestConnectionGeneration,
+        origin: RESPONSE_ORIGINS.CACHE,
+        reason: 'fresh-cache',
+        sourceRequestId: freshCache.requestId,
+        startedAt: freshCache.startedAt,
+        startedOnline: freshCache.startedOnline
+      });
+      debug('cache hit', { keyHash: keyHash(requestKey), requestId, generation: requestGeneration });
+      return attachResponseMetadata(freshCache.value, metadata);
     }
 
-    const requestVersion = currentVersion(requestKey);
     const existingInFlight = inFlight.get(requestKey);
-    if (dedupe && existingInFlight && existingInFlight.version === requestVersion) {
+    if (dedupe && existingInFlight && existingInFlight.generation === requestGeneration) {
       stats.deduped += 1;
-      debug('dedupe in-flight', { key: requestKey });
-      return existingInFlight.promise;
+      debug('dedupe in-flight', {
+        keyHash: keyHash(requestKey),
+        requestId,
+        generation: requestGeneration,
+        sourceRequestId: existingInFlight.requestId
+      });
+      return existingInFlight.promise.then((result) => {
+        const metadata = recordResponseOrigin({
+          requestKey,
+          rpcName,
+          requestId,
+          generation: requestGeneration,
+          connectionGeneration: existingInFlight.connectionGeneration,
+          origin: RESPONSE_ORIGINS.IN_FLIGHT,
+          reason: 'deduped-request',
+          sourceRequestId: existingInFlight.requestId,
+          startedAt: existingInFlight.startedAt,
+          startedOnline: existingInFlight.startedOnline
+        });
+        return attachResponseMetadata(result, metadata);
+      });
     }
 
     assertCanStartRequest({ key: requestKey, force, time });
 
-    const cooldownValue = maybeReturnCooldownCache({ key: requestKey, cooldownMs, force, time });
-    if (cooldownValue) return cooldownValue;
+    const cooldownValue = allowCache
+      ? maybeReturnCooldownCache({ key: requestKey, cooldownMs, force, time })
+      : null;
+    if (cooldownValue) {
+      const metadata = recordResponseOrigin({
+        requestKey,
+        rpcName,
+        requestId,
+        generation: requestGeneration,
+        connectionGeneration: requestConnectionGeneration,
+        origin: RESPONSE_ORIGINS.CACHE,
+        reason: 'cooldown-cache',
+        startedOnline: isBrowserOnline()
+      });
+      return attachResponseMetadata(cooldownValue, metadata);
+    }
 
     const requestTags = normalizeTags(tags);
     stats.requestsStarted += 1;
     lastStartedAt.set(requestKey, time);
-    debug('fetch', { key: requestKey, rpcName, ttlMs, cooldownMs, tags: requestTags });
+    const requestRecord = {
+      requestKey,
+      rpcName,
+      requestId,
+      generation: requestGeneration,
+      connectionGeneration: requestConnectionGeneration,
+      startedAt: time,
+      startedOnline: isBrowserOnline(),
+      tags: requestTags
+    };
+    debug('fetch', {
+      keyHash: keyHash(requestKey),
+      rpcName,
+      requestId,
+      generation: requestGeneration,
+      ttlMs,
+      cooldownMs,
+      allowCache,
+      tags: requestTags
+    });
 
     const promise = Promise.resolve()
       .then(fn)
       .then((result) => {
+        if (currentVersion(requestKey) !== requestGeneration) {
+          throw buildStaleResponseError(requestRecord, 'generation_changed');
+        }
+        if (connectionGeneration !== requestConnectionGeneration) {
+          throw buildStaleResponseError(requestRecord, 'connection_lost');
+        }
+        if (!isBrowserOnline()) {
+          throw buildStaleResponseError(requestRecord, 'browser_offline');
+        }
         if (isRateLimitedPayload(result)) {
           throw buildRateLimitedError(result);
         }
 
         backoff.delete(requestKey);
 
-        if (Number(ttlMs) > 0 && currentVersion(requestKey) === requestVersion) {
+        if (allowCache && Number(ttlMs) > 0 && currentVersion(requestKey) === requestGeneration) {
           const completedAt = now();
           cache.set(requestKey, {
             value: result,
             tags: requestTags,
             createdAt: completedAt,
             lastAccessedAt: completedAt,
-            expiresAt: completedAt + Number(ttlMs)
+            expiresAt: completedAt + Number(ttlMs),
+            requestId,
+            generation: requestGeneration,
+            connectionGeneration: requestConnectionGeneration,
+            startedAt: time,
+            startedOnline: requestRecord.startedOnline
           });
           cleanupCache(false);
-        } else if (currentVersion(requestKey) !== requestVersion) {
-          debug('obsolete result ignored for cache', { key: requestKey });
         }
 
         return result;
       })
       .catch((error) => {
+        if (isStaleResponseError(error)) throw error;
+        if (currentVersion(requestKey) !== requestGeneration) {
+          throw buildStaleResponseError(requestRecord, 'generation_changed_after_error');
+        }
+        if (connectionGeneration !== requestConnectionGeneration) {
+          throw buildStaleResponseError(requestRecord, 'connection_lost_after_error');
+        }
+        if (isTransportUnavailableError(error)) {
+          advanceConnectionGeneration('transport_error');
+          const metadata = recordResponseOrigin({
+            requestKey,
+            rpcName,
+            requestId,
+            generation: requestGeneration,
+            connectionGeneration: requestConnectionGeneration,
+            origin: RESPONSE_ORIGINS.NETWORK,
+            reason: 'transport-error',
+            startedAt: time,
+            startedOnline: requestRecord.startedOnline,
+            errorCode: error?.code || error?.name || 'CLOUD_TRANSPORT_ERROR'
+          });
+          error = attachErrorMetadata(error, metadata);
+        }
         stats.errors += 1;
         registerBackoff(requestKey, error);
         throw error;
@@ -356,10 +625,27 @@ export const cloudRequestManager = {
       promise,
       tags: requestTags,
       startedAt: time,
-      version: requestVersion
+      generation: requestGeneration,
+      version: requestGeneration,
+      requestId,
+      connectionGeneration: requestConnectionGeneration,
+      startedOnline: requestRecord.startedOnline
     });
 
-    return promise;
+    return promise.then((result) => {
+      const metadata = recordResponseOrigin({
+        requestKey,
+        rpcName,
+        requestId,
+        generation: requestGeneration,
+        connectionGeneration: requestConnectionGeneration,
+        origin: RESPONSE_ORIGINS.NETWORK,
+        reason: null,
+        startedAt: time,
+        startedOnline: requestRecord.startedOnline
+      });
+      return attachResponseMetadata(result, metadata);
+    });
   },
 
   invalidateByTag(tag) {
@@ -406,6 +692,7 @@ export const cloudRequestManager = {
     cache.clear();
     backoff.clear();
     lastStartedAt.clear();
+    responseAudit.length = 0;
     debug('clear', { count: keys.size });
     return keys.size;
   },
@@ -415,8 +702,23 @@ export const cloudRequestManager = {
       ...stats,
       activeInFlight: inFlight.size,
       cacheSize: cache.size,
-      backoffSize: backoff.size
+      backoffSize: backoff.size,
+      connectionGeneration,
+      responseOrigins: responseAudit.reduce((counts, entry) => {
+        if (entry.origin) counts[entry.origin] = (counts[entry.origin] || 0) + 1;
+        return counts;
+      }, {})
     };
+  },
+
+  getResponseAudit({ key = null, rpcName = null, limit = 50 } = {}) {
+    const keyHashFilter = key ? keyHash(normalizeKey(key)) : null;
+    const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), MAX_RESPONSE_AUDIT_ENTRIES);
+    return responseAudit
+      .filter((entry) => (!keyHashFilter || entry.keyHash === keyHashFilter)
+        && (!rpcName || entry.rpcName === rpcName))
+      .slice(-safeLimit)
+      .map((entry) => ({ ...entry }));
   },
 
   _cleanupForTests() {

@@ -24,6 +24,18 @@ const notifyCashChanged = () => {
 
 const getRuntimeLicenseKey = () => getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails);
 
+const getRuntimeCashCacheContext = () => {
+  const state = useAppStore.getState() || {};
+  const isStaff = state.currentDeviceRole === 'staff';
+  const actor = isStaff ? state.currentStaffUser : (state.currentAdminUser || state.licenseDetails?.admin_user);
+  return {
+    actorKey: actor?.id ? `${isStaff ? 'staff' : 'admin'}:${actor.id}` : null,
+    actorSessionId: state.currentStaffSession?.id
+      || state.currentActorSession?.id
+      || null
+  };
+};
+
 const normalizeChangeSeq = (response, fallback = 0) => {
   const value = Number(response?.latest_change_seq ?? response?.latestChangeSeq ?? response?.change_seq ?? fallback);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
@@ -59,7 +71,8 @@ export const cashSyncHandler = {
         scope,
         limit: 100,
         includeClosed: true,
-        force
+        force,
+        cacheContext: getRuntimeCashCacheContext()
       });
 
       if (response?.success === false) {

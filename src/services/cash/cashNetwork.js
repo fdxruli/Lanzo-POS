@@ -1,4 +1,5 @@
 export const CASH_NETWORK_UNAVAILABLE_CODE = 'CASH_NETWORK_UNAVAILABLE';
+export const CASH_STALE_RESPONSE_CODE = 'CLOUD_REQUEST_RESPONSE_STALE';
 
 export const CASH_NETWORK_UNAVAILABLE_MESSAGE = 'Sin conexión con Supabase. La Caja permanece en solo consulta hasta verificar nuevamente la estación.';
 
@@ -56,6 +57,10 @@ const getErrorChain = (error) => {
   return chain;
 };
 
+const getRequestMetadata = (error) => error?.cloudRequestMeta
+  || error?.cause?.cloudRequestMeta
+  || null;
+
 const isRetryableHttpStatus = (status) => Boolean(
   status && (RETRYABLE_HTTP_STATUS_CODES.has(status) || (status >= 500 && status <= 599))
 );
@@ -70,6 +75,13 @@ export const isCashNetworkUnavailableError = (error) => {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
 
   return getErrorChain(error).some((candidate) => {
+    if (candidate?.code === CASH_STALE_RESPONSE_CODE
+      || candidate?.origin === 'stale/discarded'
+      || String(candidate?.reason || '').includes('connection_lost')
+      || String(candidate?.reason || '').includes('browser_offline')) {
+      return true;
+    }
+
     const status = getStatusCode(candidate);
     if (isRetryableHttpStatus(status)) return true;
 
@@ -97,12 +109,23 @@ export const normalizeCashNetworkError = (error, { rpcName = null } = {}) => {
   normalized.status = getStatusCode(error);
   normalized.rpcName = rpcName;
   normalized.cause = error;
+  const requestMetadata = getRequestMetadata(error);
+  if (requestMetadata) {
+    normalized.requestId = requestMetadata.requestId || error?.requestId || null;
+    normalized.generation = requestMetadata.generation || error?.generation || null;
+    normalized.connectionGeneration = requestMetadata.connectionGeneration || null;
+    normalized.startedOnline = requestMetadata.startedOnline ?? null;
+    normalized.responseOrigin = requestMetadata.origin || error?.origin || null;
+    normalized.responseReason = requestMetadata.reason || error?.reason || null;
+    normalized.cloudRequestMeta = requestMetadata;
+  }
   return normalized;
 };
 
 export default Object.freeze({
   CASH_NETWORK_UNAVAILABLE_CODE,
   CASH_NETWORK_UNAVAILABLE_MESSAGE,
+  CASH_STALE_RESPONSE_CODE,
   isCashNetworkUnavailableError,
   normalizeCashNetworkError
 });

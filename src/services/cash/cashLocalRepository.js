@@ -25,6 +25,27 @@ const localCashProjectionDiagnostics = {
 
 const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+const isCompleteCloudCashSession = (value) => Boolean(
+  isRecord(value)
+  && value.id
+  && (
+    value.status
+    || value.opened_at
+    || value.created_at
+    || value.actor_key
+    || value.cash_station_id
+    || value.cashStationId
+  )
+);
+
+const isCompleteCloudCashMovement = (value) => Boolean(
+  isRecord(value)
+  && value.id
+  && (value.cash_session_id || value.cashSessionId)
+  && (value.type || value.tipo)
+  && (value.amount !== undefined || value.monto !== undefined)
+);
+
 const recordLocalRows = (rows, kind) => {
   for (const row of rows || []) {
     if (!isRecord(row)) {
@@ -503,7 +524,10 @@ export const cashLocalRepository = {
   },
 
   async applyCloudCashSession(cloudSession) {
-    if (!cloudSession?.id) return null;
+    if (!isCompleteCloudCashSession(cloudSession)) {
+      localCashProjectionDiagnostics.invalidCashSessionRecords += 1;
+      return null;
+    }
     await ensureOpen();
     const existing = await db.table(STORES.CAJAS).get(cloudSession.id);
     const local = cloudCashSessionToLocal(cloudSession, existing);
@@ -522,7 +546,10 @@ export const cashLocalRepository = {
   },
 
   async applyCloudCashMovement(cloudMovement) {
-    if (!cloudMovement?.id) return null;
+    if (!isCompleteCloudCashMovement(cloudMovement)) {
+      localCashProjectionDiagnostics.invalidCashMovementRecords += 1;
+      return null;
+    }
     await ensureOpen();
     const existing = await db.table(STORES.MOVIMIENTOS_CAJA).get(cloudMovement.id);
     const local = cloudCashMovementToLocal(cloudMovement, existing);

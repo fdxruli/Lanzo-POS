@@ -134,7 +134,6 @@ export function useCaja() {
 
   const totalesCacheRef = useRef({ teoricoTimestamp: 0, teoricoData: null, teoricoCajaId: null, totalesTurnoKey: null });
   const verificationInFlightRef = useRef(null);
-  const pendingForceVerificationRef = useRef(false);
   const verificationSequenceRef = useRef(0);
   const lastAppliedSequenceRef = useRef(0);
   const lastSuccessfulSequenceRef = useRef(0);
@@ -196,13 +195,17 @@ export function useCaja() {
       || (currentMode.cloudEnabled && candidateSessionMismatch)
       || (currentMode.cloudEnabled && (!displayResult.stateKnown || displayResult.networkUnavailable))
     );
-    const financialStatus = candidateSessionMismatch ? 'BLOCKED' : displayResult.financialStatus;
+    const financialStatus = candidateSessionMismatch
+      || displayResult.financialCode === 'CASH_SESSION_STATION_MISMATCH'
+      ? 'BLOCKED'
+      : displayResult.financialStatus;
     const nextMode = {
       ...currentMode,
       ...(displayResult.mode || {}),
       readOnly: nextReadOnly,
       stateKnown: displayResult.stateKnown,
-      networkUnavailable: displayResult.networkUnavailable
+      networkUnavailable: displayResult.networkUnavailable,
+      financialCode: displayResult.financialCode || null
     };
 
     networkUnavailableRef.current = displayResult.networkUnavailable;
@@ -253,7 +256,13 @@ export function useCaja() {
     setMovimientosCaja(displayResult.movements || []);
     setTotalesTurno(displayResult.totals || zeroTotals);
     setHistorialCajas(history);
-    setEstadoCaja('open');
+    setEstadoCaja(
+      !displayResult.networkUnavailable && financialStatus === 'BLOCKED'
+        ? 'financial_blocked'
+        : !displayResult.networkUnavailable && financialStatus === 'HANDOFF_REQUIRED'
+          ? 'financial_handoff_required'
+          : 'open'
+    );
     totalesCacheRef.current = { teoricoTimestamp: 0, teoricoData: null, teoricoCajaId: null, totalesTurnoKey: null };
   }, []);
 
@@ -287,9 +296,9 @@ export function useCaja() {
   }, []);
 
   const cargarEstadoCaja = useCallback(({ showLoading = true, force = false } = {}) => {
-    if (verificationInFlightRef.current) {
-      if (force) pendingForceVerificationRef.current = true;
-      return verificationInFlightRef.current;
+    const currentVerification = verificationInFlightRef.current;
+    if (currentVerification && (!force || currentVerification.force)) {
+      return currentVerification.promise;
     }
 
     if (showLoading) {
@@ -300,6 +309,13 @@ export function useCaja() {
 
     const sequence = verificationSequenceRef.current + 1;
     verificationSequenceRef.current = sequence;
+    if (force) lastAppliedSequenceRef.current = sequence;
+
+    const verification = {
+      promise: null,
+      sequence,
+      force
+    };
     const request = (async () => {
       try {
         const result = await cashRepository.getCurrentCashSession({ force });
@@ -338,24 +354,18 @@ export function useCaja() {
         }
         return null;
       } finally {
-        if (mountedRef.current) setIsLoading(false);
+        if (mountedRef.current && verificationInFlightRef.current === verification) {
+          setIsLoading(false);
+        }
       }
     })();
 
-    verificationInFlightRef.current = request;
+    verification.promise = request;
+    verificationInFlightRef.current = verification;
     const settleVerification = () => {
-      if (verificationInFlightRef.current === request) verificationInFlightRef.current = null;
-      const shouldForceRetry = pendingForceVerificationRef.current;
-      pendingForceVerificationRef.current = false;
-      if (!mountedRef.current) return;
-      if (shouldForceRetry) {
-        setIsRetrying(true);
-        window.setTimeout(() => {
-          if (mountedRef.current) cargarEstadoCaja({ showLoading: false, force: true });
-        }, 0);
-      } else {
-        setIsRetrying(false);
-      }
+      if (verificationInFlightRef.current !== verification) return;
+      verificationInFlightRef.current = null;
+      if (mountedRef.current) setIsRetrying(false);
     };
     request.then(settleVerification, settleVerification);
     return request;
@@ -388,11 +398,11 @@ export function useCaja() {
         return;
       }
       networkUnavailableRef.current = true;
+      cashRepository.invalidateCashReadGenerations?.();
       const offlineSequence = verificationSequenceRef.current + 1;
       verificationSequenceRef.current = offlineSequence;
       lastAppliedSequenceRef.current = offlineSequence;
       applyCashState(buildNetworkFallbackResult());
-      scheduleRefresh({ allowWhenUnavailable: true });
     };
     const refresh = () => scheduleRefresh();
     window.addEventListener(CASH_OPENING_POLICY_EVENT, refresh);
@@ -940,6 +950,7 @@ export function useCaja() {
     isCloudCashReadOnly,
     stateKnown: cashMode.stateKnown !== false,
     networkUnavailable: Boolean(cashMode.networkUnavailable),
+    financialCode: cashMode.financialCode || null,
     isRetrying,
     cashActor,
     adminCashSessions,

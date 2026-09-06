@@ -121,6 +121,7 @@ export default function CajaPage() {
     isCloudCashReadOnly,
     networkUnavailable,
     stateKnown,
+    financialCode,
     isRetrying,
     cashActor,
     adminCashSessions,
@@ -609,6 +610,7 @@ export default function CajaPage() {
 
   if (estadoCaja === 'financial_handoff_required' || estadoCaja === 'financial_blocked') {
     const handoffRequired = estadoCaja === 'financial_handoff_required';
+    const stationMismatch = financialCode === 'CASH_SESSION_STATION_MISMATCH';
     const stationSession = aperturaPendiente?.stationOpenCashSession || null;
     const stationOwnerActorKey = cashSessionActorKey(stationSession);
     return (
@@ -646,6 +648,11 @@ export default function CajaPage() {
                   </dl>
                 </details>
               )}
+            </div>
+          ) : stationMismatch ? (
+            <div className="ui-alert ui-alert--warning" role="alert">
+              <strong>Inconsistencia de estación financiera</strong>
+              <p>Supabase devolvió una sesión asociada a otra estación. La Caja permanece bloqueada hasta resolver la identidad de estación explícitamente.</p>
             </div>
           ) : (
             <div className="ui-alert ui-alert--warning" role="alert">

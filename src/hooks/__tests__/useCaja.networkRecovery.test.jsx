@@ -14,6 +14,7 @@ const runtime = vi.hoisted(() => ({
     actor: { actorKey: 'admin:one', isStaff: false, responsibleName: 'Admin' }
   },
   getCurrent: vi.fn(),
+  invalidateReadGenerations: vi.fn(),
   open: vi.fn(),
   movement: vi.fn(),
   message: vi.fn()
@@ -23,6 +24,7 @@ vi.mock('../../services/cash/cashRepository', () => ({
   cashRepository: {
     getMode: () => runtime.mode,
     getCurrentCashSession: (...args) => runtime.getCurrent(...args),
+    invalidateCashReadGenerations: (...args) => runtime.invalidateReadGenerations(...args),
     openCashSession: (...args) => runtime.open(...args),
     registerMovement: (...args) => runtime.movement(...args),
     adjustInitialFund: vi.fn(),
@@ -119,6 +121,7 @@ beforeEach(() => {
   runtime.mode.stateKnown = false;
   runtime.mode.networkUnavailable = false;
   runtime.getCurrent.mockReset();
+  runtime.invalidateReadGenerations.mockReset();
   runtime.open.mockReset();
   runtime.movement.mockReset();
 });
@@ -180,6 +183,22 @@ describe('useCaja network recovery', () => {
     expect(result.current.estadoCaja).toBe('financial_blocked');
   });
 
+  it('keeps CASH_NETWORK_UNAVAILABLE after a manual retry also fails at transport', async () => {
+    runtime.getCurrent
+      .mockResolvedValueOnce(networkResult())
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const { result } = renderHook(() => useCaja());
+
+    await waitFor(() => expect(result.current.networkUnavailable).toBe(true));
+    await act(async () => {
+      await result.current.reintentarVerificacion();
+    });
+
+    await waitFor(() => expect(result.current.networkUnavailable).toBe(true));
+    expect(result.current.stateKnown).toBe(false);
+    expect(result.current.isCloudCashReadOnly).toBe(true);
+  });
+
   it('pauses the 30-second polling while disconnected', async () => {
     vi.useFakeTimers();
     runtime.getCurrent.mockResolvedValue(networkResult());
@@ -215,6 +234,32 @@ describe('useCaja network recovery', () => {
     });
     expect(result.current.networkUnavailable).toBe(true);
     expect(result.current.isCloudCashReadOnly).toBe(true);
+  });
+
+  it('starts a new forced verification while an older verification is still in flight', async () => {
+    let resolveOld;
+    runtime.getCurrent.mockImplementation(({ force }) => {
+      if (force) return Promise.resolve(validResult());
+      return new Promise((resolve) => {
+        resolveOld = resolve;
+      });
+    });
+    const { result } = renderHook(() => useCaja());
+    await waitFor(() => expect(runtime.getCurrent).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.reintentarVerificacion();
+    });
+    await waitFor(() => expect(result.current.stateKnown).toBe(true));
+    expect(runtime.getCurrent).toHaveBeenNthCalledWith(2, { force: true });
+
+    await act(async () => {
+      resolveOld(networkResult());
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.stateKnown).toBe(true);
+    expect(result.current.networkUnavailable).toBe(false);
   });
 
   it('does not send a financial write while state is unknown', async () => {

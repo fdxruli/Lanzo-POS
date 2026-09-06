@@ -147,4 +147,26 @@ describe('cashRepository network recovery', () => {
       financialCode: 'CASH_NETWORK_UNAVAILABLE'
     });
   });
+
+  it('keeps a real online station mismatch as a financial inconsistency, not a network outage', async () => {
+    runtime.current.mockResolvedValue({
+      success: true,
+      cash_session: null,
+      actor_key: 'admin:one'
+    });
+    runtime.stationState.mockResolvedValue({
+      success: true,
+      cash_station: { id: 'cash_station_device_B', device_id: 'B' },
+      station_open_cash_session: null
+    });
+
+    await expect(cashRepository.getCurrentCashSession()).resolves.toMatchObject({
+      success: true,
+      readOnly: true,
+      stateKnown: false,
+      networkUnavailable: false,
+      financialCode: 'CASH_SESSION_STATION_MISMATCH'
+    });
+    expect(runtime.stationState).toHaveBeenCalledTimes(1);
+  });
 });

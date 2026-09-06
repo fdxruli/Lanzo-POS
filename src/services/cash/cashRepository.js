@@ -103,13 +103,85 @@ const showOfflineCashMessage = () => {
   showMessageModal(CASH_CLOUD_OFFLINE_MESSAGE, null, { type: 'warning' });
 };
 
-const logCashNetworkUnavailableOnce = (error) => {
-  if (cashNetworkWarningActive) return;
-  cashNetworkWarningActive = true;
-  Logger.warn('[Cash] Sin conexión con Supabase; la cache local queda en solo consulta:', error);
+const getStationForMode = async () => getCashStationIdentity();
+
+const buildCashReadCacheContext = (mode, station) => ({
+  actorKey: mode?.actor?.actorKey || null,
+  actorSessionId: mode?.actor?.sessionId
+    || mode?.actor?.actorSessionId
+    || mode?.actor?.staffSessionId
+    || null,
+  cashStationId: station?.cashStationId || null
+});
+
+const redactCashIdentity = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return null;
+
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash ^= normalized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `redacted:${(hash >>> 0).toString(36)}`;
 };
 
-const getStationForMode = async () => getCashStationIdentity();
+const getCloudRequestMetadata = (value) => value?.cloudRequestMeta
+  || value?.cause?.cloudRequestMeta
+  || value?.details?.cloudRequestMeta
+  || null;
+
+const buildCashResponseDiagnostic = ({
+  error = null,
+  response = null,
+  localStation = null,
+  cloudStationId = null
+} = {}) => {
+  const metadata = getCloudRequestMetadata(error) || getCloudRequestMetadata(response);
+  return {
+    code: error?.code || null,
+    requestId: error?.requestId || metadata?.requestId || null,
+    generation: error?.generation || metadata?.generation || null,
+    origin: error?.responseOrigin || error?.origin || metadata?.origin || null,
+    localStation: redactCashIdentity(localStation?.cashStationId),
+    cloudStation: redactCashIdentity(
+      cloudStationId || getCashStationIdFromCloudResponse(response || {})
+    )
+  };
+};
+
+const logCashResponseOrigin = ({ response, localStation, cloudStationId = null } = {}) => {
+  const metadata = getCloudRequestMetadata(response);
+  if (!metadata || typeof Logger.debug !== 'function') return;
+  Logger.debug('[Cash] Respuesta de verificación cloud:', buildCashResponseDiagnostic({
+    response,
+    localStation,
+    cloudStationId
+  }));
+};
+
+const logCashNetworkUnavailableOnce = (error, context = {}) => {
+  if (cashNetworkWarningActive) return;
+  cashNetworkWarningActive = true;
+  Logger.warn('[Cash] Sin conexión con Supabase; la cache local queda en solo consulta:',
+    buildCashResponseDiagnostic({ error, ...context }));
+};
+
+const assertAuthoritativeCashResponse = (response, label) => {
+  const metadata = getCloudRequestMetadata(response);
+  if (metadata?.origin === 'cache') {
+    throw new CashFinancialError(
+      'CASH_CLOUD_RESPONSE_NOT_AUTHORITATIVE',
+      `La respuesta cloud de ${label} proviene de cache y no puede validar el estado financiero actual.`,
+      {
+        responseOrigin: metadata.origin,
+        requestId: metadata.requestId,
+        generation: metadata.generation
+      }
+    );
+  }
+  return metadata;
+};
 
 const normalizeCashMutationError = (error, fallbackCode = 'CASH_ERROR') => {
   const message = String(error?.message || error || 'No se pudo completar la operación de caja.');
@@ -163,14 +235,20 @@ const withStationEvidence = (session, cashStationId) => (
     : session
 );
 
-const assertSessionForStation = (session, cashStationId, message = 'La respuesta cloud contiene una sesión de otra estación.') => {
+const assertSessionForStation = (
+  session,
+  cashStationId,
+  message = 'La respuesta cloud contiene una sesión de otra estación.',
+  cloudRequestMeta = null
+) => {
   if (!session || !cashStationId) return session;
   const sessionWithEvidence = withStationEvidence(session, cashStationId);
   const sessionStationId = getSessionStationId(sessionWithEvidence);
   if (!areCashStationsEquivalent(sessionStationId, cashStationId)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, message, {
       sessionStationId,
-      cashStationId
+      cashStationId,
+      cloudRequestMeta
     });
   }
   return sessionWithEvidence;
@@ -178,41 +256,47 @@ const assertSessionForStation = (session, cashStationId, message = 'La respuesta
 
 const assertResponseOwnSession = (response, mode, cashStationId = null) => {
   const session = response?.cash_session || response?.cashSession || null;
+  const cloudRequestMeta = getCloudRequestMetadata(response);
   const responseActor = response?.actor_key || response?.actorKey || null;
   if (responseActor && responseActor !== mode.actor.actorKey) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La respuesta cloud pertenece a otro actor.', {
       responseActorKey: responseActor,
-      actorKey: mode.actor.actorKey
+      actorKey: mode.actor.actorKey,
+      cloudRequestMeta
     });
   }
   const owner = session?.actor_key || session?.actorKey || null;
   if (session && owner !== mode.actor.actorKey) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La respuesta cloud contiene una sesión de otro actor.', {
       ownerActorKey: owner,
-      actorKey: mode.actor.actorKey
+      actorKey: mode.actor.actorKey,
+      cloudRequestMeta
     });
   }
   const responseStationId = getCashStationIdFromCloudResponse(response);
   if (responseStationId && cashStationId && !areCashStationsEquivalent(responseStationId, cashStationId)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La respuesta cloud contiene una estación de otra estación.', {
       responseStationId,
-      cashStationId
+      cashStationId,
+      cloudRequestMeta
     });
   }
   return assertSessionForStation(
     session,
     responseStationId || cashStationId,
-    undefined
+    undefined,
+    cloudRequestMeta
   );
 };
 
 const assertCloudResponseStation = ({ response, localStation } = {}) => {
+  const cloudRequestMeta = getCloudRequestMetadata(response);
   const serverCashStationId = getCashStationIdFromCloudResponse(response);
   if (!serverCashStationId) {
     throw new CashFinancialError(
       CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
       'La respuesta cloud no contiene una estación financiera canónica.',
-      { response }
+      { response, cloudRequestMeta }
     );
   }
 
@@ -221,7 +305,7 @@ const assertCloudResponseStation = ({ response, localStation } = {}) => {
     throw new CashFinancialError(
       CASH_FINANCIAL_CODES.STATION_MISMATCH,
       'La respuesta cloud contiene una estación financiera inconsistente.',
-      { serverCashStationId, resolvedCashStationId }
+      { serverCashStationId, resolvedCashStationId, cloudRequestMeta }
     );
   }
 
@@ -232,12 +316,13 @@ const assertCloudResponseStation = ({ response, localStation } = {}) => {
     && !areCashStationsEquivalent(serverCashStationId, localStation.cashStationId)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La respuesta cloud contiene una sesión de otra estación.', {
       serverCashStationId,
-      localCashStationId: localStation.cashStationId
+      localCashStationId: localStation.cashStationId,
+      cloudRequestMeta
     });
   }
 
   const session = response?.cash_session || response?.cashSession || null;
-  if (session) assertSessionForStation(session, serverCashStationId);
+  if (session) assertSessionForStation(session, serverCashStationId, undefined, cloudRequestMeta);
   return serverCashStationId;
 };
 
@@ -245,6 +330,7 @@ export const cashRepositoryInternals = Object.freeze({
   assertSessionForStation,
   assertResponseOwnSession,
   assertCloudResponseStation,
+  assertAuthoritativeCashResponse,
   isCompleteCloudCashSession,
   isCompleteCloudCashMovement
 });
@@ -280,6 +366,138 @@ const assertCurrentFinancialSessionForMutation = async ({
   });
 };
 
+const assertCloudCashStateKnownBeforeOpen = async ({ mode, station } = {}) => {
+  // Partial repository doubles in contract tests do not expose the read API;
+  // the production repository always does. Keeping this guard at the write
+  // boundary prevents a direct cloud open from bypassing Caja's read-only
+  // state after a transport failure.
+  if (typeof cashCloudRepository.getCurrentCashSession !== 'function'
+    || typeof cashCloudRepository.getCashStationState !== 'function') return null;
+
+  let current;
+  try {
+    current = await cashCloudRepository.getCurrentCashSession({
+      licenseKey: mode.licenseKey,
+      force: true,
+      cacheContext: buildCashReadCacheContext(mode, station),
+      allowCache: false
+    });
+  } catch (error) {
+    if (isCashNetworkUnavailableError(error)) {
+      throw new CashFinancialError(
+        CASH_NETWORK_UNAVAILABLE_CODE,
+        CASH_NETWORK_UNAVAILABLE_MESSAGE,
+        { cause: normalizeCashNetworkError(error, { rpcName: 'pos_get_current_cash_session' }) }
+      );
+    }
+    throw error;
+  }
+  if (current?.success === false) {
+    throw new CashFinancialError(
+      current.code || CASH_FINANCIAL_CODES.SESSION_REQUIRED,
+      current.message || 'No se pudo verificar el estado financiero antes de abrir caja.',
+      { current }
+    );
+  }
+  if (current?.networkUnavailable || current?.stateKnown === false || current?.readOnly
+    || current?.financialStatus === CASH_FINANCIAL_STATUS.BLOCKED
+    || current?.financialStatus === CASH_FINANCIAL_STATUS.HANDOFF_REQUIRED) {
+    throw new CashFinancialError(
+      current.financialCode || (current.networkUnavailable
+        ? CASH_NETWORK_UNAVAILABLE_CODE
+        : CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE),
+      current.warning || 'La apertura permanece bloqueada hasta verificar nuevamente la Caja.',
+      { current }
+    );
+  }
+
+  let stationState;
+  try {
+    stationState = await cashCloudRepository.getCashStationState({
+      licenseKey: mode.licenseKey,
+      force: true,
+      cacheContext: buildCashReadCacheContext(mode, station),
+      allowCache: false
+    });
+  } catch (error) {
+    if (isCashNetworkUnavailableError(error)) {
+      throw new CashFinancialError(
+        CASH_NETWORK_UNAVAILABLE_CODE,
+        CASH_NETWORK_UNAVAILABLE_MESSAGE,
+        { cause: normalizeCashNetworkError(error, { rpcName: 'pos_get_cash_station_state' }) }
+      );
+    }
+    throw error;
+  }
+  if (stationState?.success === false || !stationState?.cash_station) {
+    throw new CashFinancialError(
+      isCashNetworkUnavailableError(stationState)
+        ? CASH_NETWORK_UNAVAILABLE_CODE
+        : (stationState?.code || CASH_FINANCIAL_CODES.STATION_UNRESOLVED),
+      stationState?.message || 'No se pudo verificar la estación financiera antes de abrir caja.',
+      { stationState }
+    );
+  }
+
+  assertAuthoritativeCashResponse(current, 'la sesión actual antes de abrir caja');
+  assertAuthoritativeCashResponse(stationState, 'el estado de estación antes de abrir caja');
+  const stationId = assertCloudResponseStation({ response: stationState, localStation: station });
+  const currentSession = assertResponseOwnSession(current, mode, stationId);
+  const stationOpenCashSession = assertSessionForStation(
+    stationState.station_open_cash_session || stationState.stationOpenCashSession || null,
+    stationId,
+    undefined,
+    getCloudRequestMetadata(stationState)
+  );
+  if (currentSession && !isCompleteCloudCashSession(currentSession)) {
+    throw new CashFinancialError(
+      'CASH_CURRENT_RESPONSE_INVALID',
+      'La respuesta cloud no contiene una sesión de caja completa antes de abrir caja.',
+      { current }
+    );
+  }
+  if (stationOpenCashSession && !isCompleteCloudCashSession(stationOpenCashSession)) {
+    throw new CashFinancialError(
+      'CASH_STATION_STATE_INVALID',
+      'La respuesta cloud no contiene una sesión de estación completa antes de abrir caja.',
+      { stationState }
+    );
+  }
+  const stationOwner = stationOpenCashSession?.actor_key || stationOpenCashSession?.actorKey || null;
+  if (stationOwner && stationOwner !== mode.actor.actorKey) {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.HANDOFF_REQUIRED,
+      'La estación financiera requiere cierre y reconciliación antes de cambiar de actor.',
+      { stationOpenCashSession, stationId }
+    );
+  }
+  return { current, stationState, cashStationId: stationId };
+};
+
+const assertCloudStationKnownBeforeWrite = async ({ mode, station, operation } = {}) => {
+  if (typeof cashCloudRepository.getCashStationState !== 'function') return null;
+
+  const stationState = await cashCloudRepository.getCashStationState({
+    licenseKey: mode.licenseKey,
+    force: true,
+    cacheContext: buildCashReadCacheContext(mode, station),
+    allowCache: false
+  });
+  if (stationState?.success === false || !stationState?.cash_station) {
+    const networkUnavailable = isCashNetworkUnavailableError(stationState);
+    throw new CashFinancialError(
+      networkUnavailable
+        ? CASH_NETWORK_UNAVAILABLE_CODE
+        : (stationState?.code || CASH_FINANCIAL_CODES.STATION_UNRESOLVED),
+      stationState?.message || `${operation || 'La operación'} requiere verificar la estación financiera.`,
+      { stationState }
+    );
+  }
+  assertAuthoritativeCashResponse(stationState, 'el estado de estación');
+  assertCloudResponseStation({ response: stationState, localStation: station });
+  return stationState;
+};
+
 const applyCloudResponse = async (response = {}) => {
   const applied = {
     cashSession: null,
@@ -311,15 +529,17 @@ const applyCloudResponse = async (response = {}) => {
   };
 
   if (response.cash_session !== undefined && response.cash_session !== null) {
-    applied.cashSession = await cashLocalRepository.applyCloudCashSession(
-      validCashSession(response.cash_session)
-    );
+    const validSession = validCashSession(response.cash_session);
+    if (validSession) {
+      applied.cashSession = await cashLocalRepository.applyCloudCashSession(validSession);
+    }
   }
 
   if (response.movement !== undefined && response.movement !== null) {
-    applied.movement = await cashLocalRepository.applyCloudCashMovement(
-      validCashMovement(response.movement)
-    );
+    const validMovement = validCashMovement(response.movement);
+    if (validMovement) {
+      applied.movement = await cashLocalRepository.applyCloudCashMovement(validMovement);
+    }
   }
 
   if (Array.isArray(response.cash_sessions)) {
@@ -371,7 +591,9 @@ const getCachedScope = async (mode, { limit = 50, networkUnavailable = false } =
   try {
     station = await getStationForMode();
   } catch (stationError) {
-    Logger.warn('[Cash] No se pudo resolver la estación local:', stationError);
+    Logger.warn('[Cash] No se pudo resolver la estación local:', {
+      code: stationError?.code || 'CASH_STATION_UNRESOLVED'
+    });
   }
   const financial = await cashLocalRepository.getFinancialState({
     actorKey: actor.actorKey,
@@ -476,6 +698,10 @@ const buildNetworkUnavailableScope = async (mode) => {
 export const cashRepository = {
   getMode: getCashMode,
 
+  invalidateCashReadGenerations() {
+    return cashCloudRepository.invalidateCashReadGenerations?.() || 0;
+  },
+
   async getCurrentCashSession({ force = false } = {}) {
     const mode = getCashMode();
 
@@ -492,13 +718,23 @@ export const cashRepository = {
     try {
       station = await getStationForMode();
     } catch (stationError) {
-      Logger.warn('[Cash] Estación financiera no resuelta:', stationError);
+      Logger.warn('[Cash] Estación financiera no resuelta:', {
+        code: stationError?.code || 'CASH_STATION_UNRESOLVED'
+      });
     }
 
     assertCanUseCashRegister();
+    const cashReadCacheContext = buildCashReadCacheContext(mode, station);
 
     try {
-      const response = await cashCloudRepository.getCurrentCashSession({ licenseKey: mode.licenseKey, force });
+      const response = await cashCloudRepository.getCurrentCashSession({
+        licenseKey: mode.licenseKey,
+        force,
+        cacheContext: cashReadCacheContext,
+        allowCache: false
+      });
+      logCashResponseOrigin({ response, localStation: station });
+      assertAuthoritativeCashResponse(response, 'la sesión actual');
       if (response?.success === false) {
         if (isCashNetworkUnavailableError(response)) {
           throw normalizeCashNetworkError(response, { rpcName: 'pos_get_current_cash_session' });
@@ -508,8 +744,16 @@ export const cashRepository = {
 
       const stationState = await cashCloudRepository.getCashStationState({
         licenseKey: mode.licenseKey,
-        force
+        force,
+        cacheContext: cashReadCacheContext,
+        allowCache: false
       });
+      logCashResponseOrigin({
+        response: stationState,
+        localStation: station,
+        cloudStationId: getCashStationIdFromCloudResponse(stationState)
+      });
+      assertAuthoritativeCashResponse(stationState, 'el estado de estación');
       if (stationState?.success === false || !stationState?.cash_station) {
         if (isCashNetworkUnavailableError(stationState)) {
           throw normalizeCashNetworkError(stationState, { rpcName: 'pos_get_cash_station_state' });
@@ -564,7 +808,14 @@ export const cashRepository = {
 
       let cashSessions = [];
       try {
-        const snapshot = await this.pullCashSnapshot({ scope: mode.actor.isStaff ? 'mine' : 'all', includeClosed: true, limit: 50, force });
+        const snapshot = await this.pullCashSnapshot({
+          scope: mode.actor.isStaff ? 'mine' : 'all',
+          includeClosed: true,
+          limit: 50,
+          force,
+          cacheContext: cashReadCacheContext,
+          allowCache: false
+        });
         cashSessions = snapshot.cashSessions || [];
       } catch (snapshotError) {
         if (!isCashNetworkUnavailableError(snapshotError)) {
@@ -609,13 +860,37 @@ export const cashRepository = {
         }
       });
     } catch (error) {
-      const normalized = normalizeCashMutationError(error, 'CASH_CURRENT_FAILED');
       const networkUnavailable = isCashNetworkUnavailableError(error);
-      if (networkUnavailable) logCashNetworkUnavailableOnce(normalized);
-      else Logger.warn('[Cash] Carga cloud falló; cache local queda read-only y no libre:', normalized);
+      const normalized = networkUnavailable
+        ? normalizeCashNetworkError(error, { rpcName: error?.rpcName || 'cash_verification' })
+        : normalizeCashMutationError(error, 'CASH_CURRENT_FAILED');
+      if (networkUnavailable) {
+        logCashNetworkUnavailableOnce(normalized, {
+          response: error?.response || error?.details?.response || null,
+          localStation: station,
+          cloudStationId: error?.details?.serverCashStationId
+            || error?.details?.responseStationId
+            || error?.details?.sessionStationId
+            || null
+        });
+      } else {
+        Logger.warn('[Cash] Carga cloud falló; cache local queda read-only y no libre:',
+          buildCashResponseDiagnostic({
+            error: normalized,
+            response: error?.details?.response || null,
+            localStation: station,
+            cloudStationId: error?.details?.serverCashStationId
+              || error?.details?.responseStationId
+              || error?.details?.sessionStationId
+              || null
+          }));
+      }
       const cached = networkUnavailable
         ? await buildNetworkUnavailableScope(mode)
         : await getSafeCachedScope({ ...mode, readOnly: true }, { networkUnavailable: false });
+      const safeFinancialCode = networkUnavailable
+        ? CASH_NETWORK_UNAVAILABLE_CODE
+        : (normalized.code || cached.financialCode || CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE);
       return {
         ...cached,
         success: true,
@@ -623,23 +898,19 @@ export const cashRepository = {
           ? CASH_NETWORK_UNAVAILABLE_MESSAGE
           : (normalized.message || 'No se pudo refrescar caja cloud.'),
         readOnly: true,
-        financialStatus: networkUnavailable || cached.financialStatus === CASH_FINANCIAL_STATUS.NO_SESSION
-          ? CASH_FINANCIAL_STATUS.BLOCKED
-          : cached.financialStatus,
-        financialCode: networkUnavailable
-          ? CASH_NETWORK_UNAVAILABLE_CODE
-          : (cached.financialCode || normalized.code || CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE),
+        financialStatus: CASH_FINANCIAL_STATUS.BLOCKED,
+        financialCode: safeFinancialCode,
         stateKnown: false,
         networkUnavailable,
-        financialState: networkUnavailable
-          ? {
-            ...(cached.financialState || {}),
-            status: CASH_FINANCIAL_STATUS.BLOCKED,
-            code: CASH_NETWORK_UNAVAILABLE_CODE,
-            stateKnown: false,
-            networkUnavailable: true
-          }
-          : cached.financialState
+        financialState: {
+          ...(cached.financialState || {}),
+          status: CASH_FINANCIAL_STATUS.BLOCKED,
+          code: safeFinancialCode,
+          stateKnown: false,
+          networkUnavailable,
+          online: mode.online,
+          cloudEnabled: mode.cloudEnabled
+        }
       };
     }
   },
@@ -675,6 +946,13 @@ export const cashRepository = {
     if (!mode.online) {
       showOfflineCashMessage();
       return fail(CASH_CLOUD_OFFLINE_MESSAGE, 'CLOUD_CASH_OFFLINE');
+    }
+
+    try {
+      await assertCloudCashStateKnownBeforeOpen({ mode, station });
+    } catch (openVerificationError) {
+      const normalized = normalizeCashMutationError(openVerificationError, 'CASH_OPEN_VERIFICATION_REQUIRED');
+      return fail(normalized.message, normalized.code, { error: normalized });
     }
 
     let response;
@@ -972,10 +1250,17 @@ export const cashRepository = {
     if (!canAuditCashSessions()) {
       return fail('No tienes permiso para revisar esta caja.', 'CASH_AUDIT_PERMISSION_DENIED');
     }
+    let station = null;
+    try {
+      station = await getStationForMode();
+    } catch {
+      // The cloud response remains subject to its actor/device auth checks.
+    }
     const response = await cashCloudRepository.getCashSessionDetailForAudit({
       licenseKey: mode.licenseKey,
       cashSessionId,
-      force
+      force,
+      cacheContext: buildCashReadCacheContext(mode, station)
     });
     if (response?.success === false) {
       return fail(response.message || 'No se pudo cargar el detalle de caja.', response.code || 'CASH_AUDIT_DETAIL_FAILED', { response });
@@ -1011,7 +1296,19 @@ export const cashRepository = {
     if (mode.actor.isStaff) {
       return fail('Solo un administrador con sesion valida puede cerrar administrativamente una caja.', 'ADMIN_SESSION_REQUIRED');
     }
+    const station = await getStationForMode();
     const actorContext = captureFinancialActor();
+
+    try {
+      await assertCloudStationKnownBeforeWrite({
+        mode,
+        station,
+        operation: 'El cierre administrativo'
+      });
+    } catch (verificationError) {
+      const normalized = normalizeCashMutationError(verificationError, 'ADMIN_CASH_CLOSE_VERIFICATION_REQUIRED');
+      return fail(normalized.message, normalized.code, { error: normalized });
+    }
 
     const resolvedIdempotencyKey = idempotencyKey || null;
     let response;
@@ -1062,6 +1359,18 @@ export const cashRepository = {
       return fail('Solo un administrador con sesión válida puede continuar una caja anterior.', 'ADMIN_SESSION_REQUIRED');
     }
 
+    const station = await getStationForMode();
+    try {
+      await assertCloudStationKnownBeforeWrite({
+        mode,
+        station,
+        operation: 'La transición de caja anterior'
+      });
+    } catch (verificationError) {
+      const normalized = normalizeCashMutationError(verificationError, 'CASH_LEGACY_VERIFICATION_REQUIRED');
+      return fail(normalized.message, normalized.code, { error: normalized });
+    }
+
     const idempotencyKey = generateIdempotencyKey({
       entityType: SYNC_ENTITY_TYPES.CASH_SESSION,
       operation: 'identity_adopt',
@@ -1083,7 +1392,15 @@ export const cashRepository = {
     return { success: true, cashSession: applied.cashSession, response };
   },
 
-  async pullCashSnapshot({ scope = 'mine', includeClosed = true, limit = 100, offset = 0, force = false } = {}) {
+  async pullCashSnapshot({
+    scope = 'mine',
+    includeClosed = true,
+    limit = 100,
+    offset = 0,
+    force = false,
+    cacheContext = null,
+    allowCache = false
+  } = {}) {
     const mode = getCashMode();
 
     if (!mode.cloudEnabled || !mode.online) {
@@ -1097,13 +1414,21 @@ export const cashRepository = {
       return { success: true, cashSessions, movements: [], readOnly: mode.readOnly };
     }
 
+    let station = null;
+    try {
+      station = await getStationForMode();
+    } catch {
+      // The request will still carry license/device/staff context.
+    }
     const response = await cashCloudRepository.pullCashSnapshot({
       licenseKey: mode.licenseKey,
       scope,
       includeClosed,
       limit,
       offset,
-      force
+      force,
+      cacheContext: cacheContext || buildCashReadCacheContext(mode, station),
+      allowCache
     });
 
     if (response?.success === false) {
@@ -1133,8 +1458,15 @@ export const cashRepository = {
       return { success: true, cashSessions, readOnly: mode.readOnly };
     }
 
+    let station = null;
+    try {
+      station = await getStationForMode();
+    } catch {
+      // Keep the audit request bound to its authenticated device context.
+    }
     const response = await cashCloudRepository.listCashSessionsForAudit({
       licenseKey: mode.licenseKey,
+      cacheContext: buildCashReadCacheContext(mode, station),
       ...filters
     });
 

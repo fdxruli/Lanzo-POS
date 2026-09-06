@@ -61,6 +61,15 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
   SYNC_LIMITS.MAX_PULL_LIMIT
 );
 
+const resolveCashCacheContext = (baseArgs, cacheContext = {}) => {
+  return {
+    actorKey: cacheContext.actorKey ?? null,
+    actorSessionId: cacheContext.actorSessionId ?? null,
+    cashStationId: cacheContext.cashStationId
+      ?? (baseArgs?.p_device_fingerprint ? `local:device:${baseArgs.p_device_fingerprint}` : null)
+  };
+};
+
 const invalidateAfterCashSuccess = (licenseKey, response) => {
   if (response?.success !== false) invalidateCloudCacheAfterCashMutation(licenseKey);
   return response;
@@ -81,21 +90,25 @@ const cachedCashRpc = ({
   rpcName,
   licenseKey,
   baseArgs,
+  cacheContext = {},
   params = {},
   ttlMs = CLOUD_REQUEST_TTL.SHORT,
   cooldownMs = CLOUD_REQUEST_COOLDOWN.SHORT,
   tags = [],
   force = false,
+  allowCache = true,
   fn
 }) => cloudRequestManager.request({
   rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
+    ...resolveCashCacheContext(baseArgs, cacheContext),
     params
   }),
   ttlMs,
   cooldownMs,
   force,
+  allowCache,
   tags: [
     CLOUD_REQUEST_TAGS.CASH,
     cloudRequestTags.license(licenseKey),
@@ -106,32 +119,46 @@ const cachedCashRpc = ({
 });
 
 export const cashCloudRepository = {
-  async getCurrentCashSession({ licenseKey, force = false }) {
+  async getCurrentCashSession({
+    licenseKey,
+    force = false,
+    cacheContext = {},
+    allowCache = false
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     return cachedCashRpc({
       rpcName: 'pos_get_current_cash_session',
       licenseKey,
       baseArgs,
+      cacheContext,
       // En hora pico esta lectura puede dispararse varias veces por pantalla/foreground.
       // Las mutaciones de caja siguen siendo directas e invalidan caché; 15s evita ráfagas.
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
+      allowCache,
       fn: () => invokeCashReadRpc('pos_get_current_cash_session', baseArgs)
     });
   },
 
-  async getCashStationState({ licenseKey, force = false }) {
+  async getCashStationState({
+    licenseKey,
+    force = false,
+    cacheContext = {},
+    allowCache = false
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     return cachedCashRpc({
       rpcName: 'pos_get_cash_station_state',
       licenseKey,
       baseArgs,
+      cacheContext,
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
+      allowCache,
       fn: () => invokeCashReadRpc('pos_get_cash_station_state', baseArgs)
     });
   },
@@ -193,7 +220,16 @@ export const cashCloudRepository = {
     return invalidateAfterCashSuccess(licenseKey, parseRpcPayload(data));
   },
 
-  async pullCashSnapshot({ licenseKey, scope = 'mine', limit = 100, offset = 0, includeClosed = true, force = false }) {
+  async pullCashSnapshot({
+    licenseKey,
+    scope = 'mine',
+    limit = 100,
+    offset = 0,
+    includeClosed = true,
+    force = false,
+    cacheContext = {},
+    allowCache = true
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -206,10 +242,12 @@ export const cashCloudRepository = {
       rpcName: 'pos_pull_cash_snapshot',
       licenseKey,
       baseArgs,
+      cacheContext,
       params,
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
       force,
+      allowCache,
       fn: () => invokeCashReadRpc('pos_pull_cash_snapshot', {
         ...baseArgs,
         ...params
@@ -227,7 +265,18 @@ export const cashCloudRepository = {
     });
   },
 
-  async listCashSessionsForAudit({ licenseKey, status = null, staffUserId = null, dateFrom = null, dateTo = null, limit = 100, offset = 0, force = false }) {
+  async listCashSessionsForAudit({
+    licenseKey,
+    status = null,
+    staffUserId = null,
+    dateFrom = null,
+    dateTo = null,
+    limit = 100,
+    offset = 0,
+    force = false,
+    cacheContext = {},
+    allowCache = true
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = {
@@ -242,9 +291,11 @@ export const cashCloudRepository = {
       rpcName: 'pos_admin_list_cash_sessions',
       licenseKey,
       baseArgs,
+      cacheContext,
       params,
       ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
       force,
+      allowCache,
       fn: () => invokeCashReadRpc('pos_admin_list_cash_sessions', {
           ...baseArgs,
           ...params
@@ -252,7 +303,13 @@ export const cashCloudRepository = {
     });
   },
 
-  async getCashSessionDetailForAudit({ licenseKey, cashSessionId, force = false }) {
+  async getCashSessionDetailForAudit({
+    licenseKey,
+    cashSessionId,
+    force = false,
+    cacheContext = {},
+    allowCache = true
+  }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     const params = { p_cash_session_id: cashSessionId };
@@ -260,14 +317,20 @@ export const cashCloudRepository = {
       rpcName: 'pos_admin_get_cash_session_detail',
       licenseKey,
       baseArgs,
+      cacheContext,
       params,
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       force,
+      allowCache,
       fn: () => invokeCashReadRpc('pos_admin_get_cash_session_detail', {
           ...baseArgs,
           ...params
         })
     });
+  },
+
+  invalidateCashReadGenerations() {
+    return cloudRequestManager.invalidateByTag(CLOUD_REQUEST_TAGS.CASH);
   }
 };
 

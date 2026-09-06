@@ -49,6 +49,9 @@ export const cloudRequestTags = Object.freeze({
   device: (deviceId) => `device:${stableHash(deviceId)}`,
   staff: (staffUserId) => `staff:${stableHash(staffUserId)}`,
   staffSession: (staffSessionToken) => `staff_session:${stableHash(staffSessionToken)}`,
+  actor: (actorKey) => `actor:${stableHash(actorKey)}`,
+  actorSession: (actorSessionId) => `actor_session:${stableHash(actorSessionId)}`,
+  cashStation: (cashStationId) => `cash_station:${stableHash(cashStationId)}`,
   rpc: (rpcName) => `rpc:${sanitizePart(rpcName)}`,
   resource: (resource) => `resource:${sanitizePart(resource)}`
 });
@@ -58,13 +61,19 @@ export const buildCloudContextKey = ({
   licenseId = null,
   deviceId = null,
   staffUserId = null,
-  staffSessionToken = null
+  staffSessionToken = null,
+  actorKey = null,
+  actorSessionId = null,
+  cashStationId = null
 } = {}) => ([
   licenseKey ? cloudRequestTags.license(licenseKey) : null,
   licenseId ? cloudRequestTags.licenseId(licenseId) : null,
   deviceId ? cloudRequestTags.device(deviceId) : null,
   staffUserId ? cloudRequestTags.staff(staffUserId) : null,
-  staffSessionToken ? cloudRequestTags.staffSession(staffSessionToken) : null
+  staffSessionToken ? cloudRequestTags.staffSession(staffSessionToken) : null,
+  actorKey ? cloudRequestTags.actor(actorKey) : null,
+  actorSessionId ? cloudRequestTags.actorSession(actorSessionId) : null,
+  cashStationId ? cloudRequestTags.cashStation(cashStationId) : null
 ].filter(Boolean).join('|') || 'context:anonymous');
 
 export const buildCloudRequestKey = ({ resource, context = {}, params = {} } = {}) => [
@@ -79,10 +88,22 @@ export const buildRpcRequestKey = (rpcName, {
   deviceId = null,
   staffUserId = null,
   staffSessionToken = null,
+  actorKey = null,
+  actorSessionId = null,
+  cashStationId = null,
   params = {}
 } = {}) => buildCloudRequestKey({
   resource: `rpc:${sanitizePart(rpcName, 'rpc')}`,
-  context: { licenseKey, licenseId, deviceId, staffUserId, staffSessionToken },
+  context: {
+    licenseKey,
+    licenseId,
+    deviceId,
+    staffUserId,
+    staffSessionToken,
+    actorKey,
+    actorSessionId,
+    cashStationId
+  },
   params
 });
 
