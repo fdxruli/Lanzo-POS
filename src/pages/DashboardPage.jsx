@@ -36,6 +36,7 @@ import { BarChart3, Trash2 } from 'lucide-react';
 import { CANCELLATION_ACTIONS } from '../services/sales/cancelSaleCore';
 import {
   canPerformRefunds,
+  getSalesFinalHistoryScope,
   getSalesActorIdentity
 } from '../services/auth/salesPermissionPolicy';
 import { captureRefundsActorHandle } from '../services/auth/refundsActorAuthorization';
@@ -102,6 +103,7 @@ export default function DashboardPage() {
   const actorRuntime = useActorRuntimeSnapshot();
   const canManageRefunds = canPerformRefunds(actorRuntime);
   const salesActorIdentity = getSalesActorIdentity(actorRuntime);
+  const salesFinalHistoryScope = getSalesFinalHistoryScope(actorRuntime);
   const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(), [licenseDetails]);
   const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
 
@@ -157,7 +159,7 @@ export default function DashboardPage() {
       const historyOffset = salesFinalHistoryPageIndex * SALES_HISTORY_PAGE_SIZE;
       const salesFinalHistoryPromise = shouldLoadFinalHistory
         ? reportsRepository.getSalesFinalHistory({
-          scope: 'mine',
+          scope: salesFinalHistoryScope,
           limit: SALES_HISTORY_PAGE_SIZE,
           offset: historyOffset
         })
@@ -226,7 +228,7 @@ export default function DashboardPage() {
         refreshKey: Date.now()
       }));
     }
-  }, [dashboardReportMode, features.activeRubros, salesFinalHistoryPageIndex]);
+  }, [dashboardReportMode, features.activeRubros, salesFinalHistoryPageIndex, salesFinalHistoryScope]);
 
   useEffect(() => {
     Logger.log('Actualizando Dashboard...');

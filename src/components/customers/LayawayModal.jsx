@@ -1,14 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
     Package, X, Calendar, DollarSign, CheckCircle, XCircle,
     AlertTriangle, ShoppingBag
 } from 'lucide-react';
 import { layawayRepository } from '../../services/db/layaways';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
+import { reportsRepository } from '../../services/reports/reportsRepository';
 import { useCaja } from '../../hooks/useCaja';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { getSalesFinalHistoryScope } from '../../services/auth/salesPermissionPolicy';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import Logger from '../../services/Logger';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import {
+    buildHistoricalLayawayFolios,
+    isActionableLayaway,
+    isTerminalLayaway,
+    normalizeLayawayStatus,
+    splitLayawaysForDisplay
+} from './layawayHistory';
 import './LayawayModal.css';
 
 const CALENDAR_DATE_PATTERN = /^([0-9]{4})-([0-9]{2})-([0-9]{2})(?:T|$)/;
@@ -53,6 +63,7 @@ export default function LayawayModal({
     actorIdentity = null
 }) {
     const [layaways, setLayaways] = useState([]);
+    const [historicalFolios, setHistoricalFolios] = useState({});
     const [loading, setLoading] = useState(false);
     const [processingId, setProcessingId] = useState(null);
 
@@ -61,34 +72,73 @@ export default function LayawayModal({
     const [activePaymentId, setActivePaymentId] = useState(null); // ID del apartado que se está abonando
 
     const { cajaActual } = useCaja();
+    const actorRuntime = useActorRuntimeSnapshot();
+    const salesHistoryScope = getSalesFinalHistoryScope(actorRuntime);
+    const loadVersionRef = useRef(0);
 
-    useEffect(() => {
-        if (show && customer) {
-            loadLayaways();
-        } else {
-            setLayaways([]);
-            setPaymentAmount('');
-            setActivePaymentId(null);
-        }
-    }, [show, customer]);
-
-    const loadLayaways = async () => {
+    const loadLayaways = useCallback(async (loadVersion = loadVersionRef.current) => {
         setLoading(true);
         try {
-            const active = await layawayRepository.getByCustomer(customer.id, true);
-            // Ordenar: Más recientes primero
-            active.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-            setLayaways(active);
+            const allLayaways = await layawayRepository.getByCustomer(customer.id, false);
+            const { history } = splitLayawaysForDisplay(allLayaways);
+            let folios = {};
+
+            // The report RPC is an existing, server-authorized read boundary.
+            // It is invoked while loading the modal, never by a historical card
+            // render, and only receives the broader scope for actors the server
+            // also recognizes as audit-capable.
+            if (history.some((layaway) => normalizeLayawayStatus(layaway) === 'completed' && (layaway.conversionSaleId || layaway.conversion_sale_id))) {
+                try {
+                    const salesHistory = await reportsRepository.getSalesFinalHistory({
+                        scope: salesHistoryScope,
+                        customerId: customer.id,
+                        limit: 500,
+                        offset: 0
+                    });
+                    folios = buildHistoricalLayawayFolios({
+                        layaways: history,
+                        sales: salesHistory?.sales || salesHistory?.rows || []
+                    });
+                } catch (error) {
+                    // A failed optional reference lookup must not hide the
+                    // terminal layaway or cause a fallback financial action.
+                    Logger.warn('No se pudo cargar el folio de venta del historial de apartados', error);
+                }
+            }
+
+            if (loadVersionRef.current !== loadVersion) return;
+            setLayaways(allLayaways);
+            setHistoricalFolios(folios);
         } catch (error) {
+            if (loadVersionRef.current !== loadVersion) return;
             Logger.error("Error cargando apartados", error);
             showMessageModal("Error al cargar los apartados del cliente.");
         } finally {
-            setLoading(false);
+            if (loadVersionRef.current === loadVersion) setLoading(false);
         }
-    };
+    }, [customer, salesHistoryScope]);
+
+    useEffect(() => {
+        const loadVersion = ++loadVersionRef.current;
+        if (show && customer) {
+            loadLayaways(loadVersion);
+        } else {
+            setLayaways([]);
+            setHistoricalFolios({});
+            setPaymentAmount('');
+            setActivePaymentId(null);
+        }
+        return () => {
+            if (loadVersionRef.current === loadVersion) loadVersionRef.current += 1;
+        };
+    }, [show, customer, loadLayaways]);
 
     const handleAddPayment = async (layaway) => {
         if (processingId) return;
+        if (!isActionableLayaway(layaway)) {
+            showMessageModal('Este apartado ya es histórico y no acepta más abonos.', null, { type: 'warning' });
+            return;
+        }
         if (!cajaActual || cajaActual.estado !== 'abierta') {
             showMessageModal('⚠️ Necesitas una caja abierta para recibir dinero.');
             return;
@@ -127,6 +177,10 @@ export default function LayawayModal({
     };
 
     const handleDeliver = async (layaway) => {
+        if (!isActionableLayaway(layaway)) {
+            showMessageModal('Este apartado ya fue finalizado y es de solo lectura.', null, { type: 'warning' });
+            return;
+        }
         const pending = layaway.totalAmount - layaway.paidAmount;
         // ✅ FIX: umbral alineado con addPayment ($0.01) en lugar del anterior $0.50
         if (pending > 0.01) {
@@ -154,13 +208,6 @@ export default function LayawayModal({
         }
     };
 
-    const getDaysElapsed = (dateString) => {
-        const start = new Date(dateString);
-        const now = new Date();
-        const diffTime = Math.abs(now - start);
-        return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-    };
-
     if (!show || !customer) return null;
 
     const checkIsOverdue = (deadline) => {
@@ -176,6 +223,10 @@ export default function LayawayModal({
     };
 
     const handleCancel = async (layaway) => {
+    if (!isActionableLayaway(layaway)) {
+        showMessageModal('Este apartado ya es histórico y no puede cancelarse.', null, { type: 'warning' });
+        return;
+    }
     if (!canManageRefunds || !actorIdentity) return;
     let actorHandle;
     try {
@@ -237,6 +288,24 @@ export default function LayawayModal({
     }
 };
 
+    const layawaySections = splitLayawaysForDisplay(layaways);
+    const visibleSections = [
+        {
+            key: 'active',
+            title: 'Apartados activos',
+            description: 'Apartados que aún admiten operaciones según su estado.',
+            layaways: layawaySections.active,
+            historical: false
+        },
+        {
+            key: 'history',
+            title: 'Historial de apartados',
+            description: 'Apartados finalizados. Esta sección es de solo lectura.',
+            layaways: layawaySections.history,
+            historical: true
+        }
+    ].filter((section) => section.layaways.length > 0);
+
     return (
         <div className="ui-modal ui-modal--high customer-layaway-modal" role="presentation">
             <div
@@ -273,27 +342,40 @@ export default function LayawayModal({
                             <span className="customer-layaway-modal__spinner" aria-hidden="true"></span>
                             <p className="customer-layaway-empty-state__copy">Cargando...</p>
                         </div>
-                    ) : layaways.length === 0 ? (
+                    ) : visibleSections.length === 0 ? (
                         <div className="customer-layaway-empty-state" role="status">
                             <div className="customer-layaway-empty-state__icon" aria-hidden="true">
                                 <Package size={28} strokeWidth={1.75} />
                             </div>
                             <div className="customer-layaway-empty-state__content">
                                 <h3 className="customer-layaway-empty-state__title">Sin apartados</h3>
-                                <p className="customer-layaway-empty-state__copy">Este cliente no tiene apartados activos.</p>
+                                <p className="customer-layaway-empty-state__copy">Este cliente no tiene apartados registrados.</p>
                             </div>
                         </div>
                     ) : (
                         <div className="customer-layaway-list">
-                            {layaways.map(layaway => {
+                            {visibleSections.map((section) => (
+                                <section
+                                    key={section.key}
+                                    className={`customer-layaway-section ${section.historical ? 'customer-layaway-section--history' : 'customer-layaway-section--active'}`}
+                                    aria-labelledby={`customer-layaway-section-${section.key}`}
+                                >
+                                    <div className="customer-layaway-section__header">
+                                        <h3 id={`customer-layaway-section-${section.key}`} className="customer-layaway-section__title">{section.title}</h3>
+                                        <p className="customer-layaway-section__description">{section.description}</p>
+                                    </div>
+                                    {section.layaways.map(layaway => {
+                                const status = normalizeLayawayStatus(layaway);
+                                const isHistorical = section.historical || isTerminalLayaway(layaway);
+                                const isCompleted = status === 'completed';
                                 const pending = layaway.totalAmount - (layaway.paidAmount || 0);
                                 const progress = Math.min((layaway.paidAmount / layaway.totalAmount) * 100, 100);
                                 // ✅ FIX: umbral de isReady alineado a $0.01 para coincidir con addPayment y handleDeliver
-                                const isReady = pending <= 0.01 || layaway.status === 'ready';
-                                const daysElapsed = getDaysElapsed(layaway.createdAt);
-                                const isOverdue = checkIsOverdue(layaway.deadline);
+                                const isReady = !isHistorical && (pending <= 0.01 || status === 'ready');
+                                const isOverdue = !isHistorical && checkIsOverdue(layaway.deadline);
                                 const isPayingThis = activePaymentId === layaway.id;
                                 const paymentInputId = `customer-layaway-payment-${layaway.id}`;
+                                const completionFolio = historicalFolios[layaway.id] || null;
 
                                 return (
                                     <div key={layaway.id} className="customer-layaway-card">
@@ -309,8 +391,8 @@ export default function LayawayModal({
             Límite: {layaway.deadline ? formatCalendarDate(layaway.deadline) : 'Sin definir'}
         </span>
     </div>
-    <div className={`customer-layaway-status ${isReady ? 'customer-layaway-status--ready' : (isOverdue ? 'customer-layaway-status--overdue' : 'customer-layaway-status--pending')}`}>
-        {isReady ? 'Listo' : (isOverdue ? 'Vencido' : 'Pendiente')}
+    <div className={`customer-layaway-status ${isCompleted ? 'customer-layaway-status--completed' : (status === 'cancelled' ? 'customer-layaway-status--cancelled' : (isReady ? 'customer-layaway-status--ready' : (isOverdue ? 'customer-layaway-status--overdue' : 'customer-layaway-status--pending')))}`}>
+        {isCompleted ? 'Completado' : (status === 'cancelled' ? 'Cancelado' : (isReady ? 'Listo' : (isOverdue ? 'Vencido' : 'Pendiente')))}
     </div>
 </div>
 
@@ -393,7 +475,21 @@ export default function LayawayModal({
                                             </div>
                                         </div>
 
+                                        {isHistorical && (
+                                            <div className="customer-layaway-history-details" aria-label="Detalles históricos del apartado">
+                                                <span>Cliente: {layaway.customerName || customer.name}</span>
+                                                <span>Finalizado: {layaway.deliveredAt ? new Date(layaway.deliveredAt).toLocaleDateString() : (layaway.updatedAt ? new Date(layaway.updatedAt).toLocaleDateString() : 'Sin fecha disponible')}</span>
+                                                {isCompleted && (
+                                                    <>
+                                                        <span>Venta vinculada</span>
+                                                        <span>Folio: {completionFolio || 'No disponible'}</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        )}
+
                                         {/* 4. Footer de Acciones */}
+                                        {!isHistorical && (
                                         <div className="customer-layaway-card__footer">
                                             
                                             {/* A) Modo Normal: Botón de Abonar grande y Botones de gestión */}
@@ -484,9 +580,12 @@ export default function LayawayModal({
                                                 </div>
                                             )}
                                         </div>
+                                        )}
                                     </div>
                                 );
                             })}
+                                </section>
+                            ))}
                         </div>
                     )}
                 </div>

@@ -23,6 +23,24 @@ const assertCloudLayawaysEnabled = (mode) => {
     throw error;
 };
 
+const assertLayawayActionable = (layaway, operation) => {
+    const status = String(layaway?.status || '').trim().toLowerCase();
+    // Older local snapshots can lack status; retain their existing server-side
+    // validation path. A known terminal/invalid state must never be retried.
+    if (!status || ['active', 'ready'].includes(status)) return;
+
+    const error = new Error(
+        status === 'completed'
+            ? 'El apartado ya está completado y es de solo lectura.'
+            : 'Solo se pueden operar apartados activos o listos para entrega.'
+    );
+    error.code = status === 'completed'
+        ? 'LAYAWAY_TERMINAL_STATE'
+        : 'LAYAWAY_STATE_INVALID';
+    error.operation = operation;
+    throw error;
+};
+
 const paymentReference = (layawayId, paymentId) => `layaway:${layawayId}:payment:${paymentId}`;
 const refundReference = (layawayId, refundId) => `layaway:${layawayId}:refund:${refundId}`;
 
@@ -433,6 +451,7 @@ export const layawayFinancialService = {
 
         const layaway = await layawayRepository.getById(layawayId);
         if (!layaway) throw new Error('Apartado no encontrado');
+        assertLayawayActionable(layaway, 'layaway.add_payment');
         const resolvedCash = await resolveLayawayCashSession({
             expectedCashSessionId,
             operation: 'layaway.add_payment'
@@ -489,12 +508,7 @@ export const layawayFinancialService = {
             });
             const layaway = snapshot?.layaway || null;
             if (!layaway) throw new Error('Apartado no encontrado');
-            if (layaway.status === 'cancelled') {
-                throw new Error('No se puede entregar un apartado cancelado.');
-            }
-            if (!['active', 'ready', 'completed'].includes(layaway.status)) {
-                throw new Error('Solo se puede entregar un apartado activo o listo.');
-            }
+            assertLayawayActionable(layaway, 'layaway.complete');
             if (Number(layaway.total_amount ?? layaway.totalAmount ?? 0)
                 - Number(layaway.paid_amount ?? layaway.paidAmount ?? 0) > 0.01) {
                 throw new Error('El apartado debe estar liquidado para entregar.');
@@ -509,12 +523,7 @@ export const layawayFinancialService = {
 
         const layaway = await layawayRepository.getById(layawayId);
         if (!layaway) throw new Error('Apartado no encontrado');
-        if (layaway.status === 'cancelled') {
-            throw new Error('No se puede entregar un apartado cancelado.');
-        }
-        if (!['active', 'ready', 'completed'].includes(layaway.status)) {
-            throw new Error('Solo se puede entregar un apartado activo o listo.');
-        }
+        assertLayawayActionable(layaway, 'layaway.complete');
         if (Number(layaway.totalAmount || 0) - Number(layaway.paidAmount || 0) > 0.01) {
             throw new Error('El apartado debe estar liquidado para entregar.');
         }
@@ -545,6 +554,7 @@ export const layawayFinancialService = {
           assertCurrent();
           const layaway = snapshot?.layaway || null;
           if (!layaway) throw new Error('Apartado no encontrado');
+          assertLayawayActionable(layaway, 'layaway.cancel');
           const paidAmount = Number(layaway.paid_amount ?? layaway.paidAmount ?? 0);
           let cashSessionId = null;
           if (!retainMoney && paidAmount > 0) {
@@ -578,6 +588,7 @@ export const layawayFinancialService = {
           throw error;
         }
         if (!layaway) throw new Error('Apartado no encontrado');
+        assertLayawayActionable(layaway, 'layaway.cancel');
         if (retainMoney || Number(layaway.paidAmount || 0) <= 0) {
           return layawayRepository.cancel(layawayId, reason, retainMoney, null, {
             assertActorCurrent: assertCurrent

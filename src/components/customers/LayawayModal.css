@@ -162,6 +162,38 @@
   min-width: 0;
 }
 
+.customer-layaway-section {
+  display: grid;
+  min-width: 0;
+  gap: var(--ui-space-md);
+}
+
+.customer-layaway-section--history {
+  padding-top: var(--ui-space-lg);
+  border-top: 1px solid var(--ui-border-color);
+}
+
+.customer-layaway-section__header {
+  display: grid;
+  gap: var(--ui-space-2xs);
+}
+
+.customer-layaway-section__title,
+.customer-layaway-section__description {
+  margin: 0;
+}
+
+.customer-layaway-section__title {
+  color: var(--ui-text-strong);
+  font-size: 1rem;
+}
+
+.customer-layaway-section__description {
+  color: var(--ui-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .customer-layaway-card {
   display: flex;
   min-width: 0;
@@ -233,6 +265,18 @@
   color: var(--ui-text-danger);
   background-color: var(--ui-bg-danger-soft);
   border-color: var(--ui-border-danger);
+}
+
+.customer-layaway-status--completed {
+  color: var(--ui-text-success);
+  background-color: var(--ui-bg-success-soft);
+  border-color: var(--ui-border-success);
+}
+
+.customer-layaway-status--cancelled {
+  color: var(--ui-text-muted);
+  background-color: var(--ui-bg-muted);
+  border-color: var(--ui-border-color);
 }
 
 .customer-layaway-card__overdue-alert {
@@ -384,6 +428,25 @@
   padding: var(--ui-space-md) var(--ui-space-lg);
   background-color: var(--ui-bg-surface);
   border-top: 1px solid var(--ui-border-color);
+}
+
+.customer-layaway-history-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-space-sm) var(--ui-space-md);
+  margin: 0 var(--ui-space-lg) var(--ui-space-lg);
+  padding: var(--ui-space-md);
+  color: var(--ui-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  background-color: var(--ui-bg-muted);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+}
+
+.customer-layaway-history-details span:last-child {
+  color: var(--ui-text-strong);
+  font-weight: 700;
 }
 
 .customer-layaway-card__start-payment {
