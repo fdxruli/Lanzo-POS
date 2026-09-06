@@ -22,6 +22,7 @@ export const CASH_FINANCIAL_STATUS = Object.freeze({
 export const CASH_FINANCIAL_CODES = Object.freeze({
   HANDOFF_REQUIRED: 'CASH_HANDOFF_REQUIRED',
   HANDOFF_REQUIRES_ONLINE: 'CASH_HANDOFF_REQUIRES_ONLINE',
+  NETWORK_UNAVAILABLE: 'CASH_NETWORK_UNAVAILABLE',
   STATION_UNRESOLVED: 'CASH_STATION_UNRESOLVED',
   STATION_MISMATCH: 'CASH_SESSION_STATION_MISMATCH',
   SESSION_FORBIDDEN: 'CASH_SESSION_FORBIDDEN',
@@ -64,7 +65,8 @@ export const deriveCashFinancialState = ({
   online = true,
   cloudEnabled = false,
   stateKnown = true,
-  stationResolved = true
+  stationResolved = true,
+  networkUnavailable = false
 } = {}) => {
   const ownSession = isOpen(cashSession) && sessionActorKey(cashSession) === actorKey;
   const stationSession = isOpen(stationOpenCashSession)
@@ -72,29 +74,32 @@ export const deriveCashFinancialState = ({
     : (ownSession ? cashSession : null);
   const stationOwner = sessionActorKey(stationSession);
 
+  if (cloudEnabled && !stateKnown) {
+    return {
+      status: CASH_FINANCIAL_STATUS.BLOCKED,
+      code: networkUnavailable
+        ? CASH_FINANCIAL_CODES.NETWORK_UNAVAILABLE
+        : CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE,
+      cashStationId,
+      cashSession: null,
+      stationOpenCashSession: null,
+      actorKey,
+      online,
+      stateKnown: false,
+      networkUnavailable: Boolean(networkUnavailable)
+    };
+  }
+
   if (!stationResolved) {
     return {
       status: CASH_FINANCIAL_STATUS.BLOCKED,
       code: CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
       cashStationId,
       cashSession: null,
-      stationOpenCashSession: stationSession,
-      actorKey,
-      online,
-      stateKnown
-    };
-  }
-
-  if (cloudEnabled && !online && !stateKnown) {
-    return {
-      status: CASH_FINANCIAL_STATUS.BLOCKED,
-      code: CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE,
-      cashStationId,
-      cashSession: null,
       stationOpenCashSession: null,
       actorKey,
       online,
-      stateKnown: false
+      stateKnown
     };
   }
 
@@ -143,7 +148,7 @@ export const assertCashFinancialWriteAccess = ({
   cashStationId = null,
   operation = 'cash mutation'
 } = {}) => {
-  if (!state || !isCashFinancialStatusReady(state.status)) {
+  if (!state || state.stateKnown === false || !isCashFinancialStatusReady(state.status)) {
     const code = state?.code || (
       state?.status === CASH_FINANCIAL_STATUS.HANDOFF_REQUIRED
         ? CASH_FINANCIAL_CODES.HANDOFF_REQUIRED

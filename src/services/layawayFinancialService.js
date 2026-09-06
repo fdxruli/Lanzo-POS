@@ -90,10 +90,16 @@ export const resolveLayawayCashSession = async ({
         );
     }
 
-    if (mode.cloudEnabled && (!mode.online || mode.readOnly || result.readOnly)) {
-        throw layawayCashError(
-            !mode.online ? 'CLOUD_CASH_OFFLINE' : 'CLOUD_CASH_READ_ONLY',
-            !mode.online
+    if (mode.cloudEnabled && (
+        !mode.online
+        || mode.readOnly
+        || result.readOnly
+        || result.stateKnown === false
+        || result.networkUnavailable
+    )) {
+      throw layawayCashError(
+            !mode.online || result.networkUnavailable ? 'CLOUD_CASH_OFFLINE' : 'CLOUD_CASH_READ_ONLY',
+            !mode.online || result.networkUnavailable
                 ? 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Revisa tu conexión e intenta de nuevo.'
                 : 'La Caja cloud está en modo de solo lectura. Espera la sincronización y reintenta.',
             { operation, result }

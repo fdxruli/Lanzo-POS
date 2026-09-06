@@ -145,12 +145,15 @@ export const isTemporaryCloudRequestError = (error) => {
   const message = stringifyError(error);
 
   return (
+    code === 'cash_network_unavailable' ||
     code === '57014' ||
+    code === '408' ||
     code === '429' ||
     code === 'rate_limited' ||
     code.startsWith('08') ||
     code.startsWith('53') ||
     code.startsWith('5') ||
+    message.includes('err_connection_closed') ||
     message.includes('failed to fetch') ||
     message.includes('networkerror') ||
     message.includes('network request failed') ||

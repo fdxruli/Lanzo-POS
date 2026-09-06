@@ -59,6 +59,27 @@ describe('cash financial gate', () => {
       .toThrow(CashFinancialError);
   });
 
+  it('blocks every financial write while cloud state is unknown, even with a cached open session', () => {
+    const state = deriveCashFinancialState({
+      actorKey: 'staff:b',
+      cashStationId: 'station-s',
+      cashSession: session('staff:b'),
+      online: true,
+      cloudEnabled: true,
+      stateKnown: false,
+      networkUnavailable: true
+    });
+
+    expect(state.code).toBe(CASH_FINANCIAL_CODES.NETWORK_UNAVAILABLE);
+    expect(state.status).toBe(CASH_FINANCIAL_STATUS.BLOCKED);
+    expect(() => assertCashFinancialWriteAccess({
+      state,
+      actorKey: 'staff:b',
+      cashStationId: 'station-s',
+      cashSessionId: 'c1'
+    })).toThrow(CashFinancialError);
+  });
+
   it('does not reinterpret a session when the station differs', () => {
     const state = deriveCashFinancialState({
       actorKey: 'admin:a',

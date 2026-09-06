@@ -1,5 +1,5 @@
 // src/pages/CajaPage.jsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import { useCaja } from '../hooks/useCaja';
 import { useModal } from '../hooks/useModal';
@@ -18,6 +18,7 @@ import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
 import { canShowBusinessCashSummary } from '../services/cash/businessCashSummary';
 import { buildLegacyCashAdoptionConfirmation } from '../services/cash/cashDeviceLabel';
+import { CASH_NETWORK_UNAVAILABLE_MESSAGE } from '../services/cash/cashNetwork';
 
 // Componentes de secciones
 import {
@@ -46,6 +47,21 @@ import {
 import './CajaPage.css';
 
 const CLOUD_CASH_READ_ONLY_MESSAGE = 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Puedes consultar el último estado, pero no registrar movimientos.';
+
+const CashNetworkRecoveryBanner = ({ onRetry, isRetrying = false }) => (
+  <div className="ui-alert ui-alert--warning caja-network-recovery" role="alert" aria-live="polite">
+    <strong>Sin conexión con Supabase</strong>
+    <p>{CASH_NETWORK_UNAVAILABLE_MESSAGE}</p>
+    <button
+      type="button"
+      className="ui-button ui-button--secondary btn btn-secondary"
+      onClick={onRetry}
+      disabled={isRetrying}
+    >
+      {isRetrying ? 'Verificando…' : 'Reintentar verificación'}
+    </button>
+  </div>
+);
 
 const cashSessionActorKey = (cashSession) => cashSession?.actor_key || cashSession?.actorKey || null;
 
@@ -103,6 +119,9 @@ export default function CajaPage() {
     totalesTurno,
     isCloudCash,
     isCloudCashReadOnly,
+    networkUnavailable,
+    stateKnown,
+    isRetrying,
     cashActor,
     adminCashSessions,
     legacyAdminCashSessions,
@@ -117,6 +136,7 @@ export default function CajaPage() {
     calcularTotalTeorico,
     registrarAjusteCaja,
     sincronizarEstadoCaja,
+    reintentarVerificacion,
     obtenerResumenEstadistico,
     descargarReporteCaja,
     verificarExcesoLiquidez,
@@ -186,7 +206,13 @@ export default function CajaPage() {
     return Money.toNumber(total);
   }, [cajaActual, totalesTurno]);
 
-  const operationDisabled = isBackupLoading || isCloudCashReadOnly;
+  const handleRetryVerification = useCallback(
+    () => (reintentarVerificacion
+      ? reintentarVerificacion()
+      : sincronizarEstadoCaja({ force: true })),
+    [reintentarVerificacion, sincronizarEstadoCaja]
+  );
+  const operationDisabled = isBackupLoading || isCloudCashReadOnly || networkUnavailable || stateKnown === false;
   const showAdminAuditPanel = Boolean(isCloudCash && !cashActor?.isStaff && listCashSessionsForAudit);
   const canUseOwnerClose = !isCloudCash || isCashSessionOwnedByActor(cajaActual, cashActor);
   const showBusinessCashSummary = canShowBusinessCashSummary({
@@ -279,9 +305,12 @@ export default function CajaPage() {
       if (e.altKey && (e.key === 'r' || e.key === 'R')) {
         if (!isInput) {
           e.preventDefault();
-          sincronizarEstadoCaja();
-          setLastSyncTime(new Date());
-          showMessageModal('Estado de caja sincronizado.', null, { type: 'success' });
+          Promise.resolve(handleRetryVerification()).then(() => {
+            setLastSyncTime(new Date());
+            showMessageModal('Verificación de caja solicitada.', null, { type: 'success' });
+          }).catch((retryError) => {
+            Logger.warn('No se pudo solicitar la verificación de caja', retryError);
+          });
         }
       }
 
@@ -316,7 +345,7 @@ export default function CajaPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     operationDisabled,
-    sincronizarEstadoCaja,
+    handleRetryVerification,
     editInitialModal,
     cashEntryModal,
     cashExitModal,
@@ -328,13 +357,15 @@ export default function CajaPage() {
   // AUTO-REFRESH PERIÓDICO
   // ============================================================
   useEffect(() => {
+    if (networkUnavailable || (isCloudCash && stateKnown === false)) return undefined;
     const interval = setInterval(() => {
-      sincronizarEstadoCaja();
-      setLastSyncTime(new Date());
+      Promise.resolve(sincronizarEstadoCaja()).then((result) => {
+        if (!result?.networkUnavailable) setLastSyncTime(new Date());
+      }).catch(() => {});
     }, 30000); // 30 segundos
 
     return () => clearInterval(interval);
-  }, [sincronizarEstadoCaja]);
+  }, [isCloudCash, networkUnavailable, stateKnown, sincronizarEstadoCaja]);
 
   // ============================================================
   // VERIFICAR EXCESO DE LIQUIDEZ
@@ -562,10 +593,16 @@ export default function CajaPage() {
   if (estadoCaja === 'error') {
     return (
       <div className="ui-error-state caja-loading" role="alert">
-        <p>{error || 'No se pudo cargar el estado de caja.'}</p>
-        <button type="button" className="ui-button ui-button--primary btn btn-primary" onClick={sincronizarEstadoCaja}>
-          Reintentar
-        </button>
+        {networkUnavailable ? (
+          <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+        ) : (
+          <>
+            <p>{error || 'No se pudo cargar el estado de caja.'}</p>
+            <button type="button" className="ui-button ui-button--primary btn btn-primary" onClick={sincronizarEstadoCaja}>
+              Reintentar
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -579,12 +616,14 @@ export default function CajaPage() {
         <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
           <div className="ui-section__actions">
             <span className="ui-badge ui-badge--warning">
-              {handoffRequired ? 'Cierre pendiente' : 'Estado financiero bloqueado'}
+              {networkUnavailable ? 'Sin conexión con Supabase' : handoffRequired ? 'Cierre pendiente' : 'Estado financiero bloqueado'}
             </span>
           </div>
         </header>
         <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Resolución financiera">
-          {handoffRequired ? (
+          {networkUnavailable ? (
+            <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+          ) : handoffRequired ? (
             <div className="ui-alert ui-alert--warning caja-handoff-card" role="alert">
               <div className="caja-handoff-card__heading">
                 <LockKeyhole size={22} aria-hidden="true" />
@@ -649,6 +688,9 @@ export default function CajaPage() {
           </div>
         </header>
       <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Apertura de Caja">
+        {networkUnavailable && (
+          <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+        )}
         <CajaOpeningPanel
           aperturaPendiente={aperturaPendiente}
           onOpen={abrirCaja}
@@ -694,6 +736,9 @@ export default function CajaPage() {
         </header>
       )}
       <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
+        {networkUnavailable && (
+          <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+        )}
         <CajaSectionTabs
           sections={cajaSections}
           activeSection={activeCajaSection}

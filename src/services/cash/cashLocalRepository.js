@@ -18,22 +18,41 @@ import {
 
 const nowIso = () => new Date().toISOString();
 
+const localCashProjectionDiagnostics = {
+  invalidCashSessionRecords: 0,
+  invalidCashMovementRecords: 0
+};
+
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const recordLocalRows = (rows, kind) => {
+  for (const row of rows || []) {
+    if (!isRecord(row)) {
+      if (kind === 'session') localCashProjectionDiagnostics.invalidCashSessionRecords += 1;
+      if (kind === 'movement') localCashProjectionDiagnostics.invalidCashMovementRecords += 1;
+    }
+  }
+  return rows || [];
+};
+
+export const getCashLocalProjectionDiagnostics = () => ({ ...localCashProjectionDiagnostics });
+
 const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
 };
 
-const sortByOpenedDesc = (items = []) => [...items].sort(
+const sortByOpenedDesc = (items = []) => items.filter(Boolean).sort(
   (a, b) => Date.parse(b.fecha_apertura || b.updatedAt || 0) - Date.parse(a.fecha_apertura || a.updatedAt || 0)
 );
 
 const getAllCashSessions = async () => {
   await ensureOpen();
-  return db.table(STORES.CAJAS).toArray();
+  return recordLocalRows(await db.table(STORES.CAJAS).toArray(), 'session');
 };
 
 const getAllCashMovements = async () => {
   await ensureOpen();
-  return db.table(STORES.MOVIMIENTOS_CAJA).toArray();
+  return recordLocalRows(await db.table(STORES.MOVIMIENTOS_CAJA).toArray(), 'movement');
 };
 
 const matchesActor = (record, { actorKey = null, staffUserId = null } = {}) => {
@@ -102,7 +121,8 @@ export const cashLocalRepository = {
   async getCurrentCashSession({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, cashStationId = null } = {}) {
     const sessions = await getAllCashSessions();
     const openSessions = sessions
-      .filter((cashSession) => cashSession.estado === 'abierta')
+      .filter(Boolean)
+      .filter((cashSession) => isOpenSession(cashSession))
       .filter((cashSession) => (
         includeAll
           ? true
@@ -116,7 +136,7 @@ export const cashLocalRepository = {
   async getHistory({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, limit = 50 } = {}) {
     const sessions = await getAllCashSessions();
     return sortByOpenedDesc(
-      sessions.filter((cashSession) => (
+      sessions.filter(Boolean).filter((cashSession) => (
         includeAll
           ? true
           : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
@@ -132,7 +152,7 @@ export const cashLocalRepository = {
     stateKnown = true
   } = {}) {
     const sessions = await getAllCashSessions();
-    const openSessions = sessions.filter(isOpenSession);
+    const openSessions = sessions.filter(Boolean).filter(isOpenSession);
     const ownSession = openSessions.find((session) => (
       getSessionActorKey(session) === actorKey
       && (!cashStationId || matchesStation(session, cashStationId))
@@ -231,7 +251,7 @@ export const cashLocalRepository = {
       : await getCashStationIdentity({ deviceId: openingData.deviceId });
 
     return db.transaction('rw', db.table(STORES.CAJAS), async () => {
-      const openSessions = await db.table(STORES.CAJAS).where('estado').equals('abierta').toArray();
+      const openSessions = (await db.table(STORES.CAJAS).where('estado').equals('abierta').toArray()).filter(Boolean);
       const stationOpen = openSessions.find((session) => matchesStation(session, station.cashStationId)) || null;
       if (stationOpen) {
         if (getSessionActorKey(stationOpen) === actorKey) return stationOpen;
@@ -523,7 +543,13 @@ export const cashLocalRepository = {
   async getMovementsForSession(cashSessionId) {
     const movements = await getAllCashMovements();
     return movements
-      .filter((movement) => movement.cash_session_id === cashSessionId || movement.caja_id === cashSessionId)
+      .filter(Boolean)
+      .filter(isRecord)
+      .filter((movement) => (
+        movement.cash_session_id === cashSessionId
+        || movement.caja_id === cashSessionId
+        || movement.cashSessionId === cashSessionId
+      ))
       .sort((a, b) => Date.parse(b.fecha || 0) - Date.parse(a.fecha || 0));
   }
 };

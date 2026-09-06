@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fx = vi.hoisted(() => ({
-  hook: null, business: false, audit: vi.fn(), modals: [], message: vi.fn()
+  hook: null, business: false, audit: vi.fn(), retry: vi.fn(), modals: [], message: vi.fn()
 }));
 
 vi.mock('../../hooks/useCaja', () => ({ useCaja: () => fx.hook }));
@@ -82,12 +82,15 @@ import React from 'react';
 import CajaPage from '../CajaPage';
 
 const makeState = ({
-  actorKey = 'local:default', isStaff = false, isCloudCash = false, isCloudCashReadOnly = false
+  actorKey = 'local:default', isStaff = false, isCloudCash = false, isCloudCashReadOnly = false,
+  networkUnavailable = false, stateKnown = true, estadoCaja = 'open', cajaActual = null
 } = {}) => ({
-  cajaActual: { id: 'cash-own', actor_key: actorKey, estado: 'abierta', monto_inicial: '100' },
-  historialCajas: [], movimientosCaja: [], isLoading: false, estadoCaja: 'open',
+  cajaActual: cajaActual || { id: 'cash-own', actor_key: actorKey, estado: 'abierta', monto_inicial: '100' },
+  historialCajas: [], movimientosCaja: [], isLoading: false, estadoCaja,
   aperturaPendiente: null, error: null, totalesTurno: { ventasContado: '0', abonosFiado: '0' },
-  isCloudCash, isCloudCashReadOnly, cashActor: { actorKey, isStaff, responsibleName: 'Responsable A' },
+  isCloudCash, isCloudCashReadOnly, networkUnavailable, stateKnown,
+  isRetrying: false, reintentarVerificacion: fx.retry,
+  cashActor: { actorKey, isStaff, responsibleName: 'Responsable A' },
   adminCashSessions: [], legacyAdminCashSessions: [], listCashSessionsForAudit: fx.audit,
   getCashSessionDetailForAudit: vi.fn(), cerrarCajaAdministrativamente: vi.fn(),
   adoptarCajaLegacy: vi.fn(), abrirCaja: vi.fn(), ajustarMontoInicial: vi.fn(),
@@ -101,7 +104,7 @@ const clickTab = (name) => fireEvent.click(screen.getByRole('tab', { name }));
 const tabLabels = () => screen.getAllByRole('tab').map((tab) => tab.textContent);
 
 beforeEach(() => {
-  cleanup(); fx.business = false; fx.audit = vi.fn(); fx.modals = []; fx.message.mockClear();
+  cleanup(); fx.business = false; fx.audit = vi.fn(); fx.retry.mockClear(); fx.modals = []; fx.message.mockClear();
   fx.hook = makeState();
 });
 afterEach(cleanup);
@@ -186,5 +189,35 @@ describe('CajaPage progressive disclosure', () => {
     expect(screen.getByRole('button', { name: 'Entrada' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Salida' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Ajuste de caja' })).toBeDisabled();
+  });
+
+  it('shows the Supabase outage message and forces a verification retry', () => {
+    fx.hook = makeState({
+      isCloudCash: true,
+      isCloudCashReadOnly: true,
+      networkUnavailable: true,
+      stateKnown: false
+    });
+    render(<CajaPage />);
+
+    expect(screen.getAllByText('Sin conexión con Supabase')[0]).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
+    expect(fx.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not label a network outage as an invalid financial station', () => {
+    fx.hook = makeState({
+      isCloudCash: true,
+      isCloudCashReadOnly: true,
+      networkUnavailable: true,
+      stateKnown: false,
+      estadoCaja: 'financial_blocked',
+      cajaActual: null
+    });
+    render(<CajaPage />);
+
+    expect(screen.getAllByText('Sin conexión con Supabase')[0]).toBeVisible();
+    expect(screen.queryByText('No se puede verificar la estación financiera.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintentar verificación' })).toBeEnabled();
   });
 });

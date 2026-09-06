@@ -10,6 +10,7 @@ import {
 } from './sales/saleReference';
 
 const zeroTotals = { ventasContado: '0', abonosFiado: '0' };
+const records = (value) => (Array.isArray(value) ? value.filter(Boolean) : []);
 
 const hasAmountValue = (value) => value !== null && value !== undefined && value !== '';
 
@@ -26,6 +27,7 @@ const loadOptionalTable = async (database, tableName) => {
 };
 
 const loadSessionSales = async (database, cashSession, endOverride) => {
+  if (!cashSession?.id) return [];
   const end = sessionEnd(cashSession, endOverride);
   const salesTable = database.table(STORES.SALES);
 
@@ -37,17 +39,17 @@ const loadSessionSales = async (database, cashSession, endOverride) => {
     salesTable
       .where('timestamp')
       .between(cashSession.fecha_apertura, end, true, true)
-      .filter((sale) => !sale.cash_session_id)
+      .filter((sale) => !sale?.cash_session_id)
       .toArray()
   ]);
 
-  return [...taggedSales, ...legacySales];
+  return [...records(taggedSales), ...records(legacySales)];
 };
 
 const sumCloudCustomerPaymentMovements = (movements = []) => {
   let total = Money.init(0);
 
-  for (const movement of movements) {
+  for (const movement of records(movements)) {
     const type = String(movement.tipo || movement.type || '').toLowerCase();
     const source = String(movement.origen || movement.source || '').toLowerCase();
     const isCustomerPayment = type === 'abono_cliente' || source === 'customer_payment';
@@ -138,11 +140,11 @@ export const resolveCashSessionAmounts = (cashSession = {}, totals = zeroTotals,
   };
 };
 
-export const calculateSessionTotals = (sales) => {
+export const calculateSessionTotals = (sales = []) => {
   let contado = Money.init(0);
   let abonosFiado = Money.init(0);
 
-  for (const sale of sales) {
+  for (const sale of records(sales)) {
     if (!isFinanciallyClosedSale(sale)) continue;
 
     const method = sale.paymentMethod?.toLowerCase();
@@ -197,7 +199,7 @@ const movementSaleReferences = (movement = {}) => {
 
 export const buildSaleIdentityIndex = (sales = []) => {
   const index = new Map();
-  for (const sale of sales) {
+  for (const sale of records(sales)) {
     for (const identity of getSaleIdentityReferences(sale)) {
       index.set(normalizeIdentity(identity), sale);
     }
@@ -223,7 +225,7 @@ const saleEffectKey = (sale, movement) => {
 export const enrichOfficialCashMovements = (cashMovements = [], sales = []) => {
   const saleIndex = buildSaleIdentityIndex(sales);
 
-  return cashMovements.map((movement) => {
+  return records(cashMovements).map((movement) => {
     const sale = resolveMovementSale(movement, saleIndex);
     if (!sale) return movement;
 
@@ -240,10 +242,10 @@ export const enrichOfficialCashMovements = (cashMovements = [], sales = []) => {
   });
 };
 
-export const normalizeSaleMovements = (sales) => {
+export const normalizeSaleMovements = (sales = []) => {
   const movements = [];
 
-  for (const sale of sales) {
+  for (const sale of records(sales)) {
     if (!isFinanciallyClosedSale(sale)) continue;
 
     const method = sale.paymentMethod?.toLowerCase();
@@ -311,12 +313,12 @@ export const deduplicateSyntheticSaleMovements = (
   syntheticMovements = []
 ) => {
   const officialKeys = new Set(
-    officialMovements
+    records(officialMovements)
       .map((movement) => movement.sale ? saleEffectKey(movement.sale, movement) : null)
       .filter(Boolean)
   );
 
-  return syntheticMovements.filter((movement) => {
+  return records(syntheticMovements).filter((movement) => {
     const key = movement.sale ? saleEffectKey(movement.sale, movement) : null;
     return !key || !officialKeys.has(key);
   });
@@ -348,36 +350,41 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
       .toArray(),
     loadOptionalTable(database, STORES.LAYAWAYS)
   ]);
+  const safeCashMovements = records(cashMovements);
+  const safeSales = records(sales);
+  const safeDeletedSales = records(deletedSales);
+  const safeWasteLogs = records(wasteLogs);
+  const safeLayaways = records(layaways);
 
-  const salesTotals = calculateSessionTotals(sales);
+  const salesTotals = calculateSessionTotals(safeSales);
   const reconciliation = buildCashReconciliation({
     cashSession: { ...cashSession, fecha_cierre: end },
-    sales,
-    layaways,
-    cashMovements
+    sales: safeSales,
+    layaways: safeLayaways,
+    cashMovements: safeCashMovements
   });
-  const totals = buildCashSessionTotals(cashSession, salesTotals, cashMovements);
+  const totals = buildCashSessionTotals(cashSession, salesTotals, safeCashMovements);
   // Compatibilidad: los consumidores antiguos comparan exactamente este objeto.
   // La proyeccion completa viaja como campo propio del resultado.
   Object.defineProperty(totals, 'reconciliation', { value: reconciliation, enumerable: false });
 
-  const officialCashMovements = enrichOfficialCashMovements(cashMovements, sales);
+  const officialCashMovements = enrichOfficialCashMovements(safeCashMovements, safeSales);
   const syntheticSaleMovements = deduplicateSyntheticSaleMovements(
     officialCashMovements,
-    normalizeSaleMovements(sales)
+    normalizeSaleMovements(safeSales)
   );
 
   const movements = [
     ...officialCashMovements,
     ...syntheticSaleMovements,
-    ...deletedSales.map((sale) => ({
+    ...safeDeletedSales.map((sale) => ({
       id: `del-sale-${sale.id}`,
       tipo: 'venta_eliminada',
       monto: String(sale.total || sale.paymentData?.amount || 0),
       concepto: `Venta Eliminada #${String(sale.folio || sale.ticketNumber || sale.id).substring(0, 12)}`,
       fecha: sale.deletedAt
     })),
-    ...wasteLogs.map((waste) => ({
+    ...safeWasteLogs.map((waste) => ({
       id: waste.id,
       tipo: 'merma',
       monto: String(waste.lossAmount || 0),
@@ -387,7 +394,7 @@ export async function loadCashSessionProjection(database, cashSession, endOverri
   ].sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
 
   return {
-    sales,
+    sales: safeSales,
     movements,
     totals,
     reconciliation

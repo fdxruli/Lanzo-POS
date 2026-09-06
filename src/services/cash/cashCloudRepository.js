@@ -12,10 +12,27 @@ import {
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { executeNewFinancialIntent } from '../financial/financialIntentLedger';
+import {
+  isCashNetworkUnavailableError,
+  normalizeCashNetworkError
+} from './cashNetwork';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
   return data || {};
+};
+
+const invokeCashReadRpc = async (rpcName, args) => {
+  try {
+    const { data, error } = await supabaseClient.rpc(rpcName, args);
+    if (error) throw error;
+    return parseRpcPayload(data);
+  } catch (error) {
+    if (isCashNetworkUnavailableError(error)) {
+      throw normalizeCashNetworkError(error, { rpcName });
+    }
+    throw error;
+  }
 };
 
 const assertSupabase = () => {
@@ -101,11 +118,7 @@ export const cashCloudRepository = {
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_current_cash_session', baseArgs);
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      fn: () => invokeCashReadRpc('pos_get_current_cash_session', baseArgs)
     });
   },
 
@@ -119,11 +132,7 @@ export const cashCloudRepository = {
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_cash_station_state', baseArgs);
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      fn: () => invokeCashReadRpc('pos_get_cash_station_state', baseArgs)
     });
   },
 
@@ -201,27 +210,21 @@ export const cashCloudRepository = {
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
       force,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_pull_cash_snapshot', {
-          ...baseArgs,
-          ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+      fn: () => invokeCashReadRpc('pos_pull_cash_snapshot', {
+        ...baseArgs,
+        ...params
+      })
     });
   },
 
   async pullCashChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_pull_cash_changes', {
+    return invokeCashReadRpc('pos_pull_cash_changes', {
       ...baseArgs,
       p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0),
       p_limit: normalizeLimit(limit)
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
   },
 
   async listCashSessionsForAudit({ licenseKey, status = null, staffUserId = null, dateFrom = null, dateTo = null, limit = 100, offset = 0, force = false }) {
@@ -242,14 +245,10 @@ export const cashCloudRepository = {
       params,
       ttlMs: CLOUD_REQUEST_TTL.MEDIUM,
       force,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_admin_list_cash_sessions', {
+      fn: () => invokeCashReadRpc('pos_admin_list_cash_sessions', {
           ...baseArgs,
           ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+        })
     });
   },
 
@@ -264,14 +263,10 @@ export const cashCloudRepository = {
       params,
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       force,
-      fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_admin_get_cash_session_detail', {
+      fn: () => invokeCashReadRpc('pos_admin_get_cash_session_detail', {
           ...baseArgs,
           ...params
-        });
-        if (error) throw error;
-        return parseRpcPayload(data);
-      }
+        })
     });
   }
 };

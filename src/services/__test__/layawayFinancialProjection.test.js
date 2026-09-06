@@ -73,6 +73,23 @@ const buildExplicitLinkProjection = ({ payment = {}, movement, layaway = {} } = 
 };
 
 describe('layaway financial projection', () => {
+  it('ignora ventas, apartados y movimientos null sin romper conciliación', () => {
+    expect(() => buildCashReconciliation({
+      cashSession: session,
+      sales: [null, cashSale],
+      layaways: [null, pendingLayaway],
+      cashMovements: [null, ...paymentMovements]
+    })).not.toThrow();
+
+    const reconciliation = buildCashReconciliation({
+      cashSession: session,
+      sales: [null, cashSale],
+      layaways: [null, pendingLayaway],
+      cashMovements: [null, ...paymentMovements]
+    });
+    expect(reconciliation.theoreticalCash).toBe(485);
+  });
+
   it('reconciles direct sales and pending advances without treating advances as recognized revenue', () => {
     const reconciliation = buildCashReconciliation({
       cashSession: session,

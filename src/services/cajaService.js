@@ -14,6 +14,7 @@ import {
   CashFinancialError,
   assertCashActorContextCurrent
 } from './cash/cashFinancialGate';
+import { areCashStationsEquivalent } from './cash/cashStation';
 
 // ============================================================================
 // CONSTANTES CANÓNICAS
@@ -105,7 +106,7 @@ export const assertCashSessionMutationContext = async (cashSession, {
       cashSessionId: cashSession?.id
     });
   }
-  if (!cashStationId || sessionStationId !== cashStationId) {
+  if (!cashStationId || !areCashStationsEquivalent(sessionStationId, cashStationId)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, `${operation}: la sesión no pertenece a la estación actual.`, {
       sessionStationId,
       cashStationId,

@@ -9,7 +9,7 @@ import {
 } from '../sync/syncConstants';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { cashCloudRepository } from './cashCloudRepository';
-import { cashLocalRepository } from './cashLocalRepository';
+import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 import {
   areCashStationsEquivalent,
   getCashStationIdFromCloudResponse,
@@ -27,6 +27,12 @@ import {
   CASH_CLOUD_OFFLINE_MESSAGE,
   getCashMode
 } from './cashActor';
+import {
+  CASH_NETWORK_UNAVAILABLE_CODE,
+  CASH_NETWORK_UNAVAILABLE_MESSAGE,
+  isCashNetworkUnavailableError,
+  normalizeCashNetworkError
+} from './cashNetwork';
 import { assertCanUseCashRegister, canAuditCashSessions } from './cashPermissions';
 import {
   localClosingToCloudPayload,
@@ -46,10 +52,61 @@ const fail = (message, code = 'CASH_ERROR', extra = {}) => ({
 
 const ADMIN_CLOSE_REVIEW_CODES = new Set(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED']);
 
+const cashProjectionDiagnostics = {
+  invalidCashSessionRecords: 0,
+  invalidCashMovementRecords: 0
+};
+
+let cashNetworkWarningActive = false;
+
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const isCompleteCloudCashSession = (value) => Boolean(
+  isRecord(value)
+  && value.id
+  && (
+    value.status
+    || value.opened_at
+    || value.created_at
+    || value.actor_key
+    || value.cash_station_id
+    || value.cashStationId
+  )
+);
+
+const isCompleteCloudCashMovement = (value) => Boolean(
+  isRecord(value)
+  && value.id
+  && (value.cash_session_id || value.cashSessionId)
+  && (value.type || value.tipo)
+  && (value.amount !== undefined || value.monto !== undefined)
+);
+
+const recordInvalidCloudProjection = (kind) => {
+  if (kind === 'session') cashProjectionDiagnostics.invalidCashSessionRecords += 1;
+  if (kind === 'movement') cashProjectionDiagnostics.invalidCashMovementRecords += 1;
+};
+
+export const getCashProjectionDiagnostics = () => {
+  const local = getCashLocalProjectionDiagnostics();
+  return {
+    invalidCashSessionRecords: cashProjectionDiagnostics.invalidCashSessionRecords
+      + local.invalidCashSessionRecords,
+    invalidCashMovementRecords: cashProjectionDiagnostics.invalidCashMovementRecords
+      + local.invalidCashMovementRecords
+  };
+};
+
 const normalizeAmount = (value) => Money.toExactString(Money.init(value || 0));
 
 const showOfflineCashMessage = () => {
   showMessageModal(CASH_CLOUD_OFFLINE_MESSAGE, null, { type: 'warning' });
+};
+
+const logCashNetworkUnavailableOnce = (error) => {
+  if (cashNetworkWarningActive) return;
+  cashNetworkWarningActive = true;
+  Logger.warn('[Cash] Sin conexión con Supabase; la cache local queda en solo consulta:', error);
 };
 
 const getStationForMode = async () => getCashStationIdentity();
@@ -77,7 +134,8 @@ const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = 
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
     stateKnown: result?.stateKnown !== false,
-    stationResolved: Boolean(station?.cashStationId)
+    stationResolved: Boolean(station?.cashStationId),
+    networkUnavailable: Boolean(result?.networkUnavailable)
   });
   return {
     ...result,
@@ -88,7 +146,8 @@ const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = 
     financialState: state,
     cashStationId: station?.cashStationId || result?.cashStationId || null,
     stationOpenCashSession: stationOpenCashSession || result?.stationOpenCashSession || null,
-    cashSession: cashSession || result?.cashSession || null
+    cashSession: cashSession || result?.cashSession || null,
+    networkUnavailable: Boolean(result?.networkUnavailable)
   };
 };
 
@@ -119,6 +178,13 @@ const assertSessionForStation = (session, cashStationId, message = 'La respuesta
 
 const assertResponseOwnSession = (response, mode, cashStationId = null) => {
   const session = response?.cash_session || response?.cashSession || null;
+  const responseActor = response?.actor_key || response?.actorKey || null;
+  if (responseActor && responseActor !== mode.actor.actorKey) {
+    throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La respuesta cloud pertenece a otro actor.', {
+      responseActorKey: responseActor,
+      actorKey: mode.actor.actorKey
+    });
+  }
   const owner = session?.actor_key || session?.actorKey || null;
   if (session && owner !== mode.actor.actorKey) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La respuesta cloud contiene una sesión de otro actor.', {
@@ -178,7 +244,9 @@ const assertCloudResponseStation = ({ response, localStation } = {}) => {
 export const cashRepositoryInternals = Object.freeze({
   assertSessionForStation,
   assertResponseOwnSession,
-  assertCloudResponseStation
+  assertCloudResponseStation,
+  isCompleteCloudCashSession,
+  isCompleteCloudCashMovement
 });
 
 const assertCurrentFinancialSessionForMutation = async ({
@@ -200,7 +268,8 @@ const assertCurrentFinancialSessionForMutation = async ({
     cashStationId: current.cashStationId || station?.cashStationId,
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
-    stateKnown: current.stateKnown !== false
+    stateKnown: current.stateKnown !== false,
+    networkUnavailable: current.networkUnavailable === true
   });
   return assertCashFinancialWriteAccess({
     state,
@@ -225,24 +294,46 @@ const applyCloudResponse = async (response = {}) => {
     return { ...record, cash_station_id: serverCashStationId };
   };
 
-  if (response.cash_session) {
+  const validCashSession = (record) => {
+    if (!isCompleteCloudCashSession(record)) {
+      recordInvalidCloudProjection('session');
+      return null;
+    }
+    return withServerCashStation(record);
+  };
+
+  const validCashMovement = (record) => {
+    if (!isCompleteCloudCashMovement(record)) {
+      recordInvalidCloudProjection('movement');
+      return null;
+    }
+    return withServerCashStation(record);
+  };
+
+  if (response.cash_session !== undefined && response.cash_session !== null) {
     applied.cashSession = await cashLocalRepository.applyCloudCashSession(
-      withServerCashStation(response.cash_session)
+      validCashSession(response.cash_session)
     );
   }
 
-  if (response.movement) {
+  if (response.movement !== undefined && response.movement !== null) {
     applied.movement = await cashLocalRepository.applyCloudCashMovement(
-      withServerCashStation(response.movement)
+      validCashMovement(response.movement)
     );
   }
 
   if (Array.isArray(response.cash_sessions)) {
-    applied.cashSessions = await cashLocalRepository.applyCloudCashSessions(response.cash_sessions);
+    const validCashSessions = response.cash_sessions
+      .map(validCashSession)
+      .filter(Boolean);
+    applied.cashSessions = await cashLocalRepository.applyCloudCashSessions(validCashSessions);
   }
 
   if (Array.isArray(response.movements)) {
-    applied.movements = await cashLocalRepository.applyCloudCashMovements(response.movements);
+    const validCashMovements = response.movements
+      .map(validCashMovement)
+      .filter(Boolean);
+    applied.movements = await cashLocalRepository.applyCloudCashMovements(validCashMovements);
   }
 
   return applied;
@@ -274,7 +365,7 @@ const applyFinancialCloudResponse = async ({ response, actorContext }) => {
   registerFinancialProjectionHandler(operationType, applyCashFinancialResponseProjection);
 });
 
-const getCachedScope = async (mode, { limit = 50 } = {}) => {
+const getCachedScope = async (mode, { limit = 50, networkUnavailable = false } = {}) => {
   const actor = mode.actor;
   let station = null;
   try {
@@ -287,7 +378,7 @@ const getCachedScope = async (mode, { limit = 50 } = {}) => {
     cashStationId: station?.cashStationId || null,
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
-    stateKnown: !mode.cloudEnabled
+    stateKnown: !mode.cloudEnabled && !networkUnavailable
   });
   const cashSession = financial.cashSession;
   const projection = cashSession
@@ -306,18 +397,80 @@ const getCachedScope = async (mode, { limit = 50 } = {}) => {
     cashSession,
     stationOpenCashSession: financial.stationOpenCashSession,
     result: {
-    success: true,
-    readOnly: mode.readOnly,
-    movements: projection.movements,
-    totals: projection.totals,
-    cashSessions,
-    actor,
-    mode,
-    stateKnown: financial.stateKnown,
-    financialStatus: financial.status,
-    financialCode: financial.code
+      success: true,
+      readOnly: mode.readOnly,
+      movements: projection.movements,
+      totals: projection.totals,
+      cashSessions,
+      actor,
+      mode,
+      stateKnown: financial.stateKnown,
+      financialStatus: financial.status,
+      financialCode: financial.code,
+      networkUnavailable
     }
   });
+};
+
+const getSafeCachedScope = async (mode, options = {}) => {
+  try {
+    return await getCachedScope(mode, options);
+  } catch (error) {
+    Logger.warn('[Cash] No se pudo leer la cache local; se conserva el bloqueo financiero:', error);
+    return {
+      success: true,
+      readOnly: true,
+      stateKnown: false,
+      networkUnavailable: Boolean(options.networkUnavailable),
+      financialStatus: CASH_FINANCIAL_STATUS.BLOCKED,
+      financialCode: options.networkUnavailable
+        ? CASH_NETWORK_UNAVAILABLE_CODE
+        : CASH_FINANCIAL_CODES.SESSION_REQUIRED,
+      financialState: {
+        status: CASH_FINANCIAL_STATUS.BLOCKED,
+        code: options.networkUnavailable
+          ? CASH_NETWORK_UNAVAILABLE_CODE
+          : CASH_FINANCIAL_CODES.SESSION_REQUIRED,
+        stateKnown: false,
+        networkUnavailable: Boolean(options.networkUnavailable),
+        cashSession: null,
+        stationOpenCashSession: null,
+        cashStationId: null,
+        actorKey: mode.actor.actorKey,
+        online: mode.online,
+        cloudEnabled: mode.cloudEnabled
+      },
+      cashSession: null,
+      cashSessions: [],
+      movements: [],
+      totals: { ventasContado: '0', abonosFiado: '0' },
+      actor: mode.actor,
+      mode
+    };
+  }
+};
+
+const buildNetworkUnavailableScope = async (mode) => {
+  const cached = await getSafeCachedScope(mode, { networkUnavailable: true });
+  return {
+    ...cached,
+    success: true,
+    readOnly: true,
+    stateKnown: false,
+    networkUnavailable: true,
+    warning: CASH_NETWORK_UNAVAILABLE_MESSAGE,
+    financialStatus: CASH_FINANCIAL_STATUS.BLOCKED,
+    financialCode: CASH_NETWORK_UNAVAILABLE_CODE,
+    financialState: {
+      ...(cached.financialState || {}),
+      status: CASH_FINANCIAL_STATUS.BLOCKED,
+      code: CASH_NETWORK_UNAVAILABLE_CODE,
+      stateKnown: false,
+      networkUnavailable: true,
+      online: mode.online,
+      cloudEnabled: mode.cloudEnabled
+    }
+  };
 };
 
 export const cashRepository = {
@@ -325,6 +478,16 @@ export const cashRepository = {
 
   async getCurrentCashSession({ force = false } = {}) {
     const mode = getCashMode();
+
+    if (!mode.cloudEnabled) {
+      return getSafeCachedScope({ ...mode, readOnly: false }, { networkUnavailable: false });
+    }
+
+    if (!mode.online) {
+      logCashNetworkUnavailableOnce({ code: CASH_NETWORK_UNAVAILABLE_CODE, message: CASH_NETWORK_UNAVAILABLE_MESSAGE });
+      return buildNetworkUnavailableScope(mode);
+    }
+
     let station = null;
     try {
       station = await getStationForMode();
@@ -332,19 +495,14 @@ export const cashRepository = {
       Logger.warn('[Cash] Estación financiera no resuelta:', stationError);
     }
 
-    if (!mode.cloudEnabled) {
-      return getCachedScope({ ...mode, readOnly: false });
-    }
-
-    if (!mode.online) {
-      return getCachedScope(mode);
-    }
-
     assertCanUseCashRegister();
 
     try {
       const response = await cashCloudRepository.getCurrentCashSession({ licenseKey: mode.licenseKey, force });
       if (response?.success === false) {
+        if (isCashNetworkUnavailableError(response)) {
+          throw normalizeCashNetworkError(response, { rpcName: 'pos_get_current_cash_session' });
+        }
         return fail(response.message || 'No se pudo cargar la caja cloud.', response.code || 'CASH_CURRENT_FAILED', { response });
       }
 
@@ -353,17 +511,37 @@ export const cashRepository = {
         force
       });
       if (stationState?.success === false || !stationState?.cash_station) {
+        if (isCashNetworkUnavailableError(stationState)) {
+          throw normalizeCashNetworkError(stationState, { rpcName: 'pos_get_cash_station_state' });
+        }
         throw new CashFinancialError(
           stationState?.code || CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
           stationState?.message || 'No se pudo verificar la estación financiera.',
           { stationState }
         );
       }
-      const stationId = stationState.cash_station.id;
+      const stationId = assertCloudResponseStation({ response: stationState, localStation: station });
       const currentSession = assertResponseOwnSession(response, mode, stationId);
       const stationOpenCashSession = assertSessionForStation(stationState?.station_open_cash_session
         || stationState?.stationOpenCashSession
         || null, stationId);
+
+      if (currentSession && !isCompleteCloudCashSession(currentSession)) {
+        recordInvalidCloudProjection('session');
+        throw new CashFinancialError(
+          'CASH_CURRENT_RESPONSE_INVALID',
+          'La respuesta cloud no contiene una sesión de caja completa.',
+          { response }
+        );
+      }
+      if (stationOpenCashSession && !isCompleteCloudCashSession(stationOpenCashSession)) {
+        recordInvalidCloudProjection('session');
+        throw new CashFinancialError(
+          'CASH_STATION_STATE_INVALID',
+          'La respuesta cloud no contiene una sesión de estación completa.',
+          { stationState }
+        );
+      }
 
       const applied = await applyCloudResponse(response);
       if (stationOpenCashSession && stationOpenCashSession.id !== currentSession?.id) {
@@ -373,6 +551,13 @@ export const cashRepository = {
         (applied.cashSession.actorKey || applied.cashSession.actor_key || response.actor_key) === mode.actor.actorKey
         && areCashStationsEquivalent(getSessionStationId(applied.cashSession), stationId)
       ) ? applied.cashSession : null;
+      if (currentSession && !cashSession) {
+        throw new CashFinancialError(
+          'CASH_CURRENT_RESPONSE_INVALID',
+          'La sesión cloud no pudo proyectarse de forma segura en la cache local.',
+          { response }
+        );
+      }
       const projection = cashSession
         ? await cashLocalRepository.loadProjection(cashSession)
         : { movements: [], totals: { ventasContado: '0', abonosFiado: '0' } };
@@ -382,7 +567,9 @@ export const cashRepository = {
         const snapshot = await this.pullCashSnapshot({ scope: mode.actor.isStaff ? 'mine' : 'all', includeClosed: true, limit: 50, force });
         cashSessions = snapshot.cashSessions || [];
       } catch (snapshotError) {
-        Logger.warn('[Cash] Snapshot posterior a current fallo:', snapshotError);
+        if (!isCashNetworkUnavailableError(snapshotError)) {
+          Logger.warn('[Cash] Snapshot posterior a current fallo:', snapshotError);
+        }
         cashSessions = await cashLocalRepository.getHistory({
           actorKey: mode.actor.actorKey,
           staffUserId: mode.actor.staffUserId,
@@ -391,6 +578,7 @@ export const cashRepository = {
         });
       }
 
+      cashNetworkWarningActive = false;
       return buildFinancialResult({
         mode,
         station: (stationState?.cash_station ? {
@@ -400,40 +588,58 @@ export const cashRepository = {
         cashSession,
         stationOpenCashSession,
         result: {
-        success: true,
-        readOnly: false,
-        movements: projection.movements,
-        totals: projection.totals,
-        cashSessions,
-        adminOpenSessions: response.admin_open_sessions || [],
-        legacyAdminCashSessions: response.legacy_admin_cash_sessions || [],
-        actor: {
-          ...mode.actor,
-          actorKey: response.actor_key || mode.actor.actorKey,
-          responsibleName: response.actor_name || mode.actor.responsibleName,
-          displayName: response.actor_name || mode.actor.displayName
-        },
-        mode,
-        response,
-        stateKnown: true,
-        financialStatus: stationState?.financial_status || stationState?.financialStatus || null,
-        financialCode: stationState?.financial_code || stationState?.financialCode || null
+          success: true,
+          readOnly: false,
+          movements: projection.movements,
+          totals: projection.totals,
+          cashSessions,
+          adminOpenSessions: response.admin_open_sessions || [],
+          legacyAdminCashSessions: response.legacy_admin_cash_sessions || [],
+          actor: {
+            ...mode.actor,
+            actorKey: response.actor_key || mode.actor.actorKey,
+            responsibleName: response.actor_name || mode.actor.responsibleName,
+            displayName: response.actor_name || mode.actor.displayName
+          },
+          mode,
+          response,
+          stateKnown: true,
+          financialStatus: stationState?.financial_status || stationState?.financialStatus || null,
+          financialCode: stationState?.financial_code || stationState?.financialCode || null
         }
       });
     } catch (error) {
       const normalized = normalizeCashMutationError(error, 'CASH_CURRENT_FAILED');
-      Logger.warn('[Cash] Carga cloud falló; cache local queda read-only y no libre:', normalized);
-      const cached = await getCachedScope({ ...mode, readOnly: true });
+      const networkUnavailable = isCashNetworkUnavailableError(error);
+      if (networkUnavailable) logCashNetworkUnavailableOnce(normalized);
+      else Logger.warn('[Cash] Carga cloud falló; cache local queda read-only y no libre:', normalized);
+      const cached = networkUnavailable
+        ? await buildNetworkUnavailableScope(mode)
+        : await getSafeCachedScope({ ...mode, readOnly: true }, { networkUnavailable: false });
       return {
         ...cached,
         success: true,
-        warning: normalized.message || 'No se pudo refrescar caja cloud.',
+        warning: networkUnavailable
+          ? CASH_NETWORK_UNAVAILABLE_MESSAGE
+          : (normalized.message || 'No se pudo refrescar caja cloud.'),
         readOnly: true,
-        financialStatus: cached.financialStatus === CASH_FINANCIAL_STATUS.NO_SESSION
+        financialStatus: networkUnavailable || cached.financialStatus === CASH_FINANCIAL_STATUS.NO_SESSION
           ? CASH_FINANCIAL_STATUS.BLOCKED
           : cached.financialStatus,
-        financialCode: cached.financialCode || CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE,
-        stateKnown: false
+        financialCode: networkUnavailable
+          ? CASH_NETWORK_UNAVAILABLE_CODE
+          : (cached.financialCode || normalized.code || CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE),
+        stateKnown: false,
+        networkUnavailable,
+        financialState: networkUnavailable
+          ? {
+            ...(cached.financialState || {}),
+            status: CASH_FINANCIAL_STATUS.BLOCKED,
+            code: CASH_NETWORK_UNAVAILABLE_CODE,
+            stateKnown: false,
+            networkUnavailable: true
+          }
+          : cached.financialState
       };
     }
   },

@@ -1,7 +1,7 @@
 import Dexie from 'dexie';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
+import { calculateSessionTotals, loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
 
 describe('loadCashSessionProjection', () => {
   let testDb;
@@ -29,6 +29,38 @@ describe('loadCashSessionProjection', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await testDb.delete();
+  });
+
+  it('ignora ventas null sin romper el cálculo de caja', () => {
+    expect(calculateSessionTotals([
+      null,
+      {
+        id: 'sale-safe',
+        status: 'closed',
+        paymentMethod: 'efectivo',
+        total: '125'
+      }
+    ])).toEqual({ ventasContado: '125', abonosFiado: '0' });
+  });
+
+  it('ignora movimientos null al construir una proyección real', async () => {
+    const movementTable = testDb.table('movimientos_caja');
+    vi.spyOn(movementTable, 'where').mockReturnValue({
+      equals: () => ({
+        toArray: () => Promise.resolve([
+          null,
+          {
+            id: 'movement-safe',
+            cash_session_id: cashSession.id,
+            tipo: 'entrada',
+            monto: '10',
+            fecha: '2026-06-14T11:00:00.000Z'
+          }
+        ])
+      })
+    });
+    const result = await loadCashSessionProjection(testDb, cashSession);
+    expect(result.movements.map((movement) => movement.id)).toContain('movement-safe');
   });
 
   it('limita ventas y eventos al turno solicitado usando indices', async () => {

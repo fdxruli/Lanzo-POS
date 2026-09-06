@@ -1,8 +1,8 @@
 import 'fake-indexeddb/auto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, STORES } from '../db/dexie';
 import { closeTestTenantRuntime, openTestTenantRuntime } from '../../test/tenantRuntimeTestHarness';
-import { cashLocalRepository } from './cashLocalRepository';
+import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 
 const stationId = 'local:device:station-s';
 
@@ -13,9 +13,34 @@ beforeEach(async () => {
   await db.table(STORES.SALES).clear();
 });
 
-afterEach(() => closeTestTenantRuntime());
+afterEach(() => {
+  vi.restoreAllMocks();
+  closeTestTenantRuntime();
+});
 
 describe('cashLocalRepository shared-terminal financial ownership', () => {
+  it('ignores null rows while retaining an invalid-row diagnostic', async () => {
+    const sessionTable = db.table(STORES.CAJAS);
+    vi.spyOn(sessionTable, 'toArray').mockResolvedValue([
+      null,
+      { id: 'cash-safe', estado: 'abierta', actorKey: 'admin:a', cashStationId: stationId }
+    ]);
+    const movementTable = db.table(STORES.MOVIMIENTOS_CAJA);
+    vi.spyOn(movementTable, 'toArray').mockResolvedValue([null, {
+      id: 'movement-safe', cash_session_id: 'cash-safe', fecha: '2026-09-06T10:00:00.000Z'
+    }]);
+
+    await expect(cashLocalRepository.getCurrentCashSession({ actorKey: 'admin:a' }))
+      .resolves.toMatchObject({ id: 'cash-safe' });
+    await expect(cashLocalRepository.getMovementsForSession('cash-safe'))
+      .resolves.toMatchObject([{ id: 'movement-safe' }]);
+
+    expect(getCashLocalProjectionDiagnostics()).toMatchObject({
+      invalidCashSessionRecords: 1,
+      invalidCashMovementRecords: 1
+    });
+  });
+
   it('allows the same Admin actor to open independent sessions on different stations', async () => {
     const stationA = await cashLocalRepository.openCashSession({
       actorKey: 'admin:shared',
