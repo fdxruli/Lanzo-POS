@@ -149,6 +149,31 @@ describe('LayawayModal completed history', () => {
     expect(screen.getByText('Historial de apartados')).toBeVisible();
   });
 
+  it('renders the same completed sale folio for two authorized admin devices', async () => {
+    mocks.layaways = [layaway({
+      id: 'layaway-completed', status: 'completed', paidAmount: 35,
+      deliveredAt: '2026-09-06T11:00:00.000Z', conversionSaleId: 'sale-fixture'
+    })];
+    mocks.getSalesFinalHistory.mockResolvedValue({
+      sales: [{ id: 'sale-fixture', posFolio: 'FG-01-000061' }]
+    });
+
+    for (const deviceId of ['device-a', 'device-b']) {
+      mocks.actorRuntime = {
+        status: 'granted', actorType: 'admin', actorId: 'admin-a',
+        sessionId: `session-${deviceId}`, deviceId, licenseId: 'license-shared', permissions: ['*']
+      };
+      const view = renderModal();
+      await screen.findByText('Folio: FG-01-000061');
+      expect(screen.getByText('Completado')).toBeVisible();
+      view.unmount();
+    }
+
+    expect(mocks.getSalesFinalHistory).toHaveBeenCalledTimes(2);
+    expect(mocks.getSalesFinalHistory).toHaveBeenNthCalledWith(1, expect.objectContaining({ scope: 'license' }));
+    expect(mocks.getSalesFinalHistory).toHaveBeenNthCalledWith(2, expect.objectContaining({ scope: 'license' }));
+  });
+
   it('keeps one completed card and folio after closing and reopening the modal', async () => {
     mocks.layaways = [layaway({
       id: 'layaway-completed', status: 'completed', paidAmount: 35,
