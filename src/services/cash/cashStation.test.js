@@ -7,10 +7,16 @@ vi.mock('../tenant/tenantScopedStorage', () => ({
   setTenantStorageItem: (_key, value) => { storage.value = value; }
 }));
 
+vi.mock('../supabase', () => ({
+  getStableDeviceId: vi.fn(() => Promise.resolve('fp-stable-browser'))
+}));
+
 import {
   areCashStationsEquivalent,
+  getCashStationEvidence,
   getCashStationIdFromCloudResponse,
   getCashStationIdentity,
+  isCanonicalCashStation,
   persistCashStationBinding
 } from './cashStation';
 
@@ -27,6 +33,10 @@ describe('cash station identity alignment', () => {
     expect(areCashStationsEquivalent(`cash_station_device_${DEVICE_UUID}`, `cash_station_device_${DEVICE_UUID}`)).toBe(true);
     expect(areCashStationsEquivalent(`cash_station_device_${DEVICE_UUID}`, 'cash_station_device_650e8400-e29b-41d4-a716-446655440001')).toBe(false);
     expect(areCashStationsEquivalent('station-A', 'station-A-suffix')).toBe(false);
+    expect(isCanonicalCashStation(`cash_station_device_${DEVICE_UUID}`)).toBe(true);
+    expect(isCanonicalCashStation(DEVICE_UUID)).toBe(false);
+    expect(isCanonicalCashStation(`cash_station_device_${DEVICE_UUID}-suffix`)).toBe(false);
+    expect(isCanonicalCashStation('fp-browser-a')).toBe(false);
   });
 
   it('separates browser fingerprint, local key and unresolved cloud station', async () => {
@@ -37,6 +47,26 @@ describe('cash station identity alignment', () => {
       deviceId: null,
       identityState: 'legacy_unresolved'
     });
+  });
+
+  it('never uses a cloud device UUID as the browser fingerprint', async () => {
+    await expect(getCashStationIdentity({ deviceId: DEVICE_UUID })).resolves.toMatchObject({
+      deviceFingerprint: 'fp-stable-browser',
+      localStationKey: 'local:device:fp-stable-browser',
+      cashStationId: null,
+      deviceId: DEVICE_UUID
+    });
+  });
+
+  it('collects all station evidence so conflicting responses cannot be accepted', () => {
+    const evidence = getCashStationEvidence({
+      cash_station: { id: `cash_station_device_${DEVICE_UUID}` },
+      cash_session: { cash_station_id: 'cash_station_device_650e8400-e29b-41d4-a716-446655440001' }
+    });
+    expect(evidence.map((entry) => entry.value)).toEqual([
+      `cash_station_device_${DEVICE_UUID}`,
+      'cash_station_device_650e8400-e29b-41d4-a716-446655440001'
+    ]);
   });
 
   it('persists and reloads a tenant-scoped canonical binding without raw identifiers', async () => {

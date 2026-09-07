@@ -9,40 +9,59 @@ import {
   UserRound
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
 
-const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de cortes', eyebrow = 'Turnos anteriores', isCloudCash = false }) => {
+const CajaHistoryList = ({
+  historial,
+  itemsPerPage = 10,
+  title = 'Historial de cortes',
+  eyebrow = 'Turnos anteriores',
+  isCloudCash = false
+}) => {
   const [paginaActual, setPaginaActual] = useState(1);
 
   const historialRender = useMemo(() => {
     const startIndex = (paginaActual - 1) * itemsPerPage;
     const historialPaginado = historial.slice(startIndex, startIndex + itemsPerPage);
 
-    return historialPaginado.map(c => {
+    return historialPaginado.map((c) => {
       const rawDifference = c.diferencia ?? c.cash_difference;
       const hasPhysicalCount = rawDifference !== null && rawDifference !== undefined;
       const diffSafe = Money.init(rawDifference ?? 0);
       const isCuadrada = hasPhysicalCount && diffSafe.abs().lt(1);
       const staffUserId = c.staffUserId || c.staff_user_id || null;
-      const actorKey = c.actorKey || c.actor_key || null;
-      const responsible = c.responsable_apertura || c.responsibleName || c.staff_display_name || c.staffDisplayName || null;
-      const opened = c.fecha_apertura ? new Date(c.fecha_apertura) : null;
-      const closed = c.fecha_cierre ? new Date(c.fecha_cierre) : null;
+      const responsible = c.responsable_apertura
+        || c.responsibleName
+        || c.responsible_name
+        || c.staff_display_name
+        || c.staffDisplayName
+        || 'Responsable no asignado';
+      const opened = c.fecha_apertura || c.opened_at ? new Date(c.fecha_apertura || c.opened_at) : null;
+      const closed = c.fecha_cierre || c.closed_at ? new Date(c.fecha_cierre || c.closed_at) : null;
       const isCloudSession = Boolean(c.cloudCash || isCloudCash);
-      const isStaffSession = c.deviceRole === 'staff' || c.device_role === 'staff' || staffUserId;
+      const isStaffSession = Boolean(
+        c.deviceRole === 'staff'
+        || c.device_role === 'staff'
+        || staffUserId
+        || String(c.actorKey || c.actor_key || '').startsWith('staff:')
+      );
 
       return {
         id: c.id,
-        fecha: opened ? opened.toLocaleDateString() : 'Sin fecha',
-        hora: opened ? opened.toLocaleTimeString() : '',
-        cierreFecha: closed ? closed.toLocaleString() : null,
-        estado: c.estado || 'cerrada',
+        fecha: opened && !Number.isNaN(opened.getTime()) ? opened.toLocaleDateString() : 'Sin fecha',
+        hora: opened && !Number.isNaN(opened.getTime()) ? opened.toLocaleTimeString() : '',
+        cierreFecha: closed && !Number.isNaN(closed.getTime()) ? closed.toLocaleString() : null,
+        estado: c.estado || c.status || 'cerrada',
+        station: getCashSessionStationLabel(c),
         responsible,
         actor: isCloudSession ? (isStaffSession ? 'Caja de staff' : 'Caja admin') : 'Caja local',
-        actorKey,
-        staffUserId,
         isCuadrada,
-        cierre: c.monto_cierre !== null && c.monto_cierre !== undefined ? `$${Money.toNumber(c.monto_cierre).toFixed(2)}` : 'No contado',
-        dif: hasPhysicalCount ? `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}` : 'No calculada',
+        cierre: c.monto_cierre !== null && c.monto_cierre !== undefined
+          ? `$${Money.toNumber(c.monto_cierre).toFixed(2)}`
+          : 'No contado',
+        dif: hasPhysicalCount
+          ? `${diffSafe.gt(0) ? '+' : ''}$${Money.toNumber(diffSafe).toFixed(2)}`
+          : 'No calculada',
         difTone: !hasPhysicalCount || isCuadrada
           ? 'neutral'
           : diffSafe.gt(0)
@@ -54,8 +73,8 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
 
   const totalPaginas = Math.ceil(historial.length / itemsPerPage);
 
-  const handlePaginaAnterior = () => setPaginaActual(p => Math.max(1, p - 1));
-  const handlePaginaSiguiente = () => setPaginaActual(p => Math.min(totalPaginas, p + 1));
+  const handlePaginaAnterior = () => setPaginaActual((p) => Math.max(1, p - 1));
+  const handlePaginaSiguiente = () => setPaginaActual((p) => Math.min(totalPaginas, p + 1));
 
   const sectionHeading = (
     <div className="section-header">
@@ -89,7 +108,7 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
       {sectionHeading}
 
       <div className="history-list">
-        {historialRender.map(c => (
+        {historialRender.map((c) => (
           <div key={c.id} className="history-item">
             <span className={`history-status-icon ${c.isCuadrada ? 'success' : c.dif === 'No calculada' ? 'neutral' : 'error'}`} aria-hidden="true">
               {c.isCuadrada ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
@@ -102,19 +121,18 @@ const CajaHistoryList = ({ historial, itemsPerPage = 10, title = 'Historial de c
                 </span>
               </div>
               <div className="movement-details">
+                <span>Estación: {c.station}</span>
                 <span>Estado: {c.estado}</span>
                 <span>Cierre: {c.cierre}</span>
                 <span className={`history-difference ${c.difTone}`}>Dif: {c.dif}</span>
-                {c.responsible && <span><UserRound size={12} aria-hidden="true" /> {c.responsible}</span>}
-                {c.actor && <span>{c.actor}</span>}
+                <span><UserRound size={12} aria-hidden="true" /> {c.responsible}</span>
+                <span>{c.actor}</span>
               </div>
-              {(c.staffUserId || c.actorKey || c.cierreFecha) && (
+              {c.cierreFecha && (
                 <details className="history-technical-details">
                   <summary>Detalles</summary>
                   <div className="history-technical-meta">
-                    {c.staffUserId && <span>Staff ID: {String(c.staffUserId).slice(0, 8)}</span>}
-                    {c.actorKey && <span>Actor: {c.actorKey}</span>}
-                    {c.cierreFecha && <span>Cerrada: {c.cierreFecha}</span>}
+                    <span>Cerrada: {c.cierreFecha}</span>
                   </div>
                 </details>
               )}

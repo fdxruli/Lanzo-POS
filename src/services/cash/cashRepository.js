@@ -64,31 +64,92 @@ let cashNetworkWarningActive = false;
 
 const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+const hasCloudValue = (value) => (
+  value !== null
+  && value !== undefined
+  && String(value).trim() !== ''
+);
+
+const getCloudRecordActorKey = (value) => (
+  value?.actor_key
+  || value?.actorKey
+  || value?.staff_user_id
+  || value?.staffUserId
+  || null
+);
+
+const getCloudRecordStationId = (value) => [
+  value?.cash_station_id,
+  value?.cashStationId,
+  value?.metadata?.cash_station_id,
+  value?.metadata?.cashStationId,
+  value?.cash_station?.id,
+  value?.cashStation?.id
+].find((candidate) => isCanonicalCashStation(candidate)) || null;
+
 const isCompleteCloudCashSession = (value) => Boolean(
   isRecord(value)
-  && value.id
-  && (
-    value.status
-    || value.opened_at
-    || value.created_at
-    || value.actor_key
-    || value.cash_station_id
-    || value.cashStationId
-  )
+  && hasCloudValue(value.id)
+  && hasCloudValue(value.status || value.estado)
+  && hasCloudValue(getCloudRecordActorKey(value))
+  && Boolean(getCloudRecordStationId(value))
 );
 
 const isCompleteCloudCashMovement = (value) => Boolean(
   isRecord(value)
-  && value.id
-  && (value.cash_session_id || value.cashSessionId)
-  && (value.type || value.tipo)
-  && (value.amount !== undefined || value.monto !== undefined)
+  && hasCloudValue(value.id)
+  && hasCloudValue(value.cash_session_id || value.cashSessionId)
+  && hasCloudValue(value.type || value.tipo)
+  && (value.amount !== undefined && value.amount !== null
+    || value.monto !== undefined && value.monto !== null)
+  && hasCloudValue(getCloudRecordActorKey(value))
+  && Boolean(getCloudRecordStationId(value))
 );
 
+const getCloudStationEvidence = (response = {}) => {
+  const evidence = [];
+  const add = (source, value) => {
+    if (hasCloudValue(value)) evidence.push({ source, value: String(value).trim() });
+  };
+  const addRecord = (record, source) => {
+    if (!record || typeof record !== 'object') return;
+    add(source + '.cash_station.id', record.cash_station?.id);
+    add(source + '.cashStation.id', record.cashStation?.id);
+    add(source + '.cash_station_id', record.cash_station_id);
+    add(source + '.cashStationId', record.cashStationId);
+    add(source + '.resolved_cash_station_id', record.resolved_cash_station_id);
+    add(source + '.resolvedCashStationId', record.resolvedCashStationId);
+  };
+
+  addRecord(response, 'response');
+  addRecord(response?.cash_session || response?.cashSession, 'response.cash_session');
+  addRecord(response?.movement || response?.cashMovement, 'response.movement');
+  addRecord(
+    response?.station_open_cash_session || response?.stationOpenCashSession,
+    'response.station_open_cash_session'
+  );
+  for (const session of Array.isArray(response?.cash_sessions)
+    ? response.cash_sessions
+    : Array.isArray(response?.cashSessions)
+      ? response.cashSessions
+      : []) {
+    addRecord(session, 'response.cash_sessions');
+  }
+  for (const movement of Array.isArray(response?.movements) ? response.movements : []) {
+    addRecord(movement, 'response.movements');
+  }
+  return evidence;
+};
 const recordInvalidCloudProjection = (kind) => {
   if (kind === 'session') cashProjectionDiagnostics.invalidCashSessionRecords += 1;
   if (kind === 'movement') cashProjectionDiagnostics.invalidCashMovementRecords += 1;
 };
+
+const getCompleteCloudCashSessions = (sessions = []) => (
+  Array.isArray(sessions)
+    ? sessions.filter((session) => isCompleteCloudCashSession(session))
+    : []
+);
 
 export const getCashProjectionDiagnostics = () => {
   const local = getCashLocalProjectionDiagnostics();
@@ -244,18 +305,7 @@ const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = 
   };
 };
 
-const getSessionStationId = (session) => [
-  session?.cash_station_id,
-  session?.cashStationId,
-  session?.metadata?.cash_station_id,
-  session?.metadata?.cashStationId
-].find((value) => isCanonicalCashStation(value)) || null;
-
-const withStationEvidence = (session, cashStationId) => (
-  session && !getSessionStationId(session) && cashStationId
-    ? { ...session, cash_station_id: cashStationId }
-    : session
-);
+const getSessionStationId = (session) => getCloudRecordStationId(session);
 
 const assertSessionForStation = (
   session,
@@ -264,8 +314,16 @@ const assertSessionForStation = (
   cloudRequestMeta = null
 ) => {
   if (!session || !cashStationId) return session;
-  const sessionWithEvidence = withStationEvidence(session, cashStationId);
-  const sessionStationId = getSessionStationId(sessionWithEvidence);
+
+  const sessionStationId = getSessionStationId(session);
+  if (!sessionStationId) {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+      'La respuesta cloud contiene una sesión sin estación financiera canónica.',
+      { cashStationId, cloudRequestMeta }
+    );
+  }
+
   if (!areCashStationsEquivalent(sessionStationId, cashStationId)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, message, {
       sessionStationId,
@@ -273,7 +331,7 @@ const assertSessionForStation = (
       cloudRequestMeta
     });
   }
-  return sessionWithEvidence;
+  return session;
 };
 
 const assertResponseOwnSession = (response, mode, cashStationId = null) => {
@@ -287,6 +345,7 @@ const assertResponseOwnSession = (response, mode, cashStationId = null) => {
       cloudRequestMeta
     });
   }
+
   const owner = session?.actor_key || session?.actorKey || null;
   if (session && owner !== mode.actor.actorKey) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La respuesta cloud contiene una sesión de otro actor.', {
@@ -295,14 +354,20 @@ const assertResponseOwnSession = (response, mode, cashStationId = null) => {
       cloudRequestMeta
     });
   }
-  const responseStationId = getCashStationIdFromCloudResponse(response);
-  if (responseStationId && cashStationId && !areCashStationsEquivalent(responseStationId, cashStationId)) {
+
+  const responseEvidence = getCloudStationEvidence(response);
+  const responseStationId = responseEvidence.length
+    ? assertCloudResponseStation({ response })
+    : null;
+  if (responseStationId && cashStationId
+    && !areCashStationsEquivalent(responseStationId, cashStationId)) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La respuesta cloud contiene una estación de otra estación.', {
       responseStationId,
       cashStationId,
       cloudRequestMeta
     });
   }
+
   return assertSessionForStation(
     session,
     responseStationId || cashStationId,
@@ -311,10 +376,17 @@ const assertResponseOwnSession = (response, mode, cashStationId = null) => {
   );
 };
 
-const assertCloudResponseStation = ({ response } = {}) => {
+const assertCloudResponseStation = ({ response, localStation = null } = {}) => {
   const cloudRequestMeta = getCloudRequestMetadata(response);
-  const serverCashStationId = getCashStationIdFromCloudResponse(response);
-  if (!serverCashStationId || !isCanonicalCashStation(serverCashStationId)) {
+  const evidence = getCloudStationEvidence(response);
+  const canonicalEvidence = evidence
+    .filter((entry) => isCanonicalCashStation(entry.value))
+    .map((entry) => entry.value);
+  const invalidEvidence = evidence
+    .filter((entry) => !isCanonicalCashStation(entry.value))
+    .map((entry) => entry.value);
+
+  if (canonicalEvidence.length === 0) {
     throw new CashFinancialError(
       CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
       'La respuesta cloud no contiene una estación financiera canónica.',
@@ -322,20 +394,48 @@ const assertCloudResponseStation = ({ response } = {}) => {
     );
   }
 
-  const resolvedCashStationId = response?.resolvedCashStationId || null;
-  if (resolvedCashStationId && !areCashStationsEquivalent(serverCashStationId, resolvedCashStationId)) {
+  const uniqueCanonicalStations = [...new Set(canonicalEvidence)];
+  if (uniqueCanonicalStations.length !== 1 || invalidEvidence.length > 0) {
     throw new CashFinancialError(
       CASH_FINANCIAL_CODES.STATION_MISMATCH,
       'La respuesta cloud contiene una estación financiera inconsistente.',
-      { serverCashStationId, resolvedCashStationId, cloudRequestMeta }
+      {
+        serverCashStationId: uniqueCanonicalStations[0] || null,
+        stationEvidence: evidence,
+        cloudRequestMeta
+      }
+    );
+  }
+
+  const serverCashStationId = uniqueCanonicalStations[0];
+  const expectedCashStationId = isCanonicalCashStation(localStation?.cashStationId)
+    ? localStation.cashStationId
+    : null;
+  if (expectedCashStationId
+    && !areCashStationsEquivalent(serverCashStationId, expectedCashStationId)) {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.STATION_MISMATCH,
+      'La respuesta cloud pertenece a una estación distinta del dispositivo vinculado.',
+      {
+        serverCashStationId,
+        expectedCashStationId,
+        cloudRequestMeta
+      }
     );
   }
 
   const session = response?.cash_session || response?.cashSession || null;
   if (session) assertSessionForStation(session, serverCashStationId, undefined, cloudRequestMeta);
+
+  const stationOpenCashSession = response?.station_open_cash_session
+    || response?.stationOpenCashSession
+    || null;
+  if (stationOpenCashSession) {
+    assertSessionForStation(stationOpenCashSession, serverCashStationId, undefined, cloudRequestMeta);
+  }
+
   return serverCashStationId;
 };
-
 const persistCloudCashStationBinding = ({ mode, station, response, cashStationId = null } = {}) => {
   const resolvedCashStationId = cashStationId || getCashStationIdFromCloudResponse(response || {});
   if (!mode?.licenseKey || !station?.deviceFingerprint || !isCanonicalCashStation(resolvedCashStationId)) return false;
@@ -562,56 +662,69 @@ const applyCloudResponse = async (response = {}) => {
   };
 
   const serverCashStationId = getCashStationIdFromCloudResponse(response);
-  const withServerCashStation = (record) => {
-    if (!record || !serverCashStationId || getSessionStationId(record)) return record;
-    return {
-      ...record,
-      cash_station_id: serverCashStationId,
-      cashStationId: serverCashStationId,
-      localStationKey: null
-    };
-  };
-
-  const validCashSession = (record) => {
-    if (!isCompleteCloudCashSession(record)) {
-      recordInvalidCloudProjection('session');
+  const validateRecord = (record, kind, expectedStationId = null) => {
+    const isSession = kind === 'session';
+    const isComplete = isSession
+      ? isCompleteCloudCashSession(record)
+      : isCompleteCloudCashMovement(record);
+    if (!isComplete) {
+      recordInvalidCloudProjection(kind);
       return null;
     }
-    return withServerCashStation(record);
-  };
 
-  const validCashMovement = (record) => {
-    if (!isCompleteCloudCashMovement(record)) {
-      recordInvalidCloudProjection('movement');
-      return null;
+    const recordStationId = getCloudRecordStationId(record);
+    if (expectedStationId
+      && !areCashStationsEquivalent(recordStationId, expectedStationId)) {
+      throw new CashFinancialError(
+        CASH_FINANCIAL_CODES.STATION_MISMATCH,
+        'La proyección cloud contiene una estación financiera distinta.',
+        {
+          recordStationId,
+          expectedStationId,
+          record
+        }
+      );
     }
-    return withServerCashStation(record);
+    return record;
   };
 
-  if (response.cash_session !== undefined && response.cash_session !== null) {
-    const validSession = validCashSession(response.cash_session);
+  const directSession = response.cash_session !== undefined
+    ? response.cash_session
+    : response.cashSession;
+  const directMovement = response.movement !== undefined
+    ? response.movement
+    : response.cashMovement;
+
+  if (directSession !== undefined && directSession !== null) {
+    const validSession = validateRecord(directSession, 'session', serverCashStationId);
     if (validSession) {
       applied.cashSession = await cashLocalRepository.applyCloudCashSession(validSession);
     }
   }
 
-  if (response.movement !== undefined && response.movement !== null) {
-    const validMovement = validCashMovement(response.movement);
+  if (directMovement !== undefined && directMovement !== null) {
+    const validMovement = validateRecord(directMovement, 'movement', serverCashStationId);
     if (validMovement) {
       applied.movement = await cashLocalRepository.applyCloudCashMovement(validMovement);
     }
   }
 
-  if (Array.isArray(response.cash_sessions)) {
-    const validCashSessions = response.cash_sessions
-      .map(validCashSession)
+  const cloudSessions = Array.isArray(response.cash_sessions)
+    ? response.cash_sessions
+    : Array.isArray(response.cashSessions)
+      ? response.cashSessions
+      : [];
+  if (cloudSessions.length > 0) {
+    const validCashSessions = cloudSessions
+      .map((record) => validateRecord(record, 'session'))
       .filter(Boolean);
     applied.cashSessions = await cashLocalRepository.applyCloudCashSessions(validCashSessions);
   }
 
-  if (Array.isArray(response.movements)) {
-    const validCashMovements = response.movements
-      .map(validCashMovement)
+  const cloudMovements = Array.isArray(response.movements) ? response.movements : [];
+  if (cloudMovements.length > 0) {
+    const validCashMovements = cloudMovements
+      .map((record) => validateRecord(record, 'movement'))
       .filter(Boolean);
     applied.movements = await cashLocalRepository.applyCloudCashMovements(validCashMovements);
   }
@@ -621,11 +734,33 @@ const applyCloudResponse = async (response = {}) => {
 
 export const applyCashFinancialResponseProjection = async ({ responsePayload, actorHandle }) => {
   actorHandle?.assertCurrent?.();
-  const applied = await applyCloudResponse(responsePayload || {});
+  const payload = responsePayload || {};
+  const applied = await applyCloudResponse(payload);
+  const directSession = payload.cash_session !== undefined
+    ? payload.cash_session
+    : payload.cashSession;
+  const directMovement = payload.movement !== undefined
+    ? payload.movement
+    : payload.cashMovement;
+
+  if (directSession !== undefined && directSession !== null && !applied.cashSession) {
+    throw new CashFinancialError(
+      'CASH_CLOUD_PROJECTION_INVALID',
+      'La sesión cloud no pudo proyectarse con todos sus campos financieros.',
+      { projectionKind: 'session' }
+    );
+  }
+  if (directMovement !== undefined && directMovement !== null && !applied.movement) {
+    throw new CashFinancialError(
+      'CASH_CLOUD_PROJECTION_INVALID',
+      'El movimiento cloud no pudo proyectarse con todos sus campos financieros.',
+      { projectionKind: 'movement' }
+    );
+  }
+
   actorHandle?.assertCurrent?.();
   return applied;
 };
-
 const applyFinancialCloudResponse = async ({ response, actorContext }) => {
   try {
     const applied = await applyCashFinancialResponseProjection({ responsePayload: response, actorHandle: actorContext });
@@ -655,12 +790,16 @@ const getCachedScope = async (mode, { limit = 50, networkUnavailable = false } =
       code: stationError?.code || 'CASH_STATION_UNRESOLVED'
     });
   }
+  const resolvedCloudStationId = mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
+    ? station.cashStationId
+    : null;
+  const resolvedLocalStationKey = !mode.cloudEnabled && station?.localStationKey
+    ? station.localStationKey
+    : null;
   const financial = await cashLocalRepository.getFinancialState({
     actorKey: actor.actorKey,
-    cashStationId: mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
-      ? station.cashStationId
-      : null,
-    localStationKey: mode.cloudEnabled ? null : station?.localStationKey || null,
+    cashStationId: resolvedCloudStationId,
+    localStationKey: resolvedLocalStationKey,
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
     stateKnown: !mode.cloudEnabled && !networkUnavailable
@@ -669,12 +808,18 @@ const getCachedScope = async (mode, { limit = 50, networkUnavailable = false } =
   const projection = cashSession
     ? await cashLocalRepository.loadProjection(cashSession)
     : { movements: [], totals: { ventasContado: '0', abonosFiado: '0' } };
-  const cashSessions = await cashLocalRepository.getHistory({
-    actorKey: actor.actorKey,
-    staffUserId: actor.staffUserId,
-    isAdmin: false,
-    limit
-  });
+  // An offline cloud cache without an authenticated station binding is not
+  // safe to attribute to this terminal. Never show another station's rows.
+  const cashSessions = mode.cloudEnabled && !resolvedCloudStationId
+    ? []
+    : await cashLocalRepository.getHistory({
+      actorKey: actor.actorKey,
+      staffUserId: actor.staffUserId,
+      isAdmin: false,
+      cashStationId: resolvedCloudStationId,
+      localStationKey: resolvedLocalStationKey,
+      limit
+    });
 
   return buildFinancialResult({
     mode,
@@ -900,6 +1045,7 @@ export const cashRepository = {
           actorKey: mode.actor.actorKey,
           staffUserId: mode.actor.staffUserId,
           isAdmin: !mode.actor.isStaff,
+          cashStationId: stationId,
           limit: 50
         });
       }
@@ -925,8 +1071,10 @@ export const cashRepository = {
           movements: projection.movements,
           totals: projection.totals,
           cashSessions,
-          adminOpenSessions: response.admin_open_sessions || [],
-          legacyAdminCashSessions: response.legacy_admin_cash_sessions || [],
+          adminOpenSessions: getCompleteCloudCashSessions(response.admin_open_sessions),
+          legacyAdminCashSessions: Array.isArray(response.legacy_admin_cash_sessions)
+            ? response.legacy_admin_cash_sessions
+            : [],
           actor: {
             ...mode.actor,
             actorKey: response.actor_key || mode.actor.actorKey,
@@ -1361,9 +1509,9 @@ export const cashRepository = {
     const applied = await applyCloudResponse(response);
     return {
       success: true,
-      cashSession: applied.cashSession || response.cash_session || null,
-      movements: response.movements || [],
-      auditEvents: response.audit_events || [],
+      cashSession: applied.cashSession || null,
+      movements: applied.movements || [],
+      auditEvents: Array.isArray(response.audit_events) ? response.audit_events : [],
       response
     };
   },
@@ -1497,16 +1645,32 @@ export const cashRepository = {
     const mode = getCashMode();
 
     if (!mode.cloudEnabled || !mode.online) {
-      const cashSessions = await cashLocalRepository.getHistory({
-        actorKey: mode.actor.actorKey,
-        staffUserId: mode.actor.staffUserId,
-        isAdmin: false,
-        includeAll: scope === 'all' && !mode.actor.isStaff,
-        limit
-      });
+      let station = null;
+      try {
+        station = await getStationForMode(mode);
+      } catch {
+        // An unresolved local station cannot safely expose cached cash rows.
+      }
+      const cashStationId = mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
+        ? station.cashStationId
+        : null;
+      const localStationKey = !mode.cloudEnabled && station?.localStationKey
+        ? station.localStationKey
+        : null;
+      const hasStationScope = Boolean(cashStationId || localStationKey);
+      const cashSessions = !hasStationScope
+        ? []
+        : await cashLocalRepository.getHistory({
+          actorKey: mode.actor.actorKey,
+          staffUserId: mode.actor.staffUserId,
+          isAdmin: false,
+          includeAll: scope === 'all' && !mode.actor.isStaff,
+          cashStationId,
+          localStationKey,
+          limit
+        });
       return { success: true, cashSessions, movements: [], readOnly: mode.readOnly };
     }
-
     let station = null;
     try {
       station = await getStationForMode(mode);
@@ -1528,6 +1692,7 @@ export const cashRepository = {
       return fail(response.message || 'No se pudo refrescar caja cloud.', response.code || 'CASH_SNAPSHOT_FAILED', { response });
     }
 
+    assertAuthoritativeCashResponse(response, 'el snapshot de caja');
     const applied = await applyCloudResponse(response);
     return {
       success: true,
@@ -1541,16 +1706,31 @@ export const cashRepository = {
   async listCashSessionsForAudit(filters = {}) {
     const mode = getCashMode();
     if (!mode.cloudEnabled || !mode.online || !canAuditCashSessions()) {
-      const cashSessions = await cashLocalRepository.getHistory({
-        actorKey: mode.actor.actorKey,
-        staffUserId: mode.actor.staffUserId,
-        isAdmin: false,
-        includeAll: !mode.actor.isStaff,
-        limit: filters.limit || 100
-      });
+      let station = null;
+      try {
+        station = await getStationForMode(mode);
+      } catch {
+        // An unresolved local station cannot safely expose cached audit rows.
+      }
+      const cashStationId = mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
+        ? station.cashStationId
+        : null;
+      const localStationKey = !mode.cloudEnabled && station?.localStationKey
+        ? station.localStationKey
+        : null;
+      const cashSessions = !cashStationId && !localStationKey
+        ? []
+        : await cashLocalRepository.getHistory({
+          actorKey: mode.actor.actorKey,
+          staffUserId: mode.actor.staffUserId,
+          isAdmin: false,
+          includeAll: !mode.actor.isStaff,
+          cashStationId,
+          localStationKey,
+          limit: filters.limit || 100
+        });
       return { success: true, cashSessions, readOnly: mode.readOnly };
     }
-
     let station = null;
     try {
       station = await getStationForMode(mode);

@@ -30,27 +30,47 @@ const localCashProjectionDiagnostics = {
 
 const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
+const hasCloudValue = (value) => (
+  value !== null
+  && value !== undefined
+  && String(value).trim() !== ''
+);
+
+const getCloudRecordActorKey = (value) => (
+  value?.actor_key
+  || value?.actorKey
+  || value?.staff_user_id
+  || value?.staffUserId
+  || null
+);
+
+const getCloudRecordStationId = (value) => [
+  value?.cash_station_id,
+  value?.cashStationId,
+  value?.metadata?.cash_station_id,
+  value?.metadata?.cashStationId,
+  value?.cash_station?.id,
+  value?.cashStation?.id
+].find((candidate) => isCanonicalCashStation(candidate)) || null;
+
 const isCompleteCloudCashSession = (value) => Boolean(
   isRecord(value)
-  && value.id
-  && (
-    value.status
-    || value.opened_at
-    || value.created_at
-    || value.actor_key
-    || value.cash_station_id
-    || value.cashStationId
-  )
+  && hasCloudValue(value.id)
+  && hasCloudValue(value.status || value.estado)
+  && hasCloudValue(getCloudRecordActorKey(value))
+  && Boolean(getCloudRecordStationId(value))
 );
 
 const isCompleteCloudCashMovement = (value) => Boolean(
   isRecord(value)
-  && value.id
-  && (value.cash_session_id || value.cashSessionId)
-  && (value.type || value.tipo)
-  && (value.amount !== undefined || value.monto !== undefined)
+  && hasCloudValue(value.id)
+  && hasCloudValue(value.cash_session_id || value.cashSessionId)
+  && hasCloudValue(value.type || value.tipo)
+  && (value.amount !== undefined && value.amount !== null
+    || value.monto !== undefined && value.monto !== null)
+  && hasCloudValue(getCloudRecordActorKey(value))
+  && Boolean(getCloudRecordStationId(value))
 );
-
 const recordLocalRows = (rows, kind) => {
   for (const row of rows || []) {
     if (!isRecord(row)) {
@@ -197,13 +217,25 @@ export const cashLocalRepository = {
     return sortByOpenedDesc(openSessions)[0] || null;
   },
 
-  async getHistory({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, limit = 50 } = {}) {
+  async getHistory({
+    actorKey = null,
+    staffUserId = null,
+    isAdmin = false,
+    includeAll = false,
+    cashStationId = null,
+    localStationKey = null,
+    limit = 50
+  } = {}) {
+    const stationScope = resolveStationScope({ cashStationId, localStationKey });
     const sessions = await getAllCashSessions();
     return sortByOpenedDesc(
       sessions.filter(Boolean).filter((cashSession) => (
         includeAll
           ? true
           : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
+      )).filter((cashSession) => (
+        (!stationScope.cashStationId && !stationScope.localStationKey)
+          || matchesStation(cashSession, stationScope)
       ))
     ).slice(0, limit);
   },

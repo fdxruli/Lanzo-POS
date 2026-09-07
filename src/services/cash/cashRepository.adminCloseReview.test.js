@@ -152,6 +152,7 @@ describe('cashRepository administrative close review delivery', () => {
           actor_key: 'staff:owner',
           status: 'open',
           expected_cash_total: '1200',
+          cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
           server_version: 5
         },
         financialIntentId: `intent-${code.toLowerCase()}`
@@ -229,6 +230,7 @@ describe('cashRepository administrative close review delivery', () => {
         actor_key: 'staff:owner',
         status: 'open',
         expected_cash_total: '1210',
+        cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
         server_version: 8
       },
       financialIntentId: 'intent-projection-failed'

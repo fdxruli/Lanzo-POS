@@ -40,49 +40,106 @@ const normalizeUuid = (value) => {
 };
 
 export const isLocalStationKey = (value) => (
-  typeof value === 'string' && value.trim().startsWith(LOCAL_STATION_KEY_PREFIX)
+  typeof value === 'string'
+  && value.trim().startsWith(LOCAL_STATION_KEY_PREFIX)
+  && value.trim().slice(LOCAL_STATION_KEY_PREFIX.length).length > 0
 );
 
 const stationCandidate = (record) => {
   if (typeof record === 'string') return normalizeIdentifier(record);
-  return normalizeIdentifier(record?.cashStationId || record?.cash_station_id);
+  return normalizeIdentifier(
+    record?.cashStationId
+      || record?.cash_station_id
+      || record?.id
+  );
 };
 
+const CANONICAL_CASH_STATION_PATTERN = new RegExp(
+  '^' + CANONICAL_DEVICE_STATION_PREFIX
+    + '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+  'i'
+);
+
 /**
- * A cloud station is not an alias of a browser-local key. The only valid
- * cross-record comparison is an exact comparison within the same identity
- * domain.
+ * A cloud station is a canonical server identity, never a browser-local
+ * alias, a raw device fingerprint or a partial/suffixed identifier.
  */
 export const isCanonicalCashStation = (record) => {
   const candidate = stationCandidate(record);
-  return Boolean(candidate && !isLocalStationKey(candidate));
+  return Boolean(candidate && CANONICAL_CASH_STATION_PATTERN.test(candidate));
 };
 
 export const areCashStationsEquivalent = (left, right) => {
   const leftId = normalizeIdentifier(left);
   const rightId = normalizeIdentifier(right);
-  return Boolean(leftId && rightId && leftId === rightId);
+  if (!leftId || !rightId || leftId !== rightId) return false;
+
+  const sameLocalDomain = isLocalStationKey(leftId) && isLocalStationKey(rightId);
+  const sameCloudDomain = isCanonicalCashStation(leftId) && isCanonicalCashStation(rightId);
+  return sameLocalDomain || sameCloudDomain;
 };
 
-const firstCashStationId = (...values) => values
-  .map(normalizeIdentifier)
-  .find((value) => isCanonicalCashStation(value)) || null;
+const addStationEvidence = (evidence, source, value) => {
+  const normalized = normalizeIdentifier(value);
+  if (normalized) evidence.push({ source, value: normalized });
+};
+
+const addStationRecordEvidence = (evidence, record, sourcePrefix) => {
+  if (!record || typeof record !== 'object') return;
+
+  addStationEvidence(evidence, sourcePrefix + '.cash_station_id', record.cash_station_id);
+  addStationEvidence(evidence, sourcePrefix + '.cashStationId', record.cashStationId);
+  addStationEvidence(evidence, sourcePrefix + '.resolved_cash_station_id', record.resolved_cash_station_id);
+  addStationEvidence(evidence, sourcePrefix + '.resolvedCashStationId', record.resolvedCashStationId);
+};
+
+const addNestedStationEvidence = (evidence, record, sourcePrefix) => {
+  if (!record || typeof record !== 'object') return;
+
+  addStationEvidence(evidence, sourcePrefix + '.cash_station.id', record.cash_station?.id);
+  addStationEvidence(evidence, sourcePrefix + '.cashStation.id', record.cashStation?.id);
+  addStationRecordEvidence(evidence, record, sourcePrefix);
+};
+
+export const getCashStationEvidence = (response = {}) => {
+  const evidence = [];
+  if (!response || typeof response !== 'object') return evidence;
+
+  addNestedStationEvidence(evidence, response, 'response');
+
+  const cashSession = response.cash_session || response.cashSession;
+  addNestedStationEvidence(evidence, cashSession, 'response.cash_session');
+
+  const directMovement = response.movement || response.cashMovement;
+  addNestedStationEvidence(evidence, directMovement, 'response.movement');
+
+  const sessions = Array.isArray(response.cash_sessions)
+    ? response.cash_sessions
+    : Array.isArray(response.cashSessions)
+      ? response.cashSessions
+      : [];
+  for (const session of sessions) {
+    addNestedStationEvidence(evidence, session, 'response.cash_sessions');
+  }
+
+  const movements = Array.isArray(response.movements) ? response.movements : [];
+  for (const movement of movements) {
+    addNestedStationEvidence(evidence, movement, 'response.movements');
+  }
+
+  const stationOpenCashSession = response.station_open_cash_session
+    || response.stationOpenCashSession;
+  addNestedStationEvidence(evidence, stationOpenCashSession, 'response.station_open_cash_session');
+
+  return evidence.map((entry) => Object.freeze(entry));
+};
 
 /**
- * Read only server-provided station evidence. The top-level `cash_station`
- * object is preferred; the remaining fields support older RPC response
- * shapes and the canonical station propagated by the financial intent path.
+ * Read only server-provided station evidence. The first canonical value is
+ * preferred, while callers can inspect all evidence to reject conflicts.
  */
-export const getCashStationIdFromCloudResponse = (response = {}) => firstCashStationId(
-  response?.cash_station?.id,
-  response?.cashStation?.id,
-  response?.cash_station_id,
-  response?.cashStationId,
-  response?.resolvedCashStationId,
-  response?.cash_session?.cash_station_id,
-  response?.cash_session?.cashStationId,
-  response?.cash_session?.metadata?.cash_station_id,
-  response?.cash_session?.metadata?.cashStationId
+export const getCashStationIdFromCloudResponse = (response = {}) => (
+  getCashStationEvidence(response).find((entry) => isCanonicalCashStation(entry.value))?.value || null
 );
 
 const readBindingDocument = () => {
@@ -107,7 +164,7 @@ const readBindingDocument = () => {
 export const getCashStationBinding = ({ licenseKey = null, deviceFingerprint = null } = {}) => {
   const license = normalizeIdentifier(licenseKey);
   const fingerprint = normalizeIdentifier(deviceFingerprint);
-  if (!license || !fingerprint) return null;
+  if (!license || !fingerprint || isLocalStationKey(fingerprint)) return null;
 
   const document = readBindingDocument();
   const licenseKeyHash = hashIdentifier(license);
@@ -115,16 +172,20 @@ export const getCashStationBinding = ({ licenseKey = null, deviceFingerprint = n
   if (!document || document.licenseKeyHash !== licenseKeyHash) return null;
 
   const binding = document.bindings[fingerprintHash];
+  const bindingDeviceId = normalizeUuid(binding?.deviceId);
+  const bindingMatchesDevice = !bindingDeviceId
+    || binding.cashStationId === CANONICAL_DEVICE_STATION_PREFIX + bindingDeviceId;
   if (!binding
     || binding.licenseKeyHash !== licenseKeyHash
     || binding.deviceFingerprintHash !== fingerprintHash
-    || !isCanonicalCashStation(binding.cashStationId)) {
+    || !isCanonicalCashStation(binding.cashStationId)
+    || !bindingMatchesDevice) {
     return null;
   }
 
   return Object.freeze({
     cashStationId: binding.cashStationId,
-    deviceId: normalizeUuid(binding.deviceId),
+    deviceId: bindingDeviceId,
     stationKey: normalizeIdentifier(binding.stationKey),
     bindingMode: normalizeIdentifier(binding.bindingMode)
   });
@@ -145,7 +206,12 @@ export const persistCashStationBinding = ({
   const license = normalizeIdentifier(licenseKey);
   const fingerprint = normalizeIdentifier(deviceFingerprint);
   const station = normalizeIdentifier(cashStationId);
-  if (!license || !fingerprint || !isCanonicalCashStation(station)) return false;
+  const canonicalDeviceId = normalizeUuid(deviceId);
+  if (!license || !fingerprint || isLocalStationKey(fingerprint)
+    || !isCanonicalCashStation(station)) return false;
+  if (deviceId && !canonicalDeviceId) return false;
+  if (canonicalDeviceId
+    && station !== CANONICAL_DEVICE_STATION_PREFIX + canonicalDeviceId) return false;
 
   const licenseKeyHash = hashIdentifier(license);
   const deviceFingerprintHash = hashIdentifier(fingerprint);
@@ -158,8 +224,10 @@ export const persistCashStationBinding = ({
     licenseKeyHash,
     deviceFingerprintHash,
     cashStationId: station,
-    deviceId: normalizeUuid(deviceId),
-    stationKey: normalizeIdentifier(stationKey),
+    deviceId: canonicalDeviceId,
+    stationKey: isLocalStationKey(stationKey)
+      ? null
+      : normalizeIdentifier(stationKey),
     bindingMode: normalizeIdentifier(bindingMode) || 'device'
   };
 
@@ -181,8 +249,14 @@ export const getCashStationIdentity = async ({
   deviceFingerprint = null,
   deviceId = null
 } = {}) => {
+  // deviceId is cloud metadata and can never become the browser fingerprint.
+  // Keeping these domains separate prevents localStationKey/cloud station
+  // comparisons from changing when the actor changes on the same terminal.
+  const suppliedFingerprint = normalizeIdentifier(deviceFingerprint);
   const stableDeviceFingerprint = normalizeIdentifier(
-    deviceFingerprint || deviceId || await getStableDeviceId()
+    suppliedFingerprint && !isLocalStationKey(suppliedFingerprint)
+      ? suppliedFingerprint
+      : await getStableDeviceId()
   );
   if (!stableDeviceFingerprint) {
     const error = new Error('CASH_STATION_UNRESOLVED');
@@ -194,12 +268,15 @@ export const getCashStationIdentity = async ({
     licenseKey,
     deviceFingerprint: stableDeviceFingerprint
   });
+  const suppliedDeviceId = normalizeUuid(deviceId);
 
   return Object.freeze({
     deviceFingerprint: stableDeviceFingerprint,
-    localStationKey: `${LOCAL_STATION_KEY_PREFIX}${stableDeviceFingerprint}`,
+    localStationKey: LOCAL_STATION_KEY_PREFIX + stableDeviceFingerprint,
     cashStationId: binding?.cashStationId || null,
-    deviceId: binding?.deviceId || null,
+    // This remains cloud device metadata; it is never used to derive the
+    // browser fingerprint or a local station key.
+    deviceId: binding?.deviceId || suppliedDeviceId || null,
     stationKey: binding?.stationKey || null,
     identityState: binding
       ? CASH_STATION_IDENTITY_STATE.CANONICAL
@@ -227,5 +304,6 @@ export default Object.freeze({
   isLocalStationKey,
   isCanonicalCashStation,
   areCashStationsEquivalent,
+  getCashStationEvidence,
   getCashStationIdFromCloudResponse
 });

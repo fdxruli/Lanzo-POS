@@ -210,10 +210,12 @@ describe('CajaPage cash close routing', () => {
     render(<CajaPage />);
 
     expect(screen.getByText('Caja protegida por cambio de usuario')).toBeVisible();
+    expect(screen.getByText('Caja pendiente de cierre')).toBeVisible();
     expect(screen.getByText('Administradora Ana')).toBeVisible();
+    expect(screen.getByText('Estación financiera sin nombre')).toBeVisible();
     expect(screen.getByText('Pendiente de cierre y conteo')).toBeVisible();
-    expect(screen.getByText(/debe completar el cierre antes/i)).toBeVisible();
-    expect(screen.getByText('Ver detalles técnicos')).toBeVisible();
+    expect(screen.getByText(/debe completar el cierre/i)).toBeVisible();
+    expect(screen.queryByText('Ver detalles técnicos')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Corte de caja' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Revisar caja ajena' })).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain(fullSessionId);

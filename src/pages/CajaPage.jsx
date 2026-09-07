@@ -16,7 +16,10 @@ import * as googleDriveService from '../services/googleDriveService';
 import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
-import { canShowBusinessCashSummary } from '../services/cash/businessCashSummary';
+import {
+  canShowBusinessCashSummary,
+  getCashSessionStationLabel
+} from '../services/cash/businessCashSummary';
 import { buildLegacyCashAdoptionConfirmation } from '../services/cash/cashDeviceLabel';
 import { CASH_NETWORK_UNAVAILABLE_MESSAGE } from '../services/cash/cashNetwork';
 
@@ -71,12 +74,17 @@ export const isCashSessionOwnedByActor = (cashSession, cashActor) => {
   return Boolean(ownerActorKey && currentActorKey && ownerActorKey === currentActorKey);
 };
 
-const shortenTechnicalIdentifier = (value) => {
-  const identifier = String(value || '').trim();
-  if (!identifier || identifier.length <= 18) return identifier || 'No disponible';
-  const separatorIndex = identifier.indexOf(':');
-  const prefixLength = separatorIndex > -1 ? separatorIndex + 1 : 8;
-  return `${identifier.slice(0, prefixLength)}…${identifier.slice(-6)}`;
+const cashSessionStationLabel = (cashSession) => {
+  if (typeof getCashSessionStationLabel === 'function') {
+    return getCashSessionStationLabel(cashSession);
+  }
+  return cashSession?.station_name
+    || cashSession?.stationName
+    || cashSession?.device_name
+    || cashSession?.deviceName
+    || cashSession?.opened_by_device_name
+    || cashSession?.opening_device_name
+    || 'Estación financiera sin nombre';
 };
 
 const cashSessionResponsibleLabel = (cashSession) => {
@@ -612,13 +620,12 @@ export default function CajaPage() {
     const handoffRequired = estadoCaja === 'financial_handoff_required';
     const stationMismatch = financialCode === 'CASH_SESSION_STATION_MISMATCH';
     const stationSession = aperturaPendiente?.stationOpenCashSession || null;
-    const stationOwnerActorKey = cashSessionActorKey(stationSession);
     return (
       <main className="ui-page caja-page" aria-label="Caja">
         <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
           <div className="ui-section__actions">
             <span className="ui-badge ui-badge--warning">
-              {networkUnavailable ? 'Sin conexión con Supabase' : handoffRequired ? 'Cierre pendiente' : 'Estado financiero bloqueado'}
+              {networkUnavailable ? 'Sin conexión con Supabase' : handoffRequired ? 'Caja pendiente de cierre' : 'Estado financiero bloqueado'}
             </span>
           </div>
         </header>
@@ -630,24 +637,16 @@ export default function CajaPage() {
               <div className="caja-handoff-card__heading">
                 <LockKeyhole size={22} aria-hidden="true" />
                 <div>
-                  <strong>Caja protegida por cambio de usuario</strong>
+                  <strong>Caja pendiente de cierre</strong>
                   <p>Hay una caja abierta por otro usuario en esta estación. Lanzo no la transfirió ni la cerró automáticamente para proteger el efectivo.</p>
                 </div>
               </div>
               <dl className="caja-handoff-card__summary">
+                <div><dt>Estación</dt><dd>{cashSessionStationLabel(stationSession)}</dd></div>
                 <div><dt>Caja abierta por</dt><dd>{cashSessionResponsibleLabel(stationSession)}</dd></div>
                 <div><dt>Estado</dt><dd>Pendiente de cierre y conteo</dd></div>
               </dl>
-              <p className="caja-handoff-card__guidance">El usuario que abrió la caja o un administrador debe completar el cierre antes de que otro usuario pueda iniciar un nuevo turno.</p>
-              {(stationSession?.id || stationOwnerActorKey) && (
-                <details className="caja-handoff-card__technical">
-                  <summary>Ver detalles técnicos</summary>
-                  <dl>
-                    {stationSession?.id && <div><dt>Sesión</dt><dd><code>{shortenTechnicalIdentifier(stationSession.id)}</code></dd></div>}
-                    {stationOwnerActorKey && <div><dt>Propietario</dt><dd><code>{shortenTechnicalIdentifier(stationOwnerActorKey)}</code></dd></div>}
-                  </dl>
-                </details>
-              )}
+              <p className="caja-handoff-card__guidance">El usuario que abrió la caja o un administrador debe completar el cierre y la conciliación antes de que otro usuario pueda iniciar un nuevo turno.</p>
             </div>
           ) : stationMismatch ? (
             <div className="ui-alert ui-alert--warning" role="alert">

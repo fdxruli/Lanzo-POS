@@ -32,6 +32,7 @@ const DEVICE_UUID_A = '550e8400-e29b-41d4-a716-446655440000';
 const DEVICE_UUID_B = '650e8400-e29b-41d4-a716-446655440001';
 const STATION_A = `cash_station_device_${DEVICE_UUID_A}`;
 const STATION_B = `cash_station_device_${DEVICE_UUID_B}`;
+const isCanonicalStation = (value) => /^cash_station_device_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeStation(value));
 
 vi.mock('../Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock('../utils', () => ({ showMessageModal: vi.fn() }));
@@ -61,8 +62,12 @@ vi.mock('./cashStation', () => ({
     LEGACY_UNRESOLVED: 'legacy_unresolved'
   },
   getCashStationIdentity: () => runtime.station,
-  isCanonicalCashStation: (value) => Boolean(normalizeStation(value) && !normalizeStation(value).startsWith('local:device:')),
-  areCashStationsEquivalent: (left, right) => Boolean(normalizeStation(left) && normalizeStation(left) === normalizeStation(right)),
+  isCanonicalCashStation: (value) => isCanonicalStation(value),
+  areCashStationsEquivalent: (left, right) => Boolean(
+    isCanonicalStation(left)
+    && isCanonicalStation(right)
+    && normalizeStation(left) === normalizeStation(right)
+  ),
   persistCashStationBinding: (...args) => runtime.persistBinding(...args),
   getCashStationIdFromCloudResponse: (response = {}) => [
     response?.cash_station?.id,
@@ -173,6 +178,41 @@ describe('cashRepository cloud station alignment', () => {
     expect(runtime.applyCloudCashSession).toHaveBeenCalledWith(expect.objectContaining({
       cash_station_id: STATION_A
     }));
+  });
+
+  it('rejects station B when the device is already bound to station A', async () => {
+    runtime.station = {
+      deviceFingerprint: 'fp-browser-a',
+      localStationKey: 'local:device:fp-browser-a',
+      cashStationId: STATION_A,
+      deviceId: DEVICE_UUID_A,
+      identityState: 'canonical'
+    };
+    runtime.openCashSession.mockResolvedValue({
+      success: true,
+      cash_station: { id: STATION_B, device_id: DEVICE_UUID_B },
+      cash_session: {
+        id: 'cash-b',
+        status: 'open',
+        actor_key: 'admin:shared',
+        cash_station_id: STATION_B
+      }
+    });
+
+    await expect(cashRepository.openCashSession({ montoInicial: '100' }))
+      .rejects.toMatchObject({ code: 'CASH_SESSION_STATION_MISMATCH' });
+    expect(runtime.persistBinding).not.toHaveBeenCalled();
+    expect(runtime.applyCloudCashSession).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a raw or partial station identifier as cloud authority', () => {
+    expect(() => cashRepositoryInternals.assertCloudResponseStation({
+      response: { cash_station_id: 'station-A' }
+    })).toThrowError(expect.objectContaining({ code: 'CASH_STATION_UNRESOLVED' }));
+
+    expect(() => cashRepositoryInternals.assertCloudResponseStation({
+      response: { cash_station_id: STATION_A, resolvedCashStationId: STATION_B }
+    })).toThrowError(expect.objectContaining({ code: 'CASH_SESSION_STATION_MISMATCH' }));
   });
 
   it('rejects a session from station B when cloud authority says the request is for station A', () => {

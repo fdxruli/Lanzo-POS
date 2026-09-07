@@ -1,8 +1,9 @@
-import { AlertTriangle, Building2, Clock3, UserRound, UsersRound, WalletCards } from 'lucide-react';
+import { AlertTriangle, Building2, Clock3, UserRound, UsersRound } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import {
   buildBusinessCashSummary,
   getCashSessionAge,
+  getCashSessionStationLabel,
   isStaffCashSession
 } from '../../../services/cash/businessCashSummary';
 
@@ -19,11 +20,24 @@ const getResponsibleName = (session = {}) => (
 
 const getOpenedAt = (session = {}) => session.opened_at || session.fecha_apertura;
 
+const formatOpenedAt = (value) => {
+  if (!value) return 'Hora de apertura no disponible';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Hora de apertura no disponible'
+    : date.toLocaleString();
+};
+
 const getExpectedCash = (session = {}) => (
   session.expected_cash_total ?? session.total_teorico_cloud ?? 0
 );
 
-const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null, onReviewSession = null, isReadOnly = false }) => {
+const CajaBusinessCashSummary = ({
+  adminOpenSessions = [],
+  cajaActual = null,
+  onReviewSession = null,
+  isReadOnly = false
+}) => {
   const summary = buildBusinessCashSummary(adminOpenSessions, cajaActual);
 
   return (
@@ -32,37 +46,28 @@ const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null, on
         <div className="section-heading">
           <span className="section-heading-icon" aria-hidden="true"><Building2 size={19} /></span>
           <div>
-            <p className="section-eyebrow">Resumen consolidado</p>
-            <h2 id="business-cash-title" className="section-title">Efectivo del negocio</h2>
+            <p className="section-eyebrow">Estaciones físicas</p>
+            <h2 id="business-cash-title" className="section-title">Cajas abiertas por estación</h2>
           </div>
         </div>
-        <span className="items-count">{summary.openCount} abiertas</span>
+        <span className="items-count">
+          {summary.openCount} {summary.openCount === 1 ? 'estación abierta' : 'estaciones abiertas'}
+        </span>
       </div>
 
-      <div className="business-cash-hero">
-        <WalletCards size={22} aria-hidden="true" />
-        <div><strong>{formatMoney(summary.expectedCashTotal)}</strong><span>Efectivo teórico</span></div>
-      </div>
-      <p className="business-cash-help">El efectivo teórico se calcula con las cajas abiertas registradas en Lanzo.</p>
-
-      <div className="business-cash-breakdown" aria-label="Distribución del efectivo del negocio">
-        <span><small>Mi caja</small><strong>{formatMoney(summary.currentActorTotal)}</strong></span>
-        <span><small>Otras cajas admin</small><strong>{formatMoney(summary.otherAdminTotal)}</strong></span>
-        <span><small>Cajas staff</small><strong>{formatMoney(summary.staffTotal)}</strong></span>
-      </div>
-
-      <details className="caja-disclosure business-cash-components-disclosure">
-        <summary>Ver composición del efectivo</summary>
-        <div className="business-cash-components" aria-label="Componentes del efectivo teórico">
-          <span>Fondo inicial <strong>{formatMoney(summary.openingTotal)}</strong></span>
-          <span>Ventas efectivo <strong>{formatMoney(summary.cashSalesTotal)}</strong></span>
-          <span>Abonos <strong>{formatMoney(summary.customerPaymentsTotal)}</strong></span>
-          <span>Entradas <strong>{formatMoney(summary.entriesTotal)}</strong></span>
-          <span>Salidas <strong>- {formatMoney(summary.exitsTotal)}</strong></span>
+      {summary.otherAdminCount > 0 && (
+        <div className="cash-opening-notice cash-opening-notice--warning" role="status">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <p>
+            Tienes {summary.otherAdminCount} otra{summary.otherAdminCount === 1 ? '' : 's'} estación
+            {summary.otherAdminCount === 1 ? '' : 'es'} admin abierta
+            {summary.otherAdminCount === 1 ? '' : 's'}. Cada caja mantiene su monto separado.
+          </p>
         </div>
-      </details>
-      <div className="business-cash-list" aria-label="Cajas abiertas de la licencia">
-        <h3>Cajas abiertas</h3>
+      )}
+
+      <div className="business-cash-list" aria-label="Cajas abiertas por estación física">
+        <h3>Detalle por estación</h3>
         {summary.sessions.map((session) => {
           const age = getCashSessionAge(getOpenedAt(session));
           const isStaff = isStaffCashSession(session);
@@ -70,11 +75,15 @@ const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null, on
           return (
             <article key={session.id || session.cash_session_id} className="business-cash-session">
               <div>
-                <strong>{getResponsibleName(session)}</strong>
+                <strong>{getCashSessionStationLabel(session)}</strong>
                 <span className="business-cash-session-meta"><UserRound size={13} aria-hidden="true" />{type}</span>
+                <span className="business-cash-session-meta">Responsable: {getResponsibleName(session)}</span>
+                <span className="business-cash-session-meta">Abierta: {formatOpenedAt(getOpenedAt(session))}</span>
               </div>
               <div className="business-cash-session-value">
                 <strong>{formatMoney(getExpectedCash(session))}</strong>
+                <span>Efectivo teórico</span>
+                <span>Estado: Abierta</span>
                 <span className={`business-cash-age business-cash-age--${age.level}`} title={age.detail || age.label}>
                   {age.level !== 'normal' && <AlertTriangle size={13} aria-hidden="true" />}
                   <Clock3 size={13} aria-hidden="true" />{age.label}
@@ -82,7 +91,7 @@ const CajaBusinessCashSummary = ({ adminOpenSessions = [], cajaActual = null, on
               </div>
               {onReviewSession && (
                 <button type="button" className="business-cash-review" onClick={() => onReviewSession(session)} disabled={isReadOnly}>
-                  {isReadOnly ? 'Sin conexion' : 'Revisar'}
+                  {isReadOnly ? 'Sin conexión' : 'Revisar'}
                 </button>
               )}
             </article>

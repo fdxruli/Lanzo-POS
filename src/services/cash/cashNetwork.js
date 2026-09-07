@@ -84,6 +84,7 @@ export const isCashNetworkUnavailableError = (error) => {
 
     const status = getStatusCode(candidate);
     if (isRetryableHttpStatus(status)) return true;
+    if (candidate?.name === 'TypeError') return true;
 
     const text = getErrorText(candidate);
     return (

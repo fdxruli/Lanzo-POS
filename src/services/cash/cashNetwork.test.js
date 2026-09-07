@@ -10,6 +10,7 @@ describe('cash network recovery classification', () => {
   it.each([
     ['ERR_CONNECTION_CLOSED', new Error('net::ERR_CONNECTION_CLOSED')],
     ['Failed to fetch', new TypeError('Failed to fetch')],
+    ['generic TypeError transport', new TypeError('Opaque browser transport failure')],
     ['NetworkError', new Error('NetworkError when attempting to fetch resource')],
     ['408', Object.assign(new Error('Request timeout'), { status: 408 })],
     ['429', Object.assign(new Error('Too many requests'), { status: 429 })],

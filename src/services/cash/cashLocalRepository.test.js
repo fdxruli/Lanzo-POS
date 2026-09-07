@@ -69,6 +69,15 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       .resolves.toMatchObject({ id: stationA.id, localStationKey: stationKeyA });
     await expect(cashLocalRepository.getCurrentCashSession({ actorKey: 'admin:shared', localStationKey: stationKeyB }))
       .resolves.toMatchObject({ id: stationB.id, localStationKey: stationKeyB });
+
+    await expect(cashLocalRepository.getHistory({
+      actorKey: 'admin:shared',
+      localStationKey: stationKeyA
+    })).resolves.toMatchObject([{ id: stationA.id }]);
+    await expect(cashLocalRepository.getHistory({
+      actorKey: 'admin:shared',
+      localStationKey: stationKeyB
+    })).resolves.toMatchObject([{ id: stationB.id }]);
   });
 
   it('keeps one open session per station when two Admin actors race', async () => {
@@ -114,6 +123,25 @@ describe('cashLocalRepository shared-terminal financial ownership', () => {
       cloudEnabled: false
     });
     expect(state).toMatchObject({ status: 'NO_SESSION', cashSession: null });
+  });
+
+  it('does not persist incomplete cloud session or movement projections', async () => {
+    await expect(cashLocalRepository.applyCloudCashSession({
+      id: 'incomplete-session',
+      status: 'open',
+      actor_key: 'admin:shared'
+    })).resolves.toBeNull();
+
+    await expect(cashLocalRepository.applyCloudCashMovement({
+      id: 'incomplete-movement',
+      cash_session_id: 'incomplete-session',
+      type: 'cash_in',
+      amount: '10',
+      actor_key: 'admin:shared'
+    })).resolves.toBeNull();
+
+    expect(await db.table(STORES.CAJAS).get('incomplete-session')).toBeUndefined();
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).get('incomplete-movement')).toBeUndefined();
   });
 
   it('keeps Staff limited to one open session per actor across stations', async () => {
