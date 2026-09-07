@@ -39,7 +39,10 @@ vi.mock('../../services/dataTransfer', () => ({
 vi.mock('../../services/backup/backupManager', () => ({ backupManager: { backup: vi.fn() } }));
 vi.mock('../../services/googleDriveService', () => ({ uploadBackup: vi.fn() }));
 vi.mock('../../services/Logger', () => ({ default: { error: vi.fn(), warn: vi.fn() } }));
-vi.mock('../../services/cash/businessCashSummary', () => ({ canShowBusinessCashSummary: () => false }));
+vi.mock('../../services/cash/businessCashSummary', () => ({
+  canShowBusinessCashSummary: () => false,
+  getCashSessionStationLabel: () => 'Estación financiera sin nombre'
+}));
 vi.mock('../../services/cash/cashDeviceLabel', () => ({ buildLegacyCashAdoptionConfirmation: () => '' }));
 
 vi.mock('../../components/common/AuditModal', () => ({
