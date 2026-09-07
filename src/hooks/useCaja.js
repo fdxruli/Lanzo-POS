@@ -10,7 +10,11 @@ import {
   CASH_NETWORK_UNAVAILABLE_MESSAGE,
   isCashNetworkUnavailableError
 } from '../services/cash/cashNetwork';
-import { areCashStationsEquivalent } from '../services/cash/cashStation';
+import {
+  areCashStationsEquivalent,
+  isCanonicalCashStation,
+  isLocalStationKey
+} from '../services/cash/cashStation';
 import { resolveCashSessionAmounts } from '../services/cajaProjection';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -29,21 +33,45 @@ const isOpenCashSession = (cashSession) => (
   cashSession?.estado === 'abierta' || cashSession?.status === 'open'
 );
 
-const getSessionStationId = (cashSession) => (
-  cashSession?.cashStationId || cashSession?.cash_station_id || null
-);
+const getSessionStationId = (cashSession) => [
+  cashSession?.cashStationId,
+  cashSession?.cash_station_id,
+  cashSession?.metadata?.cashStationId,
+  cashSession?.metadata?.cash_station_id
+].find((value) => isCanonicalCashStation(value)) || null;
+
+const getSessionLocalStationKey = (cashSession) => [
+  cashSession?.localStationKey,
+  cashSession?.local_station_key,
+  cashSession?.cashStationId,
+  cashSession?.cash_station_id,
+  cashSession?.metadata?.localStationKey,
+  cashSession?.metadata?.local_station_key
+].find((value) => isLocalStationKey(value)) || null;
 
 const getSessionActorKey = (cashSession) => cashSession?.actorKey || cashSession?.actor_key || null;
 
-const isSessionForStation = (cashSession, cashStationId, actorKey = null) => (
-  Boolean(
+const isSessionForStation = (cashSession, cashStationId, actorKey = null, localStationKey = null) => {
+  const expectedCloudStation = isCanonicalCashStation(cashStationId) ? cashStationId : null;
+  const expectedLocalStation = localStationKey
+    || (isLocalStationKey(cashStationId) ? cashStationId : null);
+  const stationMatches = expectedCloudStation
+    ? Boolean(
+      getSessionStationId(cashSession)
+      && areCashStationsEquivalent(getSessionStationId(cashSession), expectedCloudStation)
+    )
+    : expectedLocalStation
+      ? Boolean(
+        getSessionLocalStationKey(cashSession)
+        && areCashStationsEquivalent(getSessionLocalStationKey(cashSession), expectedLocalStation)
+      )
+      : false;
+  return Boolean(
     isOpenCashSession(cashSession)
-    && cashStationId
-    && getSessionStationId(cashSession)
-    && areCashStationsEquivalent(getSessionStationId(cashSession), cashStationId)
+    && stationMatches
     && (!actorKey || getSessionActorKey(cashSession) === actorKey)
-  )
-);
+  );
+};
 
 const createCajaNeedsOpeningError = (message = 'La caja requiere apertura manual. Confirma el fondo inicial.') => {
   const error = new Error(message);
@@ -107,6 +135,7 @@ const normalizeRepositoryResult = (result = {}) => {
     financialCode: result.financialCode || financialState?.code || null,
     financialState,
     cashStationId: result.cashStationId || result.cash_station_id || null,
+    localStationKey: result.localStationKey || result.local_station_key || null,
     stationOpenCashSession: result.stationOpenCashSession || result.station_open_cash_session || null,
     adminOpenSessions: Array.isArray(result.adminOpenSessions || result.admin_open_sessions)
       ? (result.adminOpenSessions || result.admin_open_sessions).filter(Boolean)
@@ -145,6 +174,7 @@ export function useCaja() {
     movements: [],
     totals: zeroTotals,
     cashStationId: null,
+    localStationKey: null,
     stationOpenCashSession: null,
     actor: cashActor,
     mode: cashMode,
@@ -173,6 +203,7 @@ export function useCaja() {
           : previous.movements,
         totals: result.totals || previous.totals,
         cashStationId: result.cashStationId || previous.cashStationId,
+        localStationKey: result.localStationKey || previous.localStationKey,
         stationOpenCashSession: result.stationOpenCashSession || previous.stationOpenCashSession,
         actor: result.actor || previous.actor,
         mode: result.mode || previous.mode
@@ -181,7 +212,8 @@ export function useCaja() {
     const current = isSessionForStation(
       displayResult.cashSession,
       displayResult.cashStationId,
-      displayResult.actor?.actorKey
+      displayResult.actor?.actorKey,
+      displayResult.localStationKey
     )
       ? displayResult.cashSession
       : null;
@@ -215,6 +247,7 @@ export function useCaja() {
       movements: displayResult.movements || [],
       totals: displayResult.totals || zeroTotals,
       cashStationId: displayResult.cashStationId,
+      localStationKey: displayResult.localStationKey,
       stationOpenCashSession: displayResult.stationOpenCashSession,
       actor: displayResult.actor || currentMode.actor,
       mode: nextMode,
@@ -276,6 +309,7 @@ export function useCaja() {
       movements: previous.movements,
       totals: previous.totals,
       cashStationId: previous.cashStationId,
+      localStationKey: previous.localStationKey,
       stationOpenCashSession: previous.stationOpenCashSession,
       actor: previous.actor || mode.actor,
       mode,
@@ -564,7 +598,12 @@ export function useCaja() {
       applyCashState(result);
 
       const current = result.cashSession || result.cash_session || null;
-      if (isSessionForStation(current, result.cashStationId, mode.actor.actorKey)) return current;
+      if (isSessionForStation(
+        current,
+        result.cashStationId,
+        mode.actor.actorKey,
+        result.localStationKey
+      )) return current;
 
       throw createCajaNeedsOpeningError();
     }
@@ -589,7 +628,12 @@ export function useCaja() {
     }
 
     const localCurrent = localState?.cashSession || localState?.cash_session || null;
-    if (isSessionForStation(localCurrent, localState?.cashStationId, mode.actor.actorKey)) {
+    if (isSessionForStation(
+      localCurrent,
+      localState?.cashStationId,
+      mode.actor.actorKey,
+      localState?.localStationKey
+    )) {
       applyCashState(localState);
       return localCurrent;
     }

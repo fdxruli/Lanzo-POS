@@ -110,9 +110,9 @@ export const normalizeCashNetworkError = (error, { rpcName = null } = {}) => {
   normalized.rpcName = rpcName;
   normalized.cause = error;
   const requestMetadata = getRequestMetadata(error);
+  normalized.generation = requestMetadata?.generation ?? error?.generation ?? null;
   if (requestMetadata) {
     normalized.requestId = requestMetadata.requestId || error?.requestId || null;
-    normalized.generation = requestMetadata.generation || error?.generation || null;
     normalized.connectionGeneration = requestMetadata.connectionGeneration || null;
     normalized.startedOnline = requestMetadata.startedOnline ?? null;
     normalized.responseOrigin = requestMetadata.origin || error?.origin || null;

@@ -1,3 +1,5 @@
+import { isCanonicalCashStation, isLocalStationKey } from './cashStation';
+
 export const CASH_SYNC_STATUS = Object.freeze({
   LOCAL: 'local',
   SYNCED: 'synced',
@@ -37,8 +39,17 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     session.metadata?.cash_station_id,
     session.metadata?.cashStationId
   );
-  const cashStationId = serverCashStationId
-    || firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
+  const existingCashStationId = firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
+  const cashStationId = isCanonicalCashStation(serverCashStationId)
+    ? serverCashStationId
+    : (isCanonicalCashStation(existingCashStationId) ? existingCashStationId : null);
+  const localStationKey = cashStationId
+    ? null
+    : firstIdentifier(
+      existing?.localStationKey,
+      existing?.local_station_key,
+      isLocalStationKey(existingCashStationId) ? existingCashStationId : null
+    );
   const local = {
     ...(existing || {}),
     id: session.id,
@@ -92,7 +103,8 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     deviceId: session.device_id || null,
     deviceRole: session.device_role || null,
     cashStationId,
-    cashIdentityState: serverCashStationId
+    localStationKey,
+    cashIdentityState: cashStationId
       ? 'canonical'
       : session.cash_identity_state || session.cashIdentityState || existing?.cashIdentityState || 'legacy_unresolved',
     scope: session.scope || 'actor',
@@ -108,14 +120,23 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
 
   const syncedAt = nowIso();
   const metadata = movement.metadata || existing?.metadata || {};
-  const cashStationId = firstIdentifier(
+  const existingCashStationId = firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
+  const serverCashStationId = firstIdentifier(
     movement.cash_station_id,
     movement.cashStationId,
     metadata.cash_station_id,
-    metadata.cashStationId,
-    existing?.cashStationId,
-    existing?.cash_station_id
+    metadata.cashStationId
   );
+  const cashStationId = isCanonicalCashStation(serverCashStationId)
+    ? serverCashStationId
+    : (isCanonicalCashStation(existingCashStationId) ? existingCashStationId : null);
+  const localStationKey = cashStationId
+    ? null
+    : firstIdentifier(
+      existing?.localStationKey,
+      existing?.local_station_key,
+      isLocalStationKey(existingCashStationId) ? existingCashStationId : null
+    );
   const referenceType = movement.reference_type
     || movement.referenceType
     || existing?.referenceType
@@ -164,6 +185,7 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
     staffUserId: movement.staff_user_id || null,
     deviceId: movement.device_id || null,
     cashStationId,
+    localStationKey,
     idempotencyKey: movement.idempotency_key || movement.idempotencyKey || existing?.idempotencyKey || null,
     cloudCash: true,
     deletedAt: movement.deleted_at || null

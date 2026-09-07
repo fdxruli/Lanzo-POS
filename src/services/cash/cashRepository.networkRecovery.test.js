@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const DEVICE_UUID_A = '550e8400-e29b-41d4-a716-446655440000';
+const DEVICE_UUID_B = '650e8400-e29b-41d4-a716-446655440001';
+const STATION_A = `cash_station_device_${DEVICE_UUID_A}`;
+const STATION_B = `cash_station_device_${DEVICE_UUID_B}`;
+
 const runtime = vi.hoisted(() => ({
   mode: {
     cloudEnabled: true,
@@ -11,9 +16,11 @@ const runtime = vi.hoisted(() => ({
     actor: { actorKey: 'admin:one', isStaff: false, staffUserId: null }
   },
   station: {
-    deviceId: 'A',
-    cashStationId: 'local:device:A',
-    identityState: 'deterministic-device-bound'
+    deviceFingerprint: 'fp-browser-a',
+    localStationKey: 'local:device:fp-browser-a',
+    cashStationId: null,
+    deviceId: null,
+    identityState: 'legacy_unresolved'
   },
   current: vi.fn(),
   stationState: vi.fn(),
@@ -55,10 +62,19 @@ vi.mock('./cashLocalRepository', () => ({
 }));
 vi.mock('./cashStation', () => ({
   getCashStationIdentity: () => runtime.station,
-  areCashStationsEquivalent: (left, right) => left === right || (
-    String(left || '').replace('local:device:', '') === String(right || '').replace('cash_station_device_', '')
-  ),
-  getCashStationIdFromCloudResponse: (response = {}) => response?.cash_station?.id || response?.cashStationId || null
+  CASH_STATION_IDENTITY_STATE: {
+    CANONICAL: 'canonical',
+    LOCAL: 'local',
+    LEGACY_UNRESOLVED: 'legacy_unresolved'
+  },
+  isCanonicalCashStation: (value) => Boolean(value && !String(value).startsWith('local:device:')),
+  areCashStationsEquivalent: (left, right) => Boolean(left && right && left === right),
+  persistCashStationBinding: vi.fn(),
+  getCashStationIdFromCloudResponse: (response = {}) => response?.cash_station?.id
+    || response?.cash_station_id
+    || response?.cashStationId
+    || response?.cash_session?.cash_station_id
+    || null
 }));
 vi.mock('./cashActor', () => ({
   CASH_CLOUD_OFFLINE_MESSAGE: 'Caja cloud sin conexión.',
@@ -80,7 +96,7 @@ const cachedSession = {
   id: 'cash-local-known',
   estado: 'abierta',
   actorKey: 'admin:one',
-  cashStationId: 'cash_station_device_A',
+  cashStationId: STATION_A,
   fecha_apertura: '2026-09-06T09:00:00.000Z'
 };
 
@@ -97,7 +113,7 @@ beforeEach(() => {
     code: null,
     cashSession: cachedSession,
     stationOpenCashSession: cachedSession,
-    cashStationId: 'local:device:A',
+    cashStationId: STATION_A,
     actorKey: 'admin:one',
     stateKnown: false,
     online: true,
@@ -151,12 +167,17 @@ describe('cashRepository network recovery', () => {
   it('keeps a real online station mismatch as a financial inconsistency, not a network outage', async () => {
     runtime.current.mockResolvedValue({
       success: true,
-      cash_session: null,
+      cash_session: {
+        id: 'cash-b',
+        status: 'open',
+        actor_key: 'admin:one',
+        cash_station_id: STATION_B
+      },
       actor_key: 'admin:one'
     });
     runtime.stationState.mockResolvedValue({
       success: true,
-      cash_station: { id: 'cash_station_device_B', device_id: 'B' },
+      cash_station: { id: STATION_A, device_id: DEVICE_UUID_A },
       station_open_cash_session: null
     });
 

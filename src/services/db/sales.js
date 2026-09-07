@@ -14,6 +14,20 @@ import { Money } from '../../utils/moneyMath';
 import { SALE_STATUS } from '../sales/financialStats';
 import Logger from '../Logger';
 
+const LOCAL_STATION_KEY_PREFIX = 'local:device:';
+const isLocalStationKey = (value) => (
+    typeof value === 'string' && value.trim().startsWith(LOCAL_STATION_KEY_PREFIX)
+);
+const isCanonicalCashStation = (value) => {
+    const normalized = String(value || '').trim();
+    return Boolean(normalized && !isLocalStationKey(normalized));
+};
+const areCashStationsEquivalent = (left, right) => {
+    const normalizedLeft = String(left || '').trim();
+    const normalizedRight = String(right || '').trim();
+    return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+};
+
 const getRealProductId = (item) => item?.parentId || item?.id;
 const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'table';
 const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
@@ -75,16 +89,55 @@ const getSaleCashActorKey = (sale = {}) => (
     || null
 );
 
-const getSaleCashStationId = (sale = {}) => (
-    sale.cashStationId
-    || sale.cash_station_id
-    || sale.metadata?.cashStationId
-    || sale.metadata?.cash_station_id
-    || null
-);
+const getSaleCashStationId = (sale = {}) => [
+    sale.cashStationId,
+    sale.cash_station_id,
+    sale.metadata?.cashStationId,
+    sale.metadata?.cash_station_id
+].find((value) => isCanonicalCashStation(value)) || null;
+
+const getSaleLocalStationKey = (sale = {}) => [
+    sale.localStationKey,
+    sale.local_station_key,
+    sale.cashStationId,
+    sale.cash_station_id,
+    sale.metadata?.localStationKey,
+    sale.metadata?.local_station_key,
+    sale.metadata?.cashStationId,
+    sale.metadata?.cash_station_id
+].find((value) => isLocalStationKey(value)) || null;
 
 const getCashSessionActorKey = (session = {}) => session.actorKey || session.actor_key || null;
-const getCashSessionStationId = (session = {}) => session.cashStationId || session.cash_station_id || null;
+const getCashSessionStationId = (session = {}) => [
+    session.cashStationId,
+    session.cash_station_id,
+    session.metadata?.cashStationId,
+    session.metadata?.cash_station_id
+].find((value) => isCanonicalCashStation(value)) || null;
+const getCashSessionLocalStationKey = (session = {}) => [
+    session.localStationKey,
+    session.local_station_key,
+    session.cashStationId,
+    session.cash_station_id,
+    session.metadata?.localStationKey,
+    session.metadata?.local_station_key,
+    session.metadata?.cashStationId,
+    session.metadata?.cash_station_id
+].find((value) => isLocalStationKey(value)) || null;
+
+const hasCashStationIdentity = (session = {}) => Boolean(
+    getCashSessionStationId(session) || getCashSessionLocalStationKey(session)
+);
+
+const cashStationMatches = ({
+    session,
+    cashStationId = null,
+    localStationKey = null
+} = {}) => {
+    if (cashStationId) return areCashStationsEquivalent(getCashSessionStationId(session), cashStationId);
+    if (localStationKey) return areCashStationsEquivalent(getCashSessionLocalStationKey(session), localStationKey);
+    return false;
+};
 
 const buildCashBindingError = (code, message) => new DatabaseError(
     DB_ERROR_CODES.VALIDATION_ERROR,
@@ -414,6 +467,8 @@ const processSaleWithinTransaction = async ({
         const requestedSessionId = sale.cash_session_id || sale.cashSessionId || null;
         const saleActorKey = getSaleCashActorKey(sale);
         const saleStationId = getSaleCashStationId(sale);
+        const saleLocalStationKey = getSaleLocalStationKey(sale);
+        const saleHasStationIdentity = Boolean(saleStationId || saleLocalStationKey);
         let activeCashSession = null;
 
         if (requestedSessionId) {
@@ -424,36 +479,52 @@ const processSaleWithinTransaction = async ({
         } else if (saleActorKey) {
             activeCashSession = openCashSessions.find((session) => (
                 getCashSessionActorKey(session) === saleActorKey
-                && (!saleHasCashComponent(sale) || (saleStationId && getCashSessionStationId(session) === saleStationId))
+                && (!saleHasCashComponent(sale) || cashStationMatches({
+                    session,
+                    cashStationId: saleStationId,
+                    localStationKey: saleLocalStationKey
+                }))
             )) || null;
         }
 
         if (activeCashSession) {
             const owner = getCashSessionActorKey(activeCashSession);
             const station = getCashSessionStationId(activeCashSession);
+            const sessionLocalStationKey = getCashSessionLocalStationKey(activeCashSession);
             if (owner && saleActorKey && owner !== saleActorKey) {
                 throw buildCashBindingError('CASH_HANDOFF_REQUIRED', 'La venta no puede usar la sesión financiera de otro actor.');
             }
-            if (station && saleStationId && station !== saleStationId) {
+            if (saleHasStationIdentity && !cashStationMatches({
+                session: activeCashSession,
+                cashStationId: saleStationId,
+                localStationKey: saleLocalStationKey
+            })) {
                 throw buildCashBindingError('CASH_SESSION_STATION_MISMATCH', 'La venta no corresponde a la estación financiera actual.');
             }
-            if ((saleHasCashComponent(sale) || requestedSessionId) && (!owner || !station || (saleHasCashComponent(sale) && !saleStationId))) {
+            if ((saleHasCashComponent(sale) || requestedSessionId)
+                && (!owner || !hasCashStationIdentity(activeCashSession)
+                    || (saleHasCashComponent(sale) && !saleHasStationIdentity))) {
                 throw buildCashBindingError('CASH_STATION_UNRESOLVED', 'La sesión legacy no puede recibir una mutación financiera sin reconciliación.');
             }
             sale.cash_session_id = activeCashSession.id;
-            sale.cashStationId = station || saleStationId || null;
+            sale.cashStationId = station || null;
+            sale.localStationKey = station ? null : (sessionLocalStationKey || saleLocalStationKey || null);
         } else if (saleActorKey) {
             const incompatibleStationSession = openCashSessions.find((session) => (
                 getCashSessionActorKey(session) && getCashSessionActorKey(session) !== saleActorKey
-                && saleStationId
-                && getCashSessionStationId(session) === saleStationId
+                && saleHasStationIdentity
+                && cashStationMatches({
+                    session,
+                    cashStationId: saleStationId,
+                    localStationKey: saleLocalStationKey
+                })
             ));
             if (incompatibleStationSession && saleHasCashComponent(sale)) {
                 throw buildCashBindingError('CASH_HANDOFF_REQUIRED', 'La estación financiera está ocupada por otro actor.');
             }
 
             const legacySession = openCashSessions.find((session) => (
-                !getCashSessionActorKey(session) && !getCashSessionStationId(session)
+                !getCashSessionActorKey(session) && !hasCashStationIdentity(session)
             ));
             // Legacy rows are only tolerated for historical non-canonical
             // flows. New actor-scoped cash operations never select them.
@@ -464,7 +535,7 @@ const processSaleWithinTransaction = async ({
             }
         } else if (openCashSessions.length > 0) {
             const legacySession = openCashSessions.find((session) => (
-                !getCashSessionActorKey(session) && !getCashSessionStationId(session)
+                !getCashSessionActorKey(session) && !hasCashStationIdentity(session)
             ));
             if (legacySession) {
                 sale.cash_session_id = legacySession.id;

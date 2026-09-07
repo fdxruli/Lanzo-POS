@@ -3,31 +3,49 @@ import { buildRpcRequestKey } from './cloudRequestKeys';
 
 const context = {
   licenseKey: 'license-redacted-test',
-  deviceId: 'device-A',
+  deviceFingerprint: 'fp-browser-a',
   staffSessionToken: 'staff-session-A',
   actorKey: 'admin:actor-A',
   actorSessionId: 'actor-session-A'
 };
 
+const stationA = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
+const stationB = 'cash_station_device_650e8400-e29b-41d4-a716-446655440001';
+
 describe('cash cloud request identity', () => {
-  it('separates cache keys by actor and local financial station', () => {
-    const stationA = buildRpcRequestKey('pos_get_current_cash_session', {
+  it('separates cache keys by actor, local key and canonical financial station', () => {
+    const localStation = buildRpcRequestKey('pos_get_current_cash_session', {
       ...context,
-      cashStationId: 'local:device:A'
+      localStationKey: 'local:device:fp-browser-a'
     });
-    const stationB = buildRpcRequestKey('pos_get_current_cash_session', {
+    const canonicalStation = buildRpcRequestKey('pos_get_current_cash_session', {
       ...context,
-      cashStationId: 'cash_station_device_B'
+      cashStationId: stationB
     });
     const actorB = buildRpcRequestKey('pos_get_current_cash_session', {
       ...context,
       actorKey: 'admin:actor-B',
-      cashStationId: 'local:device:A'
+      localStationKey: 'local:device:fp-browser-a'
     });
 
-    expect(stationA).not.toBe(stationB);
-    expect(stationA).not.toBe(actorB);
-    expect(stationA).not.toContain('license-redacted-test');
-    expect(stationA).not.toContain('staff-session-A');
+    expect(localStation).not.toBe(canonicalStation);
+    expect(localStation).not.toBe(actorB);
+    expect(localStation).not.toContain('license-redacted-test');
+    expect(localStation).not.toContain('staff-session-A');
+  });
+
+  it('does not collapse the browser fingerprint into a synthetic cash station id', () => {
+    const localKey = buildRpcRequestKey('pos_get_current_cash_session', {
+      ...context,
+      localStationKey: 'local:device:fp-browser-a'
+    });
+    const canonicalKey = buildRpcRequestKey('pos_get_current_cash_session', {
+      ...context,
+      cashStationId: stationA
+    });
+
+    expect(localKey).not.toBe(canonicalKey);
+    expect(localKey).toContain('local_station:');
+    expect(canonicalKey).toContain('cash_station:');
   });
 });

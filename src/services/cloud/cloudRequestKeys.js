@@ -47,6 +47,8 @@ export const cloudRequestTags = Object.freeze({
   license: (licenseKey) => `license:${stableHash(licenseKey)}`,
   licenseId: (licenseId) => `license_id:${stableHash(licenseId)}`,
   device: (deviceId) => `device:${stableHash(deviceId)}`,
+  deviceFingerprint: (deviceFingerprint) => `device_fingerprint:${stableHash(deviceFingerprint)}`,
+  localStationKey: (localStationKey) => `local_station:${stableHash(localStationKey)}`,
   staff: (staffUserId) => `staff:${stableHash(staffUserId)}`,
   staffSession: (staffSessionToken) => `staff_session:${stableHash(staffSessionToken)}`,
   actor: (actorKey) => `actor:${stableHash(actorKey)}`,
@@ -60,6 +62,8 @@ export const buildCloudContextKey = ({
   licenseKey = null,
   licenseId = null,
   deviceId = null,
+  deviceFingerprint = null,
+  localStationKey = null,
   staffUserId = null,
   staffSessionToken = null,
   actorKey = null,
@@ -68,7 +72,10 @@ export const buildCloudContextKey = ({
 } = {}) => ([
   licenseKey ? cloudRequestTags.license(licenseKey) : null,
   licenseId ? cloudRequestTags.licenseId(licenseId) : null,
-  deviceId ? cloudRequestTags.device(deviceId) : null,
+  deviceFingerprint
+    ? cloudRequestTags.deviceFingerprint(deviceFingerprint)
+    : (deviceId ? cloudRequestTags.device(deviceId) : null),
+  localStationKey ? cloudRequestTags.localStationKey(localStationKey) : null,
   staffUserId ? cloudRequestTags.staff(staffUserId) : null,
   staffSessionToken ? cloudRequestTags.staffSession(staffSessionToken) : null,
   actorKey ? cloudRequestTags.actor(actorKey) : null,
@@ -86,6 +93,8 @@ export const buildRpcRequestKey = (rpcName, {
   licenseKey = null,
   licenseId = null,
   deviceId = null,
+  deviceFingerprint = null,
+  localStationKey = null,
   staffUserId = null,
   staffSessionToken = null,
   actorKey = null,
@@ -98,6 +107,8 @@ export const buildRpcRequestKey = (rpcName, {
     licenseKey,
     licenseId,
     deviceId,
+    deviceFingerprint,
+    localStationKey,
     staffUserId,
     staffSessionToken,
     actorKey,
@@ -109,6 +120,6 @@ export const buildRpcRequestKey = (rpcName, {
 
 export const buildBaseRpcContextFromArgs = (licenseKey, baseArgs = {}) => ({
   licenseKey: baseArgs.p_license_key || licenseKey || null,
-  deviceId: baseArgs.p_device_fingerprint || null,
+  deviceFingerprint: baseArgs.p_device_fingerprint || null,
   staffSessionToken: baseArgs.p_staff_session_token || null
 });

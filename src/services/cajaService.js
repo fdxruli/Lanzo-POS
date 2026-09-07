@@ -14,7 +14,11 @@ import {
   CashFinancialError,
   assertCashActorContextCurrent
 } from './cash/cashFinancialGate';
-import { areCashStationsEquivalent } from './cash/cashStation';
+import {
+  areCashStationsEquivalent,
+  isCanonicalCashStation,
+  isLocalStationKey
+} from './cash/cashStation';
 
 // ============================================================================
 // CONSTANTES CANÓNICAS
@@ -91,12 +95,20 @@ const retryWithBackoff = async (operation, maxAttempts = CAJA_CONFIG.RETRY_ATTEM
 export const assertCashSessionMutationContext = async (cashSession, {
   actorKey = null,
   cashStationId = null,
+  localStationKey = null,
   actorContext = null,
   operation = 'cash mutation'
 } = {}) => {
   const ownerActorKey = cashSession?.actorKey || cashSession?.actor_key || null;
-  const sessionStationId = cashSession?.cashStationId || cashSession?.cash_station_id || null;
-  if (!ownerActorKey && !sessionStationId) return cashSession;
+  const sessionStationId = [cashSession?.cashStationId, cashSession?.cash_station_id]
+    .find((value) => isCanonicalCashStation(value)) || null;
+  const sessionLocalStationKey = [
+    cashSession?.localStationKey,
+    cashSession?.local_station_key,
+    cashSession?.cashStationId,
+    cashSession?.cash_station_id
+  ].find((value) => isLocalStationKey(value)) || null;
+  if (!ownerActorKey && !sessionStationId && !sessionLocalStationKey) return cashSession;
 
   if (actorContext) assertCashActorContextCurrent(actorContext);
   if (!actorKey || ownerActorKey !== actorKey) {
@@ -106,10 +118,20 @@ export const assertCashSessionMutationContext = async (cashSession, {
       cashSessionId: cashSession?.id
     });
   }
-  if (!cashStationId || !areCashStationsEquivalent(sessionStationId, cashStationId)) {
+  const expectedCloudStation = isCanonicalCashStation(cashStationId) ? cashStationId : null;
+  const expectedLocalStation = localStationKey
+    || (isLocalStationKey(cashStationId) ? cashStationId : null);
+  const stationMatches = expectedCloudStation
+    ? Boolean(sessionStationId && areCashStationsEquivalent(sessionStationId, expectedCloudStation))
+    : expectedLocalStation
+      ? Boolean(sessionLocalStationKey && areCashStationsEquivalent(sessionLocalStationKey, expectedLocalStation))
+      : false;
+  if (!stationMatches) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, `${operation}: la sesión no pertenece a la estación actual.`, {
       sessionStationId,
-      cashStationId,
+      sessionLocalStationKey,
+      cashStationId: expectedCloudStation,
+      localStationKey: expectedLocalStation,
       cashSessionId: cashSession?.id
     });
   }
@@ -179,6 +201,7 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
   await assertCashSessionMutationContext(cajaDb, {
     actorKey: options.actorKey || options.metadata?.actorKey || null,
     cashStationId: options.cashStationId || options.metadata?.cashStationId || null,
+    localStationKey: options.localStationKey || options.metadata?.localStationKey || options.metadata?.local_station_key || null,
     actorContext: options.actorContext || null,
     operation: 'cash movement'
   });
@@ -216,8 +239,17 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
     fecha: options.createdAt || new Date().toISOString(),
     actorKey: options.actorKey || options.metadata?.actorKey || cajaDb.actorKey || null,
     originActorKey: options.originActorKey || options.metadata?.originActorKey || cajaDb.originActorKey || cajaDb.actorKey || null,
-    actorGeneration: options.actorGeneration || options.metadata?.actorGeneration || null,
-    cashStationId: options.cashStationId || options.metadata?.cashStationId || cajaDb.cashStationId || null,
+    actorGeneration: options.actorGeneration ?? options.metadata?.actorGeneration ?? null,
+    cashStationId: isCanonicalCashStation(
+      options.cashStationId || options.metadata?.cashStationId || cajaDb.cashStationId
+    )
+      ? (options.cashStationId || options.metadata?.cashStationId || cajaDb.cashStationId)
+      : null,
+    localStationKey: options.localStationKey
+      || options.metadata?.localStationKey
+      || options.metadata?.local_station_key
+      || cajaDb.localStationKey
+      || (isLocalStationKey(cajaDb.cashStationId) ? cajaDb.cashStationId : null),
     performedByActorKey: options.performedByActorKey
       || options.metadata?.performedByActorKey
       || options.actorKey
@@ -226,6 +258,13 @@ export async function registrarMovimientoCajaEnTransaccion(tx, cajaId, tipo, mon
     ...(options.metadata || {}),
     ...(idempotencyKey ? { idempotencyKey } : {})
   };
+  // Metadata is caller-controlled context, not station authority. Reapply
+  // the separated fields after spreading it so a local key cannot overwrite
+  // the canonical cashStationId field (or vice versa).
+  movimiento.cashStationId = isCanonicalCashStation(movimiento.cashStationId)
+    ? movimiento.cashStationId
+    : null;
+  movimiento.localStationKey = movimiento.localStationKey || null;
   await tx.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);
 
   return { cajaActualizada: cajaDb, movimiento };

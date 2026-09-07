@@ -1,58 +1,72 @@
 import { getStableDeviceId } from '../supabase';
+import {
+  getTenantStorageItem,
+  setTenantStorageItem
+} from '../tenant/tenantScopedStorage';
 
 export const CASH_STATION_IDENTITY_STATE = Object.freeze({
   CANONICAL: 'canonical',
+  LOCAL: 'local',
   DETERMINISTIC_DEVICE_BOUND: 'deterministic-device-bound',
   LEGACY_UNRESOLVED: 'legacy_unresolved'
 });
 
-const normalizeDeviceId = (deviceId) => {
-  const value = String(deviceId || '').trim();
-  return value || null;
+export const LOCAL_STATION_KEY_PREFIX = 'local:device:';
+export const CANONICAL_DEVICE_STATION_PREFIX = 'cash_station_device_';
+
+const CASH_STATION_BINDINGS_KEY = 'cash-station-bindings-v1';
+const CASH_STATION_BINDINGS_VERSION = 1;
+
+const normalizeIdentifier = (value) => {
+  const normalized = String(value || '').trim();
+  return normalized || null;
 };
 
-const normalizeCashStationId = (cashStationId) => {
-  const value = String(cashStationId || '').trim();
-  return value || null;
+const hashIdentifier = (value) => {
+  const input = String(value || '');
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
 };
 
-const LEGACY_DEVICE_STATION_PREFIX = 'local:device:';
-const CANONICAL_DEVICE_STATION_PREFIX = 'cash_station_device_';
+const normalizeUuid = (value) => {
+  const normalized = normalizeIdentifier(value);
+  return normalized && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : null;
+};
 
-const getDeviceBoundStationIdentity = (cashStationId) => {
-  const normalized = normalizeCashStationId(cashStationId);
-  if (!normalized) return null;
+export const isLocalStationKey = (value) => (
+  typeof value === 'string' && value.trim().startsWith(LOCAL_STATION_KEY_PREFIX)
+);
 
-  const prefix = normalized.startsWith(LEGACY_DEVICE_STATION_PREFIX)
-    ? LEGACY_DEVICE_STATION_PREFIX
-    : normalized.startsWith(CANONICAL_DEVICE_STATION_PREFIX)
-      ? CANONICAL_DEVICE_STATION_PREFIX
-      : null;
-  if (!prefix) return null;
-
-  const deviceId = normalizeDeviceId(normalized.slice(prefix.length));
-  return deviceId ? { deviceId } : null;
+const stationCandidate = (record) => {
+  if (typeof record === 'string') return normalizeIdentifier(record);
+  return normalizeIdentifier(record?.cashStationId || record?.cash_station_id);
 };
 
 /**
- * The browser used a legacy local representation before the server became
- * the cash-station authority. Only the two complete device-bound forms are
- * aliases; arbitrary station ids never match by prefix or partial text.
+ * A cloud station is not an alias of a browser-local key. The only valid
+ * cross-record comparison is an exact comparison within the same identity
+ * domain.
  */
-export const areCashStationsEquivalent = (left, right) => {
-  const leftId = normalizeCashStationId(left);
-  const rightId = normalizeCashStationId(right);
-  if (!leftId || !rightId) return false;
-  if (leftId === rightId) return true;
+export const isCanonicalCashStation = (record) => {
+  const candidate = stationCandidate(record);
+  return Boolean(candidate && !isLocalStationKey(candidate));
+};
 
-  const leftIdentity = getDeviceBoundStationIdentity(leftId);
-  const rightIdentity = getDeviceBoundStationIdentity(rightId);
-  return Boolean(leftIdentity && rightIdentity && leftIdentity.deviceId === rightIdentity.deviceId);
+export const areCashStationsEquivalent = (left, right) => {
+  const leftId = normalizeIdentifier(left);
+  const rightId = normalizeIdentifier(right);
+  return Boolean(leftId && rightId && leftId === rightId);
 };
 
 const firstCashStationId = (...values) => values
-  .map(normalizeCashStationId)
-  .find(Boolean) || null;
+  .map(normalizeIdentifier)
+  .find((value) => isCanonicalCashStation(value)) || null;
 
 /**
  * Read only server-provided station evidence. The top-level `cash_station`
@@ -71,40 +85,146 @@ export const getCashStationIdFromCloudResponse = (response = {}) => firstCashSta
   response?.cash_session?.metadata?.cashStationId
 );
 
+const readBindingDocument = () => {
+  const raw = getTenantStorageItem(CASH_STATION_BINDINGS_KEY);
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.version === CASH_STATION_BINDINGS_VERSION && parsed?.bindings
+      && typeof parsed.bindings === 'object'
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
- * Local storage remains tenant-scoped.  This identity is a binding between a
- * stable device provenance and a financial station; it is not an actor and it
- * never grants permission or ownership.
+ * Reads a tenant-scoped browser binding. Raw license/fingerprint values are
+ * deliberately not serialized; the active tenant namespace is an additional
+ * boundary, while the hashes avoid leaking identifiers into localStorage.
  */
-export const getCashStationIdentity = async ({ deviceId = null } = {}) => {
-  const stableDeviceId = normalizeDeviceId(deviceId || await getStableDeviceId());
-  if (!stableDeviceId) {
+export const getCashStationBinding = ({ licenseKey = null, deviceFingerprint = null } = {}) => {
+  const license = normalizeIdentifier(licenseKey);
+  const fingerprint = normalizeIdentifier(deviceFingerprint);
+  if (!license || !fingerprint) return null;
+
+  const document = readBindingDocument();
+  const licenseKeyHash = hashIdentifier(license);
+  const fingerprintHash = hashIdentifier(fingerprint);
+  if (!document || document.licenseKeyHash !== licenseKeyHash) return null;
+
+  const binding = document.bindings[fingerprintHash];
+  if (!binding
+    || binding.licenseKeyHash !== licenseKeyHash
+    || binding.deviceFingerprintHash !== fingerprintHash
+    || !isCanonicalCashStation(binding.cashStationId)) {
+    return null;
+  }
+
+  return Object.freeze({
+    cashStationId: binding.cashStationId,
+    deviceId: normalizeUuid(binding.deviceId),
+    stationKey: normalizeIdentifier(binding.stationKey),
+    bindingMode: normalizeIdentifier(binding.bindingMode)
+  });
+};
+
+/**
+ * Persists only authenticated cloud authority. A local synthetic key can
+ * never be written as a cash-station binding.
+ */
+export const persistCashStationBinding = ({
+  licenseKey = null,
+  deviceFingerprint = null,
+  cashStationId = null,
+  deviceId = null,
+  stationKey = null,
+  bindingMode = 'device'
+} = {}) => {
+  const license = normalizeIdentifier(licenseKey);
+  const fingerprint = normalizeIdentifier(deviceFingerprint);
+  const station = normalizeIdentifier(cashStationId);
+  if (!license || !fingerprint || !isCanonicalCashStation(station)) return false;
+
+  const licenseKeyHash = hashIdentifier(license);
+  const deviceFingerprintHash = hashIdentifier(fingerprint);
+  const current = readBindingDocument();
+  const bindings = current?.licenseKeyHash === licenseKeyHash
+    ? { ...current.bindings }
+    : {};
+
+  bindings[deviceFingerprintHash] = {
+    licenseKeyHash,
+    deviceFingerprintHash,
+    cashStationId: station,
+    deviceId: normalizeUuid(deviceId),
+    stationKey: normalizeIdentifier(stationKey),
+    bindingMode: normalizeIdentifier(bindingMode) || 'device'
+  };
+
+  setTenantStorageItem(CASH_STATION_BINDINGS_KEY, JSON.stringify({
+    version: CASH_STATION_BINDINGS_VERSION,
+    licenseKeyHash,
+    bindings
+  }));
+  return true;
+};
+
+/**
+ * The browser identity contains provenance and a local storage key. The
+ * financial station remains null until an authenticated cloud response has
+ * established the tenant/device binding.
+ */
+export const getCashStationIdentity = async ({
+  licenseKey = null,
+  deviceFingerprint = null,
+  deviceId = null
+} = {}) => {
+  const stableDeviceFingerprint = normalizeIdentifier(
+    deviceFingerprint || deviceId || await getStableDeviceId()
+  );
+  if (!stableDeviceFingerprint) {
     const error = new Error('CASH_STATION_UNRESOLVED');
     error.code = 'CASH_STATION_UNRESOLVED';
     throw error;
   }
 
+  const binding = getCashStationBinding({
+    licenseKey,
+    deviceFingerprint: stableDeviceFingerprint
+  });
+
   return Object.freeze({
-    deviceId: stableDeviceId,
-    cashStationId: `local:device:${stableDeviceId}`,
-    stationKey: `device_default:${stableDeviceId}`,
-    identityState: CASH_STATION_IDENTITY_STATE.DETERMINISTIC_DEVICE_BOUND,
-    bindingMode: 'device_default'
+    deviceFingerprint: stableDeviceFingerprint,
+    localStationKey: `${LOCAL_STATION_KEY_PREFIX}${stableDeviceFingerprint}`,
+    cashStationId: binding?.cashStationId || null,
+    deviceId: binding?.deviceId || null,
+    stationKey: binding?.stationKey || null,
+    identityState: binding
+      ? CASH_STATION_IDENTITY_STATE.CANONICAL
+      : CASH_STATION_IDENTITY_STATE.LEGACY_UNRESOLVED,
+    bindingMode: binding?.bindingMode || null
   });
 };
 
-export const getLocalCashStationId = async (options = {}) => (
-  (await getCashStationIdentity(options)).cashStationId
+export const getLocalStationKey = async (options = {}) => (
+  (await getCashStationIdentity(options)).localStationKey
 );
 
-export const isCanonicalCashStation = (record) => Boolean(
-  record?.cashStationId || record?.cash_station_id
-);
+// Kept as a compatibility export for callers that still use the old name.
+export const getLocalCashStationId = getLocalStationKey;
 
 export default Object.freeze({
   CASH_STATION_IDENTITY_STATE,
+  LOCAL_STATION_KEY_PREFIX,
+  CANONICAL_DEVICE_STATION_PREFIX,
   getCashStationIdentity,
+  getCashStationBinding,
+  persistCashStationBinding,
+  getLocalStationKey,
   getLocalCashStationId,
+  isLocalStationKey,
   isCanonicalCashStation,
   areCashStationsEquivalent,
   getCashStationIdFromCloudResponse

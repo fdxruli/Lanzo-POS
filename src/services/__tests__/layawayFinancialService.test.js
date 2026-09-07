@@ -59,7 +59,13 @@ vi.mock('../cash/cashFinancialGate', () => ({
 }));
 
 vi.mock('../cash/cashStation', () => ({
-  getCashStationIdentity: vi.fn(async () => ({ cashStationId: 'local:device:1' })),
+  getCashStationIdentity: vi.fn(async () => ({
+    deviceFingerprint: 'fp-browser-a',
+    localStationKey: 'local:device:1',
+    cashStationId: null
+  })),
+  isCanonicalCashStation: (value) => Boolean(value && !String(value).startsWith('local:device:')),
+  isLocalStationKey: (value) => Boolean(value && String(value).startsWith('local:device:')),
   areCashStationsEquivalent: (left, right) => Boolean(left && right && left === right)
 }));
 
@@ -103,6 +109,22 @@ const refundActorHandle = {
   assertCurrent: vi.fn(() => ({ actorKey: 'staff:refunds' }))
 };
 
+const CLOUD_STATION_ID = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
+
+const configureCloudCashSession = () => {
+  mocks.getCurrentCashSession.mockResolvedValue({
+    cashSession: {
+      id: 'cash-1',
+      status: 'open',
+      actor_key: 'admin:1',
+      cash_station_id: CLOUD_STATION_ID
+    },
+    cashStationId: CLOUD_STATION_ID,
+    financialState: { status: 'OWN_SESSION_OPEN' },
+    readOnly: false
+  });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getMode.mockReturnValue({
@@ -116,9 +138,9 @@ beforeEach(() => {
       id: 'cash-1',
       estado: 'abierta',
       actorKey: 'admin:1',
-      cashStationId: 'local:device:1'
+      localStationKey: 'local:device:1'
     },
-    cashStationId: 'local:device:1',
+    localStationKey: 'local:device:1',
     financialState: { status: 'OWN_SESSION_OPEN' },
     readOnly: false
   });
@@ -219,9 +241,9 @@ describe('layawayFinancialService', () => {
         id: 'cash-2',
         estado: 'abierta',
         actorKey: 'admin:1',
-        cashStationId: 'local:device:1'
+        localStationKey: 'local:device:1'
       },
-      cashStationId: 'local:device:1',
+      localStationKey: 'local:device:1',
       financialState: { status: 'OWN_SESSION_OPEN' },
       readOnly: false
     });
@@ -259,9 +281,9 @@ describe('layawayFinancialService', () => {
         id: 'cash-foreign-actor',
         estado: 'abierta',
         actorKey: 'admin:other',
-        cashStationId: 'local:device:1'
+        localStationKey: 'local:device:1'
       },
-      cashStationId: 'local:device:1',
+      localStationKey: 'local:device:1',
       financialState: { status: 'OWN_SESSION_OPEN' },
       readOnly: false
     });
@@ -277,9 +299,9 @@ describe('layawayFinancialService', () => {
         id: 'cash-foreign-station',
         estado: 'abierta',
         actorKey: 'admin:1',
-        cashStationId: 'local:device:2'
+        localStationKey: 'local:device:2'
       },
-      cashStationId: 'local:device:1',
+      localStationKey: 'local:device:1',
       financialState: { status: 'OWN_SESSION_OPEN' },
       readOnly: false
     });
@@ -378,6 +400,7 @@ describe('layawayFinancialService', () => {
       actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
     });
     mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+    configureCloudCashSession();
 
     await layawayFinancialService.create({
       layawayData,
@@ -411,6 +434,7 @@ describe('layawayFinancialService', () => {
       actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
     });
     mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+    configureCloudCashSession();
 
     await layawayFinancialService.addPayment({
       layawayId: 'layaway-1',
@@ -477,6 +501,7 @@ describe('layawayFinancialService', () => {
       actor: { actorKey: 'admin:1', isStaff: false, deviceRole: 'admin' }
     });
     mocks.isCloudLayawaysEnabled.mockReturnValue(true);
+    configureCloudCashSession();
     mocks.getLayaway.mockResolvedValue({
       layaway: { ...layawayData, total_amount: 175, paid_amount: 75, status: 'active' }
     });
@@ -521,9 +546,9 @@ describe('layawayFinancialService', () => {
         id: 'cash-2',
         estado: 'abierta',
         actorKey: 'admin:1',
-        cashStationId: 'local:device:1'
+        localStationKey: 'local:device:1'
       },
-      cashStationId: 'local:device:1',
+      localStationKey: 'local:device:1',
       financialState: { status: 'OWN_SESSION_OPEN' },
       readOnly: false
     });
@@ -784,9 +809,9 @@ describe('layawayFinancialService', () => {
         id: 'cash-2',
         estado: 'abierta',
         actorKey: 'admin:1',
-        cashStationId: 'local:device:1'
+        localStationKey: 'local:device:1'
       },
-      cashStationId: 'local:device:1',
+      localStationKey: 'local:device:1',
       financialState: { status: 'OWN_SESSION_OPEN' },
       readOnly: false
     });

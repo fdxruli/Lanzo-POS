@@ -44,6 +44,10 @@ vi.mock('./cashLocalRepository', () => ({
 }));
 vi.mock('./cashStation', () => ({
   getCashStationIdentity: vi.fn(),
+  isCanonicalCashStation: (value) => Boolean(value && !String(value).startsWith('local:device:')),
+  isLocalStationKey: (value) => Boolean(value && String(value).startsWith('local:device:')),
+  CASH_STATION_IDENTITY_STATE: { CANONICAL: 'canonical', LOCAL: 'local', LEGACY_UNRESOLVED: 'legacy_unresolved' },
+  persistCashStationBinding: vi.fn(),
   areCashStationsEquivalent: (left, right) => {
     const normalize = (value) => String(value || '').trim();
     const leftId = normalize(left);

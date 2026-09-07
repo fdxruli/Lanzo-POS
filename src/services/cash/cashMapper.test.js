@@ -51,27 +51,30 @@ describe('cashMapper cloud opening contract', () => {
     expect(local.apertura_origen).toBe('manual');
   });
 
-  it('projects the server station and preserves a legacy station when cloud data omits it', () => {
+  it('projects the server station and separates a legacy local key when cloud data omits it', () => {
+    const stationId = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
     const canonical = cloudCashSessionToLocal({
       id: 'cash-canonical',
       status: 'open',
-      metadata: { cash_station_id: 'cash_station_device_A' }
+      metadata: { cash_station_id: stationId }
     });
     const legacy = cloudCashSessionToLocal({
       id: 'cash-legacy',
       status: 'open'
     }, {
       id: 'cash-legacy',
-      cashStationId: 'local:device:A',
+      cashStationId: null,
+      localStationKey: 'local:device:fp-browser-a',
       cashIdentityState: 'deterministic-device-bound'
     });
 
     expect(canonical).toMatchObject({
-      cashStationId: 'cash_station_device_A',
+      cashStationId: stationId,
       cashIdentityState: 'canonical'
     });
     expect(legacy).toMatchObject({
-      cashStationId: 'local:device:A',
+      cashStationId: null,
+      localStationKey: 'local:device:fp-browser-a',
       cashIdentityState: 'deterministic-device-bound'
     });
   });

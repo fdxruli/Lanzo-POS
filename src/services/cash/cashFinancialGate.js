@@ -4,7 +4,11 @@ import {
   ActorRuntimeError,
   actorRuntimeController
 } from '../auth/actorRuntimeController';
-import { areCashStationsEquivalent } from './cashStation';
+import {
+  areCashStationsEquivalent,
+  isCanonicalCashStation,
+  isLocalStationKey
+} from './cashStation';
 
 /**
  * Financial access is deliberately narrower than application access.  A
@@ -41,11 +45,22 @@ export class CashFinancialError extends Error {
 }
 
 const sessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
-const sessionStationId = (session) => session?.cashStationId
-  || session?.cash_station_id
-  || session?.metadata?.cashStationId
-  || session?.metadata?.cash_station_id
-  || null;
+const sessionStationId = (session) => [
+  session?.cashStationId,
+  session?.cash_station_id,
+  session?.metadata?.cashStationId,
+  session?.metadata?.cash_station_id
+].find((value) => isCanonicalCashStation(value)) || null;
+const sessionLocalStationKey = (session) => [
+  session?.localStationKey,
+  session?.local_station_key,
+  session?.metadata?.localStationKey,
+  session?.metadata?.local_station_key,
+  session?.cashStationId,
+  session?.cash_station_id,
+  session?.metadata?.cashStationId,
+  session?.metadata?.cash_station_id
+].find((value) => isLocalStationKey(value)) || null;
 const isOpen = (session) => session?.estado === 'abierta' || session?.status === 'open';
 
 export const isCashFinancialStatusReady = (status) => (
@@ -62,6 +77,7 @@ export const deriveCashFinancialState = ({
   cashSession = null,
   stationOpenCashSession = null,
   cashStationId = null,
+  localStationKey = null,
   online = true,
   cloudEnabled = false,
   stateKnown = true,
@@ -81,6 +97,7 @@ export const deriveCashFinancialState = ({
         ? CASH_FINANCIAL_CODES.NETWORK_UNAVAILABLE
         : CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE,
       cashStationId,
+      localStationKey,
       cashSession: null,
       stationOpenCashSession: null,
       actorKey,
@@ -95,6 +112,7 @@ export const deriveCashFinancialState = ({
       status: CASH_FINANCIAL_STATUS.BLOCKED,
       code: CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
       cashStationId,
+      localStationKey,
       cashSession: null,
       stationOpenCashSession: null,
       actorKey,
@@ -108,6 +126,7 @@ export const deriveCashFinancialState = ({
       status: CASH_FINANCIAL_STATUS.HANDOFF_REQUIRED,
       code: CASH_FINANCIAL_CODES.HANDOFF_REQUIRED,
       cashStationId,
+      localStationKey,
       cashSession: null,
       stationOpenCashSession: stationSession,
       actorKey,
@@ -121,6 +140,7 @@ export const deriveCashFinancialState = ({
       status: CASH_FINANCIAL_STATUS.OWN_SESSION_OPEN,
       code: null,
       cashStationId: cashStationId || sessionStationId(cashSession),
+      localStationKey: localStationKey || sessionLocalStationKey(cashSession),
       cashSession,
       stationOpenCashSession: stationSession || cashSession,
       actorKey,
@@ -133,6 +153,7 @@ export const deriveCashFinancialState = ({
     status: CASH_FINANCIAL_STATUS.NO_SESSION,
     code: null,
     cashStationId,
+    localStationKey,
     cashSession: null,
     stationOpenCashSession: stationSession,
     actorKey,
@@ -146,6 +167,7 @@ export const assertCashFinancialWriteAccess = ({
   cashSessionId = null,
   actorKey = null,
   cashStationId = null,
+  localStationKey = null,
   operation = 'cash mutation'
 } = {}) => {
   if (!state || state.stateKnown === false || !isCashFinancialStatusReady(state.status)) {
@@ -177,10 +199,23 @@ export const assertCashFinancialWriteAccess = ({
   }
 
   const station = sessionStationId(session);
-  if (cashStationId && station && !areCashStationsEquivalent(cashStationId, station)) {
+  const sessionLocalKey = sessionLocalStationKey(session);
+  const expectedCloudStation = isCanonicalCashStation(cashStationId) ? cashStationId : null;
+  const expectedLocalStation = localStationKey
+    || (isLocalStationKey(cashStationId) ? cashStationId : null);
+  const stationMatches = expectedCloudStation
+    ? Boolean(station && areCashStationsEquivalent(expectedCloudStation, station))
+    : expectedLocalStation
+      ? Boolean(sessionLocalKey && areCashStationsEquivalent(expectedLocalStation, sessionLocalKey))
+      : true;
+  if ((expectedCloudStation || expectedLocalStation) && !stationMatches) {
     throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, `${operation} no corresponde a la estación financiera actual.`, {
       status: CASH_FINANCIAL_STATUS.BLOCKED,
-      state
+      state,
+      sessionStationId: station,
+      sessionLocalStationKey: sessionLocalKey,
+      cashStationId: expectedCloudStation,
+      localStationKey: expectedLocalStation
     });
   }
 

@@ -66,12 +66,13 @@ export const customerCreditRepository = {
                         'CAJA_REQUIRED: No se puede registrar un abono en efectivo sin caja abierta.'
                     );
                 }
-                if (caja.actorKey || caja.cashStationId) {
+                if (caja.actorKey || caja.cashStationId || caja.localStationKey) {
                     const actor = getCashActorFromState();
                     const station = await getCashStationIdentity();
                     cashMutationContext = {
                         actorKey: actor.actorKey,
-                        cashStationId: station.cashStationId,
+                        cashStationId: station.cashStationId || null,
+                        localStationKey: station.localStationKey,
                         actorContext: captureCashActorContext()
                     };
                 }

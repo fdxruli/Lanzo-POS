@@ -12,8 +12,11 @@ import { cashCloudRepository } from './cashCloudRepository';
 import { cashLocalRepository, getCashLocalProjectionDiagnostics } from './cashLocalRepository';
 import {
   areCashStationsEquivalent,
+  CASH_STATION_IDENTITY_STATE,
   getCashStationIdFromCloudResponse,
-  getCashStationIdentity
+  getCashStationIdentity,
+  isCanonicalCashStation,
+  persistCashStationBinding
 } from './cashStation';
 import {
   CASH_FINANCIAL_CODES,
@@ -103,7 +106,9 @@ const showOfflineCashMessage = () => {
   showMessageModal(CASH_CLOUD_OFFLINE_MESSAGE, null, { type: 'warning' });
 };
 
-const getStationForMode = async () => getCashStationIdentity();
+const getStationForMode = async (mode = null) => getCashStationIdentity({
+  licenseKey: mode?.licenseKey || null
+});
 
 const buildCashReadCacheContext = (mode, station) => ({
   actorKey: mode?.actor?.actorKey || null,
@@ -111,7 +116,11 @@ const buildCashReadCacheContext = (mode, station) => ({
     || mode?.actor?.actorSessionId
     || mode?.actor?.staffSessionId
     || null,
-  cashStationId: station?.cashStationId || null
+  deviceFingerprint: station?.deviceFingerprint || null,
+  localStationKey: station?.localStationKey || null,
+  cashStationId: isCanonicalCashStation(station?.cashStationId)
+    ? station.cashStationId
+    : null
 });
 
 const redactCashIdentity = (value) => {
@@ -141,9 +150,9 @@ const buildCashResponseDiagnostic = ({
   return {
     code: error?.code || null,
     requestId: error?.requestId || metadata?.requestId || null,
-    generation: error?.generation || metadata?.generation || null,
+    generation: error?.generation ?? metadata?.generation ?? null,
     origin: error?.responseOrigin || error?.origin || metadata?.origin || null,
-    localStation: redactCashIdentity(localStation?.cashStationId),
+    localStation: redactCashIdentity(localStation?.localStationKey),
     cloudStation: redactCashIdentity(
       cloudStationId || getCashStationIdFromCloudResponse(response || {})
     )
@@ -198,15 +207,26 @@ const normalizeCashMutationError = (error, fallbackCode = 'CASH_ERROR') => {
 const captureFinancialActor = () => captureCashActorContext();
 
 const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = null, cashSession = null } = {}) => {
+  const cashStationId = mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
+    ? station.cashStationId
+    : null;
+  const localStationKey = mode.cloudEnabled ? null : station?.localStationKey || null;
+  const resultCashStationId = isCanonicalCashStation(result?.cashStationId)
+    ? result.cashStationId
+    : null;
+  const resultLocalStationKey = result?.localStationKey && !isCanonicalCashStation(result.localStationKey)
+    ? result.localStationKey
+    : null;
   const state = deriveCashFinancialState({
     actorKey: mode.actor.actorKey,
     cashSession,
     stationOpenCashSession,
-    cashStationId: station?.cashStationId || null,
+    cashStationId,
+    localStationKey,
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
     stateKnown: result?.stateKnown !== false,
-    stationResolved: Boolean(station?.cashStationId),
+    stationResolved: mode.cloudEnabled ? Boolean(cashStationId) : Boolean(localStationKey),
     networkUnavailable: Boolean(result?.networkUnavailable)
   });
   return {
@@ -216,18 +236,20 @@ const buildFinancialResult = ({ mode, result, station, stationOpenCashSession = 
       : (result?.financialStatus || state.status),
     financialCode: state.code || result?.financialCode || null,
     financialState: state,
-    cashStationId: station?.cashStationId || result?.cashStationId || null,
+    cashStationId: cashStationId || (mode.cloudEnabled ? null : resultCashStationId),
+    localStationKey: localStationKey || resultLocalStationKey,
     stationOpenCashSession: stationOpenCashSession || result?.stationOpenCashSession || null,
     cashSession: cashSession || result?.cashSession || null,
     networkUnavailable: Boolean(result?.networkUnavailable)
   };
 };
 
-const getSessionStationId = (session) => session?.cash_station_id
-  || session?.cashStationId
-  || session?.metadata?.cash_station_id
-  || session?.metadata?.cashStationId
-  || null;
+const getSessionStationId = (session) => [
+  session?.cash_station_id,
+  session?.cashStationId,
+  session?.metadata?.cash_station_id,
+  session?.metadata?.cashStationId
+].find((value) => isCanonicalCashStation(value)) || null;
 
 const withStationEvidence = (session, cashStationId) => (
   session && !getSessionStationId(session) && cashStationId
@@ -289,10 +311,10 @@ const assertResponseOwnSession = (response, mode, cashStationId = null) => {
   );
 };
 
-const assertCloudResponseStation = ({ response, localStation } = {}) => {
+const assertCloudResponseStation = ({ response } = {}) => {
   const cloudRequestMeta = getCloudRequestMetadata(response);
   const serverCashStationId = getCashStationIdFromCloudResponse(response);
-  if (!serverCashStationId) {
+  if (!serverCashStationId || !isCanonicalCashStation(serverCashStationId)) {
     throw new CashFinancialError(
       CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
       'La respuesta cloud no contiene una estación financiera canónica.',
@@ -309,21 +331,42 @@ const assertCloudResponseStation = ({ response, localStation } = {}) => {
     );
   }
 
-  // `resolvedCashStationId` is the server-side preflight result produced by
-  // the financial intent ledger. When it is available it is the authority;
-  // the local id is only a legacy-compatible fallback for older responses.
-  if (!resolvedCashStationId && localStation?.cashStationId
-    && !areCashStationsEquivalent(serverCashStationId, localStation.cashStationId)) {
-    throw new CashFinancialError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La respuesta cloud contiene una sesión de otra estación.', {
-      serverCashStationId,
-      localCashStationId: localStation.cashStationId,
-      cloudRequestMeta
-    });
-  }
-
   const session = response?.cash_session || response?.cashSession || null;
   if (session) assertSessionForStation(session, serverCashStationId, undefined, cloudRequestMeta);
   return serverCashStationId;
+};
+
+const persistCloudCashStationBinding = ({ mode, station, response, cashStationId = null } = {}) => {
+  const resolvedCashStationId = cashStationId || getCashStationIdFromCloudResponse(response || {});
+  if (!mode?.licenseKey || !station?.deviceFingerprint || !isCanonicalCashStation(resolvedCashStationId)) return false;
+
+  try {
+    return persistCashStationBinding({
+      licenseKey: mode.licenseKey,
+      deviceFingerprint: station.deviceFingerprint,
+      cashStationId: resolvedCashStationId,
+      deviceId: response?.cash_station?.device_id
+        || response?.cashStation?.device_id
+        || response?.device_id
+        || station.deviceId
+        || null,
+      stationKey: response?.cash_station?.station_key
+        || response?.cashStation?.station_key
+        || response?.cash_station?.stationKey
+        || response?.cashStation?.stationKey
+        || station.stationKey
+        || null,
+      bindingMode: response?.cash_station?.binding_mode
+        || response?.cashStation?.bindingMode
+        || station.bindingMode
+        || 'device'
+    });
+  } catch (error) {
+    Logger.warn('[Cash] No se pudo persistir la vinculación local de estación:', {
+      code: error?.code || 'CASH_STATION_BINDING_PERSIST_FAILED'
+    });
+    return false;
+  }
 };
 
 export const cashRepositoryInternals = Object.freeze({
@@ -351,7 +394,9 @@ const assertCurrentFinancialSessionForMutation = async ({
     actorKey: mode.actor.actorKey,
     cashSession: current.cashSession,
     stationOpenCashSession: current.stationOpenCashSession,
-    cashStationId: current.cashStationId || station?.cashStationId,
+    cashStationId: isCanonicalCashStation(current.cashStationId)
+      ? current.cashStationId
+      : (isCanonicalCashStation(station?.cashStationId) ? station.cashStationId : null),
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
     stateKnown: current.stateKnown !== false,
@@ -361,7 +406,9 @@ const assertCurrentFinancialSessionForMutation = async ({
     state,
     cashSessionId,
     actorKey: mode.actor.actorKey,
-    cashStationId: current.cashStationId || station?.cashStationId,
+    cashStationId: isCanonicalCashStation(current.cashStationId)
+      ? current.cashStationId
+      : (isCanonicalCashStation(station?.cashStationId) ? station.cashStationId : null),
     operation
   });
 };
@@ -471,6 +518,13 @@ const assertCloudCashStateKnownBeforeOpen = async ({ mode, station } = {}) => {
       { stationOpenCashSession, stationId }
     );
   }
+  persistCloudCashStationBinding({
+    mode,
+    station,
+    response: current,
+    cashStationId: getCashStationIdFromCloudResponse(current)
+  });
+  persistCloudCashStationBinding({ mode, station, response: stationState, cashStationId: stationId });
   return { current, stationState, cashStationId: stationId };
 };
 
@@ -494,7 +548,8 @@ const assertCloudStationKnownBeforeWrite = async ({ mode, station, operation } =
     );
   }
   assertAuthoritativeCashResponse(stationState, 'el estado de estación');
-  assertCloudResponseStation({ response: stationState, localStation: station });
+  const stationId = assertCloudResponseStation({ response: stationState, localStation: station });
+  persistCloudCashStationBinding({ mode, station, response: stationState, cashStationId: stationId });
   return stationState;
 };
 
@@ -509,7 +564,12 @@ const applyCloudResponse = async (response = {}) => {
   const serverCashStationId = getCashStationIdFromCloudResponse(response);
   const withServerCashStation = (record) => {
     if (!record || !serverCashStationId || getSessionStationId(record)) return record;
-    return { ...record, cash_station_id: serverCashStationId };
+    return {
+      ...record,
+      cash_station_id: serverCashStationId,
+      cashStationId: serverCashStationId,
+      localStationKey: null
+    };
   };
 
   const validCashSession = (record) => {
@@ -589,7 +649,7 @@ const getCachedScope = async (mode, { limit = 50, networkUnavailable = false } =
   const actor = mode.actor;
   let station = null;
   try {
-    station = await getStationForMode();
+    station = await getStationForMode(mode);
   } catch (stationError) {
     Logger.warn('[Cash] No se pudo resolver la estación local:', {
       code: stationError?.code || 'CASH_STATION_UNRESOLVED'
@@ -597,7 +657,10 @@ const getCachedScope = async (mode, { limit = 50, networkUnavailable = false } =
   }
   const financial = await cashLocalRepository.getFinancialState({
     actorKey: actor.actorKey,
-    cashStationId: station?.cashStationId || null,
+    cashStationId: mode.cloudEnabled && isCanonicalCashStation(station?.cashStationId)
+      ? station.cashStationId
+      : null,
+    localStationKey: mode.cloudEnabled ? null : station?.localStationKey || null,
     online: mode.online,
     cloudEnabled: mode.cloudEnabled,
     stateKnown: !mode.cloudEnabled && !networkUnavailable
@@ -716,7 +779,7 @@ export const cashRepository = {
 
     let station = null;
     try {
-      station = await getStationForMode();
+      station = await getStationForMode(mode);
     } catch (stationError) {
       Logger.warn('[Cash] Estación financiera no resuelta:', {
         code: stationError?.code || 'CASH_STATION_UNRESOLVED'
@@ -787,6 +850,18 @@ export const cashRepository = {
         );
       }
 
+      // Both authenticated read RPCs carry server station evidence. Persist
+      // only after the two responses agree and their sessions pass actor and
+      // station validation, so an inconsistent response cannot poison the
+      // tenant-scoped browser binding.
+      persistCloudCashStationBinding({
+        mode,
+        station,
+        response,
+        cashStationId: getCashStationIdFromCloudResponse(response)
+      });
+      persistCloudCashStationBinding({ mode, station, response: stationState, cashStationId: stationId });
+
       const applied = await applyCloudResponse(response);
       if (stationOpenCashSession && stationOpenCashSession.id !== currentSession?.id) {
         await cashLocalRepository.applyCloudCashSession(stationOpenCashSession);
@@ -833,8 +908,14 @@ export const cashRepository = {
       return buildFinancialResult({
         mode,
         station: (stationState?.cash_station ? {
+          ...station,
           cashStationId: stationId,
-          deviceId: stationState.cash_station.device_id || null
+          deviceId: stationState.cash_station.device_id || station?.deviceId || null,
+          stationKey: stationState.cash_station.station_key
+            || stationState.cash_station.stationKey
+            || station?.stationKey
+            || null,
+          identityState: CASH_STATION_IDENTITY_STATE.CANONICAL
         } : station),
         cashSession,
         stationOpenCashSession,
@@ -918,7 +999,7 @@ export const cashRepository = {
   async openCashSession(openingData) {
     const mode = getCashMode();
     assertCanUseCashRegister();
-    const station = await getStationForMode();
+    const station = await getStationForMode(mode);
     const actorContext = captureFinancialActor();
     const canonicalOpeningData = {
       ...openingData,
@@ -926,8 +1007,12 @@ export const cashRepository = {
       originActorKey: mode.actor.actorKey,
       actorGeneration: actorContext.generation,
       deviceId: station.deviceId,
+      deviceFingerprint: station.deviceFingerprint,
+      localStationKey: station.localStationKey,
       deviceRole: mode.actor.deviceRole,
-      cashStationId: station.cashStationId,
+      cashStationId: isCanonicalCashStation(station.cashStationId)
+        ? station.cashStationId
+        : null,
       cashIdentityState: station.identityState
     };
 
@@ -970,6 +1055,7 @@ export const cashRepository = {
 
     if (response?.cash_session) {
       const serverCashStationId = assertCloudResponseStation({ response, localStation: station });
+      persistCloudCashStationBinding({ mode, station, response, cashStationId: serverCashStationId });
       const owner = response.cash_session.actor_key || response.cash_session.actorKey || null;
       if (response.code === CASH_FINANCIAL_CODES.HANDOFF_REQUIRED || (owner && owner !== mode.actor.actorKey)) {
         return fail('La estación financiera requiere reconciliación antes de cambiar de actor.', CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, {
@@ -1007,7 +1093,7 @@ export const cashRepository = {
   }) {
     const mode = getCashMode();
     assertCanUseCashRegister();
-    const station = await getStationForMode();
+    const station = await getStationForMode(mode);
     const actorContext = captureFinancialActor();
 
     const amountSafe = normalizeAmount(amount);
@@ -1031,7 +1117,8 @@ export const cashRepository = {
         referenceId,
         metadata: movementMetadata,
         actorKey: mode.actor.actorKey,
-        cashStationId: station.cashStationId,
+        cashStationId: null,
+        localStationKey: station.localStationKey,
         actorContext
       });
     }
@@ -1063,7 +1150,9 @@ export const cashRepository = {
         metadata: {
           ...movementMetadata,
           originActorKey: mode.actor.actorKey,
-          cashStationId: station.cashStationId,
+          cashStationId: isCanonicalCashStation(station.cashStationId)
+            ? station.cashStationId
+            : null,
           originActorGeneration: actorContext.generation,
           source: movementMetadata.source || movementMetadata.origen || 'manual',
           reference_type: movementMetadata.reference_type || movementMetadata.referenceType || null,
@@ -1097,7 +1186,7 @@ export const cashRepository = {
   async adjustInitialFund({ cashSessionId, newAmount, reason, expectedVersion = null }) {
     const mode = getCashMode();
     assertCanUseCashRegister();
-    const station = await getStationForMode();
+    const station = await getStationForMode(mode);
     const actorContext = captureFinancialActor();
     if (!mode.cloudEnabled) {
       const idempotencyKey = generateIdempotencyKey({
@@ -1112,7 +1201,8 @@ export const cashRepository = {
         reason,
         expectedVersion,
         actorKey: mode.actor.actorKey,
-        cashStationId: station.cashStationId,
+        cashStationId: null,
+        localStationKey: station.localStationKey,
         actorContext,
         idempotencyKey
       });
@@ -1167,7 +1257,7 @@ export const cashRepository = {
   async closeCashSession({ cashSessionId, countedAmount, nextShiftFund, comments = '', expectedVersion = null }) {
     const mode = getCashMode();
     assertCanUseCashRegister();
-    const station = await getStationForMode();
+    const station = await getStationForMode(mode);
     const actorContext = captureFinancialActor();
     if (!mode.cloudEnabled) {
       const idempotencyKey = generateIdempotencyKey({
@@ -1183,7 +1273,8 @@ export const cashRepository = {
         comments,
         expectedVersion,
         actorKey: mode.actor.actorKey,
-        cashStationId: station.cashStationId,
+        cashStationId: null,
+        localStationKey: station.localStationKey,
         actorContext,
         idempotencyKey
       });
@@ -1213,7 +1304,9 @@ export const cashRepository = {
           comments,
           metadata: {
             closed_by_actor_key: mode.actor.actorKey,
-            cash_station_id: station.cashStationId,
+            cash_station_id: isCanonicalCashStation(station.cashStationId)
+              ? station.cashStationId
+              : null,
             origin_actor_key: mode.actor.actorKey
           }
         }),
@@ -1252,7 +1345,7 @@ export const cashRepository = {
     }
     let station = null;
     try {
-      station = await getStationForMode();
+      station = await getStationForMode(mode);
     } catch {
       // The cloud response remains subject to its actor/device auth checks.
     }
@@ -1296,7 +1389,7 @@ export const cashRepository = {
     if (mode.actor.isStaff) {
       return fail('Solo un administrador con sesion valida puede cerrar administrativamente una caja.', 'ADMIN_SESSION_REQUIRED');
     }
-    const station = await getStationForMode();
+    const station = await getStationForMode(mode);
     const actorContext = captureFinancialActor();
 
     try {
@@ -1359,7 +1452,7 @@ export const cashRepository = {
       return fail('Solo un administrador con sesión válida puede continuar una caja anterior.', 'ADMIN_SESSION_REQUIRED');
     }
 
-    const station = await getStationForMode();
+    const station = await getStationForMode(mode);
     try {
       await assertCloudStationKnownBeforeWrite({
         mode,
@@ -1416,7 +1509,7 @@ export const cashRepository = {
 
     let station = null;
     try {
-      station = await getStationForMode();
+      station = await getStationForMode(mode);
     } catch {
       // The request will still carry license/device/staff context.
     }
@@ -1460,7 +1553,7 @@ export const cashRepository = {
 
     let station = null;
     try {
-      station = await getStationForMode();
+      station = await getStationForMode(mode);
     } catch {
       // Keep the audit request bound to its authenticated device context.
     }

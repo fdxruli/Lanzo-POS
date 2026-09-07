@@ -38,6 +38,15 @@ describe('cash network recovery classification', () => {
     expect(normalized.message).toBe(CASH_NETWORK_UNAVAILABLE_MESSAGE);
   });
 
+  it('preserves diagnostic generation zero', () => {
+    const normalized = normalizeCashNetworkError(
+      Object.assign(new TypeError('Failed to fetch'), { generation: 0 }),
+      { rpcName: 'pos_get_current_cash_session' }
+    );
+
+    expect(normalized.generation).toBe(0);
+  });
+
   it('does not reinterpret a station or authorization error as a network error', () => {
     expect(isCashNetworkUnavailableError(new Error('CASH_SESSION_STATION_MISMATCH'))).toBe(false);
     expect(isCashNetworkUnavailableError(Object.assign(new Error('device denied'), { code: 'DEVICE_NOT_ALLOWED' }))).toBe(false);

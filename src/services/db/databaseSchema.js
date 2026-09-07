@@ -1,6 +1,10 @@
 import { POS_SYNC_STORES } from '../sync/syncConstants';
 import { LOCAL_TENANT_BINDING_STORE } from '../tenant/localTenantPolicy';
 
+const isLocalStationKey = (value) => (
+  typeof value === 'string' && value.trim().startsWith('local:device:')
+);
+
 export const DEXIE_NATIVE_VERSION_MULTIPLIER = 10;
 export const LEGACY_NATIVE_DATABASE_VERSION = 110;
 export const POS_SYNC_DEXIE_VERSION = 24;
@@ -148,14 +152,24 @@ export const registerCanonicalDexieExtensions = (db, stores) => {
           next.originActorKey = next.actorKey;
           next.openedByActorKey = next.actorKey;
         }
-        if (!next.cashStationId) {
-          const stationId = localStationFromDevice(next);
-          if (stationId) {
-            next.cashStationId = stationId;
-            next.cashIdentityState = next.cashIdentityState || 'deterministic-device-bound';
+        // v32 used cashStationId for both cloud stations and browser-local
+        // keys. Keep the data recoverable, but move the local identity to its
+        // dedicated field; a browser fingerprint must never become a
+        // financial cashStationId.
+        if (isLocalStationKey(next.cashStationId)) {
+          next.localStationKey = next.localStationKey || next.cashStationId;
+          next.cashStationId = null;
+        }
+        if (!next.cashStationId && !next.localStationKey) {
+          const stationKey = localStationFromDevice(next);
+          if (stationKey) {
+            next.localStationKey = stationKey;
+            next.cashIdentityState = next.cashIdentityState || 'local';
           } else {
             next.cashIdentityState = next.cashIdentityState || 'legacy_unresolved';
           }
+        } else if (!next.cashStationId && next.localStationKey) {
+          next.cashIdentityState = next.cashIdentityState || 'local';
         }
         if (JSON.stringify(next) !== JSON.stringify(session)) await sessionsTable.put(next);
         sessionsById.set(next.id, next);
@@ -168,8 +182,23 @@ export const registerCanonicalDexieExtensions = (db, stores) => {
         if (!next.originActorKey && (next.actorKey || session?.actorKey)) {
           next.originActorKey = next.actorKey || session.actorKey;
         }
-        if (!next.cashStationId && session?.cashStationId) next.cashStationId = session.cashStationId;
-        if (!next.cashStationId && !session?.cashStationId) next.cashIdentityState = 'legacy_unresolved';
+        if (isLocalStationKey(next.cashStationId)) {
+          next.localStationKey = next.localStationKey || next.cashStationId;
+          next.cashStationId = null;
+        }
+        if (!next.cashStationId && !next.localStationKey) {
+          if (isLocalStationKey(session?.cashStationId)) {
+            next.localStationKey = session.cashStationId;
+            next.cashIdentityState = next.cashIdentityState || 'local';
+          } else if (session?.localStationKey) {
+            next.localStationKey = session.localStationKey;
+            next.cashIdentityState = next.cashIdentityState || 'local';
+          } else if (session?.cashStationId) {
+            next.cashStationId = session.cashStationId;
+          } else {
+            next.cashIdentityState = 'legacy_unresolved';
+          }
+        }
         if (JSON.stringify(next) !== JSON.stringify(movement)) await movementsTable.put(next);
       }
     });

@@ -16,6 +16,7 @@ import {
   isCashNetworkUnavailableError,
   normalizeCashNetworkError
 } from './cashNetwork';
+import { isCanonicalCashStation, isLocalStationKey } from './cashStation';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -62,11 +63,16 @@ const normalizeLimit = (limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT) => Math.min(
 );
 
 const resolveCashCacheContext = (baseArgs, cacheContext = {}) => {
+  const suppliedStationId = cacheContext.cashStationId || null;
   return {
     actorKey: cacheContext.actorKey ?? null,
     actorSessionId: cacheContext.actorSessionId ?? null,
-    cashStationId: cacheContext.cashStationId
-      ?? (baseArgs?.p_device_fingerprint ? `local:device:${baseArgs.p_device_fingerprint}` : null)
+    deviceFingerprint: cacheContext.deviceFingerprint
+      ?? baseArgs?.p_device_fingerprint
+      ?? null,
+    localStationKey: cacheContext.localStationKey
+      ?? (isLocalStationKey(suppliedStationId) ? suppliedStationId : null),
+    cashStationId: isCanonicalCashStation(suppliedStationId) ? suppliedStationId : null
   };
 };
 

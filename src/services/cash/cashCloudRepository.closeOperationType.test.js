@@ -95,7 +95,7 @@ describe('cashCloudRepository close financial operation types', () => {
   it('propagates the canonical station resolved before the financial dispatch', async () => {
     fixtures.executeFinancialIntent.mockResolvedValue({
       intentId: 'intent-open',
-      intent: { cashStationId: 'cash_station_device_A' },
+      intent: { cashStationId: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000' },
       response: {
         success: true,
         cash_session: { id: 'cash-a', status: 'open' }
@@ -111,7 +111,7 @@ describe('cashCloudRepository close financial operation types', () => {
 
     expect(result).toMatchObject({
       financialIntentId: 'intent-open',
-      resolvedCashStationId: 'cash_station_device_A',
+      resolvedCashStationId: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
       cash_session: { id: 'cash-a' }
     });
   });

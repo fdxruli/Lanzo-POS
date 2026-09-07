@@ -20,6 +20,11 @@ const runtime = vi.hoisted(() => ({
   message: vi.fn()
 }));
 
+const DEVICE_UUID_A = '550e8400-e29b-41d4-a716-446655440000';
+const DEVICE_UUID_B = '650e8400-e29b-41d4-a716-446655440001';
+const STATION_A = `cash_station_device_${DEVICE_UUID_A}`;
+const STATION_B = `cash_station_device_${DEVICE_UUID_B}`;
+
 vi.mock('../../services/cash/cashRepository', () => ({
   cashRepository: {
     getMode: () => runtime.mode,
@@ -49,6 +54,11 @@ vi.mock('../../services/cajaService', () => ({
   },
   CAJA_CONFIG: { MAX_CASH_THRESHOLD: 50000 }
 }));
+vi.mock('../../services/cash/cashStation', () => ({
+  isCanonicalCashStation: (value) => Boolean(value && !String(value).startsWith('local:device:')),
+  isLocalStationKey: (value) => Boolean(value && String(value).startsWith('local:device:')),
+  areCashStationsEquivalent: (left, right) => Boolean(left && right && left === right)
+}));
 vi.mock('../../services/cashOpeningPolicyService.js', () => ({
   CASH_OPENING_POLICY: { AUTOMATIC: 'automatic', MANUAL: 'manual' },
   CASH_OPENING_POLICY_EVENT: 'cash-opening-policy-changed',
@@ -69,7 +79,7 @@ const cachedSession = {
   id: 'cash-known',
   estado: 'abierta',
   actorKey: 'admin:one',
-  cashStationId: 'cash_station_device_A',
+  cashStationId: STATION_A,
   fecha_apertura: '2026-09-06T09:00:00.000Z',
   monto_inicial: '100',
   entradas_efectivo: '0',
@@ -87,7 +97,7 @@ const networkResult = () => ({
   cashSessions: [cachedSession],
   movements: [],
   totals: { ventasContado: '0', abonosFiado: '0' },
-  cashStationId: 'local:device:A',
+  cashStationId: STATION_A,
   actor: runtime.mode.actor,
   mode: runtime.mode
 });
@@ -102,7 +112,7 @@ const validResult = () => ({
   cashSessions: [cachedSession],
   movements: [],
   totals: { ventasContado: '0', abonosFiado: '0' },
-  cashStationId: 'local:device:A',
+  cashStationId: STATION_A,
   actor: runtime.mode.actor,
   mode: { ...runtime.mode, stateKnown: true }
 });
@@ -277,7 +287,7 @@ describe('useCaja network recovery', () => {
   });
 
   it.each([
-    ['another station', { cashStationId: 'cash_station_device_B' }],
+    ['another station', { cashStationId: STATION_B }],
     ['another actor', { actorKey: 'admin:other' }]
   ])('keeps a verified-looking session blocked when identity belongs to %s', async (_label, overrides) => {
     runtime.getCurrent.mockResolvedValue({
