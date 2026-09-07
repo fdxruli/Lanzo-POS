@@ -106,7 +106,7 @@ const mapEdgeErrorMessage = (payload = {}) => {
     AI_AGENT_PERMISSION_REQUIRED: 'Tu usuario staff no tiene permiso para usar agentes de IA.',
     USAGE_LOOKUP_ERROR: payload.message || 'No se pudo consultar el uso de agentes IA.',
     USAGE_RESERVATION_ERROR: payload.message || 'No se pudo reservar el uso del agente IA.',
-    AI_KEY_MISSING: 'Falta configurar AI_API_KEY u OPENAI_API_KEY en Supabase Secrets.',
+    AI_KEY_MISSING: 'Falta configurar AI_API_KEY en Supabase Secrets.',
     AI_PROVIDER_ERROR: payload.message || 'El proveedor de IA devolvió un error.',
     PROMPT_TOO_LARGE: payload.message || 'El análisis contiene demasiados datos. Reduce el rango.',
     AI_REQUEST_FAILED: payload.message || 'No se pudo contactar al proveedor de IA.',

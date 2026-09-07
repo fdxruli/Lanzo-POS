@@ -353,13 +353,73 @@ Deno.test('staff token se propaga a begin', async () => {
 
 Deno.test('provider chat success devuelve contenido y usageStatus', async () => {
   const client = analysisClient();
-  const response = await makeHandler(client, { fetchImpl: async () => chatResponse() })(request({ auth, agentType: 'financialAnalyst', systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
+  let providerBody: Record<string, unknown> | null = null;
+  const response = await makeHandler(client, {
+    fetchImpl: async (_url, init) => {
+      providerBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return chatResponse();
+    }
+  })(request({ auth, agentType: 'financialAnalyst', systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
   const body = await json(response);
   assertEquals(response.status, 200);
   assertEquals(body.content, 'respuesta sintética');
   assertEquals((body.usageStatus as Record<string, unknown>).remaining, 14);
   assertEquals(client.calls[1].name, 'complete_ai_agent_analysis');
   assertEquals(client.calls[1].args.p_success, true);
+  assert(providerBody !== null, 'El proveedor debe recibir un body');
+  assertEquals(providerBody.temperature, 0.2);
+  const metadata = client.calls[1].args.p_metadata as Record<string, unknown>;
+  assertEquals(metadata.provider, 'openai-compatible');
+  assertEquals(metadata.protocol, 'chat-completions');
+  assertEquals(metadata.model, 'synthetic-model');
+});
+
+
+Deno.test('Moonshot Kimi K2.6 omite temperature y admite thinking', async () => {
+  const client = analysisClient();
+  let providerBody: Record<string, unknown> | null = null;
+  const response = await makeHandler(client, {
+    env: {
+      AI_PROVIDER: 'moonshot',
+      AI_API_URL: 'https://api.moonshot.ai/v1/chat/completions',
+      AI_MODEL: 'kimi-k2.6',
+      AI_THINKING_MODE: 'disabled',
+      AI_REASONING_EFFORT: undefined
+    },
+    fetchImpl: async (_url, init) => {
+      providerBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return chatResponse();
+    }
+  })(request({ auth, systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
+  assertEquals(response.status, 200);
+  assert(providerBody !== null, 'Moonshot debe recibir un body');
+  assertEquals(providerBody.model, 'kimi-k2.6');
+  assertEquals((providerBody.thinking as Record<string, unknown>)?.type, 'disabled');
+  assert(!Object.prototype.hasOwnProperty.call(providerBody, 'temperature'), 'Moonshot no debe recibir temperature');
+});
+
+Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () => {
+  const client = analysisClient();
+  let providerBody: Record<string, unknown> | null = null;
+  const response = await makeHandler(client, {
+    env: {
+      AI_PROVIDER: 'moonshot',
+      AI_API_URL: 'https://api.moonshot.ai/v1/chat/completions',
+      AI_MODEL: 'kimi-k3',
+      AI_THINKING_MODE: undefined,
+      AI_REASONING_EFFORT: 'low'
+    },
+    fetchImpl: async (_url, init) => {
+      providerBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return chatResponse();
+    }
+  })(request({ auth, systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
+  assertEquals(response.status, 200);
+  assert(providerBody !== null, 'Moonshot debe recibir un body');
+  assertEquals(providerBody.model, 'kimi-k3');
+  assertEquals(providerBody.reasoning_effort, 'low');
+  assertEquals(providerBody.thinking, undefined);
+  assert(!Object.prototype.hasOwnProperty.call(providerBody, 'temperature'), 'Moonshot no debe recibir temperature');
 });
 
 Deno.test('provider Responses-style success devuelve contenido', async () => {

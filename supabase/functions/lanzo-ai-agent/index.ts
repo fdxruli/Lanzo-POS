@@ -41,7 +41,7 @@ const SAFE_MESSAGES: Record<string, string> = {
   AI_RATE_LIMITED: 'Demasiadas consultas de uso de IA. Intenta de nuevo más tarde.',
   USAGE_LOOKUP_ERROR: 'No se pudo consultar el uso de agentes IA.',
   USAGE_RESERVATION_ERROR: 'No se pudo reservar o finalizar el uso del agente IA.',
-  AI_KEY_MISSING: 'Falta configurar AI_API_KEY u OPENAI_API_KEY en Supabase Secrets.',
+  AI_KEY_MISSING: 'Falta configurar AI_API_KEY en Supabase Secrets.',
   AI_PROVIDER_ERROR: 'La configuración del proveedor de IA no es válida.',
   PROMPT_TOO_LARGE: 'El análisis contiene demasiados datos. Reduce el rango.',
   AI_REQUEST_FAILED: 'No se pudo contactar al proveedor de IA.',
@@ -264,7 +264,8 @@ async function completeUsage(
     agent_type: request.agentType,
     system_prompt_length: request.systemPrompt.length,
     user_prompt_length: request.userPrompt.length,
-    provider: provider.style,
+    provider: provider.vendor,
+    protocol: provider.style,
     model: provider.model,
     latency_ms: latency
   };
