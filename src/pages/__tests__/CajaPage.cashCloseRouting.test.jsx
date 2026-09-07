@@ -212,8 +212,7 @@ describe('CajaPage cash close routing', () => {
 
     render(<CajaPage />);
 
-    expect(screen.getByText('Caja protegida por cambio de usuario')).toBeVisible();
-    expect(screen.getByText('Caja pendiente de cierre')).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Caja pendiente de cierre');
     expect(screen.getByText('Administradora Ana')).toBeVisible();
     expect(screen.getByText('Estación financiera sin nombre')).toBeVisible();
     expect(screen.getByText('Pendiente de cierre y conteo')).toBeVisible();

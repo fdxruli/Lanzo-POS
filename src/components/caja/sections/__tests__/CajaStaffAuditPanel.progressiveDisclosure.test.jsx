@@ -62,7 +62,7 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     expect(screen.getByText('$150.00')).toBeVisible();
     expect(screen.getByText('Abonos/clientes')).toBeVisible();
     expect(screen.getByText('Dispositivo')).toBeVisible();
-    expect(screen.getByText('Caja Samsung')).toBeVisible();
+    expect(screen.getAllByText('Caja Samsung')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));
     expect(onReviewSession).toHaveBeenCalledWith(staffSession);
