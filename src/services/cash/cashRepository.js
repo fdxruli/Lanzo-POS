@@ -43,6 +43,11 @@ import {
 } from './cashMapper';
 import { markFinancialIntentProjectionApplied, markFinancialIntentProjectionFailed } from '../financial/financialIntentLedger';
 import { registerFinancialProjectionHandler } from '../financial/financialProjectionRegistry';
+import {
+  FINANCIAL_TIMEOUTS,
+  getFinancialTimeoutMs,
+  withFinancialTimeout
+} from '../financial/financialTimeout';
 
 import './cashSyncHandler';
 
@@ -262,6 +267,19 @@ const normalizeCashMutationError = (error, fallbackCode = 'CASH_ERROR') => {
   const normalized = error instanceof CashFinancialError
     ? error
     : new CashFinancialError(knownCode, message, { cause: error });
+  for (const field of [
+    'financialPhase',
+    'isFinancialTimeout',
+    'isFinancialOperationAmbiguous',
+    'financialStatus',
+    'financialIntentId',
+    'financialIdempotencyKey',
+    'financialRecoveryCode',
+    'receiptStatus',
+    'receiptErrorCode'
+  ]) {
+    if (error && error[field] !== undefined) normalized[field] = error[field];
+  }
   return normalized;
 };
 
@@ -651,6 +669,57 @@ const assertCloudStationKnownBeforeWrite = async ({ mode, station, operation } =
   const stationId = assertCloudResponseStation({ response: stationState, localStation: station });
   persistCloudCashStationBinding({ mode, station, response: stationState, cashStationId: stationId });
   return stationState;
+};
+
+const resolveAdministrativeTargetStation = async ({
+  mode,
+  station,
+  cashSessionId,
+  targetCashStationId = null,
+  timeouts = null
+} = {}) => {
+  if (isCanonicalCashStation(targetCashStationId)) return targetCashStationId;
+  if (typeof cashCloudRepository.getCashSessionDetailForAudit !== 'function') {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+      'No se pudo resolver la estación de la caja que se va a cerrar.',
+      { cashSessionId }
+    );
+  }
+
+  const detail = await withFinancialTimeout(
+    () => cashCloudRepository.getCashSessionDetailForAudit({
+      licenseKey: mode.licenseKey,
+      cashSessionId,
+      force: true,
+      cacheContext: buildCashReadCacheContext(mode, station),
+      allowCache: false
+    }),
+    {
+      timeoutMs: getFinancialTimeoutMs(timeouts, 'AUDIT_DETAIL_MS'),
+      code: 'CASH_AUDIT_DETAIL_TIMEOUT',
+      message: 'No se pudo verificar la estación de la caja a tiempo; la operación no fue enviada.',
+      phase: 'audit_detail'
+    }
+  );
+  if (detail?.success === false) {
+    throw new CashFinancialError(
+      detail.code || CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+      detail.message || 'No se pudo resolver la estación de la caja que se va a cerrar.',
+      { detail, cashSessionId }
+    );
+  }
+
+  const targetSession = detail?.cash_session || detail?.cashSession || null;
+  const resolvedStationId = getCloudRecordStationId(targetSession);
+  if (!resolvedStationId) {
+    throw new CashFinancialError(
+      CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
+      'La caja seleccionada no contiene una estación financiera canónica.',
+      { cashSessionId }
+    );
+  }
+  return resolvedStationId;
 };
 
 const applyCloudResponse = async (response = {}) => {
@@ -1497,12 +1566,20 @@ export const cashRepository = {
     } catch {
       // The cloud response remains subject to its actor/device auth checks.
     }
-    const response = await cashCloudRepository.getCashSessionDetailForAudit({
-      licenseKey: mode.licenseKey,
-      cashSessionId,
-      force,
-      cacheContext: buildCashReadCacheContext(mode, station)
-    });
+    const response = await withFinancialTimeout(
+      () => cashCloudRepository.getCashSessionDetailForAudit({
+        licenseKey: mode.licenseKey,
+        cashSessionId,
+        force,
+        cacheContext: buildCashReadCacheContext(mode, station)
+      }),
+      {
+        timeoutMs: FINANCIAL_TIMEOUTS.AUDIT_DETAIL_MS,
+        code: 'CASH_AUDIT_DETAIL_TIMEOUT',
+        message: 'No se pudo cargar el detalle de caja a tiempo.',
+        phase: 'audit_detail'
+      }
+    );
     if (response?.success === false) {
       return fail(response.message || 'No se pudo cargar el detalle de caja.', response.code || 'CASH_AUDIT_DETAIL_FAILED', { response });
     }
@@ -1524,7 +1601,9 @@ export const cashRepository = {
     reasonCode,
     comments = '',
     expectedVersion,
-    idempotencyKey = null
+    idempotencyKey = null,
+    targetCashStationId = null,
+    timeouts = null
   }) {
     const mode = getCashMode();
     if (!mode.cloudEnabled) {
@@ -1537,18 +1616,66 @@ export const cashRepository = {
     if (mode.actor.isStaff) {
       return fail('Solo un administrador con sesion valida puede cerrar administrativamente una caja.', 'ADMIN_SESSION_REQUIRED');
     }
-    const station = await getStationForMode(mode);
+    let station;
+    try {
+      station = await withFinancialTimeout(
+        () => getStationForMode(mode),
+        {
+          timeoutMs: getFinancialTimeoutMs(timeouts, 'STATION_RESOLUTION_MS'),
+          code: 'CASH_STATION_RESOLUTION_TIMEOUT',
+          message: 'No se pudo resolver la estación financiera a tiempo; la operación no fue enviada.',
+          phase: 'station_resolution'
+        }
+      );
+    } catch (stationError) {
+      const normalized = normalizeCashMutationError(stationError, 'ADMIN_CASH_CLOSE_VERIFICATION_REQUIRED');
+      return fail(normalized.message, normalized.code, {
+        error: normalized,
+        operationSent: false,
+        retryable: true
+      });
+    }
     const actorContext = captureFinancialActor();
 
     try {
-      await assertCloudStationKnownBeforeWrite({
-        mode,
-        station,
-        operation: 'El cierre administrativo'
-      });
+      await withFinancialTimeout(
+        () => assertCloudStationKnownBeforeWrite({
+          mode,
+          station,
+          operation: 'El cierre administrativo'
+        }),
+        {
+          timeoutMs: getFinancialTimeoutMs(timeouts, 'PREFLIGHT_MS'),
+          code: 'FINANCIAL_PREFLIGHT_TIMEOUT',
+          message: 'La verificación financiera previa tardó demasiado; la operación no fue enviada.',
+          phase: 'preflight'
+        }
+      );
     } catch (verificationError) {
       const normalized = normalizeCashMutationError(verificationError, 'ADMIN_CASH_CLOSE_VERIFICATION_REQUIRED');
-      return fail(normalized.message, normalized.code, { error: normalized });
+      return fail(normalized.message, normalized.code, {
+        error: normalized,
+        operationSent: false,
+        retryable: true
+      });
+    }
+
+    let resolvedTargetCashStationId;
+    try {
+      resolvedTargetCashStationId = await resolveAdministrativeTargetStation({
+        mode,
+        station,
+        cashSessionId,
+        targetCashStationId,
+        timeouts
+      });
+    } catch (targetStationError) {
+      const normalized = normalizeCashMutationError(targetStationError, 'ADMIN_CASH_CLOSE_VERIFICATION_REQUIRED');
+      return fail(normalized.message, normalized.code, {
+        error: normalized,
+        operationSent: false,
+        retryable: true
+      });
     }
 
     const resolvedIdempotencyKey = idempotencyKey || null;
@@ -1564,10 +1691,25 @@ export const cashRepository = {
         comments,
         expectedVersion,
         idempotencyKey: resolvedIdempotencyKey,
+        targetCashStationId: resolvedTargetCashStationId,
+        ...(timeouts ? { timeouts } : {}),
         actorHandle: actorContext
       });
     } catch (adminCloseError) {
       const normalized = normalizeCashMutationError(adminCloseError, 'ADMIN_CASH_CLOSE_FAILED');
+      if (adminCloseError?.isFinancialOperationAmbiguous || normalized?.isFinancialOperationAmbiguous) {
+        return fail(
+          'La operación está siendo verificada; no la repitas.',
+          'FINANCIAL_RECOVERY_RECEIPT_PENDING',
+          {
+            error: normalized,
+            operationPending: true,
+            financialStatus: 'PENDING_RECEIPT',
+            financialIntentId: adminCloseError?.financialIntentId || normalized?.financialIntentId || null,
+            idempotencyKey: resolvedIdempotencyKey
+          }
+        );
+      }
       return fail(normalized.message, normalized.code, { error: normalized });
     }
     if (response?.success === false) {
@@ -1580,11 +1722,34 @@ export const cashRepository = {
       }
       return fail(response.message || 'No se pudo cerrar administrativamente la caja.', response.code || 'ADMIN_CASH_CLOSE_FAILED', { response });
     }
-    const applied = await applyFinancialCloudResponse({ response, actorContext });
+    let applied = { cashSession: null };
+    let syncPending = false;
+    let syncErrorCode = null;
+    try {
+      applied = await withFinancialTimeout(
+        () => applyFinancialCloudResponse({ response, actorContext }),
+        {
+          timeoutMs: getFinancialTimeoutMs(timeouts, 'POST_SYNC_MS'),
+          code: 'CASH_LOCAL_PROJECTION_TIMEOUT',
+          message: 'El cierre fue confirmado, pero la actualización local está pendiente.',
+          phase: 'post_sync'
+        }
+      );
+    } catch (projectionError) {
+      syncPending = true;
+      syncErrorCode = projectionError?.code || 'CASH_LOCAL_PROJECTION_FAILED';
+      Logger.warn('El cierre administrativo fue confirmado, pero la proyección local quedó pendiente.', projectionError);
+    }
     invalidateCloudCacheAfterCashMutation(mode.licenseKey);
-    posSyncOrchestrator.pullIncremental('cash_admin_close').catch(() => {});
+    Promise.resolve(posSyncOrchestrator.pullIncremental('cash_admin_close')).catch(() => {});
     actorContext.assertCurrent();
-    return { success: true, cashSession: applied.cashSession, response };
+    return {
+      success: true,
+      cashSession: applied.cashSession,
+      response,
+      syncPending,
+      ...(syncErrorCode ? { syncErrorCode } : {})
+    };
   },
 
   async adoptLegacyCashSession({ cashSessionId, expectedVersion = null }) {

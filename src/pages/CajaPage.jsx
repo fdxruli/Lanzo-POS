@@ -298,7 +298,13 @@ export default function CajaPage() {
   const handleAdminCashAuditClose = (result = null) => {
     setReviewCashSessionId(null);
     if (result?.closed) {
-      showMessageModal('Cierre administrativo completado.', null, { type: 'success' });
+      showMessageModal(
+        result.syncPending
+          ? 'Cierre administrativo confirmado. La actualización local está pendiente; verifica la Caja nuevamente.'
+          : 'Cierre administrativo completado.',
+        null,
+        { type: result.syncPending ? 'warning' : 'success' }
+      );
     }
   };
 

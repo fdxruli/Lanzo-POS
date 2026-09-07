@@ -8,6 +8,10 @@ import {
   financialRequestHashV1
 } from './financialCanonicalV1';
 import { retryExistingFinancialIntentExplicitly } from './financialIntentRecovery';
+import {
+  getFinancialTimeoutMs,
+  withFinancialTimeout
+} from './financialTimeout';
 
 export const FINANCIAL_INTENT_STATUS = Object.freeze({
   PREPARED: 'PREPARED',
@@ -671,13 +675,35 @@ const updateProjectionStatusUnderLease = async ({
   }
 };
 
-const resolveStation = async ({ auth, cashSessionId, operationType }) => {
+const resolveStation = async ({
+  auth,
+  cashSessionId,
+  operationType,
+  targetCashStationId = null,
+  timeouts = null
+}) => {
   if (operationType === 'sale.cancel') return null;
-  const { data, error } = await supabaseClient.rpc('pos_get_cash_station_state', auth);
+  const { data, error } = await withFinancialTimeout(
+    () => supabaseClient.rpc('pos_get_cash_station_state', auth),
+    {
+      timeoutMs: getFinancialTimeoutMs(timeouts, 'STATION_RESOLUTION_MS'),
+      code: 'CASH_STATION_RESOLUTION_TIMEOUT',
+      message: 'No se pudo resolver la estación financiera a tiempo.',
+      phase: 'station_resolution'
+    }
+  );
   if (error) throw error;
   const payload = parseRpcPayload(data);
   const stationId = payload?.cash_station?.id || payload?.cashStation?.id || null;
   if (!stationId) throw new Error('CASH_STATION_UNRESOLVED');
+  if (operationType === 'cash.admin_close') {
+    const targetStationId = String(targetCashStationId || '').trim();
+    if (!targetStationId) throw new Error('CASH_SESSION_STATION_UNRESOLVED');
+    // An administrative close keeps the authenticated Admin station as origin
+    // context, but hashes the target session's station. The server re-resolves
+    // that session and remains authoritative for the final write.
+    return targetStationId;
+  }
   if (cashSessionId) {
     const open = payload?.station_open_cash_session || payload?.stationOpenCashSession || null;
     if (!open?.id || String(open.id) !== String(cashSessionId)) throw new Error('CASH_SESSION_STATION_MISMATCH');
@@ -685,7 +711,8 @@ const resolveStation = async ({ auth, cashSessionId, operationType }) => {
   return stationId;
 };
 
-const receiptForCurrentOrigin = async ({ intent, licenseKey, handle }) => {
+const receiptForCurrentOrigin = async ({ intent, licenseKey, handle, timeouts = null }) => withFinancialTimeout(
+  async () => {
   handle.assertCurrent();
   const auth = await buildAuth(licenseKey);
   handle.assertCurrent();
@@ -694,15 +721,22 @@ const receiptForCurrentOrigin = async ({ intent, licenseKey, handle }) => {
   });
   if (error) throw error;
   return parseRpcPayload(data);
-};
+  },
+  {
+    timeoutMs: getFinancialTimeoutMs(timeouts, 'RECEIPT_MS'),
+    code: 'FINANCIAL_RECEIPT_TIMEOUT',
+    message: 'No se pudo verificar el recibo financiero a tiempo.',
+    phase: 'receipt'
+  }
+);
 
-export const getFinancialIntentReceiptForRecovery = async ({ intent, licenseKey, actorHandle = null } = {}) => {
+export const getFinancialIntentReceiptForRecovery = async ({ intent, licenseKey, actorHandle = null, timeouts = null } = {}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   assertFinancialIntentRecoveryAuthority(intent, handle);
   const row = await db.table(STORES.FINANCIAL_INTENTS).get(intent.id);
   if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   assertFinancialIntentRecoveryAuthority(row, handle);
-  return receiptForCurrentOrigin({ intent: row, licenseKey, handle });
+  return receiptForCurrentOrigin({ intent: row, licenseKey, handle, timeouts });
 };
 
 const initialIntent = ({ operationType, request, idempotencyKey, requestHash, canonicalRequest, handle, cashSessionId, cashStationId, projectionStatus }) => ({
@@ -718,7 +752,17 @@ const initialIntent = ({ operationType, request, idempotencyKey, requestHash, ca
   projectionStatus, projectionErrorCode: null, createdAt: now(), updatedAt: now(), completedAt: null
 });
 
-const prepareFinancialIntent = async ({ operationType, request, licenseKey, idempotencyKey = null, cashSessionId = null, actorHandle = null, projectionRequired = true }) => {
+const prepareFinancialIntent = async ({
+  operationType,
+  request,
+  licenseKey,
+  idempotencyKey = null,
+  cashSessionId = null,
+  targetCashStationId = null,
+  actorHandle = null,
+  projectionRequired = true,
+  timeouts = null
+}) => {
   assertSupabase();
   const immutableRequest = JSON.parse(JSON.stringify(request));
   assertNoSecretPayload(immutableRequest);
@@ -727,7 +771,13 @@ const prepareFinancialIntent = async ({ operationType, request, licenseKey, idem
   if (!normalizeDeviceRef(handle.deviceRef)) throw new Error('FINANCIAL_ORIGIN_DEVICE_REQUIRED');
   const auth = await buildAuth(licenseKey);
   handle.assertCurrent();
-  const stationId = await resolveStation({ auth, cashSessionId, operationType });
+  const stationId = await resolveStation({
+    auth,
+    cashSessionId,
+    operationType,
+    targetCashStationId,
+    timeouts
+  });
   handle.assertCurrent();
   const { canonicalRequest, requestHash } = await financialRequestHashV1({ operationType, request: immutableRequest, actorKey: handle.actorKey, cashSessionId, cashStationId: stationId });
   const intent = initialIntent({ operationType, request: immutableRequest, idempotencyKey: idempotencyKey || secureKey(), requestHash, canonicalRequest, handle, cashSessionId, cashStationId: stationId, projectionStatus: projectionRequired ? FINANCIAL_PROJECTION_STATUS.PENDING : FINANCIAL_PROJECTION_STATUS.NOT_REQUIRED });
@@ -748,7 +798,15 @@ const persistPreparedFinancialIntent = async (intent) => {
 };
 
 export const createFinancialIntent = async (options) => {
-  const { intent } = await prepareFinancialIntent(options);
+  const { intent } = await withFinancialTimeout(
+    () => prepareFinancialIntent(options),
+    {
+      timeoutMs: getFinancialTimeoutMs(options?.timeouts, 'PREFLIGHT_MS'),
+      code: 'FINANCIAL_PREFLIGHT_TIMEOUT',
+      message: 'La verificación financiera previa tardó demasiado; la operación no fue enviada.',
+      phase: 'preflight'
+    }
+  );
   await persistPreparedFinancialIntent(intent);
   return Object.freeze(intent);
 };
@@ -772,7 +830,15 @@ export const isExplicitSaleFinancialRetry = (operationType) => EXPLICIT_SALE_RET
  * retry path below is allowed to look up an existing owner after this write.
  */
 export const executeNewFinancialIntent = async (options) => {
-  const prepared = await prepareFinancialIntent(options);
+  const prepared = await withFinancialTimeout(
+    () => prepareFinancialIntent(options),
+    {
+      timeoutMs: getFinancialTimeoutMs(options?.timeouts, 'PREFLIGHT_MS'),
+      code: 'FINANCIAL_PREFLIGHT_TIMEOUT',
+      message: 'La verificación financiera previa tardó demasiado; la operación no fue enviada.',
+      phase: 'preflight'
+    }
+  );
   const initialLease = createRecoveryLease({ leaseMs: options?.leaseMs });
   const leasedIntent = {
     ...prepared.intent,
@@ -828,7 +894,8 @@ export const executeNewFinancialIntent = async (options) => {
         recoveryLeaseId: initialLease.leaseId,
         lastRecoveryCode: 'FINANCIAL_RECOVERY_INITIAL_DISPATCH',
         resolveAmbiguousReceipt: true,
-        project: options?.project
+        project: options?.project,
+        timeouts: options?.timeouts
       }))
     };
   } finally {
@@ -844,7 +911,7 @@ export const executeNewFinancialIntent = async (options) => {
   }
 };
 
-export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle = null }) => {
+export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle = null, timeouts = null }) => {
   if (!intent?.id || !intent?.idempotencyKey || !intent?.requestHash) throw new Error('FINANCIAL_INTENT_INVALID');
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
@@ -872,7 +939,8 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
       expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
       recoveryLeaseId: claim.recoveryLeaseId,
       lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH',
-      resolveAmbiguousReceipt: true
+      resolveAmbiguousReceipt: true,
+      timeouts
     });
   } finally {
     try {
@@ -895,7 +963,8 @@ const executeDurableFinancialIntentForRecovery = async ({
   recoveryLeaseId = null,
   lastRecoveryCode,
   resolveAmbiguousReceipt = false,
-  project = null
+  project = null,
+  timeouts = null
 }) => {
   if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
   const handle = actorHandle || actorRuntimeController.capture();
@@ -938,22 +1007,38 @@ const executeDurableFinancialIntentForRecovery = async ({
   }, handle, { recoveryLeaseId, expectedStatus });
   let result;
   try {
-    const auth = await buildAuth(licenseKey);
-    handle.assertCurrent();
-    const { data, error } = await supabaseClient.rpc('pos_execute_financial_operation_v1', {
-      ...auth,
-      p_idempotency_key: durableIntent.idempotencyKey,
-      p_request_hash: durableIntent.requestHash,
-      p_operation_type: durableIntent.operationType,
-      p_request: durableIntent.requestPayload
-    });
+    const { data, error } = await withFinancialTimeout(
+      async () => {
+        const auth = await buildAuth(licenseKey);
+        handle.assertCurrent();
+        return supabaseClient.rpc('pos_execute_financial_operation_v1', {
+          ...auth,
+          p_idempotency_key: durableIntent.idempotencyKey,
+          p_request_hash: durableIntent.requestHash,
+          p_operation_type: durableIntent.operationType,
+          p_request: durableIntent.requestPayload
+        });
+      },
+      {
+        timeoutMs: getFinancialTimeoutMs(timeouts, 'DISPATCH_MS'),
+        code: 'FINANCIAL_DISPATCH_TIMEOUT',
+        message: 'El servidor no confirmó la operación financiera a tiempo.',
+        phase: 'dispatch',
+        ambiguous: true
+      }
+    );
     if (error) throw error;
     result = parseRpcPayload(data);
     if (result?.success === false && !isCashAdminCloseReviewResponse(durableIntent.operationType, result)) {
       throw rejectedFinancialResponseError(result);
     }
   } catch (error) {
-    const { code, status } = classifyDispatchFailure(error);
+    const surfacedError = error && (typeof error === 'object' || typeof error === 'function')
+      ? error
+      : new Error(String(error));
+    const { code, status } = error?.isFinancialOperationAmbiguous === true
+      ? { code: null, status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT }
+      : classifyDispatchFailure(error);
     await updateFinancialIntentForRecovery(intentId, {
       status,
       lastReceiptStatus: status,
@@ -961,8 +1046,17 @@ const executeDurableFinancialIntentForRecovery = async ({
     }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.DISPATCHING });
 
     if (resolveAmbiguousReceipt && status === FINANCIAL_INTENT_STATUS.PENDING_RECEIPT) {
+      let receipt = null;
+      let receiptError = null;
+      let receiptCompleted = false;
+      let recoveredProjection = null;
       try {
-        const receipt = await receiptForCurrentOrigin({ intent: durableIntent, licenseKey, handle });
+        receipt = await receiptForCurrentOrigin({
+          intent: durableIntent,
+          licenseKey,
+          handle,
+          timeouts
+        });
         if (receipt?.status === 'COMPLETED') {
           await updateFinancialIntentForRecovery(intentId, {
             status: FINANCIAL_INTENT_STATUS.COMPLETED,
@@ -971,15 +1065,17 @@ const executeDurableFinancialIntentForRecovery = async ({
             responsePayload: receipt?.result || receipt,
             completedAt: now()
           }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
-          if (typeof project === 'function') {
-            await runFinancialProjectionUnderLease({
+          receiptCompleted = true;
+          recoveredProjection = typeof project === 'function'
+            ? await runFinancialProjectionUnderLease({
               intentId,
               actorHandle: handle,
               recoveryLeaseId,
               project
-            });
-          }
-        } else if (receipt?.status === 'CONFLICT') {
+            })
+            : null;
+        }
+        if (receipt?.status === 'CONFLICT') {
           await updateFinancialIntentForRecovery(intentId, {
             status: FINANCIAL_INTENT_STATUS.CONFLICT,
             lastReceiptStatus: 'CONFLICT',
@@ -990,11 +1086,35 @@ const executeDurableFinancialIntentForRecovery = async ({
             lastReceiptStatus: receipt?.status || FINANCIAL_INTENT_STATUS.PENDING_RECEIPT
           }, handle, { recoveryLeaseId, expectedStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
         }
-      } catch {
-        // The original ambiguous intent remains durable; it is never resent.
+      } catch (errorReadingReceipt) {
+        receiptError = errorReadingReceipt;
+      }
+
+      if (receipt?.status === 'COMPLETED' && receiptCompleted) {
+        return {
+          intentId,
+          response: receipt?.result || receipt,
+          projection: recoveredProjection,
+          receiptRecovered: true
+        };
+      }
+      if (receipt?.status === 'CONFLICT') {
+        surfacedError.code = 'IDEMPOTENCY_CONFLICT';
+        surfacedError.financialStatus = FINANCIAL_INTENT_STATUS.CONFLICT;
+      } else {
+        // Preserve the original error identity while making the durable
+        // ambiguity explicit to UI callers. The same idempotency key remains
+        // attached to the intent and no automatic redispatch is allowed.
+        surfacedError.isFinancialOperationAmbiguous = true;
+        surfacedError.financialStatus = FINANCIAL_INTENT_STATUS.PENDING_RECEIPT;
+        surfacedError.financialIntentId = intentId;
+        surfacedError.financialIdempotencyKey = durableIntent.idempotencyKey;
+        surfacedError.financialRecoveryCode = 'FINANCIAL_RECOVERY_RECEIPT_PENDING';
+        surfacedError.receiptStatus = receipt?.status || null;
+        surfacedError.receiptErrorCode = receiptError?.code || null;
       }
     }
-    throw error;
+    throw surfacedError;
   }
 
   await updateFinancialIntentForRecovery(intentId, {
@@ -1019,7 +1139,7 @@ const executeDurableFinancialIntentForRecovery = async ({
  * The first-dispatch recovery path is intentionally restricted to an
  * immutable PREPARED row that has never crossed the durable dispatch boundary.
  */
-export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, leaseMs } = {}) => {
+export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, leaseMs, timeouts = null } = {}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
   const durableIntent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
@@ -1041,7 +1161,9 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
       actorHandle: handle,
       expectedStatus: FINANCIAL_INTENT_STATUS.PREPARED,
       recoveryLeaseId,
-      lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH'
+      lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH',
+      resolveAmbiguousReceipt: true,
+      timeouts
     });
   } finally {
     if (claim) {
@@ -1059,7 +1181,7 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
  * already validated the immutable retry evidence, acquired the recovery lease
  * and obtained an authoritative NOT_FOUND receipt.
  */
-export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null } = {}) => {
+export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, timeouts = null } = {}) => {
   if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
@@ -1076,7 +1198,9 @@ export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licen
     actorHandle: handle,
     expectedStatus: FINANCIAL_INTENT_STATUS.BLOCKED,
     recoveryLeaseId,
-    lastRecoveryCode: 'FINANCIAL_RECOVERY_BLOCKED_REDISPATCH'
+    lastRecoveryCode: 'FINANCIAL_RECOVERY_BLOCKED_REDISPATCH',
+    resolveAmbiguousReceipt: true,
+    timeouts
   });
 };
 

@@ -16,6 +16,7 @@ import {
   isLocalStationKey
 } from '../services/cash/cashStation';
 import { resolveCashSessionAmounts } from '../services/cajaProjection';
+import { getFinancialTimeoutMs, withFinancialTimeout } from '../services/financial/financialTimeout';
 import { useAppStore } from '../store/useAppStore';
 import {
   CASH_OPENING_POLICY,
@@ -978,7 +979,38 @@ export function useCaja() {
 
   const cerrarCajaAdministrativamente = useCallback(async (input = {}) => {
     const response = await cashRepository.adminCloseCashSession(input);
-    if (response?.success) await sincronizarEstadoCaja();
+    if (response?.success) {
+      try {
+        const syncResult = await withFinancialTimeout(
+          () => sincronizarEstadoCaja(),
+          {
+            timeoutMs: getFinancialTimeoutMs(input?.timeouts, 'POST_SYNC_MS'),
+            code: 'CASH_SYNC_TIMEOUT',
+            message: 'El cierre fue confirmado, pero la actualización local está pendiente.',
+            phase: 'post_sync'
+          }
+        );
+        if (!syncResult || syncResult.success === false) {
+          return {
+            ...response,
+            syncPending: true,
+            syncErrorCode: syncResult?.code || 'CASH_SYNC_PENDING'
+          };
+        }
+        return {
+          ...response,
+          syncPending: false,
+          syncErrorCode: null
+        };
+      } catch (syncError) {
+        Logger.warn('El cierre administrativo fue confirmado, pero la sincronización local quedó pendiente.', syncError);
+        return {
+          ...response,
+          syncPending: true,
+          syncErrorCode: syncError?.code || 'CASH_SYNC_TIMEOUT'
+        };
+      }
+    }
     return response;
   }, [sincronizarEstadoCaja]);
 

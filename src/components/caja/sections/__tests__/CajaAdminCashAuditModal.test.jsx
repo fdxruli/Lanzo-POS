@@ -19,6 +19,7 @@ const detail = {
     cash_entries_total: '0',
     cash_exits_total: '0',
     expected_cash_total: '1196',
+    cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
     server_version: 4,
     sales_count: 2
   },
@@ -161,6 +162,40 @@ describe('CajaAdminCashAuditModal', () => {
     expect(secondAttempt).toMatchObject({ expectedVersion: 8 });
     expect(secondAttempt.idempotencyKey).not.toBe(firstAttempt.idempotencyKey);
     expect(onClose).toHaveBeenCalledWith({ closed: true, cashSessionId: 'cash-1196' });
+  });
+
+  it('passes the target station and blocks a second click while the outcome is pending', async () => {
+    const onClose = vi.fn();
+    let resolveClose;
+    const closeAdmin = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveClose = resolve;
+    }));
+    renderModal({ onClose, cerrarCajaAdministrativamente: closeAdmin });
+
+    await screen.findByText('Caja sintetica');
+    fireEvent.click(screen.getByText(/conte fisicamente/i));
+    fireEvent.change(screen.getByLabelText(/efectivo contado/i), { target: { value: '1196' } });
+    fireEvent.change(screen.getByLabelText(/^motivo/i), { target: { value: 'operational_error' } });
+    fireEvent.click(screen.getByRole('button', { name: /revisar confirmacion/i }));
+
+    const submitButton = screen.getByRole('button', { name: /confirmar cierre administrativo/i });
+    fireEvent.click(submitButton);
+    await waitFor(() => expect(closeAdmin).toHaveBeenCalledTimes(1));
+    expect(closeAdmin).toHaveBeenCalledWith(expect.objectContaining({
+      targetCashStationId: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000'
+    }));
+    expect(submitButton).toBeDisabled();
+    fireEvent.click(submitButton);
+    expect(closeAdmin).toHaveBeenCalledTimes(1);
+
+    resolveClose({
+      success: false,
+      operationPending: true,
+      financialStatus: 'PENDING_RECEIPT'
+    });
+    expect((await screen.findAllByText(/no la repitas/i)).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: /operación en verificación/i })).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('shows thrown submit errors and always restores the submit action', async () => {

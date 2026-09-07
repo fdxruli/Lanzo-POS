@@ -17,6 +17,7 @@ const runtime = vi.hoisted(() => ({
   invalidateReadGenerations: vi.fn(),
   open: vi.fn(),
   movement: vi.fn(),
+  adminClose: vi.fn(),
   message: vi.fn()
 }));
 
@@ -34,7 +35,7 @@ vi.mock('../../services/cash/cashRepository', () => ({
     registerMovement: (...args) => runtime.movement(...args),
     adjustInitialFund: vi.fn(),
     closeCashSession: vi.fn(),
-    adminCloseCashSession: vi.fn(),
+    adminCloseCashSession: (...args) => runtime.adminClose(...args),
     adoptLegacyCashSession: vi.fn(),
     listCashSessionsForAudit: vi.fn(),
     getCashSessionDetailForAudit: vi.fn()
@@ -134,6 +135,7 @@ beforeEach(() => {
   runtime.invalidateReadGenerations.mockReset();
   runtime.open.mockReset();
   runtime.movement.mockReset();
+  runtime.adminClose.mockReset();
 });
 
 afterEach(() => {
@@ -316,5 +318,28 @@ describe('useCaja network recovery', () => {
 
     expect(runtime.open).not.toHaveBeenCalled();
     expect(runtime.movement).not.toHaveBeenCalled();
+  });
+
+  it('returns a confirmed administrative close with syncPending when post-close verification times out', async () => {
+    runtime.getCurrent.mockImplementation(() => new Promise(() => {}));
+    runtime.adminClose.mockResolvedValue({ success: true, response: { success: true } });
+    const { result } = renderHook(() => useCaja());
+
+    await waitFor(() => expect(runtime.getCurrent).toHaveBeenCalledTimes(1));
+
+    let closeResult;
+    await act(async () => {
+      closeResult = await result.current.cerrarCajaAdministrativamente({
+        cashSessionId: 'cash-foreign-staff',
+        timeouts: { POST_SYNC_MS: 5 }
+      });
+    });
+
+    expect(closeResult).toMatchObject({
+      success: true,
+      syncPending: true,
+      syncErrorCode: 'CASH_SYNC_TIMEOUT'
+    });
+    expect(runtime.adminClose).toHaveBeenCalledOnce();
   });
 });

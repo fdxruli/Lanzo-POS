@@ -207,9 +207,28 @@ export const cashCloudRepository = {
     comments,
     expectedVersion,
     idempotencyKey,
+    targetCashStationId = null,
+    timeouts = null,
     actorHandle = null
   }) {
-    const result = await executeNewFinancialIntent({ operationType: 'cash.admin_close', request: { cash_session_id: cashSessionId, closing_mode: closingMode, counted_amount: countedAmount, next_shift_fund: nextShiftFund, reason_code: reasonCode, comments, expected_version: expectedVersion }, licenseKey, idempotencyKey, cashSessionId, actorHandle });
+    const result = await executeNewFinancialIntent({
+      operationType: 'cash.admin_close',
+      request: {
+        cash_session_id: cashSessionId,
+        closing_mode: closingMode,
+        counted_amount: countedAmount,
+        next_shift_fund: nextShiftFund,
+        reason_code: reasonCode,
+        comments,
+        expected_version: expectedVersion
+      },
+      licenseKey,
+      idempotencyKey,
+      cashSessionId,
+      ...(targetCashStationId ? { targetCashStationId } : {}),
+      ...(timeouts ? { timeouts } : {}),
+      actorHandle
+    });
     return withResolvedCashStation(licenseKey, result);
   },
 

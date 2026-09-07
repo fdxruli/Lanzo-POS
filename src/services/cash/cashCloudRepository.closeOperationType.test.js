@@ -71,6 +71,7 @@ describe('cashCloudRepository close financial operation types', () => {
       comments: 'Cierre revisado por administración.',
       expectedVersion: 7,
       idempotencyKey: 'cash-admin-close-key',
+      targetCashStationId: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
       actorHandle
     });
 
@@ -88,6 +89,7 @@ describe('cashCloudRepository close financial operation types', () => {
       licenseKey: 'license-test',
       idempotencyKey: 'cash-admin-close-key',
       cashSessionId: 'cash-foreign-staff',
+      targetCashStationId: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
       actorHandle
     });
   });

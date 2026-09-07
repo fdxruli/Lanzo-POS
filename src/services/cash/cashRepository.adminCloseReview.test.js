@@ -13,6 +13,7 @@ const runtime = vi.hoisted(() => ({
     assertCurrent: vi.fn()
   },
   adminClose: vi.fn(),
+  targetDetail: vi.fn(),
   applyCloudCashSession: vi.fn(),
   markProjectionApplied: vi.fn(),
   markProjectionFailed: vi.fn(),
@@ -35,7 +36,10 @@ vi.mock('../sync/posSyncOrchestrator', () => ({
   posSyncOrchestrator: { pullIncremental: (...args) => runtime.pullIncremental(...args) }
 }));
 vi.mock('./cashCloudRepository', () => ({
-  cashCloudRepository: { adminCloseCashSession: (...args) => runtime.adminClose(...args) }
+  cashCloudRepository: {
+    adminCloseCashSession: (...args) => runtime.adminClose(...args),
+    getCashSessionDetailForAudit: (...args) => runtime.targetDetail(...args)
+  }
 }));
 vi.mock('./cashLocalRepository', () => ({
   cashLocalRepository: {
@@ -114,6 +118,15 @@ import { cashRepository, cashRepositoryInternals } from './cashRepository';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  runtime.targetDetail.mockResolvedValue({
+    success: true,
+    cash_session: {
+      id: 'cash-foreign-staff',
+      status: 'open',
+      actor_key: 'staff:owner',
+      cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000'
+    }
+  });
   runtime.applyCloudCashSession.mockImplementation(async (session) => ({
     id: session.id,
     actorKey: session.actor_key,
@@ -182,6 +195,11 @@ describe('cashRepository administrative close review delivery', () => {
         cashSessionId: 'cash-foreign-staff',
         expectedVersion: 4,
         idempotencyKey: 'original-human-confirmation-key'
+      }));
+      expect(runtime.targetDetail).toHaveBeenCalledWith(expect.objectContaining({
+        cashSessionId: 'cash-foreign-staff',
+        force: true,
+        allowCache: false
       }));
       expect(runtime.applyCloudCashSession).toHaveBeenCalledOnce();
       expect(runtime.applyCloudCashSession).toHaveBeenCalledWith(response.cash_session);
@@ -264,5 +282,83 @@ describe('cashRepository administrative close review delivery', () => {
     });
     expect(runtime.invalidateCashCache).not.toHaveBeenCalled();
     expect(runtime.pullIncremental).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an ambiguous financial dispatch as pending without offering a second write', async () => {
+    runtime.adminClose.mockRejectedValue(Object.assign(new Error('gateway timeout'), {
+      isFinancialOperationAmbiguous: true,
+      financialStatus: 'PENDING_RECEIPT',
+      financialIntentId: 'intent-pending'
+    }));
+
+    const result = await cashRepository.adminCloseCashSession({
+      cashSessionId: 'cash-foreign-staff',
+      closingMode: 'admin_audited',
+      countedAmount: '1180',
+      nextShiftFund: '100',
+      reasonCode: 'operational_error',
+      expectedVersion: 4,
+      idempotencyKey: 'pending-key'
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'FINANCIAL_RECOVERY_RECEIPT_PENDING',
+      operationPending: true,
+      financialStatus: 'PENDING_RECEIPT',
+      financialIntentId: 'intent-pending',
+      idempotencyKey: 'pending-key'
+    });
+    expect(result.message).toContain('no la repitas');
+    expect(runtime.applyCloudCashSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps a confirmed close successful when local projection synchronization is pending', async () => {
+    const response = {
+      success: true,
+      cash_session: {
+        id: 'cash-foreign-staff',
+        actor_key: 'staff:owner',
+        status: 'closed',
+        expected_cash_total: '1200',
+        cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
+        server_version: 6
+      },
+      financialIntentId: 'intent-confirmed'
+    };
+    runtime.adminClose.mockResolvedValue(response);
+    runtime.applyCloudCashSession.mockRejectedValue(new Error('IndexedDB no disponible'));
+
+    const result = await cashRepository.adminCloseCashSession({
+      cashSessionId: 'cash-foreign-staff',
+      closingMode: 'admin_audited',
+      countedAmount: '1180',
+      nextShiftFund: '100',
+      reasonCode: 'operational_error',
+      expectedVersion: 5,
+      idempotencyKey: 'confirmed-key'
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      syncPending: true,
+      syncErrorCode: 'CASH_LOCAL_PROJECTION_FAILED',
+      response
+    });
+    expect(runtime.invalidateCashCache).toHaveBeenCalledOnce();
+    expect(runtime.pullIncremental).toHaveBeenCalledWith('cash_admin_close');
+  });
+
+  it('blocks administrative close for Staff and while offline before reading the target', async () => {
+    runtime.mode.actor = { actorKey: 'staff:owner', isStaff: true };
+    await expect(cashRepository.adminCloseCashSession({ cashSessionId: 'cash-foreign-staff' }))
+      .resolves.toMatchObject({ success: false, code: 'ADMIN_SESSION_REQUIRED' });
+    expect(runtime.targetDetail).not.toHaveBeenCalled();
+
+    runtime.mode.actor = { actorKey: 'admin:reviewer', isStaff: false };
+    runtime.mode.online = false;
+    await expect(cashRepository.adminCloseCashSession({ cashSessionId: 'cash-foreign-staff' }))
+      .resolves.toMatchObject({ success: false, code: 'CLOUD_CASH_OFFLINE' });
+    expect(runtime.adminClose).not.toHaveBeenCalled();
   });
 });
