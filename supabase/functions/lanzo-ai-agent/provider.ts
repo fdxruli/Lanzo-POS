@@ -4,12 +4,18 @@ export const PROVIDER_TIMEOUT_MS = 55_000;
 export const MAX_PROVIDER_BODY_BYTES = 512 * 1024;
 
 export type ProviderStyle = 'responses' | 'chat-completions';
+export type ProviderVendor = 'openai-compatible' | 'moonshot';
+export type ThinkingMode = 'enabled' | 'disabled';
+export type ReasoningEffort = 'low' | 'high' | 'max';
 
 export type ProviderConfig = {
   url: string;
   model: string;
   apiKey: string;
   style: ProviderStyle;
+  vendor: ProviderVendor;
+  thinkingMode: ThinkingMode | null;
+  reasoningEffort: ReasoningEffort | null;
 };
 
 export type ProviderResult = {
@@ -52,6 +58,8 @@ const nonNegativeInteger = (value: unknown): number | null => (
   typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
 );
 
+const MOONSHOT_HOSTS = new Set(['api.moonshot.ai', 'api.moonshot.cn']);
+
 function classifyProviderUrl(rawUrl: string): ProviderStyle {
   let parsed: URL;
   try {
@@ -69,6 +77,90 @@ function classifyProviderUrl(rawUrl: string): ProviderStyle {
   if (path.endsWith('/chat/completions')) return 'chat-completions';
 
   throw new ProviderError('AI_PROVIDER_ERROR', 'El formato del endpoint de IA no está reconocido.', 500);
+}
+
+function resolveProviderVendor(
+  rawUrl: string,
+  model: string,
+  configuredVendor: string | undefined
+): ProviderVendor {
+  const configured = (configuredVendor || '').trim().toLowerCase();
+  if (configured === 'moonshot' || configured === 'kimi') return 'moonshot';
+  if (configured === 'openai' || configured === 'openai-compatible') return 'openai-compatible';
+  if (configured && configured !== 'auto') {
+    throw new ProviderError('AI_PROVIDER_ERROR', 'El proveedor de IA configurado no es válido.', 500);
+  }
+
+  let hostname = '';
+  try {
+    hostname = new URL(rawUrl).hostname.toLowerCase();
+  } catch {
+    // classifyProviderUrl ya valida la URL antes de llegar aquí.
+  }
+
+  if (MOONSHOT_HOSTS.has(hostname) || model.toLowerCase().startsWith('kimi-')) {
+    return 'moonshot';
+  }
+
+  return 'openai-compatible';
+}
+
+function parseThinkingMode(value: string | undefined): ThinkingMode | null {
+  const normalized = (value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized !== 'enabled' && normalized !== 'disabled') {
+    throw new ProviderError('AI_PROVIDER_ERROR', 'AI_THINKING_MODE debe ser enabled o disabled.', 500);
+  }
+  return normalized;
+}
+
+function parseReasoningEffort(value: string | undefined): ReasoningEffort | null {
+  const normalized = (value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized !== 'low' && normalized !== 'high' && normalized !== 'max') {
+    throw new ProviderError('AI_PROVIDER_ERROR', 'AI_REASONING_EFFORT debe ser low, high o max.', 500);
+  }
+  return normalized;
+}
+
+function validateMoonshotConfig(
+  style: ProviderStyle,
+  model: string,
+  thinkingMode: ThinkingMode | null,
+  reasoningEffort: ReasoningEffort | null
+): void {
+  if (style !== 'chat-completions') {
+    throw new ProviderError(
+      'AI_PROVIDER_ERROR',
+      'Moonshot/Kimi requiere un endpoint de chat completions.',
+      500
+    );
+  }
+
+  const normalizedModel = model.toLowerCase();
+  if (normalizedModel === 'kimi-k3' && thinkingMode) {
+    throw new ProviderError(
+      'AI_PROVIDER_ERROR',
+      'Kimi K3 usa AI_REASONING_EFFORT; no admite AI_THINKING_MODE.',
+      500
+    );
+  }
+
+  if (normalizedModel.startsWith('kimi-k2') && reasoningEffort) {
+    throw new ProviderError(
+      'AI_PROVIDER_ERROR',
+      'Los modelos Kimi K2 usan AI_THINKING_MODE; no admiten AI_REASONING_EFFORT.',
+      500
+    );
+  }
+
+  if (normalizedModel.startsWith('kimi-k2.7') && thinkingMode === 'disabled') {
+    throw new ProviderError(
+      'AI_PROVIDER_ERROR',
+      'Kimi K2.7 mantiene el razonamiento activo y no admite disabled.',
+      500
+    );
+  }
 }
 
 export function resolveProviderConfig(env: (name: string) => string | undefined): ProviderConfig | ProviderError {
@@ -91,37 +183,72 @@ export function resolveProviderConfig(env: (name: string) => string | undefined)
   }
 
   try {
-    return { url: rawUrl, model, apiKey, style: classifyProviderUrl(rawUrl) };
+    const style = classifyProviderUrl(rawUrl);
+    const vendor = resolveProviderVendor(rawUrl, model, env('AI_PROVIDER'));
+
+    let thinkingMode: ThinkingMode | null = null;
+    let reasoningEffort: ReasoningEffort | null = null;
+    if (vendor === 'moonshot') {
+      thinkingMode = parseThinkingMode(env('AI_THINKING_MODE'));
+      reasoningEffort = parseReasoningEffort(env('AI_REASONING_EFFORT'));
+      validateMoonshotConfig(style, model, thinkingMode, reasoningEffort);
+    }
+
+    return {
+      url: rawUrl,
+      model,
+      apiKey,
+      style,
+      vendor,
+      thinkingMode,
+      reasoningEffort
+    };
   } catch (error) {
     if (error instanceof ProviderError) return error;
     return new ProviderError('AI_PROVIDER_ERROR', 'La configuración del proveedor de IA no es válida.', 500);
   }
 }
 
-function buildRequestBody(config: ProviderConfig, systemPrompt: string, userPrompt: string, options: AnalysisOptions) {
-  if (config.style === 'responses') {
-    return {
-      model: config.model,
-      input: [
-        { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
-        { role: 'user', content: [{ type: 'input_text', text: userPrompt }] }
-      ],
-      temperature: options.temperature,
-      max_output_tokens: options.maxTokens,
-      stream: false
-    };
+function buildRequestBody(
+  config: ProviderConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  options: AnalysisOptions
+): Record<string, unknown> {
+  const requestBody: Record<string, unknown> = config.style === 'responses'
+    ? {
+        model: config.model,
+        input: [
+          { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
+          { role: 'user', content: [{ type: 'input_text', text: userPrompt }] }
+        ],
+        max_output_tokens: options.maxTokens,
+        stream: false
+      }
+    : {
+        model: config.model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: options.maxTokens,
+        stream: false
+      };
+
+  if (config.vendor !== 'moonshot') {
+    requestBody.temperature = options.temperature;
+    return requestBody;
   }
 
-  return {
-    model: config.model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    temperature: options.temperature,
-    max_tokens: options.maxTokens,
-    stream: false
-  };
+  const normalizedModel = config.model.toLowerCase();
+  if (normalizedModel === 'kimi-k2.6' && config.thinkingMode) {
+    requestBody.thinking = { type: config.thinkingMode };
+  }
+  if (normalizedModel === 'kimi-k3' && config.reasoningEffort) {
+    requestBody.reasoning_effort = config.reasoningEffort;
+  }
+
+  return requestBody;
 }
 
 async function readBodyWithLimit(response: Response): Promise<string> {
@@ -223,7 +350,7 @@ export async function requestProvider(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
+        Authorization: 'Bearer ' + config.apiKey
       },
       body: JSON.stringify(buildRequestBody(config, systemPrompt, userPrompt, options)),
       signal: controller.signal

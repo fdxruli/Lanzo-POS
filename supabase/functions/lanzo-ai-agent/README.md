@@ -64,6 +64,24 @@ El cliente Supabase server-side usa el endpoint RPC REST con sesión persistente
 automático desactivados. Las RPC están fijadas en el código; el cliente no puede elegir
 una RPC arbitraria.
 
+### Moonshot/Kimi
+
+Para usar Kimi, configura el endpoint OpenAI-compatible de Moonshot:
+
+AI_PROVIDER=moonshot
+AI_API_URL=https://api.moonshot.ai/v1/chat/completions
+AI_MODEL=kimi-k2.6
+AI_THINKING_MODE=disabled
+
+En kimi-k2.6, AI_THINKING_MODE puede ser enabled o disabled. En kimi-k3 usa
+AI_REASONING_EFFORT con low, high o max. No combines los controles de K2 y K3.
+El adaptador omite temperature en todas las solicitudes Moonshot porque Kimi no
+acepta ese parámetro explícito. El campo puede seguir existiendo en el contrato
+del cliente para conservar compatibilidad y permitir rollback a un proveedor
+OpenAI-compatible.
+
+AI_PROVIDER es opcional: si no se define, se detecta Moonshot por el host api.moonshot.ai,
+api.moonshot.cn o por un modelo cuyo nombre comience con kimi-.
 ## Validación
 
 Las pruebas de `index.test.ts` usan mocks de RPC, reloj, request ID, fetch y variables de
