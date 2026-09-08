@@ -25,6 +25,7 @@
     "test:oss-bootstrap": "node --test scripts/oss/reset-local-with-bootstrap.node-test.mjs",
     "test:oss-release": "node --test scripts/oss/release-boundary.test.mjs scripts/oss/reset-local-with-bootstrap.node-test.mjs",
     "test:supabase-ledger-baseline": "node --test scripts/supabase/migration-ledger-baseline.node-test.mjs",
+    "test:security-gates": "node --test scripts/supabase/security-gates.node-test.mjs",
     "test:cash-station-labels-contract": "node --test scripts/supabase/cash-station-labels-read-contract.node-test.mjs",
     "test:admin-cash-close-contract": "node --test scripts/supabase/admin-cash-close-contract.node-test.mjs",
     "test:admin-close-financial-terminal-contract": "node --test scripts/supabase/admin-close-financial-terminal-contract.node-test.mjs",

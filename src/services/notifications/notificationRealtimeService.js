@@ -88,11 +88,13 @@ export const startNotificationRealtime = ({
       const rawEvent = payload?.payload || payload || {};
       const event = {
         event: rawEvent.event,
-        notificationId: rawEvent.notification_id || rawEvent.notificationId || null,
-        ticketId: rawEvent.ticket_id || rawEvent.ticketId || null,
+        // Realtime is invalidation-only. IDs and metadata are reloaded via
+        // actor-authorized RPCs after this event.
+        notificationId: null,
+        ticketId: null,
         reason: rawEvent.reason || 'notification_created',
         createdAt: rawEvent.created_at || rawEvent.createdAt || null,
-        metadata: rawEvent.metadata || {}
+        metadata: {}
       };
 
       if (rawEvent?.event === 'ecommerce_orders_changed') {
@@ -105,7 +107,11 @@ export const startNotificationRealtime = ({
         return;
       }
 
-      if (event.metadata?.category === 'ecommerce' || event.metadata?.source === 'ecommerce') {
+      if (
+        event.reason === 'ecommerce_order_created'
+        || event.metadata?.category === 'ecommerce'
+        || event.metadata?.source === 'ecommerce'
+      ) {
         dispatchEcommerceOrderEvent(event);
       }
 

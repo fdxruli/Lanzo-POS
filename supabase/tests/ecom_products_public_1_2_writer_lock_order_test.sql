@@ -41,13 +41,6 @@ begin
   end if;
 
   select pg_get_functiondef(
-    'public.ecommerce_admin_upsert_published_product(text,text,text,jsonb)'::regprocedure
-  ) into v_definition;
-  if strpos(v_definition, 'limit 1 for update') = 0 then
-    raise exception 'LEGACY_UPSERT_PORTAL_LOCK_MISSING';
-  end if;
-
-  select pg_get_functiondef(
     'public.ecommerce_admin_upsert_published_product(text,text,text,text,jsonb)'::regprocedure
   ) into v_definition;
   if strpos(v_definition, 'limit 1 for update') = 0 then
@@ -55,17 +48,17 @@ begin
   end if;
 
   select pg_get_functiondef(
-    'public.ecommerce_admin_set_product_published(text,text,text,uuid,boolean)'::regprocedure
-  ) into v_definition;
-  if strpos(v_definition, 'ecommerce_lock_configuration_writer') = 0 then
-    raise exception 'LEGACY_SET_STATUS_LOCK_MISSING';
-  end if;
-
-  select pg_get_functiondef(
     'public.ecommerce_admin_set_product_published(text,text,text,text,uuid,boolean)'::regprocedure
   ) into v_definition;
   if strpos(v_definition, 'ecommerce_lock_configuration_writer') = 0 then
     raise exception 'STAFF_SET_STATUS_LOCK_MISSING';
+  end if;
+
+  if has_function_privilege('anon', 'public.ecommerce_admin_upsert_published_product(text,text,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_upsert_published_product(text,text,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.ecommerce_admin_set_product_published(text,text,text,uuid,boolean)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_set_product_published(text,text,text,uuid,boolean)', 'EXECUTE') then
+    raise exception 'ACTORLESS_PRODUCT_OVERLOAD_PUBLICLY_EXECUTABLE';
   end if;
 end;
 $definitions$;

@@ -15,6 +15,7 @@ declare
   v_key text := 'ECOM-CONTACT-COMPAT-' || v_suffix;
   v_fingerprint text := 'ecom-contact-device-' || v_suffix;
   v_token text := 'ecom-contact-token-' || v_suffix;
+  v_admin_session text;
   v_result jsonb;
   v_before public.ecommerce_portals%rowtype;
   v_after public.ecommerce_portals%rowtype;
@@ -84,6 +85,19 @@ begin
     true,
     'admin'
   );
+
+  v_result := public.admin_enroll_owner_on_device(
+    v_key,
+    v_fingerprint,
+    v_token,
+    'contact-owner-' || v_suffix,
+    'ContactPassword9',
+    'Contact test owner'
+  );
+  if coalesce((v_result->>'success')::boolean, false) is not true then
+    raise exception 'TEST_ADMIN_OWNER_ENROLL_FAILED: %', v_result;
+  end if;
+  v_admin_session := v_result->>'admin_session_token';
 
   -- Recreate the pre-compensation state transactionally so the data migration
   -- itself is exercised without leaving schema or fixture changes behind.
@@ -254,7 +268,7 @@ begin
   -- Missing new keys preserve the existing structured contact data.
   select * into v_before from public.ecommerce_portals where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_before.name, 'description', 'Cliente anterior')
   );
   if coalesce((v_result->>'success')::boolean, false) is false then
@@ -273,7 +287,7 @@ begin
 
   -- A legacy address updates only the legacy projection.
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'address', 'Domicilio legado nuevo')
   );
   select * into v_after from public.ecommerce_portals where id = v_portal;
@@ -290,7 +304,7 @@ begin
   -- Explicit null clears the optional email and nothing else.
   select * into v_before from public.ecommerce_portals where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_before.name, 'contactEmail', null)
   );
   select * into v_after from public.ecommerce_portals where id = v_portal;
@@ -308,7 +322,7 @@ begin
 
   -- A partial structured update retains every omitted structured field.
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'addressStreet', 'Calle Parcial')
   );
   select * into v_after from public.ecommerce_portals where id = v_portal;
@@ -325,7 +339,7 @@ begin
   -- Saving an unrelated field does not mutate contact data.
   select * into v_before from public.ecommerce_portals where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_before.name, 'description', 'Solo descripción')
   );
   select * into v_after from public.ecommerce_portals where id = v_portal;
@@ -347,7 +361,7 @@ begin
   set status = 'draft', whatsapp_phone = null
   where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'status', 'published')
   );
   if v_result->>'code' <> 'ECOMMERCE_WHATSAPP_REQUIRED_TO_PUBLISH' then
@@ -358,7 +372,7 @@ begin
   set whatsapp_phone = '9992223344', address_street = null
   where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'status', 'published')
   );
   if v_result->>'code' <> 'ECOMMERCE_ADDRESS_STREET_REQUIRED_TO_PUBLISH' then
@@ -369,7 +383,7 @@ begin
   set address_street = 'Calle Final', address_neighborhood = null
   where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'status', 'published')
   );
   if v_result->>'code' <> 'ECOMMERCE_ADDRESS_NEIGHBORHOOD_REQUIRED_TO_PUBLISH' then
@@ -380,7 +394,7 @@ begin
   set address_neighborhood = 'Centro', address_municipality = null
   where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'status', 'published')
   );
   if v_result->>'code' <> 'ECOMMERCE_ADDRESS_MUNICIPALITY_REQUIRED_TO_PUBLISH' then
@@ -391,7 +405,7 @@ begin
   set address_municipality = 'Mérida', address_state = null
   where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'status', 'published')
   );
   if v_result->>'code' <> 'ECOMMERCE_ADDRESS_STATE_REQUIRED_TO_PUBLISH' then
@@ -402,14 +416,14 @@ begin
   set address_state = 'Yucatán', address_postal_code = null
   where id = v_portal;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'status', 'published')
   );
   if v_result->>'code' <> 'ECOMMERCE_ADDRESS_POSTAL_CODE_REQUIRED_TO_PUBLISH' then
     raise exception 'TEST_18_PUBLISH_WITHOUT_POSTAL_CODE_ACCEPTED: %', v_result;
   end if;
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object(
       'name', v_after.name,
       'status', 'published',
@@ -421,7 +435,7 @@ begin
   end if;
 
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token, null,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object(
       'name', v_after.name,
       'status', 'published',
@@ -433,10 +447,10 @@ begin
     raise exception 'TEST_20_COMPLETE_PORTAL_NOT_PUBLISHED: %', v_result;
   end if;
 
-  -- The no-session overload still delegates to the authorized primary RPC,
-  -- and an old published client can save without the new keys.
+  -- The actor-aware RPC remains usable for partial updates without sending
+  -- business data through the Realtime invalidation channel.
   v_result := public.ecommerce_admin_upsert_portal(
-    v_key, v_fingerprint, v_token,
+    v_key, v_fingerprint, v_token, v_admin_session,
     jsonb_build_object('name', v_after.name, 'description', 'Overload compatible')
   );
   if coalesce((v_result->>'success')::boolean, false) is false
@@ -450,6 +464,7 @@ begin
     'INVALID-' || v_suffix,
     'invalid-device-' || v_suffix,
     'invalid-token-' || v_suffix,
+    'invalid-session-' || v_suffix,
     jsonb_build_object('name', 'Unauthorized')
   );
   if coalesce((v_result->>'success')::boolean, true) is true then
@@ -461,8 +476,7 @@ begin
   end if;
 
   foreach v_signature in array array[
-    'public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb)'::regprocedure,
-    'public.ecommerce_admin_upsert_portal(text,text,text,jsonb)'::regprocedure
+    'public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb)'::regprocedure
   ]
   loop
     if not (

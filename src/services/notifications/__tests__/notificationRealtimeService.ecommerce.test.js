@@ -135,11 +135,9 @@ describe('notificationRealtimeService ecommerce', () => {
     expect(listener.mock.calls[0][0].detail).toEqual(expect.objectContaining({
       event: 'ecommerce_orders_changed',
       reason: 'order_accepted',
-      metadata: expect.objectContaining({
-        source: 'ecommerce',
-        category: 'ecommerce',
-        status: 'accepted'
-      })
+      notificationId: null,
+      ticketId: null,
+      metadata: {}
     }));
   });
 
@@ -169,6 +167,11 @@ describe('notificationRealtimeService ecommerce', () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(notificationHandler).toHaveBeenCalledTimes(1);
+    expect(notificationHandler.mock.calls[0][0]).toEqual(expect.objectContaining({
+      notificationId: null,
+      ticketId: null,
+      metadata: {}
+    }));
   });
 
   it('does not invalidate orders for unrelated notification events', () => {

@@ -47,7 +47,7 @@ describe('licenseRealtime business profile events', () => {
     await cleanupAllChannels();
   });
 
-  it('forwards BUSINESS_PROFILE_UPDATED with revision metadata', async () => {
+  it('forwards BUSINESS_PROFILE_UPDATED as an invalidation without metadata', async () => {
     createChannel();
     const onLicenseChanged = vi.fn();
 
@@ -73,10 +73,7 @@ describe('licenseRealtime business profile events', () => {
       source: 'realtime_event',
       type: 'BUSINESS_PROFILE_UPDATED',
       triggeredAt: '2026-08-06T06:15:00Z',
-      metadata: {
-        profile_revision: 1785996900000,
-        business_type: ['hardware']
-      }
+      metadata: {}
     });
   });
 });

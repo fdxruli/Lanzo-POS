@@ -92,16 +92,26 @@ begin
   if v_result->>'code' <> 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_CROSS_TOKEN_ACCEPTED'; end if;
   v_result := public.ecommerce_admin_get_portal(v_admin_key, v_admin_fingerprint, v_admin_device_token, v_admin_session);
   if v_result->>'code' = 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_PUBLIC_ACTOR_NOT_FORWARDED: %', v_result; end if;
-  v_result := public.ecommerce_admin_get_portal(v_admin_key, v_admin_fingerprint, v_admin_device_token);
-  if v_result->>'code' <> 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_LEGACY_OPEN: %', v_result; end if;
   v_result := public.ecommerce_admin_list_published_products(v_admin_key, v_admin_fingerprint, v_admin_device_token, v_admin_session);
   if v_result->>'code' = 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_LIST_ACTOR_NOT_FORWARDED: %', v_result; end if;
-  v_result := public.ecommerce_admin_list_published_products(v_admin_key, v_admin_fingerprint, v_admin_device_token);
-  if v_result->>'code' <> 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_LIST_LEGACY_OPEN: %', v_result; end if;
-  v_result := public.ecommerce_admin_set_product_published(v_admin_key, v_admin_fingerprint, v_admin_device_token, extensions.gen_random_uuid(), true);
-  if v_result->>'code' <> 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_SET_LEGACY_OPEN: %', v_result; end if;
-  v_result := public.ecommerce_admin_upsert_published_product(v_admin_key, v_admin_fingerprint, v_admin_device_token, '{}'::jsonb);
-  if v_result->>'code' <> 'ECOMMERCE_ADMIN_SESSION_REQUIRED' then raise exception 'CUTOVER_ECOM_UPSERT_LEGACY_OPEN: %', v_result; end if;
+  if has_function_privilege('anon', 'public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.admin_list_staff_users(text,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.admin_list_staff_users(text,text,text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.ecommerce_admin_get_portal(text,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_get_portal(text,text,text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.ecommerce_admin_list_published_products(text,text,text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_list_published_products(text,text,text)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.ecommerce_admin_set_product_published(text,text,text,uuid,boolean)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_set_product_published(text,text,text,uuid,boolean)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.ecommerce_admin_upsert_portal(text,text,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_upsert_portal(text,text,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.ecommerce_admin_upsert_published_product(text,text,text,jsonb)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.ecommerce_admin_upsert_published_product(text,text,text,jsonb)', 'EXECUTE') then
+    raise exception 'CUTOVER_ACTORLESS_OVERLOAD_PUBLICLY_EXECUTABLE';
+  end if;
 
   update public.license_admin_sessions set revoked_at = now() where license_id = v_admin_license and revoked_at is null;
   v_result := private.ecommerce_admin_authorize_v2(v_admin_key, v_admin_fingerprint, v_admin_device_token, v_admin_session, 'cutover_admin');

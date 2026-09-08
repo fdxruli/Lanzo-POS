@@ -1,0 +1,66 @@
+name: Security gates
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  security-gates:
+    name: Tenant / actor / Realtime / license gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Static security contracts
+        run: npm run test:security-gates
+
+      - name: Focused security regression tests
+        run: >-
+          npx vitest run
+          src/services/offlineEntitlement.test.js
+          src/services/licenseRealtime.profileSync.test.js
+          src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js
+          src/services/tenant/__tests__/localTenantGuard.test.js
+          src/store/slices/license/licenseSessionTransitions.test.js
+          src/services/cash/cashRepository.adminCloseReview.test.js
+          --pool=forks
+          --maxWorkers=1
+
+      - name: Lint security touchpoints
+        run: >-
+          npx eslint
+          src/services/offlineEntitlement.js
+          src/services/licenseStorage.js
+          src/services/licenseRealtime.js
+          src/services/licenseRealtime.profileSync.test.js
+          src/services/posRealtime.js
+          src/services/notifications/notificationRealtimeService.js
+          src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js
+          src/store/slices/createNotificationSlice.js
+
+      - name: Browser build
+        run: npm run build
+
+      - name: Store build
+        run: npm run build:store
+
+      - name: Verify diff cleanliness
+        run: git diff --check

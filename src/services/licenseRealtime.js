@@ -138,6 +138,7 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
     .on('broadcast', { event: 'license_event' }, async (payload) => {
       const event = payload?.payload || payload;
       const eventType = event?.event_type;
+      const isInvalidation = event?.kind === 'invalidate';
 
       if (!eventType) {
         Logger.warn('[Realtime] Broadcast sin tipo de evento. Forzando revalidacion.');
@@ -152,18 +153,28 @@ export const startLicenseListener = (licenseKey, deviceFingerprint, realtimeTopi
           source: 'realtime_event',
           type: eventType,
           triggeredAt: event.triggered_at || null,
-          metadata: event.metadata || {}
+          // Realtime is an invalidation hint, never an authority or a data
+          // transport. The server-side actor-authorized read supplies the
+          // authoritative license state after this callback.
+          metadata: {}
         });
         return;
       }
 
       if (DEVICE_EVENTS.has(eventType)) {
-        const targetFingerprint =
+        // New payloads are routed to the target device by the server and do
+        // not disclose the target fingerprint. Keep the legacy client-side
+        // check only during the staged rollout, before the invalidation
+        // schema is present on the hosted project.
+        const legacyTargetFingerprint =
           event.metadata?.fingerprint ||
           event.metadata?.target_fingerprint ||
           event.metadata?.device_fingerprint;
+        const isTargetedToThisDevice = isInvalidation
+          || !legacyTargetFingerprint
+          || legacyTargetFingerprint === deviceFingerprint;
 
-        if (!targetFingerprint || targetFingerprint === deviceFingerprint) {
+        if (isTargetedToThisDevice) {
           Logger.warn('[Realtime] Este dispositivo fue marcado para revalidacion de seguridad.');
           callbacks.onDeviceChanged?.({
             status: eventType === 'DEVICE_BANNED' ? 'banned' : 'deleted',

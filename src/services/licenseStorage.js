@@ -1,62 +1,30 @@
 import { isLocalStorageEnabled, safeLocalStorageSet } from './utils';
 import Logger from './Logger';
+import {
+  getConfiguredOfflineEntitlementPublicKey,
+  verifyOfflineEntitlement,
+  OFFLINE_ENTITLEMENT_TRUST
+} from './offlineEntitlement';
 
-const _ui_render_config_v2 = import.meta.env.VITE_LICENSE_SALT;
+const STORAGE_SCHEMA_VERSION = 2;
 
-export const stableStringify = (obj) => {
-  if (typeof obj !== 'object' || obj === null) {
-    return JSON.stringify(obj);
-  }
-
-  if (Array.isArray(obj)) {
-    return JSON.stringify(
-      obj.map((item) =>
-        typeof item === 'object' && item !== null
-          ? JSON.parse(stableStringify(item))
-          : item
-      )
-    );
-  }
-
-  const sortedKeys = Object.keys(obj).sort();
-  const sortedObj = sortedKeys.reduce((result, key) => {
-    const value = obj[key];
-    if (typeof value === 'object' && value !== null) {
-      result[key] = JSON.parse(stableStringify(value));
-    } else {
-      result[key] = value;
-    }
-    return result;
-  }, {});
-
-  return JSON.stringify(sortedObj);
-};
-
-export const generateSignature = (data) => {
-  const stringData = stableStringify(data);
-  let hash = 0;
-  if (stringData.length === 0) return hash;
-  const mixedString = stringData + _ui_render_config_v2;
-  for (let i = 0; i < mixedString.length; i++) {
-    const char = mixedString.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash &= hash;
-  }
-  return hash.toString(16);
-};
+const resolveOfflineEntitlement = (packageData) => (
+  packageData?.offline_entitlement || packageData?.data?.offline_entitlement || null
+);
 
 export const saveLicenseToStorage = async (licenseData) => {
   if (!isLocalStorageEnabled()) return;
   const dataToStore = { ...licenseData };
 
-  if (!dataToStore.localExpiry) {
-    dataToStore.localExpiry = new Date(
-      Date.now() + 30 * 24 * 60 * 60 * 1000
-    ).toISOString();
-  }
-
-  const signature = generateSignature(dataToStore);
-  const packageToStore = { data: dataToStore, signature };
+  // A browser cache is not an authority. Only a server-issued Ed25519
+  // entitlement can make the cached cloud state verifiable offline. When the
+  // issuer is not deployed yet, persist an explicit transitional marker.
+  const packageToStore = {
+    storage_schema_version: STORAGE_SCHEMA_VERSION,
+    data: dataToStore,
+    offline_entitlement: dataToStore.offline_entitlement || null,
+    offline_trust: OFFLINE_ENTITLEMENT_TRUST.UNTRUSTED_CACHE
+  };
   const saved = safeLocalStorageSet('lanzo_license', JSON.stringify(packageToStore));
 
   if (!saved) {
@@ -71,18 +39,41 @@ export const getLicenseFromStorage = async () => {
 
   try {
     const parsedPackage = JSON.parse(storedString);
-    if (!parsedPackage.data || !parsedPackage.signature) {
+    if (!parsedPackage.data) {
       return null;
     }
 
-    const expectedSignature = generateSignature(parsedPackage.data);
-    if (parsedPackage.signature !== expectedSignature) {
-      Logger.error('ALERTA DE SEGURIDAD: Firma de licencia manipulada o corrupta.');
-      clearLicenseFromStorage();
-      return null;
+    if (parsedPackage.storage_schema_version !== STORAGE_SCHEMA_VERSION) {
+      // Legacy hashes were never cryptographic signatures. Preserve the
+      // Local/Free bootstrap path, but make the lack of authenticity explicit
+      // so no future cloud authorization can treat it as proof.
+      return {
+        ...parsedPackage.data,
+        offline_trust: OFFLINE_ENTITLEMENT_TRUST.LEGACY_UNTRUSTED
+      };
     }
 
-    return parsedPackage.data;
+    const entitlement = resolveOfflineEntitlement(parsedPackage);
+    if (entitlement) {
+      const verified = await verifyOfflineEntitlement(
+        entitlement,
+        getConfiguredOfflineEntitlementPublicKey()
+      );
+      if (!verified) {
+        Logger.error('La acreditación offline firmada no es válida.');
+        clearLicenseFromStorage();
+        return null;
+      }
+      return {
+        ...parsedPackage.data,
+        offline_trust: OFFLINE_ENTITLEMENT_TRUST.SIGNED
+      };
+    }
+
+    return {
+      ...parsedPackage.data,
+      offline_trust: OFFLINE_ENTITLEMENT_TRUST.UNTRUSTED_CACHE
+    };
   } catch (e) {
     Logger.error('Error leyendo licencia local:', e);
     return null;

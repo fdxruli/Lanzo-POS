@@ -76,17 +76,19 @@ export const startPosRealtimeListener = ({ posTopic, licenseDetails, callbacks =
     })
     .on('broadcast', { event: 'pos_event' }, (payload) => {
       const event = payload?.payload || payload || {};
-      const changeSeq = event?.change_seq ?? event?.changeSeq ?? null;
-      const entity = event?.entity_type ?? event?.entityType ?? event?.entity ?? null;
-      const eventType = event?.event_type ?? event?.eventType ?? event?.operation ?? null;
 
-      Logger.log('[PosRealtime] Aviso POS recibido. Se debe hacer pull incremental.', changeSeq || 'sin_seq');
+      Logger.log('[PosRealtime] Invalidación POS recibida. Se debe hacer pull incremental.');
       callbacks.onPosChangeAvailable?.({
         source: 'realtime',
-        eventType,
-        entity,
-        changeSeq,
-        event
+        eventType: null,
+        entity: null,
+        changeSeq: null,
+        event: {
+          schemaVersion: event?.schema_version || 1,
+          kind: event?.kind || 'invalidate',
+          scope: event?.scope || 'pos',
+          createdAt: event?.created_at || null
+        }
       });
     })
     .subscribe((status, error) => {

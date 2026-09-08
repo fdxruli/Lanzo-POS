@@ -708,8 +708,10 @@ export const createNotificationSlice = (set, get) => ({
         await get().loadSupportTickets?.({ force: true, background: true });
       }
 
-      if (eventTicketId && activeTicketId === eventTicketId) {
-        await get().openSupportTicket?.(eventTicketId, { force: true, background: true });
+      if (shouldRefreshSupport && activeTicketId) {
+        // The Realtime payload intentionally carries no ticket identifier.
+        // Refresh the currently open ticket through its actor-authorized RPC.
+        await get().openSupportTicket?.(activeTicketId, { force: true, background: true });
       }
     }, 750);
   },
