@@ -120,7 +120,7 @@ async function readJson(request: Request): Promise<EntitlementRequest | null> {
 
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') {
-    return new Response('ok', {
+    return new Response(null, {
       status: 204,
       headers: { ...CORS_HEADERS, 'Access-Control-Allow-Origin': allowedOrigin(request) }
     });
