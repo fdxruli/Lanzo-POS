@@ -15,7 +15,12 @@ begin
     'public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)'::regprocedure,
     'public.pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)'::regprocedure,
     'public.pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)'::regprocedure,
-    'public.pos_get_cash_station_state(text,text,text,text)'::regprocedure
+    'public.pos_get_cash_station_state(text,text,text,text)'::regprocedure,
+    'public.ecommerce_admin_get_portal(text,text,text,text)'::regprocedure,
+    'public.ecommerce_admin_list_published_products(text,text,text,text)'::regprocedure,
+    'public.ecommerce_admin_set_product_published(text,text,text,text,uuid,boolean)'::regprocedure,
+    'public.ecommerce_admin_upsert_portal(text,text,text,text,jsonb)'::regprocedure,
+    'public.ecommerce_admin_upsert_published_product(text,text,text,text,jsonb)'::regprocedure
   ]
   loop
     if has_function_privilege('public', v_signature, 'EXECUTE')

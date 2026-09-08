@@ -74,7 +74,12 @@ test('hardening migration closes the sensitive privilege and overload surface', 
     'public.admin_update_staff_user(text, text, text, uuid, text, jsonb, boolean, text, text, text)',
     'public.pos_admin_adopt_legacy_cash_session(text, text, text, text, text, integer, text)',
     'public.pos_admin_close_cash_session(text, text, text, text, text, text, numeric, numeric, text, text, integer, text)',
-    'public.pos_get_cash_station_state(text, text, text, text)'
+    'public.pos_get_cash_station_state(text, text, text, text)',
+    'public.ecommerce_admin_get_portal(text, text, text, text)',
+    'public.ecommerce_admin_list_published_products(text, text, text, text)',
+    'public.ecommerce_admin_set_product_published(text, text, text, text, uuid, boolean)',
+    'public.ecommerce_admin_upsert_portal(text, text, text, text, jsonb)',
+    'public.ecommerce_admin_upsert_published_product(text, text, text, text, jsonb)'
   ];
 
   for (const signature of sensitiveSignatures) {
