@@ -1,7 +1,7 @@
 -- SECURITY.TENANT.ACTOR.HARDENING.R1
 --
 -- This migration is intentionally staged on an isolated branch. It is not
--- applied to the hosted project by this audit.
+-- applied to the production project by this audit.
 --
 -- Goals:
 --   1. Remove PUBLIC inheritance from sensitive actor-aware RPCs while
@@ -94,7 +94,7 @@ grant execute on function public.ecommerce_admin_upsert_published_product(
   text, text, text, text, jsonb
 ) to anon, authenticated, service_role;
 
--- 2) Legacy actorless overloads. They remain catalogued for reversible
+-- 3) Legacy actorless overloads. They remain catalogued for reversible
 -- compatibility, but client roles cannot execute them. Trusted server-side
 -- maintenance may retain access while consumers complete the cutover.
 revoke all on function public.admin_create_staff_user(
@@ -147,13 +147,13 @@ grant execute on function public.ecommerce_admin_upsert_published_product(
   text, text, text, jsonb
 ) to service_role;
 
--- 3) Private operational tables have no direct client grants. RLS provides a
+-- 4) Private operational tables have no direct client grants. RLS provides a
 -- second boundary if a future grant or SECURITY INVOKER helper is introduced.
 alter table private.ecommerce_catalog_sync_requests enable row level security;
 alter table private.ecommerce_public_rate_limit_secret enable row level security;
 alter table private.pos_notification_operational_incidents enable row level security;
 
--- 4) Realtime is an invalidation bus only. Routing remains per-device and the
+-- 5) Realtime is an invalidation bus only. Routing remains per-device and the
 -- existing private-channel policies continue to decide who can join. Payloads
 -- deliberately omit business IDs, metadata, fingerprints, and actor IDs.
 create or replace function private.broadcast_license_event()
