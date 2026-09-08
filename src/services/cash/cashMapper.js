@@ -22,6 +22,10 @@ const asIdentifier = (value) => {
 
 const firstIdentifier = (...values) => values.map(asIdentifier).find(Boolean) || null;
 
+const firstSafeLabel = (...values) => values.find((value) => (
+  typeof value === 'string' && value.trim().length > 0
+))?.trim() || null;
+
 const normalizeStatus = (status) => {
   if (status === 'open') return 'abierta';
   if (status === 'closed') return 'cerrada';
@@ -50,6 +54,28 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
       existing?.local_station_key,
       isLocalStationKey(existingCashStationId) ? existingCashStationId : null
     );
+  const stationName = firstSafeLabel(
+    session.station_name,
+    session.stationName,
+    existing?.station_name,
+    existing?.stationName
+  );
+  const deviceName = firstSafeLabel(
+    session.device_name,
+    session.deviceName,
+    existing?.device_name,
+    existing?.deviceName
+  );
+  const openedByDeviceName = firstSafeLabel(
+    session.opened_by_device_name,
+    existing?.opened_by_device_name,
+    existing?.openedByDeviceName
+  );
+  const openingDeviceName = firstSafeLabel(
+    session.opening_device_name,
+    existing?.opening_device_name,
+    existing?.openingDeviceName
+  );
   const local = {
     ...(existing || {}),
     id: session.id,
@@ -80,6 +106,14 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
       : asStringAmount(session.cash_difference),
     responsable_apertura: session.responsible_name || existing?.responsable_apertura || 'Responsable',
     responsibleName: session.responsible_name || existing?.responsibleName || 'Responsable',
+    station_name: stationName,
+    stationName,
+    device_name: deviceName,
+    deviceName,
+    opened_by_device_name: openedByDeviceName,
+    openedByDeviceName,
+    opening_device_name: openingDeviceName,
+    openingDeviceName,
     comentarios_auditoria: session.audit_comments || null,
     detalle_cierre: session.close_detail || {},
     closingMode: session.closing_mode || null,

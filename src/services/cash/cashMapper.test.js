@@ -4,6 +4,7 @@ import {
   cloudCashSessionToLocal,
   localOpeningToCloudPayload
 } from './cashMapper.js';
+import { getCashSessionStationLabel } from './businessCashSummary.js';
 
 describe('cashMapper cloud opening contract', () => {
   it('does not send local auto-opening flags to Supabase', () => {
@@ -49,6 +50,20 @@ describe('cashMapper cloud opening contract', () => {
     expect(local.politica_apertura).toBeNull();
     expect(local.es_auto_apertura).toBe(false);
     expect(local.apertura_origen).toBe('manual');
+  });
+
+  it('preserves server-provided station labels for Caja presentation', () => {
+    const local = cloudCashSessionToLocal({
+      id: 'cash-labeled',
+      status: 'open',
+      opened_by_device_name: 'Caja mostrador'
+    });
+
+    expect(local).toMatchObject({
+      opened_by_device_name: 'Caja mostrador',
+      openedByDeviceName: 'Caja mostrador'
+    });
+    expect(getCashSessionStationLabel(local)).toBe('Caja mostrador');
   });
 
   it('projects the server station and separates a legacy local key when cloud data omits it', () => {
