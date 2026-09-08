@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBusinessCashSummary,
   canShowBusinessCashSummary,
-  getCashSessionAge
+  getCashSessionAge,
+  getCashSessionStationLabel
 } from './businessCashSummary';
 
 const session = (id, expected, overrides = {}) => ({
@@ -56,6 +57,29 @@ describe('buildBusinessCashSummary', () => {
     ]);
     expect(summary).toMatchObject({ openCount: 1, expectedCashTotal: '0' });
     expect(Number.isNaN(Number(summary.expectedCashTotal))).toBe(false);
+  });
+});
+
+describe('getCashSessionStationLabel', () => {
+  it('uses a safe server-provided name and never falls back to technical identity', () => {
+    expect(getCashSessionStationLabel({
+      device_name: 'Caja mostrador',
+      cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
+      actor_key: 'admin:secret'
+    })).toBe('Caja mostrador');
+
+    expect(getCashSessionStationLabel({
+      cash_station_id: 'cash_station_device_550e8400-e29b-41d4-a716-446655440000',
+      deviceFingerprint: 'fp-secret',
+      actorKey: 'admin:secret'
+    })).toBe('Estación financiera sin nombre');
+  });
+
+  it('normalizes opening-device aliases, including metadata, into one visible label', () => {
+    expect(getCashSessionStationLabel({ opened_by_device_name: 'Caja principal' })).toBe('Caja principal');
+    expect(getCashSessionStationLabel({ deviceName: 'Terminal secundaria' })).toBe('Terminal secundaria');
+    expect(getCashSessionStationLabel({ openingDeviceName: 'Caja de respaldo' })).toBe('Caja de respaldo');
+    expect(getCashSessionStationLabel({ metadata: { opening_device_name: 'Caja metadata' } })).toBe('Caja metadata');
   });
 });
 

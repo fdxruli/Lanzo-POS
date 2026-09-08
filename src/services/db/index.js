@@ -162,12 +162,13 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expect
                 }
 
                 let cashMutationContext = {};
-                if (caja.actorKey || caja.cashStationId) {
+                if (caja.actorKey || caja.cashStationId || caja.localStationKey) {
                     const actor = getCashActorFromState();
                     const station = await getCashStationIdentity();
                     cashMutationContext = {
                         actorKey: actor.actorKey,
-                        cashStationId: station.cashStationId,
+                        cashStationId: station.cashStationId || null,
+                        localStationKey: station.localStationKey,
                         actorContext: captureCashActorContext()
                     };
                     await assertCashSessionMutationContext(caja, cashMutationContext);
@@ -202,6 +203,7 @@ export const executeBatchWithPaymentSafe = async (batchData, paymentInfo, expect
                     actorKey: cashMutationContext.actorKey || caja.actorKey || null,
                     originActorKey: cashMutationContext.actorKey || caja.originActorKey || caja.actorKey || null,
                     cashStationId: cashMutationContext.cashStationId || caja.cashStationId || null,
+                    localStationKey: cashMutationContext.localStationKey || caja.localStationKey || null,
                     actorGeneration: cashMutationContext.actorContext?.generation ?? null
                 };
                 await db.table(STORES.MOVIMIENTOS_CAJA).put(movimiento);

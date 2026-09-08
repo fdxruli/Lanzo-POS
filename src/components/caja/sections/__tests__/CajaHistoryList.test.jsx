@@ -82,16 +82,20 @@ describe('CajaHistoryList', () => {
     expect(screen.getByText('Descuadre')).toBeVisible();
     expect(screen.getByText('Dif: $-2.00')).toHaveClass('history-difference', 'negative');
   });
-  it('keeps technical history traceability behind Detalles', () => {
+  it('shows a safe station label without exposing technical identifiers', () => {
     render(<CajaHistoryList historial={[{
       ...baseSession,
+      opening_device_name: 'Caja mostrador',
       staffUserId: 'staff-123456789',
       actorKey: 'staff:traceable'
     }]} />);
 
-    expect(screen.getByText('Actor: staff:traceable')).not.toBeVisible();
+    expect(screen.getByText('Estación: Caja mostrador')).toBeVisible();
+    expect(screen.queryByText('Actor: staff:traceable')).not.toBeInTheDocument();
+    expect(screen.queryByText('Staff ID: staff-12')).not.toBeInTheDocument();
+    expect(screen.getByText('Detalles')).toBeVisible();
     fireEvent.click(screen.getByText('Detalles'));
-    expect(screen.getByText('Actor: staff:traceable')).toBeVisible();
-    expect(screen.getByText('Staff ID: staff-12')).toBeVisible();
+    expect(screen.queryByText('staff-123456789')).not.toBeInTheDocument();
+    expect(screen.queryByText('staff:traceable')).not.toBeInTheDocument();
   });
 });

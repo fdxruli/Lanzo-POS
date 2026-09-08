@@ -7,6 +7,7 @@ import {
   UsersRound
 } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
+import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
 
 const formatMoney = (value) => `$${Money.toNumber(value || 0).toFixed(2)}`;
 
@@ -30,18 +31,25 @@ const getStaffLabel = (session = {}) => (
   session.staff_display_name ||
   session.staffDisplayName ||
   session.metadata?.staff_display_name ||
-  session.staffUserId ||
-  session.staff_user_id ||
-  null
+  session.metadata?.staffDisplayName ||
+  getResponsibleName(session)
 );
 
 const getStaffUserId = (session = {}) => session.staffUserId || session.staff_user_id || null;
 
 const getDeviceLabel = (session = {}) => (
-  session.deviceId ||
-  session.device_id ||
-  session.metadata?.device_id ||
-  session.actorKey ||
+  session.device_name ||
+  session.deviceName ||
+  session.openedByDeviceName ||
+  session.opened_by_device_name ||
+  session.openingDeviceName ||
+  session.opening_device_name ||
+  session.metadata?.device_name ||
+  session.metadata?.deviceName ||
+  session.metadata?.openedByDeviceName ||
+  session.metadata?.opened_by_device_name ||
+  session.metadata?.openingDeviceName ||
+  session.metadata?.opening_device_name ||
   null
 );
 
@@ -275,7 +283,8 @@ const CajaStaffAuditPanel = ({
               <article key={session.id} className="staff-audit-item">
                 <div className="staff-audit-item-header">
                   <div>
-                    <strong>{getResponsibleName(session)}</strong>
+                    <strong>{getCashSessionStationLabel(session)}</strong>
+                    <span className="staff-audit-meta">Responsable: {getResponsibleName(session)}</span>
                   </div>
                   <span className={`status-badge ${statusTone}`}>
                     {statusLabel}

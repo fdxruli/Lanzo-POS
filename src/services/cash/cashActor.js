@@ -55,6 +55,8 @@ export const getCashMode = () => {
     cloudEnabled,
     online,
     readOnly: cloudEnabled && !online,
+    stateKnown: !cloudEnabled,
+    networkUnavailable: cloudEnabled && !online,
     actor
   };
 };

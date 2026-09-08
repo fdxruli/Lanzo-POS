@@ -1,3 +1,5 @@
+import { isCanonicalCashStation, isLocalStationKey } from './cashStation';
+
 export const CASH_SYNC_STATUS = Object.freeze({
   LOCAL: 'local',
   SYNCED: 'synced',
@@ -20,6 +22,10 @@ const asIdentifier = (value) => {
 
 const firstIdentifier = (...values) => values.map(asIdentifier).find(Boolean) || null;
 
+const firstSafeLabel = (...values) => values.find((value) => (
+  typeof value === 'string' && value.trim().length > 0
+))?.trim() || null;
+
 const normalizeStatus = (status) => {
   if (status === 'open') return 'abierta';
   if (status === 'closed') return 'cerrada';
@@ -37,8 +43,49 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     session.metadata?.cash_station_id,
     session.metadata?.cashStationId
   );
-  const cashStationId = serverCashStationId
-    || firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
+  const existingCashStationId = firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
+  const cashStationId = isCanonicalCashStation(serverCashStationId)
+    ? serverCashStationId
+    : (isCanonicalCashStation(existingCashStationId) ? existingCashStationId : null);
+  const localStationKey = cashStationId
+    ? null
+    : firstIdentifier(
+      existing?.localStationKey,
+      existing?.local_station_key,
+      isLocalStationKey(existingCashStationId) ? existingCashStationId : null
+    );
+  const stationName = firstSafeLabel(
+    session.station_name,
+    session.stationName,
+    session.metadata?.station_name,
+    session.metadata?.stationName,
+    existing?.station_name,
+    existing?.stationName
+  );
+  const deviceName = firstSafeLabel(
+    session.device_name,
+    session.deviceName,
+    session.metadata?.device_name,
+    session.metadata?.deviceName,
+    existing?.device_name,
+    existing?.deviceName
+  );
+  const openedByDeviceName = firstSafeLabel(
+    session.opened_by_device_name,
+    session.openedByDeviceName,
+    session.metadata?.opened_by_device_name,
+    session.metadata?.openedByDeviceName,
+    existing?.opened_by_device_name,
+    existing?.openedByDeviceName
+  );
+  const openingDeviceName = firstSafeLabel(
+    session.opening_device_name,
+    session.openingDeviceName,
+    session.metadata?.opening_device_name,
+    session.metadata?.openingDeviceName,
+    existing?.opening_device_name,
+    existing?.openingDeviceName
+  );
   const local = {
     ...(existing || {}),
     id: session.id,
@@ -69,6 +116,14 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
       : asStringAmount(session.cash_difference),
     responsable_apertura: session.responsible_name || existing?.responsable_apertura || 'Responsable',
     responsibleName: session.responsible_name || existing?.responsibleName || 'Responsable',
+    station_name: stationName,
+    stationName,
+    device_name: deviceName,
+    deviceName,
+    opened_by_device_name: openedByDeviceName,
+    openedByDeviceName,
+    opening_device_name: openingDeviceName,
+    openingDeviceName,
     comentarios_auditoria: session.audit_comments || null,
     detalle_cierre: session.close_detail || {},
     closingMode: session.closing_mode || null,
@@ -92,7 +147,8 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
     deviceId: session.device_id || null,
     deviceRole: session.device_role || null,
     cashStationId,
-    cashIdentityState: serverCashStationId
+    localStationKey,
+    cashIdentityState: cashStationId
       ? 'canonical'
       : session.cash_identity_state || session.cashIdentityState || existing?.cashIdentityState || 'legacy_unresolved',
     scope: session.scope || 'actor',
@@ -108,14 +164,23 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
 
   const syncedAt = nowIso();
   const metadata = movement.metadata || existing?.metadata || {};
-  const cashStationId = firstIdentifier(
+  const existingCashStationId = firstIdentifier(existing?.cashStationId, existing?.cash_station_id);
+  const serverCashStationId = firstIdentifier(
     movement.cash_station_id,
     movement.cashStationId,
     metadata.cash_station_id,
-    metadata.cashStationId,
-    existing?.cashStationId,
-    existing?.cash_station_id
+    metadata.cashStationId
   );
+  const cashStationId = isCanonicalCashStation(serverCashStationId)
+    ? serverCashStationId
+    : (isCanonicalCashStation(existingCashStationId) ? existingCashStationId : null);
+  const localStationKey = cashStationId
+    ? null
+    : firstIdentifier(
+      existing?.localStationKey,
+      existing?.local_station_key,
+      isLocalStationKey(existingCashStationId) ? existingCashStationId : null
+    );
   const referenceType = movement.reference_type
     || movement.referenceType
     || existing?.referenceType
@@ -164,6 +229,7 @@ export const cloudCashMovementToLocal = (movement = {}, existing = null) => {
     staffUserId: movement.staff_user_id || null,
     deviceId: movement.device_id || null,
     cashStationId,
+    localStationKey,
     idempotencyKey: movement.idempotency_key || movement.idempotencyKey || existing?.idempotencyKey || null,
     cloudCash: true,
     deletedAt: movement.deleted_at || null

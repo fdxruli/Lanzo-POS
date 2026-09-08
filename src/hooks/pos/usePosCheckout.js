@@ -1194,7 +1194,11 @@ export function usePosCheckout({
                 paymentData: {
                     ...paymentData,
                     cashSessionId: cashSessionForSale?.id || null,
-                    cashStationId: cashSessionForSale?.cashStationId || cashSessionForSale?.cash_station_id || null
+                    cashStationId: cashSessionForSale?.cashStationId || cashSessionForSale?.cash_station_id || null,
+                    localStationKey: cashSessionForSale?.localStationKey
+                      || cashSessionForSale?.local_station_key
+                      || paymentData.localStationKey
+                      || null
                 },
                 total: snapshot.total,
                 allProducts: posSearch.menuVisual,

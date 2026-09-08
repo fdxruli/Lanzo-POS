@@ -3,7 +3,12 @@ import { generateID } from '../utils';
 import { registrarMovimientoCaja } from '../cajaService';
 import { loadCashSessionProjection, loadCashSessionTotals } from '../cajaProjection';
 import { Money } from '../../utils/moneyMath';
-import { areCashStationsEquivalent, getCashStationIdentity } from './cashStation';
+import {
+  areCashStationsEquivalent,
+  getCashStationIdentity,
+  isCanonicalCashStation,
+  isLocalStationKey
+} from './cashStation';
 import {
   CASH_FINANCIAL_CODES,
   CASH_FINANCIAL_STATUS,
@@ -18,22 +23,82 @@ import {
 
 const nowIso = () => new Date().toISOString();
 
+const localCashProjectionDiagnostics = {
+  invalidCashSessionRecords: 0,
+  invalidCashMovementRecords: 0
+};
+
+const isRecord = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
+const hasCloudValue = (value) => (
+  value !== null
+  && value !== undefined
+  && String(value).trim() !== ''
+);
+
+const getCloudRecordActorKey = (value) => (
+  value?.actor_key
+  || value?.actorKey
+  || value?.staff_user_id
+  || value?.staffUserId
+  || null
+);
+
+const getCloudRecordStationId = (value) => [
+  value?.cash_station_id,
+  value?.cashStationId,
+  value?.metadata?.cash_station_id,
+  value?.metadata?.cashStationId,
+  value?.cash_station?.id,
+  value?.cashStation?.id
+].find((candidate) => isCanonicalCashStation(candidate)) || null;
+
+const isCompleteCloudCashSession = (value) => Boolean(
+  isRecord(value)
+  && hasCloudValue(value.id)
+  && hasCloudValue(value.status || value.estado)
+  && hasCloudValue(getCloudRecordActorKey(value))
+  && Boolean(getCloudRecordStationId(value))
+);
+
+const isCompleteCloudCashMovement = (value) => Boolean(
+  isRecord(value)
+  && hasCloudValue(value.id)
+  && hasCloudValue(value.cash_session_id || value.cashSessionId)
+  && hasCloudValue(value.type || value.tipo)
+  && (value.amount !== undefined && value.amount !== null
+    || value.monto !== undefined && value.monto !== null)
+  && hasCloudValue(getCloudRecordActorKey(value))
+  && Boolean(getCloudRecordStationId(value))
+);
+const recordLocalRows = (rows, kind) => {
+  for (const row of rows || []) {
+    if (!isRecord(row)) {
+      if (kind === 'session') localCashProjectionDiagnostics.invalidCashSessionRecords += 1;
+      if (kind === 'movement') localCashProjectionDiagnostics.invalidCashMovementRecords += 1;
+    }
+  }
+  return rows || [];
+};
+
+export const getCashLocalProjectionDiagnostics = () => ({ ...localCashProjectionDiagnostics });
+
 const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
 };
 
-const sortByOpenedDesc = (items = []) => [...items].sort(
+const sortByOpenedDesc = (items = []) => items.filter(Boolean).sort(
   (a, b) => Date.parse(b.fecha_apertura || b.updatedAt || 0) - Date.parse(a.fecha_apertura || a.updatedAt || 0)
 );
 
 const getAllCashSessions = async () => {
   await ensureOpen();
-  return db.table(STORES.CAJAS).toArray();
+  return recordLocalRows(await db.table(STORES.CAJAS).toArray(), 'session');
 };
 
 const getAllCashMovements = async () => {
   await ensureOpen();
-  return db.table(STORES.MOVIMIENTOS_CAJA).toArray();
+  return recordLocalRows(await db.table(STORES.MOVIMIENTOS_CAJA).toArray(), 'movement');
 };
 
 const matchesActor = (record, { actorKey = null, staffUserId = null } = {}) => {
@@ -41,7 +106,7 @@ const matchesActor = (record, { actorKey = null, staffUserId = null } = {}) => {
   if (staffUserId && record?.staffUserId === staffUserId) return true;
   // `isAdmin` is an audit scope hint, never an ownership grant.  A normal
   // current-session read with no actor can only return legacy records.
-  return !actorKey && !staffUserId && !record?.actorKey && !getSessionStationId(record);
+  return !actorKey && !staffUserId && !record?.actorKey && !hasSessionStationIdentity(record);
 };
 
 const createCashError = (code, message = code, details = {}) => (
@@ -49,21 +114,51 @@ const createCashError = (code, message = code, details = {}) => (
 );
 
 const getSessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
-const getSessionStationId = (session) => session?.cashStationId
-  || session?.cash_station_id
-  || session?.metadata?.cashStationId
-  || session?.metadata?.cash_station_id
-  || null;
-const matchesStation = (session, cashStationId) => areCashStationsEquivalent(
-  getSessionStationId(session),
-  cashStationId
+const getSessionStationId = (session) => [
+  session?.cashStationId,
+  session?.cash_station_id,
+  session?.metadata?.cashStationId,
+  session?.metadata?.cash_station_id
+].find((value) => isCanonicalCashStation(value)) || null;
+const getSessionLocalStationKey = (session) => [
+  session?.localStationKey,
+  session?.local_station_key,
+  session?.metadata?.localStationKey,
+  session?.metadata?.local_station_key,
+  session?.cashStationId,
+  session?.cash_station_id,
+  session?.metadata?.cashStationId,
+  session?.metadata?.cash_station_id
+].find((value) => isLocalStationKey(value)) || null;
+const hasSessionStationIdentity = (session) => Boolean(
+  getSessionStationId(session) || getSessionLocalStationKey(session)
 );
+
+const resolveStationScope = ({ cashStationId = null, localStationKey = null } = {}) => ({
+  cashStationId: isCanonicalCashStation(cashStationId) ? cashStationId : null,
+  localStationKey: localStationKey
+    || (isLocalStationKey(cashStationId) ? cashStationId : null)
+});
+
+const matchesStation = (session, scope = {}) => {
+  const { cashStationId, localStationKey } = resolveStationScope(scope);
+  if (cashStationId) return Boolean(
+    getSessionStationId(session)
+    && areCashStationsEquivalent(getSessionStationId(session), cashStationId)
+  );
+  if (localStationKey) return Boolean(
+    getSessionLocalStationKey(session)
+    && areCashStationsEquivalent(getSessionLocalStationKey(session), localStationKey)
+  );
+  return false;
+};
 const isOpenSession = (session) => session?.estado === 'abierta' || session?.status === 'open';
 
 const assertLocalSessionOwnership = async ({
   cashSessionId,
   actorKey,
   cashStationId,
+  localStationKey = null,
   actorContext = null,
   operation = 'cash mutation'
 } = {}) => {
@@ -74,7 +169,8 @@ const assertLocalSessionOwnership = async ({
 
   const owner = getSessionActorKey(session);
   const station = getSessionStationId(session);
-  if (!owner || !station) {
+  const sessionLocalStationKey = getSessionLocalStationKey(session);
+  if (!owner || !hasSessionStationIdentity(session)) {
     throw createCashError(CASH_FINANCIAL_CODES.STATION_UNRESOLVED, 'La sesión local no tiene identidad financiera determinista.', {
       operation,
       cashSessionId,
@@ -88,38 +184,58 @@ const assertLocalSessionOwnership = async ({
       actorKey
     });
   }
-  if (!cashStationId || !areCashStationsEquivalent(station, cashStationId)) {
+  const scope = resolveStationScope({ cashStationId, localStationKey });
+  if (!matchesStation(session, scope)) {
     throw createCashError(CASH_FINANCIAL_CODES.STATION_MISMATCH, 'La sesión no pertenece a la estación financiera actual.', {
       operation,
       sessionStationId: station,
-      cashStationId
+      sessionLocalStationKey,
+      cashStationId: scope.cashStationId,
+      localStationKey: scope.localStationKey
     });
   }
   return session;
 };
 
 export const cashLocalRepository = {
-  async getCurrentCashSession({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, cashStationId = null } = {}) {
+  async getCurrentCashSession({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, cashStationId = null, localStationKey = null } = {}) {
+    const stationScope = resolveStationScope({ cashStationId, localStationKey });
     const sessions = await getAllCashSessions();
     const openSessions = sessions
-      .filter((cashSession) => cashSession.estado === 'abierta')
+      .filter(Boolean)
+      .filter((cashSession) => isOpenSession(cashSession))
       .filter((cashSession) => (
         includeAll
           ? true
           : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
       ))
-      .filter((cashSession) => !cashStationId || matchesStation(cashSession, cashStationId));
+      .filter((cashSession) => (
+        (!stationScope.cashStationId && !stationScope.localStationKey)
+          || matchesStation(cashSession, stationScope)
+      ));
 
     return sortByOpenedDesc(openSessions)[0] || null;
   },
 
-  async getHistory({ actorKey = null, staffUserId = null, isAdmin = false, includeAll = false, limit = 50 } = {}) {
+  async getHistory({
+    actorKey = null,
+    staffUserId = null,
+    isAdmin = false,
+    includeAll = false,
+    cashStationId = null,
+    localStationKey = null,
+    limit = 50
+  } = {}) {
+    const stationScope = resolveStationScope({ cashStationId, localStationKey });
     const sessions = await getAllCashSessions();
     return sortByOpenedDesc(
-      sessions.filter((cashSession) => (
+      sessions.filter(Boolean).filter((cashSession) => (
         includeAll
           ? true
           : matchesActor(cashSession, { actorKey, staffUserId, isAdmin })
+      )).filter((cashSession) => (
+        (!stationScope.cashStationId && !stationScope.localStationKey)
+          || matchesStation(cashSession, stationScope)
       ))
     ).slice(0, limit);
   },
@@ -127,40 +243,47 @@ export const cashLocalRepository = {
   async getFinancialState({
     actorKey = null,
     cashStationId = null,
+    localStationKey = null,
     online = true,
     cloudEnabled = false,
     stateKnown = true
   } = {}) {
+    const stationScope = resolveStationScope({ cashStationId, localStationKey });
+    const requestedStation = cloudEnabled
+      ? stationScope.cashStationId
+      : stationScope.localStationKey;
     const sessions = await getAllCashSessions();
-    const openSessions = sessions.filter(isOpenSession);
+    const openSessions = sessions.filter(Boolean).filter(isOpenSession);
     const ownSession = openSessions.find((session) => (
       getSessionActorKey(session) === actorKey
-      && (!cashStationId || matchesStation(session, cashStationId))
+      && (!requestedStation || matchesStation(session, stationScope))
     )) || null;
-    const stationOpenCashSession = cashStationId
-      ? openSessions.find((session) => matchesStation(session, cashStationId)) || null
+    const stationOpenCashSession = requestedStation
+      ? openSessions.find((session) => matchesStation(session, stationScope)) || null
       : null;
-    const unresolvedOpen = openSessions.find((session) => !getSessionStationId(session)) || null;
+    const unresolvedOpen = openSessions.find((session) => !hasSessionStationIdentity(session)) || null;
 
-    if (!cashStationId && unresolvedOpen) {
+    if (!requestedStation) {
       return {
         status: CASH_FINANCIAL_STATUS.BLOCKED,
         code: CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
         cashSession: null,
         stationOpenCashSession: unresolvedOpen,
-        cashStationId: null,
+        cashStationId: stationScope.cashStationId,
+        localStationKey: stationScope.localStationKey,
         actorKey,
         stateKnown
       };
     }
 
-    if (cashStationId && unresolvedOpen && !stationOpenCashSession && !ownSession) {
+    if (unresolvedOpen && !stationOpenCashSession && !ownSession) {
       return {
         status: CASH_FINANCIAL_STATUS.BLOCKED,
         code: CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
         cashSession: null,
         stationOpenCashSession: unresolvedOpen,
-        cashStationId,
+        cashStationId: stationScope.cashStationId,
+        localStationKey: stationScope.localStationKey,
         actorKey,
         stateKnown
       };
@@ -172,7 +295,8 @@ export const cashLocalRepository = {
         code: CASH_FINANCIAL_CODES.HANDOFF_REQUIRES_ONLINE,
         cashSession: null,
         stationOpenCashSession: null,
-        cashStationId,
+        cashStationId: stationScope.cashStationId,
+        localStationKey: stationScope.localStationKey,
         actorKey,
         stateKnown: false,
         online,
@@ -187,7 +311,8 @@ export const cashLocalRepository = {
         code: CASH_FINANCIAL_CODES.HANDOFF_REQUIRED,
         cashSession: null,
         stationOpenCashSession,
-        cashStationId,
+        cashStationId: stationScope.cashStationId,
+        localStationKey: stationScope.localStationKey,
         actorKey,
         stateKnown,
         online,
@@ -200,7 +325,8 @@ export const cashLocalRepository = {
       code: null,
       cashSession: ownSession,
       stationOpenCashSession: stationOpenCashSession || ownSession,
-      cashStationId,
+      cashStationId: stationScope.cashStationId,
+      localStationKey: stationScope.localStationKey,
       actorKey,
       stateKnown,
       online,
@@ -222,21 +348,44 @@ export const cashLocalRepository = {
     await ensureOpen();
     const actorKey = openingData.actorKey || openingData.originActorKey || null;
     if (!actorKey) throw createCashError('CASH_ACTOR_CONTEXT_REQUIRED', 'Se requiere el actor autenticado para abrir caja.');
-    const station = openingData.cashStationId
+    const explicitLocalStationKey = openingData.localStationKey
+      || (isLocalStationKey(openingData.cashStationId) ? openingData.cashStationId : null);
+    const identity = explicitLocalStationKey
       ? {
-        cashStationId: openingData.cashStationId,
-        deviceId: openingData.deviceId || null,
-        identityState: openingData.cashIdentityState || 'canonical'
+        deviceFingerprint: openingData.deviceFingerprint
+          || explicitLocalStationKey.slice('local:device:'.length),
+        localStationKey: explicitLocalStationKey,
+        cashStationId: null,
+        deviceId: null,
+        identityState: 'local'
       }
-      : await getCashStationIdentity({ deviceId: openingData.deviceId });
+      : await getCashStationIdentity({
+        licenseKey: openingData.licenseKey || null,
+        deviceFingerprint: openingData.deviceFingerprint || null,
+        deviceId: openingData.deviceId || null
+      });
+    const station = {
+      deviceFingerprint: openingData.deviceFingerprint || identity.deviceFingerprint,
+      localStationKey: explicitLocalStationKey || identity.localStationKey,
+      // Local-created rows do not promote a browser key into a cloud station.
+      cashStationId: isCanonicalCashStation(openingData.cashStationId)
+        ? openingData.cashStationId
+        : null,
+      deviceId: openingData.canonicalDeviceId || null,
+      identityState: isCanonicalCashStation(openingData.cashStationId)
+        ? (openingData.cashIdentityState || 'canonical')
+        : 'local'
+    };
 
     return db.transaction('rw', db.table(STORES.CAJAS), async () => {
-      const openSessions = await db.table(STORES.CAJAS).where('estado').equals('abierta').toArray();
-      const stationOpen = openSessions.find((session) => matchesStation(session, station.cashStationId)) || null;
+      const openSessions = (await db.table(STORES.CAJAS).where('estado').equals('abierta').toArray()).filter(Boolean);
+      const stationOpen = openSessions.find((session) => matchesStation(session, {
+        localStationKey: station.localStationKey
+      })) || null;
       if (stationOpen) {
         if (getSessionActorKey(stationOpen) === actorKey) return stationOpen;
         throw createCashError(CASH_FINANCIAL_CODES.HANDOFF_REQUIRED, 'La estación financiera requiere cierre y reconciliación antes de cambiar de actor.', {
-          cashStationId: station.cashStationId,
+          localStationKey: station.localStationKey,
           cashSession: stationOpen
         });
       }
@@ -252,7 +401,7 @@ export const cashLocalRepository = {
         }
       }
 
-      const unresolvedOpen = openSessions.find((session) => !getSessionStationId(session));
+      const unresolvedOpen = openSessions.find((session) => !hasSessionStationIdentity(session));
       if (unresolvedOpen) {
         throw createCashError(CASH_FINANCIAL_CODES.STATION_UNRESOLVED, 'Existe una caja abierta legacy cuya estación no puede determinarse de forma segura.', {
           cashSession: unresolvedOpen
@@ -282,9 +431,11 @@ export const cashLocalRepository = {
         originActorKey: actorKey,
         openedByActorKey: actorKey,
         originActorGeneration: openingData.actorGeneration ?? null,
-        deviceId: station.deviceId || openingData.deviceId || null,
+        deviceId: station.deviceId || null,
+        deviceFingerprint: station.deviceFingerprint || null,
         deviceRole: openingData.deviceRole || null,
         cashStationId: station.cashStationId,
+        localStationKey: station.localStationKey,
         cashIdentityState: station.identityState || 'canonical',
         lastIdempotencyKey: openingData.idempotencyKey || null,
         syncStatus: CASH_SYNC_STATUS.LOCAL,
@@ -296,11 +447,12 @@ export const cashLocalRepository = {
     });
   },
 
-  async registerMovement({ cashSessionId, type, amount, concept, idempotencyKey = null, referenceId = null, metadata = {}, actorKey = null, cashStationId = null, actorContext = null }) {
+  async registerMovement({ cashSessionId, type, amount, concept, idempotencyKey = null, referenceId = null, metadata = {}, actorKey = null, cashStationId = null, localStationKey = null, actorContext = null }) {
     const session = await assertLocalSessionOwnership({
       cashSessionId,
       actorKey,
       cashStationId,
+      localStationKey,
       actorContext,
       operation: 'cash movement'
     });
@@ -317,11 +469,13 @@ export const cashLocalRepository = {
           actorKey,
           originActorKey: actorKey,
           cashStationId,
+          localStationKey,
           originActorGeneration: actorContext?.generation ?? null,
           cashSessionId: session.id
         },
         actorKey,
         cashStationId,
+        localStationKey,
         actorContext
       }
     );
@@ -333,9 +487,9 @@ export const cashLocalRepository = {
     };
   },
 
-  async adjustInitialFund({ cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey = null, actorKey = null, cashStationId = null, actorContext = null }) {
+  async adjustInitialFund({ cashSessionId, newAmount, reason, expectedVersion = null, idempotencyKey = null, actorKey = null, cashStationId = null, localStationKey = null, actorContext = null }) {
     await ensureOpen();
-    await assertLocalSessionOwnership({ cashSessionId, actorKey, cashStationId, actorContext, operation: 'cash initial fund adjustment' });
+    await assertLocalSessionOwnership({ cashSessionId, actorKey, cashStationId, localStationKey, actorContext, operation: 'cash initial fund adjustment' });
     const amountSafe = Money.init(newAmount);
     if (amountSafe.lt(0)) throw new Error('El fondo no puede ser negativo.');
 
@@ -378,7 +532,8 @@ export const cashLocalRepository = {
         actorKey,
         originActorKey: actorKey,
         performedByActorKey: actorKey,
-        cashStationId,
+        cashStationId: isCanonicalCashStation(cashStationId) ? cashStationId : null,
+        localStationKey: localStationKey || (isLocalStationKey(cashStationId) ? cashStationId : null),
         idempotencyKey,
         originActorGeneration: actorContext?.generation ?? null,
         audit: {
@@ -396,13 +551,13 @@ export const cashLocalRepository = {
     });
   },
 
-  async closeCashSession({ cashSessionId, countedAmount, nextShiftFund, comments = '', expectedVersion = null, idempotencyKey = null, actorKey = null, cashStationId = null, actorContext = null }) {
+  async closeCashSession({ cashSessionId, countedAmount, nextShiftFund, comments = '', expectedVersion = null, idempotencyKey = null, actorKey = null, cashStationId = null, localStationKey = null, actorContext = null }) {
     await ensureOpen();
     const initialSession = await db.table(STORES.CAJAS).get(cashSessionId);
     if (initialSession && !isOpenSession(initialSession)) {
       if (initialSession.estado === 'cerrada'
         && initialSession.closedByActorKey === actorKey
-        && areCashStationsEquivalent(getSessionStationId(initialSession), cashStationId)) {
+        && matchesStation(initialSession, { cashStationId, localStationKey })) {
         if (actorContext) assertCashActorContextCurrent(actorContext);
         return {
           success: true,
@@ -412,7 +567,7 @@ export const cashLocalRepository = {
         };
       }
     }
-    await assertLocalSessionOwnership({ cashSessionId, actorKey, cashStationId, actorContext, operation: 'cash session close' });
+    await assertLocalSessionOwnership({ cashSessionId, actorKey, cashStationId, localStationKey, actorContext, operation: 'cash session close' });
     const countedSafe = Money.init(countedAmount);
     const nextFundSafe = Money.init(nextShiftFund);
     if (countedSafe.lt(0) || nextFundSafe.lt(0)) throw new Error('Los montos de auditoria no pueden ser negativos.');
@@ -424,7 +579,7 @@ export const cashLocalRepository = {
       if (cashSession.estado !== 'abierta') {
         if (cashSession.estado === 'cerrada'
           && cashSession.closedByActorKey === actorKey
-          && areCashStationsEquivalent(getSessionStationId(cashSession), cashStationId)) {
+          && matchesStation(cashSession, { cashStationId, localStationKey })) {
           return {
             success: true,
             alreadyClosed: true,
@@ -483,7 +638,10 @@ export const cashLocalRepository = {
   },
 
   async applyCloudCashSession(cloudSession) {
-    if (!cloudSession?.id) return null;
+    if (!isCompleteCloudCashSession(cloudSession)) {
+      localCashProjectionDiagnostics.invalidCashSessionRecords += 1;
+      return null;
+    }
     await ensureOpen();
     const existing = await db.table(STORES.CAJAS).get(cloudSession.id);
     const local = cloudCashSessionToLocal(cloudSession, existing);
@@ -502,7 +660,10 @@ export const cashLocalRepository = {
   },
 
   async applyCloudCashMovement(cloudMovement) {
-    if (!cloudMovement?.id) return null;
+    if (!isCompleteCloudCashMovement(cloudMovement)) {
+      localCashProjectionDiagnostics.invalidCashMovementRecords += 1;
+      return null;
+    }
     await ensureOpen();
     const existing = await db.table(STORES.MOVIMIENTOS_CAJA).get(cloudMovement.id);
     const local = cloudCashMovementToLocal(cloudMovement, existing);
@@ -523,7 +684,13 @@ export const cashLocalRepository = {
   async getMovementsForSession(cashSessionId) {
     const movements = await getAllCashMovements();
     return movements
-      .filter((movement) => movement.cash_session_id === cashSessionId || movement.caja_id === cashSessionId)
+      .filter(Boolean)
+      .filter(isRecord)
+      .filter((movement) => (
+        movement.cash_session_id === cashSessionId
+        || movement.caja_id === cashSessionId
+        || movement.cashSessionId === cashSessionId
+      ))
       .sort((a, b) => Date.parse(b.fecha || 0) - Date.parse(a.fecha || 0));
   }
 };

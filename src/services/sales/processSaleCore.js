@@ -25,6 +25,12 @@ const CLOUD_INVENTORY_AUTHORITATIVE_MODES = new Set([
     'cloud_credit_inventory'
 ]);
 
+const LOCAL_STATION_KEY_PREFIX = 'local:device:';
+
+const isLocalStationKey = (value) => (
+    typeof value === 'string' && value.startsWith(LOCAL_STATION_KEY_PREFIX)
+);
+
 const toFiniteNumber = (value, fallback = 0) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -382,6 +388,18 @@ export const processSaleCore = async ({
             ecommerceAcceptedTaxTotal: Money.toExactString(financialTotals.taxTotal || 0),
             ecommerceCurrency: financialTotals.currency || 'MXN'
         } : {};
+        const suppliedCashStationId = safePaymentData.cashStationId
+            || safePaymentData.cash_station_id
+            || null;
+        const suppliedLocalStationKey = safePaymentData.localStationKey
+            || safePaymentData.local_station_key
+            || null;
+        const localStationKey = isLocalStationKey(suppliedLocalStationKey)
+            ? suppliedLocalStationKey
+            : (isLocalStationKey(suppliedCashStationId) ? suppliedCashStationId : null);
+        const cashStationId = isLocalStationKey(suppliedCashStationId)
+            ? null
+            : suppliedCashStationId;
 
         const sale = {
             id: activeOrderId || generateID('sal'),
@@ -399,7 +417,8 @@ export const processSaleCore = async ({
             customerId: safePaymentData.customerId,
             paymentMethod: safePaymentData.paymentMethod,
             cash_session_id: safePaymentData.cashSessionId || safePaymentData.cash_session_id || null,
-            cashStationId: safePaymentData.cashStationId || safePaymentData.cash_station_id || null,
+            cashStationId,
+            localStationKey,
             cashOriginActorKey: actorContext?.actorKey || safePaymentData.originActorKey || null,
             cashOriginActorGeneration: actorContext?.generation ?? safePaymentData.originActorGeneration ?? null,
             abono: Money.toExactString(abonoSeguro),

@@ -6,8 +6,17 @@ const firstLabel = (...values) => values.find((value) => (
 export const getOpeningDeviceLabel = (session = {}) => (
   firstLabel(
     session.opened_by_device_name,
+    session.openedByDeviceName,
     session.opening_device_name,
-    session.device_name
+    session.openingDeviceName,
+    session.device_name,
+    session.deviceName,
+    session.metadata?.opened_by_device_name,
+    session.metadata?.openedByDeviceName,
+    session.metadata?.opening_device_name,
+    session.metadata?.openingDeviceName,
+    session.metadata?.device_name,
+    session.metadata?.deviceName
   ) || 'Dispositivo registrado'
 );
 

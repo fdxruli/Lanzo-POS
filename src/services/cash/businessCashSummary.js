@@ -19,6 +19,36 @@ const amountOf = (session, cloudKey, localKey) => (
   session?.[cloudKey] ?? session?.[localKey] ?? 0
 );
 
+const firstSafeLabel = (...values) => values.find((value) => (
+  typeof value === 'string' && value.trim()
+))?.trim() || null;
+
+/**
+ * Only server-provided human-readable names are suitable for an operational
+ * report. UUIDs, fingerprints, actor keys and local cache keys are never
+ * rendered as station labels.
+ */
+export const getCashSessionStationLabel = (session = {}) => (
+  firstSafeLabel(
+    session.station_name,
+    session.stationName,
+    session.device_name,
+    session.deviceName,
+    session.openedByDeviceName,
+    session.opened_by_device_name,
+    session.openingDeviceName,
+    session.opening_device_name,
+    session.metadata?.station_name,
+    session.metadata?.stationName,
+    session.metadata?.device_name,
+    session.metadata?.deviceName,
+    session.metadata?.opened_by_device_name,
+    session.metadata?.openedByDeviceName,
+    session.metadata?.opening_device_name,
+    session.metadata?.openingDeviceName
+  ) || 'Estación financiera sin nombre'
+);
+
 export const isOpenBusinessCashSession = (session = {}) => (
   Boolean(session) &&
   OPEN_STATUSES.has(String(session.status ?? session.estado ?? '').toLowerCase()) &&
@@ -69,6 +99,7 @@ export const buildBusinessCashSummary = (openSessions = [], currentCashSession =
     exitsTotal: '0',
     currentActorTotal: '0',
     otherAdminTotal: '0',
+    otherAdminCount: 0,
     staffTotal: '0',
     sessions
   };
@@ -88,6 +119,7 @@ export const buildBusinessCashSummary = (openSessions = [], currentCashSession =
       addAmount(summary, 'staffTotal', expectedCash);
     } else {
       addAmount(summary, 'otherAdminTotal', expectedCash);
+      summary.otherAdminCount += 1;
     }
   });
 

@@ -1,41 +1,45 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import CajaBusinessCashSummary from '../CajaBusinessCashSummary';
 
 afterEach(cleanup);
 
 describe('CajaBusinessCashSummary progressive disclosure', () => {
-  it('keeps the total and distribution visible while collapsing component detail', () => {
+  it('keeps each station amount and safe operational labels separate', () => {
     render(
       <CajaBusinessCashSummary
-        cajaActual={{ id: 'cash-admin', actor_key: 'admin:one' }}
+        cajaActual={{ id: 'cash-admin', actor_key: 'admin:one', device_name: 'Caja mostrador' }}
         adminOpenSessions={[
           {
             id: 'cash-admin',
             status: 'open',
             actor_key: 'admin:one',
             responsible_name: 'Ana',
-            expected_cash_total: '150',
-            opening_amount: '100',
-            cash_sales_total: '40',
-            customer_payments_total: '20',
-            cash_entries_total: '10',
-            cash_exits_total: '20'
+            device_name: 'Caja mostrador',
+            expected_cash_total: '150'
+          },
+          {
+            id: 'cash-admin-2',
+            status: 'open',
+            actor_key: 'admin:one',
+            responsible_name: 'Ana',
+            opened_by_device_name: 'Terminal 2',
+            expected_cash_total: '275'
           }
         ]}
       />
     );
 
-    expect(screen.getByText('Efectivo del negocio')).toBeVisible();
-    screen.getAllByText('$150.00').forEach((element) => expect(element).toBeVisible());
-    expect(screen.getByText('Mi caja')).toBeVisible();
-    expect(screen.getByText('1 abiertas')).toBeVisible();
-    expect(screen.getByText('Fondo inicial')).not.toBeVisible();
-
-    fireEvent.click(screen.getByText(/Ver composici.n del efectivo/));
-    expect(screen.getByText('Fondo inicial')).toBeVisible();
-    expect(screen.getByText('$100.00')).toBeVisible();
+    expect(screen.getByText('Cajas abiertas por estación')).toBeVisible();
+    expect(screen.getByText('2 estaciones abiertas')).toBeVisible();
+    expect(screen.getByText('Caja mostrador')).toBeVisible();
+    expect(screen.getByText('Terminal 2')).toBeVisible();
+    expect(screen.getByText('$150.00')).toBeVisible();
+    expect(screen.getByText('$275.00')).toBeVisible();
+    expect(screen.getByText(/Cada caja mantiene su monto separado/)).toBeVisible();
+    expect(screen.queryByText('$425.00')).not.toBeInTheDocument();
+    expect(screen.queryByText('Resumen consolidado')).not.toBeInTheDocument();
   });
 });

@@ -47,8 +47,13 @@ export const cloudRequestTags = Object.freeze({
   license: (licenseKey) => `license:${stableHash(licenseKey)}`,
   licenseId: (licenseId) => `license_id:${stableHash(licenseId)}`,
   device: (deviceId) => `device:${stableHash(deviceId)}`,
+  deviceFingerprint: (deviceFingerprint) => `device_fingerprint:${stableHash(deviceFingerprint)}`,
+  localStationKey: (localStationKey) => `local_station:${stableHash(localStationKey)}`,
   staff: (staffUserId) => `staff:${stableHash(staffUserId)}`,
   staffSession: (staffSessionToken) => `staff_session:${stableHash(staffSessionToken)}`,
+  actor: (actorKey) => `actor:${stableHash(actorKey)}`,
+  actorSession: (actorSessionId) => `actor_session:${stableHash(actorSessionId)}`,
+  cashStation: (cashStationId) => `cash_station:${stableHash(cashStationId)}`,
   rpc: (rpcName) => `rpc:${sanitizePart(rpcName)}`,
   resource: (resource) => `resource:${sanitizePart(resource)}`
 });
@@ -57,14 +62,25 @@ export const buildCloudContextKey = ({
   licenseKey = null,
   licenseId = null,
   deviceId = null,
+  deviceFingerprint = null,
+  localStationKey = null,
   staffUserId = null,
-  staffSessionToken = null
+  staffSessionToken = null,
+  actorKey = null,
+  actorSessionId = null,
+  cashStationId = null
 } = {}) => ([
   licenseKey ? cloudRequestTags.license(licenseKey) : null,
   licenseId ? cloudRequestTags.licenseId(licenseId) : null,
-  deviceId ? cloudRequestTags.device(deviceId) : null,
+  deviceFingerprint
+    ? cloudRequestTags.deviceFingerprint(deviceFingerprint)
+    : (deviceId ? cloudRequestTags.device(deviceId) : null),
+  localStationKey ? cloudRequestTags.localStationKey(localStationKey) : null,
   staffUserId ? cloudRequestTags.staff(staffUserId) : null,
-  staffSessionToken ? cloudRequestTags.staffSession(staffSessionToken) : null
+  staffSessionToken ? cloudRequestTags.staffSession(staffSessionToken) : null,
+  actorKey ? cloudRequestTags.actor(actorKey) : null,
+  actorSessionId ? cloudRequestTags.actorSession(actorSessionId) : null,
+  cashStationId ? cloudRequestTags.cashStation(cashStationId) : null
 ].filter(Boolean).join('|') || 'context:anonymous');
 
 export const buildCloudRequestKey = ({ resource, context = {}, params = {} } = {}) => [
@@ -77,17 +93,33 @@ export const buildRpcRequestKey = (rpcName, {
   licenseKey = null,
   licenseId = null,
   deviceId = null,
+  deviceFingerprint = null,
+  localStationKey = null,
   staffUserId = null,
   staffSessionToken = null,
+  actorKey = null,
+  actorSessionId = null,
+  cashStationId = null,
   params = {}
 } = {}) => buildCloudRequestKey({
   resource: `rpc:${sanitizePart(rpcName, 'rpc')}`,
-  context: { licenseKey, licenseId, deviceId, staffUserId, staffSessionToken },
+  context: {
+    licenseKey,
+    licenseId,
+    deviceId,
+    deviceFingerprint,
+    localStationKey,
+    staffUserId,
+    staffSessionToken,
+    actorKey,
+    actorSessionId,
+    cashStationId
+  },
   params
 });
 
 export const buildBaseRpcContextFromArgs = (licenseKey, baseArgs = {}) => ({
   licenseKey: baseArgs.p_license_key || licenseKey || null,
-  deviceId: baseArgs.p_device_fingerprint || null,
+  deviceFingerprint: baseArgs.p_device_fingerprint || null,
   staffSessionToken: baseArgs.p_staff_session_token || null
 });

@@ -46,6 +46,7 @@ const runtime = vi.hoisted(() => {
     makeHandle,
     execute: async () => ({ success: true, receipt: 'server-result' }),
     executeError: null,
+    stationState: async () => ({ cash_station: { id: 'station-a' } }),
     receipt: async () => ({ status: 'NOT_FOUND' }),
     rpcCalls: []
   };
@@ -70,7 +71,7 @@ vi.mock('../../supabase', () => ({
   supabaseClient: {
     rpc: async (name, args) => {
       runtime.rpcCalls.push({ name, args });
-      if (name === 'pos_get_cash_station_state') return { data: { cash_station: { id: 'station-a' } }, error: null };
+      if (name === 'pos_get_cash_station_state') return { data: await runtime.stationState(args), error: null };
       if (name === 'pos_execute_financial_operation_v1') {
         if (runtime.executeError) return { data: null, error: runtime.executeError };
         return { data: await runtime.execute(args), error: null };
@@ -107,6 +108,7 @@ describe('financial intent ledger', () => {
     runtime.handle = runtime.makeHandle();
     runtime.execute = async () => ({ success: true, receipt: 'server-result' });
     runtime.executeError = null;
+    runtime.stationState = async () => ({ cash_station: { id: 'station-a' } });
     runtime.receipt = async () => ({ status: 'NOT_FOUND' });
   });
 
@@ -125,6 +127,51 @@ describe('financial intent ledger', () => {
       'pos_get_cash_station_state',
       'pos_execute_financial_operation_v1'
     ]);
+  });
+
+  it('uses the target station for a remote Admin close while keeping normal closes strict', async () => {
+    runtime.stationState = async () => ({
+      cash_station: { id: 'station-a' },
+      station_open_cash_session: { id: 'cash-admin-a' }
+    });
+
+    const remoteIntent = await createOpenIntent({
+      operationType: 'cash.admin_close',
+      cashSessionId: 'cash-staff-b',
+      targetCashStationId: 'station-b',
+      request: {
+        cash_session_id: 'cash-staff-b',
+        closing_mode: 'admin_unverified',
+        counted_amount: null,
+        next_shift_fund: null,
+        reason_code: 'device_lost',
+        comments: 'Revisión administrativa.',
+        expected_version: 3
+      }
+    });
+
+    expect(remoteIntent.cashStationId).toBe('station-b');
+    await expect(createOpenIntent({
+      operationType: 'cash.close',
+      cashSessionId: 'cash-staff-b',
+      idempotencyKey: 'normal-close-k',
+      request: { cash_session_id: 'cash-staff-b', expected_version: 3 }
+    })).rejects.toThrow('CASH_SESSION_STATION_MISMATCH');
+  });
+
+  it('times out before persistence without creating an ambiguous intent', async () => {
+    runtime.stationState = () => new Promise(() => {});
+
+    await expect(createOpenIntent({
+      idempotencyKey: 'preflight-timeout-k',
+      timeouts: { STATION_RESOLUTION_MS: 5, PREFLIGHT_MS: 20 }
+    })).rejects.toMatchObject({
+      code: 'CASH_STATION_RESOLUTION_TIMEOUT',
+      isFinancialTimeout: true
+    });
+
+    expect(runtime.rows.size).toBe(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(0);
   });
 
   it('never stores auth material and rejects secret-bearing request payloads', async () => {
@@ -185,7 +232,8 @@ describe('financial intent ledger', () => {
   it.each(['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'])('preserves the full cash.admin_close %s review response as terminal evidence', async (code) => {
     const intent = await createOpenIntent({
       operationType: 'cash.admin_close',
-      request: { cash_session_id: 'cash-session-1', expected_version: 7, close_mode: 'admin_audited' }
+      request: { cash_session_id: 'cash-session-1', expected_version: 7, close_mode: 'admin_audited' },
+      targetCashStationId: 'station-b'
     });
     const reviewResponse = {
       success: false,
@@ -221,7 +269,8 @@ describe('financial intent ledger', () => {
   it('preserves an admin review response at the PREPARED zero-attempt recovery dispatch edge', async () => {
     const intent = await createOpenIntent({
       operationType: 'cash.admin_close',
-      request: { cash_session_id: 'cash-session-1', expected_version: 7, close_mode: 'admin_audited' }
+      request: { cash_session_id: 'cash-session-1', expected_version: 7, close_mode: 'admin_audited' },
+      targetCashStationId: 'station-b'
     });
     const reviewResponse = {
       success: false,
@@ -254,7 +303,11 @@ describe('financial intent ledger', () => {
     ['cash.close', 'VERSION_CONFLICT'],
     ['cash.admin_close', 'UNEXPECTED_ADMIN_CLOSE_REJECTION']
   ])('does not grant the admin review exception to %s / %s', async (operationType, code) => {
-    const intent = await createOpenIntent({ operationType, request: { cash_session_id: 'cash-session-1' } });
+    const intent = await createOpenIntent({
+      operationType,
+      request: { cash_session_id: 'cash-session-1' },
+      ...(operationType === 'cash.admin_close' ? { targetCashStationId: 'station-b' } : {})
+    });
     runtime.execute = async () => ({
       success: false,
       code,
@@ -299,7 +352,11 @@ describe('financial intent ledger', () => {
     const intent = await createOpenIntent();
     runtime.execute = async () => { throw new TypeError('Failed to fetch'); };
     runtime.receipt = async () => ({ status: 'COMPLETED', result: { success: true, receipt: 'authoritative' } });
-    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle })).rejects.toThrow('Failed to fetch');
+    await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
+      .resolves.toMatchObject({
+        receiptRecovered: true,
+        response: { success: true, receipt: 'authoritative' }
+      });
     const row = await getFinancialIntent(intent.id);
     expect(row).toMatchObject({
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
@@ -326,6 +383,55 @@ describe('financial intent ledger', () => {
       requestHash: intent.requestHash
     });
     expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+  });
+
+  it('marks a persisted dispatch timeout as pending and keeps the same idempotency evidence', async () => {
+    const intent = await createOpenIntent({ idempotencyKey: 'dispatch-timeout-k' });
+    runtime.execute = async () => new Promise(() => {});
+    runtime.receipt = async () => ({ status: 'NOT_FOUND' });
+
+    await expect(executeFinancialIntent({
+      intent,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle,
+      timeouts: { DISPATCH_MS: 5, RECEIPT_MS: 5 }
+    })).rejects.toMatchObject({
+      isFinancialOperationAmbiguous: true,
+      financialRecoveryCode: 'FINANCIAL_RECOVERY_RECEIPT_PENDING',
+      financialIdempotencyKey: 'dispatch-timeout-k'
+    });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      lastReceiptStatus: 'NOT_FOUND',
+      idempotencyKey: 'dispatch-timeout-k',
+      dispatchAttemptCount: 1
+    });
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+  });
+
+  it('keeps the durable intent pending when the receipt query itself times out', async () => {
+    const intent = await createOpenIntent({ idempotencyKey: 'receipt-timeout-k' });
+    runtime.execute = async () => { throw Object.assign(new Error('gateway timeout'), { status: 504 }); };
+    runtime.receipt = async () => new Promise(() => {});
+
+    await expect(executeFinancialIntent({
+      intent,
+      licenseKey: 'fixture-license-secret',
+      actorHandle: runtime.handle,
+      timeouts: { RECEIPT_MS: 5 }
+    })).rejects.toMatchObject({
+      isFinancialOperationAmbiguous: true,
+      receiptErrorCode: 'FINANCIAL_RECEIPT_TIMEOUT'
+    });
+
+    expect(await getFinancialIntent(intent.id)).toMatchObject({
+      status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      lastReceiptStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
+      idempotencyKey: 'receipt-timeout-k'
+    });
     expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
   });
 

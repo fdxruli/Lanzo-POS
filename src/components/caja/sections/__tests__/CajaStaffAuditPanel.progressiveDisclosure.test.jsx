@@ -13,7 +13,7 @@ const staffSession = {
   fecha_cierre: null,
   responsible_name: 'Ana García',
   staff_display_name: 'Ana García',
-  device_id: 'Caja Samsung',
+  opened_by_device_name: 'Caja Samsung',
   monto_inicial: '500',
   entradas_efectivo: '300',
   salidas_efectivo: '150',
@@ -38,7 +38,7 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
 
     await waitFor(() => expect(listCashSessionsForAudit).toHaveBeenCalledTimes(1));
 
-    expect(screen.getByRole('article').querySelector('.staff-audit-item-header strong')).toHaveTextContent('Ana García');
+    expect(screen.getByRole('article').querySelector('.staff-audit-item-header strong')).toHaveTextContent('Caja Samsung');
     expect(screen.getByText('abierta')).toBeVisible();
     expect(screen.getByText('Apertura')).toBeVisible();
     expect(screen.getByText('$3450.00')).toBeVisible();
@@ -62,7 +62,7 @@ describe('CajaStaffAuditPanel progressive disclosure', () => {
     expect(screen.getByText('$150.00')).toBeVisible();
     expect(screen.getByText('Abonos/clientes')).toBeVisible();
     expect(screen.getByText('Dispositivo')).toBeVisible();
-    expect(screen.getByText('Caja Samsung')).toBeVisible();
+    expect(screen.getAllByText('Caja Samsung')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));
     expect(onReviewSession).toHaveBeenCalledWith(staffSession);

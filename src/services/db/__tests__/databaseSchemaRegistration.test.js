@@ -191,15 +191,17 @@ describe('canonical Dexie registration', () => {
 
     expect(upgraded.verno).toBe(FINANCIAL_INTENT_DEXIE_VERSION);
     await expect(upgraded.table('cajas').get('cash-device-bound')).resolves.toMatchObject({
-      cashStationId: 'local:device:device-a',
-      cashIdentityState: 'deterministic-device-bound',
+      localStationKey: 'local:device:device-a',
+      cashIdentityState: 'local',
       originActorKey: 'admin:a',
       openedByActorKey: 'admin:a'
     });
+    await expect(upgraded.table('cajas').get('cash-device-bound')).resolves.not.toHaveProperty('cashStationId');
     await expect(upgraded.table('movimientos_caja').get('movement-device-bound')).resolves.toMatchObject({
-      cashStationId: 'local:device:device-a',
+      localStationKey: 'local:device:device-a',
       originActorKey: 'admin:a'
     });
+    await expect(upgraded.table('movimientos_caja').get('movement-device-bound')).resolves.not.toHaveProperty('cashStationId');
     await expect(upgraded.table('cajas').get('cash-legacy-unresolved')).resolves.toMatchObject({
       cashIdentityState: 'legacy_unresolved'
     });

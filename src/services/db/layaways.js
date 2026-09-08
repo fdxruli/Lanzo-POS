@@ -7,6 +7,7 @@ import { getFinancialQuality } from '../sales/financialPolicy';
 import { Money } from '../../utils/moneyMath';
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
 import { auditLayawayFinancialLinks } from '../layawayFinancialProjection';
+import { isCanonicalCashStation, isLocalStationKey } from '../cash/cashStation';
 import {
     ACTOR_RUNTIME_ERROR_CODES,
     ActorRuntimeError
@@ -32,11 +33,17 @@ const buildPaymentRecord = (payment, fallbackAmount, fallbackType = 'installment
 });
 
 const buildCashPaymentLink = (cashSessionId, evidence = {}) => {
-    const cashStationId = evidence.cashStationId
+    const suppliedStationId = evidence.cashStationId
         || evidence.cash_station_id
         || evidence.metadata?.cashStationId
         || evidence.metadata?.cash_station_id
         || null;
+    const cashStationId = isCanonicalCashStation(suppliedStationId) ? suppliedStationId : null;
+    const localStationKey = evidence.localStationKey
+        || evidence.local_station_key
+        || evidence.metadata?.localStationKey
+        || evidence.metadata?.local_station_key
+        || (isLocalStationKey(suppliedStationId) ? suppliedStationId : null);
     const actorKey = evidence.actorKey
         || evidence.actor_key
         || evidence.metadata?.actorKey
@@ -53,6 +60,7 @@ const buildCashPaymentLink = (cashSessionId, evidence = {}) => {
         cajaId: cashSessionId,
         cash_session_id: cashSessionId,
         ...(cashStationId ? { cashStationId } : {}),
+        ...(localStationKey ? { localStationKey } : {}),
         ...(actorKey ? { actorKey } : {}),
         ...(originActorGeneration !== null ? { originActorGeneration } : {})
     };

@@ -1,6 +1,11 @@
 import { layawayRepository } from './db/layaways';
 import { cashRepository } from './cash/cashRepository';
-import { areCashStationsEquivalent, getCashStationIdentity } from './cash/cashStation';
+import {
+    areCashStationsEquivalent,
+    getCashStationIdentity,
+    isCanonicalCashStation,
+    isLocalStationKey
+} from './cash/cashStation';
 import {
     CASH_FINANCIAL_CODES,
     captureCashActorContext
@@ -48,13 +53,20 @@ const CASH_SESSION_CHANGED_MESSAGE =
     'La caja cambió mientras confirmabas el apartado. Vuelve a abrir la ventana y reintenta.';
 
 const getSessionActorKey = (session) => session?.actorKey || session?.actor_key || null;
-const getSessionStationId = (session) => (
-    session?.cashStationId
-    || session?.cash_station_id
-    || session?.metadata?.cashStationId
-    || session?.metadata?.cash_station_id
-    || null
-);
+const getSessionStationId = (session) => [
+    session?.cashStationId,
+    session?.cash_station_id,
+    session?.metadata?.cashStationId,
+    session?.metadata?.cash_station_id
+].find((value) => isCanonicalCashStation(value)) || null;
+const getSessionLocalStationKey = (session) => [
+    session?.localStationKey,
+    session?.local_station_key,
+    session?.cashStationId,
+    session?.cash_station_id,
+    session?.metadata?.localStationKey,
+    session?.metadata?.local_station_key
+].find((value) => isLocalStationKey(value)) || null;
 const isOpenCashSession = (session) => session?.estado === 'abierta' || session?.status === 'open';
 
 const layawayCashError = (code, message, details = {}) => {
@@ -90,10 +102,16 @@ export const resolveLayawayCashSession = async ({
         );
     }
 
-    if (mode.cloudEnabled && (!mode.online || mode.readOnly || result.readOnly)) {
-        throw layawayCashError(
-            !mode.online ? 'CLOUD_CASH_OFFLINE' : 'CLOUD_CASH_READ_ONLY',
-            !mode.online
+    if (mode.cloudEnabled && (
+        !mode.online
+        || mode.readOnly
+        || result.readOnly
+        || result.stateKnown === false
+        || result.networkUnavailable
+    )) {
+      throw layawayCashError(
+            !mode.online || result.networkUnavailable ? 'CLOUD_CASH_OFFLINE' : 'CLOUD_CASH_READ_ONLY',
+            !mode.online || result.networkUnavailable
                 ? 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Revisa tu conexión e intenta de nuevo.'
                 : 'La Caja cloud está en modo de solo lectura. Espera la sincronización y reintenta.',
             { operation, result }
@@ -111,10 +129,12 @@ export const resolveLayawayCashSession = async ({
 
     const financialState = result.financialState || {};
     const financialCode = result.financialCode || financialState.code || null;
-    const stationId = result.cashStationId
-        || result.cash_station_id
-        || getSessionStationId(session);
-    if (!stationId || financialCode === CASH_FINANCIAL_CODES.STATION_UNRESOLVED) {
+    const stationId = isCanonicalCashStation(result.cashStationId)
+        ? result.cashStationId
+        : getSessionStationId(session);
+    const localStationKey = result.localStationKey || getSessionLocalStationKey(session);
+    const resolvedStation = mode.cloudEnabled ? stationId : localStationKey;
+    if (!resolvedStation || financialCode === CASH_FINANCIAL_CODES.STATION_UNRESOLVED) {
         throw layawayCashError(
             CASH_FINANCIAL_CODES.STATION_UNRESOLVED,
             'No se pudo resolver la estación financiera actual. Abre Caja desde este dispositivo y reintenta.',
@@ -141,11 +161,22 @@ export const resolveLayawayCashSession = async ({
     }
 
     const sessionStationId = getSessionStationId(session);
-    if (!sessionStationId || !areCashStationsEquivalent(sessionStationId, stationId)) {
+    const sessionLocalStationKey = getSessionLocalStationKey(session);
+    const stationMatches = mode.cloudEnabled
+        ? Boolean(sessionStationId && areCashStationsEquivalent(sessionStationId, stationId))
+        : Boolean(sessionLocalStationKey && areCashStationsEquivalent(sessionLocalStationKey, localStationKey));
+    if (!stationMatches) {
         throw layawayCashError(
             CASH_FINANCIAL_CODES.STATION_MISMATCH,
             'La sesión de Caja no pertenece a la estación financiera actual. Vuelve a abrir Caja y reintenta.',
-            { operation, sessionStationId, cashStationId: stationId, sessionId: session.id }
+            {
+                operation,
+                sessionStationId,
+                sessionLocalStationKey,
+                cashStationId: stationId,
+                localStationKey,
+                sessionId: session.id
+            }
         );
     }
 
@@ -162,7 +193,7 @@ export const resolveLayawayCashSession = async ({
         );
     }
 
-    return { mode, result, session, cashStationId: stationId };
+    return { mode, result, session, cashStationId: stationId, localStationKey };
 };
 
 const cashMetadata = ({ layawayId, paymentId, paymentType, customerId, idempotencyKey }) => ({
@@ -301,11 +332,12 @@ const buildCloudLayawayCompletionRequest = (layaway = {}) => {
 const getLocalCashMutationContext = async (mode = cashRepository.getMode()) => {
     const actor = mode?.actor || null;
     if (!actor?.actorKey) return {};
-    const station = await getCashStationIdentity();
+    const station = await getCashStationIdentity({ licenseKey: mode?.licenseKey || null });
     const actorContext = captureCashActorContext();
     return {
         actorKey: actor.actorKey,
-        cashStationId: station.cashStationId,
+        cashStationId: isCanonicalCashStation(station.cashStationId) ? station.cashStationId : null,
+        localStationKey: station.localStationKey,
         originActorGeneration: actorContext.generation ?? null,
         actorContext
     };

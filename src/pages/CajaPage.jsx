@@ -1,5 +1,5 @@
 // src/pages/CajaPage.jsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import { useCaja } from '../hooks/useCaja';
 import { useModal } from '../hooks/useModal';
@@ -16,8 +16,12 @@ import * as googleDriveService from '../services/googleDriveService';
 import { Money } from '../utils/moneyMath';
 import { useAppStore } from '../store/useAppStore';
 import Logger from '../services/Logger';
-import { canShowBusinessCashSummary } from '../services/cash/businessCashSummary';
+import {
+  canShowBusinessCashSummary,
+  getCashSessionStationLabel
+} from '../services/cash/businessCashSummary';
 import { buildLegacyCashAdoptionConfirmation } from '../services/cash/cashDeviceLabel';
+import { CASH_NETWORK_UNAVAILABLE_MESSAGE } from '../services/cash/cashNetwork';
 
 // Componentes de secciones
 import {
@@ -47,6 +51,21 @@ import './CajaPage.css';
 
 const CLOUD_CASH_READ_ONLY_MESSAGE = 'Caja cloud requiere conexión para proteger el dinero y evitar descuadres. Puedes consultar el último estado, pero no registrar movimientos.';
 
+const CashNetworkRecoveryBanner = ({ onRetry, isRetrying = false }) => (
+  <div className="ui-alert ui-alert--warning caja-network-recovery" role="alert" aria-live="polite">
+    <strong>Sin conexión con Supabase</strong>
+    <p>{CASH_NETWORK_UNAVAILABLE_MESSAGE}</p>
+    <button
+      type="button"
+      className="ui-button ui-button--secondary btn btn-secondary"
+      onClick={onRetry}
+      disabled={isRetrying}
+    >
+      {isRetrying ? 'Verificando…' : 'Reintentar verificación'}
+    </button>
+  </div>
+);
+
 const cashSessionActorKey = (cashSession) => cashSession?.actor_key || cashSession?.actorKey || null;
 
 export const isCashSessionOwnedByActor = (cashSession, cashActor) => {
@@ -55,12 +74,8 @@ export const isCashSessionOwnedByActor = (cashSession, cashActor) => {
   return Boolean(ownerActorKey && currentActorKey && ownerActorKey === currentActorKey);
 };
 
-const shortenTechnicalIdentifier = (value) => {
-  const identifier = String(value || '').trim();
-  if (!identifier || identifier.length <= 18) return identifier || 'No disponible';
-  const separatorIndex = identifier.indexOf(':');
-  const prefixLength = separatorIndex > -1 ? separatorIndex + 1 : 8;
-  return `${identifier.slice(0, prefixLength)}…${identifier.slice(-6)}`;
+const cashSessionStationLabel = (cashSession) => {
+  return getCashSessionStationLabel(cashSession);
 };
 
 const cashSessionResponsibleLabel = (cashSession) => {
@@ -103,6 +118,10 @@ export default function CajaPage() {
     totalesTurno,
     isCloudCash,
     isCloudCashReadOnly,
+    networkUnavailable,
+    stateKnown,
+    financialCode,
+    isRetrying,
     cashActor,
     adminCashSessions,
     legacyAdminCashSessions,
@@ -117,6 +136,7 @@ export default function CajaPage() {
     calcularTotalTeorico,
     registrarAjusteCaja,
     sincronizarEstadoCaja,
+    reintentarVerificacion,
     obtenerResumenEstadistico,
     descargarReporteCaja,
     verificarExcesoLiquidez,
@@ -186,7 +206,13 @@ export default function CajaPage() {
     return Money.toNumber(total);
   }, [cajaActual, totalesTurno]);
 
-  const operationDisabled = isBackupLoading || isCloudCashReadOnly;
+  const handleRetryVerification = useCallback(
+    () => (reintentarVerificacion
+      ? reintentarVerificacion()
+      : sincronizarEstadoCaja({ force: true })),
+    [reintentarVerificacion, sincronizarEstadoCaja]
+  );
+  const operationDisabled = isBackupLoading || isCloudCashReadOnly || networkUnavailable || stateKnown === false;
   const showAdminAuditPanel = Boolean(isCloudCash && !cashActor?.isStaff && listCashSessionsForAudit);
   const canUseOwnerClose = !isCloudCash || isCashSessionOwnedByActor(cajaActual, cashActor);
   const showBusinessCashSummary = canShowBusinessCashSummary({
@@ -263,7 +289,13 @@ export default function CajaPage() {
   const handleAdminCashAuditClose = (result = null) => {
     setReviewCashSessionId(null);
     if (result?.closed) {
-      showMessageModal('Cierre administrativo completado.', null, { type: 'success' });
+      showMessageModal(
+        result.syncPending
+          ? 'Cierre administrativo confirmado. La actualización local está pendiente; verifica la Caja nuevamente.'
+          : 'Cierre administrativo completado.',
+        null,
+        { type: result.syncPending ? 'warning' : 'success' }
+      );
     }
   };
 
@@ -279,9 +311,12 @@ export default function CajaPage() {
       if (e.altKey && (e.key === 'r' || e.key === 'R')) {
         if (!isInput) {
           e.preventDefault();
-          sincronizarEstadoCaja();
-          setLastSyncTime(new Date());
-          showMessageModal('Estado de caja sincronizado.', null, { type: 'success' });
+          Promise.resolve(handleRetryVerification()).then(() => {
+            setLastSyncTime(new Date());
+            showMessageModal('Verificación de caja solicitada.', null, { type: 'success' });
+          }).catch((retryError) => {
+            Logger.warn('No se pudo solicitar la verificación de caja', retryError);
+          });
         }
       }
 
@@ -316,7 +351,7 @@ export default function CajaPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     operationDisabled,
-    sincronizarEstadoCaja,
+    handleRetryVerification,
     editInitialModal,
     cashEntryModal,
     cashExitModal,
@@ -328,13 +363,15 @@ export default function CajaPage() {
   // AUTO-REFRESH PERIÓDICO
   // ============================================================
   useEffect(() => {
+    if (networkUnavailable || (isCloudCash && stateKnown === false)) return undefined;
     const interval = setInterval(() => {
-      sincronizarEstadoCaja();
-      setLastSyncTime(new Date());
+      Promise.resolve(sincronizarEstadoCaja()).then((result) => {
+        if (!result?.networkUnavailable) setLastSyncTime(new Date());
+      }).catch(() => {});
     }, 30000); // 30 segundos
 
     return () => clearInterval(interval);
-  }, [sincronizarEstadoCaja]);
+  }, [isCloudCash, networkUnavailable, stateKnown, sincronizarEstadoCaja]);
 
   // ============================================================
   // VERIFICAR EXCESO DE LIQUIDEZ
@@ -562,51 +599,56 @@ export default function CajaPage() {
   if (estadoCaja === 'error') {
     return (
       <div className="ui-error-state caja-loading" role="alert">
-        <p>{error || 'No se pudo cargar el estado de caja.'}</p>
-        <button type="button" className="ui-button ui-button--primary btn btn-primary" onClick={sincronizarEstadoCaja}>
-          Reintentar
-        </button>
+        {networkUnavailable ? (
+          <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+        ) : (
+          <>
+            <p>{error || 'No se pudo cargar el estado de caja.'}</p>
+            <button type="button" className="ui-button ui-button--primary btn btn-primary" onClick={sincronizarEstadoCaja}>
+              Reintentar
+            </button>
+          </>
+        )}
       </div>
     );
   }
 
   if (estadoCaja === 'financial_handoff_required' || estadoCaja === 'financial_blocked') {
     const handoffRequired = estadoCaja === 'financial_handoff_required';
+    const stationMismatch = financialCode === 'CASH_SESSION_STATION_MISMATCH';
     const stationSession = aperturaPendiente?.stationOpenCashSession || null;
-    const stationOwnerActorKey = cashSessionActorKey(stationSession);
     return (
       <main className="ui-page caja-page" aria-label="Caja">
         <header className="ui-page__header caja-page__header" aria-label="Estado de caja">
           <div className="ui-section__actions">
             <span className="ui-badge ui-badge--warning">
-              {handoffRequired ? 'Cierre pendiente' : 'Estado financiero bloqueado'}
+              {networkUnavailable ? 'Sin conexión con Supabase' : handoffRequired ? 'Caja pendiente de cierre' : 'Estado financiero bloqueado'}
             </span>
           </div>
         </header>
         <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Resolución financiera">
-          {handoffRequired ? (
+          {networkUnavailable ? (
+            <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+          ) : handoffRequired ? (
             <div className="ui-alert ui-alert--warning caja-handoff-card" role="alert">
               <div className="caja-handoff-card__heading">
                 <LockKeyhole size={22} aria-hidden="true" />
                 <div>
-                  <strong>Caja protegida por cambio de usuario</strong>
+                  <strong>Caja pendiente de cierre</strong>
                   <p>Hay una caja abierta por otro usuario en esta estación. Lanzo no la transfirió ni la cerró automáticamente para proteger el efectivo.</p>
                 </div>
               </div>
               <dl className="caja-handoff-card__summary">
+                <div><dt>Estación</dt><dd>{cashSessionStationLabel(stationSession)}</dd></div>
                 <div><dt>Caja abierta por</dt><dd>{cashSessionResponsibleLabel(stationSession)}</dd></div>
                 <div><dt>Estado</dt><dd>Pendiente de cierre y conteo</dd></div>
               </dl>
-              <p className="caja-handoff-card__guidance">El usuario que abrió la caja o un administrador debe completar el cierre antes de que otro usuario pueda iniciar un nuevo turno.</p>
-              {(stationSession?.id || stationOwnerActorKey) && (
-                <details className="caja-handoff-card__technical">
-                  <summary>Ver detalles técnicos</summary>
-                  <dl>
-                    {stationSession?.id && <div><dt>Sesión</dt><dd><code>{shortenTechnicalIdentifier(stationSession.id)}</code></dd></div>}
-                    {stationOwnerActorKey && <div><dt>Propietario</dt><dd><code>{shortenTechnicalIdentifier(stationOwnerActorKey)}</code></dd></div>}
-                  </dl>
-                </details>
-              )}
+              <p className="caja-handoff-card__guidance">El usuario que abrió la caja o un administrador debe completar el cierre y la conciliación antes de que otro usuario pueda iniciar un nuevo turno.</p>
+            </div>
+          ) : stationMismatch ? (
+            <div className="ui-alert ui-alert--warning" role="alert">
+              <strong>Inconsistencia de estación financiera</strong>
+              <p>Supabase devolvió una sesión asociada a otra estación. La Caja permanece bloqueada hasta resolver la identidad de estación explícitamente.</p>
             </div>
           ) : (
             <div className="ui-alert ui-alert--warning" role="alert">
@@ -649,6 +691,9 @@ export default function CajaPage() {
           </div>
         </header>
       <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Apertura de Caja">
+        {networkUnavailable && (
+          <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+        )}
         <CajaOpeningPanel
           aperturaPendiente={aperturaPendiente}
           onOpen={abrirCaja}
@@ -694,6 +739,9 @@ export default function CajaPage() {
         </header>
       )}
       <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
+        {networkUnavailable && (
+          <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
+        )}
         <CajaSectionTabs
           sections={cajaSections}
           activeSection={activeCajaSection}

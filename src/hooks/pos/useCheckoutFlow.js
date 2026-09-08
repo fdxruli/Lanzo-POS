@@ -172,7 +172,8 @@ export function useCheckoutFlow({
                 paymentData: {
                     ...paymentData,
                     cashSessionId: cajaActual?.id || paymentData.cashSessionId || null,
-                    cashStationId: cajaActual?.cashStationId || paymentData.cashStationId || null
+                    cashStationId: cajaActual?.cashStationId || paymentData.cashStationId || null,
+                    localStationKey: cajaActual?.localStationKey || paymentData.localStationKey || null
                 },
                 total,
                 allProducts: usePosCatalogStore.getState().items || [],

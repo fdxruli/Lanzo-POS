@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, LoaderCircle, X } from 'lucide-react';
 import { Money } from '../../../utils/moneyMath';
 import { generateIdempotencyKey } from '../../../services/sync/idempotency';
+import { isCanonicalCashStation } from '../../../services/cash/cashStation';
+import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
+import { getOpeningDeviceLabel } from '../../../services/cash/cashDeviceLabel';
 
 const REASONS = [
   ['historical_test', 'Caja historica de pruebas'],
@@ -21,6 +24,12 @@ const age = (value) => {
 };
 const sessionExpected = (session) => session?.expected_cash_total ?? session?.total_teorico_cloud ?? 0;
 const movementAmount = (movement = {}) => movement.amount ?? movement.monto ?? 0;
+const sessionStation = (session) => [
+  session?.cash_station_id,
+  session?.cashStationId,
+  session?.metadata?.cash_station_id,
+  session?.metadata?.cashStationId
+].find((value) => isCanonicalCashStation(value)) || null;
 
 const DetailValue = ({ label, children }) => (
   <span><small>{label}</small><strong>{children}</strong></span>
@@ -42,8 +51,11 @@ const CajaAdminCashAuditModal = ({
   const [reasonCode, setReasonCode] = useState('');
   const [comments, setComments] = useState('');
   const [confirming, setConfirming] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submissionState, setSubmissionState] = useState('idle');
   const idempotencyKeyRef = useRef(null);
+
+  const submitting = submissionState === 'submitting';
+  const operationPending = submissionState === 'pending_receipt';
 
   useEffect(() => {
     if (!cashSessionId) return;
@@ -57,6 +69,7 @@ const CajaAdminCashAuditModal = ({
     setReasonCode('');
     setComments('');
     setConfirming(false);
+    setSubmissionState('idle');
     idempotencyKeyRef.current = null;
     getCashSessionDetailForAudit(cashSessionId, { force: true })
       .then((result) => {
@@ -87,8 +100,8 @@ const CajaAdminCashAuditModal = ({
   );
 
   const submit = async () => {
-    if (!canContinue || submitting) return;
-    setSubmitting(true);
+    if (!canContinue || submitting || operationPending) return;
+    setSubmissionState('submitting');
     setError('');
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current = generateIdempotencyKey({
@@ -99,8 +112,9 @@ const CajaAdminCashAuditModal = ({
       });
     }
     let closeResult = null;
+    let nextSubmissionState = 'idle';
     try {
-      const result = await cerrarCajaAdministrativamente({
+      const request = {
         cashSessionId: session.id,
         closingMode: mode,
         countedAmount: audited ? Money.toExactString(counted) : null,
@@ -109,9 +123,17 @@ const CajaAdminCashAuditModal = ({
         comments: comments.trim(),
         expectedVersion: session.serverVersion || session.server_version || null,
         idempotencyKey: idempotencyKeyRef.current
-      });
+      };
+      const targetCashStationId = sessionStation(session);
+      if (targetCashStationId) request.targetCashStationId = targetCashStationId;
+      const result = await cerrarCajaAdministrativamente(request);
       if (result?.success) {
-        closeResult = { closed: true, cashSessionId: session.id };
+        closeResult = {
+          closed: true,
+          cashSessionId: session.id,
+          ...(result.syncPending ? { syncPending: true } : {}),
+          ...(result.syncErrorCode ? { syncErrorCode: result.syncErrorCode } : {})
+        };
       } else {
         const response = result?.response;
         const requiresReview = ['VERSION_CONFLICT', 'CASH_TOTALS_CHANGED'].includes(result?.code);
@@ -124,14 +146,28 @@ const CajaAdminCashAuditModal = ({
           setError(result?.code === 'CASH_TOTALS_CHANGED'
             ? 'El efectivo esperado cambió mientras revisabas la caja. Actualizamos los datos; revísalos antes de confirmar nuevamente.'
             : 'La caja cambió desde que la revisaste. Actualizamos los datos; vuelve a confirmar el cierre.');
+        } else if (result?.operationPending || result?.financialStatus === 'PENDING_RECEIPT') {
+          nextSubmissionState = 'pending_receipt';
+          setError('FINANCIAL_RECOVERY_RECEIPT_PENDING: La operación está siendo verificada; no la repitas.');
         } else {
-          setError(result?.message || 'No se pudo cerrar administrativamente la caja.');
+          const code = result?.code ? `${result.code}: ` : '';
+          const retryMessage = result?.operationSent === false
+            ? ' La operación no fue enviada; puedes intentarlo nuevamente.'
+            : '';
+          if (result?.operationSent === false) idempotencyKeyRef.current = null;
+          setError(`${code}${result?.message || 'No se pudo cerrar administrativamente la caja.'}${retryMessage}`);
         }
       }
     } catch (submitError) {
-      setError(submitError?.message || 'No se pudo cerrar administrativamente la caja. Intenta nuevamente.');
+      if (submitError?.isFinancialOperationAmbiguous || submitError?.financialStatus === 'PENDING_RECEIPT') {
+        nextSubmissionState = 'pending_receipt';
+        setError('FINANCIAL_RECOVERY_RECEIPT_PENDING: La operación está siendo verificada; no la repitas.');
+      } else {
+        const code = submitError?.code ? `${submitError.code}: ` : '';
+        setError(`${code}${submitError?.message || 'No se pudo cerrar administrativamente la caja. Intenta nuevamente.'}`);
+      }
     } finally {
-      setSubmitting(false);
+      setSubmissionState(nextSubmissionState);
     }
 
     if (closeResult) onClose(closeResult);
@@ -145,7 +181,7 @@ const CajaAdminCashAuditModal = ({
         <header className="caja-modal__header">
           <span className="caja-modal__header-icon" aria-hidden="true"><ClipboardCheck size={22} /></span>
           <div className="caja-modal__heading"><p>Auditoria administrativa</p><h2 id="admin-cash-audit-title">Revisar y cerrar caja</h2></div>
-          <button type="button" className="caja-modal__close" onClick={() => onClose()} disabled={submitting} aria-label="Cerrar"><X size={20} /></button>
+          <button type="button" className="caja-modal__close" onClick={() => onClose()} disabled={submitting || operationPending} aria-label="Cerrar"><X size={20} /></button>
         </header>
         <div className="caja-modal__body admin-cash-audit-body">
           {loading && <p className="admin-cash-audit-loading"><LoaderCircle size={18} /> Cargando detalle de caja...</p>}
@@ -153,9 +189,10 @@ const CajaAdminCashAuditModal = ({
           {session && (
             <>
               <div className="admin-cash-audit-summary">
+                <DetailValue label="Estación">{getCashSessionStationLabel(session)}</DetailValue>
                 <DetailValue label="Responsable">{session.responsible_name || session.responsable_apertura || 'No disponible'}</DetailValue>
                 <DetailValue label="Identidad">{session.cash_identity_state === 'legacy' ? 'Legacy' : 'CanÃ³nica'}</DetailValue>
-                <DetailValue label="Dispositivo de apertura">{session.opened_by_device_name || session.device_name || session.opened_by_device_id || session.device_id || 'No disponible'}</DetailValue>
+                <DetailValue label="Dispositivo de apertura">{getOpeningDeviceLabel(session)}</DetailValue>
                 <DetailValue label="Abierta">{date(session.opened_at || session.fecha_apertura)}</DetailValue>
                 <DetailValue label="AntigÃ¼edad">{age(session.opened_at || session.fecha_apertura)}</DetailValue>
                 <DetailValue label="Efectivo esperado">{formatMoney(expected)}</DetailValue>
@@ -180,12 +217,13 @@ const CajaAdminCashAuditModal = ({
               ) : confirming ? (
                 <div className="admin-cash-audit-confirm">
                   <h3>Confirmar cierre administrativo</h3>
+                  {operationPending && <div className="caja-modal__notice caja-modal__notice--warning" role="status"><AlertTriangle size={18} /><p>La operación está siendo verificada; no la repitas.</p></div>}
                   <p>Caja: {session.responsible_name || session.responsable_apertura}</p>
                   <p>Tipo: {audited ? 'Cierre administrativo auditado' : 'Cierre administrativo sin conteo'}</p>
                   <p>Esperado: {formatMoney(expected)}</p>
                   <p>{audited ? `Contado: ${formatMoney(counted)} · Diferencia: ${formatMoney(difference)}` : 'Conteo fisico: No disponible · Diferencia: No determinada'}</p>
                   <p>Motivo: {REASONS.find(([code]) => code === reasonCode)?.[1]}</p>
-                  <div className="caja-modal__actions"><button type="button" className="caja-modal__button caja-modal__button--secondary" onClick={() => setConfirming(false)} disabled={submitting}>Volver</button><button type="button" className="caja-modal__button caja-modal__button--primary" onClick={submit} disabled={submitting}>{submitting ? 'Cerrando...' : 'Confirmar cierre administrativo'}</button></div>
+                  <div className="caja-modal__actions"><button type="button" className="caja-modal__button caja-modal__button--secondary" onClick={() => setConfirming(false)} disabled={submitting || operationPending}>Volver</button><button type="button" className="caja-modal__button caja-modal__button--primary" onClick={submit} disabled={submitting || operationPending}>{submitting ? 'Cerrando...' : operationPending ? 'Operación en verificación' : 'Confirmar cierre administrativo'}</button></div>
                 </div>
               ) : (
                 <div className="admin-cash-audit-form">
