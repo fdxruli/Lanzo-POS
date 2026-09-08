@@ -3,6 +3,8 @@ import { AlertTriangle, CheckCircle2, ClipboardCheck, LoaderCircle, X } from 'lu
 import { Money } from '../../../utils/moneyMath';
 import { generateIdempotencyKey } from '../../../services/sync/idempotency';
 import { isCanonicalCashStation } from '../../../services/cash/cashStation';
+import { getCashSessionStationLabel } from '../../../services/cash/businessCashSummary';
+import { getOpeningDeviceLabel } from '../../../services/cash/cashDeviceLabel';
 
 const REASONS = [
   ['historical_test', 'Caja historica de pruebas'],
@@ -187,9 +189,10 @@ const CajaAdminCashAuditModal = ({
           {session && (
             <>
               <div className="admin-cash-audit-summary">
+                <DetailValue label="Estación">{getCashSessionStationLabel(session)}</DetailValue>
                 <DetailValue label="Responsable">{session.responsible_name || session.responsable_apertura || 'No disponible'}</DetailValue>
                 <DetailValue label="Identidad">{session.cash_identity_state === 'legacy' ? 'Legacy' : 'CanÃ³nica'}</DetailValue>
-                <DetailValue label="Dispositivo de apertura">{session.opened_by_device_name || session.device_name || session.opened_by_device_id || session.device_id || 'No disponible'}</DetailValue>
+                <DetailValue label="Dispositivo de apertura">{getOpeningDeviceLabel(session)}</DetailValue>
                 <DetailValue label="Abierta">{date(session.opened_at || session.fecha_apertura)}</DetailValue>
                 <DetailValue label="AntigÃ¼edad">{age(session.opened_at || session.fecha_apertura)}</DetailValue>
                 <DetailValue label="Efectivo esperado">{formatMoney(expected)}</DetailValue>

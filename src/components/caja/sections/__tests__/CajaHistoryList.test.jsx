@@ -85,7 +85,7 @@ describe('CajaHistoryList', () => {
   it('shows a safe station label without exposing technical identifiers', () => {
     render(<CajaHistoryList historial={[{
       ...baseSession,
-      device_name: 'Caja mostrador',
+      opening_device_name: 'Caja mostrador',
       staffUserId: 'staff-123456789',
       actorKey: 'staff:traceable'
     }]} />);

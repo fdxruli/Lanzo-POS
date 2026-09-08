@@ -40,11 +40,15 @@ const getStaffUserId = (session = {}) => session.staffUserId || session.staff_us
 const getDeviceLabel = (session = {}) => (
   session.device_name ||
   session.deviceName ||
+  session.openedByDeviceName ||
   session.opened_by_device_name ||
+  session.openingDeviceName ||
   session.opening_device_name ||
   session.metadata?.device_name ||
   session.metadata?.deviceName ||
+  session.metadata?.openedByDeviceName ||
   session.metadata?.opened_by_device_name ||
+  session.metadata?.openingDeviceName ||
   session.metadata?.opening_device_name ||
   null
 );

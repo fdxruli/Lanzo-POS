@@ -25,7 +25,7 @@ describe('CajaBusinessCashSummary progressive disclosure', () => {
             status: 'open',
             actor_key: 'admin:one',
             responsible_name: 'Ana',
-            device_name: 'Terminal 2',
+            opened_by_device_name: 'Terminal 2',
             expected_cash_total: '275'
           }
         ]}

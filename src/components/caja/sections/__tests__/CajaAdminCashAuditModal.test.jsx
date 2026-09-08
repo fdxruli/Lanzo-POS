@@ -38,10 +38,29 @@ describe('CajaAdminCashAuditModal', () => {
   it('loads one selected session on demand and renders movements/events', async () => {
     const { getDetail } = renderModal();
     await screen.findByText('Caja sintetica');
+    expect(screen.getByText('Estación financiera sin nombre')).toBeVisible();
+    expect(screen.getByText('Dispositivo registrado')).toBeVisible();
+    expect(screen.queryByText('cash_station_device_550e8400-e29b-41d4-a716-446655440000')).not.toBeInTheDocument();
     expect(getDetail).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByText(/movimientos \(1\)/i));
     expect(screen.getByText(/Venta sintetica/)).toBeVisible();
     expect(screen.getByText(/OPENED/)).toBeVisible();
+  });
+
+  it('renders the safe opening device name and station label without exposing identifiers', async () => {
+    renderModal({
+      getCashSessionDetailForAudit: vi.fn().mockResolvedValue({
+        ...detail,
+        cashSession: {
+          ...detail.cashSession,
+          opened_by_device_name: 'Caja mostrador'
+        }
+      })
+    });
+
+    await screen.findByText('Caja mostrador');
+    expect(screen.getAllByText('Caja mostrador')).toHaveLength(2);
+    expect(screen.queryByText('cash_station_device_550e8400-e29b-41d4-a716-446655440000')).not.toBeInTheDocument();
   });
 
   it('requires a physical count for audited close and previews the correct difference', async () => {

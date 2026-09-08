@@ -57,22 +57,32 @@ export const cloudCashSessionToLocal = (session = {}, existing = null) => {
   const stationName = firstSafeLabel(
     session.station_name,
     session.stationName,
+    session.metadata?.station_name,
+    session.metadata?.stationName,
     existing?.station_name,
     existing?.stationName
   );
   const deviceName = firstSafeLabel(
     session.device_name,
     session.deviceName,
+    session.metadata?.device_name,
+    session.metadata?.deviceName,
     existing?.device_name,
     existing?.deviceName
   );
   const openedByDeviceName = firstSafeLabel(
     session.opened_by_device_name,
+    session.openedByDeviceName,
+    session.metadata?.opened_by_device_name,
+    session.metadata?.openedByDeviceName,
     existing?.opened_by_device_name,
     existing?.openedByDeviceName
   );
   const openingDeviceName = firstSafeLabel(
     session.opening_device_name,
+    session.openingDeviceName,
+    session.metadata?.opening_device_name,
+    session.metadata?.openingDeviceName,
     existing?.opening_device_name,
     existing?.openingDeviceName
   );

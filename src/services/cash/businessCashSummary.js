@@ -34,12 +34,18 @@ export const getCashSessionStationLabel = (session = {}) => (
     session.stationName,
     session.device_name,
     session.deviceName,
+    session.openedByDeviceName,
     session.opened_by_device_name,
+    session.openingDeviceName,
     session.opening_device_name,
     session.metadata?.station_name,
     session.metadata?.stationName,
     session.metadata?.device_name,
-    session.metadata?.deviceName
+    session.metadata?.deviceName,
+    session.metadata?.opened_by_device_name,
+    session.metadata?.openedByDeviceName,
+    session.metadata?.opening_device_name,
+    session.metadata?.openingDeviceName
   ) || 'Estación financiera sin nombre'
 );
 

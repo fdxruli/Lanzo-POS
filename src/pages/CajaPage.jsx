@@ -75,16 +75,7 @@ export const isCashSessionOwnedByActor = (cashSession, cashActor) => {
 };
 
 const cashSessionStationLabel = (cashSession) => {
-  if (typeof getCashSessionStationLabel === 'function') {
-    return getCashSessionStationLabel(cashSession);
-  }
-  return cashSession?.station_name
-    || cashSession?.stationName
-    || cashSession?.device_name
-    || cashSession?.deviceName
-    || cashSession?.opened_by_device_name
-    || cashSession?.opening_device_name
-    || 'Estación financiera sin nombre';
+  return getCashSessionStationLabel(cashSession);
 };
 
 const cashSessionResponsibleLabel = (cashSession) => {

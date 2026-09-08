@@ -74,6 +74,13 @@ describe('getCashSessionStationLabel', () => {
       actorKey: 'admin:secret'
     })).toBe('Estación financiera sin nombre');
   });
+
+  it('normalizes opening-device aliases, including metadata, into one visible label', () => {
+    expect(getCashSessionStationLabel({ opened_by_device_name: 'Caja principal' })).toBe('Caja principal');
+    expect(getCashSessionStationLabel({ deviceName: 'Terminal secundaria' })).toBe('Terminal secundaria');
+    expect(getCashSessionStationLabel({ openingDeviceName: 'Caja de respaldo' })).toBe('Caja de respaldo');
+    expect(getCashSessionStationLabel({ metadata: { opening_device_name: 'Caja metadata' } })).toBe('Caja metadata');
+  });
 });
 
 describe('getCashSessionAge', () => {

@@ -13,7 +13,7 @@ const staffSession = {
   fecha_cierre: null,
   responsible_name: 'Ana García',
   staff_display_name: 'Ana García',
-  device_name: 'Caja Samsung',
+  opened_by_device_name: 'Caja Samsung',
   monto_inicial: '500',
   entradas_efectivo: '300',
   salidas_efectivo: '150',

@@ -66,6 +66,26 @@ describe('cashMapper cloud opening contract', () => {
     expect(getCashSessionStationLabel(local)).toBe('Caja mostrador');
   });
 
+  it('keeps device aliases and the canonical station identity separate', () => {
+    const stationId = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
+    const local = cloudCashSessionToLocal({
+      id: 'cash-device-label',
+      status: 'open',
+      cash_station_id: stationId,
+      device_name: 'Terminal principal',
+      opening_device_name: 'Terminal de apertura'
+    });
+
+    expect(local).toMatchObject({
+      cashStationId: stationId,
+      device_name: 'Terminal principal',
+      deviceName: 'Terminal principal',
+      opening_device_name: 'Terminal de apertura',
+      openingDeviceName: 'Terminal de apertura'
+    });
+    expect(getCashSessionStationLabel(local)).toBe('Terminal principal');
+  });
+
   it('projects the server station and separates a legacy local key when cloud data omits it', () => {
     const stationId = 'cash_station_device_550e8400-e29b-41d4-a716-446655440000';
     const canonical = cloudCashSessionToLocal({
