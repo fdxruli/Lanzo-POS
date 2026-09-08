@@ -58,10 +58,10 @@ describe('CajaAdminCashAuditModal', () => {
       })
     });
 
-    await screen.findByText('Caja mostrador');
+    const visibleLabels = await screen.findAllByText('Caja mostrador');
     expect(screen.getByText('Estación')).toBeVisible();
     expect(screen.getByText('Dispositivo de apertura')).toBeVisible();
-    expect(screen.getAllByText('Caja mostrador').length).toBeGreaterThanOrEqual(1);
+    expect(visibleLabels.length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('cash_station_device_550e8400-e29b-41d4-a716-446655440000')).not.toBeInTheDocument();
   });
 
