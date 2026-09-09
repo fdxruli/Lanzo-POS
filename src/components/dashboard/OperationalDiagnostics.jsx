@@ -6,7 +6,7 @@
  * mobile-first work queue instead of a card-heavy dashboard.
  */
 
-import { memo, useMemo, useState, useCallback } from 'react';
+import { memo, useMemo, useState, useCallback, useEffect } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -31,6 +31,7 @@ import {
 import { useAppStore } from '../../store/useAppStore';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { canCurrentActorUseAIAgents } from '../../services/auth/aiAgentAuthorization';
+import { readAIReportUiState, writeAIReportUiState } from '../../utils/aiReportUiState';
 import { useRestaurantDiagnostics } from '../../hooks/diagnostics/useRestaurantDiagnostics';
 import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagnostics';
 import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
@@ -257,7 +258,11 @@ export default function OperationalDiagnostics({
 }) {
   const [rubroOverride, setRubroOverride] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(() => Date.now());
-  const [showAIAgent, setShowAIAgent] = useState(false);
+  const [showAIAgent, setShowAIAgent] = useState(() => readAIReportUiState().showAIAgent);
+  const [hasOpenedAIAgent, setHasOpenedAIAgent] = useState(() => {
+    const persisted = readAIReportUiState();
+    return persisted.hasOpenedAIAgent || persisted.showAIAgent;
+  });
 
   const companyProfile = useAppStore(state => state.companyProfile);
   const licenseDetails = useAppStore(state => state.licenseDetails);
@@ -277,6 +282,11 @@ export default function OperationalDiagnostics({
     actorSnapshot
   }), [actorSnapshot, licenseDetails]);
   const effectiveShowAIAgent = Boolean(showAIAgent && canUseAIAgents);
+  const shouldRenderAIAgent = Boolean(canUseAIAgents && (effectiveShowAIAgent || hasOpenedAIAgent));
+
+  useEffect(() => {
+    writeAIReportUiState({ showAIAgent, hasOpenedAIAgent });
+  }, [hasOpenedAIAgent, showAIAgent]);
 
   const handleNavigate = useCallback((link) => {
     if (onNavigate) {
@@ -292,8 +302,10 @@ export default function OperationalDiagnostics({
 
   const handleToggleMode = useCallback(() => {
     if (!canUseAIAgents && !effectiveShowAIAgent) return;
-    setShowAIAgent(prev => !prev);
-  }, [canUseAIAgents, effectiveShowAIAgent]);
+    const nextMode = !showAIAgent;
+    setShowAIAgent(nextMode);
+    if (nextMode) setHasOpenedAIAgent(true);
+  }, [canUseAIAgents, effectiveShowAIAgent, showAIAgent]);
 
   const currentTypeConfig = BUSINESS_TYPE_MAPPING[businessTypeString] || { label: 'Negocio', icon: Activity };
   const TypeIcon = currentTypeConfig.icon;
@@ -462,15 +474,18 @@ export default function OperationalDiagnostics({
       )}
 
       <div className="diagnostics-content">
-        {effectiveShowAIAgent ? (
-          <AIAgentDashboard
-            sales={sales}
-            menu={menu}
-            customers={customers}
-            wasteLogs={wasteLogs}
-            businessType={businessTypeArray}
-          />
-        ) : renderClassicContent()}
+        {shouldRenderAIAgent && (
+          <div hidden={!effectiveShowAIAgent} aria-hidden={!effectiveShowAIAgent}>
+            <AIAgentDashboard
+              sales={sales}
+              menu={menu}
+              customers={customers}
+              wasteLogs={wasteLogs}
+              businessType={businessTypeArray}
+            />
+          </div>
+        )}
+        {!effectiveShowAIAgent && renderClassicContent()}
       </div>
 
       <footer className="diagnostics-footer">

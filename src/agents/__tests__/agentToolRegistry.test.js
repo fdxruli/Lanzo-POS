@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getAvailableAgentTools } from '../agentToolRegistry';
+import { getAvailableAgentTools, runAgentTools } from '../agentToolRegistry';
 
 const toolIdsFor = (businessTypes) => getAvailableAgentTools({
   agentType: 'financialAnalyst',
@@ -22,5 +22,24 @@ describe('agentToolRegistry business type routing', () => {
     expect(pharmacyTools).toContain('finance.salesPulse');
     expect(pharmacyTools).not.toContain('restaurant.upsellLeakage');
   });
-});
 
+  it('keeps tool execution errors in the complete local run result', async () => {
+    const throwingPayload = new Proxy({}, {
+      get() {
+        throw new Error('synthetic tool failure');
+      }
+    });
+
+    const toolRun = await runAgentTools({
+      agentType: 'financialAnalyst',
+      businessTypes: ['retail'],
+      rawData: { sales: [], menu: [], customers: [], wasteLogs: [] },
+      aggregatedPayload: throwingPayload
+    });
+
+    expect(toolRun.results[0].errorMetadata).toEqual({
+      code: 'TOOL_EXECUTION_FAILED',
+      message: 'synthetic tool failure'
+    });
+  });
+});

@@ -85,7 +85,9 @@ const WRAPPER_KEYS = [
   'análisis',
   'data',
   'answer',
-  'payload'
+  'payload',
+  'parsedResult',
+  'parsed_result'
 ];
 
 const STRUCTURED_KEYS = [
@@ -115,6 +117,19 @@ const STRUCTURED_KEYS = [
   'resumen_ejecutivo',
   'summary',
   'resumen'
+];
+
+const REQUIRED_CONTRACT_KEYS = [
+  'formatVersion',
+  'executiveSummary',
+  'severity',
+  'confidence',
+  'coverage',
+  'findings',
+  'actions',
+  'opportunities',
+  'questionsToAskUser',
+  'toolReferences'
 ];
 
 const clampNumber = (value, min = 0, max = 1, fallback = 0.7) => {
@@ -169,6 +184,64 @@ const firstPresent = (source, keys, fallback = undefined) => {
 const hasStructuredKeys = (payload) => asObject(payload) && STRUCTURED_KEYS.some(key => (
   Object.prototype.hasOwnProperty.call(payload, key) && payload[key] !== undefined && payload[key] !== null
 ));
+
+const normalizeNonNegativeNumber = (value, fallback = 0) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+};
+
+const normalizeCoverage = (value) => {
+  const source = asObject(value) ? value : {};
+  const factsTotal = normalizeNonNegativeNumber(source.factsTotal ?? source.facts_total, 0);
+  const factsIncluded = normalizeNonNegativeNumber(source.factsIncluded ?? source.facts_included, 0);
+  const factsOmitted = normalizeNonNegativeNumber(source.factsOmitted ?? source.facts_omitted, 0);
+  const notes = asFlexibleArray(source.notes)
+    .map(note => asString(note))
+    .filter(Boolean);
+
+  return {
+    complete: source.complete === true && factsOmitted === 0,
+    factsTotal,
+    factsIncluded,
+    factsOmitted,
+    notes
+  };
+};
+
+const validateContract = (payload, coverage, metadata = {}) => {
+  const source = asObject(payload) ? payload : {};
+  const missingKeys = REQUIRED_CONTRACT_KEYS.filter(key => (
+    !Object.prototype.hasOwnProperty.call(source, key)
+  ));
+  const errors = [];
+
+  if (missingKeys.length > 0) errors.push(`missing_keys:${missingKeys.join(',')}`);
+  if (String(source.formatVersion || '') !== '1.1') errors.push('format_version_not_1.1');
+  if (typeof source.executiveSummary !== 'string') errors.push('executive_summary_not_string');
+  if (!VALID_SEVERITIES.has(source.severity)) errors.push('severity_invalid');
+  if (typeof source.confidence !== 'number' || !Number.isFinite(source.confidence) || source.confidence < 0 || source.confidence > 1) {
+    errors.push('confidence_invalid');
+  }
+  ['findings', 'actions', 'opportunities', 'questionsToAskUser', 'toolReferences'].forEach(key => {
+    if (!Array.isArray(source[key])) errors.push(`${key}_not_array`);
+  });
+  if (!asObject(source.coverage)) errors.push('coverage_missing');
+  if (asObject(source.coverage)) {
+    ['complete', 'factsTotal', 'factsIncluded', 'factsOmitted', 'notes'].forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(source.coverage, key)) errors.push(`coverage_${key}_missing`);
+    });
+    if (typeof source.coverage.complete !== 'boolean') errors.push('coverage_complete_invalid');
+    if (!Array.isArray(source.coverage.notes)) errors.push('coverage_notes_not_array');
+  }
+  if (coverage.factsOmitted > 0 || coverage.complete !== true) errors.push('coverage_incomplete');
+  const finishReason = String(metadata.finishReason || '').toLowerCase();
+  if (['length', 'max_tokens', 'max_output_tokens', 'incomplete'].includes(finishReason)) errors.push(`finish_reason:${finishReason}`);
+
+  return {
+    isComplete: errors.length === 0,
+    errors
+  };
+};
 
 const normalizeSeverity = (value, fallback = 'info') => {
   const normalized = normalizeToken(value || fallback);
@@ -533,8 +606,7 @@ const normalizeFinding = (item, index) => {
     metric: asString(firstPresent(item, ['metric', 'metrica', 'métrica', 'value', 'valor'], '')),
     evidence: asFlexibleArray(firstPresent(item, ['evidence', 'evidencia', 'datos', 'data', 'reason', 'razon', 'razón'], []))
       .map(entry => asString(entry))
-      .filter(Boolean)
-      .slice(0, 5),
+      .filter(Boolean),
     toolId: asString(firstPresent(item, ['toolId', 'tool_id', 'tool', 'herramienta'], ''))
   };
 };
@@ -591,27 +663,54 @@ const normalizeOpportunity = (item, index) => {
   };
 };
 
-const normalizeAgentResponse = (payload) => {
+const getNormalizationState = (contract, coverage, metadata = {}) => {
+  const errors = Array.isArray(contract?.errors) ? contract.errors : [];
+  const finishReason = normalizeToken(metadata.finishReason);
+  const providerTruncated = ['length', 'max_tokens', 'max_output_tokens', 'incomplete'].includes(finishReason);
+  const onlyCoverageIncomplete = errors.length > 0 && errors.every(error => error === 'coverage_incomplete');
+  const coverageStatus = coverage.factsOmitted > 0 || coverage.complete !== true ? 'partial' : 'complete';
+
+  if (contract.isComplete) {
+    return { parseStatus: 'structured', reportStatus: 'completed', coverageStatus };
+  }
+
+  if (onlyCoverageIncomplete) {
+    return { parseStatus: 'structured', reportStatus: 'incomplete', coverageStatus: 'partial' };
+  }
+
+  // A provider response cut short by its token limit is incomplete even when
+  // the browser could only salvage part of its JSON.
+  if (providerTruncated) {
+    return { parseStatus: 'incomplete', reportStatus: 'incomplete', coverageStatus };
+  }
+
+  return { parseStatus: 'invalid', reportStatus: 'invalid', coverageStatus };
+};
+
+const normalizeAgentResponse = (payload, metadata = {}) => {
   const normalizedPayload = Array.isArray(payload)
     ? { [inferArrayBucket(payload)]: payload }
     : unwrapProviderPayload(payload);
+  const rawPayload = asObject(normalizedPayload) ? normalizedPayload : {};
+  const coverage = normalizeCoverage(rawPayload.coverage);
+  const contract = validateContract(rawPayload, coverage, metadata);
+  const normalizationState = getNormalizationState(contract, coverage, metadata);
 
-  const findings = asArray(firstPresent(normalizedPayload, ['findings', 'hallazgos', 'insights', 'diagnostics', 'diagnosticos', 'diagnósticos', 'issues', 'alertas'], []))
+  const findings = asArray(firstPresent(rawPayload, ['findings', 'hallazgos', 'insights', 'diagnostics', 'diagnosticos', 'diagnósticos', 'issues', 'alertas'], []))
     .map(normalizeFinding)
     .filter(item => item.title || item.summary);
 
-  const actions = asArray(firstPresent(normalizedPayload, ['actions', 'acciones', 'recommendedActions', 'recommended_actions', 'recommendations', 'recomendaciones', 'nextSteps', 'next_steps'], []))
+  const actions = asArray(firstPresent(rawPayload, ['actions', 'acciones', 'recommendedActions', 'recommended_actions', 'recommendations', 'recomendaciones', 'nextSteps', 'next_steps'], []))
     .map(normalizeAction)
     .filter(item => item.label || item.description);
 
-  const opportunities = asArray(firstPresent(normalizedPayload, ['opportunities', 'oportunidades', 'growthOpportunities', 'growth_opportunities'], []))
+  const opportunities = asArray(firstPresent(rawPayload, ['opportunities', 'oportunidades', 'growthOpportunities', 'growth_opportunities'], []))
     .map(normalizeOpportunity)
     .filter(item => item.title || item.description);
 
-  const questionsToAskUser = asFlexibleArray(firstPresent(normalizedPayload, ['questionsToAskUser', 'questions_to_ask_user', 'questions', 'preguntas', 'preguntasAlUsuario'], []))
+  const questionsToAskUser = asFlexibleArray(firstPresent(rawPayload, ['questionsToAskUser', 'questions_to_ask_user', 'questions', 'preguntas', 'preguntasAlUsuario'], []))
     .map(question => asString(question))
-    .filter(Boolean)
-    .slice(0, 5);
+    .filter(Boolean);
 
   const hasUsefulStructuredContent = findings.length > 0 || actions.length > 0 || opportunities.length > 0;
   const fallbackSummary = hasUsefulStructuredContent
@@ -620,10 +719,10 @@ const normalizeAgentResponse = (payload) => {
 
   return {
     isStructured: true,
-    formatVersion: asString(firstPresent(normalizedPayload, ['formatVersion', 'format_version', 'version'], '1.0')),
-    executiveSummary: asString(firstPresent(normalizedPayload, ['executiveSummary', 'executive_summary', 'summary', 'resumen', 'resumenEjecutivo', 'resumen_ejecutivo'], fallbackSummary)),
-    severity: normalizeSeverity(firstPresent(normalizedPayload, ['severity', 'nivel', 'status', 'estado'], hasUsefulStructuredContent ? 'info' : 'warning'), hasUsefulStructuredContent ? 'info' : 'warning'),
-    confidence: clampNumber(firstPresent(normalizedPayload, ['confidence', 'confianza'], 0.7), 0, 1, 0.7),
+    formatVersion: asString(firstPresent(rawPayload, ['formatVersion', 'format_version', 'version'], '1.0')),
+    executiveSummary: asString(firstPresent(rawPayload, ['executiveSummary', 'executive_summary', 'summary', 'resumen', 'resumenEjecutivo', 'resumen_ejecutivo'], fallbackSummary)),
+    severity: normalizeSeverity(firstPresent(rawPayload, ['severity', 'nivel', 'status', 'estado'], hasUsefulStructuredContent ? 'info' : 'warning'), hasUsefulStructuredContent ? 'info' : 'warning'),
+    confidence: clampNumber(firstPresent(rawPayload, ['confidence', 'confianza'], 0.7), 0, 1, 0.7),
     findings: hasUsefulStructuredContent ? findings : [normalizeFinding({
       title: 'Respuesta JSON sin contrato completo',
       summary: 'El proveedor respondió en formato JSON, pero no incluyó findings/actions/opportunities reconocibles. Revisa el prompt o la Edge Function si esto se repite.',
@@ -633,18 +732,70 @@ const normalizeAgentResponse = (payload) => {
     actions,
     opportunities,
     questionsToAskUser,
-    toolReferences: asFlexibleArray(firstPresent(normalizedPayload, ['toolReferences', 'tool_references', 'tools', 'herramientas'], []))
+    coverage,
+    toolReferences: asFlexibleArray(firstPresent(rawPayload, ['toolReferences', 'tool_references', 'tools', 'herramientas'], []))
       .map(reference => asString(reference))
       .filter(Boolean),
-    raw: normalizedPayload
+    raw: normalizedPayload,
+    parsedResult: normalizedPayload,
+    rawResultContent: typeof metadata.rawResultContent === 'string' ? metadata.rawResultContent : '',
+    resultFormat: 'structured_json',
+    isComplete: contract.isComplete,
+    validContract: contract.isComplete,
+    incompleteReason: contract.isComplete ? null : contract.errors.join('|'),
+    validationErrors: contract.errors,
+    finishReason: metadata.finishReason || null,
+    parseStatus: normalizationState.parseStatus,
+    coverageStatus: normalizationState.coverageStatus,
+    reportStatus: normalizationState.reportStatus,
+    status: normalizationState.reportStatus === 'completed' ? 'complete' : normalizationState.reportStatus
   };
 };
 
-export const parseAgentResponse = (rawResponse) => {
+export const classifyParsedAgentResponse = ({ parsedResult, providerStatus = 200, providerError = false, recordStatus = null } = {}) => {
+  const parsed = parsedResult && typeof parsedResult === 'object' ? parsedResult : {};
+  const numericProviderStatus = Number(providerStatus);
+  const normalizedProviderStatus = String(providerStatus ?? '').toLowerCase();
+  const transportFailed = providerError
+    || (Number.isFinite(numericProviderStatus) && numericProviderStatus >= 400)
+    || ['error', 'failed', 'timeout', 'network_error'].includes(normalizedProviderStatus);
+  const parseStatus = parsed.parseStatus
+    || (parsed.status === 'failed'
+      ? 'failed'
+      : parsed.isStructured === true
+        ? (parsed.isComplete === true || parsed.incompleteReason === 'coverage_incomplete' ? 'structured' : 'invalid')
+        : parsed.status === 'incomplete' ? 'incomplete' : 'invalid');
+  const coverageStatus = parsed.coverageStatus
+    || (parsed.coverage?.factsOmitted > 0 || parsed.coverage?.complete === false ? 'partial' : 'complete');
+  const computedReportStatus = transportFailed || parseStatus === 'failed'
+    ? 'failed'
+    : parseStatus === 'structured'
+      ? coverageStatus === 'partial' ? 'incomplete' : 'completed'
+      : parseStatus === 'incomplete' ? 'incomplete' : 'invalid';
+  const reportStatus = ['saved', 'archived'].includes(recordStatus)
+    ? recordStatus
+    : recordStatus === 'failed' && (transportFailed || parseStatus !== 'structured')
+      ? 'failed'
+      : computedReportStatus;
+
+  return {
+    providerStatus: transportFailed ? 'failed' : 'success',
+    providerHttpStatus: Number.isFinite(numericProviderStatus) ? numericProviderStatus : null,
+    parseStatus,
+    reportStatus,
+    coverageStatus
+  };
+};
+
+export const parseAgentResponse = (rawResponse, metadata = {}) => {
+  const rawResultContent = typeof rawResponse === 'string'
+    ? rawResponse
+    : safeJsonStringify(rawResponse, '');
+  const parserMetadata = { ...metadata, rawResultContent };
   const parsedPayload = parseRawResponse(rawResponse);
 
   if (parsedPayload !== null && parsedPayload !== undefined) {
-    return normalizeAgentResponse(parsedPayload);
+    return normalizeAgentResponse(parsedPayload, parserMetadata);
   }
 
   const rawText = asString(rawResponse);
@@ -652,18 +803,33 @@ export const parseAgentResponse = (rawResponse) => {
     return {
       isStructured: false,
       markdown: '',
+      rawResultContent,
+      resultFormat: 'raw',
+      status: 'failed',
+      parseStatus: 'failed',
+      reportStatus: 'failed',
+      coverageStatus: 'unknown',
+      isComplete: false,
       error: 'Respuesta vacía del proveedor de IA'
     };
   }
 
   const salvagedPayload = salvageJsonLikeResponse(rawText);
   if (salvagedPayload) {
-    return normalizeAgentResponse(salvagedPayload);
+    return normalizeAgentResponse(salvagedPayload, { ...parserMetadata, salvaged: true });
   }
 
   return {
     isStructured: false,
     markdown: rawText,
+    rawResultContent,
+    resultFormat: 'markdown',
+    status: 'invalid',
+    parseStatus: 'invalid',
+    reportStatus: 'invalid',
+    coverageStatus: 'unknown',
+    isComplete: false,
+    incompleteReason: 'UNPARSEABLE_RESPONSE',
     error: 'No se pudo interpretar la respuesta como JSON estructurado válido'
   };
 };

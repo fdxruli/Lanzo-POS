@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Calendar, RefreshCw, ShieldCheck, WifiOff } from 'lucide-react';
 import { getAIAgentUsage } from '../../services/aiAgentUsageService';
 import './AIAgentUsageLegend.css';
@@ -54,9 +54,13 @@ export default function AIAgentUsageLegend({ enabled = true, connectionStatus = 
   const [usage, setUsage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const usageRequestInFlightRef = useRef(false);
 
   const loadUsage = useCallback(async ({ silent = false } = {}) => {
     if (!enabled) return;
+    if (usageRequestInFlightRef.current) return;
+
+    usageRequestInFlightRef.current = true;
 
     if (!silent) setIsLoading(true);
 
@@ -75,6 +79,7 @@ export default function AIAgentUsageLegend({ enabled = true, connectionStatus = 
       setLastUpdated(new Date());
     } finally {
       if (!silent) setIsLoading(false);
+      usageRequestInFlightRef.current = false;
     }
   }, [enabled]);
 
@@ -87,12 +92,8 @@ export default function AIAgentUsageLegend({ enabled = true, connectionStatus = 
       loadUsage({ silent: true });
     }, POLL_INTERVAL_MS);
 
-    const handleFocus = () => loadUsage({ silent: true });
-    window.addEventListener('focus', handleFocus);
-
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
     };
   }, [enabled, loadUsage]);
 

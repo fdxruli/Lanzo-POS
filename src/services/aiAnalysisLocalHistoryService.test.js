@@ -24,6 +24,8 @@ vi.mock('./db/tenantRuntimeRouter', () => ({
 }));
 
 import {
+  archiveLocalAIAnalysis,
+  deleteLocalAIAnalysis,
   getLocalAIAnalysisHistory,
   getLocalAIAnalysisDetail,
   saveLocalAIAnalysis,
@@ -62,6 +64,7 @@ afterEach(async () => {
   tenantState.ready = false;
   tenantState.runtime = null;
   closeLocalAIAnalysisHistoryDatabasesForTests();
+  localStorage.clear();
   await deleteHistoryDatabases();
 });
 
@@ -155,5 +158,119 @@ describe('AI analysis local history tenant isolation', () => {
     });
     expect(await getLocalAIAnalysisHistory()).toEqual([]);
     openSpy.mockRestore();
+  });
+
+  it('persists raw content, parsed result, coverage, usage and provider metadata', async () => {
+    const tenantA = makeOpaqueId('c');
+    setTenant(tenantA);
+    const rawResultContent = JSON.stringify({ report: 'contenido completo original', evidence: Array.from({ length: 4 }, (_, index) => index) });
+
+    const saved = await saveLocalAIAnalysis({
+      agentType: 'financialAnalyst',
+      agentName: 'Analista',
+      dateRange: 'last7days',
+      resultContent: rawResultContent,
+      rawResultContent,
+      parsedResult: { formatVersion: '1.1', executiveSummary: 'Resumen' },
+      resultFormat: 'structured_json',
+      coverage: { complete: false, factsTotal: 10, factsIncluded: 8, factsOmitted: 2, notes: ['limitado'] },
+      usage: { prompt_tokens: 1200, completion_tokens: 900, total_tokens: 2100, prompt_cache_hit_tokens: 100, reasoning_tokens: 0 },
+      providerMetadata: { provider: 'openai-compatible', model: 'synthetic-model', finish_reason: 'stop', authorization: 'must-not-persist' },
+      status: 'incomplete',
+      errorMetadata: { code: 'AI_TRUNCATED', status: 200 },
+      factSnapshot: { completeLocalFacts: [1, 2, 3] }
+    });
+
+    const detail = await getLocalAIAnalysisDetail(saved.id);
+    expect(detail.rawResultContent).toBe(rawResultContent);
+    expect(detail.resultContent).toBe(rawResultContent);
+    expect(detail.parsedResult).toEqual({ formatVersion: '1.1', executiveSummary: 'Resumen' });
+    expect(detail.coverage).toMatchObject({ complete: false, factsTotal: 10, factsIncluded: 8, factsOmitted: 2 });
+    expect(detail.usage).toMatchObject({ promptTokens: 1200, completionTokens: 900, totalTokens: 2100, promptCacheHitTokens: 100, reasoningTokens: 0 });
+    expect(detail.providerMetadata).toMatchObject({ provider: 'openai-compatible', model: 'synthetic-model', finish_reason: 'stop' });
+    expect(detail.providerMetadata).not.toHaveProperty('authorization');
+    expect(detail.status).toBe('incomplete');
+    expect(detail.factSnapshot).toEqual({ completeLocalFacts: [1, 2, 3] });
+  });
+
+  it('preserves completed separately from incomplete, invalid and failed statuses', async () => {
+    const tenantA = makeOpaqueId('f');
+    setTenant(tenantA);
+
+    const saved = await saveLocalAIAnalysis({
+      agentType: 'financialAnalyst',
+      agentName: 'Analista',
+      dateRange: 'last7days',
+      rawResultContent: 'reporte completo',
+      status: 'completed'
+    });
+
+    const detail = await getLocalAIAnalysisDetail(saved.id);
+    expect(detail.status).toBe('completed');
+  });
+
+  it('persists the complete agentToolRun locally without trimming metrics, evidence or errors', async () => {
+    const tenantA = makeOpaqueId('e');
+    setTenant(tenantA);
+    const agentToolRun = {
+      executedAt: '2026-08-31T12:00:00.000Z',
+      availableToolCount: 3,
+      results: [
+        {
+          id: 'tool.synthetic',
+          title: 'Herramienta sintética',
+          severity: 'warning',
+          summary: 'Resultado local completo.',
+          metrics: { total: 37, nested: { amount: 123.45 } },
+          actions: ['Revisar el detalle local.'],
+          evidence: ['Evidencia 1', 'Evidencia 2'],
+          confidence: 0.72,
+          errorMetadata: { code: 'TOOL_WARNING', message: 'Advertencia conservada', status: 422 }
+        }
+      ]
+    };
+
+    const saved = await saveLocalAIAnalysis({
+      agentType: 'inventoryAuditor',
+      agentName: 'Auditor',
+      dateRange: 'last7days',
+      rawResultContent: 'reporte completo',
+      agentToolRun
+    });
+
+    const detail = await getLocalAIAnalysisDetail(saved.id);
+    expect(detail.agentToolRun).toEqual(agentToolRun);
+  });
+
+  it('uses local recovery storage when IndexedDB save fails', async () => {
+    const tenantA = makeOpaqueId('d');
+    setTenant(tenantA);
+    const openSpy = vi.spyOn(Dexie.prototype, 'open').mockRejectedValueOnce(new Error('synthetic IndexedDB failure'));
+
+    const saved = await saveLocalAIAnalysis({
+      agentType: 'inventoryAuditor',
+      agentName: 'Auditor',
+      dateRange: 'last7days',
+      rawResultContent: 'reporte que no debe perderse',
+      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      status: 'failed',
+      errorMetadata: { code: 'AI_EMPTY_RESPONSE' }
+    });
+    openSpy.mockRestore();
+
+    expect(saved.persistence).toBe('fallback');
+    const history = await getLocalAIAnalysisHistory();
+    const detail = await getLocalAIAnalysisDetail(saved.id);
+    expect(history[0].rawResultContent).toBe('reporte que no debe perderse');
+    expect(detail.usage).toMatchObject({ promptTokens: 10, completionTokens: 20, totalTokens: 30 });
+    expect(detail.status).toBe('failed');
+
+    const archived = await archiveLocalAIAnalysis(saved.id);
+    expect(archived.persistence).toBe('fallback');
+    expect((await getLocalAIAnalysisDetail(saved.id)).status).toBe('archived');
+
+    const deleted = await deleteLocalAIAnalysis(saved.id);
+    expect(deleted).toMatchObject({ success: true });
+    expect(await getLocalAIAnalysisDetail(saved.id)).toBeNull();
   });
 });

@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -8,28 +7,16 @@ import {
   ShieldCheck,
   X
 } from 'lucide-react';
+import { getActionTypeLabel, getModuleLabel, getPriorityLabel, getRouteLabel } from '../../utils/aiReportLabels';
 import './AgentActionConfirmModal.css';
-
-const PRIORITY_LABELS = {
-  high: 'Alta',
-  medium: 'Media',
-  low: 'Baja'
-};
-
-const TYPE_LABELS = {
-  navigate: 'Navegación',
-  review: 'Revisión guiada',
-  draft: 'Borrador',
-  checklist: 'Checklist',
-  manual: 'Manual'
-};
 
 export default function AgentActionConfirmModal({ action, isOpen, onClose, onConfirm }) {
   if (!isOpen || !action) return null;
 
   const isBlocked = action.status === 'blocked_route';
+  const friendlyRouteLabel = action.route ? getRouteLabel(action.route, action.routeLabel ? `Ir al módulo ${action.routeLabel}` : undefined) : '';
   const confirmLabel = action.canNavigate
-    ? `Ir a ${action.routeLabel || action.route}`
+    ? friendlyRouteLabel
     : 'Entendido';
 
   return (
@@ -78,22 +65,22 @@ export default function AgentActionConfirmModal({ action, isOpen, onClose, onCon
         <section className="agent-action-details">
           <div className="agent-action-detail-row">
             <span>Tipo</span>
-            <strong>{TYPE_LABELS[action.type] || TYPE_LABELS.manual}</strong>
+            <strong>{getActionTypeLabel(action.type)}</strong>
           </div>
           <div className="agent-action-detail-row">
             <span>Prioridad</span>
-            <strong>{PRIORITY_LABELS[action.priority] || PRIORITY_LABELS.medium}</strong>
+            <strong>{getPriorityLabel(action.priority)}</strong>
           </div>
-          {action.routeLabel && (
+          {friendlyRouteLabel && (
             <div className="agent-action-detail-row">
               <span>Módulo</span>
-              <strong>{action.routeLabel}</strong>
+              <strong>{friendlyRouteLabel}</strong>
             </div>
           )}
           {action.permission && (
             <div className="agent-action-detail-row">
-              <span>Permiso requerido</span>
-              <strong>{action.permission}</strong>
+              <span>Módulo necesario</span>
+              <strong>{getModuleLabel(action.permission)}</strong>
             </div>
           )}
         </section>
@@ -121,10 +108,10 @@ export default function AgentActionConfirmModal({ action, isOpen, onClose, onCon
           </section>
         )}
 
-        {action.route && (
+        {friendlyRouteLabel && (
           <div className="agent-action-route-preview">
             <MapPin size={14} />
-            <span>{action.route}</span>
+            <span>{friendlyRouteLabel}</span>
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { buildAgentPayload, DATE_RANGES, formatDateRangeLabel } from '../../utils/buildAgentPayload';
 import { buildPrompt, validateAgentData } from '../../utils/aiPromptBuilder';
+import { classifyParsedAgentResponse, parseAgentResponse } from '../../utils/parseAgentResponse';
 import { analyzeWithAI, AIApiError, validateAIConnection, getAIConfigStatus } from '../../services/aiService';
 import { assertCurrentAIAgentActor, hasCurrentActorAIAgentPermission } from '../../services/auth/aiAgentAuthorization';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
@@ -28,6 +29,7 @@ import { getAvailableAgentTools, runAgentTools } from '../../agents/agentToolReg
 import { resolveAgentAction, executeAgentAction } from '../../agents/agentActionRouter';
 import { useAgentPreview } from '../../hooks/dashboard/useAgentPreview';
 import { normalizeBusinessTypes } from '../../utils/businessType';
+import { readAIReportUiState, writeAIReportUiState } from '../../utils/aiReportUiState';
 import DataPreviewBanner from './DataPreviewBanner';
 import AgentActionConfirmModal from './AgentActionConfirmModal';
 import AIAgentHistoryPanel from './AIAgentHistoryPanel';
@@ -98,8 +100,8 @@ const DateRangeSelector = ({ selectedRange, onSelect, disabled }) => (
 
 export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARRAY, customers = EMPTY_ARRAY, wasteLogs = EMPTY_ARRAY, businessType = EMPTY_ARRAY }) {
   const navigate = useNavigate();
-  const [selectedAgent, setSelectedAgent] = useState(null);
-  const [selectedDateRange, setSelectedDateRange] = useState(DATE_RANGES.LAST_7_DAYS);
+  const [selectedAgent, setSelectedAgent] = useState(() => readAIReportUiState().selectedAgent);
+  const [selectedDateRange, setSelectedDateRange] = useState(() => readAIReportUiState().selectedDateRange || DATE_RANGES.LAST_7_DAYS);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [analysisError, setAnalysisError] = useState(null);
@@ -111,8 +113,23 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
   const [historyError, setHistoryError] = useState(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState({ isOnline: isBrowserOnline(), isApiReady: false, isChecking: true, error: null, provider: null, model: null });
+  const analysisInFlightRef = useRef(false);
+  const analysisRequestRef = useRef(0);
+  const historyRequestRef = useRef(0);
+  const isMountedRef = useRef(false);
+  const shouldRestoreSavedReportRef = useRef(true);
+  const persistedReportIdRef = useRef(readAIReportUiState().selectedReportId);
   const actorSnapshot = useActorRuntimeSnapshot();
   const currentActorCanUseAIAgents = hasCurrentActorAIAgentPermission(actorSnapshot);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      analysisRequestRef.current += 1;
+      historyRequestRef.current += 1;
+    };
+  }, []);
 
   const normalizedBusinessTypes = useMemo(() => normalizeBusinessTypes(businessType, 'abarrotes'), [businessType]);
   const activeAgent = useMemo(() => AGENTS.find(agent => agent.id === selectedAgent), [selectedAgent]);
@@ -128,16 +145,36 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
   }, [selectedAgent, menu, sales, customers]);
 
   const loadLocalHistory = useCallback(async () => {
+    const requestId = ++historyRequestRef.current;
     setIsHistoryLoading(true);
     setHistoryError(null);
     try {
       const analyses = await getLocalAIAnalysisHistory({ agentType: selectedAgent || undefined, includeArchived: false, limit: 25 });
+      if (!isMountedRef.current || requestId !== historyRequestRef.current) return;
       setSavedAnalyses(analyses);
+
+      if (shouldRestoreSavedReportRef.current) {
+        shouldRestoreSavedReportRef.current = false;
+        const savedReport = persistedReportIdRef.current
+          ? analyses.find(analysis => analysis.id === persistedReportIdRef.current)
+          : null;
+
+        if (savedReport) {
+          setSelectedSavedAnalysis(savedReport);
+          setAnalysisResult(null);
+          setAnalysisError(null);
+          if (!selectedAgent && savedReport.agentType) setSelectedAgent(savedReport.agentType);
+        } else if (persistedReportIdRef.current) {
+          persistedReportIdRef.current = null;
+          writeAIReportUiState({ selectedReportId: null });
+        }
+      }
     } catch (error) {
+      if (!isMountedRef.current || requestId !== historyRequestRef.current) return;
       console.warn('No se pudo cargar el historial local de IA:', error);
       setHistoryError('No se pudo cargar el historial guardado en este dispositivo.');
     } finally {
-      setIsHistoryLoading(false);
+      if (isMountedRef.current && requestId === historyRequestRef.current) setIsHistoryLoading(false);
     }
   }, [selectedAgent]);
 
@@ -188,16 +225,29 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
   }, []);
 
   const handleSelectAgent = useCallback((agentId) => {
+    if (analysisInFlightRef.current) {
+      analysisRequestRef.current += 1;
+      analysisInFlightRef.current = false;
+    }
     setSelectedAgent(agentId);
+    writeAIReportUiState({ selectedAgent: agentId, selectedReportId: null });
+    persistedReportIdRef.current = null;
     resetTransientAnalysis();
   }, [resetTransientAnalysis]);
 
   const handleSelectDateRange = useCallback((dateRange) => {
+    if (analysisInFlightRef.current) {
+      analysisRequestRef.current += 1;
+      analysisInFlightRef.current = false;
+    }
     setSelectedDateRange(dateRange);
+    writeAIReportUiState({ selectedDateRange: dateRange, selectedReportId: null });
+    persistedReportIdRef.current = null;
     resetTransientAnalysis();
   }, [resetTransientAnalysis]);
 
   const handleAnalyze = useCallback(async () => {
+    if (analysisInFlightRef.current) return;
     if (!selectedAgent || !selectedDateRange) return;
     if (!currentActorCanUseAIAgents) {
       setAnalysisError('El usuario actual no tiene permiso para usar agentes de IA.');
@@ -206,14 +256,18 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
     if (!connectionStatus.isOnline) { setAnalysisError('Sin conexion. Verifica tu conexion a internet para analisis con IA.'); return; }
     if (!connectionStatus.isApiReady) { setAnalysisError(`API no disponible: ${connectionStatus.error || 'Error de configuracion'}`); return; }
 
+    analysisInFlightRef.current = true;
+    const requestId = ++analysisRequestRef.current;
     setIsAnalyzing(true);
     setAnalysisError(null);
-    setAnalysisResult(null);
-    setLastToolRun(null);
     setPendingGuidedAction(null);
     setSelectedSavedAnalysis(null);
+    persistedReportIdRef.current = null;
+    writeAIReportUiState({ selectedReportId: null });
     setHistoryMessage(null);
     setHistoryError(null);
+
+    let analysisContext = null;
 
     try {
       const aggregatedPayload = await buildAgentPayload(selectedAgent, selectedDateRange, { menu, wasteLogs, sales, customers });
@@ -222,23 +276,59 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
       if (!validation.valid) throw new Error(validation.reason);
 
       const agentToolRun = await runAgentTools({ agentType: selectedAgent, businessTypes: normalizedBusinessTypes, rawData: { menu, wasteLogs, sales, customers }, aggregatedPayload });
-      setLastToolRun(agentToolRun);
+      analysisContext = { aggregatedPayload, agentToolRun };
+      if (isMountedRef.current && requestId === analysisRequestRef.current) setLastToolRun(agentToolRun);
 
       const { systemPrompt, userPrompt } = buildPrompt(
         selectedAgent,
-        { ...aggregatedPayload, agentToolRun },
-        { businessType: normalizedBusinessTypes.join(', '), totalCustomers: customers.length, dateRange: formatDateRangeLabel(selectedDateRange) }
+        aggregatedPayload,
+        { businessType: normalizedBusinessTypes.join(', '), totalCustomers: customers.length, dateRange: selectedDateRange },
+        agentToolRun
       );
       const response = await analyzeWithAI(systemPrompt, userPrompt, { model: connectionStatus.model, provider: connectionStatus.provider, temperature: 0.2, maxTokens: 2048, timeoutMs: 60000 });
-      setAnalysisResult(response);
+      const generatedAt = new Date().toISOString();
+      const rawResultContent = response.rawResultContent || response.content || '';
+      const parsedResult = parseAgentResponse(rawResultContent, { finishReason: response.providerMetadata?.finish_reason });
+      const classification = classifyParsedAgentResponse({
+        parsedResult,
+        providerStatus: response.providerHttpStatus ?? response.httpStatus ?? response.providerMetadata?.provider_response_status ?? 200,
+        providerError: Boolean(response.transportError || response.timedOut || Number(response.errorMetadata?.status) >= 400)
+      });
+      const isIncomplete = classification.reportStatus === 'incomplete';
+      const normalizedResult = {
+        ...response,
+        generatedAt,
+        rawResultContent,
+        parsedResult,
+        agentToolRun,
+        coverage: aggregatedPayload.coverage || parsedResult.coverage,
+        ...classification,
+        status: classification.reportStatus,
+        incomplete: isIncomplete
+      };
+      if (isMountedRef.current && requestId === analysisRequestRef.current) setAnalysisResult(normalizedResult);
 
       try {
-        await saveLocalAIAnalysis({
+        const savedRecord = await saveLocalAIAnalysis({
           agentType: selectedAgent,
           agentName: activeAgent?.name || selectedAgent,
           dateRange: selectedDateRange,
           dateRangeLabel: formatDateRangeLabel(selectedDateRange),
-          resultContent: response,
+          rawResultContent,
+          parsedResult,
+          resultFormat: parsedResult.resultFormat,
+          coverage: aggregatedPayload.coverage || parsedResult.coverage,
+          usage: response.usage,
+          providerMetadata: response.providerMetadata,
+          status: normalizedResult.status,
+          providerStatus: normalizedResult.providerStatus,
+          providerHttpStatus: normalizedResult.providerHttpStatus,
+          parseStatus: normalizedResult.parseStatus,
+          reportStatus: normalizedResult.reportStatus,
+          coverageStatus: normalizedResult.coverageStatus,
+          errorMetadata: response.errorMetadata,
+          factSnapshot: aggregatedPayload,
+          agentToolRun,
           businessTypes: normalizedBusinessTypes,
           toolRunSummary: {
             availableToolCount: agentToolRun?.availableToolCount || availableTools.length,
@@ -246,39 +336,121 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
             toolIds: Array.isArray(agentToolRun?.results) ? agentToolRun.results.flatMap(tool => tool.id ? [tool.id] : []) : []
           }
         });
-        setHistoryMessage('Analisis guardado en este dispositivo.');
-        await loadLocalHistory();
+        if (isMountedRef.current && requestId === analysisRequestRef.current) {
+          if (savedRecord?.id) {
+            persistedReportIdRef.current = savedRecord.id;
+            writeAIReportUiState({ selectedReportId: savedRecord.id });
+          }
+          setHistoryMessage(savedRecord.persistence === 'fallback'
+            ? 'Analisis guardado en almacenamiento de recuperación local.'
+            : 'Analisis guardado en este dispositivo.');
+        }
+        if (isMountedRef.current && requestId === analysisRequestRef.current) await loadLocalHistory();
       } catch (historySaveError) {
         console.warn('El analisis IA se genero, pero no se pudo guardar localmente:', historySaveError);
-        setHistoryError('El analisis se genero, pero no se pudo guardar en este dispositivo.');
+        if (isMountedRef.current && requestId === analysisRequestRef.current) setHistoryError('El analisis se genero, pero no se pudo guardar en este dispositivo.');
       }
     } catch (error) {
-      console.error('Error en analisis IA:', error);
-      setAnalysisError(error instanceof AIApiError ? error.message : error.message || 'Error al generar analisis. Intenta nuevamente.');
+      if (error instanceof AIApiError && analysisContext) {
+        const failurePayload = error.originalError && typeof error.originalError === 'object' ? error.originalError : {};
+        const rawResultContent = typeof failurePayload.rawResultContent === 'string' ? failurePayload.rawResultContent : '';
+        const parsedResult = rawResultContent
+          ? parseAgentResponse(rawResultContent, { finishReason: failurePayload.providerMetadata?.finish_reason })
+          : null;
+        const failureRecord = {
+          generatedAt: new Date().toISOString(),
+          rawResultContent,
+          parsedResult,
+          resultFormat: parsedResult?.resultFormat || 'raw',
+          coverage: analysisContext.aggregatedPayload.coverage || parsedResult?.coverage || null,
+          usage: failurePayload.usage || null,
+          providerMetadata: failurePayload.providerMetadata || null,
+          status: 'failed',
+          providerStatus: 'failed',
+          providerHttpStatus: error.statusCode || null,
+          parseStatus: parsedResult?.parseStatus || 'failed',
+          reportStatus: 'failed',
+          coverageStatus: parsedResult?.coverageStatus || 'unknown',
+          errorMetadata: failurePayload.errorMetadata || { code: error.code || 'AI_ANALYSIS_FAILED', status: error.statusCode || null },
+          factSnapshot: analysisContext.aggregatedPayload,
+          agentToolRun: analysisContext.agentToolRun
+        };
+
+        try {
+          await saveLocalAIAnalysis({
+            agentType: selectedAgent,
+            agentName: activeAgent?.name || selectedAgent,
+            dateRange: selectedDateRange,
+            dateRangeLabel: formatDateRangeLabel(selectedDateRange),
+            ...failureRecord,
+            businessTypes: normalizedBusinessTypes,
+            toolRunSummary: {
+              availableToolCount: analysisContext.agentToolRun?.availableToolCount || availableTools.length,
+              executedToolCount: Array.isArray(analysisContext.agentToolRun?.results) ? analysisContext.agentToolRun.results.length : 0,
+              toolIds: Array.isArray(analysisContext.agentToolRun?.results) ? analysisContext.agentToolRun.results.flatMap(tool => tool.id ? [tool.id] : []) : []
+            }
+          });
+          setHistoryMessage('El intento fallido también quedó registrado localmente con su uso disponible.');
+          if (isMountedRef.current && requestId === analysisRequestRef.current) await loadLocalHistory();
+        } catch (historySaveError) {
+          console.warn('No se pudo conservar el intento fallido de IA:', historySaveError);
+        }
+
+        if (isMountedRef.current && requestId === analysisRequestRef.current) {
+          setAnalysisResult({
+            ...failureRecord,
+            content: rawResultContent,
+            incomplete: true
+          });
+        }
+      }
+      if (isMountedRef.current && requestId === analysisRequestRef.current) {
+        console.error('Error en analisis IA:', error);
+        setAnalysisError(error instanceof AIApiError ? error.message : error.message || 'Error al generar analisis. Intenta nuevamente.');
+      }
     } finally {
-      setIsAnalyzing(false);
+      if (requestId === analysisRequestRef.current) {
+        analysisInFlightRef.current = false;
+        if (isMountedRef.current) setIsAnalyzing(false);
+      }
     }
   }, [activeAgent, availableTools.length, connectionStatus, currentActorCanUseAIAgents, customers, loadLocalHistory, menu, normalizedBusinessTypes, sales, selectedAgent, selectedDateRange, wasteLogs]);
 
   const handleOpenSavedAnalysis = useCallback(async (analysisId) => {
+    const requestId = ++historyRequestRef.current;
     setIsHistoryLoading(true);
     setHistoryError(null);
     setHistoryMessage(null);
     try {
       const analysis = await getLocalAIAnalysisDetail(analysisId);
-      if (!analysis) { setHistoryError('No se encontro el analisis guardado en este dispositivo.'); return; }
+      if (!isMountedRef.current || requestId !== historyRequestRef.current) return;
+      if (!analysis) {
+        persistedReportIdRef.current = null;
+        writeAIReportUiState({ selectedReportId: null });
+        setHistoryError('No se encontro el analisis guardado en este dispositivo.');
+        return;
+      }
       setSelectedSavedAnalysis(analysis);
+      if (analysis.agentType) setSelectedAgent(analysis.agentType);
+      if (analysis.dateRange) setSelectedDateRange(analysis.dateRange);
+      persistedReportIdRef.current = analysis.id;
+      writeAIReportUiState({
+        selectedAgent: analysis.agentType,
+        selectedDateRange: analysis.dateRange || selectedDateRange,
+        selectedReportId: analysis.id
+      });
       setAnalysisResult(null);
       setAnalysisError(null);
       setLastToolRun(null);
       setPendingGuidedAction(null);
     } catch (error) {
+      if (!isMountedRef.current || requestId !== historyRequestRef.current) return;
       console.warn('No se pudo abrir el analisis guardado:', error);
       setHistoryError('No se pudo abrir el analisis guardado.');
     } finally {
-      setIsHistoryLoading(false);
+      if (isMountedRef.current && requestId === historyRequestRef.current) setIsHistoryLoading(false);
     }
-  }, []);
+  }, [selectedDateRange]);
 
   const handleOpenGuidedAction = useCallback((action) => setPendingGuidedAction(resolveAgentAction(action)), []);
   const handleConfirmGuidedAction = useCallback(() => {
@@ -291,8 +463,14 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
   const handleGenerateCurrentFromSaved = useCallback(() => {
     if (selectedSavedAnalysis?.agentType) setSelectedAgent(selectedSavedAnalysis.agentType);
     if (selectedSavedAnalysis?.dateRange) setSelectedDateRange(selectedSavedAnalysis.dateRange);
+    persistedReportIdRef.current = null;
+    writeAIReportUiState({
+      selectedAgent: selectedSavedAnalysis?.agentType || selectedAgent,
+      selectedDateRange: selectedSavedAnalysis?.dateRange || selectedDateRange,
+      selectedReportId: null
+    });
     setSelectedSavedAnalysis(null);
-  }, [selectedSavedAnalysis]);
+  }, [selectedAgent, selectedDateRange, selectedSavedAnalysis]);
 
   const isButtonDisabled = isAnalyzing || !currentActorCanUseAIAgents || !connectionStatus.isApiReady || isPreviewLoading || isDataEmpty;
   const hasReadySelection = Boolean(selectedAgent && selectedDateRange);
@@ -357,7 +535,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
                 {connectionStatus.isOnline && !connectionStatus.isApiReady && connectionStatus.error && <p className="ai-agent-hint"><AlertCircle size={14} />{connectionStatus.error}</p>}
               </section>
 
-              {isAnalyzing && (
+              {isAnalyzing && !analysisResult && (
                 <section className="analysis-state">
                   <div className="state-indicator">
                     <div className="pulse-ring" />
@@ -365,6 +543,13 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
                   </div>
                   <p className="state-text">Procesando datos y preparando acciones guiadas...</p>
                 </section>
+              )}
+
+              {isAnalyzing && analysisResult && (
+                <div className="analysis-refresh-indicator" role="status" aria-live="polite">
+                  <RefreshCw size={15} className="spin-icon" />
+                  <span>Actualizando el análisis; el resultado anterior permanece visible.</span>
+                </div>
               )}
 
               {analysisError && (
@@ -378,7 +563,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
                 </section>
               )}
 
-              {analysisResult && !isAnalyzing && !selectedSavedAnalysis && (
+              {analysisResult && !selectedSavedAnalysis && (
                 <section className="analysis-result-container">
                   <div className="result-header">
                     <div className="result-agent" style={{ '--agent-color': activeAgent?.color }}>
@@ -407,7 +592,7 @@ export default function AIAgentDashboard({ sales = EMPTY_ARRAY, menu = EMPTY_ARR
             <button className="ai-history-secondary-button" type="button" onClick={() => setSelectedSavedAnalysis(null)}>Volver al historial</button>
           </div>
           <div className="ai-saved-analysis-notice">Este analisis corresponde a los datos disponibles cuando fue generado. Consultarlo no consume una nueva consulta IA.</div>
-          <StructuredAnalysisResult result={selectedSavedAnalysis.resultContent} onAction={handleOpenGuidedAction} />
+          <StructuredAnalysisResult result={selectedSavedAnalysis} onAction={handleOpenGuidedAction} />
           <div className="ai-saved-analysis-actions">
             <button className="ai-history-primary-button" type="button" onClick={handleGenerateCurrentFromSaved}><Sparkles size={16} />Generar nuevo analisis con datos actuales</button>
           </div>
