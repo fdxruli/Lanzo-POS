@@ -407,6 +407,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
             <div className="scanner-camera-controls">
               <span className="scanner-camera-label">Cámara</span>
               <button
+                type="button"
                 className="scanner-close-btn"
                 onClick={handleClose}
                 disabled={isConfirming}
