@@ -10,6 +10,11 @@ import {
   NotFoundException,
 } from '@zxing/library';
 import { isRecoverableDecodeError, useZxingScanner } from '../useZxingScanner';
+import {
+  expandNormalizedRoi,
+  getCoveredVideoRect,
+  mapVisibleRegionToSource,
+} from '../../../components/scanner/scannerGeometry';
 
 const zxing = vi.hoisted(() => ({
   instances: [],
@@ -339,6 +344,37 @@ describe('useZxingScanner camera enhancement', () => {
       0,
       expect.any(Number),
       expect.any(Number),
+    );
+  });
+
+  it('captures the source rectangle aligned with a cover viewport crop', async () => {
+    const coveredRect = getCoveredVideoRect({
+      containerWidth: 400,
+      containerHeight: 800,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    });
+    const visibleReticle = { x: 0.1, y: 0.4, width: 0.8, height: 0.2 };
+    const decodeRegionRef = {
+      current: expandNormalizedRoi(
+        mapVisibleRegionToSource(visibleReticle, coveredRect),
+      ),
+    };
+    zxing.queues.normal.push({ type: 'result', value: createResult('COVER') });
+    const track = createTrack();
+    const { video } = await renderScanner({ track, decodeRegionRef });
+
+    await waitFor(() => expect(getNormalReader().decodeBitmap).toHaveBeenCalledTimes(1));
+    expect(zxing.contexts[0].drawImage).toHaveBeenCalledWith(
+      video,
+      722,
+      421,
+      476,
+      238,
+      0,
+      0,
+      476,
+      238,
     );
   });
 

@@ -9,8 +9,12 @@ import {
 } from 'react';
 import {
   expandNormalizedRoi,
+  getCameraFitMode,
   getContainedVideoRect,
+  getCoveredVideoRect,
+  mapVisibleRegionToSource,
   normalizeChildRectWithinStage,
+  SCANNER_DESKTOP_BREAKPOINT,
 } from './scannerGeometry';
 
 const EMPTY_SIZE = Object.freeze({ width: 0, height: 0 });
@@ -37,11 +41,58 @@ const readVideoSize = (videoElement) => ({
   height: Number(videoElement?.videoHeight) || 0,
 });
 
+const readIsDesktopViewport = () => {
+  if (typeof window === 'undefined') return true;
+
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia(
+      `(min-width: ${SCANNER_DESKTOP_BREAKPOINT}px)`,
+    ).matches;
+  }
+
+  return window.innerWidth >= SCANNER_DESKTOP_BREAKPOINT;
+};
+
+const useIsDesktopViewport = () => {
+  const [isDesktop, setIsDesktop] = useState(readIsDesktopViewport);
+
+  useEffect(() => {
+    const updateViewportMode = () => {
+      setIsDesktop(readIsDesktopViewport());
+    };
+    const mediaQuery = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      ? window.matchMedia(`(min-width: ${SCANNER_DESKTOP_BREAKPOINT}px)`)
+      : null;
+
+    if (mediaQuery?.addEventListener) {
+      mediaQuery.addEventListener('change', updateViewportMode);
+    } else if (mediaQuery?.addListener) {
+      mediaQuery.addListener(updateViewportMode);
+    }
+
+    window.addEventListener('resize', updateViewportMode);
+
+    return () => {
+      if (mediaQuery?.removeEventListener) {
+        mediaQuery.removeEventListener('change', updateViewportMode);
+      } else if (mediaQuery?.removeListener) {
+        mediaQuery.removeListener(updateViewportMode);
+      }
+      window.removeEventListener('resize', updateViewportMode);
+    };
+  }, []);
+
+  return isDesktop;
+};
+
 const useCameraViewportGeometry = (
   videoRef,
   enabled,
   onDecodeRegionChange,
 ) => {
+  const isDesktop = useIsDesktopViewport();
+  const cameraFitMode = getCameraFitMode(isDesktop);
   const containerRef = useRef(null);
   const stageRef = useRef(null);
   const reticleRef = useRef(null);
@@ -49,6 +100,19 @@ const useCameraViewportGeometry = (
   const videoSizeRef = useRef(EMPTY_SIZE);
   const [containerSize, setContainerSize] = useState(EMPTY_SIZE);
   const [videoSize, setVideoSize] = useState(EMPTY_SIZE);
+
+  const geometry = useMemo(() => {
+    const geometryInput = {
+      containerWidth: containerSize.width,
+      containerHeight: containerSize.height,
+      videoWidth: videoSize.width,
+      videoHeight: videoSize.height,
+    };
+
+    return cameraFitMode === 'cover'
+      ? getCoveredVideoRect(geometryInput)
+      : getContainedVideoRect(geometryInput);
+  }, [cameraFitMode, containerSize, videoSize]);
 
   const refreshDecodeRegion = useCallback(() => {
     if (!enabled) {
@@ -61,8 +125,9 @@ const useCameraViewportGeometry = (
       childRect: reticleRef.current?.getBoundingClientRect?.(),
     });
 
-    onDecodeRegionChange?.(expandNormalizedRoi(measuredRegion));
-  }, [enabled, onDecodeRegionChange]);
+    const sourceRegion = mapVisibleRegionToSource(measuredRegion, geometry);
+    onDecodeRegionChange?.(expandNormalizedRoi(sourceRegion));
+  }, [enabled, geometry, onDecodeRegionChange]);
 
   const measure = useCallback(() => {
     const nextContainerSize = readElementSize(containerRef.current);
@@ -125,13 +190,6 @@ const useCameraViewportGeometry = (
     };
   }, [enabled, measure, videoRef]);
 
-  const geometry = useMemo(() => getContainedVideoRect({
-    containerWidth: containerSize.width,
-    containerHeight: containerSize.height,
-    videoWidth: videoSize.width,
-    videoHeight: videoSize.height,
-  }), [containerSize, videoSize]);
-
   useLayoutEffect(() => {
     if (!enabled) {
       refreshDecodeRegion();
@@ -152,6 +210,7 @@ const useCameraViewportGeometry = (
     reticleRef,
     geometry,
     geometryReady: !geometry.isFallback,
+    cameraFitMode,
   };
 };
 /**
@@ -370,6 +429,7 @@ export function CameraViewport({
     reticleRef,
     geometry,
     geometryReady,
+    cameraFitMode,
   } = useCameraViewportGeometry(
     videoRef,
     !cameraError,
@@ -396,10 +456,10 @@ export function CameraViewport({
 
   const stageStyle = geometryReady
     ? {
-      width: `${geometry.width}px`,
-      height: `${geometry.height}px`,
-      left: `${geometry.x}px`,
-      top: `${geometry.y}px`,
+      width: `${geometry.fit === 'cover' ? geometry.viewportWidth : geometry.width}px`,
+      height: `${geometry.fit === 'cover' ? geometry.viewportHeight : geometry.height}px`,
+      left: `${geometry.fit === 'cover' ? 0 : geometry.x}px`,
+      top: `${geometry.fit === 'cover' ? 0 : geometry.y}px`,
     }
     : undefined;
 
@@ -407,16 +467,18 @@ export function CameraViewport({
     <div
       ref={containerRef}
       className="scanner-video-viewport"
+      data-camera-fit={cameraFitMode}
       data-geometry-ready={geometryReady ? 'true' : 'false'}
     >
       <div ref={stageRef} className="scanner-video-stage" style={stageStyle}>
         <video
           ref={videoRef}
           id="scanner-video"
+          data-camera-fit={cameraFitMode}
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'contain',
+            objectFit: cameraFitMode,
             transform: 'translateZ(0)',
             backfaceVisibility: 'hidden',
             filter: isScanning ? 'none' : 'brightness(0.6)',
