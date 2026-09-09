@@ -41,6 +41,7 @@ import {
 } from '../services/auth/salesPermissionPolicy';
 import { captureRefundsActorHandle } from '../services/auth/refundsActorAuthorization';
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
+import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
 
@@ -93,7 +94,8 @@ export default function DashboardPage() {
     isLoading: true,
     refreshKey: 0
   });
-  const [activeTab, setActiveTab] = useState('stats');
+  const [activeTab, setActiveTab] = useState(() => readAIReportUiState().activeTab || 'stats');
+  const [hasCompletedInitialStatsLoad, setHasCompletedInitialStatsLoad] = useState(false);
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [salesFinalHistoryPageIndex, setSalesFinalHistoryPageIndex] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -232,10 +234,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     Logger.log('Actualizando Dashboard...');
-    loadStats();
+    let isActive = true;
+    const markInitialStatsLoadComplete = () => {
+      if (isActive) setHasCompletedInitialStatsLoad(true);
+    };
+
+    Promise.resolve().then(loadStats).then(markInitialStatsLoadComplete, markInitialStatsLoadComplete);
     loadRecentSales();
     loadDashboardReporting();
     loadCustomers();
+
+    return () => {
+      isActive = false;
+    };
   }, [loadDashboardReporting, loadRecentSales, loadStats, loadCustomers]);
 
   useEffect(() => {
@@ -270,14 +281,15 @@ export default function DashboardPage() {
       waste: 'waste'
     };
 
-    if (tabParam && tabMap[tabParam]) {
-      setActiveTab(tabMap[tabParam]);
-    } else {
-      setActiveTab('stats');
-    }
+    const nextTab = tabParam && tabMap[tabParam]
+      ? tabMap[tabParam]
+      : readAIReportUiState().activeTab || 'stats';
+    setActiveTab(nextTab);
+    writeAIReportUiState({ activeTab: nextTab });
   }, [searchParams]);
 
   const handleTabChange = (tabKey) => {
+    writeAIReportUiState({ activeTab: tabKey });
     if (tabKey === 'stats') {
       setSearchParams({});
     } else {
@@ -411,7 +423,7 @@ export default function DashboardPage() {
     if (activeTab === 'history') loadRecycleBin();
   }, [activeTab, loadRecycleBin]);
 
-  if (isStatsLoading) {
+  if (isStatsLoading && !hasCompletedInitialStatsLoad) {
     return (
       <div className="ui-loading-state loading-container">
         <div className="ui-spinner spinner-loader"></div>
@@ -514,13 +526,15 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {activeTab === 'tips' && (
+      {canUseAIAgents && (
+        <section className="ui-section dashboard-section dashboard-section--tips" aria-label="Consejos y diagnosticos" hidden={activeTab !== 'tips'} aria-hidden={activeTab !== 'tips'}>
+          <OperationalDiagnostics sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
+        </section>
+      )}
+
+      {!canUseAIAgents && activeTab === 'tips' && (
         <section className="ui-section dashboard-section dashboard-section--tips" aria-label="Consejos y diagnosticos">
-          {canUseAIAgents ? (
-            <OperationalDiagnostics sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
-          ) : (
-            <BusinessTips sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} activeRubros={features.activeRubros} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} onNavigate={(route) => navigate(route)} />
-          )}
+          <BusinessTips sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} activeRubros={features.activeRubros} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} onNavigate={(route) => navigate(route)} />
         </section>
       )}
 

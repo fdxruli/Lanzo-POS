@@ -35,6 +35,42 @@ const PAYLOAD_LIMITS = {
   MAX_CATEGORIES: 10
 };
 
+/**
+ * Keeps the provider payload bounded without hiding the deterministic local
+ * facts. The complete list is stored separately in `localDetails`.
+ */
+export const createFactCollection = (items = [], limit = Infinity, sort = 'impact_desc', reason = 'provider_payload_limit') => {
+  const allItems = Array.isArray(items) ? items : [];
+  const boundedLimit = Number.isFinite(limit) ? Math.max(0, Math.trunc(limit)) : allItems.length;
+  const includedItems = allItems.slice(0, boundedLimit);
+
+  return {
+    total: allItems.length,
+    included: includedItems.length,
+    omitted: Math.max(0, allItems.length - includedItems.length),
+    sort,
+    reason,
+    items: includedItems
+  };
+};
+
+const sumCollectionCoverage = (collections = []) => collections.reduce((coverage, collection) => ({
+  factsTotal: coverage.factsTotal + Number(collection?.total || 0),
+  factsIncluded: coverage.factsIncluded + Number(collection?.included || 0),
+  factsOmitted: coverage.factsOmitted + Number(collection?.omitted || 0)
+}), { factsTotal: 0, factsIncluded: 0, factsOmitted: 0 });
+
+const buildCoverage = (collections = []) => {
+  const totals = sumCollectionCoverage(collections);
+  return {
+    complete: totals.factsOmitted === 0,
+    ...totals,
+    notes: totals.factsOmitted > 0
+      ? ['Algunas listas fueron limitadas para el proveedor; el detalle completo permanece en localDetails.']
+      : []
+  };
+};
+
 // ============================================================
 // 2. UTILIDADES DE FECHA
 // ============================================================
@@ -163,7 +199,7 @@ export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = [
     return sDate >= start && sDate <= end && !isTestData;
   });
 
-  const topProducts = aggregateTopProducts(filteredSales, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS);
+  const allTopProducts = aggregateTopProducts(filteredSales);
 
   // Set de IDs de productos vendidos para detectar stock muerto real
   const soldProductIds = new Set();
@@ -187,18 +223,14 @@ export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = [
 
     // Clasificación de stock
     if (p.stock === 0) {
-      if (outOfStockProducts.length < PAYLOAD_LIMITS.MAX_TOP_PRODUCTS) {
-        outOfStockProducts.push({ name: p.name, category: p.categoryName });
-      }
+      outOfStockProducts.push({ name: p.name, category: p.categoryName });
     } else if (p.stock <= (p.minStock || 5)) { // Corrección: Usar minStock real
-      if (lowStockProducts.length < PAYLOAD_LIMITS.MAX_TOP_PRODUCTS) {
-        lowStockProducts.push({
-          name: p.name,
-          stock: p.stock,
-          minStock: p.minStock || 5,
-          category: p.categoryName
-        });
-      }
+      lowStockProducts.push({
+        name: p.name,
+        stock: p.stock,
+        minStock: p.minStock || 5,
+        category: p.categoryName
+      });
     }
 
     // Dead Stock Real: Tiene stock pero NO tuvo ventas en este rango de fechas
@@ -213,10 +245,59 @@ export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = [
 
   // Ordenar dead stock por impacto de capital
   const sortedDeadStock = deadStockCandidates
-    .sort((a, b) => b.tiedCapital - a.tiedCapital)
-    .slice(0, 5);
+    .sort((a, b) => b.tiedCapital - a.tiedCapital);
 
   const categoryStats = aggregateByCategory(menu);
+  const outOfStockCollection = createFactCollection(
+    outOfStockProducts,
+    PAYLOAD_LIMITS.MAX_TOP_PRODUCTS,
+    'stock_priority',
+    'provider_payload_limit'
+  );
+  const lowStockCollection = createFactCollection(
+    lowStockProducts,
+    PAYLOAD_LIMITS.MAX_TOP_PRODUCTS,
+    'stock_asc',
+    'provider_payload_limit'
+  );
+  const deadStockCollection = createFactCollection(
+    sortedDeadStock,
+    5,
+    'impact_desc',
+    'provider_payload_limit'
+  );
+  const allWasteCategories = Array.from(wasteByCategory.entries())
+    .map(([category, data]) => ({ category, ...data }))
+    .sort((a, b) => b.amount - a.amount);
+  const allWastedProducts = Array.from(wasteByProduct.entries())
+    .map(([product, data]) => ({ product, ...data }))
+    .sort((a, b) => b.amount - a.amount);
+  const wasteCategoryCollection = createFactCollection(
+    allWasteCategories,
+    5,
+    'impact_desc',
+    'provider_payload_limit'
+  );
+  const wastedProductCollection = createFactCollection(
+    allWastedProducts,
+    5,
+    'impact_desc',
+    'provider_payload_limit'
+  );
+  const topProductsCollection = createFactCollection(
+    allTopProducts,
+    PAYLOAD_LIMITS.MAX_TOP_PRODUCTS,
+    'revenue_desc',
+    'provider_payload_limit'
+  );
+  const coverage = buildCoverage([
+    outOfStockCollection,
+    lowStockCollection,
+    deadStockCollection,
+    wasteCategoryCollection,
+    wastedProductCollection,
+    topProductsCollection
+  ]);
 
   return {
     menuStats: {
@@ -229,22 +310,30 @@ export const buildInventoryPayload = async (start, end, menu = [], wasteLogs = [
     wasteStats: {
       totalWasteLoss,
       wasteTransactions: filteredWaste.length,
-      topWasteCategories: Array.from(wasteByCategory.entries())
-        .map(([category, data]) => ({ category, ...data }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 5),
-      topWastedProducts: Array.from(wasteByProduct.entries()) // Nuevo: Visibilidad granular
-        .map(([product, data]) => ({ product, ...data }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 5),
+      topWasteCategories: wasteCategoryCollection,
+      topWastedProducts: wastedProductCollection,
       avgWastePerTransaction: filteredWaste.length > 0 ? totalWasteLoss / filteredWaste.length : 0
     },
     inventoryAlerts: {
-      outOfStockProducts, // Nuevo: Qué falta exactamente
-      lowStockProducts,
-      potentialDeadStock: sortedDeadStock // Nuevo: Basado en falta de ventas y capital inmovilizado
+      outOfStockProducts: outOfStockCollection,
+      lowStockProducts: lowStockCollection,
+      potentialDeadStock: deadStockCollection,
+      deadStockTotalTiedCapital: sortedDeadStock.reduce((sum, product) => sum + Number(product.tiedCapital || 0), 0)
     },
-    topProducts
+    topProducts: topProductsCollection,
+    coverage,
+    localDetails: {
+      inventoryAlerts: {
+        outOfStockProducts,
+        lowStockProducts,
+        potentialDeadStock: sortedDeadStock
+      },
+      wasteStats: {
+        topWasteCategories: allWasteCategories,
+        topWastedProducts: allWastedProducts
+      },
+      topProducts: allTopProducts
+    }
   };
 };
 
@@ -273,6 +362,21 @@ export const buildFinancialPayload = async (start, end, sales = []) => {
   // Corrección: Evitar proyecciones irreales en rangos cortos
   const daysInRange = Math.max(1, (end - start) / (1000 * 60 * 60 * 24));
   const projectedMonthly = daysInRange >= 7 ? (totalRevenue / daysInRange) * 30 : null;
+  const allPaymentMethods = aggregatePaymentMethods(filteredSales);
+  const paymentCollection = createFactCollection(
+    allPaymentMethods,
+    PAYLOAD_LIMITS.MAX_PAYMENT_METHODS,
+    'count_desc',
+    'provider_payload_limit'
+  );
+  const allTopProducts = aggregateTopProducts(filteredSales);
+  const topProductsCollection = createFactCollection(
+    allTopProducts,
+    PAYLOAD_LIMITS.MAX_TOP_PRODUCTS,
+    'revenue_desc',
+    'provider_payload_limit'
+  );
+  const coverage = buildCoverage([paymentCollection, topProductsCollection]);
 
   return {
     salesStats: {
@@ -298,9 +402,14 @@ export const buildFinancialPayload = async (start, end, sales = []) => {
       revenueByDayOfWeek: aggregateByDayOfWeek(filteredSales),
       revenueByHour: aggregateByHour(filteredSales)
     },
-    paymentAnalysis: aggregatePaymentMethods(filteredSales),
+    paymentAnalysis: paymentCollection,
     orderTypeAnalysis: aggregateByOrderType(filteredSales),
-    topProducts: aggregateTopProducts(filteredSales, PAYLOAD_LIMITS.MAX_TOP_PRODUCTS)
+    topProducts: topProductsCollection,
+    coverage,
+    localDetails: {
+      paymentAnalysis: allPaymentMethods,
+      topProducts: allTopProducts
+    }
   };
 };
 
@@ -336,7 +445,9 @@ export const buildCustomerPayload = async (start, end, customers = [], sales = [
   const totalCustomers = customers.length;
 
   const totalDebt = customers.reduce((sum, c) => sum + Number(c.debt || 0), 0);
-  const customersWithDebt = customers.filter(c => c.debt > 0);
+  const customersWithDebt = customers
+    .filter(c => c.debt > 0)
+    .sort((a, b) => Number(b.debt || 0) - Number(a.debt || 0));
 
   // Analizar qué compran los clientes registrados para perfilar
   const registeredCategoryPreferences = new Map();
@@ -346,6 +457,36 @@ export const buildCustomerPayload = async (start, end, customers = [], sales = [
       registeredCategoryPreferences.set(cat, (registeredCategoryPreferences.get(cat) || 0) + 1);
     });
   });
+
+  const topDebtorDetails = customersWithDebt.map(c => ({ name: c.name, debt: c.debt }));
+  const topDebtorsCollection = createFactCollection(
+    topDebtorDetails.map((customer, index) => ({ customerRef: `customer-${index + 1}`, debt: customer.debt })),
+    5,
+    'debt_desc',
+    'provider_payload_limit'
+  );
+  const allTopSpenderDetails = aggregateCustomerSpending(filteredSales, customers);
+  const topSpendersCollection = createFactCollection(
+    allTopSpenderDetails.map((customer, index) => ({
+      customerRef: `customer-${index + 1}`,
+      visits: customer.visits,
+      totalSpent: customer.totalSpent,
+      avgTicket: customer.avgTicket
+    })),
+    PAYLOAD_LIMITS.MAX_TOP_CUSTOMERS,
+    'total_spent_desc',
+    'provider_payload_limit'
+  );
+  const allCategoryPreferences = Array.from(registeredCategoryPreferences.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, count]) => ({ category, itemsBought: count }));
+  const categoryCollection = createFactCollection(
+    allCategoryPreferences,
+    5,
+    'items_bought_desc',
+    'provider_payload_limit'
+  );
+  const coverage = buildCoverage([topDebtorsCollection, topSpendersCollection, categoryCollection]);
 
   return {
     audienceSplit: { // Vital: Entender qué proporción del negocio está anonimizada
@@ -367,19 +508,23 @@ export const buildCustomerPayload = async (start, end, customers = [], sales = [
     debtAnalysis: {
       totalDebt,
       debtorCount: customersWithDebt.length,
-      topDebtors: customersWithDebt
-        .sort((a, b) => (b.debt || 0) - (a.debt || 0))
-        .slice(0, 5)
-        .map(c => ({ name: c.name, debt: c.debt }))
+      topDebtors: topDebtorsCollection
     },
     loyaltyInsights: {
-      topSpenders: aggregateCustomerSpending(filteredSales, customers),
-      topCategoriesBoughtByRegistered: Array.from(registeredCategoryPreferences.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([category, count]) => ({ category, itemsBought: count })),
+      topSpenders: topSpendersCollection,
+      topCategoriesBoughtByRegistered: categoryCollection,
       // Ya no usas un hardcodeo estricto, le pasas las métricas dinámicas de recurrencia
       visitFrequency: calculateDynamicRecurrence(filteredSales)
+    },
+    coverage,
+    localDetails: {
+      debtAnalysis: {
+        topDebtors: topDebtorDetails
+      },
+      loyaltyInsights: {
+        topSpenders: allTopSpenderDetails,
+        topCategoriesBoughtByRegistered: allCategoryPreferences
+      }
     }
   };
 };
@@ -405,7 +550,7 @@ const calculateDynamicRecurrence = (sales) => {
 // 4. FUNCIONES DE AGREGACIÓN AUXILIARES
 // ============================================================
 
-const aggregateTopProducts = (filteredSales, limit = 10) => {
+const aggregateTopProducts = (filteredSales, limit = Infinity) => {
   const productMap = new Map();
 
   filteredSales.forEach(sale => {
@@ -430,9 +575,8 @@ const aggregateTopProducts = (filteredSales, limit = 10) => {
     });
   });
 
-  return Array.from(productMap.values())
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, limit);
+  const sorted = Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue);
+  return Number.isFinite(limit) ? sorted.slice(0, limit) : sorted;
 };
 
 const aggregateByCategory = (menu) => {
@@ -551,8 +695,7 @@ const aggregateCustomerSpending = (sales, customers) => {
 
   return customerData
     .filter(c => c.visits > 0)
-    .sort((a, b) => b.totalSpent - a.totalSpent)
-    .slice(0, 10);
+    .sort((a, b) => b.totalSpent - a.totalSpent);
 };
 
 export const calculateRecurrence = (sales, _customers) => {

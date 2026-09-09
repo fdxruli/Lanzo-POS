@@ -38,6 +38,16 @@ const parseDateRange = (aggregatedPayload = {}) => {
   return { start, end };
 };
 
+const collectionItems = (collection) => {
+  if (Array.isArray(collection)) return collection;
+  return Array.isArray(collection?.items) ? collection.items : [];
+};
+
+const collectionTotal = (collection) => {
+  if (Array.isArray(collection)) return collection.length;
+  return Number.isFinite(Number(collection?.total)) ? Number(collection.total) : collectionItems(collection).length;
+};
+
 const isWithinRange = (timestamp, start, end) => {
   if (!timestamp || !start || !end) return true;
   const date = new Date(timestamp);
@@ -79,7 +89,7 @@ const sortObjectEntriesByValue = (obj = {}, valueKey = 'revenue') => {
     .sort((a, b) => Number(b[valueKey] || 0) - Number(a[valueKey] || 0));
 };
 
-const makeToolResult = ({ id, title, severity = TOOL_SEVERITY.INFO, summary, metrics = {}, actions = [], evidence = [], confidence = 0.75 }) => ({
+const makeToolResult = ({ id, title, severity = TOOL_SEVERITY.INFO, summary, metrics = {}, actions = [], evidence = [], confidence = 0.75, errorMetadata = null }) => ({
   id,
   title,
   severity,
@@ -87,7 +97,8 @@ const makeToolResult = ({ id, title, severity = TOOL_SEVERITY.INFO, summary, met
   metrics,
   actions,
   evidence,
-  confidence
+  confidence,
+  ...(errorMetadata ? { errorMetadata } : {})
 });
 
 const dataQualityTool = {
@@ -134,14 +145,18 @@ const inventoryStockRiskTool = {
   supportedBusinessTypes: ['restaurant', 'pharmacy', 'retail'],
   run: ({ aggregatedPayload }) => {
     const alerts = aggregatedPayload.inventoryAlerts || {};
-    const outOfStock = alerts.outOfStockProducts || [];
-    const lowStock = alerts.lowStockProducts || [];
-    const deadStock = alerts.potentialDeadStock || [];
-    const tiedCapital = deadStock.reduce((sum, product) => sum + Number(product.tiedCapital || 0), 0);
+    const outOfStock = collectionItems(alerts.outOfStockProducts);
+    const lowStock = collectionItems(alerts.lowStockProducts);
+    const deadStock = collectionItems(alerts.potentialDeadStock);
+    const outOfStockCount = collectionTotal(alerts.outOfStockProducts);
+    const lowStockCount = collectionTotal(alerts.lowStockProducts);
+    const deadStockCount = collectionTotal(alerts.potentialDeadStock);
+    const tiedCapital = Number(alerts.deadStockTotalTiedCapital)
+      || deadStock.reduce((sum, product) => sum + Number(product.tiedCapital || 0), 0);
 
-    const severity = outOfStock.length > 0 || tiedCapital > 1000
+    const severity = outOfStockCount > 0 || tiedCapital > 1000
       ? TOOL_SEVERITY.DANGER
-      : lowStock.length > 0 || deadStock.length > 0
+      : lowStockCount > 0 || deadStockCount > 0
         ? TOOL_SEVERITY.WARNING
         : TOOL_SEVERITY.SUCCESS;
 
@@ -149,22 +164,22 @@ const inventoryStockRiskTool = {
       id: inventoryStockRiskTool.id,
       title: 'Riesgo de inventario',
       severity,
-      summary: `${outOfStock.length} agotados, ${lowStock.length} en bajo stock y ${deadStock.length} candidatos a stock muerto.`,
+      summary: `${outOfStockCount} agotados, ${lowStockCount} en bajo stock y ${deadStockCount} candidatos a stock muerto.`,
       metrics: {
-        outOfStockCount: outOfStock.length,
-        lowStockCount: lowStock.length,
-        deadStockCandidates: deadStock.length,
+        outOfStockCount,
+        lowStockCount,
+        deadStockCandidates: deadStockCount,
         tiedCapital
       },
       actions: [
-        outOfStock.length > 0 ? 'Prioriza reposición o desactiva temporalmente productos agotados del menú.' : null,
-        lowStock.length > 0 ? 'Programa reposición de productos bajo mínimo antes del siguiente pico de venta.' : null,
-        deadStock.length > 0 ? 'Considera promoción, combo o liquidación para liberar capital detenido.' : null
+        outOfStockCount > 0 ? 'Prioriza reposición o desactiva temporalmente productos agotados del menú.' : null,
+        lowStockCount > 0 ? 'Programa reposición de productos bajo mínimo antes del siguiente pico de venta.' : null,
+        deadStockCount > 0 ? 'Considera promoción, combo o liquidación para liberar capital detenido.' : null
       ].filter(Boolean),
       evidence: [
-        ...outOfStock.slice(0, 3).map(product => `Agotado: ${product.name}`),
-        ...lowStock.slice(0, 3).map(product => `Bajo stock: ${product.name} (${product.stock}/${product.minStock})`),
-        ...deadStock.slice(0, 3).map(product => `Stock muerto: ${product.name} - $${Number(product.tiedCapital || 0).toFixed(2)}`)
+        ...outOfStock.map(product => `Agotado: ${product.name}`),
+        ...lowStock.map(product => `Bajo stock: ${product.name} (${product.stock}/${product.minStock})`),
+        ...deadStock.map(product => `Stock muerto: ${product.name} - $${Number(product.tiedCapital || 0).toFixed(2)}`)
       ],
       confidence: 0.86
     });
@@ -180,8 +195,8 @@ const wasteImpactTool = {
   run: ({ aggregatedPayload }) => {
     const waste = aggregatedPayload.wasteStats || {};
     const totalWasteLoss = Number(waste.totalWasteLoss || 0);
-    const topWasteCategories = waste.topWasteCategories || [];
-    const topWastedProducts = waste.topWastedProducts || [];
+    const topWasteCategories = collectionItems(waste.topWasteCategories);
+    const topWastedProducts = collectionItems(waste.topWastedProducts);
 
     return makeToolResult({
       id: wasteImpactTool.id,
@@ -199,8 +214,8 @@ const wasteImpactTool = {
         ? ['Revisar porcionamiento, caducidades y manipulación de los productos con mayor merma.']
         : ['Mantener registro de mermas para detectar patrones futuros.'],
       evidence: [
-        ...topWasteCategories.slice(0, 3).map(item => `Categoría: ${item.category} - $${Number(item.amount || 0).toFixed(2)}`),
-        ...topWastedProducts.slice(0, 3).map(item => `Producto: ${item.product} - $${Number(item.amount || 0).toFixed(2)}`)
+        ...topWasteCategories.map(item => `Categoría: ${item.category} - $${Number(item.amount || 0).toFixed(2)}`),
+        ...topWastedProducts.map(item => `Producto: ${item.product} - $${Number(item.amount || 0).toFixed(2)}`)
       ],
       confidence: totalWasteLoss > 0 ? 0.82 : 0.7
     });
@@ -266,8 +281,10 @@ const temporalHotspotsTool = {
   supportedBusinessTypes: ['restaurant', 'pharmacy', 'retail'],
   run: ({ aggregatedPayload }) => {
     const patterns = aggregatedPayload.temporalPatterns || {};
-    const topDays = sortObjectEntriesByValue(patterns.revenueByDayOfWeek || {}, 'revenue').slice(0, 3);
-    const topHours = sortObjectEntriesByValue(patterns.revenueByHour || {}, 'revenue').slice(0, 3);
+    const allDays = sortObjectEntriesByValue(patterns.revenueByDayOfWeek || {}, 'revenue');
+    const allHours = sortObjectEntriesByValue(patterns.revenueByHour || {}, 'revenue');
+    const topDays = allDays.slice(0, 3);
+    const topHours = allHours.slice(0, 3);
 
     return makeToolResult({
       id: temporalHotspotsTool.id,
@@ -280,7 +297,17 @@ const temporalHotspotsTool = {
         topDay: topDays[0]?.key || null,
         topDayRevenue: topDays[0]?.revenue || 0,
         topHour: topHours[0]?.key || null,
-        topHourRevenue: topHours[0]?.revenue || 0
+        topHourRevenue: topHours[0]?.revenue || 0,
+        days: {
+          total: allDays.length,
+          included: topDays.length,
+          omitted: Math.max(0, allDays.length - topDays.length)
+        },
+        hours: {
+          total: allHours.length,
+          included: topHours.length,
+          omitted: Math.max(0, allHours.length - topHours.length)
+        }
       },
       actions: [
         topHours.length > 0 ? 'Preparar inventario y personal antes de las horas con mayor ingreso.' : null,
@@ -375,7 +402,7 @@ const customerHealthTool = {
         Number(debt.totalDebt || 0) > 0 ? 'Preparar seguimiento de cobranza para clientes con deuda alta.' : null,
         Number(recurrence.singleVisitCustomers || 0) > 0 ? 'Diseñar mensaje de segunda visita para clientes que solo compraron una vez.' : null
       ].filter(Boolean),
-      evidence: (debt.topDebtors || []).slice(0, 3).map(customer => `Deudor: ${customer.name} - $${Number(customer.debt || 0).toFixed(2)}`),
+      evidence: collectionItems(debt.topDebtors).map(customer => `Deudor ${customer.customerRef || 'referencia'} - $${Number(customer.debt || 0).toFixed(2)}`),
       confidence: 0.82
     });
   }
@@ -406,8 +433,7 @@ const retailMarginRiskTool = {
       })
       .filter(Boolean)
       .filter(product => product.marginPct < 20)
-      .sort((a, b) => a.marginPct - b.marginPct)
-      .slice(0, 8);
+      .sort((a, b) => a.marginPct - b.marginPct);
 
     return makeToolResult({
       id: retailMarginRiskTool.id,
@@ -460,14 +486,22 @@ export const runAgentTools = async ({ agentType, businessTypes = [], rawData = {
       const result = await tool.run({ agentType, businessTypes, rawData, aggregatedPayload });
       if (result) results.push(result);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error || 'error desconocido');
+      const errorCode = error && typeof error === 'object' && error.code
+        ? String(error.code)
+        : 'TOOL_EXECUTION_FAILED';
       results.push(makeToolResult({
         id: tool.id,
         title: tool.name,
         severity: TOOL_SEVERITY.WARNING,
-        summary: `La herramienta no pudo ejecutarse: ${error.message || 'error desconocido'}`,
+        summary: `La herramienta no pudo ejecutarse: ${errorMessage}`,
         metrics: {},
         actions: ['Revisar la estructura de datos local para esta herramienta.'],
-        confidence: 0.3
+        confidence: 0.3,
+        errorMetadata: {
+          code: errorCode,
+          message: errorMessage
+        }
       }));
     }
   }

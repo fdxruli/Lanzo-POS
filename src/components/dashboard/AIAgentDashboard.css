@@ -436,6 +436,20 @@
   padding: var(--ui-space-lg);
 }
 
+.analysis-refresh-indicator {
+  align-items: center;
+  background: color-mix(in srgb, var(--ui-bg-muted) 82%, transparent);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-text-muted);
+  display: flex;
+  font-size: 0.8rem;
+  font-weight: 800;
+  gap: 0.45rem;
+  margin-bottom: var(--ui-space-sm);
+  padding: 0.55rem 0.7rem;
+}
+
 .state-indicator {
   align-items: center;
   display: flex;

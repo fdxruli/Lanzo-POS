@@ -1,4 +1,5 @@
 import { CheckCircle, Clock, Eye, History, Loader2, Sparkles } from 'lucide-react';
+import { humanizeAIReportText } from '../../utils/aiReportLabels';
 import './AIAgentHistoryPanel.css';
 
 const formatToolSummary = (toolRunSummary = {}) => {
@@ -8,6 +9,16 @@ const formatToolSummary = (toolRunSummary = {}) => {
   if (executed > 0 && available > 0) return `${executed}/${available} herramientas`;
   if (available > 0) return `${available} herramientas`;
   return null;
+};
+
+const formatAnalysisStatus = (analysis = {}) => {
+  const status = analysis.reportStatus || analysis.status;
+  if (status === 'failed') return 'Fallido, conservado';
+  if (status === 'incomplete' && analysis.coverageStatus === 'partial') return 'Completado con cobertura parcial';
+  if (status === 'incomplete') return 'Incompleto';
+  if (status === 'invalid') return 'Formato inválido';
+  if (status === 'completed') return 'Completado';
+  return 'Guardado';
 };
 
 const EMPTY_ANALYSES = [];
@@ -55,18 +66,18 @@ export default function AIAgentHistoryPanel({
       {isLoading && (
         <div className="ai-analysis-history-loading">
           <Loader2 size={18} className="spin-icon" />
-          <span>Cargando historial...</span>
+          <span>{analyses.length > 0 ? 'Actualizando historial guardado...' : 'Cargando historial...'}</span>
         </div>
       )}
 
-      {!isLoading && analyses.length === 0 && (
+      {analyses.length === 0 && !isLoading && (
         <div className="ai-analysis-history-empty">
           <History size={22} />
           <p>Aun no hay analisis guardados para esta vista.</p>
         </div>
       )}
 
-      {!isLoading && analyses.length > 0 && (
+      {analyses.length > 0 && (
         <div className="ai-analysis-history-list">
           {analyses.map(analysis => {
             const toolSummary = formatToolSummary(analysis.toolRunSummary);
@@ -82,7 +93,7 @@ export default function AIAgentHistoryPanel({
                   </div>
 
                   <p className="ai-analysis-history-summary">
-                    {analysis.resultSummary}
+                    {humanizeAIReportText(analysis.resultSummary, 'Sin resumen disponible.')}
                   </p>
 
                   <div className="ai-analysis-history-meta">
@@ -94,8 +105,9 @@ export default function AIAgentHistoryPanel({
                     {toolSummary && <span>{toolSummary}</span>}
                     <span className="ai-analysis-history-saved">
                       <CheckCircle size={13} />
-                      Guardado
+                      {formatAnalysisStatus(analysis)}
                     </span>
+                    {Number(analysis.coverage?.factsOmitted || 0) > 0 && <span>{analysis.coverage.factsOmitted} datos no incluidos en la muestra</span>}
                   </div>
                 </div>
 

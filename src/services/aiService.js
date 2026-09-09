@@ -295,11 +295,28 @@ export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
     clearAIUsageGateNotice();
   }
 
-  if (!data.content || typeof data.content !== 'string') {
+  const rawResultContent = typeof data.rawResultContent === 'string'
+    ? data.rawResultContent
+    : typeof data.content === 'string'
+      ? data.content
+      : '';
+
+  if (!rawResultContent.trim()) {
     throw new AIApiError('La Edge Function no devolvió contenido de IA válido.', 502, data, 'AI_EMPTY_RESPONSE');
   }
 
-  return data.content.trim();
+  return {
+    content: rawResultContent.trim(),
+    rawResultContent,
+    resultFormat: data.resultFormat || 'raw',
+    coverage: data.coverage || null,
+    usage: data.usage || null,
+    providerMetadata: data.providerMetadata || null,
+    status: data.status || (data.incomplete ? 'incomplete' : 'completed'),
+    incomplete: data.incomplete === true || data.status === 'incomplete',
+    errorMetadata: data.errorMetadata || null,
+    usageStatus
+  };
 };
 
 export const hasApiKey = (provider = EDGE_PROVIDER) => isEdgeProvider(provider) && Boolean(supabaseClient);
