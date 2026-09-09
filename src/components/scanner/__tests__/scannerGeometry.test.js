@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   expandNormalizedRoi,
+  getCoveredVideoRect,
   getContainedVideoRect,
   mapNormalizedRegionToSource,
+  mapVisibleRegionToSource,
   normalizeChildRectWithinStage,
 } from '../scannerGeometry';
 
@@ -135,7 +137,184 @@ describe('scanner contained preview geometry', () => {
   });
 });
 
+describe('scanner cover preview geometry', () => {
+  it('covers a landscape viewport with a vertical source using a centered crop', () => {
+    const rect = getCoveredVideoRect({
+      containerWidth: 800,
+      containerHeight: 600,
+      videoWidth: 1080,
+      videoHeight: 1920,
+    });
+
+    expect(rect.width).toBe(800);
+    expect(rect.height).toBeCloseTo(1422.222222);
+    expect(rect.x).toBe(0);
+    expect(rect.y).toBeCloseTo(-411.111111);
+    expect(rect.viewportWidth).toBe(800);
+    expect(rect.viewportHeight).toBe(600);
+    expect(rect.isFallback).toBe(false);
+    expect(rect.fit).toBe('cover');
+  });
+
+  it('covers a portrait viewport with a landscape source using a centered crop', () => {
+    const rect = getCoveredVideoRect({
+      containerWidth: 400,
+      containerHeight: 800,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    });
+
+    expect(rect.width).toBeCloseTo(1422.222222);
+    expect(rect.height).toBeCloseTo(800);
+    expect(rect.x).toBeCloseTo(-511.111111);
+    expect(rect.y).toBe(0);
+  });
+
+  it.each([
+    ['4:3', 640, 480, 1000, 600],
+    ['16:9', 1920, 1080, 1000, 600],
+    ['square', 1000, 1000, 600, 600],
+  ])('uses native %s source proportions without distortion', (
+    _label,
+    videoWidth,
+    videoHeight,
+    containerWidth,
+    containerHeight,
+  ) => {
+    const rect = getCoveredVideoRect({
+      containerWidth,
+      containerHeight,
+      videoWidth,
+      videoHeight,
+    });
+
+    expect(rect.width / rect.height).toBeCloseTo(videoWidth / videoHeight);
+    expect(rect.width).toBeGreaterThanOrEqual(containerWidth);
+    expect(rect.height).toBeGreaterThanOrEqual(containerHeight);
+    expect(rect.isFallback).toBe(false);
+  });
+
+  it('does not crop when source and viewport proportions are equal', () => {
+    expect(getCoveredVideoRect({
+      containerWidth: 800,
+      containerHeight: 450,
+      videoWidth: 1600,
+      videoHeight: 900,
+    })).toMatchObject({
+      width: 800,
+      height: 450,
+      x: 0,
+      y: 0,
+      isFallback: false,
+    });
+  });
+
+  it('returns a safe fallback until cover metadata is available', () => {
+    expect(getCoveredVideoRect({
+      containerWidth: 400,
+      containerHeight: 800,
+      videoWidth: 0,
+      videoHeight: 0,
+    })).toEqual({
+      width: 400,
+      height: 800,
+      x: 0,
+      y: 0,
+      viewportWidth: 400,
+      viewportHeight: 800,
+      isFallback: true,
+      fit: 'cover',
+    });
+  });
+
+  it('recomputes the centered crop after orientation changes', () => {
+    const portrait = getCoveredVideoRect({
+      containerWidth: 400,
+      containerHeight: 800,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    });
+    const landscape = getCoveredVideoRect({
+      containerWidth: 800,
+      containerHeight: 400,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    });
+
+    expect(portrait.x).toBeLessThan(0);
+    expect(portrait.y).toBe(0);
+    expect(landscape.x).toBeCloseTo(0);
+    expect(landscape.y).toBeLessThan(0);
+    expect(portrait.width).not.toBe(landscape.width);
+  });
+});
+
 describe('scanner decode ROI geometry', () => {
+  it('maps a cover viewport reticle back through the centered vertical crop', () => {
+    const coveredRect = getCoveredVideoRect({
+      containerWidth: 800,
+      containerHeight: 600,
+      videoWidth: 1080,
+      videoHeight: 1920,
+    });
+
+    expect(mapVisibleRegionToSource({
+      x: 0.25,
+      y: 0.4,
+      width: 0.5,
+      height: 0.2,
+    }, coveredRect)).toMatchObject({
+      x: expect.closeTo(0.25),
+      y: expect.closeTo(0.4578125),
+      width: expect.closeTo(0.5),
+      height: expect.closeTo(0.084375),
+    });
+  });
+
+  it('maps a cover viewport reticle back through a centered horizontal crop', () => {
+    const coveredRect = getCoveredVideoRect({
+      containerWidth: 400,
+      containerHeight: 800,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    });
+
+    expect(mapVisibleRegionToSource({
+      x: 0.1,
+      y: 0.25,
+      width: 0.8,
+      height: 0.5,
+    }, coveredRect)).toMatchObject({
+      x: expect.closeTo(0.3875),
+      y: expect.closeTo(0.25),
+      width: expect.closeTo(0.225),
+      height: expect.closeTo(0.5),
+    });
+  });
+
+  it('keeps mapped cover regions within the source limits and rejects invalid areas', () => {
+    const coveredRect = getCoveredVideoRect({
+      containerWidth: 800,
+      containerHeight: 600,
+      videoWidth: 1080,
+      videoHeight: 1920,
+    });
+
+    const mapped = mapVisibleRegionToSource({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    }, coveredRect);
+
+    expect(Object.values(mapped).every((value) => value >= 0 && value <= 1)).toBe(true);
+    expect(mapped.width).toBeGreaterThan(0);
+    expect(mapped.height).toBeGreaterThan(0);
+    expect(mapVisibleRegionToSource(null, coveredRect)).toBeNull();
+    expect(mapVisibleRegionToSource({ x: 0.1, y: 0.1, width: 0, height: 0.2 }, coveredRect))
+      .toBeNull();
+  });
+
   it('maps a normalized reticle region to intrinsic source pixels', () => {
     const region = normalizeChildRectWithinStage({
       stageRect: { left: 0, top: 0, width: 1000, height: 500 },

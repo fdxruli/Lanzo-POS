@@ -125,13 +125,21 @@
   isolation: isolate;
 }
 
-/* El video conserva su relación nativa y nunca recorta la fuente. */
+/* CameraViewport owns the fit mode so CSS and the ROI geometry stay aligned. */
 .scanner-video-container video,
 #scanner-video {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: cover;
+}
+
+.scanner-video-viewport[data-camera-fit='contain'] #scanner-video {
   object-fit: contain;
+}
+
+.scanner-video-viewport[data-camera-fit='cover'] #scanner-video {
+  object-fit: cover;
 }
 
 /* Controles del panel: en móvil se superponen al frame sin bloquear la cámara. */
@@ -163,6 +171,8 @@
   z-index: 10;
   transition: background-color 0.2s ease;
   padding: 0;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .scanner-close-btn:hover,

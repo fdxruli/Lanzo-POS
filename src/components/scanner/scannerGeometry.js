@@ -41,6 +41,10 @@ const getRectDimensions = (rect) => {
 
 const clampUnit = (value) => Math.min(1, Math.max(0, value));
 
+export const SCANNER_DESKTOP_BREAKPOINT = 768;
+
+export const getCameraFitMode = (isDesktop) => (isDesktop ? 'contain' : 'cover');
+
 /**
  * Normalizes a child DOM rectangle against its visible stage.
  *
@@ -235,5 +239,116 @@ export const getContainedVideoRect = ({
     x: Math.max(0, (safeContainerWidth - width) / 2),
     y: Math.max(0, (safeContainerHeight - height) / 2),
     isFallback: false,
+  };
+};
+
+/**
+ * Returns the rendered video rectangle produced by CSS object-fit: cover.
+ *
+ * The rectangle can extend beyond the viewport on either axis. Its negative
+ * x/y offset is the centered crop that the browser applies to the source.
+ * viewportWidth/viewportHeight identify the stage against which a visible ROI
+ * must be mapped back to the intrinsic video frame.
+ */
+export const getCoveredVideoRect = ({
+  containerWidth,
+  containerHeight,
+  videoWidth,
+  videoHeight,
+}) => {
+  const safeContainerWidth = toPositiveNumber(containerWidth);
+  const safeContainerHeight = toPositiveNumber(containerHeight);
+  const safeVideoWidth = toPositiveNumber(videoWidth);
+  const safeVideoHeight = toPositiveNumber(videoHeight);
+
+  if (
+    safeContainerWidth === 0
+    || safeContainerHeight === 0
+    || safeVideoWidth === 0
+    || safeVideoHeight === 0
+  ) {
+    return {
+      width: safeContainerWidth,
+      height: safeContainerHeight,
+      x: 0,
+      y: 0,
+      viewportWidth: safeContainerWidth,
+      viewportHeight: safeContainerHeight,
+      isFallback: true,
+      fit: 'cover',
+    };
+  }
+
+  const scale = Math.max(
+    safeContainerWidth / safeVideoWidth,
+    safeContainerHeight / safeVideoHeight,
+  );
+  const width = safeVideoWidth * scale;
+  const height = safeVideoHeight * scale;
+
+  return {
+    width,
+    height,
+    x: (safeContainerWidth - width) / 2,
+    y: (safeContainerHeight - height) / 2,
+    viewportWidth: safeContainerWidth,
+    viewportHeight: safeContainerHeight,
+    isFallback: false,
+    fit: 'cover',
+  };
+};
+
+/**
+ * Converts a region measured in a cover viewport into source-normalized
+ * coordinates. For contain, the measured stage already has the source aspect
+ * ratio, so the normalized region can pass through unchanged.
+ */
+export const mapVisibleRegionToSource = (region, videoRect) => {
+  const normalized = normalizeRegion(region);
+
+  if (!normalized) return null;
+  if (videoRect?.fit !== 'cover') return normalized;
+
+  const viewportWidth = toPositiveNumber(Number(videoRect.viewportWidth));
+  const viewportHeight = toPositiveNumber(Number(videoRect.viewportHeight));
+  const renderedWidth = toPositiveNumber(Number(videoRect.width));
+  const renderedHeight = toPositiveNumber(Number(videoRect.height));
+  const renderedX = toFiniteNumber(videoRect.x);
+  const renderedY = toFiniteNumber(videoRect.y);
+
+  if (
+    viewportWidth === 0
+    || viewportHeight === 0
+    || renderedWidth === 0
+    || renderedHeight === 0
+    || renderedX === null
+    || renderedY === null
+  ) {
+    return null;
+  }
+
+  const visibleLeft = normalized.x * viewportWidth;
+  const visibleTop = normalized.y * viewportHeight;
+  const visibleRight = (normalized.x + normalized.width) * viewportWidth;
+  const visibleBottom = (normalized.y + normalized.height) * viewportHeight;
+  const left = Math.max(renderedX, visibleLeft);
+  const top = Math.max(renderedY, visibleTop);
+  const right = Math.min(renderedX + renderedWidth, visibleRight);
+  const bottom = Math.min(renderedY + renderedHeight, visibleBottom);
+
+  if (right <= left || bottom <= top) return null;
+
+  const sourceLeft = clampUnit((left - renderedX) / renderedWidth);
+  const sourceTop = clampUnit((top - renderedY) / renderedHeight);
+  const sourceRight = clampUnit((right - renderedX) / renderedWidth);
+  const sourceBottom = clampUnit((bottom - renderedY) / renderedHeight);
+
+  if (sourceRight <= sourceLeft || sourceBottom <= sourceTop) return null;
+
+  return {
+    x: sourceLeft,
+    y: sourceTop,
+    width: sourceRight - sourceLeft,
+    height: sourceBottom - sourceTop,
   };
 };
