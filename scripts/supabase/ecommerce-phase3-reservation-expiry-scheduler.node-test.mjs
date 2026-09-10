@@ -6,8 +6,13 @@ const migrationUrl = new URL(
   '../../supabase/migrations/20260910053018_ecommerce_phase3_reservation_expiry_scheduler_r1.sql',
   import.meta.url
 );
+const phase3MigrationUrl = new URL(
+  '../../supabase/migrations/20260910030440_ecommerce_phase3_stock_reservations.sql',
+  import.meta.url
+);
 
 const migration = await readFile(migrationUrl, 'utf8');
+const phase3Migration = await readFile(phase3MigrationUrl, 'utf8');
 
 test('scheduler enables pg_cron in pg_catalog and schedules only the private expiry function', () => {
   assert.match(migration, /create extension if not exists pg_cron with schema pg_catalog/i);
@@ -48,4 +53,20 @@ test('scheduler requires a protected security-definer target and denies client e
 
 test('scheduler migration does not mutate business tables or physical inventory', () => {
   assert.doesNotMatch(migration, /\b(?:insert|update|delete)\s+(?:into\s+)?public\.(?:ecommerce_orders|ecommerce_order_inventory_reservations|pos_products|pos_product_batches)/i);
+});
+
+test('the existing expiry target remains private, locked, idempotent and search-path safe', () => {
+  assert.match(
+    phase3Migration,
+    /create or replace function private\.ecommerce_expire_abandoned_stock_reservations\(\)[\s\S]*?security definer\s+set search_path = ''/i
+  );
+  assert.match(phase3Migration, /stock_reservation_status = 'reserved'/i);
+  assert.match(phase3Migration, /stock_reservation_expires_at <= now\(\)/i);
+  assert.match(phase3Migration, /for update skip locked/i);
+  assert.match(phase3Migration, /greatest\(committed_stock - v_reservation\.quantity, 0\)/i);
+  assert.match(phase3Migration, /status = p_transition/i);
+  assert.match(
+    phase3Migration,
+    /revoke all on function private\.ecommerce_expire_abandoned_stock_reservations\(\) from public, anon, authenticated/i
+  );
 });
