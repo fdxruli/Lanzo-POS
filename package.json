@@ -27,6 +27,7 @@
     "test:supabase-ledger-baseline": "node --test scripts/supabase/migration-ledger-baseline.node-test.mjs",
     "test:ecommerce-phase3-stock-reservations-contract": "node --test scripts/supabase/ecommerce-phase3-stock-reservations-contract.node-test.mjs",
     "test:ecommerce-phase3-reservation-expiry-scheduler": "node --test scripts/supabase/ecommerce-phase3-reservation-expiry-scheduler.node-test.mjs",
+    "test:ecommerce-phase3-fulfillment-reservation-hold": "node --test scripts/supabase/ecommerce-phase3-fulfillment-reservation-hold.node-test.mjs",
     "test:cash-station-labels-contract": "node --test scripts/supabase/cash-station-labels-read-contract.node-test.mjs",
     "test:admin-cash-close-contract": "node --test scripts/supabase/admin-cash-close-contract.node-test.mjs",
     "test:admin-close-financial-terminal-contract": "node --test scripts/supabase/admin-close-financial-terminal-contract.node-test.mjs",

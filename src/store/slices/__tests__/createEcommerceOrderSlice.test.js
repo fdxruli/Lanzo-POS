@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   getEcommerceOrder: vi.fn(),
   markEcommerceOrderSeen: vi.fn(),
   acceptEcommerceOrder: vi.fn(),
-  rejectEcommerceOrder: vi.fn()
+  rejectEcommerceOrder: vi.fn(),
+  revalidateEcommerceOrderStock: vi.fn()
 }));
 
 vi.mock('../../../services/ecommerce/ecommerceOrderService', () => ({
@@ -14,6 +15,7 @@ vi.mock('../../../services/ecommerce/ecommerceOrderService', () => ({
   markEcommerceOrderSeen: mocks.markEcommerceOrderSeen,
   acceptEcommerceOrder: mocks.acceptEcommerceOrder,
   rejectEcommerceOrder: mocks.rejectEcommerceOrder,
+  revalidateEcommerceOrderStock: mocks.revalidateEcommerceOrderStock,
   getEcommerceOrderErrorMessage: () => 'Error seguro'
 }));
 
@@ -110,6 +112,11 @@ beforeEach(() => {
   mocks.getEcommerceOrder.mockResolvedValue(detailResult('order-1'));
   mocks.markEcommerceOrderSeen.mockResolvedValue({ success: true, changed: false });
   mocks.acceptEcommerceOrder.mockResolvedValue({
+    success: true,
+    changed: true,
+    order: { id: 'order-1', status: 'accepted' }
+  });
+  mocks.revalidateEcommerceOrderStock.mockResolvedValue({
     success: true,
     changed: true,
     order: { id: 'order-1', status: 'accepted' }

@@ -171,6 +171,9 @@ function useMediaQuery(query) {
 
 function OrderCard({ order, onOpen }) {
   const itemCount = Number(order.itemCount || 0);
+  const reservationExpired = order.stockReservationStatus === 'expired';
+  const checkoutReservation = order.stockReservationStatus === 'reserved' && order.stockReservationPhase === 'checkout';
+  const fulfillmentReservation = order.stockReservationStatus === 'reserved' && order.stockReservationPhase === 'fulfillment';
 
   return (
     <li className="ecommerce-order-card-shell">
@@ -190,6 +193,15 @@ function OrderCard({ order, onOpen }) {
           <span><Store size={15} aria-hidden="true" />{fulfillmentLabel(order.fulfillmentMethod)}</span>
           <span><Package size={15} aria-hidden="true" />{itemCount} {itemCount === 1 ? 'artículo' : 'artículos'}</span>
         </span>
+        {(reservationExpired || checkoutReservation || fulfillmentReservation) && (
+          <small className="ecommerce-order-card__reservation">
+            {reservationExpired
+              ? 'Reserva expirada · requiere revalidación'
+              : checkoutReservation
+                ? `Reserva activa hasta: ${formatDate(order.checkoutReservationExpiresAt)}`
+                : `Stock retenido hasta: ${formatDate(order.fulfillmentHoldExpiresAt)}`}
+          </small>
+        )}
         <strong className="ecommerce-order-card__total">{formatMoney(order.total, order.currency)}</strong>
       </button>
     </li>
@@ -532,6 +544,7 @@ function OrderDetail({
   error,
   onClose,
   onAccept,
+  onRevalidateStock,
   onReject,
   onPrepare,
   onRelease,
@@ -577,6 +590,10 @@ function OrderDetail({
       ? 'Registrado en Punto de Venta'
       : 'Pendiente al entregar';
   const posConversion = order?.posConversion;
+  const stockReservation = order?.stockReservation || {};
+  const reservationExpired = stockReservation.status === 'expired';
+  const hasCheckoutReservation = stockReservation.status === 'reserved' && stockReservation.phase === 'checkout';
+  const hasFulfillmentReservation = stockReservation.status === 'reserved' && stockReservation.phase === 'fulfillment';
 
   return (
     <div
@@ -671,6 +688,20 @@ function OrderDetail({
               </dl>
             </DetailSection>
 
+            {(hasCheckoutReservation || reservationExpired || hasFulfillmentReservation) && (
+              <DetailSection title="Reserva de inventario" variant="fulfillment" icon={PackageCheck}>
+                {hasCheckoutReservation && (
+                  <p>Reserva activa hasta: <strong>{formatDate(stockReservation.checkoutExpiresAt)}</strong><br />Fase: Esperando aceptación</p>
+                )}
+                {reservationExpired && (
+                  <p><strong>Reserva expirada</strong><br />El stock debe verificarse nuevamente antes de aceptar o continuar.</p>
+                )}
+                {hasFulfillmentReservation && (
+                  <p>Reserva confirmada<br />Retención de stock hasta: <strong>{formatDate(stockReservation.fulfillmentHoldExpiresAt)}</strong></p>
+                )}
+              </DetailSection>
+            )}
+
             <EcommerceFulfillmentPanel onTerminalSuccess={onFulfillmentTerminalSuccess} />
 
             <DetailSection
@@ -711,7 +742,7 @@ function OrderDetail({
                     disabled={Boolean(actionLoading) || loading}
                   >
                     <PackageCheck size={17} />
-                    {actionLoading === 'accept' ? 'Aceptando…' : 'Aceptar pedido'}
+                    {actionLoading === 'accept' ? 'Aceptando…' : reservationExpired ? 'Aceptar y reservar nuevamente' : 'Aceptar pedido'}
                   </button>
                   <button
                     type="button"
@@ -724,7 +755,19 @@ function OrderDetail({
                 </>
               )}
 
-              {order.status === 'accepted' && canPrepareInPos && ['none', 'released'].includes(posDraftStatus) && (
+              {order.status === 'accepted' && reservationExpired && (
+                <button
+                  type="button"
+                  className="ui-button ui-button--primary"
+                  onClick={onRevalidateStock}
+                  disabled={Boolean(actionLoading) || loading}
+                >
+                  <RefreshCw size={17} />
+                  {actionLoading === 'revalidate-stock' ? 'Revalidando…' : 'Revalidar stock y reservar nuevamente'}
+                </button>
+              )}
+
+              {order.status === 'accepted' && !reservationExpired && canPrepareInPos && ['none', 'released'].includes(posDraftStatus) && (
                 <button
                   type="button"
                   className="ui-button ui-button--primary"
@@ -738,7 +781,7 @@ function OrderDetail({
                 </button>
               )}
 
-              {order.status === 'accepted' && canPrepareInPos && isClaimedByCurrentActor && (
+              {order.status === 'accepted' && !reservationExpired && canPrepareInPos && isClaimedByCurrentActor && (
                 <button
                   type="button"
                   className="ui-button ui-button--primary"
@@ -750,13 +793,13 @@ function OrderDetail({
                 </button>
               )}
 
-              {order.status === 'accepted' && canPrepareInPos && isClaimedByAnotherActor && (
+              {order.status === 'accepted' && !reservationExpired && canPrepareInPos && isClaimedByAnotherActor && (
                 <button type="button" className="ui-button ui-button--secondary" disabled>
                   En preparación en otro dispositivo
                 </button>
               )}
 
-              {order.status === 'accepted' && canPrepareInPos && isPreparedByCurrentActor && (
+              {order.status === 'accepted' && !reservationExpired && canPrepareInPos && isPreparedByCurrentActor && (
                 <>
                   <button
                     type="button"
@@ -778,7 +821,7 @@ function OrderDetail({
                 </>
               )}
 
-              {order.status === 'accepted' && canPrepareInPos && isPreparedByAnotherActor && (
+              {order.status === 'accepted' && !reservationExpired && canPrepareInPos && isPreparedByAnotherActor && (
                 <>
                   <button type="button" className="ui-button ui-button--secondary" disabled>
                     Preparado en otro dispositivo
@@ -882,6 +925,7 @@ export default function EcommerceOrdersPage() {
   const setFilter = useAppStore((state) => state.setEcommerceOrdersFilter);
   const clearSelectedOrder = useAppStore((state) => state.clearSelectedEcommerceOrder);
   const acceptOrder = useAppStore((state) => state.acceptEcommerceOrder);
+  const revalidateOrderStock = useAppStore((state) => state.revalidateEcommerceOrderStock);
   const rejectOrder = useAppStore((state) => state.rejectEcommerceOrder);
 
   const staffSession = useMemo(() => ({ currentDeviceRole, currentStaffUser }), [currentDeviceRole, currentStaffUser]);
@@ -1040,6 +1084,15 @@ export default function EcommerceOrdersPage() {
     }
   };
 
+  const handleRevalidateStock = async () => {
+    const visibleOrderId = selectedOrder?.id;
+    if (!visibleOrderId || selectedLoading || actionLoading) return;
+    const result = await revalidateOrderStock?.(visibleOrderId);
+    if (result?.success === false) {
+      showMessageModal(result.message || 'No hay existencia disponible para aceptar este pedido.', null, { type: 'warning' });
+    }
+  };
+
   const handleFulfillmentTerminalSuccess = (nextState) => {
     showMessageModal(
       nextState === 'completed' ? 'Pedido completado' : 'Pedido cancelado',
@@ -1145,6 +1198,7 @@ export default function EcommerceOrdersPage() {
         onAccept={() => {
           if (!selectedLoading && !actionLoading) setDialogMode('accept');
         }}
+        onRevalidateStock={handleRevalidateStock}
         onReject={() => {
           if (!selectedLoading && !actionLoading) setDialogMode('reject');
         }}

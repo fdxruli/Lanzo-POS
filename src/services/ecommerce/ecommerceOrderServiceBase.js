@@ -19,6 +19,9 @@ const SAFE_MESSAGES = Object.freeze({
   ECOMMERCE_ORDER_PAYMENT_REQUIRED: 'Registra el pago en Punto de Venta antes de completar el pedido.',
   ECOMMERCE_REJECTION_REASON_REQUIRED: 'Escribe un motivo de rechazo de al menos 3 caracteres.',
   ECOMMERCE_REJECTION_REASON_TOO_LONG: 'El motivo de rechazo no puede superar 300 caracteres.',
+  ECOMMERCE_ACCEPT_RESERVATION_STOCK_UNAVAILABLE: 'No se puede aceptar el pedido porque la reserva expiró y el producto ya no tiene existencia disponible.',
+  ECOMMERCE_RESERVATION_REVALIDATION_REQUIRED: 'El stock debe verificarse nuevamente antes de continuar con este pedido.',
+  ECOMMERCE_FULFILLMENT_RESERVATION_REQUIRED: 'El pedido requiere una reserva de stock activa para continuar. Revalida el stock e inténtalo nuevamente.',
   ECOMMERCE_POS_DRAFT_IN_PROGRESS: 'Este pedido ya está siendo preparado en otro dispositivo.',
   ECOMMERCE_POS_DRAFT_ALREADY_PREPARED: 'Este pedido ya tiene un borrador preparado en Punto de Venta.',
   ECOMMERCE_POS_DRAFT_CLAIM_EXPIRED: 'La reserva para preparar este pedido venció. Intenta nuevamente.',
@@ -92,7 +95,11 @@ const normalizeOrderSummary = (order = {}) => ({
   paymentStatus: safeText(order.paymentStatus, 'pending'),
   paymentRegistered: Boolean(order.paymentRegistered),
   posConversionStatus: safeText(order.posConversionStatus, 'idle'),
-  posVisibilityStatus: safeText(order.posVisibilityStatus)
+  posVisibilityStatus: safeText(order.posVisibilityStatus),
+  stockReservationStatus: safeText(order.stockReservationStatus, 'not_applicable'),
+  stockReservationPhase: safeText(order.stockReservationPhase) || null,
+  checkoutReservationExpiresAt: order.checkoutReservationExpiresAt || null,
+  fulfillmentHoldExpiresAt: order.fulfillmentHoldExpiresAt || null
 });
 
 const normalizeCounts = (counts = {}) => ({
@@ -142,6 +149,14 @@ const normalizeFulfillment = (fulfillment = {}) => ({
   updatedAt: fulfillment?.updatedAt || null,
   publicMessage: safeText(fulfillment?.publicMessage),
   paymentRegistered: Boolean(fulfillment?.paymentRegistered)
+});
+
+const normalizeStockReservation = (reservation = {}) => ({
+  status: safeText(reservation?.status, 'not_applicable'),
+  phase: safeText(reservation?.phase) || null,
+  checkoutExpiresAt: reservation?.checkoutExpiresAt || null,
+  fulfillmentHoldExpiresAt: reservation?.fulfillmentHoldExpiresAt || null,
+  fulfillmentHoldMinutes: Math.max(0, Math.floor(safeNumber(reservation?.fulfillmentHoldMinutes))) || null
 });
 
 const normalizeOrderDeliveryAddress = (value) => {
@@ -216,6 +231,7 @@ const normalizeDetail = (order = {}) => {
       convertedSaleId: safeText(order.posConversion?.convertedSaleId) || null,
       convertedAt: order.posConversion?.convertedAt || null
     },
+    stockReservation: normalizeStockReservation(order.stockReservation),
     fulfillment: normalizeFulfillment(order.fulfillment)
   };
 };
@@ -410,6 +426,7 @@ const mutateOrder = async (rpcName, { licenseDetails, orderId, reason } = {}) =>
 export const markEcommerceOrderSeen = (args) => mutateOrder('ecommerce_admin_mark_order_seen', args);
 export const acceptEcommerceOrder = (args) => mutateOrder('ecommerce_admin_accept_order', args);
 export const rejectEcommerceOrder = (args) => mutateOrder('ecommerce_admin_reject_order', args);
+export const revalidateEcommerceOrderStock = (args) => mutateOrder('ecommerce_admin_revalidate_order_stock', args);
 
 const mutatePosDraft = async (rpcName, {
   licenseDetails,
@@ -472,6 +489,7 @@ export const ecommerceOrderServiceInternals = Object.freeze({
   },
   normalizeOrderSummary,
   normalizeDetail,
+  normalizeStockReservation,
   normalizeFulfillment,
   normalizeCounts,
   normalizePagination
