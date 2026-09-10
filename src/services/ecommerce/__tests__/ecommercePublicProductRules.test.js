@@ -38,6 +38,17 @@ describe('ecommercePublicProductRules', () => {
     expect(getPublicProductMaxQuantity(product, 2)).toBe(2);
   });
 
+  it('renders the coarse Pro low-stock state without inventing an exact quantity', () => {
+    const product = {
+      isAvailable: true,
+      stock: { mode: 'status', status: 'low_stock', quantity: null },
+    };
+
+    expect(isPublicProductAvailable(product)).toBe(true);
+    expect(getPublicProductStockLabel(product)).toBe('Pocos disponibles');
+    expect(getPublicProductMaxQuantity(product, 8)).toBe(8);
+  });
+
   it('keeps hidden stock private and follows only isAvailable', () => {
     const inconsistentHiddenStock = {
       isAvailable: true,
