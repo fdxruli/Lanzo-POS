@@ -24,6 +24,9 @@ const REFRESH_ON_CONFLICT_CODES = new Set([
   'ECOMMERCE_ORDER_POS_CONVERSION_IN_PROGRESS',
   'ECOMMERCE_POS_DRAFT_IN_PROGRESS'
 ]);
+const RETRYABLE_CODES = new Set([
+  'ECOMMERCE_ORDER_ACTION_FAILED'
+]);
 
 const formatDateTime = (value) => {
   const date = new Date(value);
@@ -88,6 +91,7 @@ export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [publicMessage, setPublicMessage] = useState('');
   const [pendingTransition, setPendingTransition] = useState(null);
+  const [retryOperation, setRetryOperation] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -201,6 +205,7 @@ export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
     publicMessageDirtyRef.current = false;
     setOperationalOrder(null);
     setPendingTransition(null);
+    setRetryOperation(null);
     setFeedback(null);
     setPublicMessage('');
     if (visibleOrderId) void loadFulfillment(visibleOrderId);
@@ -236,21 +241,36 @@ export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
   }
 
   const fulfillment = operationalOrder?.fulfillment;
-  const runTransition = async (action) => {
+  const runTransition = async (action, operationToRetry = null) => {
     if (pendingRef.current || !operationalOrder || !fulfillment) return;
-    if (action.destructive && !globalThis.confirm?.('¿Cancelar este pedido? Esta acción no se puede deshacer desde la bandeja.')) {
+    if (!operationToRetry && action.destructive && !globalThis.confirm?.('¿Cancelar este pedido? Esta acción no se puede deshacer desde la bandeja.')) {
       return;
     }
 
-    const operation = {
+    const operation = operationToRetry || {
       orderId: operationalOrder.id,
       transition: action.transition,
       expectedVersion: Number(fulfillment.version || 0),
-      idempotencyKey: createIdempotencyKey()
+      idempotencyKey: createIdempotencyKey(),
+      publicMessage
+    };
+    const previousOrder = operationalOrder;
+    const optimisticOrder = {
+      ...previousOrder,
+      fulfillment: {
+        ...previousOrder.fulfillment,
+        status: operation.transition,
+        internalStatus: operation.transition,
+        version: operation.expectedVersion + 1,
+        updatedAt: new Date().toISOString(),
+        publicMessage: operation.publicMessage
+      }
     };
     pendingRef.current = operation;
     setPendingTransition(action.transition);
+    setRetryOperation(null);
     setFeedback(null);
+    setOperationalOrder(optimisticOrder);
 
     const result = await updateEcommerceOrderFulfillment({
       licenseDetails,
@@ -258,7 +278,7 @@ export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
       transition: operation.transition,
       expectedVersion: operation.expectedVersion,
       idempotencyKey: operation.idempotencyKey,
-      publicMessage
+      publicMessage: operation.publicMessage
     });
 
     const currentSelection = useAppStore.getState().selectedEcommerceOrderRequestId;
@@ -268,7 +288,11 @@ export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
 
     if (currentSelection !== operation.orderId) return;
     if (result.success !== true) {
+      setOperationalOrder(previousOrder);
       setFeedback({ type: 'error', text: result.message });
+      if (RETRYABLE_CODES.has(result.code)) {
+        setRetryOperation(operation);
+      }
       if (REFRESH_ON_CONFLICT_CODES.has(result.code)) {
         await loadFulfillment(operation.orderId, { quiet: true });
       }
@@ -365,6 +389,20 @@ export default function EcommerceFulfillmentPanel({ onTerminalSuccess } = {}) {
             : <CheckCircle2 aria-hidden="true" size={18} />}
           <span>{feedback.text}</span>
         </div>
+      ) : null}
+
+      {retryOperation ? (
+        <button
+          type="button"
+          className="ui-button ui-button--secondary"
+          disabled={Boolean(pendingTransition)}
+          onClick={() => runTransition(
+            { transition: retryOperation.transition, label: 'Reintentar actualización' },
+            retryOperation
+          )}
+        >
+          Reintentar actualización
+        </button>
       ) : null}
 
       {actions.length > 0 ? (
