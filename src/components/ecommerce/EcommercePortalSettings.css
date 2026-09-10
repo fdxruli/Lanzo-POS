@@ -338,6 +338,25 @@
 .ecom-admin-product > div > span, .ecom-admin-product > div > small { overflow: hidden; color: var(--text-light); text-overflow: ellipsis; white-space: nowrap; }
 .ecom-admin-mini-status { padding: 3px 7px; color: var(--text-light); background: var(--light-background); font-size: .7rem; }
 .ecom-admin-mini-status.is-on { color: var(--ui-text-success, #176b3a); background: var(--ui-bg-success-soft, #e7f6ed); }
+.ecom-admin-mini-status.is-eligible { color: var(--ui-text-success, #176b3a); background: var(--ui-bg-success-soft, #e7f6ed); }
+.ecom-admin-mini-status.is-blocked { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
+.ecom-admin-product-statuses { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.ecom-admin-store-health {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--light-background);
+}
+.ecom-admin-store-health > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.ecom-admin-store-health span { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; }
+.ecom-admin-store-health .is-complete { color: var(--ui-text-success, #176b3a); }
+.ecom-admin-store-health .is-pending { color: var(--ui-text-warning, #8a5a00); }
+.ecom-admin-local-product-search { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.ecom-admin-local-product-search .form-input { min-width: 0; }
+.ecom-admin-load-more-products { width: fit-content; margin-top: 8px; }
 .ecom-admin-stock-warning {
   display: inline-flex;
   align-items: center;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link2, LoaderCircle, Save, Unlink, X } from 'lucide-react';
+import { Link2, LoaderCircle, Save, Search, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getEcommercePortal } from '../../services/ecommerce/ecommerceAdminService';
 import { useAppStore } from '../../store/useAppStore';
@@ -103,6 +103,10 @@ export default function EcommerceProductPublishModal({
   linkedRefs,
   isPro,
   limitReached,
+  localCatalogLoading = false,
+  localCatalogHasMore = false,
+  onSearchLocalProducts,
+  onLoadMoreLocalProducts,
   onClose,
   onSave
 }) {
@@ -111,6 +115,7 @@ export default function EcommerceProductPublishModal({
   const [stockFeatureLoading, setStockFeatureLoading] = useState(false);
   const [stockFeatureError, setStockFeatureError] = useState(false);
   const [stockVisibilityEnabled, setStockVisibilityEnabled] = useState(false);
+  const [localProductSearch, setLocalProductSearch] = useState('');
   const companyProfile = useAppStore((state) => state.companyProfile);
   const selectedLocalProduct = useMemo(
     () => localProducts.find(
@@ -175,6 +180,14 @@ export default function EcommerceProductPublishModal({
         : MANUAL_SYNC_CONFIG
     });
   }, [editingProduct, isPro, limitReached, localProducts, open]);
+
+  useEffect(() => {
+    if (!open || typeof onSearchLocalProducts !== 'function') return undefined;
+    const timeoutId = window.setTimeout(() => {
+      void onSearchLocalProducts(localProductSearch);
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [localProductSearch, onSearchLocalProducts, open]);
 
   useEffect(() => {
     let active = true;
@@ -269,12 +282,14 @@ export default function EcommerceProductPublishModal({
     if (isPro && stockFeatureError) {
       return toast.error('No se pudo validar la política de inventario público. Intenta nuevamente.');
     }
-    if (
-      form.isPublished
-      && businessPolicy.status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
-    ) {
+    if (form.isPublished && [
+      BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW,
+      'hidden_incompatible'
+    ].includes(businessPolicy.status)) {
       return toast.error(
-        'El producto requiere revisión. Publícalo sin extras o déjalo despublicado.'
+        businessPolicy.status === 'hidden_incompatible'
+          ? 'El producto es incompatible con la tienda y no se puede publicar.'
+          : 'El producto requiere revisión. Publícalo sin extras o déjalo despublicado.'
       );
     }
     if (form.wholesaleEnabled && !wholesalePreview.valid) {
@@ -334,6 +349,17 @@ export default function EcommerceProductPublishModal({
         <form onSubmit={submit}>
           <label className="form-group ecom-admin-span-2">
             <span className="form-label">Producto del catálogo local *</span>
+            <span className="ecom-admin-local-product-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                className="form-input"
+                type="search"
+                value={localProductSearch}
+                onChange={(event) => setLocalProductSearch(event.target.value)}
+                placeholder="Buscar por nombre, código o SKU"
+                disabled={Boolean(editingProduct)}
+              />
+            </span>
             <select className="form-input" value={form.localProductRef} onChange={chooseProduct} disabled={Boolean(editingProduct)} required>
               <option value="">Selecciona un producto</option>
               {localProducts.map((product) => {
@@ -358,6 +384,20 @@ export default function EcommerceProductPublishModal({
                 ? 'Lanzo Nube puede mantener vinculados los campos elegidos sin sobrescribir los campos manuales.'
                 : 'Se guarda una copia pública; tu producto local no se modifica.'}
             </small>
+            {localCatalogLoading && <small className="ecom-admin-help">Cargando productos…</small>}
+            {!localCatalogLoading && localProducts.length === 0 && (
+              <small className="ecom-admin-help">No encontramos productos activos con esa búsqueda.</small>
+            )}
+            {localCatalogHasMore && !editingProduct && (
+              <button
+                type="button"
+                className="btn btn-secondary ecom-admin-load-more-products"
+                onClick={() => onLoadMoreLocalProducts?.(localProductSearch)}
+                disabled={localCatalogLoading}
+              >
+                Cargar más productos
+              </button>
+            )}
           </label>
 
           {isPro && (

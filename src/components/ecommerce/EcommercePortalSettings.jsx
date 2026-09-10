@@ -62,6 +62,7 @@ const STOCK_WARNING_COPY = Object.freeze({
   inactive_source: 'Producto original inactivo',
   unverified: 'No se pudo verificar el stock'
 });
+const LOCAL_CATALOG_PAGE_SIZE = 50;
 
 const numberOr = (value, fallback = 0) => {
   const parsed = Number(value);
@@ -198,6 +199,53 @@ function BusinessCapabilityReviewBanner({ products }) {
   );
 }
 
+function PublicationBadge({ product }) {
+  const capability = product.businessCapabilityStatus || product.publicConfigurationMode;
+  const isIncompatible = capability === 'hidden_incompatible';
+  const requiresReview = capability === 'requires_review';
+  const isEligible = !isIncompatible && !requiresReview;
+
+  return (
+    <span className="ecom-admin-product-statuses">
+      <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
+        {product.isPublished ? 'Publicado' : 'No publicado'}
+      </span>
+      <span className={`ecom-admin-mini-status ${isEligible ? 'is-eligible' : 'is-blocked'}`}>
+        {isIncompatible ? 'Incompatible' : requiresReview ? 'Requiere revisión' : 'Elegible'}
+      </span>
+    </span>
+  );
+}
+
+function StoreHealth({ portal, requirements, products, operations }) {
+  const eligiblePublished = products.some((product) => (
+    product.isPublished
+    && !['requires_review', 'hidden_incompatible'].includes(product.businessCapabilityStatus)
+    && !['requires_review', 'hidden_incompatible'].includes(product.publicConfigurationMode)
+  ));
+  const checks = [
+    ['WhatsApp válido', requirements.whatsapp],
+    ['Dirección completa', requirements.street && requirements.neighborhood && requirements.municipality && requirements.state && requirements.postalCode],
+    ['Horarios configurados', portal?.businessHoursEnabled !== true || (operations?.hours?.weekly || []).some((day) => day?.isOpen === true)],
+    ['Catálogo elegible', eligiblePublished],
+    ['Tienda publicada', portal?.status === 'published'],
+    ['Pedidos activos', portal?.ordersPaused !== true]
+  ];
+
+  return (
+    <section className="ecom-admin-store-health" aria-label="Estado de la tienda">
+      <strong>Salud de la tienda</strong>
+      <div>
+        {checks.map(([label, complete]) => (
+          <span key={label} className={complete ? 'is-complete' : 'is-pending'}>
+            <CheckCircle2 size={15} aria-hidden="true" /> {label}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function EcommercePortalSettings({ requestedSection = null }) {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const canAccess = useAppStore((state) => state.canAccess);
@@ -238,6 +286,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
+  const [localCatalogCursor, setLocalCatalogCursor] = useState(null);
+  const [localCatalogHasMore, setLocalCatalogHasMore] = useState(false);
   const [categoriesById, setCategoriesById] = useState(new Map());
   const [operations, setOperations] = useState(null);
   const [customization, setCustomization] = useState(() => portalCustomization(null));
@@ -581,72 +631,31 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     }
   };
 
-  const loadLocalCatalog = async () => {
-    if (localProducts.length > 0) return true;
+  const loadLocalCatalog = async ({ searchTerm = '', cursor = null, append = false } = {}) => {
     setLoadingCatalog(true);
     try {
-      const catalogProducts = [];
-      const visitedCursors = new Set();
-      let cursor = null;
-
-      while (true) {
-        const cursorKey = cursor === null || cursor === undefined || cursor === ''
-          ? null
-          : String(cursor);
-
-        if (cursorKey !== null) {
-          if (visitedCursors.has(cursorKey)) break;
-          visitedCursors.add(cursorKey);
-        }
-
-        const page = await productRepository.listProductsPage({
-          limit: 500,
+      const [page, categories] = await Promise.all([
+        productRepository.listProductsPage({
+          limit: LOCAL_CATALOG_PAGE_SIZE,
           status: 'active',
-          cursor
-        });
+          cursor,
+          searchTerm
+        }),
+        categoriesById.size > 0 ? Promise.resolve(null) : productRepository.listCategories()
+      ]);
+      if (!page || !Array.isArray(page.data)) throw new Error('No se pudo leer el catalogo local.');
 
-        if (!page || !Array.isArray(page.data)) {
-          throw new Error('No se pudo leer el catalogo local.');
-        }
-
-        const pageProducts = page.data;
-        catalogProducts.push(...pageProducts);
-
-        const nextCursor = page.nextCursor;
-        const nextCursorKey = nextCursor === null
-          || nextCursor === undefined
-          || nextCursor === ''
-          ? null
-          : String(nextCursor);
-
-        if (
-          nextCursorKey === null
-          || pageProducts.length === 0
-          || nextCursorKey === cursorKey
-          || visitedCursors.has(nextCursorKey)
-        ) {
-          break;
-        }
-
-        cursor = nextCursor;
-      }
-
-      const categories = await productRepository.listCategories();
-      const uniqueProducts = [];
-      const productIds = new Set();
-
-      catalogProducts.forEach((product) => {
-        if (!product?.id || product.isActive === false) return;
-        const productId = String(product.id);
-        if (productIds.has(productId)) return;
-        productIds.add(productId);
-        uniqueProducts.push(product);
+      const pageProducts = page.data.filter((product) => product?.id && product.isActive !== false);
+      setLocalProducts((currentProducts) => {
+        const byId = new Map((append ? currentProducts : []).map((product) => [String(product.id), product]));
+        pageProducts.forEach((product) => byId.set(String(product.id), product));
+        return Array.from(byId.values());
       });
-
-      setLocalProducts(uniqueProducts);
-      setCategoriesById(new Map(
-        (categories || []).map((category) => [category.id, category.name])
-      ));
+      setLocalCatalogCursor(page.nextCursor || null);
+      setLocalCatalogHasMore(Boolean(page.nextCursor) && pageProducts.length > 0);
+      if (categories) {
+        setCategoriesById(new Map((categories || []).map((category) => [category.id, category.name])));
+      }
       return true;
     } catch (catalogError) {
       toast.error(catalogError?.message || 'No se pudo leer el catalogo local.');
@@ -668,6 +677,16 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   const openEditProduct = async (product) => {
     if (!(await loadLocalCatalog())) return;
+    const sourceProduct = product?.localProductRef
+      ? await productRepository.getProductById(product.localProductRef)
+      : null;
+    if (sourceProduct?.id) {
+      setLocalProducts((current) => {
+        const byId = new Map(current.map((item) => [String(item.id), item]));
+        byId.set(String(sourceProduct.id), sourceProduct);
+        return Array.from(byId.values());
+      });
+    }
     setEditingProduct(product);
     setModalOpen(true);
   };
@@ -756,6 +775,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           </div>
         )}
       </header>
+
+      {portal && <StoreHealth portal={portal} requirements={publicationRequirements} products={products} operations={operations} />}
 
       {portal && (
         <nav
@@ -1029,9 +1050,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                   <div>
                     <div>
                       <strong>{product.publicName}</strong>
-                      <span className={`ecom-admin-mini-status ${product.isPublished ? 'is-on' : ''}`}>
-                        {product.isPublished ? 'Publicado' : 'Oculto'}
-                      </span>
+                      <PublicationBadge product={product} />
                       {isPro && (
                         <EcommerceCatalogSyncBadge status={product.syncStatus} />
                       )}
@@ -1120,6 +1139,14 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         linkedRefs={linkedRefs}
         isPro={isPro}
         limitReached={limitReached}
+        localCatalogLoading={loadingCatalog}
+        localCatalogHasMore={localCatalogHasMore}
+        onSearchLocalProducts={(searchTerm) => loadLocalCatalog({ searchTerm })}
+        onLoadMoreLocalProducts={(searchTerm) => loadLocalCatalog({
+          searchTerm,
+          cursor: localCatalogCursor,
+          append: true
+        })}
         onClose={() => setModalOpen(false)}
         onSave={saveProduct}
       />
