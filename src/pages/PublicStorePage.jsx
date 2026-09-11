@@ -76,6 +76,7 @@ function PublicStorePage() {
   const { slug = '' } = useParams();
   const mountedRef = useRef(false);
   const activeSlugRef = useRef(slug);
+  const activePortalIdRef = useRef(null);
   const requestGenerationRef = useRef(0);
   const requestedOffsetsRef = useRef(new Set());
   const paginationRef = useRef(INITIAL_PAGINATION);
@@ -168,6 +169,7 @@ function PublicStorePage() {
     replace = false,
     generation,
     expectedRevision = activeCatalogRevisionRef.current,
+    portalId = activePortalIdRef.current,
     offline = false
   }) => {
     const normalizedOffset = Math.max(0, Math.floor(Number(offset) || 0));
@@ -195,6 +197,7 @@ function PublicStorePage() {
 
     try {
       const catalogOptions = { limit: 100, offset: normalizedOffset };
+      if (portalId) catalogOptions.portalId = portalId;
       if (expectedRevision !== null) {
         catalogOptions.catalogRevision = expectedRevision;
         catalogOptions.cachePolicy = cachePolicyRef.current;
@@ -272,6 +275,7 @@ function PublicStorePage() {
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
     activeSlugRef.current = slug;
+    activePortalIdRef.current = null;
     requestedOffsetsRef.current = new Set();
     paginationRef.current = INITIAL_PAGINATION;
     activeCatalogRevisionRef.current = null;
@@ -314,9 +318,10 @@ function PublicStorePage() {
 
     const loadStore = async () => {
       try {
-        const result = await getPublicPortalBySlug(slug);
+        const result = await getPublicPortalBySlug(slug, { portalId: activePortalIdRef.current });
         if (!isCurrentRequest()) return;
         const revision = normalizeRevision(result.catalogRevision);
+        activePortalIdRef.current = result.portalId || null;
         activeCatalogRevisionRef.current = revision;
         cachePolicyRef.current = result.cachePolicy || null;
         setCatalogRevision(revision);
@@ -475,7 +480,10 @@ function PublicStorePage() {
       try {
         if (closeOverlays) await closeTransientPublicOverlaysForRecovery();
         preparePublicStoreDocument();
-        const nextPortal = await getPublicPortalBySlug(requestSlug, { reason });
+        const nextPortal = await getPublicPortalBySlug(requestSlug, {
+          reason,
+          portalId: activePortalIdRef.current
+        });
         if (!isCurrentRequest()) return false;
         const nextRevision = normalizeRevision(nextPortal.catalogRevision);
         const nextCachePolicy = nextPortal.cachePolicy || null;
@@ -483,6 +491,7 @@ function PublicStorePage() {
           limit: 100,
           offset: 0,
           catalogRevision: nextRevision,
+          portalId: nextPortal.portalId,
           cachePolicy: nextCachePolicy,
           cacheStrategy: 'network-first'
         });
@@ -652,6 +661,7 @@ function PublicStorePage() {
 
   const cart = usePublicCart({
     slug,
+    portalId: portalResult?.portalId,
     products,
     catalogReady,
     catalogExhausted,

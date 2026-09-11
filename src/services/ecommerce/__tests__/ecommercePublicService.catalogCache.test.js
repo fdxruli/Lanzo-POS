@@ -11,6 +11,7 @@ const databases = [];
 
 const portalResponse = (revision) => ({
   success: true,
+  portalId: 'portal-1',
   portal: {
     slug: 'mi-tienda',
     name: 'Mi tienda',
@@ -20,7 +21,7 @@ const portalResponse = (revision) => ({
   hours: { weekly: [], exceptions: [] },
   features: { orderInbox: true },
   catalogRevision: revision,
-  cachePolicy: { schemaVersion: 2, freshSeconds: 300, maxStaleSeconds: 86400 }
+  cachePolicy: { schemaVersion: 3, freshSeconds: 300, maxStaleSeconds: 86400 }
 });
 
 const catalogResponse = (revision, offset = 0) => ({
@@ -139,12 +140,12 @@ describe('ecommercePublicService catalog cache', () => {
       cachePolicy: portal.cachePolicy
     });
     await waitForCachedPage(database);
-    for (let attempt = 0; attempt < 20 && (await database.table('portals').count()) === 0; attempt += 1) {
+    for (let attempt = 0; attempt < 20 && (await database.table('portalEntries').count()) === 0; attempt += 1) {
       await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
     }
     online = false;
 
-    const offlinePortal = await service.getPublicPortalBySlug('mi-tienda');
+    const offlinePortal = await service.getPublicPortalBySlug('mi-tienda', { portalId: portal.portalId });
     const offlineCatalog = await service.getPublicCatalog('mi-tienda', {
       catalogRevision: offlinePortal.catalogRevision,
       cachePolicy: offlinePortal.cachePolicy,

@@ -73,7 +73,7 @@ describe('usePublicCart configurationRevision', () => {
     const stored = JSON.parse(
       window.sessionStorage.getItem(getPublicCartStorageKey('mi-tienda'))
     );
-    expect(stored.version).toBe(3);
+    expect(stored.version).toBe(4);
     expect(stored.items[0]).toMatchObject({
       lineKey,
       configurationVersion: 1,

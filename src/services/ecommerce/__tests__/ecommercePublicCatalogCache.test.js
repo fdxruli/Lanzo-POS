@@ -68,7 +68,8 @@ const page = (revision = 1, offset = 0) => ({
   pagination: { limit: 100, offset, hasMore: false }
 });
 
-const portalResult = (slug = 'tienda') => ({
+const portalResult = (slug = 'tienda', portalId = 'portal-1') => ({
+  portalId,
   portal: {
     slug,
     name: 'Tienda pública',
@@ -354,6 +355,36 @@ describe('ecommercePublicCatalogCache', () => {
       slug: 'tienda',
       result: { portal: { name: 'Sin slug' }, catalogRevision: 1 }
     })).toBe(false);
+  });
+
+  it('does not reuse a cached catalog page across portal identities', async () => {
+    const cache = createCache('public-cache-portal-identity');
+    await cache.putPage({
+      portalId: 'portal-a', slug: 'misma-tienda', catalogRevision: 4,
+      offset: 0, limit: 100, page: page(4)
+    });
+
+    expect(await cache.getPage({
+      portalId: 'portal-b', slug: 'misma-tienda', catalogRevision: 4,
+      offset: 0, limit: 100
+    })).toBeNull();
+    expect(await cache.getPage({
+      portalId: 'portal-a', slug: 'misma-tienda', catalogRevision: 4,
+      offset: 0, limit: 100
+    })).not.toBeNull();
+  });
+
+  it('keeps cached portal metadata isolated when tenants share a slug', async () => {
+    const cache = createCache('public-cache-portal-metadata-identity');
+    expect(await cache.putPortal({
+      portalId: 'portal-a', slug: 'misma-tienda', result: portalResult('misma-tienda', 'portal-a')
+    })).toBe(true);
+    expect(await cache.putPortal({
+      portalId: 'portal-b', slug: 'misma-tienda', result: portalResult('misma-tienda', 'portal-b')
+    })).toBe(true);
+
+    expect((await cache.getPortal({ portalId: 'portal-a', slug: 'misma-tienda' })).portalId).toBe('portal-a');
+    expect((await cache.getPortal({ portalId: 'portal-b', slug: 'misma-tienda' })).portalId).toBe('portal-b');
   });
 
   it('deletes pages from obsolete revisions without touching the current one', async () => {

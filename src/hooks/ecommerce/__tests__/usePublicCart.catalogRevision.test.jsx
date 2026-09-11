@@ -81,4 +81,22 @@ describe('usePublicCart catalog revision reconciliation', () => {
       product: { id: 'later-page', price: 30 }
     });
   });
+
+  it('keeps carts isolated when two portals share a slug in the same browser', async () => {
+    window.sessionStorage.setItem(getPublicCartStorageKey('misma-tienda', 'portal-a'), JSON.stringify({
+      version: 4,
+      items: [{ id: 'product-1', quantity: 2 }]
+    }));
+
+    const { result, rerender } = renderHook((hookProps) => usePublicCart(hookProps), {
+      initialProps: props({ slug: 'misma-tienda', portalId: 'portal-b' })
+    });
+
+    await waitFor(() => expect(result.current.isReconciled).toBe(true));
+    expect(result.current.items).toEqual([]);
+
+    rerender(props({ slug: 'misma-tienda', portalId: 'portal-a' }));
+    await waitFor(() => expect(result.current.isReconciled).toBe(true));
+    expect(result.current.items[0]).toMatchObject({ product: { id: 'product-1' }, quantity: 2 });
+  });
 });
