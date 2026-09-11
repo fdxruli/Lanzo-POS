@@ -283,9 +283,83 @@ describe('ecommercePublicService', () => {
     });
   });
 
-  it('uses a checkout-specific safe message for network errors', async () => {
+  it('keeps a structured stock rejection as a business error instead of a network error', async () => {
     const service = createEcommercePublicService({
-      rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'database secret' } }),
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          success: false,
+          error: {
+            code: 'STOCK_INSUFFICIENT',
+            available_quantity: 3,
+            requested_quantity: 6,
+          },
+        },
+        error: null,
+      }),
+    });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({
+      code: 'STOCK_INSUFFICIENT',
+      category: 'business',
+      message: 'No hay existencias suficientes para la cantidad solicitada. Disponibles: 3.',
+      retryable: false,
+      preserveCart: true,
+      action: 'adjust_quantity',
+    });
+  });
+
+  it('maps a zero structured availability to a safe unavailable message', async () => {
+    const service = createEcommercePublicService({
+      rpc: vi.fn().mockResolvedValue({
+        data: {
+          success: false,
+          error: { code: 'STOCK_INSUFFICIENT', availableQuantity: 0 },
+        },
+        error: null,
+      }),
+    });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({
+      code: 'STOCK_INSUFFICIENT',
+      message: 'Este producto ya no está disponible. Actualiza tu carrito e inténtalo nuevamente.',
+      category: 'business',
+      retryable: false,
+      preserveCart: true,
+    });
+  });
+
+  it('normalizes a known PostgreSQL domain exception without exposing its raw transport payload', async () => {
+    const service = createEcommercePublicService({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'ECOMMERCE_INSUFFICIENT_STOCK' },
+      }),
+    });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({
+      code: 'ECOMMERCE_INSUFFICIENT_STOCK',
+      category: 'business',
+      retryable: false,
+      preserveCart: true,
+      action: 'adjust_quantity',
+    });
+  });
+
+  it.each([
+    ['Failed to fetch', 'TypeError'],
+    ['ERR_CONNECTION_CLOSED', 'Error'],
+    ['Request timed out', 'Error'],
+    ['The operation was aborted', 'AbortError'],
+  ])('uses the connection message only for a %s transport failure', async (message, name) => {
+    const transportError = Object.assign(new Error(message), { name });
+    const service = createEcommercePublicService({
+      rpc: vi.fn().mockResolvedValue({ data: null, error: transportError }),
     });
 
     await expect(service.createPublicOrder('mi-negocio', {
@@ -294,7 +368,64 @@ describe('ecommercePublicService', () => {
       idempotencyKey: 'web-key',
     })).rejects.toMatchObject({
       code: 'ECOMMERCE_PUBLIC_NETWORK_ERROR',
-      message: 'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.',
+      category: 'network',
+      message: 'No hay conexión con el servidor. Revisa tu conexión e inténtalo nuevamente.',
+      retryable: true,
+      preserveCart: true,
+    });
+  });
+
+  it.each([
+    [401, 'auth', 'Tu sesión no está autorizada para confirmar este pedido. Recarga la tienda e inténtalo nuevamente.'],
+    [403, 'auth', 'Tu sesión no está autorizada para confirmar este pedido. Recarga la tienda e inténtalo nuevamente.'],
+    [409, 'conflict', 'El pedido ya está siendo procesado o ya fue registrado. Verifica tus pedidos antes de intentarlo nuevamente.'],
+    [500, 'server', 'No pudimos procesar el pedido en este momento. Inténtalo nuevamente más tarde.'],
+  ])('normalizes HTTP %i as a safe %s checkout error', async (status, category, message) => {
+    const service = createEcommercePublicService({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST999', status, message: 'internal transport detail' },
+      }),
+    });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({ category, status, message, preserveCart: true });
+  });
+
+  it('uses a safe validation message for an HTTP validation response', async () => {
+    const service = createEcommercePublicService({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST999', status: 422, message: 'database validation detail' },
+      }),
+    });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({
+      category: 'validation',
+      message: 'Revisa la información del pedido e inténtalo nuevamente.',
+      retryable: false,
+      preserveCart: true,
+    });
+  });
+
+  it('keeps unknown errors safe and does not mislabel them as connection failures', async () => {
+    const service = createEcommercePublicService({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST999', message: 'private database detail' },
+      }),
+    });
+
+    await expect(service.createPublicOrder('mi-negocio', {
+      customer: {}, items: [], idempotencyKey: 'web-key',
+    })).rejects.toMatchObject({
+      category: 'unknown',
+      message: 'No pudimos confirmar el pedido. Inténtalo nuevamente más tarde.',
+      retryable: false,
+      preserveCart: true,
     });
   });
 
@@ -313,7 +444,7 @@ describe('ecommercePublicService', () => {
 
     await expect(capturedError).resolves.toMatchObject({
       code: 'ECOMMERCE_PUBLIC_TIMEOUT',
-      message: 'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.',
+      message: 'No hay conexión con el servidor. Revisa tu conexión e inténtalo nuevamente.',
     });
   });
 

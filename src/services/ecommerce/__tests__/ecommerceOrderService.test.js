@@ -324,6 +324,30 @@ describe('ecommerceOrderService', () => {
     }).customer).not.toHaveProperty('deliveryAddress');
   });
 
+  it('keeps administrative reservation timing while excluding internal stock details', () => {
+    const normalized = ecommerceOrderServiceInternals.normalizeDetail({
+      ...orderDetail,
+      stockReservation: {
+        status: 'reserved',
+        phase: 'fulfillment',
+        fulfillmentHoldExpiresAt: '2026-09-10T12:00:00.000Z',
+        fulfillmentHoldMinutes: 120,
+        committedStock: 999,
+        batchId: 'internal-batch'
+      }
+    });
+
+    expect(normalized.stockReservation).toEqual({
+      status: 'reserved',
+      phase: 'fulfillment',
+      checkoutExpiresAt: null,
+      fulfillmentHoldExpiresAt: '2026-09-10T12:00:00.000Z',
+      fulfillmentHoldMinutes: 120
+    });
+    expect(normalized.stockReservation).not.toHaveProperty('committedStock');
+    expect(normalized.stockReservation).not.toHaveProperty('batchId');
+  });
+
   it('normalizes POS conversion evidence without exposing conversion secrets', () => {
     const normalized = ecommerceOrderServiceInternals.normalizeDetail({
       ...orderDetail,

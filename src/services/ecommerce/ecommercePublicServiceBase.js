@@ -23,8 +23,57 @@ const PUBLIC_READ_RETRY_DELAY_MS = 120;
 const DEFAULT_CURRENCY = 'MXN';
 const STORE_REQUEST_MESSAGE = 'No se pudo cargar la tienda. Revisa tu conexión e intenta nuevamente.';
 const CONFIGURATION_REQUEST_MESSAGE = 'No se pudieron cargar las opciones de este producto.';
-const CHECKOUT_REQUEST_MESSAGE = 'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.';
+const CHECKOUT_REQUEST_MESSAGE = 'No pudimos confirmar el pedido. Inténtalo nuevamente más tarde.';
+const CHECKOUT_NETWORK_MESSAGE = 'No hay conexión con el servidor. Revisa tu conexión e inténtalo nuevamente.';
+const CHECKOUT_AUTH_MESSAGE = 'Tu sesión no está autorizada para confirmar este pedido. Recarga la tienda e inténtalo nuevamente.';
+const CHECKOUT_VALIDATION_MESSAGE = 'Revisa la información del pedido e inténtalo nuevamente.';
+const CHECKOUT_CONFLICT_MESSAGE = 'El pedido ya está siendo procesado o ya fue registrado. Verifica tus pedidos antes de intentarlo nuevamente.';
+const CHECKOUT_SERVER_MESSAGE = 'No pudimos procesar el pedido en este momento. Inténtalo nuevamente más tarde.';
 const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
+
+const STOCK_INSUFFICIENT_CODES = new Set([
+  'STOCK_INSUFFICIENT',
+  'ECOMMERCE_INSUFFICIENT_STOCK',
+  'ECOMMERCE_STOCK_LIMIT_EXCEEDED'
+]);
+const STOCK_UNAVAILABLE_CODES = new Set([
+  'ECOMMERCE_PRODUCT_NOT_AVAILABLE',
+  'ECOMMERCE_PRODUCT_UNAVAILABLE',
+  'ECOMMERCE_VARIANT_UNAVAILABLE'
+]);
+const CHECKOUT_VALIDATION_CODES = new Set([
+  'ECOMMERCE_CUSTOMER_NAME_REQUIRED',
+  'ECOMMERCE_CUSTOMER_PHONE_REQUIRED',
+  'ECOMMERCE_INVALID_FULFILLMENT_METHOD',
+  'ECOMMERCE_DELIVERY_ADDRESS_REQUIRED',
+  'ECOMMERCE_DELIVERY_STREET_REQUIRED',
+  'ECOMMERCE_DELIVERY_NEIGHBORHOOD_REQUIRED',
+  'ECOMMERCE_DELIVERY_MUNICIPALITY_REQUIRED',
+  'ECOMMERCE_DELIVERY_STATE_REQUIRED',
+  'ECOMMERCE_DELIVERY_POSTAL_CODE_REQUIRED',
+  'ECOMMERCE_DELIVERY_POSTAL_CODE_INVALID',
+  'ECOMMERCE_DELIVERY_ADDRESS_INVALID',
+  'ECOMMERCE_EMPTY_CART',
+  'ECOMMERCE_INVALID_QUANTITY',
+  'ECOMMERCE_CONFIGURATION_REQUIRED',
+  'ECOMMERCE_VARIANT_REQUIRED',
+  'ECOMMERCE_OPTION_GROUP_REQUIRED',
+  'ECOMMERCE_OPTION_SELECTION_TOO_FEW',
+  'ECOMMERCE_OPTION_SELECTION_TOO_MANY',
+  'ECOMMERCE_CONFIGURATION_INVALID'
+]);
+const CHECKOUT_CONFLICT_CODES = new Set([
+  'ECOMMERCE_IDEMPOTENCY_CONFLICT',
+  'IDEMPOTENCY_CONFLICT',
+  'ORDER_ALREADY_PROCESSING'
+]);
+const GENERIC_POSTGREST_CODES = new Set([
+  'P0001',
+  'PGRST001',
+  'PGRST003',
+  'PGRST301',
+  'PGRST302'
+]);
 
 const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_ORDERING_DISABLED: 'Este negocio no está recibiendo pedidos por ahora.',
@@ -55,7 +104,7 @@ const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_INSUFFICIENT_STOCK: 'La cantidad solicitada supera la disponibilidad actual.',
   ECOMMERCE_MIN_ORDER_NOT_REACHED: 'El pedido no alcanza el mínimo requerido.',
   ECOMMERCE_IDEMPOTENCY_KEY_REQUIRED: 'No se pudo preparar el envío seguro del pedido.',
-  ECOMMERCE_IDEMPOTENCY_CONFLICT: CHECKOUT_REQUEST_MESSAGE,
+  ECOMMERCE_IDEMPOTENCY_CONFLICT: CHECKOUT_CONFLICT_MESSAGE,
   ECOMMERCE_RATE_LIMITED: 'Se realizaron demasiados intentos. Espera unos minutos e intenta nuevamente.',
   ECOMMERCE_DAILY_ORDER_LIMIT_REACHED: 'Este negocio no puede recibir más pedidos por ahora.',
   ECOMMERCE_CONFIGURATION_REQUIRED: 'Selecciona las opciones requeridas para continuar.',
@@ -69,19 +118,20 @@ const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_OPTION_UNAVAILABLE: 'Una opción seleccionada ya no está disponible.',
   ECOMMERCE_CONFIGURATION_INVALID: 'Revisa la configuración del producto.',
   ECOMMERCE_CONFIGURATION_CHANGED: 'La configuración del producto cambió. Vuelve a seleccionarla.',
-  ECOMMERCE_ORDER_CREATE_FAILED: CHECKOUT_REQUEST_MESSAGE,
-  ECOMMERCE_PUBLIC_TIMEOUT: CHECKOUT_REQUEST_MESSAGE,
-  ECOMMERCE_PUBLIC_NETWORK_ERROR: CHECKOUT_REQUEST_MESSAGE
+  ECOMMERCE_ORDER_CREATE_FAILED: CHECKOUT_SERVER_MESSAGE,
+  ECOMMERCE_PUBLIC_TIMEOUT: CHECKOUT_NETWORK_MESSAGE,
+  ECOMMERCE_PUBLIC_NETWORK_ERROR: CHECKOUT_NETWORK_MESSAGE
 });
 
 export const ecommercePublicClient = supabasePublicClient;
 
 export class EcommercePublicError extends Error {
-  constructor(code, message, cause = null) {
+  constructor(code, message, cause = null, metadata = {}) {
     super(message);
     this.name = 'EcommercePublicError';
     this.code = code;
     this.cause = cause;
+    Object.assign(this, asObject(metadata));
   }
 }
 
@@ -132,7 +182,167 @@ function getSafeMessage(code, operation) {
   return STORE_REQUEST_MESSAGE;
 }
 
+const asHttpStatus = (value) => {
+  const status = Number(value);
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+};
+const parseStructuredValue = (value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    return asObject(JSON.parse(value));
+  } catch {
+    return {};
+  }
+};
+const asKnownDomainCode = (value) => {
+  const code = asText(value).toUpperCase();
+  if (!code || GENERIC_POSTGREST_CODES.has(code)) return '';
+  return /^[A-Z][A-Z0-9_]{2,127}$/.test(code) ? code : '';
+};
+const isKnownCheckoutCode = (code) => (
+  STOCK_INSUFFICIENT_CODES.has(code)
+  || STOCK_UNAVAILABLE_CODES.has(code)
+  || CHECKOUT_VALIDATION_CODES.has(code)
+  || CHECKOUT_CONFLICT_CODES.has(code)
+  || Object.prototype.hasOwnProperty.call(CHECKOUT_ERROR_MESSAGES, code)
+);
+
+function getCheckoutFailureDetails(data, error) {
+  const response = asObject(data);
+  const responseError = asObject(response.error);
+  const transport = asObject(error);
+  const transportBody = parseStructuredValue(transport.body);
+  const transportDetails = parseStructuredValue(transport.details);
+  const candidates = [
+    responseError,
+    parseStructuredValue(responseError.details),
+    response,
+    transportBody,
+    transportDetails,
+    transport
+  ];
+  const code = candidates
+    .map((candidate) => asKnownDomainCode(candidate.code || candidate.errorCode))
+    .find(Boolean)
+    || (() => {
+      const fallback = asText(transport.message).toUpperCase();
+      return isKnownCheckoutCode(fallback) ? fallback : '';
+    })();
+  const status = candidates
+    .map((candidate) => asHttpStatus(candidate.status || candidate.statusCode))
+    .find(Boolean)
+    || null;
+  const available = candidates
+    .map((candidate) => candidate.availableQuantity ?? candidate.available_quantity ?? candidate.available)
+    .map((value) => Number(value))
+    .find((value) => Number.isSafeInteger(value) && value >= 0);
+  return { code, status, available: available ?? null, responseError, transport };
+}
+
+function isNetworkFailure(error, status) {
+  if (status) return false;
+  const source = asObject(error);
+  if (source.name === 'AbortError' || source.name === 'TypeError') return true;
+  const message = asText(source.message).toLowerCase();
+  return /(?:failed to fetch|fetch failed|network(?:\s+request)?\s+failed|network error|connection closed|err_connection_closed|timeout|timed out|offline)/iu.test(message);
+}
+
+function createCheckoutError(code, message, cause, metadata = {}) {
+  return new EcommercePublicError(code, message, cause, {
+    retryable: false,
+    preserveCart: true,
+    action: 'review_order',
+    ...metadata
+  });
+}
+
+function normalizeCheckoutFailure(data, error) {
+  const details = getCheckoutFailureDetails(data, error);
+  const { code, status, available } = details;
+
+  if (STOCK_INSUFFICIENT_CODES.has(code)) {
+    const userMessage = available === 0
+      ? 'Este producto ya no está disponible. Actualiza tu carrito e inténtalo nuevamente.'
+      : Number.isSafeInteger(available)
+        ? `No hay existencias suficientes para la cantidad solicitada. Disponibles: ${available}.`
+        : 'No hay existencias suficientes para la cantidad solicitada.';
+    return createCheckoutError(code, userMessage, error || data, {
+      category: 'business',
+      availableQuantity: available,
+      action: 'adjust_quantity'
+    });
+  }
+
+  if (STOCK_UNAVAILABLE_CODES.has(code)) {
+    return createCheckoutError(code, 'Este producto ya no está disponible. Actualiza tu carrito e inténtalo nuevamente.', error || data, {
+      category: 'business',
+      availableQuantity: available,
+      action: 'adjust_quantity'
+    });
+  }
+
+  if (status === 401 || status === 403) {
+    return createCheckoutError(code || 'ECOMMERCE_PUBLIC_AUTH_ERROR', CHECKOUT_AUTH_MESSAGE, error || data, {
+      category: 'auth',
+      status,
+      action: 'refresh_store'
+    });
+  }
+
+  if (status === 409 || CHECKOUT_CONFLICT_CODES.has(code)) {
+    return createCheckoutError(code || 'ECOMMERCE_IDEMPOTENCY_CONFLICT', CHECKOUT_CONFLICT_MESSAGE, error || data, {
+      category: 'conflict',
+      status,
+      action: 'check_orders'
+    });
+  }
+
+  if (status && status >= 500) {
+    return createCheckoutError(code || 'ECOMMERCE_PUBLIC_SERVER_ERROR', CHECKOUT_SERVER_MESSAGE, error || data, {
+      category: 'server',
+      status,
+      retryable: true,
+      action: 'retry_later'
+    });
+  }
+
+  if (status === 400 || status === 422) {
+    return createCheckoutError(code || 'ECOMMERCE_PUBLIC_VALIDATION_ERROR', CHECKOUT_VALIDATION_MESSAGE, error || data, {
+      category: 'validation',
+      status,
+      action: 'review_order'
+    });
+  }
+
+  if (CHECKOUT_VALIDATION_CODES.has(code)) {
+    return createCheckoutError(code, getSafeMessage(code, 'checkout'), error || data, {
+      category: 'validation'
+    });
+  }
+
+  if (code && Object.prototype.hasOwnProperty.call(CHECKOUT_ERROR_MESSAGES, code)) {
+    return createCheckoutError(code, getSafeMessage(code, 'checkout'), error || data, {
+      category: 'business'
+    });
+  }
+
+  if (isNetworkFailure(error, status)) {
+    return createCheckoutError('ECOMMERCE_PUBLIC_NETWORK_ERROR', CHECKOUT_NETWORK_MESSAGE, error, {
+      category: 'network',
+      retryable: true,
+      action: 'retry_connection'
+    });
+  }
+
+  return createCheckoutError(code || 'ECOMMERCE_PUBLIC_REQUEST_FAILED', CHECKOUT_REQUEST_MESSAGE, error || data, {
+    category: 'unknown',
+    status
+  });
+}
+
 function normalizeRpcFailure(data, error, operation = 'store') {
+  if (operation === 'checkout') return normalizeCheckoutFailure(data, error);
   if (error) {
     return new EcommercePublicError(
       'ECOMMERCE_PUBLIC_NETWORK_ERROR',
@@ -466,7 +676,7 @@ async function executeRpc(client, rpcName, params, operation = 'store') {
   try {
     response = await withTimeout(client.rpc(rpcName, params), {
       timeoutMessage: operation === 'checkout'
-        ? CHECKOUT_REQUEST_MESSAGE
+        ? CHECKOUT_NETWORK_MESSAGE
         : operation === 'configuration'
           ? CONFIGURATION_REQUEST_MESSAGE
           : STORE_REQUEST_MESSAGE

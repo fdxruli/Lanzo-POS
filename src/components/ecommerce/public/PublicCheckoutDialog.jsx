@@ -14,8 +14,11 @@ import {
 const STALE_CART_CODES = new Set([
   'ECOMMERCE_PRODUCT_NOT_FOUND',
   'ECOMMERCE_PRODUCT_NOT_AVAILABLE',
+  'ECOMMERCE_PRODUCT_UNAVAILABLE',
   'ECOMMERCE_INVALID_QUANTITY',
   'ECOMMERCE_STOCK_LIMIT_EXCEEDED',
+  'ECOMMERCE_INSUFFICIENT_STOCK',
+  'STOCK_INSUFFICIENT',
   'ECOMMERCE_MIN_ORDER_NOT_REACHED',
 ]);
 
@@ -229,7 +232,7 @@ function PublicCheckoutDialog({
     onContinue();
   };
 
-  const showRefresh = STALE_CART_CODES.has(error?.code);
+  const showRefresh = error?.action === 'adjust_quantity' || STALE_CART_CODES.has(error?.code);
 
   return (
     <div className="public-checkout-modal">

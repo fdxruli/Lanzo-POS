@@ -434,6 +434,37 @@ describe('PublicStorePage checkout integration', () => {
     expect(serviceMocks.createPublicOrder.mock.calls[1][1].idempotencyKey).toBe(firstKey);
   });
 
+  it('keeps the cart and customer data after a stock business rejection without retrying automatically', async () => {
+    serviceMocks.createPublicOrder.mockRejectedValueOnce(Object.assign(
+      new EcommercePublicError(
+        'STOCK_INSUFFICIENT',
+        'No hay existencias suficientes para la cantidad solicitada. Disponibles: 3.'
+      ),
+      {
+        category: 'business',
+        retryable: false,
+        preserveCart: true,
+        action: 'adjust_quantity',
+        availableQuantity: 3,
+      }
+    ));
+    const user = userEvent.setup();
+    renderPage();
+    await openAndFillCheckout(user);
+    await user.type(screen.getByLabelText('Notas'), 'Conservar el carrito');
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'No hay existencias suficientes para la cantidad solicitada. Disponibles: 3.'
+    );
+    expect(serviceMocks.createPublicOrder).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Nombre *')).toHaveValue('Cliente QA');
+    expect(screen.getByLabelText('Teléfono *')).toHaveValue('9610000000');
+    expect(screen.getByLabelText('Notas')).toHaveValue('Conservar el carrito');
+    expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Confirmar pedido' })).toBeEnabled();
+  });
+
   it('preserves customer data and cart after a server-side availability rejection', async () => {
     const closedPortal = portalResult({
       availability: {

@@ -4,7 +4,8 @@ import {
   getEcommerceOrderErrorMessage,
   listEcommerceOrders,
   markEcommerceOrderSeen as markSeenRequest,
-  rejectEcommerceOrder as rejectOrderRequest
+  rejectEcommerceOrder as rejectOrderRequest,
+  revalidateEcommerceOrderStock as revalidateStockRequest
 } from '../../services/ecommerce/ecommerceOrderService';
 import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrderCapabilities';
 
@@ -658,6 +659,17 @@ export const createEcommerceOrderSlice = (set, get) => ({
     loadingValue: 'reject',
     request: rejectOrderRequest,
     requestArgs: { reason },
+    requireVisibleSelection: true
+  }),
+
+  revalidateEcommerceOrderStock: (orderId) => runOrderAction({
+    set,
+    get,
+    orderId,
+    actionName: 'revalidate-stock',
+    exclusiveKey: 'status',
+    loadingValue: 'revalidate-stock',
+    request: revalidateStockRequest,
     requireVisibleSelection: true
   }),
 

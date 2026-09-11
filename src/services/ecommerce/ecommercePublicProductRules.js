@@ -48,12 +48,14 @@ export function getPublicProductStockLabel(product) {
   if (stockMode === 'hidden') return null;
 
   if (stockMode === 'status') {
+    if (stockStatus === 'low_stock') return 'Pocos disponibles';
     if (stockStatus === 'available') return 'Disponible';
     return null;
   }
 
   if (stockMode === 'exact') {
     if (exactQuantity !== null) return `${exactQuantity} disponibles`;
+    if (stockStatus === 'low_stock') return 'Pocos disponibles';
     if (stockStatus === 'available') return 'Disponible';
   }
 
