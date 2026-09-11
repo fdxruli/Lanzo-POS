@@ -46,7 +46,11 @@ const AVAILABILITY_ERROR_CODES = new Set([
   'ECOMMERCE_STORE_CLOSED',
   'ECOMMERCE_SCHEDULE_NOT_CONFIGURED',
   'ECOMMERCE_CONFIGURATION_CHANGED',
-  'ECOMMERCE_PRODUCT_UNAVAILABLE'
+  'ECOMMERCE_PRODUCT_UNAVAILABLE',
+  'ECOMMERCE_PRODUCT_NOT_AVAILABLE',
+  'ECOMMERCE_STOCK_LIMIT_EXCEEDED',
+  'ECOMMERCE_INSUFFICIENT_STOCK',
+  'STOCK_INSUFFICIENT'
 ]);
 
 const normalizeSearch = (value) => value.trim().toLocaleLowerCase('es-MX');
@@ -819,7 +823,7 @@ function PublicStorePage() {
             ? error
             : new EcommercePublicError(
                 'ECOMMERCE_ORDER_CREATE_FAILED',
-                'No se pudo confirmar el pedido. Revisa tu conexión e intenta nuevamente.'
+                'No pudimos confirmar el pedido. Inténtalo nuevamente más tarde.'
               );
           if (safeError.code === 'ECOMMERCE_CONFIGURATION_CHANGED') {
             clearCheckoutAttempt(requestSlug);
