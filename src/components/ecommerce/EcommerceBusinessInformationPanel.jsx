@@ -16,6 +16,7 @@ import {
   Share2
 } from 'lucide-react';
 import PublicStoreQrCode from './PublicStoreQrCode';
+import EcommercePortalGeneralSettings from './EcommercePortalGeneralSettings';
 
 const MEXICO_STATES = Object.freeze([
   'Aguascalientes',
@@ -221,6 +222,8 @@ export default function EcommerceBusinessInformationPanel({
             />
           </label>
         </div>
+
+        <EcommercePortalGeneralSettings form={form} onFieldChange={onFieldChange} />
 
         <div className="ecom-admin-form-actions">
           <span>
