@@ -6,6 +6,7 @@ import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
 import {
   actorOriginFromHandle,
+  assertProductInventoryMutationCurrent,
   captureProductInventoryMutation,
   isLegacyLocalOwnerProductInventoryAuthority
 } from '../auth/productInventoryAuthority';
@@ -34,6 +35,9 @@ const usesBatches = (product) => product?.batchManagement?.enabled === true;
 const hasVariantAttributes = (batch) => batch?.attributes && Object.keys(batch.attributes).length > 0;
 const isStrict = (product) => String(product?.expirationMode || '').toUpperCase() === 'STRICT';
 const payloadHash = (payload) => JSON.stringify(payload);
+const assertInventoryMutationCurrent = (actorHandle) => (
+  assertProductInventoryMutationCurrent(actorHandle, { inventory: true })
+);
 
 export const canAddInventoryEntry = (product) => Boolean(
   product?.id && product.trackStock !== false && !hasRecipe(product)
@@ -142,13 +146,13 @@ export const addInventoryEntry = async ({
   if (!productId) throw domainError('PRODUCT_NOT_FOUND');
   const actorHandle = captureProductInventoryMutation({ inventory: true });
   const localOnly = isLegacyLocalOwnerProductInventoryAuthority(actorHandle);
-  actorHandle.assertCurrent('inventory');
+  assertInventoryMutationCurrent(actorHandle);
   if (!db.isOpen()) await db.open();
 
   return db.transaction('rw', [
     db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.INVENTORY_EVENTS), db.table(POS_SYNC_STORES.OUTBOX)
   ], async () => {
-    actorHandle.assertCurrent('inventory');
+    assertInventoryMutationCurrent(actorHandle);
     const eventId = `inventory-entry:${resolvedOperationId}`;
     const eventTable = db.table(STORES.INVENTORY_EVENTS);
     const existingEvent = await eventTable.get(eventId);
@@ -200,10 +204,10 @@ export const addInventoryEntry = async ({
         status: 'active',
         updatedAt: timestamp
       };
-      actorHandle.assertCurrent('inventory');
+      assertInventoryMutationCurrent(actorHandle);
       await batchTable.put(updatedBatch);
       const projected = buildProjection({ product, batches: [...batches.filter((batch) => batch.id !== updatedBatch.id), updatedBatch], timestamp });
-      actorHandle.assertCurrent('inventory');
+      assertInventoryMutationCurrent(actorHandle);
       await productTable.put(projected);
       parent = projected;
       previousStock = asNumber(product.stock, 0);
@@ -212,7 +216,7 @@ export const addInventoryEntry = async ({
       entry.batchId = updatedBatch.id;
     } else {
       const updatedProduct = { ...product, stock: newStock, updatedAt: timestamp };
-      actorHandle.assertCurrent('inventory');
+      assertInventoryMutationCurrent(actorHandle);
       await productTable.put(updatedProduct);
       parent = updatedProduct;
     }
@@ -226,7 +230,7 @@ export const addInventoryEntry = async ({
       newStock,
       pending: !localOnly
     };
-    actorHandle.assertCurrent('inventory');
+    assertInventoryMutationCurrent(actorHandle);
     await eventTable.put({
       id: eventId, type: 'INVENTORY_ENTRY', operationId: resolvedOperationId, productId: product.id,
       batchId: entry.batchId, delta: normalizedBaseQuantity, previousStock, newStock,
@@ -239,7 +243,7 @@ export const addInventoryEntry = async ({
     });
 
     if (!localOnly) {
-      actorHandle.assertCurrent('inventory');
+      assertInventoryMutationCurrent(actorHandle);
       await db.table(POS_SYNC_STORES.OUTBOX).put(buildSyncOutboxRecord({
         licenseKey: resolvedLicenseKey, entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
         operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id,
