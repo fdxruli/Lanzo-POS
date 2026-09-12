@@ -32,6 +32,7 @@ import {
 } from '../../../services/licenseStorage';
 
 import {
+    hasModernAdminIdentityEvidence,
     isLicensePlanBlockFailure,
     requiresAdminIdentity
 } from './licenseGuards';
@@ -74,6 +75,17 @@ const restoreActorAuthority = async (actorType, actor) => {
 };
 
 const canClearFailedActorSession = (error) => error?.code !== ACTOR_SESSION_AMBIGUOUS;
+
+const logFreeAdminAuthorityMode = (license, selectedMode) => {
+    const planCode = String(license?.plan_code || license?.plan?.code || '').trim().toLowerCase();
+    if (planCode !== 'free_trial') return;
+    Logger.log('[AppStore] FREE_ADMIN_AUTHORITY_MODE', {
+        planCode,
+        deviceRole: license?.device_role || null,
+        hasAdminIdentity: hasModernAdminIdentityEvidence(license),
+        selectedMode
+    });
+};
 
 export const getInitializeAppCoordinatorState = () => coordinatorState;
 
@@ -227,20 +239,31 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
                 const needsAdminIdentity = localDeviceRole === 'admin' && requiresAdminIdentity(localLicense);
                 if (needsAdminIdentity) {
+                    // Persist a local cutover marker before validating the session. The marker
+                    // does not grant authority; it only prevents a modern owner from falling
+                    // back to legacy mode after an expired/revoked Admin session.
+                    const actorBoundAdminLicense = localLicense.admin_identity_required === true
+                        ? localLicense
+                        : { ...localLicense, admin_identity_required: true };
+                    if (actorBoundAdminLicense !== localLicense) {
+                        await saveLicenseToStorage(actorBoundAdminLicense);
+                    }
+                    logFreeAdminAuthorityMode(actorBoundAdminLicense, 'actor_bound');
+
                     set({
-                        licenseDetails: { ...localLicense, device_role: 'admin' },
+                        licenseDetails: { ...actorBoundAdminLicense, device_role: 'admin' },
                         currentDeviceRole: 'admin',
                         currentAdminUser: null,
-                        adminLoginLicenseKey: localLicense.license_key
+                        adminLoginLicenseKey: actorBoundAdminLicense.license_key
                     });
 
                     if (!navigator.onLine) {
                         if (await hasValidOfflineAdminSession()) {
-                            const offlineAdmin = localLicense.admin_user || null;
+                            const offlineAdmin = actorBoundAdminLicense.admin_user || null;
                             try {
                                 await restoreActorAuthority('admin', offlineAdmin);
                                 set({ currentAdminUser: offlineAdmin });
-                                await get()._processOfflineMode(localLicense);
+                                await get()._processOfflineMode(actorBoundAdminLicense);
                             } catch (actorError) {
                                 if (canClearFailedActorSession(actorError)) {
                                     await clearAdminSessionCache();
@@ -266,29 +289,30 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     }
 
                     if (!await hasAdminSessionToken()) {
-                        await get().discoverAdminAccess(localLicense.license_key);
+                        await get().discoverAdminAccess(actorBoundAdminLicense.license_key);
                         coordinatorState = 'ready';
                         return { status: get().appStatus };
                     }
 
-                    const adminSession = await verifyAdminSession(localLicense.license_key, {
+                    const adminSession = await verifyAdminSession(actorBoundAdminLicense.license_key, {
                         beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
                             tenantSource,
                             { reason: 'admin_session_restore_before_local_persistence' }
                         )
                     });
                     if (!adminSession.valid) {
-                        await get()._requireAdminLogin(localLicense, adminSession);
+                        await get()._requireAdminLogin(actorBoundAdminLicense, adminSession);
                         coordinatorState = 'ready';
                         return { status: get().appStatus };
                     }
 
                     const restoredLicense = {
-                        ...localLicense,
+                        ...actorBoundAdminLicense,
                         ...adminSession.details,
                         device_role: 'admin',
                         staff_user: null,
-                        admin_user: adminSession.admin_user || localLicense.admin_user || null
+                        admin_identity_required: true,
+                        admin_user: adminSession.admin_user || actorBoundAdminLicense.admin_user || null
                     };
                     await saveLicenseToStorage(restoredLicense);
                     set({
@@ -327,6 +351,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 // Legacy/FREE admin compatibility has no stable authenticated
                 // admin-user session proof. Keep ActorRuntime LOCKED rather
                 // than manufacturing authority from a device identity.
+                logFreeAdminAuthorityMode(localLicense, 'legacy_local_owner');
                 await get()._processOfflineMode(localLicense);
                 if (navigator.onLine) {
                     get()._validateInBackground(localLicense.license_key);

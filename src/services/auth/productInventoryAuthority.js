@@ -11,6 +11,7 @@ import {
 } from '../sync/syncConstants';
 import { getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
 import { useAppStore } from '../../store/useAppStore';
+import { hasModernAdminIdentityEvidence } from '../../store/slices/license/licenseGuards';
 
 export const PRODUCT_PERMISSION = 'products';
 export const INVENTORY_PERMISSION = 'inventory';
@@ -157,7 +158,7 @@ const resolveLegacyLocalOwnerContext = (state = useAppStore.getState()) => {
       deviceRole
     });
   }
-  if (licenseDetails?.admin_identity_required === true) {
+  if (hasModernAdminIdentityEvidence(licenseDetails)) {
     return legacyLocalOwnerDenied('free_admin_identity_required', {
       planCode,
       explicitFree: true
@@ -209,6 +210,15 @@ export const resolveProductInventoryMutationAuthority = (state = useAppStore.get
     return Object.freeze({
       mode: PRODUCT_INVENTORY_AUTHORITY_MODES.LEGACY_LOCAL_OWNER,
       ...local
+    });
+  }
+
+  if (local.explicitFree && local.reason === 'free_admin_identity_required') {
+    return Object.freeze({
+      mode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
+      reason: local.reason,
+      planCode: local.planCode || null,
+      cloudEligible: false
     });
   }
 
@@ -295,7 +305,7 @@ const captureLegacyLocalOwnerMutation = (authority) => {
   });
 };
 
-const captureActorBoundMutation = (requirements = {}) => {
+const captureActorBoundMutation = (requirements = {}, authority = {}) => {
   const handle = actorRuntimeController.capture();
   for (const permission of uniqueRequirements([
     ...(requirements.products ? [PRODUCT_PERMISSION] : []),
@@ -307,7 +317,7 @@ const captureActorBoundMutation = (requirements = {}) => {
     ...handle,
     mode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
     authorityMode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
-    cloudEligible: true
+    cloudEligible: authority.cloudEligible !== false
   });
 };
 
@@ -323,7 +333,7 @@ export const captureProductInventoryMutation = (requirements = {}) => {
       planCode: authority.planCode || null
     });
   }
-  return captureActorBoundMutation(requirements);
+  return captureActorBoundMutation(requirements, authority);
 };
 
 export const isLegacyLocalOwnerProductInventoryAuthority = (handle) => (

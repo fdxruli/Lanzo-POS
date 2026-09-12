@@ -191,24 +191,122 @@ describe('license admin actions', () => {
     expect(state.pendingAdminSessionResult).toBeNull();
   });
 
-  it('does not remain loading when the legacy backend validates an admin device', async () => {
+  it('fails closed when modern FREE receives a stale legacy valid response without an Admin session', async () => {
     const state = setup();
+    state.licenseDetails = {
+      license_key: 'LANZO-ADMIN-TEST',
+      plan_code: 'free_trial',
+      max_devices: 1,
+      device_role: 'admin',
+      features: { staff_roles: false },
+      admin_identity_required: true,
+      admin_user: { id: 'admin-modern-1', username: 'owner' }
+    };
+    state.currentAdminUser = null;
     mocks.activateLicense.mockResolvedValue({
       valid: true,
-      details: { license_key: 'LANZO-ADMIN-TEST', plan_code: 'pro' }
+      details: {
+        license_key: 'LANZO-ADMIN-TEST',
+        plan_code: 'free_trial',
+        max_devices: 1,
+        device_role: 'admin',
+        features: { staff_roles: false }
+      }
+    });
+
+    await expect(state.discoverAdminAccess('LANZO-ADMIN-TEST')).resolves.toEqual({
+      success: false,
+      adminLoginRequired: true
+    });
+
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_login_required');
+    expect(mocks.lockActorRuntime).not.toHaveBeenCalledWith('legacy_admin_without_actor_session');
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+    expect(state.currentAdminUser).toBeNull();
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(state.licenseDetails).toMatchObject({
+      plan_code: 'free_trial',
+      admin_identity_required: true,
+      admin_user: null
+    });
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
+      admin_identity_required: true,
+      admin_user: null
+    }));
+  });
+
+  it('preserves the legacy FREE local-owner fallback for a true pre-cutover license', async () => {
+    const state = setup();
+    state.licenseDetails = {
+      license_key: 'LANZO-ADMIN-TEST',
+      plan_code: 'free_trial',
+      max_devices: 1,
+      device_role: 'admin',
+      features: { staff_roles: false }
+    };
+    mocks.activateLicense.mockResolvedValue({
+      valid: true,
+      details: {
+        license_key: 'LANZO-ADMIN-TEST',
+        plan_code: 'free_trial',
+        max_devices: 1,
+        device_role: 'admin',
+        features: { staff_roles: false }
+      }
     });
 
     await expect(state.discoverAdminAccess('LANZO-ADMIN-TEST')).resolves.toEqual({
       success: true,
       legacyBackendFallback: true
     });
+
     expect(mocks.lockActorRuntime).toHaveBeenCalledWith('legacy_admin_without_actor_session');
+    expect(mocks.lockActorRuntime).not.toHaveBeenCalledWith('admin_login_required');
     expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
     expect(state._processOfflineMode).toHaveBeenCalledWith(
-      expect.objectContaining({ license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }),
+      expect.objectContaining({
+        license_key: 'LANZO-ADMIN-TEST',
+        plan_code: 'free_trial',
+        device_role: 'admin'
+      }),
       { reason: 'legacy_admin_auth_compatibility' }
     );
+    expect(state.currentAdminUser).toBeNull();
     expect(state.appStatus).toBe('ready');
+  });
+
+  it('never accepts a legacy valid response as local-owner authority for PRO', async () => {
+    const state = setup();
+    state.licenseDetails = {
+      license_key: 'LANZO-ADMIN-TEST',
+      plan_code: 'pro_monthly',
+      max_devices: 2,
+      device_role: 'admin',
+      features: { staff_roles: true }
+    };
+    mocks.activateLicense.mockResolvedValue({
+      valid: true,
+      details: {
+        license_key: 'LANZO-ADMIN-TEST',
+        plan_code: 'pro_monthly',
+        max_devices: 2,
+        device_role: 'admin',
+        features: { staff_roles: true }
+      }
+    });
+
+    await expect(state.discoverAdminAccess('LANZO-ADMIN-TEST')).resolves.toEqual({
+      success: false,
+      adminLoginRequired: true
+    });
+
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_login_required');
+    expect(mocks.lockActorRuntime).not.toHaveBeenCalledWith('legacy_admin_without_actor_session');
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+    expect(state.currentAdminUser).toBeNull();
+    expect(state.appStatus).toBe('admin_login_required');
   });
 
   it('completes owner enrollment and records currentAdminUser', async () => {

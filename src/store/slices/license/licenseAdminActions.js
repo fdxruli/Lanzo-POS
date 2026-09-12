@@ -31,6 +31,10 @@ import {
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 import {
+  hasModernAdminIdentityEvidence,
+  requiresAdminIdentity
+} from './licenseGuards';
+import {
   clearPendingAdminSession,
   clearPendingAdminSessionIfLicenseChanged,
   createPendingAdminSession,
@@ -253,6 +257,22 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         { reason: 'admin_access_activation' }
       )
     });
+    const currentLicense = get().licenseDetails || {};
+    const mergedLicense = {
+      ...currentLicense,
+      ...(result.details || {}),
+      license_key: licenseKey,
+      device_role: 'admin',
+      staff_user: null
+    };
+    const modernAdminCutover = Boolean(
+      hasModernAdminIdentityEvidence(currentLicense)
+      || hasModernAdminIdentityEvidence(mergedLicense)
+    );
+    const discoveredLicense = modernAdminCutover
+      ? { ...mergedLicense, admin_identity_required: true }
+      : mergedLicense;
+
     if (result.admin_enrollment_required) {
       lockActorRuntime('admin_enrollment_required');
       set({
@@ -268,42 +288,41 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       return { success: false, enrollmentRequired: true };
     }
     if (result.access_choice_required) {
-      await get()._requireAdminLogin({ ...(result.details || {}), license_key: licenseKey, device_role: 'admin' }, result);
+      await get()._requireAdminLogin(discoveredLicense, result);
       return { success: false, adminLoginRequired: true };
     }
 
     if (result.valid) {
-      const legacyLicense = {
-        ...get().licenseDetails,
-        ...(result.details || {}),
-        license_key: licenseKey,
-        device_role: 'admin',
-        staff_user: null
-      };
+      if (requiresAdminIdentity(discoveredLicense)) {
+        await get()._requireAdminLogin(discoveredLicense, {
+          ...result,
+          code: result.code || 'ADMIN_LOGIN_REQUIRED',
+          message: result.message || 'Inicia sesion como administrador para continuar.'
+        });
+        return { success: false, adminLoginRequired: true };
+      }
 
       // Legacy device validation has no authenticated actor session proof.
-      // Preserve compatibility, but never manufacture ActorRuntime authority.
+      // Preserve compatibility only for a genuinely legacy FREE/local owner;
+      // once the client has modern Admin evidence it can never become legacy.
       lockActorRuntime('legacy_admin_without_actor_session');
       Logger.warn('[AdminAuth] Backend legacy detectado; continuando con sesión local hasta aplicar la migración.');
-      await saveLicenseToStorage(legacyLicense);
+      await saveLicenseToStorage(discoveredLicense);
       set({
-        licenseDetails: legacyLicense,
+        licenseDetails: discoveredLicense,
         _isLoggingOut: false,
         currentDeviceRole: 'admin',
-        currentAdminUser: legacyLicense.admin_user || null,
+        currentAdminUser: null,
         currentStaffUser: null,
         adminLoginMessage: null,
         adminLoginError: null,
         pendingAdminSessionResult: null
       });
-      await get()._processOfflineMode(legacyLicense, { reason: 'legacy_admin_auth_compatibility' });
+      await get()._processOfflineMode(discoveredLicense, { reason: 'legacy_admin_auth_compatibility' });
       return { success: true, legacyBackendFallback: true };
     }
 
-    await get()._requireAdminLogin(
-      { ...(result.details || {}), ...get().licenseDetails, license_key: licenseKey, device_role: 'admin' },
-      result
-    );
+    await get()._requireAdminLogin(discoveredLicense, result);
     return { success: false, adminLoginRequired: true };
   },
 

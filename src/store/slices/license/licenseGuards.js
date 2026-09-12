@@ -54,6 +54,21 @@ const normalizePlanCode = (licenseDetails = {}) => (
 
 const normalizeStatusCode = (value) => String(value || '').trim().toLowerCase();
 
+const hasIdentityValue = (value) => (
+  (typeof value === 'string' && value.trim().length > 0)
+  || (typeof value === 'number' && Number.isFinite(value))
+);
+
+export const hasModernAdminIdentityEvidence = (license = {}) => {
+  const adminUser = license.admin_user || license.details?.admin_user || null;
+  return Boolean(
+    license.admin_identity_required === true
+    || hasIdentityValue(adminUser?.id)
+    || hasIdentityValue(adminUser?.admin_user_id)
+    || hasIdentityValue(adminUser?.user_id)
+  );
+};
+
 export const isRealtimeEnabledForLicense = (licenseDetails) => (
   ENABLE_LICENSE_REALTIME &&
   licenseDetails?.features?.realtime_license_sync === true &&
@@ -156,7 +171,7 @@ export const requiresAdminIdentity = (license = {}) => {
   const planCode = String(license.plan_code || license.plan?.code || '').toLowerCase();
   const features = license.features || license.effective_features || {};
   return Boolean(
-    license.admin_identity_required === true ||
+    hasModernAdminIdentityEvidence(license) ||
     (planCode && planCode !== 'free_trial') ||
     features.staff_roles === true ||
     Number(license.max_devices || 1) > 1
