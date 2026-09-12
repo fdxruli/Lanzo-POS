@@ -4,7 +4,11 @@ import { buildSyncOutboxRecord } from '../sync/syncOutboxService';
 import { POS_SYNC_STORES, SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { useAppStore } from '../../store/useAppStore';
-import { actorOriginFromHandle, captureProductInventoryMutation } from '../auth/productInventoryAuthority';
+import {
+  actorOriginFromHandle,
+  captureProductInventoryMutation,
+  isLegacyLocalOwnerProductInventoryAuthority
+} from '../auth/productInventoryAuthority';
 
 const EPSILON = 0.000001;
 const nowIso = () => new Date().toISOString();
@@ -137,6 +141,7 @@ export const addInventoryEntry = async ({
 
   if (!productId) throw domainError('PRODUCT_NOT_FOUND');
   const actorHandle = captureProductInventoryMutation({ inventory: true });
+  const localOnly = isLegacyLocalOwnerProductInventoryAuthority(actorHandle);
   actorHandle.assertCurrent('inventory');
   if (!db.isOpen()) await db.open();
 
@@ -212,23 +217,38 @@ export const addInventoryEntry = async ({
       parent = updatedProduct;
     }
 
-    const result = { success: true, operationId: resolvedOperationId, product: parent, batch: batchResult, previousStock, newStock, pending: true };
+    const result = {
+      success: true,
+      operationId: resolvedOperationId,
+      product: parent,
+      batch: batchResult,
+      previousStock,
+      newStock,
+      pending: !localOnly
+    };
     actorHandle.assertCurrent('inventory');
     await eventTable.put({
       id: eventId, type: 'INVENTORY_ENTRY', operationId: resolvedOperationId, productId: product.id,
       batchId: entry.batchId, delta: normalizedBaseQuantity, previousStock, newStock,
       timestamp, occurredAt: entry.occurredAt, entryKind, metadata: entry.metadata,
-      requestHash, synced: false, result
+      requestHash,
+      synced: localOnly,
+      syncedAt: localOnly ? timestamp : null,
+      syncDisposition: localOnly ? 'local_only' : 'actor_bound',
+      result
     });
-    actorHandle.assertCurrent('inventory');
-    await db.table(POS_SYNC_STORES.OUTBOX).put(buildSyncOutboxRecord({
-      licenseKey: resolvedLicenseKey, entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
-      operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id,
-      payload: { entry }, idempotencyKey: resolvedOperationId,
-      actorSensitive: true,
-      originActor: actorOriginFromHandle(actorHandle),
-      metadata: { source: 'inventoryEntryService', operationId: resolvedOperationId }
-    }));
+
+    if (!localOnly) {
+      actorHandle.assertCurrent('inventory');
+      await db.table(POS_SYNC_STORES.OUTBOX).put(buildSyncOutboxRecord({
+        licenseKey: resolvedLicenseKey, entityType: SYNC_ENTITY_TYPES.INVENTORY_ENTRY,
+        operation: SYNC_OPERATIONS.INVENTORY_ENTRY, entityId: product.id,
+        payload: { entry }, idempotencyKey: resolvedOperationId,
+        actorSensitive: true,
+        originActor: actorOriginFromHandle(actorHandle),
+        metadata: { source: 'inventoryEntryService', operationId: resolvedOperationId }
+      }));
+    }
     return result;
   });
 };
