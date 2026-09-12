@@ -1,0 +1,71 @@
+.ecom-general-settings {
+  border: 0;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  margin: 1.5rem 0 0;
+  padding: 1.5rem 0 0;
+  min-width: 0;
+}
+
+.ecom-general-settings__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ecom-general-settings__heading h3 {
+  margin: 0.2rem 0 0.35rem;
+}
+
+.ecom-general-settings__heading p {
+  margin: 0;
+  color: var(--text-secondary, #64748b);
+}
+
+.ecom-general-settings__delivery-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ecom-general-settings__capability {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface-muted, #f1f5f9);
+  color: var(--text-secondary, #475569);
+}
+
+.ecom-general-settings__delivery-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.ecom-general-settings__delivery-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border-color, #dbe1e8);
+  border-radius: 0.75rem;
+  cursor: pointer;
+}
+
+.ecom-general-settings__delivery-option input {
+  width: 18px;
+  height: 18px;
+}
+
+
+@media (max-width: 640px) {
+  .ecom-general-settings__delivery-options {
+    grid-template-columns: 1fr;
+  }
+}

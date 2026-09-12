@@ -7,8 +7,6 @@ import {
   Eye,
   EyeOff,
   Globe2,
-  Image as ImageIcon,
-  Link2,
   LoaderCircle,
   Lock,
   PackagePlus,
@@ -276,6 +274,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [plan, setPlan] = useState({ code: 'free_trial', name: 'Plan Free' });
   const [features, setFeatures] = useState({
     customSlug: false,
+    deliveryPickupSettings: 'basic',
     maxPublishedProducts: 10,
     cloudCatalogSource: false
   });
@@ -394,6 +393,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPlan(result.plan || { code: 'free_trial', name: 'Plan Free' });
     setFeatures(result.features || {
       customSlug: false,
+      deliveryPickupSettings: 'basic',
       maxPublishedProducts: 10,
       cloudCatalogSource: false
     });
@@ -806,6 +806,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         <EcommerceBusinessInformationPanel
           portal={portal}
           form={form}
+          plan={plan}
+          features={features}
           onFieldChange={updateForm}
           onSubmit={submitPortal}
           saving={savingPortal}
@@ -857,115 +859,29 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         <form className="ui-card ecom-admin-form-card" onSubmit={submitPortal}>
           <div className="ecom-admin-card-heading">
             <div>
-              <span className="ecom-admin-eyebrow">Contenido y apariencia</span>
-              <h3>Presentación de tu tienda</h3>
-              <p>Personaliza el mensaje, la entrega y la identidad visual.</p>
+              <span className="ecom-admin-eyebrow">Diseño básico</span>
+              <h3>Identidad visual de tu tienda</h3>
+              <p>Personaliza únicamente la apariencia visual de tu tienda.</p>
             </div>
             <Save size={22} />
           </div>
-        <div className="ecom-admin-form-grid">
-          <label className="form-group">
-            <span className="form-label">Enlace / slug *</span>
-            <div className="ecom-admin-input-icon">
-              <Link2 size={16} />
-              <input
-                className="form-input"
-                value={form.slug}
-                onChange={updateForm('slug')}
-                minLength={3}
-                maxLength={64}
-                placeholder={isPro ? 'mi-negocio' : 'Generado por el sistema'}
-                readOnly={!isPro}
-                disabled={!isPro}
-              />
-            </div>
-            <small className="ecom-admin-help">
-              {isPro
-                ? 'En Lanzo Nube puedes personalizar el enlace de tu tienda.'
-                : 'En Plan Free el enlace se genera automaticamente.'}
-            </small>
-          </label>
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Frase corta / headline</span>
-            <input
-              className="form-input"
-              value={form.headline}
-              onChange={updateForm('headline')}
-              maxLength={160}
-            />
-          </label>
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Descripcion</span>
-            <textarea
-              className="form-textarea"
-              value={form.description}
-              onChange={updateForm('description')}
-              rows={4}
-              maxLength={1000}
-            />
-          </label>
-          <label className="form-group">
-            <span className="form-label">Pedido minimo</span>
-            <input
-              className="form-input"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.minOrderTotal}
-              onChange={updateForm('minOrderTotal')}
-            />
-          </label>
-          <fieldset className="ecom-admin-delivery ecom-admin-span-2">
-            <legend>Metodos de entrega</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={form.pickupEnabled}
-                onChange={updateForm('pickupEnabled')}
-              />
-              <span><strong>Recoger</strong><small>El cliente recoge en el negocio.</small></span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={form.deliveryEnabled}
-                onChange={updateForm('deliveryEnabled')}
-              />
-              <span><strong>Domicilio</strong><small>El negocio coordina la entrega.</small></span>
-            </label>
-          </fieldset>
-          <div className="form-group">
-            <span className="form-label">Logo reutilizado</span>
-            <div className="ecom-admin-logo">
-              {publicUrl(form.logoUrl || companyProfile?.logo)
-                ? (
-                    <img
-                      src={publicUrl(form.logoUrl || companyProfile?.logo)}
-                      alt="Logo del portal"
-                    />
-                  )
-                : <ImageIcon size={28} />}
-              <span>El logo del perfil se usa solo como valor inicial al crear el portal. Puedes reemplazarlo o desvincularlo sin modificar el perfil.</span>
-            </div>
-          </div>
-        </div>
-        <EcommercePortalCustomizationPanel
-          isPro={isPro}
-          portal={portal}
-          initialLogoUrl={portal ? null : publicUrl(companyProfile?.logo)}
-          licenseKey={licenseKey}
-          disabled={savingPortal}
-          onChange={handleCustomizationChange}
-          onBusyChange={setCustomizationBusy}
-        />
-        <div className="ecom-admin-form-actions">
-          <span><CheckCircle2 size={16} /> Los datos quedan separados del flujo POS.</span>
-          <button type="submit" className="btn btn-primary" disabled={savingPortal || customizationBusy || customization.valid === false}>
-            {savingPortal
-              ? <LoaderCircle className="ecom-admin-spin" size={17} />
-              : <Save size={17} />}
-            {' '}Guardar diseño
-          </button>
+          <EcommercePortalCustomizationPanel
+            isPro={isPro}
+            portal={portal}
+            initialLogoUrl={portal ? null : publicUrl(companyProfile?.logo)}
+            licenseKey={licenseKey}
+            disabled={savingPortal}
+            onChange={handleCustomizationChange}
+            onBusyChange={setCustomizationBusy}
+          />
+          <div className="ecom-admin-form-actions">
+            <span><CheckCircle2 size={16} /> Los datos quedan separados del flujo POS.</span>
+            <button type="submit" className="btn btn-primary" disabled={savingPortal || customizationBusy || customization.valid === false}>
+              {savingPortal
+                ? <LoaderCircle className="ecom-admin-spin" size={17} />
+                : <Save size={17} />}
+              {' '}Guardar diseño
+            </button>
           </div>
         </form>
       )}
