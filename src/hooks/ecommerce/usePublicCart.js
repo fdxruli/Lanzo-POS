@@ -10,7 +10,7 @@ import {
 } from '../../utils/ecommerceConfiguredProduct';
 import { resolveEcommerceUnitPrice } from '../../utils/ecommerceWholesalePricing';
 
-const CART_VERSION = 3;
+const CART_VERSION = 4;
 const CONFIGURATION_REVISION_PATTERN = /^[a-f0-9]{64}$/;
 
 const clampInteger = (value, minimum, maximum) => {
@@ -108,8 +108,10 @@ const readStoredEntries = (storageKey) => {
   }
 };
 
-export function getPublicCartStorageKey(slug) {
-  return `lanzo:ecommerce:cart:${slug || 'unknown'}:v1`;
+export function getPublicCartStorageKey(slug, portalId = '') {
+  const normalizedSlug = encodeURIComponent(asText(slug).toLowerCase() || 'unknown');
+  const normalizedPortalId = encodeURIComponent(asText(portalId).toLowerCase() || 'unresolved');
+  return `lanzo:ecommerce:cart:${normalizedPortalId}:${normalizedSlug}:v${CART_VERSION}`;
 }
 
 function calculateMoney(lines) {
@@ -178,6 +180,7 @@ const resolveCartLinePricing = ({ product, catalogProduct, quantity }) => {
 
 export default function usePublicCart({
   slug,
+  portalId = '',
   products = [],
   catalogReady = false,
   catalogExhausted = false,
@@ -186,7 +189,7 @@ export default function usePublicCart({
   maxOrderItems = 30,
   minOrderTotal = 0
 }) {
-  const storageKey = useMemo(() => getPublicCartStorageKey(slug), [slug]);
+  const storageKey = useMemo(() => getPublicCartStorageKey(slug, portalId), [portalId, slug]);
   const reconciliationKey = useMemo(
     () => `${storageKey}:catalog:${catalogRevision || 'unversioned'}`,
     [catalogRevision, storageKey]

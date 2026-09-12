@@ -474,6 +474,7 @@ function normalizePortalResult(data) {
   const siteSchemaVersion = Number(rawSite.schemaVersion) === 1 ? 1 : 2;
   const siteVersionNumber = asRevision(rawSite.versionNumber);
   return {
+    portalId: asText(data.portalId).toLowerCase(),
     portal: normalizedPortal,
     hours: {
       weekly: asArray(hours.weekly),
@@ -750,9 +751,11 @@ export function createEcommercePublicService(
     publicPortalRpcName = 'ecommerce_get_portal_by_slug_v2',
   } = {}
 ) {
+  const portalIdentityBySlug = new Map();
   return {
     async getPublicPortalBySlug(slug, options = {}) {
       const normalizedSlug = asText(slug).toLowerCase();
+      const knownPortalId = asText(options.portalId).toLowerCase();
       if (!normalizedSlug) {
         throw new EcommercePublicError(
           'ECOMMERCE_PORTAL_NOT_FOUND',
@@ -764,9 +767,11 @@ export function createEcommercePublicService(
           p_slug: normalizedSlug
         }, { retryDelayMs: publicReadRetryDelayMs, retryDelay: publicReadRetryDelay });
         const result = normalizePortalResult(data);
-        if (cache && options.cache !== false && result.catalogRevision) {
-          void safely(() => cache.putPortal({ slug: normalizedSlug, result }));
+        if (result.portalId) portalIdentityBySlug.set(normalizedSlug, result.portalId);
+        if (cache && options.cache !== false && result.catalogRevision && result.portalId) {
+          void safely(() => cache.putPortal({ portalId: result.portalId, slug: normalizedSlug, result }));
           void safely(() => cache.deleteObsoleteRevisions({
+            portalId: result.portalId,
             slug: normalizedSlug,
             keepRevision: result.catalogRevision
           }));
@@ -778,8 +783,10 @@ export function createEcommercePublicService(
           !cache
           || options.cache === false
           || error?.code === 'ECOMMERCE_PORTAL_NOT_FOUND'
+          || !knownPortalId
         ) throw error;
         const cached = await safely(() => cache.getPortal({
+          portalId: knownPortalId,
           slug: normalizedSlug,
           maxStaleSeconds: options.maxStaleSeconds
             || ECOMMERCE_PUBLIC_CACHE_POLICY.maxStaleSeconds
@@ -799,6 +806,7 @@ export function createEcommercePublicService(
       }
       const limit = Math.min(100, Math.max(1, Math.floor(asNumber(options.limit, 100))));
       const offset = Math.max(0, Math.floor(asNumber(options.offset, 0)));
+      const portalId = asText(options.portalId || portalIdentityBySlug.get(normalizedSlug)).toLowerCase();
       const catalogRevision = asRevision(options.catalogRevision);
       const cachePolicy = normalizeCachePolicy(
         options.cachePolicy || ECOMMERCE_PUBLIC_CACHE_POLICY
@@ -811,6 +819,7 @@ export function createEcommercePublicService(
         && catalogRevision
       ) {
         const cached = await safely(() => cache.getPage({
+          portalId,
           slug: normalizedSlug,
           catalogRevision,
           offset,
@@ -860,6 +869,7 @@ export function createEcommercePublicService(
         }
         if (cache && options.cache !== false && result.catalogRevision) {
           void safely(() => cache.putPage({
+            portalId,
             slug: normalizedSlug,
             catalogRevision: result.catalogRevision,
             offset,
@@ -873,6 +883,7 @@ export function createEcommercePublicService(
       } catch (error) {
         if (!cache || options.cache === false || !catalogRevision) throw error;
         const cached = await safely(() => cache.getPage({
+          portalId,
           slug: normalizedSlug,
           catalogRevision,
           offset,

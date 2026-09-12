@@ -35,10 +35,11 @@ const createV2DocumentFixture = () => ({
 
 const siteResponse = ({ schemaVersion, versionId, versionNumber, documentMode, document }) => ({
   success: true,
+  portalId: 'portal-1',
   portal: { slug: 'mi-tienda', name: 'Mi tienda', templateCode: 'compact', maxOrderItems: 30, maxItemQuantity: 99 },
   hours: { weekly: [], exceptions: [] }, features: { orderInbox: true }, catalogRevision: 41,
   site: { schemaVersion, versionId, versionNumber, documentMode, document },
-  cachePolicy: { schemaVersion, freshSeconds: 300, maxStaleSeconds: 86400 }
+  cachePolicy: { schemaVersion: 3, freshSeconds: 300, maxStaleSeconds: 86400 }
 });
 
 const createService = (rpc, name, publicPortalRpcName = 'ecommerce_get_portal_by_slug_v2') => {
@@ -50,7 +51,7 @@ const createService = (rpc, name, publicPortalRpcName = 'ecommerce_get_portal_by
 
 const waitForCachedPortal = async (database) => {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if ((await database.table('portals').count()) > 0) return;
+    if ((await database.table('portalEntries').count()) > 0) return;
     await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
   }
   throw new Error('Portal was not cached');
@@ -71,7 +72,7 @@ describe('public site version identity and cache', () => {
     const network = await service.getPublicPortalBySlug('mi-tienda');
     expect(network.site).toEqual({ schemaVersion: 1, versionId: '11111111-1111-4111-8111-111111111111', versionNumber: 1, documentMode: 'custom', document });
     await waitForCachedPortal(database); online = false;
-    expect((await service.getPublicPortalBySlug('mi-tienda')).site).toEqual(network.site);
+    expect((await service.getPublicPortalBySlug('mi-tienda', { portalId: network.portalId })).site).toEqual(network.site);
   });
 
   it('uses the v2 RPC and preserves visual identity, version and the exact cached document', async () => {
@@ -85,7 +86,7 @@ describe('public site version identity and cache', () => {
     expect(network.site).toEqual({ schemaVersion: 2, versionId: '22222222-2222-4222-8222-222222222222', versionNumber: 2, documentMode: 'custom', document });
     expect(network.site.document.global.appearance.branding.logoUrl).toBe('https://cdn.example/logo.png');
     await waitForCachedPortal(database); online = false;
-    expect((await service.getPublicPortalBySlug('mi-tienda')).site).toEqual(network.site);
+    expect((await service.getPublicPortalBySlug('mi-tienda', { portalId: network.portalId })).site).toEqual(network.site);
   });
 
   it('invalidates a changed site version without changing catalogRevision', async () => {
