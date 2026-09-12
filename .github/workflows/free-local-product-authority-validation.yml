@@ -1,0 +1,80 @@
+name: FREE Local Product Authority Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/services/auth/productInventoryAuthority.js'
+      - 'src/services/auth/__tests__/productInventoryAuthority*.test.js'
+      - 'src/services/products/productRepository.js'
+      - 'src/services/products/__tests__/productRepository.freeLocalAuthority.test.js'
+      - 'src/services/products/__tests__/productSyncHandler.cutover.test.js'
+      - 'src/services/inventory/inventoryEntryService.js'
+      - 'src/services/inventory/__tests__/inventoryEntryService*.test.js'
+      - 'src/store/slices/license/licenseSessionTransitions.test.js'
+      - 'scripts/supabase/admin-staff-product-inventory-authority-contract.node-test.mjs'
+      - '.github/workflows/free-local-product-authority-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-free-local-product-authority:
+    name: focused tests / RBAC contract / lint / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact candidate HEAD
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR-local whitespace hygiene
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Focused product / inventory / authority regression tests
+        run: >-
+          npx vitest run
+          src/services/auth/__tests__/actorRuntimeController.test.js
+          src/services/auth/__tests__/productInventoryAuthority.test.js
+          src/services/auth/__tests__/productInventoryAuthority.transitions.test.js
+          src/services/auth/__tests__/productInventoryAuthority.cutover.test.js
+          src/services/products/__tests__/productRepository.freeLocalAuthority.test.js
+          src/services/products/__tests__/productSyncHandler.cutover.test.js
+          src/services/inventory/__tests__/inventoryEntryService.test.js
+          src/services/inventory/__tests__/inventoryEntryService.freeLocalAuthority.test.js
+          src/store/slices/license/licenseSessionTransitions.test.js
+          --maxWorkers=4
+
+      - name: Existing Admin/Staff product-inventory authority contract
+        run: npm run test:admin-staff-product-inventory-authority-contract
+
+      - name: ESLint hotfix and regression files
+        run: >-
+          npx eslint
+          src/services/auth/productInventoryAuthority.js
+          src/services/auth/__tests__/productInventoryAuthority.test.js
+          src/services/auth/__tests__/productInventoryAuthority.transitions.test.js
+          src/services/auth/__tests__/productInventoryAuthority.cutover.test.js
+          src/services/inventory/inventoryEntryService.js
+          src/services/inventory/__tests__/inventoryEntryService.test.js
+          src/services/inventory/__tests__/inventoryEntryService.freeLocalAuthority.test.js
+          src/services/products/__tests__/productRepository.freeLocalAuthority.test.js
+          src/services/products/__tests__/productSyncHandler.cutover.test.js
+          src/store/slices/license/licenseSessionTransitions.test.js
+
+      - name: Production build
+        run: npm run build
