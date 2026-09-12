@@ -131,6 +131,10 @@ const createStore = (initial = {}) => {
       hasStaffValidationContext: async () => false
     })
   );
+  // Preserve the intended test seam after createLicenseProcessingActions adds
+  // its production implementation. Bootstrap tests only need to observe which
+  // authority branch was selected, not exercise offline profile hydration.
+  state._processOfflineMode = vi.fn(async () => { state.appStatus = 'ready'; });
   return state;
 };
 
