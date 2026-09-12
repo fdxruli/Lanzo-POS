@@ -1,8 +1,5 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { db, STORES } from '../../db/dexie';
-import { POS_SYNC_STORES } from '../../sync/syncConstants';
-import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
 const mocks = vi.hoisted(() => {
   class TestActorRuntimeError extends Error {
@@ -16,7 +13,12 @@ const mocks = vi.hoisted(() => {
   return {
     TestActorRuntimeError,
     actorCapture: vi.fn(),
-    state: null
+    state: null,
+    tenantRuntime: {
+      opaqueId: 'tenant-free-inventory',
+      databaseName: 'LanzoDB_t_tenant-free-inventory',
+      generation: 1
+    }
   };
 });
 
@@ -36,6 +38,17 @@ vi.mock('../../../store/useAppStore', () => ({
   useAppStore: { getState: () => mocks.state }
 }));
 
+vi.mock('../../db/tenantRuntimeRouter', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getTenantRuntimeReadiness: () => ({ ready: true, runtime: mocks.tenantRuntime })
+  };
+});
+
+import { db, STORES } from '../../db/dexie';
+import { POS_SYNC_STORES } from '../../sync/syncConstants';
+import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { addInventoryEntry } from '../inventoryEntryService';
 
 const freeLicense = () => ({

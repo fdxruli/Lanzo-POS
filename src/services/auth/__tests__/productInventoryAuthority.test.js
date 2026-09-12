@@ -12,7 +12,8 @@ const runtime = vi.hoisted(() => {
     current: null,
     assertGranted: vi.fn(),
     capture: vi.fn(),
-    TestActorRuntimeError
+    TestActorRuntimeError,
+    storeState: null
   };
 });
 
@@ -26,6 +27,18 @@ vi.mock('../actorRuntimeController', () => ({
   ActorRuntimeError: runtime.TestActorRuntimeError,
   actorRuntimeController: runtime
 }));
+
+vi.mock('../../../store/useAppStore', () => ({
+  useAppStore: { getState: () => runtime.storeState }
+}));
+
+vi.mock('../../db/tenantRuntimeRouter', () => ({
+  getTenantRuntimeReadiness: () => ({
+    ready: true,
+    runtime: { opaqueId: 'tenant-a', databaseName: 'LanzoDB_tenant-a', generation: 1 }
+  })
+}));
+
 import {
   getProductInventoryMutationRequirements,
   assertProductInventoryOperationActorCurrent,
@@ -78,10 +91,27 @@ const installRuntime = (overrides = {}) => {
     }
     return runtime.current;
   });
-}
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
+  runtime.storeState = {
+    appStatus: 'ready',
+    licenseDetails: {
+      license_key: 'LANZO-PRO-AUTHORITY-TEST',
+      valid: true,
+      plan_code: 'pro_monthly',
+      max_devices: 3,
+      device_role: 'staff',
+      features: {
+        cloud_pos_sync: true,
+        cloud_products_sync: true,
+        staff_roles: true
+      }
+    },
+    currentDeviceRole: 'staff',
+    currentStaffUser: { id: 'staff-a' }
+  };
   installRuntime();
 });
 
