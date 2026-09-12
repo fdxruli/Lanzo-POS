@@ -80,6 +80,31 @@ const proLicense = (device_role = 'admin') => ({
   localExpiry: new Date(Date.now() + 60_000).toISOString()
 });
 
+const modernFreeLicense = (overrides = {}) => ({
+  license_key: 'TEST-FREE-MODERN-ACTOR',
+  device_role: 'admin',
+  plan_code: 'free_trial',
+  max_devices: 1,
+  status: 'active',
+  valid: true,
+  features: { staff_roles: false },
+  admin_user: { id: 'admin-free-1', username: 'owner' },
+  localExpiry: new Date(Date.now() + 60_000).toISOString(),
+  ...overrides
+});
+
+const legacyFreeLicense = (overrides = {}) => ({
+  license_key: 'TEST-FREE-LEGACY',
+  device_role: 'admin',
+  plan_code: 'free_trial',
+  max_devices: 1,
+  status: 'active',
+  valid: true,
+  features: { staff_roles: false },
+  localExpiry: new Date(Date.now() + 60_000).toISOString(),
+  ...overrides
+});
+
 const createStore = (initial = {}) => {
   const state = {
     appStatus: 'loading',
@@ -211,6 +236,83 @@ describe('canonical actor session transitions', () => {
     expect(mocks.verifyStaffSession).not.toHaveBeenCalled();
   });
 
+  it('restores a modern FREE owner as a real Admin actor and persists the cutover marker', async () => {
+    const state = createStore();
+    const free = modernFreeLicense();
+    mocks.getLicenseFromStorage.mockResolvedValue(free);
+    mocks.verifyAdminSession.mockResolvedValue({
+      valid: true,
+      admin_user: { id: 'admin-free-1', username: 'owner' },
+      details: { ...free, admin_user: undefined }
+    });
+
+    await state.initializeApp();
+
+    expect(mocks.verifyAdminSession).toHaveBeenCalledWith(
+      free.license_key,
+      expect.objectContaining({ beforeLocalPersistence: expect.any(Function) })
+    );
+    expect(mocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: expect.objectContaining({ id: 'admin-free-1' })
+    });
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
+      plan_code: 'free_trial',
+      admin_identity_required: true,
+      admin_user: expect.objectContaining({ id: 'admin-free-1' })
+    }));
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-free-1' });
+    expect(state.licenseDetails.admin_identity_required).toBe(true);
+    expect(state.appStatus).toBe('ready');
+  });
+
+  it('keeps modern FREE authentication-required after an invalid Admin session instead of falling back to legacy', async () => {
+    const state = createStore();
+    const free = modernFreeLicense();
+    mocks.getLicenseFromStorage.mockResolvedValue(free);
+    mocks.verifyAdminSession.mockResolvedValue({
+      valid: false,
+      code: 'ADMIN_SESSION_INVALID',
+      message: 'Inicia sesión nuevamente.'
+    });
+
+    await state.initializeApp();
+
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(state.licenseDetails.admin_identity_required).toBe(true);
+    expect(state.currentAdminUser).toBeNull();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    mocks.hasStaffSessionToken.mockResolvedValue(false);
+    mocks.hasAdminSessionToken.mockResolvedValue(false);
+    mocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
+    mocks.getLicenseFromStorage.mockResolvedValue(state.licenseDetails);
+    state.discoverAdminAccess = vi.fn(async () => {
+      state.appStatus = 'admin_login_required';
+    });
+
+    await state.initializeApp();
+
+    expect(state.discoverAdminAccess).toHaveBeenCalledWith(free.license_key);
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
+  it('preserves FREE legacy local-owner bootstrap without creating or verifying an Admin actor', async () => {
+    const state = createStore();
+    const free = legacyFreeLicense();
+    mocks.getLicenseFromStorage.mockResolvedValue(free);
+
+    await state.initializeApp();
+
+    expect(state._processOfflineMode).toHaveBeenCalledWith(free);
+    expect(mocks.verifyAdminSession).not.toHaveBeenCalled();
+    expect(mocks.restoreActorRuntimeFromCurrentSessionCache).not.toHaveBeenCalled();
+    expect(mocks.saveLicenseToStorage).not.toHaveBeenCalledWith(expect.objectContaining({
+      admin_identity_required: true
+    }));
+  });
+
   it('moves a trusted admin from FREE to enrollment immediately without a reload', async () => {
     const state = createStore({
       appStatus: 'ready',
@@ -228,5 +330,39 @@ describe('canonical actor session transitions', () => {
     expect(state.discoverAdminAccess).toHaveBeenCalledWith(remotePro.license_key);
     expect(state.appStatus).toBe('admin_enrollment_required');
     expect(state._loadProfile).not.toHaveBeenCalled();
+  });
+
+  it('preserves modern Admin identity and session semantics across PRO → FREE downgrade', async () => {
+    const localPro = {
+      ...proLicense('admin'),
+      valid: true,
+      admin_identity_required: true,
+      admin_user: { id: 'admin-stable-1', username: 'owner' }
+    };
+    const state = createStore({
+      appStatus: 'ready',
+      licenseDetails: localPro,
+      currentDeviceRole: 'admin',
+      currentAdminUser: localPro.admin_user
+    });
+    const remoteFree = {
+      license_key: localPro.license_key,
+      device_role: 'admin',
+      plan_code: 'free_trial',
+      max_devices: 1,
+      valid: true,
+      status: 'active',
+      features: { staff_roles: false }
+    };
+
+    await state._processServerValidation(remoteFree, localPro, { reason: 'test_pro_to_free' });
+
+    expect(mocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(state.licenseDetails).toMatchObject({
+      plan_code: 'free_trial',
+      admin_identity_required: true,
+      admin_user: { id: 'admin-stable-1' }
+    });
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-stable-1' });
   });
 });
