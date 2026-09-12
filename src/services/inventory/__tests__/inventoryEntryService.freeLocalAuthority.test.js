@@ -4,28 +4,31 @@ import { db, STORES } from '../../db/dexie';
 import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 
-const mocks = vi.hoisted(() => ({
-  actorCapture: vi.fn(),
-  state: null
-}));
-
-class TestActorRuntimeError extends Error {
-  constructor(code, details = {}) {
-    super(code);
-    this.code = code;
-    this.details = details;
+const mocks = vi.hoisted(() => {
+  class TestActorRuntimeError extends Error {
+    constructor(code, details = {}) {
+      super(code);
+      this.code = code;
+      this.details = details;
+    }
   }
-}
+
+  return {
+    TestActorRuntimeError,
+    actorCapture: vi.fn(),
+    state: null
+  };
+});
 
 vi.mock('../../auth/actorRuntimeController', () => ({
   ACTOR_RUNTIME_ERROR_CODES: {
     CONTEXT_LOCKED: 'ACTOR_CONTEXT_LOCKED',
     CONTEXT_STALE: 'ACTOR_CONTEXT_STALE'
   },
-  ActorRuntimeError: TestActorRuntimeError,
+  ActorRuntimeError: mocks.TestActorRuntimeError,
   actorRuntimeController: {
     capture: mocks.actorCapture,
-    assertGranted: vi.fn(() => { throw new TestActorRuntimeError('ACTOR_CONTEXT_LOCKED'); })
+    assertGranted: vi.fn(() => { throw new mocks.TestActorRuntimeError('ACTOR_CONTEXT_LOCKED'); })
   }
 }));
 
@@ -71,7 +74,7 @@ describe('inventoryEntryService FREE/local authority', () => {
       currentStaffUser: null
     };
     mocks.actorCapture.mockImplementation(() => {
-      throw new TestActorRuntimeError('ACTOR_CONTEXT_LOCKED');
+      throw new mocks.TestActorRuntimeError('ACTOR_CONTEXT_LOCKED');
     });
     await openTestTenantRuntime();
   });

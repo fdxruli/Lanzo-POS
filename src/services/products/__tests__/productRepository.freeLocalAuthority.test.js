@@ -2,48 +2,51 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  state: null,
-  tenant: null,
-  actorCapture: vi.fn(),
-  enqueue: vi.fn(),
-  notify: vi.fn(),
-  prepareProduct: vi.fn(),
-  saveCategoryLocal: vi.fn(),
-  deleteCategoryLocal: vi.fn(),
-  savePreparedProductLocal: vi.fn(),
-  deleteProductLocal: vi.fn(),
-  toggleProductStatusLocal: vi.fn(),
-  saveBatchLocal: vi.fn(),
-  deleteBatchLocal: vi.fn(),
-  cloud: {
-    upsertCategory: vi.fn(),
-    deleteCategory: vi.fn(),
-    upsertProduct: vi.fn(),
-    deleteProduct: vi.fn(),
-    toggleProductStatus: vi.fn(),
-    upsertProductBatch: vi.fn(),
-    deleteProductBatch: vi.fn()
+const mocks = vi.hoisted(() => {
+  class TestActorRuntimeError extends Error {
+    constructor(code, details = {}) {
+      super(code);
+      this.code = code;
+      this.details = details;
+    }
   }
-}));
 
-class TestActorRuntimeError extends Error {
-  constructor(code, details = {}) {
-    super(code);
-    this.code = code;
-    this.details = details;
-  }
-}
+  return {
+    TestActorRuntimeError,
+    state: null,
+    tenant: null,
+    actorCapture: vi.fn(),
+    enqueue: vi.fn(),
+    notify: vi.fn(),
+    prepareProduct: vi.fn(),
+    saveCategoryLocal: vi.fn(),
+    deleteCategoryLocal: vi.fn(),
+    savePreparedProductLocal: vi.fn(),
+    deleteProductLocal: vi.fn(),
+    toggleProductStatusLocal: vi.fn(),
+    saveBatchLocal: vi.fn(),
+    deleteBatchLocal: vi.fn(),
+    cloud: {
+      upsertCategory: vi.fn(),
+      deleteCategory: vi.fn(),
+      upsertProduct: vi.fn(),
+      deleteProduct: vi.fn(),
+      toggleProductStatus: vi.fn(),
+      upsertProductBatch: vi.fn(),
+      deleteProductBatch: vi.fn()
+    }
+  };
+});
 
 vi.mock('../../auth/actorRuntimeController', () => ({
   ACTOR_RUNTIME_ERROR_CODES: {
     CONTEXT_LOCKED: 'ACTOR_CONTEXT_LOCKED',
     CONTEXT_STALE: 'ACTOR_CONTEXT_STALE'
   },
-  ActorRuntimeError: TestActorRuntimeError,
+  ActorRuntimeError: mocks.TestActorRuntimeError,
   actorRuntimeController: {
     capture: mocks.actorCapture,
-    assertGranted: vi.fn(() => { throw new TestActorRuntimeError('ACTOR_CONTEXT_LOCKED'); })
+    assertGranted: vi.fn(() => { throw new mocks.TestActorRuntimeError('ACTOR_CONTEXT_LOCKED'); })
   }
 }));
 
@@ -144,7 +147,7 @@ beforeEach(() => {
     currentStaffUser: null
   };
   mocks.actorCapture.mockImplementation(() => {
-    throw new TestActorRuntimeError('ACTOR_CONTEXT_LOCKED');
+    throw new mocks.TestActorRuntimeError('ACTOR_CONTEXT_LOCKED');
   });
   mocks.saveCategoryLocal.mockResolvedValue({ success: true });
   mocks.deleteCategoryLocal.mockResolvedValue({ success: true });
