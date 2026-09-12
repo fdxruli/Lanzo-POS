@@ -212,6 +212,15 @@ export const resolveProductInventoryMutationAuthority = (state = useAppStore.get
     });
   }
 
+  if (local.explicitFree && local.reason === 'free_admin_identity_required') {
+    return Object.freeze({
+      mode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
+      reason: local.reason,
+      planCode: local.planCode || null,
+      cloudEligible: false
+    });
+  }
+
   if (local.explicitFree) {
     return Object.freeze({
       mode: PRODUCT_INVENTORY_AUTHORITY_MODES.DENIED,
@@ -295,7 +304,7 @@ const captureLegacyLocalOwnerMutation = (authority) => {
   });
 };
 
-const captureActorBoundMutation = (requirements = {}) => {
+const captureActorBoundMutation = (requirements = {}, authority = {}) => {
   const handle = actorRuntimeController.capture();
   for (const permission of uniqueRequirements([
     ...(requirements.products ? [PRODUCT_PERMISSION] : []),
@@ -307,7 +316,7 @@ const captureActorBoundMutation = (requirements = {}) => {
     ...handle,
     mode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
     authorityMode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
-    cloudEligible: true
+    cloudEligible: authority.cloudEligible !== false
   });
 };
 
@@ -323,7 +332,7 @@ export const captureProductInventoryMutation = (requirements = {}) => {
       planCode: authority.planCode || null
     });
   }
-  return captureActorBoundMutation(requirements);
+  return captureActorBoundMutation(requirements, authority);
 };
 
 export const isLegacyLocalOwnerProductInventoryAuthority = (handle) => (
