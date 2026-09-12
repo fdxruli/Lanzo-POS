@@ -194,6 +194,32 @@ describe('FREE/local product and inventory authority transitions', () => {
     expect(runtime.capture).not.toHaveBeenCalled();
   });
 
+  it('keeps modern FREE Admin product/inventory authority actor-bound but cloud-ineligible', () => {
+    setStore(freeLicense({
+      admin_identity_required: true,
+      admin_user: { id: 'admin-a' }
+    }), {
+      currentAdminUser: { id: 'admin-a' }
+    });
+    installActor({ actorId: 'admin-a', generation: 5 });
+
+    expect(resolveProductInventoryMutationAuthority()).toMatchObject({
+      mode: PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND,
+      cloudEligible: false,
+      reason: 'free_admin_identity_required'
+    });
+
+    const handle = captureProductInventoryMutation({ products: true, inventory: true });
+    expect(handle.authorityMode).toBe(PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND);
+    expect(handle.actorKey).toBe('admin:admin-a');
+    expect(handle.cloudEligible).toBe(false);
+    expect(isLegacyLocalOwnerProductInventoryAuthority(handle)).toBe(false);
+
+    installLockedActor();
+    expect(() => captureProductInventoryMutation({ products: true }))
+      .toThrowError(expect.objectContaining({ code: 'ACTOR_CONTEXT_LOCKED' }));
+  });
+
   it('fails closed for an explicit FREE plan when the local-owner contract is not fully proven', () => {
     setStore(freeLicense({
       features: {
@@ -246,7 +272,7 @@ describe('FREE/local product and inventory authority transitions', () => {
       .toThrowError(expect.objectContaining({ code: 'ACTOR_PERMISSION_DENIED' }));
   });
 
-  it('switches PRO -> FREE without retaining prior cloud actor authority', () => {
+  it('switches legacy PRO -> FREE without retaining prior cloud actor authority', () => {
     setStore(proLicense());
     installActor();
     expect(captureProductInventoryMutation({ products: true }).authorityMode)
@@ -259,7 +285,40 @@ describe('FREE/local product and inventory authority transitions', () => {
     expect(runtime.capture).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves FREE -> PRO -> FREE -> PRO deterministically across repeated plan changes', () => {
+  it('keeps enrolled Admin identity actor-bound across FREE -> PRO -> FREE -> PRO', () => {
+    const adminId = 'admin-stable';
+    const modernFree = freeLicense({
+      admin_identity_required: true,
+      admin_user: { id: adminId }
+    });
+    const modernPro = proLicense({
+      admin_identity_required: true,
+      admin_user: { id: adminId }
+    });
+    installActor({ actorId: adminId, generation: 10 });
+
+    setStore(modernFree, { currentAdminUser: { id: adminId } });
+    let handle = captureProductInventoryMutation({ products: true });
+    expect(handle.actorId).toBe(adminId);
+    expect(handle.cloudEligible).toBe(false);
+
+    setStore(modernPro, { currentAdminUser: { id: adminId } });
+    handle = captureProductInventoryMutation({ products: true });
+    expect(handle.actorId).toBe(adminId);
+    expect(handle.cloudEligible).toBe(true);
+
+    setStore(modernFree, { currentAdminUser: { id: adminId } });
+    handle = captureProductInventoryMutation({ inventory: true });
+    expect(handle.actorId).toBe(adminId);
+    expect(handle.cloudEligible).toBe(false);
+
+    setStore(modernPro, { currentAdminUser: { id: adminId } });
+    handle = captureProductInventoryMutation({ inventory: true });
+    expect(handle.actorId).toBe(adminId);
+    expect(handle.cloudEligible).toBe(true);
+  });
+
+  it('preserves legacy FREE -> PRO -> FREE -> PRO deterministically across repeated plan changes', () => {
     setStore(freeLicense());
     installLockedActor();
     expect(captureProductInventoryMutation({ products: true }).authorityMode)
