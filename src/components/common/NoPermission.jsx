@@ -7,8 +7,8 @@ export default function NoPermission() {
       <div className="permission-blocker__icon" aria-hidden="true">
         <ShieldX size={32} />
       </div>
-      <h2>No tienes permiso para acceder a esta seccion</h2>
-      <p>Tu usuario staff no tiene habilitado este modulo.</p>
+      <h2>No tienes permiso para acceder a esta sección</h2>
+      <p>Tu sesión actual no tiene acceso a este módulo.</p>
       <Link to="/" className="btn btn-primary permission-blocker__action">
         Volver al punto de venta
       </Link>
