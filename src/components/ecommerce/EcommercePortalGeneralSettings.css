@@ -63,19 +63,6 @@
   height: 18px;
 }
 
-/*
- * The legacy Free design form still owns the visual-customization save action.
- * Its first grid used to mix commercial fields with design. Those controls now
- * live in Information for every plan, so keep the legacy grid out of the UI and
- * leave only the plan-specific visual editor in Diseño.
- */
-#ecom-portal-panel-design + form.ecom-admin-form-card > .ecom-admin-form-grid {
-  display: none;
-}
-
-#ecom-portal-panel-design + form.ecom-admin-form-card > .ecom-admin-card-heading p {
-  display: none;
-}
 
 @media (max-width: 640px) {
   .ecom-general-settings__delivery-options {

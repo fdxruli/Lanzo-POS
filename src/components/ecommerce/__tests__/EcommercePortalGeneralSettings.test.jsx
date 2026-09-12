@@ -21,18 +21,24 @@ const onFieldChange = (field) => {
   return handlers.get(field);
 };
 
-const setPlan = (planCode, features = {}) => {
-  useAppStore.setState({
-    licenseDetails: {
-      license_key: 'license-fixture',
-      plan_code: planCode,
-      features
-    }
-  });
-};
+const FREE_PLAN = Object.freeze({ code: 'free_trial', name: 'Plan Free' });
+const PRO_PLAN = Object.freeze({ code: 'pro_monthly', name: 'Lanzo Nube' });
+const FREE_FEATURES = Object.freeze({
+  customSlug: false,
+  deliveryPickupSettings: 'basic'
+});
+const PRO_FEATURES = Object.freeze({
+  customSlug: true,
+  deliveryPickupSettings: 'advanced'
+});
 
-const renderSettings = () => render(
-  <EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} />
+const renderSettings = ({ plan = FREE_PLAN, features = FREE_FEATURES } = {}) => render(
+  <EcommercePortalGeneralSettings
+    form={baseForm}
+    onFieldChange={onFieldChange}
+    plan={plan}
+    features={features}
+  />
 );
 
 const expectGeneralControlsVisible = () => {
@@ -44,43 +50,41 @@ const expectGeneralControlsVisible = () => {
   expect(screen.getByLabelText('Domicilio')).toBeInTheDocument();
 };
 
-describe('EcommercePortalGeneralSettings plan parity', () => {
+describe('EcommercePortalGeneralSettings authoritative plan parity', () => {
   afterEach(() => {
     cleanup();
     handlers.clear();
     act(() => useAppStore.setState({ licenseDetails: null }));
   });
 
-  it('normalizes FREE and PRO capabilities from current license contracts', () => {
+  it('derives capabilities only from administrative portal features', () => {
     expect(resolveEcommerceGeneralSettingsCapabilities({
-      plan_code: 'free_trial',
-      features: {
-        ecommerce_custom_slug: false,
-        ecommerce_delivery_pickup_settings: 'basic'
-      }
+      customSlug: false,
+      deliveryPickupSettings: 'basic'
     })).toEqual({
       customSlugAllowed: false,
       deliveryPickupSettings: 'basic'
     });
 
     expect(resolveEcommerceGeneralSettingsCapabilities({
-      plan_code: 'pro_monthly',
-      features: {
-        ecommerce_custom_slug: true,
-        ecommerce_delivery_pickup_settings: 'advanced'
-      }
+      customSlug: true,
+      deliveryPickupSettings: 'advanced'
     })).toEqual({
       customSlugAllowed: true,
       deliveryPickupSettings: 'advanced'
     });
   });
 
-  it('keeps every general control visible in FREE while locking the slug', () => {
-    act(() => setPlan('free_trial', {
-      ecommerce_custom_slug: false,
-      ecommerce_delivery_pickup_settings: 'basic'
-    }));
+  it('does not let a Pro plan code override explicit customSlug=false', () => {
+    renderSettings({
+      plan: PRO_PLAN,
+      features: { customSlug: false, deliveryPickupSettings: 'advanced' }
+    });
+    expect(screen.getByLabelText('Slug de la tienda')).toBeDisabled();
+    expect(screen.getByText('Configuración avanzada')).toBeInTheDocument();
+  });
 
+  it('keeps every general control visible in FREE while locking the slug', () => {
     renderSettings();
     expectGeneralControlsVisible();
     expect(screen.getByLabelText('Slug de la tienda')).toBeDisabled();
@@ -89,24 +93,38 @@ describe('EcommercePortalGeneralSettings plan parity', () => {
   });
 
   it('keeps every general control visible in PRO and unlocks the slug', () => {
-    act(() => setPlan('pro_monthly', {
-      ecommerce_custom_slug: true,
-      ecommerce_delivery_pickup_settings: 'advanced'
-    }));
-
-    renderSettings();
+    renderSettings({ plan: PRO_PLAN, features: PRO_FEATURES });
     expectGeneralControlsVisible();
     expect(screen.getByLabelText('Slug de la tienda')).not.toBeDisabled();
     expect(screen.getByLabelText('Slug de la tienda')).toHaveValue('mi-tienda-personalizada');
     expect(screen.getByText('Configuración avanzada')).toBeInTheDocument();
   });
 
-  it('preserves values and toggles only slug editability across FREE → PRO → FREE → PRO', () => {
-    act(() => setPlan('free_trial', {
-      ecommerce_custom_slug: false,
-      ecommerce_delivery_pickup_settings: 'basic'
+  it('ignores stale FREE licenseDetails when RPC plan/features are PRO', () => {
+    act(() => useAppStore.setState({
+      licenseDetails: {
+        license_key: 'license-fixture',
+        plan_code: 'free_trial',
+        features: { ecommerce_custom_slug: false }
+      }
     }));
+    renderSettings({ plan: PRO_PLAN, features: PRO_FEATURES });
+    expect(screen.getByLabelText('Slug de la tienda')).not.toBeDisabled();
+  });
 
+  it('ignores stale PRO licenseDetails when RPC plan/features are FREE', () => {
+    act(() => useAppStore.setState({
+      licenseDetails: {
+        license_key: 'license-fixture',
+        plan_code: 'pro_monthly',
+        features: { ecommerce_custom_slug: true }
+      }
+    }));
+    renderSettings({ plan: FREE_PLAN, features: FREE_FEATURES });
+    expect(screen.getByLabelText('Slug de la tienda')).toBeDisabled();
+  });
+
+  it('preserves values and toggles only authoritative capabilities across FREE → PRO → FREE → PRO', () => {
     const view = renderSettings();
     const assertState = (editable) => {
       expectGeneralControlsVisible();
@@ -121,35 +139,21 @@ describe('EcommercePortalGeneralSettings plan parity', () => {
     };
 
     assertState(false);
-
-    act(() => setPlan('pro_monthly', {
-      ecommerce_custom_slug: true,
-      ecommerce_delivery_pickup_settings: 'advanced'
-    }));
-    view.rerender(<EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} />);
+    view.rerender(
+      <EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} plan={PRO_PLAN} features={PRO_FEATURES} />
+    );
     assertState(true);
-
-    act(() => setPlan('free_trial', {
-      ecommerce_custom_slug: false,
-      ecommerce_delivery_pickup_settings: 'basic'
-    }));
-    view.rerender(<EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} />);
+    view.rerender(
+      <EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} plan={FREE_PLAN} features={FREE_FEATURES} />
+    );
     assertState(false);
-
-    act(() => setPlan('pro_monthly', {
-      ecommerce_custom_slug: true,
-      ecommerce_delivery_pickup_settings: 'advanced'
-    }));
-    view.rerender(<EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} />);
+    view.rerender(
+      <EcommercePortalGeneralSettings form={baseForm} onFieldChange={onFieldChange} plan={PRO_PLAN} features={PRO_FEATURES} />
+    );
     assertState(true);
   });
 
   it('keeps an existing custom slug visible but read-only after downgrade', () => {
-    act(() => setPlan('free_trial', {
-      ecommerce_custom_slug: false,
-      ecommerce_delivery_pickup_settings: 'basic'
-    }));
-
     renderSettings();
     const slug = screen.getByLabelText('Slug de la tienda');
     expect(slug).toHaveValue('mi-tienda-personalizada');

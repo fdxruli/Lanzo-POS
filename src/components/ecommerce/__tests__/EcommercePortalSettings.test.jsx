@@ -78,7 +78,7 @@ const successfulPortalResponse = {
   success: true,
   portal: null,
   plan: { code: 'free_trial', name: 'Plan Free' },
-  features: { customSlug: false, maxPublishedProducts: 10 }
+  features: { customSlug: false, deliveryPickupSettings: 'basic', maxPublishedProducts: 10 }
 };
 
 const setStoreState = ({
@@ -207,6 +207,7 @@ describe('EcommercePortalSettings internal access guard', () => {
 describe('EcommercePortalSettings image intent payloads', () => {
   const proFeatures = {
     customSlug: true,
+    deliveryPickupSettings: 'advanced',
     cloudCatalogSource: true,
     maxPublishedProducts: -1
   };
@@ -275,6 +276,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
   const renderExistingFreePortal = () => {
     const freeFeatures = {
       customSlug: false,
+      deliveryPickupSettings: 'basic',
       cloudCatalogSource: false,
       maxPublishedProducts: 10
     };
@@ -461,7 +463,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
 
-    expect(screen.getByText('Presentación de tu tienda')).toBeInTheDocument();
+    expect(screen.getByText('Identidad visual de tu tienda')).toBeInTheDocument();
     expect(screen.getByText('Identidad visual')).toBeInTheDocument();
     expect(screen.getByTestId('builder-plan')).toHaveTextContent('false');
     expect(screen.getByRole('button', { name: 'Guardar diseño' })).toBeInTheDocument();
@@ -531,4 +533,97 @@ describe('EcommercePortalSettings image intent payloads', () => {
       logoUrl: 'https://cdn.example/profile-logo.png'
     });
   });
+
+  it('uses RPC PRO features when licenseDetails is stale FREE', async () => {
+    act(() => setStoreState({
+      role: 'admin',
+      settings: true,
+      licenseDetails: {
+        license_key: 'license-fixture',
+        plan_code: 'free_trial',
+        features: { ecommerce_custom_slug: false }
+      }
+    }));
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('Slug de la tienda')).not.toBeDisabled();
+    expect(screen.getByTestId('ecommerce-general-settings')).toHaveAttribute('data-plan-code', 'pro_monthly');
+  });
+
+  it('uses RPC FREE features when licenseDetails is stale PRO', async () => {
+    act(() => setStoreState({
+      role: 'admin',
+      settings: true,
+      licenseDetails: {
+        license_key: 'license-fixture',
+        plan_code: 'pro_monthly',
+        features: { ecommerce_custom_slug: true }
+      }
+    }));
+    renderExistingFreePortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText('Slug de la tienda')).toBeDisabled();
+    expect(screen.getByTestId('ecommerce-general-settings')).toHaveAttribute('data-plan-code', 'free_trial');
+  });
+
+  it('renders each general control exactly once for PRO and none inside Design', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    ['Slug de la tienda', 'Frase corta', 'Descripción', 'Pedido mínimo', 'Recoger', 'Domicilio']
+      .forEach((label) => expect(screen.getAllByLabelText(label)).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    expect(screen.queryByText('Frase corta / headline')).toBeNull();
+    expect(screen.queryByText('Pedido mínimo')).toBeNull();
+    expect(screen.queryByText('Métodos de entrega')).toBeNull();
+    expect(screen.queryByLabelText('Slug de la tienda')).toBeNull();
+  });
+
+  it('renders each general control exactly once for FREE and removes legacy controls from Design', async () => {
+    renderExistingFreePortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    ['Slug de la tienda', 'Frase corta', 'Descripción', 'Pedido mínimo', 'Recoger', 'Domicilio']
+      .forEach((label) => expect(screen.getAllByLabelText(label)).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    expect(screen.getByText('Identidad visual de tu tienda')).toBeInTheDocument();
+    expect(screen.queryByText('Enlace / slug *')).toBeNull();
+    expect(screen.queryByText('Frase corta / headline')).toBeNull();
+    expect(screen.queryByText('Descripcion')).toBeNull();
+    expect(screen.queryByText('Pedido minimo')).toBeNull();
+    expect(screen.queryByText('Metodos de entrega')).toBeNull();
+    expect(screen.queryByLabelText('Slug de la tienda')).toBeNull();
+  });
+
+  it('saves the complete shared commercial settings payload from PRO Information', async () => {
+    renderExistingProPortal();
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText('Frase corta'), {
+      target: { value: 'Headline actualizado' }
+    });
+    fireEvent.change(screen.getByLabelText('Descripción'), {
+      target: { value: 'Descripción actualizada desde Información' }
+    });
+    fireEvent.change(screen.getByLabelText('Pedido mínimo'), {
+      target: { value: '275.50' }
+    });
+    fireEvent.click(screen.getByLabelText('Recoger'));
+    fireEvent.click(screen.getByLabelText('Domicilio'));
+    fireEvent.change(screen.getByLabelText('Slug de la tienda'), {
+      target: { value: 'negocio-pro-actualizado' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar información' }));
+
+    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(saveEcommercePortal.mock.calls[0][0]).toMatchObject({
+      headline: 'Headline actualizado',
+      description: 'Descripción actualizada desde Información',
+      minOrderTotal: 275.5,
+      pickupEnabled: false,
+      deliveryEnabled: true,
+      slug: 'negocio-pro-actualizado'
+    });
+  });
+
 });

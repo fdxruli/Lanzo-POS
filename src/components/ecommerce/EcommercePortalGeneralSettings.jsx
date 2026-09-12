@@ -1,23 +1,12 @@
 import { Link2, PackageCheck, Truck } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
 import './EcommercePortalGeneralSettings.css';
 
 const featureValue = (features, camelKey, snakeKey) => (
   features?.[camelKey] ?? features?.[snakeKey]
 );
 
-export const resolveEcommerceGeneralSettingsCapabilities = (licenseDetails = {}) => {
-  const features = licenseDetails?.features || {};
-  const planCode = String(
-    licenseDetails?.plan_code
-      || licenseDetails?.planCode
-      || licenseDetails?.plan
-      || licenseDetails?.subscription_plan
-      || licenseDetails?.product_code
-      || ''
-  ).trim().toLowerCase();
+export const resolveEcommerceGeneralSettingsCapabilities = (features = {}) => {
   const customSlugFeature = featureValue(features, 'customSlug', 'ecommerce_custom_slug');
-  const customSlugAllowed = customSlugFeature === true || planCode === 'pro_monthly';
   const configuredDeliveryMode = featureValue(
     features,
     'deliveryPickupSettings',
@@ -25,22 +14,30 @@ export const resolveEcommerceGeneralSettingsCapabilities = (licenseDetails = {})
   );
 
   return {
-    customSlugAllowed,
-    deliveryPickupSettings: configuredDeliveryMode
-      || (customSlugAllowed ? 'advanced' : 'basic')
+    customSlugAllowed: customSlugFeature === true,
+    deliveryPickupSettings: configuredDeliveryMode || 'basic'
   };
 };
 
-export default function EcommercePortalGeneralSettings({ form, onFieldChange }) {
-  const licenseDetails = useAppStore((state) => state.licenseDetails);
+export default function EcommercePortalGeneralSettings({
+  form,
+  onFieldChange,
+  plan,
+  features
+}) {
   const {
     customSlugAllowed,
     deliveryPickupSettings
-  } = resolveEcommerceGeneralSettingsCapabilities(licenseDetails);
+  } = resolveEcommerceGeneralSettingsCapabilities(features);
   const deliveryModeLabel = deliveryPickupSettings === 'advanced' ? 'Avanzada' : 'Básica';
+  const authoritativePlanCode = String(plan?.code || '').trim() || 'unknown';
 
   return (
-    <fieldset className="ecom-general-settings" data-testid="ecommerce-general-settings">
+    <fieldset
+      className="ecom-general-settings"
+      data-testid="ecommerce-general-settings"
+      data-plan-code={authoritativePlanCode}
+    >
       <div className="ecom-general-settings__heading">
         <div>
           <span className="ecom-admin-eyebrow">Configuración de tienda</span>

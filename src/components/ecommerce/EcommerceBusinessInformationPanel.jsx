@@ -67,6 +67,8 @@ function PublicationRequirement({ complete, children }) {
 export default function EcommerceBusinessInformationPanel({
   portal,
   form,
+  plan,
+  features,
   onFieldChange,
   onSubmit,
   saving,
@@ -223,7 +225,12 @@ export default function EcommerceBusinessInformationPanel({
           </label>
         </div>
 
-        <EcommercePortalGeneralSettings form={form} onFieldChange={onFieldChange} />
+        <EcommercePortalGeneralSettings
+          form={form}
+          onFieldChange={onFieldChange}
+          plan={plan}
+          features={features}
+        />
 
         <div className="ecom-admin-form-actions">
           <span>
