@@ -229,6 +229,19 @@ export const resolveProductInventoryMutationAuthority = (state = useAppStore.get
   });
 };
 
+const assertActorBoundModeStillCurrent = () => {
+  const authority = resolveProductInventoryMutationAuthority();
+  if (authority.mode !== PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+      reason: 'product_inventory_actor_bound_authority_no_longer_valid',
+      currentAuthorityMode: authority.mode,
+      currentAuthorityReason: authority.reason || null,
+      planCode: authority.planCode || null
+    });
+  }
+  return authority;
+};
+
 const assertSameLegacyLocalOwnerContext = (captured) => {
   const current = resolveLegacyLocalOwnerContext();
   if (!current.allowed) {
@@ -318,6 +331,11 @@ export const isLegacyLocalOwnerProductInventoryAuthority = (handle) => (
   || handle?.mode === PRODUCT_INVENTORY_AUTHORITY_MODES.LEGACY_LOCAL_OWNER
 );
 
+const isActorBoundProductInventoryAuthority = (handle) => (
+  handle?.authorityMode === PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND
+  || handle?.mode === PRODUCT_INVENTORY_AUTHORITY_MODES.ACTOR_BOUND
+);
+
 export const assertProductInventoryMutationCurrent = (handle, requirements = {}) => {
   if (!handle || typeof handle.assertCurrent !== 'function') {
     throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
@@ -325,6 +343,9 @@ export const assertProductInventoryMutationCurrent = (handle, requirements = {})
     });
   }
 
+  if (isActorBoundProductInventoryAuthority(handle)) {
+    assertActorBoundModeStillCurrent();
+  }
   handle.assertCurrent();
   for (const permission of uniqueRequirements([
     ...(requirements.products ? [PRODUCT_PERMISSION] : []),
@@ -352,6 +373,8 @@ export const actorOriginFromHandle = (handle) => {
 export const assertProductInventoryOperationActorCurrent = (operation = {}) => {
   const requirements = getProductInventoryMutationRequirements(operation);
   if (requirements.length === 0) return null;
+
+  assertActorBoundModeStillCurrent();
 
   const originActorKey = operation.originActorKey;
   const originGeneration = Number(operation.originActorGeneration);
