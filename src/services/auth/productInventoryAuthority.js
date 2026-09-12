@@ -11,6 +11,7 @@ import {
 } from '../sync/syncConstants';
 import { getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
 import { useAppStore } from '../../store/useAppStore';
+import { hasModernAdminIdentityEvidence } from '../../store/slices/license/licenseGuards';
 
 export const PRODUCT_PERMISSION = 'products';
 export const INVENTORY_PERMISSION = 'inventory';
@@ -157,7 +158,7 @@ const resolveLegacyLocalOwnerContext = (state = useAppStore.getState()) => {
       deviceRole
     });
   }
-  if (licenseDetails?.admin_identity_required === true) {
+  if (hasModernAdminIdentityEvidence(licenseDetails)) {
     return legacyLocalOwnerDenied('free_admin_identity_required', {
       planCode,
       explicitFree: true
