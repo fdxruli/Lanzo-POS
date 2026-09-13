@@ -55,8 +55,8 @@ const bootstrapState = {
   routeDemandInProgress: false
 };
 
-let originalPushState = null;
-let originalReplaceState = null;
+let routeDemandEventHandler = null;
+let historyPatch = null;
 
 const isDevLogEnabled = () => import.meta.env.MODE !== 'production';
 
@@ -129,7 +129,7 @@ const buildBootstrapSignature = ({ state, licenseDetails, licenseKey }) => {
   return [licenseKey || 'no-license', planCode, realtimeTopic, deviceRole, staffUserId].join('|');
 };
 
-const resetBootstrapState = ({ keepRouteListener = true } = {}) => {
+const resetBootstrapState = () => {
   clearAllTimers();
   bootstrapState.started = false;
   bootstrapState.realtimeStarted = false;
@@ -144,10 +144,6 @@ const resetBootstrapState = ({ keepRouteListener = true } = {}) => {
   bootstrapState.moduleDemand.clear();
   bootstrapState.completedSnapshots.clear();
   bootstrapState.routeDemandInProgress = false;
-
-  if (!keepRouteListener) {
-    bootstrapState.routeListenerAttached = false;
-  }
 };
 
 const getResourcesForCurrentRoute = () => {
@@ -174,30 +170,69 @@ const emitRouteDemand = () => {
 const attachRouteDemandListener = () => {
   if (typeof window === 'undefined' || bootstrapState.routeListenerAttached) return;
 
-  const emit = () => getTimerApi().setTimeout(emitRouteDemand, 0);
+  routeDemandEventHandler = () => {
+    const patchAtSchedule = historyPatch;
+    getTimerApi().setTimeout(() => {
+      if (patchAtSchedule?.active) emitRouteDemand();
+    }, 0);
+  };
 
   if (!bootstrapState.historyPatched && window.history) {
-    originalPushState = window.history.pushState;
-    originalReplaceState = window.history.replaceState;
+    const patch = {
+      active: true,
+      originalPushState: window.history.pushState,
+      originalReplaceState: window.history.replaceState,
+      wrappedPushState: null,
+      wrappedReplaceState: null
+    };
 
-    window.history.pushState = function pushStateWithDemand(...args) {
-      const result = originalPushState.apply(this, args);
-      emit();
+    patch.wrappedPushState = function pushStateWithDemand(...args) {
+      const result = patch.originalPushState.apply(this, args);
+      if (patch.active) routeDemandEventHandler?.();
       return result;
     };
 
-    window.history.replaceState = function replaceStateWithDemand(...args) {
-      const result = originalReplaceState.apply(this, args);
-      emit();
+    patch.wrappedReplaceState = function replaceStateWithDemand(...args) {
+      const result = patch.originalReplaceState.apply(this, args);
+      if (patch.active) routeDemandEventHandler?.();
       return result;
     };
 
+    window.history.pushState = patch.wrappedPushState;
+    window.history.replaceState = patch.wrappedReplaceState;
+    historyPatch = patch;
     bootstrapState.historyPatched = true;
   }
 
-  window.addEventListener('popstate', emit);
-  window.addEventListener('hashchange', emit);
+  window.addEventListener('popstate', routeDemandEventHandler);
+  window.addEventListener('hashchange', routeDemandEventHandler);
   bootstrapState.routeListenerAttached = true;
+};
+
+const detachRouteDemandListener = () => {
+  const patch = historyPatch;
+  if (patch) patch.active = false;
+
+  if (typeof window !== 'undefined') {
+    if (routeDemandEventHandler) {
+      window.removeEventListener('popstate', routeDemandEventHandler);
+      window.removeEventListener('hashchange', routeDemandEventHandler);
+    }
+
+    if (window.history && patch) {
+      if (window.history.pushState === patch.wrappedPushState) {
+        window.history.pushState = patch.originalPushState;
+      }
+      if (window.history.replaceState === patch.wrappedReplaceState) {
+        window.history.replaceState = patch.originalReplaceState;
+      }
+    }
+  }
+
+  routeDemandEventHandler = null;
+  historyPatch = null;
+  bootstrapState.routeListenerAttached = false;
+  bootstrapState.historyPatched = false;
 };
 
 const shouldSkipCompletedSnapshot = (resource, licenseKey, force) => {
@@ -371,10 +406,9 @@ export const startPosCloudBootstrap = async ({
   reason = 'app_start',
   force = false
 } = {}) => {
-  attachRouteDemandListener();
-
   const context = getRuntimeContext({ licenseDetails, licenseKey });
   if (!context.cloudEnabled) {
+    detachRouteDemandListener();
     resetBootstrapState();
     await posSyncOrchestrator.stop({ preserveStatus: false });
     return { started: false, status: 'disabled', reason: 'cloud_pos_sync_off' };
@@ -384,6 +418,8 @@ export const startPosCloudBootstrap = async ({
     { ...context.licenseDetails, license_key: context.licenseKey },
     { reason: `pos_cloud_bootstrap_${reason}` }
   );
+
+  attachRouteDemandListener();
 
   const signature = buildBootstrapSignature(context);
 
@@ -492,6 +528,7 @@ export const markModuleDemand = (resource, options = {}) => {
 export const markPosCloudModuleDemand = markModuleDemand;
 
 export const stopPosCloudBootstrap = async ({ preserveSync = false } = {}) => {
+  detachRouteDemandListener();
   resetBootstrapState();
   if (!preserveSync) {
     await posSyncOrchestrator.stop({ preserveStatus: false });
