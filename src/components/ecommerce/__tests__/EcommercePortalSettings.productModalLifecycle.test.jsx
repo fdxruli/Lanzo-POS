@@ -1,0 +1,258 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import EcommercePortalSettings from '../EcommercePortalSettings';
+import { useAppStore } from '../../../store/useAppStore';
+import {
+  getEcommercePortal,
+  listPublishedProducts
+} from '../../../services/ecommerce/ecommerceAdminService';
+import { productRepository } from '../../../services/products/productRepository';
+
+vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
+  getEcommercePortal: vi.fn(),
+  listPublishedProducts: vi.fn(),
+  saveEcommercePortal: vi.fn(),
+  savePublishedProduct: vi.fn(),
+  setProductPublished: vi.fn()
+}));
+
+vi.mock('../../../services/products/productRepository', () => ({
+  productRepository: {
+    listProductsPage: vi.fn(),
+    listCategories: vi.fn(),
+    getProductById: vi.fn()
+  }
+}));
+
+vi.mock('../EcommerceCatalogSyncPanel', () => ({
+  default: () => null,
+  EcommerceCatalogSyncBadge: () => null
+}));
+vi.mock('../EcommerceBusinessInformationPanel', () => ({ default: () => null }));
+vi.mock('../EcommerceOperatingHoursSettings', () => ({ default: () => null }));
+vi.mock('../EcommerceOrderPauseControl', () => ({ default: () => null }));
+vi.mock('../EcommercePortalCustomizationPanel', () => ({ default: () => null }));
+vi.mock('../EcommerceSiteBuilderFoundation', () => ({ default: () => null }));
+
+const portal = {
+  id: 'portal-1',
+  name: 'Negocio de prueba',
+  slug: 'negocio-prueba',
+  status: 'draft',
+  whatsappPhone: '529610000000',
+  addressStreet: 'Calle 1',
+  addressNeighborhood: 'Centro',
+  addressMunicipality: 'Tuxtla Gutiérrez',
+  addressState: 'Chiapas',
+  addressPostalCode: '29000',
+  pickupEnabled: true,
+  deliveryEnabled: false,
+  minOrderTotal: 0
+};
+
+const productOne = {
+  id: 'product-1',
+  name: 'Producto Uno',
+  description: 'Descripción uno',
+  price: 25,
+  categoryId: 'category-1',
+  trackStock: true,
+  isActive: true
+};
+const productTwo = {
+  id: 'product-2',
+  name: 'Producto Dos',
+  description: 'Descripción dos',
+  price: 40,
+  categoryId: 'category-2',
+  trackStock: false,
+  isActive: true
+};
+const staleProduct = {
+  id: 'product-stale',
+  name: 'Producto Stale',
+  description: 'Respuesta vieja',
+  price: 10,
+  categoryId: 'category-1',
+  isActive: true
+};
+
+const freePortalResponse = {
+  success: true,
+  portal,
+  plan: { code: 'free_trial', name: 'Plan Free' },
+  features: {
+    customSlug: false,
+    deliveryPickupSettings: 'basic',
+    maxPublishedProducts: 10,
+    cloudCatalogSource: false
+  }
+};
+
+const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
+const setAuthorizedStore = () => {
+  useAppStore.setState({
+    companyProfile: { name: 'Negocio de prueba', business_type: 'abarrotes' },
+    canAccess: vi.fn(() => true),
+    licenseDetails: { license_key: 'license-fixture' },
+    currentDeviceRole: 'admin',
+    currentStaffUser: null,
+    _isInitializing: false,
+    ecommercePublishedStockAlertSnapshot: { products: [] },
+    ecommercePublishedStockAlertLoading: false,
+    loadEcommercePublishedStockAlerts: vi.fn(async () => ({ success: true })),
+    invalidateEcommercePublishedStockAlerts: vi.fn(),
+    reconcileEcommercePublishedStockAlertProducts: vi.fn()
+  });
+};
+
+const renderCatalog = async () => {
+  render(<EcommercePortalSettings requestedSection="catalog" />);
+  await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+  await screen.findByRole('button', { name: 'Publicar producto' });
+};
+
+const openPublishModal = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Publicar producto' }));
+  await screen.findByRole('dialog', { name: 'Publicar producto' });
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setAuthorizedStore();
+  getEcommercePortal.mockResolvedValue(freePortalResponse);
+  listPublishedProducts.mockResolvedValue({ success: true, products: [] });
+  productRepository.listCategories.mockResolvedValue([
+    { id: 'category-1', name: 'General' },
+    { id: 'category-2', name: 'Especial' }
+  ]);
+  productRepository.listProductsPage.mockResolvedValue({
+    data: [productOne],
+    nextCursor: 'cursor-2'
+  });
+  productRepository.getProductById.mockResolvedValue(null);
+});
+
+afterEach(() => {
+  cleanup();
+  useAppStore.setState({
+    currentDeviceRole: null,
+    currentStaffUser: null,
+    licenseDetails: null,
+    companyProfile: null
+  });
+});
+
+describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecycle', () => {
+  it('preloads once, keeps the selected form stable after search, and does not flicker the background publish button', async () => {
+    await renderCatalog();
+    await openPublishModal();
+
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(1);
+    await act(async () => delay(300));
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
+      target: { value: productOne.id }
+    });
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+
+    const searchRequest = deferred();
+    productRepository.listProductsPage.mockImplementationOnce(() => searchRequest.promise);
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'dos' }
+    });
+    await act(async () => delay(275));
+
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publicar producto' }).disabled).toBe(false);
+
+    await act(async () => {
+      searchRequest.resolve({ data: [productTwo], nextCursor: null });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Producto Uno/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+  });
+
+  it('ignores a stale search response that resolves after the newest request', async () => {
+    await renderCatalog();
+    await openPublishModal();
+
+    const firstSearch = deferred();
+    const secondSearch = deferred();
+    productRepository.listProductsPage
+      .mockImplementationOnce(() => firstSearch.promise)
+      .mockImplementationOnce(() => secondSearch.promise);
+
+    const searchInput = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
+    fireEvent.change(searchInput, { target: { value: 'pro' } });
+    await act(async () => delay(275));
+    fireEvent.change(searchInput, { target: { value: 'producto' } });
+    await act(async () => delay(275));
+
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      secondSearch.resolve({ data: [productTwo], nextCursor: null });
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+
+    await act(async () => {
+      firstSearch.resolve({ data: [staleProduct], nextCursor: null });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+  });
+
+  it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {
+    await renderCatalog();
+    await openPublishModal();
+
+    const pendingSearch = deferred();
+    productRepository.listProductsPage.mockImplementationOnce(() => pendingSearch.promise);
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'pendiente' }
+    });
+    await act(async () => delay(275));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
+
+    productRepository.listProductsPage.mockResolvedValueOnce({
+      data: [productTwo],
+      nextCursor: null
+    });
+    await openPublishModal();
+    expect(screen.getByPlaceholderText('Buscar por nombre, código o SKU').value).toBe('');
+    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe('');
+
+    await act(async () => {
+      pendingSearch.resolve({ data: [staleProduct], nextCursor: null });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+  });
+});
