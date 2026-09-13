@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -283,7 +283,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [busyProductId, setBusyProductId] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [openingCatalog, setOpeningCatalog] = useState(false);
+  const [searchingCatalog, setSearchingCatalog] = useState(false);
+  const [loadingMoreCatalog, setLoadingMoreCatalog] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
   const [localCatalogCursor, setLocalCatalogCursor] = useState(null);
   const [localCatalogHasMore, setLocalCatalogHasMore] = useState(false);
@@ -293,6 +295,10 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [customizationBusy, setCustomizationBusy] = useState(false);
   const [activeSection, setActiveSection] = useState('information');
   const [productSearch, setProductSearch] = useState('');
+  const catalogRequestSeqRef = useRef(0);
+  const catalogSessionRef = useRef(0);
+  const localCatalogCursorRef = useRef(null);
+  const categoriesByIdRef = useRef(new Map());
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
 
   useEffect(() => {
@@ -534,7 +540,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
     if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
       const coverImageUrl = publicUrl(cover.value);
-      if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
+      if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirlo nuevamente.');
       payload.coverImageUrl = coverImageUrl;
     } else if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
       payload.coverImageUrl = null;
@@ -631,9 +637,25 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     }
   };
 
-  const loadLocalCatalog = async ({ searchTerm = '', cursor = null, append = false } = {}) => {
-    setLoadingCatalog(true);
+  const loadLocalCatalog = useCallback(async ({
+    searchTerm = '',
+    cursor = null,
+    append = false,
+    requestKind = 'search',
+    sessionId = catalogSessionRef.current
+  } = {}) => {
+    const requestId = ++catalogRequestSeqRef.current;
+    const setRequestLoading = (value) => {
+      if (requestKind === 'opening') setOpeningCatalog(value);
+      if (requestKind === 'search') setSearchingCatalog(value);
+      if (requestKind === 'load-more') setLoadingMoreCatalog(value);
+    };
+
+    setRequestLoading(true);
     try {
+      const categoriesPromise = categoriesByIdRef.current.size > 0
+        ? Promise.resolve(null)
+        : productRepository.listCategories().catch(() => null);
       const [page, categories] = await Promise.all([
         productRepository.listProductsPage({
           limit: LOCAL_CATALOG_PAGE_SIZE,
@@ -641,8 +663,14 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           cursor,
           searchTerm
         }),
-        categoriesById.size > 0 ? Promise.resolve(null) : productRepository.listCategories()
+        categoriesPromise
       ]);
+
+      const stale = (
+        requestId !== catalogRequestSeqRef.current
+        || sessionId !== catalogSessionRef.current
+      );
+      if (stale) return false;
       if (!page || !Array.isArray(page.data)) throw new Error('No se pudo leer el catalogo local.');
 
       const pageProducts = page.data.filter((product) => product?.id && product.isActive !== false);
@@ -651,35 +679,85 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         pageProducts.forEach((product) => byId.set(String(product.id), product));
         return Array.from(byId.values());
       });
-      setLocalCatalogCursor(page.nextCursor || null);
-      setLocalCatalogHasMore(Boolean(page.nextCursor) && pageProducts.length > 0);
+
+      const nextCursor = page.nextCursor || null;
+      localCatalogCursorRef.current = nextCursor;
+      setLocalCatalogCursor(nextCursor);
+      setLocalCatalogHasMore(Boolean(nextCursor) && pageProducts.length > 0);
       if (categories) {
-        setCategoriesById(new Map((categories || []).map((category) => [category.id, category.name])));
+        const nextCategories = new Map(
+          (categories || []).map((category) => [category.id, category.name])
+        );
+        categoriesByIdRef.current = nextCategories;
+        setCategoriesById(nextCategories);
       }
       return true;
     } catch (catalogError) {
-      toast.error(catalogError?.message || 'No se pudo leer el catalogo local.');
+      const stale = (
+        requestId !== catalogRequestSeqRef.current
+        || sessionId !== catalogSessionRef.current
+      );
+      if (!stale) {
+        toast.error(catalogError?.message || 'No se pudo leer el catalogo local.');
+      }
       return false;
     } finally {
-      setLoadingCatalog(false);
+      const stillCurrent = (
+        requestId === catalogRequestSeqRef.current
+        && sessionId === catalogSessionRef.current
+      );
+      if (stillCurrent) setRequestLoading(false);
     }
-  };
+  }, []);
+
+  const searchLocalProducts = useCallback((searchTerm) => loadLocalCatalog({
+    searchTerm,
+    requestKind: 'search',
+    sessionId: catalogSessionRef.current
+  }), [loadLocalCatalog]);
+
+  const loadMoreLocalProducts = useCallback((searchTerm) => {
+    const cursor = localCatalogCursorRef.current;
+    if (!cursor) return Promise.resolve(true);
+    return loadLocalCatalog({
+      searchTerm,
+      cursor,
+      append: true,
+      requestKind: 'load-more',
+      sessionId: catalogSessionRef.current
+    });
+  }, [loadLocalCatalog]);
+
+  const closeProductModal = useCallback(() => {
+    catalogSessionRef.current += 1;
+    catalogRequestSeqRef.current += 1;
+    setSearchingCatalog(false);
+    setLoadingMoreCatalog(false);
+    setModalOpen(false);
+  }, []);
 
   const openNewProduct = async () => {
     if (!portal) return toast.error('Primero crea el portal online.');
     if (limitReached) {
       return toast.error('Plan Free permite publicar hasta 10 productos.');
     }
-    if (!(await loadLocalCatalog())) return;
+    const sessionId = catalogSessionRef.current + 1;
+    catalogSessionRef.current = sessionId;
+    if (!(await loadLocalCatalog({ requestKind: 'opening', sessionId }))) return;
+    if (sessionId !== catalogSessionRef.current) return;
     setEditingProduct(null);
     setModalOpen(true);
   };
 
   const openEditProduct = async (product) => {
-    if (!(await loadLocalCatalog())) return;
+    const sessionId = catalogSessionRef.current + 1;
+    catalogSessionRef.current = sessionId;
+    if (!(await loadLocalCatalog({ requestKind: 'opening', sessionId }))) return;
+    if (sessionId !== catalogSessionRef.current) return;
     const sourceProduct = product?.localProductRef
       ? await productRepository.getProductById(product.localProductRef)
       : null;
+    if (sessionId !== catalogSessionRef.current) return;
     if (sourceProduct?.id) {
       setLocalProducts((current) => {
         const byId = new Map(current.map((item) => [String(item.id), item]));
@@ -909,9 +987,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             type="button"
             className="btn btn-primary ecom-admin-publish-product"
             onClick={openNewProduct}
-            disabled={!portal || limitReached || loadingCatalog}
+            disabled={!portal || limitReached || openingCatalog}
           >
-            {loadingCatalog
+            {openingCatalog
               ? <LoaderCircle className="ecom-admin-spin" size={17} />
               : <PackagePlus size={17} />}
             {' '}Publicar producto
@@ -1055,15 +1133,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         linkedRefs={linkedRefs}
         isPro={isPro}
         limitReached={limitReached}
-        localCatalogLoading={loadingCatalog}
+        localCatalogLoading={searchingCatalog || loadingMoreCatalog}
         localCatalogHasMore={localCatalogHasMore}
-        onSearchLocalProducts={(searchTerm) => loadLocalCatalog({ searchTerm })}
-        onLoadMoreLocalProducts={(searchTerm) => loadLocalCatalog({
-          searchTerm,
-          cursor: localCatalogCursor,
-          append: true
-        })}
-        onClose={() => setModalOpen(false)}
+        onSearchLocalProducts={searchLocalProducts}
+        onLoadMoreLocalProducts={loadMoreLocalProducts}
+        onClose={closeProductModal}
         onSave={saveProduct}
       />
     </div>
