@@ -9,7 +9,6 @@ import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
 import AdminLoginModal from './components/common/AdminLoginModal';
-import AdminEnrollmentModal from './components/common/AdminEnrollmentModal';
 import LicenseAccessChooser from './components/common/LicenseAccessChooser';
 import LicenseChangeRequiredModal from './components/common/LicenseChangeRequiredModal';
 import LocalTenantMismatchScreen from './components/common/LocalTenantMismatchScreen';
@@ -338,10 +337,11 @@ function App() {
         </ErrorBoundary>
       );
 
+    case 'admin_enrollment_required':
     case 'setup_required':
       return (
         <ErrorBoundary>
-          <SetupModal />
+          <SetupModal key={licenseDetails?.license_key} />
         </ErrorBoundary>
       );
 
@@ -358,8 +358,6 @@ function App() {
     case 'admin_login_required':
       return <ErrorBoundary><AdminLoginModal /></ErrorBoundary>;
 
-    case 'admin_enrollment_required':
-      return <ErrorBoundary><AdminEnrollmentModal /></ErrorBoundary>;
 
     case 'locked_renewal':
       return (

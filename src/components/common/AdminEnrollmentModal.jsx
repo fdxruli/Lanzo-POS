@@ -3,7 +3,7 @@ import { ShieldPlus } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import './AdminAuthModal.css';
 
-export default function AdminEnrollmentModal() {
+export default function AdminEnrollmentModal({ embedded = false, onBusyChange }) {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -16,15 +16,23 @@ export default function AdminEnrollmentModal() {
   const submit = async (event) => {
     event.preventDefault();
     if (password !== confirmation) { setError('Las contraseñas no coinciden.'); return; }
-    setLoading(true); setError('');
-    const result = await enroll({ displayName: displayName.trim(), username: username.trim(), password });
-    if (!result?.success) { setError(result?.message || 'No se pudo crear la cuenta propietaria.'); setLoading(false); }
+    setLoading(true); setError(''); onBusyChange?.(true);
+    try {
+      const result = await enroll({ displayName: displayName.trim(), username: username.trim(), password });
+      if (!result?.success) setError(result?.message || 'No se pudo crear la cuenta propietaria.');
+    } catch (err) {
+      setError(err.message || 'No se pudo crear la cuenta propietaria. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+      onBusyChange?.(false);
+    }
   };
 
   return (
-    <div className="admin-auth-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-enroll-title">
-      <section className="admin-auth-panel">
-        <div className="admin-auth-heading"><ShieldPlus size={30} /><div><h1 id="admin-enroll-title">Protege la administración</h1><p>Crea la cuenta única del propietario. La clave de licencia dejará de servir como acceso administrativo.</p></div></div>
+    <div className={embedded ? 'setup-owner-access' : 'admin-auth-overlay'} role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : true} aria-labelledby="admin-enroll-title">
+      <section className={embedded ? undefined : 'admin-auth-panel'}>
+        <div className="admin-auth-heading"><ShieldPlus size={30} /><div><h1 id="admin-enroll-title">Tu acceso como propietario</h1><p>Crea tu cuenta personal para administrar Lanzo. La licencia identifica a tu negocio; esta cuenta identifica que eres tú quien lo administra.</p></div></div>
+        <p>Esta contraseña es para administrar Lanzo. No es un PIN de respaldo ni sustituye la clave de tu licencia.</p>
         <form onSubmit={submit} className="admin-auth-form">
           <label>Nombre del propietario<input className="form-input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={120} required disabled={loading} /></label>
           <label>Usuario<input className="form-input" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} minLength={3} maxLength={64} required disabled={loading} /></label>
