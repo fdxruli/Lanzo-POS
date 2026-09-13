@@ -55,27 +55,27 @@ const baseProps = ({
   onSave
 });
 
+const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const getProductSelect = () => screen.getAllByRole('combobox')[0];
+
 const selectProductOne = () => {
-  fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
+  fireEvent.change(getProductSelect(), {
     target: { value: productOne.id }
   });
 };
 
 beforeEach(() => {
-  vi.useFakeTimers();
   vi.clearAllMocks();
   useAppStore.setState({ companyProfile: { business_type: 'abarrotes' } });
 });
 
 afterEach(() => {
   cleanup();
-  vi.runOnlyPendingTimers();
-  vi.useRealTimers();
   useAppStore.setState({ companyProfile: null });
 });
 
 describe('EcommerceProductPublishModal catalog lifecycle', () => {
-  it('does not issue the redundant initial search or repeat it on parent rerenders', () => {
+  it('does not issue the redundant initial search or repeat it on parent rerenders', async () => {
     const onSearchLocalProducts = vi.fn().mockResolvedValue(true);
     const initialProps = baseProps({ onSearchLocalProducts });
     const { rerender } = render(<EcommerceProductPublishModal {...initialProps} />);
@@ -84,11 +84,11 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
       rerender(<EcommerceProductPublishModal {...initialProps} localCatalogLoading={index % 2 === 0} />);
     }
 
-    act(() => vi.advanceTimersByTime(1000));
+    await act(async () => delay(300));
     expect(onSearchLocalProducts).not.toHaveBeenCalled();
   });
 
-  it('debounces user search and only dispatches the final stable term', () => {
+  it('debounces user search and only dispatches the final stable term', async () => {
     const onSearchLocalProducts = vi.fn().mockResolvedValue(true);
     render(<EcommerceProductPublishModal {...baseProps({ onSearchLocalProducts })} />);
     const search = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
@@ -98,9 +98,8 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     fireEvent.change(search, { target: { value: 'coc' } });
     fireEvent.change(search, { target: { value: 'coca' } });
 
-    act(() => vi.advanceTimersByTime(249));
     expect(onSearchLocalProducts).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
+    await act(async () => delay(275));
     expect(onSearchLocalProducts).toHaveBeenCalledTimes(1);
     expect(onSearchLocalProducts).toHaveBeenCalledWith('coca');
   });
@@ -110,7 +109,7 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     const { rerender } = render(<EcommerceProductPublishModal {...props} />);
     selectProductOne();
 
-    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe(productOne.id);
+    expect(getProductSelect().value).toBe(productOne.id);
     expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
     expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
 
@@ -122,7 +121,7 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
       />
     );
 
-    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe(productOne.id);
+    expect(getProductSelect().value).toBe(productOne.id);
     expect(screen.getByRole('option', { name: /Producto Uno/ })).toBeInTheDocument();
     expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
     expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
@@ -193,7 +192,7 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
       />
     );
 
-    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe(productOne.id);
+    expect(getProductSelect().value).toBe(productOne.id);
     expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
   });
@@ -219,7 +218,7 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     }));
   });
 
-  it('cancels a pending debounce when the modal closes', () => {
+  it('cancels a pending debounce when the modal closes', async () => {
     const onSearchLocalProducts = vi.fn().mockResolvedValue(true);
     const props = baseProps({ onSearchLocalProducts });
     const { rerender } = render(<EcommerceProductPublishModal {...props} />);
@@ -228,7 +227,7 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
       target: { value: 'pendiente' }
     });
     rerender(<EcommerceProductPublishModal {...props} open={false} />);
-    act(() => vi.advanceTimersByTime(500));
+    await act(async () => delay(300));
 
     expect(onSearchLocalProducts).not.toHaveBeenCalled();
   });
@@ -245,7 +244,7 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     rerender(<EcommerceProductPublishModal {...props} open />);
 
     expect(screen.getByPlaceholderText('Buscar por nombre, código o SKU').value).toBe('');
-    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe('');
+    expect(getProductSelect().value).toBe('');
     expect(screen.getByLabelText('Nombre público *').value).toBe('');
     expect(screen.getByLabelText('Precio público *').value).toBe('');
   });
