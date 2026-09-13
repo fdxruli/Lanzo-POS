@@ -583,7 +583,7 @@ export const loadDataPaginated = async (storeName, options = {}) => {
             } else {
                 // Con searchTerm y sin cursor: full scan para no excluir registros
                 // con createdAt undefined que orderBy sí omite
-                baseCollection = db.table(STORES.MENU).orderBy(timeIndex).reverse();
+                baseCollection = db.table(STORES.MENU).toCollection();
             }
 
             collection = baseCollection.filter(item => {

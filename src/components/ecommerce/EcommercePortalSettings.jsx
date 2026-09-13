@@ -302,6 +302,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   });
   const catalogSessionRef = useRef(0);
   const localCatalogCursorRef = useRef(null);
+  const localCatalogSearchTermRef = useRef('');
   const categoriesByIdRef = useRef(new Map());
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
 
@@ -648,6 +649,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     requestKind = 'search',
     sessionId = catalogSessionRef.current
   } = {}) => {
+    const normalizedSearchTerm = String(searchTerm || '').trim();
     const requestId = ++catalogRequestSeqRef.current;
     const requestKindId = (latestRequestByKindRef.current[requestKind] || 0) + 1;
     latestRequestByKindRef.current[requestKind] = requestKindId;
@@ -658,6 +660,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     };
 
     setRequestLoading(true);
+    if (requestKind === 'search' && !append) {
+      setLocalProducts([]);
+      setLocalCatalogHasMore(false);
+      localCatalogCursorRef.current = null;
+    }
     try {
       const categoriesPromise = categoriesByIdRef.current.size > 0
         ? Promise.resolve(null)
@@ -667,7 +674,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           limit: LOCAL_CATALOG_PAGE_SIZE,
           status: 'active',
           cursor,
-          searchTerm
+          searchTerm: normalizedSearchTerm
         }),
         categoriesPromise
       ]);
@@ -688,6 +695,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
       const nextCursor = page.nextCursor || null;
       localCatalogCursorRef.current = nextCursor;
+      localCatalogSearchTermRef.current = normalizedSearchTerm;
       setLocalCatalogHasMore(Boolean(nextCursor) && pageProducts.length > 0);
       if (categories) {
         const nextCategories = new Map(
@@ -722,10 +730,14 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   }), [loadLocalCatalog]);
 
   const loadMoreLocalProducts = useCallback((searchTerm) => {
+    const normalizedSearchTerm = String(searchTerm || '').trim();
+    if (localCatalogSearchTermRef.current !== normalizedSearchTerm) {
+      return Promise.resolve(false);
+    }
     const cursor = localCatalogCursorRef.current;
     if (!cursor) return Promise.resolve(true);
     return loadLocalCatalog({
-      searchTerm,
+      searchTerm: normalizedSearchTerm,
       cursor,
       append: true,
       requestKind: 'load-more',

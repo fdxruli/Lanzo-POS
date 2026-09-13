@@ -248,4 +248,87 @@ describe('EcommerceProductPublishModal catalog lifecycle', () => {
     expect(screen.getByLabelText('Nombre público *').value).toBe('');
     expect(screen.getByLabelText('Precio público *').value).toBe('');
   });
+
+  it('renders search matches as visible selectable results with price metadata', () => {
+    const props = baseProps({ localProducts: [productTwo] });
+    render(<EcommerceProductPublishModal {...props} />);
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'dos' }
+    });
+
+    const result = screen.getByRole('button', { name: 'Seleccionar Producto Dos' });
+    expect(result).toBeInTheDocument();
+    expect(result).toHaveTextContent('Producto Dos');
+    expect(result).toHaveTextContent('$40.00');
+    expect(result).toHaveTextContent('Especial');
+  });
+
+  it('selects a visible result through the same product-selection source of truth', () => {
+    render(<EcommerceProductPublishModal {...baseProps({ localProducts: [productTwo] })} />);
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'dos' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Seleccionar Producto Dos' }));
+
+    expect(getProductSelect().value).toBe(productTwo.id);
+    expect(screen.getByDisplayValue(productTwo.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productTwo.price))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Seleccionar Producto Dos' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('shows a dedicated no-results message for an active search', () => {
+    render(<EcommerceProductPublishModal {...baseProps({ localProducts: [] })} />);
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'producto-que-no-existe' }
+    });
+
+    expect(screen.getByText('No encontramos productos con esa búsqueda.')).toBeInTheDocument();
+  });
+
+  it('does not expose the selected snapshot as a search result when it does not match the current result set', () => {
+    const props = baseProps({ localProducts: [productOne] });
+    const { rerender } = render(<EcommerceProductPublishModal {...props} />);
+    selectProductOne();
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'sabritas' }
+    });
+    rerender(<EcommerceProductPublishModal {...props} localProducts={[]} />);
+
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Seleccionar Producto Uno' })).toBeNull();
+    expect(screen.getByText('No encontramos productos con esa búsqueda.')).toBeInTheDocument();
+  });
+
+  it('keeps linked products visible but disabled in search results', () => {
+    render(
+      <EcommerceProductPublishModal
+        {...baseProps({ localProducts: [productTwo] })}
+        linkedRefs={new Set([productTwo.id])}
+      />
+    );
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'dos' }
+    });
+
+    const result = screen.getByRole('button', { name: 'Seleccionar Producto Dos' });
+    expect(result).toBeDisabled();
+    expect(result).toHaveTextContent('Ya agregado');
+  });
+
+  it('restores the catalog only when the user explicitly clears an active search', async () => {
+    const onSearchLocalProducts = vi.fn().mockResolvedValue(true);
+    render(<EcommerceProductPublishModal {...baseProps({ onSearchLocalProducts })} />);
+    const search = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
+
+    fireEvent.change(search, { target: { value: 'coca' } });
+    await act(async () => delay(275));
+    expect(onSearchLocalProducts).toHaveBeenLastCalledWith('coca');
+
+    fireEvent.change(search, { target: { value: '' } });
+    await act(async () => delay(275));
+    expect(onSearchLocalProducts).toHaveBeenCalledTimes(2);
+    expect(onSearchLocalProducts).toHaveBeenLastCalledWith('');
+  });
+
 });

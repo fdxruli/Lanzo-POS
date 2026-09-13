@@ -214,6 +214,13 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Producto Uno/ })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    const visibleResult = screen.getByRole('button', { name: 'Seleccionar Producto Dos' });
+    expect(visibleResult).toBeInTheDocument();
+    expect(visibleResult).toHaveTextContent('$40.00');
+    fireEvent.click(visibleResult);
+    expect(getProductSelect().value).toBe(productTwo.id);
+    expect(screen.getByDisplayValue(productTwo.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productTwo.price))).toBeInTheDocument();
   });
 
   it('ignores a stale search response that resolves after the newest request', async () => {
@@ -239,6 +246,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
       await Promise.resolve();
     });
     expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Seleccionar Producto Dos' })).toBeInTheDocument();
 
     await act(async () => {
       firstSearch.resolve({ data: [staleProduct], nextCursor: null });
@@ -246,12 +254,15 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     });
 
     expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Seleccionar Producto Dos' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Seleccionar Producto Stale' })).toBeNull();
   });
 
   it('releases stale load-more loading after a newer search wins the catalog race', async () => {
     await renderCatalog();
     await openPublishModal();
+    await screen.findByRole('option', { name: /Producto Uno/ });
 
     fireEvent.change(getProductSelect(), {
       target: { value: productOne.id }
@@ -293,11 +304,12 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     });
 
     expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Seleccionar Producto Stale' })).toBeNull();
     expect(getProductSelect().value).toBe(productOne.id);
     expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
     expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
     expect(screen.queryByText('Cargando productos…')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Cargar más productos' }).disabled).toBe(false);
+    expect(screen.getByRole('button', { name: 'Cargar más resultados' }).disabled).toBe(false);
   });
 
   it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {
@@ -329,4 +341,88 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
   });
+
+  it('uses the cursor that belongs to the latest successful search term when loading more results', async () => {
+    await renderCatalog();
+    await openPublishModal();
+    const searchInput = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
+
+    productRepository.listProductsPage.mockResolvedValueOnce({
+      data: [{ ...productOne, id: 'coca-1', name: 'Coca Uno' }],
+      nextCursor: 'cursor-coca'
+    });
+    fireEvent.change(searchInput, { target: { value: 'coca' } });
+    await act(async () => delay(275));
+    await screen.findByRole('button', { name: 'Seleccionar Coca Uno' });
+
+    productRepository.listProductsPage.mockResolvedValueOnce({
+      data: [{ ...productTwo, id: 'pepsi-1', name: 'Pepsi Uno' }],
+      nextCursor: 'cursor-pepsi'
+    });
+    fireEvent.change(searchInput, { target: { value: 'pepsi' } });
+    await act(async () => delay(275));
+    await screen.findByRole('button', { name: 'Seleccionar Pepsi Uno' });
+
+    productRepository.listProductsPage.mockResolvedValueOnce({
+      data: [{ ...productTwo, id: 'pepsi-2', name: 'Pepsi Dos' }],
+      nextCursor: null
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más resultados' }));
+    await screen.findByRole('button', { name: 'Seleccionar Pepsi Dos' });
+
+    expect(productRepository.listProductsPage).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchTerm: 'pepsi',
+      cursor: 'cursor-pepsi'
+    }));
+    expect(screen.getByRole('button', { name: 'Seleccionar Pepsi Uno' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Seleccionar Pepsi Dos' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Seleccionar Coca Uno' })).toBeNull();
+  });
+
+  it('appends the next page of the same active search without duplicates', async () => {
+    await renderCatalog();
+    await openPublishModal();
+    const searchInput = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
+    const cocaOne = { ...productOne, id: 'coca-1', name: 'Coca Uno' };
+    const cocaTwo = { ...productTwo, id: 'coca-2', name: 'Coca Dos' };
+
+    productRepository.listProductsPage.mockResolvedValueOnce({ data: [cocaOne], nextCursor: 'cursor-coca-2' });
+    fireEvent.change(searchInput, { target: { value: 'coca' } });
+    await act(async () => delay(275));
+    await screen.findByRole('button', { name: 'Seleccionar Coca Uno' });
+
+    productRepository.listProductsPage.mockResolvedValueOnce({ data: [cocaOne, cocaTwo], nextCursor: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más resultados' }));
+    await screen.findByRole('button', { name: 'Seleccionar Coca Dos' });
+
+    expect(productRepository.listProductsPage).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchTerm: 'coca',
+      cursor: 'cursor-coca-2'
+    }));
+    expect(screen.getAllByRole('button', { name: 'Seleccionar Coca Uno' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Seleccionar Coca Dos' })).toHaveLength(1);
+  });
+
+  it('restores the opening catalog when the user explicitly clears an active search', async () => {
+    await renderCatalog();
+    await openPublishModal();
+    const searchInput = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
+
+    productRepository.listProductsPage.mockResolvedValueOnce({ data: [productTwo], nextCursor: null });
+    fireEvent.change(searchInput, { target: { value: 'dos' } });
+    await act(async () => delay(275));
+    await screen.findByRole('button', { name: 'Seleccionar Producto Dos' });
+
+    productRepository.listProductsPage.mockResolvedValueOnce({ data: [productOne], nextCursor: 'cursor-2' });
+    fireEvent.change(searchInput, { target: { value: '' } });
+    await act(async () => delay(275));
+
+    expect(productRepository.listProductsPage).toHaveBeenLastCalledWith(expect.objectContaining({
+      searchTerm: '',
+      cursor: null
+    }));
+    expect(screen.queryByRole('region', { name: 'Resultados de búsqueda' })).toBeNull();
+    expect(screen.getByRole('option', { name: /Producto Uno/ })).toBeInTheDocument();
+  });
+
 });

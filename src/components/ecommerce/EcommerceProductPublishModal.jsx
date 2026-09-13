@@ -140,6 +140,20 @@ export default function EcommerceProductPublishModal({
     return localProducts.find((product) => String(product.id) === selectedRef) || null;
   }, [form.localProductRef, localProducts, selectedProductSnapshot]);
 
+  const searchActive = localProductSearch.trim().length > 0;
+  const searchResults = searchActive ? localProducts : [];
+  const getLocalProductCategory = (product) => (
+    categoriesById.get(product?.categoryId) || product?.category || ''
+  );
+  const isLinkedLocalProduct = (product) => {
+    const ref = String(product?.id || '');
+    return Boolean(ref && linkedRefs.has(ref) && ref !== editingProduct?.localProductRef);
+  };
+  const getLocalProductPolicy = (product) => resolveEcommerceBusinessPolicy({
+    profile: companyProfile,
+    product: product || {}
+  });
+
   const businessPolicy = useMemo(() => resolveEcommerceBusinessPolicy({
     profile: companyProfile,
     product: selectedLocalProduct || {},
@@ -293,20 +307,21 @@ export default function EcommerceProductPublishModal({
 
   if (!open) return null;
 
-  const chooseProduct = (event) => {
-    const product = selectableLocalProducts.find(
-      (item) => String(item.id) === event.target.value
-    );
+  const clearSelectedProduct = () => {
+    setSelectedProductSnapshot(null);
+    setForm((current) => ({
+      ...current,
+      localProductRef: '',
+      stockMode: 'hidden',
+      stockTracked: false,
+      publicConfigurationMode: null,
+      wholesaleEnabled: false
+    }));
+  };
+
+  const selectLocalProduct = (product) => {
     if (!product) {
-      setSelectedProductSnapshot(null);
-      setForm((current) => ({
-        ...current,
-        localProductRef: '',
-        stockMode: 'hidden',
-        stockTracked: false,
-        publicConfigurationMode: null,
-        wholesaleEnabled: false
-      }));
+      clearSelectedProduct();
       return;
     }
     const stockTracked = isProductStockTracked(product);
@@ -317,13 +332,20 @@ export default function EcommerceProductPublishModal({
       publicName: product.name || '',
       publicDescription: product.description || '',
       price: String(product.price ?? 0),
-      categoryName: categoriesById.get(product.categoryId) || product.category || '',
+      categoryName: getLocalProductCategory(product),
       imageUrl: publicUrl(product.imageUrl || product.image),
       stockTracked,
       stockMode: stockTracked ? current.stockMode : 'hidden',
       publicConfigurationMode: null,
       wholesaleEnabled: false
     }));
+  };
+
+  const chooseProduct = (event) => {
+    const product = selectableLocalProducts.find(
+      (item) => String(item.id) === event.target.value
+    );
+    selectLocalProduct(product || null);
   };
 
   const setFieldMode = (field, linked) => {
@@ -420,8 +442,8 @@ export default function EcommerceProductPublishModal({
         </header>
 
         <form onSubmit={submit}>
-          <label className="form-group ecom-admin-span-2">
-            <span className="form-label">Producto del catálogo local *</span>
+          <div className="form-group ecom-admin-span-2">
+            <label className="form-label" htmlFor="ecom-local-product-select">Producto del catálogo local *</label>
             <span className="ecom-admin-local-product-search">
               <Search size={16} aria-hidden="true" />
               <input
@@ -433,21 +455,83 @@ export default function EcommerceProductPublishModal({
                   setLocalProductSearch(event.target.value);
                 }}
                 placeholder="Buscar por nombre, código o SKU"
+                aria-label="Buscar producto local"
                 disabled={Boolean(editingProduct)}
               />
             </span>
-            <select className="form-input" value={form.localProductRef} onChange={chooseProduct} disabled={Boolean(editingProduct)} required>
+
+            {searchActive && (
+              <div
+                className="ecom-admin-product-search-results"
+                role="region"
+                aria-label="Resultados de búsqueda"
+                aria-live="polite"
+              >
+                <div className="ecom-admin-product-search-results-heading">
+                  <strong>Resultados</strong>
+                  {localCatalogLoading && <small>Cargando productos…</small>}
+                </div>
+                {!localCatalogLoading && searchResults.length === 0 && (
+                  <div className="ecom-admin-product-search-results-empty">
+                    No encontramos productos con esa búsqueda.
+                  </div>
+                )}
+                {searchResults.map((product) => {
+                  const ref = String(product.id);
+                  const linked = isLinkedLocalProduct(product);
+                  const selected = String(form.localProductRef) === ref;
+                  const policy = getLocalProductPolicy(product);
+                  const categoryName = getLocalProductCategory(product);
+                  const secondaryRef = product.sku || product.barcode;
+                  return (
+                    <button
+                      key={ref}
+                      type="button"
+                      className={`ecom-admin-product-search-result${selected ? ' is-selected' : ''}`}
+                      onClick={() => selectLocalProduct(product)}
+                      disabled={linked}
+                      aria-label={`Seleccionar ${product.name}`}
+                      aria-pressed={selected}
+                    >
+                      <span className="ecom-admin-product-search-result-copy">
+                        <strong>{product.name}</strong>
+                        <span className="ecom-admin-product-search-result-meta">
+                          ${safeNumber(product.price).toFixed(2)}
+                          {categoryName ? ` · ${categoryName}` : ''}
+                        </span>
+                        {secondaryRef && (
+                          <small>SKU/código: {String(secondaryRef)}</small>
+                        )}
+                      </span>
+                      <span className="ecom-admin-product-search-result-status">
+                        {policy.status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW && (
+                          <small className="is-review">Requiere revisión</small>
+                        )}
+                        {linked && <small className="is-linked">Ya agregado</small>}
+                        {selected && !linked && <small className="is-selected">Seleccionado</small>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <select
+              id="ecom-local-product-select"
+              className="form-input"
+              value={form.localProductRef}
+              onChange={chooseProduct}
+              disabled={Boolean(editingProduct)}
+              required
+            >
               <option value="">Selecciona un producto</option>
               {selectableLocalProducts.map((product) => {
                 const ref = String(product.id);
-                const linked = linkedRefs.has(ref) && ref !== editingProduct?.localProductRef;
+                const linked = isLinkedLocalProduct(product);
                 return (
                   <option key={ref} value={ref} disabled={linked}>
                     {product.name} — ${safeNumber(product.price).toFixed(2)}
-                    {resolveEcommerceBusinessPolicy({
-                      profile: companyProfile,
-                      product
-                    }).status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
+                    {getLocalProductPolicy(product).status === BUSINESS_CAPABILITY_STATUS.REQUIRES_REVIEW
                       ? ' — Requiere revisión'
                       : ''}
                     {linked ? ' (ya agregado)' : ''}
@@ -460,21 +544,21 @@ export default function EcommerceProductPublishModal({
                 ? 'Lanzo Nube puede mantener vinculados los campos elegidos sin sobrescribir los campos manuales.'
                 : 'Se guarda una copia pública; tu producto local no se modifica.'}
             </small>
-            {localCatalogLoading && <small className="ecom-admin-help">Cargando productos…</small>}
-            {!localCatalogLoading && selectableLocalProducts.length === 0 && (
-              <small className="ecom-admin-help">No encontramos productos activos con esa búsqueda.</small>
+            {localCatalogLoading && !searchActive && <small className="ecom-admin-help">Cargando productos…</small>}
+            {!localCatalogLoading && !searchActive && selectableLocalProducts.length === 0 && (
+              <small className="ecom-admin-help">No encontramos productos activos disponibles.</small>
             )}
             {localCatalogHasMore && !editingProduct && (
               <button
                 type="button"
                 className="btn btn-secondary ecom-admin-load-more-products"
-                onClick={() => onLoadMoreLocalProducts?.(localProductSearch)}
+                onClick={() => onLoadMoreLocalProducts?.(localProductSearch.trim())}
                 disabled={localCatalogLoading}
               >
-                Cargar más productos
+                {searchActive ? 'Cargar más resultados' : 'Cargar más productos'}
               </button>
             )}
-          </label>
+          </div>
 
           {isPro && (
             <fieldset className="ecom-admin-sync-fields ecom-admin-span-2">

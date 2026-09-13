@@ -356,6 +356,95 @@
 .ecom-admin-store-health .is-pending { color: var(--ui-text-warning, #8a5a00); }
 .ecom-admin-local-product-search { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
 .ecom-admin-local-product-search .form-input { min-width: 0; }
+.ecom-admin-product-search-results {
+  display: grid;
+  gap: 8px;
+  max-height: min(42vh, 320px);
+  margin: 2px 0 8px;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--light-background);
+  overscroll-behavior: contain;
+}
+.ecom-admin-product-search-results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 4px;
+  color: var(--text-color, var(--text-dark));
+}
+.ecom-admin-product-search-results-heading small { color: var(--text-light); }
+.ecom-admin-product-search-results-empty {
+  padding: 13px 12px;
+  color: var(--text-light);
+  text-align: center;
+}
+.ecom-admin-product-search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-color, var(--text-dark));
+  background: var(--card-background-color);
+  text-align: left;
+  cursor: pointer;
+}
+.ecom-admin-product-search-result:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary-color) 55%, var(--border-color));
+  background: color-mix(in srgb, var(--primary-color) 5%, var(--card-background-color));
+}
+.ecom-admin-product-search-result:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+.ecom-admin-product-search-result.is-selected {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 12%, transparent);
+}
+.ecom-admin-product-search-result:disabled {
+  opacity: .62;
+  cursor: not-allowed;
+}
+.ecom-admin-product-search-result-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.ecom-admin-product-search-result-copy strong,
+.ecom-admin-product-search-result-copy small,
+.ecom-admin-product-search-result-meta {
+  overflow-wrap: anywhere;
+}
+.ecom-admin-product-search-result-meta,
+.ecom-admin-product-search-result-copy small { color: var(--text-light); font-size: .8rem; }
+.ecom-admin-product-search-result-status {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.ecom-admin-product-search-result-status small {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--card-background-color);
+  font-size: .72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.ecom-admin-product-search-result-status .is-review { color: var(--ui-text-warning, #8a5a00); background: var(--ui-bg-warning-soft, #fff3cd); }
+.ecom-admin-product-search-result-status .is-linked { color: var(--text-light); background: color-mix(in srgb, var(--text-light) 10%, transparent); }
+.ecom-admin-product-search-result-status .is-selected { color: var(--ui-text-success, #176b3a); background: var(--ui-bg-success-soft, #e7f6ed); }
 .ecom-admin-load-more-products { width: fit-content; margin-top: 8px; }
 .ecom-admin-stock-warning {
   display: inline-flex;
@@ -410,6 +499,9 @@
   .ecom-admin-public-link-panel { grid-template-columns: 1fr; }
   .ecom-admin-link-actions { align-items: stretch; flex-direction: column; }
   .ecom-admin-stock-alert { padding: 12px; }
+  .ecom-admin-product-search-results { max-height: min(46vh, 360px); padding: 6px; }
+  .ecom-admin-product-search-result { align-items: flex-start; min-height: 56px; padding: 11px; }
+  .ecom-admin-product-search-result-status { max-width: 42%; }
 }
 @media (max-width: 460px) {
   .ecom-admin-open-store span { display: none; }
