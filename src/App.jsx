@@ -9,6 +9,7 @@ import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
 import AdminLoginModal from './components/common/AdminLoginModal';
+import AdminEnrollmentModal from './components/common/AdminEnrollmentModal';
 import LicenseAccessChooser from './components/common/LicenseAccessChooser';
 import LicenseChangeRequiredModal from './components/common/LicenseChangeRequiredModal';
 import LocalTenantMismatchScreen from './components/common/LocalTenantMismatchScreen';
@@ -338,6 +339,15 @@ function App() {
       );
 
     case 'admin_enrollment_required':
+      if (useAppStore.getState().ownerEnrollmentContext !== 'new_license_setup') {
+        return <ErrorBoundary><AdminEnrollmentModal /></ErrorBoundary>;
+      }
+      // New licenses keep the draft while enrollment transitions into setup.
+      return (
+        <ErrorBoundary>
+          <SetupModal key={licenseDetails?.license_key} />
+        </ErrorBoundary>
+      );
     case 'setup_required':
       return (
         <ErrorBoundary>

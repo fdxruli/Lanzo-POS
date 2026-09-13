@@ -211,6 +211,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     clearPendingAdminSession(set, 'return_to_access_choice');
     set({
       appStatus: 'license_access_required',
+      ownerEnrollmentContext: null,
       currentDeviceRole: null,
       currentAdminUser: null,
       currentStaffUser: null,
@@ -236,6 +237,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     if (source.license_key) await saveLicenseToStorage({ ...source, device_role: 'admin', admin_user: null });
     set({
       appStatus: 'admin_login_required',
+      ownerEnrollmentContext: null,
       licenseDetails: source.license_key ? { ...source, device_role: 'admin', admin_user: null } : get().licenseDetails,
       currentDeviceRole: 'admin',
       currentAdminUser: null,

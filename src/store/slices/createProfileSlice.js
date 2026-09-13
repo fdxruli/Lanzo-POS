@@ -343,6 +343,7 @@ export const createProfileSlice = (set, get) => ({
       set({
         companyProfile: companyData,
         profileImportCandidate: null,
+        ownerEnrollmentContext: null,
         appStatus: 'ready'
       });
     } catch (error) {
