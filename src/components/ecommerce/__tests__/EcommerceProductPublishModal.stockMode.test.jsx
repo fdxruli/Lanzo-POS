@@ -44,7 +44,7 @@ const renderModal = ({
 };
 
 const chooseLocalProduct = () => {
-  fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
+  fireEvent.change(screen.getAllByRole('combobox')[0], {
     target: { value: 'product-1' }
   });
 };

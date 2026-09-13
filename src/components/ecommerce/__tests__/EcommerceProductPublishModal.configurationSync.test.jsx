@@ -70,7 +70,7 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
         />
       );
 
-      fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
+      fireEvent.change(screen.getAllByRole('combobox')[0], {
         target: { value: localProduct.id }
       });
       const saveButton = screen.getByRole('button', { name: 'Guardar producto' });
