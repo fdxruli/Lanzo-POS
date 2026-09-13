@@ -1,0 +1,191 @@
+name: Ecommerce PR287 Final Follow-up Temporary
+
+on:
+  push:
+    branches:
+      - fix/ecommerce-product-publish-modal-state-r1
+
+permissions:
+  contents: write
+
+jobs:
+  patch-validate-and-clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/ecommerce-product-publish-modal-state-r1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Apply surgical PR287 follow-up
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          portal_path = Path('src/components/ecommerce/EcommercePortalSettings.jsx')
+          portal = portal_path.read_text(encoding='utf-8')
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          portal = replace_once(
+              portal,
+              "  const [localProducts, setLocalProducts] = useState([]);\n  const [localCatalogCursor, setLocalCatalogCursor] = useState(null);\n  const [localCatalogHasMore, setLocalCatalogHasMore] = useState(false);",
+              "  const [localProducts, setLocalProducts] = useState([]);\n  const [localCatalogHasMore, setLocalCatalogHasMore] = useState(false);",
+              'remove dead localCatalogCursor state'
+          )
+
+          portal = replace_once(
+              portal,
+              "  const catalogRequestSeqRef = useRef(0);\n  const catalogSessionRef = useRef(0);",
+              "  const catalogRequestSeqRef = useRef(0);\n  const latestRequestByKindRef = useRef({\n    opening: 0,\n    search: 0,\n    'load-more': 0\n  });\n  const catalogSessionRef = useRef(0);",
+              'add per-kind request ownership'
+          )
+
+          portal = replace_once(
+              portal,
+              "    const requestId = ++catalogRequestSeqRef.current;\n    const setRequestLoading = (value) => {",
+              "    const requestId = ++catalogRequestSeqRef.current;\n    const requestKindId = (latestRequestByKindRef.current[requestKind] || 0) + 1;\n    latestRequestByKindRef.current[requestKind] = requestKindId;\n    const setRequestLoading = (value) => {",
+              'register per-kind request id'
+          )
+
+          portal = replace_once(
+              portal,
+              "      const nextCursor = page.nextCursor || null;\n      localCatalogCursorRef.current = nextCursor;\n      setLocalCatalogCursor(nextCursor);\n      setLocalCatalogHasMore(Boolean(nextCursor) && pageProducts.length > 0);",
+              "      const nextCursor = page.nextCursor || null;\n      localCatalogCursorRef.current = nextCursor;\n      setLocalCatalogHasMore(Boolean(nextCursor) && pageProducts.length > 0);",
+              'remove dead cursor setter'
+          )
+
+          portal = replace_once(
+              portal,
+              "    } finally {\n      const stillCurrent = (\n        requestId === catalogRequestSeqRef.current\n        && sessionId === catalogSessionRef.current\n      );\n      if (stillCurrent) setRequestLoading(false);\n    }",
+              "    } finally {\n      const stillLatestForKind = (\n        latestRequestByKindRef.current[requestKind] === requestKindId\n        && sessionId === catalogSessionRef.current\n      );\n      if (stillLatestForKind) setRequestLoading(false);\n    }",
+              'release loading by request kind'
+          )
+
+          portal = replace_once(
+              portal,
+              "La portada seleccionada no tiene una URL pública válida. Intenta subirlo nuevamente.",
+              "La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.",
+              'revert accidental cover copy'
+          )
+
+          portal_path.write_text(portal, encoding='utf-8')
+
+          test_path = Path('src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx')
+          test = test_path.read_text(encoding='utf-8')
+          marker = "  it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {"
+          if test.count(marker) != 1:
+              raise SystemExit(f'load-more/search test insertion marker: expected 1 match, found {test.count(marker)}')
+
+          new_test = r'''  it('releases stale load-more loading after a newer search wins the catalog race', async () => {
+    await renderCatalog();
+    await openPublishModal();
+
+    fireEvent.change(getProductSelect(), {
+      target: { value: productOne.id }
+    });
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+
+    const loadMoreRequest = deferred();
+    const searchRequest = deferred();
+    productRepository.listProductsPage
+      .mockImplementationOnce(() => loadMoreRequest.promise)
+      .mockImplementationOnce(() => searchRequest.promise);
+
+    const loadMoreButton = screen.getByRole('button', { name: 'Cargar más productos' });
+    fireEvent.click(loadMoreButton);
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'producto' }
+    });
+    await act(async () => delay(275));
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      searchRequest.resolve({ data: [productTwo], nextCursor: 'search-cursor' });
+      await Promise.resolve();
+    });
+
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+
+    await act(async () => {
+      loadMoreRequest.resolve({ data: [staleProduct], nextCursor: 'stale-cursor' });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+    expect(screen.queryByText('Cargando productos…')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cargar más productos' }).disabled).toBe(false);
+  });
+
+'''
+          test = test.replace(marker, new_test + marker, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused ecommerce lifecycle and regression tests
+        run: >-
+          npm run test:ci --
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.catalogLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.stockMode.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.configurationSync.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx
+          src/utils/__tests__/ecommerceWholesalePricing.test.js
+          src/utils/__tests__/businessCapabilities.test.js
+
+      - name: Focal ESLint zero-warning gate
+        run: >-
+          npx eslint --max-warnings=0
+          src/components/ecommerce/EcommercePortalSettings.jsx
+          src/components/ecommerce/EcommerceProductPublishModal.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.catalogLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.stockMode.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.configurationSync.test.jsx
+
+      - name: Diff check
+        run: git diff --check origin/main...HEAD && git diff --check
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit validated correction and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/ecommerce-hotfix-final-followup-temp.yml
+          git config user.name "fdxruli"
+          git config user.email "48109415+fdxruli@users.noreply.github.com"
+          git add \
+            src/components/ecommerce/EcommercePortalSettings.jsx \
+            src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx \
+            .github/workflows/ecommerce-hotfix-final-followup-temp.yml
+          git diff --cached --check
+          git commit -m "fix(ecommerce): close catalog loading race"
+          git push origin HEAD:fix/ecommerce-product-publish-modal-state-r1
