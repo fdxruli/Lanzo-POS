@@ -170,7 +170,12 @@ const emitRouteDemand = () => {
 const attachRouteDemandListener = () => {
   if (typeof window === 'undefined' || bootstrapState.routeListenerAttached) return;
 
-  routeDemandEventHandler = () => getTimerApi().setTimeout(emitRouteDemand, 0);
+  routeDemandEventHandler = () => {
+    const patchAtSchedule = historyPatch;
+    getTimerApi().setTimeout(() => {
+      if (patchAtSchedule?.active) emitRouteDemand();
+    }, 0);
+  };
 
   if (!bootstrapState.historyPatched && window.history) {
     const patch = {
