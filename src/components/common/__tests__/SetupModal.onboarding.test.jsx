@@ -56,11 +56,16 @@ import { createLicenseActivationActions } from '../../../store/slices/license/li
 import { createLicenseAdminActions } from '../../../store/slices/license/licenseAdminActions';
 import { createProfileSlice } from '../../../store/slices/createProfileSlice';
 import SetupModal from '../SetupModal';
+import AdminEnrollmentModal from '../AdminEnrollmentModal';
 
 // Same reconciliation boundary as App: status changes keep the draft; tenant changes discard it.
 function Flow() {
   const status = useAppStore((s) => s.appStatus);
   const license = useAppStore((s) => s.licenseDetails);
+  const ownerEnrollmentContext = useAppStore((s) => s.ownerEnrollmentContext);
+  if (status === 'admin_enrollment_required' && ownerEnrollmentContext !== 'new_license_setup') {
+    return <AdminEnrollmentModal />;
+  }
   if (['admin_enrollment_required', 'setup_required'].includes(status)) {
     return <SetupModal key={license?.license_key} />;
   }
@@ -133,10 +138,15 @@ describe('integrated owner onboarding', () => {
     await enroll();
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(useAppStore.getState().appStatus).toBe('setup_required');
+    expect(useAppStore.getState().ownerEnrollmentContext).toBe('new_license_setup');
+    fireEvent.click(screen.getByRole('button', { name: /1Tu negocio/ }));
+    expect(screen.getByLabelText('Nombre del Negocio *')).toHaveValue('Mi negocio');
+    fireEvent.click(screen.getByRole('button', { name: /4Todo listo/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
     await screen.findByText('ready');
     expect(mocks.events).toEqual(['owner', 'actor', 'profile']);
     expect(useAppStore.getState().companyProfile.name).toBe('Mi negocio');
+    expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
     expect(mocks.configureBackup).not.toHaveBeenCalled();
   });
 
@@ -187,6 +197,62 @@ describe('integrated owner onboarding', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
     await screen.findByText('ready');
     expect(mocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
+  });
+
+  it('routes an existing license with a profile through standalone enrollment without rewriting it', async () => {
+    mocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      details: { license_key: 'EXISTING-WITH-PROFILE', plan_code: 'pro', features: { max_rubros: 2 } }
+    });
+    mocks.getBusinessProfile.mockResolvedValue({
+      success: true,
+      data: { license_key: 'EXISTING-WITH-PROFILE', business_name: 'Negocio existente', business_type: ['abarrotes'] }
+    });
+
+    await useAppStore.getState().handleLogin('EXISTING-WITH-PROFILE');
+    render(<Flow />);
+
+    expect(useAppStore.getState().ownerEnrollmentContext).toBe('existing_license');
+    expect(screen.getByRole('heading', { name: 'Tu acceso como propietario' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Nombre del Negocio *')).not.toBeInTheDocument();
+    expect(screen.queryByText('Giro del Negocio')).not.toBeInTheDocument();
+
+    await enroll();
+    await screen.findByText('ready');
+
+    expect(mocks.events).toEqual(['owner', 'actor']);
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    expect(useAppStore.getState().companyProfile).toMatchObject({ name: 'Negocio existente' });
+    expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
+  });
+
+  it('routes an existing license without a profile to Setup after exactly one enrollment', async () => {
+    mocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      details: { license_key: 'EXISTING-WITHOUT-PROFILE', plan_code: 'pro', features: { max_rubros: 2 } }
+    });
+    mocks.getBusinessProfile.mockResolvedValue({ code: 'PROFILE_NOT_FOUND' });
+
+    await useAppStore.getState().handleLogin('EXISTING-WITHOUT-PROFILE');
+    render(<Flow />);
+
+    expect(useAppStore.getState().ownerEnrollmentContext).toBe('existing_license');
+    expect(screen.getByRole('heading', { name: 'Tu acceso como propietario' })).toBeInTheDocument();
+    await enroll();
+    await screen.findByLabelText('Nombre del Negocio *');
+    expect(screen.queryByRole('heading', { name: 'Tu acceso como propietario' })).not.toBeInTheDocument();
+    expect(mocks.events).toEqual(['owner', 'actor']);
+
+    business();
+    fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
+    await screen.findByText('ready');
+
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.events).toEqual(['owner', 'actor', 'profile']);
+    expect(mocks.saveBusinessProfile).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
   });
 
   it('does not expose enrollment or finalization to Staff even with an inconsistent route', async () => {

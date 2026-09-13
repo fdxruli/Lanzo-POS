@@ -19,6 +19,8 @@ export const createLicenseInitialState = () => ({
   adminLoginMessage: null,
   adminLoginError: null,
   adminEnrollmentRequired: false,
+  // Ephemeral UX routing only; never persisted or used as authority.
+  ownerEnrollmentContext: null,
   currentStaffUser: null,
   staffLoginLicenseKey: null,
   staffLoginMessage: null,

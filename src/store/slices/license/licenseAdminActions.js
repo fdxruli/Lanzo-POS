@@ -85,7 +85,12 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
       actor: result.admin_user || licenseData.admin_user
     });
     await get()._loadProfile(licenseKey, { forceRemote: true, reason });
-    set({ pendingAdminSessionResult: null });
+    // A ready profile completes the enrollment route. Keep the context only
+    // for the same new license when profile hydration routes into Setup.
+    set({
+      pendingAdminSessionResult: null,
+      ...(get().appStatus === 'ready' ? { ownerEnrollmentContext: null } : {})
+    });
     return { success: true, remoteAuthenticated: true };
   } catch (error) {
     lockActorRuntime('admin_actor_binding_or_bootstrap_failed');
