@@ -9,13 +9,17 @@ import {
 } from '../../../services/ecommerce/ecommerceAdminService';
 import { productRepository } from '../../../services/products/productRepository';
 
-vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
-  getEcommercePortal: vi.fn(),
-  listPublishedProducts: vi.fn(),
-  saveEcommercePortal: vi.fn(),
-  savePublishedProduct: vi.fn(),
-  setProductPublished: vi.fn()
-}));
+vi.mock('../../../services/ecommerce/ecommerceAdminService', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getEcommercePortal: vi.fn(),
+    listPublishedProducts: vi.fn(),
+    saveEcommercePortal: vi.fn(),
+    savePublishedProduct: vi.fn(),
+    setProductPublished: vi.fn()
+  };
+});
 
 vi.mock('../../../services/products/productRepository', () => ({
   productRepository: {
@@ -91,6 +95,7 @@ const freePortalResponse = {
 };
 
 const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const getProductSelect = () => screen.getAllByRole('combobox')[0];
 
 const deferred = () => {
   let resolve;
@@ -164,7 +169,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     await act(async () => delay(300));
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText(/Producto del catálogo local/), {
+    fireEvent.change(getProductSelect(), {
       target: { value: productOne.id }
     });
     expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
@@ -186,7 +191,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
       await Promise.resolve();
     });
 
-    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe(productOne.id);
+    expect(getProductSelect().value).toBe(productOne.id);
     expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
     expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
     expect(screen.getByRole('option', { name: /Producto Uno/ })).toBeInTheDocument();
@@ -245,7 +250,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     });
     await openPublishModal();
     expect(screen.getByPlaceholderText('Buscar por nombre, código o SKU').value).toBe('');
-    expect(screen.getByLabelText(/Producto del catálogo local/).value).toBe('');
+    expect(getProductSelect().value).toBe('');
 
     await act(async () => {
       pendingSearch.resolve({ data: [staleProduct], nextCursor: null });
