@@ -90,7 +90,21 @@ const freePortalResponse = {
     customSlug: false,
     deliveryPickupSettings: 'basic',
     maxPublishedProducts: 10,
-    cloudCatalogSource: false
+    cloudCatalogSource: false,
+    stockVisibility: false
+  }
+};
+
+const proPortalResponse = {
+  success: true,
+  portal,
+  plan: { code: 'pro_monthly', name: 'Lanzo Nube' },
+  features: {
+    customSlug: true,
+    deliveryPickupSettings: 'advanced',
+    maxPublishedProducts: -1,
+    cloudCatalogSource: true,
+    stockVisibility: true
   }
 };
 
@@ -161,7 +175,11 @@ afterEach(() => {
 });
 
 describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecycle', () => {
-  it('preloads once, keeps the selected form stable after search, and does not flicker the background publish button', async () => {
+  it.each([
+    ['FREE', freePortalResponse],
+    ['PRO', proPortalResponse]
+  ])('preloads once and preserves selection after search for %s without background button flicker', async (_planName, portalResponse) => {
+    getEcommercePortal.mockResolvedValue(portalResponse);
     await renderCatalog();
     await openPublishModal();
 
