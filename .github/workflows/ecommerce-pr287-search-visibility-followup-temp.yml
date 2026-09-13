@@ -62,38 +62,7 @@ jobs:
 
       - name: Fix DB search only when legacy test proves the defect
         if: steps.legacy_preflight.outputs.passed != 'true'
-        run: python .github/scripts/ecommerce_pr287_search_visibility_followup_temp.py db-fix
-
-      - name: Reapply scoped DB fix without newline churn
-        if: steps.legacy_preflight.outputs.passed != 'true'
-        shell: bash
-        run: |
-          git checkout HEAD -- src/services/db/index.js
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('src/services/db/index.js')
-          raw = path.read_bytes()
-          newline = b'\r\n' if b'\r\n' in raw else b'\n'
-          old_text = """            } else:
-                // Con searchTerm y sin cursor: full scan para no excluir registros
-                // con createdAt undefined que orderBy sí omite
-                baseCollection = db.table(STORES.MENU).orderBy(timeIndex).reverse();
-            }
-"""
-          new_text = """            } else:
-                // Con searchTerm y sin cursor: full scan para no excluir registros
-                // con createdAt undefined que orderBy sí omite.
-                // Esta rama es deliberadamente acotada: no cambia paginación normal,
-                // filtros por categoría, stock/caducidad ni búsquedas con cursor.
-                baseCollection = db.table(STORES.MENU).toCollection();
-            }
-"""
-          old = old_text.encode('utf-8').replace(b'\n', newline)
-          new = new_text.encode('utf-8').replace(b'\n', newline)
-          if raw.count(old) != 1:
-              raise SystemExit(f'expected one scoped DB branch, found {raw.count(old)}')
-          path.write_bytes(raw.replace(old, new, 1))
-          PY
+        run: python .github/scripts/ecommerce_pr287_db_fix_nochurn_temp.py
 
       - name: Verify legacy createdAt search contract
         run: npm run test:ci -- src/services/db/__tests__/loadDataPaginatedLegacySearch.test.js
@@ -132,6 +101,7 @@ jobs:
         run: |
           git rm .github/workflows/ecommerce-pr287-search-visibility-followup-temp.yml
           git rm .github/scripts/ecommerce_pr287_search_visibility_followup_temp.py
+          git rm .github/scripts/ecommerce_pr287_db_fix_nochurn_temp.py
           git config user.name "fdxruli"
           git config user.email "48109415+fdxruli@users.noreply.github.com"
           git add -A
