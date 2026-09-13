@@ -123,7 +123,7 @@ describe('posSyncBootstrapCoordinator route demand ownership', () => {
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
-  it('restores browser history and stops route demand when bootstrap stops', async () => {
+  it('restores browser history and invalidates queued route demand when bootstrap stops', async () => {
     const originalPushState = window.history.pushState;
     const originalReplaceState = window.history.replaceState;
 
@@ -133,17 +133,25 @@ describe('posSyncBootstrapCoordinator route demand ownership', () => {
     expect(window.history.pushState).not.toBe(originalPushState);
     expect(window.history.replaceState).not.toBe(originalReplaceState);
 
+    window.history.pushState({}, '', '/productos');
     await stopPosCloudBootstrap({ preserveSync: true });
 
     expect(window.history.pushState).toBe(originalPushState);
     expect(window.history.replaceState).toBe(originalReplaceState);
 
-    window.history.pushState({}, '', '/productos');
     await vi.runOnlyPendingTimersAsync();
     await flush();
 
     expect(mocks.logs.filter(({ message, meta }) => (
       message.includes('module demand') && meta?.resource === 'products'
+    ))).toHaveLength(0);
+
+    window.history.pushState({}, '', '/clientes');
+    await vi.runOnlyPendingTimersAsync();
+    await flush();
+
+    expect(mocks.logs.filter(({ message, meta }) => (
+      message.includes('module demand') && (meta?.resource === 'customers' || meta?.resource === 'credit')
     ))).toHaveLength(0);
   });
 
