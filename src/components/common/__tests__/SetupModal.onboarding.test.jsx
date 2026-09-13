@@ -83,10 +83,14 @@ const credentials = () => {
   fireEvent.change(screen.getByLabelText(/^Contraseña/), { target: { value: 'FixturePass123' } });
   fireEvent.change(screen.getByLabelText('Confirmar contraseña'), { target: { value: 'FixturePass123' } });
 };
-const enroll = async () => {
+const enrollIntegratedNewLicense = async () => {
   credentials();
   fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta propietaria' }));
   await screen.findByText('4. Todo listo');
+};
+const submitOwnerEnrollment = () => {
+  credentials();
+  fireEvent.click(screen.getByRole('button', { name: 'Crear cuenta propietaria' }));
 };
 const start = async () => {
   await useAppStore.getState().handleFreeTrial();
@@ -103,9 +107,9 @@ beforeEach(() => {
   mocks.createFreeTrial.mockResolvedValue({ success: true, details: {
     license_key: 'FREE-ONBOARDING', plan_code: 'free_trial', features: { max_rubros: 1 },
   } });
-  mocks.enrollAdminOwnerOnDevice.mockImplementation(async () => {
+  mocks.enrollAdminOwnerOnDevice.mockImplementation(async ({ licenseKey }) => {
     mocks.events.push('owner');
-    return { success: true, admin_user: { id: 'owner-1' }, details: { license_key: 'FREE-ONBOARDING' } };
+    return { success: true, admin_user: { id: 'owner-1' }, details: { license_key: licenseKey } };
   });
   mocks.getBusinessProfile.mockResolvedValue({ code: 'PROFILE_NOT_FOUND' });
   mocks.saveBusinessProfile.mockImplementation(async () => {
@@ -135,13 +139,14 @@ describe('integrated owner onboarding', () => {
     expect(screen.queryByText('Respaldo Cifrado')).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/PIN de respaldo/)).not.toBeInTheDocument();
     expect(screen.getByText(/No es un PIN de respaldo/)).toBeInTheDocument();
-    await enroll();
+    await enrollIntegratedNewLicense();
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(useAppStore.getState().appStatus).toBe('setup_required');
     expect(useAppStore.getState().ownerEnrollmentContext).toBe('new_license_setup');
     fireEvent.click(screen.getByRole('button', { name: /1Tu negocio/ }));
     expect(screen.getByLabelText('Nombre del Negocio *')).toHaveValue('Mi negocio');
-    fireEvent.click(screen.getByRole('button', { name: /4Todo listo/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Tu acceso como propietario/ }));
+    expect(screen.getByRole('heading', { name: '4. Todo listo' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
     await screen.findByText('ready');
     expect(mocks.events).toEqual(['owner', 'actor', 'profile']);
@@ -168,7 +173,7 @@ describe('integrated owner onboarding', () => {
 
   it('retries profile failure with the same authenticated owner and draft', async () => {
     mocks.saveBusinessProfile.mockResolvedValueOnce({ success: false, message: 'No se pudo guardar' });
-    await start(); business(); await enroll();
+    await start(); business(); await enrollIntegratedNewLicense();
     fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo guardar');
     expect(useAppStore.getState().currentAdminUser.id).toBe('owner-1');
@@ -181,7 +186,7 @@ describe('integrated owner onboarding', () => {
   });
 
   it('blocks finalization after actor invalidation', async () => {
-    await start(); business(); await enroll();
+    await start(); business(); await enrollIntegratedNewLicense();
     mocks.actorGranted = false;
     fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('ACTOR_CONTEXT_LOCKED');
@@ -218,9 +223,10 @@ describe('integrated owner onboarding', () => {
     expect(screen.queryByLabelText('Nombre del Negocio *')).not.toBeInTheDocument();
     expect(screen.queryByText('Giro del Negocio')).not.toBeInTheDocument();
 
-    await enroll();
+    submitOwnerEnrollment();
     await screen.findByText('ready');
 
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledWith(expect.objectContaining({ licenseKey: 'EXISTING-WITH-PROFILE' }));
     expect(mocks.events).toEqual(['owner', 'actor']);
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(useAppStore.getState().companyProfile).toMatchObject({ name: 'Negocio existente' });
@@ -240,16 +246,18 @@ describe('integrated owner onboarding', () => {
 
     expect(useAppStore.getState().ownerEnrollmentContext).toBe('existing_license');
     expect(screen.getByRole('heading', { name: 'Tu acceso como propietario' })).toBeInTheDocument();
-    await enroll();
+    submitOwnerEnrollment();
     await screen.findByLabelText('Nombre del Negocio *');
     expect(screen.queryByRole('heading', { name: 'Tu acceso como propietario' })).not.toBeInTheDocument();
     expect(mocks.events).toEqual(['owner', 'actor']);
 
     business();
+    expect(screen.getByRole('heading', { name: 'Todo listo' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Finalizar y Empezar' }));
     await screen.findByText('ready');
 
     expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledWith(expect.objectContaining({ licenseKey: 'EXISTING-WITHOUT-PROFILE' }));
     expect(mocks.events).toEqual(['owner', 'actor', 'profile']);
     expect(mocks.saveBusinessProfile).toHaveBeenCalledTimes(1);
     expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
