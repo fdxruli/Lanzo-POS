@@ -1,0 +1,53 @@
+name: Ecommerce Hotfix Validation Temporary
+
+on:
+  push:
+    branches:
+      - fix/ecommerce-product-publish-modal-state-r1
+
+permissions:
+  contents: read
+
+jobs:
+  validate-ecommerce-hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused ecommerce lifecycle and regression tests
+        run: >-
+          npm run test:ci --
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.catalogLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.stockMode.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.configurationSync.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.stockAlerts.test.jsx
+          src/utils/__tests__/ecommerceWholesalePricing.test.js
+
+      - name: Focal ESLint
+        run: >-
+          npx eslint
+          src/components/ecommerce/EcommercePortalSettings.jsx
+          src/components/ecommerce/EcommerceProductPublishModal.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.catalogLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+
+      - name: Diff check
+        run: git diff --check origin/main...HEAD
+
+      - name: Production build
+        run: npm run build
