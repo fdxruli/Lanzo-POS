@@ -36,6 +36,7 @@ jobs:
           src/components/ecommerce/__tests__/EcommerceProductPublishModal.configurationSync.test.jsx
           src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx
           src/utils/__tests__/ecommerceWholesalePricing.test.js
+          src/utils/__tests__/businessCapabilities.test.js
 
       - name: Focal ESLint
         run: >-
