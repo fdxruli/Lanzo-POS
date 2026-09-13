@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link2, LoaderCircle, Save, Search, Unlink, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getEcommercePortal } from '../../services/ecommerce/ecommerceAdminService';
@@ -116,13 +116,30 @@ export default function EcommerceProductPublishModal({
   const [stockFeatureError, setStockFeatureError] = useState(false);
   const [stockVisibilityEnabled, setStockVisibilityEnabled] = useState(false);
   const [localProductSearch, setLocalProductSearch] = useState('');
+  const [selectedProductSnapshot, setSelectedProductSnapshot] = useState(null);
+  const initializedModalKeyRef = useRef(null);
+  const hasUserSearchedRef = useRef(false);
   const companyProfile = useAppStore((state) => state.companyProfile);
-  const selectedLocalProduct = useMemo(
-    () => localProducts.find(
-      (product) => String(product.id) === String(form.localProductRef)
-    ) || null,
-    [form.localProductRef, localProducts]
-  );
+
+  const selectableLocalProducts = useMemo(() => {
+    if (!selectedProductSnapshot?.id) return localProducts;
+    const selectedRef = String(selectedProductSnapshot.id);
+    if (localProducts.some((product) => String(product.id) === selectedRef)) {
+      return localProducts;
+    }
+    return [selectedProductSnapshot, ...localProducts];
+  }, [localProducts, selectedProductSnapshot]);
+
+  const selectedLocalProduct = useMemo(() => {
+    const selectedRef = String(form.localProductRef || '');
+    if (!selectedRef) return null;
+    if (
+      selectedProductSnapshot
+      && String(selectedProductSnapshot.id) === selectedRef
+    ) return selectedProductSnapshot;
+    return localProducts.find((product) => String(product.id) === selectedRef) || null;
+  }, [form.localProductRef, localProducts, selectedProductSnapshot]);
+
   const businessPolicy = useMemo(() => resolveEcommerceBusinessPolicy({
     profile: companyProfile,
     product: selectedLocalProduct || {},
@@ -141,8 +158,24 @@ export default function EcommerceProductPublishModal({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedModalKeyRef.current = null;
+      hasUserSearchedRef.current = false;
+      setLocalProductSearch('');
+      setSelectedProductSnapshot(null);
+      return;
+    }
+
+    const modalKey = editingProduct
+      ? `edit:${editingProduct.id || editingProduct.localProductRef || 'unknown'}`
+      : 'new';
+    if (initializedModalKeyRef.current === modalKey) return;
+    initializedModalKeyRef.current = modalKey;
+    hasUserSearchedRef.current = false;
+    setLocalProductSearch('');
+
     if (!editingProduct) {
+      setSelectedProductSnapshot(null);
       setForm({
         ...emptyForm,
         isPublished: !limitReached,
@@ -153,7 +186,8 @@ export default function EcommerceProductPublishModal({
 
     const linkedProduct = localProducts.find(
       (product) => String(product.id) === String(editingProduct.localProductRef || '')
-    );
+    ) || null;
+    setSelectedProductSnapshot(linkedProduct);
     setForm({
       id: editingProduct.id,
       localProductRef: editingProduct.localProductRef || '',
@@ -182,12 +216,49 @@ export default function EcommerceProductPublishModal({
   }, [editingProduct, isPro, limitReached, localProducts, open]);
 
   useEffect(() => {
-    if (!open || typeof onSearchLocalProducts !== 'function') return undefined;
+    if (!open || !form.localProductRef) return;
+    const sourceProduct = localProducts.find(
+      (product) => String(product.id) === String(form.localProductRef)
+    );
+    if (!sourceProduct) return;
+
+    setSelectedProductSnapshot((current) => {
+      if (current && String(current.id) === String(sourceProduct.id)) return current;
+      return sourceProduct;
+    });
+
+    setForm((current) => {
+      if (String(current.localProductRef) !== String(sourceProduct.id)) return current;
+      const stockTracked = isProductStockTracked(sourceProduct);
+      const categoryName = current.categoryName
+        || categoriesById.get(sourceProduct.categoryId)
+        || sourceProduct.category
+        || '';
+      if (
+        current.stockTracked === stockTracked
+        && current.categoryName === categoryName
+      ) return current;
+      return {
+        ...current,
+        stockTracked,
+        stockMode: stockTracked ? current.stockMode : 'hidden',
+        categoryName
+      };
+    });
+  }, [categoriesById, form.localProductRef, localProducts, open]);
+
+  useEffect(() => {
+    if (
+      !open
+      || editingProduct
+      || !hasUserSearchedRef.current
+      || typeof onSearchLocalProducts !== 'function'
+    ) return undefined;
     const timeoutId = window.setTimeout(() => {
       void onSearchLocalProducts(localProductSearch);
     }, 250);
     return () => window.clearTimeout(timeoutId);
-  }, [localProductSearch, onSearchLocalProducts, open]);
+  }, [editingProduct, localProductSearch, onSearchLocalProducts, open]);
 
   useEffect(() => {
     let active = true;
@@ -223,8 +294,11 @@ export default function EcommerceProductPublishModal({
   if (!open) return null;
 
   const chooseProduct = (event) => {
-    const product = localProducts.find((item) => String(item.id) === event.target.value);
+    const product = selectableLocalProducts.find(
+      (item) => String(item.id) === event.target.value
+    );
     if (!product) {
+      setSelectedProductSnapshot(null);
       setForm((current) => ({
         ...current,
         localProductRef: '',
@@ -236,6 +310,7 @@ export default function EcommerceProductPublishModal({
       return;
     }
     const stockTracked = isProductStockTracked(product);
+    setSelectedProductSnapshot(product);
     setForm((current) => ({
       ...current,
       localProductRef: String(product.id),
@@ -271,9 +346,7 @@ export default function EcommerceProductPublishModal({
   const submit = async (event) => {
     event.preventDefault();
     const price = Number(form.price);
-    const localProduct = localProducts.find(
-      (product) => String(product.id) === form.localProductRef.trim()
-    );
+    const localProduct = selectedLocalProduct;
     if (!form.localProductRef.trim()) return toast.error('Selecciona un producto del catálogo local.');
     if (!localProduct) return toast.error('No se pudo leer el producto local seleccionado.');
     if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
@@ -355,14 +428,17 @@ export default function EcommerceProductPublishModal({
                 className="form-input"
                 type="search"
                 value={localProductSearch}
-                onChange={(event) => setLocalProductSearch(event.target.value)}
+                onChange={(event) => {
+                  hasUserSearchedRef.current = true;
+                  setLocalProductSearch(event.target.value);
+                }}
                 placeholder="Buscar por nombre, código o SKU"
                 disabled={Boolean(editingProduct)}
               />
             </span>
             <select className="form-input" value={form.localProductRef} onChange={chooseProduct} disabled={Boolean(editingProduct)} required>
               <option value="">Selecciona un producto</option>
-              {localProducts.map((product) => {
+              {selectableLocalProducts.map((product) => {
                 const ref = String(product.id);
                 const linked = linkedRefs.has(ref) && ref !== editingProduct?.localProductRef;
                 return (
@@ -385,7 +461,7 @@ export default function EcommerceProductPublishModal({
                 : 'Se guarda una copia pública; tu producto local no se modifica.'}
             </small>
             {localCatalogLoading && <small className="ecom-admin-help">Cargando productos…</small>}
-            {!localCatalogLoading && localProducts.length === 0 && (
+            {!localCatalogLoading && selectableLocalProducts.length === 0 && (
               <small className="ecom-admin-help">No encontramos productos activos con esa búsqueda.</small>
             )}
             {localCatalogHasMore && !editingProduct && (
