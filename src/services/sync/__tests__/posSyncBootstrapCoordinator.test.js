@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   logs: [],
   start: vi.fn(async () => ({ started: true })),
   stop: vi.fn(async () => undefined),
-  assertAccess: vi.fn(async () => undefined)
+  assertAccess: vi.fn(async () => undefined),
+  cloudEnabled: true
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -41,7 +42,7 @@ vi.mock('../../cash/cashSyncHandler', () => ({ cashSyncHandler: { onStart: vi.fn
 vi.mock('../../salesCloud/salesCloudSyncHandler', () => ({ salesCloudSyncHandler: { onStart: vi.fn() } }));
 vi.mock('../syncConstants', () => ({
   getLicenseKeyFromDetails: (details) => details?.license_key || null,
-  isCloudPosSyncEnabled: () => true,
+  isCloudPosSyncEnabled: () => mocks.cloudEnabled,
   POS_BOOTSTRAP_JITTER_MS: { MIN: 0, MAX: 0 },
   POS_BOOTSTRAP_RESOURCES: {
     POS: 'pos', PRODUCTS: 'products', CUSTOMERS: 'customers', CASH: 'cash', CREDIT: 'credit', SALES: 'sales', REPORTS: 'reports'
@@ -64,9 +65,10 @@ describe('posSyncBootstrapCoordinator route demand ownership', () => {
   beforeEach(async () => {
     vi.useFakeTimers();
     mocks.logs.length = 0;
+    mocks.cloudEnabled = true;
     vi.clearAllMocks();
-    window.history.replaceState({}, '', '/');
     await stopPosCloudBootstrap();
+    window.history.replaceState({}, '', '/');
   });
 
   afterEach(async () => {
@@ -98,5 +100,73 @@ describe('posSyncBootstrapCoordinator route demand ownership', () => {
     expect(mocks.logs.filter(({ message, meta }) => (
       message.includes('module demand') && meta?.resource === 'products'
     ))).toHaveLength(1);
+  });
+
+  it('does not patch browser history when cloud sync is disabled', async () => {
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+    mocks.cloudEnabled = false;
+
+    await expect(startPosCloudBootstrap({
+      licenseDetails: { license_key: 'license-free', plan_code: 'free' },
+      licenseKey: 'license-free',
+      reason: 'free_runtime'
+    })).resolves.toEqual({
+      started: false,
+      status: 'disabled',
+      reason: 'cloud_pos_sync_off'
+    });
+
+    expect(window.history.pushState).toBe(originalPushState);
+    expect(window.history.replaceState).toBe(originalReplaceState);
+    expect(mocks.assertAccess).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it('restores browser history and stops route demand when bootstrap stops', async () => {
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    await expect(startPosCloudBootstrap({ reason: 'cloud_runtime' })).resolves.toMatchObject({ started: true });
+    await flush();
+
+    expect(window.history.pushState).not.toBe(originalPushState);
+    expect(window.history.replaceState).not.toBe(originalReplaceState);
+
+    await stopPosCloudBootstrap({ preserveSync: true });
+
+    expect(window.history.pushState).toBe(originalPushState);
+    expect(window.history.replaceState).toBe(originalReplaceState);
+
+    window.history.pushState({}, '', '/productos');
+    await vi.runOnlyPendingTimersAsync();
+    await flush();
+
+    expect(mocks.logs.filter(({ message, meta }) => (
+      message.includes('module demand') && meta?.resource === 'products'
+    ))).toHaveLength(0);
+  });
+
+  it('removes an active cloud route patch when runtime becomes FREE/local', async () => {
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+
+    await expect(startPosCloudBootstrap({ reason: 'cloud_runtime' })).resolves.toMatchObject({ started: true });
+    expect(window.history.pushState).not.toBe(originalPushState);
+    expect(window.history.replaceState).not.toBe(originalReplaceState);
+
+    mocks.cloudEnabled = false;
+    await expect(startPosCloudBootstrap({
+      licenseDetails: { license_key: 'license-free', plan_code: 'free' },
+      licenseKey: 'license-free',
+      reason: 'plan_changed'
+    })).resolves.toEqual({
+      started: false,
+      status: 'disabled',
+      reason: 'cloud_pos_sync_off'
+    });
+
+    expect(window.history.pushState).toBe(originalPushState);
+    expect(window.history.replaceState).toBe(originalReplaceState);
   });
 });
