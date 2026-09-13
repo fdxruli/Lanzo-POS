@@ -287,7 +287,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [searchingCatalog, setSearchingCatalog] = useState(false);
   const [loadingMoreCatalog, setLoadingMoreCatalog] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
-  const [localCatalogCursor, setLocalCatalogCursor] = useState(null);
   const [localCatalogHasMore, setLocalCatalogHasMore] = useState(false);
   const [categoriesById, setCategoriesById] = useState(new Map());
   const [operations, setOperations] = useState(null);
@@ -296,6 +295,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [activeSection, setActiveSection] = useState('information');
   const [productSearch, setProductSearch] = useState('');
   const catalogRequestSeqRef = useRef(0);
+  const latestRequestByKindRef = useRef({
+    opening: 0,
+    search: 0,
+    'load-more': 0
+  });
   const catalogSessionRef = useRef(0);
   const localCatalogCursorRef = useRef(null);
   const categoriesByIdRef = useRef(new Map());
@@ -540,7 +544,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
     if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_SET) {
       const coverImageUrl = publicUrl(cover.value);
-      if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirlo nuevamente.');
+      if (!coverImageUrl) return toast.error('La portada seleccionada no tiene una URL pública válida. Intenta subirla nuevamente.');
       payload.coverImageUrl = coverImageUrl;
     } else if (canPersistCoverThroughPortal && cover.intent === IMAGE_INTENT_CLEAR) {
       payload.coverImageUrl = null;
@@ -645,6 +649,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     sessionId = catalogSessionRef.current
   } = {}) => {
     const requestId = ++catalogRequestSeqRef.current;
+    const requestKindId = (latestRequestByKindRef.current[requestKind] || 0) + 1;
+    latestRequestByKindRef.current[requestKind] = requestKindId;
     const setRequestLoading = (value) => {
       if (requestKind === 'opening') setOpeningCatalog(value);
       if (requestKind === 'search') setSearchingCatalog(value);
@@ -682,7 +688,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
       const nextCursor = page.nextCursor || null;
       localCatalogCursorRef.current = nextCursor;
-      setLocalCatalogCursor(nextCursor);
       setLocalCatalogHasMore(Boolean(nextCursor) && pageProducts.length > 0);
       if (categories) {
         const nextCategories = new Map(
@@ -702,11 +707,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       }
       return false;
     } finally {
-      const stillCurrent = (
-        requestId === catalogRequestSeqRef.current
+      const stillLatestForKind = (
+        latestRequestByKindRef.current[requestKind] === requestKindId
         && sessionId === catalogSessionRef.current
       );
-      if (stillCurrent) setRequestLoading(false);
+      if (stillLatestForKind) setRequestLoading(false);
     }
   }, []);
 

@@ -249,6 +249,57 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
   });
 
+  it('releases stale load-more loading after a newer search wins the catalog race', async () => {
+    await renderCatalog();
+    await openPublishModal();
+
+    fireEvent.change(getProductSelect(), {
+      target: { value: productOne.id }
+    });
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+
+    const loadMoreRequest = deferred();
+    const searchRequest = deferred();
+    productRepository.listProductsPage
+      .mockImplementationOnce(() => loadMoreRequest.promise)
+      .mockImplementationOnce(() => searchRequest.promise);
+
+    const loadMoreButton = screen.getByRole('button', { name: 'Cargar más productos' });
+    fireEvent.click(loadMoreButton);
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
+      target: { value: 'producto' }
+    });
+    await act(async () => delay(275));
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      searchRequest.resolve({ data: [productTwo], nextCursor: 'search-cursor' });
+      await Promise.resolve();
+    });
+
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
+    expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
+
+    await act(async () => {
+      loadMoreRequest.resolve({ data: [staleProduct], nextCursor: 'stale-cursor' });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(String(productOne.price))).toBeInTheDocument();
+    expect(screen.queryByText('Cargando productos…')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cargar más productos' }).disabled).toBe(false);
+  });
+
   it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {
     await renderCatalog();
     await openPublishModal();
