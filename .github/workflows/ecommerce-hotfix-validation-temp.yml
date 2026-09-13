@@ -35,7 +35,6 @@ jobs:
           src/components/ecommerce/__tests__/EcommerceProductPublishModal.stockMode.test.jsx
           src/components/ecommerce/__tests__/EcommerceProductPublishModal.configurationSync.test.jsx
           src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx
-          src/components/ecommerce/__tests__/EcommercePortalSettings.stockAlerts.test.jsx
           src/utils/__tests__/ecommerceWholesalePricing.test.js
 
       - name: Focal ESLint
@@ -45,6 +44,8 @@ jobs:
           src/components/ecommerce/EcommerceProductPublishModal.jsx
           src/components/ecommerce/__tests__/EcommerceProductPublishModal.catalogLifecycle.test.jsx
           src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.stockMode.test.jsx
+          src/components/ecommerce/__tests__/EcommerceProductPublishModal.configurationSync.test.jsx
 
       - name: Diff check
         run: git diff --check origin/main...HEAD
