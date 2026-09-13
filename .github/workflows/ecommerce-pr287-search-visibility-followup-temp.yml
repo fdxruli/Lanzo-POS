@@ -28,6 +28,20 @@ jobs:
       - name: Apply visible-search UI and regression tests
         run: python .github/scripts/ecommerce_pr287_search_visibility_followup_temp.py ui-tests
 
+      - name: Align existing active-search load-more copy assertion
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx')
+          text = path.read_text(encoding='utf-8')
+          old = "expect(screen.getByRole('button', { name: 'Cargar más productos' }).disabled).toBe(false);"
+          new = "expect(screen.getByRole('button', { name: 'Cargar más resultados' }).disabled).toBe(false);"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale-load-more copy assertion, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Install dependencies
         run: npm ci
 
