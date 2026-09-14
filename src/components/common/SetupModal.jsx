@@ -25,7 +25,7 @@ import './SetupModal.css';
 import Logger from '../../services/Logger';
 import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase';
 
-const logoPlaceholder = 'https://placehold.co/150x150/FFFFFF/4A5568?text=L'; // Aumenté un poco la resolución del placeholder
+const logoPlaceholder = 'https://placehold.co/150x150/FFFFFF/4A5568?text=L';
 
 const BUSINESS_RUBROS = [
   { id: 'food_service', label: 'Restaurante / Cocina', Icon: Utensils },
@@ -41,7 +41,7 @@ const normalizeCandidateTypes = (candidate) => {
   if (Array.isArray(types)) return types.filter(Boolean);
   if (typeof types === 'string') {
     return types
-      .replace(/[{}"]/g, '')
+      .replace(/[{}\"]/g, '')
       .split(',')
       .flatMap((item) => {
         const trimmedItem = item.trim();
@@ -119,11 +119,16 @@ export default function SetupModal() {
   const isStep2Complete = selectedTypes.length > 0
     && selectedTypes.length <= maxRubrosAllowed
     && selectedTypes.every((type) => isAllAllowed || allowedRubrosList.includes(type));
+  const isOwnerComplete = currentDeviceRole === 'admin' && Boolean(currentAdminUser);
   const isBusy = isSubmitting || enrolling;
+  const selectedRubroLabels = selectedTypes
+    .map((type) => BUSINESS_RUBROS.find((rubro) => rubro.id === type)?.label || type)
+    .join(', ');
 
   const handleSectionToggle = (section) => {
     if (section === 'type' && !isStep1Complete) return;
     if (section === 'owner' && (!isStep1Complete || !isStep2Complete)) return;
+    if (section === 'complete' && (!isStep1Complete || !isStep2Complete || !isOwnerComplete)) return;
     setActiveSection(activeSection === section ? '' : section);
   };
 
@@ -131,13 +136,13 @@ export default function SetupModal() {
     setError('');
 
     if (!isAllAllowed && !allowedRubrosList.includes(value)) {
-      setError("Tu licencia no incluye acceso a este rubro específico.");
+      setError('Tu licencia no incluye acceso a este rubro específico.');
       return;
     }
 
-    setSelectedTypes(prev => {
+    setSelectedTypes((prev) => {
       if (prev.includes(value)) {
-        return prev.filter(t => t !== value);
+        return prev.filter((type) => type !== value);
       }
       if (maxRubrosAllowed === 1) {
         return [value];
@@ -157,8 +162,8 @@ export default function SetupModal() {
         const compressedFile = await compressImage(file);
         setLogoPreview(URL.createObjectURL(compressedFile));
         setLogoData(compressedFile);
-      } catch (error) {
-        Logger.error("Error imagen:", error);
+      } catch (imageError) {
+        Logger.error('Error imagen:', imageError);
       }
     }
   };
@@ -171,7 +176,7 @@ export default function SetupModal() {
       if (activeSection !== 'type') setActiveSection('type');
       return;
     }
-    if (needsOwner || currentDeviceRole !== 'admin' || !currentAdminUser) {
+    if (currentDeviceRole !== 'admin' || !currentAdminUser) {
       setError('Inicia sesión como propietario antes de guardar tu negocio.');
       return;
     }
@@ -185,7 +190,7 @@ export default function SetupModal() {
       actorHandle.assertCurrent('settings');
 
       if (!terms || !terms.id) {
-        throw new Error("No se pudieron verificar los términos y condiciones. Revisa tu conexión.");
+        throw new Error('No se pudieron verificar los términos y condiciones. Revisa tu conexión.');
       }
 
       const currentLicenseKey = licenseDetails?.license_key;
@@ -211,10 +216,12 @@ export default function SetupModal() {
 
         throw new Error('Error registrando la aceptacion de terminos.');
       }
+
       actorHandle.assertCurrent('settings');
       if (useAppStore.getState().licenseDetails?.license_key !== currentLicenseKey) {
         throw new Error('La licencia cambió. Vuelve a iniciar la configuración.');
       }
+
       await handleSetup({
         name,
         phone,
@@ -222,10 +229,9 @@ export default function SetupModal() {
         logo: logoData,
         business_type: selectedTypes
       });
-
     } catch (err) {
-      Logger.error("Error en setup:", err);
-      setError(err.message || "Ocurrió un error al procesar. Intenta de nuevo.");
+      Logger.error('Error en setup:', err);
+      setError(err.message || 'Ocurrió un error al procesar. Intenta de nuevo.');
     } finally {
       setIsSubmitting(false);
     }
@@ -241,14 +247,17 @@ export default function SetupModal() {
   };
 
   const handleContinueToOwner = () => {
-    if (isStep1Complete && isStep2Complete) setActiveSection('owner');
+    if (!isStep1Complete || !isStep2Complete) return;
+    setActiveSection(includesOwner && !isOwnerComplete ? 'owner' : 'complete');
+  };
+
+  const handleOwnerEnrollmentSuccess = () => {
+    setActiveSection('complete');
   };
 
   return (
     <div id="business-setup-modal" className="modal fullscreen-modal">
       <div className="modal-content setup-content">
-
-        {/* LADO IZQUIERDO EN DESKTOP / ARRIBA EN MÓVIL */}
         <div className="setup-header">
           <div className="setup-header-content">
             <div className="setup-header-icon">
@@ -256,12 +265,10 @@ export default function SetupModal() {
             </div>
             <h2>Configura tu Negocio</h2>
 
-            {/* Texto estático para Móvil */}
             <p className="header-text-mobile">
               Completa estos simples pasos para personalizar tu sistema y adaptarlo a tus necesidades operativas. Estamos listos para empezar.
             </p>
 
-            {/* Texto dinámico para Escritorio */}
             <div className="header-text-desktop">
               {activeSection === 'info' && (
                 <p className="fade-in-text">
@@ -275,14 +282,18 @@ export default function SetupModal() {
               )}
               {activeSection === 'owner' && (
                 <p className="fade-in-text">
-                  Tu cuenta personal identifica quién administra el negocio. Al finalizar guardaremos su configuración.
+                  Tu cuenta personal identifica quién administra el negocio. Al continuar crearemos tu acceso de propietario antes de la confirmación final.
+                </p>
+              )}
+              {activeSection === 'complete' && (
+                <p className="fade-in-text">
+                  Revisa la información final. Al crear el negocio registraremos la versión vigente de los términos y guardaremos tu configuración.
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* LADO DERECHO EN DESKTOP / ABAJO EN MÓVIL */}
         <div className="setup-form-wrapper">
           <div id="business-setup-form">
             <div className="form-inner-container">
@@ -296,29 +307,24 @@ export default function SetupModal() {
                     </span>
                   </div>
                   <div className="profile-import-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={handleImportCandidate}
-                      disabled={isBusy}
-                    >
+                    <button type="button" className="btn btn-primary" onClick={handleImportCandidate} disabled={isBusy}>
                       Copiar datos
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={handleSkipImportCandidate}
-                      disabled={isBusy}
-                    >
+                    <button type="button" className="btn btn-secondary" onClick={handleSkipImportCandidate} disabled={isBusy}>
                       Empezar desde cero
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* --- ACORDEÓN 1: INFORMACIÓN --- */}
               <div className={`accordion-item ${activeSection === 'info' ? 'open' : ''} ${isStep1Complete ? 'completed' : ''}`}>
-                <button type="button" className="accordion-header" disabled={isBusy} aria-expanded={activeSection === 'info'} onClick={() => handleSectionToggle('info')}>
+                <button
+                  type="button"
+                  className="accordion-header"
+                  disabled={isBusy}
+                  aria-expanded={activeSection === 'info'}
+                  onClick={() => handleSectionToggle('info')}
+                >
                   <span className="header-title">
                     <span className="step-number">1</span>
                     <span>Tu negocio</span>
@@ -371,8 +377,12 @@ export default function SetupModal() {
                               </div>
                             )}
                           </label>
-                          <input id="logo-upload" type="file" accept="image/*"
-                            onChange={handleImageChange} className="hidden-input"
+                          <input
+                            id="logo-upload"
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="hidden-input"
                             disabled={isBusy}
                           />
                         </div>
@@ -406,9 +416,14 @@ export default function SetupModal() {
                 )}
               </div>
 
-              {/* --- ACORDEÓN 2: RUBROS --- */}
               <div className={`accordion-item ${activeSection === 'type' ? 'open' : ''} ${!isStep1Complete ? 'locked' : ''} ${isStep2Complete ? 'completed' : ''}`}>
-                <button type="button" className="accordion-header" disabled={isBusy || !isStep1Complete} aria-expanded={activeSection === 'type'} onClick={() => handleSectionToggle('type')}>
+                <button
+                  type="button"
+                  className="accordion-header"
+                  disabled={isBusy || !isStep1Complete}
+                  aria-expanded={activeSection === 'type'}
+                  onClick={() => handleSectionToggle('type')}
+                >
                   <span className="header-title">
                     <span className="step-number">2</span>
                     <span>Giro del Negocio</span>
@@ -421,9 +436,7 @@ export default function SetupModal() {
 
                 {activeSection === 'type' && (
                   <div className="accordion-body">
-                    <p className="rubro-intro">
-                      Selecciona a qué se dedica tu empresa. Esto activará funciones especiales.
-                    </p>
+                    <p className="rubro-intro">Selecciona a qué se dedica tu empresa. Esto activará funciones especiales.</p>
 
                     {maxRubrosAllowed === 1 && (
                       <div className="trial-badge">
@@ -433,7 +446,7 @@ export default function SetupModal() {
                     )}
 
                     <div className={`rubro-grid ${isBusy ? 'disabled-grid' : ''}`}>
-                      {BUSINESS_RUBROS.map(rubro => {
+                      {BUSINESS_RUBROS.map((rubro) => {
                         const isLockedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
                         const isSelected = selectedTypes.includes(rubro.id);
                         const IconComponent = rubro.Icon;
@@ -446,7 +459,7 @@ export default function SetupModal() {
                             key={rubro.id}
                             className={`rubro-card ${isSelected ? 'selected' : ''} ${isLockedByLicense ? 'locked-by-license' : ''} ${isBusy ? 'disabled' : ''}`}
                             onClick={() => !isLockedByLicense && !isBusy && handleTypeClick(rubro.id)}
-                            title={isLockedByLicense ? "No incluido en tu licencia" : ""}
+                            title={isLockedByLicense ? 'No incluido en tu licencia' : ''}
                           >
                             <div className="rubro-icon-wrapper">
                               <IconComponent size={32} strokeWidth={1.5} />
@@ -461,7 +474,6 @@ export default function SetupModal() {
                     {error && <div className="error-message">{error}</div>}
 
                     <div className="step-actions end">
-                      <button type="button" className="btn btn-secondary" disabled={isBusy} onClick={() => setActiveSection('info')}>Atrás</button>
                       <button
                         type="button"
                         className="btn btn-primary btn-next"
@@ -475,38 +487,115 @@ export default function SetupModal() {
                 )}
               </div>
 
-              <div className={`accordion-item ${activeSection === 'owner' ? 'open' : ''} ${!isStep1Complete || !isStep2Complete ? 'locked' : ''}`}>
-                <button type="button" className="accordion-header" aria-expanded={activeSection === 'owner'} disabled={isBusy || !isStep1Complete || !isStep2Complete} onClick={() => handleSectionToggle('owner')}>
-                  <span className="header-title"><span className="step-number">3</span>{includesOwner ? 'Tu acceso como propietario' : 'Finalizar configuración'}</span>
+              {includesOwner && (
+                <div className={`accordion-item ${activeSection === 'owner' ? 'open' : ''} ${!isStep1Complete || !isStep2Complete ? 'locked' : ''} ${isOwnerComplete ? 'completed' : ''}`}>
+                  <button
+                    type="button"
+                    className="accordion-header"
+                    aria-expanded={activeSection === 'owner'}
+                    disabled={isBusy || !isStep1Complete || !isStep2Complete}
+                    onClick={() => handleSectionToggle('owner')}
+                  >
+                    <span className="header-title">
+                      <span className="step-number">3</span>
+                      <span>Tu acceso como propietario</span>
+                    </span>
+                    <span className="header-status">
+                      {isOwnerComplete && <CheckCircle size={20} className="icon-success" />}
+                      <ChevronDown size={20} />
+                    </span>
+                  </button>
+
+                  {activeSection === 'owner' && (
+                    <div className="accordion-body">
+                      {needsOwner && currentDeviceRole !== 'staff' ? (
+                        <AdminEnrollmentModal
+                          embedded
+                          onBusyChange={setEnrolling}
+                          onEnrollmentSuccess={handleOwnerEnrollmentSuccess}
+                          submitLabel="Continuar"
+                          loadingLabel="Creando acceso..."
+                        />
+                      ) : (
+                        <div className="setup-owner-complete-note">
+                          <CheckCircle size={20} className="icon-success" />
+                          <span>Tu acceso como propietario ya está creado.</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className={`accordion-item ${activeSection === 'complete' ? 'open' : ''} ${!isStep1Complete || !isStep2Complete || !isOwnerComplete ? 'locked' : ''}`}>
+                <button
+                  type="button"
+                  className="accordion-header"
+                  aria-expanded={activeSection === 'complete'}
+                  disabled={isBusy || !isStep1Complete || !isStep2Complete || !isOwnerComplete}
+                  onClick={() => handleSectionToggle('complete')}
+                >
+                  <span className="header-title">
+                    <span className="step-number">{includesOwner ? '4' : '3'}</span>
+                    <span>Todo listo</span>
+                  </span>
                   <ChevronDown size={20} />
                 </button>
-                {activeSection === 'owner' && (
+
+                {activeSection === 'complete' && (
                   <div className="accordion-body">
-                    {needsOwner && currentDeviceRole !== 'staff' ? (
-                      <AdminEnrollmentModal embedded onBusyChange={setEnrolling} />
-                    ) : (
-                      <form onSubmit={handleSubmit}>
-                        <h3>{includesOwner ? '4. Todo listo' : 'Todo listo'}</h3>
-                        <p>{includesOwner ? 'Tu acceso como propietario está creado. ' : ''}Guarda la configuración de {name} para entrar a Lanzo.</p>
-                        <p className="terms-agreement-text">Al finalizar aceptas nuestros <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>Términos y Condiciones</button> y política de manejo de datos.</p>
-                        {error && <div className="error-message" role="alert">{error}</div>}
-                        <button type="submit" className="btn btn-save btn-finish" disabled={isBusy || !isStep1Complete || !isStep2Complete || currentDeviceRole !== 'admin' || !currentAdminUser}>
-                          {isSubmitting ? <><Loader2 className="animate-spin" size={20} />Guardando...</> : 'Finalizar y Empezar'}
-                        </button>
-                      </form>
-                    )}
-                    <div className="step-actions">
-                      <button type="button" className="btn btn-secondary" disabled={isBusy} onClick={() => setActiveSection('type')}>Atrás</button>
-                    </div>
+                    <form onSubmit={handleSubmit}>
+                      <div className="setup-final-summary">
+                        <div className="setup-final-summary__item">
+                          <span className="setup-final-summary__label">Negocio</span>
+                          <strong>{name}</strong>
+                        </div>
+                        <div className="setup-final-summary__item">
+                          <span className="setup-final-summary__label">Giro</span>
+                          <strong>{selectedRubroLabels}</strong>
+                        </div>
+                        <div className="setup-final-summary__item">
+                          <span className="setup-final-summary__label">Acceso</span>
+                          <strong>Propietario creado</strong>
+                        </div>
+                      </div>
+
+                      <p className="terms-agreement-text">
+                        Al hacer clic en <strong>Crear negocio</strong>, aceptas nuestros{' '}
+                        <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>
+                          Términos y Condiciones
+                        </button>{' '}
+                        y política de manejo de datos.
+                      </p>
+
+                      {error && <div className="error-message" role="alert">{error}</div>}
+
+                      <button
+                        type="submit"
+                        className="btn btn-save btn-finish"
+                        disabled={isBusy || !isStep1Complete || !isStep2Complete || !isOwnerComplete}
+                      >
+                        {isSubmitting ? (
+                          <><Loader2 className="animate-spin" size={20} />Creando negocio...</>
+                        ) : (
+                          'Crear negocio'
+                        )}
+                      </button>
+                    </form>
                   </div>
                 )}
               </div>
-
             </div>
           </div>
-        </div>
 
+          <div className="setup-external-actions">
+            <button type="button" className="ui-button ui-button--ghost setup-change-license" onClick={logout} disabled={isBusy}>
+              Cambiar licencia
+            </button>
+          </div>
+        </div>
       </div>
+
       <TermsAndConditionsModal
         isOpen={showTerms}
         onClose={() => setShowTerms(false)}
