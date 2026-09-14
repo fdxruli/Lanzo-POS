@@ -82,6 +82,11 @@ const staleProduct = {
   isActive: true
 };
 
+const AUTHORIZED_ECOMMERCE_LICENSE = {
+  license_key: 'license-fixture',
+  features: { ecommerce_portal_enabled: true }
+};
+
 const freePortalResponse = {
   success: true,
   portal,
@@ -125,7 +130,7 @@ const setAuthorizedStore = () => {
   useAppStore.setState({
     companyProfile: { name: 'Negocio de prueba', business_type: 'abarrotes' },
     canAccess: vi.fn(() => true),
-    licenseDetails: { license_key: 'license-fixture' },
+    licenseDetails: AUTHORIZED_ECOMMERCE_LICENSE,
     currentDeviceRole: 'admin',
     currentStaffUser: null,
     _isInitializing: false,

@@ -44,6 +44,10 @@ vi.mock('../../../services/products/productRepository', () => ({
 vi.mock('../EcommerceProductPublishModal', () => ({ default: () => null }));
 
 const publicStoreUrl = 'https://lanzo-store.vercel.app/tienda/negocio-ejemplo';
+const AUTHORIZED_ECOMMERCE_LICENSE = {
+  license_key: 'license-fixture',
+  features: { ecommerce_portal_enabled: true }
+};
 const matrix = {
   getWidth: () => 2,
   getHeight: () => 2,
@@ -113,7 +117,7 @@ describe('EcommercePortalSettings QR isolation', () => {
       companyProfile: { name: 'Negocio ejemplo' },
       currentDeviceRole: 'admin',
       currentStaffUser: null,
-      licenseDetails: { license_key: 'license-fixture' },
+      licenseDetails: AUTHORIZED_ECOMMERCE_LICENSE,
       _isInitializing: false
     }));
 
