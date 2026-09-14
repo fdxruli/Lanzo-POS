@@ -209,6 +209,7 @@ export const createLicenseActivationActions = ({
 
             if (result.admin_enrollment_required) {
                 set({
+                    ownerEnrollmentContext: 'existing_license',
                     pendingAdminSessionResult: null,
                     appStatus: 'admin_enrollment_required',
                     licenseDetails: { ...(result.details || {}), license_key: licenseKey, valid: false, device_role: 'admin' },
@@ -317,6 +318,7 @@ export const createLicenseActivationActions = ({
                 await saveLicenseToStorage(licenseDataToSave);
 
                 set({
+                    ownerEnrollmentContext: 'new_license_setup',
                     pendingAdminSessionResult: null,
                     licenseDetails: {
                         ...licenseDataToSave,

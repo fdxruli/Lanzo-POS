@@ -338,10 +338,20 @@ function App() {
         </ErrorBoundary>
       );
 
+    case 'admin_enrollment_required':
+      if (useAppStore.getState().ownerEnrollmentContext !== 'new_license_setup') {
+        return <ErrorBoundary><AdminEnrollmentModal /></ErrorBoundary>;
+      }
+      // New licenses keep the draft while enrollment transitions into setup.
+      return (
+        <ErrorBoundary>
+          <SetupModal key={licenseDetails?.license_key} />
+        </ErrorBoundary>
+      );
     case 'setup_required':
       return (
         <ErrorBoundary>
-          <SetupModal />
+          <SetupModal key={licenseDetails?.license_key} />
         </ErrorBoundary>
       );
 
@@ -358,8 +368,6 @@ function App() {
     case 'admin_login_required':
       return <ErrorBoundary><AdminLoginModal /></ErrorBoundary>;
 
-    case 'admin_enrollment_required':
-      return <ErrorBoundary><AdminEnrollmentModal /></ErrorBoundary>;
 
     case 'locked_renewal':
       return (

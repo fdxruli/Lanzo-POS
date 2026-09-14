@@ -85,7 +85,12 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
       actor: result.admin_user || licenseData.admin_user
     });
     await get()._loadProfile(licenseKey, { forceRemote: true, reason });
-    set({ pendingAdminSessionResult: null });
+    // A ready profile completes the enrollment route. Keep the context only
+    // for the same new license when profile hydration routes into Setup.
+    set({
+      pendingAdminSessionResult: null,
+      ...(get().appStatus === 'ready' ? { ownerEnrollmentContext: null } : {})
+    });
     return { success: true, remoteAuthenticated: true };
   } catch (error) {
     lockActorRuntime('admin_actor_binding_or_bootstrap_failed');
@@ -211,6 +216,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     clearPendingAdminSession(set, 'return_to_access_choice');
     set({
       appStatus: 'license_access_required',
+      ownerEnrollmentContext: null,
       currentDeviceRole: null,
       currentAdminUser: null,
       currentStaffUser: null,
@@ -236,6 +242,7 @@ export const createLicenseAdminActions = ({ set, get }) => ({
     if (source.license_key) await saveLicenseToStorage({ ...source, device_role: 'admin', admin_user: null });
     set({
       appStatus: 'admin_login_required',
+      ownerEnrollmentContext: null,
       licenseDetails: source.license_key ? { ...source, device_role: 'admin', admin_user: null } : get().licenseDetails,
       currentDeviceRole: 'admin',
       currentAdminUser: null,

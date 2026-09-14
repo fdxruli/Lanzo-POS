@@ -65,6 +65,7 @@ export const createLicenseSessionActions = ({
 
     set({
       appStatus: 'license_change_required',
+      ownerEnrollmentContext: null,
       licenseDetails: null,
       licenseStatus: blockInfo.reason || 'license_plan_blocked',
       licensePlanBlockInfo: blockInfo,
@@ -106,6 +107,7 @@ export const createLicenseSessionActions = ({
 
     set({
       appStatus: 'unauthenticated',
+      ownerEnrollmentContext: null,
       licenseDetails: null,
       licenseStatus: 'active',
       licensePlanBlockInfo: null,
@@ -152,6 +154,7 @@ export const createLicenseSessionActions = ({
     set({
       appStatus: 'unauthenticated',
       _isLoggingOut: false,
+      ownerEnrollmentContext: null,
       licenseDetails: null,
       licensePlanBlockInfo: null,
       companyProfile: null,
@@ -199,6 +202,7 @@ export const createLicenseSessionActions = ({
     set({
       appStatus: 'unauthenticated',
       _isLoggingOut: false,
+      ownerEnrollmentContext: null,
       licenseDetails: null,
       companyProfile: null,
       profileImportCandidate: null,

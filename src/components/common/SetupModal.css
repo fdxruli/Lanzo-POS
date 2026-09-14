@@ -7,7 +7,7 @@
 #business-setup-modal {
   padding: 0 !important;
   align-items: flex-start;
-  background-color: var(--background-color); 
+  background-color: var(--background-color);
 }
 
 #business-setup-modal .modal-content.setup-content {
@@ -284,49 +284,6 @@
   display: none;
 }
 
-.setup-backup-notice {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 12px;
-  margin-bottom: 16px;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 10px;
-}
-
-.setup-backup-notice p {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.45;
-}
-
-.setup-directory-button {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  margin-top: 14px;
-}
-
-.setup-backup-compatibility {
-  padding: 12px;
-  margin-top: 14px;
-  color: #1e40af;
-  font-size: 0.9rem;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 10px;
-}
-
-@media (max-width: 560px) {
-  .setup-pin-row {
-    flex-direction: column;
-  }
-}
-
 /* Grid de Rubros */
 .rubro-intro {
   margin-bottom: 15px;
@@ -509,13 +466,13 @@
 
   /* --- MITAD IZQUIERDA --- */
   .setup-header {
-    flex: 0 0 45%; 
+    flex: 0 0 45%;
     padding: 40px;
     border-bottom: none;
     border-right: 1px solid var(--border-color);
     background: linear-gradient(135deg, var(--card-background-color) 0%, var(--light-background) 100%);
     text-align: left;
-    align-items: center; 
+    align-items: center;
     justify-content: center; /* Centrado vertical en su mitad */
   }
 
@@ -548,21 +505,21 @@
   .header-text-desktop {
     display: block;
   }
-  
+
   /* Ajuste tipográfico para el nuevo texto */
   .setup-header p {
     font-size: 1.10rem;
     line-height: 1.6;
     color: var(--text-light);
   }
-  
+
   .setup-header p strong {
     color: var(--text-dark);
   }
 
   /* --- MITAD DERECHA --- */
   .setup-form-wrapper {
-    flex: 1; 
+    flex: 1;
     align-items: center; /* Centrar el formulario horizontalmente */
     padding: 40px 20px;
   }
@@ -578,11 +535,11 @@
     max-width: 550px;
     width: 100%;
     /* Un ligero margen superior si la pantalla es muy alta */
-    margin-top: max(2vh, 20px); 
+    margin-top: max(2vh, 20px);
   }
 
   .rubro-grid {
-    grid-template-columns: repeat(3, 1fr); 
+    grid-template-columns: repeat(3, 1fr);
     gap: 15px;
   }
 }
@@ -611,3 +568,19 @@
     background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
   }
 }
+
+#business-setup-modal button.accordion-header {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  font: inherit;
+}
+#business-setup-modal .setup-owner-access .admin-auth-heading h1 {
+  font-size: 1.25rem;
+}
+#business-setup-modal .setup-owner-access p {
+  line-height: 1.5;
+  color: var(--text-light);
+}
+#business-setup-modal .step-actions { gap: 12px; }
+#business-setup-modal .terms-link { background: none; border: 0; font: inherit; }

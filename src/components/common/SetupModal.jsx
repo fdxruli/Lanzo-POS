@@ -2,6 +2,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { compressImage } from '../../services/utils';
+import AdminEnrollmentModal from './AdminEnrollmentModal';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import LazyImage from './LazyImage';
 import TermsAndConditionsModal from './TermsAndConditionsModal';
 import {
@@ -17,13 +19,11 @@ import {
   Pill,
   Apple,
   Shirt,
-  Hammer,
-  FolderKey
+  Hammer
 } from 'lucide-react';
 import './SetupModal.css';
 import Logger from '../../services/Logger';
 import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase';
-import { backupManager } from '../../services/backup/backupManager';
 
 const logoPlaceholder = 'https://placehold.co/150x150/FFFFFF/4A5568?text=L'; // Aumenté un poco la resolución del placeholder
 
@@ -52,6 +52,14 @@ const normalizeCandidateTypes = (candidate) => {
 };
 
 export default function SetupModal() {
+  const appStatus = useAppStore((state) => state.appStatus);
+  const currentAdminUser = useAppStore((state) => state.currentAdminUser);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const needsOwner = appStatus === 'admin_enrollment_required';
+  // App keeps this component mounted across enrollment/setup, keyed by license.
+  // Business data stays here in memory; only handleSetup can persist it.
+  const [includesOwner] = useState(needsOwner);
+  const [enrolling, setEnrolling] = useState(false);
   const handleSetup = useAppStore((state) => state.handleSetup);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const logout = useAppStore((state) => state.logout);
@@ -68,11 +76,7 @@ export default function SetupModal() {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('info');
   const [showTerms, setShowTerms] = useState(false);
-  const [backupPin, setBackupPin] = useState('');
-  const [backupPinConfirm, setBackupPinConfirm] = useState('');
-  const [backupDirectory, setBackupDirectory] = useState(null);
   const nameInputRef = useRef(null);
-  const supportsDirectoryPicker = typeof window.showDirectoryPicker === 'function';
 
   const licenseFeatures = licenseDetails?.features || {};
   const maxRubrosAllowed = licenseFeatures.max_rubros || 1;
@@ -112,13 +116,14 @@ export default function SetupModal() {
   };
 
   const isStep1Complete = useMemo(() => name.trim().length > 0, [name]);
-  const isStep2Complete = selectedTypes.length > 0;
-  const isPinValid = /^\d{8,}$/.test(backupPin) && backupPin === backupPinConfirm;
-  const isBackupStepComplete = isPinValid && (!supportsDirectoryPicker || Boolean(backupDirectory));
+  const isStep2Complete = selectedTypes.length > 0
+    && selectedTypes.length <= maxRubrosAllowed
+    && selectedTypes.every((type) => isAllAllowed || allowedRubrosList.includes(type));
+  const isBusy = isSubmitting || enrolling;
 
   const handleSectionToggle = (section) => {
     if (section === 'type' && !isStep1Complete) return;
-    if (section === 'backup' && !isStep2Complete) return;
+    if (section === 'owner' && (!isStep1Complete || !isStep2Complete)) return;
     setActiveSection(activeSection === section ? '' : section);
   };
 
@@ -161,14 +166,13 @@ export default function SetupModal() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (selectedTypes.length === 0) {
+    if (!isStep1Complete || !isStep2Complete) {
       setError('Debes seleccionar al menos un rubro.');
       if (activeSection !== 'type') setActiveSection('type');
       return;
     }
-    if (!isBackupStepComplete) {
-      setError('Configura un PIN válido y selecciona la carpeta de respaldo.');
-      setActiveSection('backup');
+    if (needsOwner || currentDeviceRole !== 'admin' || !currentAdminUser) {
+      setError('Inicia sesión como propietario antes de guardar tu negocio.');
       return;
     }
 
@@ -176,7 +180,9 @@ export default function SetupModal() {
     setError('');
 
     try {
+      const actorHandle = actorRuntimeController.capture('settings');
       const terms = await fetchLegalTerms('terms_of_use');
+      actorHandle.assertCurrent('settings');
 
       if (!terms || !terms.id) {
         throw new Error("No se pudieron verificar los términos y condiciones. Revisa tu conexión.");
@@ -205,7 +211,10 @@ export default function SetupModal() {
 
         throw new Error('Error registrando la aceptacion de terminos.');
       }
-      await backupManager.configure(backupPin, backupDirectory);
+      actorHandle.assertCurrent('settings');
+      if (useAppStore.getState().licenseDetails?.license_key !== currentLicenseKey) {
+        throw new Error('La licencia cambió. Vuelve a iniciar la configuración.');
+      }
       await handleSetup({
         name,
         phone,
@@ -231,21 +240,8 @@ export default function SetupModal() {
     }
   };
 
-  const handleContinueToBackup = () => {
-    if (isStep2Complete) setActiveSection('backup');
-  };
-
-  const handleChooseBackupDirectory = async () => {
-    setError('');
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      setBackupDirectory(handle);
-    } catch (directoryError) {
-      if (directoryError.name !== 'AbortError') {
-        Logger.error('Error seleccionando carpeta de respaldo:', directoryError);
-        setError('No se pudo abrir la carpeta seleccionada.');
-      }
-    }
+  const handleContinueToOwner = () => {
+    if (isStep1Complete && isStep2Complete) setActiveSection('owner');
   };
 
   return (
@@ -277,9 +273,9 @@ export default function SetupModal() {
                   Elige el giro principal de tu operación. Esta selección es vital porque configurará tu entorno, habilitando los módulos y herramientas específicas que realmente necesitas.
                 </p>
               )}
-              {activeSection === 'backup' && (
+              {activeSection === 'owner' && (
                 <p className="fade-in-text">
-                  Configurar un respaldo cifrado garantiza que tu información esté siempre protegida y bajo tu control. Este paso es fundamental para poder recuperar tus datos de manera segura y privada en caso de pérdida o cambio de dispositivo.
+                  Tu cuenta personal identifica quién administra el negocio. Al finalizar guardaremos su configuración.
                 </p>
               )}
             </div>
@@ -288,7 +284,7 @@ export default function SetupModal() {
 
         {/* LADO DERECHO EN DESKTOP / ABAJO EN MÓVIL */}
         <div className="setup-form-wrapper">
-          <form id="business-setup-form" onSubmit={handleSubmit}>
+          <div id="business-setup-form">
             <div className="form-inner-container">
               {profileImportCandidate && (
                 <div className="profile-import-panel">
@@ -304,7 +300,7 @@ export default function SetupModal() {
                       type="button"
                       className="btn btn-primary"
                       onClick={handleImportCandidate}
-                      disabled={isSubmitting}
+                      disabled={isBusy}
                     >
                       Copiar datos
                     </button>
@@ -312,7 +308,7 @@ export default function SetupModal() {
                       type="button"
                       className="btn btn-secondary"
                       onClick={handleSkipImportCandidate}
-                      disabled={isSubmitting}
+                      disabled={isBusy}
                     >
                       Empezar desde cero
                     </button>
@@ -322,16 +318,16 @@ export default function SetupModal() {
 
               {/* --- ACORDEÓN 1: INFORMACIÓN --- */}
               <div className={`accordion-item ${activeSection === 'info' ? 'open' : ''} ${isStep1Complete ? 'completed' : ''}`}>
-                <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('info')}>
-                  <div className="header-title">
+                <button type="button" className="accordion-header" disabled={isBusy} aria-expanded={activeSection === 'info'} onClick={() => handleSectionToggle('info')}>
+                  <span className="header-title">
                     <span className="step-number">1</span>
-                    <span>Información General</span>
-                  </div>
-                  <div className="header-status">
+                    <span>Tu negocio</span>
+                  </span>
+                  <span className="header-status">
                     {isStep1Complete && <CheckCircle size={20} className="icon-success" />}
                     <ChevronDown size={20} className="icon-chevron" />
-                  </div>
-                </div>
+                  </span>
+                </button>
 
                 {activeSection === 'info' && (
                   <div className="accordion-body">
@@ -347,7 +343,7 @@ export default function SetupModal() {
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Ej: Mi Tiendita"
                         autoFocus
-                        disabled={isSubmitting}
+                        disabled={isBusy}
                       />
                     </div>
 
@@ -361,15 +357,15 @@ export default function SetupModal() {
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
                           placeholder="Ej: 961..."
-                          disabled={isSubmitting}
+                          disabled={isBusy}
                         />
                       </div>
                       <div className="form-group logo-group">
                         <label className="form-label text-center" htmlFor="logo-upload">Logo</label>
                         <div className="mini-logo-upload">
-                          <label htmlFor="logo-upload" className={`logo-preview-wrapper ${isSubmitting ? 'disabled' : ''}`}>
+                          <label htmlFor="logo-upload" className={`logo-preview-wrapper ${isBusy ? 'disabled' : ''}`}>
                             <LazyImage src={logoPreview} alt="Logo del negocio" />
-                            {!isSubmitting && (
+                            {!isBusy && (
                               <div className="overlay">
                                 <Camera size={24} color="white" />
                               </div>
@@ -377,7 +373,7 @@ export default function SetupModal() {
                           </label>
                           <input id="logo-upload" type="file" accept="image/*"
                             onChange={handleImageChange} className="hidden-input"
-                            disabled={isSubmitting}
+                            disabled={isBusy}
                           />
                         </div>
                       </div>
@@ -392,7 +388,7 @@ export default function SetupModal() {
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
                         placeholder="Dirección del local..."
-                        disabled={isSubmitting}
+                        disabled={isBusy}
                       />
                     </div>
 
@@ -401,7 +397,7 @@ export default function SetupModal() {
                         type="button"
                         className="btn btn-primary btn-next"
                         onClick={handleContinue}
-                        disabled={!isStep1Complete || isSubmitting}
+                        disabled={!isStep1Complete || isBusy}
                       >
                         Continuar
                       </button>
@@ -412,16 +408,16 @@ export default function SetupModal() {
 
               {/* --- ACORDEÓN 2: RUBROS --- */}
               <div className={`accordion-item ${activeSection === 'type' ? 'open' : ''} ${!isStep1Complete ? 'locked' : ''} ${isStep2Complete ? 'completed' : ''}`}>
-                <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('type')}>
-                  <div className="header-title">
+                <button type="button" className="accordion-header" disabled={isBusy || !isStep1Complete} aria-expanded={activeSection === 'type'} onClick={() => handleSectionToggle('type')}>
+                  <span className="header-title">
                     <span className="step-number">2</span>
                     <span>Giro del Negocio</span>
-                  </div>
-                  <div className="header-status">
+                  </span>
+                  <span className="header-status">
                     {isStep2Complete && <CheckCircle size={20} className="icon-success" />}
                     {!isStep1Complete ? <Lock size={18} className="icon-locked" /> : <ChevronDown size={20} className="icon-chevron" />}
-                  </div>
-                </div>
+                  </span>
+                </button>
 
                 {activeSection === 'type' && (
                   <div className="accordion-body">
@@ -436,17 +432,20 @@ export default function SetupModal() {
                       </div>
                     )}
 
-                    <div className={`rubro-grid ${isSubmitting ? 'disabled-grid' : ''}`}>
+                    <div className={`rubro-grid ${isBusy ? 'disabled-grid' : ''}`}>
                       {BUSINESS_RUBROS.map(rubro => {
                         const isLockedByLicense = !isAllAllowed && !allowedRubrosList.includes(rubro.id);
                         const isSelected = selectedTypes.includes(rubro.id);
                         const IconComponent = rubro.Icon;
 
                         return (
-                          <div
+                          <button
+                            type="button"
+                            disabled={isLockedByLicense || isBusy}
+                            aria-pressed={isSelected}
                             key={rubro.id}
-                            className={`rubro-card ${isSelected ? 'selected' : ''} ${isLockedByLicense ? 'locked-by-license' : ''} ${isSubmitting ? 'disabled' : ''}`}
-                            onClick={() => !isLockedByLicense && !isSubmitting && handleTypeClick(rubro.id)}
+                            className={`rubro-card ${isSelected ? 'selected' : ''} ${isLockedByLicense ? 'locked-by-license' : ''} ${isBusy ? 'disabled' : ''}`}
+                            onClick={() => !isLockedByLicense && !isBusy && handleTypeClick(rubro.id)}
                             title={isLockedByLicense ? "No incluido en tu licencia" : ""}
                           >
                             <div className="rubro-icon-wrapper">
@@ -454,27 +453,20 @@ export default function SetupModal() {
                             </div>
                             <span className="rubro-label">{rubro.label}</span>
                             {isLockedByLicense && <span className="locked-badge-text">Bloqueado</span>}
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
 
                     {error && <div className="error-message">{error}</div>}
 
-                    <div className="terms-agreement-text">
-                      Al hacer clic en finalizar, aceptas nuestros{' '}
-                      <span className="terms-link" onClick={() => setShowTerms(true)}>
-                        Términos y Condiciones
-                      </span>{' '}
-                      y política de manejo de datos.
-                    </div>
-
                     <div className="step-actions end">
+                      <button type="button" className="btn btn-secondary" disabled={isBusy} onClick={() => setActiveSection('info')}>Atrás</button>
                       <button
                         type="button"
                         className="btn btn-primary btn-next"
-                        disabled={isSubmitting || !isStep2Complete}
-                        onClick={handleContinueToBackup}
+                        disabled={isBusy || !isStep2Complete}
+                        onClick={handleContinueToOwner}
                       >
                         Continuar
                       </button>
@@ -483,102 +475,35 @@ export default function SetupModal() {
                 )}
               </div>
 
-              <div className={`accordion-item ${activeSection === 'backup' ? 'open' : ''} ${!isStep2Complete ? 'locked' : ''} ${isBackupStepComplete ? 'completed' : ''}`}>
-                <div className="accordion-header" onClick={() => !isSubmitting && handleSectionToggle('backup')}>
-                  <div className="header-title">
-                    <span className="step-number">3</span>
-                    <span>Respaldo Cifrado</span>
-                  </div>
-                  <div className="header-status">
-                    {isBackupStepComplete && <CheckCircle size={20} className="icon-success" />}
-                    {!isStep2Complete ? <Lock size={18} className="icon-locked" /> : <ChevronDown size={20} className="icon-chevron" />}
-                  </div>
-                </div>
-
-                {activeSection === 'backup' && (
+              <div className={`accordion-item ${activeSection === 'owner' ? 'open' : ''} ${!isStep1Complete || !isStep2Complete ? 'locked' : ''}`}>
+                <button type="button" className="accordion-header" aria-expanded={activeSection === 'owner'} disabled={isBusy || !isStep1Complete || !isStep2Complete} onClick={() => handleSectionToggle('owner')}>
+                  <span className="header-title"><span className="step-number">3</span>{includesOwner ? 'Tu acceso como propietario' : 'Finalizar configuración'}</span>
+                  <ChevronDown size={20} />
+                </button>
+                {activeSection === 'owner' && (
                   <div className="accordion-body">
-                    <div className="setup-backup-notice">
-                      <FolderKey size={22} />
-                      <p>Usa un PIN de al menos 8 dígitos. Si lo pierdes, no será posible recuperar tus respaldos.</p>
-                    </div>
-
-                    <div className="form-row-split setup-pin-row">
-                      <div className="form-group flex-grow">
-                        <label className="form-label" htmlFor="setup-backup-pin">PIN de respaldo *</label>
-                        <input
-                          id="setup-backup-pin"
-                          className="form-input"
-                          type="password"
-                          inputMode="numeric"
-                          minLength="8"
-                          required
-                          value={backupPin}
-                          onChange={(event) => setBackupPin(event.target.value.replace(/\D/g, ''))}
-                          placeholder="Mínimo 8 dígitos"
-                          disabled={isSubmitting}
-                        />
-                      </div>
-                      <div className="form-group flex-grow">
-                        <label className="form-label" htmlFor="setup-backup-pin-confirm">Confirmar PIN *</label>
-                        <input
-                          id="setup-backup-pin-confirm"
-                          className="form-input"
-                          type="password"
-                          inputMode="numeric"
-                          minLength="8"
-                          required
-                          value={backupPinConfirm}
-                          onChange={(event) => setBackupPinConfirm(event.target.value.replace(/\D/g, ''))}
-                          placeholder="Repite el PIN"
-                          disabled={isSubmitting}
-                        />
-                      </div>
-                    </div>
-
-                    {backupPinConfirm && backupPin !== backupPinConfirm && (
-                      <div className="error-message">Los PIN no coinciden.</div>
-                    )}
-
-                    {supportsDirectoryPicker ? (
-                      <button
-                        type="button"
-                        className="btn btn-secondary setup-directory-button"
-                        onClick={handleChooseBackupDirectory}
-                        disabled={isSubmitting}
-                      >
-                        <FolderKey size={18} />
-                        {backupDirectory ? `Carpeta: ${backupDirectory.name}` : 'Seleccionar carpeta de respaldo *'}
-                      </button>
+                    {needsOwner && currentDeviceRole !== 'staff' ? (
+                      <AdminEnrollmentModal embedded onBusyChange={setEnrolling} />
                     ) : (
-                      <div className="setup-backup-compatibility">
-                        Tu navegador no permite respaldos invisibles. Los archivos cifrados se descargarán manualmente.
-                      </div>
+                      <form onSubmit={handleSubmit}>
+                        <h3>{includesOwner ? '4. Todo listo' : 'Todo listo'}</h3>
+                        <p>{includesOwner ? 'Tu acceso como propietario está creado. ' : ''}Guarda la configuración de {name} para entrar a Lanzo.</p>
+                        <p className="terms-agreement-text">Al finalizar aceptas nuestros <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>Términos y Condiciones</button> y política de manejo de datos.</p>
+                        {error && <div className="error-message" role="alert">{error}</div>}
+                        <button type="submit" className="btn btn-save btn-finish" disabled={isBusy || !isStep1Complete || !isStep2Complete || currentDeviceRole !== 'admin' || !currentAdminUser}>
+                          {isSubmitting ? <><Loader2 className="animate-spin" size={20} />Guardando...</> : 'Finalizar y Empezar'}
+                        </button>
+                      </form>
                     )}
-
-                    {error && <div className="error-message">{error}</div>}
-
-                    <div className="step-actions end">
-                      <button
-                        type="submit"
-                        className="btn btn-save btn-finish"
-                        disabled={isSubmitting || !isBackupStepComplete}
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <Loader2 className="animate-spin" size={20} />
-                            Configurando...
-                          </>
-                        ) : (
-                          <>Finalizar y Empezar</>
-                        )}
-                      </button>
+                    <div className="step-actions">
+                      <button type="button" className="btn btn-secondary" disabled={isBusy} onClick={() => setActiveSection('type')}>Atrás</button>
                     </div>
                   </div>
                 )}
               </div>
 
             </div>
-          </form>
+          </div>
         </div>
 
       </div>
