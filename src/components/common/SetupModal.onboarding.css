@@ -1,0 +1,76 @@
+#business-setup-modal .setup-final-summary {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 22px;
+}
+
+#business-setup-modal .setup-final-summary__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--light-background);
+}
+
+#business-setup-modal .setup-final-summary__label {
+  color: var(--text-light);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+#business-setup-modal .setup-final-summary__item strong {
+  color: var(--text-dark);
+  text-align: right;
+}
+
+#business-setup-modal .setup-owner-complete-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--light-background);
+  color: var(--text-dark);
+  font-weight: 600;
+}
+
+#business-setup-modal .setup-external-actions {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 20px max(20px, env(safe-area-inset-bottom));
+}
+
+#business-setup-modal .setup-change-license {
+  width: auto;
+  min-width: 0;
+}
+
+#business-setup-modal .terms-agreement-text strong {
+  color: var(--text-dark);
+}
+
+@media (min-width: 768px) {
+  #business-setup-modal .setup-external-actions {
+    max-width: 550px;
+    padding: 0 0 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  #business-setup-modal .setup-final-summary__item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #business-setup-modal .setup-final-summary__item strong {
+    text-align: left;
+  }
+}
