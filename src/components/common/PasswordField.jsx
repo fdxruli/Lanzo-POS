@@ -10,7 +10,9 @@ export default function PasswordField({
   disabled = false,
   required = true,
   fieldClassName = '',
-  labelClassName = ''
+  labelClassName = '',
+  autoComplete = 'current-password',
+  minLength
 }) {
   const [isVisible, setIsVisible] = useState(false);
 
@@ -24,7 +26,8 @@ export default function PasswordField({
           type={isVisible ? 'text' : 'password'}
           value={value}
           onChange={onChange}
-          autoComplete="current-password"
+          autoComplete={autoComplete}
+          minLength={minLength}
           disabled={disabled}
           required={required}
         />
