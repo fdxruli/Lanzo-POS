@@ -19,10 +19,11 @@ import { mapLicenseActivationResult } from './licenseActivationErrorMapper';
 
 export default function WelcomeModal() {
   const [licenseKey, setLicenseKey] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [errorTitle, setErrorTitle] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const isLoading = loadingAction !== null;
 
   const handleLogin = useAppStore((state) => state.handleLogin);
   const handleFreeTrial = useAppStore((state) => state.handleFreeTrial);
@@ -72,7 +73,7 @@ export default function WelcomeModal() {
       return;
     }
 
-    setIsLoading(true);
+    setLoadingAction('license');
     clearError();
 
     try {
@@ -92,7 +93,7 @@ export default function WelcomeModal() {
       const feedback = mapLicenseActivationResult(error, { isOnline });
       showError(feedback.message, feedback.title);
     } finally {
-      setIsLoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -102,7 +103,7 @@ export default function WelcomeModal() {
       return;
     }
 
-    setIsLoading(true);
+    setLoadingAction('free');
     clearError();
 
     try {
@@ -120,7 +121,7 @@ export default function WelcomeModal() {
         showError(`Error: ${error.message || 'Intenta nuevamente'}`);
       }
     } finally {
-      setIsLoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -258,7 +259,7 @@ DESCRIBE TU PROBLEMA:
           {isOnline && isLoading && (
             <div className="connection-alert loading" role="status">
               <Wifi size={18} className="pulse-anim" aria-hidden="true" />
-              <span>Conectando de forma segura...</span>
+              <span>{loadingAction === 'free' ? 'Creando licencia Lanzo Local...' : 'Verificando licencia...'}</span>
             </div>
           )}
 
@@ -285,8 +286,8 @@ DESCRIBE TU PROBLEMA:
               className="btn-submit-license"
               disabled={isLoading || !isOnline || !licenseKey.trim()}
             >
-              <span>{isLoading ? 'Verificando...' : 'Acceder con Licencia'}</span>
-              {!isLoading && <ChevronRight size={18} aria-hidden="true" />}
+              <span>{loadingAction === 'license' ? 'Verificando...' : 'Acceder con Licencia'}</span>
+              {loadingAction !== 'license' && <ChevronRight size={18} aria-hidden="true" />}
             </button>
 
             <div className="divider">
@@ -306,7 +307,7 @@ DESCRIBE TU PROBLEMA:
                 onClick={handleTrialClick}
                 disabled={isLoading || !isOnline}
               >
-                Crear licencia Lanzo Local
+                {loadingAction === 'free' ? 'Creando licencia...' : 'Crear licencia Lanzo Local'}
               </button>
             </div>
           </form>
