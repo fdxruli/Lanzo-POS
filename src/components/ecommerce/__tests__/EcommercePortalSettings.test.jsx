@@ -81,12 +81,20 @@ const successfulPortalResponse = {
   features: { customSlug: false, deliveryPickupSettings: 'basic', maxPublishedProducts: 10 }
 };
 
+const DEFAULT_LICENSE_FEATURES = {
+  ecommerce_portal_enabled: true,
+  ecommerce_order_inbox: true
+};
+
 const setStoreState = ({
   role,
   settings = false,
   ecommerce = false,
   initializing = false,
-  licenseDetails = { license_key: 'license-fixture' }
+  licenseDetails = {
+    license_key: 'license-fixture',
+    features: DEFAULT_LICENSE_FEATURES
+  }
 }) => {
   useAppStore.setState({
     companyProfile: { name: 'Negocio de prueba' },
@@ -541,7 +549,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
       licenseDetails: {
         license_key: 'license-fixture',
         plan_code: 'free_trial',
-        features: { ecommerce_custom_slug: false }
+        features: { ...DEFAULT_LICENSE_FEATURES, ecommerce_custom_slug: false }
       }
     }));
     renderExistingProPortal();
@@ -557,7 +565,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
       licenseDetails: {
         license_key: 'license-fixture',
         plan_code: 'pro_monthly',
-        features: { ecommerce_custom_slug: true }
+        features: { ...DEFAULT_LICENSE_FEATURES, ecommerce_custom_slug: true }
       }
     }));
     renderExistingFreePortal();

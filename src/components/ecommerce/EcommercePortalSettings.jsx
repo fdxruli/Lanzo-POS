@@ -321,11 +321,14 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     );
   const canManageEcommercePortal = evaluateEcommercePortalAccess({
     canAccess,
-    currentDeviceRole
+    currentDeviceRole,
+    licenseDetails
   });
   const isPro = features.cloudCatalogSource === true
     || features.customSlug === true
-    || plan.code === 'pro_monthly';
+    || features.maxPublishedProducts < 0
+    || features.brandingCustomization === 'advanced'
+    || features.layoutCustomization === 'advanced';
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const publishedCount = products.filter((product) => product.isPublished).length;
   const maxProducts = features.maxPublishedProducts < 0

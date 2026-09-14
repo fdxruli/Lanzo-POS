@@ -30,6 +30,10 @@ vi.mock('../PublicStoreQrCode', () => ({
 }));
 
 const publicStoreUrl = 'https://lanzo-store.vercel.app/tienda/negocio-ejemplo';
+const AUTHORIZED_ECOMMERCE_LICENSE = {
+  license_key: 'license-fixture',
+  features: { ecommerce_portal_enabled: true }
+};
 
 const renderPortal = async () => {
   render(<EcommercePortalSettings />);
@@ -55,7 +59,7 @@ describe('EcommercePortalSettings public link cutover', () => {
       companyProfile: { name: 'Negocio ejemplo' },
       currentDeviceRole: 'admin',
       currentStaffUser: null,
-      licenseDetails: { license_key: 'license-fixture' },
+      licenseDetails: AUTHORIZED_ECOMMERCE_LICENSE,
       _isInitializing: false
     }));
     Object.defineProperty(navigator, 'share', {

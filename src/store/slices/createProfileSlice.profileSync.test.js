@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getBusinessProfile: vi.fn(),
+  revalidateLicense: vi.fn(),
   assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
   actorRuntimeCapture: vi.fn(),
   actorHandle: {
@@ -11,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   },
   loadData: vi.fn(),
   saveBusinessProfile: vi.fn(),
-  saveData: vi.fn(async () => undefined)
+  saveData: vi.fn(async () => undefined),
+  saveLicenseToStorage: vi.fn(async () => undefined)
 }));
 
 vi.mock('../../services/database', () => ({
@@ -22,7 +24,12 @@ vi.mock('../../services/database', () => ({
 
 vi.mock('../../services/supabase', () => ({
   getBusinessProfile: mocks.getBusinessProfile,
+  revalidateLicense: mocks.revalidateLicense,
   saveBusinessProfile: mocks.saveBusinessProfile
+}));
+
+vi.mock('../../services/licenseStorage', () => ({
+  saveLicenseToStorage: mocks.saveLicenseToStorage
 }));
 
 vi.mock('../../services/storage/imageUploadService', () => ({
@@ -84,6 +91,16 @@ describe('profile refresh during authenticated staff transition', () => {
         business_name: 'Negocio',
         business_type: ['hardware']
       }
+    });
+    mocks.revalidateLicense.mockResolvedValue({
+      valid: true,
+      license_key: 'LANZO-FREE',
+      plan_code: 'pro_monthly',
+      features: {
+        ecommerce_portal_enabled: true,
+        ecommerce_order_inbox: true
+      },
+      device_role: 'admin'
     });
   });
 
@@ -173,6 +190,67 @@ describe('profile refresh during authenticated staff transition', () => {
     );
     expect(mocks.saveData).toHaveBeenCalledTimes(2);
     expect(state.companyProfile).toMatchObject({ name: 'Actor profile' });
+  });
+
+  it('refreshes effective license features before marking first-time setup ready', async () => {
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    const state = {
+      licenseDetails: {
+        license_key: 'LANZO-FREE',
+        features: { full_access: true }
+      },
+      currentDeviceRole: 'admin',
+      companyProfile: null,
+      appStatus: 'setup_required'
+    };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    Object.assign(state, createProfileSlice(set, () => state));
+
+    await state.handleSetup({
+      name: 'Negocio nuevo',
+      business_type: ['hardware']
+    });
+
+    expect(mocks.revalidateLicense).toHaveBeenCalledWith('LANZO-FREE');
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
+      license_key: 'LANZO-FREE',
+      valid: true,
+      features: {
+        ecommerce_portal_enabled: true,
+        ecommerce_order_inbox: true
+      }
+    }));
+    expect(state.licenseDetails.features).toEqual({
+      ecommerce_portal_enabled: true,
+      ecommerce_order_inbox: true
+    });
+    expect(state.appStatus).toBe('ready');
+  });
+
+  it('does not enter ready when onboarding cannot obtain authoritative features', async () => {
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    mocks.revalidateLicense.mockResolvedValue({
+      valid: true,
+      reason: 'offline_grace',
+      features: { ecommerce_portal_enabled: true }
+    });
+    const state = {
+      licenseDetails: { license_key: 'LANZO-FREE', features: { full_access: true } },
+      currentDeviceRole: 'admin',
+      companyProfile: null,
+      appStatus: 'setup_required'
+    };
+    Object.assign(state, createProfileSlice(
+      vi.fn((partial) => Object.assign(state, partial)),
+      () => state
+    ));
+
+    await expect(state.handleSetup({
+      name: 'Negocio nuevo',
+      business_type: ['hardware']
+    })).rejects.toMatchObject({ code: 'offline_grace' });
+    expect(state.appStatus).toBe('setup_required');
+    expect(mocks.saveLicenseToStorage).not.toHaveBeenCalled();
   });
 
   it('denies a Staff profile mutation before any remote or local write when settings is absent', async () => {

@@ -12,6 +12,7 @@ import {
 } from '../../../services/ecommerce/ecommerceAdminService';
 
 vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
+  getEcommerceAdminAuthorizationContext: vi.fn(),
   getEcommercePortal: vi.fn(),
   listPublishedProducts: vi.fn(),
   saveEcommercePortal: vi.fn(),
@@ -59,7 +60,13 @@ const setAuthorizedStore = ({ snapshot, loadStockAlerts, reconcile } = {}) => {
     companyProfile: { name: 'Tienda de prueba' },
     currentDeviceRole: 'admin',
     currentStaffUser: null,
-    licenseDetails: { license_key: 'license-a' },
+    licenseDetails: {
+      license_key: 'license-a',
+      features: {
+        ecommerce_portal_enabled: true,
+        ecommerce_order_inbox: true
+      }
+    },
     deviceFingerprint: 'device-a',
     _isInitializing: false,
     canAccess: vi.fn(() => true),
@@ -72,6 +79,8 @@ const setAuthorizedStore = ({ snapshot, loadStockAlerts, reconcile } = {}) => {
     reconcileEcommercePublishedStockAlertProducts: reconcile || vi.fn()
   });
 };
+
+const renderCatalog = () => render(<EcommercePortalSettings requestedSection="catalog" />);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -116,7 +125,7 @@ describe('EcommercePortalSettings published stock alerts', () => {
       }
     });
 
-    render(<EcommercePortalSettings />);
+    renderCatalog();
 
     expect(await screen.findByText('Productos publicados sin stock'))
       .toBeInTheDocument();
@@ -150,7 +159,7 @@ describe('EcommercePortalSettings published stock alerts', () => {
       }
     });
 
-    render(<EcommercePortalSettings />);
+    renderCatalog();
 
     expect(await screen.findByText('Algunos productos publicados requieren revision'))
       .toBeInTheDocument();
@@ -181,7 +190,7 @@ describe('EcommercePortalSettings published stock alerts', () => {
       }
     });
 
-    render(<EcommercePortalSettings />);
+    renderCatalog();
 
     expect(await screen.findByText('Producto publicado')).toBeInTheDocument();
     expect(screen.queryByText('Publicado sin stock')).not.toBeInTheDocument();
@@ -211,7 +220,7 @@ describe('EcommercePortalSettings published stock alerts', () => {
       }
     });
 
-    render(<EcommercePortalSettings />);
+    renderCatalog();
     const button = await screen.findByRole('button', {
       name: 'Despublicar Producto publicado'
     });

@@ -10,6 +10,10 @@ export const getEcommerceOrderFeatures = (licenseDetails = {}) => {
   return {};
 };
 
+export const isEcommercePortalEnabled = (licenseDetails = {}) => (
+  isTrue(getEcommerceOrderFeatures(licenseDetails).ecommerce_portal_enabled)
+);
+
 const getStaffPermissions = (staffSession = {}) => (
   staffSession?.permissions ||
   staffSession?.currentStaffUser?.permissions ||

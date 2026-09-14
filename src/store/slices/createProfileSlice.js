@@ -2,8 +2,10 @@ import { loadData, saveData, STORES } from '../../services/database';
 import Logger from '../../services/Logger';
 import {
   getBusinessProfile,
+  revalidateLicense,
   saveBusinessProfile
 } from '../../services/supabase';
+import { saveLicenseToStorage } from '../../services/licenseStorage';
 import {
   IMAGE_UPLOAD_PURPOSES,
   uploadImageFile
@@ -108,6 +110,62 @@ const saveProfileCache = async (licenseKey, companyData, { beforeWrite = null } 
   markProfileLoaded(licenseKey);
 
   return scopedProfile;
+};
+
+const isAuthoritativeLicenseValidation = (validation) => (
+  validation?.valid === true
+  && validation?.reason !== 'offline_grace'
+  && validation?.is_fallback !== true
+  && validation?.features
+  && typeof validation.features === 'object'
+  && !Array.isArray(validation.features)
+);
+
+const refreshLicenseBeforeReady = async ({ licenseKey, actorHandle, set, get }) => {
+  Logger.log('[License] Revalidando capacidades autorizadas antes de finalizar onboarding.');
+  const validation = await revalidateLicense(licenseKey);
+
+  actorHandle.assertCurrent('settings');
+  if (!isAuthoritativeLicenseValidation(validation)) {
+    const error = new Error(
+      validation?.details
+      || validation?.reason
+      || 'No se pudo confirmar la licencia para finalizar la configuración.'
+    );
+    error.code = validation?.reason || 'LICENSE_REVALIDATION_REQUIRED';
+    throw error;
+  }
+
+  await assertLocalTenantSyncAccess(validation, {
+    reason: 'onboarding_license_revalidation_response'
+  });
+
+  const currentLicense = get().licenseDetails || {};
+  const authoritativeLicense = {
+    ...currentLicense,
+    ...validation,
+    license_key: validation.license_key || licenseKey,
+    valid: true,
+    features: validation.features,
+    details: {
+      ...(currentLicense.details || {}),
+      ...(validation.details || {}),
+      ...validation,
+      license_key: validation.license_key || licenseKey,
+      features: validation.features
+    },
+    device_role: validation.device_role
+      || currentLicense.device_role
+      || get().currentDeviceRole
+      || 'admin'
+  };
+
+  actorHandle.assertCurrent('settings');
+  await saveLicenseToStorage(authoritativeLicense);
+  actorHandle.assertCurrent('settings');
+  set({ licenseDetails: authoritativeLicense });
+
+  return authoritativeLicense;
 };
 
 const applyProfileState = (set, get, companyData, profileImportCandidate) => {
@@ -336,6 +394,16 @@ export const createProfileSlice = (set, get) => ({
         buildCompanyData(profileData, licenseKey),
         { beforeWrite: () => actorHandle.assertCurrent('settings') }
       );
+
+      actorHandle.assertCurrent('settings');
+      if (sessionGeneration !== _profileSessionGeneration) return null;
+
+      await refreshLicenseBeforeReady({
+        licenseKey,
+        actorHandle,
+        set,
+        get
+      });
 
       actorHandle.assertCurrent('settings');
       if (sessionGeneration !== _profileSessionGeneration) return null;

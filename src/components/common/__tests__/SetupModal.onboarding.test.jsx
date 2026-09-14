@@ -154,6 +154,18 @@ beforeEach(() => {
     ...createLicenseAdminActions({ set: useAppStore.setState, get: useAppStore.getState }),
     ...createProfileSlice(useAppStore.setState, useAppStore.getState),
   }, true);
+
+  mocks.revalidateLicense.mockImplementation(async (licenseKey) => {
+    const currentLicense = useAppStore.getState().licenseDetails || {};
+    const features = currentLicense.features || { max_rubros: 1 };
+    return {
+      valid: true,
+      license_key: licenseKey,
+      plan_code: currentLicense.plan_code,
+      features,
+      details: { ...currentLicense, license_key: licenseKey, features },
+    };
+  });
 });
 
 afterEach(cleanup);
