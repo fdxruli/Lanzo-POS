@@ -160,6 +160,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      evidence_artifact_id: ${{ steps.upload_base_evidence.outputs.artifact-id }}
     steps:
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
@@ -223,6 +225,7 @@ jobs:
           done
 
       - name: Upload BASE full-suite evidence
+        id: upload_base_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -242,6 +245,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    outputs:
+      evidence_artifact_id: ${{ steps.upload_candidate_evidence.outputs.artifact-id }}
     steps:
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
@@ -305,6 +310,7 @@ jobs:
           done
 
       - name: Upload CANDIDATE full-suite evidence
+        id: upload_candidate_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -327,22 +333,35 @@ jobs:
       - full-suite-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      evidence_artifact_id: ${{ steps.upload_differential_evidence.outputs.artifact-id }}
     steps:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
           ref: ${{ env.SHARED_TERMINAL_CANDIDATE_SHA }}
 
+      - name: Validate evidence artifact IDs
+        shell: bash
+        env:
+          BASE_ARTIFACT_ID: ${{ needs.full-suite-baseline.outputs.evidence_artifact_id }}
+          CANDIDATE_ARTIFACT_ID: ${{ needs.full-suite-candidate.outputs.evidence_artifact_id }}
+        run: |
+          echo "BASE_ARTIFACT_ID=${BASE_ARTIFACT_ID}"
+          echo "CANDIDATE_ARTIFACT_ID=${CANDIDATE_ARTIFACT_ID}"
+          [[ "${BASE_ARTIFACT_ID}" =~ ^[0-9]+$ ]] || { echo "::error::BASE evidence artifact ID is missing or invalid"; exit 1; }
+          [[ "${CANDIDATE_ARTIFACT_ID}" =~ ^[0-9]+$ ]] || { echo "::error::CANDIDATE evidence artifact ID is missing or invalid"; exit 1; }
+
       - name: Download BASE evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
-          name: shared-terminal-base-full-suite
+          artifact-ids: ${{ needs.full-suite-baseline.outputs.evidence_artifact_id }}
           path: differential/base
 
       - name: Download CANDIDATE evidence
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
-          name: shared-terminal-candidate-full-suite
+          artifact-ids: ${{ needs.full-suite-candidate.outputs.evidence_artifact_id }}
           path: differential/candidate
 
       - name: Compare repeated BASE vs CANDIDATE failure envelope
@@ -361,6 +380,7 @@ jobs:
           cat differential/full-suite-differential.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload differential evidence
+        id: upload_differential_evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -407,11 +427,20 @@ jobs:
 
           echo "report_only=false" >> "$GITHUB_OUTPUT"
 
+      - name: Validate differential artifact ID
+        if: steps.report_only.outputs.report_only != 'true'
+        shell: bash
+        env:
+          DIFFERENTIAL_ARTIFACT_ID: ${{ needs.differential-regression-gate.outputs.evidence_artifact_id }}
+        run: |
+          echo "DIFFERENTIAL_ARTIFACT_ID=${DIFFERENTIAL_ARTIFACT_ID}"
+          [[ "${DIFFERENTIAL_ARTIFACT_ID}" =~ ^[0-9]+$ ]] || { echo "::error::Differential evidence artifact ID is missing or invalid"; exit 1; }
+
       - name: Download differential evidence
         if: steps.report_only.outputs.report_only != 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
-          name: shared-terminal-full-suite-differential
+          artifact-ids: ${{ needs.differential-regression-gate.outputs.evidence_artifact_id }}
           path: differential
 
       - name: Generate audit report from exact differential JSON
