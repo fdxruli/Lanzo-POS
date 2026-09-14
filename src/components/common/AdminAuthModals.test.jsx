@@ -112,6 +112,29 @@ describe('admin access UI', () => {
     expect(staffPassword).toHaveAttribute('type', 'text');
   });
 
+  it('allows viewing both new owner password fields independently', () => {
+    render(<AdminEnrollmentModal />);
+
+    const password = screen.getByLabelText('Contraseña');
+    const confirmation = screen.getByLabelText('Confirmar contraseña');
+    const toggles = screen.getAllByRole('button', { name: 'Mostrar contraseña' });
+
+    expect(password).toHaveAttribute('type', 'password');
+    expect(confirmation).toHaveAttribute('type', 'password');
+    expect(password).toHaveAttribute('autocomplete', 'new-password');
+    expect(confirmation).toHaveAttribute('autocomplete', 'new-password');
+
+    fireEvent.click(toggles[0]);
+    expect(password).toHaveAttribute('type', 'text');
+    expect(confirmation).toHaveAttribute('type', 'password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+    expect(password).toHaveAttribute('type', 'password');
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Mostrar contraseña' })[1]);
+    expect(confirmation).toHaveAttribute('type', 'text');
+  });
+
   it('blocks owner enrollment when password confirmation differs', () => {
     const enroll = vi.fn();
     useAppStore.setState({ handleAdminEnrollment: enroll });
