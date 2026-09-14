@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldPlus } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import PasswordField from './PasswordField';
 import './AdminAuthModal.css';
 import './SetupModal.onboarding.css';
 
@@ -96,32 +97,26 @@ export default function AdminEnrollmentModal({
               disabled={loading}
             />
           </label>
-          <label>
-            Contraseña
-            <input
-              className="form-input"
-              type="password"
-              autoComplete="new-password"
+          <div>
+            <PasswordField
+              id="admin-enrollment-password"
+              label="Contraseña"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
               minLength={8}
-              required
               disabled={loading}
             />
             <small>Mínimo 8 caracteres, una letra y un número.</small>
-          </label>
-          <label>
-            Confirmar contraseña
-            <input
-              className="form-input"
-              type="password"
-              autoComplete="new-password"
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-              required
-              disabled={loading}
-            />
-          </label>
+          </div>
+          <PasswordField
+            id="admin-enrollment-password-confirmation"
+            label="Confirmar contraseña"
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
           {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
           <button className="ui-button ui-button--primary" disabled={loading || !navigator.onLine}>
             {loading ? loadingLabel : submitLabel}
