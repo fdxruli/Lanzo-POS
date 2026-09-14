@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { ShieldPlus } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import './AdminAuthModal.css';
+import './SetupModal.onboarding.css';
 
 export default function AdminEnrollmentModal({
   embedded = false,
   onBusyChange,
   onEnrollmentSuccess,
   submitLabel = 'Crear cuenta propietaria',
-  loadingLabel = 'Creando cuenta...',
-  legalNotice = null
+  loadingLabel = 'Creando cuenta...'
 }) {
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
@@ -122,7 +122,6 @@ export default function AdminEnrollmentModal({
               disabled={loading}
             />
           </label>
-          {legalNotice}
           {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
           <button className="ui-button ui-button--primary" disabled={loading || !navigator.onLine}>
             {loading ? loadingLabel : submitLabel}
