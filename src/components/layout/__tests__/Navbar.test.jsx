@@ -70,7 +70,8 @@ const createAppState = (overrides = {}) => ({
   licenseDetails: {
     features: {
       cloud_pos_sync: false,
-      ecommerce_order_inbox: true
+      ecommerce_order_inbox: true,
+      ecommerce_portal_enabled: true
     }
   },
   currentDeviceRole: 'admin',

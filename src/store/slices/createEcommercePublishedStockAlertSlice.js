@@ -16,7 +16,8 @@ const initialState = Object.freeze({
 
 const canEvaluate = (state = {}) => evaluateEcommercePortalAccess({
   canAccess: state.canAccess,
-  currentDeviceRole: state.currentDeviceRole
+  currentDeviceRole: state.currentDeviceRole,
+  licenseDetails: state.licenseDetails
 });
 
 const hasOperationalWarning = (snapshot) => Boolean(

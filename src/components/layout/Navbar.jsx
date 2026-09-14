@@ -86,7 +86,8 @@ function Navbar() {
   });
   const canManageEcommercePortal = evaluateEcommercePortalAccess({
     canAccess,
-    currentDeviceRole
+    currentDeviceRole,
+    licenseDetails
   });
   const isPortalOnlineActive = location.pathname === '/portal-online';
   const normalizedEcommerceNewCount = Math.max(Number(ecommerceNewCount) || 0, 0);

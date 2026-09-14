@@ -20,7 +20,8 @@ export default function EcommercePublishedStockAlertRuntime() {
 
   const canManagePortal = evaluateEcommercePortalAccess({
     canAccess,
-    currentDeviceRole
+    currentDeviceRole,
+    licenseDetails
   });
   const canUseNotificationSurface = (
     isNotificationCenterEnabled(licenseDetails)
