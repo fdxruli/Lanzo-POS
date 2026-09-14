@@ -106,6 +106,7 @@ export default function AdminEnrollmentModal({
               autoComplete="new-password"
               minLength={8}
               disabled={loading}
+              fieldClassName="admin-auth-field"
             />
             <small>Mínimo 8 caracteres, una letra y un número.</small>
           </div>
@@ -116,6 +117,7 @@ export default function AdminEnrollmentModal({
             onChange={(e) => setConfirmation(e.target.value)}
             autoComplete="new-password"
             disabled={loading}
+            fieldClassName="admin-auth-field"
           />
           {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
           <button className="ui-button ui-button--primary" disabled={loading || !navigator.onLine}>
