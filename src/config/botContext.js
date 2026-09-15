@@ -13,9 +13,12 @@ const getPageKey = (pathname) => {
 
 // 1. Aviso global informativo. La fecha publicada se ancla al commit que
 // introdujo update_soporte_07 (2026-03-10 22:38:42 -06:00); no depende de que
-// exista una clave de licencia en localStorage.
+// exista una clave de licencia en localStorage. Los avisos nuevos deben
+// incluir publishedAt; expiresAt:null queda reservado para retiro manual,
+// mientras que los avisos temporales (por ejemplo, mantenimiento) deben
+// declarar una fecha de expiración.
 export const GLOBAL_ALERT = {
-  active: true,
+  active: false,
   id: 'update_soporte_07',
   title: 'Actualización completada',
   message: 'Las mejoras recientes del módulo de ventas ya están disponibles. No necesitas realizar ninguna acción. Si notas algún comportamiento inesperado, puedes comunicarte con soporte desde Lanzo.',

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   GLOBAL_ALERT,
   getGlobalAlertStorageKey,
@@ -14,6 +14,7 @@ const beforePublication = {
 
 const alert = (overrides = {}) => ({
   ...GLOBAL_ALERT,
+  active: true,
   publishedAt,
   expiresAt: '2026-04-01T00:00:00.000Z',
   ...overrides,
@@ -24,6 +25,23 @@ describe('isGlobalAlertEligible', () => {
 
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('retires the current historical alert without removing its metadata or eligibility infrastructure', () => {
+    expect(GLOBAL_ALERT).toMatchObject({
+      id: 'update_soporte_07',
+      active: false,
+      publishedAt,
+      expiresAt: null,
+    });
+    expect(isGlobalAlertEligible(GLOBAL_ALERT, {
+      licenseDetails: beforePublication,
+      now: new Date('2026-09-14T12:00:00.000Z').getTime(),
+    })).toBe(false);
   });
 
   it('shows an active, unseen, unexpired alert to a license created before publication', () => {

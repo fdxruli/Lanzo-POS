@@ -163,10 +163,42 @@ export const getInstallPromptEligibility = ({
   );
 };
 
+const isHiddenElement = (element) => {
+  if (!element) return true;
+  if (element.hidden || element.getAttribute('aria-hidden') === 'true') return true;
+
+  const style = typeof window !== 'undefined' && window.getComputedStyle
+    ? window.getComputedStyle(element)
+    : null;
+
+  return style?.display === 'none' || style?.visibility === 'hidden';
+};
+
+const isVisibleElement = (element) => {
+  for (let current = element; current; current = current.parentElement) {
+    if (isHiddenElement(current)) return false;
+  }
+
+  return true;
+};
+
 export const hasBlockingModal = () => {
   if (typeof document === 'undefined') return false;
 
-  return Boolean(document.querySelector(
-    '[data-lanzo-blocking-modal="true"], #business-setup-modal, .ui-modal, .modal, [role="dialog"]'
-  ));
+  const explicitMarkers = Array.from(
+    document.querySelectorAll('[data-lanzo-blocking-modal="true"]')
+  );
+
+  // The pending DataSafety marker is intentionally hidden while its async
+  // eligibility check runs, but it still reserves the notice slot.
+  if (explicitMarkers.some((element) => (
+    element.getAttribute('data-lanzo-notice-pending') === 'true'
+      || isVisibleElement(element)
+  ))) {
+    return true;
+  }
+
+  return Array.from(document.querySelectorAll(
+    '#business-setup-modal, .ui-modal, .modal, [role="dialog"]'
+  )).some(isVisibleElement);
 };

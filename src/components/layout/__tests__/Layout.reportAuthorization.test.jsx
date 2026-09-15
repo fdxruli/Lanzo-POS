@@ -119,7 +119,10 @@ beforeEach(() => {
   };
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 describe('Layout report authorization', () => {
   it('loads report stores and mounts the assistant for a current Admin', async () => {

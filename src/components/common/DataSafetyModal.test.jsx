@@ -107,4 +107,5 @@ describe('DataSafetyModal', () => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
 });

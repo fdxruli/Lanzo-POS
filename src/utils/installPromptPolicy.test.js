@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   INSTALL_ENGAGEMENT_THRESHOLD_MS,
   flushActiveEngagement,
   getInstallPromptEligibility,
+  hasBlockingModal,
   pauseActiveEngagement,
   startActiveEngagement,
 } from './installPromptPolicy';
@@ -23,6 +25,14 @@ const eligibleState = (overrides = {}) => ({
 });
 
 describe('installPromptPolicy', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
   it('accumulates visible engagement and enables the invitation at five minutes', () => {
     const started = startActiveEngagement({ activeTimeMs: 0 }, 1_000);
     const completed = flushActiveEngagement(
@@ -56,5 +66,20 @@ describe('installPromptPolicy', () => {
     ]) {
       expect(getInstallPromptEligibility(eligibleState(conflict))).toBe(false);
     }
+  });
+
+  it('only treats visible modal candidates as blocking, except for the explicit pending marker', () => {
+    document.body.innerHTML = `
+      <div class="modal" hidden></div>
+      <div class="ui-modal" aria-hidden="true"></div>
+      <div role="dialog" style="display: none"></div>
+    `;
+    expect(hasBlockingModal()).toBe(false);
+
+    document.body.innerHTML = '<div class="modal" style="display: block"></div>';
+    expect(hasBlockingModal()).toBe(true);
+
+    document.body.innerHTML = '<div data-lanzo-blocking-modal="true" data-lanzo-notice-pending="true" hidden></div>';
+    expect(hasBlockingModal()).toBe(true);
   });
 });
