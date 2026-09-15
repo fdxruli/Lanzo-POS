@@ -7,7 +7,12 @@ import test from 'node:test';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const migrationsDir = join(repoRoot, 'supabase', 'migrations');
 const migrationName = '20260914215627_ecommerce_published_product_rpc_recursion_r1.sql';
+const compatibilityMigrationName = '20260915000239_ecommerce_published_product_legacy_compat_r1.sql';
 const hotfix = readFileSync(join(migrationsDir, migrationName), 'utf8');
+const compatibilityMigration = readFileSync(
+  join(migrationsDir, compatibilityMigrationName),
+  'utf8'
+);
 const migrationFiles = readdirSync(migrationsDir)
   .filter((name) => name.endsWith('.sql'))
   .sort()
@@ -42,18 +47,12 @@ function latestDefinition(qualifiedName) {
   return definitions.at(-1);
 }
 
-const core = extractDefinitions(
-  hotfix,
-  'private.ecommerce_admin_upsert_published_product_core'
-)[0];
-const v2 = extractDefinitions(
-  hotfix,
-  'public.ecommerce_admin_upsert_published_product_v2'
-)[0];
 const legacy = extractDefinitions(
   hotfix,
   'public.ecommerce_admin_upsert_published_product'
 );
+const core = latestDefinition('private.ecommerce_admin_upsert_published_product_core');
+const v2 = latestDefinition('public.ecommerce_admin_upsert_published_product_v2');
 const v3 = latestDefinition('public.ecommerce_admin_upsert_published_product_v3');
 
 test('effective published-product call graph is acyclic and canonical', () => {
@@ -93,15 +92,20 @@ test('core preserves the writer lock protocol and private security boundary', ()
 });
 
 test('v2 keeps configuration validation and v3 keeps publication hardening', () => {
+  assert.match(v2.body, /v_manages_configuration/iu);
+  assert.match(v2.body, /if not v_manages_configuration then\s+return v_base_result/iu);
   assert.match(v2.body, /configurationSourceRevision/iu);
   assert.match(v2.body, /private\.ecommerce_apply_product_configuration_checked\s*\(/iu);
   assert.match(v3.body, /private\.ecommerce_publication_eligibility\s*\(/iu);
+  assert.match(v3.body, /v_preserve_existing_configuration/iu);
   assert.match(v3.body, /app\.ecommerce_simple_override_reconcile/iu);
   assert.match(v3.body, /private\.ecommerce_apply_wholesale_tiers\s*\(/iu);
   assert.match(v3.body, /private\.ecommerce_reconcile_published_product_capability\s*\(/iu);
 });
 
-test('hotfix migration contains no data repair or unrelated table mutation', () => {
+test('hotfix migrations contain no data repair or unrelated table mutation', () => {
   assert.doesNotMatch(hotfix, /(?:insert|update|delete|truncate)\s+public\.(?:licenses|pos_products)\b/iu);
   assert.doesNotMatch(hotfix, /delete\s+from\s+public\.ecommerce_(?:published_products|published_product_variants)\b/iu);
+  assert.doesNotMatch(compatibilityMigration, /(?:insert|update|delete|truncate)\s+public\.(?:licenses|pos_products)\b/iu);
+  assert.doesNotMatch(compatibilityMigration, /delete\s+from\s+public\.ecommerce_(?:published_products|published_product_variants)\b/iu);
 });
