@@ -6,6 +6,7 @@ begin;
 do $definitions$
 declare
   v_definition text;
+  v_body text;
 begin
   select pg_get_functiondef(
     'public.ecommerce_create_order(text,jsonb,jsonb,text)'::regprocedure
@@ -34,31 +35,67 @@ begin
   select pg_get_functiondef(
     'private.ecommerce_apply_product_configuration_checked(uuid,uuid,jsonb,text,boolean)'::regprocedure
   ) into v_definition;
-  if strpos(v_definition, 'ecommerce_lock_configuration_writer') = 0
-     or strpos(v_definition, 'ecommerce_lock_configuration_writer')
-        > strpos(v_definition, 'ecommerce_apply_product_configuration') then
+  v_body := substring(
+    v_definition from strpos(v_definition, 'as $function$') + length('as $function$')
+  );
+  if strpos(v_body, 'ecommerce_lock_configuration_writer') = 0
+     or strpos(v_body, 'ecommerce_lock_configuration_writer')
+        > strpos(v_body, 'ecommerce_apply_product_configuration(') then
     raise exception 'CHECKED_WRITER_LOCK_ORDER_FAILED';
   end if;
 
   select pg_get_functiondef(
     'public.ecommerce_admin_upsert_published_product(text,text,text,jsonb)'::regprocedure
   ) into v_definition;
-  if strpos(v_definition, 'limit 1 for update') = 0 then
-    raise exception 'LEGACY_UPSERT_PORTAL_LOCK_MISSING';
+  if strpos(lower(v_definition), 'public.ecommerce_admin_upsert_published_product_v3(') = 0
+     or strpos(lower(v_definition), 'limit 1 for update') > 0 then
+    raise exception 'LEGACY_UPSERT_ALIAS_TO_V3_FAILED';
   end if;
 
   select pg_get_functiondef(
     'public.ecommerce_admin_upsert_published_product(text,text,text,text,jsonb)'::regprocedure
   ) into v_definition;
-  if strpos(v_definition, 'limit 1 for update') = 0 then
-    raise exception 'STAFF_UPSERT_PORTAL_LOCK_MISSING';
+  if strpos(lower(v_definition), 'public.ecommerce_admin_upsert_published_product_v3(') = 0
+     or strpos(lower(v_definition), 'limit 1 for update') > 0 then
+    raise exception 'STAFF_UPSERT_ALIAS_TO_V3_FAILED';
+  end if;
+
+  select pg_get_functiondef(
+    'public.ecommerce_admin_upsert_published_product_v3(text,text,text,text,jsonb)'::regprocedure
+  ) into v_definition;
+  if strpos(lower(v_definition), 'public.ecommerce_admin_upsert_published_product_v2(') = 0
+     or strpos(lower(v_definition), 'public.ecommerce_admin_upsert_published_product(') > 0
+     or strpos(lower(v_definition), 'private.ecommerce_admin_upsert_published_product_core(') > 0 then
+    raise exception 'V3_PUBLISHED_PRODUCT_CALL_GRAPH_FAILED';
+  end if;
+
+  select pg_get_functiondef(
+    'public.ecommerce_admin_upsert_published_product_v2(text,text,text,text,jsonb)'::regprocedure
+  ) into v_definition;
+  if strpos(lower(v_definition), 'private.ecommerce_admin_upsert_published_product_core(') = 0
+     or strpos(lower(v_definition), 'public.ecommerce_admin_upsert_published_product(') > 0 then
+    raise exception 'V2_PUBLISHED_PRODUCT_CALL_GRAPH_FAILED';
+  end if;
+
+  select pg_get_functiondef(
+    'private.ecommerce_admin_upsert_published_product_core(text,text,text,text,jsonb)'::regprocedure
+  ) into v_definition;
+  if strpos(lower(v_definition), 'limit 1 for update') = 0
+     or strpos(lower(v_definition), 'from public.ecommerce_portals') = 0
+     or strpos(lower(v_definition), 'from public.ecommerce_published_products') = 0
+     or strpos(lower(v_definition), 'limit 1 for update')
+        > strpos(lower(v_definition), 'from public.ecommerce_published_products') then
+    raise exception 'PUBLISHED_PRODUCT_CORE_LOCK_ORDER_FAILED';
   end if;
 
   select pg_get_functiondef(
     'public.ecommerce_admin_set_product_published(text,text,text,uuid,boolean)'::regprocedure
   ) into v_definition;
-  if strpos(v_definition, 'ecommerce_lock_configuration_writer') = 0 then
-    raise exception 'LEGACY_SET_STATUS_LOCK_MISSING';
+  v_body := substring(
+    v_definition from strpos(v_definition, 'as $function$') + length('as $function$')
+  );
+  if strpos(v_body, 'public.ecommerce_admin_set_product_published(') = 0 then
+    raise exception 'LEGACY_SET_STATUS_ALIAS_MISSING';
   end if;
 
   select pg_get_functiondef(
@@ -138,7 +175,9 @@ begin
 
   insert into public.ecommerce_portals(
     id, license_id, slug, status, name,
-    ordering_enabled, pickup_enabled, business_hours_enabled
+    ordering_enabled, pickup_enabled, business_hours_enabled,
+    whatsapp_phone, address_street, address_neighborhood,
+    address_municipality, address_state, address_postal_code
   ) values (
     v_portal,
     v_license,
@@ -147,7 +186,8 @@ begin
     'Writer rollback',
     true,
     true,
-    false
+    false,
+    '5555555555', 'Calle 1', 'Centro', 'Merida', 'Yucatan', '97000'
   );
 
   insert into public.ecommerce_published_products(
