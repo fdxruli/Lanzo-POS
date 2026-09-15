@@ -17,13 +17,14 @@ export const createPWASlice = (set, get) => {
     set((state) => {
       const deferredPrompt = state.deferredPrompt;
       const isInstallable = !isStandalone && (Boolean(deferredPrompt) || isIOS);
-      const becameInstallable = isInstallable && !state.isInstallable;
 
       return {
         isIOS,
         isStandalone,
         isInstallable,
-        showInstallModal: isInstallable ? state.showInstallModal || becameInstallable : false
+        // La invitación automática se gobierna por engagement visible en
+        // InstallPrompt; volverse instalable no debe abrirla durante onboarding.
+        showInstallModal: isInstallable ? state.showInstallModal : false
       };
     }),
 
@@ -31,12 +32,11 @@ export const createPWASlice = (set, get) => {
     set((state) => {
       const deferredPrompt = prompt || null;
       const isInstallable = !state.isStandalone && (Boolean(deferredPrompt) || state.isIOS);
-      const becameInstallable = isInstallable && !state.isInstallable;
 
       return {
         deferredPrompt,
         isInstallable,
-        showInstallModal: isInstallable ? state.showInstallModal || becameInstallable : false
+        showInstallModal: isInstallable ? state.showInstallModal : false
       };
     }),
 

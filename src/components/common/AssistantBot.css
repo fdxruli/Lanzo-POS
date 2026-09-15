@@ -810,6 +810,25 @@
   transition: all 0.2s;
 }
 
+.action-btn:hover {
+  background: var(--primary-hover);
+}
+
+.action-btn--secondary {
+  background: transparent;
+  color: var(--primary-color);
+  border: 1px solid var(--primary-color);
+}
+
+.action-btn--secondary:hover {
+  background: var(--light-background);
+}
+
+.close-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .dismiss-link {
   background: none;
   border: none;

@@ -1,78 +1,129 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { tryEnablePersistence } from '../../services/utils';
 import { useAppStore } from '../../store/useAppStore';
-import { isProLicense } from '../../store/slices/license/licenseGuards';
+import { ShieldCheck, ExternalLink } from 'lucide-react';
+import {
+  acknowledgeDataSafety,
+  hasAcknowledgedDataSafety,
+  isDataSafetyModalEligible,
+} from '../../utils/noticePolicy';
 import './DataSafetyModal.css';
+
+const BACKUP_ROUTE = '/configuracion?tab=maintenance';
 
 export default function DataSafetyModal() {
   const [show, setShow] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
-
-  const isStaffSession =
-    currentDeviceRole === 'staff' ||
-    licenseDetails?.device_role === 'staff' ||
-    Boolean(currentStaffUser || licenseDetails?.staff_user);
+  const navigate = useNavigate();
+  const acknowledgeButtonRef = useRef(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkSafety = async () => {
       // 1. Intentar activar persistencia silenciosamente al cargar
-      await tryEnablePersistence();
+      try {
+        await tryEnablePersistence();
 
-      // 2. Verificar si el usuario ya vio la advertencia
-      const hasAcknowledged = localStorage.getItem('lanzo_data_safety_ack');
-      const shouldSkipSafetyWarning = isProLicense(licenseDetails) || isStaffSession;
-      setShow(!hasAcknowledged && !shouldSkipSafetyWarning);
+        if (!isMounted) return;
+
+        // 2. Verificar si el usuario ya vio la advertencia
+        setShow(isDataSafetyModalEligible({
+          licenseDetails,
+          currentDeviceRole,
+          currentStaffUser,
+          acknowledged: hasAcknowledgedDataSafety(),
+        }));
+      } finally {
+        if (isMounted) setIsChecking(false);
+      }
     };
     checkSafety();
-  }, [currentDeviceRole, currentStaffUser, isStaffSession, licenseDetails]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentDeviceRole, currentStaffUser, licenseDetails]);
+
+  useEffect(() => {
+    if (show) acknowledgeButtonRef.current?.focus();
+  }, [show]);
 
   const handleAcknowledge = () => {
-    localStorage.setItem('lanzo_data_safety_ack', 'true');
+    acknowledgeDataSafety();
     setShow(false);
   };
+
+  const handleViewBackup = () => {
+    acknowledgeDataSafety();
+    setShow(false);
+    navigate(BACKUP_ROUTE);
+  };
+
+  if (isChecking) {
+    // Evita que InstallPrompt abra una invitación durante la breve evaluación
+    // asíncrona de la política de protección de datos.
+    return <div data-lanzo-blocking-modal="true" data-lanzo-notice-pending="true" hidden />;
+  }
 
   if (!show) return null;
 
   return (
-    <div className="ui-modal ui-modal--critical data-safety-modal" role="dialog" aria-modal="true" aria-labelledby="data-safety-title">
+    <div
+      className="ui-modal data-safety-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="data-safety-title"
+      aria-describedby="data-safety-description"
+      data-lanzo-blocking-modal="true"
+    >
       <div className="ui-modal__content ui-modal__content--md data-safety-modal__content">
-        <h2 id="data-safety-title" className="ui-modal__title data-safety-modal__title">
-          ⚠️ ADVERTENCIA CRÍTICA
-        </h2>
-        
+        <div className="data-safety-modal__heading">
+          <ShieldCheck className="data-safety-modal__icon" size={30} aria-hidden="true" />
+          <h2 id="data-safety-title" className="ui-modal__title data-safety-modal__title">
+            Protege la información de tu negocio
+          </h2>
+        </div>
+
         <div className="ui-modal__body data-safety-modal__body">
-          <p><strong>Tus datos viven SOLAMENTE en este dispositivo.</strong></p>
-          <p>Lanzo POS funciona sin internet, pero eso significa que no hay copia automática en la nube.</p>
-          
-          {/* CORRECCIÓN: Usamos rgba para el fondo (se ve bien en dark/light) y variables para el borde */}
-          <ul style={{ 
-            backgroundColor: 'rgba(255, 184, 0, 0.15)', /* Amarillo transparente adaptativo */
-            border: '1px solid var(--warning-color)',    /* Borde del color de alerta */
-            padding: '15px 25px', 
-            borderRadius: '8px', 
-            margin: '15px 0',
-            color: 'var(--text-dark)' /* Texto legible en ambos modos */
-          }}>
-            <li style={{ marginBottom: '8px' }}>❌ <strong>NO borres</strong> el historial o datos de navegación.</li>
-            <li style={{ marginBottom: '8px' }}>❌ <strong>NO uses</strong> &quot;Modo Incognito&quot; o Privado.</li>
-            <li>✅ <strong>HAZ COPIAS DE SEGURIDAD</strong> semanales.</li>
+          <p id="data-safety-description">
+            Lanzo puede trabajar incluso sin conexión. En esta modalidad, la información de tu negocio se conserva localmente en este dispositivo.
+          </p>
+
+          <p className="data-safety-modal__recommendations-title">Para protegerla:</p>
+          <ul className="data-safety-modal__recommendations">
+            <li>No uses Lanzo en modo incógnito o privado.</li>
+            <li>Evita borrar los datos del sitio o del navegador de este dispositivo.</li>
+            <li>Realiza respaldos periódicos de tu negocio.</li>
           </ul>
-          
-          {/* CORRECCIÓN: Usamos variable de texto en lugar de #666 */}
+
           <p className="data-safety-modal__help">
-            Si pierdes tu dispositivo o limpias el navegador, perderás tu inventario y ventas para siempre si no tienes respaldo manual.
+            Un respaldo actualizado te permite recuperar tu información si cambias de dispositivo o si el navegador elimina los datos locales.
           </p>
         </div>
 
-        <button 
-          type="button"
-          className="ui-button ui-button--danger ui-button--block data-safety-modal__action" 
-          onClick={handleAcknowledge}
-        >
-          Entendido, soy responsable de mis datos
-        </button>
+        <div className="data-safety-modal__actions">
+          <button
+            ref={acknowledgeButtonRef}
+            type="button"
+            className="ui-button ui-button--primary data-safety-modal__action"
+            onClick={handleAcknowledge}
+          >
+            Entendido
+          </button>
+          <button
+            type="button"
+            className="ui-button ui-button--secondary data-safety-modal__action data-safety-modal__backup-action"
+            onClick={handleViewBackup}
+          >
+            <ExternalLink size={16} aria-hidden="true" />
+            Ver cómo respaldar
+          </button>
+        </div>
       </div>
     </div>
   );

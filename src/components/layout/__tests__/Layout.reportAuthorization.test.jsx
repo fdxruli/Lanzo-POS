@@ -51,7 +51,13 @@ vi.mock('../../../services/db/dexie', () => ({ db: {}, STORES: {} }));
 vi.mock('../../../services/db/utils', () => ({ getAvailableStock: vi.fn() }));
 vi.mock('../../../services/sales/inventoryFlow', () => ({ getSortedBatchesForProduct: vi.fn() }));
 vi.mock('../../../services/products/commercialVariants', () => ({ isCommercialVariantProduct: vi.fn() }));
-vi.mock('../../../config/botContext', () => ({ GLOBAL_ALERT: { active: false, id: 'test' } }));
+vi.mock('../../../config/botContext', () => ({
+  GLOBAL_ALERT: { active: true, id: 'test' },
+  hasAcknowledgedGlobalAlert: () => false,
+  isGlobalAlertEligible: (_alert, { licenseDetails } = {}) => Boolean(
+    licenseDetails?.created_at === '2026-03-01T00:00:00.000Z'
+  ),
+}));
 
 vi.mock('../Navbar', () => ({ default: () => <nav>Navbar</nav> }));
 vi.mock('../Ticker', () => ({ default: () => <div>Ticker</div> }));
@@ -61,8 +67,12 @@ vi.mock('../../ecommerce/orders/EcommerceOrdersRuntime', () => ({ default: () =>
 vi.mock('../../ecommerce/EcommercePublishedStockAlertRuntime', () => ({ default: () => null }));
 vi.mock('../../ecommerce/EcommerceCatalogSyncRuntime', () => ({ default: () => null }));
 vi.mock('../../common/AssistantBot', () => ({
-  default: ({ reportsAllowed }) => (
-    <div data-testid="assistant" data-reports-allowed={String(reportsAllowed)} />
+  default: ({ reportsAllowed, globalAlertEligible }) => (
+    <div
+      data-testid="assistant"
+      data-reports-allowed={String(reportsAllowed)}
+      data-global-alert={String(globalAlertEligible)}
+    />
   ),
 }));
 
@@ -98,6 +108,7 @@ const renderLayout = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   window.scrollTo = vi.fn();
   HTMLElement.prototype.scrollTo = vi.fn();
   mocks.runtime = adminRuntime();
@@ -176,5 +187,43 @@ describe('Layout report authorization', () => {
     expect(mocks.loadStats).not.toHaveBeenCalled();
     expect(mocks.loadSales).not.toHaveBeenCalled();
     expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
+  });
+
+  it('does not compete with the data-safety notice for an unacknowledged FREE admin', async () => {
+    mocks.app = {
+      showAssistantBot: false,
+      showTicker: false,
+      licenseStatus: 'active',
+      licenseDetails: {
+        plan_code: 'free_trial',
+        created_at: '2026-03-01T00:00:00.000Z',
+      },
+      currentDeviceRole: 'admin',
+      currentStaffUser: null,
+    };
+
+    renderLayout();
+
+    await waitFor(() => expect(mocks.loadProducts).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
+  });
+
+  it('allows an eligible historical alert after the protection notice is acknowledged', async () => {
+    localStorage.setItem('lanzo_data_safety_ack', 'true');
+    mocks.app = {
+      showAssistantBot: false,
+      showTicker: false,
+      licenseStatus: 'active',
+      licenseDetails: {
+        plan_code: 'free_trial',
+        created_at: '2026-03-01T00:00:00.000Z',
+      },
+      currentDeviceRole: 'admin',
+      currentStaffUser: null,
+    };
+
+    renderLayout();
+
+    expect(await screen.findByTestId('assistant')).toHaveAttribute('data-global-alert', 'true');
   });
 });
