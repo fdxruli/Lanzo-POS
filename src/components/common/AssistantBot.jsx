@@ -2,9 +2,15 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getSmartContext, getQuickActions, GLOBAL_ALERT, getCriticalAlert, initializeGlobalAlert } from '../../config/botContext';
 import {
-  X, Wrench, AlertTriangle, ExternalLink, Send,
+  acknowledgeGlobalAlert,
+  getSmartContext,
+  getQuickActions,
+  GLOBAL_ALERT,
+  getCriticalAlert,
+} from '../../config/botContext';
+import {
+  X, AlertTriangle, ExternalLink, Send,
   Sparkles, HelpCircle, Lightbulb, MapPin, MessageSquareText,
   ShoppingCart, Package, BarChart3, Users, Settings, ClipboardList,
   WalletCards,
@@ -233,13 +239,7 @@ const getContextualShortcuts = ({ pageKey, botData }) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Verificación de alerta global: se hace UNA vez fuera del componente
-// porque GLOBAL_ALERT es una constante que nunca cambia en runtime
-const ALERT_KEY = GLOBAL_ALERT?.active ? `lanzo_alert_${GLOBAL_ALERT.id}` : null;
-const HAS_PENDING_ALERT =
-  GLOBAL_ALERT?.active && ALERT_KEY ? !localStorage.getItem(ALERT_KEY) : false;
-
-const AssistantBot = ({ reportsAllowed = true }) => {
+const AssistantBot = ({ reportsAllowed = true, globalAlertEligible = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -247,21 +247,26 @@ const AssistantBot = ({ reportsAllowed = true }) => {
   const { askBot, isReady, error: workerError } = useBotWorker();
 
   // ─── ESTADO LOCAL ───────────────────────────────────────────────────────────
-  const [showGlobalAlert, setShowGlobalAlert] = useState(HAS_PENDING_ALERT);
-  const [isOpen, setIsOpen] = useState(HAS_PENDING_ALERT);
+  const [dismissedGlobalAlert, setDismissedGlobalAlert] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [chatMode, setChatMode] = useState(false);
   const [messages, setMessages] = useState([]);
   const [userInput, setUserInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
+  const showGlobalAlert = globalAlertEligible && !dismissedGlobalAlert;
+  const globalAlertIsDismissible = GLOBAL_ALERT.isDismissible !== false
+    && GLOBAL_ALERT.severity !== 'critical';
+  const panelIsOpen = isOpen || showGlobalAlert;
+
   const chatEndRef = useRef(null);
   const botRef = useRef(null);
 
   // ─── REFS para el click-outside (evita re-registrar el listener) ────────────
-  const isOpenRef = useRef(isOpen);
+  const isOpenRef = useRef(panelIsOpen);
   const showGlobalAlertRef = useRef(showGlobalAlert);
 
-  useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+  useEffect(() => { isOpenRef.current = panelIsOpen; }, [panelIsOpen]);
   useEffect(() => { showGlobalAlertRef.current = showGlobalAlert; }, [showGlobalAlert]);
 
   // ─── SUSCRIPCIONES A STORES (selectores granulares y estables) ─────────────
@@ -365,25 +370,6 @@ const AssistantBot = ({ reportsAllowed = true }) => {
 
   // ─── EFECTOS ────────────────────────────────────────────────────────────────
 
-  // Inicializar alerta global (solo en main thread, seguro para Worker)
-  useEffect(() => {
-    initializeGlobalAlert();
-  }, []);
-
-  // La alerta global es una constante — solo necesitamos verificarla al montar
-  // No hay dependencias que cambien en runtime
-  useEffect(() => {
-    if (!GLOBAL_ALERT?.active || !ALERT_KEY) {
-      setShowGlobalAlert(false);
-      return;
-    }
-    const alreadySeen = localStorage.getItem(ALERT_KEY);
-    if (!alreadySeen) {
-      setShowGlobalAlert(true);
-      setIsOpen(true);
-    }
-  }, []); // [] intencional: GLOBAL_ALERT es una constante de importación
-
   // Auto-scroll del chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -404,8 +390,8 @@ const AssistantBot = ({ reportsAllowed = true }) => {
   // ─── HANDLERS (useCallback para estabilidad) ────────────────────────────────
 
   const handleDismissAlert = useCallback(() => {
-    if (ALERT_KEY) localStorage.setItem(ALERT_KEY, 'true');
-    setShowGlobalAlert(false);
+    acknowledgeGlobalAlert(GLOBAL_ALERT);
+    setDismissedGlobalAlert(true);
     setIsOpen(false);
   }, []);
 
@@ -508,7 +494,7 @@ const AssistantBot = ({ reportsAllowed = true }) => {
 
   // ─── VALORES DERIVADOS SIMPLES (sin memo, son baratos) ──────────────────────
   const hasActiveAlert =
-    showGlobalAlert || criticalAlert?.severity === 'critical';
+    criticalAlert?.severity === 'critical';
   const hasItemsInCart = cartOrder.length > 0;
   const PageIcon = pageContext.icon;
 
@@ -521,16 +507,17 @@ const AssistantBot = ({ reportsAllowed = true }) => {
   return (
     <div
       ref={botRef}
-      className={`lanzo-bot-container ${isOpen ? 'open' : 'closed'} ${hasItemsInCart ? 'has-items' : ''}`}
+      className={`lanzo-bot-container ${panelIsOpen ? 'open' : 'closed'} ${hasItemsInCart ? 'has-items' : ''}`}
     >
-      {isOpen && (
+      {panelIsOpen && (
         <div className="lanzo-bot-card animate-pop-in">
           <div className="bot-header">
             <div className="bot-heading">
             <span className="bot-title">
-              {chatMode ? (
+              {showGlobalAlert ? GLOBAL_ALERT.title
+               : chatMode ? (
                 <><Sparkles size={16} style={{ marginRight: '6px' }} />Asistente del sistema {isReady ? '' : '(cargando...)'}</>
-              ) : showGlobalAlert ? '⚠️ Importante'
+               )
                 : criticalAlert ? 'Atención Requerida'
                 : (context?.title || 'Lanzo Bot')}
             </span>
@@ -552,10 +539,17 @@ const AssistantBot = ({ reportsAllowed = true }) => {
                 </button>
               )}
               <button type="button"
-                onClick={() => { if (!showGlobalAlert) setIsOpen(false); }}
+                onClick={() => {
+                  if (showGlobalAlert && globalAlertIsDismissible) {
+                    handleDismissAlert();
+                  } else if (!showGlobalAlert) {
+                    setIsOpen(false);
+                  }
+                }}
                 className="close-btn"
-                style={showGlobalAlert ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
-                title={showGlobalAlert ? 'Debes leer el mensaje primero' : 'Cerrar'}
+                disabled={showGlobalAlert && !globalAlertIsDismissible}
+                title={showGlobalAlert && !globalAlertIsDismissible ? 'Este aviso no se puede cerrar' : 'Cerrar'}
+                aria-label="Cerrar asistente"
               >
                 <X size={16} />
               </button>
@@ -578,21 +572,21 @@ const AssistantBot = ({ reportsAllowed = true }) => {
             {showGlobalAlert ? (
               <div className="alert-content">
                 <p className="alert-text">{GLOBAL_ALERT.message}</p>
+                <button type="button" onClick={handleDismissAlert} className="action-btn">
+                  Entendido
+                </button>
                 {GLOBAL_ALERT.actionLink && (
                   <button type="button"
                     onClick={() => {
                       navigate(GLOBAL_ALERT.actionLink);
                       handleDismissAlert();
                     }}
-                    className="action-btn"
+                    className="action-btn action-btn--secondary"
                   >
-                    <Wrench size={16} style={{ marginRight: 5 }} />
-                    Ir Ahora
+                    <ExternalLink size={16} />
+                    {GLOBAL_ALERT.actionLabel || 'Más información'}
                   </button>
                 )}
-                <button type="button" onClick={handleDismissAlert} className="dismiss-link">
-                  Entendido
-                </button>
               </div>
             ) : chatMode ? (
               <div className="chat-container">
@@ -775,7 +769,7 @@ const AssistantBot = ({ reportsAllowed = true }) => {
         </div>
       )}
 
-      {!isOpen && (
+      {!panelIsOpen && (
         <button type="button"
           onClick={() => setIsOpen(true)}
           className={`lanzo-bot-fab ${hasActiveAlert ? 'pulse' : ''}`}
