@@ -103,6 +103,14 @@ begin
   if v_result->>'code' <> 'ACTOR_SESSION_REQUIRED' then
     raise exception 'LEGACY_4ARG_AUTH_CONTRACT_FAILED: %', v_result;
   end if;
+  if exists (
+    select 1 from public.ecommerce_published_products
+    where portal_id=v_free_portal
+      and local_product_ref='pr294-compat-free-simple'
+      and deleted_at is null
+  ) then
+    raise exception 'LEGACY_4ARG_CREATED_PRODUCT_WITHOUT_SESSION';
+  end if;
 
   -- L2: a real authenticated legacy payload without configuration must create
   -- a simple product without invoking the configuration helper.
