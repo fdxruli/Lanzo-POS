@@ -246,8 +246,9 @@ begin
 
   execute 'drop trigger license_lifecycle_r3_fail_fixture on public.licenses';
 
-  -- Case H is completed with a real two-session check after deployment. Here
-  -- prove this transaction holds the dedicated xact advisory lock used by batch.
+  -- Case H: prove this transaction holds the dedicated xact advisory lock used
+  -- by the batch. The non-blocking try-lock/already_running branch is also
+  -- asserted by the migration contract test.
   if not exists (
     select 1 from pg_catalog.pg_locks
     where locktype = 'advisory' and classid = 1279347531 and objid = 1
