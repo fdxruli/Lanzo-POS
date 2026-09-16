@@ -402,20 +402,21 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
           Escanear Codigos{scanCount > 0 ? ` (${scanCount})` : ''}
         </h2>
 
+        <button
+          type="button"
+          className="scanner-close-btn"
+          onClick={handleClose}
+          disabled={isConfirming}
+          aria-label="Cerrar escaner"
+          title="Cerrar"
+        >
+          <CloseIcon />
+        </button>
+
         <div className="scanner-main-container">
           <div className="scanner-camera-panel">
             <div className="scanner-camera-controls">
               <span className="scanner-camera-label">Cámara</span>
-              <button
-                type="button"
-                className="scanner-close-btn"
-                onClick={handleClose}
-                disabled={isConfirming}
-                aria-label="Cerrar escaner"
-                title="Cerrar"
-              >
-                <CloseIcon />
-              </button>
             </div>
 
             <div className="scanner-video-container">

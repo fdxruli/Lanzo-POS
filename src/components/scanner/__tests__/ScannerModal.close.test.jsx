@@ -95,12 +95,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('ScannerModal mobile close control', () => {
-  it('renders an accessible button that closes the visible modal', () => {
+describe('ScannerModal close control', () => {
+  it('renders one accessible button that closes the visible modal', () => {
     render(<ScannerModal show onClose={mockClose} />);
 
-    const closeButton = screen.getByRole('button', { name: 'Cerrar escaner' });
+    const closeButtons = screen.getAllByRole('button', { name: 'Cerrar escaner' });
+    const closeButton = closeButtons[0];
 
+    expect(closeButtons).toHaveLength(1);
     expect(closeButton).toHaveAttribute('type', 'button');
     expect(closeButton).toHaveAttribute('aria-label', 'Cerrar escaner');
     expect(closeButton).toHaveClass('scanner-close-btn');

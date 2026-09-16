@@ -45,6 +45,7 @@
 
 /* Contenido del modal - Sin bordes ni márgenes en móvil */
 .modal-content.scanner-modal-content {
+  position: relative;
   width: 100%;
   height: 100%;
   max-width: none;
@@ -69,7 +70,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  flex: 1;
+  flex: 1 1 auto;
   /* ✅ Usa espacio disponible pero deja lugar para botón */
   gap: 0;
   margin: 0;
@@ -157,8 +158,8 @@
 /* Botón de cierre flotante (X) - Posicionado sobre el frame en móvil */
 .scanner-close-btn {
   position: absolute;
-  top: var(--spacing-sm, 8px);
-  right: var(--spacing-sm, 8px);
+  top: max(var(--spacing-sm, 8px), var(--safe-area-top));
+  right: max(var(--spacing-sm, 8px), var(--safe-area-right));
   width: 44px;
   height: 44px;
   display: flex;
@@ -178,6 +179,11 @@
 .scanner-close-btn:hover,
 .scanner-close-btn:active {
   background-color: rgba(0, 0, 0, 0.7);
+}
+
+.scanner-close-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-shadow-focus-primary);
 }
 
 .scanner-close-btn:disabled {
@@ -560,6 +566,7 @@
     width: 95%;
     max-width: 900px;
     max-height: 90vh;
+    min-height: 0;
     height: auto;
     margin: auto;
     padding: var(--spacing-lg, 24px);
@@ -573,6 +580,7 @@
   .scanner-modal-content .modal-title {
     display: block;
     margin: 0 0 var(--spacing-md, 16px) 0;
+    padding-right: calc(40px + var(--ui-space-md, var(--spacing-md, 16px)));
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--text-color, #333);
@@ -584,15 +592,15 @@
     flex-direction: row;
     gap: var(--spacing-lg, 24px);
     height: auto;
-    min-height: 400px;
-    max-height: calc(90vh - 140px);
+    min-height: 0;
+    max-height: none;
   }
 
   /* Panel de cámara con controles fuera del área de imagen en escritorio */
   .scanner-camera-panel {
     width: 50%;
     height: auto;
-    min-height: 350px;
+    min-height: 0;
     flex: 1 1 50%;
     display: flex;
     flex-direction: column;
@@ -628,25 +636,26 @@
     aspect-ratio: auto;
   }
 
-  /* Botón de cierre dentro de la franja de controles del panel */
+  /* El único cierre se ancla al modal completo en escritorio. */
   .scanner-close-btn {
-    position: static;
-    width: 36px;
-    height: 36px;
-    background-color: var(--light-background, #f5f5f5);
-    color: var(--text-color, #333);
-    border: 1px solid var(--border-color, #d1d5db);
-    border-radius: var(--border-radius-sm, 4px);
+    top: var(--ui-space-md, var(--spacing-md, 16px));
+    right: var(--ui-space-md, var(--spacing-md, 16px));
+    width: 40px;
+    height: 40px;
+    background-color: var(--ui-bg-muted, var(--light-background, #f5f5f5));
+    color: var(--ui-text, var(--text-color, #333));
+    border: 1px solid var(--ui-border-color, var(--border-color, #d1d5db));
+    border-radius: var(--ui-radius-sm, var(--border-radius-sm, 4px));
   }
 
   .scanner-close-btn:hover,
   .scanner-close-btn:active {
-    background-color: var(--border-color, #d1d5db);
+    background-color: var(--ui-border-color, var(--border-color, #d1d5db));
   }
 
   .scanner-close-btn svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     color: currentColor;
   }
 
@@ -1298,11 +1307,6 @@
   min-width: 0;
 }
 
-.scanner-close-btn {
-  top: max(var(--spacing-sm, 8px), var(--safe-area-top));
-  right: max(var(--spacing-sm, 8px), var(--safe-area-right));
-}
-
 .scanned-items-list,
 .scanner-results-container {
   -webkit-overflow-scrolling: touch;
@@ -1331,7 +1335,9 @@
   }
 
   .scanner-main-container {
-    max-height: calc(100dvh - 172px);
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
   }
 }
 
