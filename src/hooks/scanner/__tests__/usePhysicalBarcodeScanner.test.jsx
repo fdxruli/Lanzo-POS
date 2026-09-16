@@ -31,6 +31,7 @@ describe('usePhysicalBarcodeScanner', () => {
     cleanup();
     document.body.innerHTML = '';
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('emits a normalized rapid EAN-13 event from the route-scoped listener', () => {
