@@ -4,6 +4,8 @@ import {
   BellRing,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleUserRound,
   Clock3,
   ExternalLink,
@@ -298,7 +300,12 @@ function OrderBoard({
   }));
 
   return (
-    <div className="ecommerce-orders-board" aria-busy={loading}>
+    <div
+      className="ecommerce-orders-board"
+      aria-busy={loading}
+      role="region"
+      aria-label="Resultados de pedidos"
+    >
       {groupedOrders.map((group) => (
         <OrderGroup
           key={group.key}
@@ -399,22 +406,26 @@ function OrdersPagination({ pagination, loading, refreshing, onPageChange }) {
     <nav className="ecommerce-orders-pagination" aria-label="Paginación de pedidos">
       <button
         type="button"
-        className="ui-button ui-button--secondary"
+        className="ui-button ui-button--ghost ecommerce-orders-pagination__button"
         onClick={() => onPageChange?.('previous')}
         disabled={busy || offset === 0}
+        aria-label="Página anterior"
+        title="Página anterior"
       >
-        Anterior
+        <ChevronLeft size={18} aria-hidden="true" />
       </button>
       <span className="ecommerce-orders-pagination__page" aria-current="page">
         Página {pageNumber}
       </span>
       <button
         type="button"
-        className="ui-button ui-button--secondary"
+        className="ui-button ui-button--ghost ecommerce-orders-pagination__button"
         onClick={() => onPageChange?.('next')}
         disabled={busy || !hasMore}
+        aria-label="Página siguiente"
+        title="Página siguiente"
       >
-        Siguiente
+        <ChevronRight size={18} aria-hidden="true" />
       </button>
     </nav>
   );
@@ -473,13 +484,6 @@ function OrdersInbox({
         onMobileGroup={handleMobileGroup}
       />
 
-      <OrdersPagination
-        pagination={pagination}
-        loading={loading}
-        refreshing={refreshing}
-        onPageChange={handlePageChange}
-      />
-
       {error && orders.length > 0 && <div className="ecommerce-orders-inline-error" role="alert">{error}</div>}
       {searchQuery.trim() && !loading && orders.length > 0 && visibleOrders.length === 0 ? (
         <div className="ecommerce-orders-state">
@@ -498,6 +502,13 @@ function OrdersInbox({
           onToggleMobileExpanded={handleToggleMobileExpanded}
         />
       )}
+
+      <OrdersPagination
+        pagination={pagination}
+        loading={loading}
+        refreshing={refreshing}
+        onPageChange={handlePageChange}
+      />
     </>
   );
 }

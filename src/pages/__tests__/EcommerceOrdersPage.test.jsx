@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { readFileSync } from 'node:fs';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -506,10 +506,10 @@ describe('EcommerceOrdersPage', () => {
     const view = renderPage();
 
     expect(screen.getByText('Página 1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Anterior' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Siguiente' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Página anterior' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Página siguiente' })).not.toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }));
     expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
       filter: 'all',
       limit: 1,
@@ -531,16 +531,32 @@ describe('EcommerceOrdersPage', () => {
     expect(screen.getByText('Página 2')).toBeInTheDocument();
     expect(screen.queryByText('EC-00000011')).not.toBeInTheDocument();
     expect(screen.getByText('EC-00000012')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Anterior' })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Página anterior' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Página siguiente' })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Anterior' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Página anterior' }));
     expect(store.loadEcommerceOrders).toHaveBeenCalledWith({
       filter: 'all',
       limit: 1,
       offset: 0,
       force: true
     });
+  });
+
+  it('renders one compact pagination after the order results with accessible icon controls', () => {
+    renderPage();
+
+    const board = screen.getByRole('region', { name: 'Resultados de pedidos' });
+    const pagination = screen.getByRole('navigation', { name: 'Paginación de pedidos' });
+    const previous = within(pagination).getByRole('button', { name: 'Página anterior' });
+    const next = within(pagination).getByRole('button', { name: 'Página siguiente' });
+
+    expect(screen.getAllByRole('navigation', { name: 'Paginación de pedidos' })).toHaveLength(1);
+    expect(board.compareDocumentPosition(pagination) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(previous).toHaveAttribute('title', 'Página anterior');
+    expect(next).toHaveAttribute('title', 'Página siguiente');
+    expect(previous).toBeDisabled();
+    expect(next).toBeDisabled();
   });
 
   it('resets the pagination offset when the filter changes', async () => {
