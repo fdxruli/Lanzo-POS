@@ -66,7 +66,7 @@ const CriticalStorageLockScreen = () => {
       background: 'rgba(0,0,0,0.95)', color: '#fff', zIndex: 'var(--z-critical-blocker)',
       display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
       padding: '2rem', textAlign: 'center', fontFamily: 'sans-serif'
-    }}>
+    }} data-lanzo-blocking-modal="true">
       <AlertCircle color="#ff4444" size={64} style={{ marginBottom: '1rem' }} />
       <h1 style={{ color: '#ff4444', marginBottom: '1rem' }}>Operación Pausada: Almacenamiento Crítico</h1>
       <p style={{ fontSize: '1.25rem', maxWidth: '600px', lineHeight: '1.5', color: '#e5e7eb', marginBottom: '2rem' }}>

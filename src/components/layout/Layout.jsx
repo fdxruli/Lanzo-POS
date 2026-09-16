@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Navbar from './Navbar';
@@ -14,7 +14,15 @@ import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useOrderStore } from '../../store/useOrderStore';
 import Logger from '../../services/Logger';
-import { GLOBAL_ALERT } from '../../config/botContext';
+import {
+  GLOBAL_ALERT,
+  hasAcknowledgedGlobalAlert,
+  isGlobalAlertEligible,
+} from '../../config/botContext';
+import {
+  hasAcknowledgedDataSafety,
+  isDataSafetyModalEligible,
+} from '../../utils/noticePolicy';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { db, STORES } from '../../services/db/dexie';
 import { getAvailableStock } from '../../services/db/utils';
@@ -49,9 +57,13 @@ function Layout() {
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);
   const showTicker = useAppStore((state) => state.showTicker);
   const licenseStatus = useAppStore((state) => state.licenseStatus);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const actorRuntime = useActorRuntimeSnapshot();
   const canReadReports = canReadSalesReports(actorRuntime);
   const { pathname } = useLocation();
+  const [noticeRevision, setNoticeRevision] = useState(0);
   const isPosPage = pathname === '/';
   const isAboutPage = pathname === '/acerca-de';
 
@@ -61,6 +73,26 @@ function Layout() {
     licenseStatus === 'locked_renewal'
   );
   const shouldShowTicker = !isAboutPage && (showTicker || isLicenseCritical);
+  const dataSafetyEligible = isDataSafetyModalEligible({
+    licenseDetails,
+    currentDeviceRole,
+    currentStaffUser,
+    acknowledged: hasAcknowledgedDataSafety(),
+  });
+  const globalAlertEligible = !dataSafetyEligible && isGlobalAlertEligible(GLOBAL_ALERT, {
+    licenseDetails,
+    acknowledged: hasAcknowledgedGlobalAlert(GLOBAL_ALERT),
+  });
+
+  useEffect(() => {
+    const handleDataSafetyAcknowledged = () => setNoticeRevision((revision) => revision + 1);
+    window.addEventListener('lanzo-data-safety-acknowledged', handleDataSafetyAcknowledged);
+    return () => window.removeEventListener('lanzo-data-safety-acknowledged', handleDataSafetyAcknowledged);
+  }, []);
+
+  // La lectura de localStorage anterior a este punto es deliberada: sólo
+  // recalcula la política de avisos después del evento de acknowledgment.
+  void noticeRevision;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -142,11 +174,12 @@ function Layout() {
       <MessageModal />
       <DataSafetyModal />
 
-      {((canReadReports && showAssistantBot) || (GLOBAL_ALERT && GLOBAL_ALERT.active && !localStorage.getItem(`lanzo_alert_${GLOBAL_ALERT.id}`))) && (
+      {((canReadReports && showAssistantBot) || globalAlertEligible) && (
         <Suspense fallback={null}>
           <AssistantBot
             key={actorRuntime.generation}
             reportsAllowed={canReadReports}
+            globalAlertEligible={globalAlertEligible}
           />
         </Suspense>
       )}
