@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +11,21 @@ const mocks = vi.hoisted(() => ({
   playBeep: vi.fn(),
   playErrorBeep: vi.fn()
 }));
+
+const createDeterministicScannerClock = (start = 1000, gapMs = 5) => {
+  let currentTime = start;
+  const dateNowSpy = vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+  return {
+    press(target, key, options = {}) {
+      fireEvent.keyDown(target, { key, ...options });
+      currentTime += gapMs;
+    },
+    restore() {
+      dateNowSpy.mockRestore();
+    }
+  };
+};
 
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
   useActiveOrders: (selector) => selector(mocks.activeState)
@@ -101,9 +116,19 @@ const renderPos = (ui = makeUi()) => render(
   <PosPageContent data={data} ui={ui} actions={actions} features={{ hasTables: false }} />
 );
 
+const waitForPosReady = async () => {
+  await screen.findByTestId('order-summary');
+  await act(async () => {});
+};
+
 const sendScan = (code, target = document.body) => {
-  [...code].forEach((key) => fireEvent.keyDown(target, { key }));
-  fireEvent.keyDown(target, { key: 'Enter' });
+  const clock = createDeterministicScannerClock();
+  try {
+    [...code].forEach((key) => clock.press(target, key));
+    clock.press(target, 'Enter');
+  } finally {
+    clock.restore();
+  }
 };
 
 beforeEach(() => {
@@ -128,12 +153,13 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   document.body.innerHTML = '';
+  vi.restoreAllMocks();
 });
 
 describe('POS physical scanner integration', () => {
   it('resolves a known physical barcode and uses the existing scanned-product mutation seam', async () => {
     renderPos();
-    await screen.findByTestId('order-summary');
+    await waitForPosReady();
 
     sendScan('7501234567890');
 
@@ -146,7 +172,7 @@ describe('POS physical scanner integration', () => {
   it('preserves the existing safe unknown-code semantics', async () => {
     mocks.resolveWithCache.mockResolvedValue(null);
     renderPos();
-    await screen.findByTestId('order-summary');
+    await waitForPosReady();
 
     sendScan('UNKNOWN9');
 
@@ -160,7 +186,7 @@ describe('POS physical scanner integration', () => {
 
   it('does not resolve a short rejected burst', async () => {
     renderPos();
-    await screen.findByTestId('order-summary');
+    await waitForPosReady();
 
     sendScan('ABC');
 
@@ -174,7 +200,7 @@ describe('POS physical scanner integration', () => {
     ['mobile cart', { isMobileCartOpen: true }]
   ])('pauses physical input while %s is active', async (_label, uiOverrides) => {
     renderPos(makeUi(uiOverrides));
-    await screen.findByTestId('order-summary');
+    await waitForPosReady();
 
     sendScan('7501234567890');
 
@@ -185,7 +211,7 @@ describe('POS physical scanner integration', () => {
   it('pauses physical input while the active order is confirming checkout', async () => {
     mocks.activeState.isCurrentOrderLocked = true;
     renderPos();
-    await screen.findByTestId('order-summary');
+    await waitForPosReady();
 
     sendScan('7501234567890');
 
