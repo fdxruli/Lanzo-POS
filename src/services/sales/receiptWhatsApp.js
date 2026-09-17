@@ -1,136 +1,115 @@
-import { Money } from '../../utils/moneyMath';
 import {
-    getSaleEcommerceOrderCode,
-    getSaleFinancialFolio,
-    getSaleOperationalFolio,
-    isEcommerceSale
-} from './saleReference';
+    buildCustomerMessagePayload,
+    isCreditPaymentMethod,
+    notificationNotRequested,
+    openCustomerNotification
+} from '../customerMessaging/index.js';
+import { getSaleFinancialFolio } from './saleReference';
 
-const formatMoney = (value) => Money.init(value).toFixed(2);
+const resolveCustomer = async ({ sale = {}, paymentData = {}, loadData, STORES }) => {
+    const customerId = sale.customerId || sale.customer_id || paymentData.customerId || paymentData.customer_id || null;
+    let storedCustomer = null;
 
-const firstDefinedMoneyValue = (...values) => {
-    for (const value of values) {
-        if (value === null || value === undefined || value === '') continue;
-        if (typeof value === 'object') continue;
-        return Money.init(value);
-    }
-    return null;
-};
-
-const getReceiptSubtotal = (sale = {}, items = []) => {
-    const storedSubtotal = firstDefinedMoneyValue(
-        sale.subtotal,
-        sale.grossSubtotal,
-        sale.metadata?.grossSubtotal
-    );
-
-    if (storedSubtotal) return storedSubtotal;
-
-    return (Array.isArray(items) ? items : []).reduce((subtotal, item) => {
-        const storedLineSubtotal = firstDefinedMoneyValue(
-            item.exactTotal,
-            item.lineSubtotal,
-            item.subtotal
-        );
-        const lineSubtotal = storedLineSubtotal || Money.multiply(item.price || 0, item.quantity || 0);
-        return Money.add(subtotal, lineSubtotal);
-    }, Money.init(0));
-};
-
-const getReceiptDiscountTotal = (sale = {}) => firstDefinedMoneyValue(
-    sale.discountTotal,
-    sale.discount_total,
-    sale.metadata?.discountTotal,
-    sale.metadata?.discount_total,
-    sale.discount
-) || Money.init(0);
-
-const getSaleDiscountDetail = (sale = {}) => {
-    const discount = sale.saleDiscount
-        || (sale.metadata?.discount && typeof sale.metadata.discount === 'object'
-            ? sale.metadata.discount
-            : null);
-
-    if (!discount) return '';
-
-    const details = [];
-    if (String(discount.type || '').toLowerCase() === 'percent' && discount.value !== undefined) {
-        details.push(`${Money.init(discount.value).toString()}%`);
+    if (customerId && typeof loadData === 'function' && STORES?.CUSTOMERS) {
+        storedCustomer = await loadData(STORES.CUSTOMERS, customerId);
     }
 
-    const reason = String(discount.reason || '').trim();
-    if (reason) details.push(reason);
-
-    return details.length > 0 ? ` (${details.join(' · ')})` : '';
+    return {
+        id: storedCustomer?.id || customerId,
+        // This fallback never writes customer data; it only lets a missing
+        // phone resolve to the controlled notification outcome.
+        name: storedCustomer?.name || sale.customerName || sale.customer_name || paymentData.customerName || 'Cliente',
+        phone: storedCustomer?.phone ?? sale.customerPhone ?? sale.customer_phone ?? paymentData.customerPhone ?? null
+    };
 };
 
+const buildConfirmedSaleSnapshot = ({ sale = {}, items = [], paymentData = {}, total }) => ({
+    ...sale,
+    items: Array.isArray(sale.items) && sale.items.length > 0 ? sale.items : items,
+    folio: getSaleFinancialFolio(sale) || sale.folio || null,
+    subtotal: sale.subtotal ?? sale.grossSubtotal ?? sale.metadata?.grossSubtotal ?? null,
+    discount: sale.discount ?? sale.discountTotal ?? sale.discount_total ?? sale.metadata?.discountTotal ?? sale.metadata?.discount_total ?? null,
+    total: sale.total ?? total,
+    paymentMethod: sale.payment_method ?? sale.paymentMethod ?? paymentData.payment_method ?? paymentData.paymentMethod ?? paymentData.method ?? null,
+    amountPaid: sale.amount_paid ?? sale.abono ?? sale.amountPaid ?? paymentData.amount_paid ?? paymentData.amountPaid ?? null,
+    receivedAmount: sale.received_amount ?? sale.receivedAmount ?? paymentData.received_amount ?? paymentData.receivedAmount ?? null,
+    changeAmount: sale.change_amount ?? sale.changeAmount ?? paymentData.change_amount ?? paymentData.changeAmount ?? null,
+    balanceDue: sale.balance_due ?? sale.saldoPendiente ?? sale.balanceDue ?? paymentData.saldoPendiente ?? paymentData.balanceDue ?? null,
+    dueDate: sale.dueDate ?? sale.due_date ?? paymentData.dueDate ?? null,
+    creditStatus: sale.creditStatus ?? sale.credit_status ?? null,
+    salesChannel: sale.salesChannel ?? sale.sales_channel ?? null,
+    ecommerceOrderCode: sale.ecommerceOrderCode ?? sale.ecommerce_order_code ?? null,
+    posFolio: sale.posFolio ?? sale.pos_folio ?? sale.operationalFolio ?? sale.operational_folio ?? null,
+    saleDiscount: sale.saleDiscount ?? sale.metadata?.discount ?? null,
+    metadata: sale.metadata ?? null
+});
+
+const durableSaleTimestamp = (sale = {}) => (
+    sale.timestamp
+    || sale.soldAt
+    || sale.sold_at
+    || sale.createdAt
+    || sale.created_at
+    || null
+);
+
+/**
+ * Builds and opens a temporary text receipt only after the caller has a
+ * confirmed sale. There is intentionally no financial mutation or retry path
+ * here: every exit is a notification result, never a sale failure.
+ */
 export async function sendReceiptWhatsApp({
     sale,
     items,
-    paymentData,
+    paymentData = {},
     total,
     companyName,
-    features,
     loadData,
     STORES,
     sendWhatsAppMessage,
     Logger
 }) {
+    if (paymentData.sendReceipt === false) return notificationNotRequested();
+
     try {
-        const customer = await loadData(STORES.CUSTOMERS, paymentData.customerId);
-        if (customer && customer.phone) {
-            let receiptText = '*--- TICKET DE VENTA ---*\n';
-            receiptText += `*Negocio:* ${companyName}\n`;
-            receiptText += `*Fecha:* ${new Date().toLocaleString()}\n\n`;
-            if (isEcommerceSale(sale)) {
-                receiptText += `*Pedido online:* ${getSaleEcommerceOrderCode(sale) || 'Sin código normalizado'}\n`;
-            }
-            const operationalFolio = getSaleOperationalFolio(sale);
-            const financialFolio = getSaleFinancialFolio(sale);
-            if (operationalFolio && operationalFolio !== financialFolio) {
-                receiptText += `*Folio POS:* ${operationalFolio}\n`;
-            }
-            receiptText += `*Folio de venta:* ${financialFolio || 'Sin folio'}\n\n`;
+        const confirmedSale = buildConfirmedSaleSnapshot({ sale, items, paymentData, total });
+        const customer = await resolveCustomer({ sale: confirmedSale, paymentData, loadData, STORES });
+        const payloadResult = buildCustomerMessagePayload({
+            eventType: isCreditPaymentMethod(confirmedSale.paymentMethod) ? 'sale_credit' : 'sale_paid',
+            customer,
+            business: { name: companyName || 'Tu Negocio' },
+            occurredAt: durableSaleTimestamp(confirmedSale),
+            currency: confirmedSale.currency || paymentData.currency || 'MXN',
+            reference: confirmedSale.folio || confirmedSale.id || null,
+            sale: confirmedSale,
+            internalContext: { source: confirmedSale.sourceMode || 'sale_receipt' }
+        });
 
-            if (sale.prescriptionDetails) {
-                receiptText += '*--- DATOS DE DISPENSACIÓN ---*\n';
-                receiptText += `Dr(a): ${sale.prescriptionDetails.doctorName}\n`;
-                receiptText += `Cédula: ${sale.prescriptionDetails.licenseNumber}\n`;
-                if (sale.prescriptionDetails.notes) receiptText += `Notas: ${sale.prescriptionDetails.notes}\n`;
-                receiptText += '\n';
-            }
-
-            receiptText += '*Productos:*\n';
-            items.forEach(item => {
-                const lineTotal = Money.multiply(item.price, item.quantity);
-                receiptText += `• ${item.name} (x${item.quantity}) - $${lineTotal.toFixed(2)}\n`;
-                if (features.hasLabFields && item.requiresPrescription) {
-                    receiptText += '  _(Antibiótico/Controlado)_\n';
-                }
-            });
-
-            const discountTotal = getReceiptDiscountTotal(sale);
-            if (discountTotal.gt(0)) {
-                const subtotal = getReceiptSubtotal(sale, items);
-                receiptText += `\n*Subtotal:* $${formatMoney(subtotal)}\n`;
-                receiptText += `*Descuento${getSaleDiscountDetail(sale)}:* -$${formatMoney(discountTotal)}\n`;
-            }
-
-            receiptText += `\n*TOTAL: $${formatMoney(total)}*\n`;
-
-            if (paymentData.paymentMethod === 'efectivo') {
-                const cambio = Money.subtract(paymentData.amountPaid, total);
-                receiptText += `Efectivo recibido: $${formatMoney(paymentData.amountPaid)}\n`;
-                receiptText += `Cambio: $${formatMoney(cambio)}\n`;
-            } else if (paymentData.paymentMethod === 'fiado') {
-                receiptText += `Abono: $${formatMoney(paymentData.amountPaid)}\n`;
-                receiptText += `Saldo Pendiente: $${formatMoney(paymentData.saldoPendiente)}\n`;
-            }
-
-            receiptText += '\n¡Gracias por su preferencia!';
-            sendWhatsAppMessage(customer.phone, receiptText);
+        if (!payloadResult.ok) {
+            return {
+                status: 'payload_invalid',
+                code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID',
+                errors: payloadResult.errors || []
+            };
         }
+
+        return await openCustomerNotification({
+            payload: payloadResult.payload,
+            requested: true,
+            openWhatsApp: sendWhatsAppMessage
+        });
     } catch (error) {
-        Logger.error('Error enviando ticket:', error);
+        Logger?.error?.('Error preparando ticket de WhatsApp:', error);
+        return {
+            status: 'failed',
+            code: error?.code || 'WHATSAPP_RECEIPT_PREPARATION_FAILED',
+            message: error?.message || 'No se pudo preparar el ticket de WhatsApp.'
+        };
     }
 }
+
+export const receiptWhatsAppInternals = Object.freeze({
+    buildConfirmedSaleSnapshot,
+    durableSaleTimestamp,
+    resolveCustomer
+});

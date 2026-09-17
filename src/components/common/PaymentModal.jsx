@@ -6,6 +6,7 @@ import Logger from '../../services/Logger';
 import { Money } from '../../utils/moneyMath';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { orderTotals } from '../../services/sales/orderTotals';
+import { isCreditPaymentMethod } from '../../services/customerMessaging';
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000];
 const selectCurrentOrder = (state) => (state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null);
@@ -48,12 +49,17 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   }, [show, effectiveTotal, paymentMethod]);
 
   useEffect(() => {
-    if (show && paymentMethod === 'fiado' && selectedCustomerId) {
+    if (show && isCreditPaymentMethod(paymentMethod) && selectedCustomerId) {
       const checkOverdue = async () => {
         try {
           const customerSales = await db.table(STORES.SALES).where('customerId').equals(selectedCustomerId).toArray();
           const todayStr = new Date().toISOString().split('T')[0];
-          setHasOverdueCredit(customerSales.some((sale) => sale.paymentMethod === 'fiado' && sale.creditStatus === 'VIGENTE' && sale.dueDate && sale.dueDate.split('T')[0] < todayStr));
+          setHasOverdueCredit(customerSales.some((sale) => (
+            isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method)
+            && (sale.creditStatus ?? sale.credit_status) === 'VIGENTE'
+            && (sale.dueDate ?? sale.due_date)
+            && (sale.dueDate ?? sale.due_date).split('T')[0] < todayStr
+          )));
         } catch (error) {
           Logger.error('Error al verificar morosidad:', error);
           setHasOverdueCredit(false);
@@ -70,7 +76,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   try { safePaid = Money.init(amountPaid.toString().replace(',', '.') || '0'); } catch { safePaid = Money.init(0); }
 
   const isEfectivo = paymentMethod === 'efectivo';
-  const isFiado = paymentMethod === 'fiado';
+  const isFiado = isCreditPaymentMethod(paymentMethod);
   const hasInitialCreditPayment = isFiado && safePaid.gt(0);
   const change = isEfectivo ? Money.subtract(safePaid, safeTotal) : Money.init('0');
   const safeChange = change.gte(0) ? change : Money.init('0');

@@ -4,6 +4,11 @@ import './PurchaseHistoryModal.css';
 import Logger from '../../services/Logger';
 import { getSafeCustomerDebt, formatCustomerDebt } from '../../utils/customerUtils';
 import { customerCreditRepository } from '../../services/customerCredit/customerCreditRepository';
+import {
+  formatMoneyValue,
+  isCreditPaymentMethod,
+  normalizeMoney
+} from '../../services/customerMessaging';
 
 // Iconos simples (puedes reemplazarlos por lucide-react o fontawesome si usas)
 const ChevronIcon = ({ expanded }) => (
@@ -59,8 +64,8 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
   // Filtrado en memoria
   const filteredSales = useMemo(() => {
     return sales.filter(sale => {
-      if (filterType === 'fiado') return sale.paymentMethod === 'fiado';
-      if (filterType === 'paid') return sale.paymentMethod !== 'fiado';
+      if (filterType === 'fiado') return isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method);
+      if (filterType === 'paid') return !isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method);
       return true;
     });
   }, [sales, filterType]);
@@ -141,14 +146,15 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
               ) : (
                 <div className="history-ledger-list">
                   {ledgerEntries.slice(0, 8).map((entry) => {
-                    const amount = Number(entry.amount || 0);
+                    const normalizedAmount = normalizeMoney(entry.amount ?? 0);
+                    const amountIsNegative = normalizedAmount.ok && normalizedAmount.amount.lt(0);
                     const createdAt = entry.created_at || entry.createdAt || entry.timestamp;
                     return (
                       <div key={entry.id} className="history-item-header history-ledger-row">
                         <div className="info-col">
                           <div className="info-top">
                             <span className="sale-id">#{String(entry.id).slice(-6)}</span>
-                            <span className={`badge ${amount < 0 ? 'badge-paid' : 'badge-fiado'}`}>
+                            <span className={`badge ${amountIsNegative ? 'badge-paid' : 'badge-fiado'}`}>
                               {entry.type || 'LEDGER'}
                             </span>
                           </div>
@@ -159,7 +165,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
                         </div>
                         <div className="amount-col">
                           <span className="amount">
-                            {amount < 0 ? '-' : '+'}${Math.abs(amount).toFixed(2)}
+                            {amountIsNegative ? '' : '+'}{formatMoneyValue(entry.amount)}
                           </span>
                         </div>
                       </div>
@@ -181,7 +187,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
             </div>
           ) : (
             filteredSales.map(sale => {
-              const isFiado = sale.paymentMethod === 'fiado';
+              const isFiado = isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method);
               const isExpanded = expandedSaleId === sale.id;
               const dateObj = new Date(sale.timestamp);
 
@@ -213,7 +219,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
                     </div>
 
                     <div className="amount-col">
-                      <span className="amount">${Number(sale.total || 0).toFixed(2)}</span>
+                      <span className="amount">{formatMoneyValue(sale.total)}</span>
                       <ChevronIcon expanded={isExpanded} />
                     </div>
                   </div>
@@ -226,7 +232,13 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
                         {sale.items.map((item, idx) => (
                           <li key={`${item.id}-${idx}`} className="detail-row">
                             <span>{item.quantity}x {item.name}</span>
-                            <span>${(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}</span>
+                            <span>{formatMoneyValue(
+                              (() => {
+                                const price = normalizeMoney(item.price ?? 0);
+                                const quantity = normalizeMoney(item.quantity ?? 1);
+                                return price.ok && quantity.ok ? price.amount.times(quantity.amount).toString() : null;
+                              })()
+                            )}</span>
                           </li>
                         ))}
                       </ul>
@@ -235,11 +247,11 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
                         <div className="fiado-breakdown">
                           <div className="breakdown-row">
                             <span>Abono Inicial:</span>
-                            <span>- ${Number(sale.abono || 0).toFixed(2)}</span>
+                            <span>- {formatMoneyValue(sale.abono)}</span>
                           </div>
                           <div className="breakdown-row total-debt">
                             <span>Quedó a deber:</span>
-                            <span>${Number(sale.saldoPendiente || 0).toFixed(2)}</span>
+                            <span>{formatMoneyValue(sale.saldoPendiente)}</span>
                           </div>
                         </div>
                       )}

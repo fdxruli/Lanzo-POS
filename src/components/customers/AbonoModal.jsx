@@ -3,8 +3,12 @@ import { useCallback, useState, useEffect, useRef } from 'react';
 import { Wallet, X, CheckCircle, MessageCircle, AlertTriangle, List } from 'lucide-react';
 import { db } from '../../services/db/dexie';
 import { Money } from '../../utils/moneyMath';
-import { getSafeCustomerDebt } from '../../utils/customerUtils';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
+import {
+  formatMoneyValue,
+  isCreditPaymentMethod,
+  normalizeMoney
+} from '../../services/customerMessaging';
 import './AbonoModal.css';
 
 export default function AbonoModal({
@@ -16,7 +20,8 @@ export default function AbonoModal({
   isBlocked = false,
   blockedReason = '',
   cashSession = null,
-  cashActor = null
+  cashActor = null,
+  authoritativePendingSales = null
 }) {
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
@@ -32,7 +37,9 @@ export default function AbonoModal({
   const isMountedRef = useRef(false);
   const isModalOpenRef = useRef(false);
 
-  const deudaActual = getSafeCustomerDebt(customer?.debt);
+  const normalizedDebt = normalizeMoney(customer?.debt ?? 0);
+  const deudaActualExact = normalizedDebt.ok ? normalizedDebt.exact : '0';
+  const deudaActualDecimal = normalizedDebt.ok ? normalizedDebt.decimal : '0.00';
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -72,9 +79,17 @@ export default function AbonoModal({
     if (show && advancedMode && customer) {
       const fetchSales = async () => {
         try {
+          if (Array.isArray(authoritativePendingSales)) {
+            setPendingSales(authoritativePendingSales);
+            return;
+          }
+
           const sales = await db.sales
             .where('customerId').equals(customer.id)
-            .and(s => s.paymentMethod === 'fiado' && s.saldoPendiente > 0)
+            .and((sale) => {
+              const balance = normalizeMoney(sale.saldoPendiente ?? sale.balanceDue ?? sale.balance_due);
+              return isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method) && balance.ok && balance.amount.gt(0);
+            })
             .sortBy('timestamp');
 
           // Directamente establecer las notas pendientes. El saneamiento global se encarga de las discrepancias.
@@ -86,34 +101,35 @@ export default function AbonoModal({
       };
       fetchSales();
     }
-  }, [show, advancedMode, customer]);
+  }, [show, advancedMode, customer, authoritativePendingSales]);
 
   // Recalcular el monto total cuando cambian las asignaciones en modo avanzado
   useEffect(() => {
     if (advancedMode) {
       let sum = Money.init(0);
       Object.values(allocations).forEach(val => {
-        const numVal = parseFloat(val) || 0;
-        if (numVal > 0) {
-          sum = Money.add(sum, numVal);
+        const allocation = normalizeMoney(val);
+        if (allocation.ok && allocation.amount.gt(0)) {
+          sum = Money.add(sum, allocation.amount);
         }
       });
-      const totalStr = Money.toNumber(sum) > 0 ? Money.toNumber(sum).toString() : '';
+      const totalStr = sum.gt(0) ? Money.toExactString(sum) : '';
       setMonto(totalStr);
 
-      if (Money.toNumber(sum) > deudaActual) {
+      if (sum.gt(Money.init(deudaActualExact))) {
         setError('El abono no puede ser mayor que la deuda actual.');
       } else {
         setError('');
       }
     }
-  }, [allocations, advancedMode, deudaActual]);
+  }, [allocations, advancedMode, deudaActualExact]);
 
   const handleMontoChange = (e) => {
     if (advancedMode || isSubmitting) return; // Bloquear edición manual en modo avanzado o durante envío
     const value = e.target.value;
     setError('');
-    if (parseFloat(value) > deudaActual) {
+    const enteredAmount = normalizeMoney(value);
+    if (enteredAmount.ok && enteredAmount.amount.gt(Money.init(deudaActualExact))) {
       setError('El abono no puede ser mayor que la deuda actual.');
     }
     setMonto(value);
@@ -121,7 +137,7 @@ export default function AbonoModal({
 
   const handleSaldarCuenta = () => {
     if (advancedMode || isSubmitting) return;
-    setMonto(deudaActual.toFixed(2));
+    setMonto(deudaActualDecimal);
     setError('');
   };
 
@@ -129,11 +145,12 @@ export default function AbonoModal({
     if (isSubmitting) return;
 
     let valStr = value;
-    const numVal = parseFloat(value);
+    const allocation = normalizeMoney(value);
+    const maximum = normalizeMoney(maxSaldo);
 
-    if (numVal > maxSaldo) {
-      valStr = maxSaldo.toString();
-    } else if (numVal < 0) {
+    if (allocation.ok && maximum.ok && allocation.amount.gt(maximum.amount)) {
+      valStr = maximum.exact;
+    } else if (allocation.ok && allocation.amount.lt(0)) {
       valStr = '0';
     }
 
@@ -146,12 +163,13 @@ export default function AbonoModal({
   const handleToggleFullAllocation = (sale) => {
     if (isSubmitting) return;
 
-    const currentAlloc = parseFloat(allocations[sale.id]) || 0;
-    const isFullyAllocated = currentAlloc === sale.saldoPendiente;
+    const currentAlloc = normalizeMoney(allocations[sale.id]);
+    const maxSaldo = normalizeMoney(sale.saldoPendiente);
+    const isFullyAllocated = currentAlloc.ok && maxSaldo.ok && currentAlloc.amount.eq(maxSaldo.amount);
 
     setAllocations(prev => ({
       ...prev,
-      [sale.id]: isFullyAllocated ? '' : sale.saldoPendiente.toString()
+      [sale.id]: isFullyAllocated ? '' : (maxSaldo.ok ? maxSaldo.exact : '')
     }));
   };
 
@@ -165,13 +183,13 @@ export default function AbonoModal({
       return;
     }
 
-    const montoAbono = parseFloat(monto);
+    const montoAbono = normalizeMoney(monto);
 
-    if (isNaN(montoAbono) || montoAbono <= 0) {
+    if (!montoAbono.ok || montoAbono.amount.lte(0)) {
       setError('Ingresa un monto válido.');
       return;
     }
-    if (montoAbono > deudaActual) {
+    if (montoAbono.amount.gt(Money.init(deudaActualExact))) {
       setError('El abono no puede ser mayor que la deuda actual.');
       return;
     }
@@ -179,11 +197,13 @@ export default function AbonoModal({
     let finalAllocations = null;
     if (advancedMode) {
       finalAllocations = Object.entries(allocations)
-        .map(([saleId, amount]) => ({
-          saleId,
-          amountApplied: parseFloat(amount)
-        }))
-        .filter(a => !isNaN(a.amountApplied) && a.amountApplied > 0);
+        .map(([saleId, amount]) => {
+          const normalizedAmount = normalizeMoney(amount);
+          return normalizedAmount.ok && normalizedAmount.amount.gt(0)
+            ? { saleId, amountApplied: normalizedAmount.exact }
+            : null;
+        })
+        .filter(Boolean);
 
       if (finalAllocations.length === 0) {
         setError('No has asignado ningún monto a las notas.');
@@ -197,7 +217,7 @@ export default function AbonoModal({
 
     try {
       // El Modal pasa la información al componente PADRE y espera a que termine.
-      await onConfirmAbono(customer, montoAbono, sendReceipt, finalAllocations);
+      await onConfirmAbono(customer, montoAbono.exact, sendReceipt, finalAllocations);
     } catch (submitError) {
       console.error('Error al confirmar abono:', submitError);
 
@@ -241,7 +261,7 @@ export default function AbonoModal({
                 </div>
                 <div className="deuda-row">
                   <span className="deuda-label">Deuda Actual:</span>
-                  <span className="deuda-total">${deudaActual.toFixed(2)}</span>
+                  <span className="deuda-total">{formatMoneyValue(deudaActualExact)}</span>
                 </div>
                 {isCloudCredit && (
                   <div className="deuda-row">
@@ -288,7 +308,7 @@ export default function AbonoModal({
                       title="Liquidar toda la deuda"
                       disabled={isBlocked || isSubmitting}
                     >
-                      Saldar $ {deudaActual.toFixed(2)}
+                      Saldar {formatMoneyValue(deudaActualExact)}
                     </button>
                   )}
                 </div>
@@ -301,7 +321,7 @@ export default function AbonoModal({
                     type="number"
                     step="0.01"
                     min="0"
-                    max={deudaActual.toFixed(2)}
+                    max={deudaActualDecimal}
                     value={monto}
                     onChange={handleMontoChange}
                     placeholder="0.00"
@@ -334,7 +354,7 @@ export default function AbonoModal({
                             Fecha: {new Date(sale.timestamp).toLocaleDateString()}
                           </span>
                           <span className="sale-pending">
-                            Pendiente: ${Number(sale.saldoPendiente).toFixed(2)}
+                            Pendiente: {formatMoneyValue(sale.saldoPendiente)}
                           </span>
                         </div>
                         <div className="sale-actions">
@@ -359,7 +379,13 @@ export default function AbonoModal({
                             title="Asignar total de esta nota"
                             disabled={isBlocked || isSubmitting}
                           >
-                            <CheckCircle size={16} className={(parseFloat(allocations[sale.id]) === sale.saldoPendiente) ? 'allocation-check-icon allocation-check-icon--active' : 'allocation-check-icon'} />
+                            <CheckCircle size={16} className={(() => {
+                              const selected = normalizeMoney(allocations[sale.id]);
+                              const maximum = normalizeMoney(sale.saldoPendiente);
+                              return selected.ok && maximum.ok && selected.amount.eq(maximum.amount)
+                                ? 'allocation-check-icon allocation-check-icon--active'
+                                : 'allocation-check-icon';
+                            })()} />
                           </button>
                         </div>
                       </div>

@@ -1102,7 +1102,7 @@ export function usePosCheckout({
         const afterSessionSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
         if (afterSessionSnapshotError) return afterSessionSnapshotError;
 
-        if (paymentData.paymentMethod === 'fiado') {
+        if (normalizePaymentMethod(paymentData.paymentMethod) === 'credit') {
             if (!paymentData.dueDate) {
                 await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'credit_due_date_required' });
                 showMessageModal('⚠️ Fecha de vencimiento es requerida para ventas a crédito.');
