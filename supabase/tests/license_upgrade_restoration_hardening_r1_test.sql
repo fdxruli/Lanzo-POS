@@ -38,6 +38,8 @@ declare
   v_period_pro_before uuid;
   v_period_free uuid;
   v_period_pro_after uuid;
+  v_renewal_period_before uuid;
+  v_renewal_period_after uuid;
   v_result jsonb;
   v_retry jsonb;
   v_order_before jsonb;
@@ -83,6 +85,15 @@ begin
     'pro_paid', 'active', now() - interval '30 days', now() + interval '1 day', 15,
     '{"roundtrip":"pro_before"}'::jsonb
   ) returning id into v_period_pro_before;
+
+  insert into public.license_periods (
+    id, license_id, plan_id, plan_code_snapshot, plan_name_snapshot,
+    period_type, status, starts_at, ends_at, ai_agent_limit, metadata
+  ) values (
+    extensions.gen_random_uuid(), v_already_pro, v_pro_plan, 'pro_monthly', 'Lanzo Nube',
+    'pro_paid', 'active', now() - interval '16 days', now() + interval '15 days', 15,
+    '{"roundtrip":"renewal_before"}'::jsonb
+  ) returning id into v_renewal_period_before;
 
   insert into public.license_devices (
     id, license_id, device_fingerprint, device_name, is_active, activated_at,
@@ -336,6 +347,48 @@ begin
      or (private.materialize_license_upgrade_v1(v_already_pro, 'pro_monthly', 1, 'already active', null)->>'code') <> 'ALREADY_ON_PLAN'
      or (private.materialize_license_upgrade_v1(v_suspended, 'pro_monthly', 1, 'blocked', null)->>'code') <> 'ADMINISTRATIVELY_BLOCKED' then
     raise exception 'R4 renewal state matrix failed';
+  end if;
+
+  -- Active paid renewal is an explicit, idempotency-keyed administrative
+  -- operation.  The normal Free-to-Pro activation primitive stays a safe NOOP
+  -- on a healthy Pro retry, while a genuine renewal closes one paid period and
+  -- creates one successor without a Free detour.
+  v_result := private.renew_active_paid_license_v1(
+    v_already_pro, 2, 'r4-active-renewal-key', 'active renewal fixture',
+    jsonb_build_object('type', 'test_admin', 'subject', 'r4')
+  );
+  if v_result->>'code' <> 'LICENSE_RENEWED'
+     or coalesce((v_result->>'changed')::boolean, false) is not true then
+    raise exception 'R4 active paid renewal failed: %', v_result;
+  end if;
+  v_renewal_period_after := nullif(v_result->>'period_id', '')::uuid;
+  if not exists (
+    select 1 from public.license_periods
+     where id = v_renewal_period_before and status = 'closed'
+  ) or not exists (
+    select 1 from public.license_periods
+     where id = v_renewal_period_after and status = 'active'
+       and plan_code_snapshot = 'pro_monthly'
+  ) or (select count(*) from public.license_periods
+         where license_id = v_already_pro and status = 'active') <> 1
+     or not exists (
+       select 1 from public.licenses
+        where id = v_already_pro and expires_at > now() + interval '1 month'
+     ) then
+    raise exception 'R4 active paid renewal did not create one extended paid period';
+  end if;
+  v_retry := private.renew_active_paid_license_v1(
+    v_already_pro, 2, 'r4-active-renewal-key', 'active renewal fixture',
+    jsonb_build_object('type', 'test_admin', 'subject', 'r4')
+  );
+  if v_retry->>'code' <> 'ALREADY_RENEWED'
+     or (select count(*) from public.license_periods
+         where license_id = v_already_pro and status = 'active') <> 1
+     or (select count(*) from public.license_events
+          where license_key = 'LIFECYCLE-R4-ACTIVE-' || v_already_pro
+            and event_type = 'PLAN_CHANGED'
+            and metadata->>'idempotency_key' = 'r4-active-renewal-key') <> 1 then
+    raise exception 'R4 active paid renewal retry was not idempotent';
   end if;
 
   if exists (select 1 from public.license_periods where license_id = v_grace and plan_code_snapshot = 'free_trial')
