@@ -2,16 +2,10 @@
 -- Production-safe transactional matrix. All fixture writes are rolled back.
 begin;
 
--- Transaction-local fixture accommodation for a pre-existing trigger debt:
--- private.ecommerce_phase4_tenant_scope_guard references a variant column that
--- is not present on ecommerce_order_items. The trigger state is restored before
--- rollback and any test failure rolls the DDL back atomically.
-alter table public.ecommerce_order_items
-  disable trigger ecommerce_order_items_phase4_tenant_scope_guard;
+-- The Phase 4 tenant guards stay enabled: this fixture now proves the
+-- corrected, relation-specific guards accept valid same-tenant order rows.
 alter table public.ecommerce_order_items
   disable trigger ecommerce_order_items_stock_reservation;
-alter table public.ecommerce_order_inventory_reservations
-  disable trigger ecommerce_reservations_phase4_tenant_scope_guard;
 
 do $test$
 declare
@@ -249,11 +243,7 @@ end;
 $test$;
 
 alter table public.ecommerce_order_items
-  enable trigger ecommerce_order_items_phase4_tenant_scope_guard;
-alter table public.ecommerce_order_items
   enable trigger ecommerce_order_items_stock_reservation;
-alter table public.ecommerce_order_inventory_reservations
-  enable trigger ecommerce_reservations_phase4_tenant_scope_guard;
 
 do $acl$
 begin
