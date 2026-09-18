@@ -15,6 +15,7 @@ import {
   saveCustomerMessageTemplate,
   validateCustomerMessageTemplate
 } from '../../services/customerMessaging';
+import './CustomerMessageTemplatesSettings.css';
 
 const EVENT_LABELS = Object.freeze({
   sale_paid: 'Venta pagada', sale_credit: 'Venta a crédito', account_statement: 'Estado de cuenta',
@@ -30,15 +31,27 @@ export default function CustomerMessageTemplatesSettings() {
   const access = useSettingsAccess();
   const guard = useSettingsActionGuard();
   const canvasRef = useRef(null);
+  const dictionaryRef = useRef(null);
   const [eventType, setEventType] = useState('sale_paid');
   const [customTemplates, setCustomTemplates] = useState({});
   const [draft, setDraft] = useState(() => clone(getDefaultCustomerMessageTemplate('sale_paid')));
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [validation, setValidation] = useState({ ok: true, errors: [] });
+  const [activeField, setActiveField] = useState('body');
+  const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
   const editable = canManageCustomerMessageTemplates({ licenseDetails, actorType: access.actorType });
   const selected = customTemplates[eventType];
   const variables = useMemo(() => getTemplateVariablesForEvent(eventType), [eventType]);
+  const filteredVariables = useMemo(() => variables.filter((variable) => {
+    const haystack = [variable.token, variable.name, variable.definition, variable.purpose].join(' ').toLocaleLowerCase();
+    return (typeFilter === 'all' || variable.type === typeFilter) && haystack.includes(query.trim().toLocaleLowerCase());
+  }), [query, typeFilter, variables]);
+  const variableGroups = useMemo(() => Object.entries(filteredVariables.reduce((groups, variable) => {
+    groups[variable.category] = [...(groups[variable.category] || []), variable];
+    return groups;
+  }, {})), [filteredVariables]);
 
   const changeEvent = (nextEvent) => {
     setEventType(nextEvent);
@@ -73,6 +86,15 @@ export default function CustomerMessageTemplatesSettings() {
     const next = { ...draft, [field]: value };
     setDraft(next);
     setValidation(validateCustomerMessageTemplate(eventType, next));
+  };
+
+  const insertVariable = (variable) => {
+    if (!editable || draft[activeField].includes(variable.token)) return;
+    update(activeField, `${draft[activeField]}${draft[activeField].endsWith('\n') || !draft[activeField] ? '' : '\n'}${variable.token}`);
+  };
+
+  const openDictionary = () => {
+    if (typeof dictionaryRef.current?.showModal === 'function') dictionaryRef.current.showModal();
   };
 
   const save = async () => {
@@ -126,19 +148,56 @@ export default function CustomerMessageTemplatesSettings() {
         <textarea id="customer-message-body" value={draft.body} maxLength={5000} rows={10} onChange={(event) => update('body', event.target.value)} />
         <label htmlFor="customer-message-footer">Pie de página</label>
         <textarea id="customer-message-footer" value={draft.footer} maxLength={500} rows={3} onChange={(event) => update('footer', event.target.value)} />
-        <h4>Variables disponibles</h4>
-        <div>{variables.map((variable) => <button key={variable.key} type="button" onClick={() => update('body', `${draft.body}${draft.body.endsWith('\n') ? '' : '\n'}${variable.key}`)} title={variable.description}>{variable.key}</button>)}</div>
+        <section className="customer-template-dictionary-summary" aria-label="Diccionario de variables">
+          <h4>Variables automáticas</h4>
+          <p>{variables.length} variables disponibles. Insertan datos confirmados automáticamente; los importes no se escriben manualmente.</p>
+          <button type="button" onClick={openDictionary}>Abrir diccionario de variables</button>
+        </section>
         {!validation.ok && <ul role="alert">{validation.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.code}{error.variables ? `: ${error.variables.join(', ')}` : ''}</li>)}</ul>}
         <p>
           <button type="button" disabled={loading} onClick={save}>Guardar</button>{' '}
           <button type="button" disabled={loading} onClick={() => { setDraft(clone(selected?.template_json || getDefaultCustomerMessageTemplate(eventType))); setStatus('Cambios cancelados.'); }}>Cancelar</button>{' '}
           <button type="button" disabled={loading || !selected} onClick={restore}>Restaurar mensaje</button>
         </p>
-      </> : <p>Vista de solo lectura de la plantilla genérica.</p>}
+      </> : <>
+        <p>Vista de solo lectura de la plantilla genérica.</p>
+        <section className="customer-template-dictionary-summary" aria-label="Diccionario de variables">
+          <p>{variables.length} variables automáticas disponibles para este evento.</p>
+          <button type="button" onClick={openDictionary}>Abrir diccionario de variables</button>
+        </section>
+      </>}
       {status && <p role="status">{status}</p>}
       {loading && <p>Guardando o cargando…</p>}
       <h4>Vista previa con datos ficticios</h4>
       <canvas ref={canvasRef} aria-label="Vista previa de mensaje como imagen" style={{ maxWidth: '100%', height: 'auto', border: '1px solid #cbd5e1' }} />
+      <dialog ref={dictionaryRef} className="customer-template-dictionary" aria-labelledby="customer-template-dictionary-title">
+        <div className="customer-template-dictionary__header">
+          <div>
+            <h3 id="customer-template-dictionary-title">Diccionario de variables</h3>
+            <p>Elige una variable para insertar datos automáticos del evento. Nunca muestran IDs técnicos.</p>
+          </div>
+          <form method="dialog"><button type="submit" aria-label="Cerrar diccionario de variables">Cerrar</button></form>
+        </div>
+        {editable && <label className="customer-template-dictionary__target">Insertar en
+          <select value={activeField} onChange={(event) => setActiveField(event.target.value)}>
+            <option value="title">Título</option><option value="body">Cuerpo</option><option value="footer">Pie de página</option>
+          </select>
+        </label>}
+        <div className="customer-template-dictionary__filters">
+          <label>Buscar <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Token, nombre o definición" /></label>
+          <label>Tipo <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">Todos</option><option value="text">Texto</option><option value="money">Importe</option><option value="date">Fecha</option><option value="list">Lista</option></select></label>
+        </div>
+        <div className="customer-template-dictionary__content">
+          {variableGroups.map(([category, group]) => <section key={category} className="customer-template-dictionary__group"><h4>{category}</h4><div className="customer-template-dictionary__grid">
+            {group.map((variable) => <article key={variable.token} className="customer-template-variable-card">
+              <code>{variable.token}</code><h5>{variable.name}</h5><p>{variable.definition}</p><p><strong>Uso:</strong> {variable.purpose}</p>
+              <dl><div><dt>Tipo</dt><dd>{({ text: 'Texto', money: 'Importe', date: 'Fecha', list: 'Lista' })[variable.type]}</dd></div><div><dt>Estado</dt><dd>{variable.required ? 'Obligatoria' : 'Opcional'}</dd></div><div><dt>Ejemplo</dt><dd>{variable.example}</dd></div></dl>
+              <button type="button" disabled={!editable || draft[activeField].includes(variable.token)} onClick={() => insertVariable(variable)}>{draft[activeField].includes(variable.token) ? 'Ya incluida' : 'Insertar'}</button>
+            </article>)}
+          </div></section>)}
+          {variableGroups.length === 0 && <p>No hay variables que coincidan con la búsqueda.</p>}
+        </div>
+      </dialog>
     </div>
   );
 }

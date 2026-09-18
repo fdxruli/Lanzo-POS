@@ -1,0 +1,19 @@
+.customer-template-dictionary-summary { min-width: 0; margin: 1rem 0; }
+.customer-template-dictionary { width: min(100% - 1rem, 1100px); max-width: 1100px; height: min(80dvh, 720px); max-height: min(80dvh, 720px); border: 0; border-radius: 12px; padding: 0; overflow: hidden; }
+.customer-template-dictionary::backdrop { background: rgb(15 23 42 / 55%); }
+.customer-template-dictionary__header, .customer-template-dictionary__filters, .customer-template-dictionary__target { display: flex; gap: 1rem; align-items: flex-start; min-width: 0; padding: 1rem 1.25rem; }
+.customer-template-dictionary__header { justify-content: space-between; border-bottom: 1px solid #e2e8f0; }
+.customer-template-dictionary__header h3, .customer-template-dictionary__header p { margin: 0; }
+.customer-template-dictionary__filters { flex-wrap: wrap; border-bottom: 1px solid #e2e8f0; }
+.customer-template-dictionary__filters label, .customer-template-dictionary__target { min-width: 0; }
+.customer-template-dictionary__filters input, .customer-template-dictionary__filters select, .customer-template-dictionary__target select { max-width: 100%; }
+.customer-template-dictionary__content { height: calc(100% - 190px); overflow-y: auto; overflow-x: hidden; padding: 0 1.25rem 1.25rem; }
+.customer-template-dictionary__group { min-width: 0; }
+.customer-template-dictionary__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.customer-template-variable-card { min-width: 0; border: 1px solid #cbd5e1; border-radius: 8px; padding: 1rem; overflow: hidden; }
+.customer-template-variable-card code { overflow-wrap: anywhere; white-space: normal; }
+.customer-template-variable-card h5, .customer-template-variable-card p { margin: .45rem 0; }
+.customer-template-variable-card dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0; }
+.customer-template-variable-card dl div, .customer-template-variable-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.customer-template-variable-card dt { font-weight: 700; }
+@media (max-width: 640px) { .customer-template-dictionary { width: calc(100% - .5rem); } .customer-template-dictionary__header, .customer-template-dictionary__filters, .customer-template-dictionary__target { padding: .875rem; flex-direction: column; } .customer-template-dictionary__content { height: calc(100% - 230px); padding: 0 .875rem .875rem; } .customer-template-dictionary__grid { grid-template-columns: minmax(0, 1fr); } .customer-template-variable-card dl { grid-template-columns: minmax(0, 1fr); } }

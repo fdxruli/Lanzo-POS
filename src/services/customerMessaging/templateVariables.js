@@ -64,13 +64,32 @@ const metadata = Object.freeze({
   'layaway.saleFolio': ['Folio de venta', 'Folio humano de la entrega', 'text', false, 'V-1024']
 });
 
+const categoryByKey = Object.freeze({
+  'business.name': 'Datos generales', 'customer.name': 'Datos generales', occurredAt: 'Datos generales', reference: 'Datos generales', currency: 'Datos generales',
+  'sale.items': 'Datos de venta', 'sale.total': 'Datos de venta', 'sale.receivedAmount': 'Datos de venta', 'sale.balanceDue': 'Datos de venta', 'sale.paymentMethodLabel': 'Datos de venta', 'sale.dueDate': 'Datos de venta', 'sale.creditStatus': 'Datos de venta',
+  'payment.amount': 'Datos de abonos', 'payment.previousBalance': 'Datos de abonos', 'payment.newBalance': 'Datos de abonos', 'payment.methodLabel': 'Datos de abonos', 'payment.reference': 'Datos de abonos',
+  'account.totalBalance': 'Datos de cuenta', 'account.totalPayments': 'Datos de cuenta', 'account.cutoffAt': 'Datos de cuenta', 'account.pendingNotes': 'Datos de cuenta',
+  'layaway.reference': 'Datos de apartados', 'layaway.total': 'Datos de apartados', 'layaway.initialPayment': 'Datos de apartados', 'layaway.paymentAmount': 'Datos de apartados', 'layaway.totalPaid': 'Datos de apartados', 'layaway.balanceDue': 'Datos de apartados', 'layaway.deadline': 'Datos de apartados', 'layaway.status': 'Datos de apartados', 'layaway.saleFolio': 'Datos de apartados'
+});
+
+const purposeByKey = Object.freeze({
+  'business.name': 'Identifica quién emitió el comprobante.', 'customer.name': 'Personaliza el comprobante para la persona asociada.', occurredAt: 'Indica cuándo se confirmó la operación.', reference: 'Muestra un folio humano cuando existe, sin revelar IDs técnicos.', currency: 'Aclara la moneda usada en los importes.',
+  'sale.items': 'Resume los productos confirmados de la venta.', 'sale.total': 'Muestra el total confirmado de la venta.', 'sale.receivedAmount': 'Muestra lo recibido al confirmar el cobro.', 'sale.balanceDue': 'Muestra el saldo pendiente de una venta a crédito.', 'sale.paymentMethodLabel': 'Comunica el método de pago traducido al español.', 'sale.dueDate': 'Informa la fecha límite de una venta a crédito.', 'sale.creditStatus': 'Explica el estado visible del crédito.',
+  'payment.amount': 'Muestra el importe confirmado del abono.', 'payment.previousBalance': 'Da contexto del saldo antes del abono.', 'payment.newBalance': 'Muestra el saldo restante después del abono.', 'payment.methodLabel': 'Comunica el método del abono en español.', 'payment.reference': 'Muestra una referencia humana del pago, si existe; no representa necesariamente el folio de una venta.',
+  'account.totalBalance': 'Resume el saldo total pendiente del cliente.', 'account.totalPayments': 'Resume los abonos confirmados del periodo.', 'account.cutoffAt': 'Indica la fecha de corte del estado de cuenta.', 'account.pendingNotes': 'Resume notas o ventas pendientes sin exponer IDs internos.',
+  'layaway.reference': 'Identifica el apartado mediante su referencia humana.', 'layaway.total': 'Muestra el total confirmado del apartado.', 'layaway.initialPayment': 'Muestra el pago inicial confirmado.', 'layaway.paymentAmount': 'Muestra el importe confirmado del abono del apartado.', 'layaway.totalPaid': 'Muestra el total abonado confirmado.', 'layaway.balanceDue': 'Muestra el saldo pendiente del apartado.', 'layaway.deadline': 'Informa la fecha límite del apartado.', 'layaway.status': 'Comunica el estado visible del apartado.', 'layaway.saleFolio': 'Muestra el folio de venta solo cuando el apartado fue entregado.'
+});
+
 export const TEMPLATE_VARIABLE_PATTERN = /{{([A-Za-z]+(?:\.[A-Za-z]+)?)}}/g;
+export const PAYMENT_REFERENCE_LIMITATION = 'Un abono general puede no pertenecer a una sola venta y una cuenta saldada puede no tener un folio de venta específico. La selección de pago por venta es una fase futura.';
 
 export const getTemplateVariablesForEvent = (eventType) => {
   if (!CUSTOMER_MESSAGE_EVENT_TYPES.includes(eventType)) return [];
   const entries = [...common, ...(eventKeys[eventType] || []).map((key) => [key, ...(metadata[key] || [])])];
   return entries.map(([key, label, description, type, _required, example]) => Object.freeze({
-    key: `{{${key}}}`, variable: key, label, description, type, required: (requiredKeys[eventType] || []).includes(key), example, eventTypes: [eventType]
+    token: `{{${key}}}`, key: `{{${key}}}`, variable: key, name: label, label,
+    definition: description, description, purpose: purposeByKey[key], category: categoryByKey[key],
+    type, required: (requiredKeys[eventType] || []).includes(key), example, events: [eventType], eventTypes: [eventType]
   }));
 };
 
