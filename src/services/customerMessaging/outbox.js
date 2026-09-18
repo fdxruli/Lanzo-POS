@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store/useAppStore';
 import {
   getTenantStorageItem,
+  getTenantStorageState,
   setTenantStorageItem
 } from '../tenant/tenantScopedStorage';
 import { selectDisplayReference } from './displayReference';
@@ -77,7 +78,55 @@ const SANITIZED_ERROR_CODES = new Set([
 const ACTION_IN_FLIGHT = new Map();
 const PREPARE_IN_FLIGHT = new Map();
 
+const TENANT_NAMESPACE_PATTERN = /^t_[a-f0-9]{32}$/;
+const OUTBOX_TENANT_CONTEXT_INVALID = 'OUTBOX_TENANT_CONTEXT_INVALID';
+const OUTBOX_TENANT_CONTEXT_CHANGED = 'OUTBOX_TENANT_CONTEXT_CHANGED';
+const OUTBOX_PERSISTENCE_FAILED = 'OUTBOX_PERSISTENCE_FAILED';
+const OUTBOX_RETRY_NOT_READY = 'OUTBOX_RETRY_NOT_READY';
+
 const nowIso = (now = Date.now()) => new Date(now).toISOString();
+
+const getTenantContextState = () => {
+  try {
+    return getTenantStorageState?.() || null;
+  } catch {
+    return null;
+  }
+};
+
+const isUsableTenantContext = (state) => Boolean(
+  TENANT_NAMESPACE_PATTERN.test(String(state?.opaqueId || ''))
+  && state?.ready === true
+  && state?.writesSuspended !== true
+);
+
+const captureTenantContext = () => {
+  const state = getTenantContextState();
+  if (!isUsableTenantContext(state)) {
+    return { ok: false, code: OUTBOX_TENANT_CONTEXT_INVALID };
+  }
+  return { ok: true, namespace: state.opaqueId };
+};
+
+const tenantContextMatches = (tenantContext) => {
+  const current = getTenantContextState();
+  return Boolean(
+    tenantContext?.namespace
+    && isUsableTenantContext(current)
+    && current.opaqueId === tenantContext.namespace
+  );
+};
+
+const tenantActionKey = (namespace, action, idempotencyKey) => (
+  `${namespace}:${action}:${idempotencyKey}`
+);
+
+const toTimestamp = (value) => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  const parsed = Date.parse(value || '');
+  return Number.isNaN(parsed) ? NaN : parsed;
+};
 
 const stableValue = (value) => {
   if (Array.isArray(value)) return value.map(stableValue);
@@ -341,13 +390,55 @@ export const canTransitionCustomerMessageOutbox = (from, to) => (
   VALID_STATUSES.has(from) && VALID_STATUSES.has(to) && transitionMatrix[from]?.has(to) === true
 );
 
-const persistTransition = ({ repository, record, nextStatus, patch = {} }) => {
+const persistRecord = ({ repository, record, tenantContext, confirmedRecord = null }) => {
+  if (!tenantContextMatches(tenantContext)) {
+    return {
+      ok: false,
+      persistenceOk: false,
+      code: OUTBOX_TENANT_CONTEXT_CHANGED,
+      record: null
+    };
+  }
+
+  try {
+    const persisted = repository.put(record);
+    if (persisted?.ok) {
+      return {
+        ...persisted,
+        ok: true,
+        persistenceOk: true,
+        record: persisted.record || clone(record)
+      };
+    }
+  } catch {
+    // Treat every repository failure as an unconfirmed transition. The
+    // caller must keep the last record known to be persisted.
+  }
+
+  return {
+    ok: false,
+    persistenceOk: false,
+    code: OUTBOX_PERSISTENCE_FAILED,
+    record: confirmedRecord
+  };
+};
+
+const persistTransition = ({ repository, record, nextStatus, patch = {}, tenantContext }) => {
   if (!canTransitionCustomerMessageOutbox(record.status, nextStatus)) {
-    return { ok: false, code: 'OUTBOX_TRANSITION_INVALID', record };
+    return {
+      ok: false,
+      persistenceOk: true,
+      code: 'OUTBOX_TRANSITION_INVALID',
+      record
+    };
   }
   const next = { ...record, ...patch, status: nextStatus };
-  const persisted = repository.put(next);
-  return persisted.ok ? persisted : { ...persisted, record: next };
+  return persistRecord({
+    repository,
+    record: next,
+    tenantContext,
+    confirmedRecord: record
+  });
 };
 
 export const prepareCustomerMessageOutbox = async ({
@@ -361,11 +452,21 @@ export const prepareCustomerMessageOutbox = async ({
 } = {}) => {
   if (!payload?.eventType) return { ok: false, code: 'MESSAGE_PAYLOAD_INVALID' };
 
+  const tenantContext = captureTenantContext();
+  if (!tenantContext.ok) {
+    return { ok: false, persistenceOk: false, code: tenantContext.code, record: null };
+  }
+
   const idempotencyKey = buildCustomerMessageOutboxIdempotencyKey(payload);
   const existing = repository.get(idempotencyKey);
-  if (existing) return { ok: true, record: existing, duplicate: true };
+  if (existing) {
+    return tenantContextMatches(tenantContext)
+      ? { ok: true, persistenceOk: true, record: existing, duplicate: true }
+      : { ok: false, persistenceOk: false, code: OUTBOX_TENANT_CONTEXT_CHANGED, record: null };
+  }
 
-  if (PREPARE_IN_FLIGHT.has(idempotencyKey)) return PREPARE_IN_FLIGHT.get(idempotencyKey);
+  const inFlightKey = `${tenantContext.namespace}:${idempotencyKey}`;
+  if (PREPARE_IN_FLIGHT.has(inFlightKey)) return PREPARE_IN_FLIGHT.get(inFlightKey);
 
   const promise = (async () => {
     const safePayload = sanitizeCustomerMessageOutboxPayload(payload);
@@ -410,13 +511,22 @@ export const prepareCustomerMessageOutbox = async ({
       expiresAt: nowIso(timestamp + repository.config.retentionMs)
     };
 
-    const persisted = repository.put(record);
+    const persisted = persistRecord({
+      repository,
+      record,
+      tenantContext
+    });
     return persisted.ok
-      ? { ok: true, record: persisted.record, duplicate: false }
-      : { ok: false, code: persisted.code || 'OUTBOX_PERSISTENCE_FAILED', record };
-  })().finally(() => PREPARE_IN_FLIGHT.delete(idempotencyKey));
+      ? { ok: true, persistenceOk: true, record: persisted.record, duplicate: false }
+      : {
+        ok: false,
+        persistenceOk: false,
+        code: persisted.code || OUTBOX_PERSISTENCE_FAILED,
+        record: persisted.record || null
+      };
+  })().finally(() => PREPARE_IN_FLIGHT.delete(inFlightKey));
 
-  PREPARE_IN_FLIGHT.set(idempotencyKey, promise);
+  PREPARE_IN_FLIGHT.set(inFlightKey, promise);
   return promise;
 };
 
@@ -436,17 +546,30 @@ const performOutboxAction = async ({
   render = renderCustomerMessageImage,
   share = shareCustomerMessageImage,
   download = downloadCustomerMessageImage,
-  now = () => Date.now()
+  now = () => Date.now(),
+  tenantContext
 }) => {
   if (!record?.idempotencyKey || !VALID_STATUSES.has(record.status)) {
-    return { ok: false, code: 'OUTBOX_RECORD_INVALID', record };
+    return { ok: false, code: 'OUTBOX_RECORD_INVALID', record: null };
   }
 
-  const lockKey = `${action}:${record.idempotencyKey}`;
+  if (!tenantContextMatches(tenantContext)) {
+    return { ok: false, persistenceOk: false, code: OUTBOX_TENANT_CONTEXT_CHANGED, record: null };
+  }
+
+  const lockKey = tenantActionKey(tenantContext.namespace, action, record.idempotencyKey);
   if (ACTION_IN_FLIGHT.has(lockKey)) return ACTION_IN_FLIGHT.get(lockKey);
 
   const promise = (async () => {
-    const current = repository.get(record.idempotencyKey) || record;
+    if (!tenantContextMatches(tenantContext)) {
+      return { ok: false, persistenceOk: false, code: OUTBOX_TENANT_CONTEXT_CHANGED, record: null };
+    }
+
+    const current = repository.get(record.idempotencyKey);
+    if (!current) {
+      return { ok: false, code: 'OUTBOX_RECORD_NOT_FOUND', record: null };
+    }
+
     const maxAttempts = Number(
       current.retryPolicy?.maxAttempts
       || repository.config.maxAttempts
@@ -462,12 +585,34 @@ const performOutboxAction = async ({
           lastErrorCode: 'OUTBOX_MAX_ATTEMPTS_REACHED',
           nextRetryAt: null,
           updatedAt: nowIso(now())
-        }
+        },
+        tenantContext
       });
-      return { ok: false, code: 'OUTBOX_MAX_ATTEMPTS_REACHED', record: exhausted.record || current };
+      return {
+        ok: false,
+        code: exhausted.ok ? 'OUTBOX_MAX_ATTEMPTS_REACHED' : exhausted.code,
+        record: exhausted.record,
+        persistenceOk: exhausted.persistenceOk
+      };
     }
 
-    const attemptedAt = now();
+    const currentTime = now();
+    const retryTimestamp = toTimestamp(current.nextRetryAt);
+    if (
+      action === 'share'
+      && current.status === 'reintento_pendiente'
+      && Number.isFinite(retryTimestamp)
+      && retryTimestamp > toTimestamp(currentTime)
+    ) {
+      return {
+        ok: false,
+        code: OUTBOX_RETRY_NOT_READY,
+        record: current,
+        retryAt: current.nextRetryAt
+      };
+    }
+
+    const attemptedAt = currentTime;
     const attemptCount = Number(current.attemptCount || 0) + 1;
     const shareAttemptCount = currentShareAttempts + (action === 'share' ? 1 : 0);
     const imageResult = await render(current.payloadSnapshot, { template: current.templateSnapshot });
@@ -489,9 +634,16 @@ const performOutboxAction = async ({
           nextRetryAt: nextStatus === 'reintento_pendiente'
             ? nowIso(attemptedAt + backoffForAttempt(action === 'share' ? shareAttemptCount : attemptCount, repository.config))
             : null
-        }
+        },
+        tenantContext
       });
-      return { ok: false, code: failure.code, record: transitioned.record || current, imageResult };
+      return {
+        ok: false,
+        code: transitioned.ok ? failure.code : transitioned.code,
+        record: transitioned.record,
+        imageResult,
+        persistenceOk: transitioned.persistenceOk
+      };
     }
 
     const actionResult = action === 'download'
@@ -536,16 +688,17 @@ const performOutboxAction = async ({
         updatedAt: nowIso(attemptedAt),
         lastErrorCode,
         nextRetryAt
-      }
+      },
+      tenantContext
     });
 
     return {
-      ok,
-      code: lastErrorCode,
-      record: transitioned.record || current,
+      ok: transitioned.ok ? ok : false,
+      code: transitioned.ok ? lastErrorCode : transitioned.code,
+      record: transitioned.record,
       imageResult,
       actionResult,
-      persistenceOk: transitioned.ok
+      persistenceOk: transitioned.persistenceOk
     };
   })().finally(() => ACTION_IN_FLIGHT.delete(lockKey));
 
@@ -557,13 +710,25 @@ export const shareCustomerMessageOutbox = async ({
   record,
   repository = customerMessageOutboxRepository,
   ...options
-} = {}) => performOutboxAction({ record, repository, action: 'share', ...options });
+} = {}) => {
+  const tenantContext = captureTenantContext();
+  if (!tenantContext.ok) {
+    return { ok: false, persistenceOk: false, code: tenantContext.code, record: null };
+  }
+  return performOutboxAction({ record, repository, action: 'share', tenantContext, ...options });
+};
 
 export const downloadCustomerMessageOutbox = async ({
   record,
   repository = customerMessageOutboxRepository,
   ...options
-} = {}) => performOutboxAction({ record, repository, action: 'download', ...options });
+} = {}) => {
+  const tenantContext = captureTenantContext();
+  if (!tenantContext.ok) {
+    return { ok: false, persistenceOk: false, code: tenantContext.code, record: null };
+  }
+  return performOutboxAction({ record, repository, action: 'download', tenantContext, ...options });
+};
 
 export const getCustomerMessageOutboxRecord = (
   idempotencyKey,

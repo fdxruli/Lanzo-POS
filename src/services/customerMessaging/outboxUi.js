@@ -13,6 +13,26 @@ const formatAttemptDate = (value) => {
   return parsed.toLocaleString('es-MX');
 };
 
+const persistenceFailureNote = (result) => {
+  if (result?.persistenceOk !== false) return null;
+  return 'La acción pudo completarse, pero no se pudo guardar su estado. La operación financiera permanece confirmada. Cierra este aviso y vuelve a intentarlo de forma explícita.';
+};
+
+const nextConfirmedRecord = (fallback, result) => (
+  result && Object.prototype.hasOwnProperty.call(result, 'record')
+    ? result.record
+    : fallback
+);
+
+const showActionWithoutRecord = (result, title) => {
+  showMessageModal(
+    persistenceFailureNote(result)
+      || 'No se pudo conservar el contexto del mensaje. La operación financiera permanece confirmada.',
+    null,
+    { title, type: 'warning' }
+  );
+};
+
 const contactNote = (record) => {
   if (record?.contactReadiness?.status === 'telefono_vacio') {
     return 'El cliente no tiene teléfono guardado. La imagen puede compartirse o descargarse manualmente.';
@@ -23,7 +43,10 @@ const contactNote = (record) => {
   return null;
 };
 
-const statusNote = (record) => {
+const statusNote = (record, result = null) => {
+  const persistenceNote = persistenceFailureNote(result);
+  if (persistenceNote) return persistenceNote;
+
   switch (record?.status) {
     case 'compartido':
       return 'La hoja de compartir terminó correctamente. Lanzo no puede confirmar la recepción final del archivo en WhatsApp u otra app.';
@@ -34,7 +57,9 @@ const statusNote = (record) => {
     case 'cancelado_por_usuario':
       return 'El usuario cerró o canceló la hoja de compartir. La operación financiera permanece confirmada.';
     case 'reintento_pendiente':
-      return 'El último intento falló de forma recuperable. Puedes volver a intentar manualmente.';
+      return record.nextRetryAt && new Date(record.nextRetryAt).getTime() > Date.now()
+        ? `Podrás volver a intentar compartir después de: ${formatAttemptDate(record.nextRetryAt)}. Mientras tanto puedes descargar la imagen.`
+        : 'El último intento falló de forma recuperable. Puedes volver a intentar manualmente o descargar la imagen.';
     case 'error':
       return 'No se pudo completar la acción de mensajería. La operación financiera no fue modificada.';
     default:
@@ -42,17 +67,16 @@ const statusNote = (record) => {
   }
 };
 
-export const buildCustomerMessageOutboxModalCopy = (record = {}) => {
+export const buildCustomerMessageOutboxModalCopy = (record = {}, result = null) => {
   const status = CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS[record.status] || 'Estado no disponible';
   const lines = [
     `Estado: ${status}`,
     record.humanReference ? `Referencia: ${record.humanReference}` : null,
     `Último intento: ${formatAttemptDate(record.lastAttemptAt)}`,
-    statusNote(record),
+    statusNote(record, result),
     contactNote(record)
   ].filter(Boolean);
 
-  if (record.lastErrorCode) lines.push(`Código: ${record.lastErrorCode}`);
   return lines.join('\n\n');
 };
 
@@ -64,7 +88,8 @@ export const showCustomerMessageOutboxModal = (record, {
   title = 'Mensaje al cliente',
   onStateChange = null,
   shareAction = shareCustomerMessageOutbox,
-  downloadAction = downloadCustomerMessageOutbox
+  downloadAction = downloadCustomerMessageOutbox,
+  lastResult = null
 } = {}) => {
   if (!record) {
     showMessageModal(
@@ -83,23 +108,43 @@ export const showCustomerMessageOutboxModal = (record, {
   const runShare = retryable
     ? async () => {
       const result = await shareAction({ record });
-      const next = result?.record || record;
+      const next = nextConfirmedRecord(record, result);
       onStateChange?.(next, result);
-      showCustomerMessageOutboxModal(next, { title, onStateChange, shareAction, downloadAction });
+      if (!next) {
+        showActionWithoutRecord(result, title);
+        return result;
+      }
+      showCustomerMessageOutboxModal(next, {
+        title,
+        onStateChange,
+        shareAction,
+        downloadAction,
+        lastResult: result
+      });
       return result;
     }
     : null;
 
   const runDownload = async () => {
     const result = await downloadAction({ record });
-    const next = result?.record || record;
+    const next = nextConfirmedRecord(record, result);
     onStateChange?.(next, result);
-    showCustomerMessageOutboxModal(next, { title, onStateChange, shareAction, downloadAction });
+    if (!next) {
+      showActionWithoutRecord(result, title);
+      return result;
+    }
+    showCustomerMessageOutboxModal(next, {
+      title,
+      onStateChange,
+      shareAction,
+      downloadAction,
+      lastResult: result
+    });
     return result;
   };
 
   if (!runShare) {
-    showMessageModal(buildCustomerMessageOutboxModalCopy(record), null, {
+    showMessageModal(buildCustomerMessageOutboxModalCopy(record, lastResult), null, {
       title,
       type: record.status === 'error' ? 'warning' : 'info',
       extraButton: {
@@ -111,7 +156,7 @@ export const showCustomerMessageOutboxModal = (record, {
   }
 
   showMessageModal(
-    buildCustomerMessageOutboxModalCopy(record),
+    buildCustomerMessageOutboxModalCopy(record, lastResult),
     runShare,
     {
       title,
