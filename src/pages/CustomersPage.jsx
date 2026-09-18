@@ -17,7 +17,17 @@ import { cashRepository } from '../services/cash/cashRepository';
 import { db } from '../services/db/dexie';
 import { loadData, STORES, DB_ERROR_CODES } from '../services/database';
 import { customerRepository } from '../services/customers/customerRepository';
-import { getSafeCustomerDebt, formatCustomerDebt } from '../utils/customerUtils';
+import { getSafeCustomerDebt } from '../utils/customerUtils';
+import {
+  buildAccountStatementMessagePayload,
+  buildPaymentMessagePayload,
+  createFinancialNotificationResult,
+  formatMoneyValue,
+  hasConfirmedPaymentReceipt,
+  notificationNotRequested,
+  openCustomerNotification,
+  selectCreditNotes
+} from '../services/customerMessaging';
 import {
   canPerformRefunds,
   getSalesActorIdentity
@@ -54,16 +64,17 @@ export default function CustomersPage() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [abonoCashSession, setAbonoCashSession] = useState(null);
+  const [abonoPendingNotes, setAbonoPendingNotes] = useState(null);
   const [whatsAppLoading, setWhatsAppLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
   const requestVersionRef = useRef(0);
   const requestInFlightRef = useRef(false);
+  const abonoNotesRequestRef = useRef(0);
 
   const {
     cajaActual,
     sincronizarEstadoCaja,
     isCloudCash,
-    isCloudCashReadOnly,
     cashActor,
     cashMode
   } = useCaja();
@@ -400,8 +411,32 @@ export default function CustomersPage() {
       await sincronizarEstadoCaja();
     }
 
+    // Read-only enrichment: a cloud summary is authoritative whenever it is
+    // available, but opening the payment modal never depends on this request.
+    setAbonoPendingNotes(null);
     setSelectedCustomer(customer);
     setIsAbonoModalOpen(true);
+
+    const abonoNotesRequestId = ++abonoNotesRequestRef.current;
+    Promise.all([
+      customerCreditRepository.getCustomerCreditSummary(customer.id).catch((error) => {
+        Logger.warn('[CustomersPage] No se pudo cargar el resumen cloud de crédito:', error);
+        return null;
+      }),
+      db.table(STORES.SALES).where('customerId').equals(customer.id).toArray().catch((error) => {
+        Logger.warn('[CustomersPage] No se pudieron leer las notas locales:', error);
+        return [];
+      })
+    ]).then(([summary, localSales]) => {
+      if (abonoNotesRequestId !== abonoNotesRequestRef.current) return;
+      setAbonoPendingNotes(selectCreditNotes({
+        customerId: customer.id,
+        cloudSummary: summary,
+        localSales
+      }));
+    }).catch((error) => {
+      Logger.warn('[CustomersPage] No se pudieron preparar notas para abono:', error);
+    });
   };
 
   const handleOpenLayaways = (customer) => {
@@ -410,25 +445,37 @@ export default function CustomersPage() {
   };
 
   const handleCloseModals = () => {
+    abonoNotesRequestRef.current += 1;
     setSelectedCustomer(null);
     setAbonoCashSession(null);
+    setAbonoPendingNotes(null);
     setIsHistoryModalOpen(false);
     setIsAbonoModalOpen(false);
     setIsLayawayModalOpen(false);
   };
 
-  const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
-    try {
-      let cajaVigente = null;
+  const showNotificationStatus = (notificationResult, operationLabel) => {
+    if (!notificationResult || ['not_requested', 'opened', 'ready'].includes(notificationResult.status)) return;
 
-      try {
-        cajaVigente = await resolveOpenCaja();
-        setAbonoCashSession(cajaVigente);
-      } catch (error) {
-        showMessageModal(error.message || CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE, null, { type: 'error' });
-        handleCloseModals();
-        return;
-      }
+    const messages = {
+      missing_phone: `${operationLabel} se registró, pero el cliente no tiene teléfono.`,
+      invalid_phone: `${operationLabel} se registró, pero el teléfono del cliente no es válido.`,
+      payload_invalid: `${operationLabel} se registró, pero no se pudo preparar el mensaje.`,
+      unsupported: `${operationLabel} se registró, pero este navegador no puede abrir WhatsApp.`,
+      cancelled: `${operationLabel} se registró; el envío de WhatsApp fue cancelado.`,
+      failed: `${operationLabel} se registró, pero no se pudo abrir WhatsApp.`
+    };
+    showMessageModal(messages[notificationResult.status] || `${operationLabel} se registró, pero la notificación no quedó lista.`, null, { type: 'warning' });
+  };
+
+  const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
+    let result = null;
+
+    // This block owns only the confirmed financial operation. Notification work
+    // deliberately starts after it has completed and cannot enter this catch.
+    try {
+      const cajaVigente = await resolveOpenCaja();
+      setAbonoCashSession(cajaVigente);
 
       if (!cajaVigente) {
         showMessageModal(
@@ -437,143 +484,143 @@ export default function CustomersPage() {
           { type: 'error' }
         );
         handleCloseModals();
-        return;
+        return createFinancialNotificationResult({
+          financialResult: { status: 'failed', code: 'CASH_SESSION_REQUIRED' }
+        });
       }
 
-      const concepto = `Abono de cliente: ${customer.name}`;
-      const deudaAnterior = getSafeCustomerDebt(customer.debt);
-
-      const result = await customerCreditRepository.processPayment(
+      result = await customerCreditRepository.processPayment(
         customer.id,
         amount,
         'efectivo',
         cajaVigente.id,
-        concepto,
+        `Abono de cliente: ${customer.name}`,
         allocations
       );
 
-      if (result && result.success) {
-        showMessageModal('¡Abono registrado exitosamente!');
-        handleCloseModals();
-        loadInitialCustomers();
-        await sincronizarEstadoCaja();
-
-        if (sendReceipt) {
-          const message =
-            `*--- Recibo de Abono ---*\n` +
-            `*Negocio:* ${companyName}\n\n` +
-            `Hola *${customer.name}*,\n` +
-            `Hemos registrado tu abono:\n\n` +
-            `Monto Abonado: *$${amount.toFixed(2)}*\n` +
-            `Deuda Anterior: $${deudaAnterior.toFixed(2)}\n` +
-            `*Saldo Restante: $${Number(result.newDebt || 0).toFixed(2)}*\n\n` +
-            `¡Gracias por tu pago!`;
-
-          sendWhatsAppMessage(customer.phone, message);
-        }
-      } else if (result?.success === false) {
-        showMessageModal(result.message || 'No se pudo registrar el abono.', null, { type: 'error' });
+      if (!result?.success) {
+        showMessageModal(result?.message || 'No se pudo registrar el abono.', null, { type: 'error' });
+        return createFinancialNotificationResult({
+          financialResult: { status: 'failed', code: result?.code || 'CUSTOMER_PAYMENT_FAILED' }
+        });
       }
+
     } catch (error) {
       Logger.error('Error crítico en abono:', error);
-      const errorMsg = error.message || 'Error desconocido al procesar la transacción.';
-      showMessageModal(`Transacción abortada: ${errorMsg}`, null, { type: 'error' });
+      showMessageModal(`Transacción abortada: ${error.message || 'Error desconocido al procesar la transacción.'}`, null, { type: 'error' });
       handleCloseModals();
+      return createFinancialNotificationResult({
+        financialResult: { status: 'failed', code: error?.code || 'CUSTOMER_PAYMENT_EXCEPTION' }
+      });
     }
+
+    // Refreshing UI state happens after the payment is committed. A refresh
+    // failure must never make a successful financial operation look aborted.
+    showMessageModal('¡Abono registrado exitosamente!');
+    handleCloseModals();
+    try {
+      await Promise.all([loadInitialCustomers(), sincronizarEstadoCaja()]);
+    } catch (error) {
+      Logger.warn('[CustomersPage] El abono fue confirmado, pero no se pudo actualizar la vista:', error);
+    }
+
+    const confirmedReceipt = hasConfirmedPaymentReceipt(result.receipt) ? result.receipt : null;
+    const financialResult = {
+      status: 'success',
+      paymentId: result.ledgerId || confirmedReceipt?.ledgerId || null,
+      newBalance: confirmedReceipt?.newDebt ?? result.newDebt ?? null
+    };
+    let notificationResult = notificationNotRequested();
+
+    if (sendReceipt) {
+      try {
+        // Cloud receipts include their durable timestamp. Local payments expose
+        // the ledger id, so read that committed record rather than inventing a
+        // browser timestamp for the receipt.
+        const localLedger = confirmedReceipt || !result.ledgerId
+          ? null
+          : await db.table(STORES.CUSTOMER_LEDGER).get(result.ledgerId);
+        const payloadResult = buildPaymentMessagePayload({
+          customer,
+          business: { ...(companyProfile || {}), name: companyProfile?.name || companyName },
+          financialResult: { ...financialResult, amount },
+          receipt: confirmedReceipt,
+          previousBalance: customer.debt,
+          occurredAt: localLedger?.timestamp || null,
+          allocations: allocations || []
+        });
+        notificationResult = payloadResult.ok
+          ? await openCustomerNotification({
+            payload: payloadResult.payload,
+            openWhatsApp: sendWhatsAppMessage
+          })
+          : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
+      } catch (error) {
+        Logger.error('[CustomersPage] El abono fue confirmado, pero falló la notificación:', error);
+        notificationResult = { status: 'failed', code: error?.code || 'WHATSAPP_OPEN_FAILED' };
+      }
+      showNotificationStatus(notificationResult, 'El abono');
+    }
+
+    return createFinancialNotificationResult({ financialResult, notificationResult });
   };
 
   const handleWhatsApp = async (customer) => {
-    if (!customer.phone) {
-      showMessageModal('Este cliente no tiene un teléfono registrado.');
-      return;
-    }
-
     setWhatsAppLoading(customer.id);
-    let message = '';
 
     try {
-      if (getSafeCustomerDebt(customer.debt) > 0) {
-        const allSales = await loadData(STORES.SALES);
-
-        const fiadoSales = allSales
-          .filter(sale =>
-            sale.customerId === customer.id &&
-            sale.paymentMethod === 'fiado' &&
-            sale.saldoPendiente > 0
-          )
-          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-        let remainingDebtToAllocate = getSafeCustomerDebt(customer.debt);
-        const salesToReport = [];
-
-        for (const sale of fiadoSales) {
-          if (remainingDebtToAllocate <= 0.01) break;
-
-          const amountOwedForThisSale = Math.min(sale.saldoPendiente, remainingDebtToAllocate);
-
-          salesToReport.push({
-            ...sale,
-            currentOwed: amountOwedForThisSale
-          });
-
-          remainingDebtToAllocate -= amountOwedForThisSale;
-        }
-
-        salesToReport.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        message = `*--- Estado de Cuenta ---*
-*Negocio:* ${companyName}
-Hola *${customer.name}*,
-
-A continuación el detalle de su saldo pendiente con nosotros.
-
-*DEUDA TOTAL A LA FECHA: $${formatCustomerDebt(customer.debt)}*
---------------------------------
-*Detalle de notas pendientes:*
-`;
-
-        if (salesToReport.length > 0) {
-          salesToReport.forEach(sale => {
-            const saleDate = new Date(sale.timestamp).toLocaleDateString();
-            let itemsString = '';
-            sale.items.forEach(item => {
-              itemsString += `  • ${item.name} (x${item.quantity})\n`;
-            });
-
-            const abonoInicial = sale.abono || 0;
-            let detallesPago = '';
-
-            if (abonoInicial > 0) {
-              detallesPago = `*Total Nota:* $${sale.total.toFixed(2)}\n*Abono inicial:* -$${abonoInicial.toFixed(2)}\n*Saldo Original:* $${sale.saldoPendiente.toFixed(2)}`;
-            } else {
-              detallesPago = `*Total Nota:* $${sale.total.toFixed(2)} (Sin abono inicial)`;
-            }
-
-            message += `
-📅 *Fecha:* ${saleDate}
-${detallesPago}
-
-🔴 *Resta por pagar de esta nota:* $${sale.currentOwed.toFixed(2)}
-
-_Productos:_
-${itemsString}
---------------------------------
-`;
-          });
-        } else {
-          message += `\nFavor de pasar a realizar su abono para regularizar su cuenta.`;
-        }
-
-        message += `\n¡Gracias por su preferencia!`;
-      } else {
-        message = `Hola ${customer.name}, te comunicas de ${companyName}. ¿En qué podemos ayudarte?`;
-      }
-
-      sendWhatsAppMessage(customer.phone, message);
+      const [summaryResult, localSales] = await Promise.all([
+        customerCreditRepository.getCustomerCreditSummary(customer.id).catch((error) => {
+          Logger.warn('[CustomersPage] No se pudo obtener el resumen cloud para WhatsApp:', error);
+          return null;
+        }),
+        loadData(STORES.SALES)
+      ]);
+      const customerSales = (localSales || []).filter((sale) => (sale.customerId ?? sale.customer_id) === customer.id);
+      const summary = summaryResult?.success === false ? null : summaryResult;
+      const cloudLedgerEntries = Array.isArray(summary?.ledger_entries)
+        ? summary.ledger_entries
+        : (Array.isArray(summary?.ledgerEntries) ? summary.ledgerEntries : []);
+      const cloudLedgerTimestamps = cloudLedgerEntries
+        .map((entry) => entry?.created_at || entry?.createdAt || entry?.timestamp)
+        .filter(Boolean)
+        .sort();
+      const latestDurableTimestamp = summary?.cutoffAt
+        || summary?.cutoff_at
+        || summary?.generatedAt
+        || summary?.generated_at
+        || summary?.asOf
+        || summary?.as_of
+        || summary?.customer?.updatedAt
+        || summary?.customer?.updated_at
+        || cloudLedgerTimestamps.at(-1)
+        || customerSales.map((sale) => sale.timestamp).filter(Boolean).sort().at(-1)
+        || null;
+      const payloadResult = buildAccountStatementMessagePayload({
+        customer,
+        business: { ...(companyProfile || {}), name: companyProfile?.name || companyName },
+        cloudSummary: summary,
+        localSales: customerSales,
+        occurredAt: latestDurableTimestamp
+      });
+      const notificationResult = payloadResult.ok
+        ? await openCustomerNotification({
+          payload: payloadResult.payload,
+          openWhatsApp: sendWhatsAppMessage
+        })
+        : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
+      showNotificationStatus(notificationResult, 'El estado de cuenta');
+      return createFinancialNotificationResult({
+        financialResult: { status: 'not_applicable' },
+        notificationResult
+      });
     } catch (error) {
-      Logger.error('Error al generar mensaje de WhatsApp:', error);
-      showMessageModal('Error al generar el mensaje. Abriendo chat simple.');
-      sendWhatsAppMessage(customer.phone, '');
+      Logger.error('Error al generar estado de cuenta para WhatsApp:', error);
+      showMessageModal('No se pudo preparar el estado de cuenta. No se abrió un chat vacío.', null, { type: 'warning' });
+      return createFinancialNotificationResult({
+        financialResult: { status: 'not_applicable' },
+        notificationResult: { status: 'failed', code: 'MESSAGE_PREPARATION_FAILED' }
+      });
     } finally {
       setWhatsAppLoading(null);
     }
@@ -591,7 +638,7 @@ ${itemsString}
         <section className="ui-page__header customers-hero" aria-label="Resumen de clientes">
           <div className="customers-hero__metric">
             <span>Fiado total</span>
-            <strong>${customerPortfolio.totalDebt.toFixed(2)}</strong>
+            <strong>{formatMoneyValue(customerPortfolio.totalDebt)}</strong>
           </div>
 
           <div className="customers-hero__metric customers-hero__metric--alert">
@@ -678,6 +725,7 @@ ${itemsString}
         blockedReason={abonoBlockedReason}
         cashSession={effectiveAbonoCashSession}
         cashActor={cashActor}
+        authoritativePendingSales={abonoPendingNotes}
       />
 
       <LayawayModal

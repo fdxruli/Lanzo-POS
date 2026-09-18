@@ -14,6 +14,21 @@ import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { calculateDiscountedTotals } from './discounts';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
+import {
+  createFinancialNotificationResult,
+  notificationNotRequested
+} from '../customerMessaging/index.js';
+
+const withFinancialFailure = (result = {}) => ({
+    ...result,
+    ...createFinancialNotificationResult({
+        financialResult: {
+            status: 'failed',
+            code: result.code || result.errorType || 'SALE_FINANCIAL_FAILED',
+            message: result.message || null
+        }
+    })
+});
 
 const requiresPrescriptionControl = (product = {}) => (
     product?.requiresPrescription === true ||
@@ -279,7 +294,7 @@ export const processSaleCore = async ({
             });
 
             if (!stockValidation.ok) {
-                return stockValidation.response;
+                return withFinancialFailure(stockValidation.response);
             }
         } else {
             Logger.info(
@@ -454,22 +469,23 @@ export const processSaleCore = async ({
             } catch (cloudCashierError) {
                 Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);
 
-                return {
+                return withFinancialFailure({
                     success: false,
                     errorType: 'CLOUD_CASHIER_FAILED',
                     code: cloudCashierError.code || null,
                     cloudErrorCode: cloudCashierError.code || null,
                     message: cloudCashierError.message || 'No se pudo confirmar la venta cloud. No se cobró localmente para evitar duplicados.'
-                };
+                });
             }
 
             const cloudSale = cloudResult.localSale || sale;
 
             let postEffectsFailed = false;
             let postEffectsError = null;
+            let notificationResult = notificationNotRequested();
 
             try {
-                await runPostSaleEffectsForCloudCommittedSale({
+                const postEffectsResult = await runPostSaleEffectsForCloudCommittedSale({
                     sale: cloudSale,
                     processedItems,
                     paymentData: safePaymentData,
@@ -484,6 +500,7 @@ export const processSaleCore = async ({
                     sendReceiptWhatsApp,
                     Logger
                 });
+                notificationResult = postEffectsResult?.notificationResult || notificationResult;
             } catch (postError) {
                 postEffectsFailed = true;
                 postEffectsError = {
@@ -496,6 +513,16 @@ export const processSaleCore = async ({
             }
 
             evaluator.ping();
+
+            const financialResult = {
+                status: 'success',
+                saleId: cloudSale.id,
+                cloudSaleId: cloudResult.response?.sale?.id || null,
+                timestamp: cloudSale.timestamp,
+                folio: cloudSale.folio,
+                sourceMode: 'cloud_committed',
+                cloudCommitted: true
+            };
 
             return {
                 success: true,
@@ -512,7 +539,8 @@ export const processSaleCore = async ({
                 postEffectsFailed,
                 postEffectsError: postEffectsFailed ? postEffectsError : null,
                 pendingSyncRequired: false,
-                inventoryChangesTracked: null
+                inventoryChangesTracked: null,
+                ...createFinancialNotificationResult({ financialResult, notificationResult })
             };
         }
 
@@ -522,14 +550,14 @@ export const processSaleCore = async ({
 
         if (!transactionResult.success) {
             if (transactionResult.isConcurrencyError) {
-                return { success: false, errorType: 'RACE_CONDITION', message: 'El stock cambió mientras cobrabas. Intenta de nuevo.' };
+                return withFinancialFailure({ success: false, errorType: 'RACE_CONDITION', message: 'El stock cambió mientras cobrabas. Intenta de nuevo.' });
             }
 
             const errorMessage = transactionResult.error?.message
                 || transactionResult.message
                 || 'Falló la transacción de venta sin un mensaje de error específico.';
 
-            return { success: false, message: errorMessage };
+            return withFinancialFailure({ success: false, message: errorMessage });
         }
 
         dispatchTickerInventoryAlert(transactionResult.criticalStockProductIds || []);
@@ -537,9 +565,10 @@ export const processSaleCore = async ({
         let postEffectsFailed = false;
         let postEffectsError = null;
         let inventoryChanges = null;
+        let notificationResult = notificationNotRequested();
 
         try {
-            await runPostSaleEffects({
+            const postEffectsResult = await runPostSaleEffects({
                 sale,
                 processedItems,
                 paymentData: safePaymentData,
@@ -553,6 +582,7 @@ export const processSaleCore = async ({
                 roundCurrency,
                 sendReceiptWhatsApp
             });
+            notificationResult = postEffectsResult?.notificationResult || notificationResult;
         } catch (postError) {
             postEffectsFailed = true;
             postEffectsError = {
@@ -595,6 +625,15 @@ export const processSaleCore = async ({
 
         evaluator.ping();
 
+        const financialResult = {
+            status: 'success',
+            saleId: sale.id,
+            timestamp: sale.timestamp,
+            folio: sale.folio,
+            sourceMode: 'local_committed',
+            cloudCommitted: false
+        };
+
         return {
             success: true,
             saleId: sale.id,
@@ -603,11 +642,12 @@ export const processSaleCore = async ({
             postEffectsFailed,
             postEffectsError: postEffectsFailed ? postEffectsError : null,
             pendingSyncRequired: postEffectsFailed,
-            inventoryChangesTracked: postEffectsFailed ? inventoryChanges : null
+            inventoryChangesTracked: postEffectsFailed ? inventoryChanges : null,
+            ...createFinancialNotificationResult({ financialResult, notificationResult })
         };
     } catch (error) {
         Logger.error('Service Error:', error);
-        return { success: false, code: error?.code || null, message: error.message };
+        return withFinancialFailure({ success: false, code: error?.code || null, message: error.message });
     } finally {
         Logger.timeEnd('Service:ProcessSale');
     }

@@ -4,6 +4,7 @@
 import { showMessage } from '../store/useMessageStore';
 import toast from 'react-hot-toast';
 import Logger from './Logger';
+import { normalizeMexicanPhone } from './customerMessaging/normalizers';
 import {
   EXPIRY_DAYS_THRESHOLD,
   getAvailableStock,
@@ -277,24 +278,33 @@ export const getProductAlerts = (product) => {
  * @param {string} message - El mensaje pre-escrito.
  */
 export function sendWhatsAppMessage(phone, message) {
-  // --- ¡IMPORTANTE! ---
-  // Asumimos que todos los números son de México (código 52).
-  // Si tienes clientes internacionales, necesitarás un campo de "código de país"
-  // para el cliente.
-  const countryCode = '52';
+  const normalizedPhone = normalizeMexicanPhone(phone);
+  if (normalizedPhone.status === 'missing') {
+    return { status: 'missing_phone', code: normalizedPhone.code };
+  }
+  if (normalizedPhone.status === 'invalid') {
+    return { status: 'invalid_phone', code: normalizedPhone.code };
+  }
+  if (typeof window === 'undefined' || typeof window.open !== 'function') {
+    return { status: 'unsupported', code: 'WHATSAPP_OPENER_UNAVAILABLE' };
+  }
 
-  // Limpiar el teléfono de espacios, guiones, etc.
-  const cleanPhone = phone.replace(/[\s-()]/g, '');
-  const fullPhone = `${countryCode}${cleanPhone}`;
+  const encodedMessage = encodeURIComponent(String(message ?? ''));
+  const url = `https://wa.me/${normalizedPhone.e164.slice(1)}?text=${encodedMessage}`;
 
-  // Formatear el mensaje para la URL
-  const encodedMessage = encodeURIComponent(message);
-
-  // Crear la URL
-  const url = `https://wa.me/${fullPhone}?text=${encodedMessage}`;
-
-  // Abrir WhatsApp en una nueva pestaña
-  window.open(url, '_blank');
+  try {
+    const popup = window.open(url, '_blank');
+    if (popup === null) {
+      return { status: 'failed', code: 'WHATSAPP_WINDOW_BLOCKED' };
+    }
+    return { status: 'opened', code: null, phone: normalizedPhone.e164 };
+  } catch (error) {
+    return {
+      status: 'failed',
+      code: error?.code || 'WHATSAPP_OPEN_FAILED',
+      message: error?.message || 'No se pudo abrir WhatsApp.'
+    };
+  }
 }
 
 /**
@@ -417,7 +427,7 @@ export const safeLocalStorageSet = (key, value) => {
 
       keysToClean.forEach(k => {
         if (k !== key) { // No borrar lo que estamos intentando guardar si colisiona
-          try { localStorage.removeItem(k); } catch (e) { /* ignorar */ }
+          try { localStorage.removeItem(k); } catch { /* ignorar */ }
         }
       });
 
@@ -426,7 +436,7 @@ export const safeLocalStorageSet = (key, value) => {
         localStorage.setItem(key, value);
         Logger.log('✅ Espacio recuperado. Guardado exitoso.');
         return true;
-      } catch (retryError) {
+      } catch {
         // 4. Fallo definitivo: Avisar al usuario usando tu modal existente
         Logger.error("❌ Fallo crítico: Memoria llena irrecoverable.");
 

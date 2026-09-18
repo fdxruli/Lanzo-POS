@@ -10,16 +10,22 @@ const buildDependencies = () => ({
   Logger: { error: vi.fn() }
 });
 
+const durableSale = (overrides = {}) => ({
+  id: 'sale-1',
+  timestamp: '2026-09-17T18:30:00.000Z',
+  ...overrides
+});
+
 describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
   it('formats exact-string prices and totals while preserving ecommerce references', async () => {
     const dependencies = buildDependencies();
 
     await sendReceiptWhatsApp({
-      sale: {
+      sale: durableSale({
         folio: 'V-000034',
         salesChannel: 'ecommerce',
         ecommerceOrderCode: 'EC-00000115'
-      },
+      }),
       items: [{ name: 'Producto', quantity: '2', price: '15.50' }],
       paymentData: { customerId: 'customer-1', paymentMethod: 'tarjeta' },
       total: '31',
@@ -41,7 +47,7 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     const dependencies = buildDependencies();
 
     await sendReceiptWhatsApp({
-      sale: {
+      sale: durableSale({
         folio: 'V-000038',
         subtotal: '50',
         discountTotal: '40',
@@ -51,7 +57,7 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
           amount: 40,
           reason: 'Promoción'
         }
-      },
+      }),
       items: [{ name: 'Producto Genérico', quantity: 1, price: '50' }],
       paymentData: {
         customerId: 'customer-1',
@@ -76,11 +82,11 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     const dependencies = buildDependencies();
 
     await sendReceiptWhatsApp({
-      sale: {
+      sale: durableSale({
         folio: 'V-000039',
         subtotal: '100',
         metadata: { discountTotal: '15' }
-      },
+      }),
       items: [{ name: 'Producto', quantity: 2, price: '50' }],
       paymentData: { customerId: 'customer-1', paymentMethod: 'tarjeta' },
       total: '85',
@@ -98,7 +104,7 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     const dependencies = buildDependencies();
 
     await sendReceiptWhatsApp({
-      sale: { folio: 'V-000035' },
+      sale: durableSale({ folio: 'V-000035' }),
       items: [{ name: 'Producto', quantity: 1, price: '31' }],
       paymentData: {
         customerId: 'customer-1',
@@ -120,7 +126,7 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     const dependencies = buildDependencies();
 
     await sendReceiptWhatsApp({
-      sale: { folio: 'V-000036' },
+      sale: durableSale({ folio: 'V-000036' }),
       items: [{ name: 'Producto', quantity: 1, price: '31' }],
       paymentData: {
         customerId: 'customer-1',
@@ -138,11 +144,39 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     expect(dependencies.Logger.error).not.toHaveBeenCalled();
   });
 
-  it('does not send a malformed ticket when a monetary value is invalid', async () => {
+  it('preserves pharmacy receipt details and metadata-only ecommerce references', async () => {
     const dependencies = buildDependencies();
 
     await sendReceiptWhatsApp({
-      sale: { folio: 'V-000037' },
+      ...dependencies,
+      sale: durableSale({
+        folio: 'V-000040',
+        metadata: { ecommerceOrderCode: 'EC-LEGACY-40' },
+        prescriptionDetails: {
+          doctorName: 'Dra. Rivera',
+          licenseNumber: 'CED-123',
+          notes: 'Tomar con alimentos'
+        }
+      }),
+      items: [{ name: 'Medicamento', quantity: 1, price: '75', requiresPrescription: true }],
+      paymentData: { customerId: 'customer-1', paymentMethod: 'tarjeta' },
+      total: '75',
+      features: { hasLabFields: true }
+    });
+
+    const [, receiptText] = dependencies.sendWhatsAppMessage.mock.calls[0];
+    expect(receiptText).toContain('*Pedido online:* EC-LEGACY-40');
+    expect(receiptText).toContain('Dr(a): Dra. Rivera');
+    expect(receiptText).toContain('Cédula: CED-123');
+    expect(receiptText).toContain('Notas: Tomar con alimentos');
+    expect(receiptText).toContain('_(Antibiótico/Controlado)_');
+  });
+
+  it('does not send a malformed ticket when a monetary value is invalid', async () => {
+    const dependencies = buildDependencies();
+
+    const result = await sendReceiptWhatsApp({
+      sale: durableSale({ folio: 'V-000037' }),
       items: [{ name: 'Producto', quantity: 1, price: '31' }],
       paymentData: { customerId: 'customer-1', paymentMethod: 'tarjeta' },
       total: 'invalid-total',
@@ -150,9 +184,7 @@ describe('receiptWhatsApp money formatting and ecommerce traceability', () => {
     });
 
     expect(dependencies.sendWhatsAppMessage).not.toHaveBeenCalled();
-    expect(dependencies.Logger.error).toHaveBeenCalledWith(
-      'Error enviando ticket:',
-      expect.any(Error)
-    );
+    expect(result).toMatchObject({ status: 'payload_invalid', code: 'MONEY_VALUE_INVALID' });
+    expect(dependencies.Logger.error).not.toHaveBeenCalled();
   });
 });

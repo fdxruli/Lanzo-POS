@@ -85,6 +85,42 @@ describe('processSaleCore', () => {
         );
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
         expect(deps.sendReceiptWhatsApp).toHaveBeenCalledOnce();
+        expect(result.financialResult).toMatchObject({ status: 'success', saleId: result.saleId });
+        expect(result.notificationResult).toMatchObject({ status: 'opened' });
+    });
+
+    it('keeps a committed sale successful when the customer phone is missing', async () => {
+        const deps = makeDeps({
+            sendReceiptWhatsApp: vi.fn(async () => ({
+                status: 'missing_phone',
+                code: 'CUSTOMER_PHONE_MISSING'
+            }))
+        });
+
+        const result = await processSaleCore(makeParams(), deps);
+
+        expect(result.success).toBe(true);
+        expect(result.financialResult).toMatchObject({ status: 'success' });
+        expect(result.notificationResult).toMatchObject({
+            status: 'missing_phone',
+            code: 'CUSTOMER_PHONE_MISSING'
+        });
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a committed sale successful when WhatsApp throws', async () => {
+        const deps = makeDeps({
+            sendReceiptWhatsApp: vi.fn(async () => {
+                throw new Error('popup blocked');
+            })
+        });
+
+        const result = await processSaleCore(makeParams(), deps);
+
+        expect(result.success).toBe(true);
+        expect(result.financialResult).toMatchObject({ status: 'success' });
+        expect(result.notificationResult).toMatchObject({ status: 'failed' });
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledOnce();
     });
 
     it('mapea error de concurrencia a RACE_CONDITION', async () => {
@@ -97,10 +133,15 @@ describe('processSaleCore', () => {
 
         const result = await processSaleCore(makeParams(), deps);
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
             success: false,
             errorType: 'RACE_CONDITION',
-            message: 'El stock cambió mientras cobrabas. Intenta de nuevo.'
+            message: 'El stock cambió mientras cobrabas. Intenta de nuevo.',
+            financialResult: {
+                status: 'failed',
+                code: 'RACE_CONDITION'
+            },
+            notificationResult: { status: 'not_requested', code: null }
         });
         expect(deps.__updateStatsForNewSale).not.toHaveBeenCalled();
         expect(deps.sendReceiptWhatsApp).not.toHaveBeenCalled();
@@ -131,6 +172,30 @@ describe('processSaleCore', () => {
         );
         expect(deps.saveData).not.toHaveBeenCalled();
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['fiado', 'VIGENTE'],
+        ['credit', null],
+        ['mixed_credit', null],
+        ['customer_credit', null]
+    ])('preserves %s financial metadata without rewriting the original method', async (paymentMethod, creditStatus) => {
+        const deps = makeDeps();
+        const result = await processSaleCore(makeParams({
+            paymentData: {
+                customerId: 'cust-1',
+                paymentMethod,
+                amountPaid: 10,
+                saldoPendiente: 0,
+                sendReceipt: false
+            }
+        }), deps);
+
+        expect(result.success).toBe(true);
+        expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
+            expect.objectContaining({ paymentMethod, creditStatus }),
+            expect.any(Array)
+        );
     });
 
     it('reuses the durable order timestamp when retrying the same active order', async () => {
