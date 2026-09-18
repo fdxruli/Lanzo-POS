@@ -41,7 +41,11 @@ export const selectCreditNotes = ({ customerId = null, cloudSummary = null, loca
     cloudSummary?.pendingSales,
     cloudSummary?.pending_sales
   ].filter(Array.isArray);
-  const cloudNotes = cloudNoteCollections.find((notes) => notes.length > 0) || cloudNoteCollections[0];
+  // An empty cloud collection means the summary did not include enough detail
+  // to replace a valid local read. Prefer a non-empty cloud collection when it
+  // exists; otherwise fall back to local notes instead of treating `[]` as
+  // authoritative.
+  const cloudNotes = cloudNoteCollections.find((notes) => notes.length > 0) || null;
   const source = Array.isArray(cloudNotes) ? 'cloud' : 'local';
   const candidates = Array.isArray(cloudNotes) ? cloudNotes : (Array.isArray(localSales) ? localSales : []);
 

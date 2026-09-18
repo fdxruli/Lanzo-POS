@@ -61,6 +61,28 @@ describe('customer messaging financial adapters', () => {
     expect(result.payload.internalContext.source).toBe('cloud_credit_summary');
   });
 
+  it('falls back to valid local notes when cloud detail arrays are empty', () => {
+    const notes = selectCreditNotes({
+      customerId: 'customer-1',
+      cloudSummary: {
+        noteDetails: [],
+        pendingNotes: [],
+        totalBalance: '45.50'
+      },
+      localSales: [{
+        id: 'local-credit',
+        customerId: 'customer-1',
+        paymentMethod: 'fiado',
+        saldoPendiente: '45.50'
+      }]
+    });
+
+    expect(notes).toEqual([expect.objectContaining({
+      id: 'local-credit',
+      saldoPendiente: '45.50'
+    })]);
+  });
+
   it('uses the confirmed receipt to distinguish a partial payment from a settled account', () => {
     const partial = buildPaymentMessagePayload({
       customer,
