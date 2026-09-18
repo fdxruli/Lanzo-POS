@@ -88,6 +88,16 @@ describe('customer notification results', () => {
     expect(result).toBe(cancelled);
   });
 
+  it('converts an unsupported opener status into a controlled failure', async () => {
+    const result = await openCustomerNotification({
+      payload: buildSalePayload(),
+      openWhatsApp: vi.fn().mockResolvedValue({ status: 'sent', code: null })
+    });
+
+    expect(result).toEqual({ status: 'failed', code: 'NOTIFICATION_RESULT_INVALID' });
+    expect(result.status).not.toBe('sent');
+  });
+
   it('keeps a successful financial result when WhatsApp throws and a retry only opens messaging', async () => {
     const executeFinancialOperation = vi.fn(() => ({ status: 'success', saleId: 'sale-1' }));
     const financialResult = executeFinancialOperation();

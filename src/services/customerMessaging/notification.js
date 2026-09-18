@@ -1,6 +1,18 @@
 import { normalizeMexicanPhone } from './normalizers';
 import { renderCustomerMessageText } from './templates';
 
+const NOTIFICATION_STATUSES = new Set([
+  'not_requested',
+  'missing_phone',
+  'invalid_phone',
+  'payload_invalid',
+  'ready',
+  'opened',
+  'cancelled',
+  'unsupported',
+  'failed'
+]);
+
 export const notificationNotRequested = () => ({ status: 'not_requested', code: null });
 
 export const getNotificationReadiness = (payload, { requested = true } = {}) => {
@@ -28,7 +40,11 @@ export const openCustomerNotification = async ({ payload, requested = true, open
 
   try {
     const result = await openWhatsApp(readiness.phone.e164, text);
-    if (result?.status && result.status !== 'ready') return result;
+    if (result?.status) {
+      if (result.status === 'ready') return { status: 'opened', code: null, phone: readiness.phone.e164 };
+      if (NOTIFICATION_STATUSES.has(result.status)) return result;
+      return { status: 'failed', code: 'NOTIFICATION_RESULT_INVALID' };
+    }
     if (result === false || result === null) return { status: 'failed', code: 'WHATSAPP_WINDOW_BLOCKED' };
     return { status: 'opened', code: null, phone: readiness.phone.e164 };
   } catch (error) {
