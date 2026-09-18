@@ -2,10 +2,16 @@
 import { useCallback, useRef } from 'react';
 
 import { useFeatureConfig } from '../useFeatureConfig';
+import { useAppStore } from '../../store/useAppStore';
 import { layawayFinancialService } from '../../services/layawayFinancialService';
 import { runTrackedActorOperationIfGranted } from '../../services/auth/actorOperationalHandoff';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
+import {
+    buildLayawayMessagePayload,
+    prepareCustomerMessageOutbox,
+    showCustomerMessageOutboxModal
+} from '../../services/customerMessaging';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import {
     ECOMMERCE_POS_CHECKOUT_MESSAGE,
@@ -122,7 +128,70 @@ export function useLayawayFlow({
                     // operation prevents a late A completion from clearing B's cart.
                     clearOrder();
                     closeModal('layaway');
-                    showMessageModal('✅ Apartado guardado correctamente');
+
+                    const confirmedLayaway = result.layaway || null;
+                    if (!confirmedLayaway) {
+                        showMessageModal('✅ Apartado guardado correctamente');
+                    } else {
+                        try {
+                            const totalAmount = Number(
+                                confirmedLayaway.totalAmount
+                                ?? confirmedLayaway.total_amount
+                                ?? total
+                                ?? 0
+                            );
+                            const paidAmount = Number(
+                                confirmedLayaway.paidAmount
+                                ?? confirmedLayaway.paid_amount
+                                ?? initialPayment
+                                ?? 0
+                            );
+                            const companyProfile = useAppStore.getState().companyProfile || {};
+                            const payloadResult = buildLayawayMessagePayload({
+                                eventType: 'layaway_created',
+                                customer: targetCustomer,
+                                business: {
+                                    ...companyProfile,
+                                    name: companyProfile.name || 'Tu Negocio'
+                                },
+                                layaway: {
+                                    ...confirmedLayaway,
+                                    total: totalAmount,
+                                    initialPayment: paidAmount,
+                                    totalPaid: paidAmount,
+                                    balanceDue: Math.max(0, totalAmount - paidAmount)
+                                },
+                                occurredAt: confirmedLayaway.createdAt
+                                    || confirmedLayaway.created_at
+                                    || confirmedLayaway.updatedAt
+                                    || confirmedLayaway.updated_at
+                                    || null
+                            });
+
+                            const prepared = payloadResult.ok
+                                ? await prepareCustomerMessageOutbox({ payload: payloadResult.payload })
+                                : { ok: false, code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
+
+                            if (prepared?.ok && prepared.record) {
+                                showCustomerMessageOutboxModal(prepared.record, {
+                                    title: 'Apartado creado · mensaje preparado'
+                                });
+                            } else {
+                                showMessageModal(
+                                    '✅ Apartado guardado correctamente. No se pudo guardar el estado del mensaje para reintento.',
+                                    null,
+                                    { type: 'warning' }
+                                );
+                            }
+                        } catch (outboxError) {
+                            Logger.error('El apartado fue confirmado, pero falló el outbox de mensajería', outboxError);
+                            showMessageModal(
+                                '✅ Apartado guardado correctamente. No se pudo preparar el mensaje al cliente.',
+                                null,
+                                { type: 'warning' }
+                            );
+                        }
+                    }
                 } else {
                     showMessageModal('❌ Error al guardar apartado: ' + result.message);
                 }
