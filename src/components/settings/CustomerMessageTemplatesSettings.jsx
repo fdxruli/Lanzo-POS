@@ -31,7 +31,6 @@ export default function CustomerMessageTemplatesSettings() {
   const access = useSettingsAccess();
   const guard = useSettingsActionGuard();
   const canvasRef = useRef(null);
-  const dictionaryRef = useRef(null);
   const [eventType, setEventType] = useState('sale_paid');
   const [customTemplates, setCustomTemplates] = useState({});
   const [draft, setDraft] = useState(() => clone(getDefaultCustomerMessageTemplate('sale_paid')));
@@ -41,6 +40,7 @@ export default function CustomerMessageTemplatesSettings() {
   const [activeField, setActiveField] = useState('body');
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [dictionaryOpen, setDictionaryOpen] = useState(false);
   const editable = canManageCustomerMessageTemplates({ licenseDetails, actorType: access.actorType });
   const selected = customTemplates[eventType];
   const variables = useMemo(() => getTemplateVariablesForEvent(eventType), [eventType]);
@@ -76,6 +76,15 @@ export default function CustomerMessageTemplatesSettings() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    if (!dictionaryOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setDictionaryOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [dictionaryOpen]);
+
+  useEffect(() => {
     const payload = buildCustomerMessageTemplatePreviewPayload(eventType);
     const canvas = canvasRef.current;
     if (!canvas || !payload) return;
@@ -93,9 +102,7 @@ export default function CustomerMessageTemplatesSettings() {
     update(activeField, `${draft[activeField]}${draft[activeField].endsWith('\n') || !draft[activeField] ? '' : '\n'}${variable.token}`);
   };
 
-  const openDictionary = () => {
-    if (typeof dictionaryRef.current?.showModal === 'function') dictionaryRef.current.showModal();
-  };
+  const openDictionary = () => setDictionaryOpen(true);
 
   const save = async () => {
     const checked = validateCustomerMessageTemplate(eventType, draft);
@@ -171,34 +178,94 @@ export default function CustomerMessageTemplatesSettings() {
       {loading && <p>Guardando o cargando…</p>}
       <h4>Vista previa con datos ficticios</h4>
       <canvas ref={canvasRef} aria-label="Vista previa de mensaje como imagen" style={{ maxWidth: '100%', height: 'auto', border: '1px solid #cbd5e1' }} />
-      <dialog ref={dictionaryRef} className="customer-template-dictionary" aria-labelledby="customer-template-dictionary-title">
-        <div className="customer-template-dictionary__header">
-          <div>
-            <h3 id="customer-template-dictionary-title">Diccionario de variables</h3>
-            <p>Elige una variable para insertar datos automáticos del evento. Nunca muestran IDs técnicos.</p>
+      {dictionaryOpen && (
+        <div
+          className="ui-modal ui-modal--high customer-template-dictionary"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-template-dictionary-title"
+          aria-describedby="customer-template-dictionary-description"
+        >
+          <div className="ui-modal__content ui-modal__content--xl customer-template-dictionary__content-shell">
+            <header className="ui-modal__header customer-template-dictionary__header">
+              <div>
+                <h3 id="customer-template-dictionary-title" className="ui-modal__title">Diccionario de variables</h3>
+                <p id="customer-template-dictionary-description" className="ui-modal__subtitle">Elige una variable para insertar datos automáticos del evento. Nunca muestran IDs técnicos.</p>
+              </div>
+              <button
+                type="button"
+                className="ui-button ui-button--ghost customer-template-dictionary__close"
+                onClick={() => setDictionaryOpen(false)}
+                aria-label="Cerrar diccionario de variables"
+              >
+                Cerrar
+              </button>
+            </header>
+            {editable && <label className="customer-template-dictionary__target" htmlFor="customer-template-dictionary-target">
+              <span>Insertar en</span>
+              <select
+                id="customer-template-dictionary-target"
+                className="customer-template-dictionary__select"
+                value={activeField}
+                onChange={(event) => setActiveField(event.target.value)}
+              >
+                <option value="title">Título</option><option value="body">Cuerpo</option><option value="footer">Pie de página</option>
+              </select>
+            </label>}
+            <div className="customer-template-dictionary__filters">
+              <label htmlFor="customer-template-dictionary-search">
+                <span>Buscar</span>
+                <input
+                  id="customer-template-dictionary-search"
+                  className="customer-template-dictionary__input"
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Token, nombre o definición"
+                />
+              </label>
+              <label htmlFor="customer-template-dictionary-type">
+                <span>Tipo</span>
+                <select
+                  id="customer-template-dictionary-type"
+                  className="customer-template-dictionary__select"
+                  value={typeFilter}
+                  onChange={(event) => setTypeFilter(event.target.value)}
+                >
+                  <option value="all">Todos</option><option value="text">Texto</option><option value="money">Importe</option><option value="date">Fecha</option><option value="list">Lista</option>
+                </select>
+              </label>
+            </div>
+            <div className="ui-modal__body customer-template-dictionary__body">
+              {variableGroups.map(([category, group]) => <section key={category} className="customer-template-dictionary__group">
+                <h4>{category}</h4>
+                <div className="customer-template-dictionary__grid">
+                  {group.map((variable) => <article key={variable.token} className="customer-template-variable-card">
+                    <code className="customer-template-variable-card__token">{variable.token}</code>
+                    <h5>{variable.name}</h5>
+                    <p>{variable.definition}</p>
+                    <p><strong>Uso:</strong> {variable.purpose}</p>
+                    <dl>
+                      <div><dt>Tipo</dt><dd>{({ text: 'Texto', money: 'Importe', date: 'Fecha', list: 'Lista' })[variable.type]}</dd></div>
+                      <div><dt>Estado</dt><dd>{variable.required ? 'Obligatoria' : 'Opcional'}</dd></div>
+                      <div><dt>Ejemplo</dt><dd>{variable.example}</dd></div>
+                    </dl>
+                    <button
+                      type="button"
+                      className="ui-button ui-button--secondary ui-button--sm customer-template-variable-card__insert"
+                      disabled={!editable || draft[activeField].includes(variable.token)}
+                      onClick={() => insertVariable(variable)}
+                    >
+                      {draft[activeField].includes(variable.token) ? 'Ya incluida' : 'Insertar'}
+                    </button>
+                  </article>)}
+                </div>
+              </section>)}
+              {variableGroups.length === 0 && <p className="customer-template-dictionary__empty">No hay variables que coincidan con la búsqueda.</p>}
+            </div>
           </div>
-          <form method="dialog"><button type="submit" aria-label="Cerrar diccionario de variables">Cerrar</button></form>
         </div>
-        {editable && <label className="customer-template-dictionary__target">Insertar en
-          <select value={activeField} onChange={(event) => setActiveField(event.target.value)}>
-            <option value="title">Título</option><option value="body">Cuerpo</option><option value="footer">Pie de página</option>
-          </select>
-        </label>}
-        <div className="customer-template-dictionary__filters">
-          <label>Buscar <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Token, nombre o definición" /></label>
-          <label>Tipo <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">Todos</option><option value="text">Texto</option><option value="money">Importe</option><option value="date">Fecha</option><option value="list">Lista</option></select></label>
-        </div>
-        <div className="customer-template-dictionary__content">
-          {variableGroups.map(([category, group]) => <section key={category} className="customer-template-dictionary__group"><h4>{category}</h4><div className="customer-template-dictionary__grid">
-            {group.map((variable) => <article key={variable.token} className="customer-template-variable-card">
-              <code>{variable.token}</code><h5>{variable.name}</h5><p>{variable.definition}</p><p><strong>Uso:</strong> {variable.purpose}</p>
-              <dl><div><dt>Tipo</dt><dd>{({ text: 'Texto', money: 'Importe', date: 'Fecha', list: 'Lista' })[variable.type]}</dd></div><div><dt>Estado</dt><dd>{variable.required ? 'Obligatoria' : 'Opcional'}</dd></div><div><dt>Ejemplo</dt><dd>{variable.example}</dd></div></dl>
-              <button type="button" disabled={!editable || draft[activeField].includes(variable.token)} onClick={() => insertVariable(variable)}>{draft[activeField].includes(variable.token) ? 'Ya incluida' : 'Insertar'}</button>
-            </article>)}
-          </div></section>)}
-          {variableGroups.length === 0 && <p>No hay variables que coincidan con la búsqueda.</p>}
-        </div>
-      </dialog>
+      )}
     </div>
   );
 }
