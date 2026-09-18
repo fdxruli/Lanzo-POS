@@ -32,5 +32,20 @@ describe('sale receipt image preparation', () => {
     const result = await sendReceiptWhatsApp({ paymentData: { sendReceipt: false } });
     expect(result).toEqual({ status: 'not_requested', code: null });
   });
-});
 
+  it('does not use a sale ID as a visible receipt reference', async () => {
+    const result = await sendReceiptWhatsApp({
+      sale: {
+        id: 'sale-internal-only',
+        timestamp: '2026-09-18T12:30:00.000Z',
+        total: '250.00', paymentMethod: 'cash', customerName: 'Cliente'
+      },
+      items: [{ name: 'Producto', quantity: 1, total: '250.00' }],
+      paymentData: { sendReceipt: true },
+      total: '250.00',
+      companyName: 'Mi negocio'
+    });
+
+    expect(result.payload.reference).toBeNull();
+  });
+});

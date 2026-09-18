@@ -68,6 +68,11 @@ describe('customer message image sharing', () => {
     expect(env.urlApi.revokeObjectURL).toHaveBeenCalledWith('blob:test');
   });
 
+  it('explains automatic download as an informational browser fallback', () => {
+    expect(IMAGE_SHARE_UI_COPY.downloaded).toBe('Este navegador no permite compartir archivos directamente. La imagen fue descargada para adjuntarla manualmente.');
+    expect(IMAGE_SHARE_UI_COPY.downloaded).not.toMatch(/operacion financiera|fallo/i);
+  });
+
   it('does not use window.open or create a text URL', () => {
     const env = downloadEnvironment();
     const open = vi.fn();

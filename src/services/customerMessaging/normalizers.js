@@ -138,6 +138,38 @@ export const normalizePaymentMethod = (value) => {
   };
 };
 
+const PAYMENT_METHOD_DISPLAY_LABELS = Object.freeze({
+  efectivo: 'Efectivo',
+  cash: 'Efectivo',
+  fiado: 'Fiado',
+  partial_credit: 'Fiado',
+  customer_credit: 'Fiado',
+  debt: 'Fiado',
+  cuenta_cliente: 'Fiado',
+  credit: 'Crédito',
+  credito: 'Crédito',
+  crédito: 'Crédito',
+  card: 'Tarjeta',
+  tarjeta: 'Tarjeta',
+  tarjeta_credito: 'Tarjeta',
+  tarjeta_debito: 'Tarjeta',
+  transfer: 'Transferencia',
+  transferencia: 'Transferencia',
+  spei: 'Transferencia',
+  bank_transfer: 'Transferencia',
+  mixed: 'Mixto',
+  mixto: 'Mixto'
+});
+
+/** Presentation-only label. It never changes the canonical financial method. */
+export const getPaymentMethodDisplayLabel = (originalMethod, canonicalMethod = null) => {
+  const original = normalizePaymentMethod(originalMethod).normalized;
+  const canonical = normalizePaymentMethod(canonicalMethod).normalized;
+  return PAYMENT_METHOD_DISPLAY_LABELS[original]
+    || PAYMENT_METHOD_DISPLAY_LABELS[canonical]
+    || 'No especificado';
+};
+
 export const isCreditPaymentMethod = (value) => normalizePaymentMethod(value).isCredit;
 
 const dateParts = (date, timeZone) => {

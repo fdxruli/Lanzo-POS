@@ -1,5 +1,6 @@
 import { buildCustomerMessagePayload } from './payloadBuilder';
 import { isCreditPaymentMethod, normalizeMoney } from './normalizers';
+import { selectDisplayReference } from './displayReference';
 
 const read = (source, ...keys) => {
   for (const key of keys) {
@@ -202,10 +203,10 @@ export const buildPaymentMessagePayload = ({
     business,
     occurredAt: paymentOccurredAt,
     currency,
-    reference: read(confirmedReceipt, 'reference', 'folio') || paymentId || null,
+    reference: selectDisplayReference(confirmedReceipt),
     payment: {
       id: paymentId,
-      reference: read(confirmedReceipt, 'reference', 'folio') || paymentId || null,
+      reference: selectDisplayReference(confirmedReceipt),
       occurredAt: paymentOccurredAt,
       method: read(confirmedReceipt, 'method', 'paymentMethod', 'payment_method') || 'efectivo',
       previousBalance: read(confirmedReceipt, 'previousBalance', 'previousDebt', 'previous_debt') ?? previousBalance,
@@ -239,10 +240,10 @@ export const buildLayawayMessagePayload = ({
   business,
   occurredAt: occurredAt || read(layaway, 'occurredAt', 'updatedAt', 'updated_at', 'createdAt', 'created_at'),
   currency,
-  reference: read(layaway, 'reference', 'layawayReference', 'folio') || null,
+  reference: selectDisplayReference(layaway),
   layaway: {
     id: read(layaway, 'id', 'layawayId', 'layaway_id'),
-    reference: read(layaway, 'reference', 'layawayReference', 'folio') || null,
+    reference: selectDisplayReference(layaway),
     items: layaway.items || [],
     total: read(layaway, 'total'),
     initialPayment: read(layaway, 'initialPayment', 'initial_payment', 'deposit'),

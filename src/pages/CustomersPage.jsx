@@ -479,14 +479,14 @@ export default function CustomersPage() {
     }
     const shareResult = await shareCustomerMessageImage(imageResult);
     if (shareResult.status === 'downloaded') {
-      showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+      showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'info' });
     } else if (shareResult.status === 'failed' && shareResult.canDownload) {
       showMessageModal(
         IMAGE_SHARE_UI_COPY.failed,
         () => {
           const downloadResult = downloadCustomerMessageImage(imageResult);
           if (downloadResult.status === 'downloaded') {
-            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'info' });
           } else {
             showMessageModal('No se pudo descargar la imagen. La operacion financiera se conservo correctamente.', null, { type: 'warning' });
           }
@@ -502,6 +502,18 @@ export default function CustomersPage() {
       );
     } else if (shareResult.status === 'unsupported') {
       showMessageModal(IMAGE_SHARE_UI_COPY.unsupported, null, { type: 'warning' });
+    } else if (shareResult.status === 'cancelled') {
+      showMessageModal(
+        IMAGE_SHARE_UI_COPY.cancelled,
+        () => sharePayloadAsImage(payload),
+        {
+          title: 'Compartir cancelado',
+          confirmButtonText: 'Intentar compartir de nuevo',
+          cancelButtonText: 'Ahora no',
+          showCancel: true,
+          type: 'info'
+        }
+      );
     }
     return shareResult;
   };

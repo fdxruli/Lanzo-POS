@@ -85,7 +85,7 @@ export async function sendReceiptWhatsApp({
             business: { name: companyName || 'Tu Negocio' },
             occurredAt: durableSaleTimestamp(confirmedSale),
             currency: confirmedSale.currency || paymentData.currency || 'MXN',
-            reference: confirmedSale.folio || confirmedSale.id || null,
+            reference: confirmedSale.folio || null,
             sale: confirmedSale,
             internalContext: {
                 source: confirmedSale.sourceMode || 'sale_receipt',

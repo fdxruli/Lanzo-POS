@@ -9,12 +9,14 @@ export {
   formatMessageDate,
   formatMoney,
   formatMoneyValue,
+  getPaymentMethodDisplayLabel,
   isCreditPaymentMethod,
   normalizeMessageDate,
   normalizeMexicanPhone,
   normalizeMoney,
   normalizePaymentMethod
 } from './normalizers';
+export { isDisplayReference, selectDisplayReference } from './displayReference';
 export { buildCustomerMessagePayload } from './payloadBuilder';
 export {
   buildAccountStatementMessagePayload,

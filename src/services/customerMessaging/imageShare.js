@@ -1,7 +1,7 @@
 const isShareCancellation = (error) => error?.name === 'AbortError' || error?.code === 'ABORT_ERR';
 
 export const IMAGE_SHARE_UI_COPY = Object.freeze({
-  downloaded: 'La imagen fue descargada. Adjuntala manualmente desde la aplicacion que prefieras.',
+  downloaded: 'Este navegador no permite compartir archivos directamente. La imagen fue descargada para adjuntarla manualmente.',
   cancelled: 'El compartido fue cancelado. La operacion financiera se conservo correctamente.',
   failed: 'No se pudo compartir la imagen. La operacion financiera se conservo correctamente.',
   unsupported: 'La imagen quedo disponible para descarga manual.',

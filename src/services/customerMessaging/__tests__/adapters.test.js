@@ -142,6 +142,36 @@ describe('customer messaging financial adapters', () => {
     expect(result.payload.internalContext.source).toBe('customer_credit_confirmed_local_result');
   });
 
+  it('keeps ledger IDs internal and preserves an explicit payment reference', () => {
+    const withoutReference = buildPaymentMessagePayload({
+      customer,
+      business,
+      receipt: {
+        ledger_id: 'ldg_27d7ed24a14544808277697849acc242',
+        amount: '10', previous_debt: '50', new_debt: '40', payment_method: 'cash', created_at: occurredAt
+      },
+      previousBalance: '50',
+      occurredAt,
+      timeZone: 'UTC'
+    });
+    const withReference = buildPaymentMessagePayload({
+      customer,
+      business,
+      receipt: {
+        id: 'payment-internal', reference: 'AB-0001',
+        amount: '10', previous_debt: '50', new_debt: '40', payment_method: 'cash', created_at: occurredAt
+      },
+      previousBalance: '50',
+      occurredAt,
+      timeZone: 'UTC'
+    });
+
+    expect(withoutReference.payload.reference).toBeNull();
+    expect(withoutReference.payload.payment.reference).toBeNull();
+    expect(withReference.payload.reference).toBe('AB-0001');
+    expect(withReference.payload.payment.reference).toBe('AB-0001');
+  });
+
   it.each(['fiado', 'credit', 'mixed_credit', 'customer_credit'])('recognizes overdue %s notes when legacy local metadata lacks creditStatus', (paymentMethod) => {
     expect(isOverdueCreditNote({
       paymentMethod,

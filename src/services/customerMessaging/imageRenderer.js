@@ -1,5 +1,6 @@
 import { CUSTOMER_MESSAGE_EVENT_TYPES } from './contracts';
-import { formatMoneyValue } from './normalizers';
+import { formatMoneyValue, getPaymentMethodDisplayLabel } from './normalizers';
+import { selectDisplayReference } from './displayReference';
 
 const WIDTH = 1080;
 const PADDING = 72;
@@ -66,21 +67,21 @@ export const buildImageReceiptModel = (payload = {}) => {
   const sections = [];
   add(rows, 'Cliente', payload.customer.name);
   add(rows, 'Fecha y hora', payload.occurredAt);
-  add(rows, 'Folio / referencia', payload.reference || payload.sale?.folio || payload.layaway?.reference);
+  add(rows, 'Folio / referencia', selectDisplayReference(payload.reference, payload.sale, payload.payment, payload.layaway));
 
   if (payload.eventType.startsWith('sale_')) {
     sections.push(...itemRows(payload.sale?.items, currency));
     add(rows, 'Total', money(payload.sale?.total, currency));
     add(rows, 'Importe recibido', money(payload.sale?.receivedAmount ?? payload.sale?.amountPaid, currency));
     add(rows, 'Saldo restante', money(payload.sale?.balanceDue, currency));
-    add(rows, 'Metodo de pago', payload.sale?.paymentMethod);
+    add(rows, 'Método de pago', getPaymentMethodDisplayLabel(payload.sale?.originalPaymentMethod, payload.sale?.paymentMethod));
     add(rows, 'Fecha limite', payload.sale?.dueDate);
     add(rows, 'Estado', payload.sale?.creditStatus);
   } else if (payload.eventType === 'payment_partial' || payload.eventType === 'account_settled') {
     add(rows, 'Saldo anterior', money(payload.payment?.previousBalance, currency));
     add(rows, 'Importe del abono', money(payload.payment?.amount, currency));
     add(rows, 'Saldo restante', money(payload.payment?.newBalance, currency));
-    add(rows, 'Metodo de pago', payload.payment?.method);
+    add(rows, 'Método de pago', getPaymentMethodDisplayLabel(payload.payment?.originalMethod, payload.payment?.method));
     add(rows, 'Estado', payload.eventType === 'account_settled' ? 'Saldada' : 'Saldo pendiente');
   } else if (payload.eventType === 'account_statement' || payload.eventType === 'debt_reminder') {
     add(rows, 'Saldo total', money(payload.account?.totalBalance, currency));
@@ -88,7 +89,7 @@ export const buildImageReceiptModel = (payload = {}) => {
     add(rows, 'Fecha de corte', payload.account?.cutoffAt);
     const notes = payload.account?.noteDetails || payload.account?.pendingNotes || [];
     sections.push(...notes.map((note) => {
-      const ref = cleanText(note?.folio || note?.reference || note?.id, 'Nota');
+      const ref = cleanText(selectDisplayReference(note), 'Nota');
       const balance = money(note?.saldoPendiente ?? note?.balanceDue ?? note?.currentOwed, currency);
       return `${ref}${balance ? `  Saldo: ${balance}` : ''}`;
     }));
@@ -101,7 +102,7 @@ export const buildImageReceiptModel = (payload = {}) => {
     add(rows, 'Saldo restante', money(payload.layaway?.balanceDue, currency));
     add(rows, 'Fecha limite', payload.layaway?.deadline);
     add(rows, 'Estado', payload.layaway?.status);
-    add(rows, 'Folio de venta', payload.layaway?.saleFolio);
+    add(rows, 'Folio de venta', selectDisplayReference({ saleFolio: payload.layaway?.saleFolio }));
   }
 
   return {
@@ -205,7 +206,7 @@ export const renderCustomerMessageImage = async (payload, { canvasFactory, FileC
     }
 
     const blob = await canvasToBlob(canvas);
-    const filename = sanitizeImageFilename(`${built.model.title}-${payload.reference || payload.customer?.name}`);
+    const filename = sanitizeImageFilename(`${built.model.title}-${selectDisplayReference(payload.reference, payload.sale, payload.payment, payload.layaway) || payload.customer?.name}`);
     const file = typeof FileCtor === 'function'
       ? new FileCtor([blob], filename, { type: 'image/png' })
       : Object.assign(blob, { name: filename, lastModified: Date.now() });
