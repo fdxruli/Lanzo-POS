@@ -14,6 +14,20 @@ const positiveMoney = (value) => {
   return normalized.ok && normalized.amount.gt(0);
 };
 
+const buildLayawayDisplayReference = (layaway = {}, occurredAt = null) => {
+  const explicit = selectDisplayReference(layaway);
+  if (explicit) return explicit;
+
+  const sourceDate = occurredAt
+    || read(layaway, 'occurredAt', 'updatedAt', 'updated_at', 'createdAt', 'created_at');
+  const date = new Date(sourceDate || '');
+  if (!Number.isNaN(date.getTime())) {
+    const stamp = date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/u, 'Z');
+    return `AP-${stamp.slice(0, 8)}-${stamp.slice(9, 15)}`;
+  }
+  return 'APARTADO';
+};
+
 const noteBalance = (note = {}) => read(
   note,
   'currentOwed',
@@ -234,16 +248,20 @@ export const buildLayawayMessagePayload = ({
   occurredAt,
   currency = 'MXN',
   timeZone
-} = {}) => buildCustomerMessagePayload({
+} = {}) => {
+  const resolvedOccurredAt = occurredAt || read(layaway, 'occurredAt', 'updatedAt', 'updated_at', 'createdAt', 'created_at');
+  const displayReference = buildLayawayDisplayReference(layaway, resolvedOccurredAt);
+
+  return buildCustomerMessagePayload({
   eventType,
   customer,
   business,
-  occurredAt: occurredAt || read(layaway, 'occurredAt', 'updatedAt', 'updated_at', 'createdAt', 'created_at'),
+  occurredAt: resolvedOccurredAt,
   currency,
-  reference: selectDisplayReference(layaway),
+  reference: displayReference,
   layaway: {
     id: read(layaway, 'id', 'layawayId', 'layaway_id'),
-    reference: selectDisplayReference(layaway),
+    reference: displayReference,
     items: layaway.items || [],
     total: read(layaway, 'total'),
     initialPayment: read(layaway, 'initialPayment', 'initial_payment', 'deposit'),
@@ -258,4 +276,5 @@ export const buildLayawayMessagePayload = ({
   },
   internalContext: { source: 'layaway_financial_result' },
   timeZone
-});
+  });
+};
