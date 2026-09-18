@@ -28,6 +28,7 @@
 .customer-template-dictionary__target,
 .customer-template-dictionary__filters {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--ui-space-md);
   min-width: 0;
@@ -51,7 +52,7 @@
 
 .customer-template-dictionary__filters label {
   display: flex;
-  flex: 1 1 280px;
+  flex: 0 1 280px;
   flex-direction: column;
   gap: var(--ui-space-sm);
   min-width: 0;
@@ -81,7 +82,10 @@
 }
 
 .customer-template-dictionary__body {
+  flex: 1 1 0;
+  min-height: 0;
   padding-top: var(--ui-space-md);
+  overflow-x: hidden;
 }
 
 .customer-template-dictionary__group {
@@ -196,6 +200,14 @@
   .customer-template-dictionary__filters {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .customer-template-dictionary__filters {
+    flex-wrap: nowrap;
+  }
+
+  .customer-template-dictionary__filters label {
+    flex: 0 0 auto;
   }
 
   .customer-template-dictionary__target .customer-template-dictionary__select {
