@@ -3,6 +3,7 @@ import {
   buildAccountStatementMessagePayload,
   buildPaymentMessagePayload,
   hasConfirmedPaymentReceipt,
+  isOverdueCreditNote,
   selectCreditNotes
 } from '../index';
 
@@ -117,5 +118,22 @@ describe('customer messaging financial adapters', () => {
     expect(result.payload.eventType).toBe('payment_partial');
     expect(result.payload.payment).toMatchObject({ id: 'ledger-local', amount: '10', previousBalance: '50', newBalance: '40' });
     expect(result.payload.internalContext.source).toBe('customer_credit_confirmed_local_result');
+  });
+
+  it.each(['fiado', 'credit', 'mixed_credit', 'customer_credit'])('recognizes overdue %s notes when legacy local metadata lacks creditStatus', (paymentMethod) => {
+    expect(isOverdueCreditNote({
+      paymentMethod,
+      saldoPendiente: '10.00',
+      dueDate: '2026-09-01'
+    }, '2026-09-17')).toBe(true);
+  });
+
+  it('does not classify a settled or non-active credit note as overdue', () => {
+    expect(isOverdueCreditNote({
+      payment_method: 'credit',
+      balance_due: '0',
+      credit_status: 'LIQUIDADA',
+      due_date: '2026-09-01'
+    }, '2026-09-17')).toBe(false);
   });
 });

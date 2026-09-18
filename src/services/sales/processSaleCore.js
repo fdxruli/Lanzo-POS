@@ -16,7 +16,6 @@ import { calculateDiscountedTotals } from './discounts';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
 import {
   createFinancialNotificationResult,
-  isCreditPaymentMethod,
   notificationNotRequested
 } from '../customerMessaging/index.js';
 
@@ -440,9 +439,7 @@ export const processSaleCore = async ({
             abono: Money.toExactString(abonoSeguro),
             saldoPendiente: Money.toExactString(saldoSeguro),
             dueDate: safePaymentData.dueDate ? new Date(safePaymentData.dueDate).toISOString() : null,
-            // Keep the original payment method for existing financial paths;
-            // this only normalizes the credit classification metadata.
-            creditStatus: isCreditPaymentMethod(safePaymentData.paymentMethod) ? 'VIGENTE' : null,
+            creditStatus: safePaymentData.paymentMethod === 'fiado' ? 'VIGENTE' : null,
             status: SALE_STATUS.CLOSED,
             fulfillmentStatus: features.hasKDS && !isEcommerceSale ? 'pending' : 'completed',
             prescriptionDetails: tempPrescriptionData || null,

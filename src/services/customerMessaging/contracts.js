@@ -48,11 +48,11 @@ const withCommon = (eventType, { requiredFields = [], optionalFields = [] }) => 
 export const CUSTOMER_MESSAGE_CONTRACTS = Object.freeze({
   sale_paid: withCommon('sale_paid', {
     requiredFields: ['sale.id', 'sale.total', 'sale.paymentMethod'],
-    optionalFields: ['sale.folio', 'sale.items', 'sale.subtotal', 'sale.discount', 'sale.amountPaid', 'sale.receivedAmount', 'sale.changeAmount']
+    optionalFields: ['sale.folio', 'sale.items', 'sale.subtotal', 'sale.discount', 'sale.amountPaid', 'sale.receivedAmount', 'sale.changeAmount', 'sale.salesChannel', 'sale.ecommerceOrderCode', 'sale.posFolio', 'sale.prescriptionDetails']
   }),
   sale_credit: withCommon('sale_credit', {
     requiredFields: ['sale.id', 'sale.total', 'sale.paymentMethod', 'sale.balanceDue'],
-    optionalFields: ['sale.folio', 'sale.items', 'sale.subtotal', 'sale.discount', 'sale.amountPaid', 'sale.dueDate', 'sale.creditStatus']
+    optionalFields: ['sale.folio', 'sale.items', 'sale.subtotal', 'sale.discount', 'sale.amountPaid', 'sale.dueDate', 'sale.creditStatus', 'sale.salesChannel', 'sale.ecommerceOrderCode', 'sale.posFolio', 'sale.prescriptionDetails']
   }),
   account_statement: withCommon('account_statement', {
     requiredFields: ['account.totalBalance'],

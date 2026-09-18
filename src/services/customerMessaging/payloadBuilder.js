@@ -19,9 +19,18 @@ const cloneItems = (items) => Array.isArray(items)
     name: item?.name || item?.productName || '',
     quantity: item?.quantity ?? 0,
     price: item?.price ?? item?.unitPrice ?? null,
-    total: item?.total ?? item?.lineTotal ?? item?.exactTotal ?? item?.lineSubtotal ?? item?.subtotal ?? null
+    total: item?.total ?? item?.lineTotal ?? item?.exactTotal ?? item?.lineSubtotal ?? item?.subtotal ?? null,
+    requiresPrescription: Boolean(item?.requiresPrescription)
   }))
   : [];
+
+const normalizePrescriptionDetails = (details) => {
+  if (!details || typeof details !== 'object') return null;
+  const doctorName = String(details.doctorName ?? details.doctor_name ?? '').trim();
+  const licenseNumber = String(details.licenseNumber ?? details.license_number ?? '').trim();
+  const notes = String(details.notes ?? '').trim();
+  return doctorName || licenseNumber || notes ? { doctorName, licenseNumber, notes } : null;
+};
 
 const normalizeMoneyField = (value, path, errors, { required = false } = {}) => {
   if (isValueMissing(value)) {
@@ -75,6 +84,7 @@ const normalizeSale = (sale = {}, errors, timeZone) => {
     ecommerceOrderCode: read(sale, 'ecommerceOrderCode', 'ecommerce_order_code'),
     posFolio: read(sale, 'posFolio', 'pos_folio', 'operationalFolio', 'operational_folio'),
     discountDetail: sale.saleDiscount || sale.metadata?.discount || null,
+    prescriptionDetails: normalizePrescriptionDetails(read(sale, 'prescriptionDetails', 'prescription_details')),
     originalPaymentMethod: paymentMethod.original
   };
 };
@@ -238,7 +248,8 @@ export const buildCustomerMessagePayload = ({
     internalContext: {
       source: internalContext.source || 'unknown',
       originalPaymentMethod: normalizedSale.originalPaymentMethod || normalizedPayment.originalMethod || null,
-      isCredit: isCreditPaymentMethod(normalizedSale.originalPaymentMethod)
+      isCredit: isCreditPaymentMethod(normalizedSale.originalPaymentMethod),
+      showLabItemMarker: internalContext.showLabItemMarker === true
     }
   };
 

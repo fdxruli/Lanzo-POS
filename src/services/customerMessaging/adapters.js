@@ -64,6 +64,26 @@ export const selectCreditNotes = ({ customerId = null, cloudSummary = null, loca
   }));
 };
 
+/**
+ * Read-only overdue interpretation shared by checkout warnings. Older local
+ * alias sales can lack `creditStatus`; a positive balance and durable due date
+ * remain sufficient to identify them as overdue. Explicit non-active states
+ * continue to be excluded.
+ */
+export const isOverdueCreditNote = (note = {}, today = '') => {
+  const dueDate = read(note, 'dueDate', 'due_date');
+  const creditStatus = String(read(note, 'creditStatus', 'credit_status') || '').trim().toUpperCase();
+  const dueDateOnly = String(dueDate || '').slice(0, 10);
+  const todayOnly = String(today || '').slice(0, 10);
+
+  return isCreditPaymentMethod(read(note, 'paymentMethod', 'payment_method', 'method'))
+    && positiveMoney(noteBalance(note))
+    && (!creditStatus || creditStatus === 'VIGENTE')
+    && Boolean(dueDateOnly)
+    && Boolean(todayOnly)
+    && dueDateOnly < todayOnly;
+};
+
 const cloudSummaryBalance = (summary = {}) => read(
   summary,
   'totalBalance',

@@ -174,7 +174,12 @@ describe('processSaleCore', () => {
         expect(deps.__updateStatsForNewSale).toHaveBeenCalledOnce();
     });
 
-    it.each(['fiado', 'credit', 'mixed_credit', 'customer_credit'])('marks %s as credit metadata without changing the original method', async (paymentMethod) => {
+    it.each([
+        ['fiado', 'VIGENTE'],
+        ['credit', null],
+        ['mixed_credit', null],
+        ['customer_credit', null]
+    ])('preserves %s financial metadata without rewriting the original method', async (paymentMethod, creditStatus) => {
         const deps = makeDeps();
         const result = await processSaleCore(makeParams({
             paymentData: {
@@ -188,7 +193,7 @@ describe('processSaleCore', () => {
 
         expect(result.success).toBe(true);
         expect(deps.executeSaleTransactionSafe).toHaveBeenCalledWith(
-            expect.objectContaining({ paymentMethod, creditStatus: 'VIGENTE' }),
+            expect.objectContaining({ paymentMethod, creditStatus }),
             expect.any(Array)
         );
     });

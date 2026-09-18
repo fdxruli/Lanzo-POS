@@ -6,7 +6,7 @@ import Logger from '../../services/Logger';
 import { Money } from '../../utils/moneyMath';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { orderTotals } from '../../services/sales/orderTotals';
-import { isCreditPaymentMethod } from '../../services/customerMessaging';
+import { isCreditPaymentMethod, isOverdueCreditNote } from '../../services/customerMessaging';
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000];
 const selectCurrentOrder = (state) => (state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null);
@@ -54,12 +54,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
         try {
           const customerSales = await db.table(STORES.SALES).where('customerId').equals(selectedCustomerId).toArray();
           const todayStr = new Date().toISOString().split('T')[0];
-          setHasOverdueCredit(customerSales.some((sale) => (
-            isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method)
-            && (sale.creditStatus ?? sale.credit_status) === 'VIGENTE'
-            && (sale.dueDate ?? sale.due_date)
-            && (sale.dueDate ?? sale.due_date).split('T')[0] < todayStr
-          )));
+          setHasOverdueCredit(customerSales.some((sale) => isOverdueCreditNote(sale, todayStr)));
         } catch (error) {
           Logger.error('Error al verificar morosidad:', error);
           setHasOverdueCredit(false);

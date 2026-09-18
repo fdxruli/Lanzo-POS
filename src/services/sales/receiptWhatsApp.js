@@ -4,7 +4,12 @@ import {
     notificationNotRequested,
     openCustomerNotification
 } from '../customerMessaging/index.js';
-import { getSaleFinancialFolio } from './saleReference';
+import {
+    getSaleChannel,
+    getSaleEcommerceOrderCode,
+    getSaleFinancialFolio,
+    getSaleOperationalFolio
+} from './saleReference';
 
 const resolveCustomer = async ({ sale = {}, paymentData = {}, loadData, STORES }) => {
     const customerId = sale.customerId || sale.customer_id || paymentData.customerId || paymentData.customer_id || null;
@@ -37,10 +42,11 @@ const buildConfirmedSaleSnapshot = ({ sale = {}, items = [], paymentData = {}, t
     balanceDue: sale.balance_due ?? sale.saldoPendiente ?? sale.balanceDue ?? paymentData.saldoPendiente ?? paymentData.balanceDue ?? null,
     dueDate: sale.dueDate ?? sale.due_date ?? paymentData.dueDate ?? null,
     creditStatus: sale.creditStatus ?? sale.credit_status ?? null,
-    salesChannel: sale.salesChannel ?? sale.sales_channel ?? null,
-    ecommerceOrderCode: sale.ecommerceOrderCode ?? sale.ecommerce_order_code ?? null,
-    posFolio: sale.posFolio ?? sale.pos_folio ?? sale.operationalFolio ?? sale.operational_folio ?? null,
+    salesChannel: getSaleChannel(sale),
+    ecommerceOrderCode: getSaleEcommerceOrderCode(sale),
+    posFolio: getSaleOperationalFolio(sale),
     saleDiscount: sale.saleDiscount ?? sale.metadata?.discount ?? null,
+    prescriptionDetails: sale.prescriptionDetails ?? sale.prescription_details ?? null,
     metadata: sale.metadata ?? null
 });
 
@@ -64,6 +70,7 @@ export async function sendReceiptWhatsApp({
     paymentData = {},
     total,
     companyName,
+    features,
     loadData,
     STORES,
     sendWhatsAppMessage,
@@ -82,7 +89,10 @@ export async function sendReceiptWhatsApp({
             currency: confirmedSale.currency || paymentData.currency || 'MXN',
             reference: confirmedSale.folio || confirmedSale.id || null,
             sale: confirmedSale,
-            internalContext: { source: confirmedSale.sourceMode || 'sale_receipt' }
+            internalContext: {
+                source: confirmedSale.sourceMode || 'sale_receipt',
+                showLabItemMarker: Boolean(features?.hasLabFields)
+            }
         });
 
         if (!payloadResult.ok) {

@@ -21,6 +21,7 @@ export {
   buildLayawayMessagePayload,
   buildPaymentMessagePayload,
   hasConfirmedPaymentReceipt,
+  isOverdueCreditNote,
   selectCreditNotes
 } from './adapters';
 export { renderCustomerMessageText } from './templates';

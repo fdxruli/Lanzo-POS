@@ -7,9 +7,23 @@ const itemTotal = (item = {}) => {
   return price.ok && quantity.ok ? price.amount.times(quantity.amount).toString() : null;
 };
 
-const listItems = (items = [], currency) => items
-  .map((item) => `• ${item.name || 'Producto'} (x${item.quantity ?? 0}) - ${formatMoneyValue(itemTotal(item), { currency })}`)
+const listItems = (items = [], currency, { showLabItemMarker = false } = {}) => items
+  .flatMap((item) => [
+    `• ${item.name || 'Producto'} (x${item.quantity ?? 0}) - ${formatMoneyValue(itemTotal(item), { currency })}`,
+    showLabItemMarker && item.requiresPrescription ? '  _(Antibiótico/Controlado)_' : null
+  ].filter(Boolean))
   .join('\n');
+
+const prescriptionLines = (details = null) => {
+  if (!details) return [];
+  return [
+    '*--- DATOS DE DISPENSACIÓN ---*',
+    details.doctorName ? `Dr(a): ${details.doctorName}` : null,
+    details.licenseNumber ? `Cédula: ${details.licenseNumber}` : null,
+    details.notes ? `Notas: ${details.notes}` : null,
+    ''
+  ].filter((line) => line !== null);
+};
 
 const discountDetail = (discount) => {
   if (!discount || typeof discount !== 'object') return '';
@@ -37,12 +51,13 @@ const saleLines = (payload) => {
     '*--- TICKET DE VENTA ---*',
     `*Negocio:* ${payload.business.name}`,
     `*Fecha:* ${payload.occurredAt}`,
-    sale.ecommerceOrderCode ? `*Pedido online:* ${sale.ecommerceOrderCode}` : null,
+    sale.salesChannel === 'ecommerce' || sale.ecommerceOrderCode ? `*Pedido online:* ${sale.ecommerceOrderCode || 'Sin código normalizado'}` : null,
     sale.posFolio && sale.posFolio !== sale.folio ? `*Folio POS:* ${sale.posFolio}` : null,
     sale.folio ? `*Folio de venta:* ${sale.folio}` : null,
     '',
+    ...prescriptionLines(sale.prescriptionDetails),
     '*Productos:*',
-    listItems(sale.items, currency),
+    listItems(sale.items, currency, { showLabItemMarker: payload.internalContext?.showLabItemMarker === true }),
     '',
     `*TOTAL: ${formatMoneyValue(sale.total, { currency })}*`
   ];
