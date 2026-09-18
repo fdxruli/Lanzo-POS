@@ -473,7 +473,9 @@ const performOutboxAction = async ({
     const imageResult = await render(current.payloadSnapshot, { template: current.templateSnapshot });
     if (!imageResult?.ok) {
       const failure = classifyFailure(imageResult?.code || 'OUTBOX_RENDER_FAILED');
-      const nextStatus = failure.retryable && attemptCount < maxAttempts ? 'reintento_pendiente' : 'error';
+      const nextStatus = failure.retryable && (action !== 'share' || shareAttemptCount < maxAttempts)
+        ? 'reintento_pendiente'
+        : 'error';
       const transitioned = persistTransition({
         repository,
         record: current,
@@ -529,6 +531,7 @@ const performOutboxAction = async ({
       nextStatus,
       patch: {
         attemptCount,
+        shareAttemptCount,
         lastAttemptAt: nowIso(attemptedAt),
         updatedAt: nowIso(attemptedAt),
         lastErrorCode,
