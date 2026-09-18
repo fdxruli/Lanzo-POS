@@ -35,12 +35,13 @@ describe('customer message template catalogue and validation', () => {
 
   it('uses custom copy only when the template is valid and never exposes internal identifiers', () => {
     const payload = buildCustomerMessageTemplatePreviewPayload('sale_paid');
-    const template = { ...getDefaultCustomerMessageTemplate('sale_paid'), title: 'Hola {{customer.name}}' };
+    const template = { ...getDefaultCustomerMessageTemplate('sale_paid'), title: 'Hola {{customer.name}}', footer: 'Gracias por tu compra. Esto no es una factura.' };
     const custom = buildImageReceiptModel(payload, { template });
     const fallback = buildImageReceiptModel(payload, { template: { ...template, body: '{{sale.id}}' } });
     expect(custom.model.title).toBe('Hola María Cliente');
     expect(custom.model.sections.join('\n')).toContain('$250.00');
     expect(custom.model.sections.join('\n')).not.toContain('preview-sale');
+    expect(custom.model.footer).toBe('Gracias por tu compra. Esto no es una factura.');
     expect(fallback.model.isCustomTemplate).toBeUndefined();
     expect(fallback.model.rows.map((row) => row.value).join('\n')).not.toContain('preview-sale');
   });

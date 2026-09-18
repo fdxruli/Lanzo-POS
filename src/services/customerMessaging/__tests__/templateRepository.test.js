@@ -45,6 +45,16 @@ describe('customer message template repository', () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it('resolves a valid custom template from the global Pro/Admin state', async () => {
+    const template = { ...getDefaultCustomerMessageTemplate('sale_paid'), footer: 'Gracias por tu compra. Esto no es una factura.' };
+    rpc.mockResolvedValueOnce({ data: { success: true, templates: [{ event_type: 'sale_paid', channel: 'image', schema_version: 1, revision: 2, template_json: template }] }, error: null });
+    const result = await resolveCustomerMessageTemplate({ eventType: 'sale_paid' });
+    expect(result.source).toBe('custom');
+    expect(result.template).toBeTruthy();
+    expect(result.template.footer).toBe('Gracias por tu compra. Esto no es una factura.');
+    expect(rpc).toHaveBeenCalledWith('list_customer_message_templates', expect.objectContaining({ p_license_key: 'LANZO-PRO' }));
+  });
+
   it('returns generic copy when an RPC fails and preserves revision conflicts', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { code: 'NETWORK', message: 'unavailable' } });
     expect(await resolveCustomerMessageTemplate({ eventType: 'sale_paid', licenseDetails: pro, actorHandle: adminHandle })).toMatchObject({ source: 'default', warning: 'NETWORK' });

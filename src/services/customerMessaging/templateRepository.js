@@ -81,13 +81,18 @@ export const resetCustomerMessageTemplate = async ({ eventType, revision = 0, ..
   }, context.actorHandle);
 };
 
-export const resolveCustomerMessageTemplate = async ({ eventType, ...options } = {}) => {
+export const resolveCustomerMessageTemplate = async ({
+  eventType,
+  licenseDetails = useAppStore.getState().licenseDetails,
+  actorHandle = null,
+  ...options
+} = {}) => {
   const fallback = { template: null, defaultTemplate: getDefaultCustomerMessageTemplate(eventType), source: 'default', revision: 0 };
-  const actorType = options.actorHandle?.actorType || useAppStore.getState().currentDeviceRole;
+  const actorType = actorHandle?.actorType || useAppStore.getState().currentDeviceRole;
   // Staff and Free/Local never even request customized copy. The RPC repeats
   // this boundary so a forged client call cannot read another presentation.
-  if (!featureEnabled(options.licenseDetails) || actorType !== 'admin') return fallback;
-  const listed = await listCustomerMessageTemplates(options);
+  if (!featureEnabled(licenseDetails) || actorType !== 'admin') return fallback;
+  const listed = await listCustomerMessageTemplates({ ...options, licenseDetails, actorHandle });
   if (!listed.ok) return { ...fallback, warning: listed.code };
   const row = (listed.templates || []).find((template) => template.event_type === eventType && template.channel === 'image');
   if (!row || row.schema_version !== CUSTOMER_MESSAGE_TEMPLATE_SCHEMA_VERSION) return fallback;
