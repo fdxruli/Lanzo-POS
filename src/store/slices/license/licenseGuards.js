@@ -201,9 +201,15 @@ export const buildLicensePlanBlockInfo = (validation = {}, fallbackLicense = {})
   };
 };
 
-export const deriveGracePeriodEnd = (validationData = {}, fallbackLicense = {}) => {
+export const deriveGracePeriodEnd = (validationData = {}, fallbackLicense = {}, options = {}) => {
   if (validationData.grace_period_ends) return validationData.grace_period_ends;
-  if (validationData.status !== 'grace_period') return null;
+  const lifecycleState = normalizeStatusCode(
+    validationData.lifecycle_state || validationData.status || validationData.reason
+  );
+  const mayDeriveFromExpiry = options.allowImplicit === true ||
+    lifecycleState === 'grace_period' ||
+    validationData.is_in_grace === true;
+  if (!mayDeriveFromExpiry) return null;
   const expiryValue = validationData.expires_at || fallbackLicense.expires_at;
   if (!expiryValue) return null;
   const expiryDate = new Date(expiryValue);
@@ -211,13 +217,21 @@ export const deriveGracePeriodEnd = (validationData = {}, fallbackLicense = {}) 
   return new Date(expiryDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
 };
 
+export const deriveLocalGracePeriodEnd = (licenseDetails = {}) => (
+  deriveGracePeriodEnd(licenseDetails, {}, { allowImplicit: true })
+);
+
 const parseTime = (value) => {
   if (!value) return null;
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : null;
 };
 
-const isFatalLocalStatus = (status) => LOCAL_FATAL_APP_STATUSES.some((item) => item.toLowerCase() === normalizeStatusCode(status));
+const isFatalLocalStatus = (status) => {
+  const normalized = normalizeStatusCode(status);
+  return [...LOCAL_FATAL_APP_STATUSES, ...FATAL_REASONS]
+    .some((item) => item.toLowerCase() === normalized);
+};
 
 export const assertLocalTransactionAllowed = (licenseDetails, state = {}) => {
   if (!licenseDetails) return { ok: false, code: 'LICENSE_MISSING', message: 'No hay una licencia activa para cobrar.' };
@@ -232,17 +246,45 @@ export const assertLocalTransactionAllowed = (licenseDetails, state = {}) => {
     return { ok: false, code: normalizeStatusCode(appStatus || licenseStatus || detailStatus).toUpperCase() || 'LICENSE_BLOCKED', message: 'La licencia requiere revisión antes de cobrar.' };
   }
 
-  const now = Date.now();
-  const expiresAt = parseTime(licenseDetails.expires_at);
-  const graceEnds = parseTime(licenseDetails.grace_period_ends || licenseDetails.gracePeriodEnds || state.gracePeriodEnds);
-
-  if (expiresAt && expiresAt <= now && (!graceEnds || graceEnds <= now)) {
-    return { ok: false, code: 'LICENSE_EXPIRED', message: 'La licencia está expirada.' };
-  }
-
   const isStaff = state.currentDeviceRole === 'staff' || licenseDetails.device_role === 'staff' || Boolean(licenseDetails.staff_user);
   if (isStaff && !(state.currentStaffUser || licenseDetails.staff_user)) {
     return { ok: false, code: 'STAFF_LOGIN_REQUIRED', message: 'Inicia sesión staff para cobrar.' };
+  }
+
+  const now = Date.now();
+  const expiresAt = parseTime(licenseDetails.expires_at);
+  const cachedGracePeriodEnd = licenseDetails.grace_period_ends || licenseDetails.gracePeriodEnds || state.gracePeriodEnds;
+  const derivedGracePeriodEnd = cachedGracePeriodEnd
+    ? null
+    : deriveLocalGracePeriodEnd(licenseDetails);
+  const gracePeriodEnd = cachedGracePeriodEnd || derivedGracePeriodEnd;
+  const graceEnds = parseTime(gracePeriodEnd);
+
+  if (expiresAt && expiresAt <= now) {
+    if (graceEnds && graceEnds > now) {
+      return {
+        ok: true,
+        lifecycleState: 'grace_period',
+        gracePeriodEnds: new Date(graceEnds).toISOString(),
+        requiresRemoteResolution: !cachedGracePeriodEnd
+      };
+    }
+
+    return {
+      ok: false,
+      code: 'LICENSE_EXPIRED',
+      message: 'El período de gracia terminó. Se requiere confirmar la transición de tu plan con el servidor.',
+      requiresRemoteResolution: true
+    };
+  }
+
+  if (normalizeStatusCode(licenseStatus) === 'grace_period' && !graceEnds) {
+    return {
+      ok: false,
+      code: 'LICENSE_LIFECYCLE_STALE',
+      message: 'El estado local de la licencia necesita actualizarse antes de cobrar.',
+      requiresRemoteResolution: true
+    };
   }
 
   return { ok: true };

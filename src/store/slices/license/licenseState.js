@@ -12,6 +12,7 @@ export const createLicenseInitialState = () => ({
 
   licenseStatus: 'active',
   gracePeriodEnds: null,
+  lastIntegrityFailure: null,
   licenseDetails: null,
   currentDeviceRole: null,
   currentAdminUser: null,
