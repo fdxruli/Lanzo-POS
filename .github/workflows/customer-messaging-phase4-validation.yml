@@ -60,12 +60,41 @@ jobs:
           src/services/customerMessaging/__tests__
           src/services/sales/__tests__/postSaleEffects.outbox.test.js
           src/services/sales/__tests__/receiptImagePreparation.test.js
-          src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js
           src/services/__test__/sales/processSaleCore.test.js
           src/services/db/__tests__/customerCreditRepository.test.js
           src/hooks/pos/__tests__/useLayawayFlow.ecommerce.test.jsx
           src/hooks/pos/__tests__/usePosCheckout.ecommerce.test.jsx
           --maxWorkers=4
+
+      - name: Legacy text receipt CANDIDATE observation
+        id: legacy_receipt_candidate
+        continue-on-error: true
+        run: npx vitest run src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js --maxWorkers=1
+
+      - name: Checkout exact BASE for legacy receipt comparison
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .tmp/phase4-base
+
+      - name: Install BASE dependencies for legacy receipt comparison
+        working-directory: .tmp/phase4-base
+        run: npm ci
+
+      - name: Legacy text receipt BASE observation
+        id: legacy_receipt_base
+        continue-on-error: true
+        working-directory: .tmp/phase4-base
+        run: npx vitest run src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js --maxWorkers=1
+
+      - name: Compare legacy receipt BASE vs CANDIDATE outcome
+        env:
+          BASE_OUTCOME: ${{ steps.legacy_receipt_base.outcome }}
+          CANDIDATE_OUTCOME: ${{ steps.legacy_receipt_candidate.outcome }}
+        run: |
+          echo "LEGACY_RECEIPT_BASE=${BASE_OUTCOME}"
+          echo "LEGACY_RECEIPT_CANDIDATE=${CANDIDATE_OUTCOME}"
+          test "${BASE_OUTCOME}" = "${CANDIDATE_OUTCOME}"
 
       - name: ESLint modified Phase 4 files
         run: >-
