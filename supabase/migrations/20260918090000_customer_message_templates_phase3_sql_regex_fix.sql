@@ -34,7 +34,7 @@ begin
     when 'layaway_delivered' then array['layaway.reference','layaway.saleFolio'] when 'layaway_cancelled' then array['layaway.reference','layaway.status'] else array[]::text[] end;
   if p_event_type = 'debt_reminder' then v_required := array['business.name','customer.name','account.totalBalance']; end if;
   v_all_text := coalesce(p_template->>'title','') || E'\n' || coalesce(p_template->>'body','') || E'\n' || coalesce(p_template->>'footer','');
-  if v_all_text ~* $$<[[:alpha:]][^>]*>|javascript[[:space:]]*:|data[[:space:]]*:[[:space:]]*text/html|https?://|\mwww\.$$ 
+  if v_all_text ~* $$<[[:alpha:]][^>]*>|javascript[[:space:]]*:|data[[:space:]]*:[[:space:]]*text/html|https?://|\mwww\.$$
      or v_all_text ~ $$([$€£][[:space:]]*[0-9]+([.,][0-9]{3})*([.,][0-9]{1,2})?|\m[0-9]{1,3}(,[0-9]{3})*\.[0-9]{2}\M|\m[0-9]{1,3}(\.[0-9]{3})*,[0-9]{2}\M|\m[0-9]+[,.][0-9]{2}\M)$$
      or regexp_replace(v_all_text, $$\{\{[^}]*\}\}$$, '', 'g') ~ '[{}]'
      or (select count(*) from regexp_matches(v_all_text, $$\{\{([^}]*)\}\}$$, 'g')) > 60

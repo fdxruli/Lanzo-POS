@@ -5,7 +5,7 @@ import { getAllowedTemplateVariableKeys, getRequiredTemplateVariableKeys, TEMPLA
 export const TEMPLATE_LIMITS = Object.freeze({ title: 100, body: 5000, footer: 500, variables: 60, lines: 160 });
 const unsafeText = /<\/?[a-z][^>]*>|javascript\s*:|data\s*:\s*text\/html|https?:\/\/|\bwww\./i;
 // Reject money notation but keep ordinary quantities and dates available to copy.
-const handwrittenMoney = /(?:[$€£]\s*\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d{1,3}(?:\.\d{3})*,\d{2}\b|\b\d+[,\.]\d{2}\b)/;
+const handwrittenMoney = /(?:[$€£]\s*\d+(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\b\d{1,3}(?:,\d{3})*\.\d{2}\b|\b\d{1,3}(?:\.\d{3})*,\d{2}\b|\b\d+[,.]\d{2}\b)/;
 const fields = ['title', 'body', 'footer'];
 
 const variablesIn = (text) => [...String(text || '').matchAll(TEMPLATE_VARIABLE_PATTERN)].map((match) => match[1]);
