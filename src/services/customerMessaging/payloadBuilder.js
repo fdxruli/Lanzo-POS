@@ -15,11 +15,11 @@ const getAtPath = (source, path) => path.split('.').reduce(
 
 const cloneItems = (items) => Array.isArray(items)
   ? items.map((item) => ({
-    id: item?.id || item?.productId || null,
-    name: item?.name || item?.productName || '',
+    id: item?.id || item?.productId || item?.product_id || null,
+    name: item?.name || item?.productName || item?.product_name || '',
     quantity: item?.quantity ?? 0,
-    price: item?.price ?? item?.unitPrice ?? null,
-    total: item?.total ?? item?.lineTotal ?? item?.exactTotal ?? item?.lineSubtotal ?? item?.subtotal ?? null,
+    price: item?.price ?? item?.unitPrice ?? item?.unit_price ?? null,
+    total: item?.total ?? item?.lineTotal ?? item?.line_total ?? item?.exactTotal ?? item?.lineSubtotal ?? item?.line_subtotal ?? item?.subtotal ?? null,
     requiresPrescription: Boolean(item?.requiresPrescription)
   }))
   : [];
