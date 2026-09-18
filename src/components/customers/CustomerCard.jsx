@@ -132,17 +132,15 @@ const CustomerCard = memo(({
                         </button>
                     )}
 
-                    {customer.phone && (
-                        <button
-                            type="button"
-                            className="ui-button ui-button--secondary btn btn-whatsapp"
-                            onClick={() => onWhatsApp(customer)}
-                            disabled={isWhatsAppLoading}
-                        >
-                            <MessageCircle size={18} aria-hidden="true" />
-                            <span>{isWhatsAppLoading ? '...' : 'Chat'}</span>
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        className="ui-button ui-button--secondary btn btn-whatsapp"
+                        onClick={() => onWhatsApp(customer)}
+                        disabled={isWhatsAppLoading}
+                    >
+                        <MessageCircle size={18} aria-hidden="true" />
+                        <span>{isWhatsAppLoading ? '...' : 'Estado en imagen'}</span>
+                    </button>
                 </div>
 
                 <div className="actions-secondary">

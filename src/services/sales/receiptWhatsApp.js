@@ -1,8 +1,7 @@
 import {
     buildCustomerMessagePayload,
     isCreditPaymentMethod,
-    notificationNotRequested,
-    openCustomerNotification
+    notificationNotRequested
 } from '../customerMessaging/index.js';
 import {
     getSaleChannel,
@@ -73,7 +72,6 @@ export async function sendReceiptWhatsApp({
     features,
     loadData,
     STORES,
-    sendWhatsAppMessage,
     Logger
 }) {
     if (paymentData.sendReceipt === false) return notificationNotRequested();
@@ -103,17 +101,21 @@ export async function sendReceiptWhatsApp({
             };
         }
 
-        return await openCustomerNotification({
-            payload: payloadResult.payload,
-            requested: true,
-            openWhatsApp: sendWhatsAppMessage
-        });
+        // Phase 2 deliberately stops here. Post-sale work may prepare the
+        // normalized payload, but only a later, explicit UI gesture may render
+        // and share its PNG. The legacy function name remains for wiring
+        // compatibility; no WhatsApp/text opener is invoked.
+        return {
+            status: 'ready',
+            code: 'IMAGE_SHARE_USER_ACTION_REQUIRED',
+            payload: payloadResult.payload
+        };
     } catch (error) {
-        Logger?.error?.('Error preparando ticket de WhatsApp:', error);
+        Logger?.error?.('Error preparando comprobante de imagen:', error);
         return {
             status: 'failed',
-            code: error?.code || 'WHATSAPP_RECEIPT_PREPARATION_FAILED',
-            message: error?.message || 'No se pudo preparar el ticket de WhatsApp.'
+            code: error?.code || 'IMAGE_RECEIPT_PREPARATION_FAILED',
+            message: error?.message || 'No se pudo preparar el comprobante de imagen.'
         };
     }
 }

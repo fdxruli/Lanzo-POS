@@ -26,6 +26,15 @@ export {
 } from './adapters';
 export { renderCustomerMessageText } from './templates';
 export {
+  buildImageReceiptModel,
+  renderCustomerMessageImage,
+  sanitizeImageFilename
+} from './imageRenderer';
+export {
+  downloadCustomerMessageImage,
+  shareCustomerMessageImage
+} from './imageShare';
+export {
   createFinancialNotificationResult,
   getNotificationReadiness,
   notificationNotRequested,

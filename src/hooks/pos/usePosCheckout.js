@@ -6,6 +6,10 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
+import {
+    renderCustomerMessageImage,
+    shareCustomerMessageImage
+} from '../../services/customerMessaging';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
@@ -1253,6 +1257,27 @@ export function usePosCheckout({
                         type: 'warning',
                         confirmButtonText: 'Entendido'
                     });
+                } else if (result.notificationResult?.status === 'ready' && result.notificationResult?.payload) {
+                    showMessageModal(
+                        '✅ ¡Venta registrada correctamente! Puedes compartir el comprobante como imagen.',
+                        async () => {
+                            const imageResult = await renderCustomerMessageImage(result.notificationResult.payload);
+                            const shareResult = imageResult.ok
+                                ? await shareCustomerMessageImage(imageResult)
+                                : { status: 'failed' };
+                            if (shareResult.status === 'downloaded') {
+                                showMessageModal('Imagen descargada. Adjuntala manualmente desde la aplicacion que prefieras.', null, { type: 'warning' });
+                            } else if (shareResult.status === 'failed' || shareResult.status === 'unsupported') {
+                                showMessageModal('La venta quedó registrada, pero no se pudo compartir el comprobante.', null, { type: 'warning' });
+                            }
+                        },
+                        {
+                            title: 'Comprobante listo',
+                            confirmButtonText: 'Compartir comprobante como imagen',
+                            cancelButtonText: 'Ahora no',
+                            showCancel: true
+                        }
+                    );
                 } else {
                     showMessageModal('✅ ¡Venta registrada correctamente!');
                 }

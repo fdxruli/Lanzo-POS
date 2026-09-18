@@ -7,7 +7,7 @@ import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
 import AbonoModal from '../components/customers/AbonoModal';
 import LayawayModal from '../components/customers/LayawayModal';
 import { useCaja } from '../hooks/useCaja';
-import { showConfirmModal, showMessageModal, sendWhatsAppMessage } from '../services/utils';
+import { showConfirmModal, showMessageModal } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
@@ -25,7 +25,8 @@ import {
   formatMoneyValue,
   hasConfirmedPaymentReceipt,
   notificationNotRequested,
-  openCustomerNotification,
+  renderCustomerMessageImage,
+  shareCustomerMessageImage,
   selectCreditNotes
 } from '../services/customerMessaging';
 import {
@@ -455,7 +456,7 @@ export default function CustomersPage() {
   };
 
   const showNotificationStatus = (notificationResult, operationLabel) => {
-    if (!notificationResult || ['not_requested', 'opened', 'ready'].includes(notificationResult.status)) return;
+    if (!notificationResult || ['not_requested', 'opened', 'ready', 'shared', 'downloaded', 'cancelled'].includes(notificationResult.status)) return;
 
     const messages = {
       missing_phone: `${operationLabel} se registró, pero el cliente no tiene teléfono.`,
@@ -466,6 +467,21 @@ export default function CustomersPage() {
       failed: `${operationLabel} se registró, pero no se pudo abrir WhatsApp.`
     };
     showMessageModal(messages[notificationResult.status] || `${operationLabel} se registró, pero la notificación no quedó lista.`, null, { type: 'warning' });
+  };
+
+  const sharePayloadAsImage = async (payload, operationLabel) => {
+    const imageResult = await renderCustomerMessageImage(payload);
+    if (!imageResult.ok) {
+      showMessageModal(`${operationLabel} se conservó, pero no se pudo generar la imagen.`, null, { type: 'warning' });
+      return { status: 'failed', code: imageResult.code };
+    }
+    const shareResult = await shareCustomerMessageImage(imageResult);
+    if (shareResult.status === 'downloaded') {
+      showMessageModal('Imagen descargada. Adjuntala manualmente desde la aplicacion que prefieras.', null, { type: 'warning' });
+    } else if (shareResult.status === 'failed' || shareResult.status === 'unsupported') {
+      showMessageModal(`${operationLabel} se conservó, pero no se pudo compartir la imagen.`, null, { type: 'warning' });
+    }
+    return shareResult;
   };
 
   const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
@@ -550,14 +566,23 @@ export default function CustomersPage() {
           allocations: allocations || []
         });
         notificationResult = payloadResult.ok
-          ? await openCustomerNotification({
-            payload: payloadResult.payload,
-            openWhatsApp: sendWhatsAppMessage
-          })
+          ? { status: 'ready', code: 'IMAGE_SHARE_USER_ACTION_REQUIRED' }
           : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
+        if (payloadResult.ok) {
+          showMessageModal(
+            'El abono quedó registrado. Puedes compartir su comprobante como imagen.',
+            () => sharePayloadAsImage(payloadResult.payload, 'El abono'),
+            {
+              title: 'Comprobante de abono listo',
+              confirmButtonText: 'Compartir abono',
+              cancelButtonText: 'Ahora no',
+              showCancel: true
+            }
+          );
+        }
       } catch (error) {
-        Logger.error('[CustomersPage] El abono fue confirmado, pero falló la notificación:', error);
-        notificationResult = { status: 'failed', code: error?.code || 'WHATSAPP_OPEN_FAILED' };
+        Logger.error('[CustomersPage] El abono fue confirmado, pero falló el comprobante:', error);
+        notificationResult = { status: 'failed', code: error?.code || 'IMAGE_PREPARATION_FAILED' };
       }
       showNotificationStatus(notificationResult, 'El abono');
     }
@@ -571,7 +596,7 @@ export default function CustomersPage() {
     try {
       const [summaryResult, localSales] = await Promise.all([
         customerCreditRepository.getCustomerCreditSummary(customer.id).catch((error) => {
-          Logger.warn('[CustomersPage] No se pudo obtener el resumen cloud para WhatsApp:', error);
+          Logger.warn('[CustomersPage] No se pudo obtener el resumen cloud para la imagen:', error);
           return null;
         }),
         loadData(STORES.SALES)
@@ -604,10 +629,7 @@ export default function CustomersPage() {
         occurredAt: latestDurableTimestamp
       });
       const notificationResult = payloadResult.ok
-        ? await openCustomerNotification({
-          payload: payloadResult.payload,
-          openWhatsApp: sendWhatsAppMessage
-        })
+        ? await sharePayloadAsImage(payloadResult.payload, 'El estado de cuenta')
         : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
       showNotificationStatus(notificationResult, 'El estado de cuenta');
       return createFinancialNotificationResult({
@@ -615,8 +637,8 @@ export default function CustomersPage() {
         notificationResult
       });
     } catch (error) {
-      Logger.error('Error al generar estado de cuenta para WhatsApp:', error);
-      showMessageModal('No se pudo preparar el estado de cuenta. No se abrió un chat vacío.', null, { type: 'warning' });
+      Logger.error('Error al generar estado de cuenta como imagen:', error);
+      showMessageModal('No se pudo preparar el estado de cuenta como imagen.', null, { type: 'warning' });
       return createFinancialNotificationResult({
         financialResult: { status: 'not_applicable' },
         notificationResult: { status: 'failed', code: 'MESSAGE_PREPARATION_FAILED' }
