@@ -31,6 +31,7 @@ export default function CustomerMessageTemplatesSettings() {
   const access = useSettingsAccess();
   const guard = useSettingsActionGuard();
   const canvasRef = useRef(null);
+  const dictionaryCloseRef = useRef(null);
   const [eventType, setEventType] = useState('sale_paid');
   const [customTemplates, setCustomTemplates] = useState({});
   const [draft, setDraft] = useState(() => clone(getDefaultCustomerMessageTemplate('sale_paid')));
@@ -77,11 +78,16 @@ export default function CustomerMessageTemplatesSettings() {
 
   useEffect(() => {
     if (!dictionaryOpen) return undefined;
+    const previousActiveElement = document.activeElement;
+    dictionaryCloseRef.current?.focus();
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') setDictionaryOpen(false);
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (typeof previousActiveElement?.focus === 'function') previousActiveElement.focus();
+    };
   }, [dictionaryOpen]);
 
   useEffect(() => {
@@ -194,6 +200,7 @@ export default function CustomerMessageTemplatesSettings() {
               </div>
               <button
                 type="button"
+                ref={dictionaryCloseRef}
                 className="ui-button ui-button--ghost customer-template-dictionary__close"
                 onClick={() => setDictionaryOpen(false)}
                 aria-label="Cerrar diccionario de variables"
