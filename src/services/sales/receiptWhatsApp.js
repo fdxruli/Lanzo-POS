@@ -2,12 +2,11 @@ import {
     buildCustomerMessagePayload,
     isCreditPaymentMethod,
     notificationNotRequested,
-    openCustomerNotification
+    selectDisplayReference
 } from '../customerMessaging/index.js';
 import {
     getSaleChannel,
     getSaleEcommerceOrderCode,
-    getSaleFinancialFolio,
     getSaleOperationalFolio
 } from './saleReference';
 
@@ -31,7 +30,7 @@ const resolveCustomer = async ({ sale = {}, paymentData = {}, loadData, STORES }
 const buildConfirmedSaleSnapshot = ({ sale = {}, items = [], paymentData = {}, total }) => ({
     ...sale,
     items: Array.isArray(sale.items) && sale.items.length > 0 ? sale.items : items,
-    folio: getSaleFinancialFolio(sale) || sale.folio || null,
+    folio: selectDisplayReference(sale),
     subtotal: sale.subtotal ?? sale.grossSubtotal ?? sale.metadata?.grossSubtotal ?? null,
     discount: sale.discount ?? sale.discountTotal ?? sale.discount_total ?? sale.metadata?.discountTotal ?? sale.metadata?.discount_total ?? null,
     total: sale.total ?? total,
@@ -60,9 +59,9 @@ const durableSaleTimestamp = (sale = {}) => (
 );
 
 /**
- * Builds and opens a temporary text receipt only after the caller has a
- * confirmed sale. There is intentionally no financial mutation or retry path
- * here: every exit is a notification result, never a sale failure.
+ * Builds an image-ready payload only after the caller has a confirmed sale.
+ * There is no financial mutation, share call, text fallback, or retry path
+ * here: every exit is a messaging result, never a sale failure.
  */
 export async function sendReceiptWhatsApp({
     sale,
@@ -73,7 +72,6 @@ export async function sendReceiptWhatsApp({
     features,
     loadData,
     STORES,
-    sendWhatsAppMessage,
     Logger
 }) {
     if (paymentData.sendReceipt === false) return notificationNotRequested();
@@ -87,7 +85,7 @@ export async function sendReceiptWhatsApp({
             business: { name: companyName || 'Tu Negocio' },
             occurredAt: durableSaleTimestamp(confirmedSale),
             currency: confirmedSale.currency || paymentData.currency || 'MXN',
-            reference: confirmedSale.folio || confirmedSale.id || null,
+            reference: confirmedSale.folio || null,
             sale: confirmedSale,
             internalContext: {
                 source: confirmedSale.sourceMode || 'sale_receipt',
@@ -103,17 +101,21 @@ export async function sendReceiptWhatsApp({
             };
         }
 
-        return await openCustomerNotification({
-            payload: payloadResult.payload,
-            requested: true,
-            openWhatsApp: sendWhatsAppMessage
-        });
+        // Phase 2 deliberately stops here. Post-sale work may prepare the
+        // normalized payload, but only a later, explicit UI gesture may render
+        // and share its PNG. The legacy function name remains for wiring
+        // compatibility; no WhatsApp/text opener is invoked.
+        return {
+            status: 'ready',
+            code: 'IMAGE_SHARE_USER_ACTION_REQUIRED',
+            payload: payloadResult.payload
+        };
     } catch (error) {
-        Logger?.error?.('Error preparando ticket de WhatsApp:', error);
+        Logger?.error?.('Error preparando comprobante de imagen:', error);
         return {
             status: 'failed',
-            code: error?.code || 'WHATSAPP_RECEIPT_PREPARATION_FAILED',
-            message: error?.message || 'No se pudo preparar el ticket de WhatsApp.'
+            code: error?.code || 'IMAGE_RECEIPT_PREPARATION_FAILED',
+            message: error?.message || 'No se pudo preparar el comprobante de imagen.'
         };
     }
 }

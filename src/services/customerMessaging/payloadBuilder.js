@@ -7,6 +7,7 @@ import {
   normalizeMoney,
   normalizePaymentMethod
 } from './normalizers';
+import { selectDisplayReference } from './displayReference';
 
 const getAtPath = (source, path) => path.split('.').reduce(
   (value, key) => (value === null || value === undefined ? undefined : value[key]),
@@ -68,7 +69,7 @@ const normalizeSale = (sale = {}, errors, timeZone) => {
   const paymentMethod = normalizePaymentMethod(originalMethod);
   return {
     id: read(sale, 'id', 'saleId', 'sale_id'),
-    folio: read(sale, 'folio', 'saleFolio', 'sale_folio'),
+    folio: selectDisplayReference(sale),
     items: cloneItems(sale.items),
     subtotal: normalizeMoneyField(read(sale, 'subtotal', 'grossSubtotal'), 'sale.subtotal', errors),
     discount: normalizeMoneyField(read(sale, 'discount', 'discountTotal', 'discount_total'), 'sale.discount', errors),
@@ -91,7 +92,7 @@ const normalizeSale = (sale = {}, errors, timeZone) => {
 
 const normalizePayment = (payment = {}, errors, timeZone) => ({
   id: read(payment, 'id', 'ledgerId', 'ledger_id'),
-  reference: read(payment, 'reference', 'folio'),
+  reference: selectDisplayReference(payment),
   occurredAt: normalizeDateField(read(payment, 'occurredAt', 'createdAt', 'created_at', 'timestamp'), 'payment.occurredAt', errors, timeZone),
   method: normalizePaymentMethod(read(payment, 'method', 'paymentMethod', 'payment_method')).canonical,
   previousBalance: normalizeMoneyField(read(payment, 'previousBalance', 'previousDebt', 'previous_debt'), 'payment.previousBalance', errors),
@@ -111,7 +112,7 @@ const normalizeAccount = (account = {}, errors, timeZone) => ({
 
 const normalizeLayaway = (layaway = {}, errors, timeZone) => ({
   id: read(layaway, 'id', 'layawayId', 'layaway_id'),
-  reference: read(layaway, 'reference', 'folio', 'layawayReference'),
+  reference: selectDisplayReference(layaway),
   items: cloneItems(layaway.items),
   total: normalizeMoneyField(read(layaway, 'total'), 'layaway.total', errors),
   initialPayment: normalizeMoneyField(read(layaway, 'initialPayment', 'initial_payment', 'deposit'), 'layaway.initialPayment', errors),
@@ -122,7 +123,7 @@ const normalizeLayaway = (layaway = {}, errors, timeZone) => ({
   deadline: normalizeDateField(read(layaway, 'deadline', 'dueDate', 'due_date'), 'layaway.deadline', errors, timeZone),
   status: read(layaway, 'status'),
   deliveryDate: normalizeDateField(read(layaway, 'deliveryDate', 'delivery_date', 'deliveredAt', 'delivered_at'), 'layaway.deliveryDate', errors, timeZone),
-  saleFolio: read(layaway, 'saleFolio', 'sale_folio')
+  saleFolio: selectDisplayReference({ saleFolio: read(layaway, 'saleFolio', 'sale_folio') })
 });
 
 const validateRequiredFields = (payload, requiredFields) => requiredFields.reduce((errors, path) => {
@@ -215,7 +216,7 @@ export const buildCustomerMessagePayload = ({
     },
     occurredAt: date.ok ? date.value : null,
     currency: String(currency || 'MXN').toUpperCase(),
-    reference,
+    reference: selectDisplayReference(reference, normalizedPayment, normalizedSale, normalizedLayaway),
     sale: normalizedSale,
     payment: normalizedPayment,
     account: normalizedAccount,
@@ -243,7 +244,7 @@ export const buildCustomerMessagePayload = ({
       occurredAt: date.ok ? date.value : null,
       occurredAtIso: date.iso || null,
       currency: String(currency || 'MXN').toUpperCase(),
-      reference
+      reference: selectDisplayReference(reference, normalizedPayment, normalizedSale, normalizedLayaway)
     },
     internalContext: {
       source: internalContext.source || 'unknown',

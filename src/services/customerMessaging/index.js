@@ -9,12 +9,14 @@ export {
   formatMessageDate,
   formatMoney,
   formatMoneyValue,
+  getPaymentMethodDisplayLabel,
   isCreditPaymentMethod,
   normalizeMessageDate,
   normalizeMexicanPhone,
   normalizeMoney,
   normalizePaymentMethod
 } from './normalizers';
+export { isDisplayReference, selectDisplayReference } from './displayReference';
 export { buildCustomerMessagePayload } from './payloadBuilder';
 export {
   buildAccountStatementMessagePayload,
@@ -25,6 +27,16 @@ export {
   selectCreditNotes
 } from './adapters';
 export { renderCustomerMessageText } from './templates';
+export {
+  buildImageReceiptModel,
+  renderCustomerMessageImage,
+  sanitizeImageFilename
+} from './imageRenderer';
+export {
+  downloadCustomerMessageImage,
+  IMAGE_SHARE_UI_COPY,
+  shareCustomerMessageImage
+} from './imageShare';
 export {
   createFinancialNotificationResult,
   getNotificationReadiness,

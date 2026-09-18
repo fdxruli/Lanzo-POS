@@ -18,15 +18,15 @@ const normalizeNotificationResult = (result) => {
     if (result?.status && NOTIFICATION_STATUSES.has(result.status)) return result;
     if (result === true) return { status: 'opened', code: null };
     if (result === false || result === null) {
-        return { status: 'failed', code: 'WHATSAPP_WINDOW_BLOCKED' };
+        return { status: 'failed', code: 'IMAGE_RECEIPT_PREPARATION_FAILED' };
     }
     return { status: 'failed', code: 'NOTIFICATION_RESULT_INVALID' };
 };
 
 const notificationFailureResult = (error) => ({
     status: 'failed',
-    code: error?.code || 'WHATSAPP_NOTIFICATION_FAILED',
-    message: error?.message || 'No se pudo preparar la notificación.'
+    code: error?.code || 'IMAGE_RECEIPT_PREPARATION_FAILED',
+    message: error?.message || 'No se pudo preparar el comprobante.'
 });
 
 export const runPostSaleEffects = async ({
@@ -75,9 +75,8 @@ export const runPostSaleEffects = async ({
             Logger?.info?.('PostSaleEffects cloud-safe: inventario local omitido; Supabase es la fuente oficial.');
         }
 
-        // 4. La notificación ocurre después del compromiso financiero y no
-        // participa en el sellado financiero/post-effects. Se espera sólo para
-        // poder informar su resultado de manera independiente al caller.
+        // 4. Después del compromiso financiero sólo se prepara el payload.
+        // Compartir el PNG queda reservado a una acción explícita en la UI.
         if (paymentData?.sendReceipt) {
             try {
                 const result = typeof sendReceiptWhatsApp === 'function'
@@ -89,10 +88,10 @@ export const runPostSaleEffects = async ({
                         companyName,
                         features
                     })
-                    : { status: 'unsupported', code: 'WHATSAPP_OPENER_UNAVAILABLE' };
+                    : { status: 'unsupported', code: 'IMAGE_PAYLOAD_BUILDER_UNAVAILABLE' };
                 notificationResult = normalizeNotificationResult(result);
             } catch (notificationError) {
-                Logger?.error('Error enviando WhatsApp en background', notificationError);
+                Logger?.error('Error preparando comprobante de imagen', notificationError);
                 notificationResult = notificationFailureResult(notificationError);
             }
         }

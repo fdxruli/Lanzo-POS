@@ -203,7 +203,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                     <button type="button" className="btn-quick-add" onClick={() => setIsQuickAddOpen(true)}>+ Nuevo Cliente</button>
                   </div>
 
-                  {selectedCustomerId && <div className="form-group-checkbox payment-form-group-spaced"><input id="send-receipt-ticket" type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><label htmlFor="send-receipt-ticket">Enviar ticket por WhatsApp</label></div>}
+                  {selectedCustomerId && <div className="form-group-checkbox payment-form-group-spaced"><input id="send-receipt-ticket" type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><label htmlFor="send-receipt-ticket">Ofrecer comprobante como imagen al terminar</label></div>}
                 </div>
               </div>
 

@@ -6,6 +6,12 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
+import {
+    downloadCustomerMessageImage,
+    IMAGE_SHARE_UI_COPY,
+    renderCustomerMessageImage,
+    shareCustomerMessageImage
+} from '../../services/customerMessaging';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
@@ -1253,6 +1259,47 @@ export function usePosCheckout({
                         type: 'warning',
                         confirmButtonText: 'Entendido'
                     });
+                } else if (result.notificationResult?.status === 'ready' && result.notificationResult?.payload) {
+                    showMessageModal(
+                        '✅ ¡Venta registrada correctamente! Puedes compartir el comprobante como imagen.',
+                        async () => {
+                            const imageResult = await renderCustomerMessageImage(result.notificationResult.payload);
+                            const shareResult = imageResult.ok
+                                ? await shareCustomerMessageImage(imageResult)
+                                : { status: 'failed' };
+                            if (shareResult.status === 'downloaded') {
+                                showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+                            } else if (shareResult.status === 'failed' && shareResult.canDownload) {
+                                showMessageModal(
+                                    IMAGE_SHARE_UI_COPY.failed,
+                                    () => {
+                                        const downloadResult = downloadCustomerMessageImage(imageResult);
+                                        if (downloadResult.status === 'downloaded') {
+                                            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+                                        } else {
+                                            showMessageModal('No se pudo descargar la imagen. La operacion financiera se conservo correctamente.', null, { type: 'warning' });
+                                        }
+                                        return downloadResult;
+                                    },
+                                    {
+                                        title: 'Comprobante disponible',
+                                        confirmButtonText: IMAGE_SHARE_UI_COPY.downloadAction,
+                                        cancelButtonText: 'Ahora no',
+                                        showCancel: true,
+                                        type: 'warning'
+                                    }
+                                );
+                            } else if (shareResult.status === 'unsupported') {
+                                showMessageModal(IMAGE_SHARE_UI_COPY.unsupported, null, { type: 'warning' });
+                            }
+                        },
+                        {
+                            title: 'Comprobante listo',
+                            confirmButtonText: 'Compartir comprobante como imagen',
+                            cancelButtonText: 'Ahora no',
+                            showCancel: true
+                        }
+                    );
                 } else {
                     showMessageModal('✅ ¡Venta registrada correctamente!');
                 }

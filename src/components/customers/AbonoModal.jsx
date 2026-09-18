@@ -401,7 +401,7 @@ export default function AbonoModal({
             <label className={`abono-whatsapp-toggle ${isSubmitting ? 'is-disabled' : ''}`}>
               <div className="toggle-info">
                 <MessageCircle size={20} className="icon-whatsapp" />
-                <span>Enviar recibo por WhatsApp</span>
+                <span>Ofrecer comprobante como imagen al terminar</span>
               </div>
               <input
                 id="send-receipt-abono"
