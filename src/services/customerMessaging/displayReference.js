@@ -7,6 +7,12 @@ const DISPLAY_REFERENCE_FIELDS = Object.freeze([
   'payment_number',
   'saleFolio',
   'sale_folio',
+  'cloudFolio',
+  'cloud_folio',
+  'localFolio',
+  'local_folio',
+  'operationalFolio',
+  'operational_folio',
   'layawayReference',
   'layaway_reference'
 ]);

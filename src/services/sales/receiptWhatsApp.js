@@ -1,12 +1,12 @@
 import {
     buildCustomerMessagePayload,
     isCreditPaymentMethod,
-    notificationNotRequested
+    notificationNotRequested,
+    selectDisplayReference
 } from '../customerMessaging/index.js';
 import {
     getSaleChannel,
     getSaleEcommerceOrderCode,
-    getSaleFinancialFolio,
     getSaleOperationalFolio
 } from './saleReference';
 
@@ -30,7 +30,7 @@ const resolveCustomer = async ({ sale = {}, paymentData = {}, loadData, STORES }
 const buildConfirmedSaleSnapshot = ({ sale = {}, items = [], paymentData = {}, total }) => ({
     ...sale,
     items: Array.isArray(sale.items) && sale.items.length > 0 ? sale.items : items,
-    folio: getSaleFinancialFolio(sale) || sale.folio || null,
+    folio: selectDisplayReference(sale),
     subtotal: sale.subtotal ?? sale.grossSubtotal ?? sale.metadata?.grossSubtotal ?? null,
     discount: sale.discount ?? sale.discountTotal ?? sale.discount_total ?? sale.metadata?.discountTotal ?? sale.metadata?.discount_total ?? null,
     total: sale.total ?? total,
