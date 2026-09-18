@@ -28,6 +28,7 @@ import {
   IMAGE_SHARE_UI_COPY,
   notificationNotRequested,
   renderCustomerMessageImage,
+  resolveCustomerMessageTemplate,
   shareCustomerMessageImage,
   selectCreditNotes
 } from '../services/customerMessaging';
@@ -472,7 +473,8 @@ export default function CustomersPage() {
   };
 
   const sharePayloadAsImage = async (payload) => {
-    const imageResult = await renderCustomerMessageImage(payload);
+    const resolvedTemplate = await resolveCustomerMessageTemplate({ eventType: payload.eventType });
+    const imageResult = await renderCustomerMessageImage(payload, { template: resolvedTemplate.template });
     if (!imageResult.ok) {
       showMessageModal(`${IMAGE_SHARE_UI_COPY.payloadInvalid} La operacion financiera se conservo correctamente.`, null, { type: 'warning' });
       return { status: 'failed', code: imageResult.code };

@@ -1,6 +1,8 @@
 import { CUSTOMER_MESSAGE_EVENT_TYPES } from './contracts';
 import { formatMoneyValue, getPaymentMethodDisplayLabel } from './normalizers';
 import { selectDisplayReference } from './displayReference';
+import { validateCustomerMessageTemplate } from './templateValidator';
+import { TEMPLATE_VARIABLE_PATTERN } from './templateVariables';
 
 const WIDTH = 1080;
 const PADDING = 72;
@@ -54,7 +56,46 @@ const itemRows = (items, currency) => (Array.isArray(items) ? items : []).map((i
   return `${quantity} x ${cleanText(item?.name, 'Producto')}${total ? `  ${total}` : ''}`;
 });
 
-export const buildImageReceiptModel = (payload = {}) => {
+const templateValues = (payload, currency) => ({
+  'business.name': cleanText(payload.business?.name),
+  'customer.name': cleanText(payload.customer?.name),
+  occurredAt: cleanText(payload.occurredAt),
+  reference: cleanText(selectDisplayReference(payload.reference, payload.sale, payload.payment, payload.layaway)),
+  currency: cleanText(currency),
+  'sale.items': itemRows(payload.sale?.items, currency).join('\n'),
+  'sale.total': money(payload.sale?.total, currency),
+  'sale.receivedAmount': money(payload.sale?.receivedAmount ?? payload.sale?.amountPaid, currency),
+  'sale.balanceDue': money(payload.sale?.balanceDue, currency),
+  'sale.paymentMethodLabel': getPaymentMethodDisplayLabel(payload.sale?.originalPaymentMethod, payload.sale?.paymentMethod),
+  'sale.dueDate': cleanText(payload.sale?.dueDate),
+  'sale.creditStatus': cleanText(payload.sale?.creditStatus),
+  'payment.amount': money(payload.payment?.amount, currency),
+  'payment.previousBalance': money(payload.payment?.previousBalance, currency),
+  'payment.newBalance': money(payload.payment?.newBalance, currency),
+  'payment.methodLabel': getPaymentMethodDisplayLabel(payload.payment?.originalMethod, payload.payment?.method),
+  'payment.reference': cleanText(selectDisplayReference(payload.payment?.reference, payload.payment)),
+  'account.totalBalance': money(payload.account?.totalBalance, currency),
+  'account.totalPayments': money(payload.account?.totalPayments, currency),
+  'account.cutoffAt': cleanText(payload.account?.cutoffAt),
+  'account.pendingNotes': (payload.account?.noteDetails || payload.account?.pendingNotes || []).map((note) => {
+    const reference = cleanText(selectDisplayReference(note), 'Nota');
+    const balance = money(note?.saldoPendiente ?? note?.balanceDue ?? note?.currentOwed, currency);
+    return `${reference}${balance ? ` · ${balance}` : ''}`;
+  }).join('\n'),
+  'layaway.reference': cleanText(selectDisplayReference(payload.layaway?.reference, payload.layaway)),
+  'layaway.total': money(payload.layaway?.total, currency),
+  'layaway.initialPayment': money(payload.layaway?.initialPayment, currency),
+  'layaway.paymentAmount': money(payload.layaway?.paymentAmount, currency),
+  'layaway.totalPaid': money(payload.layaway?.totalPaid, currency),
+  'layaway.balanceDue': money(payload.layaway?.balanceDue, currency),
+  'layaway.deadline': cleanText(payload.layaway?.deadline),
+  'layaway.status': cleanText(payload.layaway?.status),
+  'layaway.saleFolio': cleanText(selectDisplayReference({ saleFolio: payload.layaway?.saleFolio }))
+});
+
+const interpolateTemplate = (text, values) => String(text || '').replace(TEMPLATE_VARIABLE_PATTERN, (_, key) => cleanText(values[key]));
+
+export const buildImageReceiptModel = (payload = {}, { template = null } = {}) => {
   if (!payload || !CUSTOMER_MESSAGE_EVENT_TYPES.includes(payload.eventType)) {
     return { ok: false, code: 'MESSAGE_EVENT_UNSUPPORTED' };
   }
@@ -105,7 +146,7 @@ export const buildImageReceiptModel = (payload = {}) => {
     add(rows, 'Folio de venta', selectDisplayReference({ saleFolio: payload.layaway?.saleFolio }));
   }
 
-  return {
+  const defaultModel = {
     ok: true,
     model: {
       eventType: payload.eventType,
@@ -114,6 +155,25 @@ export const buildImageReceiptModel = (payload = {}) => {
       rows,
       sections,
       footer: 'Comprobante informativo generado por Lanzo POS.'
+    }
+  };
+
+  // Preserving the Phase 2 model byte-for-byte when no custom template exists
+  // is intentional: templates are an optional copy layer, never finance logic.
+  if (!template) return defaultModel;
+  const validation = validateCustomerMessageTemplate(payload.eventType, template);
+  if (!validation.ok) return defaultModel;
+  const values = templateValues(payload, currency);
+  return {
+    ok: true,
+    model: {
+      eventType: payload.eventType,
+      businessName: cleanText(payload.business.name),
+      title: interpolateTemplate(template.title, values),
+      rows: [],
+      sections: interpolateTemplate(template.body, values).split('\n').filter(Boolean),
+      footer: interpolateTemplate(template.footer, values),
+      isCustomTemplate: true
     }
   };
 };
@@ -161,10 +221,10 @@ const canvasToBlob = (canvas) => new Promise((resolve, reject) => {
   canvas.toBlob((blob) => blob ? resolve(blob) : reject(Object.assign(new Error('PNG generation failed.'), { code: 'IMAGE_PNG_EMPTY' })), 'image/png');
 });
 
-export const renderCustomerMessageImage = async (payload, { canvasFactory, FileCtor = globalThis.File } = {}) => {
+export const renderCustomerMessageImage = async (payload, { canvasFactory, FileCtor = globalThis.File, template = null } = {}) => {
   const eventType = payload?.eventType || null;
   try {
-    const built = buildImageReceiptModel(payload);
+    const built = buildImageReceiptModel(payload, { template });
     if (!built.ok) return { ok: false, code: built.code, error: new Error(built.code), eventType };
     const canvas = getCanvas(canvasFactory);
     const context = canvas?.getContext?.('2d');

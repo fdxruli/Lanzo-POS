@@ -10,6 +10,7 @@ import {
     downloadCustomerMessageImage,
     IMAGE_SHARE_UI_COPY,
     renderCustomerMessageImage,
+    resolveCustomerMessageTemplate,
     shareCustomerMessageImage
 } from '../../services/customerMessaging';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
@@ -1263,7 +1264,8 @@ export function usePosCheckout({
                     showMessageModal(
                         '✅ ¡Venta registrada correctamente! Puedes compartir el comprobante como imagen.',
                         async () => {
-                            const imageResult = await renderCustomerMessageImage(result.notificationResult.payload);
+                            const resolvedTemplate = await resolveCustomerMessageTemplate({ eventType: result.notificationResult.payload.eventType });
+                            const imageResult = await renderCustomerMessageImage(result.notificationResult.payload, { template: resolvedTemplate.template });
                             const shareResult = imageResult.ok
                                 ? await shareCustomerMessageImage(imageResult)
                                 : { status: 'failed' };
