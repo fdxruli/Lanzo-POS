@@ -3,11 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 const migrationUrl = new URL(
-  '../../supabase/migrations/20260918055709_license_grace_runtime_realtime_r1.sql',
+  '../../supabase/migrations/20260918060949_license_grace_runtime_realtime_r1.sql',
   import.meta.url
 );
 const handoffMigrationUrl = new URL(
-  '../../supabase/migrations/20260918061146_license_expiry_verified_handoff_r1.sql',
+  '../../supabase/migrations/20260918061350_license_expiry_verified_handoff_r1.sql',
   import.meta.url
 );
 
