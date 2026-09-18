@@ -288,6 +288,35 @@ beforeEach(() => {
 });
 
 describe('usePosCheckout ecommerce and stale lock ownership', () => {
+  it('uses the detailed integrity reason without forcing a reload', async () => {
+    setOrders([makeOrder()]);
+    mocks.appState.lastIntegrityFailure = {
+      code: 'STAFF_LOGIN_REQUIRED',
+      message: 'Inicia sesión staff para cobrar.'
+    };
+    const deps = makeDeps();
+    deps.pos.verifySessionIntegrity.mockResolvedValue(false);
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+
+    await initiateCheckout(result);
+    let response;
+    await act(async () => {
+      response = await result.current.handleProcessOrder({ paymentMethod: 'tarjeta' });
+    });
+
+    expect(response).toEqual({
+      success: false,
+      code: 'STAFF_LOGIN_REQUIRED',
+      message: 'Inicia sesión staff para cobrar.'
+    });
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(
+      'Inicia sesión staff para cobrar.',
+      null,
+      { type: 'warning' }
+    );
+    expect(mocks.processSale).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['claimed', 'claimed'],
     ['prepared', 'prepared'],

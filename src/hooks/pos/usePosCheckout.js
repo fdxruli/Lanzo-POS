@@ -1093,10 +1093,11 @@ export function usePosCheckout({
         const isSessionValid = await verifySessionIntegrity(CHECKOUT_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
             await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'session_invalid' });
-            showMessageModal('Sesion invalida o licencia expirada. El sistema se recargará.', () => {
-                window.location.reload();
-            });
-            return { success: false, code: 'SESSION_INVALID' };
+            const integrityFailure = useAppStore.getState().lastIntegrityFailure;
+            const failureCode = integrityFailure?.code || 'SESSION_INVALID';
+            const failureMessage = integrityFailure?.message || 'No se pudo validar la sesión para completar la venta.';
+            showMessageModal(failureMessage, null, { type: 'warning' });
+            return { success: false, code: failureCode, message: failureMessage };
         }
 
         const afterSessionSnapshotError = await validateLiveCheckoutSnapshot(snapshot);

@@ -7,7 +7,6 @@ import {
 } from '../../../services/licenseStorage';
 
 import {
-    GRACE_PERIOD_DAYS,
     RENEWAL_REASONS
 } from './licenseConstants';
 
@@ -18,6 +17,7 @@ import {
     isStaffDeviceAuthorizationFailure,
     isLicensePlanBlockFailure,
     deriveGracePeriodEnd,
+    deriveLocalGracePeriodEnd,
     requiresAdminIdentity
 } from './licenseGuards';
 
@@ -288,11 +288,7 @@ export const createLicenseProcessingActions = ({
 
         const derivedGracePeriodEnd =
             localLicense.grace_period_ends ||
-            (expiryDate
-                ? new Date(
-                    expiryDate + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
-                ).toISOString()
-                : null);
+            deriveLocalGracePeriodEnd(localLicense);
 
         const graceDate = derivedGracePeriodEnd
             ? new Date(derivedGracePeriodEnd).getTime()
