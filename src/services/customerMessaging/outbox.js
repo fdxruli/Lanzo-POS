@@ -395,6 +395,10 @@ export const prepareCustomerMessageOutbox = async ({
       contactReadiness: contactReadiness(payload),
       status: 'preparado',
       attemptCount: 0,
+      shareAttemptCount: 0,
+      retryPolicy: {
+        maxAttempts: Number(repository.config.maxAttempts || CUSTOMER_MESSAGE_OUTBOX_DEFAULTS.maxAttempts)
+      },
       lastErrorCode: null,
       nextRetryAt: null,
       lastAttemptAt: null,
@@ -440,8 +444,13 @@ const performOutboxAction = async ({
 
   const promise = (async () => {
     const current = repository.get(record.idempotencyKey) || record;
-    const maxAttempts = Number(repository.config.maxAttempts || CUSTOMER_MESSAGE_OUTBOX_DEFAULTS.maxAttempts);
-    if (current.attemptCount >= maxAttempts) {
+    const maxAttempts = Number(
+      current.retryPolicy?.maxAttempts
+      || repository.config.maxAttempts
+      || CUSTOMER_MESSAGE_OUTBOX_DEFAULTS.maxAttempts
+    );
+    const currentShareAttempts = Number(current.shareAttemptCount || 0);
+    if (action === 'share' && currentShareAttempts >= maxAttempts) {
       const exhausted = persistTransition({
         repository,
         record: current,
@@ -457,6 +466,7 @@ const performOutboxAction = async ({
 
     const attemptedAt = now();
     const attemptCount = Number(current.attemptCount || 0) + 1;
+    const shareAttemptCount = currentShareAttempts + (action === 'share' ? 1 : 0);
     const imageResult = await render(current.payloadSnapshot, { template: current.templateSnapshot });
     if (!imageResult?.ok) {
       const failure = classifyFailure(imageResult?.code || 'OUTBOX_RENDER_FAILED');
@@ -467,11 +477,12 @@ const performOutboxAction = async ({
         nextStatus,
         patch: {
           attemptCount,
+          shareAttemptCount,
           lastAttemptAt: nowIso(attemptedAt),
           updatedAt: nowIso(attemptedAt),
           lastErrorCode: failure.code,
           nextRetryAt: nextStatus === 'reintento_pendiente'
-            ? nowIso(attemptedAt + backoffForAttempt(attemptCount, repository.config))
+            ? nowIso(attemptedAt + backoffForAttempt(action === 'share' ? shareAttemptCount : attemptCount, repository.config))
             : null
         }
       });
@@ -502,10 +513,10 @@ const performOutboxAction = async ({
         actionResult?.code
         || (action === 'download' ? 'OUTBOX_DOWNLOAD_FAILED' : 'OUTBOX_SHARE_FAILED')
       );
-      nextStatus = failure.retryable && attemptCount < maxAttempts ? 'reintento_pendiente' : 'error';
+      nextStatus = failure.retryable && (action !== 'share' || shareAttemptCount < maxAttempts) ? 'reintento_pendiente' : 'error';
       lastErrorCode = failure.code;
       if (nextStatus === 'reintento_pendiente') {
-        nextRetryAt = nowIso(attemptedAt + backoffForAttempt(attemptCount, repository.config));
+        nextRetryAt = nowIso(attemptedAt + backoffForAttempt(action === 'share' ? shareAttemptCount : attemptCount, repository.config));
       }
     }
 
