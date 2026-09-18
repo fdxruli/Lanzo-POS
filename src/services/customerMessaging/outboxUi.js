@@ -26,7 +26,7 @@ const contactNote = (record) => {
 const statusNote = (record) => {
   switch (record?.status) {
     case 'compartido':
-      return 'La hoja de compartir terminó correctamente. Lanzo no puede confirmar que WhatsApp u otra app haya entregado o recibido el archivo.';
+      return 'La hoja de compartir terminó correctamente. Lanzo no puede confirmar la recepción final del archivo en WhatsApp u otra app.';
     case 'descarga_generada':
       return record.lastErrorCode === 'WEB_SHARE_UNAVAILABLE_OR_INCOMPATIBLE'
         ? 'Este navegador no permitió compartir el archivo directamente; se generó una descarga manual.'
