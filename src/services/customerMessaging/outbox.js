@@ -377,7 +377,10 @@ export const prepareCustomerMessageOutbox = async ({
       actorHandle
     });
     const timestamp = now();
-    const templateSource = templateResolution?.source === 'custom' && templateResolution?.template
+    const customTemplateAllowed = actorType === 'admin' && featureEnabled(licenseDetails);
+    const templateSource = customTemplateAllowed
+      && templateResolution?.source === 'custom'
+      && templateResolution?.template
       ? 'custom'
       : 'default';
     const record = {
