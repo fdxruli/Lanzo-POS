@@ -27,6 +27,17 @@ export {
   selectCreditNotes
 } from './adapters';
 export { renderCustomerMessageText } from './templates';
+export { CUSTOMER_MESSAGE_DEFAULT_TEMPLATES, CUSTOMER_MESSAGE_TEMPLATE_SCHEMA_VERSION, getDefaultCustomerMessageTemplate } from './defaultTemplates';
+export { getAllowedTemplateVariableKeys, getRequiredTemplateVariableKeys, getTemplateVariablesForEvent } from './templateVariables';
+export { TEMPLATE_LIMITS, validateCustomerMessageTemplate } from './templateValidator';
+export {
+  canManageCustomerMessageTemplates,
+  listCustomerMessageTemplates,
+  resetCustomerMessageTemplate,
+  resolveCustomerMessageTemplate,
+  saveCustomerMessageTemplate
+} from './templateRepository';
+export { buildCustomerMessageTemplatePreviewPayload } from './templatePreview';
 export {
   buildImageReceiptModel,
   renderCustomerMessageImage,

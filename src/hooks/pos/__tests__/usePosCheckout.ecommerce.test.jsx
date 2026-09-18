@@ -79,11 +79,16 @@ vi.mock('../../../services/restaurant/restaurantOrderCheckoutClose', () => ({
   retryPendingRestaurantCloudOrderCloses: mocks.retryCloudCloses
 }));
 
-vi.mock('../../../services/sync/syncConstants', () => ({
-  isCloudSalesCashierEnabled: () => false,
-  isCloudSalesCreditEnabled: () => false,
-  isRestaurantOrdersCloudEnabled: () => true
-}));
+vi.mock('../../../services/sync/syncConstants', async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    isCloudSalesCashierEnabled: () => false,
+    isCloudSalesCreditEnabled: () => false,
+    isRestaurantOrdersCloudEnabled: () => true
+  };
+});
 
 vi.mock('../../../services/salesService', () => ({
   processSale: mocks.processSale

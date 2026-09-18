@@ -36,11 +36,11 @@ describe('Settings actor access matrix A-G', () => {
     expect(tabKeys(access)).toEqual([]);
   });
 
-  it('B: settings grants General and Controls only', () => {
+  it('B: settings grants General, Controls, and read-only Messages', () => {
     const access = staffAccess({ settings: true });
 
     expect(access.canEnterSettings).toBe(true);
-    expect(tabKeys(access)).toEqual(['general', 'controls']);
+    expect(tabKeys(access)).toEqual(['general', 'controls', 'messages']);
   });
 
   it('C: license grants its section without General', () => {
@@ -90,7 +90,7 @@ describe('Settings actor evidence', () => {
 
     expect(access.canEnterSettings).toBe(true);
     expect(tabKeys(access)).toEqual([
-      'general', 'controls', 'license', 'devices', 'maintenance', 'backup'
+      'general', 'controls', 'license', 'devices', 'maintenance', 'backup', 'messages'
     ]);
   });
 

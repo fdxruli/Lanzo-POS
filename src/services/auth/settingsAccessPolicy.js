@@ -12,7 +12,8 @@ export const SETTINGS_SECTION_PERMISSIONS = Object.freeze({
   license: Object.freeze(['license']),
   devices: Object.freeze(['devices']),
   maintenance: Object.freeze(['sync', 'inventory']),
-  backup: Object.freeze(['sync'])
+  backup: Object.freeze(['sync']),
+  messages: Object.freeze(['settings'])
 });
 
 export const SETTINGS_TAB_DEFINITIONS = Object.freeze([
@@ -22,6 +23,7 @@ export const SETTINGS_TAB_DEFINITIONS = Object.freeze([
   Object.freeze({ key: 'devices', section: 'devices' }),
   Object.freeze({ key: 'maintenance', section: 'maintenance' }),
   Object.freeze({ key: 'backup', section: 'backup' }),
+  Object.freeze({ key: 'messages', section: 'messages' }),
   Object.freeze({ key: 'debug', developmentOnly: true }),
   Object.freeze({ key: 'test-ventas', developmentOnly: true })
 ]);
