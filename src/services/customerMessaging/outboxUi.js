@@ -56,7 +56,7 @@ export const buildCustomerMessageOutboxModalCopy = (record = {}) => {
   return lines.join('\n\n');
 };
 
-const canRetryShare = (record) => Number(record?.attemptCount || 0) < Number(
+const canRetryShare = (record) => Number(record?.shareAttemptCount || 0) < Number(
   record?.retryPolicy?.maxAttempts || CUSTOMER_MESSAGE_OUTBOX_DEFAULTS.maxAttempts
 );
 
@@ -101,7 +101,11 @@ export const showCustomerMessageOutboxModal = (record, {
   if (!runShare) {
     showMessageModal(buildCustomerMessageOutboxModalCopy(record), null, {
       title,
-      type: record.status === 'error' ? 'warning' : 'info'
+      type: record.status === 'error' ? 'warning' : 'info',
+      extraButton: {
+        text: 'Descargar imagen',
+        action: runDownload
+      }
     });
     return;
   }
