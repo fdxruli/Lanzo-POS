@@ -7,11 +7,8 @@ import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
 import {
-    downloadCustomerMessageImage,
-    IMAGE_SHARE_UI_COPY,
-    renderCustomerMessageImage,
-    resolveCustomerMessageTemplate,
-    shareCustomerMessageImage
+    prepareCustomerMessageOutbox,
+    showCustomerMessageOutboxModal
 } from '../../services/customerMessaging';
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
@@ -1261,47 +1258,29 @@ export function usePosCheckout({
                         confirmButtonText: 'Entendido'
                     });
                 } else if (result.notificationResult?.status === 'ready' && result.notificationResult?.payload) {
-                    showMessageModal(
-                        '✅ ¡Venta registrada correctamente! Puedes compartir el comprobante como imagen.',
-                        async () => {
-                            const resolvedTemplate = await resolveCustomerMessageTemplate({ eventType: result.notificationResult.payload.eventType });
-                            const imageResult = await renderCustomerMessageImage(result.notificationResult.payload, { template: resolvedTemplate.template });
-                            const shareResult = imageResult.ok
-                                ? await shareCustomerMessageImage(imageResult)
-                                : { status: 'failed' };
-                            if (shareResult.status === 'downloaded') {
-                                showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
-                            } else if (shareResult.status === 'failed' && shareResult.canDownload) {
-                                showMessageModal(
-                                    IMAGE_SHARE_UI_COPY.failed,
-                                    () => {
-                                        const downloadResult = downloadCustomerMessageImage(imageResult);
-                                        if (downloadResult.status === 'downloaded') {
-                                            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
-                                        } else {
-                                            showMessageModal('No se pudo descargar la imagen. La operacion financiera se conservo correctamente.', null, { type: 'warning' });
-                                        }
-                                        return downloadResult;
-                                    },
-                                    {
-                                        title: 'Comprobante disponible',
-                                        confirmButtonText: IMAGE_SHARE_UI_COPY.downloadAction,
-                                        cancelButtonText: 'Ahora no',
-                                        showCancel: true,
-                                        type: 'warning'
-                                    }
-                                );
-                            } else if (shareResult.status === 'unsupported') {
-                                showMessageModal(IMAGE_SHARE_UI_COPY.unsupported, null, { type: 'warning' });
-                            }
-                        },
-                        {
-                            title: 'Comprobante listo',
-                            confirmButtonText: 'Compartir comprobante como imagen',
-                            cancelButtonText: 'Ahora no',
-                            showCancel: true
+                    try {
+                        const prepared = result.notificationResult.outboxRecord
+                            ? { ok: true, record: result.notificationResult.outboxRecord, duplicate: true }
+                            : await prepareCustomerMessageOutbox({ payload: result.notificationResult.payload });
+                        if (prepared?.ok && prepared.record) {
+                            showCustomerMessageOutboxModal(prepared.record, {
+                                title: 'Comprobante de venta'
+                            });
+                        } else {
+                            showMessageModal(
+                                '✅ La venta quedó registrada, pero no se pudo guardar el estado del mensaje. Puedes reabrir el recibo e intentarlo de nuevo.',
+                                null,
+                                { type: 'warning' }
+                            );
                         }
-                    );
+                    } catch (outboxError) {
+                        console.error('[usePosCheckout] La venta fue confirmada, pero falló el outbox de mensajería:', outboxError);
+                        showMessageModal(
+                            '✅ La venta quedó registrada, pero no se pudo preparar el reintento del mensaje.',
+                            null,
+                            { type: 'warning' }
+                        );
+                    }
                 } else {
                     showMessageModal('✅ ¡Venta registrada correctamente!');
                 }
