@@ -110,7 +110,8 @@ export default function CustomerMessageTemplatesSettings() {
       setCustomTemplates((current) => ({ ...current, [eventType]: result.template }));
       setStatus('Cambios guardados.');
     } else if (result.code === 'TEMPLATE_CONFLICT') setStatus('Conflicto: otro dispositivo actualizó este mensaje. Recarga antes de guardar.');
-    else setStatus(`No se pudo guardar (${result.code}).`);
+    else if (result.code === 'TEMPLATE_INVALID') setStatus('No se puede guardar la plantilla porque contiene una variable inválida, falta una variable obligatoria o incluye un importe escrito manualmente.');
+    else setStatus('No se pudo guardar la plantilla. Intenta de nuevo.');
     setLoading(false);
   };
 
