@@ -22,8 +22,10 @@ import {
   buildAccountStatementMessagePayload,
   buildPaymentMessagePayload,
   createFinancialNotificationResult,
+  downloadCustomerMessageImage,
   formatMoneyValue,
   hasConfirmedPaymentReceipt,
+  IMAGE_SHARE_UI_COPY,
   notificationNotRequested,
   renderCustomerMessageImage,
   shareCustomerMessageImage,
@@ -66,7 +68,7 @@ export default function CustomersPage() {
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [abonoCashSession, setAbonoCashSession] = useState(null);
   const [abonoPendingNotes, setAbonoPendingNotes] = useState(null);
-  const [whatsAppLoading, setWhatsAppLoading] = useState(null);
+  const [imageShareLoading, setImageShareLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
   const requestVersionRef = useRef(0);
   const requestInFlightRef = useRef(false);
@@ -459,27 +461,47 @@ export default function CustomersPage() {
     if (!notificationResult || ['not_requested', 'opened', 'ready', 'shared', 'downloaded', 'cancelled'].includes(notificationResult.status)) return;
 
     const messages = {
-      missing_phone: `${operationLabel} se registró, pero el cliente no tiene teléfono.`,
-      invalid_phone: `${operationLabel} se registró, pero el teléfono del cliente no es válido.`,
-      payload_invalid: `${operationLabel} se registró, pero no se pudo preparar el mensaje.`,
-      unsupported: `${operationLabel} se registró, pero este navegador no puede abrir WhatsApp.`,
-      cancelled: `${operationLabel} se registró; el envío de WhatsApp fue cancelado.`,
-      failed: `${operationLabel} se registró, pero no se pudo abrir WhatsApp.`
+      missing_phone: IMAGE_SHARE_UI_COPY.payloadInvalid,
+      invalid_phone: IMAGE_SHARE_UI_COPY.payloadInvalid,
+      payload_invalid: IMAGE_SHARE_UI_COPY.payloadInvalid,
+      unsupported: IMAGE_SHARE_UI_COPY.unsupported,
+      cancelled: IMAGE_SHARE_UI_COPY.cancelled,
+      failed: IMAGE_SHARE_UI_COPY.failed
     };
-    showMessageModal(messages[notificationResult.status] || `${operationLabel} se registró, pero la notificación no quedó lista.`, null, { type: 'warning' });
+    showMessageModal(messages[notificationResult.status] || `${operationLabel}: no se pudo preparar el comprobante como imagen.`, null, { type: 'warning' });
   };
 
-  const sharePayloadAsImage = async (payload, operationLabel) => {
+  const sharePayloadAsImage = async (payload) => {
     const imageResult = await renderCustomerMessageImage(payload);
     if (!imageResult.ok) {
-      showMessageModal(`${operationLabel} se conservó, pero no se pudo generar la imagen.`, null, { type: 'warning' });
+      showMessageModal(`${IMAGE_SHARE_UI_COPY.payloadInvalid} La operacion financiera se conservo correctamente.`, null, { type: 'warning' });
       return { status: 'failed', code: imageResult.code };
     }
     const shareResult = await shareCustomerMessageImage(imageResult);
     if (shareResult.status === 'downloaded') {
-      showMessageModal('Imagen descargada. Adjuntala manualmente desde la aplicacion que prefieras.', null, { type: 'warning' });
-    } else if (shareResult.status === 'failed' || shareResult.status === 'unsupported') {
-      showMessageModal(`${operationLabel} se conservó, pero no se pudo compartir la imagen.`, null, { type: 'warning' });
+      showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+    } else if (shareResult.status === 'failed' && shareResult.canDownload) {
+      showMessageModal(
+        IMAGE_SHARE_UI_COPY.failed,
+        () => {
+          const downloadResult = downloadCustomerMessageImage(imageResult);
+          if (downloadResult.status === 'downloaded') {
+            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+          } else {
+            showMessageModal('No se pudo descargar la imagen. La operacion financiera se conservo correctamente.', null, { type: 'warning' });
+          }
+          return downloadResult;
+        },
+        {
+          title: 'Comprobante disponible',
+          confirmButtonText: IMAGE_SHARE_UI_COPY.downloadAction,
+          cancelButtonText: 'Ahora no',
+          showCancel: true,
+          type: 'warning'
+        }
+      );
+    } else if (shareResult.status === 'unsupported') {
+      showMessageModal(IMAGE_SHARE_UI_COPY.unsupported, null, { type: 'warning' });
     }
     return shareResult;
   };
@@ -571,7 +593,7 @@ export default function CustomersPage() {
         if (payloadResult.ok) {
           showMessageModal(
             'El abono quedó registrado. Puedes compartir su comprobante como imagen.',
-            () => sharePayloadAsImage(payloadResult.payload, 'El abono'),
+            () => sharePayloadAsImage(payloadResult.payload),
             {
               title: 'Comprobante de abono listo',
               confirmButtonText: 'Compartir abono',
@@ -590,8 +612,8 @@ export default function CustomersPage() {
     return createFinancialNotificationResult({ financialResult, notificationResult });
   };
 
-  const handleWhatsApp = async (customer) => {
-    setWhatsAppLoading(customer.id);
+  const handleShareStatementImage = async (customer) => {
+    setImageShareLoading(customer.id);
 
     try {
       const [summaryResult, localSales] = await Promise.all([
@@ -629,7 +651,7 @@ export default function CustomersPage() {
         occurredAt: latestDurableTimestamp
       });
       const notificationResult = payloadResult.ok
-        ? await sharePayloadAsImage(payloadResult.payload, 'El estado de cuenta')
+        ? await sharePayloadAsImage(payloadResult.payload)
         : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
       showNotificationStatus(notificationResult, 'El estado de cuenta');
       return createFinancialNotificationResult({
@@ -644,7 +666,7 @@ export default function CustomersPage() {
         notificationResult: { status: 'failed', code: 'MESSAGE_PREPARATION_FAILED' }
       });
     } finally {
-      setWhatsAppLoading(null);
+      setImageShareLoading(null);
     }
   };
 
@@ -723,8 +745,8 @@ export default function CustomersPage() {
               onViewHistory={handleViewHistory}
               onAbonar={handleOpenAbono}
               onViewLayaways={handleOpenLayaways}
-              onWhatsApp={handleWhatsApp}
-              onWhatsAppLoading={whatsAppLoading}
+              onWhatsApp={handleShareStatementImage}
+              onWhatsAppLoading={imageShareLoading}
             />
           )}
         </section>

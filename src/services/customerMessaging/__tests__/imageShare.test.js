@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { downloadCustomerMessageImage, shareCustomerMessageImage } from '../imageShare';
+import {
+  downloadCustomerMessageImage,
+  IMAGE_SHARE_UI_COPY,
+  shareCustomerMessageImage
+} from '../imageShare';
 
 const imageResult = {
   ok: true,
@@ -28,17 +32,29 @@ describe('customer message image sharing', () => {
 
   it('reports user cancellation without downloading or throwing', async () => {
     const error = Object.assign(new Error('cancelled'), { name: 'AbortError' });
+    const env = downloadEnvironment();
     const result = await shareCustomerMessageImage(imageResult, {
-      navigatorRef: { canShare: () => true, share: vi.fn().mockRejectedValue(error) }
+      navigatorRef: { canShare: () => true, share: vi.fn().mockRejectedValue(error) },
+      ...env
     });
     expect(result.status).toBe('cancelled');
+    expect(env.urlApi.createObjectURL).not.toHaveBeenCalled();
+    expect(env.anchor.click).not.toHaveBeenCalled();
   });
 
-  it('reports browser share errors separately', async () => {
+  it('reports browser share errors with an explicit manual download path', async () => {
+    const env = downloadEnvironment();
     const result = await shareCustomerMessageImage(imageResult, {
-      navigatorRef: { canShare: () => true, share: vi.fn().mockRejectedValue(new Error('browser failed')) }
+      navigatorRef: { canShare: () => true, share: vi.fn().mockRejectedValue(new Error('browser failed')) },
+      ...env
     });
-    expect(result).toMatchObject({ status: 'failed', code: 'IMAGE_SHARE_FAILED' });
+    expect(result).toMatchObject({ status: 'failed', code: 'IMAGE_SHARE_FAILED', canDownload: true });
+    expect(env.urlApi.createObjectURL).not.toHaveBeenCalled();
+
+    const downloadResult = downloadCustomerMessageImage(imageResult, env);
+    expect(downloadResult.status).toBe('downloaded');
+    expect(env.urlApi.createObjectURL).toHaveBeenCalledWith(imageResult.blob);
+    expect(env.anchor.click).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -54,9 +70,13 @@ describe('customer message image sharing', () => {
 
   it('does not use window.open or create a text URL', () => {
     const env = downloadEnvironment();
+    const open = vi.fn();
+    vi.stubGlobal('window', { open });
     downloadCustomerMessageImage(imageResult, env);
     expect(env.anchor.href).toBe('blob:test');
     expect(env.anchor.href).not.toContain('?text=');
+    expect(open).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it('is independent from customer phone data', async () => {
@@ -65,5 +85,10 @@ describe('customer message image sharing', () => {
     });
     expect(result.status).toBe('shared');
   });
-});
 
+  it('keeps image-route UI copy free from WhatsApp references', () => {
+    expect(Object.values(IMAGE_SHARE_UI_COPY).join(' ')).not.toMatch(/whatsapp/i);
+    expect(IMAGE_SHARE_UI_COPY.failed).toContain('operacion financiera se conservo');
+    expect(IMAGE_SHARE_UI_COPY.downloadAction).toBe('Descargar imagen');
+  });
+});

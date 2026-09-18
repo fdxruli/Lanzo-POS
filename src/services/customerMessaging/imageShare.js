@@ -1,5 +1,14 @@
 const isShareCancellation = (error) => error?.name === 'AbortError' || error?.code === 'ABORT_ERR';
 
+export const IMAGE_SHARE_UI_COPY = Object.freeze({
+  downloaded: 'La imagen fue descargada. Adjuntala manualmente desde la aplicacion que prefieras.',
+  cancelled: 'El compartido fue cancelado. La operacion financiera se conservo correctamente.',
+  failed: 'No se pudo compartir la imagen. La operacion financiera se conservo correctamente.',
+  unsupported: 'La imagen quedo disponible para descarga manual.',
+  payloadInvalid: 'No se pudo preparar el comprobante como imagen.',
+  downloadAction: 'Descargar imagen'
+});
+
 export const downloadCustomerMessageImage = ({ blob, filename }, {
   documentRef = globalThis.document,
   urlApi = globalThis.URL
@@ -21,7 +30,7 @@ export const downloadCustomerMessageImage = ({ blob, filename }, {
     return {
       status: 'downloaded',
       code: null,
-      message: 'Imagen descargada. Adjuntala manualmente desde la aplicacion que prefieras.'
+      message: IMAGE_SHARE_UI_COPY.downloaded
     };
   } catch (error) {
     return { status: 'failed', code: 'IMAGE_DOWNLOAD_FAILED', error };
@@ -49,10 +58,14 @@ export const shareCustomerMessageImage = async (imageResult, {
       } catch (error) {
         return isShareCancellation(error)
           ? { status: 'cancelled', code: 'IMAGE_SHARE_CANCELLED' }
-          : { status: 'failed', code: 'IMAGE_SHARE_FAILED', error };
+          : {
+            status: 'failed',
+            code: 'IMAGE_SHARE_FAILED',
+            canDownload: true,
+            error
+          };
       }
     }
   }
   return downloadCustomerMessageImage(imageResult, { documentRef, urlApi });
 };
-

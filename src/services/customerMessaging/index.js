@@ -32,6 +32,7 @@ export {
 } from './imageRenderer';
 export {
   downloadCustomerMessageImage,
+  IMAGE_SHARE_UI_COPY,
   shareCustomerMessageImage
 } from './imageShare';
 export {

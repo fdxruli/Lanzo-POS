@@ -7,6 +7,8 @@ import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
 import {
+    downloadCustomerMessageImage,
+    IMAGE_SHARE_UI_COPY,
     renderCustomerMessageImage,
     shareCustomerMessageImage
 } from '../../services/customerMessaging';
@@ -1266,9 +1268,29 @@ export function usePosCheckout({
                                 ? await shareCustomerMessageImage(imageResult)
                                 : { status: 'failed' };
                             if (shareResult.status === 'downloaded') {
-                                showMessageModal('Imagen descargada. Adjuntala manualmente desde la aplicacion que prefieras.', null, { type: 'warning' });
-                            } else if (shareResult.status === 'failed' || shareResult.status === 'unsupported') {
-                                showMessageModal('La venta quedó registrada, pero no se pudo compartir el comprobante.', null, { type: 'warning' });
+                                showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+                            } else if (shareResult.status === 'failed' && shareResult.canDownload) {
+                                showMessageModal(
+                                    IMAGE_SHARE_UI_COPY.failed,
+                                    () => {
+                                        const downloadResult = downloadCustomerMessageImage(imageResult);
+                                        if (downloadResult.status === 'downloaded') {
+                                            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'warning' });
+                                        } else {
+                                            showMessageModal('No se pudo descargar la imagen. La operacion financiera se conservo correctamente.', null, { type: 'warning' });
+                                        }
+                                        return downloadResult;
+                                    },
+                                    {
+                                        title: 'Comprobante disponible',
+                                        confirmButtonText: IMAGE_SHARE_UI_COPY.downloadAction,
+                                        cancelButtonText: 'Ahora no',
+                                        showCancel: true,
+                                        type: 'warning'
+                                    }
+                                );
+                            } else if (shareResult.status === 'unsupported') {
+                                showMessageModal(IMAGE_SHARE_UI_COPY.unsupported, null, { type: 'warning' });
                             }
                         },
                         {

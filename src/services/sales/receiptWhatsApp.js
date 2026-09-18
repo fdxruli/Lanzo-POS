@@ -59,9 +59,9 @@ const durableSaleTimestamp = (sale = {}) => (
 );
 
 /**
- * Builds and opens a temporary text receipt only after the caller has a
- * confirmed sale. There is intentionally no financial mutation or retry path
- * here: every exit is a notification result, never a sale failure.
+ * Builds an image-ready payload only after the caller has a confirmed sale.
+ * There is no financial mutation, share call, text fallback, or retry path
+ * here: every exit is a messaging result, never a sale failure.
  */
 export async function sendReceiptWhatsApp({
     sale,
