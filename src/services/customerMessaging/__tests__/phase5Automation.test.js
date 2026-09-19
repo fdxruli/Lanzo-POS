@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUSES,
   buildPaymentMessagePayload,
@@ -10,7 +10,10 @@ import {
   toLocalCustomerMessageOutboxStatus
 } from '../index';
 import {
+  cancelCustomerMessageReminder,
+  getCustomerMessageReminderErrorCopy,
   listCustomerMessageReminders,
+  rescheduleCustomerMessageReminder,
   scheduleCustomerMessageReminder
 } from '../reminders';
 
@@ -109,5 +112,41 @@ describe('customer messaging phase 5 automation contracts', () => {
     expect(local).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
     expect(cloud.reminders[0]).toMatchObject({ status: 'programado', provider_configured: false });
     expect(scheduled.reminder).toMatchObject({ status: 'programado', provider_configured: false });
+  });
+
+  it('does not call the cloud repository for any reminder mutation in Free/Local', async () => {
+    const repository = {
+      scheduleReminder: vi.fn(async () => ({ ok: true })),
+      cancelReminder: vi.fn(async () => ({ ok: true })),
+      rescheduleReminder: vi.fn(async () => ({ ok: true }))
+    };
+
+    const localSchedule = await scheduleCustomerMessageReminder('customer-a', {
+      repository,
+      licenseDetails: { plan_code: 'free_trial', features: {} }
+    });
+    const localCancel = await cancelCustomerMessageReminder('reminder-a', {
+      repository,
+      licenseDetails: { plan_code: 'free_trial', features: {} }
+    });
+    const localReschedule = await rescheduleCustomerMessageReminder(
+      'reminder-a',
+      '2026-09-21T10:00:00.000Z',
+      { repository, licenseDetails: { plan_code: 'free_trial', features: {} } }
+    );
+
+    expect(localSchedule).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
+    expect(localCancel).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
+    expect(localReschedule).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
+    expect(repository.scheduleReminder).not.toHaveBeenCalled();
+    expect(repository.cancelReminder).not.toHaveBeenCalled();
+    expect(repository.rescheduleReminder).not.toHaveBeenCalled();
+  });
+
+  it('keeps RPC failures in Spanish and provider-neutral', () => {
+    expect(getCustomerMessageReminderErrorCopy('REMINDER_CANCEL_FAILED'))
+      .toBe('No se pudo cancelar el recordatorio. Intenta de nuevo.');
+    expect(getCustomerMessageReminderErrorCopy('REMINDER_DATE_INVALID'))
+      .toBe('La fecha del recordatorio debe ser futura.');
   });
 });

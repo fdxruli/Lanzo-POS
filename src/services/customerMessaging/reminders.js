@@ -33,13 +33,22 @@ export const CUSTOMER_MESSAGE_REMINDER_DEFAULTS = Object.freeze({
 
 export const CUSTOMER_MESSAGE_REMINDER_ERROR_COPY = Object.freeze({
   CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE: 'Los recordatorios cloud requieren Lanzo Nube.',
+  CUSTOMER_MESSAGE_ADMIN_REQUIRED: 'Solo un Admin puede modificar los recordatorios.',
+  CUSTOMER_MESSAGE_STAFF_NOT_ALLOWED: 'Staff puede consultar el estado, pero no modificar recordatorios.',
+  CUSTOMER_MESSAGE_AUTH_CONTEXT_MISSING: 'No se pudo validar la sesión cloud actual.',
+  SUPABASE_UNAVAILABLE: 'La sincronización cloud no está disponible en este dispositivo.',
   REMINDER_CONFIG_DISABLED: 'Activa los recordatorios antes de programar una cuenta.',
   REMINDER_CUSTOMER_NOT_PENDING: 'La cuenta ya no tiene saldo pendiente; no se programó el recordatorio.',
   REMINDER_CUSTOMER_NOT_FOUND: 'No se encontró la cuenta del cliente.',
+  REMINDER_NOT_FOUND: 'No se encontró el recordatorio.',
   REMINDER_TIMEZONE_INVALID: 'La zona horaria no es válida.',
   REMINDER_DATE_INVALID: 'La fecha del recordatorio debe ser futura.',
   REMINDER_CONFLICT: 'Otro dispositivo actualizó este recordatorio. Recarga la lista.',
-  SUPABASE_UNAVAILABLE: 'La sincronización cloud no está disponible en este dispositivo.'
+  REMINDER_SCHEDULE_FAILED: 'No se pudo programar el recordatorio. Intenta de nuevo.',
+  REMINDER_CANCEL_FAILED: 'No se pudo cancelar el recordatorio. Intenta de nuevo.',
+  REMINDER_RESCHEDULE_FAILED: 'No se pudo reprogramar el recordatorio. Intenta de nuevo.',
+  REMINDER_LIST_FAILED: 'No se pudo cargar el historial de recordatorios.',
+  CUSTOMER_MESSAGE_RPC_FAILED: 'No se pudo actualizar el recordatorio. Intenta de nuevo.'
 });
 
 export const getCustomerMessageReminderErrorCopy = (code) => (
