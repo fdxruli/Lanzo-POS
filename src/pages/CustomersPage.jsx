@@ -31,6 +31,7 @@ import {
 } from '../services/customerMessaging';
 import {
   getCustomerMessageReminderErrorCopy,
+  getCustomerMessagingLicenseEligibility,
   isCloudCustomerMessagingEnabled,
   listCustomerMessageReminders,
   cancelCustomerMessageReminder,
@@ -126,8 +127,15 @@ export default function CustomersPage() {
   const companyName = companyProfile?.name || 'Tu Negocio';
   const globalCreditLimit = Number(companyProfile?.settings_default_credit_limit) || 0;
   const customerMessagingCloudEnabled = isCloudCustomerMessagingEnabled(licenseDetails);
+  const customerMessagingLicenseEligibility = useMemo(
+    () => getCustomerMessagingLicenseEligibility(licenseDetails),
+    [licenseDetails]
+  );
+  const customerMessagingLicenseEligible = customerMessagingLicenseEligibility.ok;
   const reminderActorType = settingsAccess.actorType || actorRuntime?.actorType || null;
-  const canManageCustomerReminders = customerMessagingCloudEnabled && settingsAccess.isAdmin;
+  const canManageCustomerReminders = customerMessagingCloudEnabled
+    && customerMessagingLicenseEligible
+    && settingsAccess.isAdmin;
 
   useEffect(() => {
     setIsLayawayModalOpen(false);
@@ -299,7 +307,19 @@ export default function CustomersPage() {
     if (!customerMessagingCloudEnabled || !reminderActorType) {
       setCustomerReminders([]);
       setCustomerReminderConfig(null);
-      setCustomerReminderError('');
+      setCustomerReminderError(
+        customerMessagingCloudEnabled && !customerMessagingLicenseEligible
+          ? getCustomerMessageReminderErrorCopy(customerMessagingLicenseEligibility.code)
+          : ''
+      );
+      setCustomerReminderLoading(false);
+      return;
+    }
+
+    if (!customerMessagingLicenseEligible) {
+      setCustomerReminders([]);
+      setCustomerReminderConfig(null);
+      setCustomerReminderError(getCustomerMessageReminderErrorCopy(customerMessagingLicenseEligibility.code));
       setCustomerReminderLoading(false);
       return;
     }
@@ -330,7 +350,13 @@ export default function CustomersPage() {
     } finally {
       setCustomerReminderLoading(false);
     }
-  }, [customerMessagingCloudEnabled, licenseDetails, reminderActorType]);
+  }, [
+    customerMessagingCloudEnabled,
+    customerMessagingLicenseEligibility,
+    customerMessagingLicenseEligible,
+    licenseDetails,
+    reminderActorType
+  ]);
 
   useEffect(() => {
     loadCustomerMessageReminders();
@@ -388,6 +414,15 @@ export default function CustomersPage() {
       return;
     }
 
+    if (!customerMessagingLicenseEligible) {
+      setCustomerReminderFeedback(
+        customerId,
+        'error',
+        getCustomerMessageReminderErrorCopy(customerMessagingLicenseEligibility.code)
+      );
+      return;
+    }
+
     if (customerReminderConfig?.enabled !== true) {
       setCustomerReminderFeedback(customerId, 'error', 'Activa primero los recordatorios cloud en Configuración.');
       return;
@@ -436,6 +471,8 @@ export default function CustomersPage() {
     canManageCustomerReminders,
     customerReminderConfig?.enabled,
     customerReminders,
+    customerMessagingLicenseEligibility,
+    customerMessagingLicenseEligible,
     finishCustomerReminderAction,
     licenseDetails,
     loadCustomerMessageReminders,

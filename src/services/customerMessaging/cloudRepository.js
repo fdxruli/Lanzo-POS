@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store/useAppStore';
+import { assertLocalTransactionAllowed } from '../../store/slices/license/licenseGuards';
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 
@@ -19,12 +20,18 @@ const planCode = (licenseDetails = {}) => String(
   || ''
 ).trim().toLowerCase();
 
-const features = (licenseDetails = {}) => (
-  licenseDetails?.effective_features
-  || licenseDetails?.features
-  || licenseDetails?.details?.features
-  || {}
-);
+const features = (licenseDetails = {}) => ({
+  ...(licenseDetails?.details?.features || {}),
+  ...(licenseDetails?.features || {}),
+  ...(licenseDetails?.effective_features || {})
+});
+
+const errorResult = (code, message = null, extra = {}) => ({
+  ok: false,
+  code,
+  message,
+  ...extra
+});
 
 export const isCloudCustomerMessagingEnabled = (licenseDetails = {}) => {
   const currentFeatures = features(licenseDetails);
@@ -34,17 +41,88 @@ export const isCloudCustomerMessagingEnabled = (licenseDetails = {}) => {
   );
 };
 
+const LICENSE_LIFECYCLE_BLOCK_CODES = new Set([
+  'expired',
+  'administratively_blocked',
+  'cancelled',
+  'revoked',
+  'suspended',
+  'blocked'
+]);
+
+const toCloudLicenseEligibilityError = (guardResult) => {
+  if (
+    guardResult?.code === 'LICENSE_EXPIRED'
+    || guardResult?.code === 'LICENSE_LIFECYCLE_STALE'
+    || String(guardResult?.code || '').toLowerCase() === 'expired'
+    || guardResult?.code === 'LOCKED_RENEWAL'
+  ) {
+    return {
+      ok: false,
+      code: guardResult.code === 'LICENSE_LIFECYCLE_STALE' ? guardResult.code : 'LICENSE_EXPIRED',
+      lifecycleState: guardResult.lifecycleState || null,
+      gracePeriodEnds: guardResult.gracePeriodEnds || null
+    };
+  }
+
+  if (guardResult?.code === 'LICENSE_NOT_ACTIVE' || LICENSE_LIFECYCLE_BLOCK_CODES.has(String(guardResult?.code || '').toLowerCase())) {
+    return {
+      ok: false,
+      code: 'LICENSE_NOT_ACTIVE',
+      lifecycleState: guardResult.lifecycleState || null,
+      gracePeriodEnds: guardResult.gracePeriodEnds || null
+    };
+  }
+
+  return {
+    ok: false,
+    code: guardResult?.code || 'LICENSE_INVALID',
+    lifecycleState: guardResult?.lifecycleState || null,
+    gracePeriodEnds: guardResult?.gracePeriodEnds || null
+  };
+};
+
+export const getCustomerMessagingLicenseEligibility = (
+  licenseDetails = {},
+  state = useAppStore.getState()
+) => {
+  const canonicalLifecycle = String(licenseDetails?.lifecycle_state || '').trim().toLowerCase();
+  if (licenseDetails?.is_entitled === false || LICENSE_LIFECYCLE_BLOCK_CODES.has(canonicalLifecycle)) {
+    return {
+      ok: false,
+      code: canonicalLifecycle === 'administratively_blocked' ? 'LICENSE_NOT_ACTIVE' : 'LICENSE_EXPIRED',
+      lifecycleState: canonicalLifecycle || null,
+      gracePeriodEnds: licenseDetails?.grace_period_ends || null
+    };
+  }
+
+  if (!isCloudCustomerMessagingEnabled(licenseDetails)) {
+    return errorResult('CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE');
+  }
+
+  const guardResult = assertLocalTransactionAllowed(licenseDetails, {
+    appStatus: state?.appStatus,
+    licenseStatus: state?.licenseStatus,
+    currentDeviceRole: state?.currentDeviceRole,
+    currentStaffUser: state?.currentStaffUser,
+    gracePeriodEnds: state?.gracePeriodEnds
+  });
+
+  if (!guardResult.ok) return toCloudLicenseEligibilityError(guardResult);
+
+  return {
+    ok: true,
+    code: null,
+    lifecycleState: guardResult.lifecycleState || canonicalLifecycle || 'active',
+    gracePeriodEnds: guardResult.gracePeriodEnds || licenseDetails?.grace_period_ends || null
+  };
+};
+
 export const getCustomerMessagingPlanRequirement = () => 'Lanzo Nube (Pro)';
 
-const errorResult = (code, message = null, extra = {}) => ({
-  ok: false,
-  code,
-  message,
-  ...extra
-});
-
 const contextArgs = async (licenseDetails, actorType = null) => {
-  if (!isCloudCustomerMessagingEnabled(licenseDetails)) return errorResult('CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE');
+  const eligibility = getCustomerMessagingLicenseEligibility(licenseDetails);
+  if (!eligibility.ok) return eligibility;
   if (!supabaseClient) return errorResult('SUPABASE_UNAVAILABLE');
   const licenseKey = licenseDetails?.license_key || licenseDetails?.details?.license_key;
   if (!licenseKey) return errorResult('LICENSE_MISSING');

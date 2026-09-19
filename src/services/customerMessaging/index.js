@@ -81,6 +81,7 @@ export {
 export {
   createCustomerMessageCloudRepository,
   customerMessageCloudRepository,
+  getCustomerMessagingLicenseEligibility,
   getCustomerMessagingPlanRequirement,
   isCloudCustomerMessagingEnabled
 } from './cloudRepository';

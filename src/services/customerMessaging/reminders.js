@@ -1,8 +1,8 @@
 import { useAppStore } from '../../store/useAppStore';
 import {
   customerMessageCloudRepository,
-  getCustomerMessagingPlanRequirement,
-  isCloudCustomerMessagingEnabled
+  getCustomerMessagingLicenseEligibility,
+  getCustomerMessagingPlanRequirement
 } from './cloudRepository';
 
 export const CUSTOMER_MESSAGE_REMINDER_STATUSES = Object.freeze([
@@ -33,6 +33,10 @@ export const CUSTOMER_MESSAGE_REMINDER_DEFAULTS = Object.freeze({
 
 export const CUSTOMER_MESSAGE_REMINDER_ERROR_COPY = Object.freeze({
   CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE: 'Los recordatorios cloud requieren Lanzo Nube.',
+  LICENSE_EXPIRED: 'Los recordatorios cloud requieren una licencia Pro/Nube vigente.',
+  LICENSE_NOT_ACTIVE: 'Los recordatorios cloud requieren una licencia Pro/Nube vigente.',
+  LICENSE_NOT_ENTITLED: 'Los recordatorios cloud requieren una licencia Pro/Nube vigente.',
+  LICENSE_LIFECYCLE_STALE: 'Los recordatorios cloud requieren una licencia Pro/Nube vigente.',
   CUSTOMER_MESSAGE_ADMIN_REQUIRED: 'Solo un Admin puede modificar los recordatorios.',
   CUSTOMER_MESSAGE_STAFF_NOT_ALLOWED: 'Staff puede consultar el estado, pero no modificar recordatorios.',
   CUSTOMER_MESSAGE_AUTH_CONTEXT_MISSING: 'No se pudo validar la sesión cloud actual.',
@@ -57,42 +61,60 @@ export const getCustomerMessageReminderErrorCopy = (code) => (
 
 const currentLicenseDetails = () => useAppStore.getState().licenseDetails;
 
+const isStaffActor = (actorType, licenseDetails) => (
+  actorType === 'staff' || licenseDetails?.device_role === 'staff'
+);
+
+const validateCloudMutationAccess = (licenseDetails, options) => {
+  const eligibility = getCustomerMessagingLicenseEligibility(licenseDetails);
+  if (!eligibility.ok) return eligibility;
+  if (isStaffActor(options.actorType, licenseDetails)) {
+    return { ok: false, code: 'CUSTOMER_MESSAGE_STAFF_NOT_ALLOWED' };
+  }
+  return { ok: true };
+};
+
 export const listCustomerMessageReminders = async ({ repository = customerMessageCloudRepository, ...options } = {}) => {
   const licenseDetails = options.licenseDetails || currentLicenseDetails();
-  if (!isCloudCustomerMessagingEnabled(licenseDetails)) {
-    return { ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE', planRequired: getCustomerMessagingPlanRequirement(), reminders: [], config: null };
+  const eligibility = getCustomerMessagingLicenseEligibility(licenseDetails);
+  if (!eligibility.ok) {
+    return { ...eligibility, planRequired: getCustomerMessagingPlanRequirement(), reminders: [], config: null };
   }
   return repository.listReminders({ ...options, licenseDetails });
 };
 
 export const saveCustomerMessageReminderConfig = async ({ repository = customerMessageCloudRepository, ...options } = {}) => {
   const licenseDetails = options.licenseDetails || currentLicenseDetails();
-  if (!isCloudCustomerMessagingEnabled(licenseDetails)) {
-    return { ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE', planRequired: getCustomerMessagingPlanRequirement() };
+  const access = validateCloudMutationAccess(licenseDetails, options);
+  if (!access.ok) {
+    return { ...access, planRequired: getCustomerMessagingPlanRequirement() };
   }
   return repository.saveReminderConfig({ ...options, licenseDetails });
 };
 
 export const scheduleCustomerMessageReminder = async (customerId, { repository = customerMessageCloudRepository, ...options } = {}) => {
   const licenseDetails = options.licenseDetails || currentLicenseDetails();
-  if (!isCloudCustomerMessagingEnabled(licenseDetails)) {
-    return { ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE', planRequired: getCustomerMessagingPlanRequirement() };
+  const access = validateCloudMutationAccess(licenseDetails, options);
+  if (!access.ok) {
+    return { ...access, planRequired: getCustomerMessagingPlanRequirement() };
   }
   return repository.scheduleReminder(customerId, { ...options, licenseDetails });
 };
 
 export const cancelCustomerMessageReminder = async (reminderId, { repository = customerMessageCloudRepository, ...options } = {}) => {
   const licenseDetails = options.licenseDetails || currentLicenseDetails();
-  if (!isCloudCustomerMessagingEnabled(licenseDetails)) {
-    return { ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE', planRequired: getCustomerMessagingPlanRequirement() };
+  const access = validateCloudMutationAccess(licenseDetails, options);
+  if (!access.ok) {
+    return { ...access, planRequired: getCustomerMessagingPlanRequirement() };
   }
   return repository.cancelReminder(reminderId, { ...options, licenseDetails });
 };
 
 export const rescheduleCustomerMessageReminder = async (reminderId, scheduledFor, { repository = customerMessageCloudRepository, ...options } = {}) => {
   const licenseDetails = options.licenseDetails || currentLicenseDetails();
-  if (!isCloudCustomerMessagingEnabled(licenseDetails)) {
-    return { ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE', planRequired: getCustomerMessagingPlanRequirement() };
+  const access = validateCloudMutationAccess(licenseDetails, options);
+  if (!access.ok) {
+    return { ...access, planRequired: getCustomerMessagingPlanRequirement() };
   }
   return repository.rescheduleReminder(reminderId, scheduledFor, { ...options, licenseDetails });
 };

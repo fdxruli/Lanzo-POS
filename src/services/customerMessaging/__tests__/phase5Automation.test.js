@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUSES,
   buildPaymentMessagePayload,
+  getCustomerMessagingLicenseEligibility,
   isCloudCustomerMessagingEnabled,
   mergeCustomerMessageOutboxRecords,
   payloadContainsTechnicalIds,
@@ -18,7 +19,11 @@ import {
 } from '../reminders';
 
 const cloudLicense = {
+  license_key: 'LANZO-PRO-CUSTOMER-MESSAGING',
+  valid: true,
+  status: 'active',
   plan_code: 'pro_monthly',
+  expires_at: '2099-09-19T00:00:00.000Z',
   features: { cloud_pos_sync: true, customerMessageTemplates: true }
 };
 
@@ -27,6 +32,38 @@ describe('customer messaging phase 5 automation contracts', () => {
     expect(isCloudCustomerMessagingEnabled({ plan_code: 'free_trial', features: {} })).toBe(false);
     expect(isCloudCustomerMessagingEnabled({ plan_code: 'basic_monthly', features: { cloud_pos_sync: false } })).toBe(false);
     expect(isCloudCustomerMessagingEnabled(cloudLicense)).toBe(true);
+  });
+
+  it('follows the canonical license lifecycle, including a valid grace period', () => {
+    expect(getCustomerMessagingLicenseEligibility(cloudLicense)).toMatchObject({
+      ok: true,
+      lifecycleState: 'active'
+    });
+
+    const expired = {
+      ...cloudLicense,
+      expires_at: '2020-09-01T00:00:00.000Z'
+    };
+    expect(getCustomerMessagingLicenseEligibility(expired)).toMatchObject({
+      ok: false,
+      code: 'LICENSE_EXPIRED'
+    });
+
+    const grace = {
+      ...cloudLicense,
+      status: 'grace_period',
+      lifecycle_state: 'grace_period',
+      is_entitled: true,
+      is_in_grace: true,
+      expires_at: '2026-09-18T00:00:00.000Z',
+      grace_period_ends: '2099-09-26T00:00:00.000Z'
+    };
+    expect(getCustomerMessagingLicenseEligibility(grace)).toMatchObject({
+      ok: true,
+      lifecycleState: 'grace_period'
+    });
+    expect(getCustomerMessageReminderErrorCopy('LICENSE_EXPIRED'))
+      .toBe('Los recordatorios cloud requieren una licencia Pro/Nube vigente.');
   });
 
   it('maps legacy local statuses to honest provider-neutral cloud statuses', () => {
@@ -138,6 +175,37 @@ describe('customer messaging phase 5 automation contracts', () => {
     expect(localSchedule).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
     expect(localCancel).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
     expect(localReschedule).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_CLOUD_UNAVAILABLE' });
+    expect(repository.scheduleReminder).not.toHaveBeenCalled();
+    expect(repository.cancelReminder).not.toHaveBeenCalled();
+    expect(repository.rescheduleReminder).not.toHaveBeenCalled();
+  });
+
+  it('does not allow Staff to schedule, cancel, or reschedule reminders', async () => {
+    const repository = {
+      scheduleReminder: vi.fn(async () => ({ ok: true })),
+      cancelReminder: vi.fn(async () => ({ ok: true })),
+      rescheduleReminder: vi.fn(async () => ({ ok: true }))
+    };
+
+    const schedule = await scheduleCustomerMessageReminder('customer-a', {
+      repository,
+      actorType: 'staff',
+      licenseDetails: cloudLicense
+    });
+    const cancel = await cancelCustomerMessageReminder('reminder-a', {
+      repository,
+      actorType: 'staff',
+      licenseDetails: cloudLicense
+    });
+    const reschedule = await rescheduleCustomerMessageReminder('reminder-a', '2099-09-21T10:00:00.000Z', {
+      repository,
+      actorType: 'staff',
+      licenseDetails: cloudLicense
+    });
+
+    expect(schedule).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_STAFF_NOT_ALLOWED' });
+    expect(cancel).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_STAFF_NOT_ALLOWED' });
+    expect(reschedule).toMatchObject({ ok: false, code: 'CUSTOMER_MESSAGE_STAFF_NOT_ALLOWED' });
     expect(repository.scheduleReminder).not.toHaveBeenCalled();
     expect(repository.cancelReminder).not.toHaveBeenCalled();
     expect(repository.rescheduleReminder).not.toHaveBeenCalled();

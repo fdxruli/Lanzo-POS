@@ -142,6 +142,23 @@ describe('CustomerReminderActions', () => {
         expect(screen.getByText('No se pudo cancelar el recordatorio. Intenta de nuevo.')).toBeVisible();
     });
 
+    it('blocks cloud scheduling for an expired license without grace', () => {
+        render(
+            <CustomerReminderActions
+                customer={customer()}
+                cloudEnabled
+                configEnabled
+                canManage
+                configError="Los recordatorios cloud requieren una licencia Pro/Nube vigente."
+                onSchedule={vi.fn()}
+            />
+        );
+
+        expect(screen.getByText('Los recordatorios cloud requieren una licencia Pro/Nube vigente.')).toBeVisible();
+        expect(screen.queryByRole('button', { name: 'Programar recordatorio' })).not.toBeInTheDocument();
+        expect(screen.queryByText(/Enviado/i)).not.toBeInTheDocument();
+    });
+
     it('renders a newly scheduled Ruly reminder without exposing its IDs', () => {
         render(
             <CustomerReminderActions
