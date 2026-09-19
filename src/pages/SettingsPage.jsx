@@ -6,6 +6,7 @@ import DevicesSettings from '../components/settings/DevicesSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
 import CustomerMessageTemplatesSettings from '../components/settings/CustomerMessageTemplatesSettings';
+import CustomerMessageAutomationSettings from '../components/settings/CustomerMessageAutomationSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
 import { useSearchParams } from 'react-router-dom';
@@ -77,7 +78,12 @@ export default function SettingsPage() {
             <BackupSettings isCloudLicense={isCloudLicense} />
           </>
         )}
-        {activeTab === 'messages' && <CustomerMessageTemplatesSettings />}
+        {activeTab === 'messages' && (
+          <>
+            <CustomerMessageTemplatesSettings />
+            <CustomerMessageAutomationSettings />
+          </>
+        )}
         {activeTab === 'debug' && (
           <div className="ui-card debug-section">
             <h3>Pruebas de datos</h3>

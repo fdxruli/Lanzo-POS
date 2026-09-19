@@ -1,6 +1,7 @@
 import { showMessageModal } from '../utils';
 import {
   CUSTOMER_MESSAGE_OUTBOX_DEFAULTS,
+  CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUS_LABELS,
   CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS,
   downloadCustomerMessageOutbox,
   shareCustomerMessageOutbox
@@ -48,14 +49,20 @@ const statusNote = (record, result = null) => {
   if (persistenceNote) return persistenceNote;
 
   switch (record?.status) {
+    case 'pendiente':
+      return 'El mensaje está pendiente de una acción local. Todavía no se ha enviado ni entregado.';
     case 'compartido':
       return 'La hoja de compartir terminó correctamente. Lanzo no puede confirmar la recepción final del archivo en WhatsApp u otra app.';
     case 'descarga_generada':
       return record.lastErrorCode === 'WEB_SHARE_UNAVAILABLE_OR_INCOMPATIBLE'
         ? 'Este navegador no permitió compartir el archivo directamente; se generó una descarga manual.'
         : 'La imagen se descargó correctamente para que puedas adjuntarla manualmente.';
+    case 'descargado':
+      return 'La imagen se descargó correctamente. Lanzo no puede confirmar recepción por parte del cliente.';
     case 'cancelado_por_usuario':
       return 'El usuario cerró o canceló la hoja de compartir. La operación financiera permanece confirmada.';
+    case 'cancelado':
+      return 'El mensaje fue cancelado. La operación financiera permanece confirmada.';
     case 'reintento_pendiente':
       return record.nextRetryAt && new Date(record.nextRetryAt).getTime() > Date.now()
         ? `Podrás volver a intentar compartir después de: ${formatAttemptDate(record.nextRetryAt)}. Mientras tanto puedes descargar la imagen.`
@@ -68,7 +75,9 @@ const statusNote = (record, result = null) => {
 };
 
 export const buildCustomerMessageOutboxModalCopy = (record = {}, result = null) => {
-  const status = CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS[record.status] || 'Estado no disponible';
+  const status = CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS[record.status]
+    || CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUS_LABELS[record.status]
+    || 'Estado no disponible';
   const lines = [
     `Estado: ${status}`,
     record.humanReference ? `Referencia: ${record.humanReference}` : null,

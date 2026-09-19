@@ -12,6 +12,10 @@ import {
 import { renderCustomerMessageImage } from './imageRenderer';
 import { normalizeMexicanPhone } from './normalizers';
 import { resolveCustomerMessageTemplate } from './templateRepository';
+import {
+  customerMessageCloudRepository,
+  isCloudCustomerMessagingEnabled
+} from './cloudRepository';
 
 export const CUSTOMER_MESSAGE_OUTBOX_SCHEMA_VERSION = 1;
 export const CUSTOMER_MESSAGE_OUTBOX_STORAGE_KEY = 'customer-message-outbox-v1';
@@ -32,6 +36,47 @@ export const CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS = Object.freeze({
   cancelado_por_usuario: 'Cancelado por el usuario',
   error: 'Error',
   reintento_pendiente: 'Reintento pendiente'
+});
+
+// The local v1 record keeps its historical status names for backwards
+// compatibility. Cloud history uses this smaller, provider-neutral contract.
+export const CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUSES = Object.freeze([
+  'preparado',
+  'pendiente',
+  'compartido',
+  'descargado',
+  'cancelado',
+  'reintento_pendiente',
+  'error'
+]);
+
+export const CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUS_LABELS = Object.freeze({
+  preparado: 'Preparado',
+  pendiente: 'Pendiente',
+  compartido: 'Compartido',
+  descargado: 'Descargado',
+  cancelado: 'Cancelado',
+  reintento_pendiente: 'Reintento pendiente',
+  error: 'Error'
+});
+
+const LOCAL_TO_CLOUD_STATUS = Object.freeze({
+  preparado: 'preparado',
+  compartido: 'compartido',
+  descarga_generada: 'descargado',
+  cancelado_por_usuario: 'cancelado',
+  error: 'error',
+  reintento_pendiente: 'reintento_pendiente'
+});
+
+const CLOUD_TO_LOCAL_STATUS = Object.freeze({
+  preparado: 'preparado',
+  pendiente: 'preparado',
+  compartido: 'compartido',
+  descargado: 'descarga_generada',
+  cancelado: 'cancelado_por_usuario',
+  reintento_pendiente: 'reintento_pendiente',
+  error: 'error'
 });
 
 export const CUSTOMER_MESSAGE_OUTBOX_DEFAULTS = Object.freeze({
@@ -177,6 +222,21 @@ const safeNotes = (notes) => (Array.isArray(notes) ? notes : []).map((note) => (
   currentOwed: cleanScalar(note?.currentOwed ?? note?.balanceDue ?? note?.saldoPendiente)
 }));
 
+const safePaymentAllocations = (allocations) => (Array.isArray(allocations) ? allocations : [])
+  .map((allocation) => {
+    const reference = selectDisplayReference(
+      allocation,
+      allocation?.sale,
+      allocation?.saleData,
+      allocation?.ticket
+    );
+    return reference ? {
+      reference,
+      amount: cleanScalar(allocation?.amount ?? allocation?.amountApplied ?? allocation?.amount_applied)
+    } : null;
+  })
+  .filter(Boolean);
+
 /**
  * The renderer receives only presentation data. Technical ids remain usable
  * while deriving the idempotency hash, but they are deliberately absent from
@@ -218,7 +278,8 @@ export const sanitizeCustomerMessageOutboxPayload = (payload = {}) => ({
     originalMethod: cleanScalar(payload.payment?.originalMethod),
     previousBalance: cleanScalar(payload.payment?.previousBalance),
     amount: cleanScalar(payload.payment?.amount),
-    newBalance: cleanScalar(payload.payment?.newBalance)
+    newBalance: cleanScalar(payload.payment?.newBalance),
+    allocations: safePaymentAllocations(payload.payment?.allocations)
   },
   account: {
     cutoffAt: cleanScalar(payload.account?.cutoffAt),
@@ -441,6 +502,119 @@ const persistTransition = ({ repository, record, nextStatus, patch = {}, tenantC
   });
 };
 
+export const toCloudCustomerMessageOutboxStatus = (status) => (
+  LOCAL_TO_CLOUD_STATUS[status] || (CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUSES.includes(status) ? status : 'error')
+);
+
+export const toLocalCustomerMessageOutboxStatus = (status) => (
+  CLOUD_TO_LOCAL_STATUS[status] || 'error'
+);
+
+const timestampValue = (value) => {
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/**
+ * Cloud is authoritative when its confirmed revision is newer. When both
+ * records have the same clock, the cloud state wins because it may have been
+ * confirmed by another device. This function never merges payloads from
+ * different idempotency keys.
+ */
+export const mergeCustomerMessageOutboxRecords = (localRecord, cloudRecord) => {
+  if (!localRecord) return cloudRecord ? {
+    ...cloudRecord,
+    idempotencyKey: cloudRecord.idempotencyKey || cloudRecord.idempotency_key,
+    status: toLocalCustomerMessageOutboxStatus(cloudRecord.status),
+    cloudStatus: cloudRecord.status,
+    cloudUpdatedAt: cloudRecord.updatedAt || cloudRecord.updated_at || null,
+    cloudSyncStatus: 'synced'
+  } : null;
+  if (!cloudRecord) return localRecord;
+  const cloudKey = cloudRecord.idempotencyKey || cloudRecord.idempotency_key;
+  if (cloudKey && cloudKey !== localRecord.idempotencyKey) return localRecord;
+  const cloudUpdatedAt = cloudRecord.updatedAt || cloudRecord.updated_at || null;
+  const cloudIsNewer = timestampValue(cloudUpdatedAt) >= timestampValue(localRecord.cloudUpdatedAt || localRecord.updatedAt);
+  if (!cloudIsNewer) return { ...localRecord, cloudSyncStatus: localRecord.cloudSyncStatus || 'pending' };
+  return {
+    ...localRecord,
+    status: toLocalCustomerMessageOutboxStatus(cloudRecord.status),
+    cloudStatus: cloudRecord.status,
+    cloudUpdatedAt,
+    cloudSyncStatus: 'synced',
+    lastErrorCode: cloudRecord.lastErrorCode ?? cloudRecord.last_error_code ?? localRecord.lastErrorCode,
+    nextRetryAt: cloudRecord.nextRetryAt ?? cloudRecord.next_retry_at ?? localRecord.nextRetryAt,
+    lastAttemptAt: cloudRecord.lastAttemptAt ?? cloudRecord.last_attempt_at ?? localRecord.lastAttemptAt,
+    attemptCount: Math.max(Number(localRecord.attemptCount || 0), Number(cloudRecord.attemptCount ?? cloudRecord.attempt_count ?? 0)),
+    shareAttemptCount: Math.max(Number(localRecord.shareAttemptCount || 0), Number(cloudRecord.shareAttemptCount ?? cloudRecord.share_attempt_count ?? 0)),
+    updatedAt: localRecord.updatedAt
+  };
+};
+
+const syncRecordToCloud = async ({
+  record,
+  licenseDetails,
+  actorType,
+  cloudRepository = customerMessageCloudRepository
+}) => {
+  if (!isCloudCustomerMessagingEnabled(licenseDetails) || !cloudRepository?.upsert) {
+    return { ok: true, skipped: true, record };
+  }
+  const result = await cloudRepository.upsert({
+    ...record,
+    cloudStatus: toCloudCustomerMessageOutboxStatus(record.status)
+  }, { licenseDetails, actorType });
+  if (!result?.ok || !result.record) return { ok: false, code: result?.code || 'CUSTOMER_MESSAGE_CLOUD_SYNC_FAILED', record };
+  return {
+    ok: true,
+    duplicate: result.duplicate === true,
+    record: mergeCustomerMessageOutboxRecords(record, result.record)
+  };
+};
+
+const syncTransitionToCloud = async ({
+  record,
+  licenseDetails,
+  actorType,
+  cloudRepository = customerMessageCloudRepository
+}) => {
+  if (!isCloudCustomerMessagingEnabled(licenseDetails) || !cloudRepository?.transition) {
+    return { ok: true, skipped: true, record };
+  }
+  const result = await cloudRepository.transition(
+    { ...record, cloudStatus: toCloudCustomerMessageOutboxStatus(record.status) },
+    toCloudCustomerMessageOutboxStatus(record.status),
+    { licenseDetails, actorType }
+  );
+  if (!result?.ok || !result.record) return { ok: false, code: result?.code || 'CUSTOMER_MESSAGE_CLOUD_SYNC_FAILED', record };
+  return { ok: true, record: mergeCustomerMessageOutboxRecords(record, result.record) };
+};
+
+const confirmCloudTransition = async ({
+  record,
+  repository,
+  licenseDetails,
+  actorType,
+  cloudRepository
+}) => {
+  if (!isCloudCustomerMessagingEnabled(licenseDetails) || !cloudRepository?.transition) {
+    return { record, cloudSyncStatus: 'not_applicable' };
+  }
+  try {
+    const cloud = await syncTransitionToCloud({ record, licenseDetails, actorType, cloudRepository });
+    if (cloud.ok && cloud.record) {
+      const confirmedRecord = { ...cloud.record, cloudSyncStatus: 'synced' };
+      repository.put(confirmedRecord);
+      return { record: confirmedRecord, cloudSyncStatus: 'synced' };
+    }
+  } catch {
+    // The local transition is still valid and remains retryable for a later sync.
+  }
+  const pendingRecord = { ...record, cloudSyncStatus: 'pending' };
+  try { repository.put(pendingRecord); } catch { /* preserve the confirmed local transition */ }
+  return { record: pendingRecord, cloudSyncStatus: 'pending' };
+};
+
 export const prepareCustomerMessageOutbox = async ({
   payload,
   licenseDetails = useAppStore.getState().licenseDetails,
@@ -448,6 +622,7 @@ export const prepareCustomerMessageOutbox = async ({
   actorHandle = null,
   resolvedTemplate = null,
   repository = customerMessageOutboxRepository,
+  cloudRepository = customerMessageCloudRepository,
   now = () => Date.now()
 } = {}) => {
   if (!payload?.eventType) return { ok: false, code: 'MESSAGE_PAYLOAD_INVALID' };
@@ -460,9 +635,24 @@ export const prepareCustomerMessageOutbox = async ({
   const idempotencyKey = buildCustomerMessageOutboxIdempotencyKey(payload);
   const existing = repository.get(idempotencyKey);
   if (existing) {
-    return tenantContextMatches(tenantContext)
-      ? { ok: true, persistenceOk: true, record: existing, duplicate: true }
-      : { ok: false, persistenceOk: false, code: OUTBOX_TENANT_CONTEXT_CHANGED, record: null };
+    if (!tenantContextMatches(tenantContext)) {
+      return { ok: false, persistenceOk: false, code: OUTBOX_TENANT_CONTEXT_CHANGED, record: null };
+    }
+    if (isCloudCustomerMessagingEnabled(licenseDetails)
+      && existing.cloudSyncStatus !== 'synced'
+      && cloudRepository?.upsert) {
+      try {
+        const cloud = await syncRecordToCloud({ record: existing, licenseDetails, actorType, cloudRepository });
+        if (cloud.ok && cloud.record) {
+          const confirmedRecord = { ...cloud.record, cloudSyncStatus: 'synced' };
+          repository.put(confirmedRecord);
+          return { ok: true, persistenceOk: true, record: confirmedRecord, duplicate: true, cloudSyncStatus: 'synced' };
+        }
+      } catch {
+        // Keep the durable local record and allow a later retry to sync it.
+      }
+    }
+    return { ok: true, persistenceOk: true, record: existing, duplicate: true, cloudSyncStatus: existing.cloudSyncStatus };
   }
 
   const inFlightKey = `${tenantContext.namespace}:${idempotencyKey}`;
@@ -516,14 +706,38 @@ export const prepareCustomerMessageOutbox = async ({
       record,
       tenantContext
     });
-    return persisted.ok
-      ? { ok: true, persistenceOk: true, record: persisted.record, duplicate: false }
-      : {
+    if (!persisted.ok) {
+      return {
         ok: false,
         persistenceOk: false,
         code: persisted.code || OUTBOX_PERSISTENCE_FAILED,
         record: persisted.record || null
       };
+    }
+
+    let confirmedRecord = persisted.record;
+    try {
+      const cloud = await syncRecordToCloud({ record: confirmedRecord, licenseDetails, actorType, cloudRepository });
+      if (cloud.ok && cloud.record) {
+        confirmedRecord = { ...cloud.record, cloudSyncStatus: cloud.skipped ? 'not_applicable' : 'synced' };
+        // Keep the local browser record usable after a cross-device merge.
+        if (!cloud.skipped) repository.put(confirmedRecord);
+      } else if (!cloud.skipped) {
+        confirmedRecord = { ...confirmedRecord, cloudSyncStatus: 'pending' };
+        repository.put(confirmedRecord);
+      }
+    } catch {
+      confirmedRecord = { ...confirmedRecord, cloudSyncStatus: 'pending' };
+      try { repository.put(confirmedRecord); } catch { /* local confirmation already exists */ }
+    }
+
+    return {
+      ok: true,
+      persistenceOk: true,
+      record: confirmedRecord,
+      duplicate: false,
+      cloudSyncStatus: confirmedRecord.cloudSyncStatus
+    };
   })().finally(() => PREPARE_IN_FLIGHT.delete(inFlightKey));
 
   PREPARE_IN_FLIGHT.set(inFlightKey, promise);
@@ -547,7 +761,10 @@ const performOutboxAction = async ({
   share = shareCustomerMessageImage,
   download = downloadCustomerMessageImage,
   now = () => Date.now(),
-  tenantContext
+  tenantContext,
+  licenseDetails = useAppStore.getState().licenseDetails,
+  actorType = useAppStore.getState().currentDeviceRole,
+  cloudRepository = customerMessageCloudRepository
 }) => {
   if (!record?.idempotencyKey || !VALID_STATUSES.has(record.status)) {
     return { ok: false, code: 'OUTBOX_RECORD_INVALID', record: null };
@@ -588,11 +805,21 @@ const performOutboxAction = async ({
         },
         tenantContext
       });
+      const cloudConfirmation = exhausted.ok
+        ? await confirmCloudTransition({
+          record: exhausted.record,
+          repository,
+          licenseDetails,
+          actorType,
+          cloudRepository
+        })
+        : { record: exhausted.record, cloudSyncStatus: exhausted.record?.cloudSyncStatus };
       return {
         ok: false,
         code: exhausted.ok ? 'OUTBOX_MAX_ATTEMPTS_REACHED' : exhausted.code,
-        record: exhausted.record,
-        persistenceOk: exhausted.persistenceOk
+        record: cloudConfirmation.record,
+        persistenceOk: exhausted.persistenceOk,
+        cloudSyncStatus: cloudConfirmation.cloudSyncStatus
       };
     }
 
@@ -637,12 +864,22 @@ const performOutboxAction = async ({
         },
         tenantContext
       });
+      const cloudConfirmation = transitioned.ok
+        ? await confirmCloudTransition({
+          record: transitioned.record,
+          repository,
+          licenseDetails,
+          actorType,
+          cloudRepository
+        })
+        : { record: transitioned.record, cloudSyncStatus: transitioned.record?.cloudSyncStatus };
       return {
         ok: false,
         code: transitioned.ok ? failure.code : transitioned.code,
-        record: transitioned.record,
+        record: cloudConfirmation.record,
         imageResult,
-        persistenceOk: transitioned.persistenceOk
+        persistenceOk: transitioned.persistenceOk,
+        cloudSyncStatus: cloudConfirmation.cloudSyncStatus
       };
     }
 
@@ -692,13 +929,33 @@ const performOutboxAction = async ({
       tenantContext
     });
 
-    return {
-      ok: transitioned.ok ? ok : false,
-      code: transitioned.ok ? lastErrorCode : transitioned.code,
+    if (!transitioned.ok) {
+      return {
+        ok: false,
+        code: transitioned.code,
+        record: transitioned.record,
+        imageResult,
+        actionResult,
+        persistenceOk: transitioned.persistenceOk
+      };
+    }
+
+    const cloudConfirmation = await confirmCloudTransition({
       record: transitioned.record,
+      repository,
+      licenseDetails,
+      actorType,
+      cloudRepository
+    });
+
+    return {
+      ok,
+      code: lastErrorCode,
+      record: cloudConfirmation.record,
       imageResult,
       actionResult,
-      persistenceOk: transitioned.persistenceOk
+      persistenceOk: true,
+      cloudSyncStatus: cloudConfirmation.cloudSyncStatus
     };
   })().finally(() => ACTION_IN_FLIGHT.delete(lockKey));
 
@@ -739,11 +996,61 @@ export const listCustomerMessageOutbox = (
   repository = customerMessageOutboxRepository
 ) => repository.list();
 
+export const syncCustomerMessageOutbox = async ({
+  repository = customerMessageOutboxRepository,
+  cloudRepository = customerMessageCloudRepository,
+  licenseDetails = useAppStore.getState().licenseDetails,
+  actorType = useAppStore.getState().currentDeviceRole
+} = {}) => {
+  if (!isCloudCustomerMessagingEnabled(licenseDetails) || !cloudRepository?.list) {
+    return { ok: true, skipped: true, records: repository.list() };
+  }
+  const result = await cloudRepository.list({ licenseDetails, actorType });
+  if (!result?.ok) return { ok: false, code: result?.code || 'CUSTOMER_MESSAGE_CLOUD_SYNC_FAILED', records: repository.list() };
+  const records = (result.records || []).map((cloudRecord) => {
+    const key = cloudRecord.idempotencyKey || cloudRecord.idempotency_key;
+    const local = key ? repository.get(key) : null;
+    const merged = mergeCustomerMessageOutboxRecords(local, cloudRecord);
+    return {
+      schemaVersion: CUSTOMER_MESSAGE_OUTBOX_SCHEMA_VERSION,
+      idempotencyKey: key,
+      eventType: cloudRecord.eventType || cloudRecord.event_type,
+      messageType: cloudRecord.eventType || cloudRecord.event_type,
+      channel: cloudRecord.channel || 'image',
+      humanReference: cloudRecord.humanReference || cloudRecord.human_reference || null,
+      payloadSnapshot: cloudRecord.payloadSnapshot || cloudRecord.payload_snapshot || {},
+      templateSnapshot: cloudRecord.templateSnapshot || cloudRecord.template_snapshot || null,
+      templateRevision: Number(cloudRecord.templateRevision ?? cloudRecord.template_revision ?? 0),
+      templateSource: cloudRecord.templateSource || cloudRecord.template_source || 'default',
+      planContext: local?.planContext || { actorType, cloud: true },
+      contactReadiness: local?.contactReadiness || { status: 'telefono_vacio', code: 'CUSTOMER_PHONE_MISSING' },
+      status: merged?.status || toLocalCustomerMessageOutboxStatus(cloudRecord.status),
+      cloudStatus: cloudRecord.status,
+      cloudUpdatedAt: cloudRecord.updatedAt || cloudRecord.updated_at || null,
+      cloudSyncStatus: 'synced',
+      attemptCount: Number(cloudRecord.attemptCount ?? cloudRecord.attempt_count ?? local?.attemptCount ?? 0),
+      shareAttemptCount: Number(cloudRecord.shareAttemptCount ?? cloudRecord.share_attempt_count ?? local?.shareAttemptCount ?? 0),
+      retryPolicy: { maxAttempts: Number(cloudRecord.maxAttempts ?? cloudRecord.max_attempts ?? local?.retryPolicy?.maxAttempts ?? 3) },
+      lastErrorCode: cloudRecord.lastErrorCode ?? cloudRecord.last_error_code ?? null,
+      nextRetryAt: cloudRecord.nextRetryAt ?? cloudRecord.next_retry_at ?? null,
+      lastAttemptAt: cloudRecord.lastAttemptAt ?? cloudRecord.last_attempt_at ?? null,
+      createdAt: cloudRecord.createdAt || cloudRecord.created_at || local?.createdAt || nowIso(Date.now()),
+      updatedAt: local?.updatedAt || cloudRecord.updatedAt || cloudRecord.updated_at || nowIso(Date.now()),
+      expiresAt: cloudRecord.expiresAt || cloudRecord.expires_at || local?.expiresAt || nowIso(Date.now() + CUSTOMER_MESSAGE_OUTBOX_DEFAULTS.retentionMs)
+    };
+  }).filter((record) => record.idempotencyKey);
+  records.forEach((record) => { try { repository.put(record); } catch { /* cloud state stays available to the caller */ } });
+  return { ok: true, skipped: false, records: repository.list() };
+};
+
 export const customerMessageOutboxInternals = Object.freeze({
   classifyFailure,
   contactReadiness,
   hashText,
   operationIdentity,
+  toCloudCustomerMessageOutboxStatus,
+  toLocalCustomerMessageOutboxStatus,
+  mergeCustomerMessageOutboxRecords,
   resolvePlanContext,
   sanitizeErrorCode,
   stableStringify
