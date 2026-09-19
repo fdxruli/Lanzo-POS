@@ -75,6 +75,7 @@ const paymentLines = (payload, settled = false) => [
   `*Negocio:* ${payload.business.name}`,
   `Hola *${payload.customer.name}*,`,
   `*Fecha:* ${payload.occurredAt}`,
+  payload.payment.reference ? `*Referencias relacionadas:* ${payload.payment.reference}` : null,
   '',
   `Monto abonado: *${formatMoneyValue(payload.payment.amount, { currency: payload.currency })}*`,
   `Deuda anterior: ${formatMoneyValue(payload.payment.previousBalance, { currency: payload.currency })}`,

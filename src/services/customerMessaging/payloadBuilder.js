@@ -64,6 +64,28 @@ const read = (source, ...keys) => {
   return null;
 };
 
+const displayReferences = (source, ...nestedSources) => [
+  selectDisplayReference(source),
+  ...nestedSources.map((nested) => selectDisplayReference(nested))
+].filter((value, index, values) => value && values.indexOf(value) === index);
+
+const normalizePaymentAllocations = (allocations, errors) => (Array.isArray(allocations) ? allocations : [])
+  .map((allocation, index) => {
+    const reference = selectDisplayReference(
+      allocation,
+      allocation?.sale,
+      allocation?.saleData,
+      allocation?.ticket
+    );
+    const amount = normalizeMoneyField(
+      read(allocation, 'amountApplied', 'amount_applied', 'amount'),
+      `payment.allocations[${index}].amount`,
+      errors
+    );
+    return reference ? { reference, amount } : null;
+  })
+  .filter(Boolean);
+
 const normalizeSale = (sale = {}, errors, timeZone) => {
   const originalMethod = read(sale, 'payment_method', 'paymentMethod');
   const paymentMethod = normalizePaymentMethod(originalMethod);
@@ -90,17 +112,21 @@ const normalizeSale = (sale = {}, errors, timeZone) => {
   };
 };
 
-const normalizePayment = (payment = {}, errors, timeZone) => ({
+const normalizePayment = (payment = {}, errors, timeZone) => {
+  const allocations = normalizePaymentAllocations(read(payment, 'allocations') || [], errors);
+  const references = displayReferences(payment, ...allocations);
+  return {
   id: read(payment, 'id', 'ledgerId', 'ledger_id'),
-  reference: selectDisplayReference(payment),
+  reference: references.join(' · ') || null,
   occurredAt: normalizeDateField(read(payment, 'occurredAt', 'createdAt', 'created_at', 'timestamp'), 'payment.occurredAt', errors, timeZone),
   method: normalizePaymentMethod(read(payment, 'method', 'paymentMethod', 'payment_method')).canonical,
   previousBalance: normalizeMoneyField(read(payment, 'previousBalance', 'previousDebt', 'previous_debt'), 'payment.previousBalance', errors),
   amount: normalizeMoneyField(read(payment, 'amount'), 'payment.amount', errors),
   newBalance: normalizeMoneyField(read(payment, 'newBalance', 'newDebt', 'new_debt'), 'payment.newBalance', errors),
-  allocations: Array.isArray(payment.allocations) ? payment.allocations : [],
+  allocations,
   originalMethod: read(payment, 'method', 'paymentMethod', 'payment_method') || null
-});
+  };
+};
 
 const normalizeAccount = (account = {}, errors, timeZone) => ({
   cutoffAt: normalizeDateField(read(account, 'cutoffAt', 'cutoff_at'), 'account.cutoffAt', errors, timeZone),

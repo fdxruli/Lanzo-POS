@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { formatCustomerDebt, getSafeCustomerDebt } from '../../utils/customerUtils';
+import CustomerReminderActions from './CustomerReminderActions';
 
 const SYNC_BADGES = {
     pending: { label: 'Pendiente', className: 'warning' },
@@ -29,7 +30,17 @@ const CustomerCard = memo(({
     onAbonar,
     onWhatsApp,
     onViewLayaways,
-    globalLimit = 0
+    globalLimit = 0,
+    reminder = null,
+    reminderCloudEnabled = false,
+    reminderConfigEnabled = false,
+    reminderConfigError = '',
+    canManageReminders = false,
+    reminderLoadingAction = '',
+    reminderFeedback = null,
+    onScheduleReminder,
+    onCancelReminder,
+    onRescheduleReminder
 }) => {
     const { hasLayaway } = useFeatureConfig();
     const parsedDebt = getSafeCustomerDebt(customer.debt);
@@ -143,6 +154,20 @@ const CustomerCard = memo(({
                     </button>
                 </div>
 
+                <CustomerReminderActions
+                    customer={customer}
+                    reminder={reminder}
+                    cloudEnabled={reminderCloudEnabled}
+                    configEnabled={reminderConfigEnabled}
+                    configError={reminderConfigError}
+                    canManage={canManageReminders}
+                    loadingAction={reminderLoadingAction}
+                    feedback={reminderFeedback}
+                    onSchedule={onScheduleReminder}
+                    onCancel={onCancelReminder}
+                    onReschedule={onRescheduleReminder}
+                />
+
                 <div className="actions-secondary">
                     <button
                         type="button"
@@ -180,6 +205,13 @@ const CustomerCard = memo(({
 }, (prevProps, nextProps) => (
     prevProps.customer === nextProps.customer
     && prevProps.isWhatsAppLoading === nextProps.isWhatsAppLoading
+    && prevProps.reminder === nextProps.reminder
+    && prevProps.reminderCloudEnabled === nextProps.reminderCloudEnabled
+    && prevProps.reminderConfigEnabled === nextProps.reminderConfigEnabled
+    && prevProps.reminderConfigError === nextProps.reminderConfigError
+    && prevProps.canManageReminders === nextProps.canManageReminders
+    && prevProps.reminderLoadingAction === nextProps.reminderLoadingAction
+    && prevProps.reminderFeedback === nextProps.reminderFeedback
     && prevProps.globalLimit === nextProps.globalLimit
 ));
 

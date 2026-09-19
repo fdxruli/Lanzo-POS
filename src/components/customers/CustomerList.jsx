@@ -6,6 +6,15 @@ import { customerCreditRepository } from '../../services/db/customerCreditReposi
 import { showMessageModal } from '../../services/utils';
 import './CustomerList.css';
 
+const getCustomerReminder = (reminders, customerId) => {
+    const matchingReminders = (Array.isArray(reminders) ? reminders : [])
+        .filter((item) => String(item.customer_id) === String(customerId));
+
+    return matchingReminders.find((item) => item.status !== 'cancelado')
+        || matchingReminders[0]
+        || null;
+};
+
 // --- SUB-COMPONENTE: Modal de Configuración de Crédito ---
 const CreditConfigModal = ({ isOpen, onClose, currentGlobal, onSaveGlobal, isSaving }) => {
     const [limit, setLimit] = useState(currentGlobal);
@@ -78,7 +87,17 @@ export default function CustomerList({
     onAbonar,
     onViewLayaways,
     onWhatsApp,
-    onWhatsAppLoading
+    onWhatsAppLoading,
+    reminders = [],
+    reminderCloudEnabled = false,
+    reminderConfigEnabled = false,
+    reminderConfigError = '',
+    canManageReminders = false,
+    reminderLoadingAction = '',
+    reminderFeedbackByCustomer = {},
+    onScheduleReminder,
+    onCancelReminder,
+    onRescheduleReminder
 }) {
     // --- ESTADOS Y STORES ---
     const globalCreditLimit = useAppStore(
@@ -219,6 +238,16 @@ export default function CustomerList({
                         onAbonar={onAbonar}
                         onViewLayaways={onViewLayaways}
                         onWhatsApp={onWhatsApp}
+                        reminder={getCustomerReminder(reminders, customer.id)}
+                        reminderCloudEnabled={reminderCloudEnabled}
+                        reminderConfigEnabled={reminderConfigEnabled}
+                        reminderConfigError={reminderConfigError}
+                        canManageReminders={canManageReminders}
+                        reminderLoadingAction={reminderLoadingAction}
+                        reminderFeedback={reminderFeedbackByCustomer[customer.id] || null}
+                        onScheduleReminder={onScheduleReminder}
+                        onCancelReminder={onCancelReminder}
+                        onRescheduleReminder={onRescheduleReminder}
                         // Pasamos props extra si CustomerCard las acepta para visualización
                         // (Si no modificas CustomerCard, esto se ignora sin error)
                         globalLimit={globalCreditLimit}

@@ -30,10 +30,19 @@ import {
   showCustomerMessageOutboxModal
 } from '../services/customerMessaging';
 import {
+  getCustomerMessageReminderErrorCopy,
+  isCloudCustomerMessagingEnabled,
+  listCustomerMessageReminders,
+  cancelCustomerMessageReminder,
+  rescheduleCustomerMessageReminder,
+  scheduleCustomerMessageReminder
+} from '../services/customerMessaging';
+import {
   canPerformRefunds,
   getSalesActorIdentity
 } from '../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
+import { useSettingsAccess } from '../services/auth/useSettingsAccess';
 import './CustomersPage.css';
 
 const PAGE_SIZE = 50;
@@ -48,6 +57,28 @@ const mergeUniqueCustomers = (currentCustomers, nextCustomers) => {
   });
 
   return [...currentCustomers, ...uniqueNextCustomers];
+};
+
+const reminderBelongsToCustomer = (reminder, customerId) => (
+  String(reminder?.customer_id || '') === String(customerId || '')
+);
+
+const isCurrentCustomerReminder = (reminder) => reminder?.status !== 'cancelado';
+
+const selectCustomerReminder = (reminders, customerId) => {
+  const customerReminders = (Array.isArray(reminders) ? reminders : [])
+    .filter((reminder) => reminderBelongsToCustomer(reminder, customerId));
+
+  return customerReminders.find(isCurrentCustomerReminder) || customerReminders[0] || null;
+};
+
+const upsertCustomerReminder = (reminders, nextReminder) => {
+  if (!nextReminder?.id) return reminders;
+
+  const withoutNextReminder = (Array.isArray(reminders) ? reminders : [])
+    .filter((reminder) => reminder.id !== nextReminder.id);
+
+  return [nextReminder, ...withoutNextReminder];
 };
 
 export default function CustomersPage() {
@@ -68,9 +99,16 @@ export default function CustomersPage() {
   const [abonoPendingNotes, setAbonoPendingNotes] = useState(null);
   const [imageShareLoading, setImageShareLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
+  const [customerReminders, setCustomerReminders] = useState([]);
+  const [customerReminderConfig, setCustomerReminderConfig] = useState(null);
+  const [customerReminderError, setCustomerReminderError] = useState('');
+  const [customerReminderLoading, setCustomerReminderLoading] = useState(false);
+  const [customerReminderAction, setCustomerReminderAction] = useState('');
+  const [customerReminderFeedback, setCustomerReminderFeedbackState] = useState({});
   const requestVersionRef = useRef(0);
   const requestInFlightRef = useRef(false);
   const abonoNotesRequestRef = useRef(0);
+  const customerReminderActionRef = useRef('');
 
   const {
     cajaActual,
@@ -80,11 +118,16 @@ export default function CustomersPage() {
     cashMode
   } = useCaja();
   const companyProfile = useAppStore((state) => state.companyProfile);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const actorRuntime = useActorRuntimeSnapshot();
+  const settingsAccess = useSettingsAccess();
   const canManageRefunds = canPerformRefunds(actorRuntime);
   const salesActorIdentity = getSalesActorIdentity(actorRuntime);
   const companyName = companyProfile?.name || 'Tu Negocio';
   const globalCreditLimit = Number(companyProfile?.settings_default_credit_limit) || 0;
+  const customerMessagingCloudEnabled = isCloudCustomerMessagingEnabled(licenseDetails);
+  const reminderActorType = settingsAccess.actorType || actorRuntime?.actorType || null;
+  const canManageCustomerReminders = customerMessagingCloudEnabled && settingsAccess.isAdmin;
 
   useEffect(() => {
     setIsLayawayModalOpen(false);
@@ -252,6 +295,47 @@ export default function CustomersPage() {
     loadInitialCustomers();
   }, [loadInitialCustomers]);
 
+  const loadCustomerMessageReminders = useCallback(async () => {
+    if (!customerMessagingCloudEnabled || !reminderActorType) {
+      setCustomerReminders([]);
+      setCustomerReminderConfig(null);
+      setCustomerReminderError('');
+      setCustomerReminderLoading(false);
+      return;
+    }
+
+    setCustomerReminderLoading(true);
+
+    try {
+      const result = await listCustomerMessageReminders({
+        licenseDetails,
+        actorType: reminderActorType
+      });
+
+      if (result.ok) {
+        setCustomerReminders(Array.isArray(result.reminders) ? result.reminders : []);
+        setCustomerReminderConfig(result.config || null);
+        setCustomerReminderError('');
+      } else {
+        setCustomerReminders([]);
+        setCustomerReminderConfig(null);
+        setCustomerReminderError(getCustomerMessageReminderErrorCopy(result.code));
+      }
+
+      return result;
+    } catch (error) {
+      Logger.warn('[CustomersPage] No se pudo cargar el historial de recordatorios:', error);
+      setCustomerReminderError(getCustomerMessageReminderErrorCopy(error?.code));
+      return { ok: false, code: error?.code || 'REMINDER_LIST_FAILED' };
+    } finally {
+      setCustomerReminderLoading(false);
+    }
+  }, [customerMessagingCloudEnabled, licenseDetails, reminderActorType]);
+
+  useEffect(() => {
+    loadCustomerMessageReminders();
+  }, [loadCustomerMessageReminders]);
+
   useEffect(() => {
     const refreshFromSync = () => {
       loadInitialCustomers().catch((error) => {
@@ -277,6 +361,190 @@ export default function CustomersPage() {
       snapshotOverride: snapshotAt
     });
   }, [hasMore, isLoadingMore, loadCustomersPage, loading, offset, snapshotAt]);
+
+  const setCustomerReminderFeedback = useCallback((customerId, type, message) => {
+    setCustomerReminderFeedbackState((current) => ({
+      ...current,
+      [customerId]: { type, message }
+    }));
+  }, []);
+
+  const finishCustomerReminderAction = useCallback(() => {
+    customerReminderActionRef.current = '';
+    setCustomerReminderAction('');
+  }, []);
+
+  const handleScheduleReminder = useCallback(async (customer) => {
+    const customerId = customer?.id;
+    if (!customerId || customerReminderActionRef.current) return;
+
+    if (getSafeCustomerDebt(customer.debt) <= 0) {
+      setCustomerReminderFeedback(customerId, 'error', 'Este cliente no tiene saldo pendiente.');
+      return;
+    }
+
+    if (!canManageCustomerReminders) {
+      setCustomerReminderFeedback(customerId, 'error', 'Staff puede consultar el estado, pero no programar recordatorios.');
+      return;
+    }
+
+    if (customerReminderConfig?.enabled !== true) {
+      setCustomerReminderFeedback(customerId, 'error', 'Activa primero los recordatorios cloud en Configuración.');
+      return;
+    }
+
+    const existingReminder = selectCustomerReminder(customerReminders, customerId);
+    if (existingReminder && isCurrentCustomerReminder(existingReminder)) {
+      setCustomerReminderFeedback(customerId, 'success', 'Este cliente ya tiene un recordatorio programado.');
+      return;
+    }
+
+    customerReminderActionRef.current = customerId;
+    setCustomerReminderAction(customerId);
+    setCustomerReminderFeedback(customerId, 'info', 'Programando recordatorio...');
+
+    try {
+      const result = await scheduleCustomerMessageReminder(customerId, {
+        licenseDetails,
+        actorType: reminderActorType
+      });
+
+      if (!result.ok) {
+        setCustomerReminderFeedback(customerId, 'error', getCustomerMessageReminderErrorCopy(result.code));
+        return;
+      }
+
+      if (result.reminder) {
+        setCustomerReminders((current) => upsertCustomerReminder(current, result.reminder));
+      }
+      setCustomerReminderFeedback(
+        customerId,
+        'success',
+        result.duplicate
+          ? 'Este cliente ya tiene un recordatorio programado.'
+          : 'Recordatorio programado correctamente.'
+      );
+      await loadCustomerMessageReminders();
+      window.dispatchEvent(new CustomEvent('lanzo:customer-message-reminders-updated'));
+    } catch (error) {
+      Logger.warn('[CustomersPage] No se pudo programar el recordatorio:', error);
+      setCustomerReminderFeedback(customerId, 'error', getCustomerMessageReminderErrorCopy(error?.code));
+    } finally {
+      finishCustomerReminderAction();
+    }
+  }, [
+    canManageCustomerReminders,
+    customerReminderConfig?.enabled,
+    customerReminders,
+    finishCustomerReminderAction,
+    licenseDetails,
+    loadCustomerMessageReminders,
+    reminderActorType,
+    setCustomerReminderFeedback
+  ]);
+
+  const handleCancelReminder = useCallback(async (customer, reminder) => {
+    const customerId = customer?.id;
+    if (!customerId || !reminder?.id || customerReminderActionRef.current) return;
+
+    if (!canManageCustomerReminders) {
+      setCustomerReminderFeedback(customerId, 'error', 'Staff puede consultar el estado, pero no modificar este recordatorio.');
+      return;
+    }
+
+    customerReminderActionRef.current = customerId;
+    setCustomerReminderAction(customerId);
+    setCustomerReminderFeedback(customerId, 'info', 'Cancelando recordatorio...');
+
+    try {
+      const result = await cancelCustomerMessageReminder(reminder.id, {
+        licenseDetails,
+        actorType: reminderActorType
+      });
+
+      if (!result.ok) {
+        setCustomerReminderFeedback(customerId, 'error', getCustomerMessageReminderErrorCopy(result.code));
+        return;
+      }
+
+      if (result.reminder) {
+        setCustomerReminders((current) => upsertCustomerReminder(current, result.reminder));
+      }
+      setCustomerReminderFeedback(customerId, 'success', 'Recordatorio cancelado. El historial se conserva.');
+      await loadCustomerMessageReminders();
+      window.dispatchEvent(new CustomEvent('lanzo:customer-message-reminders-updated'));
+    } catch (error) {
+      Logger.warn('[CustomersPage] No se pudo cancelar el recordatorio:', error);
+      setCustomerReminderFeedback(customerId, 'error', getCustomerMessageReminderErrorCopy(error?.code));
+    } finally {
+      finishCustomerReminderAction();
+    }
+  }, [
+    canManageCustomerReminders,
+    finishCustomerReminderAction,
+    licenseDetails,
+    loadCustomerMessageReminders,
+    reminderActorType,
+    setCustomerReminderFeedback
+  ]);
+
+  const handleRescheduleReminder = useCallback(async (customer, reminder, selectedDate) => {
+    const customerId = customer?.id;
+    if (!customerId || !reminder?.id || customerReminderActionRef.current) return;
+
+    if (!canManageCustomerReminders) {
+      setCustomerReminderFeedback(customerId, 'error', 'Staff puede consultar el estado, pero no modificar este recordatorio.');
+      return;
+    }
+
+    if (customerReminderConfig?.enabled !== true) {
+      setCustomerReminderFeedback(customerId, 'error', 'Activa primero los recordatorios cloud en Configuración.');
+      return;
+    }
+
+    const scheduledFor = new Date(selectedDate || '');
+    if (Number.isNaN(scheduledFor.getTime())) {
+      setCustomerReminderFeedback(customerId, 'error', 'La fecha del recordatorio debe ser futura.');
+      return;
+    }
+
+    customerReminderActionRef.current = customerId;
+    setCustomerReminderAction(customerId);
+    setCustomerReminderFeedback(customerId, 'info', 'Reprogramando recordatorio...');
+
+    try {
+      const result = await rescheduleCustomerMessageReminder(
+        reminder.id,
+        scheduledFor.toISOString(),
+        { licenseDetails, actorType: reminderActorType }
+      );
+
+      if (!result.ok) {
+        setCustomerReminderFeedback(customerId, 'error', getCustomerMessageReminderErrorCopy(result.code));
+        return;
+      }
+
+      if (result.reminder) {
+        setCustomerReminders((current) => upsertCustomerReminder(current, result.reminder));
+      }
+      setCustomerReminderFeedback(customerId, 'success', 'Recordatorio reprogramado. El historial se conserva.');
+      await loadCustomerMessageReminders();
+      window.dispatchEvent(new CustomEvent('lanzo:customer-message-reminders-updated'));
+    } catch (error) {
+      Logger.warn('[CustomersPage] No se pudo reprogramar el recordatorio:', error);
+      setCustomerReminderFeedback(customerId, 'error', getCustomerMessageReminderErrorCopy(error?.code));
+    } finally {
+      finishCustomerReminderAction();
+    }
+  }, [
+    canManageCustomerReminders,
+    customerReminderConfig?.enabled,
+    finishCustomerReminderAction,
+    licenseDetails,
+    loadCustomerMessageReminders,
+    reminderActorType,
+    setCustomerReminderFeedback
+  ]);
 
   const handleActionableError = (result) => {
     const message = result?.error?.message || result?.message || 'Error en base de datos.';
@@ -739,6 +1007,16 @@ export default function CustomersPage() {
               onViewLayaways={handleOpenLayaways}
               onWhatsApp={handleShareStatementImage}
               onWhatsAppLoading={imageShareLoading}
+              reminders={customerReminders}
+              reminderCloudEnabled={customerMessagingCloudEnabled}
+              reminderConfigEnabled={customerReminderConfig?.enabled === true}
+              reminderConfigError={customerReminderLoading ? 'Cargando historial de recordatorios...' : customerReminderError}
+              canManageReminders={canManageCustomerReminders}
+              reminderLoadingAction={customerReminderAction}
+              reminderFeedbackByCustomer={customerReminderFeedback}
+              onScheduleReminder={handleScheduleReminder}
+              onCancelReminder={handleCancelReminder}
+              onRescheduleReminder={handleRescheduleReminder}
             />
           )}
         </section>

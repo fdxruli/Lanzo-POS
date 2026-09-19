@@ -1,0 +1,93 @@
+.customer-reminder-actions {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 0.55rem;
+    padding: 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 22%, var(--border-color));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+}
+
+.customer-reminder-actions--muted,
+.customer-reminder-actions--error {
+    color: var(--text-light);
+    font-size: 0.78rem;
+}
+
+.customer-reminder-actions--error {
+    color: var(--error-color);
+    background: color-mix(in srgb, var(--error-color) 6%, transparent);
+}
+
+.customer-reminder-actions__status {
+    display: grid;
+    gap: 0.18rem;
+    color: var(--text-light);
+    font-size: 0.75rem;
+}
+
+.customer-reminder-actions__status-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-color);
+    font-size: 0.8rem;
+}
+
+.customer-reminder-actions__controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.45rem;
+}
+
+.customer-reminder-actions__controls label {
+    display: grid;
+    gap: 0.2rem;
+    min-width: min(100%, 12rem);
+    color: var(--text-light);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.customer-reminder-actions__controls input {
+    min-height: 2.15rem;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid var(--border-color);
+    border-radius: 7px;
+    background: var(--card-bg, #fff);
+    color: var(--text-color);
+}
+
+.customer-reminder-actions button {
+    min-height: 38px;
+    padding-inline: 0.65rem;
+    font-size: 0.72rem;
+}
+
+.customer-reminder-actions__hint,
+.customer-reminder-actions__feedback {
+    color: var(--text-light);
+    font-size: 0.75rem;
+}
+
+.customer-reminder-actions__feedback.is-success {
+    color: var(--success-color, #087f61);
+    font-weight: 700;
+}
+
+.customer-reminder-actions__feedback.is-error {
+    color: var(--error-color);
+    font-weight: 700;
+}
+
+@media (max-width: 640px) {
+    .customer-reminder-actions__controls {
+        align-items: stretch;
+    }
+
+    .customer-reminder-actions__controls label,
+    .customer-reminder-actions__controls button {
+        width: 100%;
+    }
+}
