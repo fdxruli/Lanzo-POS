@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   activeState: null,
   createLayaway: vi.fn(),
+  buildLayawayMessagePayload: vi.fn(),
+  prepareCustomerMessageOutbox: vi.fn(),
+  showCustomerMessageOutboxModal: vi.fn(),
   showMessageModal: vi.fn()
 }));
 
@@ -14,6 +17,12 @@ vi.mock('../../useFeatureConfig', () => ({
 
 vi.mock('../../../services/layawayFinancialService', () => ({
   layawayFinancialService: { create: mocks.createLayaway }
+}));
+
+vi.mock('../../../services/customerMessaging', () => ({
+  buildLayawayMessagePayload: mocks.buildLayawayMessagePayload,
+  prepareCustomerMessageOutbox: mocks.prepareCustomerMessageOutbox,
+  showCustomerMessageOutboxModal: mocks.showCustomerMessageOutboxModal
 }));
 
 // The ecommerce-guard suite is intentionally below an already-GRANTED actor
@@ -90,6 +99,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   setActiveOrder('ecommerce');
   mocks.createLayaway.mockResolvedValue({ success: true });
+  mocks.buildLayawayMessagePayload.mockReturnValue({
+    ok: true,
+    payload: { eventType: 'layaway_created', occurredAt: '2026-09-18T20:00:00.000Z' }
+  });
+  mocks.prepareCustomerMessageOutbox.mockResolvedValue({
+    ok: true,
+    record: { idempotencyKey: 'cm_layaway', status: 'preparado' }
+  });
 });
 
 describe('useLayawayFlow ecommerce guard', () => {
@@ -156,6 +173,72 @@ describe('useLayawayFlow ecommerce guard', () => {
     }));
     expect(deps.clearOrder).toHaveBeenCalledTimes(1);
     expect(deps.closeModal).toHaveBeenCalledWith('layaway');
+  });
+
+  it('creates the messaging outbox only after the layaway is financially confirmed', async () => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    mocks.createLayaway.mockResolvedValueOnce({
+      success: true,
+      layaway: {
+        id: 'technical-layaway-id',
+        customerId: 'customer-1',
+        customerName: 'Cliente',
+        items: deps.order,
+        totalAmount: 20,
+        paidAmount: 10,
+        deadline: '2026-07-20',
+        status: 'active',
+        createdAt: '2026-09-18T20:00:00.000Z'
+      }
+    });
+    const { result } = renderLayawayHook(deps);
+
+    await act(async () => {
+      await result.current.handleConfirmLayaway({
+        initialPayment: 10,
+        deadline: '2026-07-20',
+        expectedCashSessionId: 'caja-1'
+      });
+    });
+
+    expect(mocks.createLayaway).toHaveBeenCalledTimes(1);
+    expect(mocks.buildLayawayMessagePayload).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'layaway_created',
+      layaway: expect.objectContaining({
+        id: 'technical-layaway-id',
+        total: 20,
+        initialPayment: 10,
+        balanceDue: 10
+      })
+    }));
+    expect(mocks.prepareCustomerMessageOutbox).toHaveBeenCalledTimes(1);
+    expect(mocks.showCustomerMessageOutboxModal).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'preparado' }),
+      expect.objectContaining({ title: expect.stringContaining('Apartado creado') })
+    );
+  });
+
+  it('does not create a successful messaging outbox when layaway creation fails', async () => {
+    setActiveOrder(undefined);
+    const deps = makeDeps();
+    mocks.createLayaway.mockResolvedValueOnce({
+      success: false,
+      code: 'LAYAWAY_CREATE_FAILED',
+      message: 'No confirmado'
+    });
+    const { result } = renderLayawayHook(deps);
+
+    await act(async () => {
+      await result.current.handleConfirmLayaway({
+        initialPayment: 10,
+        deadline: '2026-07-20',
+        expectedCashSessionId: 'caja-1'
+      });
+    });
+
+    expect(mocks.prepareCustomerMessageOutbox).not.toHaveBeenCalled();
+    expect(mocks.showCustomerMessageOutboxModal).not.toHaveBeenCalled();
   });
 
   it.each(['product_id', 'productId', 'parentId'])('accepts a valid product alias: %s', async (field) => {

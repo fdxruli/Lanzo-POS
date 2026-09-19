@@ -22,15 +22,12 @@ import {
   buildAccountStatementMessagePayload,
   buildPaymentMessagePayload,
   createFinancialNotificationResult,
-  downloadCustomerMessageImage,
   formatMoneyValue,
   hasConfirmedPaymentReceipt,
-  IMAGE_SHARE_UI_COPY,
   notificationNotRequested,
-  renderCustomerMessageImage,
-  resolveCustomerMessageTemplate,
-  shareCustomerMessageImage,
-  selectCreditNotes
+  prepareCustomerMessageOutbox,
+  selectCreditNotes,
+  showCustomerMessageOutboxModal
 } from '../services/customerMessaging';
 import {
   canPerformRefunds,
@@ -459,65 +456,53 @@ export default function CustomersPage() {
   };
 
   const showNotificationStatus = (notificationResult, operationLabel) => {
-    if (!notificationResult || ['not_requested', 'opened', 'ready', 'shared', 'downloaded', 'cancelled'].includes(notificationResult.status)) return;
+    if (!notificationResult || [
+      'not_requested',
+      'opened',
+      'ready',
+      'shared',
+      'downloaded',
+      'cancelled',
+      'preparado',
+      'compartido',
+      'descarga_generada',
+      'cancelado_por_usuario',
+      'reintento_pendiente'
+    ].includes(notificationResult.status)) return;
 
     const messages = {
-      missing_phone: IMAGE_SHARE_UI_COPY.payloadInvalid,
-      invalid_phone: IMAGE_SHARE_UI_COPY.payloadInvalid,
-      payload_invalid: IMAGE_SHARE_UI_COPY.payloadInvalid,
-      unsupported: IMAGE_SHARE_UI_COPY.unsupported,
-      cancelled: IMAGE_SHARE_UI_COPY.cancelled,
-      failed: IMAGE_SHARE_UI_COPY.failed
+      missing_phone: 'El cliente no tiene un teléfono válido. Aún puedes descargar la imagen manualmente.',
+      invalid_phone: 'El teléfono del cliente no es válido. Aún puedes descargar la imagen manualmente.',
+      payload_invalid: 'No se pudo preparar el comprobante como imagen.',
+      unsupported: 'El navegador no permite compartir el archivo directamente.',
+      failed: 'No se pudo preparar el mensaje. La operación financiera se conservó correctamente.',
+      error: 'No se pudo completar la acción de mensajería. La operación financiera se conservó correctamente.'
     };
-    showMessageModal(messages[notificationResult.status] || `${operationLabel}: no se pudo preparar el comprobante como imagen.`, null, { type: 'warning' });
+    showMessageModal(
+      messages[notificationResult.status] || `${operationLabel}: no se pudo preparar el comprobante como imagen.`,
+      null,
+      { type: 'warning' }
+    );
   };
 
-  const sharePayloadAsImage = async (payload) => {
-    const resolvedTemplate = await resolveCustomerMessageTemplate({ eventType: payload.eventType });
-    const imageResult = await renderCustomerMessageImage(payload, { template: resolvedTemplate.template });
-    if (!imageResult.ok) {
-      showMessageModal(`${IMAGE_SHARE_UI_COPY.payloadInvalid} La operacion financiera se conservo correctamente.`, null, { type: 'warning' });
-      return { status: 'failed', code: imageResult.code };
-    }
-    const shareResult = await shareCustomerMessageImage(imageResult);
-    if (shareResult.status === 'downloaded') {
-      showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'info' });
-    } else if (shareResult.status === 'failed' && shareResult.canDownload) {
+  const preparePayloadOutbox = async (payload, title = 'Mensaje al cliente') => {
+    const prepared = await prepareCustomerMessageOutbox({ payload });
+    if (!prepared?.ok || !prepared.record) {
       showMessageModal(
-        IMAGE_SHARE_UI_COPY.failed,
-        () => {
-          const downloadResult = downloadCustomerMessageImage(imageResult);
-          if (downloadResult.status === 'downloaded') {
-            showMessageModal(IMAGE_SHARE_UI_COPY.downloaded, null, { type: 'info' });
-          } else {
-            showMessageModal('No se pudo descargar la imagen. La operacion financiera se conservo correctamente.', null, { type: 'warning' });
-          }
-          return downloadResult;
-        },
-        {
-          title: 'Comprobante disponible',
-          confirmButtonText: IMAGE_SHARE_UI_COPY.downloadAction,
-          cancelButtonText: 'Ahora no',
-          showCancel: true,
-          type: 'warning'
-        }
+        'No se pudo guardar el estado del mensaje. La operación financiera se conservó correctamente.',
+        null,
+        { type: 'warning' }
       );
-    } else if (shareResult.status === 'unsupported') {
-      showMessageModal(IMAGE_SHARE_UI_COPY.unsupported, null, { type: 'warning' });
-    } else if (shareResult.status === 'cancelled') {
-      showMessageModal(
-        IMAGE_SHARE_UI_COPY.cancelled,
-        () => sharePayloadAsImage(payload),
-        {
-          title: 'Compartir cancelado',
-          confirmButtonText: 'Intentar compartir de nuevo',
-          cancelButtonText: 'Ahora no',
-          showCancel: true,
-          type: 'info'
-        }
-      );
+      return { status: 'failed', code: prepared?.code || 'OUTBOX_PERSISTENCE_FAILED' };
     }
-    return shareResult;
+
+    showCustomerMessageOutboxModal(prepared.record, { title });
+    return {
+      status: 'ready',
+      code: 'IMAGE_SHARE_USER_ACTION_REQUIRED',
+      outboxRecord: prepared.record,
+      duplicate: prepared.duplicate === true
+    };
   };
 
   const handleConfirmAbono = async (customer, amount, sendReceipt, allocations = null) => {
@@ -602,20 +587,13 @@ export default function CustomersPage() {
           allocations: allocations || []
         });
         notificationResult = payloadResult.ok
-          ? { status: 'ready', code: 'IMAGE_SHARE_USER_ACTION_REQUIRED' }
+          ? await preparePayloadOutbox(
+              payloadResult.payload,
+              payloadResult.payload.eventType === 'account_settled'
+                ? 'Cuenta saldada'
+                : 'Comprobante de abono'
+            )
           : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
-        if (payloadResult.ok) {
-          showMessageModal(
-            'El abono quedó registrado. Puedes compartir su comprobante como imagen.',
-            () => sharePayloadAsImage(payloadResult.payload),
-            {
-              title: 'Comprobante de abono listo',
-              confirmButtonText: 'Compartir abono',
-              cancelButtonText: 'Ahora no',
-              showCancel: true
-            }
-          );
-        }
       } catch (error) {
         Logger.error('[CustomersPage] El abono fue confirmado, pero falló el comprobante:', error);
         notificationResult = { status: 'failed', code: error?.code || 'IMAGE_PREPARATION_FAILED' };
@@ -665,7 +643,7 @@ export default function CustomersPage() {
         occurredAt: latestDurableTimestamp
       });
       const notificationResult = payloadResult.ok
-        ? await sharePayloadAsImage(payloadResult.payload)
+        ? await preparePayloadOutbox(payloadResult.payload, 'Estado de cuenta')
         : { status: 'payload_invalid', code: payloadResult.code || 'MESSAGE_PAYLOAD_INVALID' };
       showNotificationStatus(notificationResult, 'El estado de cuenta');
       return createFinancialNotificationResult({

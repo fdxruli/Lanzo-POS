@@ -54,3 +54,25 @@ export {
   notificationNotRequested,
   openCustomerNotification
 } from './notification';
+
+export {
+  CUSTOMER_MESSAGE_OUTBOX_DEFAULTS,
+  CUSTOMER_MESSAGE_OUTBOX_SCHEMA_VERSION,
+  CUSTOMER_MESSAGE_OUTBOX_STATUSES,
+  CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS,
+  buildCustomerMessageOutboxIdempotencyKey,
+  canTransitionCustomerMessageOutbox,
+  createCustomerMessageOutboxRepository,
+  customerMessageOutboxRepository,
+  downloadCustomerMessageOutbox,
+  getCustomerMessageOutboxRecord,
+  listCustomerMessageOutbox,
+  payloadContainsTechnicalIds,
+  prepareCustomerMessageOutbox,
+  sanitizeCustomerMessageOutboxPayload,
+  shareCustomerMessageOutbox
+} from './outbox';
+export {
+  buildCustomerMessageOutboxModalCopy,
+  showCustomerMessageOutboxModal
+} from './outboxUi';
