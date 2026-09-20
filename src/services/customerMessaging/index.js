@@ -57,6 +57,8 @@ export {
 
 export {
   CUSTOMER_MESSAGE_OUTBOX_DEFAULTS,
+  CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUSES,
+  CUSTOMER_MESSAGE_CLOUD_OUTBOX_STATUS_LABELS,
   CUSTOMER_MESSAGE_OUTBOX_SCHEMA_VERSION,
   CUSTOMER_MESSAGE_OUTBOX_STATUSES,
   CUSTOMER_MESSAGE_OUTBOX_STATUS_LABELS,
@@ -70,8 +72,31 @@ export {
   payloadContainsTechnicalIds,
   prepareCustomerMessageOutbox,
   sanitizeCustomerMessageOutboxPayload,
-  shareCustomerMessageOutbox
+  shareCustomerMessageOutbox,
+  syncCustomerMessageOutbox,
+  toCloudCustomerMessageOutboxStatus,
+  toLocalCustomerMessageOutboxStatus,
+  mergeCustomerMessageOutboxRecords
 } from './outbox';
+export {
+  createCustomerMessageCloudRepository,
+  customerMessageCloudRepository,
+  getCustomerMessagingLicenseEligibility,
+  getCustomerMessagingPlanRequirement,
+  isCloudCustomerMessagingEnabled
+} from './cloudRepository';
+export {
+  CUSTOMER_MESSAGE_REMINDER_DEFAULTS,
+  CUSTOMER_MESSAGE_REMINDER_ERROR_COPY,
+  CUSTOMER_MESSAGE_REMINDER_STATUS_LABELS,
+  CUSTOMER_MESSAGE_REMINDER_STATUSES,
+  cancelCustomerMessageReminder,
+  getCustomerMessageReminderErrorCopy,
+  listCustomerMessageReminders,
+  rescheduleCustomerMessageReminder,
+  saveCustomerMessageReminderConfig,
+  scheduleCustomerMessageReminder
+} from './reminders';
 export {
   buildCustomerMessageOutboxModalCopy,
   showCustomerMessageOutboxModal

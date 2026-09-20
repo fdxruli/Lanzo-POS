@@ -210,6 +210,16 @@ export const buildPaymentMessagePayload = ({
   const paymentOccurredAt = read(confirmedReceipt, 'occurredAt', 'createdAt', 'created_at', 'timestamp') || occurredAt;
   const paymentId = read(confirmedReceipt, 'id', 'ledgerId', 'ledger_id')
     || read(financialResult, 'ledgerId', 'ledger_id');
+  const paymentReferences = [
+    selectDisplayReference(confirmedReceipt),
+    ...(Array.isArray(allocations) ? allocations.map((allocation) => selectDisplayReference(
+      allocation,
+      allocation?.sale,
+      allocation?.saleData,
+      allocation?.ticket
+    )) : [])
+  ].filter((value, index, values) => value && values.indexOf(value) === index);
+  const displayPaymentReference = paymentReferences.join(' · ') || null;
 
   return buildCustomerMessagePayload({
     eventType,
@@ -217,7 +227,7 @@ export const buildPaymentMessagePayload = ({
     business,
     occurredAt: paymentOccurredAt,
     currency,
-    reference: selectDisplayReference(confirmedReceipt),
+    reference: displayPaymentReference,
     payment: {
       id: paymentId,
       reference: selectDisplayReference(confirmedReceipt),
