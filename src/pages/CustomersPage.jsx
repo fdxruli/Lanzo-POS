@@ -990,13 +990,6 @@ export default function CustomersPage() {
   return (
     <>
       <main className="ui-page customers-page" aria-label="Clientes">
-        <header className="ui-page__header customers-page__header">
-          <div>
-            <h1 className="ui-page__title">Clientes</h1>
-            <p className="ui-page__subtitle">Directorio, crédito y mensajería en un solo lugar.</p>
-          </div>
-        </header>
-
         <section className="ui-section customers-tabs-section" aria-label="Secciones de clientes">
           <div className="tabs-container customers-tabs" role="tablist" aria-label="Navegación de clientes">
             {visibleCustomerTabs.map(({ key, label }) => (

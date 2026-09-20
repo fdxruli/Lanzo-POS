@@ -156,6 +156,8 @@ describe('CustomersPage navigation', () => {
     expect(screen.getByText('Fiado total')).toBeInTheDocument();
     expect(screen.getByText('$125.00')).toBeInTheDocument();
     expect(document.querySelector('.customers-hero')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Clientes' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Directorio, crédito y mensajería en un solo lugar.')).not.toBeInTheDocument();
   });
 
   it('uses the shared pill navigation without page overflow or tab icons', () => {

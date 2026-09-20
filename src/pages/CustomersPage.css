@@ -10,15 +10,6 @@
   margin: 0;
 }
 
-.customers-page__header {
-  align-items: center;
-  margin-bottom: var(--ui-space-md);
-}
-
-.customers-page__header > div {
-  min-width: 0;
-}
-
 .customers-tabs-section {
   margin-bottom: var(--ui-space-lg);
 }
@@ -132,7 +123,6 @@
     padding: 0;
   }
 
-  .customers-page__header,
   .customers-tabs-section,
   .customer-directory-toolbar,
   .customer-actions-container,
