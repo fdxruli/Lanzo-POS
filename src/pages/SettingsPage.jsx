@@ -5,16 +5,16 @@ import LicenseSettings from '../components/settings/LicenseSettings';
 import DevicesSettings from '../components/settings/DevicesSettings';
 import MaintenanceSettings from '../components/settings/MaintenanceSettings';
 import BackupSettings from '../components/settings/BackupSettings';
-import CustomerMessageTemplatesSettings from '../components/settings/CustomerMessageTemplatesSettings';
-import CustomerMessageAutomationSettings from '../components/settings/CustomerMessageAutomationSettings';
 import DbMigrationTester from '../components/debug/DbMigrationTester';
 import SalesSystemTester from '../components/debug/SystemHealthTester';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { isCloudPosSyncEnabled } from '../services/sync/syncConstants';
+import { isCloudCustomerMessagingEnabled } from '../services/customerMessaging';
 import NoPermission from '../components/common/NoPermission';
 import { useSettingsAccess } from '../services/auth/useSettingsAccess';
 import {
+  getVisibleSettingsTabs,
   resolveAllowedSettingsTab
 } from './settingsPageAccess';
 
@@ -24,8 +24,18 @@ export default function SettingsPage() {
   const settingsAccess = useSettingsAccess();
 
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
-  const visibleTabs = settingsAccess.visibleTabs;
+  const visibleTabs = getVisibleSettingsTabs(settingsAccess.visibleTabs);
   const requestedTab = searchParams.get('tab') || 'general';
+
+  if (requestedTab === 'messages') {
+    return (
+      <Navigate
+        to={isCloudCustomerMessagingEnabled(licenseDetails) ? '/clientes?tab=message-config' : '/clientes?tab=list'}
+        replace
+      />
+    );
+  }
+
   const activeTab = resolveAllowedSettingsTab({ requestedTab, visibleTabs });
 
   const handleTabChange = (tabKey) => {
@@ -49,7 +59,6 @@ export default function SettingsPage() {
           <button type="button" className={`tab-btn ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => handleTabChange('devices')} hidden={!tabIsVisible('devices')}>Dispositivos</button>
           <button type="button" className={`tab-btn ${activeTab === 'maintenance' ? 'active' : ''}`} onClick={() => handleTabChange('maintenance')} hidden={!tabIsVisible('maintenance')}>Datos y Mantenimiento</button>
           <button type="button" className={`tab-btn ${activeTab === 'backup' ? 'active' : ''}`} onClick={() => handleTabChange('backup')} hidden={!tabIsVisible('backup')}>Respaldos</button>
-          <button type="button" className={`tab-btn ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => handleTabChange('messages')} hidden={!tabIsVisible('messages')}>Mensajes al cliente</button>
           {tabIsVisible('debug') && <button type="button" className={`tab-btn ${activeTab === 'debug' ? 'active' : ''}`} onClick={() => handleTabChange('debug')}>Depuracion DB</button>}
           {tabIsVisible('test-ventas') && <button type="button" className={`tab-btn ${activeTab === 'test-ventas' ? 'active' : ''}`} onClick={() => handleTabChange('test-ventas')}>Test Ventas</button>}
         </div>
@@ -76,12 +85,6 @@ export default function SettingsPage() {
               </div>
             )}
             <BackupSettings isCloudLicense={isCloudLicense} />
-          </>
-        )}
-        {activeTab === 'messages' && (
-          <>
-            <CustomerMessageTemplatesSettings />
-            <CustomerMessageAutomationSettings />
           </>
         )}
         {activeTab === 'debug' && (
