@@ -8,6 +8,7 @@ import {
   buildCustomerMessageTemplatePreviewPayload,
   canManageCustomerMessageTemplates,
   getDefaultCustomerMessageTemplate,
+  getCustomerMessagingLicenseEligibility,
   getTemplateVariablesForEvent,
   listCustomerMessageTemplates,
   renderCustomerMessageImage,
@@ -42,7 +43,11 @@ export default function CustomerMessageTemplatesSettings() {
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [dictionaryOpen, setDictionaryOpen] = useState(false);
-  const editable = canManageCustomerMessageTemplates({ licenseDetails, actorType: access.actorType });
+  const licenseEligibility = useMemo(
+    () => getCustomerMessagingLicenseEligibility(licenseDetails),
+    [licenseDetails]
+  );
+  const editable = licenseEligibility.ok && canManageCustomerMessageTemplates({ licenseDetails, actorType: access.actorType });
   const selected = customTemplates[eventType];
   const variables = useMemo(() => getTemplateVariablesForEvent(eventType), [eventType]);
   const filteredVariables = useMemo(() => variables.filter((variable) => {
@@ -147,8 +152,8 @@ export default function CustomerMessageTemplatesSettings() {
   };
 
   return (
-    <div className="ui-card" aria-label="Mensajes al cliente">
-      <h3>Mensajes al cliente</h3>
+    <div className="ui-card" aria-label="Configuración de mensajes">
+      <h3>Configuración de mensajes</h3>
       <p>Canal: imagen. Plan actual: {getCommercialPlanName(licenseDetails)}.</p>
       {!editable && <p role="note">La edición de plantillas requiere Lanzo Nube con una sesión Admin/Owner. Seguirás compartiendo las imágenes genéricas.</p>}
       <label htmlFor="customer-message-event">Evento</label>

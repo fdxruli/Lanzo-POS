@@ -1,8 +1,10 @@
 // src/pages/CustomersPage.jsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AlertTriangle, UserPlus, Users } from 'lucide-react';
+import { AlertTriangle, BellRing, MessageSquareText, UserPlus, Users } from 'lucide-react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
+import CustomerMessageTemplatesSettings from '../components/settings/CustomerMessageTemplatesSettings';
+import CustomerMessageAutomationSettings from '../components/settings/CustomerMessageAutomationSettings';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
 import AbonoModal from '../components/customers/AbonoModal';
 import LayawayModal from '../components/customers/LayawayModal';
@@ -48,6 +50,22 @@ import './CustomersPage.css';
 
 const PAGE_SIZE = 50;
 
+const CUSTOMER_TABS = Object.freeze([
+  Object.freeze({ key: 'add', label: 'Agregar cliente', icon: UserPlus }),
+  Object.freeze({ key: 'list', label: 'Lista de clientes', icon: Users }),
+  Object.freeze({ key: 'message-config', label: 'Configuración de mensajes', icon: MessageSquareText, cloudOnly: true }),
+  Object.freeze({ key: 'reminders', label: 'Recordatorios y sincronización', icon: BellRing, cloudOnly: true })
+]);
+
+const resolveCustomerTab = (requestedTab, cloudEnabled) => {
+  const requested = requestedTab || 'list';
+  const isKnownTab = CUSTOMER_TABS.some((tab) => tab.key === requested);
+  const isCloudTab = CUSTOMER_TABS.some((tab) => tab.key === requested && tab.cloudOnly);
+
+  if (!isKnownTab || (isCloudTab && !cloudEnabled)) return 'list';
+  return requested;
+};
+
 const mergeUniqueCustomers = (currentCustomers, nextCustomers) => {
   const seenIds = new Set(currentCustomers.map(customer => customer.id));
 
@@ -84,7 +102,6 @@ const upsertCustomerReminder = (reminders, nextReminder) => {
 
 export default function CustomersPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('add-customer');
   const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -136,6 +153,8 @@ export default function CustomersPage() {
   const canManageCustomerReminders = customerMessagingCloudEnabled
     && customerMessagingLicenseEligible
     && settingsAccess.isAdmin;
+  const activeTab = resolveCustomerTab(searchParams.get('tab'), customerMessagingCloudEnabled);
+  const visibleCustomerTabs = CUSTOMER_TABS.filter((tab) => !tab.cloudOnly || customerMessagingCloudEnabled);
 
   useEffect(() => {
     setIsLayawayModalOpen(false);
@@ -210,23 +229,20 @@ export default function CustomersPage() {
   }, [cashMode?.online, cajaActual, isCloudCash, sincronizarEstadoCaja]);
 
   useEffect(() => {
-    const tabParam = searchParams.get('tab');
+    if (activeTab === 'list') setEditingCustomer(null);
+  }, [activeTab]);
 
-    if (tabParam === 'add') {
-      setActiveTab('add-customer');
-    } else if (tabParam === 'list') {
-      setActiveTab('view-customers');
-      setEditingCustomer(null);
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab');
+    if (requestedTab && requestedTab !== activeTab) {
+      setSearchParams({ tab: activeTab }, { replace: true });
     }
-  }, [searchParams]);
+  }, [activeTab, searchParams, setSearchParams]);
 
-  const handleTabChange = (internalTab) => {
-    if (internalTab === 'view-customers') {
-      setSearchParams({ tab: 'list' });
-      handleCancelEdit();
-    } else if (internalTab === 'add-customer') {
-      setSearchParams({ tab: 'add' });
-    }
+  const handleTabChange = (tabKey) => {
+    if ((tabKey === 'message-config' || tabKey === 'reminders') && !customerMessagingCloudEnabled) return;
+    if (tabKey === 'list') setEditingCustomer(null);
+    setSearchParams({ tab: tabKey });
   };
 
   const loadCustomersPage = useCallback(async ({
@@ -359,8 +375,10 @@ export default function CustomersPage() {
   ]);
 
   useEffect(() => {
+    if (activeTab !== 'list') return undefined;
     loadCustomerMessageReminders();
-  }, [loadCustomerMessageReminders]);
+    return undefined;
+  }, [activeTab, loadCustomerMessageReminders]);
 
   useEffect(() => {
     const refreshFromSync = () => {
@@ -630,7 +648,7 @@ export default function CustomersPage() {
       }
 
       setEditingCustomer(null);
-      setActiveTab('view-customers');
+      setSearchParams({ tab: 'list' });
       await loadInitialCustomers();
       showMessageModal(result.pending
         ? 'Cliente guardado localmente. Sincronizacion pendiente.'
@@ -682,10 +700,6 @@ export default function CustomersPage() {
         setLoading(false);
       }
     }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingCustomer(null);
   };
 
   const handleViewHistory = (customer) => {
@@ -976,87 +990,112 @@ export default function CustomersPage() {
   return (
     <>
       <main className="ui-page customers-page" aria-label="Clientes">
-        <section className="ui-page__header customers-hero" aria-label="Resumen de clientes">
-          <div className="customers-hero__metric">
-            <span>Fiado total</span>
-            <strong>{formatMoneyValue(customerPortfolio.totalDebt)}</strong>
+        <header className="ui-page__header customers-page__header">
+          <div>
+            <h1 className="ui-page__title">Clientes</h1>
+            <p className="ui-page__subtitle">Directorio, crédito y mensajería en un solo lugar.</p>
           </div>
+        </header>
 
-          <div className="customers-hero__metric customers-hero__metric--alert">
-            <span>Clientes excedidos</span>
-            <div>
-              <strong>{customerPortfolio.overLimitCount}</strong>
-              {customerPortfolio.overLimitCount > 0 && (
-                <span className="ui-badge ui-badge--warning customers-alert-badge">
-                  <AlertTriangle size={16} aria-hidden="true" />
-                  Limite excedido
-                </span>
-              )}
-            </div>
+        <section className="ui-section customers-tabs-section" aria-label="Secciones de clientes">
+          <div className="tabs-container customers-tabs" role="tablist" aria-label="Navegación de clientes">
+            {visibleCustomerTabs.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                className={`tab-btn ${activeTab === key ? 'active' : ''}`}
+                aria-selected={activeTab === key}
+                aria-controls={`customers-panel-${key}`}
+                id={`customers-tab-${key}`}
+                onClick={() => handleTabChange(key)}
+              >
+                <Icon size={17} aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            ))}
           </div>
-
-          <button
-            type="button"
-            className={`ui-button ui-button--primary customers-add-button ${activeTab === 'add-customer' ? 'is-active' : ''}`}
-            onClick={() => {
-              if (activeTab === 'add-customer') {
-                handleTabChange('view-customers');
-              } else {
-                handleTabChange('add-customer');
-              }
-            }}
-            aria-pressed={activeTab === 'add-customer'}
-          >
-            {activeTab === 'add-customer' ? (
-              <>
-                <Users size={20} aria-hidden="true" />
-                Ver lista
-              </>
-            ) : (
-              <>
-                <UserPlus size={20} aria-hidden="true" />
-                {editingCustomer ? 'Editar cliente' : 'Añadir cliente'}
-              </>
-            )}
-          </button>
         </section>
 
-        <section className="ui-section customers-page__content">
-          {activeTab === 'add-customer' ? (
+        {activeTab === 'list' && (
+          <>
+            <section className="ui-section customers-overview" aria-label="Resumen de crédito">
+              <article className="ui-card customers-metric">
+                <span>Fiado total</span>
+                <strong>{formatMoneyValue(customerPortfolio.totalDebt)}</strong>
+              </article>
+              <article className="ui-card customers-metric customers-metric--alert">
+                <span>Clientes excedidos</span>
+                <div>
+                  <strong>{customerPortfolio.overLimitCount}</strong>
+                  {customerPortfolio.overLimitCount > 0 && (
+                    <span className="ui-badge ui-badge--warning customers-alert-badge">
+                      <AlertTriangle size={14} aria-hidden="true" />
+                      Limite excedido
+                    </span>
+                  )}
+                </div>
+              </article>
+            </section>
+
+            <section
+              id="customers-panel-list"
+              className="ui-section customers-page__content"
+              role="tabpanel"
+              aria-labelledby="customers-tab-list"
+              tabIndex={0}
+            >
+              <CustomerList
+                customers={customers}
+                isLoading={loading && customers.length === 0}
+                isLoadingMore={isLoadingMore}
+                hasMore={hasMore}
+                onLoadMore={loadMoreCustomers}
+                onRefreshList={loadInitialCustomers}
+                onEdit={handleEditCustomer}
+                onDelete={handleDeleteCustomer}
+                onViewHistory={handleViewHistory}
+                onAbonar={handleOpenAbono}
+                onViewLayaways={handleOpenLayaways}
+                onWhatsApp={handleShareStatementImage}
+                onWhatsAppLoading={imageShareLoading}
+                reminders={customerReminders}
+                reminderCloudEnabled={customerMessagingCloudEnabled}
+                reminderConfigEnabled={customerReminderConfig?.enabled === true}
+                reminderConfigError={customerReminderLoading ? 'Cargando historial de recordatorios...' : customerReminderError}
+                canManageReminders={canManageCustomerReminders}
+                reminderLoadingAction={customerReminderAction}
+                reminderFeedbackByCustomer={customerReminderFeedback}
+                onScheduleReminder={handleScheduleReminder}
+                onCancelReminder={handleCancelReminder}
+                onRescheduleReminder={handleRescheduleReminder}
+              />
+            </section>
+          </>
+        )}
+
+        {activeTab === 'add' && (
+          <section id="customers-panel-add" className="ui-section customers-page__content" role="tabpanel" aria-labelledby="customers-tab-add" tabIndex={0}>
             <CustomerForm
               onSave={handleSaveCustomer}
-              onCancel={() => handleTabChange('view-customers')}
+              onCancel={() => handleTabChange('list')}
               customerToEdit={editingCustomer}
               globalCreditLimit={globalCreditLimit}
             />
-          ) : (
-            <CustomerList
-              customers={customers}
-              isLoading={loading && customers.length === 0}
-              isLoadingMore={isLoadingMore}
-              hasMore={hasMore}
-              onLoadMore={loadMoreCustomers}
-              onRefreshList={loadInitialCustomers}
-              onEdit={handleEditCustomer}
-              onDelete={handleDeleteCustomer}
-              onViewHistory={handleViewHistory}
-              onAbonar={handleOpenAbono}
-              onViewLayaways={handleOpenLayaways}
-              onWhatsApp={handleShareStatementImage}
-              onWhatsAppLoading={imageShareLoading}
-              reminders={customerReminders}
-              reminderCloudEnabled={customerMessagingCloudEnabled}
-              reminderConfigEnabled={customerReminderConfig?.enabled === true}
-              reminderConfigError={customerReminderLoading ? 'Cargando historial de recordatorios...' : customerReminderError}
-              canManageReminders={canManageCustomerReminders}
-              reminderLoadingAction={customerReminderAction}
-              reminderFeedbackByCustomer={customerReminderFeedback}
-              onScheduleReminder={handleScheduleReminder}
-              onCancelReminder={handleCancelReminder}
-              onRescheduleReminder={handleRescheduleReminder}
-            />
-          )}
-        </section>
+          </section>
+        )}
+
+        {activeTab === 'message-config' && customerMessagingCloudEnabled && (
+          <section id="customers-panel-message-config" className="ui-section customers-page__content customers-page__cloud-panel" role="tabpanel" aria-labelledby="customers-tab-message-config" tabIndex={0}>
+            <CustomerMessageTemplatesSettings />
+          </section>
+        )}
+
+        {activeTab === 'reminders' && customerMessagingCloudEnabled && (
+          <section id="customers-panel-reminders" className="ui-section customers-page__content customers-page__cloud-panel" role="tabpanel" aria-labelledby="customers-tab-reminders" tabIndex={0}>
+            <CustomerMessageAutomationSettings />
+          </section>
+        )}
       </main>
 
       <PurchaseHistoryModal
