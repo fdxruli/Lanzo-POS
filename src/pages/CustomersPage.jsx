@@ -1,6 +1,6 @@
 // src/pages/CustomersPage.jsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AlertTriangle, BellRing, MessageSquareText, UserPlus, Users } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import CustomerMessageTemplatesSettings from '../components/settings/CustomerMessageTemplatesSettings';
@@ -51,10 +51,10 @@ import './CustomersPage.css';
 const PAGE_SIZE = 50;
 
 const CUSTOMER_TABS = Object.freeze([
-  Object.freeze({ key: 'add', label: 'Agregar cliente', icon: UserPlus }),
-  Object.freeze({ key: 'list', label: 'Lista de clientes', icon: Users }),
-  Object.freeze({ key: 'message-config', label: 'Configuración de mensajes', icon: MessageSquareText, cloudOnly: true }),
-  Object.freeze({ key: 'reminders', label: 'Recordatorios y sincronización', icon: BellRing, cloudOnly: true })
+  Object.freeze({ key: 'add', label: 'Agregar cliente' }),
+  Object.freeze({ key: 'list', label: 'Lista de clientes' }),
+  Object.freeze({ key: 'message-config', label: 'Configuración de mensajes', cloudOnly: true }),
+  Object.freeze({ key: 'reminders', label: 'Recordatorios y sincronización', cloudOnly: true })
 ]);
 
 const resolveCustomerTab = (requestedTab, cloudEnabled) => {
@@ -999,7 +999,7 @@ export default function CustomersPage() {
 
         <section className="ui-section customers-tabs-section" aria-label="Secciones de clientes">
           <div className="tabs-container customers-tabs" role="tablist" aria-label="Navegación de clientes">
-            {visibleCustomerTabs.map(({ key, label, icon: Icon }) => (
+            {visibleCustomerTabs.map(({ key, label }) => (
               <button
                 key={key}
                 type="button"
@@ -1010,7 +1010,6 @@ export default function CustomersPage() {
                 id={`customers-tab-${key}`}
                 onClick={() => handleTabChange(key)}
               >
-                <Icon size={17} aria-hidden="true" />
                 <span>{label}</span>
               </button>
             ))}

@@ -3,6 +3,11 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const readSource = (relativeUrl) => readFileSync(new URL(relativeUrl, import.meta.url), 'utf8');
+const customersPageStyles = readSource('../CustomersPage.css');
+const sharedTabsStyles = readSource('../../styles/ui-tabs.css');
 
 const state = vi.hoisted(() => ({
   cloud: true,
@@ -151,6 +156,21 @@ describe('CustomersPage navigation', () => {
     expect(screen.getByText('Fiado total')).toBeInTheDocument();
     expect(screen.getByText('$125.00')).toBeInTheDocument();
     expect(document.querySelector('.customers-hero')).not.toBeInTheDocument();
+  });
+
+  it('uses the shared pill navigation without page overflow or tab icons', () => {
+    renderPage('/clientes?tab=list');
+
+    const page = document.querySelector('.customers-page');
+    const tabs = page.querySelector('.tabs-container');
+
+    expect(tabs).toHaveClass('tabs-container', 'customers-tabs');
+    expect(tabs.querySelectorAll('svg')).toHaveLength(0);
+    expect(customersPageStyles).not.toMatch(/\.customers-page \.tabs-container/);
+    expect(customersPageStyles).not.toContain('overflow-x: clip');
+    expect(sharedTabsStyles).toMatch(/\.customers-page \.tabs-container,[\s\S]*display: flex;/);
+    expect(sharedTabsStyles).toMatch(/\.customers-page \.tabs-container,[\s\S]*overflow-x: auto;/);
+    expect(sharedTabsStyles).toMatch(/\.customers-page \.tab-btn,[\s\S]*white-space: nowrap;/);
   });
 
   it('supports the add and list deep links', () => {

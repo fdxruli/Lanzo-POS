@@ -8,9 +8,6 @@
   min-width: 0;
   max-width: 100%;
   margin: 0;
-  padding-top: var(--ui-space-lg);
-  padding-inline: var(--ui-space-lg);
-  overflow-x: clip;
 }
 
 .customers-page__header {
@@ -24,61 +21,6 @@
 
 .customers-tabs-section {
   margin-bottom: var(--ui-space-lg);
-}
-
-.customers-page .tabs-container {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--ui-space-xs);
-  width: 100%;
-  min-width: 0;
-  padding: var(--ui-space-2xs);
-  border: 1px solid var(--ui-border-color);
-  border-radius: var(--ui-radius-md);
-  background: var(--ui-bg-muted);
-}
-
-.customers-page .tab-btn {
-  display: inline-flex;
-  min-width: 0;
-  min-height: 48px;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ui-space-xs);
-  padding: 0.6rem 0.7rem;
-  border: 1px solid transparent;
-  border-radius: var(--ui-radius-sm);
-  background: transparent;
-  color: var(--ui-text-muted);
-  font: inherit;
-  font-size: 0.86rem;
-  font-weight: 750;
-  line-height: 1.2;
-  text-align: center;
-  cursor: pointer;
-  white-space: normal;
-  transition: background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), color var(--ui-transition-fast);
-}
-
-.customers-page .tab-btn:hover {
-  color: var(--ui-text-strong);
-  background: var(--ui-bg-surface);
-}
-
-.customers-page .tab-btn.active {
-  border-color: var(--ui-border-brand);
-  color: var(--ui-text-brand);
-  background: var(--ui-bg-surface);
-  box-shadow: var(--ui-shadow-sm);
-}
-
-.customers-page .tab-btn:focus-visible {
-  outline: none;
-  box-shadow: var(--ui-shadow-focus-brand);
-}
-
-.customers-page .tab-btn svg {
-  flex: 0 0 auto;
 }
 
 .customers-overview {
@@ -155,35 +97,7 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 760px) {
-  .customers-page .tabs-container {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 640px) {
-  .customers-page {
-    padding:
-      var(--ui-space-sm)
-      max(var(--ui-space-sm), var(--safe-area-right))
-      var(--mobile-navigation-clearance)
-      max(var(--ui-space-sm), var(--safe-area-left));
-  }
-
-  .customers-page .tabs-container {
-    gap: 0.35rem;
-  }
-
-  .customers-page .tab-btn {
-    min-height: 52px;
-    padding-inline: 0.45rem;
-    font-size: 0.78rem;
-  }
-
-  .customers-page .tab-btn svg {
-    display: none;
-  }
-
   .customers-overview {
     gap: var(--ui-space-sm);
   }

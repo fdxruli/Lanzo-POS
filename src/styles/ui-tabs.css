@@ -4,6 +4,7 @@
 .products-page .tabs-container,
 .dashboard-page .tabs-container,
 .ecommerce-portal-page .tabs-container,
+.customers-page .tabs-container,
 .settings-page-wrapper .tabs-container.tabs-container {
   display: flex;
   align-items: center;
@@ -25,6 +26,7 @@
 .products-page .tabs-container::-webkit-scrollbar,
 .dashboard-page .tabs-container::-webkit-scrollbar,
 .ecommerce-portal-page .tabs-container::-webkit-scrollbar,
+.customers-page .tabs-container::-webkit-scrollbar,
 .settings-page-wrapper .tabs-container.tabs-container::-webkit-scrollbar {
   display: none;
 }
@@ -32,6 +34,7 @@
 .products-page .tab-btn,
 .dashboard-page .tab-btn,
 .ecommerce-portal-page .tab-btn,
+.customers-page .tab-btn,
 .settings-page-wrapper .tab-btn.tab-btn {
   position: relative;
   flex: 0 0 auto;
@@ -58,6 +61,7 @@
 .products-page .tab-btn:hover,
 .dashboard-page .tab-btn:hover,
 .ecommerce-portal-page .tab-btn:hover,
+.customers-page .tab-btn:hover,
 .settings-page-wrapper .tab-btn.tab-btn:hover {
   background: color-mix(in srgb, var(--ui-bg-surface) 72%, var(--ui-bg-muted));
   color: var(--ui-text-strong);
@@ -78,6 +82,11 @@
 .ecommerce-portal-page .tab-btn.active:focus,
 .ecommerce-portal-page .tab-btn.active:focus-visible,
 .ecommerce-portal-page .tab-btn.active:active,
+.customers-page .tab-btn.active,
+.customers-page .tab-btn.active:hover,
+.customers-page .tab-btn.active:focus,
+.customers-page .tab-btn.active:focus-visible,
+.customers-page .tab-btn.active:active,
 .settings-page-wrapper .tab-btn.tab-btn.active,
 .settings-page-wrapper .tab-btn.tab-btn.active:hover,
 .settings-page-wrapper .tab-btn.tab-btn.active:focus,
@@ -100,6 +109,7 @@
 .products-page .tab-btn.active::after,
 .dashboard-page .tab-btn.active::after,
 .ecommerce-portal-page .tab-btn.active::after,
+.customers-page .tab-btn.active::after,
 .settings-page-wrapper .tab-btn.tab-btn.active::after {
   content: '';
   position: absolute;
@@ -116,6 +126,7 @@
 .products-page .tab-btn:focus-visible,
 .dashboard-page .tab-btn:focus-visible,
 .ecommerce-portal-page .tab-btn:focus-visible,
+.customers-page .tab-btn:focus-visible,
 .settings-page-wrapper .tab-btn.tab-btn:focus-visible {
   outline: none;
   box-shadow: var(--ui-shadow-focus-brand);
@@ -146,6 +157,7 @@
 [data-theme="dark"] .products-page .tabs-container,
 [data-theme="dark"] .dashboard-page .tabs-container,
 [data-theme="dark"] .ecommerce-portal-page .tabs-container,
+[data-theme="dark"] .customers-page .tabs-container,
 [data-theme="dark"] .settings-page-wrapper .tabs-container.tabs-container {
   background: color-mix(in srgb, var(--ui-bg-muted) 64%, black 12%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -154,6 +166,7 @@
 [data-theme="dark"] .products-page .tab-btn:hover,
 [data-theme="dark"] .dashboard-page .tab-btn:hover,
 [data-theme="dark"] .ecommerce-portal-page .tab-btn:hover,
+[data-theme="dark"] .customers-page .tab-btn:hover,
 [data-theme="dark"] .settings-page-wrapper .tab-btn.tab-btn:hover {
   background: color-mix(in srgb, var(--ui-bg-muted) 82%, white 4%);
 }
@@ -173,6 +186,11 @@
 [data-theme="dark"] .ecommerce-portal-page .tab-btn.active:focus,
 [data-theme="dark"] .ecommerce-portal-page .tab-btn.active:focus-visible,
 [data-theme="dark"] .ecommerce-portal-page .tab-btn.active:active,
+[data-theme="dark"] .customers-page .tab-btn.active,
+[data-theme="dark"] .customers-page .tab-btn.active:hover,
+[data-theme="dark"] .customers-page .tab-btn.active:focus,
+[data-theme="dark"] .customers-page .tab-btn.active:focus-visible,
+[data-theme="dark"] .customers-page .tab-btn.active:active,
 [data-theme="dark"] .settings-page-wrapper .tab-btn.tab-btn.active,
 [data-theme="dark"] .settings-page-wrapper .tab-btn.tab-btn.active:hover,
 [data-theme="dark"] .settings-page-wrapper .tab-btn.tab-btn.active:focus,
@@ -207,6 +225,7 @@
   .products-page .tabs-container,
   .dashboard-page .tabs-container,
   .ecommerce-portal-page .tabs-container,
+  .customers-page .tabs-container,
   .settings-page-wrapper .tabs-container.tabs-container {
     padding: 3px;
   }
@@ -214,6 +233,7 @@
   .products-page .tab-btn,
   .dashboard-page .tab-btn,
   .ecommerce-portal-page .tab-btn,
+  .customers-page .tab-btn,
   .settings-page-wrapper .tab-btn.tab-btn {
     min-height: 38px;
     padding: 0.54rem 0.82rem;
