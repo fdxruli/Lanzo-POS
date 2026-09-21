@@ -197,6 +197,12 @@ const buildEvidenceKeys = (source = {}) => {
     'profitability.profit',
     'profitability.margin',
     'profitability.costCoverage',
+    'coverage.itemsComplete',
+    'coverage.costCoverage',
+    'coverage.paginationComplete',
+    'coverage.sourceComplete',
+    'coverage.costStatus',
+    'summary.discountsKnown',
     'products.risks'
   ];
   if (Object.keys(comparison).length) {
