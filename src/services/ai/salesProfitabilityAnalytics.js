@@ -31,7 +31,8 @@ const EXCLUDED_SALES_STATUSES = new Set([
   'voided',
   'rejected',
   'rechazada',
-  'rechazado'
+  'rechazado',
+  'shadow'
 ]);
 
 const OPERATIONAL_SALES_SOURCES = new Set([
