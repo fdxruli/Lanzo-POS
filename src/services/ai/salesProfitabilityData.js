@@ -1,3 +1,5 @@
+import { normalizeValidSales } from './salesProfitabilityAnalytics';
+
 const DEFAULT_TIMEZONE = 'America/Mexico_City';
 const DEFAULT_PAGE_SIZE = 200;
 const DEFAULT_MAX_ROWS = 5000;
@@ -342,9 +344,12 @@ const buildProductEvidence = (lines) => {
 };
 
 const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
+  const validRows = normalizeValidSales({ rows: historyRows }).rows;
+  const validRowSet = new Set(validRows);
   const sales = historyRows.map((sale) => ({ ...sale, items: [] }));
   const saleIndexes = new Map();
-  sales.forEach((sale, index) => {
+  historyRows.forEach((sale, index) => {
+    if (!validRowSet.has(sale)) return;
     saleKeys(sale).forEach((key) => {
       if (!saleIndexes.has(key)) saleIndexes.set(key, index);
     });
@@ -376,18 +381,21 @@ const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
   let expectedUnits = 0;
   let salesWithMissingDetail = 0;
 
-  sales.forEach((sale) => {
-    const expected = expectedItems(sale);
+  historyRows.forEach((sale, index) => {
+    if (!validRowSet.has(sale)) return;
+    const mergedSale = sales[index];
+    const expected = expectedItems(mergedSale);
     expectedDetailLines += expected;
-    expectedUnits += reportedUnits(sale);
-    matchedDetailLines += sale.items.length;
-    if (expected > sale.items.length) salesWithMissingDetail += 1;
+    expectedUnits += reportedUnits(mergedSale);
+    matchedDetailLines += mergedSale.items.length;
+    if (expected > mergedSale.items.length) salesWithMissingDetail += 1;
   });
 
+  const validSalesCount = validRows.length;
   const itemCoverage = expectedDetailLines > 0
     ? Math.min(matchedDetailLines / expectedDetailLines, 1)
-    : (sales.length === 0 ? 1 : 0);
-  const detailComplete = sales.length === 0
+    : (validSalesCount === 0 ? 1 : 0);
+  const detailComplete = validSalesCount === 0
     ? true
     : expectedDetailLines > 0
       && salesWithMissingDetail === 0
