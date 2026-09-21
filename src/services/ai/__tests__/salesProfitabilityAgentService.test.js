@@ -267,6 +267,43 @@ describe('sales profitability agent service', () => {
     expect(analyze).not.toHaveBeenCalled();
   });
 
+  it('keeps profitability indeterminate and skips the provider when the sale source is not authoritative', async () => {
+    const unknownHistory = {
+      ...history,
+      rows: history.rows.map((row) => ({
+        ...row,
+        sourceMode: 'cloud_committed',
+        sourceModeKnown: false
+      }))
+    };
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(unknownHistory, profit),
+      analyze,
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' },
+      compare: false
+    });
+
+    expect(result.providerCalled).toBe(false);
+    expect(analyze).not.toHaveBeenCalled();
+    expect(result.usageStatus).toBeNull();
+    expect(result.response.status).toBe('incomplete');
+    expect(result.response.current.profit).toBeNull();
+    expect(result.response.current.margin).toBeNull();
+    expect(result.response.coverage).toMatchObject({
+      sourceComplete: false,
+      complete: false,
+      sourcePolicy: { unknownSources: 1 }
+    });
+    expect(result.response.confidence).toBe('low');
+  });
+
   it('preloads product options from the profit report without provider or quota path', async () => {
     const reports = repository({
       ...history,
