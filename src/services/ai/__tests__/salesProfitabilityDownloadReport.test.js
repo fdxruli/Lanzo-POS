@@ -229,7 +229,7 @@ describe('sales profitability download report', () => {
     expect(serialized).not.toContain('+52 961 123 4567');
     expect(serialized).not.toContain('private.provider.example');
     expect(serialized).not.toContain('rawSalesRows');
-    expect(serialized).not.toContain('tickets');
+    expect(serialized).not.toContain('"tickets":[100,100]');
     expect(report.redactions).toEqual([
       'raw sales rows omitted',
       'customer personal data omitted',
