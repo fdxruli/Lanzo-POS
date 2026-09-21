@@ -4,6 +4,7 @@ export const COMMERCIAL_AGENT_KEYS = Object.freeze({
 });
 
 export const COMMERCIAL_AGENT_INTENTS = Object.freeze([
+  'profitability_summary',
   'explain_change',
   'product_risk',
   'price_simulation',
@@ -170,12 +171,17 @@ export const validateCommercialAgentResponse = (response, { expectedAgentKey = n
   }
 
   for (const item of response.recommendations) {
+    const legacyRecommendation = isRecord(item)
+      && typeof item.effort === 'string'
+      && Array.isArray(item.evidence);
+    const narrativeRecommendation = isRecord(item)
+      && ['high', 'medium', 'low'].includes(String(item.priority))
+      && Array.isArray(item.evidenceKeys);
     if (!isRecord(item)
       || typeof item.title !== 'string'
       || typeof item.explanation !== 'string'
       || typeof item.expectedImpact !== 'string'
-      || typeof item.effort !== 'string'
-      || !Array.isArray(item.evidence)
+      || (!legacyRecommendation && !narrativeRecommendation)
       || item.requiresConfirmation !== true) {
       return invalid('RECOMMENDATION_CONTRACT_INVALID');
     }
