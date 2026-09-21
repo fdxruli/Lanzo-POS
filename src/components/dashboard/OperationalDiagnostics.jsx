@@ -21,6 +21,12 @@ import {
   DIAGNOSTIC_TYPES,
   formatDiagnosticPeriodLabel
 } from '../../services/diagnostics/diagnosticCalculations';
+import {
+  buildDiagnosticViewModel,
+  formatCurrency,
+  formatNumber,
+  formatPercentage
+} from '../../utils/diagnostics/diagnosticPresentation';
 import './OperationalDiagnostics.css';
 
 const EMPTY_ARRAY = [];
@@ -57,68 +63,16 @@ const PERIOD_OPTIONS = [
   { id: DIAGNOSTIC_DATE_RANGES.LAST_MONTH, label: 'Mes anterior' }
 ];
 
-const METRIC_CONFIG = {
-  [DIAGNOSTIC_TYPES.INVENTORY]: [
-    ['productsWithoutStock', 'Sin stock', 'number'],
-    ['lowStock', 'Stock bajo', 'number'],
-    ['committedStock', 'Stock comprometido', 'number'],
-    ['productsWithoutMovement', 'Sin movimiento', 'number'],
-    ['capitalDetained', 'Capital detenido', 'currency'],
-    ['wasteAmount', 'Mermas', 'currency'],
-    ['expiringLots', 'Lotes por caducar', 'number'],
-    ['productsAtRisk', 'Productos en riesgo', 'number']
-  ],
-  [DIAGNOSTIC_TYPES.FINANCIAL]: [
-    ['netSales', 'Ventas netas', 'currency'],
-    ['salesCount', 'Número de ventas', 'number'],
-    ['averageTicket', 'Ticket promedio', 'currency'],
-    ['costOfSales', 'Costo de venta', 'currency'],
-    ['grossProfit', 'Utilidad bruta', 'currency'],
-    ['grossMargin', 'Margen bruto', 'percent'],
-    ['discounts', 'Descuentos', 'currency'],
-    ['itemsSold', 'Unidades vendidas', 'number']
-  ],
-  [DIAGNOSTIC_TYPES.CUSTOMERS]: [
-    ['registeredCustomers', 'Clientes registrados', 'number'],
-    ['activeCustomers', 'Clientes activos', 'number'],
-    ['recurrentCustomers', 'Clientes recurrentes', 'number'],
-    ['purchaseFrequency', 'Frecuencia de compra', 'decimal'],
-    ['averageTicket', 'Ticket promedio', 'currency'],
-    ['pendingBalances', 'Saldos pendientes', 'currency'],
-    ['totalDebt', 'Deuda total', 'currency'],
-    ['customersWithoutRecentActivity', 'Sin actividad reciente', 'number']
-  ]
-};
-
 const TYPE_ICONS = {
   info: AlertCircle,
   warning: AlertTriangle,
   critical: XCircle
 };
 
-const formatNumber = (value, digits = 0) => {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
-  return Number(value).toLocaleString('es-MX', { maximumFractionDigits: digits });
-};
-
-const formatMetric = (value, format) => {
-  if (value === null || value === undefined) return '—';
-  if (format === 'currency') return `$${formatNumber(value, 2)}`;
-  if (format === 'percent') return `${formatNumber(value, 2)}%`;
-  if (format === 'decimal') return formatNumber(value, 2);
-  return formatNumber(value);
-};
-
-const getSourceLabel = (source) => {
-  if (source === 'cloud') return 'Fuente: datos cloud consolidados';
-  if (source === 'mixed') return 'Fuente: datos combinados (cloud + datos locales)';
-  return 'Fuente: datos locales de este dispositivo';
-};
-
-const MetricCard = memo(({ label, value, format }) => (
+const MetricCard = memo(({ label, displayValue }) => (
   <div className="opdiag-metric-card">
     <span className="opdiag-metric-label">{label}</span>
-    <strong className="opdiag-metric-value">{formatMetric(value, format)}</strong>
+    <strong className="opdiag-metric-value">{displayValue}</strong>
   </div>
 ));
 
@@ -127,7 +81,7 @@ MetricCard.displayName = 'MetricCard';
 const DiagnosticFinding = memo(({ finding, onNavigate }) => {
   const Icon = TYPE_ICONS[finding.severity] || CheckCircle2;
   const handleNavigate = () => {
-    if (finding.actionRoute) onNavigate(finding.actionRoute);
+    if (finding.actionRoute && onNavigate) onNavigate(finding.actionRoute);
   };
 
   return (
@@ -136,7 +90,7 @@ const DiagnosticFinding = memo(({ finding, onNavigate }) => {
       <div className="opdiag-finding-body">
         <div className="opdiag-finding-heading">
           <div>
-            <span className="opdiag-severity">{finding.severity}</span>
+            <span className="opdiag-severity">{finding.severityLabel}</span>
             <h4>{finding.title}</h4>
           </div>
           {finding.actionRoute && (
@@ -146,16 +100,16 @@ const DiagnosticFinding = memo(({ finding, onNavigate }) => {
           )}
         </div>
         <p>{finding.description}</p>
-        <div className="opdiag-finding-details">
-          <div>
-            <span>Evidencia</span>
-            <code>{JSON.stringify(finding.evidence || [])}</code>
-          </div>
-          <div>
-            <span>Fórmula utilizada</span>
-            <code>{finding.formula || 'Cálculo determinístico del diagnóstico'}</code>
-          </div>
-        </div>
+        {finding.details.length > 0 && (
+          <dl className="opdiag-finding-details">
+            {finding.details.map((item, index) => (
+              <div key={`${item.label}-${index}`}>
+                <dt>{item.label}</dt>
+                <dd>{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </div>
     </article>
   );
@@ -171,17 +125,11 @@ const LoadingState = () => (
   </div>
 );
 
-const EmptyState = ({ diagnosticType }) => (
+const EmptyState = ({ description }) => (
   <div className="opdiag-state">
     <CheckCircle2 size={28} />
     <strong>Sin datos suficientes</strong>
-    <span>
-      {diagnosticType === DIAGNOSTIC_TYPES.INVENTORY
-        ? 'No hay productos disponibles para analizar inventario.'
-        : diagnosticType === DIAGNOSTIC_TYPES.FINANCIAL
-          ? 'No hay ventas cerradas en el periodo seleccionado.'
-          : 'No hay clientes o ventas vinculadas para analizar.'}
-    </span>
+    <span>{description}</span>
   </div>
 );
 
@@ -193,6 +141,110 @@ const ErrorState = ({ message, onRetry }) => (
     <button type="button" className="opdiag-retry" onClick={onRetry}><RefreshCw size={15} /> Reintentar</button>
   </div>
 );
+
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Efectivo',
+  efectivo: 'Efectivo',
+  card: 'Tarjeta',
+  tarjeta: 'Tarjeta',
+  credit: 'Crédito',
+  credito: 'Crédito',
+  fiado: 'Fiado',
+  transfer: 'Transferencia',
+  transferencia: 'Transferencia'
+};
+
+const formatPaymentMethod = (value) => {
+  const key = String(value || '').trim().toLowerCase();
+  return PAYMENT_METHOD_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'No especificado');
+};
+
+const formatHour = (value) => {
+  const hour = Number(value);
+  return Number.isFinite(hour) ? `${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:59` : 'Horario no disponible';
+};
+
+const getTopRows = (rows, limit = 3) => rows
+  .filter((row) => row && typeof row === 'object')
+  .sort((a, b) => (b.count || 0) - (a.count || 0) || (b.revenue || 0) - (a.revenue || 0))
+  .slice(0, limit);
+
+const DiagnosticBreakdowns = memo(({ diagnosticType, viewModel }) => {
+  const { breakdowns, currency } = viewModel;
+  if (diagnosticType === DIAGNOSTIC_TYPES.FINANCIAL) {
+    const days = Object.entries(breakdowns.byDay).map(([day, data]) => ({ day, ...data }));
+    const hours = Object.entries(breakdowns.byHour).map(([hour, data]) => ({ hour, ...data }));
+    const hasFinancialBreakdown = breakdowns.paymentMethods.length > 0
+      || breakdowns.topProducts.length > 0
+      || days.length > 0
+      || hours.length > 0;
+    if (!hasFinancialBreakdown) return null;
+
+    return (
+      <section className="opdiag-breakdowns" aria-label="Desglose financiero">
+        <div className="opdiag-section-heading"><h3>Comportamiento de ventas</h3><span>Resumen del periodo</span></div>
+        <div className="opdiag-breakdown-grid">
+          {breakdowns.paymentMethods.length > 0 && (
+            <div className="opdiag-breakdown-card">
+              <h4>Métodos de pago</h4>
+              {breakdowns.paymentMethods.slice(0, 5).map((row) => (
+                <div className="opdiag-breakdown-row" key={row.method}>
+                  <span>{formatPaymentMethod(row.method)}</span>
+                  <strong>{formatCurrency(row.revenue, currency)} <small>{formatPercentage(row.percentage)}</small></strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {(days.length > 0 || hours.length > 0) && (
+            <div className="opdiag-breakdown-card">
+              <h4>Días y horarios con mayor actividad</h4>
+              {getTopRows(days, 2).map((row) => (
+                <div className="opdiag-breakdown-row" key={`day-${row.day}`}>
+                  <span>{row.day}</span><strong>{formatNumber(row.count)} ventas</strong>
+                </div>
+              ))}
+              {getTopRows(hours, 2).map((row) => (
+                <div className="opdiag-breakdown-row" key={`hour-${row.hour}`}>
+                  <span>{formatHour(row.hour)}</span><strong>{formatNumber(row.count)} ventas</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {breakdowns.topProducts.length > 0 && (
+            <div className="opdiag-breakdown-card">
+              <h4>Productos con mayor contribución</h4>
+              {breakdowns.topProducts.slice(0, 5).map((row) => (
+                <div className="opdiag-breakdown-row" key={row.id || row.name}>
+                  <span>{row.name || 'Producto sin nombre'}</span>
+                  <strong>{formatCurrency(row.revenue, currency)} <small>{formatNumber(row.quantity, 2)} u.</small></strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  if (diagnosticType === DIAGNOSTIC_TYPES.INVENTORY && breakdowns.capitalByProduct.length > 0) {
+    return (
+      <section className="opdiag-breakdowns" aria-label="Detalle de inventario">
+        <div className="opdiag-section-heading"><h3>Capital detenido por producto</h3><span>Valor con costos disponibles</span></div>
+        <div className="opdiag-breakdown-card opdiag-breakdown-card--wide">
+          {breakdowns.capitalByProduct.slice(0, 10).map((row) => (
+            <div className="opdiag-breakdown-row" key={row.id || row.name}>
+              <span>{row.name || 'Producto sin nombre'}</span><strong>{formatCurrency(row.value, currency)}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return null;
+});
+
+DiagnosticBreakdowns.displayName = 'DiagnosticBreakdowns';
 
 export default function OperationalDiagnostics({
   onNavigate,
@@ -208,6 +260,7 @@ export default function OperationalDiagnostics({
   const [refreshKey, setRefreshKey] = useState(0);
   const companyProfile = useAppStore((state) => state.companyProfile);
   const timezone = companyProfile?.timezone || companyProfile?.time_zone || DEFAULT_BUSINESS_TIMEZONE;
+  const currency = companyProfile?.currency || companyProfile?.currency_code || companyProfile?.currencyCode || 'MXN';
 
   const commonArgs = useMemo(() => ({
     dateRange,
@@ -228,6 +281,15 @@ export default function OperationalDiagnostics({
   const activeOption = DIAGNOSTIC_OPTIONS.find((option) => option.id === diagnosticType) || DIAGNOSTIC_OPTIONS[0];
   const ActiveIcon = activeOption.icon;
   const activeDiagnostic = activeState.diagnostic;
+  const activeViewModel = useMemo(() => buildDiagnosticViewModel({
+    diagnostic: activeDiagnostic,
+    diagnosticType,
+    rangeLabel: formatDiagnosticPeriodLabel(dateRange),
+    timezone,
+    currency,
+    sales,
+    products: menu
+  }), [activeDiagnostic, currency, dateRange, diagnosticType, menu, sales, timezone]);
 
   const handleNavigate = useCallback((route) => {
     if (onNavigate) {
@@ -239,21 +301,15 @@ export default function OperationalDiagnostics({
 
   const handleRefresh = useCallback(() => setRefreshKey((current) => current + 1), []);
   const hasNoData = activeDiagnostic && (
-    activeDiagnostic.coverage.salesAnalyzed === 0
-    && (diagnosticType === DIAGNOSTIC_TYPES.INVENTORY
-      ? activeDiagnostic.coverage.productsAnalyzed === 0
+    diagnosticType === DIAGNOSTIC_TYPES.INVENTORY
+      ? activeViewModel.coverage.productsAnalyzed === 0
       : diagnosticType === DIAGNOSTIC_TYPES.CUSTOMERS
-        ? activeDiagnostic.coverage.customersAnalyzed === 0
-        : true)
+        ? activeViewModel.coverage.customersAnalyzed === 0 && activeViewModel.coverage.salesAnalyzed === 0
+        : activeViewModel.coverage.salesAnalyzed === 0
   );
-  const metricRows = activeDiagnostic ? METRIC_CONFIG[diagnosticType].map(([key, label, format]) => ({
-    key,
-    label,
-    format,
-    value: activeDiagnostic.metrics[key]
-  })) : [];
-  const sourceText = activeDiagnostic ? getSourceLabel(activeDiagnostic.source) : 'Fuente: preparando datos';
-  const reportWarning = reportData?.source?.stale ? 'El reporte cloud disponible es un snapshot; los detalles locales pueden estar más actualizados.' : null;
+  const reportWarning = reportData?.source?.stale
+    ? 'El reporte cloud disponible es un snapshot; los detalles locales pueden estar más actualizados.'
+    : null;
 
   return (
     <section className="operational-diagnostics opdiag-shell" aria-label="Diagnóstico operativo">
@@ -264,8 +320,8 @@ export default function OperationalDiagnostics({
           <p>Resultados calculados con fórmulas y datos históricos del sistema.</p>
         </div>
         <div className="opdiag-header-meta">
-          <span className="opdiag-source-badge"><Database size={14} />{sourceText}</span>
-          <span className="opdiag-period-badge"><Clock3 size={14} />{formatDiagnosticPeriodLabel(dateRange)} · {timezone}</span>
+          <span className="opdiag-source-badge"><Database size={14} />{activeDiagnostic ? activeViewModel.sourceLabel : 'Fuente: preparando datos'}</span>
+          <span className="opdiag-period-badge"><Clock3 size={14} />{activeDiagnostic ? activeViewModel.periodLabel : formatDiagnosticPeriodLabel(dateRange)} · {timezone}</span>
         </div>
       </header>
 
@@ -304,8 +360,8 @@ export default function OperationalDiagnostics({
       </div>
 
       <div className="opdiag-active-heading">
-        <div><ActiveIcon size={20} /><div><h3>{activeOption.label}</h3><span>Periodo: {formatDiagnosticPeriodLabel(dateRange)}</span></div></div>
-        <span className="opdiag-readonly-badge"><CheckCircle2 size={14} /> Solo lectura</span>
+        <div><ActiveIcon size={20} /><div><h3>{activeViewModel.title}</h3><p className="opdiag-active-subtitle">{activeViewModel.subtitle}</p><span>{activeDiagnostic ? activeViewModel.periodLabel : `Periodo: ${formatDiagnosticPeriodLabel(dateRange)}`}</span></div></div>
+        <span className={`opdiag-severity-badge opdiag-severity-badge--${activeViewModel.severity}`}><CheckCircle2 size={14} /> Nivel: {activeViewModel.severityLabel}</span>
       </div>
 
       {activeState.isLoading && <LoadingState />}
@@ -313,24 +369,26 @@ export default function OperationalDiagnostics({
       {!activeState.isLoading && !activeState.error && activeDiagnostic && (
         <>
           <div className="opdiag-metrics" aria-label="Métricas del diagnóstico">
-            {metricRows.map((metric) => (
-              <MetricCard key={metric.key} label={metric.label} format={metric.format} value={metric.value} />
+            {activeViewModel.kpis.map((metric) => (
+              <MetricCard key={metric.key} label={metric.label} displayValue={metric.displayValue} />
             ))}
           </div>
 
           <div className="opdiag-coverage">
-            <span><strong>Cobertura:</strong> {activeDiagnostic.coverage.salesAnalyzed} ventas · {activeDiagnostic.coverage.productsAnalyzed} productos · {activeDiagnostic.coverage.customersAnalyzed} clientes</span>
-            {activeDiagnostic.coverage.missingFields.length > 0 && <span className="opdiag-incomplete"><AlertTriangle size={14} /> Datos incompletos: {activeDiagnostic.coverage.missingFields.slice(0, 3).join(', ')}</span>}
+            <span><strong>Datos analizados:</strong> {activeViewModel.coverage.summary}</span>
+            {activeViewModel.coverage.isIncomplete && <span className="opdiag-incomplete"><AlertTriangle size={14} /> Datos incompletos: {activeViewModel.coverage.missingFields.slice(0, 3).join(', ')}</span>}
           </div>
 
           {reportWarning && <div className="opdiag-warning"><AlertTriangle size={16} />{reportWarning}</div>}
-          {activeDiagnostic.warnings.map((warning) => <div className="opdiag-warning" key={warning}><AlertTriangle size={16} />{warning}</div>)}
+          {activeViewModel.warnings.map((warning) => <div className="opdiag-warning" key={warning}><AlertTriangle size={16} />{warning}</div>)}
 
-          {hasNoData ? <EmptyState diagnosticType={diagnosticType} /> : (
+          <DiagnosticBreakdowns diagnosticType={diagnosticType} viewModel={activeViewModel} />
+
+          {hasNoData ? <EmptyState description={activeViewModel.emptyDescription} /> : (
             <section className="opdiag-findings" aria-label="Hallazgos del diagnóstico">
-              <div className="opdiag-section-heading"><h3>Alertas y evidencia</h3><span>{activeDiagnostic.findings.length} hallazgo(s)</span></div>
-              {activeDiagnostic.findings.length > 0
-                ? activeDiagnostic.findings.map((finding) => <DiagnosticFinding key={finding.id} finding={finding} onNavigate={handleNavigate} />)
+              <div className="opdiag-section-heading"><h3>Hallazgos y acciones</h3><span>{activeViewModel.findings.length} hallazgo(s)</span></div>
+              {activeViewModel.findings.length > 0
+                ? activeViewModel.findings.map((finding) => <DiagnosticFinding key={finding.id} finding={finding} onNavigate={handleNavigate} />)
                 : <div className="opdiag-no-findings"><CheckCircle2 size={18} /> No se detectaron alertas operativas en este periodo.</div>}
             </section>
           )}
@@ -343,7 +401,7 @@ export default function OperationalDiagnostics({
       </aside>
 
       <footer className="opdiag-footer">
-        <span><Clock3 size={13} /> Cálculo de solo lectura · {activeDiagnostic?.generatedAt ? new Date(activeDiagnostic.generatedAt).toLocaleTimeString('es-MX') : 'pendiente'}</span>
+        <span><Clock3 size={13} /> Cálculo de solo lectura · {activeDiagnostic?.generatedAt && Number.isFinite(new Date(activeDiagnostic.generatedAt).getTime()) ? new Date(activeDiagnostic.generatedAt).toLocaleTimeString('es-MX') : 'pendiente'}</span>
         <span>{activeState.period?.timezone || timezone}</span>
       </footer>
     </section>

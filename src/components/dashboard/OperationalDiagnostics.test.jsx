@@ -44,4 +44,69 @@ describe('OperationalDiagnostics', () => {
     fireEvent.change(screen.getByLabelText('Periodo'), { target: { value: 'thisMonth' } });
     expect(screen.getByLabelText('Periodo')).toHaveValue('thisMonth');
   });
+
+  it('renders inventory and financial findings as readable values instead of JSON', async () => {
+    const timestamp = new Date().toISOString();
+    const sale = {
+      id: 'sale-1',
+      timestamp,
+      status: 'closed',
+      total: 1250,
+      paymentMethod: 'card',
+      items: [{ id: 'p-1', name: 'Producto', quantity: 10, price: 125, lineTotal: 1250, cost: 80 }]
+    };
+
+    render(
+      <OperationalDiagnostics
+        menu={[{ id: 'p-1', name: 'Producto', trackStock: true, stock: 0, committedStock: 0, minStock: 2, cost: 10 }]}
+        sales={[sale]}
+        customers={[]}
+        wasteLogs={[]}
+        reportSource={{ mode: 'cloud' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getAllByText('Productos sin stock').length).toBeGreaterThan(0));
+    const stockLabel = screen.getByText('Stock actual');
+    expect(stockLabel).toBeInTheDocument();
+    expect(stockLabel.parentElement).toHaveTextContent('0');
+    expect(screen.queryByText(/"id"\s*:/)).not.toBeInTheDocument();
+    expect(screen.getByText('Datos mixtos: cloud + información local complementaria')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Diagnóstico financiero/ }));
+    await waitFor(() => expect(screen.getAllByText('$1,250.00').length).toBeGreaterThan(0));
+    expect(screen.getByText('Margen bruto')).toBeInTheDocument();
+    expect(screen.getByText('36.0%')).toBeInTheDocument();
+    expect(screen.getByText('Tarjeta')).toBeInTheDocument();
+    expect(screen.getAllByText('Productos con mayor contribución').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/"paymentMethods"\s*:/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/\bundefined\b/i);
+    expect(document.body.textContent).not.toMatch(/\bnull\b/i);
+    expect(document.body.textContent).not.toMatch(/\bNaN\b/i);
+    expect(document.body.textContent).not.toContain('[object Object]');
+  });
+
+  it('shows customer metrics with human labels and keeps personal details out of the summary', async () => {
+    const timestamp = new Date().toISOString();
+    render(
+      <OperationalDiagnostics
+        sales={[{
+          id: 'sale-customer-1',
+          timestamp,
+          status: 'closed',
+          total: 350,
+          customerId: 'customer-1',
+          items: [{ id: 'p-1', name: 'Producto', quantity: 1, lineTotal: 350, cost: 100 }]
+        }]}
+        customers={[{ id: 'customer-1', name: 'Cliente Confidencial', isActive: true, balance: 125 }]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Diagnóstico de clientes/ }));
+    await waitFor(() => expect(screen.getByText('Clientes registrados')).toBeInTheDocument());
+    expect(screen.getByText('Ventas anónimas')).toBeInTheDocument();
+    expect(screen.getByText('Deuda total')).toBeInTheDocument();
+    expect(screen.queryByText('Cliente Confidencial')).not.toBeInTheDocument();
+    expect(screen.queryByText(/"customerId"\s*:/)).not.toBeInTheDocument();
+  });
 });

@@ -205,8 +205,19 @@
   gap: 0.6rem;
 }
 
+.opdiag-active-heading > div > div {
+  min-width: 0;
+}
+
 .opdiag-active-heading h3 {
   font-size: 1.05rem;
+}
+
+.opdiag-active-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--text-light);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .opdiag-active-heading span:not(.opdiag-readonly-badge) {
@@ -214,13 +225,30 @@
   font-size: 0.8rem;
 }
 
-.opdiag-readonly-badge {
+.opdiag-readonly-badge,
+.opdiag-severity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 0.55rem;
   border-radius: 999px;
-  color: var(--ui-color-success, #15803d);
-  background: color-mix(in srgb, var(--ui-color-success, #15803d) 10%, transparent);
   font-size: 0.74rem;
   font-weight: 800;
+}
+
+.opdiag-severity-badge--info {
+  color: var(--ui-color-info, #2563eb);
+  background: color-mix(in srgb, var(--ui-color-info, #2563eb) 10%, transparent);
+}
+
+.opdiag-severity-badge--warning {
+  color: var(--ui-color-warning, #a16207);
+  background: color-mix(in srgb, var(--ui-color-warning, #a16207) 12%, transparent);
+}
+
+.opdiag-severity-badge--critical {
+  color: var(--ui-color-danger, #dc2626);
+  background: color-mix(in srgb, var(--ui-color-danger, #dc2626) 10%, transparent);
 }
 
 .opdiag-metrics {
@@ -322,14 +350,96 @@
 
 .opdiag-finding-details {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
   margin-top: 0.65rem;
 }
 
-.opdiag-finding-details > div { min-width: 0; }
-.opdiag-finding-details span { display: block; margin-bottom: 0.2rem; color: var(--text-light); font-size: 0.7rem; font-weight: 800; }
-.opdiag-finding-details code { display: block; overflow-wrap: anywhere; color: var(--text-dark); font-family: var(--font-mono, monospace); font-size: 0.69rem; line-height: 1.4; }
+.opdiag-finding-details > div {
+  min-width: 0;
+  padding: 0.5rem;
+  border-radius: var(--ui-radius-sm);
+  background: color-mix(in srgb, var(--ui-bg-muted) 75%, var(--ui-bg-surface));
+}
+
+.opdiag-finding-details dt {
+  margin-bottom: 0.2rem;
+  color: var(--text-light);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.opdiag-finding-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.opdiag-breakdowns {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.opdiag-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.opdiag-breakdown-card {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-bg-surface);
+}
+
+.opdiag-breakdown-card--wide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1rem;
+}
+
+.opdiag-breakdown-card h4 {
+  margin: 0 0 0.55rem;
+  color: var(--text-dark);
+  font-size: 0.82rem;
+}
+
+.opdiag-breakdown-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--ui-border-color) 70%, transparent);
+  font-size: 0.76rem;
+}
+
+.opdiag-breakdown-row:first-of-type {
+  border-top: 0;
+}
+
+.opdiag-breakdown-row > span {
+  min-width: 0;
+  color: var(--text-light);
+  overflow-wrap: anywhere;
+}
+
+.opdiag-breakdown-row > strong {
+  flex: 0 0 auto;
+  color: var(--text-dark);
+  text-align: right;
+}
+
+.opdiag-breakdown-row small {
+  color: var(--text-light);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
 
 .opdiag-state,
 .opdiag-no-findings {
@@ -386,6 +496,8 @@
   .opdiag-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .opdiag-finding-heading { flex-direction: column; }
   .opdiag-finding-details { grid-template-columns: 1fr; }
+  .opdiag-breakdown-grid,
+  .opdiag-breakdown-card--wide { grid-template-columns: 1fr; }
 }
 
 .diagnostics-header {
