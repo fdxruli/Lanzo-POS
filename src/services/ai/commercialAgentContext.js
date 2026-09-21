@@ -13,10 +13,13 @@ const asFiniteNumber = (value) => {
   return Number.isFinite(number) ? number : null;
 };
 
-const asSafeText = (value, fallback = null, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
+const asSafeText = (value, fallbackOrMaxLength = null, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
+  const legacyMaxLength = typeof fallbackOrMaxLength === 'number' ? fallbackOrMaxLength : null;
+  const fallback = legacyMaxLength === null ? fallbackOrMaxLength : null;
+  const limit = legacyMaxLength ?? maxLength;
   if (typeof value !== 'string') return fallback;
   const text = value.trim();
-  return text ? text.slice(0, maxLength) : fallback;
+  return text ? text.slice(0, limit) : fallback;
 };
 
 const asSafeSource = (value) => SAFE_SOURCES.has(value) ? value : 'mixed';
