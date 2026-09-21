@@ -233,6 +233,7 @@ const safeScenario = (scenario) => {
   const source = asRecord(scenario);
   return {
     label: sanitizeText(source.label, 180) || null,
+    product: sanitizeText(source.product, 160) || null,
     products: safeTextArray(source.products, 8, 160),
     volume: finiteNumber(source.volume),
     utility: finiteNumber(source.utility),
