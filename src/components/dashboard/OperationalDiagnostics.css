@@ -287,20 +287,69 @@
   font-size: 0.78rem;
 }
 
-.opdiag-incomplete,
-.opdiag-warning {
-  color: var(--ui-color-warning, #a16207);
+.opdiag-limitations {
+  display: grid;
+  gap: 0.55rem;
+  width: 100%;
+  max-width: 58rem;
 }
 
-.opdiag-warning {
+.opdiag-limitations-heading h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.92rem;
+}
+
+.opdiag-limitations-heading span {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-light);
+  font-size: 0.76rem;
+}
+
+.opdiag-limitations-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 0.55rem;
+}
+
+.opdiag-limitation {
   display: flex;
   align-items: flex-start;
   gap: 0.45rem;
   padding: 0.65rem 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--ui-color-warning, #a16207) 25%, var(--ui-border-color));
+  min-width: 0;
   border-radius: var(--ui-radius-sm);
-  background: color-mix(in srgb, var(--ui-color-warning, #a16207) 7%, var(--ui-bg-surface));
+  border: 1px solid var(--ui-border-color);
+  background: var(--ui-bg-surface);
   font-size: 0.8rem;
+}
+
+.opdiag-limitation--warning {
+  color: var(--ui-color-warning, #a16207);
+  border-color: color-mix(in srgb, var(--ui-color-warning, #a16207) 25%, var(--ui-border-color));
+  background: color-mix(in srgb, var(--ui-color-warning, #a16207) 7%, var(--ui-bg-surface));
+}
+
+.opdiag-limitation--info {
+  color: var(--ui-color-info, #2563eb);
+  border-color: color-mix(in srgb, var(--ui-color-info, #2563eb) 24%, var(--ui-border-color));
+  background: color-mix(in srgb, var(--ui-color-info, #2563eb) 6%, var(--ui-bg-surface));
+}
+
+.opdiag-limitation-icon { flex: 0 0 auto; margin-top: 0.1rem; }
+
+.opdiag-limitation strong {
+  display: block;
+  color: var(--text-dark);
+  font-size: 0.8rem;
+}
+
+.opdiag-limitation p {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-dark);
+  line-height: 1.4;
 }
 
 .opdiag-findings {
@@ -498,6 +547,8 @@
   .opdiag-finding-details { grid-template-columns: 1fr; }
   .opdiag-breakdown-grid,
   .opdiag-breakdown-card--wide { grid-template-columns: 1fr; }
+  .opdiag-limitations-list { grid-template-columns: 1fr; }
+  .opdiag-limitation { padding: 0.6rem; }
 }
 
 .diagnostics-header {

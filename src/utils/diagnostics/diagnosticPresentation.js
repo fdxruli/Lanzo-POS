@@ -274,21 +274,176 @@ const getCurrencyFromData = ({ currency, sales, products }) => currency
   || products.find((product) => product?.currency)?.currency
   || DEFAULT_CURRENCY;
 
-const buildWarnings = ({ diagnostic, diagnosticType, source }) => {
-  const warnings = Array.isArray(diagnostic?.warnings) ? diagnostic.warnings.filter(Boolean) : [];
-  const metrics = diagnostic?.metrics || {};
-  const missingCostItems = safeNumber(metrics.missingCostItems, 0);
-  if (diagnosticType === 'financial' && missingCostItems > 0) {
-    warnings.unshift(`Margen no completamente calculable: faltan costos en algunos productos. La utilidad mostrada utiliza únicamente costos registrados (${formatNumber(missingCostItems, 2)} unidades sin costo).`);
+const getFieldValue = (row, fields = []) => fields.reduce((value, field) => (
+  value !== undefined && value !== null && value !== '' ? value : row?.[field]
+), undefined);
+
+const parsePresentationNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const normalized = value.trim().replace(/[^0-9.-]+/g, '');
+    if (!normalized || normalized === '-' || normalized === '.' || normalized === '-.') return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
   }
+  return safeNumber(value);
+};
+
+const hasUsableNumber = (value) => parsePresentationNumber(value) !== null;
+
+const getInventoryRecordGaps = (product) => {
+  const gaps = [];
+  const stockValue = getFieldValue(product, ['stock', 'currentStock']);
+  const committedValue = getFieldValue(product, ['committedStock', 'committed_stock']);
+  const minStockValue = getFieldValue(product, ['minStock', 'min_stock']);
+
+  if (!hasUsableNumber(stockValue)) gaps.push('stock');
+  if (!hasUsableNumber(committedValue)) gaps.push('committedStock');
+  if (!hasUsableNumber(minStockValue)) gaps.push('minStock');
+
+  const stock = parsePresentationNumber(stockValue) || 0;
+  const costValue = getFieldValue(product, ['cost', 'unitCost', 'unit_cost']);
+  if (stock > 0 && !hasUsableNumber(costValue)) gaps.push('cost');
+  return gaps;
+};
+
+const getInventoryRecords = (products = []) => (Array.isArray(products) ? products : [])
+  .filter((product) => product?.isActive !== false && product?.trackStock !== false);
+
+const getFinancialIncompleteRecordCount = ({ sales = [], period } = {}) => {
+  const periodFrom = new Date(period?.from);
+  const periodTo = new Date(period?.to);
+  const hasPeriod = Number.isFinite(periodFrom.getTime()) && Number.isFinite(periodTo.getTime());
+  return (Array.isArray(sales) ? sales : []).reduce((count, sale) => {
+    const timestamp = new Date(sale?.timestamp || sale?.createdAt || sale?.date);
+    if (hasPeriod && (!Number.isFinite(timestamp.getTime()) || timestamp < periodFrom || timestamp >= periodTo)) return count;
+    const missingItems = (Array.isArray(sale?.items) ? sale.items : []).filter((item) => !hasUsableNumber(
+      getFieldValue(item, ['cost', 'unitCost', 'unit_cost'])
+    )).length;
+    return count + missingItems;
+  }, 0);
+};
+
+const getCustomerIncompleteRecordCount = (customers = []) => (Array.isArray(customers) ? customers : [])
+  .filter((customer) => customer?.isActive !== false && !customer?.id).length;
+
+const isKnownTechnicalWarning = (warning) => [
+  /campos faltantes o inválidos/i,
+  /no se sustituyeron silenciosamente/i,
+  /utilidad y el margen no se presentan como completos/i,
+  /información de lotes proviene del almacenamiento local/i,
+  /^nota:.*costo registrado/i
+].some((pattern) => pattern.test(warning));
+
+const buildIncompleteMessage = (count, metricLabel) => {
+  const recordLabel = count === 1 ? 'registro no tiene' : 'registros no tienen';
+  return `${formatNumber(count)} ${recordLabel} todos los campos necesarios para ${metricLabel}. No se estimaron valores.`;
+};
+
+export const buildDiagnosticLimitations = ({
+  diagnostic,
+  diagnosticType,
+  source,
+  products = [],
+  sales = [],
+  customers = []
+} = {}) => {
+  const limitations = [];
+  const coverage = diagnostic?.coverage && typeof diagnostic.coverage === 'object' ? diagnostic.coverage : {};
+  const metrics = diagnostic?.metrics && typeof diagnostic.metrics === 'object' ? diagnostic.metrics : {};
+  const missingFields = Array.isArray(coverage.missingFields) ? coverage.missingFields.map((field) => String(field)) : [];
+  const inventoryRecords = getInventoryRecords(products);
+
+  if (diagnosticType === 'inventory') {
+    const gapsByRecord = inventoryRecords.map((product) => getInventoryRecordGaps(product));
+    const missingMinStock = gapsByRecord.filter((gaps) => gaps.includes('minStock')).length;
+    const incompleteStockRecords = gapsByRecord.filter((gaps) => gaps.some((gap) => ['stock', 'committedStock'].includes(gap))).length;
+    const missingCostRecords = gapsByRecord.filter((gaps) => gaps.includes('cost')).length;
+
+    if (missingMinStock > 0) {
+      limitations.push({
+        id: 'missing-min-stock',
+        tone: 'warning',
+        title: 'Stock mínimo no configurado',
+        message: `Stock mínimo no configurado en ${formatNumber(missingMinStock)} ${missingMinStock === 1 ? 'producto' : 'productos'}. El cálculo de stock bajo no incluye ${missingMinStock === 1 ? 'ese producto' : 'esos productos'}.`
+      });
+    }
+    if (incompleteStockRecords > 0) {
+      limitations.push({
+        id: 'incomplete-inventory-records',
+        tone: 'warning',
+        title: 'Datos incompletos de inventario',
+        message: buildIncompleteMessage(incompleteStockRecords, 'las existencias y el stock bajo')
+      });
+    }
+    if (missingCostRecords > 0) {
+      limitations.push({
+        id: 'incomplete-inventory-costs',
+        tone: 'warning',
+        title: 'Costos incompletos',
+        message: buildIncompleteMessage(missingCostRecords, 'el capital detenido')
+      });
+    }
+  }
+
+  if (diagnosticType === 'financial') {
+    const missingCostRecords = getFinancialIncompleteRecordCount({ sales, period: diagnostic?.period });
+    const fallbackCount = safeNumber(metrics.missingCostItems, 0);
+    const count = missingCostRecords > 0 ? missingCostRecords : fallbackCount;
+    if (count > 0) {
+      limitations.push({
+        id: 'incomplete-financial-records',
+        tone: 'warning',
+        title: 'Costos incompletos',
+        message: buildIncompleteMessage(count, 'la utilidad y el margen')
+      });
+    }
+  }
+
+  if (diagnosticType === 'customers') {
+    const missingCustomerRecords = getCustomerIncompleteRecordCount(customers);
+    if (missingCustomerRecords > 0) {
+      limitations.push({
+        id: 'incomplete-customer-records',
+        tone: 'warning',
+        title: 'Datos incompletos de clientes',
+        message: buildIncompleteMessage(missingCustomerRecords, 'la actividad y recurrencia de clientes')
+      });
+    }
+  }
+
+  const knownMissingField = (field) => missingFields.some((item) => item === field || item.includes(field));
   if (diagnosticType === 'inventory' && source !== 'local') {
-    warnings.push('La información de lotes proviene del almacenamiento local.');
+    limitations.push({
+      id: 'local-batch-source',
+      tone: 'info',
+      title: 'Fuente de lotes',
+      message: 'Fuente de lotes: datos locales de este dispositivo. Puede no incluir cambios realizados desde otros dispositivos.'
+    });
   }
-  if (diagnosticType === 'inventory' && (diagnostic?.coverage?.missingFields || []).some((field) => String(field).startsWith('cost:'))) {
-    const missingCosts = diagnostic.coverage.missingFields.filter((field) => String(field).startsWith('cost:')).length;
-    warnings.unshift(`Nota: ${formatNumber(missingCosts)} ${missingCosts === 1 ? 'producto no tiene' : 'productos no tienen'} costo registrado. El capital detenido fue calculado únicamente con costos disponibles.`);
+
+  const rawWarnings = Array.isArray(diagnostic?.warnings) ? diagnostic.warnings : [];
+  rawWarnings
+    .filter((warning) => typeof warning === 'string' && warning.trim() && !isKnownTechnicalWarning(warning) && !/[{}[\]]/.test(warning))
+    .forEach((warning, index) => limitations.push({
+      id: `diagnostic-warning-${index}`,
+      tone: 'warning',
+      title: 'Limitación del diagnóstico',
+      message: warning.trim()
+    }));
+
+  // Keep a future/partial diagnostic visible when its source only reports a field token.
+  if (diagnosticType === 'inventory' && knownMissingField('min_stock') && !limitations.some((item) => item.id === 'missing-min-stock') && inventoryRecords.length > 0) {
+    limitations.push({
+      id: 'missing-min-stock',
+      tone: 'warning',
+      title: 'Stock mínimo no configurado',
+      message: `Stock mínimo no configurado en ${formatNumber(inventoryRecords.length)} ${inventoryRecords.length === 1 ? 'producto' : 'productos'}. El cálculo de stock bajo no incluye esos productos.`
+    });
   }
-  return Array.from(new Set(warnings));
+
+  return Array.from(new Map(limitations.map((item) => [item.id, item])).values());
 };
 
 export const buildDiagnosticViewModel = ({
@@ -298,7 +453,8 @@ export const buildDiagnosticViewModel = ({
   timezone = 'America/Mexico_City',
   currency,
   sales = [],
-  products = []
+  products = [],
+  customers = []
 } = {}) => {
   const safeDiagnostic = diagnostic || {};
   const metrics = safeDiagnostic.metrics && typeof safeDiagnostic.metrics === 'object' ? safeDiagnostic.metrics : {};
@@ -307,6 +463,14 @@ export const buildDiagnosticViewModel = ({
   const copy = DIAGNOSTIC_COPY[diagnosticType] || DIAGNOSTIC_COPY.inventory;
   const source = SOURCE_COPY[safeDiagnostic.source] || SOURCE_COPY.local;
   const resolvedCurrency = getCurrencyFromData({ currency, sales, products });
+  const limitations = buildDiagnosticLimitations({
+    diagnostic: safeDiagnostic,
+    diagnosticType,
+    source: source.sourceType,
+    products,
+    sales,
+    customers
+  });
   const period = safeDiagnostic.period || {};
   const days = getPeriodDays(period);
   const metricRows = (METRIC_CONFIG[diagnosticType] || []).map(([key, label, format]) => ({
@@ -362,7 +526,8 @@ export const buildDiagnosticViewModel = ({
         route: finding.actionRoute,
         title: finding.title
       })),
-    warnings: buildWarnings({ diagnostic: safeDiagnostic, diagnosticType, source: source.sourceType }),
+    limitations,
+    warnings: limitations.filter((item) => item.tone === 'warning').map((item) => item.message),
     coverage: {
       salesAnalyzed: safeNumber(coverage.salesAnalyzed, 0),
       productsAnalyzed: safeNumber(coverage.productsAnalyzed, 0),

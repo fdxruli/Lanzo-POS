@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import useOperationalDiagnostics from '../../hooks/diagnostics/useOperationalDiagnostics';
+import DiagnosticLimitations from './DiagnosticLimitations';
 import {
   DEFAULT_BUSINESS_TIMEZONE,
   DIAGNOSTIC_DATE_RANGES,
@@ -288,8 +289,9 @@ export default function OperationalDiagnostics({
     timezone,
     currency,
     sales,
-    products: menu
-  }), [activeDiagnostic, currency, dateRange, diagnosticType, menu, sales, timezone]);
+    products: menu,
+    customers
+  }), [activeDiagnostic, currency, customers, dateRange, diagnosticType, menu, sales, timezone]);
 
   const handleNavigate = useCallback((route) => {
     if (onNavigate) {
@@ -376,11 +378,9 @@ export default function OperationalDiagnostics({
 
           <div className="opdiag-coverage">
             <span><strong>Datos analizados:</strong> {activeViewModel.coverage.summary}</span>
-            {activeViewModel.coverage.isIncomplete && <span className="opdiag-incomplete"><AlertTriangle size={14} /> Datos incompletos: {activeViewModel.coverage.missingFields.slice(0, 3).join(', ')}</span>}
           </div>
 
-          {reportWarning && <div className="opdiag-warning"><AlertTriangle size={16} />{reportWarning}</div>}
-          {activeViewModel.warnings.map((warning) => <div className="opdiag-warning" key={warning}><AlertTriangle size={16} />{warning}</div>)}
+          <DiagnosticLimitations limitations={activeViewModel.limitations} reportWarning={reportWarning} />
 
           <DiagnosticBreakdowns diagnosticType={diagnosticType} viewModel={activeViewModel} />
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDiagnosticLimitations,
   buildDiagnosticViewModel,
   formatCurrency,
   formatDate,
@@ -85,7 +86,8 @@ describe('diagnostic presentation', () => {
     });
 
     expect(model.kpis.find((kpi) => kpi.key === 'grossMargin').displayValue).toBe('No disponible');
-    expect(model.warnings.join(' ')).toContain('Margen no completamente calculable');
+    expect(model.warnings.join(' ')).toContain('4 registros no tienen todos los campos necesarios para la utilidad y el margen. No se estimaron valores.');
+    expect(model.warnings.join(' ')).not.toContain('no se sustituyeron silenciosamente');
     expect(model.findings[0].details[0]).toEqual({ label: 'Venta sin costo confirmado', value: '$500.00' });
     expect(model.coverage.missingFields).toEqual(['costos unitarios']);
   });
@@ -94,5 +96,52 @@ describe('diagnostic presentation', () => {
     expect(formatSeverity('info')).toBe('Informativo');
     expect(formatSeverity('warning')).toBe('Atención');
     expect(formatSeverity('critical')).toBe('Crítico');
+  });
+
+  it('groups specific inventory gaps without duplicating a generic warning', () => {
+    const model = buildDiagnosticViewModel({
+      diagnosticType: 'inventory',
+      diagnostic: {
+        source: 'mixed',
+        period,
+        metrics: {},
+        coverage: { salesAnalyzed: 4, productsAnalyzed: 2, missingFields: ['min_stock', 'cost:p-1'] },
+        warnings: ['Hay campos faltantes o inválidos; no se sustituyeron silenciosamente por valores confiables.']
+      },
+      products: [
+        { id: 'p-1', trackStock: true, stock: 3, committedStock: 0 },
+        { id: 'p-2', trackStock: true, stock: 5, committedStock: 0, minStock: 2, cost: 10 }
+      ]
+    });
+
+    expect(model.limitations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'missing-min-stock',
+        message: 'Stock mínimo no configurado en 1 producto. El cálculo de stock bajo no incluye ese producto.'
+      }),
+      expect.objectContaining({ id: 'incomplete-inventory-costs' }),
+      expect.objectContaining({
+        id: 'local-batch-source',
+        tone: 'info',
+        message: 'Fuente de lotes: datos locales de este dispositivo. Puede no incluir cambios realizados desde otros dispositivos.'
+      })
+    ]));
+    expect(model.limitations.filter((item) => item.id === 'incomplete-inventory-records')).toHaveLength(0);
+    expect(model.limitations.map((item) => item.message).join(' ')).not.toContain('no se sustituyeron silenciosamente');
+  });
+
+  it('hides limitations when counts are zero and ignores raw JSON warnings', () => {
+    const limitations = buildDiagnosticLimitations({
+      diagnosticType: 'inventory',
+      source: 'local',
+      diagnostic: {
+        coverage: { missingFields: [] },
+        warnings: ['{"missingFields":["min_stock"]}']
+      },
+      products: [{ id: 'p-1', trackStock: true, stock: 4, committedStock: 0, minStock: 2, cost: 10 }]
+    });
+
+    expect(limitations).toEqual([]);
+    expect(JSON.stringify(limitations)).not.toContain('missingFields');
   });
 });

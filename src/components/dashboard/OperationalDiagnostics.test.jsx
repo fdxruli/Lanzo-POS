@@ -109,4 +109,24 @@ describe('OperationalDiagnostics', () => {
     expect(screen.queryByText('Cliente Confidencial')).not.toBeInTheDocument();
     expect(screen.queryByText(/"customerId"\s*:/)).not.toBeInTheDocument();
   });
+
+  it('groups incomplete inventory data and presents local batch source as neutral information', async () => {
+    render(
+      <OperationalDiagnostics
+        menu={[
+          { id: 'p-1', name: 'Sin mínimo', trackStock: true, stock: 3, committedStock: 0, cost: 10 },
+          { id: 'p-2', name: 'Completo', trackStock: true, stock: 5, committedStock: 0, minStock: 2, cost: 10 }
+        ]}
+        reportSource={{ mode: 'cloud' }}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText(/Stock mínimo no configurado en 1 producto/)).toBeInTheDocument());
+    expect(screen.getByText(/El cálculo de stock bajo no incluye ese producto/)).toBeInTheDocument();
+    expect(screen.queryByText(/Datos incompletos:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no se sustituyeron silenciosamente/i)).not.toBeInTheDocument();
+
+    const localSource = screen.getByText('Fuente de lotes: datos locales de este dispositivo. Puede no incluir cambios realizados desde otros dispositivos.');
+    expect(localSource.closest('.opdiag-limitation')).toHaveClass('opdiag-limitation--info');
+  });
 });
