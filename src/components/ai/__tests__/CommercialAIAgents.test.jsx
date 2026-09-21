@@ -18,7 +18,12 @@ const runtime = vi.hoisted(() => ({
 
 vi.mock('../../../services/ai/salesProfitabilityAgentService', () => ({
   runSalesProfitabilityAgent: runtime.runAgent,
-  loadSalesProfitabilityProducts: runtime.loadProducts
+  loadSalesProfitabilityProducts: runtime.loadProducts,
+  resolveBusinessTimezone: (companyProfile = {}) => (
+    companyProfile?.timezone
+    || companyProfile?.time_zone
+    || 'America/Mexico_City'
+  )
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
