@@ -662,7 +662,7 @@ const simulatePromotion = (aggregate, scenario, period) => {
       : ['La simulación no predice el aumento de demanda que podría generar la promoción.']
   };
 };
-const buildComboSimulation = (validRows, aggregate, period) => {
+const buildComboSimulation = (validRows, period) => {
   const pairMap = new Map();
   const ticketCount = validRows.length;
   validRows.map(normalizeSale).forEach((sale) => {
@@ -1062,7 +1062,7 @@ export const buildSalesProfitabilityAnalysis = ({
   let simulation = normalizeSimulationResult();
   if (resolvedIntent === 'price_simulation') simulation = normalizeSimulationResult(simulatePrice(current, scenario, period));
   if (resolvedIntent === 'promotion_opportunity') simulation = normalizeSimulationResult(simulatePromotion(current, scenario, period));
-  if (resolvedIntent === 'combo_opportunity') simulation = normalizeSimulationResult(buildComboSimulation(validRows, current, period));
+  if (resolvedIntent === 'combo_opportunity') simulation = normalizeSimulationResult(buildComboSimulation(validRows, period));
 
   let calculations = [];
   if (resolvedIntent === 'profitability_summary') {
