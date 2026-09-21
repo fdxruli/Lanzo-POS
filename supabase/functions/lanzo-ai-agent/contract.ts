@@ -134,6 +134,7 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'channels',
   'comparison',
   'contributors',
+  'evidenceKeys',
   'coverage',
   'calculations',
   'assumptions',
@@ -277,6 +278,10 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
     for (const mix of [...(comparison.productMixChanges || []), ...(comparison.channelMixChanges || [])]) {
       if (!isRecord(mix) || !assertOnlyKeys(mix, COMMERCIAL_MIX_KEYS)) return false;
     }
+  }
+  if (sales.evidenceKeys !== undefined) {
+    if (!Array.isArray(sales.evidenceKeys) || sales.evidenceKeys.length > 40) return false;
+    if (!sales.evidenceKeys.every((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 160)) return false;
   }
   if (sales.contributors !== undefined) {
     if (!Array.isArray(sales.contributors) || sales.contributors.length > 3) return false;
