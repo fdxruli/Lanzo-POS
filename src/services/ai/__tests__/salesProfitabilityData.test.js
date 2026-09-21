@@ -54,6 +54,19 @@ describe('sales profitability data', () => {
     expect(addCalendarDays(from, days)).toBe(expected);
   });
 
+  it.each([
+    ['2026-08-23', '2026-09-21', '2026-08-23T06:00:00.000Z', '2026-09-22T06:00:00.000Z'],
+    ['2026-07-24', '2026-09-21', '2026-07-24T06:00:00.000Z', '2026-09-22T06:00:00.000Z']
+  ])('builds exact 30/60-day calendar query bounds from %s to %s', (from, to, expectedFrom, expectedTo) => {
+    const range = buildSalesProfitabilityQueryRange({
+      from,
+      to,
+      timezone: 'America/Mexico_City'
+    });
+    expect(range.fromInclusiveUtc).toBe(expectedFrom);
+    expect(range.toExclusiveUtc).toBe(expectedTo);
+  });
+
   it('handles DST boundaries using the requested IANA timezone', () => {
     const beforeSpring = buildSalesProfitabilityQueryRange({
       from: '2026-03-07',
