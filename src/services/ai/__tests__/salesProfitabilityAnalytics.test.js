@@ -180,11 +180,36 @@ describe('sales profitability deterministic analysis', () => {
     expect(withoutEvidence.limitations).toContain('No hay datos suficientes para recomendar un combo con confianza.');
   });
 
-  it('builds local period ranges and the immediately preceding comparable period', () => {
-    const current = buildPeriodRange({ days: 7, end: new Date('2026-09-07T12:00:00') });
+  it('builds business-calendar period ranges independently from the browser timezone', () => {
+    const current = buildPeriodRange({
+      days: 7,
+      end: new Date('2026-09-08T03:00:00.000Z'),
+      timezone: 'America/Mexico_City'
+    });
     const previous = buildPreviousPeriod(current);
-    expect(current).toMatchObject({ from: '2026-09-01', to: '2026-09-07', days: 7 });
-    expect(previous).toMatchObject({ from: '2026-08-25', to: '2026-08-31', days: 7 });
+    expect(current).toMatchObject({
+      from: '2026-09-01',
+      to: '2026-09-07',
+      days: 7,
+      timezone: 'America/Mexico_City'
+    });
+    expect(previous).toMatchObject({
+      from: '2026-08-25',
+      to: '2026-08-31',
+      days: 7,
+      timezone: 'America/Mexico_City'
+    });
+  });
+
+  it('keeps comparable periods contiguous across a year boundary', () => {
+    const current = buildPeriodRange({
+      days: 7,
+      end: '2027-01-03',
+      timezone: 'America/New_York'
+    });
+    const previous = buildPreviousPeriod(current);
+    expect(current).toMatchObject({ from: '2026-12-28', to: '2027-01-03' });
+    expect(previous).toMatchObject({ from: '2026-12-21', to: '2026-12-27' });
   });
   it('keeps a safe calculation array when a simulation has no eligible product', () => {
     for (const intent of ['price_simulation', 'promotion_opportunity']) {
