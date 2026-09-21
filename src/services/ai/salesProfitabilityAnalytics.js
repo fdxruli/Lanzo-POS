@@ -490,9 +490,9 @@ const sourceModeToContractSource = (mode) => {
 
 const chooseProduct = (aggregate, scenario = {}) => {
   const requested = normalize(scenario.productName ?? scenario.product ?? '');
+  if (!requested) return null;
   return aggregate.products.find((product) => normalize(product.name) === requested)
-    || aggregate.products.find((product) => normalize(product.name).includes(requested) && requested)
-    || aggregate.products[0]
+    || aggregate.products.find((product) => normalize(product.name).includes(requested))
     || null;
 };
 
