@@ -157,7 +157,10 @@ const enrichProducts = (products = [], metadata = {}) => {
 
 const hardenAggregate = (aggregate, metadata = {}) => {
   if (!aggregate) return null;
-  const complete = metadata.costComplete === true && aggregate.costComplete === true;
+  const sourceReliable = Number(aggregate?.meta?.sourcePolicy?.unknownSources || 0) === 0;
+  const complete = metadata.costComplete === true
+    && aggregate.costComplete === true
+    && sourceReliable;
   const products = enrichProducts(aggregate.products, metadata);
   const units = Number(metadata.expectedUnits) > 0 ? Number(metadata.expectedUnits) : aggregate.units;
   const costCoverage = costCoverageFor(aggregate, metadata);
@@ -175,7 +178,7 @@ const hardenAggregate = (aggregate, metadata = {}) => {
     detailComplete: metadata.detailComplete === true,
     itemCoverage: Number(metadata.itemCoverage) || 0,
     paginationComplete: metadata.paginationComplete === true,
-    sourceComplete: metadata.sourceComplete === true,
+    sourceComplete: metadata.sourceComplete === true && sourceReliable,
     costStatus: complete ? metadata.costStatus : 'incomplete'
   };
 };
@@ -244,7 +247,7 @@ const buildCoverage = ({
   itemCoverage: Number(currentMetadata.itemCoverage) || 0,
   itemsComplete: currentMetadata.detailComplete === true,
   paginationComplete: currentMetadata.paginationComplete === true,
-  sourceComplete: currentMetadata.sourceComplete === true,
+  sourceComplete: current.sourceComplete === true,
   historyTruncated: currentMetadata.historyTruncated === true,
   detailTruncated: currentMetadata.detailTruncated === true,
   knownCostOfSale: Number(currentMetadata.knownCost) || 0,
