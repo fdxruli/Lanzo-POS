@@ -9,6 +9,7 @@ const asRecord = (value) => value !== null && typeof value === 'object' && !Arra
   : {};
 
 const asFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
@@ -52,6 +53,8 @@ const normalizeProduct = (row = {}) => {
     margin: pickNumber(source, ['margin', 'gross_margin']),
     averagePrice: pickNumber(source, ['averagePrice', 'average_price', 'unit_price']),
     costKnown: source.costKnown === undefined ? null : source.costKnown === true,
+    costStatus: asSafeText(source.costStatus, null, 48),
+    costSource: asSafeText(source.costSource, null, 64),
     riskType: asSafeText(source.riskType, null, 48),
     riskReason: asSafeText(source.riskReason, null, 240)
   };
@@ -146,6 +149,14 @@ const normalizeCoverage = (coverage = {}) => {
     productsIncluded: pickNumber(source, ['productsIncluded', 'products_included']),
     productsMissingCost: pickNumber(source, ['productsMissingCost', 'products_missing_cost']),
     costCoverage: pickNumber(source, ['costCoverage', 'cost_coverage']),
+    itemCoverage: pickNumber(source, ['itemCoverage', 'item_coverage']),
+    detailLines: pickNumber(source, ['detailLines', 'detail_lines']),
+    expectedDetailLines: pickNumber(source, ['expectedDetailLines', 'expected_detail_lines']),
+    knownCostOfSale: pickNumber(source, ['knownCostOfSale', 'known_cost_of_sale']),
+    costStatus: asSafeText(source.costStatus, null, 48),
+    itemsComplete: source.itemsComplete === true,
+    paginationComplete: source.paginationComplete === true,
+    sourceComplete: source.sourceComplete === true,
     comparisonAvailable: source.comparisonAvailable === true,
     complete: source.complete === true
   };
@@ -218,7 +229,9 @@ const normalizeSalesPayload = (payload = {}) => {
       salesCount: pickNumber(overview, ['salesCount', 'sales_count', 'orders', 'order_count']),
       averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
       discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
+      discountsKnown: overview.discountsKnown === true,
       unitCosts: pickNumber(overview, ['unitCosts', 'unit_costs', 'cogs', 'costs']),
+      knownCostOfSale: pickNumber(overview, ['knownCostOfSale', 'known_cost_of_sale']),
       profit: pickNumber(overview, ['profit', 'gross_profit', 'utility']),
       margin: pickNumber(overview, ['margin', 'gross_margin']),
       costCoverage: pickNumber(asRecord(source.coverage), ['costCoverage', 'cost_coverage']),
@@ -244,6 +257,9 @@ const normalizeSalesPayload = (payload = {}) => {
     calculations: normalizeCalculations(source.calculations),
     assumptions: Array.isArray(source.assumptions)
       ? source.assumptions.filter((item) => typeof item === 'string').slice(0, 20).map((item) => item.slice(0, 180))
+      : [],
+    limitations: Array.isArray(source.limitations)
+      ? source.limitations.filter((item) => typeof item === 'string').slice(0, 20).map((item) => item.slice(0, 240))
       : [],
     scenarios: Array.isArray(source.scenarios) ? source.scenarios.slice(0, 12).map((scenario) => {
       const safeScenario = asRecord(scenario);
