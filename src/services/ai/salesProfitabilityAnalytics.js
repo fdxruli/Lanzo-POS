@@ -150,7 +150,10 @@ const normalizeItem = (item = {}) => {
   };
 };
 
-const normalizedSource = (sale) => normalize(sale?.sourceMode ?? sale?.source_mode ?? sale?.source ?? '');
+const normalizedSource = (sale) => {
+  if (sale?.sourceModeKnown === false || sale?.source_mode_known === false) return '';
+  return normalize(sale?.sourceMode ?? sale?.source_mode ?? sale?.source ?? '');
+};
 const normalizedStatus = (sale) => normalize(sale?.status ?? sale?.sale_status ?? 'closed');
 
 export const isOperationalSalesSource = (source) => OPERATIONAL_SALES_SOURCES.has(normalize(source));
