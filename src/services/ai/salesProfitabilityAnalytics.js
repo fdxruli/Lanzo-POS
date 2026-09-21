@@ -196,10 +196,19 @@ const ecommerceKey = (sale) => safeText(
   100
 );
 
-const prefersConvertedSale = (sale) => {
-  const source = normalizedSource(sale);
-  return source.includes('converted') || source.includes('pos') || source.includes('committed');
-};
+const SALES_SOURCE_PREFERENCE = new Map([
+  ['cloud_final', 4],
+  ['cloud_committed', 4],
+  ['pos_converted', 4],
+  ['ecommerce_pos_converted', 4],
+  ['pos_sale', 3],
+  ['pos', 3],
+  ['local_committed', 3],
+  ['ecommerce_converted', 2],
+  ['local', 1]
+]);
+
+const salesSourcePreference = (sale) => SALES_SOURCE_PREFERENCE.get(normalizedSource(sale)) || 0;
 
 export const normalizeValidSales = (history) => {
   const rows = extractRows(history);
@@ -261,7 +270,7 @@ export const normalizeValidSales = (history) => {
     }
 
     ecommerceDuplicates += 1;
-    if (prefersConvertedSale(row) && !prefersConvertedSale(deduped[existingIndex])) {
+    if (salesSourcePreference(row) > salesSourcePreference(deduped[existingIndex])) {
       deduped[existingIndex] = row;
     }
   });
