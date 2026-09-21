@@ -175,6 +175,38 @@ const SAFE_SCENARIO_KEYS = new Set([
   'opportunity', 'historicalVolume', 'breakEvenVolume', 'isDemandPrediction'
 ]);
 
+const buildEvidenceKeys = (source = {}) => {
+  const value = asRecord(source);
+  const comparison = asRecord(value.comparison || value.previous);
+  const contributors = normalizeContributors(value.contributors);
+  const keys = [
+    'profitability.status',
+    'profitability.netSales',
+    'profitability.costOfSale',
+    'profitability.profit',
+    'profitability.margin',
+    'profitability.costCoverage',
+    'products.risks'
+  ];
+  if (Object.keys(comparison).length) {
+    keys.push(
+      'comparison.deltaMargin',
+      'comparison.deltaMarginRelative',
+      'comparison.deltaCost',
+      'comparison.deltaDiscounts',
+      'comparison.deltaUnits',
+      'comparison.deltaTicket',
+      'comparison.productMixChanges',
+      'comparison.channelMixChanges'
+    );
+  }
+  contributors.forEach((item) => keys.push(`contributors.${item.key}`));
+  if (Array.isArray(value.scenarios) && value.scenarios.length) {
+    keys.push('scenarios.values');
+  }
+  return Array.from(new Set(keys)).slice(0, 40);
+};
+
 const normalizeSalesPayload = (payload = {}) => {
   const source = asRecord(payload);
   const overview = asRecord(source.overview || source.metrics || source.summary);
@@ -207,6 +239,7 @@ const normalizeSalesPayload = (payload = {}) => {
     channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
     comparison: normalizeComparison(source.comparison || source.previous),
     contributors: normalizeContributors(source.contributors),
+    evidenceKeys: buildEvidenceKeys(source),
     coverage: normalizeCoverage(source.coverage),
     calculations: normalizeCalculations(source.calculations),
     assumptions: Array.isArray(source.assumptions)
