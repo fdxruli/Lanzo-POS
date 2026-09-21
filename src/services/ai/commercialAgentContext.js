@@ -13,10 +13,10 @@ const asFiniteNumber = (value) => {
   return Number.isFinite(number) ? number : null;
 };
 
-const asSafeText = (value, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
-  if (typeof value !== 'string') return null;
+const asSafeText = (value, fallback = null, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
+  if (typeof value !== 'string') return fallback;
   const text = value.trim();
-  return text ? text.slice(0, maxLength) : null;
+  return text ? text.slice(0, maxLength) : fallback;
 };
 
 const asSafeSource = (value) => SAFE_SOURCES.has(value) ? value : 'mixed';
@@ -48,7 +48,9 @@ const normalizeProduct = (row = {}) => {
     profit: pickNumber(source, ['profit', 'gross_profit', 'utility']),
     margin: pickNumber(source, ['margin', 'gross_margin']),
     averagePrice: pickNumber(source, ['averagePrice', 'average_price', 'unit_price']),
-    costKnown: source.costKnown === undefined ? null : source.costKnown === true
+    costKnown: source.costKnown === undefined ? null : source.costKnown === true,
+    riskType: asSafeText(source.riskType, null, 48),
+    riskReason: asSafeText(source.riskReason, null, 240)
   };
 };
 
@@ -76,18 +78,61 @@ const normalizeChannels = (rows = []) => (
     .filter((row) => row.channel || row.netSales !== null || row.orders !== null)
 );
 
+const normalizeMixRows = (rows = [], key = 'name') => (
+  (Array.isArray(rows) ? rows : [])
+    .slice(0, 8)
+    .map((row = {}) => {
+      const source = asRecord(row);
+      return {
+        [key]: asSafeText(source[key], null, 80),
+        currentShare: pickNumber(source, ['currentShare']),
+        previousShare: pickNumber(source, ['previousShare']),
+        deltaShare: pickNumber(source, ['deltaShare'])
+      };
+    })
+    .filter((row) => row[key])
+);
+
 const normalizeComparison = (comparison = {}) => {
   const source = asRecord(comparison);
   return {
     previousNetSales: pickNumber(source, ['previousNetSales', 'previous_net_sales']),
+    previousUnits: pickNumber(source, ['previousUnits', 'previous_units']),
+    previousTicket: pickNumber(source, ['previousTicket', 'previous_ticket']),
+    previousCost: pickNumber(source, ['previousCost', 'previous_cost']),
     previousProfit: pickNumber(source, ['previousProfit', 'previous_profit']),
     previousMargin: pickNumber(source, ['previousMargin', 'previous_margin']),
     deltaNetSales: pickNumber(source, ['deltaNetSales', 'delta_net_sales']),
+    deltaUnits: pickNumber(source, ['deltaUnits', 'delta_units']),
+    deltaTicket: pickNumber(source, ['deltaTicket', 'delta_ticket']),
+    deltaCost: pickNumber(source, ['deltaCost', 'delta_cost']),
     deltaProfit: pickNumber(source, ['deltaProfit', 'delta_profit']),
-    deltaMargin: pickNumber(source, ['deltaMargin', 'delta_margin'])
+    deltaMargin: pickNumber(source, ['deltaMargin', 'delta_margin']),
+    deltaMarginRelative: pickNumber(source, ['deltaMarginRelative', 'delta_margin_relative']),
+    deltaDiscounts: pickNumber(source, ['deltaDiscounts', 'delta_discounts']),
+    productMixChanges: normalizeMixRows(source.productMixChanges, 'name'),
+    channelMixChanges: normalizeMixRows(source.channelMixChanges, 'channel')
   };
 };
 
+const normalizeContributors = (contributors = []) => (
+  (Array.isArray(contributors) ? contributors : [])
+    .slice(0, 3)
+    .map((row = {}) => {
+      const source = asRecord(row);
+      return {
+        key: asSafeText(source.key, null, 80),
+        title: asSafeText(source.title, null, 120),
+        contribution: pickNumber(source, ['contribution', 'value']),
+        direction: ['positive', 'negative', 'context'].includes(source.direction) ? source.direction : 'context',
+        explanation: asSafeText(source.explanation, null, 300),
+        evidenceKeys: Array.isArray(source.evidenceKeys)
+          ? source.evidenceKeys.filter((item) => typeof item === 'string').slice(0, 8).map((item) => item.slice(0, 120))
+          : []
+      };
+    })
+    .filter((row) => row.key && row.title && row.explanation)
+);
 const normalizeCoverage = (coverage = {}) => {
   const source = asRecord(coverage);
   return {
@@ -122,7 +167,9 @@ const normalizeCalculations = (calculations = []) => (
 
 const SAFE_SCENARIO_KEYS = new Set([
   'label', 'volume', 'utility', 'margin', 'impactVsCurrent', 'tickets', 'frequency',
-  'comboPrice', 'discount', 'products', 'note', 'isPrediction'
+  'comboPrice', 'discount', 'products', 'note', 'isPrediction', 'currentPrice', 'newPrice',
+  'unitCost', 'historicalJointSales', 'averageJointSale', 'cost', 'profit', 'evidenceLevel',
+  'opportunity', 'historicalVolume', 'breakEvenVolume', 'isDemandPrediction'
 ]);
 
 const normalizeSalesPayload = (payload = {}) => {
@@ -142,7 +189,9 @@ const normalizeSalesPayload = (payload = {}) => {
       costCoverage: pickNumber(asRecord(source.coverage), ['costCoverage', 'cost_coverage']),
       missingCostProducts: pickNumber(asRecord(source.coverage), ['productsMissingCost', 'products_missing_cost']),
       excludedSales: pickNumber(asRecord(source.coverage), ['excludedSales', 'excluded_sales']),
-      ecommerceDuplicates: pickNumber(asRecord(source.coverage), ['ecommerceDuplicatesExcluded', 'ecommerce_duplicates_excluded'])
+      ecommerceDuplicates: pickNumber(asRecord(source.coverage), ['ecommerceDuplicatesExcluded', 'ecommerce_duplicates_excluded']),
+      profitabilityStatus: asSafeText(overview.profitabilityStatus, null, 40),
+      profitabilityExplanation: asSafeText(overview.profitabilityExplanation, null, 300)
     },
     netSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']),
     grossSales: pickNumber(overview, ['grossSales', 'gross_sales']),
@@ -154,6 +203,7 @@ const normalizeSalesPayload = (payload = {}) => {
     products: normalizeProducts(source.products || source.byProduct || source.by_product),
     channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
     comparison: normalizeComparison(source.comparison || source.previous),
+    contributors: normalizeContributors(source.contributors),
     coverage: normalizeCoverage(source.coverage),
     calculations: normalizeCalculations(source.calculations),
     assumptions: Array.isArray(source.assumptions)
