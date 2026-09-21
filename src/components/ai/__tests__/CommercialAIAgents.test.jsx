@@ -8,6 +8,7 @@ import CommercialAIAgentsRoute from '../CommercialAIAgentsRoute';
 
 const runtime = vi.hoisted(() => ({
   licenseDetails: null,
+  companyProfile: null,
   actorSnapshot: null,
   runAgent: vi.fn(),
   loadProducts: vi.fn(),
@@ -21,7 +22,10 @@ vi.mock('../../../services/ai/salesProfitabilityAgentService', () => ({
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector({ licenseDetails: runtime.licenseDetails })
+  useAppStore: (selector) => selector({
+    licenseDetails: runtime.licenseDetails,
+    companyProfile: runtime.companyProfile
+  })
 }));
 
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
@@ -51,6 +55,7 @@ const renderCenter = () => render(
 describe('commercial AI center', () => {
   beforeEach(() => {
     runtime.licenseDetails = entitledLicense;
+    runtime.companyProfile = { timezone: 'America/New_York' };
     runtime.actorSnapshot = boundAdmin;
     runtime.runAgent.mockReset();
     runtime.loadProducts.mockReset();
@@ -106,15 +111,33 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
-  it('consumes the analysis path only after the user submits a question', async () => {
+  it('consumes the analysis path only after the user submits a question and propagates the company timezone', async () => {
     renderCenter();
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Por qué bajó mi margen?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
-    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'explain_change', compare: true });
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
+      intent: 'explain_change',
+      compare: true,
+      period: { timezone: 'America/New_York' }
+    });
+    expect(runtime.loadProducts.mock.calls[0][0]).toMatchObject({
+      period: { timezone: 'America/New_York' }
+    });
     expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
     expect(screen.getByText('Uso: 1 / 15')).toBeInTheDocument();
+  });
+
+  it('offers only the documented selectable periods 7/30/90/365 days', () => {
+    renderCenter();
+    const periodSelect = screen.getByRole('combobox', { name: /periodo/i });
+    expect(screen.getByRole('option', { name: 'Últimos 7 días' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Últimos 30 días' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Últimos 90 días' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Últimos 12 meses' })).toBeInTheDocument();
+    expect(Array.from(periodSelect.options).map((option) => option.value)).toEqual(['7', '30', '90', '365']);
+    expect(screen.queryByRole('option', { name: /60/ })).not.toBeInTheDocument();
   });
 
 
