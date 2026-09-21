@@ -318,4 +318,23 @@ describe('sales profitability download report', () => {
     expect(remove).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:completed');
   });
+
+  it.each([
+    'profitability_summary',
+    'explain_change',
+    'product_risk',
+    'price_simulation',
+    'combo_opportunity',
+    'promotion_opportunity'
+  ])('keeps report download available for %s', (resolvedIntent) => {
+    const report = buildSalesProfitabilityDownloadReport(completedResult, {
+      ...requestContext,
+      resolvedIntent
+    });
+    expect(report.request.resolvedIntent).toBe(resolvedIntent);
+    expect(report.result.status).toBe('completed');
+    expect(report.deterministic.calculations).toBeInstanceOf(Array);
+    expect(report.ai.executiveSummary).toBeTruthy();
+  });
+
 });
