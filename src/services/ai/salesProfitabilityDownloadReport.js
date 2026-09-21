@@ -113,6 +113,16 @@ const safeCoverage = (coverage) => {
     historyTruncated: safeBoolean(source.historyTruncated),
     detailTruncated: safeBoolean(source.detailTruncated),
     comparisonAvailable: safeBoolean(source.comparisonAvailable),
+    sourcePolicy: {
+      excludedSources: finiteNumber(source.sourcePolicy?.excludedSources),
+      excludedStatuses: finiteNumber(source.sourcePolicy?.excludedStatuses),
+      cancelledMarkers: finiteNumber(source.sourcePolicy?.cancelledMarkers),
+      legacySources: finiteNumber(source.sourcePolicy?.legacySources),
+      shadowSources: finiteNumber(source.sourcePolicy?.shadowSources),
+      ecommerceSources: finiteNumber(source.sourcePolicy?.ecommerceSources),
+      unknownSources: finiteNumber(source.sourcePolicy?.unknownSources)
+    },
+    sourceWarnings: safeTextArray(source.sourceWarnings, 20, 500),
     complete: safeBoolean(source.complete)
   };
 };
