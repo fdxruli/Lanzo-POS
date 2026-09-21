@@ -22,6 +22,12 @@ import { buildSalesProfitabilityContext } from './commercialAgentContext';
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const inflightRequests = new Map();
 
+export const resolveBusinessTimezone = (companyProfile = {}) => (
+  companyProfile?.timezone
+  || companyProfile?.time_zone
+  || DEFAULT_BUSINESS_TIMEZONE
+);
+
 const stableSerialize = (value) => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
@@ -46,10 +52,7 @@ const normalizePeriod = (period = {}) => {
     to: period.to || period.dateTo || null,
     days: Math.max(Number(period.days) || 30, 1),
     previous: period.previous || null,
-    timezone: period.timezone
-      || companyProfile.timezone
-      || companyProfile.time_zone
-      || DEFAULT_BUSINESS_TIMEZONE
+    timezone: period.timezone || resolveBusinessTimezone(companyProfile)
   };
 };
 
@@ -671,5 +674,6 @@ export default {
   runSalesProfitabilityAgent,
   loadSalesProfitabilityProducts,
   createSalesProfitabilityAgentRunner,
-  createSalesProfitabilityProductLoader
+  createSalesProfitabilityProductLoader,
+  resolveBusinessTimezone
 };
