@@ -668,20 +668,41 @@ const buildComboSimulation = (validRows, aggregate, period) => {
   validRows.map(normalizeSale).forEach((sale) => {
     const byName = new Map();
     sale.items.forEach((item) => {
-      const current = byName.get(item.name) || { name: item.name, total: 0 };
+      const current = byName.get(item.name) || {
+        name: item.name,
+        total: 0,
+        cost: 0,
+        costKnown: true
+      };
       current.total += item.total || 0;
+      if (item.unitCost === null) {
+        current.costKnown = false;
+      } else {
+        current.cost += item.unitCost * item.quantity;
+      }
       byName.set(item.name, current);
     });
+
     const uniqueItems = Array.from(byName.keys()).sort();
     for (let i = 0; i < uniqueItems.length; i += 1) {
       for (let j = i + 1; j < uniqueItems.length; j += 1) {
         const first = uniqueItems[i];
         const second = uniqueItems[j];
+        const firstEntry = byName.get(first);
+        const secondEntry = byName.get(second);
         const key = `${first}\u0000${second}`;
-        const previous = pairMap.get(key) || { tickets: 0, jointSales: 0 };
+        const previous = pairMap.get(key) || {
+          tickets: 0,
+          jointSales: 0,
+          jointCost: 0,
+          completeCostTickets: 0
+        };
+        const costKnown = firstEntry?.costKnown === true && secondEntry?.costKnown === true;
         pairMap.set(key, {
           tickets: previous.tickets + 1,
-          jointSales: previous.jointSales + (byName.get(first)?.total || 0) + (byName.get(second)?.total || 0)
+          jointSales: previous.jointSales + (firstEntry?.total || 0) + (secondEntry?.total || 0),
+          jointCost: previous.jointCost + (costKnown ? (firstEntry?.cost || 0) + (secondEntry?.cost || 0) : 0),
+          completeCostTickets: previous.completeCostTickets + (costKnown ? 1 : 0)
         });
       }
     }
@@ -690,12 +711,12 @@ const buildComboSimulation = (validRows, aggregate, period) => {
   const candidates = Array.from(pairMap.entries())
     .map(([key, pair]) => {
       const [first, second] = key.split('\u0000');
-      const products = [aggregate.products.find((product) => product.name === first), aggregate.products.find((product) => product.name === second)];
-      const cost = products.every((product) => product?.unitCost !== null && product?.unitCost !== undefined)
-        ? products.reduce((sum, product) => sum + (product.unitCost || 0), 0)
-        : null;
       const averageJointSale = pair.tickets > 0 ? pair.jointSales / pair.tickets : null;
-      const profit = averageJointSale !== null && cost !== null ? averageJointSale - cost : null;
+      const costComplete = pair.completeCostTickets === pair.tickets;
+      const averageJointCost = costComplete && pair.tickets > 0 ? pair.jointCost / pair.tickets : null;
+      const profit = averageJointSale !== null && averageJointCost !== null
+        ? averageJointSale - averageJointCost
+        : null;
       const frequency = ticketCount > 0 ? pair.tickets / ticketCount : 0;
       const evidenceLevel = pair.tickets >= 8 && frequency >= 0.1
         ? 'high'
@@ -706,7 +727,7 @@ const buildComboSimulation = (validRows, aggregate, period) => {
         frequency,
         historicalJointSales: pair.jointSales,
         averageJointSale,
-        cost,
+        cost: averageJointCost,
         comboPrice: averageJointSale,
         discount: null,
         profit,
@@ -737,11 +758,12 @@ const buildComboSimulation = (validRows, aggregate, period) => {
     calculations: candidates.slice(0, 3).flatMap((candidate) => [
       calculation(`Tickets compartidos: ${candidate.products.join(' + ')}`, candidate.tickets, 'conteo de tickets válidos con ambos productos', period, 'sales_history', formatNumber),
       calculation(`Venta conjunta histórica promedio: ${candidate.products.join(' + ')}`, candidate.averageJointSale, 'venta conjunta histórica / tickets compartidos', period),
-      calculation(`Margen observado de referencia: ${candidate.products.join(' + ')}`, candidate.margin, '(venta conjunta promedio - costo estimado) / venta conjunta promedio', period, 'sales_history', formatPercent)
+      calculation(`Costo conjunto histórico promedio: ${candidate.products.join(' + ')}`, candidate.cost, 'costo conocido de los artículos compartidos / tickets compartidos', period),
+      calculation(`Margen observado de referencia: ${candidate.products.join(' + ')}`, candidate.margin, '(venta conjunta promedio - costo conjunto promedio) / venta conjunta promedio', period, 'sales_history', formatPercent)
     ]),
     assumptions: ['La coocurrencia describe asociación histórica y no demuestra causalidad.'],
     limitations: candidates.some((candidate) => candidate.margin === null)
-      ? ['Algunos productos no tienen costo completo; el margen de esas oportunidades no puede confirmarse.']
+      ? ['Algunos tickets compartidos no tienen costo completo; el margen de esas oportunidades no puede confirmarse.']
       : []
   };
 };
