@@ -4,7 +4,11 @@ import {
   buildSalesProfitabilityAnalysis,
   buildSalesProfitabilityProductOptions,
   buildPreviousPeriod,
-  inferSalesProfitabilityIntent
+  inferSalesProfitabilityIntent,
+  isExcludedSalesSource,
+  isExcludedSalesStatus,
+  isOperationalSalesSource,
+  normalizeValidSales
 } from '../salesProfitabilityAnalytics';
 
 const period = { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' };
@@ -14,6 +18,7 @@ const sale = (id, items, overrides = {}) => ({
   status: 'closed',
   total: items.reduce((sum, item) => sum + item.total, 0),
   salesChannel: 'physical',
+  sourceMode: 'cloud_committed',
   items,
   ...overrides
 });
@@ -45,6 +50,64 @@ describe('sales profitability deterministic analysis', () => {
     expect(result.current.margin).toBeCloseTo(0.35);
     expect(result.current.averageTicket).toBe(600);
     expect(result.calculations.find((row) => row.label === 'Margen bruto').formula).toContain('utilidad bruta');
+  });
+
+  it('centralizes operational, legacy, shadow, status and ecommerce source policy', () => {
+    expect(isOperationalSalesSource('cloud_committed')).toBe(true);
+    expect(isOperationalSalesSource('pos_converted')).toBe(true);
+    expect(isExcludedSalesSource('shadow')).toBe(true);
+    expect(isExcludedSalesSource('shadow_history')).toBe(true);
+    expect(isExcludedSalesSource('legacy_imported')).toBe(true);
+    expect(isExcludedSalesSource('historical_import_batch')).toBe(true);
+    expect(isExcludedSalesSource('ecommerce_pending')).toBe(true);
+    expect(isExcludedSalesStatus('cancelled')).toBe(true);
+    expect(isExcludedSalesStatus('reverted')).toBe(true);
+
+    const rows = [
+      sale('valid-cloud', [item('Operativo', 1, 100, 40)], { sourceMode: 'cloud_committed' }),
+      sale('shadow', [item('Shadow', 1, 90, 20)], { sourceMode: 'shadow' }),
+      sale('shadow-history', [item('Shadow histórico', 1, 80, 20)], { sourceMode: 'shadow_history' }),
+      sale('legacy', [item('Legacy', 1, 70, 20)], { sourceMode: 'legacy_imported' }),
+      sale('cancelled-status', [item('Cancelada', 1, 60, 20)], { status: 'cancelled' }),
+      sale('cancelled-marker', [item('Marcada', 1, 50, 20)], { cancelled_at: '2026-09-21T12:00:00Z' }),
+      sale('ecommerce-pending', [item('Pendiente', 1, 40, 20)], { sourceMode: 'ecommerce_pending' }),
+      sale('converted-pos', [item('Convertida', 1, 30, 10)], { sourceMode: 'pos_converted', ecommerceOrderId: 'order-1' })
+    ];
+    const normalized = normalizeValidSales({ rows });
+    expect(normalized.rows.map((row) => row.id)).toEqual(['valid-cloud', 'converted-pos']);
+    expect(normalized.sourcePolicy).toMatchObject({
+      legacySources: 1,
+      shadowSources: 2,
+      ecommerceSources: 1,
+      excludedStatuses: 1,
+      cancelledMarkers: 1,
+      unknownSources: 0
+    });
+
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows },
+      intent: 'price_simulation',
+      scenario: { productName: 'Legacy', newPrice: 100 }
+    });
+    expect(result.coverage.validSales).toBe(2);
+    expect(result.coverage.excludedSales).toBe(6);
+    expect(result.coverage.sourceWarnings.join(' ')).toMatch(/legacy|shadow|ecommerce/i);
+    expect(result.current.products.map((product) => product.name)).toEqual(expect.arrayContaining(['Operativo', 'Convertida']));
+    expect(result.current.products.map((product) => product.name)).not.toContain('Legacy');
+    expect(result.priceSimulation).toBeNull();
+  });
+
+  it('keeps an unknown source only for compatibility, warns deterministically and never reports high confidence', () => {
+    const unknown = sale('unknown-source', [item('Compatibilidad', 1, 100, 40)], { sourceMode: 'vendor_future_mode' });
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [unknown] },
+      intent: 'profitability_summary'
+    });
+    expect(result.coverage.sourcePolicy.unknownSources).toBe(1);
+    expect(result.coverage.sourceWarnings.join(' ')).toContain('fuente no reconocida');
+    expect(result.confidence).toBe('low');
   });
 
   it('does not turn a missing cost into zero and reports affected products', () => {
