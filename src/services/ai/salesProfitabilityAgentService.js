@@ -111,9 +111,7 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
 
   return {
     ...deterministic,
-    recommendations: providerRecommendations.length
-      ? providerRecommendations
-      : deterministic.recommendations,
+    recommendations: deterministic.recommendations,
     aiNarrative: {
       executiveSummary: String(narrative.executiveSummary || narrative.answer || '').trim() || null,
       explanation: String(narrative.explanation || '').trim() || null,
@@ -466,6 +464,8 @@ const hardenDeterministicResult = ({
     summary: {
       ...(hardened.context?.summary || {}),
       units: current.units,
+      discounts: current.discountsKnown ? current.discounts : null,
+      discountsKnown: current.discountsKnown === true,
       unitCosts: currentComplete ? current.costOfSale : null,
       knownCostOfSale: current.knownCostOfSale,
       profit: current.profit,
