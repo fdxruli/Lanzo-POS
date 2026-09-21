@@ -253,6 +253,25 @@ describe('phase 3.2 intent routing and focused deterministic outputs', () => {
     expect(sufficient.comboOpportunities[0]).toMatchObject({ products: ['A', 'B'], tickets: 3, evidenceLevel: 'medium' });
   });
 
+  it('calculates combo utility from the actual quantities and costs in shared tickets', () => {
+    const shared = sale('multi-unit', [
+      item('A', 2, 100, 40),
+      item('B', 3, 50, 20)
+    ]);
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: {
+        rows: [shared, { ...shared, id: 'multi-unit-2' }, { ...shared, id: 'multi-unit-3' }]
+      },
+      intent: 'combo_opportunity'
+    });
+
+    expect(result.comboOpportunities[0].averageJointSale).toBe(350);
+    expect(result.comboOpportunities[0].cost).toBe(140);
+    expect(result.comboOpportunities[0].profit).toBe(210);
+    expect(result.comboOpportunities[0].margin).toBeCloseTo(0.6);
+  });
+
   it('shows a promotion that would create negative margin without predicting demand', () => {
     const result = buildSalesProfitabilityAnalysis({
       period,
