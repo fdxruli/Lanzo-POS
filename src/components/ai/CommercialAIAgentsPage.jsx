@@ -359,7 +359,7 @@ export default function CommercialAIAgentsPage() {
         if (active) setIsLoadingProducts(false);
       });
     return () => { active = false; };
-  }, [period.from, period.to]);
+  }, [period]);
 
   const selectIntent = (nextIntent, text) => {
     setIntent(nextIntent);
