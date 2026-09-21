@@ -8,14 +8,12 @@ import { useStatsStore } from '../store/useStatsStore';
 import { useSalesStore } from '../store/useSalesStore';
 import { useRecycleBinStore } from '../store/useRecycleBinStore';
 import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
-import { useAppStore } from '../store/useAppStore';
 
 // --- COMPONENTES ---
 import StatsGrid from '../components/dashboard/StatsGrid';
 import CloudFinalStatsGrid from '../components/dashboard/CloudFinalStatsGrid';
 import SalesHistory from '../components/dashboard/SalesHistory';
 import RecycleBin from '../components/dashboard/RecycleBin';
-import BusinessTips from '../components/dashboard/BusinessTips';
 import OperationalDiagnostics from '../components/dashboard/OperationalDiagnostics';
 import WasteHistory from '../components/dashboard/WasteHistory';
 import RestockSuggestions from '../components/dashboard/RestockSuggestion';
@@ -44,24 +42,6 @@ import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapsho
 import { readAIReportUiState, writeAIReportUiState } from '../utils/aiReportUiState';
 
 const SALES_HISTORY_PAGE_SIZE = 50;
-
-const hasAIAgentsEntitlement = (licenseDetails) => {
-  if (!licenseDetails?.valid) return false;
-
-  const features = licenseDetails.features || {};
-  const planCode = String(
-    licenseDetails.plan_code ||
-    licenseDetails.planCode ||
-    licenseDetails.plan ||
-    ''
-  ).toLowerCase();
-
-  return (
-    features.ai_agents === true ||
-    licenseDetails.ai_agents === true ||
-    planCode.includes('pro')
-  );
-};
 
 const buildWarningsMessage = (warnings = []) => {
   if (!warnings.length) return '';
@@ -101,13 +81,11 @@ export default function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const features = useFeatureConfig();
-  const licenseDetails = useAppStore((state) => state.licenseDetails);
   const actorRuntime = useActorRuntimeSnapshot();
   const canManageRefunds = canPerformRefunds(actorRuntime);
   const salesActorIdentity = getSalesActorIdentity(actorRuntime);
   const salesFinalHistoryScope = getSalesFinalHistoryScope(actorRuntime);
-  const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(), [licenseDetails]);
-  const canUseAIAgents = useMemo(() => hasAIAgentsEntitlement(licenseDetails), [licenseDetails]);
+  const dashboardReportMode = useMemo(() => reportsRepository.getReportMode(), []);
 
   // 1. ESTADISTICAS
   const stats = useStatsStore((state) => state.stats);
@@ -526,15 +504,17 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {canUseAIAgents && (
-        <section className="ui-section dashboard-section dashboard-section--tips" aria-label="Consejos y diagnosticos" hidden={activeTab !== 'tips'} aria-hidden={activeTab !== 'tips'}>
-          <OperationalDiagnostics sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} />
-        </section>
-      )}
-
-      {!canUseAIAgents && activeTab === 'tips' && (
-        <section className="ui-section dashboard-section dashboard-section--tips" aria-label="Consejos y diagnosticos">
-          <BusinessTips sales={analyticsSales} menu={analyticsMenu} customers={customers} wasteLogs={analyticsWasteLogs} activeRubros={features.activeRubros} reportData={reportingData.overviewReport} reportSource={reportingData.reportSource} onNavigate={(route) => navigate(route)} />
+      {activeTab === 'tips' && (
+        <section className="ui-section dashboard-section dashboard-section--tips" aria-label="Diagnóstico operativo">
+          <OperationalDiagnostics
+            sales={analyticsSales}
+            menu={analyticsMenu}
+            customers={customers}
+            wasteLogs={analyticsWasteLogs}
+            reportData={reportingData.overviewReport}
+            reportSource={reportingData.reportSource}
+            onNavigate={(route) => navigate(route)}
+          />
         </section>
       )}
 

@@ -11,16 +11,19 @@
 export { useRestaurantDiagnostics, default as useRestaurantDiagnosticsDefault } from './useRestaurantDiagnostics';
 export { usePharmacyDiagnostics, default as usePharmacyDiagnosticsDefault } from './usePharmacyDiagnostics';
 export { useRetailDiagnostics, default as useRetailDiagnosticsDefault } from './useRetailDiagnostics';
+export { useOperationalDiagnostics, default as useOperationalDiagnosticsDefault } from './useOperationalDiagnostics';
 
 // Re-exportar como objeto agrupado para acceso dinámico
 import useRestaurantDiagnostics from './useRestaurantDiagnostics';
 import usePharmacyDiagnostics from './usePharmacyDiagnostics';
 import useRetailDiagnostics from './useRetailDiagnostics';
+import useOperationalDiagnostics from './useOperationalDiagnostics';
 
 export const DIAGNOSTIC_HOOKS = {
   restaurant: useRestaurantDiagnostics,
   pharmacy: usePharmacyDiagnostics,
-  retail: useRetailDiagnostics
+  retail: useRetailDiagnostics,
+  operational: useOperationalDiagnostics
 };
 
 export default DIAGNOSTIC_HOOKS;

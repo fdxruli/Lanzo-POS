@@ -1,504 +1,408 @@
-/**
- * OperationalDiagnostics.jsx
- *
- * UI coordinator for operational diagnostics. Keeps the rule-based diagnostic
- * flow and the AI agent dashboard, but presents the classic view as a compact
- * mobile-first work queue instead of a card-heavy dashboard.
- */
-
-import { memo, useMemo, useState, useCallback, useEffect } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
-  Activity,
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle,
-  ChefHat,
-  Clock,
-  DollarSign,
-  Loader2,
-  Package,
-  Pill,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-  XCircle,
-  ShoppingCart,
   AlertCircle,
-  BrainCircuit,
-  Bot
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Database,
+  DollarSign,
+  ExternalLink,
+  Package,
+  RefreshCw,
+  Users,
+  XCircle
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
-import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
-import { canCurrentActorUseAIAgents } from '../../services/auth/aiAgentAuthorization';
-import { readAIReportUiState, writeAIReportUiState } from '../../utils/aiReportUiState';
-import { useRestaurantDiagnostics } from '../../hooks/diagnostics/useRestaurantDiagnostics';
-import { usePharmacyDiagnostics } from '../../hooks/diagnostics/usePharmacyDiagnostics';
-import { useRetailDiagnostics } from '../../hooks/diagnostics/useRetailDiagnostics';
-import AIAgentDashboard from './AIAgentDashboard';
-import { normalizeBusinessType, normalizeBusinessTypes } from '../../utils/businessType';
+import useOperationalDiagnostics from '../../hooks/diagnostics/useOperationalDiagnostics';
+import DiagnosticLimitations from './DiagnosticLimitations';
+import {
+  DEFAULT_BUSINESS_TIMEZONE,
+  DIAGNOSTIC_DATE_RANGES,
+  DIAGNOSTIC_TYPES,
+  formatDiagnosticPeriodLabel
+} from '../../services/diagnostics/diagnosticCalculations';
+import {
+  buildDiagnosticViewModel,
+  formatCurrency,
+  formatNumber,
+  formatPercentage
+} from '../../utils/diagnostics/diagnosticPresentation';
 import './OperationalDiagnostics.css';
-
-const BUSINESS_TYPE_MAPPING = {
-  food_service: { diagnosticType: 'restaurant', label: 'Restaurante / Cocina', icon: ChefHat },
-  'verduleria/fruteria': { diagnosticType: 'restaurant', label: 'Fruteria / Verduleria', icon: ShoppingCart },
-  farmacia: { diagnosticType: 'pharmacy', label: 'Farmacia', icon: Pill },
-  abarrotes: { diagnosticType: 'retail', label: 'Abarrotes', icon: ShoppingCart },
-  apparel: { diagnosticType: 'retail', label: 'Ropa', icon: ShoppingCart },
-  hardware: { diagnosticType: 'retail', label: 'Ferreteria', icon: ShoppingCart },
-  otro: { diagnosticType: 'retail', label: 'Negocio', icon: ShoppingCart }
-};
-
-const DIAGNOSTIC_HOOKS = {
-  restaurant: useRestaurantDiagnostics,
-  pharmacy: usePharmacyDiagnostics,
-  retail: useRetailDiagnostics
-};
-
-const ALERT_TYPE_CONFIG = {
-  danger: { icon: XCircle, className: 'alert-danger', label: 'Critico', shortLabel: 'Critico' },
-  warning: { icon: AlertTriangle, className: 'alert-warning', label: 'Advertencia', shortLabel: 'Aviso' },
-  info: { icon: AlertCircle, className: 'alert-info', label: 'Informacion', shortLabel: 'Info' },
-  success: { icon: CheckCircle, className: 'alert-success', label: 'Correcto', shortLabel: 'OK' }
-};
-
-const CATEGORY_CONFIG = {
-  revenue: { label: 'Ingresos', icon: DollarSign },
-  operations: { label: 'Operacion', icon: Activity },
-  inventory: { label: 'Inventario', icon: Package },
-  pricing: { label: 'Precios', icon: TrendingUp }
-};
 
 const EMPTY_ARRAY = [];
 
-const METRIC_LABELS = {
-  leakageRate: 'Fuga',
-  affectedTickets: 'Tickets afectados',
-  potentialLostRevenue: 'Venta no capturada',
-  avgDrinkPrice: 'Ticket extra promedio',
-  wasteCost: 'Costo de merma',
-  grossProfit: 'Utilidad bruta',
-  wasteRatio: 'Peso de merma',
-  currentStock: 'Stock actual',
-  avgDailySales: 'Venta diaria',
-  daysUntilStockout: 'Dias para agotarse',
-  estimatedLostSales: 'Venta perdida estimada',
-  capitalAtRisk: 'Capital en riesgo',
-  batchCount: 'Lotes',
-  avgDaysToExpiry: 'Dias promedio',
-  productsAtRisk: 'Productos en riesgo',
-  lostRevenue: 'Venta en riesgo',
-  deadCapital: 'Capital detenido',
-  productCount: 'Productos',
-  potentialRevenue: 'Venta potencial',
-  missingCostProducts: 'Sin costo',
-  revenueAtRisk: 'Venta sin costo',
-  criticalProducts: 'Productos criticos',
-  warningProducts: 'Productos en aviso',
-  avgMargin: 'Margen promedio',
-  impactOnProfit: 'Impacto en utilidad',
-  affectedProducts: 'Productos afectados',
-  avgIncrease: 'Aumento promedio',
-  totalIncrease: 'Aumento total'
+const DIAGNOSTIC_OPTIONS = [
+  {
+    id: DIAGNOSTIC_TYPES.INVENTORY,
+    label: 'Diagnóstico de inventario',
+    shortLabel: 'Inventario',
+    description: 'Stock, compromisos, movimiento, mermas y caducidad.',
+    icon: Package
+  },
+  {
+    id: DIAGNOSTIC_TYPES.FINANCIAL,
+    label: 'Diagnóstico financiero',
+    shortLabel: 'Finanzas',
+    description: 'Ventas netas, costos, utilidad, pagos y contribución.',
+    icon: DollarSign
+  },
+  {
+    id: DIAGNOSTIC_TYPES.CUSTOMERS,
+    label: 'Diagnóstico de clientes',
+    shortLabel: 'Clientes',
+    description: 'Actividad, recurrencia, frecuencia y saldos pendientes.',
+    icon: Users
+  }
+];
+
+const PERIOD_OPTIONS = [
+  { id: DIAGNOSTIC_DATE_RANGES.TODAY, label: 'Hoy' },
+  { id: DIAGNOSTIC_DATE_RANGES.LAST_7_DAYS, label: 'Últimos 7 días' },
+  { id: DIAGNOSTIC_DATE_RANGES.LAST_30_DAYS, label: 'Últimos 30 días' },
+  { id: DIAGNOSTIC_DATE_RANGES.THIS_MONTH, label: 'Este mes' },
+  { id: DIAGNOSTIC_DATE_RANGES.LAST_MONTH, label: 'Mes anterior' }
+];
+
+const TYPE_ICONS = {
+  info: AlertCircle,
+  warning: AlertTriangle,
+  critical: XCircle
 };
 
-const metricLabel = (key) => {
-  if (METRIC_LABELS[key]) return METRIC_LABELS[key];
-  return String(key)
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (letter) => letter.toUpperCase())
-    .trim();
-};
-
-const DiagnosticSkeleton = () => (
-  <div className="diagnostic-skeleton">
-    <div className="skeleton-line short" />
-    {[1, 2, 3].map(i => (
-      <div key={i} className="skeleton-alert">
-        <div className="skeleton-icon" />
-        <div className="skeleton-content">
-          <div className="skeleton-line full" />
-          <div className="skeleton-line medium" />
-          <div className="skeleton-line short" />
-        </div>
-      </div>
-    ))}
+const MetricCard = memo(({ label, displayValue }) => (
+  <div className="opdiag-metric-card">
+    <span className="opdiag-metric-label">{label}</span>
+    <strong className="opdiag-metric-value">{displayValue}</strong>
   </div>
-);
+));
 
-const AlertCard = memo(({ alert, onNavigate }) => {
-  const TypeConfig = ALERT_TYPE_CONFIG[alert.type] || ALERT_TYPE_CONFIG.info;
-  const TypeIcon = TypeConfig.icon;
-  const CategoryConfig = CATEGORY_CONFIG[alert.category] || { label: 'General', icon: Activity };
-  const CategoryIcon = CategoryConfig.icon;
+MetricCard.displayName = 'MetricCard';
 
-  const handleClick = useCallback(() => {
-    if (alert.link) onNavigate?.(alert.link);
-  }, [alert.link, onNavigate]);
-
-  const metrics = Object.entries(alert.metrics || {}).filter(([, value]) => value !== null && value !== undefined);
+const DiagnosticFinding = memo(({ finding, onNavigate }) => {
+  const Icon = TYPE_ICONS[finding.severity] || CheckCircle2;
+  const handleNavigate = () => {
+    if (finding.actionRoute && onNavigate) onNavigate(finding.actionRoute);
+  };
 
   return (
-    <article className={`diagnostic-alert ${TypeConfig.className}`}>
-      <div className="alert-leading" aria-hidden="true">
-        <TypeIcon size={18} />
-      </div>
-
-      <div className="alert-main">
-        <div className="alert-meta">
-          <span className="alert-type-badge">{TypeConfig.shortLabel}</span>
-          <span className="alert-category">
-            <CategoryIcon size={13} />
-            {CategoryConfig.label}
-          </span>
-          {alert.priority === 1 && <span className="priority-badge">Alta</span>}
+    <article className={`opdiag-finding opdiag-finding--${finding.severity}`}>
+      <div className="opdiag-finding-icon" aria-hidden="true"><Icon size={18} /></div>
+      <div className="opdiag-finding-body">
+        <div className="opdiag-finding-heading">
+          <div>
+            <span className="opdiag-severity">{finding.severityLabel}</span>
+            <h4>{finding.title}</h4>
+          </div>
+          {finding.actionRoute && (
+            <button type="button" className="opdiag-action" onClick={handleNavigate}>
+              {finding.actionLabel || 'Revisar'} <ExternalLink size={14} />
+            </button>
+          )}
         </div>
-
-        <div className="alert-body">
-          <h4 className="alert-title">{alert.title}</h4>
-          <p className="alert-message">{alert.message}</p>
-        </div>
-
-        {metrics.length > 0 && (
-          <dl className="alert-metrics">
-            {metrics.map(([key, value]) => (
-              <div key={key} className="metric-item">
-                <dt className="metric-label">{metricLabel(key)}</dt>
-                <dd className="metric-value">{value}</dd>
+        <p>{finding.description}</p>
+        {finding.details.length > 0 && (
+          <dl className="opdiag-finding-details">
+            {finding.details.map((item, index) => (
+              <div key={`${item.label}-${index}`}>
+                <dt>{item.label}</dt>
+                <dd>{item.value}</dd>
               </div>
             ))}
           </dl>
         )}
-
-        <div className="alert-footer">
-          <p className="alert-action">
-            <CheckCircle size={14} />
-            <span>{alert.action}</span>
-          </p>
-
-          {alert.link && (
-            <button className="alert-action-button" type="button" onClick={handleClick}>
-              Revisar
-              <TrendingUp size={14} />
-            </button>
-          )}
-        </div>
       </div>
     </article>
   );
 });
 
-AlertCard.displayName = 'AlertCard';
+DiagnosticFinding.displayName = 'DiagnosticFinding';
 
-const NoAlertsState = ({ businessType }) => {
-  const typeConfig = BUSINESS_TYPE_MAPPING[businessType] || { label: 'Negocio' };
-
-  return (
-    <div className="no-alerts-state">
-      <div className="no-alerts-icon">
-        <CheckCircle size={26} />
-      </div>
-      <div>
-        <h3 className="no-alerts-title">Operacion sin avisos</h3>
-        <p className="no-alerts-message">
-          No se detectaron alertas operativas para {typeConfig.label}.
-        </p>
-        <p className="no-alerts-hint">
-          Sigue registrando ventas para mantener el diagnostico actualizado.
-        </p>
-      </div>
-    </div>
-  );
-};
-
-const BusinessTypeSelector = ({ currentType, onSelect }) => {
-  const types = useMemo(() => {
-    return Object.entries(BUSINESS_TYPE_MAPPING).map(([type, config]) => ({
-      ...config,
-      type
-    }));
-  }, []);
-
-  return (
-    <label className="business-type-selector">
-      <span className="selector-label">
-        <Activity size={14} />
-        Rubro
-      </span>
-      <select
-        value={currentType}
-        onChange={(e) => onSelect(e.target.value)}
-        className="selector-input"
-      >
-        {types.map(type => (
-          <option key={type.type} value={type.type}>
-            {type.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-};
-
-const SummaryMetric = ({ icon: Icon, label, value, theme }) => (
-  <div className={`summary-metric ${theme}`}>
-    <Icon size={16} />
-    <span className="summary-label">{label}</span>
-    <strong className="summary-value">{value}</strong>
+const LoadingState = () => (
+  <div className="opdiag-state" role="status" aria-live="polite">
+    <RefreshCw size={26} className="opdiag-spin" />
+    <strong>Calculando diagnóstico</strong>
+    <span>Usando datos de lectura del periodo seleccionado.</span>
   </div>
 );
 
+const EmptyState = ({ description }) => (
+  <div className="opdiag-state">
+    <CheckCircle2 size={28} />
+    <strong>Sin datos suficientes</strong>
+    <span>{description}</span>
+  </div>
+);
+
+const ErrorState = ({ message, onRetry }) => (
+  <div className="opdiag-state opdiag-state--error" role="alert">
+    <AlertCircle size={28} />
+    <strong>No se pudo calcular el diagnóstico</strong>
+    <span>{message}</span>
+    <button type="button" className="opdiag-retry" onClick={onRetry}><RefreshCw size={15} /> Reintentar</button>
+  </div>
+);
+
+const PAYMENT_METHOD_LABELS = {
+  cash: 'Efectivo',
+  efectivo: 'Efectivo',
+  card: 'Tarjeta',
+  tarjeta: 'Tarjeta',
+  credit: 'Crédito',
+  credito: 'Crédito',
+  fiado: 'Fiado',
+  transfer: 'Transferencia',
+  transferencia: 'Transferencia'
+};
+
+const formatPaymentMethod = (value) => {
+  const key = String(value || '').trim().toLowerCase();
+  return PAYMENT_METHOD_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'No especificado');
+};
+
+const formatHour = (value) => {
+  const hour = Number(value);
+  return Number.isFinite(hour) ? `${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:59` : 'Horario no disponible';
+};
+
+const getTopRows = (rows, limit = 3) => rows
+  .filter((row) => row && typeof row === 'object')
+  .sort((a, b) => (b.count || 0) - (a.count || 0) || (b.revenue || 0) - (a.revenue || 0))
+  .slice(0, limit);
+
+const DiagnosticBreakdowns = memo(({ diagnosticType, viewModel }) => {
+  const { breakdowns, currency } = viewModel;
+  if (diagnosticType === DIAGNOSTIC_TYPES.FINANCIAL) {
+    const days = Object.entries(breakdowns.byDay).map(([day, data]) => ({ day, ...data }));
+    const hours = Object.entries(breakdowns.byHour).map(([hour, data]) => ({ hour, ...data }));
+    const hasFinancialBreakdown = breakdowns.paymentMethods.length > 0
+      || breakdowns.topProducts.length > 0
+      || days.length > 0
+      || hours.length > 0;
+    if (!hasFinancialBreakdown) return null;
+
+    return (
+      <section className="opdiag-breakdowns" aria-label="Desglose financiero">
+        <div className="opdiag-section-heading"><h3>Comportamiento de ventas</h3><span>Resumen del periodo</span></div>
+        <div className="opdiag-breakdown-grid">
+          {breakdowns.paymentMethods.length > 0 && (
+            <div className="opdiag-breakdown-card">
+              <h4>Métodos de pago</h4>
+              {breakdowns.paymentMethods.slice(0, 5).map((row) => (
+                <div className="opdiag-breakdown-row" key={row.method}>
+                  <span>{formatPaymentMethod(row.method)}</span>
+                  <strong>{formatCurrency(row.revenue, currency)} <small>{formatPercentage(row.percentage)}</small></strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {(days.length > 0 || hours.length > 0) && (
+            <div className="opdiag-breakdown-card">
+              <h4>Días y horarios con mayor actividad</h4>
+              {getTopRows(days, 2).map((row) => (
+                <div className="opdiag-breakdown-row" key={`day-${row.day}`}>
+                  <span>{row.day}</span><strong>{formatNumber(row.count)} ventas</strong>
+                </div>
+              ))}
+              {getTopRows(hours, 2).map((row) => (
+                <div className="opdiag-breakdown-row" key={`hour-${row.hour}`}>
+                  <span>{formatHour(row.hour)}</span><strong>{formatNumber(row.count)} ventas</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {breakdowns.topProducts.length > 0 && (
+            <div className="opdiag-breakdown-card">
+              <h4>Productos con mayor contribución</h4>
+              {breakdowns.topProducts.slice(0, 5).map((row) => (
+                <div className="opdiag-breakdown-row" key={row.id || row.name}>
+                  <span>{row.name || 'Producto sin nombre'}</span>
+                  <strong>{formatCurrency(row.revenue, currency)} <small>{formatNumber(row.quantity, 2)} u.</small></strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  if (diagnosticType === DIAGNOSTIC_TYPES.INVENTORY && breakdowns.capitalByProduct.length > 0) {
+    return (
+      <section className="opdiag-breakdowns" aria-label="Detalle de inventario">
+        <div className="opdiag-section-heading"><h3>Capital detenido por producto</h3><span>Valor con costos disponibles</span></div>
+        <div className="opdiag-breakdown-card opdiag-breakdown-card--wide">
+          {breakdowns.capitalByProduct.slice(0, 10).map((row) => (
+            <div className="opdiag-breakdown-row" key={row.id || row.name}>
+              <span>{row.name || 'Producto sin nombre'}</span><strong>{formatCurrency(row.value, currency)}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return null;
+});
+
+DiagnosticBreakdowns.displayName = 'DiagnosticBreakdowns';
+
 export default function OperationalDiagnostics({
-  allowRubroOverride = false,
   onNavigate,
   sales = EMPTY_ARRAY,
   menu = EMPTY_ARRAY,
   customers = EMPTY_ARRAY,
-  wasteLogs = EMPTY_ARRAY
+  wasteLogs = EMPTY_ARRAY,
+  reportData = null,
+  reportSource = null
 }) {
-  const [rubroOverride, setRubroOverride] = useState(null);
-  const [lastRefresh, setLastRefresh] = useState(() => Date.now());
-  const [showAIAgent, setShowAIAgent] = useState(() => readAIReportUiState().showAIAgent);
-  const [hasOpenedAIAgent, setHasOpenedAIAgent] = useState(() => {
-    const persisted = readAIReportUiState();
-    return persisted.hasOpenedAIAgent || persisted.showAIAgent;
-  });
+  const [diagnosticType, setDiagnosticType] = useState(DIAGNOSTIC_TYPES.INVENTORY);
+  const [dateRange, setDateRange] = useState(DIAGNOSTIC_DATE_RANGES.LAST_7_DAYS);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const timezone = companyProfile?.timezone || companyProfile?.time_zone || DEFAULT_BUSINESS_TIMEZONE;
+  const currency = companyProfile?.currency || companyProfile?.currency_code || companyProfile?.currencyCode || 'MXN';
 
-  const companyProfile = useAppStore(state => state.companyProfile);
-  const licenseDetails = useAppStore(state => state.licenseDetails);
-  const actorSnapshot = useActorRuntimeSnapshot();
+  const commonArgs = useMemo(() => ({
+    dateRange,
+    timezone,
+    sales,
+    menu,
+    customers,
+    wasteLogs,
+    reportSource,
+    refreshKey
+  }), [customers, dateRange, menu, refreshKey, reportSource, sales, timezone, wasteLogs]);
 
-  const businessTypeString = useMemo(() => {
-    if (rubroOverride) return normalizeBusinessType(rubroOverride, 'abarrotes');
-    return normalizeBusinessTypes(companyProfile?.business_type, 'abarrotes')[0];
-  }, [companyProfile, rubroOverride]);
+  const inventory = useOperationalDiagnostics({ ...commonArgs, diagnosticType: DIAGNOSTIC_TYPES.INVENTORY });
+  const financial = useOperationalDiagnostics({ ...commonArgs, diagnosticType: DIAGNOSTIC_TYPES.FINANCIAL });
+  const customer = useOperationalDiagnostics({ ...commonArgs, diagnosticType: DIAGNOSTIC_TYPES.CUSTOMERS });
+  const stateByType = { inventory, financial, customers: customer };
+  const activeState = stateByType[diagnosticType];
+  const activeOption = DIAGNOSTIC_OPTIONS.find((option) => option.id === diagnosticType) || DIAGNOSTIC_OPTIONS[0];
+  const ActiveIcon = activeOption.icon;
+  const activeDiagnostic = activeState.diagnostic;
+  const activeViewModel = useMemo(() => buildDiagnosticViewModel({
+    diagnostic: activeDiagnostic,
+    diagnosticType,
+    rangeLabel: formatDiagnosticPeriodLabel(dateRange),
+    timezone,
+    currency,
+    sales,
+    products: menu,
+    customers
+  }), [activeDiagnostic, currency, customers, dateRange, diagnosticType, menu, sales, timezone]);
 
-  const businessTypeArray = useMemo(() => [businessTypeString], [businessTypeString]);
-  const diagnosticType = BUSINESS_TYPE_MAPPING[businessTypeString]?.diagnosticType || 'retail';
-  const DiagnosticHook = DIAGNOSTIC_HOOKS[diagnosticType] || DIAGNOSTIC_HOOKS.retail;
-  const diagnostics = DiagnosticHook(lastRefresh);
-  const canUseAIAgents = useMemo(() => canCurrentActorUseAIAgents({
-    licenseDetails,
-    actorSnapshot
-  }), [actorSnapshot, licenseDetails]);
-  const effectiveShowAIAgent = Boolean(showAIAgent && canUseAIAgents);
-  const shouldRenderAIAgent = Boolean(canUseAIAgents && (effectiveShowAIAgent || hasOpenedAIAgent));
-
-  useEffect(() => {
-    writeAIReportUiState({ showAIAgent, hasOpenedAIAgent });
-  }, [hasOpenedAIAgent, showAIAgent]);
-
-  const handleNavigate = useCallback((link) => {
+  const handleNavigate = useCallback((route) => {
     if (onNavigate) {
-      onNavigate(link);
-    } else {
-      window.location.href = link;
+      onNavigate(route);
+      return;
     }
+    if (typeof window !== 'undefined') window.location.href = route;
   }, [onNavigate]);
 
-  const handleRefresh = useCallback(() => {
-    setLastRefresh(Date.now());
-  }, []);
-
-  const handleToggleMode = useCallback(() => {
-    if (!canUseAIAgents && !effectiveShowAIAgent) return;
-    const nextMode = !showAIAgent;
-    setShowAIAgent(nextMode);
-    if (nextMode) setHasOpenedAIAgent(true);
-  }, [canUseAIAgents, effectiveShowAIAgent, showAIAgent]);
-
-  const currentTypeConfig = BUSINESS_TYPE_MAPPING[businessTypeString] || { label: 'Negocio', icon: Activity };
-  const TypeIcon = currentTypeConfig.icon;
-
-  const summaryItems = useMemo(() => {
-    const summary = diagnostics.summary;
-    if (!summary || diagnostics.isLoading) return [];
-
-    return [
-      summary.ticketLeakage && {
-        icon: DollarSign,
-        label: 'Fuga ticket',
-        value: `${Math.round(summary.ticketLeakage.leakageRate * 100)}%`,
-        theme: 'revenue'
-      },
-      summary.wasteImpact && {
-        icon: Activity,
-        label: 'Merma',
-        value: `${Math.round(summary.wasteImpact.wasteRatio * 100)}%`,
-        theme: 'operations'
-      },
-      summary.expirationRisk && {
-        icon: Package,
-        label: 'Caducidad',
-        value: `${summary.expirationRisk.criticalCount + summary.expirationRisk.warningCount} lotes`,
-        theme: 'inventory'
-      },
-      summary.stockoutRisk && {
-        icon: TrendingDown,
-        label: 'Stock',
-        value: `${summary.stockoutRisk.criticalCount + summary.stockoutRisk.warningCount} productos`,
-        theme: 'inventory'
-      },
-      summary.deadStock && {
-        icon: Clock,
-        label: 'Capital muerto',
-        value: `$${summary.deadStock.totalDeadStockValue.toFixed(0)}`,
-        theme: 'inventory'
-      },
-      summary.margins && {
-        icon: TrendingUp,
-        label: 'Margen prom.',
-        value: `${summary.margins.avgMargin.toFixed(1)}%`,
-        theme: 'pricing'
-      }
-    ].filter(Boolean);
-  }, [diagnostics.summary, diagnostics.isLoading]);
-
-  const statusText = effectiveShowAIAgent
-    ? 'Analisis con agentes IA'
-    : `${diagnostics.summary?.totalAlerts || 0} alertas${diagnostics.summary?.criticalCount > 0 ? `, ${diagnostics.summary.criticalCount} criticas` : ''}`;
-
-  const renderClassicContent = () => {
-    if (diagnostics.isLoading) return <DiagnosticSkeleton />;
-
-    if (diagnostics.error) {
-      return (
-        <div className="diagnostic-error">
-          <AlertCircle size={30} />
-          <h3>Error en diagnostico</h3>
-          <p>{diagnostics.error}</p>
-          <button onClick={handleRefresh} className="refresh-button" type="button">
-            <RefreshCw size={16} />
-            Reintentar
-          </button>
-        </div>
-      );
-    }
-
-    if (!diagnostics.alerts || diagnostics.alerts.length === 0) {
-      return <NoAlertsState businessType={businessTypeString} />;
-    }
-
-    return (
-      <div className="alerts-list">
-        {diagnostics.alerts.map(alert => (
-          <AlertCard key={alert.id} alert={alert} onNavigate={handleNavigate} />
-        ))}
-      </div>
-    );
-  };
+  const handleRefresh = useCallback(() => setRefreshKey((current) => current + 1), []);
+  const hasNoData = activeDiagnostic && (
+    diagnosticType === DIAGNOSTIC_TYPES.INVENTORY
+      ? activeViewModel.coverage.productsAnalyzed === 0
+      : diagnosticType === DIAGNOSTIC_TYPES.CUSTOMERS
+        ? activeViewModel.coverage.customersAnalyzed === 0 && activeViewModel.coverage.salesAnalyzed === 0
+        : activeViewModel.coverage.salesAnalyzed === 0
+  );
+  const reportWarning = reportData?.source?.stale
+    ? 'El reporte cloud disponible es un snapshot; los detalles locales pueden estar más actualizados.'
+    : null;
 
   return (
-    <section className="operational-diagnostics" aria-label="Diagnostico operativo">
-      <header className="diagnostics-header">
-        <div className="header-content">
-          <div className="header-icon-wrapper" aria-hidden="true">
-            {effectiveShowAIAgent ? <Bot size={22} className="header-icon" /> : <TypeIcon size={22} className="header-icon" />}
-          </div>
-          <div className="header-text">
-            <span className="header-kicker">{effectiveShowAIAgent ? 'Modo IA' : currentTypeConfig.label}</span>
-            <h2 className="header-title">
-              {effectiveShowAIAgent ? 'Agentes de IA' : 'Diagnostico operativo'}
-            </h2>
-            <p className="header-subtitle">{statusText}</p>
-          </div>
+    <section className="operational-diagnostics opdiag-shell" aria-label="Diagnóstico operativo">
+      <header className="opdiag-header">
+        <div>
+          <span className="opdiag-kicker">Lectura determinística del negocio</span>
+          <h2>Diagnóstico operativo</h2>
+          <p>Resultados calculados con fórmulas y datos históricos del sistema.</p>
         </div>
-
-        <div className="header-actions">
-          {canUseAIAgents && (
-            <button
-              className={`mode-toggle-button ${effectiveShowAIAgent ? 'is-diagnostic-entry' : 'is-ai-entry'}`}
-              onClick={handleToggleMode}
-              type="button"
-              aria-label={effectiveShowAIAgent ? 'Ver diagnostico operativo' : 'Activar agente IA'}
-            >
-              {effectiveShowAIAgent ? (
-                <>
-                  <span className="mode-toggle-icon" aria-hidden="true">
-                    <BrainCircuit size={18} />
-                  </span>
-                  <span className="mode-toggle-copy">
-                    <span className="mode-toggle-kicker">Volver a accion</span>
-                    <strong>Diagnostico operativo</strong>
-                    <small>Alertas claras para decidir ahora</small>
-                  </span>
-                  <ArrowLeft size={16} className="mode-toggle-arrow" aria-hidden="true" />
-                </>
-              ) : (
-                <>
-                  <span className="mode-toggle-icon" aria-hidden="true">
-                    <Bot size={18} />
-                  </span>
-                  <span className="mode-toggle-copy">
-                    <span className="mode-toggle-kicker">Analisis avanzado</span>
-                    <strong>Activar Agente IA</strong>
-                    <small>Detecta oportunidades con mas contexto</small>
-                  </span>
-                  <ArrowRight size={16} className="mode-toggle-arrow" aria-hidden="true" />
-                </>
-              )}
-            </button>
-          )}
-
-          {allowRubroOverride && (
-            <BusinessTypeSelector currentType={businessTypeString} onSelect={setRubroOverride} />
-          )}
-
-          {!effectiveShowAIAgent && (
-            <button
-              className="refresh-button-small"
-              onClick={handleRefresh}
-              disabled={diagnostics.isLoading}
-              type="button"
-              aria-label="Actualizar diagnostico"
-              title="Actualizar diagnostico"
-            >
-              {diagnostics.isLoading ? <Loader2 size={18} className="spinning" /> : <RefreshCw size={18} />}
-            </button>
-          )}
+        <div className="opdiag-header-meta">
+          <span className="opdiag-source-badge"><Database size={14} />{activeDiagnostic ? activeViewModel.sourceLabel : 'Fuente: preparando datos'}</span>
+          <span className="opdiag-period-badge"><Clock3 size={14} />{activeDiagnostic ? activeViewModel.periodLabel : formatDiagnosticPeriodLabel(dateRange)} · {timezone}</span>
         </div>
       </header>
 
-      {!effectiveShowAIAgent && summaryItems.length > 0 && (
-        <div className="diagnostics-summary" aria-label="Resumen del diagnostico">
-          {summaryItems.map((item) => (
-            <SummaryMetric
-              key={`${item.label}-${item.value}`}
-              icon={item.icon}
-              label={item.label}
-              value={item.value}
-              theme={item.theme}
-            />
-          ))}
+      <div className="opdiag-controls">
+        <div className="opdiag-tabs" role="tablist" aria-label="Diagnósticos operativos">
+          {DIAGNOSTIC_OPTIONS.map((option) => {
+            const Icon = option.icon;
+            const selected = option.id === diagnosticType;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                className={`opdiag-tab ${selected ? 'is-selected' : ''}`}
+                onClick={() => setDiagnosticType(option.id)}
+              >
+                <Icon size={17} />
+                <span><strong>{option.label}</strong><small>{option.description}</small></span>
+              </button>
+            );
+          })}
         </div>
-      )}
-
-      <div className="diagnostics-content">
-        {shouldRenderAIAgent && (
-          <div hidden={!effectiveShowAIAgent} aria-hidden={!effectiveShowAIAgent}>
-            <AIAgentDashboard
-              sales={sales}
-              menu={menu}
-              customers={customers}
-              wasteLogs={wasteLogs}
-              businessType={businessTypeArray}
-            />
-          </div>
-        )}
-        {!effectiveShowAIAgent && renderClassicContent()}
+        <div className="opdiag-filter-row">
+          <label className="opdiag-period-select">
+            <CalendarDays size={15} />
+            <span>Periodo</span>
+            <select value={dateRange} onChange={(event) => setDateRange(event.target.value)}>
+              {PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </label>
+          <button type="button" className="opdiag-refresh" onClick={handleRefresh} aria-label="Actualizar diagnóstico">
+            <RefreshCw size={16} /> Actualizar
+          </button>
+        </div>
       </div>
 
-      <footer className="diagnostics-footer">
-        <span className="last-update">
-          <Clock size={12} />
-          Actualizado {new Date(lastRefresh).toLocaleTimeString()}
-        </span>
+      <div className="opdiag-active-heading">
+        <div><ActiveIcon size={20} /><div><h3>{activeViewModel.title}</h3><p className="opdiag-active-subtitle">{activeViewModel.subtitle}</p><span>{activeDiagnostic ? activeViewModel.periodLabel : `Periodo: ${formatDiagnosticPeriodLabel(dateRange)}`}</span></div></div>
+        <span className={`opdiag-severity-badge opdiag-severity-badge--${activeViewModel.severity}`}><CheckCircle2 size={14} /> Nivel: {activeViewModel.severityLabel}</span>
+      </div>
 
-        {diagnostics.rawData && (
-          <span className="data-summary">
-            {diagnostics.rawData.salesCount || 0} ventas / {diagnostics.rawData.menuCount || diagnostics.rawData.inventoryCount || 0} productos / {diagnostics.rawData.batchesCount || 0} lotes
-          </span>
-        )}
+      {activeState.isLoading && <LoadingState />}
+      {!activeState.isLoading && activeState.error && <ErrorState message={activeState.error} onRetry={handleRefresh} />}
+      {!activeState.isLoading && !activeState.error && activeDiagnostic && (
+        <>
+          <div className="opdiag-metrics" aria-label="Métricas del diagnóstico">
+            {activeViewModel.kpis.map((metric) => (
+              <MetricCard key={metric.key} label={metric.label} displayValue={metric.displayValue} />
+            ))}
+          </div>
+
+          <div className="opdiag-coverage">
+            <span><strong>Datos analizados:</strong> {activeViewModel.coverage.summary}</span>
+          </div>
+
+          <DiagnosticLimitations limitations={activeViewModel.limitations} reportWarning={reportWarning} />
+
+          <DiagnosticBreakdowns diagnosticType={diagnosticType} viewModel={activeViewModel} />
+
+          {hasNoData ? <EmptyState description={activeViewModel.emptyDescription} /> : (
+            <section className="opdiag-findings" aria-label="Hallazgos del diagnóstico">
+              <div className="opdiag-section-heading"><h3>Hallazgos y acciones</h3><span>{activeViewModel.findings.length} hallazgo(s)</span></div>
+              {activeViewModel.findings.length > 0
+                ? activeViewModel.findings.map((finding) => <DiagnosticFinding key={finding.id} finding={finding} onNavigate={handleNavigate} />)
+                : <div className="opdiag-no-findings"><CheckCircle2 size={18} /> No se detectaron alertas operativas en este periodo.</div>}
+            </section>
+          )}
+        </>
+      )}
+
+      <aside className="opdiag-legacy-note">
+        <strong>Historial IA anterior</strong>
+        <span>Se conserva separado en el almacenamiento local existente y no se mezcla con estos diagnósticos.</span>
+      </aside>
+
+      <footer className="opdiag-footer">
+        <span><Clock3 size={13} /> Cálculo de solo lectura · {activeDiagnostic?.generatedAt && Number.isFinite(new Date(activeDiagnostic.generatedAt).getTime()) ? new Date(activeDiagnostic.generatedAt).toLocaleTimeString('es-MX') : 'pendiente'}</span>
+        <span>{activeState.period?.timezone || timezone}</span>
       </footer>
     </section>
   );
