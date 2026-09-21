@@ -83,6 +83,28 @@ function ProductEvidence({ products }) {
 
 function AnalysisResult({ result, onDownload, isDownloading }) {
   const response = result?.response || {};
+  if (!result?.response) {
+    return (
+      <div className="commercial-ai-result commercial-ai-result--empty" aria-live="polite">
+        <div className="commercial-ai-result__header">
+          <div><p className="commercial-ai-eyebrow">Resultado estructurado</p><h2>El reporte estará disponible después de ejecutar un análisis.</h2></div>
+          <div className="commercial-ai-result__actions">
+            <button
+              type="button"
+              className="commercial-ai-download"
+              onClick={onDownload}
+              disabled
+              aria-label="Descargar reporte completo"
+              title="Ejecuta un análisis para habilitar la descarga del reporte."
+            >
+              <Download size={16} aria-hidden="true" />
+              Descargar reporte completo
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const facts = Array.isArray(response.facts) ? response.facts : EMPTY_ARRAY;
   const products = Array.isArray(response.current?.products)
     ? response.current.products
@@ -235,7 +257,7 @@ export default function CommercialAIAgentsPage() {
         {isAnalyzing && <div className="commercial-ai-loading" role="status"><span className="commercial-ai-spinner" /> Consultando reportes autorizados y preparando cálculos…</div>}
         {analysisError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {analysisError}</div>}
         {downloadError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {downloadError}</div>}
-        {result && <AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} />}
+        <AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} />
       </section>
       <aside className="commercial-ai-notice" role="note"><ShieldCheck size={18} aria-hidden="true" /><p>La IA explica evidencia calculada por código. Las recomendaciones requieren confirmación y no ejecutan acciones.</p></aside>
     </main>
