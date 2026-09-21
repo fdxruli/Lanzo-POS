@@ -8,6 +8,7 @@
 import { loadData, STORES } from './database';
 import { getDeviceSecurityToken, getStableDeviceId, supabaseClient } from './supabase';
 import { actorRuntimeController } from './auth/actorRuntimeController';
+import { validateCommercialAgentRequest } from './ai/commercialAgentContract';
 
 const EDGE_PROVIDER = 'edge';
 const EDGE_FUNCTION_NAME = import.meta.env.VITE_AI_EDGE_FUNCTION || 'lanzo-ai-agent';
@@ -110,7 +111,8 @@ const mapEdgeErrorMessage = (payload = {}) => {
     AI_PROVIDER_ERROR: payload.message || 'El proveedor de IA devolvió un error.',
     PROMPT_TOO_LARGE: payload.message || 'El análisis contiene demasiados datos. Reduce el rango.',
     AI_REQUEST_FAILED: payload.message || 'No se pudo contactar al proveedor de IA.',
-    AI_EMPTY_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta vacía.'
+    AI_EMPTY_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta vacía.',
+    AI_INVALID_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta estructurada inválida.'
   };
 
   return messages[code] || payload.message || 'No se pudo generar el análisis de IA.';
@@ -319,6 +321,76 @@ export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
   };
 };
 
+/**
+ * Phase 3 entry point. The browser sends a typed, allowlisted commercial
+ * analysis request. The Edge Function builds the provider prompts server-side;
+ * callers cannot supply arbitrary system or user prompts through this path.
+ */
+export const analyzeCommercialAgent = async (request = {}, config = {}) => {
+  const validation = validateCommercialAgentRequest(request);
+  if (!validation.valid) {
+    throw new AIApiError('La solicitud del agente de ventas no es válida.', 400, validation, validation.code);
+  }
+
+  if (!supabaseClient) {
+    throw new AIApiError('Supabase no está configurado. Revisa VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY.', 500, null, 'SUPABASE_NOT_CONFIGURED');
+  }
+
+  actorRuntimeController.assertGranted('ai_agents');
+
+  const auth = await buildAIAgentAuthContext(config);
+  if (!auth.licenseKey || !auth.deviceFingerprint || !auth.deviceSecurityToken) {
+    throw new AIApiError('Faltan datos seguros de licencia/dispositivo para usar agentes de IA. Vuelve a validar la licencia.', 401, { auth }, 'AUTH_PAYLOAD_REQUIRED');
+  }
+
+  const { data, error } = await supabaseClient.functions.invoke(EDGE_FUNCTION_NAME, {
+    body: {
+      auth,
+      agentKey: validation.request.agentKey,
+      intent: validation.request.intent,
+      question: validation.request.question,
+      requestKey: validation.request.requestKey,
+      period: validation.request.period,
+      scenario: validation.request.scenario,
+      context: validation.request.context,
+      options: {
+        temperature: config.temperature ?? DEFAULT_CONFIG.temperature,
+        maxTokens: config.maxTokens ?? DEFAULT_CONFIG.maxTokens
+      }
+    }
+  });
+
+  if (error) {
+    const functionPayload = await parseFunctionError(error);
+    const payload = functionPayload || { code: error.code, message: error.message };
+    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || 500, payload, payload.code || 'EDGE_FUNCTION_ERROR');
+  }
+
+  if (!data?.success) {
+    throw new AIApiError(mapEdgeErrorMessage(data), data?.code === 'AI_AGENT_LIMIT_REACHED' ? 429 : 403, data, data?.code || 'EDGE_REJECTED');
+  }
+
+  const rawResultContent = typeof data.rawResultContent === 'string'
+    ? data.rawResultContent
+    : typeof data.content === 'string'
+      ? data.content
+      : '';
+  if (!rawResultContent.trim()) {
+    throw new AIApiError('La Edge Function no devolvió contenido de IA válido.', 502, data, 'AI_EMPTY_RESPONSE');
+  }
+
+  return {
+    content: rawResultContent.trim(),
+    rawResultContent,
+    resultFormat: 'json',
+    usageStatus: normalizeUsageStatus(data.usageStatus || data),
+    providerMetadata: data.providerMetadata || null,
+    status: data.status || 'completed',
+    agentKey: data.agentKey || validation.request.agentKey,
+    intent: data.intent || validation.request.intent
+  };
+};
+
 export const hasApiKey = (provider = EDGE_PROVIDER) => isEdgeProvider(provider) && Boolean(supabaseClient);
 
 export const getAIConfigStatus = () => {
@@ -376,6 +448,7 @@ export const validateAIConnection = async (options = {}) => {
 
 export default {
   analyzeWithAI,
+  analyzeCommercialAgent,
   getAIAgentUsageStatus,
   hasApiKey,
   getAIConfigStatus,

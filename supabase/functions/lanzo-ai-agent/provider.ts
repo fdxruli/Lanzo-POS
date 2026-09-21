@@ -28,7 +28,7 @@ export type ProviderResult = {
   style: ProviderStyle;
 };
 
-export type ProviderFailureCode = 'AI_PROVIDER_ERROR' | 'AI_REQUEST_FAILED' | 'AI_EMPTY_RESPONSE';
+export type ProviderFailureCode = 'AI_PROVIDER_ERROR' | 'AI_REQUEST_FAILED' | 'AI_EMPTY_RESPONSE' | 'AI_INVALID_RESPONSE';
 
 export class ProviderError extends Error {
   code: ProviderFailureCode;

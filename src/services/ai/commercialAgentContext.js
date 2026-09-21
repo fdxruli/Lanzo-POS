@@ -46,7 +46,9 @@ const normalizeProduct = (row = {}) => {
     netSales: pickNumber(source, ['netSales', 'net_sales', 'sales', 'revenue']),
     unitCost: pickNumber(source, ['unitCost', 'unit_cost', 'cost']),
     profit: pickNumber(source, ['profit', 'gross_profit', 'utility']),
-    margin: pickNumber(source, ['margin', 'gross_margin'])
+    margin: pickNumber(source, ['margin', 'gross_margin']),
+    averagePrice: pickNumber(source, ['averagePrice', 'average_price', 'unit_price']),
+    costKnown: source.costKnown === undefined ? null : source.costKnown === true
   };
 };
 
@@ -86,11 +88,62 @@ const normalizeComparison = (comparison = {}) => {
   };
 };
 
+const normalizeCoverage = (coverage = {}) => {
+  const source = asRecord(coverage);
+  return {
+    validSales: pickNumber(source, ['validSales', 'valid_sales']),
+    rawSales: pickNumber(source, ['rawSales', 'raw_sales']),
+    excludedSales: pickNumber(source, ['excludedSales', 'excluded_sales']),
+    ecommerceDuplicatesExcluded: pickNumber(source, ['ecommerceDuplicatesExcluded', 'ecommerce_duplicates_excluded']),
+    productsIncluded: pickNumber(source, ['productsIncluded', 'products_included']),
+    productsMissingCost: pickNumber(source, ['productsMissingCost', 'products_missing_cost']),
+    costCoverage: pickNumber(source, ['costCoverage', 'cost_coverage']),
+    comparisonAvailable: source.comparisonAvailable === true,
+    complete: source.complete === true
+  };
+};
+
+const normalizeCalculations = (calculations = []) => (
+  (Array.isArray(calculations) ? calculations : [])
+    .slice(0, 32)
+    .map((calculation = {}) => {
+      const source = asRecord(calculation);
+      return {
+        label: asSafeText(source.label, null, 100),
+        value: source.value === null || typeof source.value === 'number' ? source.value : null,
+        formattedValue: asSafeText(source.formattedValue, 'No disponible', 80),
+        formula: asSafeText(source.formula, '', 180),
+        source: asSafeText(source.source, 'deterministic', 40),
+        period: normalizePeriod(source.period)
+      };
+    })
+    .filter((calculation) => calculation.label && calculation.formula)
+);
+
+const SAFE_SCENARIO_KEYS = new Set([
+  'label', 'volume', 'utility', 'margin', 'impactVsCurrent', 'tickets', 'frequency',
+  'comboPrice', 'discount', 'products', 'note', 'isPrediction'
+]);
+
 const normalizeSalesPayload = (payload = {}) => {
   const source = asRecord(payload);
   const overview = asRecord(source.overview || source.metrics || source.summary);
 
   return {
+    summary: {
+      netSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']),
+      units: pickNumber(overview, ['units', 'items', 'items_sold']),
+      salesCount: pickNumber(overview, ['salesCount', 'sales_count', 'orders', 'order_count']),
+      averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
+      discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
+      unitCosts: pickNumber(overview, ['unitCosts', 'unit_costs', 'cogs', 'costs']),
+      profit: pickNumber(overview, ['profit', 'gross_profit', 'utility']),
+      margin: pickNumber(overview, ['margin', 'gross_margin']),
+      costCoverage: pickNumber(asRecord(source.coverage), ['costCoverage', 'cost_coverage']),
+      missingCostProducts: pickNumber(asRecord(source.coverage), ['productsMissingCost', 'products_missing_cost']),
+      excludedSales: pickNumber(asRecord(source.coverage), ['excludedSales', 'excluded_sales']),
+      ecommerceDuplicates: pickNumber(asRecord(source.coverage), ['ecommerceDuplicatesExcluded', 'ecommerce_duplicates_excluded'])
+    },
     netSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']),
     grossSales: pickNumber(overview, ['grossSales', 'gross_sales']),
     discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
@@ -100,7 +153,19 @@ const normalizeSalesPayload = (payload = {}) => {
     averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
     products: normalizeProducts(source.products || source.byProduct || source.by_product),
     channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
-    comparison: normalizeComparison(source.comparison || source.previous)
+    comparison: normalizeComparison(source.comparison || source.previous),
+    coverage: normalizeCoverage(source.coverage),
+    calculations: normalizeCalculations(source.calculations),
+    assumptions: Array.isArray(source.assumptions)
+      ? source.assumptions.filter((item) => typeof item === 'string').slice(0, 20).map((item) => item.slice(0, 180))
+      : [],
+    scenarios: Array.isArray(source.scenarios) ? source.scenarios.slice(0, 12).map((scenario) => {
+      const safeScenario = asRecord(scenario);
+      return Object.fromEntries(Object.entries(safeScenario).filter(([key, value]) => (
+        SAFE_SCENARIO_KEYS.has(key)
+        && (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' || Array.isArray(value))
+      )));
+    }) : []
   };
 };
 

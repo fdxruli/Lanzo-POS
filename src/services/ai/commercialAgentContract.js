@@ -21,6 +21,7 @@ const VALID_AGENT_KEYS = new Set(Object.values(COMMERCIAL_AGENT_KEYS));
 const VALID_INTENTS = new Set(COMMERCIAL_AGENT_INTENTS);
 const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'not_ready', 'error']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
+const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
 const ARRAY_RESPONSE_FIELDS = [
   'facts',
   'calculations',
@@ -75,11 +76,16 @@ export const normalizeCommercialAgentRequest = (request = {}) => ({
   agentKey: typeof request.agentKey === 'string' ? request.agentKey.trim() : '',
   intent: typeof request.intent === 'string' ? request.intent.trim() : '',
   question: typeof request.question === 'string' ? request.question.trim() : '',
+  requestKey: request.requestKey === null || request.requestKey === undefined
+    ? null
+    : (typeof request.requestKey === 'string' ? request.requestKey.trim() : request.requestKey),
   threadId: request.threadId === null || request.threadId === undefined
     ? null
     : String(request.threadId).trim() || null,
   period: isRecord(request.period) ? { ...request.period } : null,
   scope: isRecord(request.scope) ? { ...request.scope } : null,
+  scenario: isRecord(request.scenario) ? { ...request.scenario } : {},
+  context: isRecord(request.context) ? { ...request.context } : null,
   requestedAction: request.requestedAction === null || request.requestedAction === undefined
     ? null
     : (typeof request.requestedAction === 'string' ? request.requestedAction.trim() : request.requestedAction)
@@ -91,11 +97,15 @@ export const validateCommercialAgentRequest = (request = {}) => {
   if (!isCommercialAgentKey(normalized.agentKey)) return invalid('INVALID_AGENT_KEY', { request: normalized });
   if (!isCommercialAgentIntent(normalized.intent)) return invalid('INVALID_INTENT', { request: normalized });
   if (!normalized.question) return invalid('QUESTION_REQUIRED', { request: normalized });
+  if (normalized.question.length > 1200) return invalid('QUESTION_TOO_LARGE', { request: normalized });
   if (hasForbiddenContent(normalized.question)) return invalid('UNSAFE_QUESTION', { request: normalized });
+  if (normalized.requestKey !== null && (typeof normalized.requestKey !== 'string' || normalized.requestKey.length > 128)) {
+    return invalid('INVALID_REQUEST_KEY', { request: normalized });
+  }
   if (normalized.requestedAction !== null && typeof normalized.requestedAction !== 'string') {
     return invalid('INVALID_REQUESTED_ACTION', { request: normalized });
   }
-  if (hasForbiddenContent(normalized.period) || hasForbiddenContent(normalized.scope)) {
+  if (hasForbiddenContent(normalized.period) || hasForbiddenContent(normalized.scope) || hasForbiddenContent(normalized.scenario) || hasForbiddenContent(normalized.context)) {
     return invalid('UNSAFE_CONTEXT', { request: normalized });
   }
 
@@ -106,10 +116,13 @@ export const createFeatureNotReadyResponse = ({ agentKey, intent } = {}) => ({
   version: COMMERCIAL_AGENT_RESPONSE_VERSION,
   agentKey,
   status: 'not_ready',
+  executiveSummary: 'Esta capacidad todavía no está disponible.',
   answer: 'Esta capacidad se preparará en una siguiente fase.',
+  explanation: '',
   facts: [],
   calculations: [],
   assumptions: [],
+  scenarios: [],
   limitations: [FEATURE_NOT_READY],
   recommendations: [],
   actionDrafts: [],
@@ -128,12 +141,44 @@ export const validateCommercialAgentResponse = (response, { expectedAgentKey = n
   if (!isCommercialAgentKey(response.agentKey)) return invalid('INVALID_AGENT_KEY');
   if (expectedAgentKey && response.agentKey !== expectedAgentKey) return invalid('AGENT_KEY_MISMATCH');
   if (!VALID_RESPONSE_STATUSES.has(response.status)) return invalid('INVALID_RESPONSE_STATUS');
-  if (typeof response.answer !== 'string') return invalid('ANSWER_REQUIRED');
+  if (typeof response.answer !== 'string' && typeof response.executiveSummary !== 'string') {
+    return invalid('EXECUTIVE_SUMMARY_REQUIRED');
+  }
   if (!VALID_SOURCES.has(response.source)) return invalid('INVALID_RESPONSE_SOURCE');
   if (!isRecord(response.coverage)) return invalid('COVERAGE_OBJECT_REQUIRED');
+  if (response.confidence !== undefined && !VALID_CONFIDENCE.has(response.confidence)) {
+    return invalid('INVALID_CONFIDENCE');
+  }
 
   for (const field of ARRAY_RESPONSE_FIELDS) {
     if (!Array.isArray(response[field])) return invalid('RESPONSE_ARRAY_REQUIRED', { field });
+  }
+  if (response.scenarios !== undefined && !Array.isArray(response.scenarios)) {
+    return invalid('RESPONSE_ARRAY_REQUIRED', { field: 'scenarios' });
+  }
+
+  for (const item of response.calculations) {
+    if (!isRecord(item)
+      || typeof item.label !== 'string'
+      || !Object.prototype.hasOwnProperty.call(item, 'value')
+      || typeof item.formattedValue !== 'string'
+      || typeof item.formula !== 'string'
+      || typeof item.source !== 'string'
+      || !isRecord(item.period)) {
+      return invalid('CALCULATION_CONTRACT_INVALID');
+    }
+  }
+
+  for (const item of response.recommendations) {
+    if (!isRecord(item)
+      || typeof item.title !== 'string'
+      || typeof item.explanation !== 'string'
+      || typeof item.expectedImpact !== 'string'
+      || typeof item.effort !== 'string'
+      || !Array.isArray(item.evidence)
+      || item.requiresConfirmation !== true) {
+      return invalid('RECOMMENDATION_CONTRACT_INVALID');
+    }
   }
 
   if (response.actionDrafts.length > 0) return invalid('ACTION_DRAFTS_NOT_ALLOWED');

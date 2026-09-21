@@ -2,12 +2,15 @@ export const MAX_BODY_BYTES = 256 * 1024;
 export const MAX_SYSTEM_PROMPT_CHARS = 32_000;
 export const MAX_USER_PROMPT_CHARS = 96_000;
 export const MAX_TOTAL_PROMPT_CHARS = 128_000;
+export const MAX_COMMERCIAL_CONTEXT_BYTES = 96 * 1024;
+export const MAX_COMMERCIAL_ROWS = 24;
 
 export const DEFAULT_TEMPERATURE = 0.2;
 export const DEFAULT_MAX_TOKENS = 2048;
 export const MAX_MAX_TOKENS = 4096;
 
 export const AGENT_TYPES = [
+  'salesProfitability',
   'inventoryAuditor',
   'financialAnalyst',
   'customerStrategist',
@@ -42,7 +45,29 @@ export type AnalysisRequest = {
   options: AnalysisOptions;
 };
 
-export type ValidatedRequest = UsageRequest | AnalysisRequest;
+export const COMMERCIAL_AGENT_KEYS = ['salesProfitability'] as const;
+export const COMMERCIAL_AGENT_INTENTS = [
+  'explain_change',
+  'product_risk',
+  'price_simulation',
+  'combo_opportunity',
+  'promotion_opportunity'
+] as const;
+
+export type CommercialAnalysisRequest = {
+  kind: 'commercialAnalysis';
+  auth: AuthPayload;
+  agentKey: typeof COMMERCIAL_AGENT_KEYS[number];
+  intent: typeof COMMERCIAL_AGENT_INTENTS[number];
+  question: string;
+  requestKey: string | null;
+  period: Record<string, unknown>;
+  scenario: Record<string, unknown>;
+  context: Record<string, unknown>;
+  options: AnalysisOptions;
+};
+
+export type ValidatedRequest = UsageRequest | AnalysisRequest | CommercialAnalysisRequest;
 
 export type ValidationFailure = {
   ok: false;
@@ -70,6 +95,98 @@ const FORBIDDEN_KEYS = new Set([
   'deployment'
 ]);
 
+const COMMERCIAL_TOP_LEVEL_KEYS = new Set([
+  'auth',
+  'agentKey',
+  'intent',
+  'question',
+  'requestKey',
+  'period',
+  'scenario',
+  'context',
+  'options'
+]);
+
+const COMMERCIAL_PERIOD_KEYS = new Set(['from', 'to', 'previousFrom', 'previousTo', 'timezone', 'label']);
+const COMMERCIAL_SCENARIO_KEYS = new Set([
+  'productName',
+  'currentPrice',
+  'newPrice',
+  'unitCost',
+  'historicalVolume',
+  'expectedVolume',
+  'discountPercent',
+  'promotionalPrice',
+  'comboDiscount'
+]);
+const COMMERCIAL_CONTEXT_KEYS = new Set(['agentKey', 'scope', 'period', 'source', 'sales']);
+const COMMERCIAL_SALES_KEYS = new Set([
+  'summary',
+  'netSales',
+  'grossSales',
+  'discounts',
+  'unitCosts',
+  'profit',
+  'margin',
+  'averageTicket',
+  'products',
+  'channels',
+  'comparison',
+  'coverage',
+  'calculations',
+  'assumptions',
+  'scenarios'
+]);
+const COMMERCIAL_SUMMARY_KEYS = new Set([
+  'netSales',
+  'units',
+  'salesCount',
+  'averageTicket',
+  'discounts',
+  'unitCosts',
+  'profit',
+  'margin',
+  'costCoverage',
+  'missingCostProducts',
+  'excludedSales',
+  'ecommerceDuplicates'
+]);
+const COMMERCIAL_PRODUCT_KEYS = new Set(['name', 'quantity', 'netSales', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown']);
+const COMMERCIAL_CHANNEL_KEYS = new Set(['channel', 'netSales', 'orders', 'units', 'averageTicket', 'share']);
+const COMMERCIAL_COMPARISON_KEYS = new Set([
+  'previousNetSales',
+  'previousUnits',
+  'previousTicket',
+  'previousCost',
+  'previousProfit',
+  'previousMargin',
+  'deltaNetSales',
+  'deltaUnits',
+  'deltaTicket',
+  'deltaCost',
+  'deltaProfit',
+  'deltaMargin',
+  'deltaDiscounts',
+  'productMixChanges',
+  'channelMixChanges'
+]);
+const COMMERCIAL_MIX_KEYS = new Set(['name', 'channel', 'currentShare', 'previousShare', 'deltaShare']);
+const COMMERCIAL_CALCULATION_KEYS = new Set(['label', 'value', 'formattedValue', 'formula', 'source', 'period']);
+const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
+  'label',
+  'volume',
+  'utility',
+  'margin',
+  'impactVsCurrent',
+  'tickets',
+  'frequency',
+  'comboPrice',
+  'discount',
+  'products',
+  'note',
+  'isPrediction'
+]);
+
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
 );
@@ -88,6 +205,103 @@ const hasForbiddenKey = (value: unknown, depth = 0): boolean => {
 
 function invalid(message: string): ValidationFailure {
   return { ok: false, code: 'INVALID_REQUEST', message, status: 400 };
+}
+
+function assertOnlyKeys(value: Record<string, unknown>, allowed: Set<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function validFiniteOrNull(value: unknown): boolean {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function validCommercialPeriod(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_PERIOD_KEYS)) return false;
+  return Object.values(value).every((entry) => entry === null || (typeof entry === 'string' && entry.length <= 80));
+}
+
+function validCommercialScenario(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_SCENARIO_KEYS)) return false;
+  return Object.entries(value).every(([key, entry]) => {
+    if (key === 'productName') return entry === null || (typeof entry === 'string' && entry.length <= 120);
+    if (entry === null) return true;
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) return false;
+    if (key.toLowerCase().includes('volume') && entry < 0) return false;
+    if (key.toLowerCase().includes('price') || key === 'unitCost') return entry < 0 ? false : true;
+    if (key.toLowerCase().includes('discount')) return entry < 0 || entry > 100 ? false : true;
+    return true;
+  });
+}
+
+function validCommercialContext(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_CONTEXT_KEYS)) return false;
+  if (value.agentKey !== 'salesProfitability' || value.scope !== 'current_authenticated_tenant') return false;
+  if (typeof value.source !== 'string' || !['cloud', 'local', 'mixed'].includes(value.source)) return false;
+  if (!validCommercialPeriod(value.period)) return false;
+  if (!isRecord(value.sales) || !assertOnlyKeys(value.sales, COMMERCIAL_SALES_KEYS)) return false;
+
+  const sales = value.sales;
+  if (!isRecord(sales.summary) || !assertOnlyKeys(sales.summary, COMMERCIAL_SUMMARY_KEYS)) return false;
+  if (!Array.isArray(sales.products) || sales.products.length > MAX_COMMERCIAL_ROWS) return false;
+  if (!sales.products.every((product) => isRecord(product) && assertOnlyKeys(product, COMMERCIAL_PRODUCT_KEYS)
+    && typeof product.name === 'string' && product.name.length <= 120
+    && Object.entries(product).every(([, entry]) => validFiniteOrNull(entry) || typeof entry === 'string' || typeof entry === 'boolean'))) return false;
+  if (!Array.isArray(sales.channels) || sales.channels.length > MAX_COMMERCIAL_ROWS) return false;
+  if (!sales.channels.every((channel) => isRecord(channel) && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_KEYS))) return false;
+  if (sales.comparison !== null && sales.comparison !== undefined) {
+    if (!isRecord(sales.comparison) || !assertOnlyKeys(sales.comparison, COMMERCIAL_COMPARISON_KEYS)) return false;
+    const comparison = sales.comparison;
+    if (comparison.productMixChanges !== undefined && (!Array.isArray(comparison.productMixChanges) || comparison.productMixChanges.length > 12)) return false;
+    if (comparison.channelMixChanges !== undefined && (!Array.isArray(comparison.channelMixChanges) || comparison.channelMixChanges.length > 12)) return false;
+    for (const mix of [...(comparison.productMixChanges || []), ...(comparison.channelMixChanges || [])]) {
+      if (!isRecord(mix) || !assertOnlyKeys(mix, COMMERCIAL_MIX_KEYS)) return false;
+    }
+  }
+  if (!Array.isArray(sales.calculations) || sales.calculations.length > 40) return false;
+  if (!sales.calculations.every((item) => isRecord(item) && assertOnlyKeys(item, COMMERCIAL_CALCULATION_KEYS))) return false;
+  if (!Array.isArray(sales.assumptions) || sales.assumptions.length > 24 || !sales.assumptions.every((item) => typeof item === 'string')) return false;
+  if (!Array.isArray(sales.scenarios) || sales.scenarios.length > 16) return false;
+  if (!sales.scenarios.every((item) => isRecord(item) && assertOnlyKeys(item, COMMERCIAL_SCENARIO_OUTPUT_KEYS))) return false;
+  if (sales.coverage !== undefined && !isRecord(sales.coverage)) return false;
+
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_COMMERCIAL_CONTEXT_BYTES;
+}
+
+function validateCommercialRequest(value: Record<string, unknown>, auth: AuthPayload): ValidationResult {
+  if (!assertOnlyKeys(value, COMMERCIAL_TOP_LEVEL_KEYS)) return invalid('La solicitud comercial contiene campos no permitidos.');
+  if (value.agentKey !== 'salesProfitability') return invalid('El agente comercial solicitado no está disponible.');
+  if (typeof value.intent !== 'string' || !COMMERCIAL_AGENT_INTENTS.includes(value.intent as typeof COMMERCIAL_AGENT_INTENTS[number])) {
+    return invalid('La intención comercial no es válida.');
+  }
+  if (typeof value.question !== 'string' || !value.question.trim() || value.question.length > 1200) {
+    return invalid('La pregunta comercial no es válida.');
+  }
+  if (value.requestKey !== null && value.requestKey !== undefined
+    && (typeof value.requestKey !== 'string' || value.requestKey.length > 128)) {
+    return invalid('La clave de solicitud no es válida.');
+  }
+  if (!validCommercialPeriod(value.period) || !validCommercialScenario(value.scenario)
+    || !validCommercialContext(value.context)) {
+    return invalid('El contexto comercial no es válido.');
+  }
+  const options = validateOptions(value.options);
+  if (!('temperature' in options)) return options;
+
+  return {
+    ok: true,
+    request: {
+      kind: 'commercialAnalysis',
+      auth,
+      agentKey: 'salesProfitability',
+      intent: value.intent as typeof COMMERCIAL_AGENT_INTENTS[number],
+      question: value.question.trim(),
+      requestKey: typeof value.requestKey === 'string' ? value.requestKey.trim() : null,
+      period: value.period as Record<string, unknown>,
+      scenario: value.scenario as Record<string, unknown>,
+      context: value.context as Record<string, unknown>,
+      options
+    }
+  };
 }
 
 function validateAuth(value: unknown): AuthPayload | ValidationFailure {
@@ -173,6 +387,10 @@ export function validatePayload(value: unknown): ValidationResult {
   const authResult = validateAuth(value.auth);
   if (!('licenseKey' in authResult)) return authResult;
 
+  if (value.agentKey !== undefined || value.intent !== undefined || value.context !== undefined) {
+    return validateCommercialRequest(value, authResult);
+  }
+
   if (value.action !== undefined && value.action !== 'usage') {
     return invalid('La operación solicitada no es válida.');
   }
@@ -220,6 +438,40 @@ export function validatePayload(value: unknown): ValidationResult {
       options
     }
   };
+}
+
+export function validateCommercialModelResponse(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.version !== 1 || value.agentKey !== 'salesProfitability') return false;
+  if (!['completed', 'incomplete', 'error'].includes(String(value.status))) return false;
+  if (typeof value.executiveSummary !== 'string' || typeof value.explanation !== 'string') return false;
+  if (!['high', 'medium', 'low'].includes(String(value.confidence))) return false;
+  if (!['cloud', 'local', 'mixed'].includes(String(value.source))) return false;
+  if (!isRecord(value.coverage)) return false;
+  if (!Array.isArray(value.facts)
+    || !Array.isArray(value.calculations)
+    || !Array.isArray(value.assumptions)
+    || !Array.isArray(value.scenarios)
+    || !Array.isArray(value.recommendations)
+    || !Array.isArray(value.limitations)
+    || !Array.isArray(value.actionDrafts)
+    || !Array.isArray(value.citations)) return false;
+  if (value.actionDrafts.length !== 0) return false;
+  if (value.calculations.some((item) => !isRecord(item)
+    || typeof item.label !== 'string'
+    || !Object.prototype.hasOwnProperty.call(item, 'value')
+    || typeof item.formattedValue !== 'string'
+    || typeof item.formula !== 'string'
+    || typeof item.source !== 'string'
+    || !isRecord(item.period))) return false;
+  if (value.recommendations.some((item) => !isRecord(item)
+    || typeof item.title !== 'string'
+    || typeof item.explanation !== 'string'
+    || typeof item.expectedImpact !== 'string'
+    || typeof item.effort !== 'string'
+    || !Array.isArray(item.evidence)
+    || item.requiresConfirmation !== true)) return false;
+  return !hasForbiddenKey(value) && !Object.values(value).some((entry) => hasForbiddenKey(entry));
 }
 
 export function isJsonContentType(contentType: string | null): boolean {

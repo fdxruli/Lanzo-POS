@@ -132,8 +132,67 @@ function responsesResponse(content = 'respuesta responses sintética') {
   });
 }
 
+function structuredCommercialResponse() {
+  return JSON.stringify({
+    version: 1,
+    agentKey: 'salesProfitability',
+    status: 'completed',
+    executiveSummary: 'El margen requiere revisión.',
+    explanation: 'Explicación basada en cálculos determinísticos.',
+    facts: [],
+    calculations: [],
+    assumptions: [],
+    scenarios: [],
+    recommendations: [{
+      title: 'Revisar mezcla',
+      explanation: 'Validar productos de bajo margen.',
+      expectedImpact: 'Por determinar.',
+      effort: 'medium',
+      evidence: ['ventas válidas'],
+      requiresConfirmation: true
+    }],
+    limitations: [],
+    confidence: 'medium',
+    source: 'cloud',
+    coverage: { complete: true },
+    citations: [],
+    actionDrafts: []
+  });
+}
+
+function structuredCommercialRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    auth,
+    agentKey: 'salesProfitability',
+    intent: 'explain_change',
+    question: 'Explica el cambio de mi margen',
+    requestKey: 'request-structured-1',
+    period: { from: '2026-09-01', to: '2026-09-07', previousFrom: '2026-08-25', previousTo: '2026-08-31', timezone: 'America/Mexico_City' },
+    scenario: {},
+    context: {
+      agentKey: 'salesProfitability',
+      scope: 'current_authenticated_tenant',
+      period: { from: '2026-09-01', to: '2026-09-07', label: 'Periodo actual' },
+      source: 'cloud',
+      sales: {
+        summary: { netSales: 100, units: 2, salesCount: 1, averageTicket: 100, discounts: 0, unitCosts: 40, profit: 60, margin: 0.6, costCoverage: 1, missingCostProducts: 0, excludedSales: 0, ecommerceDuplicates: 0 },
+        products: [{ name: 'Producto A', quantity: 2, netSales: 100, unitCost: 20, profit: 60, margin: 0.6, averagePrice: 50, costKnown: true }],
+        channels: [{ channel: 'Físico', netSales: 100, orders: 1, units: 2, averageTicket: 100, share: 1 }],
+        comparison: null,
+        coverage: { validSales: 1, complete: true },
+        calculations: [],
+        assumptions: [],
+        scenarios: []
+      }
+    },
+    options: { temperature: 0.2, maxTokens: 2048 },
+    ...overrides
+  };
+}
+
 function analysisClient(beginData: Record<string, unknown> = successBegin(), completeData: Record<string, unknown> = successComplete()) {
   return fakeClient(async (name) => {
+    if (name === 'get_ai_agent_usage_unlimited') return { data: { success: true, limit: 15, used: 0, remaining: 15, ai_agents: true }, error: null };
     if (name === 'begin_ai_agent_analysis') return { data: beginData, error: null };
     if (name === 'complete_ai_agent_analysis') return { data: completeData, error: null };
     return { data: null, error: { code: 'unexpected-rpc' } };
@@ -367,7 +426,8 @@ Deno.test('provider chat success devuelve contenido y usageStatus', async () => 
   assertEquals(client.calls[1].name, 'complete_ai_agent_analysis');
   assertEquals(client.calls[1].args.p_success, true);
   assert(providerBody !== null, 'El proveedor debe recibir un body');
-  assertEquals(providerBody.temperature, 0.2);
+  const capturedProviderBody = providerBody as Record<string, unknown>;
+  assertEquals(capturedProviderBody.temperature, 0.2);
   const metadata = client.calls[1].args.p_metadata as Record<string, unknown>;
   assertEquals(metadata.provider, 'openai-compatible');
   assertEquals(metadata.protocol, 'chat-completions');
@@ -393,9 +453,10 @@ Deno.test('Moonshot Kimi K2.6 omite temperature y admite thinking', async () => 
   })(request({ auth, systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
   assertEquals(response.status, 200);
   assert(providerBody !== null, 'Moonshot debe recibir un body');
-  assertEquals(providerBody.model, 'kimi-k2.6');
-  assertEquals((providerBody.thinking as Record<string, unknown>)?.type, 'disabled');
-  assert(!Object.prototype.hasOwnProperty.call(providerBody, 'temperature'), 'Moonshot no debe recibir temperature');
+  const capturedK2Body = providerBody as Record<string, unknown>;
+  assertEquals(capturedK2Body.model, 'kimi-k2.6');
+  assertEquals((capturedK2Body.thinking as Record<string, unknown>)?.type, 'disabled');
+  assert(!Object.prototype.hasOwnProperty.call(capturedK2Body, 'temperature'), 'Moonshot no debe recibir temperature');
 });
 
 Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () => {
@@ -416,10 +477,11 @@ Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () 
   })(request({ auth, systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
   assertEquals(response.status, 200);
   assert(providerBody !== null, 'Moonshot debe recibir un body');
-  assertEquals(providerBody.model, 'kimi-k3');
-  assertEquals(providerBody.reasoning_effort, 'low');
-  assertEquals(providerBody.thinking, undefined);
-  assert(!Object.prototype.hasOwnProperty.call(providerBody, 'temperature'), 'Moonshot no debe recibir temperature');
+  const capturedK3Body = providerBody as Record<string, unknown>;
+  assertEquals(capturedK3Body.model, 'kimi-k3');
+  assertEquals(capturedK3Body.reasoning_effort, 'low');
+  assertEquals(capturedK3Body.thinking, undefined);
+  assert(!Object.prototype.hasOwnProperty.call(capturedK3Body, 'temperature'), 'Moonshot no debe recibir temperature');
 });
 
 Deno.test('provider Responses-style success devuelve contenido', async () => {
@@ -550,7 +612,7 @@ Deno.test('RPC fijas reciben sólo nombres permitidos', async () => {
   const client = analysisClient();
   const response = await makeHandler(client, { fetchImpl: async () => chatResponse() })(request({ auth, systemPrompt: 's', userPrompt: 'u' }));
   assertEquals(response.status, 200);
-  assert(client.calls.every((call) => ['begin_ai_agent_analysis', 'complete_ai_agent_analysis'].includes(call.name)), 'RPC arbitraria detectada');
+  assert(client.calls.every((call) => ['begin_ai_agent_analysis', 'complete_ai_agent_analysis', 'get_ai_agent_usage_unlimited'].includes(call.name)), 'RPC arbitraria detectada');
 });
 
 Deno.test('respuesta de error no filtra prompts ni secretos', async () => {
@@ -561,4 +623,50 @@ Deno.test('respuesta de error no filtra prompts ni secretos', async () => {
   assert(!body.includes('secret-user-prompt'), 'userPrompt filtrado');
   assert(!body.includes('synthetic-ai-key'), 'API key filtrada');
   assert(!body.includes('secret-provider-body'), 'body del proveedor filtrado');
+});
+
+Deno.test('ventas y rentabilidad acepta sólo contexto estructurado y completa cuota una vez', async () => {
+  const client = analysisClient();
+  let providerBody: Record<string, unknown> | null = null;
+  const response = await makeHandler(client, {
+    fetchImpl: async (_url, init) => {
+      providerBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  assertEquals(body.agentKey, 'salesProfitability');
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 1);
+  assert(providerBody !== null, 'provider body missing');
+  const capturedCommercialBody = providerBody as Record<string, unknown>;
+  assert(Array.isArray(capturedCommercialBody.messages), 'server prompt missing');
+  assert(!Object.prototype.hasOwnProperty.call(structuredCommercialRequest(), 'systemPrompt'), 'arbitrary prompt accepted by fixture');
+});
+
+Deno.test('ventas y rentabilidad rechaza prompts arbitrarios en la solicitud estructurada', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client)(request(structuredCommercialRequest({ systemPrompt: 'prompt no permitido' })));
+  assertEquals(response.status, 400);
+  assertEquals((await json(response)).code, 'INVALID_REQUEST');
+  assertEquals(client.calls.length, 0);
+});
+
+Deno.test('respuesta comercial inválida finaliza como failed y no se marca completed', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, { fetchImpl: async () => chatResponse('{"version":1,"agentKey":"salesProfitability"}') })(request(structuredCommercialRequest()));
+  assertEquals(response.status, 502);
+  assertEquals((await json(response)).code, 'AI_INVALID_RESPONSE');
+  const completions = client.calls.filter((call) => call.name === 'complete_ai_agent_analysis');
+  assertEquals(completions.length, 1);
+  assertEquals(completions[0].args.p_success, false);
+});
+
+Deno.test('escenario con volumen negativo es rechazado server-side', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client)(request(structuredCommercialRequest({ scenario: { historicalVolume: -1 } })));
+  assertEquals(response.status, 400);
+  assertEquals(client.calls.length, 0);
 });
