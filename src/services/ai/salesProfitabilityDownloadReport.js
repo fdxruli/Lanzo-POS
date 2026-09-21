@@ -91,6 +91,7 @@ const safeProduct = (product) => {
     name: sanitizeText(source.name, 160) || 'Producto',
     quantity: finiteNumber(source.quantity),
     netSales: finiteNumber(source.netSales),
+    cost: finiteNumber(source.cost),
     unitCost: finiteNumber(source.unitCost),
     profit: finiteNumber(source.profit),
     margin: finiteNumber(source.margin),
@@ -165,6 +166,7 @@ const safeComparison = (comparison) => {
     deltaCost: finiteNumber(source.deltaCost),
     deltaProfit: finiteNumber(source.deltaProfit),
     deltaMargin: finiteNumber(source.deltaMargin),
+    deltaMarginRelative: finiteNumber(source.deltaMarginRelative),
     deltaDiscounts: finiteNumber(source.deltaDiscounts),
     productMixChanges: (Array.isArray(source.productMixChanges) ? source.productMixChanges : []).slice(0, 20).map((item) => safeMixChange(item, 'name')),
     channelMixChanges: (Array.isArray(source.channelMixChanges) ? source.channelMixChanges : []).slice(0, 20).map((item) => safeMixChange(item, 'channel'))
@@ -174,10 +176,44 @@ const safeComparison = (comparison) => {
 const safeContributor = (contributor) => {
   const source = asRecord(contributor);
   return {
-    label: sanitizeText(source.label, 160),
-    contribution: finiteNumber(source.contribution),
+    key: sanitizeText(source.key, 120),
+    title: sanitizeText(source.title ?? source.label, 160),
+    contribution: finiteNumber(source.contribution ?? source.value),
     direction: sanitizeText(source.direction, 40),
-    explanation: sanitizeText(source.explanation, 500)
+    explanation: sanitizeText(source.explanation, 500),
+    evidenceKeys: safeTextArray(source.evidenceKeys, 12, 200)
+  };
+};
+
+const safeProfitability = (profitability) => {
+  const source = asRecord(profitability);
+  return {
+    status: sanitizeText(source.status, 48),
+    netSales: finiteNumber(source.netSales),
+    costOfSale: finiteNumber(source.costOfSale),
+    profit: finiteNumber(source.profit),
+    margin: finiteNumber(source.margin),
+    costCoverage: finiteNumber(source.costCoverage),
+    validSales: finiteNumber(source.validSales),
+    missingCostProducts: finiteNumber(source.missingCostProducts),
+    explanation: sanitizeText(source.explanation, 700)
+  };
+};
+
+const safeProductRisk = (risk) => {
+  const source = asRecord(risk);
+  return {
+    product: sanitizeText(source.product, 160),
+    units: finiteNumber(source.units),
+    netSales: finiteNumber(source.netSales),
+    cost: finiteNumber(source.cost),
+    profit: finiteNumber(source.profit),
+    margin: finiteNumber(source.margin),
+    salesShare: finiteNumber(source.salesShare),
+    riskType: sanitizeText(source.riskType, 80),
+    riskLabel: sanitizeText(source.riskLabel, 120),
+    reason: sanitizeText(source.reason, 700),
+    evidenceKeys: safeTextArray(source.evidenceKeys, 12, 200)
   };
 };
 
@@ -206,13 +242,28 @@ const safeScenario = (scenario) => {
     frequency: finiteNumber(source.frequency),
     currentPrice: finiteNumber(source.currentPrice),
     newPrice: finiteNumber(source.newPrice),
+    promotionalPrice: finiteNumber(source.promotionalPrice),
     unitCost: finiteNumber(source.unitCost),
+    historicalVolume: finiteNumber(source.historicalVolume),
+    currentProfit: finiteNumber(source.currentProfit),
+    simulatedProfit: finiteNumber(source.simulatedProfit),
+    promotionalProfit: finiteNumber(source.promotionalProfit),
+    currentMargin: finiteNumber(source.currentMargin),
+    simulatedMargin: finiteNumber(source.simulatedMargin),
+    promotionalMargin: finiteNumber(source.promotionalMargin),
+    profitDelta: finiteNumber(source.profitDelta),
+    breakEvenVolume: finiteNumber(source.breakEvenVolume),
+    historicalJointSales: finiteNumber(source.historicalJointSales),
+    averageJointSale: finiteNumber(source.averageJointSale),
     individualPrice: finiteNumber(source.individualPrice),
     comboPrice: finiteNumber(source.comboPrice),
     discount: finiteNumber(source.discount),
     profit: finiteNumber(source.profit),
     breakEvenTickets: finiteNumber(source.breakEvenTickets),
+    evidenceLevel: sanitizeText(source.evidenceLevel, 40),
+    opportunity: sanitizeText(source.opportunity, 700),
     isPrediction: safeBoolean(source.isPrediction),
+    isDemandPrediction: safeBoolean(source.isDemandPrediction),
     note: sanitizeText(source.note, 500) || null
   };
 };
@@ -233,7 +284,9 @@ const safeSummary = (response) => {
     costCoverage: finiteNumber(source.costCoverage),
     missingCostProducts: finiteNumber(source.missingCostProducts),
     excludedSales: finiteNumber(source.excludedSales),
-    ecommerceDuplicates: finiteNumber(source.ecommerceDuplicates)
+    ecommerceDuplicates: finiteNumber(source.ecommerceDuplicates),
+    profitabilityStatus: sanitizeText(source.profitabilityStatus, 48),
+    profitabilityExplanation: sanitizeText(source.profitabilityExplanation, 700)
   };
 };
 
@@ -243,7 +296,9 @@ const safeRecommendation = (recommendation) => {
     title: sanitizeText(source.title, 200),
     explanation: sanitizeText(source.explanation, 1000),
     expectedImpact: sanitizeText(source.expectedImpact, 400),
-    effort: sanitizeText(source.effort, 80),
+    priority: sanitizeText(source.priority, 40) || null,
+    evidenceKeys: safeTextArray(source.evidenceKeys, 12, 300),
+    effort: sanitizeText(source.effort, 80) || null,
     evidence: safeTextArray(source.evidence, 12, 300),
     requiresConfirmation: source.requiresConfirmation === true
   };
@@ -312,7 +367,12 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       current,
       previous: safeAggregate(response.previous),
       comparison: safeComparison(response.comparison),
+      profitability: safeProfitability(response.profitability),
       contributors: (Array.isArray(response.contributors) ? response.contributors : []).slice(0, 20).map(safeContributor),
+      productRisks: (Array.isArray(response.productRisks) ? response.productRisks : []).slice(0, 50).map(safeProductRisk),
+      priceSimulation: response.priceSimulation ? safeScenario(response.priceSimulation) : null,
+      promotionSimulation: response.promotionSimulation ? safeScenario(response.promotionSimulation) : null,
+      comboOpportunities: (Array.isArray(response.comboOpportunities) ? response.comboOpportunities : []).slice(0, 30).map(safeScenario),
       products: Array.isArray(current.products) ? current.products : [],
       channels: Array.isArray(current.channels) ? current.channels : [],
       calculations: (Array.isArray(response.calculations) ? response.calculations : []).slice(0, 80).map(safeCalculation),
