@@ -140,6 +140,25 @@ describe('sales profitability deterministic analysis', () => {
     expect(result.current.netSales).toBe(180);
   });
 
+  it('counts two converted ecommerce/POS records for the same order only once', () => {
+    const normalized = normalizeValidSales({
+      rows: [
+        sale('ecom-converted', [item('Producto A', 1, 100, 50)], {
+          ecommerceOrderId: 'order-converted-1',
+          sourceMode: 'ecommerce_converted'
+        }),
+        sale('pos-converted', [item('Producto A', 1, 100, 50)], {
+          ecommerceOrderId: 'order-converted-1',
+          sourceMode: 'pos_converted'
+        })
+      ]
+    });
+
+    expect(normalized.rows).toHaveLength(1);
+    expect(normalized.ecommerceDuplicates).toBe(1);
+    expect(normalized.rows[0].sourceMode).toBe('pos_converted');
+  });
+
   it('compares comparable periods and exposes contribution evidence', () => {
     const result = buildSalesProfitabilityAnalysis({
       period,
