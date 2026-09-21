@@ -12,6 +12,7 @@ import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuthorization';
 import Logo from '../common/Logo';
 import NotificationBell from '../notifications/NotificationBell';
 import {
@@ -31,7 +32,8 @@ import {
   AlertCircle,
   FolderKey,
   ShoppingBag,
-  Globe2
+  Globe2,
+  Sparkles
 } from 'lucide-react';
 import './Navbar.css';
 import './NavbarEcommerce.css';
@@ -77,6 +79,10 @@ function Navbar() {
   const settingsAccess = useSettingsAccess();
   const actorRuntime = useActorRuntimeSnapshot();
   const canReadReports = canReadSalesReports(actorRuntime);
+  const commercialAIAgentAccess = getCommercialAIAgentAccessState({
+    licenseDetails,
+    actorSnapshot: actorRuntime
+  });
 
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
@@ -190,6 +196,12 @@ function Navbar() {
       description: 'Directorio, crédito y apartados',
       icon: <Users size={21} />
     },
+    ...(commercialAIAgentAccess.canSeeEntry ? [{
+      to: '/agentes-ia',
+      label: 'Agentes IA',
+      description: 'Ventas, rentabilidad y ecommerce',
+      icon: <Sparkles size={21} />
+    }] : []),
     ...(features.hasKDS ? [{
       to: '/pedidos',
       label: 'Monitor Cocina',
@@ -216,6 +228,7 @@ function Navbar() {
       : linkOrPath.route || linkOrPath.to.split('?')[0];
     if (path === '/configuracion') return settingsAccess.canEnterSettings;
     if (path === '/ventas') return canReadReports;
+    if (path === '/agentes-ia') return commercialAIAgentAccess.canSeeEntry;
     const requiredPermissions = ROUTE_PERMISSIONS[path];
     return !requiredPermissions || (Array.isArray(requiredPermissions)
       ? requiredPermissions.some((permission) => canAccess(permission))
@@ -637,6 +650,17 @@ function Navbar() {
             tabIndex={isBackupLoading ? -1 : 0}
           >
             <TrendingUp size={20} /> Ventas y Reportes
+          </NavLink>
+
+          <NavLink
+            to="/agentes-ia"
+            className={getDesktopClass}
+            onClick={handleProtectedNavClick}
+            hidden={!isRouteAllowed('/agentes-ia')}
+            aria-disabled={isBackupLoading}
+            tabIndex={isBackupLoading ? -1 : 0}
+          >
+            <Sparkles size={20} /> Agentes IA
           </NavLink>
 
           {(canAccessOnlineOrders || canManageEcommercePortal) && (
