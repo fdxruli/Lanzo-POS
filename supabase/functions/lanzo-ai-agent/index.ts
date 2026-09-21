@@ -316,12 +316,157 @@ function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'comm
   return { systemPrompt, userPrompt };
 }
 
-function parseCommercialProviderResponse(content: string): boolean {
-  try {
-    return validateCommercialModelResponse(JSON.parse(content));
-  } catch {
-    return false;
+const COMMERCIAL_UNSAFE_TEXT = /<\/?[a-z][^>]*>|```|\b(?:javascript|data|vbscript):/iu;
+
+function parseJsonRecord(content: string): Record<string, unknown> | null {
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+  const candidates: string[] = [trimmed];
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
+  if (fenced?.[1]) candidates.unshift(fenced[1].trim());
+  const firstObject = trimmed.indexOf('{');
+  const lastObject = trimmed.lastIndexOf('}');
+  if (firstObject >= 0 && lastObject > firstObject) {
+    candidates.push(trimmed.slice(firstObject, lastObject + 1));
   }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (isRecordValue(parsed)) return parsed;
+    } catch {
+      // El siguiente candidato puede ser un JSON envuelto por el proveedor.
+    }
+  }
+  return null;
+}
+
+function safeCommercialText(value: unknown, fallback: string, maxLength = 1600): string {
+  if (typeof value !== 'string') return fallback;
+  const text = value.trim().slice(0, maxLength);
+  return text && !COMMERCIAL_UNSAFE_TEXT.test(text) ? text : fallback;
+}
+
+function commercialNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function formatCommercialMoney(value: number | null): string {
+  return value === null
+    ? 'No disponible'
+    : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(value);
+}
+
+function formatCommercialPercent(value: number | null): string {
+  return value === null
+    ? 'No disponible'
+    : new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(value * 100) + '%';
+}
+
+function buildDeterministicCommercialResponse(request: CommercialAnalysisRequest): Record<string, unknown> {
+  const context = isRecordValue(request.context) ? request.context : {};
+  const sales = isRecordValue(context.sales) ? context.sales : {};
+  const summary = isRecordValue(sales.summary) ? sales.summary : {};
+  const coverage = isRecordValue(sales.coverage) ? sales.coverage : {};
+  const products = Array.isArray(sales.products) ? sales.products.slice(0, 12) : [];
+  const calculations = Array.isArray(sales.calculations)
+    ? sales.calculations.filter((item) => isRecordValue(item)
+      && typeof item.label === 'string'
+      && Object.prototype.hasOwnProperty.call(item, 'value')
+      && typeof item.formattedValue === 'string'
+      && typeof item.formula === 'string'
+      && typeof item.source === 'string'
+      && isRecordValue(item.period)).slice(0, 32)
+    : [];
+  const assumptions = Array.isArray(sales.assumptions)
+    ? sales.assumptions.filter((item): item is string => typeof item === 'string').slice(0, 24)
+    : [];
+  const scenarios = Array.isArray(sales.scenarios)
+    ? sales.scenarios.filter((item) => isRecordValue(item)).slice(0, 12)
+    : [];
+  const facts = products.filter((product) => isRecordValue(product)).map((product) => ({
+    label: typeof product.name === 'string' ? product.name : 'Producto',
+    quantity: commercialNumber(product.quantity),
+    netSales: commercialNumber(product.netSales),
+    margin: commercialNumber(product.margin),
+    costKnown: product.costKnown === true
+  }));
+  const source = context.source === 'cloud' || context.source === 'local' || context.source === 'mixed'
+    ? context.source
+    : 'mixed';
+  const validSales = commercialNumber(summary.salesCount) ?? commercialNumber(coverage.validSales) ?? 0;
+  const profit = commercialNumber(summary.profit);
+  const margin = commercialNumber(summary.margin);
+  const costCoverage = commercialNumber(summary.costCoverage);
+  const confidence = validSales === 0 || (costCoverage !== null && costCoverage < 0.7) ? 'low' : 'medium';
+  const defaultRecommendation = {
+    title: 'Revisar la evidencia antes de decidir',
+    explanation: 'Confirma los costos y el periodo analizado antes de aplicar cambios.',
+    expectedImpact: 'Por determinar.',
+    effort: 'medium',
+    evidence: ['cálculos determinísticos del periodo'],
+    requiresConfirmation: true
+  };
+  const executiveSummary = profit !== null && margin !== null
+    ? 'Con los costos disponibles, se calcularon ' + formatCommercialMoney(profit) + ' de utilidad bruta y un margen de ' + formatCommercialPercent(margin) + ' en ' + validSales + ' venta(s) válida(s).'
+    : validSales > 0
+      ? 'Se analizaron ' + validSales + ' venta(s) válida(s), pero la rentabilidad completa requiere costos unitarios suficientes.'
+      : 'No hay ventas válidas suficientes en el periodo seleccionado para confirmar la rentabilidad.';
+
+  return {
+    version: 1,
+    agentKey: 'salesProfitability',
+    status: validSales > 0 ? 'completed' : 'incomplete',
+    executiveSummary,
+    explanation: 'La conclusión usa cálculos determinísticos del periodo y no atribuye causalidad fuera de los datos disponibles.',
+    facts,
+    calculations,
+    assumptions,
+    scenarios,
+    recommendations: validSales > 0 ? [defaultRecommendation] : [],
+    limitations: [],
+    confidence,
+    source,
+    coverage,
+    citations: [],
+    actionDrafts: []
+  };
+}
+
+function normalizeProviderRecommendations(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  const recommendations: Array<Record<string, unknown>> = [];
+  for (const item of value) {
+    if (!isRecordValue(item)) continue;
+    const title = safeCommercialText(item.title, '', 160);
+    const explanation = safeCommercialText(item.explanation, '', 600);
+    const expectedImpact = safeCommercialText(item.expectedImpact, '', 240);
+    const effort = safeCommercialText(item.effort, '', 40);
+    const evidence = Array.isArray(item.evidence)
+      ? item.evidence.filter((entry): entry is string => typeof entry === 'string').slice(0, 8).map((entry) => safeCommercialText(entry, 'evidencia del periodo', 160))
+      : [];
+    if (title && explanation && expectedImpact && effort) {
+      recommendations.push({ title, explanation, expectedImpact, effort, evidence, requiresConfirmation: true });
+    }
+  }
+  return recommendations.slice(0, 8);
+}
+
+function normalizeCommercialProviderResponse(content: string, request: CommercialAnalysisRequest): string {
+  const fallback = buildDeterministicCommercialResponse(request);
+  const parsed = parseJsonRecord(content);
+  const parsedConfidence = parsed && ['high', 'medium', 'low'].includes(String(parsed.confidence))
+    ? String(parsed.confidence)
+    : fallback.confidence;
+  const providerRecommendations = normalizeProviderRecommendations(parsed?.recommendations);
+  const normalized: Record<string, unknown> = {
+    ...fallback,
+    executiveSummary: safeCommercialText(parsed?.executiveSummary ?? parsed?.answer, String(fallback.executiveSummary)),
+    explanation: safeCommercialText(parsed?.explanation, String(fallback.explanation)),
+    confidence: parsedConfidence,
+    recommendations: providerRecommendations.length > 0 ? providerRecommendations : fallback.recommendations
+  };
+  return validateCommercialModelResponse(normalized) ? JSON.stringify(normalized) : JSON.stringify(fallback);
 }
 
 async function completeUsage(
@@ -530,9 +675,10 @@ async function handleCommercialAnalysis(
       fetchImpl,
       providerTimeoutMs
     );
-    if (!parseCommercialProviderResponse(providerResult.content)) {
-      throw new ProviderError('AI_INVALID_RESPONSE', 'El proveedor IA no cumplió el contrato de respuesta.', 502);
-    }
+    providerResult = {
+      ...providerResult,
+      content: normalizeCommercialProviderResponse(providerResult.content, request)
+    };
   } catch (error) {
     const failure = providerFailure(error);
     let completion: RpcResult;

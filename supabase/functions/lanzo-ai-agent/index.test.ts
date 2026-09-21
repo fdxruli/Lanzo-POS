@@ -654,14 +654,51 @@ Deno.test('ventas y rentabilidad rechaza prompts arbitrarios en la solicitud est
   assertEquals(client.calls.length, 0);
 });
 
-Deno.test('respuesta comercial inválida finaliza como failed y no se marca completed', async () => {
+Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva cálculos determinísticos', async () => {
   const client = analysisClient();
-  const response = await makeHandler(client, { fetchImpl: async () => chatResponse('{"version":1,"agentKey":"salesProfitability"}') })(request(structuredCommercialRequest()));
-  assertEquals(response.status, 502);
-  assertEquals((await json(response)).code, 'AI_INVALID_RESPONSE');
+  const malformed = JSON.stringify({
+    version: 1,
+    agentKey: 'salesProfitability',
+    status: 'completed',
+    executiveSummary: 'El negocio requiere revisión.',
+    explanation: 'Respuesta narrativa del proveedor.',
+    facts: {},
+    calculations: { ventas: 100 },
+    assumptions: 'una cadena',
+    scenarios: {},
+    recommendations: [{ title: 'Revisar', explanation: 'Confirmar datos.', expectedImpact: 'Por determinar.', effort: 'medium', evidence: [], requiresConfirmation: false }],
+    limitations: {},
+    confidence: 'medium',
+    source: 'cloud',
+    coverage: {},
+    citations: {},
+    actionDrafts: []
+  });
+  const response = await makeHandler(client, { fetchImpl: async () => chatResponse(malformed) })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  assert(typeof body.rawResultContent === 'string', 'Debe devolver contenido normalizado');
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assert(Array.isArray(normalized.calculations), 'calculations debe ser arreglo');
+  assert(Array.isArray(normalized.assumptions), 'assumptions debe ser arreglo');
+  assert(Array.isArray(normalized.scenarios), 'scenarios debe ser arreglo');
+  assertEquals(normalized.actionDrafts.length, 0);
   const completions = client.calls.filter((call) => call.name === 'complete_ai_agent_analysis');
   assertEquals(completions.length, 1);
-  assertEquals(completions[0].args.p_success, false);
+  assertEquals(completions[0].args.p_success, true);
+});
+
+Deno.test('respuesta no JSON usa fallback determinístico válido', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, { fetchImpl: async () => chatResponse('No puedo responder en JSON.') })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(normalized.agentKey, 'salesProfitability');
+  assert(Array.isArray(normalized.calculations), 'fallback calculations debe ser arreglo');
+  assertEquals(normalized.actionDrafts.length, 0);
 });
 
 Deno.test('escenario con volumen negativo es rechazado server-side', async () => {
