@@ -1231,11 +1231,12 @@ export const buildSalesProfitabilityAnalysis = ({
     complete: current.salesCount > 0 && current.costComplete
   };
 
+  const sourceReliable = (sourcePolicy.unknownSources || 0) === 0;
   const confidence = current.salesCount === 0
     ? 'low'
     : resolvedIntent === 'explain_change'
-      ? (comparison && current.costComplete && previous?.costComplete ? 'high' : 'low')
-      : current.costComplete ? 'high' : (current.costCoverage >= 0.7 ? 'medium' : 'low');
+      ? (comparison && current.costComplete && previous?.costComplete && sourceReliable ? 'high' : 'low')
+      : current.costComplete && sourceReliable ? 'high' : (current.costCoverage >= 0.7 && sourceReliable ? 'medium' : 'low');
 
   let facts = [];
   let executiveSummary = '';
