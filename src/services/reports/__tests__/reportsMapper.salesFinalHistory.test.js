@@ -49,6 +49,23 @@ describe('reportsMapper sales final history', () => {
     expect(mapped.rows[0].status).toBe('closed');
   });
 
+  it('preserves a legacy shadow status as shadow even when source_mode is absent', () => {
+    const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
+      rows: [{
+        sale_id: 'sale-shadow-fallback',
+        status: 'shadow',
+        total: 75
+      }]
+    });
+
+    expect(mapped.rows[0]).toMatchObject({
+      sourceMode: 'shadow',
+      source_mode: 'shadow',
+      sourceModeKnown: false,
+      status: 'shadow'
+    });
+  });
+
   it('keeps the legacy cloud fallback for compatibility but marks a missing source as unknown', () => {
     const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
       rows: [{
