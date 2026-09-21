@@ -1,12 +1,16 @@
 import { AIApiError, analyzeCommercialAgent } from '../aiService';
 import { assertCurrentAIAgentActor } from '../auth/aiAgentAuthorization';
+import { getSalesFinalHistoryScope } from '../auth/salesPermissionPolicy';
 import { reportsRepository } from '../reports/reportsRepository';
 import {
   buildPreviousPeriod,
   buildSalesProfitabilityAnalysis,
-  buildSalesProfitabilityProductOptions,
   inferSalesProfitabilityIntent
 } from './salesProfitabilityAnalytics';
+import {
+  buildSalesProfitabilityProductOptionsFromDataset,
+  loadSalesProfitabilityDataset
+} from './salesProfitabilityData';
 import {
   COMMERCIAL_AGENT_KEYS,
   parseCommercialAgentResponse,
@@ -14,6 +18,7 @@ import {
 } from './commercialAgentContract';
 import { buildSalesProfitabilityContext } from './commercialAgentContext';
 
+const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const inflightRequests = new Map();
 
 const stableSerialize = (value) => {
@@ -33,20 +38,12 @@ const defaultRequestKey = (request) => {
   return `sales-profitability:${encoded}`;
 };
 
-const getSourceMode = (report) => report?.source?.mode || report?.source?.sourceMode || 'mixed';
-
 const normalizePeriod = (period = {}) => ({
   from: period.from || period.dateFrom || null,
   to: period.to || period.dateTo || null,
   days: Math.max(Number(period.days) || 30, 1),
   previous: period.previous || null,
-  timezone: period.timezone || (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC')
-});
-
-const getHistory = (repository, filters) => repository.getSalesFinalHistory({
-  ...filters,
-  limit: 500,
-  offset: 0
+  timezone: period.timezone || DEFAULT_BUSINESS_TIMEZONE
 });
 
 const priorityFromLegacyEffort = (effort) => {
@@ -54,6 +51,22 @@ const priorityFromLegacyEffort = (effort) => {
   if (effort === 'low') return 'low';
   return 'medium';
 };
+
+const ALLOWED_EVIDENCE_PREFIXES = Object.freeze([
+  'profitability.',
+  'coverage.',
+  'comparison.',
+  'current.',
+  'product:',
+  'priceSimulation.',
+  'promotionSimulation.',
+  'comboOpportunities.'
+]);
+
+const allowedEvidenceKey = (value) => (
+  typeof value === 'string'
+  && ALLOWED_EVIDENCE_PREFIXES.some((prefix) => value.startsWith(prefix))
+);
 
 const normalizeNarrativeRecommendations = (recommendations = []) => (
   (Array.isArray(recommendations) ? recommendations : [])
@@ -66,13 +79,18 @@ const normalizeNarrativeRecommendations = (recommendations = []) => (
         ? recommendation.priority
         : priorityFromLegacyEffort(recommendation.effort),
       evidenceKeys: Array.isArray(recommendation.evidenceKeys)
-        ? recommendation.evidenceKeys.filter((item) => typeof item === 'string').slice(0, 8)
+        ? recommendation.evidenceKeys.filter(allowedEvidenceKey).slice(0, 8)
         : (Array.isArray(recommendation.evidence)
-          ? recommendation.evidence.filter((item) => typeof item === 'string').slice(0, 8)
+          ? recommendation.evidence.filter(allowedEvidenceKey).slice(0, 8)
           : []),
       requiresConfirmation: true
     }))
-    .filter((recommendation) => recommendation.title && recommendation.explanation && recommendation.expectedImpact)
+    .filter((recommendation) => (
+      recommendation.title
+      && recommendation.explanation
+      && recommendation.expectedImpact
+      && recommendation.evidenceKeys.length > 0
+    ))
 );
 
 const mergeProviderResponse = (deterministic, providerResponse) => {
@@ -89,36 +107,389 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
   }
 
   const narrative = parsed.response;
-  const executiveSummary = narrative.executiveSummary || narrative.answer || deterministic.executiveSummary;
   const providerRecommendations = normalizeNarrativeRecommendations(narrative.recommendations);
 
   return {
     ...deterministic,
-    executiveSummary,
-    answer: narrative.answer || executiveSummary,
-    explanation: narrative.explanation || deterministic.explanation,
-    recommendations: providerRecommendations.length ? providerRecommendations : deterministic.recommendations,
-    confidence: deterministic.confidence,
-    facts: deterministic.facts,
-    calculations: deterministic.calculations,
-    assumptions: deterministic.assumptions,
-    scenarios: deterministic.scenarios,
-    limitations: deterministic.limitations,
-    coverage: deterministic.coverage,
-    source: deterministic.source,
-    contributors: deterministic.contributors,
-    profitability: deterministic.profitability,
-    productRisks: deterministic.productRisks,
-    priceSimulation: deterministic.priceSimulation,
-    promotionSimulation: deterministic.promotionSimulation,
-    comboOpportunities: deterministic.comboOpportunities,
-    current: deterministic.current,
-    previous: deterministic.previous,
-    comparison: deterministic.comparison,
-    context: deterministic.context,
+    recommendations: providerRecommendations.length
+      ? providerRecommendations
+      : deterministic.recommendations,
+    aiNarrative: {
+      executiveSummary: String(narrative.executiveSummary || narrative.answer || '').trim() || null,
+      explanation: String(narrative.explanation || '').trim() || null,
+      recommendations: providerRecommendations
+    },
     actionDrafts: [],
     citations: []
   };
+};
+
+const unique = (values) => Array.from(new Set(values.filter(Boolean)));
+
+const costCoverageFor = (aggregate, metadata) => {
+  const netSales = Number(aggregate?.netSales) || 0;
+  return netSales > 0 ? Math.min(Math.max((Number(metadata?.knownSales) || 0) / netSales, 0), 1) : 0;
+};
+
+const enrichProducts = (products = [], metadata = {}) => {
+  const evidence = new Map(
+    (Array.isArray(metadata.products) ? metadata.products : [])
+      .map((product) => [product.name, product])
+  );
+  return (Array.isArray(products) ? products : []).map((product) => {
+    const detail = evidence.get(product.name);
+    return {
+      ...product,
+      costStatus: detail?.costStatus || (product.costKnown ? 'estimated' : 'incomplete'),
+      costSource: detail?.costSource || (product.costKnown ? 'sale_item_snapshot' : 'missing'),
+      knownCost: detail?.knownCost ?? product.cost ?? null
+    };
+  });
+};
+
+const hardenAggregate = (aggregate, metadata = {}) => {
+  if (!aggregate) return null;
+  const complete = metadata.costComplete === true && aggregate.costComplete === true;
+  const products = enrichProducts(aggregate.products, metadata);
+  const units = Number(metadata.expectedUnits) > 0 ? Number(metadata.expectedUnits) : aggregate.units;
+  const costCoverage = costCoverageFor(aggregate, metadata);
+
+  return {
+    ...aggregate,
+    units,
+    products,
+    costOfSale: complete ? aggregate.costOfSale : null,
+    knownCostOfSale: Number(metadata.knownCost) || 0,
+    costComplete: complete,
+    profit: complete ? aggregate.profit : null,
+    margin: complete ? aggregate.margin : null,
+    costCoverage,
+    detailComplete: metadata.detailComplete === true,
+    itemCoverage: Number(metadata.itemCoverage) || 0,
+    paginationComplete: metadata.paginationComplete === true,
+    sourceComplete: metadata.sourceComplete === true,
+    costStatus: complete ? metadata.costStatus : 'incomplete'
+  };
+};
+
+const hardenCalculations = (calculations, {
+  currentComplete,
+  comparisonComplete,
+  currentMetadata
+}) => {
+  const currentUnsafe = new Set([
+    'Costo de venta',
+    'Utilidad bruta',
+    'Margen bruto',
+    'Margen actual',
+    'Utilidad actual'
+  ]);
+  const comparisonUnsafe = new Set([
+    'Margen anterior',
+    'Variación absoluta del margen',
+    'Variación relativa del margen',
+    'Utilidad anterior'
+  ]);
+
+  const rows = (Array.isArray(calculations) ? calculations : []).map((row) => {
+    const unsafe = (!currentComplete && currentUnsafe.has(row.label))
+      || (!comparisonComplete && comparisonUnsafe.has(row.label));
+    if (!unsafe) {
+      if (row.label === 'Cobertura de costos') {
+        const value = Number(currentMetadata?.knownSales) > 0 ? row.value : 0;
+        return { ...row, value };
+      }
+      return row;
+    }
+    return { ...row, value: null, formattedValue: 'No disponible' };
+  });
+
+  if (!currentComplete && Number(currentMetadata?.knownCost) > 0) {
+    rows.push({
+      label: 'Costo conocido parcial',
+      value: Number(currentMetadata.knownCost),
+      formattedValue: new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN',
+        maximumFractionDigits: 2
+      }).format(Number(currentMetadata.knownCost)),
+      formula: 'suma exclusiva de líneas con evidencia de costo válida; no representa el costo total',
+      source: 'sales_profit_report',
+      period: null
+    });
+  }
+  return rows;
+};
+
+const buildCoverage = ({
+  deterministic,
+  current,
+  currentMetadata,
+  comparisonComplete
+}) => ({
+  ...deterministic.coverage,
+  productsIncluded: current.products.length,
+  costCoverage: current.costCoverage,
+  comparisonAvailable: comparisonComplete,
+  detailLines: Number(currentMetadata.matchedDetailLines) || 0,
+  expectedDetailLines: Number(currentMetadata.expectedDetailLines) || 0,
+  itemCoverage: Number(currentMetadata.itemCoverage) || 0,
+  itemsComplete: currentMetadata.detailComplete === true,
+  paginationComplete: currentMetadata.paginationComplete === true,
+  sourceComplete: currentMetadata.sourceComplete === true,
+  historyTruncated: currentMetadata.historyTruncated === true,
+  detailTruncated: currentMetadata.detailTruncated === true,
+  knownCostOfSale: Number(currentMetadata.knownCost) || 0,
+  costStatus: current.costStatus,
+  complete: current.costComplete === true
+});
+
+const hardenComparison = (comparison, currentComplete, previousComplete) => {
+  if (!comparison) return null;
+  if (currentComplete && previousComplete) return comparison;
+  return {
+    ...comparison,
+    previousCost: previousComplete ? comparison.previousCost : null,
+    previousProfit: previousComplete ? comparison.previousProfit : null,
+    previousMargin: previousComplete ? comparison.previousMargin : null,
+    deltaCost: null,
+    deltaProfit: null,
+    deltaMargin: null,
+    deltaMarginRelative: null
+  };
+};
+
+const limitationMessages = (metadata, prefix = 'periodo') => {
+  const limitations = [];
+  if (metadata.detailComplete !== true) {
+    limitations.push(`El detalle de artículos del ${prefix} está incompleto; las ventas se conservan, pero utilidad y margen no se confirman.`);
+  }
+  if (metadata.costStatus === 'incomplete') {
+    limitations.push(`Hay líneas del ${prefix} sin evidencia de costo válida; los valores coaccionados a cero no se usan como costo real.`);
+  }
+  if (metadata.paginationComplete !== true) {
+    limitations.push(`La cobertura del ${prefix} quedó truncada por paginación o límite de seguridad.`);
+  }
+  if (metadata.sourceComplete !== true) {
+    limitations.push(`La fuente del ${prefix} no está completa o proviene de cache/fallback; el resultado se marca como incompleto.`);
+  }
+  return limitations;
+};
+
+const intentHasUsefulEvidence = (response) => {
+  if (!response || response.coverage?.validSales === 0) return false;
+  switch (response.intent) {
+    case 'profitability_summary':
+      return response.coverage?.complete === true;
+    case 'explain_change':
+      return response.coverage?.comparisonAvailable === true;
+    case 'product_risk':
+      return response.coverage?.itemsComplete === true && response.current?.products?.length > 0;
+    case 'price_simulation':
+      return Boolean(response.priceSimulation) && response.coverage?.sourceComplete === true;
+    case 'promotion_opportunity':
+      return Boolean(response.promotionSimulation) && response.coverage?.sourceComplete === true;
+    case 'combo_opportunity':
+      return response.coverage?.itemsComplete === true && response.comboOpportunities?.length > 0;
+    default:
+      return false;
+  }
+};
+
+const intentStatus = (response) => {
+  if (response.coverage?.validSales === 0) return 'insufficient_data';
+  return intentHasUsefulEvidence(response) ? 'completed' : 'incomplete';
+};
+
+const buildSafeNarrative = (response) => {
+  const sales = Number(response.coverage?.validSales) || 0;
+  const netSales = Number(response.current?.netSales) || 0;
+  const money = new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    maximumFractionDigits: 2
+  });
+
+  if (sales === 0) {
+    return {
+      executiveSummary: 'No hay ventas válidas en el periodo seleccionado.',
+      explanation: 'No se llamó al proveedor de IA porque no existe evidencia comercial suficiente para esta consulta.'
+    };
+  }
+
+  if (response.intent === 'profitability_summary' && response.coverage?.complete !== true) {
+    return {
+      executiveSummary: `Se registraron ${sales} venta(s) por ${money.format(netSales)}, pero la utilidad y el margen no están disponibles con cobertura suficiente.`,
+      explanation: 'Lanzo-POS conserva las ventas confirmadas y separa el costo conocido parcial; no interpreta detalle ausente ni costos faltantes como cero.'
+    };
+  }
+
+  if (response.intent === 'explain_change' && response.coverage?.comparisonAvailable !== true) {
+    return {
+      executiveSummary: 'No hay una comparación de margen completa y válida para explicar el cambio.',
+      explanation: 'Se requieren ambos periodos con detalle de artículos, costos y paginación completos antes de atribuir una variación de margen.'
+    };
+  }
+
+  if (response.intent === 'product_risk' && response.coverage?.itemsComplete !== true) {
+    return {
+      executiveSummary: 'No hay detalle de productos suficiente para identificar productos problemáticos con confianza.',
+      explanation: 'La lista de riesgos sólo se construye a partir de artículos vendidos reales y señala costos faltantes cuando existe evidencia por producto.'
+    };
+  }
+
+  if (response.intent === 'price_simulation' && !response.priceSimulation) {
+    return {
+      executiveSummary: 'No hay datos suficientes para completar la simulación de precio.',
+      explanation: 'La simulación requiere un producto vendido en el periodo, un precio nuevo y evidencia válida de costo; sin esos datos no se estima utilidad ni margen.'
+    };
+  }
+
+  if (response.intent === 'promotion_opportunity' && !response.promotionSimulation) {
+    return {
+      executiveSummary: 'No hay datos suficientes para construir una promoción respaldada.',
+      explanation: 'Selecciona un producto con detalle real y define un descuento o precio promocional; si el costo es desconocido no se publicará utilidad o margen.'
+    };
+  }
+
+  if (response.intent === 'combo_opportunity' && response.comboOpportunities?.length === 0) {
+    return {
+      executiveSummary: 'No hay evidencia suficiente de compras conjuntas para proponer un combo confiable.',
+      explanation: 'Los combos sólo se derivan de artículos agrupados dentro de las mismas ventas y requieren una frecuencia histórica mínima.'
+    };
+  }
+
+  return {
+    executiveSummary: response.executiveSummary,
+    explanation: response.explanation
+  };
+};
+
+const hardenDeterministicResult = ({
+  deterministic,
+  currentDataset,
+  previousDataset
+}) => {
+  const currentMetadata = currentDataset.metadata;
+  const previousMetadata = previousDataset?.metadata || null;
+  const current = hardenAggregate(deterministic.current, currentMetadata);
+  const previous = deterministic.previous && previousMetadata
+    ? hardenAggregate(deterministic.previous, previousMetadata)
+    : deterministic.previous;
+  const currentComplete = current?.costComplete === true;
+  const previousComplete = previous ? previous.costComplete === true : false;
+  const comparisonComplete = Boolean(deterministic.comparison && currentComplete && previousComplete);
+  const comparison = hardenComparison(deterministic.comparison, currentComplete, previousComplete);
+  const coverage = buildCoverage({
+    deterministic,
+    current,
+    currentMetadata,
+    comparisonComplete
+  });
+
+  const profitability = {
+    ...deterministic.profitability,
+    status: current.salesCount === 0
+      ? 'insufficient_data'
+      : (currentComplete ? deterministic.profitability.status : 'undetermined'),
+    costOfSale: currentComplete ? deterministic.profitability.costOfSale : null,
+    profit: currentComplete ? deterministic.profitability.profit : null,
+    margin: currentComplete ? deterministic.profitability.margin : null,
+    costCoverage: current.costCoverage,
+    explanation: current.salesCount === 0
+      ? 'No hay ventas válidas suficientes en el periodo para evaluar la rentabilidad.'
+      : currentComplete
+        ? deterministic.profitability.explanation
+        : 'La rentabilidad es indeterminada porque el detalle de artículos, los costos o la cobertura de la fuente están incompletos.'
+  };
+
+  const limitations = unique([
+    ...(deterministic.limitations || []),
+    ...limitationMessages(currentMetadata, 'periodo actual'),
+    ...(previousMetadata ? limitationMessages(previousMetadata, 'periodo anterior') : [])
+  ]);
+
+  let comboOpportunities = deterministic.comboOpportunities;
+  let scenarios = deterministic.scenarios;
+  let contributors = deterministic.contributors;
+  if (currentMetadata.detailComplete !== true || currentMetadata.paginationComplete !== true) {
+    if (deterministic.intent === 'combo_opportunity') {
+      comboOpportunities = [];
+      scenarios = [];
+    }
+  }
+  if (!comparisonComplete && deterministic.intent === 'explain_change') contributors = [];
+
+  const hardened = {
+    ...deterministic,
+    current,
+    previous,
+    comparison,
+    contributors,
+    comboOpportunities,
+    scenarios,
+    profitability,
+    coverage,
+    limitations,
+    calculations: hardenCalculations(deterministic.calculations, {
+      currentComplete,
+      comparisonComplete,
+      currentMetadata
+    }),
+    confidence: current.salesCount === 0
+      ? 'low'
+      : currentComplete
+        ? (current.costStatus === 'definitive' ? deterministic.confidence : 'medium')
+        : 'low',
+    queryRange: {
+      current: currentMetadata.queryRange,
+      previous: previousMetadata?.queryRange || null
+    }
+  };
+
+  hardened.status = intentStatus(hardened);
+  const narrative = buildSafeNarrative(hardened);
+  hardened.executiveSummary = narrative.executiveSummary;
+  hardened.answer = narrative.executiveSummary;
+  hardened.explanation = narrative.explanation;
+
+  if (!currentComplete) {
+    hardened.facts = (hardened.facts || []).map((fact) => ({
+      ...fact,
+      profit: null,
+      margin: null
+    }));
+  }
+
+  hardened.context = {
+    ...(hardened.context || {}),
+    summary: {
+      ...(hardened.context?.summary || {}),
+      units: current.units,
+      unitCosts: currentComplete ? current.costOfSale : null,
+      knownCostOfSale: current.knownCostOfSale,
+      profit: current.profit,
+      margin: current.margin,
+      costCoverage: current.costCoverage,
+      profitabilityStatus: profitability.status,
+      profitabilityExplanation: profitability.explanation
+    },
+    products: current.products.map((product) => ({
+      name: product.name,
+      quantity: product.quantity,
+      netSales: product.netSales,
+      unitCost: product.unitCost,
+      profit: product.profit,
+      margin: product.margin,
+      averagePrice: product.averagePrice,
+      costKnown: product.costKnown,
+      costStatus: product.costStatus,
+      costSource: product.costSource
+    })),
+    comparison: comparisonComplete ? hardened.context?.comparison : null
+  };
+
+  return hardened;
 };
 
 export const createSalesProfitabilityProductLoader = ({
@@ -126,21 +497,27 @@ export const createSalesProfitabilityProductLoader = ({
   assertActor = assertCurrentAIAgentActor
 } = {}) => async ({ period = {} } = {}) => {
   const normalizedPeriod = normalizePeriod(period);
-  assertActor();
-  const currentHistory = await getHistory(repository, {
-    dateFrom: normalizedPeriod.from,
-    dateTo: normalizedPeriod.to
+  const actor = assertActor();
+  const scope = getSalesFinalHistoryScope(actor);
+  const dataset = await loadSalesProfitabilityDataset({
+    repository,
+    period: normalizedPeriod,
+    scope
   });
   return {
-    products: buildSalesProfitabilityProductOptions({
-      period: normalizedPeriod,
-      currentHistory
-    }),
-    source: getSourceMode(currentHistory)
+    products: buildSalesProfitabilityProductOptionsFromDataset(dataset),
+    source: dataset.metadata.sourceMode,
+    coverage: {
+      itemsComplete: dataset.metadata.detailComplete,
+      paginationComplete: dataset.metadata.paginationComplete,
+      sourceComplete: dataset.metadata.sourceComplete
+    },
+    queryRange: dataset.metadata.queryRange
   };
 };
 
 export const loadSalesProfitabilityProducts = createSalesProfitabilityProductLoader();
+
 export const createSalesProfitabilityAgentRunner = ({
   repository = reportsRepository,
   analyze = analyzeCommercialAgent,
@@ -156,6 +533,8 @@ export const createSalesProfitabilityAgentRunner = ({
   const normalizedPeriod = normalizePeriod(period);
   const currentPeriod = { ...normalizedPeriod, previous: null };
   const previousPeriod = compare ? buildPreviousPeriod(currentPeriod) : null;
+  if (previousPeriod) previousPeriod.timezone = currentPeriod.timezone;
+
   const request = {
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
     intent,
@@ -180,24 +559,30 @@ export const createSalesProfitabilityAgentRunner = ({
   if (inflightRequests.has(dedupeKey)) return inflightRequests.get(dedupeKey);
 
   const execution = (async () => {
-    assertActor();
-    const [currentHistory, previousHistory] = await Promise.all([
-      getHistory(repository, { dateFrom: currentPeriod.from, dateTo: currentPeriod.to }),
+    const actor = assertActor();
+    const scope = getSalesFinalHistoryScope(actor);
+    const [currentDataset, previousDataset] = await Promise.all([
+      loadSalesProfitabilityDataset({ repository, period: currentPeriod, scope }),
       previousPeriod
-        ? getHistory(repository, { dateFrom: previousPeriod.from, dateTo: previousPeriod.to })
+        ? loadSalesProfitabilityDataset({ repository, period: previousPeriod, scope })
         : Promise.resolve(null)
     ]);
 
-    const deterministic = buildSalesProfitabilityAnalysis({
+    const deterministicBase = buildSalesProfitabilityAnalysis({
       period: currentPeriod,
-      currentHistory,
-      previousHistory,
-      sourceMode: getSourceMode(currentHistory),
+      currentHistory: currentDataset.history,
+      previousHistory: previousDataset?.history || null,
+      sourceMode: currentDataset.metadata.sourceMode,
       intent,
       scenario
     });
+    const deterministic = hardenDeterministicResult({
+      deterministic: deterministicBase,
+      currentDataset,
+      previousDataset
+    });
 
-    if (deterministic.coverage.validSales === 0) {
+    if (!intentHasUsefulEvidence(deterministic)) {
       return {
         response: deterministic,
         usageStatus: null,
@@ -213,7 +598,9 @@ export const createSalesProfitabilityAgentRunner = ({
         coverage: deterministic.coverage,
         calculations: deterministic.calculations,
         assumptions: deterministic.assumptions,
-        scenarios: deterministic.scenarios
+        scenarios: deterministic.scenarios,
+        limitations: deterministic.limitations,
+        queryRange: deterministic.queryRange
       },
       source: deterministic.source
     });
@@ -223,7 +610,10 @@ export const createSalesProfitabilityAgentRunner = ({
       context,
       requestKey: requestKey || null
     }, { temperature: 0.2, maxTokens: 2048 });
-    const response = mergeProviderResponse(deterministic, providerResult.rawResultContent || providerResult.content || '');
+    const response = mergeProviderResponse(
+      deterministic,
+      providerResult.rawResultContent || providerResult.content || ''
+    );
 
     return {
       response,
