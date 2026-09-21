@@ -76,6 +76,19 @@ const completedResult = {
       productsMissingCost: 0,
       costCoverage: 1,
       comparisonAvailable: true,
+      sourcePolicy: {
+        excludedSources: 2,
+        excludedStatuses: 1,
+        cancelledMarkers: 0,
+        legacySources: 1,
+        shadowSources: 1,
+        ecommerceSources: 0,
+        unknownSources: 0
+      },
+      sourceWarnings: [
+        'Se excluyeron 1 venta(s) legacy/históricas del dataset analítico.',
+        'Se excluyeron 1 venta(s) shadow del dataset analítico.'
+      ],
       complete: true,
       internalId: internalUuid
     },
@@ -235,6 +248,8 @@ describe('sales profitability download report', () => {
     );
     expect(report.result.status).toBe('completed');
     expect(report.result.providerCalled).toBe(true);
+    expect(report.result.coverage.sourcePolicy).toMatchObject({ legacySources: 1, shadowSources: 1 });
+    expect(report.result.coverage.sourceWarnings.join(' ')).toMatch(/legacy.*shadow/i);
     expect(report.usage).toEqual({ used: 3, limit: 15, remaining: 12 });
   });
 
