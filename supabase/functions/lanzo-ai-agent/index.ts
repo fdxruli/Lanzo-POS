@@ -299,6 +299,9 @@ function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'comm
     period: request.period,
     scenario: request.scenario,
     deterministicEvidence: request.context,
+    allowedEvidenceKeys: isRecordValue(request.context.sales) && Array.isArray(request.context.sales.evidenceKeys)
+      ? request.context.sales.evidenceKeys
+      : [],
     responseContract: {
       executiveSummary: 'máximo 2 o 3 frases',
       explanation: 'explicación clara y breve',
@@ -404,7 +407,7 @@ function buildDeterministicCommercialResponse(request: CommercialAnalysisRequest
     actionDrafts: []
   };
 }
-function normalizeProviderRecommendations(value: unknown): Array<Record<string, unknown>> {
+function normalizeProviderRecommendations(value: unknown, allowedEvidenceKeys: Set<string>): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   const recommendations: Array<Record<string, unknown>> = [];
   for (const item of value) {
@@ -422,9 +425,10 @@ function normalizeProviderRecommendations(value: unknown): Array<Record<string, 
       : (Array.isArray(item.evidence) ? item.evidence : []);
     const evidenceKeys = rawEvidence
       .filter((entry): entry is string => typeof entry === 'string')
-      .slice(0, 8)
-      .map((entry) => safeCommercialText(entry, 'evidencia del periodo', 160));
-    if (title && explanation && expectedImpact) {
+      .map((entry) => safeCommercialText(entry, '', 160))
+      .filter((entry) => entry && allowedEvidenceKeys.has(entry))
+      .slice(0, 8);
+    if (title && explanation && expectedImpact && evidenceKeys.length > 0) {
       recommendations.push({
         title,
         explanation,
@@ -443,7 +447,13 @@ function normalizeCommercialProviderResponse(content: string, request: Commercia
   const parsedConfidence = parsed && ['high', 'medium', 'low'].includes(String(parsed.confidence))
     ? String(parsed.confidence)
     : fallback.confidence;
-  const providerRecommendations = normalizeProviderRecommendations(parsed?.recommendations);
+  const contextSales = isRecordValue(request.context.sales) ? request.context.sales : {};
+  const allowedEvidenceKeys = new Set(
+    Array.isArray(contextSales.evidenceKeys)
+      ? contextSales.evidenceKeys.filter((entry): entry is string => typeof entry === 'string')
+      : []
+  );
+  const providerRecommendations = normalizeProviderRecommendations(parsed?.recommendations, allowedEvidenceKeys);
   const normalized: Record<string, unknown> = {
     ...fallback,
     executiveSummary: safeCommercialText(parsed?.executiveSummary ?? parsed?.answer, ''),
