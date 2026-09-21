@@ -9,7 +9,9 @@ import CommercialAIAgentsRoute from '../CommercialAIAgentsRoute';
 const runtime = vi.hoisted(() => ({
   licenseDetails: null,
   actorSnapshot: null,
-  runAgent: vi.fn()
+  runAgent: vi.fn(),
+  createObjectURL: vi.fn(),
+  revokeObjectURL: vi.fn()
 }));
 
 vi.mock('../../../services/ai/salesProfitabilityAgentService', () => ({
@@ -49,8 +51,15 @@ describe('commercial AI center', () => {
     runtime.licenseDetails = entitledLicense;
     runtime.actorSnapshot = boundAdmin;
     runtime.runAgent.mockReset();
+    runtime.createObjectURL.mockReset();
+    runtime.revokeObjectURL.mockReset();
+    runtime.createObjectURL.mockReturnValue('blob:lanzo-sales-profitability-report');
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: runtime.createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: runtime.revokeObjectURL });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     runtime.runAgent.mockResolvedValue({
       response: {
+        status: 'completed',
         executiveSummary: 'Resumen de prueba',
         explanation: 'Explicación de prueba',
         confidence: 'medium',
@@ -63,11 +72,15 @@ describe('commercial AI center', () => {
         recommendations: [],
         scenarios: []
       },
-      usageStatus: { used: 1, limit: 15 }
+      usageStatus: { used: 1, limit: 15, remaining: 14 },
+      providerCalled: true
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it('shows the functional sales agent and keeps ecommerce blocked', () => {
     renderCenter();
@@ -91,6 +104,62 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'explain_change', compare: true });
     expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
     expect(screen.getByText('Uso: 1 / 15')).toBeInTheDocument();
+  });
+
+
+  it('downloads the completed in-memory result without invoking the agent or quota path again', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Por qué bajó mi margen?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    const downloadButton = screen.getByRole('button', { name: 'Descargar reporte completo' });
+    expect(downloadButton).toBeEnabled();
+
+    fireEvent.click(downloadButton);
+
+    await waitFor(() => expect(runtime.createObjectURL).toHaveBeenCalledTimes(1));
+    expect(runtime.revokeObjectURL).toHaveBeenCalledWith('blob:lanzo-sales-profitability-report');
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
+  });
+
+  it('downloads an incomplete result without starting a new analysis', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'incomplete',
+        executiveSummary: 'No hay ventas suficientes.',
+        answer: 'No hay ventas suficientes.',
+        explanation: 'No existe evidencia suficiente para completar el análisis.',
+        confidence: 'low',
+        source: 'cloud',
+        coverage: { validSales: 0, costCoverage: 0, complete: false },
+        facts: [],
+        calculations: [],
+        assumptions: ['Periodo válido.'],
+        limitations: ['No hay ventas válidas.'],
+        recommendations: [],
+        scenarios: [],
+        current: { products: [], channels: [] },
+        previous: null,
+        comparison: null,
+        contributors: [],
+        context: { summary: { salesCount: 0, netSales: 0 } }
+      },
+      usageStatus: null,
+      providerCalled: false
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo estuvieron mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(screen.getByText('No hay ventas suficientes.')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar reporte completo' }));
+
+    await waitFor(() => expect(runtime.createObjectURL).toHaveBeenCalledTimes(1));
+    expect(runtime.revokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
   });
 
   it('shows availability for Free/Local without rendering the center or invoking analysis', () => {

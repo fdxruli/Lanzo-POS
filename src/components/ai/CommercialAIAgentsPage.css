@@ -194,7 +194,8 @@
 .commercial-ai-workspace input:focus,
 .commercial-ai-workspace select:focus,
 .commercial-ai-suggestion:focus-visible,
-.commercial-ai-analyze:focus-visible {
+.commercial-ai-analyze:focus-visible,
+.commercial-ai-download:focus-visible {
   outline: 3px solid rgb(124 58 237 / 20%);
   outline-offset: 2px;
   border-color: #7c3aed;
@@ -487,5 +488,54 @@
 
   .commercial-ai-card > p {
     min-height: 0;
+  }
+}
+
+
+.commercial-ai-result__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.commercial-ai-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.45rem;
+  padding: 0.58rem 0.78rem;
+  border: 1px solid #c4b5fd;
+  border-radius: 0.7rem;
+  color: #5b21b6;
+  background: #faf5ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.commercial-ai-download:hover:not(:disabled) {
+  color: #fff;
+  background: #6d28d9;
+}
+
+.commercial-ai-download:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .commercial-ai-result__actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .commercial-ai-download {
+    width: 100%;
   }
 }

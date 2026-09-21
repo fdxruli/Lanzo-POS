@@ -4,6 +4,7 @@ import {
   Calculator,
   ChevronDown,
   DatabaseZap,
+  Download,
   Globe2,
   Lightbulb,
   Send,
@@ -12,8 +13,10 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { runSalesProfitabilityAgent } from '../../services/ai/salesProfitabilityAgentService';
+import { downloadSalesProfitabilityReport } from '../../services/ai/salesProfitabilityDownloadReport';
 import {
   buildPeriodRange,
+  buildPreviousPeriod,
   formatAnalysisValue,
   inferSalesProfitabilityIntent
 } from '../../services/ai/salesProfitabilityAnalytics';
@@ -78,7 +81,7 @@ function ProductEvidence({ products }) {
   );
 }
 
-function AnalysisResult({ result }) {
+function AnalysisResult({ result, onDownload, isDownloading }) {
   const response = result?.response || {};
   const facts = Array.isArray(response.facts) ? response.facts : EMPTY_ARRAY;
   const products = Array.isArray(response.current?.products)
@@ -93,7 +96,20 @@ function AnalysisResult({ result }) {
     <div className="commercial-ai-result" aria-live="polite">
       <div className="commercial-ai-result__header">
         <div><p className="commercial-ai-eyebrow">Resultado estructurado</p><h2>{response.executiveSummary || response.answer}</h2></div>
+        <div className="commercial-ai-result__actions">
         <span className={`commercial-ai-confidence commercial-ai-confidence--${response.confidence || 'low'}`}>Confianza {response.confidence || 'low'}</span>
+          <button
+            type="button"
+            className="commercial-ai-download"
+            onClick={onDownload}
+            disabled={!result?.response || isDownloading}
+            aria-label="Descargar reporte completo"
+            title="Descarga un JSON seguro con datos agregados, cálculos determinísticos y la respuesta normalizada de IA."
+          >
+            <Download size={16} aria-hidden="true" />
+            {isDownloading ? 'Preparando descarga…' : 'Descargar reporte completo'}
+          </button>
+        </div>
       </div>
       {response.explanation && <p className="commercial-ai-result__explanation">{response.explanation}</p>}
       <div className="commercial-ai-result__meta">
@@ -124,6 +140,9 @@ export default function CommercialAIAgentsPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState(null);
   const [result, setResult] = useState(null);
+  const [downloadContext, setDownloadContext] = useState(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
   const period = useMemo(() => buildPeriodRange({ days: periodDays }), [periodDays]);
   const productOptions = Array.isArray(result?.response?.current?.products)
     ? result.response.current.products
@@ -140,14 +159,48 @@ export default function CommercialAIAgentsPage() {
   const handleAnalyze = async (event) => {
     event.preventDefault();
     if (!question.trim() || isAnalyzing) return;
-    setIsAnalyzing(true); setAnalysisError(null); setResult(null);
+    setIsAnalyzing(true); setAnalysisError(null); setDownloadError(null); setResult(null); setDownloadContext(null);
     try {
       const requestKey = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${question}`;
       const resolvedIntent = intentOverride ? intent : inferSalesProfitabilityIntent(question);
+      const previousPeriod = compare ? buildPreviousPeriod(period) : null;
+      const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
+      const requestContext = {
+        question: question.trim(),
+        resolvedIntent,
+        compare,
+        period: {
+          from: period.from,
+          to: period.to,
+          previousFrom: previousPeriod?.from || null,
+          previousTo: previousPeriod?.to || null,
+          timezone
+        },
+        scenario: { ...scenario }
+      };
       const response = await runSalesProfitabilityAgent({ question, intent: resolvedIntent, period, compare, scenario, requestKey });
       setResult(response);
+      setDownloadContext(requestContext);
     } catch (error) { setAnalysisError(error?.message || 'No se pudo completar el análisis.'); }
     finally { setIsAnalyzing(false); }
+  };
+
+  const handleDownload = () => {
+    if (!result?.response || !downloadContext || isDownloading) return;
+    setIsDownloading(true);
+    setDownloadError(null);
+    const schedule = typeof window !== 'undefined' && typeof window.setTimeout === 'function'
+      ? window.setTimeout.bind(window)
+      : setTimeout;
+    schedule(() => {
+      try {
+        downloadSalesProfitabilityReport(result, downloadContext);
+      } catch {
+        setDownloadError('No se pudo generar el reporte descargable. El análisis actual permanece disponible.');
+      } finally {
+        setIsDownloading(false);
+      }
+    }, 0);
   };
 
   return (
@@ -181,7 +234,8 @@ export default function CommercialAIAgentsPage() {
         </form>
         {isAnalyzing && <div className="commercial-ai-loading" role="status"><span className="commercial-ai-spinner" /> Consultando reportes autorizados y preparando cálculos…</div>}
         {analysisError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {analysisError}</div>}
-        {result && <AnalysisResult result={result} />}
+        {downloadError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {downloadError}</div>}
+        {result && <AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} />}
       </section>
       <aside className="commercial-ai-notice" role="note"><ShieldCheck size={18} aria-hidden="true" /><p>La IA explica evidencia calculada por código. Las recomendaciones requieren confirmación y no ejecutan acciones.</p></aside>
     </main>
