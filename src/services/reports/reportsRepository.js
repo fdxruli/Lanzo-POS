@@ -20,6 +20,7 @@ const REPORT_TYPES = Object.freeze({
   OVERVIEW: 'overview',
   SALES_FINAL_OVERVIEW: 'sales_final_overview',
   SALES_FINAL_HISTORY: 'sales_final_history',
+  SALES_PROFIT: 'sales_profit',
   CASH: 'cash',
   CUSTOMER_CREDIT: 'customer_credit',
   PRODUCT_CATALOG: 'product_catalog',
@@ -182,6 +183,17 @@ const normalizeSalesFinalHistoryFilters = (filters = {}) => ({
   offset: Math.max(Number(filters.offset) || 0, 0)
 });
 
+const normalizeSalesProfitFilters = (filters = {}) => ({
+  dateFrom: filters.dateFrom || null,
+  dateTo: filters.dateTo || null,
+  scope: filters.scope || 'mine',
+  staffUserId: filters.staffUserId || filters.staff_user_id || null,
+  productId: filters.productId || filters.product_id || null,
+  categoryId: filters.categoryId || filters.category_id || null,
+  limit: Math.max(Number(filters.limit) || 100, 1),
+  offset: Math.max(Number(filters.offset) || 0, 0)
+});
+
 const normalizeCashFilters = (filters = {}) => ({
   dateFrom: filters.dateFrom || null,
   dateTo: filters.dateTo || null,
@@ -247,6 +259,82 @@ const buildLocalSalesHistoryFallback = async (filters = {}, warnings = []) => {
     limit,
     offset,
     has_more: offset + rows.length < allSales.length,
+    warnings,
+    source: {
+      mode: REPORT_SOURCE_MODES.LOCAL,
+      official: [],
+      local: ['sales'],
+      warnings
+    }
+  }, { mode: REPORT_SOURCE_MODES.LOCAL });
+};
+
+const numberOrNull = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const buildLocalSalesProfitFallback = async (filters = {}, warnings = []) => {
+  const localReport = await reportsLocalRepository.getOverviewReport(filters);
+  const allSales = Array.isArray(localReport.sales) ? localReport.sales : [];
+  const productFilter = filters.productId ? String(filters.productId) : null;
+  const categoryFilter = filters.categoryId ? String(filters.categoryId) : null;
+  const allRows = [];
+
+  allSales.forEach((sale = {}) => {
+    const saleId = sale.id ?? sale.sale_id ?? sale.cloudSaleId ?? sale.cloud_sale_id ?? null;
+    const soldAt = sale.soldAt ?? sale.sold_at ?? sale.timestamp ?? sale.created_at ?? null;
+    const items = Array.isArray(sale.items)
+      ? sale.items
+      : (Array.isArray(sale.sale_items) ? sale.sale_items : []);
+
+    items.forEach((item = {}) => {
+      const productId = item.productId ?? item.product_id ?? item.id ?? null;
+      const categoryId = item.categoryId ?? item.category_id ?? null;
+      if (productFilter && String(productId ?? '') !== productFilter) return;
+      if (categoryFilter && String(categoryId ?? '') !== categoryFilter) return;
+
+      const quantity = numberOrNull(item.quantity ?? item.qty) ?? 0;
+      if (quantity <= 0) return;
+      const unitPrice = numberOrNull(item.unitPrice ?? item.unit_price ?? item.price ?? item.sale_price);
+      const lineTotal = numberOrNull(item.total ?? item.line_total ?? item.subtotal ?? item.net_total)
+        ?? (unitPrice !== null ? unitPrice * quantity : 0);
+      const unitCost = numberOrNull(item.cost ?? item.unit_cost ?? item.cost_snapshot ?? item.costPrice);
+      const costKnown = unitCost !== null && unitCost >= 0;
+      const cogs = costKnown ? unitCost * quantity : 0;
+      const grossProfit = costKnown ? lineTotal - cogs : 0;
+
+      allRows.push({
+        sale_id: saleId,
+        sale_item_id: item.saleItemId ?? item.sale_item_id ?? item.lineId ?? item.line_id ?? null,
+        sold_at: soldAt,
+        product_id: productId,
+        product_name: item.name ?? item.product_name ?? item.productName ?? item.description ?? 'Producto',
+        quantity,
+        line_total: lineTotal,
+        unit_cost: costKnown ? unitCost : null,
+        movement_cost: null,
+        cogs,
+        gross_profit: grossProfit,
+        gross_margin_percent: costKnown && lineTotal > 0 ? (grossProfit / lineTotal) * 100 : 0,
+        cost_source: costKnown ? 'sale_item_snapshot' : 'missing',
+        profit_status: costKnown ? 'estimated' : 'incomplete'
+      });
+    });
+  });
+
+  const offset = Math.max(Number(filters.offset) || 0, 0);
+  const limit = Math.max(Number(filters.limit) || 100, 1);
+  const rows = allRows.slice(offset, offset + limit);
+  return reportsMapper.normalizeReportPayload({
+    success: true,
+    generated_at: new Date().toISOString(),
+    rows,
+    total_count: allRows.length,
+    limit,
+    offset,
+    has_more: offset + rows.length < allRows.length,
     warnings,
     source: {
       mode: REPORT_SOURCE_MODES.LOCAL,
@@ -336,6 +424,29 @@ export const reportsRepository = {
       cacheWarning: 'Último snapshot cloud final de historial. Puede estar desactualizado.',
       cloudErrorCacheWarning: 'No se pudo cargar historial cloud final. Mostrando el último snapshot guardado.',
       cloudErrorLocalWarning: 'No se pudo cargar historial cloud final y no hay snapshot previo. Se muestra historial local no oficial de este dispositivo.'
+    });
+  },
+
+  async getSalesProfitReport(filters = {}) {
+    const mode = getMode();
+    const cloudFilters = normalizeSalesProfitFilters(filters);
+    const localProfitWarning = 'Rentabilidad local estimada desde artículos guardados en este dispositivo.';
+
+    if (!mode.cloudSalesFinal) {
+      return buildLocalSalesProfitFallback(cloudFilters, [localProfitWarning]);
+    }
+
+    return withCacheFallback({
+      reportType: REPORT_TYPES.SALES_PROFIT,
+      filters: cloudFilters,
+      reportMode: mode,
+      loader: () => reportsCloudRepository.getSalesProfitReport({ licenseKey: mode.licenseKey, ...cloudFilters }),
+      mapper: mapCloudFinalReport,
+      localFallback: () => buildLocalSalesProfitFallback(cloudFilters, [localProfitWarning]),
+      offlineWarning: 'Sin conexión y sin snapshot cloud de utilidad previo. Se muestra detalle local estimado y no oficial.',
+      cacheWarning: 'Último snapshot cloud de utilidad. Puede estar desactualizado.',
+      cloudErrorCacheWarning: 'No se pudo cargar el detalle cloud de utilidad. Mostrando el último snapshot guardado.',
+      cloudErrorLocalWarning: 'No se pudo cargar el detalle cloud de utilidad y no hay snapshot previo. Se muestra detalle local estimado y no oficial.'
     });
   },
 
