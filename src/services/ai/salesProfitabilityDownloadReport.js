@@ -1,4 +1,4 @@
-const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v1';
+const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v2';
 const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
@@ -70,6 +70,28 @@ const safeCalculationPeriod = (period) => {
   };
 };
 
+const safeQueryBoundary = (range) => {
+  const source = asRecord(range);
+  if (!Object.keys(source).length) return null;
+  return {
+    calendar: {
+      from: sanitizeText(source.calendar?.from, 40) || null,
+      to: sanitizeText(source.calendar?.to, 40) || null
+    },
+    timezone: sanitizeText(source.timezone, 120) || null,
+    fromInclusiveUtc: sanitizeText(source.fromInclusiveUtc, 80) || null,
+    toExclusiveUtc: sanitizeText(source.toExclusiveUtc, 80) || null
+  };
+};
+
+const safeQueryRange = (queryRange) => {
+  const source = asRecord(queryRange);
+  return {
+    current: safeQueryBoundary(source.current),
+    previous: safeQueryBoundary(source.previous)
+  };
+};
+
 const safeCoverage = (coverage) => {
   const source = asRecord(coverage);
   return {
@@ -80,6 +102,16 @@ const safeCoverage = (coverage) => {
     productsIncluded: finiteNumber(source.productsIncluded),
     productsMissingCost: finiteNumber(source.productsMissingCost),
     costCoverage: finiteNumber(source.costCoverage),
+    itemCoverage: finiteNumber(source.itemCoverage),
+    detailLines: finiteNumber(source.detailLines),
+    expectedDetailLines: finiteNumber(source.expectedDetailLines),
+    knownCostOfSale: finiteNumber(source.knownCostOfSale),
+    costStatus: sanitizeText(source.costStatus, 48) || null,
+    itemsComplete: safeBoolean(source.itemsComplete),
+    paginationComplete: safeBoolean(source.paginationComplete),
+    sourceComplete: safeBoolean(source.sourceComplete),
+    historyTruncated: safeBoolean(source.historyTruncated),
+    detailTruncated: safeBoolean(source.detailTruncated),
     comparisonAvailable: safeBoolean(source.comparisonAvailable),
     complete: safeBoolean(source.complete)
   };
@@ -97,6 +129,9 @@ const safeProduct = (product) => {
     margin: finiteNumber(source.margin),
     averagePrice: finiteNumber(source.averagePrice),
     costKnown: safeBoolean(source.costKnown),
+    knownCost: finiteNumber(source.knownCost),
+    costStatus: sanitizeText(source.costStatus, 48) || null,
+    costSource: sanitizeText(source.costSource, 64) || null,
     missingCostLines: finiteNumber(source.missingCostLines),
     discounts: finiteNumber(source.discounts)
   };
@@ -125,7 +160,13 @@ const safeAggregate = (aggregate) => {
     discounts: finiteNumber(source.discounts),
     discountsKnown: safeBoolean(source.discountsKnown),
     costOfSale: finiteNumber(source.costOfSale),
+    knownCostOfSale: finiteNumber(source.knownCostOfSale),
     costComplete: safeBoolean(source.costComplete),
+    costStatus: sanitizeText(source.costStatus, 48) || null,
+    detailComplete: safeBoolean(source.detailComplete),
+    itemCoverage: finiteNumber(source.itemCoverage),
+    paginationComplete: safeBoolean(source.paginationComplete),
+    sourceComplete: safeBoolean(source.sourceComplete),
     knownSales: finiteNumber(source.knownSales),
     missingCostLines: finiteNumber(source.missingCostLines),
     missingCostProducts: safeTextArray(source.missingCostProducts, 30, 160),
@@ -279,7 +320,9 @@ const safeSummary = (response) => {
     salesCount: finiteNumber(source.salesCount),
     averageTicket: finiteNumber(source.averageTicket),
     discounts: finiteNumber(source.discounts),
+    discountsKnown: source.discountsKnown === true,
     unitCosts: finiteNumber(source.unitCosts ?? source.costOfSale),
+    knownCostOfSale: finiteNumber(source.knownCostOfSale),
     profit: finiteNumber(source.profit),
     margin: finiteNumber(source.margin),
     costCoverage: finiteNumber(source.costCoverage),
@@ -350,6 +393,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       question: sanitizeText(request.question, 1200),
       resolvedIntent: sanitizeText(request.resolvedIntent ?? request.intent, 80),
       period: safeRequestPeriod(request.period),
+      queryRange: safeQueryRange(response.queryRange),
       compare: request.compare === true,
       scenario: safeScenarioRequest(request.scenario)
     },
@@ -379,13 +423,16 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       calculations: (Array.isArray(response.calculations) ? response.calculations : []).slice(0, 80).map(safeCalculation),
       scenarios: (Array.isArray(response.scenarios) ? response.scenarios : []).slice(0, 30).map(safeScenario),
       assumptions: safeTextArray(response.assumptions, 40, 700),
-      limitations: safeTextArray(response.limitations, 40, 700)
+      limitations: safeTextArray(response.limitations, 40, 700),
+      queryRange: safeQueryRange(response.queryRange)
     },
     ai: {
-      executiveSummary: providerCalled ? sanitizeText(response.executiveSummary, 2400) : null,
-      explanation: providerCalled ? sanitizeText(response.explanation, 4000) : null,
-      recommendations: providerCalled ? recommendations : [],
-      confidence: providerCalled ? safeConfidence(response.confidence) : null
+      executiveSummary: providerCalled ? sanitizeText(response.aiNarrative?.executiveSummary, 2400) : null,
+      explanation: providerCalled ? sanitizeText(response.aiNarrative?.explanation, 4000) : null,
+      recommendations: providerCalled
+        ? (Array.isArray(response.aiNarrative?.recommendations) ? response.aiNarrative.recommendations : []).slice(0, 20).map(safeRecommendation)
+        : [],
+      confidence: null
     },
     usage: safeUsage(result?.usageStatus),
     redactions: [...SALES_PROFITABILITY_REPORT_REDACTIONS]
