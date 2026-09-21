@@ -44,6 +44,26 @@ describe('reportsMapper sales final history', () => {
 
     expect(mapped.rows[0].sourceMode).toBe('cloud_committed');
     expect(mapped.rows[0].source_mode).toBe('cloud_committed');
+    expect(mapped.rows[0].sourceModeKnown).toBe(true);
+    expect(mapped.rows[0].source_mode_known).toBe(true);
     expect(mapped.rows[0].status).toBe('closed');
+  });
+
+  it('keeps the legacy cloud fallback for compatibility but marks a missing source as unknown', () => {
+    const mapped = reportsMapper.normalizeSalesFinalHistoryPayload({
+      rows: [{
+        sale_id: 'sale-missing-source',
+        status: 'closed',
+        total: 75
+      }]
+    });
+
+    expect(mapped.rows[0]).toMatchObject({
+      sourceMode: 'cloud_committed',
+      source_mode: 'cloud_committed',
+      sourceModeKnown: false,
+      source_mode_known: false,
+      status: 'closed'
+    });
   });
 });
