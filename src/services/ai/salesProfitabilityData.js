@@ -356,6 +356,7 @@ const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
   });
 
   const normalizedLines = profitRows.map(normalizeSalesProfitLine);
+  const matchedLines = [];
   let unmatchedDetailLines = 0;
   normalizedLines.forEach((line) => {
     const index = line.saleKey ? saleIndexes.get(line.saleKey) : undefined;
@@ -363,6 +364,7 @@ const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
       unmatchedDetailLines += 1;
       return;
     }
+    matchedLines.push(line);
     sales[index].items.push({
       name: line.productName,
       quantity: line.quantity,
@@ -404,7 +406,7 @@ const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
 
   return {
     sales,
-    lines: normalizedLines,
+    lines: matchedLines,
     detailComplete,
     itemCoverage,
     expectedDetailLines,
@@ -412,7 +414,7 @@ const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
     expectedUnits,
     salesWithMissingDetail,
     unmatchedDetailLines,
-    products: buildProductEvidence(normalizedLines)
+    products: buildProductEvidence(matchedLines)
   };
 };
 
