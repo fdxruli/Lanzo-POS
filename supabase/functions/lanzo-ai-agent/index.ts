@@ -350,18 +350,6 @@ function commercialNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function formatCommercialMoney(value: number | null): string {
-  return value === null
-    ? 'No disponible'
-    : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(value);
-}
-
-function formatCommercialPercent(value: number | null): string {
-  return value === null
-    ? 'No disponible'
-    : new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(value * 100) + '%';
-}
-
 function buildDeterministicCommercialResponse(request: CommercialAnalysisRequest): Record<string, unknown> {
   const context = isRecordValue(request.context) ? request.context : {};
   const sales = isRecordValue(context.sales) ? context.sales : {};
