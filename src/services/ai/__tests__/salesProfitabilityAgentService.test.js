@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createSalesProfitabilityAgentRunner,
-  createSalesProfitabilityProductLoader
+  createSalesProfitabilityProductLoader,
+  resolveBusinessTimezone
 } from '../salesProfitabilityAgentService';
 
 const history = {
@@ -74,6 +75,14 @@ const repository = (historyValue = history, profitValue = profit) => ({
 });
 
 describe('sales profitability agent service', () => {
+  it.each([
+    [{ timezone: 'America/New_York', time_zone: 'America/Mexico_City' }, 'America/New_York'],
+    [{ time_zone: 'America/New_York' }, 'America/New_York'],
+    [{}, 'America/Mexico_City']
+  ])('resolves the business timezone from the authorized company profile: %#', (companyProfile, expected) => {
+    expect(resolveBusinessTimezone(companyProfile)).toBe(expected);
+  });
+
   it('loads current and comparable history plus profit detail with exact UTC boundaries', async () => {
     const reports = repository();
     const analyze = vi.fn(async (request) => {
