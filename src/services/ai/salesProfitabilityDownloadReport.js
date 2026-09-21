@@ -379,7 +379,6 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
   const request = asRecord(requestContext);
   const providerCalled = result?.providerCalled === true;
   const now = options.generatedAt instanceof Date ? options.generatedAt : new Date(options.generatedAt || Date.now());
-  const recommendations = (Array.isArray(response.recommendations) ? response.recommendations : []).slice(0, 20).map(safeRecommendation);
   const current = safeAggregate(response.current);
 
   return {
