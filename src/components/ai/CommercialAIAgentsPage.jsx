@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import {
   loadSalesProfitabilityProducts,
+  resolveBusinessTimezone,
   runSalesProfitabilityAgent
 } from '../../services/ai/salesProfitabilityAgentService';
 import { downloadSalesProfitabilityReport } from '../../services/ai/salesProfitabilityDownloadReport';
@@ -23,6 +24,7 @@ import {
   formatAnalysisValue,
   inferSalesProfitabilityIntent
 } from '../../services/ai/salesProfitabilityAnalytics';
+import { useAppStore } from '../../store/useAppStore';
 import './CommercialAIAgentsPage.css';
 
 const SUGGESTED_QUESTIONS = [
@@ -317,6 +319,8 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
 }
 
 export default function CommercialAIAgentsPage() {
+  const companyProfile = useAppStore((state) => state.companyProfile);
+  const businessTimezone = resolveBusinessTimezone(companyProfile);
   const [question, setQuestion] = useState('');
   const [intent, setIntent] = useState('profitability_summary');
   const [intentOverride, setIntentOverride] = useState(false);
@@ -334,7 +338,10 @@ export default function CommercialAIAgentsPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(null);
 
-  const period = useMemo(() => buildPeriodRange({ days: periodDays }), [periodDays]);
+  const period = useMemo(
+    () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
+    [periodDays, businessTimezone]
+  );
   const filteredProductOptions = useMemo(() => {
     const search = productSearch.trim().toLocaleLowerCase('es-MX');
     if (!search) return productOptions;
@@ -401,14 +408,14 @@ export default function CommercialAIAgentsPage() {
           to: period.to,
           previousFrom: previousPeriod?.from || null,
           previousTo: previousPeriod?.to || null,
-          timezone: null
+          timezone: businessTimezone
         },
         scenario: { ...scenario }
       };
       const response = await runSalesProfitabilityAgent({
         question,
         intent: resolvedIntent,
-        period,
+        period: { ...period, timezone: businessTimezone },
         compare,
         scenario,
         requestKey
@@ -418,7 +425,7 @@ export default function CommercialAIAgentsPage() {
         ...requestContext,
         period: {
           ...requestContext.period,
-          timezone: response?.response?.queryRange?.current?.timezone || null
+          timezone: response?.response?.queryRange?.current?.timezone || businessTimezone
         }
       });
     } catch (error) {
