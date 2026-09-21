@@ -92,6 +92,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText('FEATURE_NOT_READY')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analizar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Descargar reporte completo' })).toBeDisabled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
