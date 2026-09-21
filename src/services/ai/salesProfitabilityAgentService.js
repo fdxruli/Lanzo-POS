@@ -4,6 +4,7 @@ import { reportsRepository } from '../reports/reportsRepository';
 import {
   buildPreviousPeriod,
   buildSalesProfitabilityAnalysis,
+  buildSalesProfitabilityProductOptions,
   inferSalesProfitabilityIntent
 } from './salesProfitabilityAnalytics';
 import {
@@ -48,6 +49,32 @@ const getHistory = (repository, filters) => repository.getSalesFinalHistory({
   offset: 0
 });
 
+const priorityFromLegacyEffort = (effort) => {
+  if (effort === 'high') return 'high';
+  if (effort === 'low') return 'low';
+  return 'medium';
+};
+
+const normalizeNarrativeRecommendations = (recommendations = []) => (
+  (Array.isArray(recommendations) ? recommendations : [])
+    .slice(0, 3)
+    .map((recommendation = {}) => ({
+      title: String(recommendation.title || '').trim(),
+      explanation: String(recommendation.explanation || '').trim(),
+      expectedImpact: String(recommendation.expectedImpact || '').trim(),
+      priority: ['high', 'medium', 'low'].includes(recommendation.priority)
+        ? recommendation.priority
+        : priorityFromLegacyEffort(recommendation.effort),
+      evidenceKeys: Array.isArray(recommendation.evidenceKeys)
+        ? recommendation.evidenceKeys.filter((item) => typeof item === 'string').slice(0, 8)
+        : (Array.isArray(recommendation.evidence)
+          ? recommendation.evidence.filter((item) => typeof item === 'string').slice(0, 8)
+          : []),
+      requiresConfirmation: true
+    }))
+    .filter((recommendation) => recommendation.title && recommendation.explanation && recommendation.expectedImpact)
+);
+
 const mergeProviderResponse = (deterministic, providerResponse) => {
   const parsed = parseCommercialAgentResponse(providerResponse, {
     expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY
@@ -61,27 +88,59 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
     );
   }
 
-  const response = parsed.response;
-  const executiveSummary = response.executiveSummary || response.answer || deterministic.executiveSummary;
+  const narrative = parsed.response;
+  const executiveSummary = narrative.executiveSummary || narrative.answer || deterministic.executiveSummary;
+  const providerRecommendations = normalizeNarrativeRecommendations(narrative.recommendations);
+
   return {
     ...deterministic,
-    ...response,
     executiveSummary,
-    answer: response.answer || executiveSummary,
-    explanation: response.explanation || deterministic.explanation,
+    answer: narrative.answer || executiveSummary,
+    explanation: narrative.explanation || deterministic.explanation,
+    recommendations: providerRecommendations.length ? providerRecommendations : deterministic.recommendations,
+    confidence: deterministic.confidence,
     facts: deterministic.facts,
     calculations: deterministic.calculations,
     assumptions: deterministic.assumptions,
     scenarios: deterministic.scenarios,
     limitations: deterministic.limitations,
     coverage: deterministic.coverage,
-    confidence: deterministic.confidence,
     source: deterministic.source,
+    contributors: deterministic.contributors,
+    profitability: deterministic.profitability,
+    productRisks: deterministic.productRisks,
+    priceSimulation: deterministic.priceSimulation,
+    promotionSimulation: deterministic.promotionSimulation,
+    comboOpportunities: deterministic.comboOpportunities,
+    current: deterministic.current,
+    previous: deterministic.previous,
+    comparison: deterministic.comparison,
+    context: deterministic.context,
     actionDrafts: [],
     citations: []
   };
 };
 
+export const createSalesProfitabilityProductLoader = ({
+  repository = reportsRepository,
+  assertActor = assertCurrentAIAgentActor
+} = {}) => async ({ period = {} } = {}) => {
+  const normalizedPeriod = normalizePeriod(period);
+  assertActor();
+  const currentHistory = await getHistory(repository, {
+    dateFrom: normalizedPeriod.from,
+    dateTo: normalizedPeriod.to
+  });
+  return {
+    products: buildSalesProfitabilityProductOptions({
+      period: normalizedPeriod,
+      currentHistory
+    }),
+    source: getSourceMode(currentHistory)
+  };
+};
+
+export const loadSalesProfitabilityProducts = createSalesProfitabilityProductLoader();
 export const createSalesProfitabilityAgentRunner = ({
   repository = reportsRepository,
   analyze = analyzeCommercialAgent,
@@ -184,4 +243,9 @@ export const createSalesProfitabilityAgentRunner = ({
 
 export const runSalesProfitabilityAgent = createSalesProfitabilityAgentRunner();
 
-export default { runSalesProfitabilityAgent, createSalesProfitabilityAgentRunner };
+export default {
+  runSalesProfitabilityAgent,
+  loadSalesProfitabilityProducts,
+  createSalesProfitabilityAgentRunner,
+  createSalesProfitabilityProductLoader
+};
