@@ -10,12 +10,13 @@ export const SALES_PROFITABILITY_INTENTS = Object.freeze([
 ]);
 
 const DEFAULT_COST_COVERAGE = 0;
+const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const MAX_PRODUCTS = 20;
 const MAX_CHANNELS = 12;
 const MIN_COMBO_TICKETS = 3;
 const LOW_MARGIN_THRESHOLD = 0.2;
 
-const CANCELLED_STATUSES = new Set([
+const EXCLUDED_SALES_STATUSES = new Set([
   'cancelled',
   'canceled',
   'cancelada',
@@ -30,18 +31,42 @@ const CANCELLED_STATUSES = new Set([
   'voided',
   'rejected',
   'rechazada',
-  'rechazado',
-  'shadow'
+  'rechazado'
 ]);
 
-const EXCLUDED_ECOMMERCE_SOURCES = new Set([
+const OPERATIONAL_SALES_SOURCES = new Set([
+  'cloud_committed',
+  'cloud_final',
+  'local',
+  'local_committed',
+  'pos',
+  'pos_sale',
+  'pos_converted',
+  'ecommerce_converted',
+  'ecommerce_pos_converted'
+]);
+
+const EXCLUDED_SALES_SOURCES = new Set([
+  'shadow',
+  'shadow_history',
+  'history_shadow',
+  'legacy',
+  'legacy_imported',
+  'legacy_history',
+  'historical',
+  'historical_import',
+  'imported_history',
   'ecommerce_order',
   'ecommerce_pending',
   'ecommerce_rejected',
   'ecommerce_cancelled',
+  'ecommerce_canceled',
   'rejected',
-  'cancelled'
+  'cancelled',
+  'canceled'
 ]);
+
+const HISTORICAL_SOURCE_TOKEN_PATTERN = /(?:^|_)(?:legacy|historical|history|imported)(?:_|$)/u;
 
 const asRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   ? value
@@ -128,14 +153,38 @@ const normalizeItem = (item = {}) => {
 const normalizedSource = (sale) => normalize(sale?.sourceMode ?? sale?.source_mode ?? sale?.source ?? '');
 const normalizedStatus = (sale) => normalize(sale?.status ?? sale?.sale_status ?? 'closed');
 
-const isExcludedSale = (sale) => {
+export const isOperationalSalesSource = (source) => OPERATIONAL_SALES_SOURCES.has(normalize(source));
+
+export const isExcludedSalesSource = (source) => {
+  const normalized = normalize(source);
+  if (!normalized) return false;
+  return EXCLUDED_SALES_SOURCES.has(normalized)
+    || normalized.startsWith('shadow_')
+    || normalized.endsWith('_shadow')
+    || HISTORICAL_SOURCE_TOKEN_PATTERN.test(normalized);
+};
+
+export const isExcludedSalesStatus = (status) => EXCLUDED_SALES_STATUSES.has(normalize(status));
+
+const salesSourceCategory = (source) => {
+  const normalized = normalize(source);
+  if (normalized.startsWith('shadow') || normalized.endsWith('_shadow')) return 'shadow';
+  if (HISTORICAL_SOURCE_TOKEN_PATTERN.test(normalized)) return 'legacy';
+  if (normalized.startsWith('ecommerce_') || normalized === 'cancelled' || normalized === 'canceled' || normalized === 'rejected') {
+    return 'ecommerce';
+  }
+  return 'other';
+};
+
+const excludedSaleReason = (sale) => {
   const status = normalizedStatus(sale);
   const source = normalizedSource(sale);
-  return CANCELLED_STATUSES.has(status)
-    || CANCELLED_STATUSES.has(source)
-    || source.includes('shadow')
-    || EXCLUDED_ECOMMERCE_SOURCES.has(source)
-    || Boolean(sale?.cancelledAt || sale?.cancelled_at || sale?.cancellationId || sale?.cancellation_id);
+  if (Boolean(sale?.cancelledAt || sale?.cancelled_at || sale?.cancellationId || sale?.cancellation_id)) {
+    return { reason: 'cancelled_marker', source, status };
+  }
+  if (isExcludedSalesStatus(status)) return { reason: 'status', source, status };
+  if (isExcludedSalesSource(source)) return { reason: 'source', source, status };
+  return null;
 };
 
 const ecommerceKey = (sale) => safeText(
@@ -156,12 +205,40 @@ export const normalizeValidSales = (history) => {
   const rows = extractRows(history);
   const excluded = [];
   const candidates = [];
+  const sourcePolicy = {
+    excludedSources: 0,
+    excludedStatuses: 0,
+    cancelledMarkers: 0,
+    legacySources: 0,
+    shadowSources: 0,
+    ecommerceSources: 0,
+    unknownSources: 0
+  };
 
   rows.forEach((row) => {
-    if (!asRecord(row) || isExcludedSale(row)) {
+    if (!asRecord(row)) {
       excluded.push(row);
+      sourcePolicy.excludedSources += 1;
       return;
     }
+
+    const exclusion = excludedSaleReason(row);
+    if (exclusion) {
+      excluded.push(row);
+      if (exclusion.reason === 'status') sourcePolicy.excludedStatuses += 1;
+      if (exclusion.reason === 'cancelled_marker') sourcePolicy.cancelledMarkers += 1;
+      if (exclusion.reason === 'source') {
+        sourcePolicy.excludedSources += 1;
+        const category = salesSourceCategory(exclusion.source);
+        if (category === 'legacy') sourcePolicy.legacySources += 1;
+        if (category === 'shadow') sourcePolicy.shadowSources += 1;
+        if (category === 'ecommerce') sourcePolicy.ecommerceSources += 1;
+      }
+      return;
+    }
+
+    const source = normalizedSource(row);
+    if (!source || !isOperationalSalesSource(source)) sourcePolicy.unknownSources += 1;
     candidates.push(row);
   });
 
@@ -193,7 +270,8 @@ export const normalizeValidSales = (history) => {
     rows: deduped,
     excludedCount: excluded.length,
     ecommerceDuplicates,
-    rawCount: rows.length
+    rawCount: rows.length,
+    sourcePolicy
   };
 };
 
@@ -1108,7 +1186,21 @@ export const buildSalesProfitabilityAnalysis = ({
   if (resolvedIntent === 'explain_change' && !current.discountsKnown) {
     limitations.push('No todas las ventas tienen descuento registrado; ese factor puede estar incompleto.');
   }
-  limitations.push(...simulation.limitations);
+  const sourcePolicy = current.meta.sourcePolicy || {};
+  const sourceWarnings = [];
+  if ((sourcePolicy.legacySources || 0) > 0) {
+    sourceWarnings.push(`Se excluyeron ${sourcePolicy.legacySources} venta(s) legacy/históricas del dataset analítico.`);
+  }
+  if ((sourcePolicy.shadowSources || 0) > 0) {
+    sourceWarnings.push(`Se excluyeron ${sourcePolicy.shadowSources} venta(s) shadow del dataset analítico.`);
+  }
+  if ((sourcePolicy.ecommerceSources || 0) > 0) {
+    sourceWarnings.push(`Se excluyeron ${sourcePolicy.ecommerceSources} registro(s) ecommerce no convertidos a venta POS.`);
+  }
+  if ((sourcePolicy.unknownSources || 0) > 0) {
+    sourceWarnings.push(`Hay ${sourcePolicy.unknownSources} venta(s) con fuente no reconocida; se conservaron por compatibilidad y se reportan con confianza limitada.`);
+  }
+  limitations.push(...simulation.limitations, ...sourceWarnings);
 
   const assumptions = [
     ...(resolvedIntent === 'price_simulation' || resolvedIntent === 'promotion_opportunity' ? simulation.assumptions : []),
@@ -1126,6 +1218,16 @@ export const buildSalesProfitabilityAnalysis = ({
     costCoverage: current.costCoverage,
     comparisonAvailable: Boolean(comparison),
     reportSource: sourceMode,
+    sourcePolicy: {
+      excludedSources: sourcePolicy.excludedSources || 0,
+      excludedStatuses: sourcePolicy.excludedStatuses || 0,
+      cancelledMarkers: sourcePolicy.cancelledMarkers || 0,
+      legacySources: sourcePolicy.legacySources || 0,
+      shadowSources: sourcePolicy.shadowSources || 0,
+      ecommerceSources: sourcePolicy.ecommerceSources || 0,
+      unknownSources: sourcePolicy.unknownSources || 0
+    },
+    sourceWarnings,
     complete: current.salesCount > 0 && current.costComplete
   };
 
@@ -1254,24 +1356,66 @@ export const buildSalesProfitabilityAnalysis = ({
     comparison
   };
 };
-export const buildPeriodRange = ({ days = 30, end = new Date() } = {}) => {
-  const endDate = new Date(end);
-  const startDate = new Date(endDate);
-  startDate.setDate(startDate.getDate() - Math.max(Number(days) || 30, 1) + 1);
-  const toDate = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
+
+const shiftCalendarDate = (value, days) => {
+  if (!DATE_ONLY_PATTERN.test(String(value || ''))) throw new Error('SALES_PROFITABILITY_DATE_INVALID');
+  const [year, month, day] = String(value).split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + Number(days || 0)));
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0')
+  ].join('-');
+};
+
+const calendarDateInTimeZone = (value, timezone) => {
+  if (typeof value === 'string' && DATE_ONLY_PATTERN.test(value)) return value;
+  const instant = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(instant.getTime())) throw new Error('SALES_PROFITABILITY_DATE_INVALID');
+  const zone = safeText(timezone, DEFAULT_BUSINESS_TIMEZONE, 120) || DEFAULT_BUSINESS_TIMEZONE;
+  let parts;
+  try {
+    parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(instant);
+  } catch {
+    throw new Error('SALES_PROFITABILITY_TIMEZONE_INVALID');
+  }
+  const values = parts.reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+export const buildPeriodRange = ({
+  days = 30,
+  end = new Date(),
+  timezone = DEFAULT_BUSINESS_TIMEZONE
+} = {}) => {
+  const normalizedDays = Math.max(Number(days) || 30, 1);
+  const to = calendarDateInTimeZone(end, timezone);
+  return {
+    from: shiftCalendarDate(to, -normalizedDays + 1),
+    to,
+    days: normalizedDays,
+    timezone: safeText(timezone, DEFAULT_BUSINESS_TIMEZONE, 120) || DEFAULT_BUSINESS_TIMEZONE
   };
-  return { from: toDate(startDate), to: toDate(endDate), days: Math.max(Number(days) || 30, 1) };
 };
 
 export const buildPreviousPeriod = (period = {}) => {
   const days = Math.max(Number(period.days) || 30, 1);
-  const end = new Date(`${period.from || period.to || new Date().toISOString().slice(0, 10)}T00:00:00`);
-  end.setDate(end.getDate() - 1);
-  const previous = buildPeriodRange({ days, end });
+  const timezone = safeText(period.timezone, DEFAULT_BUSINESS_TIMEZONE, 120) || DEFAULT_BUSINESS_TIMEZONE;
+  const anchor = period.from || period.to || calendarDateInTimeZone(new Date(), timezone);
+  const previous = buildPeriodRange({
+    days,
+    end: shiftCalendarDate(anchor, -1),
+    timezone
+  });
   return { ...previous, label: 'Periodo anterior comparable' };
 };
 
