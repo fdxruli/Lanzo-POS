@@ -47,7 +47,7 @@ describe('sales profitability data', () => {
 
   it.each([
     ['2026-09-01', 30, '2026-10-01'],
-    ['2026-09-01', 60, '2026-10-31'],
+    ['2026-09-01', 90, '2026-11-30'],
     ['2026-12-31', 1, '2027-01-01'],
     ['2026-02-28', 1, '2026-03-01']
   ])('adds calendar days without timezone drift: %s + %s', (from, days, expected) => {
@@ -56,8 +56,8 @@ describe('sales profitability data', () => {
 
   it.each([
     ['2026-08-23', '2026-09-21', '2026-08-23T06:00:00.000Z', '2026-09-22T06:00:00.000Z'],
-    ['2026-07-24', '2026-09-21', '2026-07-24T06:00:00.000Z', '2026-09-22T06:00:00.000Z']
-  ])('builds exact 30/60-day calendar query bounds from %s to %s', (from, to, expectedFrom, expectedTo) => {
+    ['2026-06-24', '2026-09-21', '2026-06-24T06:00:00.000Z', '2026-09-22T06:00:00.000Z']
+  ])('builds exact selectable 30/90-day calendar query bounds from %s to %s', (from, to, expectedFrom, expectedTo) => {
     const range = buildSalesProfitabilityQueryRange({
       from,
       to,
