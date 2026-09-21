@@ -240,6 +240,29 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
+  it('reloads the complete product selector when the selected period changes', async () => {
+    runtime.loadProducts.mockImplementation(async ({ period }) => ({
+      source: 'cloud_final',
+      products: period.days === 7
+        ? [{ name: 'Producto 7 días', units: 1, netSales: 25, averagePrice: 25, unitCost: 10, costKnown: true }]
+        : [{ name: 'Producto 30 días', units: 2, netSales: 80, averagePrice: 40, unitCost: 15, costKnown: true }]
+    }));
+
+    renderCenter();
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    expect(runtime.loadProducts.mock.calls[0][0].period).toMatchObject({ days: 30, timezone: 'America/New_York' });
+
+    fireEvent.change(screen.getByRole('combobox', { name: /periodo/i }), { target: { value: '7' } });
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(2));
+    expect(runtime.loadProducts.mock.calls[1][0].period).toMatchObject({ days: 7, timezone: 'America/New_York' });
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    const productSelect = screen.getByRole('combobox', { name: 'Producto' });
+    expect(productSelect).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Producto 7 días' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Producto 30 días' })).not.toBeInTheDocument();
+  });
+
   it('routes the profitability suggestion to its own internal intent', async () => {
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
