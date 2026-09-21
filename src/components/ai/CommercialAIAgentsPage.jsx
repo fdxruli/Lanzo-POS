@@ -392,7 +392,6 @@ export default function CommercialAIAgentsPage() {
       const requestKey = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${question}`;
       const resolvedIntent = intentOverride ? intent : inferSalesProfitabilityIntent(question);
       const previousPeriod = compare ? buildPreviousPeriod(period) : null;
-      const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC';
       const requestContext = {
         question: question.trim(),
         resolvedIntent,
@@ -402,7 +401,7 @@ export default function CommercialAIAgentsPage() {
           to: period.to,
           previousFrom: previousPeriod?.from || null,
           previousTo: previousPeriod?.to || null,
-          timezone
+          timezone: null
         },
         scenario: { ...scenario }
       };
@@ -415,7 +414,13 @@ export default function CommercialAIAgentsPage() {
         requestKey
       });
       setResult(response);
-      setDownloadContext(requestContext);
+      setDownloadContext({
+        ...requestContext,
+        period: {
+          ...requestContext.period,
+          timezone: response?.response?.queryRange?.current?.timezone || null
+        }
+      });
     } catch (error) {
       setAnalysisError(error?.message || 'No se pudo completar el análisis.');
     } finally {
