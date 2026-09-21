@@ -179,6 +179,13 @@ function structuredCommercialRequest(overrides: Record<string, unknown> = {}) {
         products: [{ name: 'Producto A', quantity: 2, netSales: 100, unitCost: 20, profit: 60, margin: 0.6, averagePrice: 50, costKnown: true }],
         channels: [{ channel: 'Físico', netSales: 100, orders: 1, units: 2, averageTicket: 100, share: 1 }],
         comparison: null,
+        evidenceKeys: [
+          'profitability.margin',
+          'profitability.profit',
+          'comparison.deltaMargin',
+          'products.risks',
+          'scenarios.values'
+        ],
         coverage: { validSales: 1, complete: true },
         calculations: [],
         assumptions: [],
@@ -772,6 +779,31 @@ Deno.test('la capa narrativa no puede sustituir cálculos determinísticos recib
   assertEquals(normalized.calculations.length, 1);
   assertEquals(normalized.calculations[0].label, 'Margen actual');
   assertEquals(normalized.facts[0].label, 'Producto A');
+});
+
+
+Deno.test('recomendación genérica sin evidenceKey permitido se descarta', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify({
+      executiveSummary: 'Resumen narrativo.',
+      explanation: 'Explicación breve.',
+      recommendations: [{
+        title: 'Cambiar todo',
+        explanation: 'Recomendación genérica sin respaldo.',
+        expectedImpact: 'Mejorar resultados.',
+        priority: 'high',
+        evidenceKeys: ['evidence.invented'],
+        requiresConfirmation: true
+      }],
+      confidence: 'medium'
+    }))
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(response.status, 200);
+  assertEquals(normalized.recommendations.length, 0);
+  assertEquals(normalized.executiveSummary, 'Resumen narrativo.');
 });
 
 Deno.test('escenario con volumen negativo es rechazado server-side', async () => {
