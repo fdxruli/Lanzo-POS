@@ -701,6 +701,79 @@ Deno.test('respuesta no JSON usa fallback determinístico válido', async () => 
   assertEquals(normalized.actionDrafts.length, 0);
 });
 
+
+Deno.test('ventas y rentabilidad acepta profitability_summary como intención propia', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify({
+      executiveSummary: 'El periodo genera utilidad con los costos registrados.',
+      explanation: 'La conclusión se limita a la evidencia recibida.',
+      recommendations: [{
+        title: 'Revisar el margen',
+        explanation: 'Confirmar si el margen actual cumple el objetivo del negocio.',
+        expectedImpact: 'Mantener decisiones basadas en el resultado del periodo.',
+        priority: 'medium',
+        evidenceKeys: ['profitability.margin'],
+        requiresConfirmation: true
+      }],
+      confidence: 'high'
+    }))
+  })(request(structuredCommercialRequest({
+    intent: 'profitability_summary',
+    question: '¿Mi negocio es rentable?'
+  })));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  assertEquals(body.intent, 'profitability_summary');
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(normalized.executiveSummary, 'El periodo genera utilidad con los costos registrados.');
+  assertEquals(normalized.recommendations.length, 1);
+  assertEquals(normalized.recommendations[0].priority, 'medium');
+  assertEquals(normalized.recommendations[0].evidenceKeys[0], 'profitability.margin');
+  assertEquals(normalized.actionDrafts.length, 0);
+});
+
+Deno.test('la capa narrativa no puede sustituir cálculos determinísticos recibidos', async () => {
+  const client = analysisClient();
+  const requestPayload = structuredCommercialRequest();
+  const context = requestPayload.context as Record<string, unknown>;
+  const sales = context.sales as Record<string, unknown>;
+  sales.calculations = [{
+    label: 'Margen actual',
+    value: 0.6,
+    formattedValue: '60%',
+    formula: 'utilidad / ventas',
+    source: 'sales_history',
+    period: { from: '2026-09-01', to: '2026-09-07' }
+  }];
+
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify({
+      executiveSummary: 'Resumen narrativo.',
+      explanation: 'Explicación narrativa.',
+      calculations: [{
+        label: 'Cálculo inventado',
+        value: 999,
+        formattedValue: '999',
+        formula: 'inventada',
+        source: 'provider',
+        period: {}
+      }],
+      facts: [{ label: 'Producto inventado' }],
+      recommendations: [],
+      confidence: 'medium'
+    }))
+  })(request(requestPayload));
+  const body = await json(response);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(response.status, 200);
+  assertEquals(normalized.executiveSummary, 'Resumen narrativo.');
+  assertEquals(normalized.calculations.length, 1);
+  assertEquals(normalized.calculations[0].label, 'Margen actual');
+  assertEquals(normalized.facts[0].label, 'Producto A');
+});
+
 Deno.test('escenario con volumen negativo es rechazado server-side', async () => {
   const client = analysisClient();
   const response = await makeHandler(client)(request(structuredCommercialRequest({ scenario: { historicalVolume: -1 } })));
