@@ -10,12 +10,14 @@ const runtime = vi.hoisted(() => ({
   licenseDetails: null,
   actorSnapshot: null,
   runAgent: vi.fn(),
+  loadProducts: vi.fn(),
   createObjectURL: vi.fn(),
   revokeObjectURL: vi.fn()
 }));
 
 vi.mock('../../../services/ai/salesProfitabilityAgentService', () => ({
-  runSalesProfitabilityAgent: runtime.runAgent
+  runSalesProfitabilityAgent: runtime.runAgent,
+  loadSalesProfitabilityProducts: runtime.loadProducts
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -51,6 +53,14 @@ describe('commercial AI center', () => {
     runtime.licenseDetails = entitledLicense;
     runtime.actorSnapshot = boundAdmin;
     runtime.runAgent.mockReset();
+    runtime.loadProducts.mockReset();
+    runtime.loadProducts.mockResolvedValue({
+      source: 'cloud_final',
+      products: [
+        { name: 'Producto A', units: 2, netSales: 100, averagePrice: 50, unitCost: 20, costKnown: true },
+        { name: 'Producto B', units: 1, netSales: 60, averagePrice: 60, unitCost: 25, costKnown: true }
+      ]
+    });
     runtime.createObjectURL.mockReset();
     runtime.revokeObjectURL.mockReset();
     runtime.createObjectURL.mockReturnValue('blob:lanzo-sales-profitability-report');
@@ -186,7 +196,34 @@ describe('commercial AI center', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
-    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'explain_change' });
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'profitability_summary' });
+  });
+
+
+  it('removes the redundant intent filter and prepares several products before the first analysis', async () => {
+    renderCenter();
+
+    expect(screen.queryByLabelText('Intención')).not.toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    const productSelect = screen.getByRole('combobox', { name: 'Producto' });
+    expect(productSelect).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Producto B' })).toBeInTheDocument();
+    expect(screen.getByText(/2 producto\(s\) elegible\(s\).*sin usar IA ni cuota/i)).toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('routes the profitability suggestion to its own internal intent', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'profitability_summary' });
   });
 
 });
