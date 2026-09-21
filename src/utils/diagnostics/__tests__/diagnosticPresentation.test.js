@@ -41,7 +41,8 @@ describe('diagnostic presentation', () => {
           title: 'Stock bajo',
           description: 'Un producto necesita revisión.',
           evidence: [{ name: 'Paracetamol 500 mg', stock: 2, minStock: 10 }],
-          formula: 'stock - committed_stock <= min_stock'
+          formula: 'stock - committed_stock <= min_stock',
+          actionRoute: '/productos'
         }],
         warnings: []
       },
@@ -50,6 +51,7 @@ describe('diagnostic presentation', () => {
 
     expect(model.sourceLabel).toBe('Datos mixtos: cloud + información local complementaria');
     expect(model.severityLabel).toBe('Atención');
+    expect(model.actions[0]).toMatchObject({ label: 'Revisar', route: '/productos' });
     expect(model.coverage.summary).toContain('62 ventas');
     expect(model.coverage.summary).toContain('70 productos');
     expect(model.kpis.find((kpi) => kpi.key === 'capitalDetained').displayValue).toBe('$1,250.00');
@@ -94,4 +96,3 @@ describe('diagnostic presentation', () => {
     expect(formatSeverity('critical')).toBe('Crítico');
   });
 });
-

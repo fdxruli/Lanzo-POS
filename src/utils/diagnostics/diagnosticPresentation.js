@@ -354,6 +354,14 @@ export const buildDiagnosticViewModel = ({
     periodLabel: formatPeriodLabel(period, rangeLabel, timezone),
     kpis: metricRows,
     findings: visualFindings,
+    actions: visualFindings
+      .filter((finding) => finding.actionRoute)
+      .map((finding) => ({
+        id: finding.id,
+        label: finding.actionLabel || 'Revisar',
+        route: finding.actionRoute,
+        title: finding.title
+      })),
     warnings: buildWarnings({ diagnostic: safeDiagnostic, diagnosticType, source: source.sourceType }),
     coverage: {
       salesAnalyzed: safeNumber(coverage.salesAnalyzed, 0),
