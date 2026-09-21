@@ -1,0 +1,161 @@
+import { COMMERCIAL_AGENT_KEYS } from './commercialAgentContract';
+
+const MAX_PRODUCT_NAME_LENGTH = 120;
+const MAX_ROWS = 20;
+const SAFE_SOURCES = new Set(['cloud', 'local', 'mixed']);
+
+const asRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+  ? value
+  : {};
+
+const asFiniteNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const asSafeText = (value, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text ? text.slice(0, maxLength) : null;
+};
+
+const asSafeSource = (value) => SAFE_SOURCES.has(value) ? value : 'mixed';
+
+const pickNumber = (row, keys) => {
+  for (const key of keys) {
+    const value = asFiniteNumber(row?.[key]);
+    if (value !== null) return value;
+  }
+  return null;
+};
+
+const normalizePeriod = (period = {}) => {
+  const source = asRecord(period);
+  return {
+    from: asSafeText(source.from || source.dateFrom || source.date_from, 32),
+    to: asSafeText(source.to || source.dateTo || source.date_to, 32),
+    label: asSafeText(source.label, 80)
+  };
+};
+
+const normalizeProduct = (row = {}) => {
+  const source = asRecord(row);
+  return {
+    name: asSafeText(source.name || source.product_name || source.productName),
+    quantity: pickNumber(source, ['quantity', 'units', 'items_sold']),
+    netSales: pickNumber(source, ['netSales', 'net_sales', 'sales', 'revenue']),
+    unitCost: pickNumber(source, ['unitCost', 'unit_cost', 'cost']),
+    profit: pickNumber(source, ['profit', 'gross_profit', 'utility']),
+    margin: pickNumber(source, ['margin', 'gross_margin'])
+  };
+};
+
+const normalizeChannel = (row = {}) => {
+  const source = asRecord(row);
+  return {
+    channel: asSafeText(source.channel || source.sales_channel || source.canal, 32),
+    netSales: pickNumber(source, ['netSales', 'net_sales', 'sales', 'revenue']),
+    orders: pickNumber(source, ['orders', 'order_count', 'orders_count']),
+    averageTicket: pickNumber(source, ['averageTicket', 'average_ticket', 'avg_ticket'])
+  };
+};
+
+const normalizeProducts = (rows = []) => (
+  (Array.isArray(rows) ? rows : [])
+    .slice(0, MAX_ROWS)
+    .map(normalizeProduct)
+    .filter((row) => row.name || row.netSales !== null || row.profit !== null)
+);
+
+const normalizeChannels = (rows = []) => (
+  (Array.isArray(rows) ? rows : [])
+    .slice(0, MAX_ROWS)
+    .map(normalizeChannel)
+    .filter((row) => row.channel || row.netSales !== null || row.orders !== null)
+);
+
+const normalizeComparison = (comparison = {}) => {
+  const source = asRecord(comparison);
+  return {
+    previousNetSales: pickNumber(source, ['previousNetSales', 'previous_net_sales']),
+    previousProfit: pickNumber(source, ['previousProfit', 'previous_profit']),
+    previousMargin: pickNumber(source, ['previousMargin', 'previous_margin']),
+    deltaNetSales: pickNumber(source, ['deltaNetSales', 'delta_net_sales']),
+    deltaProfit: pickNumber(source, ['deltaProfit', 'delta_profit']),
+    deltaMargin: pickNumber(source, ['deltaMargin', 'delta_margin'])
+  };
+};
+
+const normalizeSalesPayload = (payload = {}) => {
+  const source = asRecord(payload);
+  const overview = asRecord(source.overview || source.metrics || source.summary);
+
+  return {
+    netSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']),
+    grossSales: pickNumber(overview, ['grossSales', 'gross_sales']),
+    discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
+    unitCosts: pickNumber(overview, ['unitCosts', 'unit_costs', 'cogs', 'costs']),
+    profit: pickNumber(overview, ['profit', 'gross_profit', 'utility']),
+    margin: pickNumber(overview, ['margin', 'gross_margin']),
+    averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
+    products: normalizeProducts(source.products || source.byProduct || source.by_product),
+    channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
+    comparison: normalizeComparison(source.comparison || source.previous)
+  };
+};
+
+const normalizeEcommercePayload = (payload = {}) => {
+  const source = asRecord(payload);
+  const orders = asRecord(source.orders || source.orderFunnel || source.order_funnel);
+  const catalog = asRecord(source.catalog || source.catalogHealth || source.catalog_health);
+
+  return {
+    orders: {
+      received: pickNumber(orders, ['received', 'ordersReceived', 'orders_received']),
+      accepted: pickNumber(orders, ['accepted', 'ordersAccepted', 'orders_accepted']),
+      rejected: pickNumber(orders, ['rejected', 'ordersRejected', 'orders_rejected']),
+      converted: pickNumber(orders, ['converted', 'ordersConverted', 'orders_converted']),
+      averageOperationalTime: pickNumber(orders, ['averageOperationalTime', 'average_operational_time'])
+    },
+    events: {
+      total: pickNumber(asRecord(source.events), ['total', 'count']),
+      conversionRate: pickNumber(asRecord(source.events), ['conversionRate', 'conversion_rate'])
+    },
+    catalog: {
+      published: pickNumber(catalog, ['published', 'publishedProducts', 'published_products']),
+      eligible: pickNumber(catalog, ['eligible', 'eligibleProducts', 'eligible_products']),
+      availableStock: pickNumber(catalog, ['availableStock', 'available_stock', 'stock_available', 'stockAvailable']),
+      bestPerformers: normalizeProducts(catalog.bestPerformers || catalog.best_performers)
+    },
+    reconciledSales: {
+      netSales: pickNumber(asRecord(source.reconciledSales || source.reconciled_sales), ['netSales', 'net_sales', 'sales']),
+      orders: pickNumber(asRecord(source.reconciledSales || source.reconciled_sales), ['orders', 'order_count'])
+    }
+  };
+};
+
+export const buildSalesProfitabilityContext = ({ period, report, source = 'mixed' } = {}) => ({
+  agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
+  scope: 'current_authenticated_tenant',
+  period: normalizePeriod(period),
+  source: asSafeSource(source),
+  sales: normalizeSalesPayload(report)
+});
+
+export const buildEcommerceContext = ({ period, report, source = 'mixed' } = {}) => ({
+  agentKey: COMMERCIAL_AGENT_KEYS.ECOMMERCE,
+  scope: 'current_authenticated_tenant',
+  period: normalizePeriod(period),
+  source: asSafeSource(source),
+  ecommerce: normalizeEcommercePayload(report)
+});
+
+export const buildCommercialAgentContext = (agentKey, options = {}) => {
+  if (agentKey === COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY) {
+    return buildSalesProfitabilityContext(options);
+  }
+  if (agentKey === COMMERCIAL_AGENT_KEYS.ECOMMERCE) {
+    return buildEcommerceContext(options);
+  }
+  throw new Error('INVALID_COMMERCIAL_AGENT_KEY');
+};

@@ -18,6 +18,7 @@ import SetupModal from './components/common/SetupModal';
 import PermissionRoute from './components/common/PermissionRoute';
 import SettingsRoute from './components/common/SettingsRoute';
 import SalesReportsRoute from './components/common/SalesReportsRoute';
+import CommercialAIAgentsRoute from './components/ai/CommercialAIAgentsRoute';
 import EcommerceOrdersRoute from './components/ecommerce/orders/EcommerceOrdersRoute';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
@@ -122,6 +123,7 @@ const EcommerceOrdersPage = lazyRetry(() => import('./pages/EcommerceOrdersPage'
 const ProductsPage = lazyRetry(() => import('./pages/ProductsPage'), 'ProductsPage');
 const CustomersPage = lazyRetry(() => import('./pages/CustomersPage'), 'CustomersPage');
 const DashboardPage = lazyRetry(() => import('./pages/DashboardPage'), 'DashboardPage');
+const CommercialAIAgentsPage = lazyRetry(() => import('./components/ai/CommercialAIAgentsPage'), 'CommercialAIAgentsPage');
 const SettingsPage = lazyRetry(() => import('./pages/SettingsPage'), 'SettingsPage');
 const EcommercePortalPage = lazyRetry(() => import('./pages/EcommercePortalPage'), 'EcommercePortalPage');
 const AboutPage = lazyRetry(() => import('./pages/AboutPage'), 'AboutPage');
@@ -415,6 +417,7 @@ function App() {
                   <Route path="productos" element={<PermissionRoute permission={['products', 'inventory']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
                   <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
                   <Route path="ventas" element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
+                  <Route path="agentes-ia" element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
                   <Route path="portal-online" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
                   <Route path="configuracion" element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
