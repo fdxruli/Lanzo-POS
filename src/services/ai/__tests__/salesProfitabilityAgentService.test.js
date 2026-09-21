@@ -10,6 +10,8 @@ const history = {
   rows: [{
     id: 'internal-sale-id',
     status: 'closed',
+    sourceMode: 'cloud_committed',
+    sourceModeKnown: true,
     total: 100,
     discount: null,
     itemsCount: 1,
