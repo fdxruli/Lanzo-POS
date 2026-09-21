@@ -2,6 +2,7 @@ import { AIApiError, analyzeCommercialAgent } from '../aiService';
 import { assertCurrentAIAgentActor } from '../auth/aiAgentAuthorization';
 import { getSalesFinalHistoryScope } from '../auth/salesPermissionPolicy';
 import { reportsRepository } from '../reports/reportsRepository';
+import { useAppStore } from '../../store/useAppStore';
 import {
   buildPreviousPeriod,
   buildSalesProfitabilityAnalysis,
@@ -38,13 +39,19 @@ const defaultRequestKey = (request) => {
   return `sales-profitability:${encoded}`;
 };
 
-const normalizePeriod = (period = {}) => ({
-  from: period.from || period.dateFrom || null,
-  to: period.to || period.dateTo || null,
-  days: Math.max(Number(period.days) || 30, 1),
-  previous: period.previous || null,
-  timezone: period.timezone || DEFAULT_BUSINESS_TIMEZONE
-});
+const normalizePeriod = (period = {}) => {
+  const companyProfile = useAppStore.getState()?.companyProfile || {};
+  return {
+    from: period.from || period.dateFrom || null,
+    to: period.to || period.dateTo || null,
+    days: Math.max(Number(period.days) || 30, 1),
+    previous: period.previous || null,
+    timezone: period.timezone
+      || companyProfile.timezone
+      || companyProfile.time_zone
+      || DEFAULT_BUSINESS_TIMEZONE
+  };
+};
 
 const priorityFromLegacyEffort = (effort) => {
   if (effort === 'high') return 'high';
