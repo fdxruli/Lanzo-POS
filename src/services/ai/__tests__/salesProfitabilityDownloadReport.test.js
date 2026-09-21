@@ -41,6 +41,32 @@ const completedResult = {
     explanation: 'Explicación narrativa sin mezclar los cálculos locales.',
     confidence: 'high',
     source: 'cloud',
+    queryRange: {
+      current: {
+        calendar: { from: '2026-09-01', to: '2026-09-07' },
+        timezone: 'America/Mexico_City',
+        fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
+        toExclusiveUtc: '2026-09-08T06:00:00.000Z'
+      },
+      previous: {
+        calendar: { from: '2026-08-25', to: '2026-08-31' },
+        timezone: 'America/Mexico_City',
+        fromInclusiveUtc: '2026-08-25T06:00:00.000Z',
+        toExclusiveUtc: '2026-09-01T06:00:00.000Z'
+      }
+    },
+    aiNarrative: {
+      executiveSummary: 'La IA recomienda revisar Producto A.',
+      explanation: 'Explicación narrativa sin mezclar los cálculos locales.',
+      recommendations: [{
+        title: 'Probar el precio',
+        explanation: 'Haz una prueba controlada.',
+        expectedImpact: 'Medir utilidad.',
+        priority: 'medium',
+        evidenceKeys: ['priceSimulation.profitDelta'],
+        requiresConfirmation: true
+      }]
+    },
     coverage: {
       validSales: 2,
       rawSales: 3,
@@ -171,12 +197,12 @@ const completedResult = {
 };
 
 describe('sales profitability download report', () => {
-  it('builds the v1 complete report with request, period, intent and scenario', () => {
+  it('builds the v2 complete report with calendar period and real UTC query boundaries', () => {
     const report = buildSalesProfitabilityDownloadReport(completedResult, requestContext, {
       generatedAt: new Date('2026-09-21T15:39:00.000Z')
     });
 
-    expect(report.schemaVersion).toBe('sales-profitability-report-v1');
+    expect(report.schemaVersion).toBe('sales-profitability-report-v2');
     expect(report.generatedAt).toBe('2026-09-21T15:39:00.000Z');
     expect(report.agent).toEqual({ key: 'salesProfitability', title: 'Ventas y rentabilidad' });
     expect(report.request).toMatchObject({
@@ -199,6 +225,14 @@ describe('sales profitability download report', () => {
         expectedVolume: 24
       }
     });
+    expect(report.request.queryRange.current).toMatchObject({
+      timezone: 'America/Mexico_City',
+      fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
+      toExclusiveUtc: '2026-09-08T06:00:00.000Z'
+    });
+    expect(report.request.queryRange.previous.toExclusiveUtc).toBe(
+      report.request.queryRange.current.fromInclusiveUtc
+    );
     expect(report.result.status).toBe('completed');
     expect(report.result.providerCalled).toBe(true);
     expect(report.usage).toEqual({ used: 3, limit: 15, remaining: 12 });
@@ -212,7 +246,9 @@ describe('sales profitability download report', () => {
     expect(report.deterministic.calculations[0].formula).toBe('ventas netas - costo de venta');
     expect(report.deterministic.scenarios[0].utility).toBe(2000);
     expect(report.ai.executiveSummary).toBe('La IA recomienda revisar Producto A.');
+    expect(report.ai.explanation).toBe('Explicación narrativa sin mezclar los cálculos locales.');
     expect(report.ai.recommendations[0].title).toBe('Probar el precio');
+    expect(report.deterministic.queryRange.current.fromInclusiveUtc).toBe('2026-09-01T06:00:00.000Z');
     expect(report.deterministic).not.toHaveProperty('recommendations');
   });
 
