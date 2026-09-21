@@ -987,16 +987,37 @@ export const inferSalesProfitabilityIntent = (question = '') => {
   if (containsAny(['margen', 'cambio', 'cambio mi', 'cambio el', 'subio', 'bajo', 'variacion'])) return 'explain_change';
   return 'profitability_summary';
 };
-export const buildSalesProfitabilityProductOptions = ({ period = {}, currentHistory } = {}) => {
-  const current = aggregateSales(currentHistory, period);
-  return current.products.map((product) => ({
-    name: product.name,
-    units: product.quantity,
-    netSales: product.netSales,
-    averagePrice: product.averagePrice,
-    unitCost: product.unitCost,
-    costKnown: product.costKnown
-  }));
+export const buildSalesProfitabilityProductOptions = ({ currentHistory } = {}) => {
+  const productMap = new Map();
+  normalizeValidSales(currentHistory).rows.map(normalizeSale).forEach((sale) => {
+    sale.items.forEach((item) => {
+      const product = productMap.get(item.name) || {
+        name: item.name,
+        units: 0,
+        netSales: 0,
+        weightedPrice: 0,
+        knownCost: 0,
+        missingCostLines: 0
+      };
+      product.units += item.quantity;
+      product.netSales += item.total || 0;
+      product.weightedPrice += (item.unitPrice || 0) * item.quantity;
+      if (item.unitCost === null) product.missingCostLines += 1;
+      else product.knownCost += item.unitCost * item.quantity;
+      productMap.set(item.name, product);
+    });
+  });
+
+  return Array.from(productMap.values())
+    .map((product) => ({
+      name: product.name,
+      units: product.units,
+      netSales: product.netSales,
+      averagePrice: product.units > 0 ? product.weightedPrice / product.units : null,
+      unitCost: product.missingCostLines === 0 && product.units > 0 ? product.knownCost / product.units : null,
+      costKnown: product.missingCostLines === 0
+    }))
+    .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es'));
 };
 
 export const buildSalesProfitabilityAnalysis = ({
