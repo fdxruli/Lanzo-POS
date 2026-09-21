@@ -539,3 +539,270 @@
     width: 100%;
   }
 }
+
+
+/* Phase 3.2: executive, intent-specific sales profitability UI */
+.commercial-ai-executive-block {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #fff;
+}
+
+.commercial-ai-executive-block h3 {
+  margin: 0 0 0.65rem;
+  color: #334155;
+  font-size: 0.98rem;
+}
+
+.commercial-ai-executive-block > p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.commercial-ai-executive-block--recommendation {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.commercial-ai-evidence-lead {
+  margin: 0 0 0.75rem;
+  color: #111827;
+  font-weight: 800;
+}
+
+.commercial-ai-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.65rem;
+}
+
+.commercial-ai-metric {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  background: #f8fafc;
+}
+
+.commercial-ai-metric span,
+.commercial-ai-metric small {
+  color: #64748b;
+  font-size: 0.73rem;
+}
+
+.commercial-ai-metric strong {
+  color: #111827;
+  font-size: 0.98rem;
+}
+
+.commercial-ai-caution {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  color: #92400e;
+  background: #fffbeb;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.commercial-ai-contributors,
+.commercial-ai-recommendations {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.commercial-ai-contributor {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.72rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  background: #f8fafc;
+}
+
+.commercial-ai-contributor strong {
+  color: #334155;
+  font-size: 0.84rem;
+}
+
+.commercial-ai-contributor span {
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.commercial-ai-recommendation {
+  padding: 0.8rem;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.7rem;
+  background: rgb(255 255 255 / 70%);
+}
+
+.commercial-ai-recommendation > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.commercial-ai-recommendation > div span {
+  flex: 0 0 auto;
+  color: #166534;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.commercial-ai-recommendation p {
+  margin: 0.45rem 0 0;
+}
+
+.commercial-ai-recommendation small {
+  margin-top: 0.45rem;
+}
+
+.commercial-ai-confidence-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.commercial-ai-technical {
+  margin-top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.commercial-ai-technical summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  color: #475569;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 800;
+  list-style: none;
+}
+
+.commercial-ai-technical summary::-webkit-details-marker {
+  display: none;
+}
+
+.commercial-ai-technical__body {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.commercial-ai-technical__notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+.commercial-ai-technical__notes > div {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  background: #fff;
+}
+
+.commercial-ai-technical__notes strong {
+  color: #334155;
+  font-size: 0.82rem;
+}
+
+.commercial-ai-technical__notes ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1rem;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.commercial-ai-scenario-panel {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+}
+
+.commercial-ai-scenario-panel .commercial-ai-scenario-form {
+  margin-top: 0;
+}
+
+.commercial-ai-search-wrap {
+  position: relative;
+  display: block;
+}
+
+.commercial-ai-search-wrap svg {
+  position: absolute;
+  top: 50%;
+  left: 0.7rem;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+
+.commercial-ai-search-wrap input {
+  padding-left: 2rem;
+}
+
+.commercial-ai-product-count,
+.commercial-ai-inline-error {
+  margin: 0.65rem 0 0;
+  font-size: 0.76rem;
+}
+
+.commercial-ai-product-count {
+  color: #64748b;
+}
+
+.commercial-ai-inline-error {
+  color: #991b1b;
+}
+
+.commercial-ai-table th:first-child span,
+.commercial-ai-table th:first-child small {
+  display: block;
+  white-space: normal;
+}
+
+.commercial-ai-table th:first-child small {
+  max-width: 360px;
+  margin-top: 0.2rem;
+  color: #64748b;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+  .commercial-ai-technical__notes {
+    grid-template-columns: 1fr;
+  }
+
+  .commercial-ai-recommendation > div,
+  .commercial-ai-confidence-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .commercial-ai-confidence-row {
+    justify-content: flex-start;
+  }
+}
