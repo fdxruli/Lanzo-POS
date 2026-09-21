@@ -72,7 +72,7 @@ const buildFinalFilters = ({ dateFrom = null, dateTo = null, scope = 'mine', sta
   p_category_id: categoryId || null
 });
 
-const buildSalesProfitFilters = ({
+export const buildSalesProfitFilters = ({
   dateFrom = null,
   dateTo = null,
   scope = 'mine',
