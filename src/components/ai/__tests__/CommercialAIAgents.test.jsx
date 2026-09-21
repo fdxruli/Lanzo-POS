@@ -109,4 +109,14 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA comerciales' })).not.toBeInTheDocument();
   });
+  it('reinfers a free question after a previous scenario suggestion', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: 'Simula una promoción' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'explain_change' });
+  });
+
 });

@@ -462,7 +462,7 @@ const buildVolumeScenarios = ({ currentPrice, newPrice, unitCost, volume, baseli
 
 const simulatePrice = (aggregate, scenario, period) => {
   const product = chooseProduct(aggregate, scenario);
-  if (!product) return { scenarios: [], limitations: ['No hay productos vendidos en el periodo para simular un precio.'] };
+  if (!product) return { scenarios: [], calculations: [], assumptions: [], limitations: ['No hay productos vendidos en el periodo para simular un precio.'] };
   const currentPrice = positiveNumberOrNull(scenario.currentPrice) || positiveNumberOrNull(product.averagePrice);
   const newPrice = positiveNumberOrNull(scenario.newPrice);
   const unitCost = numberOrNull(scenario.unitCost) ?? product.unitCost;
@@ -470,6 +470,8 @@ const simulatePrice = (aggregate, scenario, period) => {
   if (currentPrice === null || newPrice === null || unitCost === null || volume === null) {
     return {
       scenarios: [],
+      calculations: [],
+      assumptions: [],
       limitations: ['Se requiere precio actual, nuevo precio, costo unitario y volumen histórico con datos confiables.']
     };
   }
@@ -496,7 +498,7 @@ const simulatePrice = (aggregate, scenario, period) => {
 
 const simulatePromotion = (aggregate, scenario, period) => {
   const product = chooseProduct(aggregate, scenario);
-  if (!product) return { scenarios: [], limitations: ['No hay productos vendidos en el periodo para simular una promoción.'] };
+  if (!product) return { scenarios: [], calculations: [], assumptions: [], limitations: ['No hay productos vendidos en el periodo para simular una promoción.'] };
   const currentPrice = positiveNumberOrNull(scenario.currentPrice) || positiveNumberOrNull(product.averagePrice);
   const discountPercent = numberOrNull(scenario.discountPercent);
   const promotionalPrice = positiveNumberOrNull(scenario.promotionalPrice)
@@ -504,7 +506,7 @@ const simulatePromotion = (aggregate, scenario, period) => {
   const unitCost = numberOrNull(scenario.unitCost) ?? product.unitCost;
   const volume = positiveNumberOrNull(scenario.historicalVolume) || product.quantity;
   if (currentPrice === null || promotionalPrice === null || unitCost === null || volume === null) {
-    return { scenarios: [], limitations: ['Se requiere precio actual, descuento o precio promocional, costo y volumen histórico.'] };
+    return { scenarios: [], calculations: [], assumptions: [], limitations: ['Se requiere precio actual, descuento o precio promocional, costo y volumen histórico.'] };
   }
   const currentProfit = (currentPrice - unitCost) * volume;
   const promotionalUnitProfit = promotionalPrice - unitCost;
@@ -590,6 +592,13 @@ const buildComboSimulation = (validRows, aggregate, period) => {
     limitations: candidates.some((candidate) => candidate.margin === null) ? ['Algunos productos no tienen costo registrado; el margen del combo puede estar incompleto.'] : []
   };
 };
+
+const normalizeSimulationResult = (simulation = {}) => ({
+  scenarios: Array.isArray(simulation.scenarios) ? simulation.scenarios : [],
+  calculations: Array.isArray(simulation.calculations) ? simulation.calculations : [],
+  assumptions: Array.isArray(simulation.assumptions) ? simulation.assumptions : [],
+  limitations: Array.isArray(simulation.limitations) ? simulation.limitations : []
+});
 
 const buildAgentContext = ({ current, comparison, period, source }) => ({
   summary: {
@@ -684,6 +693,7 @@ export const buildSalesProfitabilityAnalysis = ({
   if (intent === 'price_simulation') simulation = simulatePrice(current, scenario, period);
   if (intent === 'promotion_opportunity') simulation = simulatePromotion(current, scenario, period);
   if (intent === 'combo_opportunity') simulation = buildComboSimulation(validRows, current, period);
+  simulation = normalizeSimulationResult(simulation);
 
   const limitations = [
     ...(current.costComplete ? [] : [`Faltan costos unitarios en ${current.missingCostLines} líneas de producto; utilidad y margen no se calculan completamente.`]),

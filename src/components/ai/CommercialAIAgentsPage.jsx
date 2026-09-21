@@ -35,6 +35,7 @@ const PERIOD_OPTIONS = [
 ];
 
 const EMPTY_ARRAY = Object.freeze([]);
+const asArray = (value) => Array.isArray(value) ? value : EMPTY_ARRAY;
 const formatValue = (calculation) => calculation?.formattedValue || formatAnalysisValue.formatMoney(calculation?.value);
 
 function Section({ title, icon: Icon, children, tone = '' }) {
@@ -46,11 +47,12 @@ function Section({ title, icon: Icon, children, tone = '' }) {
   );
 }
 
-function CalculationList({ calculations = EMPTY_ARRAY }) {
-  if (!calculations.length) return <p className="commercial-ai-muted">No hay cálculos disponibles.</p>;
+function CalculationList({ calculations }) {
+  const safeCalculations = asArray(calculations);
+  if (!safeCalculations.length) return <p className="commercial-ai-muted">No hay cálculos disponibles.</p>;
   return (
     <div className="commercial-ai-calculations">
-      {calculations.map((calculation) => (
+      {safeCalculations.map((calculation) => (
         <div className="commercial-ai-calculation" key={`${calculation.label}-${calculation.formula}-${calculation.period?.from || 'period'}`}>
           <div><strong>{calculation.label}</strong><span>{calculation.formula}</span></div>
           <b>{formatValue(calculation)}</b>
@@ -60,14 +62,15 @@ function CalculationList({ calculations = EMPTY_ARRAY }) {
   );
 }
 
-function ProductEvidence({ products = EMPTY_ARRAY }) {
-  if (!products.length) return <p className="commercial-ai-muted">No hay productos con evidencia suficiente.</p>;
+function ProductEvidence({ products }) {
+  const safeProducts = asArray(products);
+  if (!safeProducts.length) return <p className="commercial-ai-muted">No hay productos con evidencia suficiente.</p>;
   return (
     <div className="commercial-ai-table-wrap">
       <table className="commercial-ai-table">
         <caption className="sr-only">Productos involucrados en el análisis</caption>
         <thead><tr><th>Producto</th><th>Unidades</th><th>Ventas</th><th>Margen</th></tr></thead>
-        <tbody>{products.map((product) => (
+        <tbody>{safeProducts.map((product) => (
           <tr key={product.name}><th scope="row">{product.name}</th><td>{formatAnalysisValue.formatNumber(product.quantity, 0)}</td><td>{formatAnalysisValue.formatMoney(product.netSales)}</td><td>{formatAnalysisValue.formatPercent(product.margin)}</td></tr>
         ))}</tbody>
       </table>
@@ -78,9 +81,13 @@ function ProductEvidence({ products = EMPTY_ARRAY }) {
 function AnalysisResult({ result }) {
   const response = result?.response || {};
   const facts = Array.isArray(response.facts) ? response.facts : EMPTY_ARRAY;
-  const products = response.current?.products || facts.filter((fact) => fact && fact.label && fact.quantity !== undefined);
-  const recommendations = Array.isArray(response.recommendations) ? response.recommendations : EMPTY_ARRAY;
-  const scenarios = Array.isArray(response.scenarios) ? response.scenarios : EMPTY_ARRAY;
+  const products = Array.isArray(response.current?.products)
+    ? response.current.products
+    : facts.filter((fact) => fact && fact.label && fact.quantity !== undefined);
+  const recommendations = asArray(response.recommendations);
+  const scenarios = asArray(response.scenarios);
+  const assumptions = asArray(response.assumptions);
+  const limitations = asArray(response.limitations);
 
   return (
     <div className="commercial-ai-result" aria-live="polite">
@@ -101,7 +108,7 @@ function AnalysisResult({ result }) {
         <article className="commercial-ai-scenario" key={`${scenario.label || scenario.products?.join('-') || 'scenario'}-${scenario.volume ?? 'volume'}`}><strong>{scenario.label || scenario.products?.join(' + ') || 'Escenario'}</strong>{scenario.volume !== undefined && <span>Volumen: {formatAnalysisValue.formatNumber(scenario.volume, 1)}</span>}{scenario.utility !== undefined && <span>Utilidad: {formatAnalysisValue.formatMoney(scenario.utility)}</span>}{scenario.margin !== undefined && <span>Margen: {formatAnalysisValue.formatPercent(scenario.margin)}</span>}{scenario.note && <small>{scenario.note}</small>}</article>
       ))}</div></Section>}
       <div className="commercial-ai-result__grid">
-        <Section title="Supuestos y limitaciones" icon={AlertTriangle} tone="amber"><ul className="commercial-ai-list">{(response.assumptions || EMPTY_ARRAY).map((item) => <li key={`a-${item}`}>{item}</li>)}{(response.limitations || EMPTY_ARRAY).map((item) => <li key={`l-${item}`}><b>Limitación:</b> {item}</li>)}</ul></Section>
+        <Section title="Supuestos y limitaciones" icon={AlertTriangle} tone="amber"><ul className="commercial-ai-list">{assumptions.map((item) => <li key={`a-${item}`}>{item}</li>)}{limitations.map((item) => <li key={`l-${item}`}><b>Limitación:</b> {item}</li>)}</ul></Section>
         <Section title="Recomendación" icon={Lightbulb} tone="green">{recommendations.length ? recommendations.map((recommendation) => <article className="commercial-ai-recommendation" key={`${recommendation.title}-${recommendation.effort || 'effort'}`}><strong>{recommendation.title}</strong><p>{recommendation.explanation}</p><span>Impacto esperado: {recommendation.expectedImpact}</span><small>Requiere confirmación manual · Esfuerzo: {recommendation.effort}</small></article>) : <p className="commercial-ai-muted">No hay recomendación confiable con esta cobertura.</p>}</Section>
       </div>
     </div>
@@ -118,9 +125,17 @@ export default function CommercialAIAgentsPage() {
   const [analysisError, setAnalysisError] = useState(null);
   const [result, setResult] = useState(null);
   const period = useMemo(() => buildPeriodRange({ days: periodDays }), [periodDays]);
-  const productOptions = result?.response?.current?.products || EMPTY_ARRAY;
+  const productOptions = Array.isArray(result?.response?.current?.products)
+    ? result.response.current.products
+    : EMPTY_ARRAY;
+  const [intentOverride, setIntentOverride] = useState(false);
 
-  const selectIntent = (nextIntent, text) => { setIntent(nextIntent); setQuestion(text); setAnalysisError(null); };
+  const selectIntent = (nextIntent, text) => {
+    setIntent(nextIntent);
+    setIntentOverride(true);
+    setQuestion(text);
+    setAnalysisError(null);
+  };
   const handleScenarioChange = (event) => { const { name, value } = event.target; setScenario((current) => ({ ...current, [name]: value === '' ? undefined : value })); };
   const handleAnalyze = async (event) => {
     event.preventDefault();
@@ -128,7 +143,8 @@ export default function CommercialAIAgentsPage() {
     setIsAnalyzing(true); setAnalysisError(null); setResult(null);
     try {
       const requestKey = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${question}`;
-      const response = await runSalesProfitabilityAgent({ question, intent: intent || inferSalesProfitabilityIntent(question), period, compare, scenario, requestKey });
+      const resolvedIntent = intentOverride ? intent : inferSalesProfitabilityIntent(question);
+      const response = await runSalesProfitabilityAgent({ question, intent: resolvedIntent, period, compare, scenario, requestKey });
       setResult(response);
     } catch (error) { setAnalysisError(error?.message || 'No se pudo completar el análisis.'); }
     finally { setIsAnalyzing(false); }
@@ -145,12 +161,20 @@ export default function CommercialAIAgentsPage() {
         <div className="commercial-ai-workspace__heading"><div><p className="commercial-ai-eyebrow">Agente activo</p><h2 id="sales-agent-title">Pregunta sobre tu negocio</h2></div><span className="commercial-ai-readonly"><ShieldCheck size={15} /> Solo lectura y simulación</span></div>
         <form onSubmit={handleAnalyze}>
           <label className="commercial-ai-label" htmlFor="sales-agent-question">Pregunta libre</label>
-          <textarea id="sales-agent-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ej. ¿Por qué bajó mi margen este periodo?" rows={3} maxLength={1200} />
+          <textarea id="sales-agent-question" value={question} onChange={(event) => {
+            const nextQuestion = event.target.value;
+            setQuestion(nextQuestion);
+            setIntentOverride(false);
+            setIntent(inferSalesProfitabilityIntent(nextQuestion));
+          }} placeholder="Ej. ¿Por qué bajó mi margen este periodo?" rows={3} maxLength={1200} />
           <div className="commercial-ai-suggestions" aria-label="Preguntas sugeridas">{SUGGESTED_QUESTIONS.map((suggestion) => <button type="button" className={`commercial-ai-suggestion ${intent === suggestion.intent ? 'is-selected' : ''}`} key={suggestion.intent} onClick={() => selectIntent(suggestion.intent, suggestion.label)}>{suggestion.label}</button>)}</div>
           <div className="commercial-ai-filters">
             <label className="commercial-ai-label" htmlFor="sales-agent-period">Periodo<span className="commercial-ai-select-wrap"><select id="sales-agent-period" value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}>{PERIOD_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>
             <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
-            <label className="commercial-ai-label" htmlFor="sales-agent-intent">Intención<span className="commercial-ai-select-wrap"><select id="sales-agent-intent" value={intent} onChange={(event) => setIntent(event.target.value)}>{SUGGESTED_QUESTIONS.map((option) => <option key={option.intent} value={option.intent}>{option.label}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>
+            <label className="commercial-ai-label" htmlFor="sales-agent-intent">Intención<span className="commercial-ai-select-wrap"><select id="sales-agent-intent" value={intent} onChange={(event) => {
+                setIntent(event.target.value);
+                setIntentOverride(true);
+              }}>{SUGGESTED_QUESTIONS.map((option) => <option key={option.intent} value={option.intent}>{option.label}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label>
           </div>
           {(intent === 'price_simulation' || intent === 'promotion_opportunity') && <div className="commercial-ai-scenario-form"><label className="commercial-ai-label" htmlFor="sales-agent-product">Producto<span className="commercial-ai-select-wrap"><select id="sales-agent-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange}><option value="">Usar el producto principal del periodo</option>{productOptions.map((product) => <option key={product.name} value={product.name}>{product.name}</option>)}</select><ChevronDown size={15} aria-hidden="true" /></span></label><label className="commercial-ai-label">Precio nuevo<input name={intent === 'price_simulation' ? 'newPrice' : 'promotionalPrice'} type="number" min="0" step="0.01" placeholder="Opcional" value={scenario[intent === 'price_simulation' ? 'newPrice' : 'promotionalPrice'] || ''} onChange={handleScenarioChange} /></label>{intent === 'promotion_opportunity' && <label className="commercial-ai-label">Descuento %<input name="discountPercent" type="number" min="0" max="100" step="0.1" placeholder="Opcional" value={scenario.discountPercent || ''} onChange={handleScenarioChange} /></label>}<label className="commercial-ai-label">Volumen esperado<input name="historicalVolume" type="number" min="0" step="1" placeholder="Volumen histórico" value={scenario.historicalVolume || ''} onChange={handleScenarioChange} /></label></div>}
           <div className="commercial-ai-submit-row"><p>Periodo: <b>{period.from} a {period.to}</b>{compare && ' · comparación comparable'}</p><button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button></div>

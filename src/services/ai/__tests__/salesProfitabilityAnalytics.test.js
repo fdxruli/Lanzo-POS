@@ -121,4 +121,18 @@ describe('sales profitability deterministic analysis', () => {
     expect(current).toMatchObject({ from: '2026-09-01', to: '2026-09-07', days: 7 });
     expect(previous).toMatchObject({ from: '2026-08-25', to: '2026-08-31', days: 7 });
   });
+  it('keeps a safe calculation array when a simulation has no eligible product', () => {
+    for (const intent of ['price_simulation', 'promotion_opportunity']) {
+      const result = buildSalesProfitabilityAnalysis({
+        period,
+        currentHistory: { rows: [] },
+        intent
+      });
+
+      expect(Array.isArray(result.calculations)).toBe(true);
+      expect(Array.isArray(result.scenarios)).toBe(true);
+      expect(result.limitations.some((item) => item.includes('No hay productos vendidos'))).toBe(true);
+    }
+  });
+
 });
