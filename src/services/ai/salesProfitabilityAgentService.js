@@ -289,13 +289,19 @@ const intentHasUsefulEvidence = (response) => {
     case 'explain_change':
       return response.coverage?.comparisonAvailable === true;
     case 'product_risk':
-      return response.coverage?.itemsComplete === true && response.current?.products?.length > 0;
+      return response.coverage?.itemsComplete === true
+        && response.coverage?.paginationComplete === true
+        && response.coverage?.sourceComplete === true
+        && response.current?.products?.length > 0;
     case 'price_simulation':
       return Boolean(response.priceSimulation) && response.coverage?.sourceComplete === true;
     case 'promotion_opportunity':
       return Boolean(response.promotionSimulation) && response.coverage?.sourceComplete === true;
     case 'combo_opportunity':
-      return response.coverage?.itemsComplete === true && response.comboOpportunities?.length > 0;
+      return response.coverage?.itemsComplete === true
+        && response.coverage?.paginationComplete === true
+        && response.coverage?.sourceComplete === true
+        && response.comboOpportunities?.length > 0;
     default:
       return false;
   }
@@ -304,6 +310,24 @@ const intentHasUsefulEvidence = (response) => {
 const intentStatus = (response) => {
   if (response.coverage?.validSales === 0) return 'insufficient_data';
   return intentHasUsefulEvidence(response) ? 'completed' : 'incomplete';
+};
+
+const incompleteRecommendations = (response) => {
+  if (
+    response.intent === 'profitability_summary'
+    && response.coverage?.validSales > 0
+    && response.coverage?.complete !== true
+  ) {
+    return [{
+      title: 'Completar detalle y costos antes de decidir',
+      explanation: 'La utilidad y el margen total permanecen indeterminados mientras la cobertura de artículos, costos o fuente no sea completa.',
+      expectedImpact: 'Evitar decisiones basadas en costos faltantes interpretados como cero.',
+      priority: 'high',
+      evidenceKeys: ['coverage.itemsComplete', 'coverage.costCoverage'],
+      requiresConfirmation: true
+    }];
+  }
+  return [];
 };
 
 const buildSafeNarrative = (response) => {
@@ -453,6 +477,9 @@ const hardenDeterministicResult = ({
   };
 
   hardened.status = intentStatus(hardened);
+  if (!intentHasUsefulEvidence(hardened)) {
+    hardened.recommendations = incompleteRecommendations(hardened);
+  }
   const narrative = buildSafeNarrative(hardened);
   hardened.executiveSummary = narrative.executiveSummary;
   hardened.answer = narrative.executiveSummary;
