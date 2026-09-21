@@ -100,12 +100,16 @@ describe('sales profitability deterministic analysis', () => {
 
   it('keeps an unknown source only for compatibility, warns deterministically and never reports high confidence', () => {
     const unknown = sale('unknown-source', [item('Compatibilidad', 1, 100, 40)], { sourceMode: 'vendor_future_mode' });
+    const fallbackUnknown = sale('fallback-source', [item('Fallback', 1, 50, 20)], {
+      sourceMode: 'cloud_committed',
+      sourceModeKnown: false
+    });
     const result = buildSalesProfitabilityAnalysis({
       period,
-      currentHistory: { rows: [unknown] },
+      currentHistory: { rows: [unknown, fallbackUnknown] },
       intent: 'profitability_summary'
     });
-    expect(result.coverage.sourcePolicy.unknownSources).toBe(1);
+    expect(result.coverage.sourcePolicy.unknownSources).toBe(2);
     expect(result.coverage.sourceWarnings.join(' ')).toContain('fuente no reconocida');
     expect(result.confidence).toBe('low');
   });
