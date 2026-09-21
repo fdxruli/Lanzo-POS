@@ -1,6 +1,7 @@
 import { COMMERCIAL_AGENT_KEYS } from './commercialAgentContract';
 
 export const SALES_PROFITABILITY_INTENTS = Object.freeze([
+  'profitability_summary',
   'explain_change',
   'product_risk',
   'price_simulation',
@@ -301,6 +302,7 @@ const aggregateSales = (history, period) => {
         name: product.name,
         quantity: product.quantity,
         netSales: product.netSales,
+        cost: costKnown ? product.cost : null,
         unitCost: costKnown && product.quantity > 0 ? product.cost / product.quantity : null,
         profit,
         margin: costKnown && product.netSales > 0 ? profit / product.netSales : null,
@@ -358,6 +360,9 @@ const buildComparison = (current, previous) => {
     deltaCost: delta(current.costComplete ? current.costOfSale : null, previous.costComplete ? previous.costOfSale : null),
     deltaProfit: delta(current.profit, previous.profit),
     deltaMargin: delta(current.margin, previous.margin),
+    deltaMarginRelative: current.margin !== null && previous.margin !== null && previous.margin !== 0
+      ? (current.margin - previous.margin) / Math.abs(previous.margin)
+      : null,
     deltaDiscounts: delta(current.discountsKnown ? current.discounts : null, previous.discountsKnown ? previous.discounts : null),
     productMixChanges: Array.from(names).map((name) => ({
       name,
@@ -380,52 +385,101 @@ const buildComparison = (current, previous) => {
 const buildContributors = (current, previous, comparison) => {
   if (!comparison) return [];
   const contributors = [];
+  const push = (key, title, contribution, direction, explanation, evidenceKeys) => {
+    if (contribution === null || contribution === undefined || !Number.isFinite(Number(contribution))) return;
+    contributors.push({
+      key,
+      title,
+      contribution,
+      value: contribution,
+      direction,
+      explanation,
+      evidenceKeys
+    });
+  };
+
   const currentCostRate = current.costComplete && current.netSales > 0 ? current.costOfSale / current.netSales : null;
   const previousCostRate = previous.costComplete && previous.netSales > 0 ? previous.costOfSale / previous.netSales : null;
   const costRateDelta = delta(currentCostRate, previousCostRate);
   if (costRateDelta !== null && Math.abs(costRateDelta) > 0.0001) {
-    contributors.push({
-      label: 'costo de venta',
-      contribution: costRateDelta,
-      direction: costRateDelta > 0 ? 'negative' : 'positive',
-      explanation: `La tasa de costo cambió ${formatPercent(costRateDelta)}.`
-    });
+    push(
+      'cost_rate',
+      'Cambio en costo de venta',
+      costRateDelta,
+      costRateDelta > 0 ? 'negative' : 'positive',
+      `El historial muestra que la proporción del costo de venta cambió ${formatPercent(costRateDelta)}.`,
+      ['comparison.deltaCost', 'comparison.costRate']
+    );
   }
 
   const mixDelta = delta(current.lowMarginSalesShare, previous.lowMarginSalesShare);
   if (mixDelta !== null && Math.abs(mixDelta) > 0.0001) {
-    contributors.push({
-      label: 'mezcla de productos de bajo margen',
-      contribution: mixDelta,
-      direction: mixDelta > 0 ? 'negative' : 'positive',
-      explanation: `La participación de ventas de bajo margen cambió ${formatPercent(mixDelta)}.`
-    });
+    push(
+      'low_margin_mix',
+      'Mezcla de productos',
+      mixDelta,
+      mixDelta > 0 ? 'negative' : 'positive',
+      `La participación de productos de bajo margen cambió ${formatPercent(mixDelta)}.`,
+      ['comparison.productMixChanges', 'current.lowMarginSalesShare']
+    );
   }
 
   const currentDiscountRate = current.netSales > 0 && current.discountsKnown ? current.discounts / current.netSales : null;
   const previousDiscountRate = previous.netSales > 0 && previous.discountsKnown ? previous.discounts / previous.netSales : null;
   const discountDelta = delta(currentDiscountRate, previousDiscountRate);
   if (discountDelta !== null && Math.abs(discountDelta) > 0.0001) {
-    contributors.push({
-      label: 'descuentos',
-      contribution: discountDelta,
-      direction: discountDelta > 0 ? 'negative' : 'positive',
-      explanation: `La tasa de descuento cambió ${formatPercent(discountDelta)}.`
-    });
+    push(
+      'discount_rate',
+      'Descuentos',
+      discountDelta,
+      discountDelta > 0 ? 'negative' : 'positive',
+      `La proporción de descuentos cambió ${formatPercent(discountDelta)}.`,
+      ['comparison.deltaDiscounts']
+    );
+  }
+
+  const volumeDelta = previous.units > 0 ? (current.units - previous.units) / previous.units : null;
+  if (volumeDelta !== null && Math.abs(volumeDelta) >= 0.05) {
+    push(
+      'sales_volume',
+      'Volumen vendido',
+      volumeDelta,
+      'context',
+      `El volumen vendido cambió ${formatPercent(volumeDelta)} frente al periodo anterior.`,
+      ['comparison.deltaUnits']
+    );
+  }
+
+  const ticketDelta = previous.averageTicket > 0 && current.averageTicket !== null
+    ? (current.averageTicket - previous.averageTicket) / previous.averageTicket
+    : null;
+  if (ticketDelta !== null && Math.abs(ticketDelta) >= 0.05) {
+    push(
+      'average_ticket',
+      'Ticket promedio',
+      ticketDelta,
+      'context',
+      `El ticket promedio cambió ${formatPercent(ticketDelta)}.`,
+      ['comparison.deltaTicket']
+    );
   }
 
   comparison.channelMixChanges.slice(0, 2).forEach((channel) => {
     if (Math.abs(channel.deltaShare || 0) > 0.05) {
-      contributors.push({
-        label: `canal ${channel.channel}`,
-        contribution: channel.deltaShare,
-        direction: 'context',
-        explanation: `La participación del canal cambió ${formatPercent(channel.deltaShare)}.`
-      });
+      push(
+        `channel_${normalize(channel.channel).replace(/[^a-z0-9]+/g, '_')}`,
+        `Canal ${channel.channel}`,
+        channel.deltaShare,
+        'context',
+        `La participación del canal cambió ${formatPercent(channel.deltaShare)}.`,
+        ['comparison.channelMixChanges']
+      );
     }
   });
 
-  return contributors.slice(0, 4);
+  return contributors
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
+    .slice(0, 3);
 };
 
 const sourceModeToContractSource = (mode) => {
@@ -462,43 +516,85 @@ const buildVolumeScenarios = ({ currentPrice, newPrice, unitCost, volume, baseli
 
 const simulatePrice = (aggregate, scenario, period) => {
   const product = chooseProduct(aggregate, scenario);
-  if (!product) return { scenarios: [], calculations: [], assumptions: [], limitations: ['No hay productos vendidos en el periodo para simular un precio.'] };
+  if (!product) {
+    return {
+      product: null,
+      priceSimulation: null,
+      scenarios: [],
+      calculations: [],
+      assumptions: [],
+      limitations: ['No hay productos vendidos en el periodo para simular un precio.']
+    };
+  }
   const currentPrice = positiveNumberOrNull(scenario.currentPrice) || positiveNumberOrNull(product.averagePrice);
   const newPrice = positiveNumberOrNull(scenario.newPrice);
   const unitCost = numberOrNull(scenario.unitCost) ?? product.unitCost;
   const volume = positiveNumberOrNull(scenario.historicalVolume) || product.quantity;
   if (currentPrice === null || newPrice === null || unitCost === null || volume === null) {
     return {
+      product: product.name,
+      priceSimulation: null,
       scenarios: [],
       calculations: [],
-      assumptions: [],
+      assumptions: ['El volumen histórico sólo se usa como supuesto del escenario.'],
       limitations: ['Se requiere precio actual, nuevo precio, costo unitario y volumen histórico con datos confiables.']
     };
   }
   const currentProfit = (currentPrice - unitCost) * volume;
-  const sameVolumeProfit = (newPrice - unitCost) * volume;
+  const currentMargin = currentPrice > 0 ? (currentPrice - unitCost) / currentPrice : null;
+  const simulatedProfit = (newPrice - unitCost) * volume;
+  const simulatedMargin = newPrice > 0 ? (newPrice - unitCost) / newPrice : null;
+  const profitDelta = simulatedProfit - currentProfit;
   const breakEvenVolume = newPrice > unitCost && currentProfit > 0 ? currentProfit / (newPrice - unitCost) : null;
   const scenarios = buildVolumeScenarios({ currentPrice, newPrice, unitCost, volume, baselineProfit: currentProfit });
+  const priceSimulation = {
+    product: product.name,
+    currentPrice,
+    newPrice,
+    unitCost,
+    historicalVolume: volume,
+    currentProfit,
+    currentMargin,
+    simulatedProfit,
+    simulatedMargin,
+    profitDelta,
+    breakEvenVolume,
+    isDemandPrediction: false
+  };
   return {
     product: product.name,
+    priceSimulation,
     scenarios,
     calculations: [
-      calculation('Precio actual', currentPrice, 'precio actual', period),
-      calculation('Nuevo precio', newPrice, 'precio simulado', period),
+      calculation('Precio actual', currentPrice, 'precio promedio histórico del producto', period),
+      calculation('Precio nuevo', newPrice, 'precio indicado para la simulación', period, 'simulation'),
+      calculation('Costo unitario', unitCost, 'costo unitario registrado', period),
+      calculation('Volumen histórico', volume, 'unidades vendidas del producto en el periodo', period, 'sales_history', formatNumber),
       calculation('Utilidad actual', currentProfit, '(precio actual - costo unitario) × volumen histórico', period),
-      calculation('Utilidad simulada con el mismo volumen', sameVolumeProfit, '(nuevo precio - costo unitario) × volumen histórico', period),
-      calculation('Margen actual', currentPrice > 0 ? (currentPrice - unitCost) / currentPrice : null, 'utilidad actual / ventas actuales', period, 'sales_history', formatPercent),
-      calculation('Margen simulado', newPrice > 0 ? (newPrice - unitCost) / newPrice : null, 'utilidad simulada / ventas simuladas', period, 'simulation', formatPercent),
-      calculation('Volumen de equilibrio para conservar la utilidad actual', breakEvenVolume, 'utilidad actual / (nuevo precio - costo unitario)', period, 'simulation', formatNumber)
+      calculation('Margen actual', currentMargin, '(precio actual - costo unitario) / precio actual', period, 'sales_history', formatPercent),
+      calculation('Utilidad simulada con el mismo volumen', simulatedProfit, '(precio nuevo - costo unitario) × volumen histórico', period, 'simulation'),
+      calculation('Margen simulado', simulatedMargin, '(precio nuevo - costo unitario) / precio nuevo', period, 'simulation', formatPercent),
+      calculation('Diferencia de utilidad', profitDelta, 'utilidad simulada - utilidad actual', period, 'simulation'),
+      calculation('Volumen mínimo para conservar la utilidad actual', breakEvenVolume, 'utilidad actual / (precio nuevo - costo unitario)', period, 'simulation', formatNumber)
     ],
-    assumptions: ['La simulación usa el volumen histórico como referencia.', 'Los escenarios de -10% y +10% son escenarios, no predicciones de demanda.'],
-    limitations: newPrice <= unitCost ? ['El nuevo precio no deja utilidad unitaria positiva; no hay punto de equilibrio finito.'] : []
+    assumptions: ['La simulación conserva como referencia el volumen histórico observado.'],
+    limitations: newPrice <= unitCost
+      ? ['El nuevo precio no deja utilidad unitaria positiva; no existe un volumen finito que conserve la utilidad actual.']
+      : ['La simulación no predice cómo cambiará la demanda al modificar el precio.']
   };
 };
-
 const simulatePromotion = (aggregate, scenario, period) => {
   const product = chooseProduct(aggregate, scenario);
-  if (!product) return { scenarios: [], calculations: [], assumptions: [], limitations: ['No hay productos vendidos en el periodo para simular una promoción.'] };
+  if (!product) {
+    return {
+      product: null,
+      promotionSimulation: null,
+      scenarios: [],
+      calculations: [],
+      assumptions: [],
+      limitations: ['No hay productos vendidos en el periodo para simular una promoción.']
+    };
+  }
   const currentPrice = positiveNumberOrNull(scenario.currentPrice) || positiveNumberOrNull(product.averagePrice);
   const discountPercent = numberOrNull(scenario.discountPercent);
   const promotionalPrice = positiveNumberOrNull(scenario.promotionalPrice)
@@ -506,154 +602,401 @@ const simulatePromotion = (aggregate, scenario, period) => {
   const unitCost = numberOrNull(scenario.unitCost) ?? product.unitCost;
   const volume = positiveNumberOrNull(scenario.historicalVolume) || product.quantity;
   if (currentPrice === null || promotionalPrice === null || unitCost === null || volume === null) {
-    return { scenarios: [], calculations: [], assumptions: [], limitations: ['Se requiere precio actual, descuento o precio promocional, costo y volumen histórico.'] };
+    return {
+      product: product.name,
+      promotionSimulation: null,
+      scenarios: [],
+      calculations: [],
+      assumptions: ['El volumen histórico sólo se usa como supuesto del escenario.'],
+      limitations: ['Se requiere precio actual, descuento o precio promocional, costo unitario y volumen histórico.']
+    };
   }
-  const currentProfit = (currentPrice - unitCost) * volume;
+  const currentUnitProfit = currentPrice - unitCost;
   const promotionalUnitProfit = promotionalPrice - unitCost;
-  const unitsToCompensate = promotionalUnitProfit > 0 ? currentProfit / promotionalUnitProfit : null;
+  const currentProfit = currentUnitProfit * volume;
+  const promotionalProfit = promotionalUnitProfit * volume;
+  const currentMargin = currentPrice > 0 ? currentUnitProfit / currentPrice : null;
+  const promotionalMargin = promotionalPrice > 0 ? promotionalUnitProfit / promotionalPrice : null;
+  const discount = currentPrice > 0 ? (currentPrice - promotionalPrice) / currentPrice : null;
+  const breakEvenVolume = promotionalUnitProfit > 0 ? currentProfit / promotionalUnitProfit : null;
   const scenarios = buildVolumeScenarios({
     currentPrice,
     newPrice: promotionalPrice,
     unitCost,
     volume,
-    baselineProfit: currentProfit,
+    baselineProfit: currentProfit
   });
+  const promotionSimulation = {
+    product: product.name,
+    currentPrice,
+    discount,
+    promotionalPrice,
+    unitCost,
+    historicalVolume: volume,
+    currentMargin,
+    promotionalMargin,
+    currentProfit,
+    promotionalProfit,
+    profitDelta: promotionalProfit - currentProfit,
+    breakEvenVolume,
+    isDemandPrediction: false
+  };
   return {
     product: product.name,
+    promotionSimulation,
     scenarios,
     calculations: [
-      calculation('Precio promocional', promotionalPrice, 'precio actual × (1 - descuento / 100)', period),
-      calculation('Descuento aplicado', currentPrice > 0 ? (currentPrice - promotionalPrice) / currentPrice : null, '(precio actual - precio promocional) / precio actual', period, 'simulation', formatPercent),
-      calculation('Margen promocional', promotionalPrice > 0 ? promotionalUnitProfit / promotionalPrice : null, '(precio promocional - costo unitario) / precio promocional', period, 'simulation', formatPercent),
-      calculation('Unidades para compensar la utilidad actual', unitsToCompensate, 'utilidad actual / utilidad unitaria promocional', period, 'simulation', formatNumber)
+      calculation('Precio actual', currentPrice, 'precio promedio histórico del producto', period),
+      calculation('Descuento', discount, '(precio actual - precio promocional) / precio actual', period, 'simulation', formatPercent),
+      calculation('Precio promocional', promotionalPrice, 'precio actual después del descuento simulado', period, 'simulation'),
+      calculation('Costo unitario', unitCost, 'costo unitario registrado', period),
+      calculation('Margen actual', currentMargin, '(precio actual - costo unitario) / precio actual', period, 'sales_history', formatPercent),
+      calculation('Margen promocional', promotionalMargin, '(precio promocional - costo unitario) / precio promocional', period, 'simulation', formatPercent),
+      calculation('Utilidad actual', currentProfit, '(precio actual - costo unitario) × volumen histórico', period),
+      calculation('Utilidad con promoción', promotionalProfit, '(precio promocional - costo unitario) × volumen histórico', period, 'simulation'),
+      calculation('Volumen mínimo para conservar la utilidad actual', breakEvenVolume, 'utilidad actual / utilidad unitaria promocional', period, 'simulation', formatNumber)
     ],
-    assumptions: ['La utilidad base usa el volumen histórico.', 'Los escenarios de volumen son ilustrativos; no estiman elasticidad.'],
-    limitations: promotionalUnitProfit <= 0 ? ['La promoción no deja utilidad unitaria positiva.'] : []
+    assumptions: ['La simulación conserva como referencia el volumen histórico observado.'],
+    limitations: promotionalUnitProfit <= 0
+      ? ['El precio promocional no deja utilidad unitaria positiva.']
+      : ['La simulación no predice el aumento de demanda que podría generar la promoción.']
   };
 };
-
 const buildComboSimulation = (validRows, aggregate, period) => {
   const pairMap = new Map();
   const ticketCount = validRows.length;
   validRows.map(normalizeSale).forEach((sale) => {
-    const uniqueItems = Array.from(new Set(sale.items.map((item) => item.name))).sort();
+    const byName = new Map();
+    sale.items.forEach((item) => {
+      const current = byName.get(item.name) || { name: item.name, total: 0 };
+      current.total += item.total || 0;
+      byName.set(item.name, current);
+    });
+    const uniqueItems = Array.from(byName.keys()).sort();
     for (let i = 0; i < uniqueItems.length; i += 1) {
       for (let j = i + 1; j < uniqueItems.length; j += 1) {
-        const key = `${uniqueItems[i]}\u0000${uniqueItems[j]}`;
-        pairMap.set(key, (pairMap.get(key) || 0) + 1);
+        const first = uniqueItems[i];
+        const second = uniqueItems[j];
+        const key = `${first}\u0000${second}`;
+        const previous = pairMap.get(key) || { tickets: 0, jointSales: 0 };
+        pairMap.set(key, {
+          tickets: previous.tickets + 1,
+          jointSales: previous.jointSales + (byName.get(first)?.total || 0) + (byName.get(second)?.total || 0)
+        });
       }
     }
   });
 
   const candidates = Array.from(pairMap.entries())
-    .map(([key, count]) => {
+    .map(([key, pair]) => {
       const [first, second] = key.split('\u0000');
       const products = [aggregate.products.find((product) => product.name === first), aggregate.products.find((product) => product.name === second)];
-      const price = products.every(Boolean) ? products.reduce((sum, product) => sum + (product.averagePrice || 0), 0) : null;
-      const cost = products.every((product) => product?.unitCost !== null)
+      const cost = products.every((product) => product?.unitCost !== null && product?.unitCost !== undefined)
         ? products.reduce((sum, product) => sum + (product.unitCost || 0), 0)
         : null;
-      const comboPrice = price !== null ? price * 0.95 : null;
-      const profit = comboPrice !== null && cost !== null ? comboPrice - cost : null;
+      const averageJointSale = pair.tickets > 0 ? pair.jointSales / pair.tickets : null;
+      const profit = averageJointSale !== null && cost !== null ? averageJointSale - cost : null;
+      const frequency = ticketCount > 0 ? pair.tickets / ticketCount : 0;
+      const evidenceLevel = pair.tickets >= 8 && frequency >= 0.1
+        ? 'high'
+        : (pair.tickets >= MIN_COMBO_TICKETS ? 'medium' : 'low');
       return {
         products: [first, second],
-        tickets: count,
-        frequency: ticketCount > 0 ? count / ticketCount : 0,
-        individualPrice: price,
+        tickets: pair.tickets,
+        frequency,
+        historicalJointSales: pair.jointSales,
+        averageJointSale,
         cost,
-        comboPrice,
-        discount: price !== null ? 0.05 : null,
+        comboPrice: averageJointSale,
+        discount: null,
         profit,
-        margin: comboPrice > 0 && profit !== null ? profit / comboPrice : null,
-        breakEvenTickets: profit > 0 ? 1 / profit : null
+        margin: averageJointSale > 0 && profit !== null ? profit / averageJointSale : null,
+        evidenceLevel,
+        opportunity: `Evaluar presentar ${first} y ${second} juntos; aparecen en ${pair.tickets} tickets compartidos.`,
+        isPrediction: false,
+        note: 'La relación proviene de tickets históricos compartidos; no implica que un producto cause la compra del otro.'
       };
     })
     .filter((candidate) => candidate.tickets >= MIN_COMBO_TICKETS)
-    .sort((a, b) => b.tickets - a.tickets)
+    .sort((a, b) => b.tickets - a.tickets || b.frequency - a.frequency)
     .slice(0, 5);
 
   if (!candidates.length) {
     return {
+      comboOpportunities: [],
       scenarios: [],
       calculations: [],
-      assumptions: ['Se requiere observar al menos tres tickets con la misma combinación para mostrar una oportunidad.'],
-      limitations: ['No hay datos suficientes para recomendar un combo con confianza.']
+      assumptions: ['Se requieren al menos tres tickets con la misma combinación para mostrar una oportunidad.'],
+      limitations: ['No hay suficientes tickets con productos compartidos para recomendar un combo confiable.']
     };
   }
 
   return {
+    comboOpportunities: candidates,
     scenarios: candidates,
     calculations: candidates.slice(0, 3).flatMap((candidate) => [
-      calculation(`Frecuencia conjunta: ${candidate.products.join(' + ')}`, candidate.frequency, 'tickets con ambos productos / tickets válidos', period, 'sales_history', formatPercent),
-      calculation(`Precio simulado del combo: ${candidate.products.join(' + ')}`, candidate.comboPrice, 'suma de precios individuales × (1 - 5%)', period, 'simulation'),
-      calculation(`Margen simulado del combo: ${candidate.products.join(' + ')}`, candidate.margin, 'utilidad del combo / precio del combo', period, 'simulation', formatPercent)
+      calculation(`Tickets compartidos: ${candidate.products.join(' + ')}`, candidate.tickets, 'conteo de tickets válidos con ambos productos', period, 'sales_history', formatNumber),
+      calculation(`Venta conjunta histórica promedio: ${candidate.products.join(' + ')}`, candidate.averageJointSale, 'venta conjunta histórica / tickets compartidos', period),
+      calculation(`Margen observado de referencia: ${candidate.products.join(' + ')}`, candidate.margin, '(venta conjunta promedio - costo estimado) / venta conjunta promedio', period, 'sales_history', formatPercent)
     ]),
-    assumptions: ['El precio del combo usa un descuento ilustrativo de 5%; debe confirmarse antes de cualquier acción.', 'La frecuencia conjunta describe asociación histórica, no causalidad.'],
-    limitations: candidates.some((candidate) => candidate.margin === null) ? ['Algunos productos no tienen costo registrado; el margen del combo puede estar incompleto.'] : []
+    assumptions: ['La coocurrencia describe asociación histórica y no demuestra causalidad.'],
+    limitations: candidates.some((candidate) => candidate.margin === null)
+      ? ['Algunos productos no tienen costo completo; el margen de esas oportunidades no puede confirmarse.']
+      : []
   };
 };
-
 const normalizeSimulationResult = (simulation = {}) => ({
+  product: simulation.product || null,
+  priceSimulation: simulation.priceSimulation || null,
+  promotionSimulation: simulation.promotionSimulation || null,
+  comboOpportunities: Array.isArray(simulation.comboOpportunities) ? simulation.comboOpportunities : [],
   scenarios: Array.isArray(simulation.scenarios) ? simulation.scenarios : [],
   calculations: Array.isArray(simulation.calculations) ? simulation.calculations : [],
   assumptions: Array.isArray(simulation.assumptions) ? simulation.assumptions : [],
   limitations: Array.isArray(simulation.limitations) ? simulation.limitations : []
 });
 
-const buildAgentContext = ({ current, comparison, period, source }) => ({
-  summary: {
+const buildProfitabilitySummary = (current) => {
+  let status = 'undetermined';
+  if (current.salesCount === 0) status = 'insufficient_data';
+  else if (!current.costComplete) status = 'undetermined';
+  else if ((current.profit ?? 0) > 0 && (current.margin ?? 0) > 0) status = 'profitable';
+  else status = 'not_profitable';
+
+  const explanation = status === 'insufficient_data'
+    ? 'No hay ventas válidas suficientes en el periodo para evaluar la rentabilidad.'
+    : status === 'undetermined'
+      ? `No puedo confirmar la rentabilidad completa porque faltan costos unitarios en ${current.missingCostProducts.length} producto(s).`
+      : status === 'profitable'
+        ? `Con los costos registrados, el negocio genera utilidad bruta en este periodo: ${formatMoney(current.profit)} con margen de ${formatPercent(current.margin)}.`
+        : `Con los costos registrados, el periodo no genera utilidad bruta positiva: ${formatMoney(current.profit)} con margen de ${formatPercent(current.margin)}.`;
+
+  return {
+    status,
     netSales: current.netSales,
-    units: current.units,
-    salesCount: current.salesCount,
-    averageTicket: current.averageTicket,
-    discounts: current.discountsKnown ? current.discounts : null,
-    unitCosts: current.costComplete ? current.costOfSale : null,
+    costOfSale: current.costComplete ? current.costOfSale : null,
     profit: current.profit,
     margin: current.margin,
     costCoverage: current.costCoverage,
+    validSales: current.salesCount,
     missingCostProducts: current.missingCostProducts.length,
-    excludedSales: current.meta.excludedCount,
-    ecommerceDuplicates: current.meta.ecommerceDuplicates
-  },
-  products: current.products.map((product) => ({
-    name: product.name,
-    quantity: product.quantity,
-    netSales: product.netSales,
-    unitCost: product.unitCost,
-    profit: product.profit,
-    margin: product.margin,
-    averagePrice: product.averagePrice,
-    costKnown: product.costKnown
-  })),
-  channels: current.channels,
-  comparison: comparison ? {
-    previousNetSales: comparison.previousNetSales,
-    previousUnits: comparison.previousUnits,
-    previousTicket: comparison.previousTicket,
-    previousCost: comparison.previousCost,
-    previousProfit: comparison.previousProfit,
-    previousMargin: comparison.previousMargin,
-    deltaNetSales: comparison.deltaNetSales,
-    deltaUnits: comparison.deltaUnits,
-    deltaTicket: comparison.deltaTicket,
-    deltaCost: comparison.deltaCost,
-    deltaProfit: comparison.deltaProfit,
-    deltaMargin: comparison.deltaMargin,
-    deltaDiscounts: comparison.deltaDiscounts,
-    productMixChanges: comparison.productMixChanges,
-    channelMixChanges: comparison.channelMixChanges
-  } : null,
-  period,
-  source
-});
+    explanation
+  };
+};
 
+const buildProductRisks = (current) => {
+  const averageUnits = current.products.length
+    ? current.products.reduce((sum, product) => sum + product.quantity, 0) / current.products.length
+    : 0;
+  return current.products.map((product) => {
+    const salesShare = current.netSales > 0 ? product.netSales / current.netSales : 0;
+    const profitShare = current.profit && current.profit > 0 && product.profit !== null
+      ? product.profit / current.profit
+      : null;
+    let riskType = null;
+    let riskLabel = null;
+    let reason = null;
+    let severity = 0;
+
+    if (!product.costKnown) {
+      riskType = 'missing_cost';
+      riskLabel = 'Costos faltantes';
+      reason = 'No se puede confirmar su utilidad ni margen porque faltan costos unitarios.';
+      severity = 5;
+    } else if (product.margin < 0) {
+      riskType = 'negative_margin';
+      riskLabel = 'Margen negativo';
+      reason = 'El costo registrado supera la venta neta del producto en el periodo.';
+      severity = 5;
+    } else if (product.margin < LOW_MARGIN_THRESHOLD) {
+      riskType = 'low_margin';
+      riskLabel = 'Margen bajo';
+      reason = `Su margen está por debajo del umbral documentado de ${formatPercent(LOW_MARGIN_THRESHOLD)}.`;
+      severity = 4;
+    } else if (product.quantity >= Math.max(averageUnits, 3) && product.margin < LOW_MARGIN_THRESHOLD * 1.5) {
+      riskType = 'many_sales_low_profit';
+      riskLabel = 'Muchas ventas con poca utilidad';
+      reason = 'Tiene un volumen relevante, pero su margen aporta poco por unidad vendida.';
+      severity = 3;
+    } else if (salesShare >= 0.2 && profitShare !== null && profitShare < salesShare * 0.5) {
+      riskType = 'high_sales_low_contribution';
+      riskLabel = 'Alta venta con baja contribución';
+      reason = 'Representa una parte importante de las ventas, pero una proporción mucho menor de la utilidad.';
+      severity = 2;
+    }
+
+    if (!riskType) return null;
+    return {
+      product: product.name,
+      units: product.quantity,
+      netSales: product.netSales,
+      cost: product.cost,
+      profit: product.profit,
+      margin: product.margin,
+      salesShare,
+      riskType,
+      riskLabel,
+      reason,
+      evidenceKeys: [`product:${product.name}`, 'current.products'],
+      severity
+    };
+  }).filter(Boolean).sort((a, b) => b.severity - a.severity || b.netSales - a.netSales);
+};
+
+const fallbackRecommendation = (intent, { profitability, productRisks, contributors, simulation }) => {
+  if (intent === 'profitability_summary') {
+    if (profitability.status === 'undetermined') {
+      return [{
+        title: 'Completar los costos faltantes',
+        explanation: 'La rentabilidad no puede confirmarse mientras existan productos vendidos sin costo unitario.',
+        expectedImpact: 'Permitir una lectura confiable de utilidad y margen.',
+        priority: 'high',
+        evidenceKeys: ['profitability.costCoverage'],
+        requiresConfirmation: true
+      }];
+    }
+    return [{
+      title: 'Revisar el margen antes de decidir cambios',
+      explanation: 'Usa la utilidad y el margen del periodo como punto de partida y confirma cualquier ajuste comercial por separado.',
+      expectedImpact: 'Decisiones basadas en el resultado real del periodo.',
+      priority: 'medium',
+      evidenceKeys: ['profitability.margin', 'profitability.profit'],
+      requiresConfirmation: true
+    }];
+  }
+  if (intent === 'explain_change') {
+    return contributors.length ? [{
+      title: `Revisar primero: ${contributors[0].title}`,
+      explanation: contributors[0].explanation,
+      expectedImpact: 'Aclarar el movimiento principal observado antes de hacer cambios.',
+      priority: 'high',
+      evidenceKeys: contributors[0].evidenceKeys,
+      requiresConfirmation: true
+    }] : [];
+  }
+  if (intent === 'product_risk') {
+    return productRisks.length ? [{
+      title: `Revisar ${productRisks[0].product}`,
+      explanation: productRisks[0].reason,
+      expectedImpact: 'Identificar si el producto necesita corrección de costo, precio o estrategia comercial.',
+      priority: productRisks[0].severity >= 4 ? 'high' : 'medium',
+      evidenceKeys: productRisks[0].evidenceKeys,
+      requiresConfirmation: true
+    }] : [];
+  }
+  if (intent === 'price_simulation' && simulation.priceSimulation) {
+    return [{
+      title: 'Comparar la utilidad antes de cambiar el precio',
+      explanation: 'La simulación conserva el volumen histórico y no predice la respuesta de la demanda.',
+      expectedImpact: `Diferencia simulada de utilidad: ${formatMoney(simulation.priceSimulation.profitDelta)}.`,
+      priority: 'medium',
+      evidenceKeys: ['priceSimulation.profitDelta', 'priceSimulation.breakEvenVolume'],
+      requiresConfirmation: true
+    }];
+  }
+  if (intent === 'promotion_opportunity' && simulation.promotionSimulation) {
+    return [{
+      title: 'Validar el margen promocional',
+      explanation: 'Confirma que el margen promocional siga siendo aceptable y toma el volumen mínimo sólo como referencia.',
+      expectedImpact: `Margen promocional simulado: ${formatPercent(simulation.promotionSimulation.promotionalMargin)}.`,
+      priority: simulation.promotionSimulation.promotionalMargin <= 0 ? 'high' : 'medium',
+      evidenceKeys: ['promotionSimulation.promotionalMargin', 'promotionSimulation.breakEvenVolume'],
+      requiresConfirmation: true
+    }];
+  }
+  if (intent === 'combo_opportunity' && simulation.comboOpportunities.length) {
+    return [{
+      title: `Evaluar ${simulation.comboOpportunities[0].products.join(' + ')}`,
+      explanation: simulation.comboOpportunities[0].opportunity,
+      expectedImpact: 'Validar una presentación conjunta con base en tickets compartidos reales.',
+      priority: simulation.comboOpportunities[0].evidenceLevel === 'high' ? 'high' : 'medium',
+      evidenceKeys: ['comboOpportunities.0.tickets', 'comboOpportunities.0.frequency'],
+      requiresConfirmation: true
+    }];
+  }
+  return [];
+};
+
+const buildAgentContext = ({ current, comparison, period, source, profitability, productRisks, contributors }) => {
+  const risksByProduct = new Map(productRisks.map((risk) => [risk.product, risk]));
+  return {
+    summary: {
+      netSales: current.netSales,
+      units: current.units,
+      salesCount: current.salesCount,
+      averageTicket: current.averageTicket,
+      discounts: current.discountsKnown ? current.discounts : null,
+      unitCosts: current.costComplete ? current.costOfSale : null,
+      profit: current.profit,
+      margin: current.margin,
+      costCoverage: current.costCoverage,
+      missingCostProducts: current.missingCostProducts.length,
+      excludedSales: current.meta.excludedCount,
+      ecommerceDuplicates: current.meta.ecommerceDuplicates,
+      profitabilityStatus: profitability.status,
+      profitabilityExplanation: profitability.explanation
+    },
+    products: current.products.map((product) => {
+      const risk = risksByProduct.get(product.name);
+      return {
+        name: product.name,
+        quantity: product.quantity,
+        netSales: product.netSales,
+        unitCost: product.unitCost,
+        profit: product.profit,
+        margin: product.margin,
+        averagePrice: product.averagePrice,
+        costKnown: product.costKnown,
+        riskType: risk?.riskType || null,
+        riskReason: risk?.reason || null
+      };
+    }),
+    channels: current.channels,
+    comparison: comparison ? {
+      previousNetSales: comparison.previousNetSales,
+      previousUnits: comparison.previousUnits,
+      previousTicket: comparison.previousTicket,
+      previousCost: comparison.previousCost,
+      previousProfit: comparison.previousProfit,
+      previousMargin: comparison.previousMargin,
+      deltaNetSales: comparison.deltaNetSales,
+      deltaUnits: comparison.deltaUnits,
+      deltaTicket: comparison.deltaTicket,
+      deltaCost: comparison.deltaCost,
+      deltaProfit: comparison.deltaProfit,
+      deltaMargin: comparison.deltaMargin,
+      deltaMarginRelative: comparison.deltaMarginRelative,
+      deltaDiscounts: comparison.deltaDiscounts,
+      productMixChanges: comparison.productMixChanges,
+      channelMixChanges: comparison.channelMixChanges
+    } : null,
+    contributors,
+    period,
+    source
+  };
+};
 export const inferSalesProfitabilityIntent = (question = '') => {
   const text = normalize(question);
-  if (text.includes('precio') || text.includes('subir') || text.includes('aumentar')) return 'price_simulation';
-  if (text.includes('combo') || text.includes('juntos') || text.includes('combin')) return 'combo_opportunity';
-  if (text.includes('promoc') || text.includes('descuento')) return 'promotion_opportunity';
-  if (text.includes('problem') || text.includes('afect') || text.includes('bajo margen')) return 'product_risk';
-  return 'explain_change';
+  const containsAny = (terms) => terms.some((term) => text.includes(term));
+
+  if (containsAny(['precio', 'subir precio', 'aumentar precio'])) return 'price_simulation';
+  if (containsAny(['combo', 'juntos', 'combinacion', 'combinaciones'])) return 'combo_opportunity';
+  if (containsAny(['promocion', 'descuento', 'oferta'])) return 'promotion_opportunity';
+  if (containsAny(['problematico', 'problematicos', 'problema', 'afectando', 'bajo margen', 'productos malos'])) return 'product_risk';
+  if (containsAny(['rentable', 'rentabilidad', 'utilidad', 'ganancia', 'gano', 'pierdo', 'perdida'])) return 'profitability_summary';
+  if (containsAny(['margen', 'cambio', 'cambio mi', 'cambio el', 'subio', 'bajo', 'variacion'])) return 'explain_change';
+  return 'profitability_summary';
+};
+export const buildSalesProfitabilityProductOptions = ({ period = {}, currentHistory } = {}) => {
+  const current = aggregateSales(currentHistory, period);
+  return current.products.map((product) => ({
+    name: product.name,
+    units: product.quantity,
+    netSales: product.netSales,
+    averagePrice: product.averagePrice,
+    unitCost: product.unitCost,
+    costKnown: product.costKnown
+  }));
 };
 
 export const buildSalesProfitabilityAnalysis = ({
@@ -661,46 +1004,74 @@ export const buildSalesProfitabilityAnalysis = ({
   currentHistory,
   previousHistory = null,
   sourceMode = 'mixed',
-  intent = 'explain_change',
+  intent = 'profitability_summary',
   scenario = {}
 } = {}) => {
+  const resolvedIntent = SALES_PROFITABILITY_INTENTS.includes(intent) ? intent : 'profitability_summary';
   const current = aggregateSales(currentHistory, period);
   const previous = previousHistory ? aggregateSales(previousHistory, period.previous || {}) : null;
   const comparison = previous ? buildComparison(current, previous) : null;
   const contributors = comparison ? buildContributors(current, previous, comparison) : [];
   const validRows = normalizeValidSales(currentHistory).rows;
-  const deterministicCalculations = [
-    calculation('Ventas netas', current.netSales, 'suma de totales de líneas de ventas válidas', period),
-    calculation('Unidades vendidas', current.units, 'suma de cantidades de productos en ventas válidas', period, 'sales_history', formatNumber),
-    calculation('Número de ventas', current.salesCount, 'conteo de ventas válidas', period, 'sales_history', formatNumber),
-    calculation('Ticket promedio', current.averageTicket, 'ventas netas / número de ventas', period),
-    calculation('Costo de venta', current.costComplete ? current.costOfSale : null, 'suma de (costo unitario × cantidad)', period),
-    calculation('Utilidad bruta', current.profit, 'ventas netas - costo de venta', period),
-    calculation('Margen bruto', current.margin, 'utilidad bruta / ventas netas', period, 'sales_history', formatPercent),
-    calculation('Descuentos', current.discountsKnown ? current.discounts : null, 'suma de descuentos registrados', period)
-  ];
+  const profitability = buildProfitabilitySummary(current);
+  const productRisks = buildProductRisks(current);
 
-  if (comparison) {
-    deterministicCalculations.push(
-      calculation('Cambio de ventas netas', comparison.deltaNetSales, 'ventas netas del periodo actual - periodo anterior', period),
-      calculation('Cambio de utilidad', comparison.deltaProfit, 'utilidad actual - utilidad anterior', period),
-      calculation('Cambio de margen', comparison.deltaMargin, 'margen actual - margen anterior', period, 'comparison', formatPercent),
-      calculation('Cambio de descuentos', comparison.deltaDiscounts, 'descuentos actuales - descuentos anteriores', period)
-    );
+  let simulation = normalizeSimulationResult();
+  if (resolvedIntent === 'price_simulation') simulation = normalizeSimulationResult(simulatePrice(current, scenario, period));
+  if (resolvedIntent === 'promotion_opportunity') simulation = normalizeSimulationResult(simulatePromotion(current, scenario, period));
+  if (resolvedIntent === 'combo_opportunity') simulation = normalizeSimulationResult(buildComboSimulation(validRows, current, period));
+
+  let calculations = [];
+  if (resolvedIntent === 'profitability_summary') {
+    calculations = [
+      calculation('Ventas netas', current.netSales, 'suma de ventas válidas del periodo', period),
+      calculation('Costo de venta', current.costComplete ? current.costOfSale : null, 'suma de (costo unitario × cantidad)', period),
+      calculation('Utilidad bruta', current.profit, 'ventas netas - costo de venta', period),
+      calculation('Margen bruto', current.margin, 'utilidad bruta / ventas netas', period, 'sales_history', formatPercent),
+      calculation('Cobertura de costos', current.costCoverage, 'ventas con costo conocido / ventas netas', period, 'sales_history', formatPercent),
+      calculation('Ventas válidas', current.salesCount, 'conteo de ventas válidas', period, 'sales_history', formatNumber)
+    ];
+  } else if (resolvedIntent === 'explain_change') {
+    calculations = [
+      calculation('Margen actual', current.margin, 'utilidad actual / ventas actuales', period, 'sales_history', formatPercent),
+      calculation('Margen anterior', comparison?.previousMargin ?? null, 'utilidad anterior / ventas anteriores', period, 'comparison', formatPercent),
+      calculation('Variación absoluta del margen', comparison?.deltaMargin ?? null, 'margen actual - margen anterior', period, 'comparison', formatPercent),
+      calculation('Variación relativa del margen', comparison?.deltaMarginRelative ?? null, '(margen actual - margen anterior) / |margen anterior|', period, 'comparison', formatPercent),
+      calculation('Ventas actuales', current.netSales, 'ventas netas del periodo actual', period),
+      calculation('Ventas anteriores', comparison?.previousNetSales ?? null, 'ventas netas del periodo anterior', period, 'comparison'),
+      calculation('Utilidad actual', current.profit, 'ventas actuales - costo actual', period),
+      calculation('Utilidad anterior', comparison?.previousProfit ?? null, 'ventas anteriores - costo anterior', period, 'comparison')
+    ];
+  } else if (resolvedIntent === 'product_risk') {
+    const riskSales = productRisks.reduce((sum, product) => sum + product.netSales, 0);
+    calculations = [
+      calculation('Productos con riesgo', productRisks.length, 'conteo de productos con una clasificación de riesgo', period, 'sales_history', formatNumber),
+      calculation('Ventas asociadas a productos con riesgo', riskSales, 'suma de ventas netas de productos clasificados', period),
+      calculation('Productos con margen negativo', productRisks.filter((product) => product.riskType === 'negative_margin').length, 'conteo de productos con margen < 0', period, 'sales_history', formatNumber),
+      calculation('Productos con costo faltante', productRisks.filter((product) => product.riskType === 'missing_cost').length, 'conteo de productos vendidos sin costo completo', period, 'sales_history', formatNumber)
+    ];
+  } else {
+    calculations = simulation.calculations;
   }
 
-  let simulation = { scenarios: [], calculations: [], assumptions: [], limitations: [] };
-  if (intent === 'price_simulation') simulation = simulatePrice(current, scenario, period);
-  if (intent === 'promotion_opportunity') simulation = simulatePromotion(current, scenario, period);
-  if (intent === 'combo_opportunity') simulation = buildComboSimulation(validRows, current, period);
-  simulation = normalizeSimulationResult(simulation);
+  const limitations = [];
+  if (current.salesCount === 0) limitations.push('No hay ventas válidas en el periodo seleccionado.');
+  if (!current.costComplete && ['profitability_summary', 'product_risk', 'price_simulation', 'promotion_opportunity', 'combo_opportunity'].includes(resolvedIntent)) {
+    limitations.push(`Faltan costos unitarios en ${current.missingCostLines} líneas de producto; no se convierten en costo cero.`);
+  }
+  if (resolvedIntent === 'explain_change' && !comparison) {
+    limitations.push('No hay un periodo anterior comparable con ventas válidas para explicar un cambio de margen.');
+  }
+  if (resolvedIntent === 'explain_change' && !current.discountsKnown) {
+    limitations.push('No todas las ventas tienen descuento registrado; ese factor puede estar incompleto.');
+  }
+  limitations.push(...simulation.limitations);
 
-  const limitations = [
-    ...(current.costComplete ? [] : [`Faltan costos unitarios en ${current.missingCostLines} líneas de producto; utilidad y margen no se calculan completamente.`]),
-    ...(current.discountsKnown ? [] : ['No todas las ventas tienen descuento registrado; el total de descuentos puede estar incompleto.']),
-    ...(comparison ? [] : ['No se proporcionó un periodo anterior comparable.']),
-    ...simulation.limitations
+  const assumptions = [
+    ...(resolvedIntent === 'price_simulation' || resolvedIntent === 'promotion_opportunity' ? simulation.assumptions : []),
+    ...(resolvedIntent === 'combo_opportunity' ? simulation.assumptions : [])
   ];
+
   const source = sourceModeToContractSource(sourceMode);
   const coverage = {
     validSales: current.salesCount,
@@ -714,60 +1085,132 @@ export const buildSalesProfitabilityAnalysis = ({
     reportSource: sourceMode,
     complete: current.salesCount > 0 && current.costComplete
   };
-  const confidence = current.salesCount === 0 || current.costCoverage < 0.7
+
+  const confidence = current.salesCount === 0
     ? 'low'
-    : (current.costComplete && comparison ? 'high' : 'medium');
-  const productFacts = current.products.slice(0, 6).map((product) => ({
-    label: product.name,
-    quantity: product.quantity,
-    netSales: product.netSales,
-    margin: product.margin,
-    costKnown: product.costKnown
-  }));
-  const executiveSummary = current.salesCount === 0
-    ? 'No hay ventas válidas suficientes en el periodo seleccionado para generar un análisis confiable.'
-    : comparison?.deltaMargin !== null && comparison?.deltaMargin !== undefined
-      ? `El margen cambió ${formatPercent(comparison.deltaMargin)} y las ventas netas cambiaron ${formatMoney(comparison.deltaNetSales)} frente al periodo anterior.`
-      : `Se analizaron ${formatNumber(current.salesCount, 0)} ventas válidas por ${formatMoney(current.netSales)}.`;
+    : resolvedIntent === 'explain_change'
+      ? (comparison && current.costComplete && previous?.costComplete ? 'high' : 'low')
+      : current.costComplete ? 'high' : (current.costCoverage >= 0.7 ? 'medium' : 'low');
+
+  let facts = [];
+  let executiveSummary = '';
+  let explanation = '';
+
+  if (resolvedIntent === 'profitability_summary') {
+    facts = [{
+      label: 'Rentabilidad del periodo',
+      status: profitability.status,
+      netSales: profitability.netSales,
+      profit: profitability.profit,
+      margin: profitability.margin,
+      costCoverage: profitability.costCoverage
+    }];
+    executiveSummary = profitability.explanation;
+    explanation = profitability.status === 'undetermined'
+      ? 'Primero conviene completar los costos faltantes; sin ellos Lanzo-POS evita clasificar el negocio como rentable o no rentable.'
+      : `La conclusión usa ${formatNumber(profitability.validSales, 0)} ventas válidas y una cobertura de costos de ${formatPercent(profitability.costCoverage)}.`;
+  } else if (resolvedIntent === 'explain_change') {
+    facts = contributors.map((item) => ({
+      label: item.title,
+      contribution: item.contribution,
+      direction: item.direction,
+      evidenceKeys: item.evidenceKeys
+    }));
+    executiveSummary = comparison
+      ? `El margen pasó de ${formatPercent(comparison.previousMargin)} a ${formatPercent(current.margin)}, una variación de ${formatPercent(comparison.deltaMargin)}.`
+      : 'No hay un periodo anterior comparable suficiente para explicar cómo cambió el margen.';
+    explanation = contributors.length
+      ? `El principal movimiento observado es ${contributors[0].title.toLowerCase()}. ${contributors[0].explanation}`
+      : 'No hay evidencia suficiente para atribuir el cambio a costos, descuentos, mezcla, volumen, ticket o canal.';
+  } else if (resolvedIntent === 'product_risk') {
+    facts = productRisks.slice(0, 8).map((risk) => ({
+      label: risk.product,
+      riskType: risk.riskType,
+      riskLabel: risk.riskLabel,
+      netSales: risk.netSales,
+      profit: risk.profit,
+      margin: risk.margin
+    }));
+    executiveSummary = productRisks.length
+      ? `Se detectaron ${formatNumber(productRisks.length, 0)} producto(s) que conviene revisar por margen, contribución o costos faltantes.`
+      : 'No se detectaron productos con los criterios de riesgo disponibles en este periodo.';
+    explanation = productRisks.length
+      ? `${productRisks[0].product} aparece primero porque: ${productRisks[0].reason}`
+      : 'El análisis sólo usa ventas, costos, utilidad y margen; no infiere rotación, stock detenido ni disponibilidad.';
+  } else if (resolvedIntent === 'price_simulation') {
+    facts = simulation.priceSimulation ? [{ label: simulation.priceSimulation.product, ...simulation.priceSimulation }] : [];
+    executiveSummary = simulation.priceSimulation
+      ? `Con el mismo volumen histórico, la utilidad cambiaría ${formatMoney(simulation.priceSimulation.profitDelta)} y el margen quedaría en ${formatPercent(simulation.priceSimulation.simulatedMargin)}.`
+      : 'No hay datos suficientes para completar la simulación de precio.';
+    explanation = simulation.priceSimulation
+      ? `El volumen mínimo para conservar la utilidad actual es ${formatNumber(simulation.priceSimulation.breakEvenVolume, 1)} unidades. Esto no es una predicción de demanda.`
+      : simulation.limitations[0] || 'Selecciona un producto y un precio nuevo para simular.';
+  } else if (resolvedIntent === 'promotion_opportunity') {
+    facts = simulation.promotionSimulation ? [{ label: simulation.promotionSimulation.product, ...simulation.promotionSimulation }] : [];
+    executiveSummary = simulation.promotionSimulation
+      ? `El precio promocional deja un margen de ${formatPercent(simulation.promotionSimulation.promotionalMargin)} con el volumen histórico usado como supuesto.`
+      : 'No hay datos suficientes para completar la simulación de promoción.';
+    explanation = simulation.promotionSimulation
+      ? `Para conservar la utilidad actual se requerirían ${formatNumber(simulation.promotionSimulation.breakEvenVolume, 1)} unidades al precio promocional. Esto no predice demanda.`
+      : simulation.limitations[0] || 'Selecciona un producto y un descuento o precio promocional.';
+  } else if (resolvedIntent === 'combo_opportunity') {
+    facts = simulation.comboOpportunities.slice(0, 5).map((combo) => ({
+      label: combo.products.join(' + '),
+      tickets: combo.tickets,
+      frequency: combo.frequency,
+      margin: combo.margin,
+      evidenceLevel: combo.evidenceLevel
+    }));
+    executiveSummary = simulation.comboOpportunities.length
+      ? `La combinación con mayor evidencia es ${simulation.comboOpportunities[0].products.join(' + ')} con ${simulation.comboOpportunities[0].tickets} tickets compartidos.`
+      : 'No hay suficientes tickets con productos compartidos para recomendar un combo confiable.';
+    explanation = simulation.comboOpportunities.length
+      ? 'La oportunidad se basa exclusivamente en coocurrencias históricas y no presupone que una compra cause la otra.'
+      : 'Se requieren al menos tres tickets compartidos de la misma combinación.';
+  }
+
+  const recommendations = current.salesCount > 0
+    ? fallbackRecommendation(resolvedIntent, { profitability, productRisks, contributors, simulation })
+    : [];
 
   return {
     version: 1,
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
+    intent: resolvedIntent,
     status: current.salesCount > 0 ? 'completed' : 'incomplete',
     executiveSummary,
     answer: executiveSummary,
-    explanation: contributors.length
-      ? `Los principales movimientos observados son: ${contributors.map((item) => item.explanation).join(' ')}`
-      : 'No hay evidencia comparativa suficiente para atribuir el cambio a un factor específico.',
-    facts: productFacts,
-    calculations: [...deterministicCalculations, ...simulation.calculations],
-    assumptions: [
-      'La zona horaria del negocio se respeta al construir el periodo seleccionado.',
-      'Las asociaciones históricas no prueban causalidad.',
-      ...simulation.assumptions
-    ],
+    explanation,
+    facts,
+    calculations,
+    assumptions,
     scenarios: simulation.scenarios,
-    recommendations: current.salesCount > 0 ? [{
-      title: intent === 'price_simulation' ? 'Validar el escenario antes de cambiar precios' : 'Revisar los productos de mayor impacto',
-      explanation: 'Usa la evidencia y confirma cualquier cambio manualmente; esta respuesta no ejecuta acciones.',
-      expectedImpact: 'Por determinar con una prueba comercial controlada.',
-      effort: 'medium',
-      evidence: contributors.length ? contributors.map((item) => item.label) : ['ventas válidas del periodo'],
-      requiresConfirmation: true
-    }] : [],
+    recommendations,
     limitations,
     confidence,
     source,
     coverage,
     citations: [],
     contributors,
-    context: buildAgentContext({ current, comparison, period, source }),
+    profitability,
+    productRisks,
+    priceSimulation: simulation.priceSimulation,
+    promotionSimulation: simulation.promotionSimulation,
+    comboOpportunities: simulation.comboOpportunities,
+    context: buildAgentContext({
+      current,
+      comparison,
+      period,
+      source,
+      profitability,
+      productRisks,
+      contributors
+    }),
     current,
     previous,
     comparison
   };
 };
-
 export const buildPeriodRange = ({ days = 30, end = new Date() } = {}) => {
   const endDate = new Date(end);
   const startDate = new Date(endDate);
