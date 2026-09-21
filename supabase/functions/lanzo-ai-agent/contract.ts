@@ -47,6 +47,7 @@ export type AnalysisRequest = {
 
 export const COMMERCIAL_AGENT_KEYS = ['salesProfitability'] as const;
 export const COMMERCIAL_AGENT_INTENTS = [
+  'profitability_summary',
   'explain_change',
   'product_risk',
   'price_simulation',
@@ -132,6 +133,7 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'products',
   'channels',
   'comparison',
+  'contributors',
   'coverage',
   'calculations',
   'assumptions',
@@ -149,9 +151,14 @@ const COMMERCIAL_SUMMARY_KEYS = new Set([
   'costCoverage',
   'missingCostProducts',
   'excludedSales',
-  'ecommerceDuplicates'
+  'ecommerceDuplicates',
+  'profitabilityStatus',
+  'profitabilityExplanation'
 ]);
-const COMMERCIAL_PRODUCT_KEYS = new Set(['name', 'quantity', 'netSales', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown']);
+const COMMERCIAL_PRODUCT_KEYS = new Set([
+  'name', 'quantity', 'netSales', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown',
+  'riskType', 'riskReason'
+]);
 const COMMERCIAL_CHANNEL_KEYS = new Set(['channel', 'netSales', 'orders', 'units', 'averageTicket', 'share']);
 const COMMERCIAL_COMPARISON_KEYS = new Set([
   'previousNetSales',
@@ -166,11 +173,13 @@ const COMMERCIAL_COMPARISON_KEYS = new Set([
   'deltaCost',
   'deltaProfit',
   'deltaMargin',
+  'deltaMarginRelative',
   'deltaDiscounts',
   'productMixChanges',
   'channelMixChanges'
 ]);
 const COMMERCIAL_MIX_KEYS = new Set(['name', 'channel', 'currentShare', 'previousShare', 'deltaShare']);
+const COMMERCIAL_CONTRIBUTOR_KEYS = new Set(['key', 'title', 'contribution', 'direction', 'explanation', 'evidenceKeys']);
 const COMMERCIAL_CALCULATION_KEYS = new Set(['label', 'value', 'formattedValue', 'formula', 'source', 'period']);
 const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
   'label',
@@ -184,7 +193,19 @@ const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
   'discount',
   'products',
   'note',
-  'isPrediction'
+  'isPrediction',
+  'currentPrice',
+  'newPrice',
+  'unitCost',
+  'historicalJointSales',
+  'averageJointSale',
+  'cost',
+  'profit',
+  'evidenceLevel',
+  'opportunity',
+  'historicalVolume',
+  'breakEvenVolume',
+  'isDemandPrediction'
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => (
@@ -256,6 +277,18 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
     for (const mix of [...(comparison.productMixChanges || []), ...(comparison.channelMixChanges || [])]) {
       if (!isRecord(mix) || !assertOnlyKeys(mix, COMMERCIAL_MIX_KEYS)) return false;
     }
+  }
+  if (sales.contributors !== undefined) {
+    if (!Array.isArray(sales.contributors) || sales.contributors.length > 3) return false;
+    if (!sales.contributors.every((item) => isRecord(item)
+      && assertOnlyKeys(item, COMMERCIAL_CONTRIBUTOR_KEYS)
+      && typeof item.key === 'string'
+      && typeof item.title === 'string'
+      && validFiniteOrNull(item.contribution)
+      && ['positive', 'negative', 'context'].includes(String(item.direction))
+      && typeof item.explanation === 'string'
+      && Array.isArray(item.evidenceKeys)
+      && item.evidenceKeys.every((entry) => typeof entry === 'string'))) return false;
   }
   if (!Array.isArray(sales.calculations) || sales.calculations.length > 40) return false;
   if (!sales.calculations.every((item) => isRecord(item) && assertOnlyKeys(item, COMMERCIAL_CALCULATION_KEYS))) return false;
@@ -464,13 +497,16 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     || typeof item.formula !== 'string'
     || typeof item.source !== 'string'
     || !isRecord(item.period))) return false;
-  if (value.recommendations.some((item) => !isRecord(item)
-    || typeof item.title !== 'string'
-    || typeof item.explanation !== 'string'
-    || typeof item.expectedImpact !== 'string'
-    || typeof item.effort !== 'string'
-    || !Array.isArray(item.evidence)
-    || item.requiresConfirmation !== true)) return false;
+  if (value.recommendations.some((item) => {
+    if (!isRecord(item)
+      || typeof item.title !== 'string'
+      || typeof item.explanation !== 'string'
+      || typeof item.expectedImpact !== 'string'
+      || item.requiresConfirmation !== true) return true;
+    const legacy = typeof item.effort === 'string' && Array.isArray(item.evidence);
+    const narrative = ['high', 'medium', 'low'].includes(String(item.priority)) && Array.isArray(item.evidenceKeys);
+    return !legacy && !narrative;
+  })) return false;
   return !hasForbiddenKey(value) && !Object.values(value).some((entry) => hasForbiddenKey(entry));
 }
 
