@@ -138,6 +138,7 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'coverage',
   'calculations',
   'assumptions',
+  'limitations',
   'scenarios'
 ]);
 const COMMERCIAL_SUMMARY_KEYS = new Set([
@@ -146,7 +147,9 @@ const COMMERCIAL_SUMMARY_KEYS = new Set([
   'salesCount',
   'averageTicket',
   'discounts',
+  'discountsKnown',
   'unitCosts',
+  'knownCostOfSale',
   'profit',
   'margin',
   'costCoverage',
@@ -158,8 +161,12 @@ const COMMERCIAL_SUMMARY_KEYS = new Set([
 ]);
 const COMMERCIAL_PRODUCT_KEYS = new Set([
   'name', 'quantity', 'netSales', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown',
-  'riskType', 'riskReason'
+  'costStatus', 'costSource', 'riskType', 'riskReason'
 ]);
+const COMMERCIAL_PRODUCT_COST_STATUS = new Set(['definitive', 'estimated', 'incomplete']);
+const COMMERCIAL_PRODUCT_COST_SOURCE = new Set(['inventory_movement', 'sale_item_snapshot', 'missing']);
+const MAX_PRODUCT_COST_STATUS_LENGTH = 48;
+const MAX_PRODUCT_COST_SOURCE_LENGTH = 64;
 const COMMERCIAL_CHANNEL_KEYS = new Set(['channel', 'netSales', 'orders', 'units', 'averageTicket', 'share']);
 const COMMERCIAL_COMPARISON_KEYS = new Set([
   'previousNetSales',
@@ -237,6 +244,16 @@ function validFiniteOrNull(value: unknown): boolean {
   return value === null || (typeof value === 'number' && Number.isFinite(value));
 }
 
+function validOptionalEnum(
+  value: unknown,
+  allowed: Set<string>,
+  maxLength: number
+): boolean {
+  return value === undefined
+    || value === null
+    || (typeof value === 'string' && value.length <= maxLength && allowed.has(value));
+}
+
 function validCommercialPeriod(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_PERIOD_KEYS)) return false;
   return Object.values(value).every((entry) => entry === null || (typeof entry === 'string' && entry.length <= 80));
@@ -267,6 +284,8 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
   if (!Array.isArray(sales.products) || sales.products.length > MAX_COMMERCIAL_ROWS) return false;
   if (!sales.products.every((product) => isRecord(product) && assertOnlyKeys(product, COMMERCIAL_PRODUCT_KEYS)
     && typeof product.name === 'string' && product.name.length <= 120
+    && validOptionalEnum(product.costStatus, COMMERCIAL_PRODUCT_COST_STATUS, MAX_PRODUCT_COST_STATUS_LENGTH)
+    && validOptionalEnum(product.costSource, COMMERCIAL_PRODUCT_COST_SOURCE, MAX_PRODUCT_COST_SOURCE_LENGTH)
     && Object.entries(product).every(([, entry]) => validFiniteOrNull(entry) || typeof entry === 'string' || typeof entry === 'boolean'))) return false;
   if (!Array.isArray(sales.channels) || sales.channels.length > MAX_COMMERCIAL_ROWS) return false;
   if (!sales.channels.every((channel) => isRecord(channel) && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_KEYS))) return false;

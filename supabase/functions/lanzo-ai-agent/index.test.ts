@@ -197,6 +197,18 @@ function structuredCommercialRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function structuredCommercialRequestWithProduct(product: Record<string, unknown>) {
+  const payload = structuredCommercialRequest();
+  payload.context = {
+    ...payload.context,
+    sales: {
+      ...payload.context.sales,
+      products: [product as unknown as typeof payload.context.sales.products[number]]
+    }
+  };
+  return payload;
+}
+
 function analysisClient(beginData: Record<string, unknown> = successBegin(), completeData: Record<string, unknown> = successComplete()) {
   return fakeClient(async (name) => {
     if (name === 'get_ai_agent_usage_unlimited') return { data: { success: true, limit: 15, used: 0, remaining: 15, ai_agents: true }, error: null };
@@ -659,6 +671,68 @@ Deno.test('ventas y rentabilidad rechaza prompts arbitrarios en la solicitud est
   assertEquals(response.status, 400);
   assertEquals((await json(response)).code, 'INVALID_REQUEST');
   assertEquals(client.calls.length, 0);
+});
+
+Deno.test('contrato comercial acepta costos de producto estrictos y rechaza valores no permitidos sin llamadas', async () => {
+  const product = {
+    name: 'Producto A',
+    quantity: 2,
+    netSales: 100,
+    unitCost: 20,
+    profit: 60,
+    margin: 0.6,
+    averagePrice: 50,
+    costKnown: true,
+    costStatus: 'definitive',
+    costSource: 'inventory_movement',
+    riskType: 'margin',
+    riskReason: 'Margen estable'
+  };
+  let providerCalls = 0;
+  const validClient = analysisClient();
+  const validResponse = await makeHandler(validClient, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequestWithProduct(product)));
+  assertEquals(validResponse.status, 200);
+  assertEquals(validClient.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+
+  const legacyClient = analysisClient();
+  const legacyResponse = await makeHandler(legacyClient, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequest()));
+  assertEquals(legacyResponse.status, 200);
+  assertEquals(legacyClient.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+
+  const invalidProducts = [
+    { ...product, unexpected: true },
+    { ...product, costStatus: 'unknown' },
+    { ...product, costSource: 'internal' },
+    { ...product, costStatus: 'd'.repeat(49) },
+    { ...product, costSource: 'm'.repeat(65) },
+    { ...product, costStatus: ['definitive'] },
+    { ...product, costSource: { source: 'missing' } }
+  ];
+
+  for (const invalidProduct of invalidProducts) {
+    const client = analysisClient();
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(structuredCommercialResponse());
+      }
+    })(request(structuredCommercialRequestWithProduct(invalidProduct)));
+    assertEquals(response.status, 400);
+    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    assertEquals(client.calls.length, 0);
+  }
+
+  assertEquals(providerCalls, 2);
 });
 
 Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva cálculos determinísticos', async () => {

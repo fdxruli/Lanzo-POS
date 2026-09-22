@@ -88,7 +88,7 @@ const inferAgentType = (systemPrompt = '', userPrompt = '', requestedAgentType =
   return explicit || 'unknown';
 };
 
-const mapEdgeErrorMessage = (payload = {}) => {
+export const mapEdgeErrorMessage = (payload = {}) => {
   const code = payload.code || payload.reason;
   const messages = {
     AUTH_PAYLOAD_REQUIRED: 'No se pudo confirmar la licencia/dispositivo para usar IA.',
@@ -112,10 +112,18 @@ const mapEdgeErrorMessage = (payload = {}) => {
     PROMPT_TOO_LARGE: payload.message || 'El análisis contiene demasiados datos. Reduce el rango.',
     AI_REQUEST_FAILED: payload.message || 'No se pudo contactar al proveedor de IA.',
     AI_EMPTY_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta vacía.',
-    AI_INVALID_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta estructurada inválida.'
+    AI_INVALID_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta estructurada inválida.',
+    INVALID_REQUEST: 'La solicitud del agente no coincide con el contrato de datos. Actualiza el Preview o contacta al administrador.'
   };
 
   return messages[code] || payload.message || 'No se pudo generar el análisis de IA.';
+};
+
+const mapEdgeErrorStatus = (payload = {}, fallback = 403) => {
+  const code = payload.code || payload.reason;
+  if (code === 'AI_AGENT_LIMIT_REACHED') return 429;
+  if (code === 'INVALID_REQUEST') return 400;
+  return fallback;
 };
 
 const parseFunctionError = async (error) => {
@@ -231,7 +239,7 @@ export const getAIAgentUsageStatus = async (config = {}) => {
   if (error) {
     const functionPayload = await parseFunctionError(error);
     const payload = functionPayload || { code: error.code, message: error.message };
-    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || 500, payload, payload.code || 'EDGE_FUNCTION_ERROR');
+    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || mapEdgeErrorStatus(payload, 500), payload, payload.code || 'EDGE_FUNCTION_ERROR');
   }
 
   if (!data?.success) {
@@ -280,14 +288,14 @@ export const analyzeWithAI = async (systemPrompt, userPrompt, config = {}) => {
     if ((payload.code || payload.reason) === 'AI_AGENT_LIMIT_REACHED') {
       setAIUsageGateNotice(normalizeUsageStatus(payload));
     }
-    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || 500, payload, payload.code || 'EDGE_FUNCTION_ERROR');
+    throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || mapEdgeErrorStatus(payload, 500), payload, payload.code || 'EDGE_FUNCTION_ERROR');
   }
 
   if (!data?.success) {
     if (data?.code === 'AI_AGENT_LIMIT_REACHED') {
       setAIUsageGateNotice(normalizeUsageStatus(data));
     }
-    throw new AIApiError(mapEdgeErrorMessage(data), data?.code === 'AI_AGENT_LIMIT_REACHED' ? 429 : 403, data, data?.code || 'EDGE_REJECTED');
+    throw new AIApiError(mapEdgeErrorMessage(data), mapEdgeErrorStatus(data), data, data?.code || 'EDGE_REJECTED');
   }
 
   const usageStatus = normalizeUsageStatus(data.usageStatus || data);
@@ -367,7 +375,7 @@ export const analyzeCommercialAgent = async (request = {}, config = {}) => {
   }
 
   if (!data?.success) {
-    throw new AIApiError(mapEdgeErrorMessage(data), data?.code === 'AI_AGENT_LIMIT_REACHED' ? 429 : 403, data, data?.code || 'EDGE_REJECTED');
+    throw new AIApiError(mapEdgeErrorMessage(data), mapEdgeErrorStatus(data), data, data?.code || 'EDGE_REJECTED');
   }
 
   const rawResultContent = typeof data.rawResultContent === 'string'
