@@ -1336,7 +1336,7 @@ export const buildSalesProfitabilityAnalysis = ({
     version: 1,
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
     intent: resolvedIntent,
-    status: current.salesCount > 0 ? 'completed' : 'incomplete',
+    status: current.salesCount > 0 ? 'completed' : 'insufficient_data',
     executiveSummary,
     answer: executiveSummary,
     explanation,
