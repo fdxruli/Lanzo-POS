@@ -176,6 +176,9 @@ describe('sales profitability agent service', () => {
     });
     expect(analyze).not.toHaveBeenCalled();
     expect(result.response.status).toBe('insufficient_data');
+    expect(result.response.coverage.validSales).toBe(0);
+    expect(result.response.limitations.some((item) => /no hay ventas válidas/i.test(item))).toBe(true);
+    expect(result.usageStatus).toBeNull();
     expect(result.providerCalled).toBe(false);
   });
 
@@ -385,14 +388,27 @@ describe('sales profitability agent service', () => {
       compare: false
     });
 
-    expect(result.response.executiveSummary).not.toContain('999999');
-    expect(result.response.executiveSummary).not.toContain('sin descuentos');
-    expect(result.response.explanation).not.toContain('100%');
+    const visibleDeterministic = JSON.stringify({
+      executiveSummary: result.response.executiveSummary,
+      explanation: result.response.explanation,
+      facts: result.response.facts,
+      calculations: result.response.calculations,
+      coverage: result.response.coverage,
+      source: result.response.source,
+      recommendations: result.response.recommendations
+    });
+    expect(visibleDeterministic).not.toContain('999999');
+    expect(visibleDeterministic).not.toContain('Inventado');
+    expect(visibleDeterministic).not.toContain('sin descuentos');
+    expect(visibleDeterministic).not.toMatch(/margen\s+100%/i);
     expect(result.response.calculations.some((row) => row.label === 'Utilidad bruta')).toBe(true);
     expect(result.response.calculations.some((row) => row.label === 'Utilidad inventada')).toBe(false);
     expect(result.response.coverage.validSales).toBe(1);
     expect(result.response.source).toBe('cloud');
     expect(result.response.aiNarrative.executiveSummary).toContain('999999');
+    expect(result.response.aiNarrative.executiveSummary).toContain('Inventado');
+    expect(result.response.aiNarrative.executiveSummary).toContain('sin descuentos');
+    expect(result.response.aiNarrative.explanation).toMatch(/margen\s+100%/i);
     expect(result.response.recommendations).toEqual(expect.any(Array));
   });
 

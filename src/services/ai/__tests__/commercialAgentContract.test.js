@@ -29,6 +29,7 @@ describe('commercial AI agent contract', () => {
   it('defines only the new commercial agent keys and future intents', () => {
     expect(Object.values(COMMERCIAL_AGENT_KEYS)).toEqual(['salesProfitability', 'ecommerce']);
     expect(COMMERCIAL_AGENT_INTENTS).toEqual([
+      'profitability_summary',
       'explain_change',
       'product_risk',
       'price_simulation',

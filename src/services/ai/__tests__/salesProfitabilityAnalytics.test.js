@@ -172,15 +172,24 @@ describe('sales profitability deterministic analysis', () => {
     });
 
     expect(result.comparison.deltaMargin).toBeLessThan(0);
-    expect(result.contributors.some((item) => item.label === 'costo de venta')).toBe(true);
-    expect(result.calculations.some((item) => item.label === 'Cambio de margen')).toBe(true);
+    const costContributor = result.contributors.find((item) => item.key === 'cost_rate');
+    expect(costContributor).toMatchObject({
+      key: 'cost_rate',
+      evidenceKeys: expect.arrayContaining(['comparison.deltaCost', 'comparison.costRate'])
+    });
+    expect(costContributor.title).toMatch(/costo/i);
+    const absoluteMarginChange = result.calculations.find((item) => /variación absoluta.*margen/i.test(item.label));
+    expect(absoluteMarginChange).toMatchObject({
+      source: 'comparison',
+      value: result.comparison.deltaMargin
+    });
   });
 
-  it('returns an incomplete response for an empty period', () => {
+  it('returns insufficient data for an empty period without inventing evidence', () => {
     const result = buildSalesProfitabilityAnalysis({ period, currentHistory: { rows: [] } });
-    expect(result.status).toBe('incomplete');
+    expect(result.status).toBe('insufficient_data');
     expect(result.coverage.validSales).toBe(0);
-    expect(result.limitations.join(' ')).toContain('No se proporcionó un periodo anterior');
+    expect(result.limitations.some((item) => /no hay ventas válidas/i.test(item))).toBe(true);
   });
 
   it('simulates price and promotion without mutating history', () => {
@@ -200,7 +209,8 @@ describe('sales profitability deterministic analysis', () => {
     const withoutEvidence = buildSalesProfitabilityAnalysis({ period, currentHistory: { rows: [rows[0]] }, intent: 'combo_opportunity' });
 
     expect(withEvidence.scenarios.length).toBeGreaterThan(0);
-    expect(withoutEvidence.limitations).toContain('No hay datos suficientes para recomendar un combo con confianza.');
+    expect(withoutEvidence.comboOpportunities).toEqual([]);
+    expect(withoutEvidence.limitations.some((item) => /tickets.*compartidos/i.test(item))).toBe(true);
   });
 
   it('builds business-calendar period ranges independently from the browser timezone', () => {

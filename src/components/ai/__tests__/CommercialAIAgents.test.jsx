@@ -131,7 +131,7 @@ describe('commercial AI center', () => {
       period: { timezone: 'America/New_York' }
     });
     expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
-    expect(screen.getByText('Uso: 1 / 15')).toBeInTheDocument();
+    expect(screen.getByText('Uso IA: 1 / 15')).toBeInTheDocument();
   });
 
   it('offers only the documented selectable periods 7/30/90/365 days', () => {
@@ -219,7 +219,7 @@ describe('commercial AI center', () => {
   });
   it('reinfers a free question after a previous scenario suggestion', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: 'Simula una promoción' }));
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
