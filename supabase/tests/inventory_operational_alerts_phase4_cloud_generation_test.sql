@@ -45,6 +45,7 @@ begin
     ('phase4-test-today', v_license_id, 'phase4-test-expiry', 1, 0, true, 'active', 1, '2026-09-23 00:00:00+00', null),
     ('phase4-test-yesterday', v_license_id, 'phase4-test-expiry', 1, 0, true, 'active', 1, '2026-09-22 00:00:00+00', null),
     ('phase4-test-no-stock', v_license_id, 'phase4-test-expiry', 0, 0, true, 'active', 1, '2026-09-23 00:00:00+00', null),
+    ('phase4-test-archived', v_license_id, 'phase4-test-expiry', 1, 0, true, 'archived', 1, '2026-09-23 00:00:00+00', null),
     ('phase4-test-target', v_license_id, 'phase4-test-expiry', 1, 0, true, 'active', 1, '2026-09-01 00:00:00+00', '2026-09-24 00:00:00+00'),
     ('phase4-test-expiry-life-batch', v_license_id, 'phase4-test-expiry-life', 1, 0, true, 'active', 1, '2026-09-25 00:00:00+00', null);
 
@@ -79,7 +80,7 @@ begin
 
   if exists (
     select 1 from private.inventory_operational_alert_candidates_v1(v_license_id, date '2026-09-23')
-    where batch_id in ('phase4-test-day8', 'phase4-test-no-stock')
+    where batch_id in ('phase4-test-day8', 'phase4-test-no-stock', 'phase4-test-archived')
   ) then raise exception 'expiry eligibility/window failed'; end if;
 
   if not exists (
