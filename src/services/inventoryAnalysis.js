@@ -5,6 +5,10 @@ import {
 } from './database';
 import { daysBetween } from '../utils/dateUtils';
 import { getAvailableStock } from './db/utils';
+import {
+  getInventoryOperationalState,
+  INVENTORY_OPERATIONAL_TYPES
+} from './inventoryOperationalAlerts';
 import Logger from './Logger';
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -203,18 +207,17 @@ export const buildLowStockProductsReport = (products = [], batches = [], options
 
   const report = (products || [])
     .filter((product) => {
-      const minStock = toSafeNumber(product?.minStock);
+      const operationalType = getInventoryOperationalState({ product, now }).stock.type;
       return (
-        product?.isActive !== false &&
-        Boolean(product?.trackStock) &&
-        minStock > 0 &&
-        toSafeNumber(getAvailableStock(product)) <= minStock
+        operationalType === INVENTORY_OPERATIONAL_TYPES.LOW_STOCK
+        || operationalType === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK
       );
     })
     .map((product) => {
-      const currentStock = toSafeNumber(getAvailableStock(product));
-      const physicalStock = toSafeNumber(product?.stock);
-      const minStock = toSafeNumber(product?.minStock);
+      const operationalStock = getInventoryOperationalState({ product, now }).stock;
+      const currentStock = toSafeNumber(operationalStock.availableStock);
+      const physicalStock = toSafeNumber(operationalStock.physicalStock);
+      const minStock = toSafeNumber(operationalStock.minStock);
       const configuredMax = toSafeNumber(product?.maxStock);
       const demand = demandByProductId.get(product.id) || {
         salesQuantity: 0,
@@ -237,7 +240,7 @@ export const buildLowStockProductsReport = (products = [], batches = [], options
         : Math.max(fallbackTarget, velocityTarget);
       const rawDeficit = Math.max(0, targetStock - stockAvailableAfterLeadTime);
       const deficit = Math.ceil(rawDeficit);
-      const urgency = minStock > 0 ? currentStock / minStock : 1;
+      const urgency = minStock > 0 ? currentStock / minStock : (currentStock <= 0 ? 0 : 1);
       const coverageDays = demand.averageDailyDemand > 0
         ? currentStock / demand.averageDailyDemand
         : null;
@@ -268,6 +271,8 @@ export const buildLowStockProductsReport = (products = [], batches = [], options
         availableStock: currentStock,
         physicalStock,
         minStock,
+        operationalType: operationalStock.type,
+        operationalSeverity: operationalStock.severity,
         maxStock: configuredMax > 0 ? configuredMax : targetStock,
         targetStock,
         deficit,

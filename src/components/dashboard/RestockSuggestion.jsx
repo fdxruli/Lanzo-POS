@@ -3,7 +3,6 @@ import { Clipboard, Truck, AlertTriangle, RefreshCw, PackageCheck } from 'lucide
 import { useAppStore } from '../../store/useAppStore';
 import { getLowStockProductsReport } from '../../services/inventoryAnalysis';
 import { showMessageModal, getProductAlerts } from '../../services/utils';
-import { getAvailableStock } from '../../services/db/utils';
 import Logger from '../../services/Logger';
 import { normalizeBusinessTypes } from '../../utils/businessType';
 import './RestockSuggestion.css';
@@ -161,16 +160,17 @@ export default function RestockSuggestion() {
         .map((item) => {
           // Usar los mismos criterios que el Ticker para detectar alertas
           const { isNearingExpiry, expiryDays } = getProductAlerts(item);
-          const availableStock = getAvailableStock(item);
+          const availableStock = toSafeNumber(item?.availableStock ?? item?.currentStock, 0);
           const minStock = toSafeNumber(item?.minStock, 0);
+          const hasOperationalStockAlert = ['low_stock', 'out_of_stock'].includes(item?.operationalType);
 
           return {
             ...item,
             id: item?.id || `fallback-${Date.now()}-${Math.random()}`,
             name: item?.name || 'Producto sin nombre',
-            currentStock: toSafeNumber(availableStock, 0), // Usar stock disponible (sin comprometido)
-            availableStock: toSafeNumber(availableStock, 0),
-            physicalStock: toSafeNumber(item?.stock, 0),
+            currentStock: availableStock,
+            availableStock,
+            physicalStock: toSafeNumber(item?.physicalStock ?? item?.stock, 0),
             minStock,
             suggestedOrder: toSafeNumber(item?.suggestedOrder, 1),
             supplierName: item?.supplierName || FALLBACK_SUPPLIER,
@@ -181,13 +181,11 @@ export default function RestockSuggestion() {
             leadTimeDays: toSafeNumber(item?.leadTimeDays, 0),
             expiringStockBeforeLeadTime: toSafeNumber(item?.expiringStockBeforeLeadTime, 0),
             isActive: item?.isActive !== false,
-            // Flags de alerta sincronizadas con Ticker
-            hasLowStock: minStock > 0 && toSafeNumber(availableStock, 0) <= minStock,
+            hasLowStock: hasOperationalStockAlert,
             isNearingExpiry,
             expiryDays
           };
         })
-        // ALINEACIÓN: Filtrar solo productos que tengan stock bajo (como el Ticker)
         .filter((item) => item.isActive && item.hasLowStock);
 
       setLowStockItems(validatedReport);

@@ -204,6 +204,22 @@ export function toTickerMessage(alert) {
     };
   }
 
+  if (alert.type === 'out-of-stock') {
+    return {
+      ...alert,
+      icon: AlertTriangle,
+      text: `¡Sin stock disponible! ${alert.productName} requiere atención.`
+    };
+  }
+
+  if (alert.type === 'expired') {
+    return {
+      ...alert,
+      icon: AlertTriangle,
+      text: `¡Producto vencido! ${alert.productName} requiere revisión.`
+    };
+  }
+
   return {
     ...alert,
     icon: Clock,
