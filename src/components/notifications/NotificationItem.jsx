@@ -5,10 +5,14 @@ import {
   Headphones,
   KeyRound,
   MonitorCog,
+  Package,
   ShoppingBag
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
+import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { getCloudInventoryNotificationNavigationRoute } from '../../services/notifications/inventoryNotificationNavigation';
 import {
   getNotificationCategory,
   isCategoryMuted,
@@ -59,6 +63,17 @@ export default function NotificationItem({
 }) {
   const navigate = useNavigate();
   const closeNotificationCenter = useAppStore((state) => state.closeNotificationCenter);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const canAccess = useAppStore((state) => state.canAccess);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canReadReports = canReadSalesReports(actorRuntime);
+  const canReadProducts = (
+    currentDeviceRole === 'staff'
+    && Boolean(currentStaffUser?.id)
+    && typeof canAccess === 'function'
+    && (canAccess('products') || canAccess('inventory'))
+  );
   const {
     id,
     title = 'Notificación',
@@ -74,22 +89,34 @@ export default function NotificationItem({
   } = notification || {};
   const itemTone = severity || tone || 'info';
   const category = getNotificationCategory(notification);
-  const Icon = CATEGORY_ICONS[category] || BellDot;
+  const Icon = type === 'inventory'
+    ? Package
+    : (CATEGORY_ICONS[category] || BellDot);
   const typeLabel = CATEGORY_LABELS[category] || 'Sistema';
   const severityLabel = SEVERITY_LABELS[itemTone] || SEVERITY_LABELS.info;
   const isMuted = itemTone !== 'critical' && isCategoryMuted(category, preferences);
   const isFeatured = shouldFeatureNotification(notification, preferences);
   const displayBody = body || description;
   const displayDate = formatNotificationDate(createdAtRaw || createdAt);
-  const actionRoute = notification?.action_route || notification?.actionRoute || '';
-  const actionLabel = notification?.action_label || notification?.actionLabel || (!isRead ? 'Marcar como leída' : '');
+  const rawActionRoute = notification?.action_route || notification?.actionRoute || '';
+  const actionRoute = type === 'inventory'
+    ? getCloudInventoryNotificationNavigationRoute(notification, {
+        canReadReports,
+        canReadProducts
+      })
+    : rawActionRoute;
+  const actionLabel = type === 'inventory'
+    ? (actionRoute
+        ? (notification?.action_label || notification?.actionLabel || 'Revisar')
+        : (!isRead ? 'Marcar como leída' : ''))
+    : (notification?.action_label || notification?.actionLabel || (!isRead ? 'Marcar como leída' : ''));
 
   const handleRead = async () => {
     const result = id ? await onRead?.(id) : { success: true };
     if (result?.success === false) return;
 
     if (typeof actionRoute === 'string' && actionRoute.startsWith('/')) {
-      if (category === 'ecommerce') {
+      if (category === 'ecommerce' || type === 'inventory') {
         closeNotificationCenter?.();
       }
       navigate(actionRoute);
