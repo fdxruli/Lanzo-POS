@@ -17,10 +17,13 @@ describe('notificationPreferencesService', () => {
 
   it('enables ecommerce and operations in defaults without muting them', () => {
     expect(DEFAULT_NOTIFICATION_PREFERENCES.tickerCategories.ecommerce).toBe(true);
+    expect(DEFAULT_NOTIFICATION_PREFERENCES.tickerCategories.inventory).toBe(true);
     expect(DEFAULT_NOTIFICATION_PREFERENCES.tickerCategories.operations).toBe(true);
     expect(DEFAULT_NOTIFICATION_PREFERENCES.featuredCategories.ecommerce).toBe(true);
+    expect(DEFAULT_NOTIFICATION_PREFERENCES.featuredCategories.inventory).toBe(true);
     expect(DEFAULT_NOTIFICATION_PREFERENCES.featuredCategories.operations).toBe(true);
     expect(DEFAULT_NOTIFICATION_PREFERENCES.mutedCategories.ecommerce).toBeNull();
+    expect(DEFAULT_NOTIFICATION_PREFERENCES.mutedCategories.inventory).toBeNull();
     expect(DEFAULT_NOTIFICATION_PREFERENCES.mutedCategories.operations).toBeNull();
   });
 
@@ -29,7 +32,7 @@ describe('notificationPreferencesService', () => {
     expect(getNotificationCategory({ type: 'system', metadata: { category: 'ecommerce' } })).toBe('ecommerce');
     expect(getNotificationCategory({ type: 'cash' })).toBe('operations');
     expect(getNotificationCategory({ type: 'sync' })).toBe('operations');
-    expect(getNotificationCategory({ type: 'inventory' })).toBe('operations');
+    expect(getNotificationCategory({ type: 'inventory' })).toBe('inventory');
     expect(getNotificationCategory({ type: 'system', metadata: { category: 'staff' } })).toBe('operations');
     expect(getNotificationCategory({ type: 'license' })).toBe('license');
     expect(getNotificationCategory({ type: 'support' })).toBe('support');

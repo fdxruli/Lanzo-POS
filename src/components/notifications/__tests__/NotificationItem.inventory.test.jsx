@@ -73,11 +73,11 @@ beforeEach(() => {
 });
 
 describe('NotificationItem inventory actor-safe navigation', () => {
-  it('keeps inventory in Operaciones and lets an authorized Admin open Reabastecimiento', async () => {
+  it('labels inventory explicitly and lets an authorized Admin open Reabastecimiento', async () => {
     const onRead = vi.fn().mockResolvedValue({ success: true });
     renderItem(onRead);
 
-    expect(screen.getByText('Operaciones')).toBeInTheDocument();
+    expect(screen.getByText('Inventario')).toBeInTheDocument();
     expect(screen.getByText('Crítica')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));

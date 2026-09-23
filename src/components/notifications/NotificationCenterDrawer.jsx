@@ -27,6 +27,13 @@ const isUnreadNotification = (notification) => (
 );
 
 const getNotificationGroup = (notification) => getNotificationCategory(notification);
+const NOTIFICATION_CATEGORY_TABS = ['ecommerce', 'inventory', 'operations', 'license', 'system'];
+const REQUESTABLE_NOTIFICATION_TABS = new Set([
+  'all',
+  'unread',
+  'support',
+  ...NOTIFICATION_CATEGORY_TABS
+]);
 
 const getNotificationPriorityRank = (notification, preferences) => {
   const unread = isUnreadNotification(notification);
@@ -105,6 +112,11 @@ export default function NotificationCenterDrawer({
     isSupportCenterEnabled(licenseDetails) &&
     supportAccessEnabled
   );
+  const inventoryAccessEnabled = canStaffAccessNotificationCategory(
+    licenseDetails,
+    staffSession,
+    'inventory'
+  );
   const normalizedPreferences = useMemo(
     () => normalizeNotificationPreferences(notificationPreferences),
     [notificationPreferences]
@@ -125,6 +137,7 @@ export default function NotificationCenterDrawer({
       unread: 0,
       support: 0,
       ecommerce: 0,
+      inventory: 0,
       operations: 0,
       license: 0,
       system: 0
@@ -221,9 +234,24 @@ export default function NotificationCenterDrawer({
       return;
     }
 
-    setActiveTab(requestedTab);
+    let nextTab = 'all';
+    if (REQUESTABLE_NOTIFICATION_TABS.has(requestedTab)) {
+      if (requestedTab === 'support') {
+        nextTab = supportCenterEnabled ? 'support' : 'all';
+      } else if (requestedTab === 'all' || requestedTab === 'unread') {
+        nextTab = requestedTab;
+      } else if (canStaffAccessNotificationCategory(
+        licenseDetails,
+        staffSession,
+        requestedTab
+      )) {
+        nextTab = requestedTab;
+      }
+    }
 
-    if (requestedTab === 'support' && supportCenterEnabled) {
+    setActiveTab(nextTab);
+
+    if (nextTab === 'support' && supportCenterEnabled) {
       if (requestedTicketId) {
         openSupportTicket?.(requestedTicketId, { force: true });
       } else {
@@ -235,12 +263,36 @@ export default function NotificationCenterDrawer({
   }, [
     clearNotificationCenterRequest,
     isOpen,
+    licenseDetails,
     loadSupportTickets,
     openSupportTicket,
     requestedTab,
     requestedTicketId,
+    staffSession,
     supportCenterEnabled,
     cloudNotificationsEnabled
+  ]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (activeTab === 'support' && !supportCenterEnabled) {
+      setActiveTab('all');
+      return;
+    }
+
+    if (
+      NOTIFICATION_CATEGORY_TABS.includes(activeTab)
+      && !canStaffAccessNotificationCategory(licenseDetails, staffSession, activeTab)
+    ) {
+      setActiveTab('all');
+    }
+  }, [
+    activeTab,
+    isOpen,
+    licenseDetails,
+    staffSession,
+    supportCenterEnabled
   ]);
 
   const handleMarkAllRead = async () => {
@@ -463,6 +515,7 @@ export default function NotificationCenterDrawer({
           activeTab={activeTab}
           onTabChange={setActiveTab}
           showSupport={supportCenterEnabled}
+          showInventory={inventoryAccessEnabled}
           counts={notificationCounts}
         />
 
