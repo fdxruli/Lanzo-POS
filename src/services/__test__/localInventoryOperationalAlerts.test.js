@@ -395,6 +395,8 @@ describe('shared runtime request protection', () => {
     const second = refreshLocalInventoryOperationalAlertsSnapshot({ querySnapshot });
 
     expect(first).toBe(second);
+
+    await Promise.resolve();
     expect(querySnapshot).toHaveBeenCalledTimes(1);
 
     resolveQuery(readySnapshot([]));
