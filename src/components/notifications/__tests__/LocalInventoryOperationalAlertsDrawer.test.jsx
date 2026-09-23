@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -151,10 +151,26 @@ describe('LocalInventoryOperationalAlertsDrawer', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole('button', {
+    const closeControls = screen.getAllByRole('button', {
       name: 'Cerrar alertas operativas de inventario'
-    }));
+    });
+    fireEvent.click(closeControls[0]);
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('moves focus into the drawer and traps keyboard focus', async () => {
+    renderDrawer();
+
+    const drawer = screen.getByRole('dialog', { name: 'Inventario requiere atención' });
+    const closeButton = drawer.querySelector('.notification-center-close');
+    await waitFor(() => expect(document.activeElement).toBe(closeButton));
+
+    const actions = within(drawer).getAllByRole('button', { name: /^Revisar /i });
+    const lastAction = actions.at(-1);
+    lastAction.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+
+    expect(document.activeElement).toBe(closeButton);
   });
 
   it('renders explicit loading, empty and error states', () => {
