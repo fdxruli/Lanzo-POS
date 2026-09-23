@@ -16,10 +16,13 @@ const STOCK_TYPES = new Set([
   INVENTORY_OPERATIONAL_TYPES.LOW_STOCK
 ]);
 
+const RESTOCK_ROUTE = '/ventas?tab=restock';
+const EXPIRATION_ROUTE = '/ventas?tab=expiration';
+
 const getAlertRoute = (alert) => (
   STOCK_TYPES.has(alert?.type)
-    ? '/ventas?tab=restock'
-    : '/ventas?tab=expiration'
+    ? RESTOCK_ROUTE
+    : EXPIRATION_ROUTE
 );
 
 const getAlertLabel = (alert) => {
@@ -65,6 +68,8 @@ const getAlertIcon = (alert) => {
   return <AlertTriangle size={18} aria-hidden="true" />;
 };
 
+const getAlertCountLabel = (count) => `${count} ${count === 1 ? 'alerta' : 'alertas'}`;
+
 export default function LocalInventoryOperationalAlertsDrawer({
   isOpen,
   onClose,
@@ -81,6 +86,8 @@ export default function LocalInventoryOperationalAlertsDrawer({
     [snapshot?.alerts]
   );
   const visibleAlerts = alerts.slice(0, 12);
+  const restockCount = (snapshot?.outOfStockCount ?? 0) + (snapshot?.lowStockCount ?? 0);
+  const expirationCount = (snapshot?.expiredCount ?? 0) + (snapshot?.expiringCount ?? 0);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -148,11 +155,14 @@ export default function LocalInventoryOperationalAlertsDrawer({
   const loading = status === 'idle' || (status === 'loading' && !snapshot?.updatedAt);
   const error = status === 'error';
 
-  const handleNavigate = (alert) => {
+  const handleCategoryNavigate = (route) => {
     if (!canNavigateReports) return;
-    const route = getAlertRoute(alert);
     onClose();
     navigate(route);
+  };
+
+  const handleNavigate = (alert) => {
+    handleCategoryNavigate(getAlertRoute(alert));
   };
 
   return (
@@ -224,6 +234,37 @@ export default function LocalInventoryOperationalAlertsDrawer({
                 <span><b>{snapshot.expiredCount}</b> Vencidos</span>
                 <span><b>{snapshot.expiringCount}</b> Próximos a caducar</span>
               </div>
+
+              {(restockCount > 0 || expirationCount > 0) && (
+                <div
+                  className="notification-center-actions"
+                  aria-label="Accesos por categoría de inventario"
+                >
+                  {restockCount > 0 && (
+                    <button
+                      type="button"
+                      className="notification-center-action"
+                      onClick={() => handleCategoryNavigate(RESTOCK_ROUTE)}
+                      disabled={!canNavigateReports}
+                      aria-label={`Revisar ${getAlertCountLabel(restockCount)} de reabastecimiento`}
+                    >
+                      Reabastecimiento · {getAlertCountLabel(restockCount)}
+                    </button>
+                  )}
+
+                  {expirationCount > 0 && (
+                    <button
+                      type="button"
+                      className="notification-center-action"
+                      onClick={() => handleCategoryNavigate(EXPIRATION_ROUTE)}
+                      disabled={!canNavigateReports}
+                      aria-label={`Revisar ${getAlertCountLabel(expirationCount)} de caducidad`}
+                    >
+                      Caducidad · {getAlertCountLabel(expirationCount)}
+                    </button>
+                  )}
+                </div>
+              )}
             </section>
 
             {!canNavigateReports && (
