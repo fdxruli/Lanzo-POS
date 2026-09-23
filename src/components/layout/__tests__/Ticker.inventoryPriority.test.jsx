@@ -232,4 +232,84 @@ describe('Ticker Pro cloud inventory summary', () => {
     fireEvent.click(inventorySummary);
     expect(mocks.app.openNotificationCenter).toHaveBeenCalledTimes(1);
   });
+
+  it('uses the Inventory ticker preference independently from Operations', () => {
+    mocks.app = {
+      ...mocks.app,
+      notificationPreferences: {
+        tickerCategories: {
+          inventory: false,
+          operations: true
+        }
+      }
+    };
+
+    renderTicker();
+
+    expect(screen.queryByText(/Inventario requiere atención/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Lanzo Nube activo/i)).toBeInTheDocument();
+  });
+
+  it('does not let Operations=false suppress an Inventory warning', () => {
+    mocks.app = {
+      ...mocks.app,
+      notificationPreferences: {
+        tickerCategories: {
+          inventory: true,
+          operations: false
+        }
+      }
+    };
+
+    renderTicker();
+
+    expect(screen.getByText(/Inventario requiere atención/i)).toBeInTheDocument();
+  });
+
+  it('does not let Inventory=false suppress a cash warning', () => {
+    mocks.app = {
+      ...mocks.app,
+      notificationPreferences: {
+        tickerCategories: {
+          inventory: false,
+          operations: true
+        }
+      },
+      notifications: [{
+        id: 'cloud-cash-1',
+        type: 'cash',
+        severity: 'warning',
+        title: 'Caja',
+        body: 'Caja requiere atención.',
+        metadata: { category: 'cash' },
+        is_read: false,
+        is_archived: false
+      }]
+    };
+
+    renderTicker();
+
+    expect(screen.getByText(/alerta de caja cloud/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Inventario requiere atención/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps critical Inventory visible even when its ticker preference is disabled', () => {
+    mocks.app = {
+      ...mocks.app,
+      notificationPreferences: {
+        tickerCategories: {
+          inventory: false,
+          operations: true
+        }
+      },
+      notifications: [{
+        ...mocks.app.notifications[0],
+        severity: 'critical'
+      }]
+    };
+
+    renderTicker();
+
+    expect(screen.getByText(/Inventario requiere atención/i)).toBeInTheDocument();
+  });
 });
