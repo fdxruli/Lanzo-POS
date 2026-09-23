@@ -6,10 +6,10 @@ export const normalizeStock = (value) => {
   return Number(Math.round(num + 'e' + STOCK_DECIMALS) + 'e-' + STOCK_DECIMALS);
 };
 
-export const getCommittedStock = (record) => normalizeStock(record?.committedStock || 0);
+export const getCommittedStock = (record) => normalizeStock(record?.committedStock ?? record?.committed_stock ?? 0);
 
 export const getAvailableStock = (record) => {
-  const physicalStock = normalizeStock(record?.stock || 0);
+  const physicalStock = normalizeStock(record?.stock ?? record?.quantity ?? 0);
   const committedStock = getCommittedStock(record);
   return normalizeStock(Math.max(0, physicalStock - committedStock));
 };
@@ -17,8 +17,8 @@ export const getAvailableStock = (record) => {
 const isMissingValue = (value) => value === null || value === undefined || value === '';
 
 export const getOperationalStockSnapshot = (record) => {
-  const rawPhysicalStock = record?.stock;
-  const rawCommittedStock = record?.committedStock;
+  const rawPhysicalStock = record?.stock ?? record?.quantity;
+  const rawCommittedStock = record?.committedStock ?? record?.committed_stock;
 
   if (isMissingValue(rawPhysicalStock)) {
     return {
