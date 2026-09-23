@@ -8,6 +8,7 @@ import {
 const CATEGORY_LABELS = {
   support: 'Soporte',
   ecommerce: 'Pedidos online',
+  inventory: 'Inventario',
   operations: 'Operaciones',
   license: 'Licencia',
   system: 'Sistema'
