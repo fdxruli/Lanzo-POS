@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   app: null,
@@ -101,12 +101,16 @@ const renderTicker = () => render(
   </MemoryRouter>
 );
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('Ticker inventory priority navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.app = createAppState();
     mocks.actorRuntime = adminRuntime;
-    mocks.ticker = { catalogSize: 10, alerts: [stockAlert] };
+    mocks.ticker = { catalogSize: 1, alerts: [stockAlert] };
   });
 
   it('sends an authorized Admin stock alert to Reabastecimiento', () => {
@@ -120,7 +124,7 @@ describe('Ticker inventory priority navigation', () => {
   });
 
   it('sends an authorized Admin expiry alert to Caducidad', () => {
-    mocks.ticker = { catalogSize: 10, alerts: [expiryAlert] };
+    mocks.ticker = { catalogSize: 1, alerts: [expiryAlert] };
 
     renderTicker();
 
