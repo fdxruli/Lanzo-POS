@@ -24,6 +24,13 @@ import { useAppStore } from '../../store/useAppStore';
 import { useTickerAlerts } from '../../hooks/useTickerAlerts';
 import Logger from '../../services/Logger';
 import {
+  DEFAULT_TICKER_MAX_VISIBLE,
+  getTickerInventoryNavigationRoute,
+  selectLocalTickerAlerts
+} from '../../services/tickerAlerts';
+import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import {
   canStaffAccessNotifications,
   getTickerMode,
   isCloudNotificationsEnabled,
@@ -38,7 +45,7 @@ import {
 } from '../../services/notifications/notificationPreferencesService';
 import './Ticker.css';
 
-const MAX_INVENTORY_ALERTS = 8;
+const MAX_INVENTORY_ALERTS = DEFAULT_TICKER_MAX_VISIBLE;
 const BACKUP_ALERT_THRESHOLD = 5;
 const SECONDS_PER_MESSAGE = 10;
 const MIN_ANIMATION_DURATION = 15;
@@ -95,6 +102,7 @@ function readBackupAlert() {
       id: 'backup-missing',
       icon: Shield,
       text: 'No has realizado ninguna copia de seguridad. Ve a Configuración > Exportar.',
+      source: 'backup',
       urgency: URGENCY.WARNING,
       route: '/configuracion'
     };
@@ -109,6 +117,7 @@ function readBackupAlert() {
         id: 'backup-stale',
         icon: Shield,
         text: `Hace ${diffDays} días que no respaldas tus datos. ¡Haz una copia hoy!`,
+        source: 'backup',
         urgency: URGENCY.WARNING,
         route: '/configuracion'
       }
@@ -374,12 +383,21 @@ export default function Ticker() {
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const currentDeviceRole = useAppStore(state => state.currentDeviceRole);
   const currentStaffUser = useAppStore(state => state.currentStaffUser);
+  const canAccess = useAppStore(state => state.canAccess);
   const notifications = useAppStore(state => state.notifications);
   const notificationsUnreadCount = useAppStore(state => state.notificationsUnreadCount);
   const supportTickets = useAppStore(state => state.supportTickets);
   const notificationPreferences = useAppStore(state => state.notificationPreferences);
   const openNotificationCenter = useAppStore(state => state.openNotificationCenter);
   const loadNotifications = useAppStore(state => state.loadNotifications);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const canReadReports = canReadSalesReports(actorRuntime);
+  const canReadProducts = (
+    currentDeviceRole === 'staff'
+    && Boolean(currentStaffUser?.id)
+    && typeof canAccess === 'function'
+    && (canAccess('products') || canAccess('inventory'))
+  );
   const tickerMode = getTickerMode(licenseDetails);
   const useLocalTicker = shouldUseLocalTicker(licenseDetails);
   const useSummaryTicker = (
@@ -442,21 +460,36 @@ export default function Ticker() {
       };
     }
 
-    const inventoryMessages = alerts
-      .map(toTickerMessage)
-      .concat(backupAlert ? [backupAlert] : [])
-      .sort((left, right) => left.urgency - right.urgency)
-      .slice(0, MAX_INVENTORY_ALERTS);
+    const localMessages = alerts.map((alert) => {
+      const route = alert.source === 'inventory'
+        ? getTickerInventoryNavigationRoute(alert, {
+            canReadReports,
+            canReadProducts
+          })
+        : alert.route;
+
+      return toTickerMessage({
+        ...alert,
+        route
+      });
+    });
+
+    const prioritizedMessages = selectLocalTickerAlerts(
+      localMessages.concat(backupAlert ? [backupAlert] : []),
+      { limit: MAX_INVENTORY_ALERTS }
+    );
 
     return {
-      messages: inventoryMessages.length > 0
-        ? inventoryMessages
+      messages: prioritizedMessages.length > 0
+        ? prioritizedMessages
         : promotionalMessages,
       isPriority: false
     };
   }, [
     alerts,
     backupAlert,
+    canReadProducts,
+    canReadReports,
     gracePeriodEnds,
     licenseDetails,
     licenseStatus,

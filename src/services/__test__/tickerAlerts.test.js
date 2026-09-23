@@ -1,7 +1,12 @@
 import Dexie from 'dexie';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { queryTickerInventoryAlerts } from '../tickerAlerts';
+import {
+  getTickerInventoryNavigationRoute,
+  mapInventoryOperationalAlertsForTicker,
+  queryTickerInventoryAlerts,
+  selectLocalTickerAlerts
+} from '../tickerAlerts';
 
 describe('queryTickerInventoryAlerts', () => {
   let testDb;
@@ -169,5 +174,186 @@ describe('queryTickerInventoryAlerts', () => {
         availableStock: -1
       })
     ]);
+  });
+});
+
+
+describe('ticker operational priority hardening', () => {
+  const canonicalDomainAlerts = () => ([
+    {
+      incidentId: 'inventory-expiry:expired',
+      type: 'expired',
+      severity: 'critical',
+      productId: 'p-expired',
+      productName: 'Vencido',
+      batchId: 'expired',
+      daysUntilExpiry: -1
+    },
+    {
+      incidentId: 'inventory-stock:out',
+      type: 'out_of_stock',
+      severity: 'critical',
+      productId: 'out',
+      productName: 'Agotado',
+      availableStock: 0,
+      minStock: 5
+    },
+    {
+      incidentId: 'inventory-expiry:today',
+      type: 'expiring',
+      severity: 'critical',
+      productId: 'p-today',
+      productName: 'Vence hoy',
+      batchId: 'today',
+      daysUntilExpiry: 0,
+      expiresToday: true
+    },
+    {
+      incidentId: 'inventory-stock:low',
+      type: 'low_stock',
+      severity: 'warning',
+      productId: 'low',
+      productName: 'Stock bajo',
+      availableStock: 2,
+      minStock: 5
+    },
+    {
+      incidentId: 'inventory-expiry:soon',
+      type: 'expiring',
+      severity: 'warning',
+      productId: 'p-soon',
+      productName: 'Próximo',
+      batchId: 'soon',
+      daysUntilExpiry: 3,
+      expiresToday: false
+    }
+  ]);
+
+  it('preserves the SSOT order and derives ticker urgency only from canonical severity', () => {
+    const mapped = mapInventoryOperationalAlertsForTicker(canonicalDomainAlerts());
+
+    expect(mapped.map((alert) => alert.incidentId)).toEqual([
+      'inventory-expiry:expired',
+      'inventory-stock:out',
+      'inventory-expiry:today',
+      'inventory-stock:low',
+      'inventory-expiry:soon'
+    ]);
+    expect(mapped.map((alert) => alert.urgency)).toEqual([0, 0, 0, 1, 1]);
+    expect(mapped[2]).toMatchObject({
+      type: 'expiry',
+      severity: 'critical',
+      urgency: 0
+    });
+  });
+
+  it('deduplicates inventory incidents without changing their first canonical position', () => {
+    const alerts = canonicalDomainAlerts();
+    const mapped = mapInventoryOperationalAlertsForTicker([
+      alerts[0],
+      alerts[1],
+      { ...alerts[1] },
+      alerts[2]
+    ]);
+
+    expect(mapped.map((alert) => alert.incidentId)).toEqual([
+      'inventory-expiry:expired',
+      'inventory-stock:out',
+      'inventory-expiry:today'
+    ]);
+  });
+
+  it('keeps inventory canonical order inside each urgency and uses deterministic source tie-breaks', () => {
+    const inventory = mapInventoryOperationalAlertsForTicker(canonicalDomainAlerts());
+    const selected = selectLocalTickerAlerts([
+      {
+        id: 'ecommerce-published-out-of-stock',
+        type: 'ecommerce-published-out-of-stock',
+        urgency: 1
+      },
+      inventory[4],
+      {
+        id: 'backup-stale',
+        source: 'backup',
+        urgency: 1
+      },
+      inventory[3],
+      inventory[2],
+      inventory[1],
+      inventory[0]
+    ], { limit: 8 });
+
+    expect(selected.map((alert) => alert.incidentId || alert.id)).toEqual([
+      'inventory-expiry:expired',
+      'inventory-stock:out',
+      'inventory-expiry:today',
+      'inventory-stock:low',
+      'inventory-expiry:soon',
+      'ecommerce-published-out-of-stock',
+      'backup-stale'
+    ]);
+  });
+
+  it('applies the visual limit only after dedupe and priority without mutating the full input', () => {
+    const full = [
+      ...mapInventoryOperationalAlertsForTicker(canonicalDomainAlerts()),
+      ...mapInventoryOperationalAlertsForTicker(
+        Array.from({ length: 7 }, (_, index) => ({
+          incidentId: `inventory-stock:extra-${index}`,
+          type: 'low_stock',
+          severity: 'warning',
+          productId: `extra-${index}`,
+          productName: `Extra ${index}`,
+          availableStock: 1,
+          minStock: 5
+        }))
+      ).map((alert, index) => ({
+        ...alert,
+        canonicalOrder: 5 + index
+      }))
+    ];
+    const before = full.map((alert) => alert.incidentId);
+
+    const selected = selectLocalTickerAlerts(full, { limit: 8 });
+
+    expect(full.map((alert) => alert.incidentId)).toEqual(before);
+    expect(full).toHaveLength(12);
+    expect(selected).toHaveLength(8);
+    expect(selected.slice(0, 5).map((alert) => alert.incidentId)).toEqual(
+      before.slice(0, 5)
+    );
+  });
+
+  it('routes stock and expiry alerts to specialized reports only with reports authority', () => {
+    const mapped = mapInventoryOperationalAlertsForTicker(canonicalDomainAlerts());
+    const expired = mapped.find((alert) => alert.type === 'expired');
+    const outOfStock = mapped.find((alert) => alert.type === 'out-of-stock');
+    const lowStock = mapped.find((alert) => alert.type === 'low-stock');
+    const expiring = mapped.find((alert) => alert.type === 'expiry');
+
+    expect(getTickerInventoryNavigationRoute(lowStock, { canReadReports: true }))
+      .toBe('/ventas?tab=restock');
+    expect(getTickerInventoryNavigationRoute(outOfStock, { canReadReports: true }))
+      .toBe('/ventas?tab=restock');
+    expect(getTickerInventoryNavigationRoute(expired, { canReadReports: true }))
+      .toBe('/ventas?tab=expiration');
+    expect(getTickerInventoryNavigationRoute(expiring, { canReadReports: true }))
+      .toBe('/ventas?tab=expiration');
+  });
+
+  it('falls back to Products without elevating actors that cannot read reports', () => {
+    const [expired] = mapInventoryOperationalAlertsForTicker([
+      canonicalDomainAlerts()[0]
+    ]);
+
+    expect(getTickerInventoryNavigationRoute(expired, {
+      canReadReports: false,
+      canReadProducts: true
+    })).toBe('/productos');
+
+    expect(getTickerInventoryNavigationRoute(expired, {
+      canReadReports: false,
+      canReadProducts: false
+    })).toBeNull();
   });
 });

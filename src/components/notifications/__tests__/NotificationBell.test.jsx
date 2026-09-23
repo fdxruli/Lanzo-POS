@@ -57,6 +57,7 @@ const emptyLocalSnapshot = () => ({
 });
 
 const createState = () => ({
+  showTicker: true,
   licenseDetails: {
     features: {
       local_inventory_alerts: true,
@@ -191,6 +192,31 @@ describe('NotificationBell', () => {
     })).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
     await waitFor(() => expect(local.markSeen).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the Free/local bell and full active badge when the ticker is hidden', () => {
+    store.state = {
+      ...createState(),
+      showTicker: false
+    };
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 6,
+      criticalCount: 2,
+      warningCount: 4,
+      outOfStockCount: 2,
+      lowStockCount: 2,
+      expiredCount: 1,
+      expiringCount: 1,
+      unseenCount: 1
+    };
+
+    renderBell();
+
+    expect(screen.getByRole('button', {
+      name: /Abrir alertas operativas de inventario, 6 activas/i
+    })).toBeInTheDocument();
+    expect(screen.getByText('6')).toBeInTheDocument();
   });
 
   it('caps the local active badge at 99+', () => {
