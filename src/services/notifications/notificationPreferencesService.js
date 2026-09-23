@@ -1,6 +1,6 @@
 const STORAGE_PREFIX = 'lanzo_notification_preferences:v2';
 
-export const NOTIFICATION_CATEGORIES = ['support', 'ecommerce', 'operations', 'license', 'system'];
+export const NOTIFICATION_CATEGORIES = ['support', 'ecommerce', 'inventory', 'operations', 'license', 'system'];
 
 export const DEFAULT_NOTIFICATION_PREFERENCES = {
   showInfoNotifications: true,
@@ -8,6 +8,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = {
   tickerCategories: {
     support: true,
     ecommerce: true,
+    inventory: true,
     operations: true,
     license: true,
     system: false
@@ -15,6 +16,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = {
   featuredCategories: {
     support: true,
     ecommerce: true,
+    inventory: true,
     operations: true,
     license: true,
     system: false
@@ -22,6 +24,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES = {
   mutedCategories: {
     support: null,
     ecommerce: null,
+    inventory: null,
     operations: null,
     license: null,
     system: null
@@ -73,19 +76,28 @@ const normalizeLegacyMutedOperation = (value = {}, fallback = null) => {
   return candidates.sort().at(-1) || fallback;
 };
 
-const normalizeCategoryMap = (value, fallbackMap, { muted = false } = {}) => (
-  NOTIFICATION_CATEGORIES.reduce((acc, category) => {
+const normalizeCategoryMap = (value = {}, fallbackMap, { muted = false } = {}) => {
+  const operationsValue = muted
+    ? normalizeLegacyMutedOperation(value, fallbackMap?.operations ?? null)
+    : normalizeLegacyOperationValue(value, fallbackMap?.operations ?? null);
+
+  return NOTIFICATION_CATEGORIES.reduce((acc, category) => {
     if (category === 'operations') {
-      acc[category] = muted
-        ? normalizeLegacyMutedOperation(value, fallbackMap?.[category] ?? null)
-        : normalizeLegacyOperationValue(value, fallbackMap?.[category] ?? null);
+      acc[category] = operationsValue;
+      return acc;
+    }
+
+    if (category === 'inventory') {
+      acc[category] = value.inventory !== undefined
+        ? value.inventory
+        : operationsValue;
       return acc;
     }
 
     acc[category] = value?.[category] ?? fallbackMap?.[category] ?? null;
     return acc;
-  }, {})
-);
+  }, {});
+};
 
 export function normalizeNotificationPreferences(preferences = {}) {
   const defaults = cloneDefaults();
@@ -163,19 +175,29 @@ export function resetNotificationPreferences(scope = null) {
 }
 
 export function getNotificationCategory(notification = {}) {
-  const explicitCategory = notification?.category;
-  if (NOTIFICATION_CATEGORIES.includes(explicitCategory)) return explicitCategory;
-
   const type = String(notification?.type || notification?.section || 'system').toLowerCase();
+  const explicitCategory = String(notification?.category || '').toLowerCase();
   const metadataCategory = String(notification?.metadata?.category || '').toLowerCase();
 
-  if (type === 'support' || metadataCategory === 'support') return 'support';
-  if (type === 'ecommerce' || metadataCategory === 'ecommerce') return 'ecommerce';
-  if (type === 'license' || metadataCategory === 'license') return 'license';
+  // Inventory type is authoritative so legacy category='operations' payloads
+  // cannot pull a valid inventory notification back into Operations.
+  if (type === 'inventory') return 'inventory';
+  if (explicitCategory === 'inventory' || metadataCategory === 'inventory') return 'inventory';
+
+  if (type === 'ecommerce' || explicitCategory === 'ecommerce' || metadataCategory === 'ecommerce') {
+    return 'ecommerce';
+  }
+  if (type === 'support' || explicitCategory === 'support' || metadataCategory === 'support') {
+    return 'support';
+  }
+  if (type === 'license' || explicitCategory === 'license' || metadataCategory === 'license') {
+    return 'license';
+  }
 
   if (
-    ['cash', 'sync', 'inventory'].includes(type)
-    || ['cash', 'sync', 'inventory', 'staff', 'operation', 'operations'].includes(metadataCategory)
+    ['cash', 'sync', 'staff', 'operation', 'operations'].includes(type)
+    || ['cash', 'sync', 'staff', 'operation', 'operations'].includes(explicitCategory)
+    || ['cash', 'sync', 'staff', 'operation', 'operations'].includes(metadataCategory)
   ) {
     return 'operations';
   }
