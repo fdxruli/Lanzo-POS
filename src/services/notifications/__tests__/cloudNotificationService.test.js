@@ -22,6 +22,7 @@ vi.mock('../notificationCapabilities', () => ({
 
 import {
   archiveCloudNotification,
+  getInventoryOperationalBusinessDate,
   listCloudNotifications,
   markAllCloudNotificationsRead,
   markCloudNotificationRead,
@@ -57,6 +58,14 @@ beforeEach(() => {
 });
 
 describe('cloudNotificationService custom-auth RPC access', () => {
+  it('builds the inventory business date from the same local calendar semantics as Phase 1', () => {
+    expect(getInventoryOperationalBusinessDate(new Date(2026, 8, 23, 23, 59, 59)))
+      .toBe('2026-09-23');
+    expect(getInventoryOperationalBusinessDate(new Date(2026, 8, 24, 0, 0, 1)))
+      .toBe('2026-09-24');
+    expect(getInventoryOperationalBusinessDate('not-a-date')).toBeNull();
+  });
+
   it('lists and normalizes actor seen/read state through the public Supabase client', async () => {
     mocks.rpc.mockResolvedValue({
       data: {
@@ -143,7 +152,10 @@ describe('cloudNotificationService custom-auth RPC access', () => {
       ...authArgs,
       p_notification_id: 'notification-1'
     });
-    expect(mocks.rpc).toHaveBeenNthCalledWith(5, 'refresh_operational_notifications', authArgs);
+    expect(mocks.rpc).toHaveBeenNthCalledWith(5, 'refresh_operational_notifications', {
+      ...authArgs,
+      p_business_date: expect.stringMatching(/^\\d{4}-\\d{2}-\\d{2}$/u)
+    });
 
     expect(mocks.rpc.mock.calls.every(([, args]) => (
       args.p_staff_session_token === 'actor-session-fixture'
