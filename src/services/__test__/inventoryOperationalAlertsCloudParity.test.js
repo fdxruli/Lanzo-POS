@@ -19,6 +19,13 @@ const archivedBatchParityMigration = readFileSync(
   ),
   'utf8'
 ).replace(/\r\n/gu, '\n');
+const actorSafeActionMigration = readFileSync(
+  new URL(
+    '../../../supabase/migrations/20260923163709_inventory_operational_alerts_phase4_actor_safe_action_contract_r1.sql',
+    import.meta.url
+  ),
+  'utf8'
+).replace(/\r\n/gu, '\n');
 
 const now = new Date(2026, 8, 23, 12, 0, 0);
 
@@ -144,6 +151,8 @@ describe('Phase 1 / Phase 4 inventory operational parity contract', () => {
     expect(migration).toMatch(/'category', 'inventory'/u);
     expect(migration).not.toMatch(/create table .*inventory_(?:notifications|alerts|notification_reads)/iu);
     expect(migration).not.toMatch(/cron\.schedule/u);
+    expect(actorSafeActionMigration).toMatch(/p_action_label => null/u);
+    expect(actorSafeActionMigration).toMatch(/p_action_route => null/u);
   });
 
   it('fails expiry date authority safely for missing/invalid client dates', () => {
