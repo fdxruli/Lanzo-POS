@@ -326,6 +326,7 @@ export const markLocalInventoryOperationalAlertsSeenInState = (
 
 let currentSnapshot = { ...EMPTY_LOCAL_INVENTORY_OPERATIONAL_SNAPSHOT };
 let refreshRequest = null;
+let runtimeGeneration = 0;
 const snapshotListeners = new Set();
 
 const publishSnapshot = (snapshot) => {
@@ -341,6 +342,7 @@ export const subscribeLocalInventoryOperationalAlerts = (listener) => {
 };
 
 export const resetLocalInventoryOperationalAlertsRuntime = () => {
+  runtimeGeneration += 1;
   refreshRequest = null;
   publishSnapshot({ ...EMPTY_LOCAL_INVENTORY_OPERATIONAL_SNAPSHOT });
 };
@@ -369,6 +371,8 @@ export const refreshLocalInventoryOperationalAlertsSnapshot = ({
 } = {}) => {
   if (refreshRequest) return refreshRequest;
 
+  const generation = runtimeGeneration;
+
   publishSnapshot({
     ...currentSnapshot,
     status: 'loading',
@@ -379,11 +383,14 @@ export const refreshLocalInventoryOperationalAlertsSnapshot = ({
   const request = Promise.resolve()
     .then(() => querySnapshot(queryOptions))
     .then((snapshot) => {
+      if (generation !== runtimeGeneration) return currentSnapshot;
       const nextSnapshot = applyStoredSeenState(snapshot);
+      if (generation !== runtimeGeneration) return currentSnapshot;
       publishSnapshot(nextSnapshot);
       return nextSnapshot;
     })
     .catch((error) => {
+      if (generation !== runtimeGeneration) return currentSnapshot;
       const nextSnapshot = {
         ...EMPTY_LOCAL_INVENTORY_OPERATIONAL_SNAPSHOT,
         status: 'error',
