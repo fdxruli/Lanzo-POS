@@ -193,6 +193,41 @@ describe('NotificationBell', () => {
     await waitFor(() => expect(local.markSeen).toHaveBeenCalledTimes(1));
   });
 
+  it('caps the local active badge at 99+', () => {
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 100,
+      outOfStockCount: 100,
+      criticalCount: 100
+    };
+
+    renderBell();
+
+    expect(screen.getByText('99+')).toBeInTheDocument();
+    expect(screen.getByLabelText('100 alertas operativas activas')).toBeInTheDocument();
+  });
+
+  it('hides the local bell from Staff without products or inventory authority', () => {
+    store.state = {
+      ...createState(),
+      currentDeviceRole: 'staff',
+      currentStaffUser: {
+        id: 'staff-restricted',
+        permissions: {
+          notifications: false,
+          products: false,
+          inventory: false
+        }
+      }
+    };
+
+    renderBell();
+
+    expect(screen.queryByRole('button', {
+      name: /alertas operativas de inventario/i
+    })).not.toBeInTheDocument();
+  });
+
   it('Free opens zero cloud notification/support paths', () => {
     local.snapshot = {
       ...emptyLocalSnapshot(),
