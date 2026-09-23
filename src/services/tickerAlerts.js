@@ -193,6 +193,9 @@ export async function queryTickerInventoryAlerts({
 
   return {
     catalogSize: snapshot.catalogSize,
-    alerts: mapInventoryOperationalAlertsForTicker(snapshot.alerts).slice(0, limit)
+    alerts: selectLocalTickerAlerts(
+      mapInventoryOperationalAlertsForTicker(snapshot.alerts),
+      { limit }
+    )
   };
 }
