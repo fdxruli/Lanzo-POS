@@ -22,6 +22,10 @@ import { useProductStore } from '../../store/useProductStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useStatsStore } from '../../store/useStatsStore';
 import { normalizeBusinessTypes } from '../../utils/businessType';
+import {
+  getInventoryOperationalState,
+  INVENTORY_OPERATIONAL_TYPES
+} from '../../services/inventoryOperationalAlerts';
 
 import { useBotWorker } from '../../hooks/useBotWorker';
 
@@ -54,9 +58,13 @@ const selectCartTotal = (state) =>
 // Selector que cuenta productos con bajo stock DENTRO del selector
 // Solo re-renderiza cuando el conteo cambia, no cuando cambia cualquier producto
 const selectLowStockCount = (state) =>
-  state.menu.filter(
-    (p) => p.trackStock && p.isActive && p.stock <= (p.minStock || 0)
-  ).length;
+  state.menu.filter((product) => {
+    const type = getInventoryOperationalState({ product }).stock.type;
+    return (
+      type === INVENTORY_OPERATIONAL_TYPES.LOW_STOCK
+      || type === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK
+    );
+  }).length;
 
 const selectProductCount = (state) => state.menu.filter((p) => p.isActive).length;
 
