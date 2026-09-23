@@ -12,6 +12,7 @@ const NOTIFICATION_DETAIL_PERMISSIONS = [
   'notifications_ecommerce',
   'notifications_support',
   'notifications_license',
+  'notifications_inventory',
   'notifications_operations',
   'notifications_system'
 ];
@@ -26,6 +27,7 @@ const PERMISSION_LABELS = {
   notifications_ecommerce: 'Mensajes de pedidos online',
   notifications_support: 'Mensajes de soporte',
   notifications_license: 'Mensajes de licencia',
+  notifications_inventory: 'Alertas de inventario',
   notifications_operations: 'Mensajes de operaciones',
   notifications_system: 'Mensajes de sistema',
   support_center: 'Soporte Lanzo',
@@ -46,7 +48,8 @@ const PERMISSION_DESCRIPTIONS = {
   notifications_ecommerce: 'Avisos de nuevos pedidos online y eventos del canal ecommerce.',
   notifications_support: 'Avisos de respuestas y cambios de solicitudes de soporte.',
   notifications_license: 'Vencimiento, renovacion, plan y eventos importantes de la licencia.',
-  notifications_operations: 'Caja, sincronizacion, inventario y otras alertas operativas del negocio.',
+  notifications_inventory: 'Alertas de stock bajo, productos agotados, vencimientos y productos próximos a caducar.',
+  notifications_operations: 'Caja, sincronizacion y otras alertas operativas del negocio.',
   notifications_system: 'Mensajes generales de Lanzo que no pertenecen a otra categoria.',
   support_center: 'Permite crear y responder solicitudes de soporte desde Lanzo Nube.'
 };
@@ -128,6 +131,7 @@ const ROLE_TEMPLATES = {
     notifications_ecommerce: true,
     notifications_support: true,
     notifications_license: true,
+    notifications_inventory: true,
     notifications_operations: true,
     notifications_system: true,
     support_center: true,
@@ -151,12 +155,17 @@ const normalizePermissions = (permissions = {}) => {
   };
 
   // Compatibility for staff created before category-level notification flags.
-  // An existing master notifications=true keeps access to every category until
-  // an admin explicitly saves granular switches.
+  // Inventory inherited Operations before Phase 5, so preserve that exact
+  // authority when the new key is absent.
   NOTIFICATION_DETAIL_PERMISSIONS.forEach((permission) => {
-    if (!hasOwn(permissions, permission)) {
-      normalized[permission] = permissions.notifications === true;
+    if (hasOwn(permissions, permission)) return;
+
+    if (permission === 'notifications_inventory' && hasOwn(permissions, 'notifications_operations')) {
+      normalized[permission] = permissions.notifications_operations === true;
+      return;
     }
+
+    normalized[permission] = permissions.notifications === true;
   });
 
   return normalized;
