@@ -154,7 +154,7 @@ describe('cloudNotificationService custom-auth RPC access', () => {
     });
     expect(mocks.rpc).toHaveBeenNthCalledWith(5, 'refresh_operational_notifications', {
       ...authArgs,
-      p_business_date: expect.stringMatching(/^\\d{4}-\\d{2}-\\d{2}$/u)
+      p_business_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/u)
     });
 
     expect(mocks.rpc.mock.calls.every(([, args]) => (
