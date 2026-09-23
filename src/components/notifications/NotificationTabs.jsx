@@ -3,6 +3,7 @@ const TABS = [
   { key: 'unread', label: 'No leídas' },
   { key: 'support', label: 'Soporte' },
   { key: 'ecommerce', label: 'Pedidos online' },
+  { key: 'inventory', label: 'Inventario' },
   { key: 'operations', label: 'Operaciones' },
   { key: 'license', label: 'Licencia' },
   { key: 'system', label: 'Sistema' }
@@ -12,11 +13,13 @@ export default function NotificationTabs({
   activeTab = 'all',
   onTabChange,
   showSupport = true,
+  showInventory = true,
   counts = {}
 }) {
-  const visibleTabs = showSupport
-    ? TABS
-    : TABS.filter((tab) => tab.key !== 'support');
+  const visibleTabs = TABS.filter((tab) => (
+    (showSupport || tab.key !== 'support')
+    && (showInventory || tab.key !== 'inventory')
+  ));
 
   return (
     <div
