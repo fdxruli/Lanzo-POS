@@ -259,6 +259,13 @@ function getOperationalSummary(notification) {
     };
   }
 
+  if (notification.type === 'inventory') {
+    return {
+      icon: Package,
+      text: 'Inventario requiere atención. Revisa el Centro de Notificaciones.'
+    };
+  }
+
   return {
     icon: MonitorCog,
     text: 'Hay un aviso de dispositivos o staff. Revisa Lanzo Nube.'
@@ -294,7 +301,9 @@ function buildSummaryMessages({
       icon: AlertTriangle,
       text: isLicenseAlert
         ? 'Hay una alerta importante de licencia. Revisa Lanzo Nube.'
-        : 'Hay una alerta crítica en Lanzo Nube. Revisa el Centro de Notificaciones.',
+        : licenseAlert.type === 'inventory'
+          ? 'Inventario requiere atención. Revisa el Centro de Notificaciones.'
+          : 'Hay una alerta crítica en Lanzo Nube. Revisa el Centro de Notificaciones.',
       urgency: licenseAlert.severity === 'critical' ? URGENCY.CRITICAL : URGENCY.WARNING,
       openNotificationCenter: true
     });
@@ -325,7 +334,7 @@ function buildSummaryMessages({
   }
 
   const operationalWarning = unreadNotifications.find((notification) => (
-    ['sync', 'cash'].includes(notification.type) &&
+    ['sync', 'cash', 'inventory'].includes(notification.type) &&
     ['critical', 'warning'].includes(notification.severity)
   )) || unreadNotifications.find((notification) => (
     notification.type === 'system' &&
