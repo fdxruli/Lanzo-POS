@@ -12,6 +12,13 @@ const migration = readFileSync(
   ),
   'utf8'
 ).replace(/\r\n/gu, '\n');
+const archivedBatchParityMigration = readFileSync(
+  new URL(
+    '../../../supabase/migrations/20260923163414_inventory_operational_alerts_phase4_archived_batch_parity_r1.sql',
+    import.meta.url
+  ),
+  'utf8'
+).replace(/\r\n/gu, '\n');
 
 const now = new Date(2026, 8, 23, 12, 0, 0);
 
@@ -122,6 +129,8 @@ describe('Phase 1 / Phase 4 inventory operational parity contract', () => {
     expect(migration).toMatch(/e\.expiry_date <= p_business_date \+ 7/u);
     expect(migration).toMatch(/when e\.expiry_date < p_business_date then 'expired'/u);
     expect(migration).toMatch(/when e\.expiry_date = p_business_date then 'inventory_expiring_critical'/u);
+    expect(archivedBatchParityMigration)
+      .toMatch(/not in \('inactive', 'archived'\)/u);
   });
 
   it('reuses the existing incident, notification, entitlement and realtime infrastructure', () => {
