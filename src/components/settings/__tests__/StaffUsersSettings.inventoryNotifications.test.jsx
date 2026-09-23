@@ -45,7 +45,13 @@ const openInventoryPermission = async (permissions) => {
   render(<StaffUsersSettings licenseKey="LIC-PHASE5" />);
   await waitFor(() => expect(screen.getByText('Legacy Staff')).toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
-  fireEvent.click(screen.getByText('Lanzo Nube', { selector: 'strong' }));
+
+  const cloudGroupLabel = screen.getByText('Lanzo Nube', { selector: 'strong' });
+  const cloudDetails = cloudGroupLabel.closest('details');
+  if (!cloudDetails?.open) {
+    fireEvent.click(cloudGroupLabel);
+  }
+
   return screen.getByRole('checkbox', { name: /Alertas de inventario/ });
 };
 
