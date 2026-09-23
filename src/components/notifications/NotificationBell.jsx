@@ -49,7 +49,8 @@ export default function NotificationBell({
   );
 
   const canShowLocalOperationalAlert = (
-    cloudEnabled
+    !localOnly
+    && cloudEnabled
     && canStaffAccessEcommerceOperationalAlert(licenseDetails, staffSession)
   );
   const { snapshot } = useEcommercePublishedStockAlerts({
