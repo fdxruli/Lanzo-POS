@@ -33,6 +33,7 @@ const formatNotificationDate = (value) => {
 };
 
 const CATEGORY_ICONS = {
+  inventory: Package,
   operations: CircleDollarSign,
   license: KeyRound,
   support: Headphones,
@@ -41,6 +42,7 @@ const CATEGORY_ICONS = {
 };
 
 const CATEGORY_LABELS = {
+  inventory: 'Inventario',
   operations: 'Operaciones',
   license: 'Licencia',
   support: 'Soporte',
