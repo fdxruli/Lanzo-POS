@@ -116,8 +116,8 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
   it('separates Inventory and Operations counts and filtering for Admin', () => {
     renderDrawer();
 
-    expect(screen.getByRole('tab', { name: /Inventario 2 pendientes/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Operaciones 1 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Inventario\s*2 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Operaciones\s*1 pendientes/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /Inventario/ }));
     expect(screen.getByText('Stock bajo')).toBeInTheDocument();
@@ -152,7 +152,7 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
 
     renderDrawer();
 
-    expect(screen.getByRole('tab', { name: /Inventario 2 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Inventario\s*2 pendientes/i })).toBeInTheDocument();
   });
 
   it('hides Inventory rows, count and tab from denied Staff while keeping Operations', () => {
@@ -178,7 +178,7 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
     renderDrawer();
 
     expect(screen.queryByRole('tab', { name: /Inventario/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Operaciones 1 pendientes/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Operaciones\s*1 pendientes/i })).toBeInTheDocument();
     expect(screen.queryByText('Stock bajo')).not.toBeInTheDocument();
     expect(screen.queryByText('Producto vencido')).not.toBeInTheDocument();
     expect(screen.getByText('Caja requiere atención')).toBeInTheDocument();
@@ -208,7 +208,7 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
     renderDrawer();
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Todas' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tab', { name: /^Todas/ })).toHaveAttribute('aria-selected', 'true');
     });
     expect(screen.queryByRole('tab', { name: /Inventario/ })).not.toBeInTheDocument();
     expect(store.state.clearNotificationCenterRequest).toHaveBeenCalled();
@@ -250,7 +250,7 @@ describe('NotificationCenterDrawer Phase 5 Inventory category', () => {
     renderDrawer();
 
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Todas' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tab', { name: /^Todas/ })).toHaveAttribute('aria-selected', 'true');
     });
     expect(store.state.clearNotificationCenterRequest).toHaveBeenCalled();
   });
