@@ -127,7 +127,9 @@ begin
       and n.source = 'system'
       and n.metadata->>'category' = 'inventory'
       and n.metadata->>'event_key' = 'inventory:' || v_first_incident::text
-  ) then raise exception 'notification contract/event key failed'; end if;
+      and n.action_label is null
+      and n.action_route is null
+  ) then raise exception 'notification contract/event key/action authority failed'; end if;
 
   perform private.generate_inventory_operational_notifications(v_license_id, date '2026-09-23');
 
