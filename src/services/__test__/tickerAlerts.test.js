@@ -92,6 +92,30 @@ describe('queryTickerInventoryAlerts', () => {
     );
   });
 
+  it('aplica el limite del ticker después de construir el snapshot operacional completo', async () => {
+    await testDb.table('menu').bulkAdd(
+      Array.from({ length: 10 }, (_, index) => ({
+        id: `low-${index}`,
+        name: `Low ${index}`,
+        stock: 1,
+        committedStock: 0,
+        minStock: 5,
+        trackStock: true,
+        isActive: true,
+        lowStockAlertStatus: 1
+      }))
+    );
+
+    const result = await queryTickerInventoryAlerts({
+      database: testDb,
+      now: new Date(2026, 5, 11, 12, 0, 0),
+      limit: 8
+    });
+
+    expect(result.catalogSize).toBe(10);
+    expect(result.alerts).toHaveLength(8);
+  });
+
   it('mantiene agotados y lotes ya vencidos visibles con prioridad crítica', async () => {
     await testDb.table('menu').bulkAdd([
       {

@@ -8,16 +8,60 @@ const store = vi.hoisted(() => ({
   state: null
 }));
 
+const local = vi.hoisted(() => ({
+  snapshot: null,
+  markSeen: vi.fn(),
+  refresh: vi.fn(async () => ({ status: 'ready' }))
+}));
+
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(store.state))
 }));
 
+vi.mock('../../../hooks/useInventoryOperationalAlertsSnapshot', () => ({
+  useInventoryOperationalAlertsSnapshot: () => local.snapshot
+}));
+
+vi.mock('../../../services/localInventoryOperationalAlerts', () => ({
+  markCurrentLocalInventoryOperationalAlertsSeen: local.markSeen,
+  refreshLocalInventoryOperationalAlertsSnapshot: local.refresh
+}));
+
+vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
+  useActorRuntimeSnapshot: () => ({
+    status: 'granted',
+    actorType: 'admin',
+    actorId: 'admin-1',
+    sessionId: 'admin-session-1',
+    permissions: ['*']
+  })
+}));
+
 import NotificationBell from '../NotificationBell';
+
+const emptyLocalSnapshot = () => ({
+  catalogSize: 0,
+  alerts: [],
+  activeCount: 0,
+  criticalCount: 0,
+  warningCount: 0,
+  outOfStockCount: 0,
+  lowStockCount: 0,
+  expiredCount: 0,
+  expiringCount: 0,
+  unseenCount: 0,
+  status: 'ready',
+  loading: false,
+  error: null,
+  updatedAt: '2026-09-22T12:00:00.000Z'
+});
 
 const createState = () => ({
   licenseDetails: {
     features: {
-      notification_center: false
+      local_inventory_alerts: true,
+      notification_center: false,
+      cloud_notifications: false
     }
   },
   currentDeviceRole: 'admin',
@@ -74,6 +118,7 @@ const createState = () => ({
 const cloudLicense = () => ({
   license_key: 'license-a',
   features: {
+    local_inventory_alerts: true,
     ticker_mode: 'summary',
     notification_center: true,
     cloud_notifications: true,
@@ -82,9 +127,9 @@ const cloudLicense = () => ({
   }
 });
 
-const renderBell = () => render(
+const renderBell = (props = {}) => render(
   <MemoryRouter>
-    <NotificationBell />
+    <NotificationBell {...props} />
   </MemoryRouter>
 );
 
@@ -95,17 +140,102 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   store.state = createState();
+  local.snapshot = emptyLocalSnapshot();
 });
 
 describe('NotificationBell', () => {
-  it('no renderiza la campana cuando el centro no esta habilitado', () => {
+  it('renders the dedicated local inventory bell for Free/Local', () => {
     renderBell();
 
-    expect(screen.queryByRole('button', { name: /Abrir centro de notificaciones/i }))
-      .not.toBeInTheDocument();
+    expect(screen.getByRole('button', {
+      name: /Abrir alertas operativas de inventario, 0 activas/i
+    })).toBeInTheDocument();
+    expect(screen.queryByRole('button', {
+      name: /Abrir centro de notificaciones/i
+    })).not.toBeInTheDocument();
   });
 
-  it('usa unseen para la campana y conserva unread para el drawer', () => {
+  it('uses active local incidents for the badge and opening does not clear it', async () => {
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 6,
+      criticalCount: 2,
+      warningCount: 4,
+      outOfStockCount: 1,
+      lowStockCount: 3,
+      expiredCount: 1,
+      expiringCount: 1,
+      unseenCount: 6,
+      alerts: [{
+        incidentId: 'inventory-stock:p1',
+        productId: 'p1',
+        productName: 'Producto',
+        type: 'out_of_stock',
+        severity: 'critical',
+        availableStock: 0,
+        isSeen: false
+      }]
+    };
+
+    renderBell();
+
+    const bell = screen.getByRole('button', {
+      name: /Abrir alertas operativas de inventario, 6 activas/i
+    });
+    expect(screen.getByText('6')).toBeInTheDocument();
+
+    fireEvent.click(bell);
+
+    expect(screen.getByRole('dialog', {
+      name: 'Inventario requiere atención'
+    })).toBeInTheDocument();
+    expect(screen.getByText('6')).toBeInTheDocument();
+    await waitFor(() => expect(local.markSeen).toHaveBeenCalledTimes(1));
+  });
+
+  it('Free opens zero cloud notification/support paths', () => {
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 1,
+      outOfStockCount: 1,
+      criticalCount: 1,
+      alerts: [{
+        incidentId: 'inventory-stock:p1',
+        productId: 'p1',
+        productName: 'Producto',
+        type: 'out_of_stock',
+        severity: 'critical',
+        availableStock: 0,
+        isSeen: false
+      }]
+    };
+
+    renderBell();
+    fireEvent.click(screen.getByRole('button', {
+      name: /Abrir alertas operativas de inventario/i
+    }));
+
+    expect(store.state.loadNotifications).not.toHaveBeenCalled();
+    expect(store.state.markNotificationsSeen).not.toHaveBeenCalled();
+    expect(store.state.markNotificationRead).not.toHaveBeenCalled();
+    expect(store.state.markAllNotificationsRead).not.toHaveBeenCalled();
+    expect(store.state.archiveNotification).not.toHaveBeenCalled();
+    expect(store.state.loadSupportTickets).not.toHaveBeenCalled();
+    expect(store.state.loadNotificationPreferences).not.toHaveBeenCalled();
+  });
+
+  it('localOnly does not render a second local drawer on Pro/Nube', () => {
+    store.state = {
+      ...createState(),
+      licenseDetails: cloudLicense()
+    };
+
+    renderBell({ localOnly: true });
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('uses unseen for the Pro cloud bell and preserves unread for the drawer', () => {
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
@@ -124,7 +254,7 @@ describe('NotificationBell', () => {
     expect(screen.queryByText('25')).not.toBeInTheDocument();
   });
 
-  it('abrir el drawer marca visto pero no marca leído', async () => {
+  it('Pro opening the cloud drawer marks seen but not read', async () => {
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
@@ -149,9 +279,10 @@ describe('NotificationBell', () => {
     });
     expect(store.state.markNotificationRead).not.toHaveBeenCalled();
     expect(store.state.markAllNotificationsRead).not.toHaveBeenCalled();
+    expect(local.markSeen).not.toHaveBeenCalled();
   });
 
-  it('renderiza el drawer abierto y lo cierra con Escape', () => {
+  it('keeps the existing Pro cloud drawer and closes it with Escape', () => {
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
@@ -164,13 +295,15 @@ describe('NotificationBell', () => {
       .toBeInTheDocument();
     expect(screen.getByText('No tienes notificaciones por ahora.')).toBeInTheDocument();
     expect(screen.queryByText('Soporte Lanzo Nube')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Inventario requiere atención' }))
+      .not.toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(store.state.closeNotificationCenter).toHaveBeenCalledTimes(1);
   });
 
-  it('muestra una señal separada sin alterar el contador cloud unseen', () => {
+  it('keeps the ecommerce operational signal separate from Pro unseen count', () => {
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
@@ -196,7 +329,12 @@ describe('NotificationBell', () => {
     })).toBeInTheDocument();
   });
 
-  it('presenta la tarjeta local sin invocar lectura o archivo cloud', async () => {
+  it('keeps the existing Pro ecommerce card without local Free count contamination', async () => {
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 45,
+      outOfStockCount: 45
+    };
     store.state = {
       ...createState(),
       licenseDetails: cloudLicense(),
@@ -214,11 +352,11 @@ describe('NotificationBell', () => {
 
     expect(await screen.findByText('Productos publicados sin stock'))
       .toBeInTheDocument();
+    expect(screen.queryByText('45')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Revisar productos' }));
 
     expect(store.state.closeNotificationCenter).toHaveBeenCalledTimes(1);
     expect(store.state.markNotificationRead).not.toHaveBeenCalled();
     expect(store.state.archiveNotification).not.toHaveBeenCalled();
-    expect(store.state.notificationsUnreadCount).toBe(0);
   });
 });
