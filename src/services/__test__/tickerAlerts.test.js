@@ -268,7 +268,6 @@ describe('ticker operational priority hardening', () => {
     const selected = selectLocalTickerAlerts([
       {
         id: 'ecommerce-published-out-of-stock',
-        source: 'ecommerce',
         type: 'ecommerce-published-out-of-stock',
         urgency: 1
       },
