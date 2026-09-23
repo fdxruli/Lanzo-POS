@@ -31,8 +31,8 @@ const notification = {
   severity: 'critical',
   title: 'Producto agotado',
   body: 'Producto prueba no tiene stock disponible.',
-  action_label: 'Revisar',
-  action_route: '/ventas?tab=restock',
+  action_label: null,
+  action_route: null,
   metadata: {
     category: 'inventory',
     classification: 'out_of_stock'
