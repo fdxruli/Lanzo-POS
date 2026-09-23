@@ -186,3 +186,50 @@ describe('Ticker inventory priority navigation', () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });
+
+
+describe('Ticker Pro cloud inventory summary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.actorRuntime = adminRuntime;
+    mocks.ticker = { catalogSize: 0, alerts: [] };
+    mocks.app = createAppState({
+      licenseDetails: {
+        features: {
+          ticker_enabled: true,
+          ticker_mode: 'summary',
+          local_inventory_alerts: true,
+          notification_center: true,
+          cloud_notifications: true
+        }
+      },
+      notifications: [{
+        id: 'cloud-inventory-1',
+        type: 'inventory',
+        severity: 'warning',
+        title: 'Stock bajo',
+        body: 'Producto prueba tiene 3 disponibles; mínimo configurado: 5.',
+        metadata: {
+          category: 'inventory',
+          classification: 'low_stock'
+        },
+        is_read: false,
+        is_archived: false
+      }],
+      notificationsUnreadCount: 1
+    });
+  });
+
+  it('uses an inventory-specific cloud summary instead of the device/staff fallback', () => {
+    renderTicker();
+
+    const inventorySummary = screen.getByRole('button', {
+      name: /Inventario requiere atención.*Centro de Notificaciones/i
+    });
+    expect(inventorySummary).toBeInTheDocument();
+    expect(screen.queryByText(/dispositivos o staff/i)).not.toBeInTheDocument();
+
+    fireEvent.click(inventorySummary);
+    expect(mocks.app.openNotificationCenter).toHaveBeenCalledTimes(1);
+  });
+});
