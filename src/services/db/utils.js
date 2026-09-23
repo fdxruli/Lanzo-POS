@@ -1,5 +1,25 @@
 import Dexie from 'dexie';
 import Logger from '../Logger';
+import {
+  EXPIRY_DAYS_THRESHOLD,
+  getLowStockAlertStatusFromOperationalState,
+  LOW_STOCK_THRESHOLD
+} from '../inventoryOperationalAlerts';
+import {
+  getAvailableStock,
+  getCommittedStock,
+  normalizeStock,
+  STOCK_DECIMALS
+} from '../inventoryStock';
+
+export {
+  EXPIRY_DAYS_THRESHOLD,
+  getAvailableStock,
+  getCommittedStock,
+  LOW_STOCK_THRESHOLD,
+  normalizeStock,
+  STOCK_DECIMALS
+};
 
 export class DatabaseError extends Error {
   constructor(code, message, details = {}) {
@@ -24,34 +44,9 @@ export const DB_ERROR_CODES = {
   UNKNOWN: 'UNKNOWN'
 };
 
-export const STOCK_DECIMALS = 4;
-export const LOW_STOCK_THRESHOLD = 5;
-export const EXPIRY_DAYS_THRESHOLD = 7;
-
-export const normalizeStock = (value) => {
-  const num = Number(value);
-  if (isNaN(num)) return 0;
-  return Number(Math.round(num + 'e' + STOCK_DECIMALS) + 'e-' + STOCK_DECIMALS);
-};
-
-export const getCommittedStock = (record) => normalizeStock(record?.committedStock || 0);
-
-export const getAvailableStock = (record) => {
-  const physicalStock = normalizeStock(record?.stock || 0);
-  const committedStock = getCommittedStock(record);
-  return normalizeStock(Math.max(0, physicalStock - committedStock));
-};
-
-export const getLowStockAlertStatus = (record) => {
-  const availableStock = getAvailableStock(record);
-
-  return Boolean(record?.trackStock)
-    && record?.isActive !== false
-    && availableStock > 0
-    && availableStock < LOW_STOCK_THRESHOLD
-    ? 1
-    : 0;
-};
+export const getLowStockAlertStatus = (record) => (
+  getLowStockAlertStatusFromOperationalState(record)
+);
 
 export function handleDexieError(error, context = '') {
   let errorCode = DB_ERROR_CODES.UNKNOWN;
