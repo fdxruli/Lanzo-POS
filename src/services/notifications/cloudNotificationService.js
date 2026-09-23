@@ -43,6 +43,16 @@ const canUseCloudNotifications = (licenseDetails = {}) => (
   isCloudNotificationsEnabled(licenseDetails)
 );
 
+export const getInventoryOperationalBusinessDate = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const normalizeNotification = (notification = {}) => ({
   id: notification.id,
   type: notification.type || 'system',
@@ -167,7 +177,10 @@ export async function refreshOperationalNotifications({
   }
 
   const authArgs = await buildRpcAuthArgs(licenseDetails);
-  const { data, error } = await supabaseClient.rpc('refresh_operational_notifications', authArgs);
+  const { data, error } = await supabaseClient.rpc('refresh_operational_notifications', {
+    ...authArgs,
+    p_business_date: getInventoryOperationalBusinessDate()
+  });
 
   if (error) throw error;
 
