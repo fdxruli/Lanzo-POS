@@ -3,6 +3,7 @@ import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js';
 import { isCloudCashSyncEnabled } from '../../services/sync/syncConstants.js';
+import { getNotificationCapabilities } from '../../services/notifications/notificationCapabilities.js';
 import { useAppStore } from '../../store/useAppStore';
 
 function SettingsSwitch({ checked, disabled = false, warning = false, onChange, ariaLabel }) {
@@ -39,6 +40,33 @@ export default function OperationalSettings() {
   const multipleOrdersLocked = enableMultipleOrders && hasMultipleActiveOrders;
   const shouldShowMultipleOrdersControl = !features.hasTables;
   const cloudCashSyncEnabled = isCloudCashSyncEnabled(licenseDetails);
+  const notificationCapabilities = getNotificationCapabilities(licenseDetails);
+  const usesCloudNotificationCenter = (
+    notificationCapabilities.notification_center
+    && notificationCapabilities.cloud_notifications
+  );
+  const usesLocalInventoryBell = (
+    notificationCapabilities.local_inventory_alerts
+    && !usesCloudNotificationCenter
+  );
+  const tickerDescription = notificationCapabilities.ticker_mode === 'summary'
+    ? 'Muestra la cinta superior con un resumen de avisos importantes de Lanzo Nube.'
+    : 'Muestra la cinta superior con avisos rápidos de inventario y otros mensajes operativos.';
+  const tickerStatusCopy = showTicker
+    ? (
+        usesCloudNotificationCenter
+          ? 'Activo: la cinta muestra un resumen; las notificaciones completas siguen en el Centro de Notificaciones.'
+          : usesLocalInventoryBell
+            ? 'Activo: la cinta muestra avisos rápidos; las alertas de inventario completas siguen en la campana.'
+            : 'Activo: la cinta muestra avisos rápidos en pantalla.'
+      )
+    : (
+        usesCloudNotificationCenter
+          ? 'Oculto: la cinta superior se oculta; las notificaciones siguen disponibles en el Centro de Notificaciones.'
+          : usesLocalInventoryBell
+            ? 'Oculto: la cinta superior se oculta; las alertas de inventario siguen disponibles en la campana.'
+            : 'Oculto: la cinta superior se oculta sin cambiar las demás alertas disponibles.'
+      );
   const automaticCashOpening = !cloudCashSyncEnabled && cashOpeningPolicy === CASH_OPENING_POLICY.AUTOMATIC;
 
   return (
@@ -58,9 +86,9 @@ export default function OperationalSettings() {
             </div>
             <div className="settings-option-copy">
               <span className="settings-option-title">Ticker de alertas</span>
-              <p>Muestra la cinta superior con avisos de stock bajo, caducidad y mensajes en cola.</p>
+              <p>{tickerDescription}</p>
               <span className="settings-option-meta">
-                {showTicker ? 'Activo: las alertas se muestran en pantalla.' : 'Oculto: no verás la cinta de alertas.'}
+                {tickerStatusCopy}
               </span>
             </div>
           </div>
