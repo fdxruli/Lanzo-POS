@@ -53,6 +53,7 @@ export const NOTIFICATION_CATEGORY_PERMISSION_KEYS = Object.freeze({
   ecommerce: 'notifications_ecommerce',
   support: 'notifications_support',
   license: 'notifications_license',
+  inventory: 'notifications_inventory',
   operations: 'notifications_operations',
   system: 'notifications_system'
 });
@@ -116,6 +117,16 @@ export function canStaffAccessNotificationCategory(
 
   const permissions = getStaffPermissions(staffSession);
   if (permissions.notifications !== true) return false;
+
+  if (category === 'inventory') {
+    if (hasOwn(permissions, 'notifications_inventory')) {
+      return permissions.notifications_inventory === true;
+    }
+    if (hasOwn(permissions, 'notifications_operations')) {
+      return permissions.notifications_operations === true;
+    }
+    return true;
+  }
 
   const permissionKey = NOTIFICATION_CATEGORY_PERMISSION_KEYS[category]
     || NOTIFICATION_CATEGORY_PERMISSION_KEYS.system;
