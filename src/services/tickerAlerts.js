@@ -37,7 +37,6 @@ export function buildEcommercePublishedStockTickerAlert(snapshot) {
   return {
     id: 'ecommerce-published-out-of-stock',
     type: 'ecommerce-published-out-of-stock',
-    source: 'ecommerce',
     count,
     urgency: 1,
     route: ECOMMERCE_PUBLISHED_STOCK_ALERT_ROUTE
@@ -124,6 +123,13 @@ const normalizeCanonicalOrder = (value) => (
   Number.isFinite(Number(value)) ? Number(value) : Number.MAX_SAFE_INTEGER
 );
 
+const getTickerSource = (alert) => {
+  if (alert?.source) return alert.source;
+  if (alert?.type === 'ecommerce-published-out-of-stock') return 'ecommerce';
+  if (String(alert?.id || '').startsWith('backup-')) return 'backup';
+  return 'unknown';
+};
+
 export const compareLocalTickerAlerts = (left, right) => {
   const urgencyDiff = normalizeUrgency(left?.urgency) - normalizeUrgency(right?.urgency);
   if (urgencyDiff !== 0) return urgencyDiff;
@@ -137,8 +143,8 @@ export const compareLocalTickerAlerts = (left, right) => {
   }
 
   const sourceDiff = (
-    (TICKER_SOURCE_PRIORITY[left?.source] ?? 99)
-    - (TICKER_SOURCE_PRIORITY[right?.source] ?? 99)
+    (TICKER_SOURCE_PRIORITY[getTickerSource(left)] ?? 99)
+    - (TICKER_SOURCE_PRIORITY[getTickerSource(right)] ?? 99)
   );
   if (sourceDiff !== 0) return sourceDiff;
 
