@@ -109,25 +109,11 @@ export async function queryTickerInventoryAlerts({
   const upperExpiryKey = `${toLocalDateKey(expiryLimit)}￿`;
 
   const [
-    catalogSize,
-    lowStockProducts,
-    outOfStockProducts,
+    products,
     upcomingBatches,
     expiredBatches
   ] = await Promise.all([
-    database.table(STORES.MENU).count(),
-    database.table(STORES.MENU)
-      .where('lowStockAlertStatus')
-      .equals(1)
-      .limit(limit)
-      .toArray(),
-    database.table(STORES.MENU)
-      .filter((product) => (
-        getInventoryOperationalState({ product, now }).stock.type
-        === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK
-      ))
-      .limit(limit)
-      .toArray(),
+    database.table(STORES.MENU).toArray(),
     database.table(STORES.PRODUCT_BATCHES)
       .where('[activeStockStatus+alertTargetDate]')
       .between([1, lowerExpiryKey], [1, upperExpiryKey], true, true)
@@ -141,20 +127,15 @@ export async function queryTickerInventoryAlerts({
       .toArray()
   ]);
 
+  const catalogSize = products.length;
   const candidateBatches = uniqueById([...upcomingBatches, ...expiredBatches]);
-  const productIds = Array.from(new Set(
-    candidateBatches.map((batch) => batch.productId).filter(Boolean)
-  ));
-  const products = productIds.length > 0
-    ? await database.table(STORES.MENU).bulkGet(productIds)
-    : [];
   const productsById = new Map(
     products.filter(Boolean).map((product) => [product.id, product])
   );
 
   const domainAlerts = [];
 
-  uniqueById([...lowStockProducts, ...outOfStockProducts]).forEach((product) => {
+  products.forEach((product) => {
     const { alerts } = getInventoryOperationalState({ product, now });
     const stockAlert = alerts.find((alert) => (
       alert.type === INVENTORY_OPERATIONAL_TYPES.LOW_STOCK
