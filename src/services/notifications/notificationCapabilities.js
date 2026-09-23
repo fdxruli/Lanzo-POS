@@ -172,6 +172,28 @@ export function getNotificationCapabilities(licenseDetails = {}) {
   };
 }
 
+export function isLocalInventoryAlertsEnabled(licenseDetails = {}) {
+  return getNotificationCapabilities(licenseDetails).local_inventory_alerts;
+}
+
+export function canStaffAccessLocalInventoryOperationalAlerts(
+  _licenseDetails = {},
+  staffSession = {}
+) {
+  if (!isStaffSession(staffSession)) return true;
+  const permissions = getStaffPermissions(staffSession);
+  return permissions.products === true || permissions.inventory === true;
+}
+
+export function shouldUseLocalInventoryOperationalBell(licenseDetails = {}) {
+  const capabilities = getNotificationCapabilities(licenseDetails);
+  return (
+    capabilities.local_inventory_alerts === true
+    && capabilities.notification_center === false
+    && capabilities.cloud_notifications === false
+  );
+}
+
 export function isNotificationCenterEnabled(licenseDetails = {}) {
   return getNotificationCapabilities(licenseDetails).notification_center;
 }

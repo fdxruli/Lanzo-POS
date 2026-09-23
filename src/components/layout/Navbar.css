@@ -755,3 +755,19 @@
     background: color-mix(in srgb, var(--brand-accent-soft) 54%, var(--light-background));
   }
 }
+
+
+/* Phase 2: keep the local inventory bell visible without opening the mobile menu. */
+.notification-bell--mobile-top {
+  position: absolute;
+  top: 50%;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  z-index: 1;
+  transform: translateY(-50%);
+}
+
+@media (min-width: 1024px) {
+  .notification-bell--mobile-top {
+    display: none !important;
+  }
+}

@@ -327,6 +327,7 @@ function Navbar() {
           >
             <Logo style={{ height: '40px', width: 'auto' }} />
           </div>
+          <NotificationBell className="notification-bell--mobile-top" localOnly />
         </div>
       )}
 
