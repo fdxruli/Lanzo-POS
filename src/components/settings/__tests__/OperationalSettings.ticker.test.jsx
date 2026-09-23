@@ -5,33 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OperationalSettings from '../OperationalSettings.jsx';
 import { CASH_OPENING_POLICY } from '../../../services/cashOpeningPolicyService.js';
 
-const setShowTicker = vi.fn();
-const setShowAssistantBot = vi.fn();
-const setEnableMultipleOrders = vi.fn();
-const setCashOpeningPolicy = vi.fn();
-
-const appState = {
-  showTicker: true,
-  setShowTicker,
-  showAssistantBot: false,
-  setShowAssistantBot,
-  enableMultipleOrders: false,
-  setEnableMultipleOrders,
-  cashOpeningPolicy: CASH_OPENING_POLICY.MANUAL,
-  setCashOpeningPolicy,
-  licenseDetails: {
-    features: {
-      ticker_enabled: true,
-      ticker_mode: 'local',
-      local_inventory_alerts: true,
-      notification_center: false,
-      cloud_notifications: false
-    }
-  }
-};
+const mocks = vi.hoisted(() => ({
+  appState: null,
+  setShowTicker: vi.fn(),
+  setShowAssistantBot: vi.fn(),
+  setEnableMultipleOrders: vi.fn(),
+  setCashOpeningPolicy: vi.fn()
+}));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: vi.fn((selector) => selector(appState))
+  useAppStore: vi.fn((selector) => selector(mocks.appState))
 }));
 
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
@@ -62,11 +45,23 @@ const cloudLicense = () => ({
   }
 });
 
+const createAppState = (overrides = {}) => ({
+  showTicker: true,
+  setShowTicker: mocks.setShowTicker,
+  showAssistantBot: false,
+  setShowAssistantBot: mocks.setShowAssistantBot,
+  enableMultipleOrders: false,
+  setEnableMultipleOrders: mocks.setEnableMultipleOrders,
+  cashOpeningPolicy: CASH_OPENING_POLICY.MANUAL,
+  setCashOpeningPolicy: mocks.setCashOpeningPolicy,
+  licenseDetails: localLicense(),
+  ...overrides
+});
+
 describe('OperationalSettings ticker safety-net copy', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    appState.showTicker = true;
-    appState.licenseDetails = localLicense();
+    mocks.appState = createAppState();
   });
 
   it('Free/local ON explains quick visibility while the bell remains the complete safety net', () => {
@@ -81,7 +76,7 @@ describe('OperationalSettings ticker safety-net copy', () => {
   });
 
   it('Free/local OFF explains that hiding the ticker does not disable the inventory bell', () => {
-    appState.showTicker = false;
+    mocks.appState = createAppState({ showTicker: false });
 
     render(<OperationalSettings />);
 
@@ -91,7 +86,7 @@ describe('OperationalSettings ticker safety-net copy', () => {
   });
 
   it('Pro/Nube ON uses summary semantics and preserves the cloud Notification Center', () => {
-    appState.licenseDetails = cloudLicense();
+    mocks.appState = createAppState({ licenseDetails: cloudLicense() });
 
     render(<OperationalSettings />);
 
@@ -104,8 +99,10 @@ describe('OperationalSettings ticker safety-net copy', () => {
   });
 
   it('Pro/Nube OFF says only the ticker is hidden while the Notification Center remains', () => {
-    appState.showTicker = false;
-    appState.licenseDetails = cloudLicense();
+    mocks.appState = createAppState({
+      showTicker: false,
+      licenseDetails: cloudLicense()
+    });
 
     render(<OperationalSettings />);
 
@@ -115,16 +112,16 @@ describe('OperationalSettings ticker safety-net copy', () => {
   });
 
   it('the ticker switch only writes showTicker and leaves notification capabilities untouched', () => {
-    const capabilitiesBefore = JSON.stringify(appState.licenseDetails.features);
+    const capabilitiesBefore = JSON.stringify(mocks.appState.licenseDetails.features);
 
     render(<OperationalSettings />);
     fireEvent.click(screen.getByLabelText('Activar ticker de alertas'));
 
-    expect(setShowTicker).toHaveBeenCalledTimes(1);
-    expect(setShowTicker).toHaveBeenCalledWith(false);
-    expect(setShowAssistantBot).not.toHaveBeenCalled();
-    expect(setEnableMultipleOrders).not.toHaveBeenCalled();
-    expect(setCashOpeningPolicy).not.toHaveBeenCalled();
-    expect(JSON.stringify(appState.licenseDetails.features)).toBe(capabilitiesBefore);
+    expect(mocks.setShowTicker).toHaveBeenCalledTimes(1);
+    expect(mocks.setShowTicker).toHaveBeenCalledWith(false);
+    expect(mocks.setShowAssistantBot).not.toHaveBeenCalled();
+    expect(mocks.setEnableMultipleOrders).not.toHaveBeenCalled();
+    expect(mocks.setCashOpeningPolicy).not.toHaveBeenCalled();
+    expect(JSON.stringify(mocks.appState.licenseDetails.features)).toBe(capabilitiesBefore);
   });
 });
