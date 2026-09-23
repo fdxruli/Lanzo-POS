@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import OperationalSettings from '../OperationalSettings.jsx';
 import { CASH_OPENING_POLICY } from '../../../services/cashOpeningPolicyService.js';
 
@@ -56,6 +56,10 @@ const createAppState = (overrides = {}) => ({
   setCashOpeningPolicy: mocks.setCashOpeningPolicy,
   licenseDetails: localLicense(),
   ...overrides
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 describe('OperationalSettings ticker safety-net copy', () => {
