@@ -1,21 +1,32 @@
+import { useState } from 'react';
 import { Bell } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useEcommercePublishedStockAlerts } from '../../hooks/useEcommercePublishedStockAlerts';
+import { useInventoryOperationalAlertsSnapshot } from '../../hooks/useInventoryOperationalAlertsSnapshot';
 import {
   canStaffAccessEcommerceOperationalAlert,
+  canStaffAccessLocalInventoryOperationalAlerts,
   canStaffAccessNotifications,
   isCloudNotificationsEnabled,
-  isNotificationCenterEnabled
+  isNotificationCenterEnabled,
+  shouldUseLocalInventoryOperationalBell
 } from '../../services/notifications/notificationCapabilities';
 import EcommercePublishedStockOperationalAlert from './EcommercePublishedStockOperationalAlert';
+import LocalInventoryOperationalAlertsDrawer from './LocalInventoryOperationalAlertsDrawer';
 import NotificationCenterDrawer from './NotificationCenterDrawer';
 import './NotificationCenter.css';
 import './EcommercePublishedStockOperationalAlert.css';
 
-export default function NotificationBell({ className = '', showLabel = false, onOpen }) {
+export default function NotificationBell({
+  className = '',
+  showLabel = false,
+  onOpen,
+  localOnly = false
+}) {
   const navigate = useNavigate();
+  const [isLocalOpen, setIsLocalOpen] = useState(false);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
@@ -24,14 +35,22 @@ export default function NotificationBell({ className = '', showLabel = false, on
   const unseenCount = useAppStore((state) => state.notificationsUnseenCount);
   const openNotificationCenter = useAppStore((state) => state.openNotificationCenter);
   const closeNotificationCenter = useAppStore((state) => state.closeNotificationCenter);
+  const localSnapshot = useInventoryOperationalAlertsSnapshot();
   const staffSession = { currentDeviceRole, currentStaffUser };
-  const isEnabled = (
+
+  const cloudEnabled = (
     isNotificationCenterEnabled(licenseDetails) &&
     isCloudNotificationsEnabled(licenseDetails) &&
     canStaffAccessNotifications(licenseDetails, staffSession)
   );
+  const localEnabled = (
+    shouldUseLocalInventoryOperationalBell(licenseDetails) &&
+    canStaffAccessLocalInventoryOperationalAlerts(licenseDetails, staffSession)
+  );
+
   const canShowLocalOperationalAlert = (
-    isEnabled
+    !localOnly
+    && cloudEnabled
     && canStaffAccessEcommerceOperationalAlert(licenseDetails, staffSession)
   );
   const { snapshot } = useEcommercePublishedStockAlerts({
@@ -45,7 +64,64 @@ export default function NotificationBell({ className = '', showLabel = false, on
     && Number(snapshot?.outOfStockCount || 0) > 0
   );
 
-  if (!isEnabled) return null;
+  if (localOnly && !localEnabled) return null;
+
+  if (localEnabled) {
+    const safeActiveCount = Math.max(Number(localSnapshot?.activeCount || 0), 0);
+    const badge = safeActiveCount > 99 ? '99+' : safeActiveCount;
+    const localButtonClassName = [
+      'notification-bell',
+      'notification-bell--local-inventory',
+      className
+    ].filter(Boolean).join(' ');
+    const drawer = (
+      <LocalInventoryOperationalAlertsDrawer
+        isOpen={isLocalOpen}
+        onClose={() => setIsLocalOpen(false)}
+        snapshot={localSnapshot}
+      />
+    );
+
+    return (
+      <>
+        <button
+          type="button"
+          className={localButtonClassName}
+          onClick={() => {
+            if (isLocalOpen) {
+              setIsLocalOpen(false);
+              return;
+            }
+            onOpen?.();
+            setIsLocalOpen(true);
+          }}
+          aria-label={
+            isLocalOpen
+              ? 'Cerrar alertas operativas de inventario'
+              : `Abrir alertas operativas de inventario, ${safeActiveCount} activas`
+          }
+          aria-haspopup="dialog"
+          aria-expanded={isLocalOpen}
+          aria-controls="local-inventory-operational-alerts-drawer"
+        >
+          <Bell size={20} strokeWidth={2.35} aria-hidden="true" />
+          {showLabel && <span className="notification-bell__label">Alertas de inventario</span>}
+          {safeActiveCount > 0 && (
+            <span
+              className="notification-bell__badge"
+              aria-label={`${safeActiveCount} alertas operativas activas`}
+            >
+              {badge}
+            </span>
+          )}
+        </button>
+
+        {typeof document === 'undefined' ? drawer : createPortal(drawer, document.body)}
+      </>
+    );
+  }
+
+  if (localOnly || !cloudEnabled) return null;
 
   const buttonClassName = [
     'notification-bell',

@@ -1,76 +1,33 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Logger from '../services/Logger';
+import { useMemo } from 'react';
 import {
   buildEcommercePublishedStockTickerAlert,
-  queryTickerInventoryAlerts,
-  TICKER_ALERT_POLL_INTERVAL_MS
+  mapInventoryOperationalAlertsForTicker
 } from '../services/tickerAlerts';
-import { TICKER_INVENTORY_ALERT_EVENT } from '../services/tickerAlertEvents';
+import { useInventoryOperationalAlertsSnapshot } from './useInventoryOperationalAlertsSnapshot';
 import { useEcommercePublishedStockAlerts } from './useEcommercePublishedStockAlerts';
 
 const EMPTY_SNAPSHOT = { catalogSize: 0, alerts: [] };
 
 export function useTickerAlerts(enabled = true) {
-  const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT);
-  const requestIdRef = useRef(0);
+  const localInventorySnapshot = useInventoryOperationalAlertsSnapshot();
   const { snapshot: ecommerceSnapshot } = useEcommercePublishedStockAlerts({
     enabled,
     reason: 'free_ticker'
   });
 
-  useEffect(() => {
-    if (!enabled) {
-      requestIdRef.current += 1;
-      setSnapshot(EMPTY_SNAPSHOT);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const refreshIfVisible = async () => {
-      if (cancelled || document.visibilityState !== 'visible') return;
-
-      const requestId = ++requestIdRef.current;
-      try {
-        const nextSnapshot = await queryTickerInventoryAlerts();
-        if (!cancelled && requestId === requestIdRef.current) {
-          setSnapshot(nextSnapshot);
-        }
-      } catch (error) {
-        Logger.error('Error consultando alertas indexadas del ticker:', error);
-      }
-    };
-
-    const initialTimer = window.setTimeout(() => {
-      void refreshIfVisible();
-    }, 0);
-    const intervalId = window.setInterval(
-      () => void refreshIfVisible(),
-      TICKER_ALERT_POLL_INTERVAL_MS
-    );
-
-    const handleRefresh = () => void refreshIfVisible();
-    window.addEventListener(TICKER_INVENTORY_ALERT_EVENT, handleRefresh);
-    document.addEventListener('visibilitychange', handleRefresh);
-
-    return () => {
-      cancelled = true;
-      requestIdRef.current += 1;
-      window.clearTimeout(initialTimer);
-      window.clearInterval(intervalId);
-      window.removeEventListener(TICKER_INVENTORY_ALERT_EVENT, handleRefresh);
-      document.removeEventListener('visibilitychange', handleRefresh);
-    };
-  }, [enabled]);
-
   return useMemo(() => {
     if (!enabled) return EMPTY_SNAPSHOT;
+
     const ecommerceAlert = buildEcommercePublishedStockTickerAlert(ecommerceSnapshot);
+    const inventoryAlerts = mapInventoryOperationalAlertsForTicker(
+      localInventorySnapshot.alerts
+    );
+
     return {
-      ...snapshot,
+      catalogSize: localInventorySnapshot.catalogSize,
       alerts: ecommerceAlert
-        ? [ecommerceAlert, ...(snapshot.alerts || [])]
-        : (snapshot.alerts || [])
+        ? [ecommerceAlert, ...inventoryAlerts]
+        : inventoryAlerts
     };
-  }, [ecommerceSnapshot, enabled, snapshot]);
+  }, [ecommerceSnapshot, enabled, localInventorySnapshot.alerts, localInventorySnapshot.catalogSize]);
 }

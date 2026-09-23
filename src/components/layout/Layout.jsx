@@ -8,6 +8,7 @@ import DataSafetyModal from '../common/DataSafetyModal';
 import EcommerceOrdersRuntime from '../ecommerce/orders/EcommerceOrdersRuntime';
 import EcommercePublishedStockAlertRuntime from '../ecommerce/EcommercePublishedStockAlertRuntime';
 import EcommerceCatalogSyncRuntime from '../ecommerce/EcommerceCatalogSyncRuntime';
+import LocalInventoryOperationalAlertsRuntime from '../inventory/LocalInventoryOperationalAlertsRuntime';
 import { useStatsStore } from '../../store/useStatsStore';
 import { useSalesStore } from '../../store/useSalesStore';
 import { useInventoryCatalogStore } from '../../store/useInventoryCatalogStore';
@@ -159,6 +160,7 @@ function Layout() {
         }}
       />
 
+      <LocalInventoryOperationalAlertsRuntime />
       <Navbar />
       <EcommerceOrdersRuntime />
       <EcommercePublishedStockAlertRuntime />

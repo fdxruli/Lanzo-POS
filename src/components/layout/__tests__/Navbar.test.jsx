@@ -47,7 +47,14 @@ vi.mock('../../common/Logo', () => ({
 }));
 
 vi.mock('../../notifications/NotificationBell', () => ({
-  default: () => <button type="button" aria-label="Notificaciones" />
+  default: ({ className = '', localOnly = false }) => (
+    <button
+      type="button"
+      className={className}
+      data-local-only={localOnly ? 'true' : 'false'}
+      aria-label={localOnly ? 'Alertas locales de inventario' : 'Notificaciones'}
+    />
+  )
 }));
 
 import Navbar from '../Navbar';
@@ -190,6 +197,18 @@ describe('Navbar sales report access', () => {
 });
 
 describe('Navbar mobile menu', () => {
+  it('keeps the local inventory bell visible in the mobile top bar without opening Menu', () => {
+    renderNavbar();
+
+    const topBell = document.querySelector(
+      '.mobile-top-bar .notification-bell--mobile-top'
+    );
+    expect(topBell).toBeInTheDocument();
+    expect(topBell).toHaveAttribute('data-local-only', 'true');
+    expect(screen.getByRole('button', { name: 'Abrir menú principal' }))
+      .toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('opens as a dialog and closes with Escape', () => {
     renderNavbar();
 
