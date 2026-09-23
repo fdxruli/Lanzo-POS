@@ -4,6 +4,7 @@ import {
   getInventoryOperationalState,
   INVENTORY_OPERATIONAL_TYPES
 } from '../inventoryOperationalAlerts';
+import { getLowStockAlertStatus } from '../db/utils';
 
 const NOW = new Date(2026, 8, 22, 12, 0, 0);
 
@@ -118,6 +119,22 @@ describe('inventory operational stock contract', () => {
       now: NOW
     });
     expect(state.alerts).toHaveLength(0);
+    expect(state.stock.type).toBe('not_applicable');
+  });
+
+  it('marks invalid stock data as unknown instead of healthy', () => {
+    const state = getInventoryOperationalState({
+      product: product({ stock: 'invalid' }),
+      now: NOW
+    });
+    expect(state.alerts).toHaveLength(0);
+    expect(state.stock.type).toBe('unknown');
+  });
+
+  it('keeps the Dexie lowStockAlertStatus compatibility index exclusive to low_stock', () => {
+    expect(getLowStockAlertStatus(product({ stock: 4, minStock: 5 }))).toBe(1);
+    expect(getLowStockAlertStatus(product({ stock: 0, minStock: 5 }))).toBe(0);
+    expect(getLowStockAlertStatus(product({ stock: 1, minStock: 0 }))).toBe(0);
   });
 });
 
