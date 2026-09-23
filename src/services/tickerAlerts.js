@@ -1,9 +1,10 @@
 import { db, STORES } from './db/dexie';
 import {
+  compareInventoryOperationalAlerts,
   EXPIRY_DAYS_THRESHOLD,
-  getAvailableStock
-} from './db/utils';
-import { daysBetween } from '../utils/dateUtils';
+  getInventoryOperationalState,
+  INVENTORY_OPERATIONAL_TYPES
+} from './inventoryOperationalAlerts';
 import { ECOMMERCE_PUBLISHED_STOCK_ALERT_ROUTE } from './ecommerce/ecommercePublishedStockAlertConstants';
 
 export const TICKER_ALERT_POLL_INTERVAL_MS = 5 * 60 * 1000;
@@ -19,15 +20,9 @@ const toLocalDateKey = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const getExpiryDays = (targetDate, now) => {
-  if (!targetDate) return null;
-  try {
-    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-    return daysBetween(todayUTC, targetDate);
-  } catch (err) {
-    return null;
-  }
-};
+const uniqueById = (items = []) => Array.from(
+  new Map(items.filter(Boolean).map((item) => [item.id, item])).values()
+);
 
 export function buildEcommercePublishedStockTickerAlert(snapshot) {
   const count = Number(snapshot?.outOfStockCount || 0);
@@ -48,6 +43,58 @@ export function buildEcommercePublishedStockTickerAlert(snapshot) {
   };
 }
 
+const toTickerInventoryAlert = (alert) => {
+  if (alert.type === INVENTORY_OPERATIONAL_TYPES.LOW_STOCK) {
+    return {
+      id: `stock-${alert.productId}`,
+      type: 'low-stock',
+      productId: alert.productId,
+      productName: alert.productName,
+      availableStock: alert.availableStock,
+      minStock: alert.minStock,
+      urgency: 1,
+      route: '/productos'
+    };
+  }
+
+  if (alert.type === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK) {
+    return {
+      id: `stock-${alert.productId}`,
+      type: 'out-of-stock',
+      productId: alert.productId,
+      productName: alert.productName,
+      availableStock: alert.availableStock,
+      minStock: alert.minStock,
+      urgency: 0,
+      route: '/productos'
+    };
+  }
+
+  if (alert.type === INVENTORY_OPERATIONAL_TYPES.EXPIRED) {
+    return {
+      id: `expiry-${alert.batchId}`,
+      type: 'expired',
+      productId: alert.productId,
+      productName: alert.productName,
+      batchId: alert.batchId,
+      expiryDays: alert.daysUntilExpiry,
+      urgency: 0,
+      route: '/productos'
+    };
+  }
+
+  return {
+    id: `expiry-${alert.batchId}`,
+    type: 'expiry',
+    productId: alert.productId,
+    productName: alert.productName,
+    batchId: alert.batchId,
+    expiryDays: alert.daysUntilExpiry,
+    urgency: alert.expiresToday ? 0 : 1,
+    route: '/productos'
+  };
+};
+
 export async function queryTickerInventoryAlerts({
   limit = 8,
   now = new Date(),
@@ -61,67 +108,78 @@ export async function queryTickerInventoryAlerts({
   const lowerExpiryKey = toLocalDateKey(startOfLocalDay(now));
   const upperExpiryKey = `${toLocalDateKey(expiryLimit)}￿`;
 
-  const [catalogSize, lowStockProducts, expiringBatches] = await Promise.all([
+  const [
+    catalogSize,
+    lowStockProducts,
+    outOfStockProducts,
+    upcomingBatches,
+    expiredBatches
+  ] = await Promise.all([
     database.table(STORES.MENU).count(),
     database.table(STORES.MENU)
       .where('lowStockAlertStatus')
       .equals(1)
       .limit(limit)
       .toArray(),
+    database.table(STORES.MENU)
+      .filter((product) => (
+        getInventoryOperationalState({ product, now }).stock.type
+        === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK
+      ))
+      .limit(limit)
+      .toArray(),
     database.table(STORES.PRODUCT_BATCHES)
       .where('[activeStockStatus+alertTargetDate]')
       .between([1, lowerExpiryKey], [1, upperExpiryKey], true, true)
       .limit(limit)
+      .toArray(),
+    database.table(STORES.PRODUCT_BATCHES)
+      .where('[activeStockStatus+alertTargetDate]')
+      .between([1, ''], [1, lowerExpiryKey], true, false)
+      .reverse()
+      .limit(limit)
       .toArray()
   ]);
 
+  const candidateBatches = uniqueById([...upcomingBatches, ...expiredBatches]);
   const productIds = Array.from(new Set(
-    expiringBatches.map(batch => batch.productId).filter(Boolean)
+    candidateBatches.map((batch) => batch.productId).filter(Boolean)
   ));
   const products = productIds.length > 0
     ? await database.table(STORES.MENU).bulkGet(productIds)
     : [];
   const productsById = new Map(
-    products.filter(Boolean).map(product => [product.id, product])
+    products.filter(Boolean).map((product) => [product.id, product])
   );
 
-  const stockAlerts = lowStockProducts.map(product => ({
-    id: `stock-${product.id}`,
-    type: 'low-stock',
-    productId: product.id,
-    productName: product.name || 'Producto sin nombre',
-    availableStock: getAvailableStock(product),
-    urgency: 1,
-    route: '/productos'
-  }));
+  const domainAlerts = [];
 
-  const expiryAlerts = expiringBatches.flatMap(batch => {
+  uniqueById([...lowStockProducts, ...outOfStockProducts]).forEach((product) => {
+    const { alerts } = getInventoryOperationalState({ product, now });
+    const stockAlert = alerts.find((alert) => (
+      alert.type === INVENTORY_OPERATIONAL_TYPES.LOW_STOCK
+      || alert.type === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK
+    ));
+    if (stockAlert) domainAlerts.push(stockAlert);
+  });
+
+  candidateBatches.forEach((batch) => {
     const product = productsById.get(batch.productId);
-    if (!product || product.isActive === false) return [];
+    if (!product) return;
 
-    const expiryDays = getExpiryDays(
-      batch.alertTargetDate || batch.expiryDate,
-      now
-    );
-    if (expiryDays === null || expiryDays < 0 || expiryDays > EXPIRY_DAYS_THRESHOLD) {
-      return [];
-    }
-
-    return [{
-      id: `expiry-${batch.id}`,
-      type: 'expiry',
-      productId: batch.productId,
-      productName: product.name || 'Producto sin nombre',
-      expiryDays,
-      urgency: expiryDays === 0 ? 0 : 1,
-      route: '/productos'
-    }];
+    const { alerts } = getInventoryOperationalState({ product, batch, now });
+    const expiryAlert = alerts.find((alert) => (
+      alert.type === INVENTORY_OPERATIONAL_TYPES.EXPIRED
+      || alert.type === INVENTORY_OPERATIONAL_TYPES.EXPIRING
+    ));
+    if (expiryAlert) domainAlerts.push(expiryAlert);
   });
 
   return {
     catalogSize,
-    alerts: [...stockAlerts, ...expiryAlerts]
-      .sort((left, right) => left.urgency - right.urgency)
+    alerts: domainAlerts
+      .sort(compareInventoryOperationalAlerts)
       .slice(0, limit)
+      .map(toTickerInventoryAlert)
   };
 }
