@@ -7,9 +7,10 @@ import Logger from './Logger';
 import { normalizeMexicanPhone } from './customerMessaging/normalizers';
 import {
   EXPIRY_DAYS_THRESHOLD,
-  getAvailableStock,
+  getInventoryOperationalState,
+  INVENTORY_OPERATIONAL_TYPES,
   LOW_STOCK_THRESHOLD
-} from './db/utils';
+} from './inventoryOperationalAlerts';
 
 /**
  * Muestra un mensaje al usuario.
@@ -234,42 +235,28 @@ export { LOW_STOCK_THRESHOLD, EXPIRY_DAYS_THRESHOLD };
  * @returns {{isLowStock: boolean, isNearingExpiry: boolean, isOutOfStock: boolean, expiryDays: number|null}}
  */
 export const getProductAlerts = (product) => {
-  let isLowStock = false;
-  let isNearingExpiry = false;
-  let expiryDays = null;
-  const availableStock = getAvailableStock(product);
+  const stockState = getInventoryOperationalState({ product }).stock;
+  const expiryState = product?.expiryDate
+    ? getInventoryOperationalState({
+        product,
+        batch: {
+          id: product.id,
+          productId: product.id,
+          stock: product.stock,
+          committedStock: product.committedStock,
+          isActive: product.isActive,
+          activeStockStatus: product.activeStockStatus,
+          expiryDate: product.expiryDate
+        }
+      }).expiry
+    : { type: 'none', daysUntilExpiry: null };
 
-  // 1. Revisar si está agotado
-  const isOutOfStock = product.trackStock && availableStock <= 0;
-
-  // 2. Revisar stock bajo (solo si no está agotado)
-  if (
-    product.trackStock &&
-    availableStock > 0 &&
-    availableStock < LOW_STOCK_THRESHOLD
-  ) {
-    isLowStock = true;
-  }
-
-  // 3. Revisar caducidad
-  if (product.expiryDate) {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0); // Comparamos solo fechas
-
-    // Asumimos que la fecha guardada (ej. '2025-11-20')
-    // se interpreta correctamente en la zona horaria local.
-    const expiryDate = new Date(product.expiryDate);
-
-    const diffTime = expiryDate - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays >= 0 && diffDays <= EXPIRY_DAYS_THRESHOLD) {
-      isNearingExpiry = true;
-      expiryDays = diffDays;
-    }
-  }
-
-  return { isLowStock, isNearingExpiry, isOutOfStock, expiryDays };
+  return {
+    isLowStock: stockState.type === INVENTORY_OPERATIONAL_TYPES.LOW_STOCK,
+    isNearingExpiry: expiryState.type === INVENTORY_OPERATIONAL_TYPES.EXPIRING,
+    isOutOfStock: stockState.type === INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK,
+    expiryDays: expiryState.daysUntilExpiry
+  };
 };
 
 /**
