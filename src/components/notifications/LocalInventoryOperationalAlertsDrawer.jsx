@@ -86,7 +86,6 @@ export default function LocalInventoryOperationalAlertsDrawer({
     if (!isOpen) return undefined;
 
     previousFocusRef.current = document.activeElement;
-    markCurrentLocalInventoryOperationalAlertsSeen();
 
     const drawer = document.getElementById('local-inventory-operational-alerts-drawer');
     const focusableSelector = [
@@ -130,10 +129,23 @@ export default function LocalInventoryOperationalAlertsDrawer({
     };
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (snapshot?.status === 'idle') {
+      void refreshLocalInventoryOperationalAlertsSnapshot();
+      return;
+    }
+
+    if (snapshot?.status === 'ready') {
+      markCurrentLocalInventoryOperationalAlertsSeen();
+    }
+  }, [isOpen, snapshot?.status, snapshot?.updatedAt]);
+
   if (!isOpen) return null;
 
   const status = snapshot?.status || 'idle';
-  const loading = status === 'loading' && !snapshot?.updatedAt;
+  const loading = status === 'idle' || (status === 'loading' && !snapshot?.updatedAt);
   const error = status === 'error';
 
   const handleNavigate = (alert) => {
