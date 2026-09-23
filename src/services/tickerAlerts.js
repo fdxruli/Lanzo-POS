@@ -117,11 +117,11 @@ export const mapInventoryOperationalAlertsForTicker = (alerts = []) => {
 };
 
 const normalizeUrgency = (value) => (
-  Number.isFinite(Number(value)) ? Number(value) : Number.POSITIVE_INFINITY
+  Number.isFinite(Number(value)) ? Number(value) : 99
 );
 
 const normalizeCanonicalOrder = (value) => (
-  Number.isFinite(Number(value)) ? Number(value) : Number.POSITIVE_INFINITY
+  Number.isFinite(Number(value)) ? Number(value) : Number.MAX_SAFE_INTEGER
 );
 
 export const compareLocalTickerAlerts = (left, right) => {
