@@ -5,13 +5,27 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  closeNotificationCenter: vi.fn()
+  closeNotificationCenter: vi.fn(),
+  actorRuntime: {
+    status: 'granted',
+    actorType: 'admin',
+    actorId: 'admin-1',
+    sessionId: 'admin-session-1',
+    permissions: ['*']
+  }
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector({
-    closeNotificationCenter: mocks.closeNotificationCenter
+    closeNotificationCenter: mocks.closeNotificationCenter,
+    currentDeviceRole: 'admin',
+    currentStaffUser: null,
+    canAccess: vi.fn(() => true)
   })
+}));
+
+vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
+  useActorRuntimeSnapshot: () => mocks.actorRuntime
 }));
 
 import NotificationItem from '../NotificationItem';
