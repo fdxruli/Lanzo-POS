@@ -33,6 +33,14 @@ const TYPE_PRIORITY = Object.freeze({
 
 const isMissingValue = (value) => value === null || value === undefined || value === '';
 
+const isProductStockTracked = (product) => (
+  (product?.trackStock ?? product?.track_stock) === true
+);
+
+const isProductActive = (product) => (
+  (product?.isActive ?? product?.is_active) !== false
+);
+
 const getLocalCalendarDate = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -71,7 +79,7 @@ export const resolveOperationalMinStock = (product) => {
 };
 
 const buildStockAlert = (product) => {
-  if (!product || product?.trackStock !== true || product?.isActive === false) {
+  if (!product || !isProductStockTracked(product) || !isProductActive(product)) {
     return null;
   }
 
@@ -109,7 +117,7 @@ const buildStockAlert = (product) => {
 };
 
 const isRelevantBatch = (batch) => {
-  if (!batch || batch?.isActive === false || batch?.status === 'inactive' || batch?.isArchived === true) {
+  if (!batch || (batch?.isActive ?? batch?.is_active) === false || batch?.status === 'inactive' || (batch?.isArchived ?? batch?.is_archived) === true) {
     return false;
   }
 
@@ -126,7 +134,7 @@ const isRelevantBatch = (batch) => {
 };
 
 const buildExpiryAlert = (product, batch, now, expiryDaysThreshold) => {
-  if (!product || product?.isActive === false || product?.trackStock === false || !isRelevantBatch(batch)) {
+  if (!product || !isProductActive(product) || !isProductStockTracked(product) || !isRelevantBatch(batch)) {
     return null;
   }
 
@@ -186,10 +194,21 @@ export const getInventoryOperationalState = ({
   now = new Date(),
   expiryDaysThreshold = EXPIRY_DAYS_THRESHOLD
 } = {}) => {
+  const stockSnapshot = getOperationalStockSnapshot(product);
+  const minimum = resolveOperationalMinStock(product);
+  const stockApplicable = Boolean(product)
+    && isProductStockTracked(product)
+    && isProductActive(product);
   const stockAlert = buildStockAlert(product);
   const expiryAlert = batch
     ? buildExpiryAlert(product, batch, now, expiryDaysThreshold)
     : null;
+
+  let stockType = 'healthy';
+  if (!stockApplicable) stockType = 'not_applicable';
+  else if (!stockSnapshot.valid || (!minimum.valid && stockSnapshot.availableStock > 0)) {
+    stockType = 'unknown';
+  }
 
   return {
     stock: stockAlert
@@ -203,11 +222,11 @@ export const getInventoryOperationalState = ({
           minStockSource: stockAlert.minStockSource
         }
       : {
-          type: 'healthy',
+          type: stockType,
           severity: null,
-          ...getOperationalStockSnapshot(product),
-          minStock: resolveOperationalMinStock(product).value,
-          minStockSource: resolveOperationalMinStock(product).source
+          ...stockSnapshot,
+          minStock: minimum.value,
+          minStockSource: minimum.source
         },
     expiry: expiryAlert
       ? {
