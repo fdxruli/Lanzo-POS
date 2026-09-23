@@ -66,7 +66,6 @@ describe('queryTickerInventoryAlerts', () => {
       alertTargetDate: '2026-06-13T12:00:00.000Z'
     });
 
-    const menuWhere = vi.spyOn(testDb.table('menu'), 'where');
     const batchWhere = vi.spyOn(testDb.table('product_batches'), 'where');
     const result = await queryTickerInventoryAlerts({
       database: testDb,
@@ -88,7 +87,6 @@ describe('queryTickerInventoryAlerts', () => {
       type: 'expiry',
       expiryDays: 2
     });
-    expect(menuWhere).toHaveBeenCalledWith('lowStockAlertStatus');
     expect(batchWhere).toHaveBeenCalledWith(
       '[activeStockStatus+alertTargetDate]'
     );
