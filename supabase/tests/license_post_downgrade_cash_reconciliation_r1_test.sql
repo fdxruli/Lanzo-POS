@@ -223,7 +223,7 @@ begin
   -- extra devices during the fixture downgrade, so make this requester the sole
   -- active device for the owner-only authorization check.
   update public.license_devices set is_active = false where id = v_owner_device;
-  update public.license_devices set is_active = true where id = v_non_owner_device;
+  update public.license_devices set is_active = true, security_token = v_non_owner_security where id = v_non_owner_device;
   update public.license_admin_sessions
   set revoked_at = null, expires_at = now() + interval '1 hour'
   where id = v_non_owner_session;
@@ -236,7 +236,7 @@ begin
     if sqlerrm <> 'POST_DOWNGRADE_CASH_OWNER_REQUIRED' then raise; end if;
   end;
   update public.license_devices set is_active = false where id = v_non_owner_device;
-  update public.license_devices set is_active = true where id = v_owner_device;
+  update public.license_devices set is_active = true, security_token = v_owner_security where id = v_owner_device;
   update public.license_admin_sessions
   set revoked_at = null, expires_at = now() + interval '1 hour'
   where id = v_owner_session;
