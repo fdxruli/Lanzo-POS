@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   refresh: vi.fn(),
-  takeoverCompleted: false,
   pending: null
 }));
 
@@ -16,14 +15,15 @@ vi.mock('react-router-dom', () => ({
 }));
 
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
-  default: () => mocks.pending,
-  consumeFreeDeviceTakeoverCompleted: () => mocks.takeoverCompleted
+  default: () => mocks.pending
 }));
 
 import PostDowngradeRecoveryBanner from '../PostDowngradeRecoveryBanner';
 
 const basePending = (overrides = {}) => ({
   eligible: true,
+  scopeKey: 'scope-a',
+  takeoverCompleted: false,
   online: true,
   status: 'success',
   pendingCount: 2,
@@ -35,7 +35,6 @@ const basePending = (overrides = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.takeoverCompleted = false;
   mocks.pending = basePending();
 });
 
@@ -74,8 +73,7 @@ describe('PostDowngradeRecoveryBanner', () => {
   });
 
   it('shows takeover success only after bootstrap and can be dismissed when no cash remains', () => {
-    mocks.takeoverCompleted = true;
-    mocks.pending = basePending({ pendingCount: 0 });
+    mocks.pending = basePending({ pendingCount: 0, takeoverCompleted: true });
 
     render(<PostDowngradeRecoveryBanner />);
 
@@ -94,4 +92,22 @@ describe('PostDowngradeRecoveryBanner', () => {
     const { container } = render(<PostDowngradeRecoveryBanner />);
     expect(container).toBeEmptyDOMElement();
   });
+  it('does not carry a dismissed recovery banner to a different owner scope', () => {
+    mocks.pending = basePending({ pendingCount: 0, takeoverCompleted: true });
+
+    const { rerender } = render(<PostDowngradeRecoveryBanner />);
+    fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+    expect(screen.queryByText('Este dispositivo ya está activo')).not.toBeInTheDocument();
+
+    mocks.pending = basePending({
+      scopeKey: 'scope-b',
+      takeoverCompleted: false,
+      pendingCount: 1,
+      isPostDowngrade: true
+    });
+    rerender(<PostDowngradeRecoveryBanner />);
+
+    expect(screen.getByText(/1 caja del plan anterior pendiente de revisar/i)).toBeInTheDocument();
+  });
+
 });
