@@ -16,6 +16,8 @@ declare
   v_device_removed uuid := extensions.gen_random_uuid();
   v_device_cycle2 uuid := extensions.gen_random_uuid();
   v_other_device uuid := extensions.gen_random_uuid();
+  v_cash_station text := 'p5-station-' || replace(extensions.gen_random_uuid()::text, '-', '');
+  v_other_cash_station text := 'p5-other-station-' || replace(extensions.gen_random_uuid()::text, '-', '');
   v_cash_cycle1 text := 'p5-cycle1-' || replace(extensions.gen_random_uuid()::text, '-', '');
   v_other_cash text := 'p5-other-' || replace(extensions.gen_random_uuid()::text, '-', '');
   v_cash_cycle2 text;
@@ -67,6 +69,11 @@ begin
     (v_other_license, v_other_key, v_pro_plan.id, 'subscription', 'active',
       now() + interval '30 days', false, 1, v_pro_plan.max_devices,
       v_pro_plan.features, 'Phase 5 tenant isolation fixture');
+
+  insert into public.pos_cash_stations (id, license_id, station_key, status, binding_mode)
+  values
+    (v_cash_station, v_license, 'p5-station-key-' || v_suffix, 'active', 'device_default'),
+    (v_other_cash_station, v_other_license, 'p5-other-station-key-' || v_suffix, 'active', 'device_default');
 
   insert into public.license_periods (
     license_id, plan_id, plan_code_snapshot, plan_name_snapshot,
@@ -127,17 +134,17 @@ begin
     id, license_id, device_id, admin_user_id, device_role, scope, actor_key, status,
     opened_at, opened_by_actor_key, opening_amount, cash_sales_total,
     cash_entries_total, cash_exits_total, expected_cash_total,
-    responsible_name, opened_by_device_id, server_version, metadata
+    responsible_name, opened_by_device_id, cash_station_id, server_version, metadata
   ) values
     (v_cash_cycle1, v_license, v_device_survivor, v_owner, 'admin', 'actor',
       'admin:' || v_owner::text, 'open', now() - interval '20 days',
       'admin:' || v_owner::text, 100, 0, 25, 0, 125,
-      'Synthetic owner', v_device_survivor, 1,
+      'Synthetic owner', v_device_survivor, v_cash_station, 1,
       '{"fixture":"phase5-cycle-1"}'::jsonb),
     (v_other_cash, v_other_license, v_other_device, v_other_owner, 'admin', 'actor',
       'admin:' || v_other_owner::text, 'open', now() - interval '1 day',
       'admin:' || v_other_owner::text, 777, 0, 0, 0, 777,
-      'Other tenant', v_other_device, 1,
+      'Other tenant', v_other_device, v_other_cash_station, 1,
       '{"fixture":"phase5-tenant-b"}'::jsonb);
 
   insert into public.pos_cash_movements (
