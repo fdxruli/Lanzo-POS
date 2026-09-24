@@ -278,6 +278,12 @@ function classify({ phase, baseFocused, candidateFocused, output }) {
   };
   writeJson(output, result);
   writeSummary(result, output.replace(/\.json$/, '.md'));
+  console.log('[PR127_DIAGNOSTIC]', JSON.stringify({
+    targets: initial.rawCandidateOnlyFailures.map(({ file, testName, errorClass, signature, opaqueJson }) => ({ file, testName, errorClass, signature, opaqueJson })),
+    classifications: focused.classifications.map(({ file, testName, classification, semanticErrorClass, semanticSignature, semanticSource, baseEvidenceCount, candidateEvidenceCount, semanticSignatureMatch }) => ({ file, testName, classification, semanticErrorClass, semanticSignature, semanticSource, baseEvidenceCount, candidateEvidenceCount, semanticSignatureMatch })),
+    diagnostic: focused.diagnostic || null,
+    newFailures: focused.newFailures.map(({ file, testName, classification, errorClass, signature }) => ({ file, testName, classification, errorClass, signature })),
+  }, null, 2));
   return result;
 }
 
