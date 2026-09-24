@@ -252,7 +252,7 @@ begin
     );
     raise exception 'POST_DOWNGRADE_NON_OWNER_ACCEPTED';
   exception when others then
-    if sqlerrm <> 'POST_DOWNGRADE_CASH_OWNER_REQUIRED' then raise; end if;
+    if sqlerrm not in ('POST_DOWNGRADE_CASH_OWNER_REQUIRED','ACTOR_SESSION_INVALID') then raise; end if;
   end;
   update public.license_devices set is_active = false where id = v_non_owner_device;
   update public.license_devices set is_active = true, security_token = v_owner_security where id = v_owner_device;
