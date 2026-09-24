@@ -89,7 +89,6 @@ export default function AdminLoginModal() {
         return;
       }
 
-      markFreeDeviceTakeoverCompleted();
     } catch (submitError) {
       setError(describeLoginError(submitError));
     } finally {
@@ -108,7 +107,10 @@ export default function AdminLoginModal() {
       });
       if (!result?.success) {
         setError(describeLoginError(null, result));
+        return;
       }
+
+      markFreeDeviceTakeoverCompleted();
     } catch (takeoverError) {
       setError(describeLoginError(takeoverError));
     } finally {
