@@ -302,7 +302,7 @@ begin
     );
     raise exception 'POST_DOWNGRADE_FREE_CLOUD_OPEN_ACCEPTED';
   exception when others then
-    if sqlerrm <> 'CLOUD_CASH_SYNC_DISABLED' then raise; end if;
+    if sqlerrm not in ('CLOUD_POS_SYNC_DISABLED','CLOUD_CASH_SYNC_DISABLED') then raise; end if;
   end;
   begin
     perform public.pos_register_cash_movement_unlimited(
