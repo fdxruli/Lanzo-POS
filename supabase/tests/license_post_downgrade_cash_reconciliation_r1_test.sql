@@ -135,8 +135,7 @@ begin
       features = p.features,
       max_devices = 1,
       product_name = 'Lanzo POS Free',
-      expires_at = null,
-      updated_at = now()
+      expires_at = null
   from public.plans p
   where l.id = v_license_id
     and p.code = 'free_trial';
@@ -417,8 +416,7 @@ begin
       features = p.features,
       max_devices = 5,
       product_name = 'Lanzo POS Pro',
-      expires_at = now() + interval '30 days',
-      updated_at = now()
+      expires_at = now() + interval '30 days'
   from public.plans p
   where l.id = v_license_id
     and p.code = 'pro_monthly';
