@@ -196,6 +196,38 @@ begin
     raise exception 'FINAL_LIFECYCLE_GRACE_BOUNDARY_MISMATCH: %', row_to_json(v_entitlement);
   end if;
 
+  -- Exact grace boundary is inclusive; one millisecond either side must classify consistently.
+  update public.licenses
+     set expires_at = now() - interval '7 days' + interval '1 millisecond'
+   where id = v_license;
+  select * into v_entitlement from private.license_entitlement_state_v1(v_license);
+  if v_entitlement.lifecycle_state <> 'grace_period'
+     or v_entitlement.grace_period_ends is distinct from (now() + interval '1 millisecond') then
+    raise exception 'FINAL_LIFECYCLE_LAST_GRACE_MILLISECOND_FAILED: %', row_to_json(v_entitlement);
+  end if;
+
+  update public.licenses
+     set expires_at = now() - interval '7 days'
+   where id = v_license;
+  select * into v_entitlement from private.license_entitlement_state_v1(v_license);
+  if v_entitlement.lifecycle_state <> 'grace_period'
+     or v_entitlement.grace_period_ends is distinct from now() then
+    raise exception 'FINAL_LIFECYCLE_EXACT_GRACE_BOUNDARY_FAILED: %', row_to_json(v_entitlement);
+  end if;
+
+  update public.licenses
+     set expires_at = now() - interval '7 days' - interval '1 millisecond'
+   where id = v_license;
+  select * into v_entitlement from private.license_entitlement_state_v1(v_license);
+  if v_entitlement.lifecycle_state <> 'expired'
+     or v_entitlement.is_entitled is not false then
+    raise exception 'FINAL_LIFECYCLE_GRACE_PLUS_ONE_MILLISECOND_FAILED: %', row_to_json(v_entitlement);
+  end if;
+
+  -- Restore the in-grace fixture before asserting that materialization is a no-op.
+  update public.licenses
+     set expires_at = now() - interval '3 days'
+   where id = v_license;
   v_result := private.materialize_expired_license_to_free_v1(v_license);
   if v_result->>'code' <> 'LICENSE_IN_GRACE'
      or (select count(*) from public.license_devices where license_id = v_license and is_active) <> 2
