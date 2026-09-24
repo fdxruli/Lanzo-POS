@@ -42,7 +42,7 @@ declare
   v_movement_after jsonb;
   v_expected_amount numeric;
   v_expected_version integer;
-  v_boundary1 timestamptz := now() - interval '30 days';
+  v_boundary1 timestamptz := now() - interval '23 days';
   v_boundary2 timestamptz := now() - interval '1 day';
   v_cycle1_recovery_event uuid;
   v_cycle2_recovery_event uuid;
@@ -80,7 +80,7 @@ begin
     period_type, status, starts_at, ends_at, ai_agent_limit, metadata
   ) values (
     v_license, v_pro_plan.id, 'pro_monthly', v_pro_plan.name,
-    'pro_paid', 'active', now() - interval '40 days', now() - interval '8 days',
+    'pro_paid', 'active', now() - interval '45 days', now() - interval '30 days',
     15, '{"fixture":"license-pro-to-free-lifecycle-final-r1"}'::jsonb
   );
 
@@ -187,12 +187,12 @@ begin
 
   -- Active -> grace is still entitled; materialization must remain a no-op.
   update public.licenses
-     set expires_at = now() - interval '33 days'
+     set expires_at = now() - interval '3 days'
    where id = v_license;
   select * into v_entitlement from private.license_entitlement_state_v1(v_license);
   if v_entitlement.lifecycle_state <> 'grace_period'
      or v_entitlement.is_entitled is not true
-     or v_entitlement.grace_period_ends is distinct from (now() - interval '26 days') then
+     or v_entitlement.grace_period_ends is distinct from (now() + interval '4 days') then
     raise exception 'FINAL_LIFECYCLE_GRACE_BOUNDARY_MISMATCH: %', row_to_json(v_entitlement);
   end if;
 
@@ -207,7 +207,7 @@ begin
   end if;
 
   -- Grace ended: the real materializer performs Free transition and Phase 2 pruning.
-  update public.licenses set expires_at = now() - interval '37 days' where id = v_license;
+  update public.licenses set expires_at = now() - interval '30 days' where id = v_license;
   select * into v_entitlement from private.license_entitlement_state_v1(v_license);
   if v_entitlement.lifecycle_state <> 'expired'
      or v_entitlement.is_entitled is not false then
@@ -442,14 +442,14 @@ begin
   -- Model the paid second-cycle period after the prior Free period has ended.
   update public.license_periods
      set starts_at = v_boundary1,
-         ends_at = now() - interval '20 days',
+         ends_at = now() - interval '10 days',
          status = 'expired',
-         closed_at = now() - interval '20 days'
+         closed_at = now() - interval '10 days'
    where license_id = v_license
      and plan_code_snapshot = 'free_trial'
      and status = 'active';
   update public.license_periods
-     set starts_at = now() - interval '20 days',
+     set starts_at = now() - interval '10 days',
          ends_at = now() - interval '8 days',
          plan_id = v_pro_plan.id,
          plan_code_snapshot = 'pro_monthly',
@@ -467,13 +467,13 @@ begin
       period_type, status, starts_at, ends_at, ai_agent_limit, metadata
     ) values (
       v_license, v_pro_plan.id, 'pro_monthly', v_pro_plan.name,
-      'pro_paid', 'active', now() - interval '20 days', now() - interval '8 days',
+      'pro_paid', 'active', now() - interval '10 days', now() - interval '8 days',
       15, '{"fixture":"phase5-cycle-2"}'::jsonb
     );
   end if;
 
   update public.license_events
-     set triggered_at = now() - interval '20 days'
+     set triggered_at = now() - interval '10 days'
    where id = (
      select e.id from public.license_events e
       where e.license_key = v_license_key
@@ -512,7 +512,7 @@ begin
     raise exception 'FINAL_LIFECYCLE_CYCLE2_CASH_ID_MISSING: %', v_result;
   end if;
   update public.pos_cash_sessions
-     set opened_at = now() - interval '10 days'
+     set opened_at = now() - interval '9 days'
    where id = v_cash_cycle2 and license_id = v_license;
   select to_jsonb(c) into v_cash2_before
     from public.pos_cash_sessions c where c.id = v_cash_cycle2;
