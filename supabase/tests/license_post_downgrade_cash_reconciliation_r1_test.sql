@@ -167,6 +167,20 @@ begin
   set is_active = false
   where id = v_staff;
 
+  -- Fase 2 owns the device-retirement ranking. Phase 3 only needs one valid
+  -- current owner requester, so normalize the synthetic post-downgrade runtime.
+  update public.license_devices
+  set is_active = false
+  where license_id = v_license_id;
+  update public.license_devices
+  set is_active = true,
+      security_token = v_owner_security
+  where id = v_owner_device;
+  update public.license_admin_sessions
+  set revoked_at = null,
+      expires_at = now() + interval '1 hour'
+  where id = v_owner_session;
+
   insert into public.pos_cash_sessions(
     id, license_id, device_id, device_role, actor_key, status,
     opened_at, opening_amount, expected_cash_total, responsible_name, server_version
