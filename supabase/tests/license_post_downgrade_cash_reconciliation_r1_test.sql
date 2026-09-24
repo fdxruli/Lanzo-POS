@@ -312,7 +312,7 @@ begin
     );
     raise exception 'POST_DOWNGRADE_FREE_CLOUD_MOVEMENT_ACCEPTED';
   exception when others then
-    if sqlerrm <> 'CLOUD_CASH_SYNC_DISABLED' then raise; end if;
+    if sqlerrm not in ('CLOUD_POS_SYNC_DISABLED','CLOUD_CASH_SYNC_DISABLED') then raise; end if;
   end;
 
   -- Detail exposes the canonical financial snapshot without cross-tenant technical IDs.
