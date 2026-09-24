@@ -102,12 +102,14 @@ describe('post-downgrade cash pending session runtime', () => {
 
     render(
       <>
+        <Probe name="layout" />
         <Probe name="banner" />
         <Probe name="caja" />
       </>
     );
 
     await waitFor(() => expect(screen.getByTestId('banner-count')).toHaveTextContent('2'));
+    expect(screen.getByTestId('layout-count')).toHaveTextContent('2');
     expect(screen.getByTestId('caja-count')).toHaveTextContent('2');
     expect(screen.getByTestId('banner-downgrade')).toHaveTextContent('yes');
     expect(mocks.list).toHaveBeenCalledTimes(1);
@@ -346,6 +348,32 @@ describe('post-downgrade cash pending session runtime', () => {
       expect(screen.getByTestId('network-flap-count')).toHaveTextContent('3');
     });
     expect(mocks.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards an in-flight response after logout resets the runtime', async () => {
+    const request = deferred();
+    mocks.list.mockReturnValue(request.promise);
+    const { rerender } = render(<Probe name="logout-stale" />);
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(1));
+
+    mocks.app = {
+      licenseStatus: null,
+      licenseDetails: null,
+      currentDeviceRole: null,
+      currentAdminUser: null
+    };
+    rerender(<Probe name="logout-stale" />);
+    await waitFor(() => expect(screen.getByTestId('logout-stale-status')).toHaveTextContent('idle'));
+
+    request.resolve({
+      success: true,
+      pendingCount: 8,
+      cashSessions: [{ id: 'stale-after-logout' }]
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('logout-stale-status')).toHaveTextContent('idle');
+      expect(screen.getByTestId('logout-stale-count')).toHaveTextContent('unknown');
+    });
   });
 
   it('falls back to a returned session list when the count is null and never converts a malformed response to zero', async () => {
