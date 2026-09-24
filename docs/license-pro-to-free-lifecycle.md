@@ -18,7 +18,7 @@ El bridge histórico sirve para una conciliación humana explícita; no vuelve a
 
 Cada ciclo usa su transición y evidencia de downgrade actuales. Upgrade a PRO desactiva el bridge y restaura la superficie Cloud Cash normal; no reactiva dispositivos ni usuarios Staff antiguos automáticamente. Un segundo downgrade produce evidencia propia y no reutiliza el takeover anterior.
 
-El runtime frontend aísla el conteo y el resultado transitorio de takeover por licencia y propietario. Logout, cambio de licencia/actor y respuestas tardías no pueden contaminar el scope nuevo. Sólo una respuesta válida del scope actual actualiza el snapshot; valores ausentes o inconsistentes permanecen como error/unknown.
+El runtime frontend aísla el conteo y el resultado transitorio de takeover por licencia y propietario. Logout, cambio de licencia/actor y respuestas tardías no pueden contaminar el scope nuevo. Sólo una respuesta válida del scope actual actualiza el snapshot; valores ausentes o inconsistentes permanecen como error/unknown. Los errores SQL/RPC técnicos se convierten en copy seguro y no se muestran directamente en los modales.
 
 ## Regresiones y diagnóstico
 
