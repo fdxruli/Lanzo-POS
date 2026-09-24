@@ -354,6 +354,11 @@ export const createLicenseIntegrityActions = ({
             }
 
             await get().refreshLicenseSyncMode('integrity');
+
+            if (state.appStatus === 'locked_renewal' && isTechnicallyValid) {
+                set({ appStatus: 'ready' });
+            }
+
             set({ lastIntegrityFailure: null });
         } catch (error) {
             markLastLicenseValidationAttempt(licenseDetails.license_key);
