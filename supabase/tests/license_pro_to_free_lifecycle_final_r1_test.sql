@@ -50,7 +50,7 @@ declare
   v_other_cash_after jsonb;
   v_entitlement record;
   v_count integer;
-  v_opened_1 timestamptz := now() - interval '6 days';
+  v_opened_1 timestamptz := now() - interval '40 days';
   v_opened_2 timestamptz;
 begin
   select id, max_devices
@@ -83,7 +83,7 @@ begin
     period_type, status, starts_at, ends_at, ai_agent_limit, metadata
   ) values (
     v_license, v_pro_plan, 'pro_monthly', 'Lanzo Nube',
-    'pro_paid', 'active', now() - interval '30 days', now() + interval '30 days',
+    'pro_paid', 'active', now() - interval '60 days', now() + interval '30 days',
     15, '{"fixture":"final-lifecycle-r1"}'::jsonb
   );
 
@@ -134,7 +134,7 @@ begin
   -- Canonical opening-plan history for a Cloud Cash session.
   insert into public.license_events (license_key, event_type, triggered_at, metadata)
   values (
-    v_license_key, 'PLAN_CHANGED', now() - interval '20 days',
+    v_license_key, 'PLAN_CHANGED', now() - interval '50 days',
     jsonb_build_object(
       'source', 'licenses_update_trigger',
       'from_plan', 'free_trial',
@@ -295,7 +295,7 @@ begin
   -- defaults triggered_at to transaction-stable now(), so move cycle-1 transition
   -- evidence into the past before the synthetic upgrade/cycle-2 sequence.
   update public.license_events
-  set triggered_at = now() - interval '2 days'
+  set triggered_at = now() - interval '30 days'
   where license_key = v_license_key
     and (
       (event_type = 'PLAN_CHANGED'
@@ -306,6 +306,19 @@ begin
         and metadata->>'plan' = 'free_trial')
       or event_type in ('PLAN_EXPIRED_DOWNGRADED_TO_FREE','FREE_PRIMARY_DEVICE_TAKEOVER')
     );
+
+  update public.license_periods
+  set ends_at = now() - interval '30 days',
+      closed_at = now() - interval '30 days'
+  where license_id = v_license
+    and plan_code_snapshot = 'pro_monthly'
+    and status = 'expired';
+
+  update public.license_periods
+  set starts_at = now() - interval '30 days'
+  where license_id = v_license
+    and plan_code_snapshot = 'free_trial'
+    and status = 'active';
 
   -- The displaced pre-downgrade device/session/token no longer has authority.
   v_result := public.verify_admin_session(
@@ -389,6 +402,30 @@ begin
     raise exception 'FINAL_CYCLE1_TAKEOVER_EVIDENCE_SURVIVED_UPGRADE';
   end if;
 
+  -- Keep the whole fixture rollback-only while modeling a real later renewal
+  -- transaction. Event/period timestamps are shifted, not production clocks.
+  update public.license_events
+  set triggered_at = now() - interval '20 days'
+  where license_key = v_license_key
+    and event_type = 'PLAN_CHANGED'
+    and metadata->>'source' = 'licenses_update_trigger'
+    and metadata->>'to_plan' = 'pro_monthly'
+    and triggered_at = now();
+
+  update public.license_periods
+  set starts_at = now() - interval '20 days',
+      ends_at = now() + interval '10 days'
+  where license_id = v_license
+    and plan_code_snapshot = 'pro_monthly'
+    and status = 'active';
+
+  update public.license_periods
+  set ends_at = now() - interval '20 days',
+      closed_at = now() - interval '20 days'
+  where license_id = v_license
+    and plan_code_snapshot = 'free_trial'
+    and status = 'closed';
+
   if (select count(*) from public.license_devices where license_id=v_license and is_active) <> 1
      or not exists(select 1 from public.license_devices where id=v_device_b and is_active)
      or exists(select 1 from public.license_devices where id=v_device_a and is_active) then
@@ -424,7 +461,7 @@ begin
     now() + interval '1 hour', '{"fixture":"final-lifecycle-r1","cycle":2}'::jsonb
   );
 
-  v_opened_2 := clock_timestamp();
+  v_opened_2 := now() - interval '10 days';
 
   insert into public.pos_cash_sessions (
     id, license_id, device_id, admin_user_id, device_role, scope, actor_key,
