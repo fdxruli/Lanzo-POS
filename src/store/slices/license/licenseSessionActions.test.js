@@ -100,6 +100,55 @@ describe('owner enrollment context session boundaries', () => {
     expect(state).toMatchObject({ appStatus: 'unauthenticated', ownerEnrollmentContext: null });
   });
 
+  it('routes only the retired Lanzo Local owner device into admin recovery', () => {
+    const state = createState();
+    state.appStatus = 'license_change_required';
+    state.licensePlanBlockInfo = {
+      reason: 'PLAN_DOWNGRADE_DEVICE_LIMIT',
+      license_key: 'LICENSE-FREE-DOWNGRADE',
+      plan_code: 'free_trial',
+      plan_name: 'Lanzo Local',
+      product_name: 'Lanzo POS Free',
+      max_devices: 1
+    };
+
+    expect(state.recoverDowngradedOwnerDevice()).toEqual({ success: true });
+    expect(state).toMatchObject({
+      appStatus: 'admin_login_required',
+      licensePlanBlockInfo: null,
+      adminLoginLicenseKey: 'LICENSE-FREE-DOWNGRADE',
+      currentAdminUser: null,
+      currentStaffUser: null
+    });
+    expect(state.adminLoginMessage).toMatch(/propietario.*usar este dispositivo/i);
+  });
+
+  it('does not reuse Free takeover for PRO device limits or Staff removal', () => {
+    const state = createState();
+
+    state.licensePlanBlockInfo = {
+      reason: 'PLAN_DOWNGRADE_DEVICE_LIMIT',
+      license_key: 'LICENSE-PRO',
+      plan_code: 'pro_monthly',
+      max_devices: 5
+    };
+    expect(state.recoverDowngradedOwnerDevice()).toEqual({
+      success: false,
+      code: 'FREE_DEVICE_RECOVERY_NOT_ALLOWED'
+    });
+
+    state.licensePlanBlockInfo = {
+      reason: 'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED',
+      license_key: 'LICENSE-FREE',
+      plan_code: 'free_trial',
+      max_devices: 1
+    };
+    expect(state.recoverDowngradedOwnerDevice()).toEqual({
+      success: false,
+      code: 'FREE_DEVICE_RECOVERY_NOT_ALLOWED'
+    });
+  });
+
   it('clears context and tenant-owned UI when leaving a local tenant mismatch', async () => {
     const state = createState();
     state.companyProfile = { name: 'Tenant A' };

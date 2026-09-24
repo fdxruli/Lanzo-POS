@@ -109,7 +109,14 @@ export const createLicenseIntegrityActions = ({
 
         const localCheck = assertLocalTransactionAllowed(licenseDetails, state);
         const isOnline = navigator.onLine;
-        const shouldResolveLifecycleRemotely = localCheck.requiresRemoteResolution === true && isOnline;
+        const isExplicitExpiryTransitionRetry = (
+            state.appStatus === 'locked_renewal' &&
+            reason === 'license_expiry_transition_retry'
+        );
+        const shouldResolveLifecycleRemotely = (
+            localCheck.requiresRemoteResolution === true ||
+            isExplicitExpiryTransitionRetry
+        ) && isOnline;
 
         if (!localCheck.ok && !shouldResolveLifecycleRemotely) {
             Logger.warn(`[Integrity] Validación local bloqueó operación (${reason}):`, localCheck.code);
@@ -354,6 +361,11 @@ export const createLicenseIntegrityActions = ({
             }
 
             await get().refreshLicenseSyncMode('integrity');
+
+            if (state.appStatus === 'locked_renewal' && isTechnicallyValid) {
+                set({ appStatus: 'ready' });
+            }
+
             set({ lastIntegrityFailure: null });
         } catch (error) {
             markLastLicenseValidationAttempt(licenseDetails.license_key);

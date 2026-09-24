@@ -81,45 +81,71 @@ function getFullLicense(licenseDetails) {
 }
 
 function getGracePeriodState(licenseDetails) {
-    const expiryDateString = licenseDetails?.expires_at;
-    if (!expiryDateString) return { inGracePeriod: false };
+    const status = String(licenseDetails?.status || '').trim().toLowerCase();
+    const graceEndValue = licenseDetails?.grace_period_ends || null;
+    const graceEndDate = graceEndValue ? new Date(graceEndValue) : null;
+    const hasReliableEnd = graceEndDate && !Number.isNaN(graceEndDate.getTime());
 
-    const now = new Date();
-    const expiryDate = new Date(expiryDateString);
-    if (Number.isNaN(expiryDate.getTime())) return { inGracePeriod: false };
-
-    const graceEndDate = new Date(expiryDate);
-    graceEndDate.setDate(graceEndDate.getDate() + 7);
-    return { inGracePeriod: now > expiryDate && now < graceEndDate };
-}
-
-function getExpirationInfo(licenseDetails) {
-    const expiryDateString = licenseDetails?.expires_at;
-    if (!expiryDateString) return { label: 'Permanente', tone: 'success', note: '' };
-
-    const now = new Date();
-    const expiryDate = new Date(expiryDateString);
-    const graceEndDate = new Date(expiryDate);
-    graceEndDate.setDate(graceEndDate.getDate() + 7);
-
-    const isExpired = now > expiryDate;
-    const inGracePeriod = isExpired && now < graceEndDate;
-    const daysLeftInGrace = inGracePeriod ? Math.ceil((graceEndDate - now) / (1000 * 60 * 60 * 24)) : 0;
-    const formattedDate = expiryDate.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    if (inGracePeriod) {
+    if (status === 'grace_period') {
         return {
-            label: 'Vencida en gracia',
-            tone: 'warning',
-            note: `Corte definitivo en ${daysLeftInGrace} dias`
+            inGracePeriod: !hasReliableEnd || graceEndDate > new Date(),
+            graceEndDate: hasReliableEnd ? graceEndDate : null
         };
     }
 
-    if (isExpired) {
+    const expiryValue = licenseDetails?.expires_at;
+    if (!expiryValue || !hasReliableEnd) return { inGracePeriod: false, graceEndDate: null };
+
+    const expiryDate = new Date(expiryValue);
+    if (Number.isNaN(expiryDate.getTime())) return { inGracePeriod: false, graceEndDate: null };
+
+    const now = new Date();
+    return {
+        inGracePeriod: expiryDate < now && graceEndDate > now,
+        graceEndDate
+    };
+}
+
+function getExpirationInfo(licenseDetails) {
+    const status = String(licenseDetails?.status || '').trim().toLowerCase();
+    const planCode = getPlanCode(licenseDetails);
+    const isPaidPlan = planCode.includes('pro') || planCode.includes('basic');
+    const expiryDateString = licenseDetails?.expires_at;
+    const graceEndValue = licenseDetails?.grace_period_ends || null;
+    const graceEndDate = graceEndValue ? new Date(graceEndValue) : null;
+    const hasReliableGraceEnd = graceEndDate && !Number.isNaN(graceEndDate.getTime());
+
+    if (status === 'grace_period') {
         return {
-            label: 'Licencia suspendida',
-            tone: 'danger',
-            note: `Expiro el ${formattedDate}`
+            label: 'Período de gracia',
+            tone: 'warning',
+            note: hasReliableGraceEnd
+                ? `Lanzo Nube terminó. Puedes seguir operando durante la gracia hasta ${graceEndDate.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}. Después, si no renuevas, se aplicará Lanzo Local.`
+                : 'Lanzo Nube terminó. Puedes seguir operando durante la gracia; después, si no renuevas, se aplicará Lanzo Local.'
+        };
+    }
+
+    if (status === 'expired' && isPaidPlan) {
+        return {
+            label: 'Cambio a Lanzo Local pendiente',
+            tone: 'warning',
+            note: 'El período de gracia terminó y Lanzo está confirmando el cambio de plan.'
+        };
+    }
+
+    if (!expiryDateString) return { label: 'Permanente', tone: 'success', note: '' };
+
+    const expiryDate = new Date(expiryDateString);
+    if (Number.isNaN(expiryDate.getTime())) return { label: 'No disponible', tone: 'neutral', note: '' };
+
+    const now = new Date();
+    const formattedDate = expiryDate.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    if (expiryDate < now) {
+        return {
+            label: 'Revisión requerida',
+            tone: 'warning',
+            note: `Fecha anterior: ${formattedDate}`
         };
     }
 
@@ -132,7 +158,13 @@ function LicenseHero({
     planName,
     licenseStatus
 }) {
-    const statusLabel = licenseStatus === 'active' ? 'Activa' : licenseStatus || 'Inactiva';
+    const statusLabel = licenseStatus === 'active'
+        ? 'Activa'
+        : licenseStatus === 'grace_period'
+            ? 'Período de gracia'
+            : licenseStatus === 'expired'
+                ? 'Actualizando a Lanzo Local'
+                : licenseStatus || 'Inactiva';
 
     return (
         <header className="license-settings-hero">

@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AlertTriangle, ClipboardCheck, LoaderCircle } from 'lucide-react';
 import { useAppStore } from '../../../store/useAppStore';
-import {
-  getLicenseKeyFromDetails,
-  isCloudCashSyncEnabled
-} from '../../../services/sync/syncConstants';
+import { getLicenseKeyFromDetails } from '../../../services/sync/syncConstants';
 import { postDowngradeCashReconciliation } from '../../../services/cash/postDowngradeCashReconciliation';
+import usePostDowngradeCashPending from '../../../hooks/usePostDowngradeCashPending';
 import CajaAdminCashAuditModal from './CajaAdminCashAuditModal';
 
 const formatMoney = (value) => {
@@ -19,62 +17,25 @@ const formatDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? 'No disponible' : parsed.toLocaleString();
 };
 
-const ownerOnlyCode = 'POST_DOWNGRADE_CASH_OWNER_REQUIRED';
-
 const CajaPostDowngradeReconciliationPanel = () => {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const licenseKey = useMemo(() => getLicenseKeyFromDetails(licenseDetails), [licenseDetails]);
-  const cloudCashEnabled = isCloudCashSyncEnabled(licenseDetails);
-
-  const [cashSessions, setCashSessions] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [hiddenForActor, setHiddenForActor] = useState(false);
-  const [error, setError] = useState('');
+  const {
+    eligible,
+    online,
+    status,
+    pendingCount,
+    cashSessions,
+    isPostDowngrade,
+    error,
+    refresh
+  } = usePostDowngradeCashPending();
   const [selectedCashSessionId, setSelectedCashSessionId] = useState(null);
 
-  const eligibleRuntime = Boolean(
-    licenseKey
-    && currentDeviceRole === 'admin'
-    && !cloudCashEnabled
-  );
-
-  const loadPending = useCallback(async () => {
-    if (!eligibleRuntime) {
-      setCashSessions([]);
-      setHiddenForActor(false);
-      setError('');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    try {
-      const result = await postDowngradeCashReconciliation.list({ licenseKey });
-      if (result?.success === false) {
-        setCashSessions([]);
-        setError(result.message || 'No se pudieron consultar las cajas pendientes del plan anterior.');
-        return;
-      }
-      setHiddenForActor(false);
-      setCashSessions(result.cashSessions || []);
-    } catch (loadError) {
-      if (loadError?.bridgeCode === ownerOnlyCode) {
-        setHiddenForActor(true);
-        setCashSessions([]);
-        setError('');
-        return;
-      }
-      setCashSessions([]);
-      setError(loadError?.message || 'No se pudieron consultar las cajas pendientes del plan anterior.');
-    } finally {
-      setLoading(false);
-    }
-  }, [eligibleRuntime, licenseKey]);
-
-  useEffect(() => {
-    loadPending();
-  }, [loadPending]);
+  const loading = status === 'loading';
+  const hasPending = Number.isInteger(pendingCount) && pendingCount > 0;
+  const isOfflineKnown = status === 'offline_known';
+  const canShowHistoricalSurface = isPostDowngrade || hasPending;
 
   const getDetail = useCallback(async (cashSessionId) => (
     postDowngradeCashReconciliation.detail({ licenseKey, cashSessionId })
@@ -96,45 +57,59 @@ const CajaPostDowngradeReconciliationPanel = () => {
 
   const handleModalClose = useCallback((result = null) => {
     setSelectedCashSessionId(null);
-    if (result?.closed) loadPending();
-  }, [loadPending]);
+    if (result?.closed) void refresh();
+  }, [refresh]);
 
-  if (!eligibleRuntime || hiddenForActor) return null;
-  if (!loading && !error && cashSessions.length === 0) return null;
-
-  const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (!eligible || status === 'hidden') return null;
+  if (!canShowHistoricalSurface && loading) return null;
+  if (!canShowHistoricalSurface && ['unknown', 'error'].includes(status)) return null;
+  if (!loading && !error && pendingCount === 0) return null;
 
   return (
-    <section className="ui-section caja-post-downgrade-reconciliation" aria-label="Cajas pendientes del plan anterior">
+    <section
+      className="ui-section caja-post-downgrade-reconciliation"
+      aria-label="Cajas pendientes del plan anterior"
+      aria-busy={loading}
+    >
       <div className="ui-section__header">
         <div>
-          <p className="ui-section__eyebrow">Conciliación histórica</p>
+          <p className="ui-section__eyebrow">Historial del plan anterior</p>
           <h2>Cajas pendientes del plan anterior</h2>
           <p>
-            Estas cajas fueron abiertas antes del cambio a Lanzo Local. Puedes revisarlas y cerrarlas
-            para completar la conciliación. Esto no habilita Caja Cloud en tu plan actual.
+            Estas cajas fueron abiertas mientras tu negocio utilizaba Lanzo Nube.
+            Puedes revisarlas y cerrarlas para dejar el historial conciliado.
+            Esto no activa Caja Cloud en tu plan actual.
           </p>
         </div>
-        {cashSessions.length > 0 && (
-          <span className="ui-badge ui-badge--warning">{cashSessions.length} pendiente{cashSessions.length === 1 ? '' : 's'}</span>
+        {hasPending && (
+          <span className="ui-badge ui-badge--warning">
+            {pendingCount} pendiente{pendingCount === 1 ? '' : 's'}
+          </span>
         )}
       </div>
 
       {loading && (
-        <p role="status"><LoaderCircle size={18} aria-hidden="true" /> Consultando cajas pendientes…</p>
+        <p role="status" aria-live="polite">
+          <LoaderCircle size={18} aria-hidden="true" /> Consultando cajas pendientes…
+        </p>
       )}
 
-      {error && (
+      {error && canShowHistoricalSurface && (
         <div className="ui-alert ui-alert--warning" role="alert">
           <AlertTriangle size={18} aria-hidden="true" />
-          <p>{error}</p>
-          <button type="button" className="ui-button ui-button--secondary" onClick={loadPending}>
-            Reintentar
-          </button>
+          <div>
+            <p>{error || 'No pudimos verificar si existen cajas pendientes del plan anterior.'}</p>
+            {!online && <p>Conéctate a internet para volver a consultar este historial.</p>}
+          </div>
+          {online && (
+            <button type="button" className="ui-button ui-button--secondary" onClick={() => refresh()}>
+              Reintentar
+            </button>
+          )}
         </div>
       )}
 
-      {!loading && cashSessions.length > 0 && (
+      {!loading && hasPending && (
         <div className="caja-business-cash-list">
           {cashSessions.map((session) => (
             <article className="caja-business-cash-item" key={session.id}>
@@ -142,13 +117,16 @@ const CajaPostDowngradeReconciliationPanel = () => {
                 <strong>{session.responsible_name || 'Responsable no disponible'}</strong>
                 <p>{session.opening_device_name || 'Dispositivo no disponible'} · abierta {formatDate(session.opened_at)}</p>
                 <p>Efectivo esperado: {formatMoney(session.expected_cash_total)}</p>
-                {session.original_device_active === false && <small>El dispositivo original ya no está activo.</small>}
+                {session.original_device_active === false && (
+                  <small>El dispositivo donde se abrió esta caja ya no está activo.</small>
+                )}
               </div>
               <button
                 type="button"
                 className="ui-button ui-button--secondary"
                 onClick={() => setSelectedCashSessionId(session.id)}
-                disabled={isOffline}
+                disabled={!online}
+                aria-describedby={!online ? 'post-downgrade-cash-offline-help' : undefined}
               >
                 <ClipboardCheck size={17} aria-hidden="true" />
                 Revisar y conciliar
@@ -158,10 +136,14 @@ const CajaPostDowngradeReconciliationPanel = () => {
         </div>
       )}
 
-      {isOffline && cashSessions.length > 0 && (
-        <div className="ui-alert ui-alert--warning" role="status">
+      {(isOfflineKnown || (!online && hasPending)) && (
+        <div
+          id="post-downgrade-cash-offline-help"
+          className="ui-alert ui-alert--warning"
+          role="status"
+        >
           <AlertTriangle size={18} aria-hidden="true" />
-          <p>Conéctate a internet para revisar y cerrar una caja pendiente.</p>
+          <p>Conéctate a internet para revisar y cerrar las cajas pendientes.</p>
         </div>
       )}
 
@@ -170,7 +152,7 @@ const CajaPostDowngradeReconciliationPanel = () => {
         onClose={handleModalClose}
         getCashSessionDetailForAudit={getDetail}
         cerrarCajaAdministrativamente={closeCashSession}
-        isReadOnly={isOffline}
+        isReadOnly={!online}
       />
     </section>
   );

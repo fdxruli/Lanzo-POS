@@ -195,7 +195,7 @@ export const createLicenseBackgroundValidationActions = ({
       }
 
       if (criticalChanges.needsRenewal) {
-        Logger.warn('[Background] Licencia expirada detectada');
+        Logger.warn('[Background] Fin de gracia detectado; esperando confirmación del handoff a Lanzo Local');
 
         const expiredDetails = {
           ...localLicense,
@@ -214,7 +214,7 @@ export const createLicenseBackgroundValidationActions = ({
         });
 
         showMessageModal(
-          'Tu licencia ha expirado.\n\nPara continuar usando la aplicación, renueva tu suscripción.',
+          'Tu período de gracia terminó.\n\nEstamos confirmando la actualización a Lanzo Local. Si el servidor no responde, podrás reintentar sin borrar tus datos locales.',
           null,
           { type: 'warning' }
         );

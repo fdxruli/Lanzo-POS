@@ -98,6 +98,46 @@ export const createLicenseSessionActions = ({
     });
   },
 
+  recoverDowngradedOwnerDevice: () => {
+    const blockInfo = get().licensePlanBlockInfo || {};
+    const reason = blockInfo.reason || blockInfo.block_reason || '';
+    const planCode = String(blockInfo.plan_code || '').trim().toLowerCase();
+    const maxDevices = Number(blockInfo.max_devices ?? 0);
+    const licenseKey = blockInfo.license_key || null;
+
+    const eligible = (
+      reason === 'PLAN_DOWNGRADE_DEVICE_LIMIT' &&
+      planCode === 'free_trial' &&
+      maxDevices === 1 &&
+      Boolean(licenseKey)
+    );
+
+    if (!eligible) return { success: false, code: 'FREE_DEVICE_RECOVERY_NOT_ALLOWED' };
+
+    set({
+      appStatus: 'admin_login_required',
+      licenseStatus: 'active',
+      licensePlanBlockInfo: null,
+      licenseDetails: {
+        license_key: licenseKey,
+        plan_code: blockInfo.plan_code,
+        plan_name: blockInfo.plan_name,
+        product_name: blockInfo.product_name,
+        max_devices: blockInfo.max_devices,
+        device_role: 'admin'
+      },
+      currentDeviceRole: null,
+      currentAdminUser: null,
+      currentStaffUser: null,
+      adminLoginLicenseKey: licenseKey,
+      adminLoginMessage: 'Tu plan cambió a Lanzo Local. Inicia sesión como propietario para usar este dispositivo.',
+      adminLoginError: null,
+      pendingAdminSessionResult: null
+    });
+
+    return { success: true };
+  },
+
   confirmLicenseChangeRequired: async () => {
     get()._invalidateProfileLoads?.();
     get().resetNotificationRuntime?.();
