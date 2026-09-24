@@ -63,22 +63,6 @@ const promotionalMessages = [
   { id: 'promo-progress', icon: Sparkles, text: '¡Sigue creciendo tu negocio con nosotros!', urgency: URGENCY.INFO }
 ];
 
-function getDaysRemaining(endDate) {
-  if (!endDate) return 0;
-
-  const now = new Date();
-  const end = new Date(endDate);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const target = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  return Math.max(0, Math.ceil((target.getTime() - today.getTime()) / 86400000));
-}
-
-function getDayText(days) {
-  if (days <= 0) return 'hoy';
-  if (days === 1) return 'mañana';
-  return `en ${days} días`;
-}
-
 function deriveGracePeriodEnd(expiresAt) {
   if (!expiresAt) return null;
 
