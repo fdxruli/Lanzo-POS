@@ -219,7 +219,14 @@ begin
     if sqlerrm <> 'POST_DOWNGRADE_CASH_NOT_ELIGIBLE' then raise; end if;
   end;
 
-  -- Admin but not owner cannot use the exceptional bridge.
+  -- Admin but not owner cannot use the exceptional bridge. Fase 2 may retire
+  -- extra devices during the fixture downgrade, so make this requester the sole
+  -- active device for the owner-only authorization check.
+  update public.license_devices set is_active = false where id = v_owner_device;
+  update public.license_devices set is_active = true where id = v_non_owner_device;
+  update public.license_admin_sessions
+  set revoked_at = null, expires_at = now() + interval '1 hour'
+  where id = v_non_owner_session;
   begin
     perform public.pos_list_post_downgrade_cash_sessions(
       v_license_key, v_non_owner_fingerprint, v_non_owner_security, v_non_owner_token
@@ -228,6 +235,11 @@ begin
   exception when others then
     if sqlerrm <> 'POST_DOWNGRADE_CASH_OWNER_REQUIRED' then raise; end if;
   end;
+  update public.license_devices set is_active = false where id = v_non_owner_device;
+  update public.license_devices set is_active = true where id = v_owner_device;
+  update public.license_admin_sessions
+  set revoked_at = null, expires_at = now() + interval '1 hour'
+  where id = v_owner_session;
 
   -- Staff cannot use it, even with a cash permission.
   begin
@@ -236,7 +248,7 @@ begin
     );
     raise exception 'POST_DOWNGRADE_STAFF_ACCEPTED';
   exception when others then
-    if sqlerrm not in ('POST_DOWNGRADE_CASH_OWNER_REQUIRED','ACTOR_SESSION_INVALID','STAFF_USER_DISABLED') then raise; end if;
+    if sqlerrm not in ('POST_DOWNGRADE_CASH_OWNER_REQUIRED','ACTOR_SESSION_INVALID','STAFF_USER_DISABLED','DEVICE_NOT_ACTIVE') then raise; end if;
   end;
 
   -- Revoked owner session cannot operate.
@@ -259,7 +271,7 @@ begin
     );
     raise exception 'POST_DOWNGRADE_INACTIVE_REQUESTER_ACCEPTED';
   exception when others then
-    if sqlerrm not in ('POS_DEVICE_NOT_FOUND_OR_INACTIVE','ADMIN_DEVICE_NOT_FOUND_OR_INACTIVE','DEVICE_NOT_FOUND_OR_INACTIVE') then raise; end if;
+    if sqlerrm not in ('POS_DEVICE_NOT_FOUND_OR_INACTIVE','ADMIN_DEVICE_NOT_FOUND_OR_INACTIVE','DEVICE_NOT_FOUND_OR_INACTIVE','DEVICE_NOT_ACTIVE') then raise; end if;
   end;
   update public.license_devices set is_active = true where id = v_owner_device;
 
