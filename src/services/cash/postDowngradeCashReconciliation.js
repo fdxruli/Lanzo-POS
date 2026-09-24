@@ -142,7 +142,9 @@ export const postDowngradeCashReconciliation = {
       },
       'No se pudo completar la conciliación de esta caja.'
     );
-    if (payload?.success === false) return normalizeFailure(payload, 'No se pudo completar la conciliación de esta caja.');
+    if (payload?.success === false) {
+      return { ...normalizeFailure(payload, 'No se pudo completar la conciliación de esta caja.'), response: payload };
+    }
     return {
       success: true,
       response: payload,
