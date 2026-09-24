@@ -73,13 +73,21 @@ describe('admin access UI', () => {
     expect(useAppStore.getState().password).toBeUndefined();
   });
 
-  it('shows an incorrect-login response and stays in the modal', async () => {
-    useAppStore.setState({ handleAdminLogin: vi.fn().mockResolvedValue({ success: false, message: 'Credenciales incorrectas.' }) });
+  it('shows a safe incorrect-login response and stays in the modal', async () => {
+    useAppStore.setState({
+      handleAdminLogin: vi.fn().mockResolvedValue({
+        success: false,
+        code: 'INVALID_ADMIN_CREDENTIALS',
+        message: 'Credenciales incorrectas.'
+      })
+    });
     render(<AdminLoginModal />);
     fireEvent.change(screen.getByLabelText('Usuario'), { target: { value: 'owner_test' } });
     fireEvent.change(screen.getByLabelText('Contraseña'), { target: { value: 'wrong-fixture' } });
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales incorrectas.');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Usuario o contraseña incorrectos.');
+    expect(alert).not.toHaveTextContent('Credenciales incorrectas.');
   });
 
   it('returns to profile selection from both login modals', () => {
