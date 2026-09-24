@@ -204,6 +204,29 @@ describe('AdminLoginModal local database recovery', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
   });
+  it('does not show raw Postgres or RPC errors when takeover fails', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+    storeState.handleFreeDeviceTakeover.mockResolvedValueOnce({
+      success: false,
+      code: 'P0001',
+      message: 'POST_DOWNGRADE_CASH_OWNER_REQUIRED from private.function at SQL line 42'
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+    fireEvent.click(await screen.findByRole('button', { name: 'Usar este dispositivo' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.'
+    );
+    expect(screen.queryByText(/POST_DOWNGRADE_CASH_OWNER_REQUIRED|SQL line 42|P0001/)).not.toBeInTheDocument();
+  });
+
   it('does not emit an unscoped success when owner bootstrap state is missing', async () => {
     storeState.handleAdminLogin.mockResolvedValueOnce({
       success: false,
