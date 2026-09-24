@@ -5,6 +5,10 @@ const migration = readFileSync(
   new URL('../../../supabase/migrations/20260924051208_license_free_owner_device_takeover_r1.sql', import.meta.url),
   'utf8'
 );
+const evidenceCycleHardening = readFileSync(
+  new URL('../../../supabase/migrations/20260924052752_license_free_owner_device_takeover_evidence_cycle_hardening_r1.sql', import.meta.url),
+  'utf8'
+);
 const sqlMatrix = readFileSync(
   new URL('../../../supabase/tests/license_free_owner_device_takeover_r1_test.sql', import.meta.url),
   'utf8'
@@ -69,6 +73,17 @@ describe('Free owner device takeover contract', () => {
     expect(takeover).toContain("'downgrade_event_id'");
     expect(takeover).toContain("'FREE_PRIMARY_DEVICE_TAKEOVER'");
     expect(takeover).toContain("'idempotent_retry', v_is_retry_winner");
+  });
+
+  it('invalidates old Free recovery evidence after a later non-Free plan-limit enforcement', () => {
+    expect(evidenceCycleHardening).toContain("later.event_type = 'LICENSE_UPDATE'");
+    expect(evidenceCycleHardening).toContain("later.metadata->>'source' = 'enforce_license_plan_limits_after_change'");
+    expect(evidenceCycleHardening).toContain("later.metadata->>'reason' = 'PLAN_LIMITS_ENFORCED'");
+    expect(evidenceCycleHardening).toContain('later.triggered_at > c.triggered_at');
+    expect(evidenceCycleHardening).toContain("coalesce(later.metadata->>'plan', '') <> 'free_trial'");
+    expect(evidenceCycleHardening).toMatch(
+      /revoke all on function private\.resolve_free_device_takeover_evidence_v1\(text\)[\s\S]*from public, anon, authenticated, service_role/iu
+    );
   });
 
   it('revokes displaced sessions and stale device tokens, then creates one fresh Admin session', () => {
