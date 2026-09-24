@@ -119,11 +119,27 @@ begin
     ('cash-upgrade-history-' || v_suffix, v_license_id, v_original_device, null, 'admin', 'admin:' || v_owner::text, 'open',
       v_historical_opened + interval '2 hours', 25, 25, 'Upgrade pending cash', 1),
     ('cash-closed-history-' || v_suffix, v_license_id, v_original_device, null, 'admin', 'admin:' || v_owner::text, 'closed',
-      v_historical_opened + interval '3 hours', 10, 10, 'Closed history', 1);
+      v_historical_opened + interval '3 hours', 10, 10, 'Closed history', 1),
+    ('cash-feature-ambiguous-' || v_suffix, v_license_id, v_original_device, null, 'admin', 'admin:' || v_owner::text, 'open',
+      v_historical_opened + interval '5 hours', 15, 15, 'Ambiguous entitlement evidence', 1);
 
   update public.pos_cash_sessions
   set closed_at = v_historical_opened + interval '4 hours'
   where id = 'cash-closed-history-' || v_suffix;
+
+  -- A feature-only license update after the PRO plan transition but before a
+  -- later cash opening makes historical Cloud Cash entitlement ambiguous.
+  insert into public.license_events(license_key, event_type, triggered_at, metadata)
+  values (
+    v_license_key,
+    'LICENSE_UPDATE',
+    v_historical_opened + interval '4 hours 30 minutes',
+    jsonb_build_object(
+      'source', 'licenses_update_trigger',
+      'changed_fields', jsonb_build_array('features'),
+      'plan', 'pro_monthly'
+    )
+  );
 
   select count(*) into v_before
   from public.pos_cash_sessions
@@ -209,7 +225,8 @@ begin
      or not exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') x where x->>'id' = 'cash-staff-history-' || v_suffix)
      or not exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') x where x->>'id' = 'cash-upgrade-history-' || v_suffix)
      or exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') x where x->>'id' = 'cash-after-downgrade-' || v_suffix)
-     or exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') x where x->>'id' = 'cash-closed-history-' || v_suffix) then
+     or exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') x where x->>'id' = 'cash-closed-history-' || v_suffix)
+     or exists(select 1 from jsonb_array_elements(v_result->'cash_sessions') x where x->>'id' = 'cash-feature-ambiguous-' || v_suffix) then
     raise exception 'POST_DOWNGRADE_ELIGIBILITY_FAILED: %', v_result;
   end if;
 
