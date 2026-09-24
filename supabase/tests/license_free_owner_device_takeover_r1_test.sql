@@ -177,7 +177,7 @@ begin
   -- Case J: snapshot an open cash session immediately before takeover.
   insert into public.pos_cash_sessions (
     id, license_id, device_id, admin_user_id, device_role, scope, actor_key, status,
-    cash_station_id, opened_by_actor_key, opening_amount, cash_sales_total,
+    opened_by_actor_key, opening_amount, cash_sales_total,
     expected_cash_total, responsible_name, opened_by_device_id, metadata
   ) values (
     v_cash_id,
@@ -188,7 +188,6 @@ begin
     'actor',
     'admin:' || v_owner::text,
     'open',
-    'station-takeover-r1',
     'admin:' || v_owner::text,
     100,
     75,
