@@ -450,12 +450,19 @@ export default function Ticker() {
     const isGracePeriod = licenseStatus === 'grace_period'
       || (expiryDate && graceDate && expiryDate < now && graceDate > now);
 
-    if (isGracePeriod && effectiveGracePeriodEnds) {
+    if (isGracePeriod) {
+      const canonicalGraceEnd = gracePeriodEnds || licenseDetails?.grace_period_ends || null;
+      const parsedGraceEnd = canonicalGraceEnd ? new Date(canonicalGraceEnd) : null;
+      const hasReliableGraceEnd = parsedGraceEnd && !Number.isNaN(parsedGraceEnd.getTime());
+      const graceCopy = hasReliableGraceEnd
+        ? `Tu plan Lanzo Nube terminó. Tu período de gracia continúa hasta ${parsedGraceEnd.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}. Después, si no renuevas, tu negocio continuará con Lanzo Local.`
+        : 'Tu plan Lanzo Nube terminó y estás en período de gracia. Si no renuevas, después tu negocio continuará con Lanzo Local.';
+
       const warning = {
         id: 'license-grace',
         icon: AlertTriangle,
-        text: `Tu licencia ha caducado. El sistema se bloqueará ${getDayText(getDaysRemaining(effectiveGracePeriodEnds))}. Renueva tu plan para evitar interrupciones.`,
-        urgency: URGENCY.CRITICAL,
+        text: graceCopy,
+        urgency: URGENCY.WARNING,
         route: '/configuracion'
       };
 
