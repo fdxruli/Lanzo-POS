@@ -153,4 +153,61 @@ describe('postDowngradeCashReconciliation', () => {
       message: 'Esta caja no pertenece a las operaciones pendientes del plan anterior.'
     });
   });
+
+  it('keeps an explicit empty list as a verified zero', async () => {
+    fixtures.rpc.mockResolvedValue({
+      data: { success: true, cash_sessions: [], pending_count: 0 },
+      error: null
+    });
+
+    await expect(postDowngradeCashReconciliation.list({ licenseKey: 'TEST-LICENSE' }))
+      .resolves.toMatchObject({ success: true, pendingCount: 0, cashSessions: [] });
+  });
+
+  it.each([
+    { success: true, pending_count: 0 },
+    { success: true, cash_sessions: [], pending_count: null },
+    { success: true, cash_sessions: [], pending_count: 'not-a-count' },
+    { success: true, cash_sessions: [], pending_count: 1 }
+  ])('keeps a malformed or inconsistent list unknown: %j', async (data) => {
+    fixtures.rpc.mockResolvedValue({ data, error: null });
+
+    await expect(postDowngradeCashReconciliation.list({ licenseKey: 'TEST-LICENSE' }))
+      .resolves.toMatchObject({
+        success: false,
+        code: null,
+        internalCode: 'POST_DOWNGRADE_CASH_RESPONSE_INVALID',
+        message: 'No se pudieron consultar las cajas pendientes del plan anterior.'
+      });
+  });
+
+  it('maps missing or failed auth context to safe user-facing copy', async () => {
+    fixtures.buildContext.mockRejectedValue(new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE raw details'));
+
+    await expect(postDowngradeCashReconciliation.list({ licenseKey: 'TEST-LICENSE' }))
+      .rejects.toMatchObject({
+        bridgeCode: 'POST_DOWNGRADE_CASH_RECONCILIATION_FAILED',
+        message: 'No se pudieron consultar las cajas pendientes del plan anterior.'
+      });
+  });
+
+  it('does not expose unknown backend messages in the user-facing failure', async () => {
+    fixtures.rpc.mockResolvedValue({
+      data: {
+        success: false,
+        code: 'INTERNAL_SQL_FAILURE',
+        message: 'permission denied in private.execute_admin_cash_close_v2 at line 81'
+      },
+      error: null
+    });
+
+    await expect(postDowngradeCashReconciliation.list({ licenseKey: 'TEST-LICENSE' }))
+      .resolves.toMatchObject({
+        success: false,
+        code: null,
+        internalCode: 'INTERNAL_SQL_FAILURE',
+        message: 'No se pudieron consultar las cajas pendientes del plan anterior.'
+      });
+  });
+
 });
