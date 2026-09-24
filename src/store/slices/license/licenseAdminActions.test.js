@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   activateLicense: vi.fn(),
   adminLoginOnDevice: vi.fn(),
   adminLogoutSession: vi.fn(),
+  adminTakeoverFreeDevice: vi.fn(),
   clearAdminSessionCache: vi.fn(),
   clearStaffSessionCache: vi.fn(),
   enrollAdminOwnerOnDevice: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('../../../services/supabase', () => ({
   activateLicense: mocks.activateLicense,
   adminLoginOnDevice: mocks.adminLoginOnDevice,
   adminLogoutSession: mocks.adminLogoutSession,
+  adminTakeoverFreeDevice: mocks.adminTakeoverFreeDevice,
   clearAdminSessionCache: mocks.clearAdminSessionCache,
   clearStaffSessionCache: mocks.clearStaffSessionCache,
   enrollAdminOwnerOnDevice: mocks.enrollAdminOwnerOnDevice
@@ -112,6 +114,90 @@ describe('license admin actions', () => {
     expect(state.adminLoginError.code).toBe('INVALID_ADMIN_CREDENTIALS');
     expect(state.pendingAdminSessionResult).toBeNull();
     expect(mocks.ensureLocalDatabaseReady).not.toHaveBeenCalled();
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
+  });
+
+  it('keeps a valid owner at the explicit Free takeover confirmation boundary', async () => {
+    const state = setup();
+    mocks.adminLoginOnDevice.mockResolvedValue({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true,
+      message: 'Confirma el dispositivo.',
+      details: { plan_code: 'free_trial', max_devices: 1 }
+    });
+
+    const result = await state.handleAdminLogin({
+      username: 'owner',
+      password: 'fixture-password'
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_free_device_takeover_required');
+    expect(state.adminLoginError).toBeNull();
+    expect(mocks.adminTakeoverFreeDevice).not.toHaveBeenCalled();
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
+  });
+
+  it('completes the explicit Free owner takeover as a fresh Admin session', async () => {
+    const state = setup();
+    mocks.adminTakeoverFreeDevice.mockResolvedValue({
+      success: true,
+      admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
+      details: {
+        license_key: 'LANZO-ADMIN-TEST',
+        plan_code: 'free_trial',
+        max_devices: 1,
+        device_role: 'admin'
+      }
+    });
+
+    await expect(state.handleFreeDeviceTakeover({
+      username: 'owner',
+      password: 'fixture-password'
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(mocks.adminTakeoverFreeDevice).toHaveBeenCalledWith(expect.objectContaining({
+      licenseKey: 'LANZO-ADMIN-TEST',
+      username: 'owner',
+      password: 'fixture-password',
+      beforeLocalPersistence: expect.any(Function)
+    }));
+    expect(mocks.beginActorRuntimeAuthentication).toHaveBeenCalledWith('admin');
+    expect(mocks.grantAuthenticatedActorRuntime).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: expect.objectContaining({ id: 'admin-1' })
+    });
+    expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
+    expect(state.appStatus).toBe('ready');
+    expect(state._loadProfile).toHaveBeenCalledWith(
+      'LANZO-ADMIN-TEST',
+      { forceRemote: true, reason: 'admin_free_device_takeover' }
+    );
+  });
+
+  it('fails closed when the Free takeover confirmation is rejected server-side', async () => {
+    const state = setup();
+    mocks.adminTakeoverFreeDevice.mockResolvedValue({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_NOT_ALLOWED',
+      message: 'La recuperación ya no está disponible.'
+    });
+
+    const result = await state.handleFreeDeviceTakeover({
+      username: 'owner',
+      password: 'fixture-password'
+    });
+
+    expect(result.code).toBe('FREE_DEVICE_TAKEOVER_NOT_ALLOWED');
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_free_device_takeover_rejected');
+    expect(state.adminLoginError).toMatchObject({
+      code: 'FREE_DEVICE_TAKEOVER_NOT_ALLOWED'
+    });
     expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
   });
 

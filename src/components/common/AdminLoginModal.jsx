@@ -41,7 +41,9 @@ export default function AdminLoginModal() {
   const [loading, setLoading] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const [error, setError] = useState('');
+  const [takeoverRequired, setTakeoverRequired] = useState(false);
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
+  const handleFreeDeviceTakeover = useAppStore((state) => state.handleFreeDeviceTakeover);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
   const message = useAppStore((state) => state.adminLoginMessage);
@@ -68,6 +70,11 @@ export default function AdminLoginModal() {
 
     try {
       const result = await handleAdminLogin({ username: username.trim(), password });
+      if (result?.code === 'FREE_DEVICE_TAKEOVER_REQUIRED' || result?.takeoverRequired === true) {
+        setTakeoverRequired(true);
+        setError('');
+        return;
+      }
       if (!result?.success) {
         setError(describeLoginError(null, result));
       }
@@ -76,6 +83,30 @@ export default function AdminLoginModal() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const confirmTakeover = async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await handleFreeDeviceTakeover({
+        username: username.trim(),
+        password
+      });
+      if (!result?.success) {
+        setError(describeLoginError(null, result));
+      }
+    } catch (takeoverError) {
+      setError(describeLoginError(takeoverError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelTakeover = () => {
+    setTakeoverRequired(false);
+    setError('');
   };
 
   return (
@@ -102,13 +133,21 @@ export default function AdminLoginModal() {
             <ShieldCheck size={27} strokeWidth={2.2} />
           </span>
           <div>
-            <h1 id="admin-login-title">Acceso administrador</h1>
-            <p id="admin-login-description">Ingresa con la cuenta del propietario.</p>
+            <h1 id="admin-login-title">
+              {takeoverRequired ? 'Tu plan cambió a Lanzo Local' : 'Acceso administrador'}
+            </h1>
+            <p id="admin-login-description">
+              {takeoverRequired
+                ? 'El propietario puede elegir el dispositivo que tiene delante.'
+                : 'Ingresa con la cuenta del propietario.'}
+            </p>
           </div>
         </div>
 
         <p className="auth-login-helper">
-          Usa tus credenciales de administración para continuar con todos los permisos del negocio.
+          {takeoverRequired
+            ? 'Lanzo Local permite utilizar un dispositivo.'
+            : 'Usa tus credenciales de administración para continuar con todos los permisos del negocio.'}
         </p>
 
         {!online && (
@@ -121,38 +160,69 @@ export default function AdminLoginModal() {
           <div className="ui-alert ui-alert--info" role="status">{message}</div>
         )}
 
-        <form onSubmit={submit} className="admin-auth-form" aria-busy={loading}>
-          <label className="admin-auth-field" htmlFor="admin-username">
-            Usuario
-            <input
-              id="admin-username"
-              className="form-input"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              required
+        {takeoverRequired ? (
+          <div className="admin-auth-form" aria-busy={loading}>
+            <div className="ui-alert ui-alert--info" role="status">
+              Actualmente hay otro dispositivo registrado como activo.
+            </div>
+            <p className="auth-login-helper">
+              Puedes utilizar este dispositivo. Al continuar, las sesiones activas en los demás
+              dispositivos se cerrarán. Tus datos permanecerán intactos.
+            </p>
+            {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
+            <button
+              type="button"
+              className="ui-button ui-button--primary admin-auth-submit"
+              onClick={confirmTakeover}
               disabled={loading || !online}
+            >
+              <ShieldCheck size={18} aria-hidden="true" />
+              {loading ? 'Recuperando...' : 'Usar este dispositivo'}
+            </button>
+            <button
+              type="button"
+              className="ui-button ui-button--ghost"
+              onClick={cancelTakeover}
+              disabled={loading}
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="admin-auth-form" aria-busy={loading}>
+            <label className="admin-auth-field" htmlFor="admin-username">
+              Usuario
+              <input
+                id="admin-username"
+                className="form-input"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                required
+                disabled={loading || !online}
+              />
+            </label>
+            <PasswordField
+              id="admin-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={loading || !online}
+              fieldClassName="admin-auth-field"
             />
-          </label>
-          <PasswordField
-            id="admin-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            disabled={loading || !online}
-            fieldClassName="admin-auth-field"
-          />
-          {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
-          <button
-            type="submit"
-            className="ui-button ui-button--primary admin-auth-submit"
-            disabled={loading || !online || !username.trim() || !password}
-          >
-            <LogIn size={18} aria-hidden="true" />
-            {loading ? 'Verificando...' : 'Entrar'}
-          </button>
-        </form>
+            {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
+            <button
+              type="submit"
+              className="ui-button ui-button--primary admin-auth-submit"
+              disabled={loading || !online || !username.trim() || !password}
+            >
+              <LogIn size={18} aria-hidden="true" />
+              {loading ? 'Verificando...' : 'Entrar'}
+            </button>
+          </form>
+        )}
 
-        <div className="auth-modal-actions">
+        {!takeoverRequired && (
+          <div className="auth-modal-actions">
           {canSwitchAccess && (
             <button
               type="button"
@@ -167,7 +237,8 @@ export default function AdminLoginModal() {
           <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
             Cambiar licencia
           </button>
-        </div>
+          </div>
+        )}
       </section>
     </div>
   );

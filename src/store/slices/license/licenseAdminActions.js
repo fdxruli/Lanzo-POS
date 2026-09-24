@@ -3,6 +3,7 @@ import {
   activateLicense,
   adminLoginOnDevice,
   adminLogoutSession,
+  adminTakeoverFreeDevice,
   clearAdminSessionCache,
   clearStaffSessionCache,
   enrollAdminOwnerOnDevice
@@ -361,6 +362,13 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         )
       });
       if (!result.success) {
+        if (result.code === 'FREE_DEVICE_TAKEOVER_REQUIRED' || result.takeoverRequired === true) {
+          lockActorRuntime('admin_free_device_takeover_required');
+          clearPendingAdminSession(set, 'admin_free_device_takeover_required');
+          set({ adminLoginError: null });
+          return { ...result, takeoverRequired: true };
+        }
+
         lockActorRuntime('admin_credentials_rejected');
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
@@ -402,6 +410,81 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         success: false,
         code: error?.code || 'ADMIN_LOGIN_FAILED',
         message: error?.message || 'No se pudo iniciar sesión.'
+      };
+    }
+  },
+
+  handleFreeDeviceTakeover: async ({ username, password }) => {
+    const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
+
+    try {
+      initializeLocalTenantGuard('admin_free_device_takeover');
+      await assertLocalTenantAccess(
+        { license_key: licenseKey },
+        { reason: 'admin_free_device_takeover' }
+      );
+      beginActorRuntimeAuthentication('admin');
+
+      const result = await adminTakeoverFreeDevice({
+        licenseKey,
+        username,
+        password,
+        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
+          tenantSource,
+          { reason: 'admin_free_device_takeover_before_local_persistence' }
+        )
+      });
+
+      if (!result.success) {
+        lockActorRuntime('admin_free_device_takeover_rejected');
+        clearPendingAdminSession(set, 'admin_free_device_takeover_rejected');
+        set({ adminLoginError: { code: result.code, message: result.message } });
+        return result;
+      }
+
+      return completeAdminSession(
+        set,
+        get,
+        licenseKey,
+        result,
+        'admin_free_device_takeover'
+      );
+    } catch (error) {
+      lockActorRuntime('admin_free_device_takeover_failed');
+      if (isLocalTenantAccessError(error)) {
+        enterLocalTenantIsolationFailure(set, error);
+        return {
+          success: false,
+          localTenantMismatch: true,
+          code: error.code,
+          message: error.message
+        };
+      }
+
+      const classification = classifyDatabaseError(error);
+      if (classification.structural) {
+        const recoveryError = createDatabaseRecoveryError({
+          ...getDatabaseRecoveryState(),
+          errorCode: classification.code
+        }, error);
+        return {
+          success: false,
+          remoteAuthenticated: validatePendingAdminSession({
+            pending: get().pendingAdminSessionResult,
+            licenseKey,
+            currentAdminUser: get().currentAdminUser
+          }).valid,
+          localRecoveryRequired: true,
+          code: classification.code,
+          message: recoveryError.message
+        };
+      }
+
+      Logger.error('[AdminAuth] Error durante recuperación de dispositivo Free:', error);
+      return {
+        success: false,
+        code: error?.code || 'FREE_DEVICE_TAKEOVER_FAILED',
+        message: error?.message || 'No se pudo recuperar este dispositivo.'
       };
     }
   },
