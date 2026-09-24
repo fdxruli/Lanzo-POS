@@ -4,7 +4,10 @@ import { useAppStore } from '../../store/useAppStore';
 import { classifyDatabaseError } from '../../services/db/databaseRecoveryState';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
-import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
+import {
+  getPostDowngradeCashPendingScopeKey,
+  markFreeDeviceTakeoverCompleted
+} from '../../hooks/usePostDowngradeCashPending';
 import './AdminAuthModal.css';
 
 const describeLoginError = (error, result = null) => {
@@ -110,7 +113,20 @@ export default function AdminLoginModal() {
         return;
       }
 
-      markFreeDeviceTakeoverCompleted();
+      const completedState = useAppStore.getState();
+      const completedLicenseKey = completedState?.licenseDetails?.license_key
+        || completedState?.adminLoginLicenseKey;
+      if (
+        String(completedLicenseKey || '').trim() === String(licenseKey || '').trim() &&
+        completedState?.currentDeviceRole === 'admin' &&
+        completedState?.currentAdminUser?.is_owner === true
+      ) {
+        const completionScopeKey = getPostDowngradeCashPendingScopeKey(
+          completedLicenseKey,
+          completedState.currentAdminUser
+        );
+        markFreeDeviceTakeoverCompleted(completionScopeKey);
+      }
     } catch (takeoverError) {
       setError(describeLoginError(takeoverError));
     } finally {
