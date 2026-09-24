@@ -82,7 +82,7 @@ begin
     (v_non_owner_device, v_license_id, v_non_owner_fingerprint, 'Non-owner device', v_non_owner_security, true, 'admin', null),
     (v_staff_device, v_license_id, v_staff_fingerprint, 'Staff requester device', v_staff_security, true, 'staff', v_staff),
     (v_original_device, v_license_id, 'old-admin-' || v_suffix, 'Retired admin device', 'old-admin-token-' || v_suffix, true, 'admin', null),
-    (v_historical_staff_device, v_license_id, 'old-staff-' || v_suffix, 'Retired staff device', 'old-staff-token-' || v_suffix, true, 'staff', v_staff),
+    (v_historical_staff_device, v_license_id, 'old-staff-' || v_suffix, 'Retired staff device', 'old-staff-token-' || v_suffix, false, 'staff', v_staff),
     (v_other_device, v_other_license_id, v_other_fingerprint, 'Other tenant device', v_other_security, true, 'admin', null);
 
   insert into public.license_admin_sessions(id, license_id, admin_user_id, device_id, session_token_hash, expires_at)
