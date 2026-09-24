@@ -5,6 +5,7 @@ import Navbar from './Navbar';
 import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
 import DataSafetyModal from '../common/DataSafetyModal';
+import PostDowngradeRecoveryBanner from '../common/PostDowngradeRecoveryBanner';
 import EcommerceOrdersRuntime from '../ecommerce/orders/EcommerceOrdersRuntime';
 import EcommercePublishedStockAlertRuntime from '../ecommerce/EcommercePublishedStockAlertRuntime';
 import EcommerceCatalogSyncRuntime from '../ecommerce/EcommerceCatalogSyncRuntime';
@@ -168,6 +169,7 @@ function Layout() {
 
       <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''}`.trim()}>
         {shouldShowTicker && <Ticker />}
+        <PostDowngradeRecoveryBanner />
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''}`.trim()}>
           <Outlet />
         </div>
