@@ -32,8 +32,9 @@ const storeState = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(storeState),
-  getState: () => storeState
+  useAppStore: Object.assign((selector) => selector(storeState), {
+    getState: () => storeState
+  })
 }));
 
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
