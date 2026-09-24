@@ -431,6 +431,9 @@ begin
   -- Free -> Pro restores normal Cloud Cash and removes the historical bridge surface.
   update public.licenses l
      set plan_id = v_pro_plan.id,
+         license_type = 'subscription',
+         is_lifetime = false,
+         duration_months = 1,
          features = v_pro_plan.features,
          max_devices = v_pro_plan.max_devices,
          expires_at = now() + interval '30 days'
