@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, LogIn, ShieldCheck, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { classifyDatabaseError } from '../../services/db/databaseRecoveryState';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
+import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
 import './AdminAuthModal.css';
 
 const describeLoginError = (error, result = null) => {
@@ -42,6 +43,8 @@ export default function AdminLoginModal() {
   const [online, setOnline] = useState(navigator.onLine);
   const [error, setError] = useState('');
   const [takeoverRequired, setTakeoverRequired] = useState(false);
+  const usernameRef = useRef(null);
+  const takeoverButtonRef = useRef(null);
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const handleFreeDeviceTakeover = useAppStore((state) => state.handleFreeDeviceTakeover);
   const logout = useAppStore((state) => state.logout);
@@ -63,6 +66,12 @@ export default function AdminLoginModal() {
     };
   }, []);
 
+  useEffect(() => {
+    if (takeoverRequired) {
+      takeoverButtonRef.current?.focus();
+    }
+  }, [takeoverRequired]);
+
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
@@ -77,7 +86,10 @@ export default function AdminLoginModal() {
       }
       if (!result?.success) {
         setError(describeLoginError(null, result));
+        return;
       }
+
+      markFreeDeviceTakeoverCompleted();
     } catch (submitError) {
       setError(describeLoginError(submitError));
     } finally {
@@ -106,7 +118,9 @@ export default function AdminLoginModal() {
 
   const cancelTakeover = () => {
     setTakeoverRequired(false);
+    setPassword('');
     setError('');
+    window.requestAnimationFrame(() => usernameRef.current?.focus());
   };
 
   return (
@@ -172,6 +186,7 @@ export default function AdminLoginModal() {
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button
               type="button"
+              ref={takeoverButtonRef}
               className="ui-button ui-button--primary admin-auth-submit"
               onClick={confirmTakeover}
               disabled={loading || !online}
@@ -194,6 +209,7 @@ export default function AdminLoginModal() {
               Usuario
               <input
                 id="admin-username"
+                ref={usernameRef}
                 className="form-input"
                 autoComplete="username"
                 value={username}
