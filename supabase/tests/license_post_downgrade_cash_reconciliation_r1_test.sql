@@ -238,9 +238,14 @@ begin
   -- active device for the owner-only authorization check.
   update public.license_devices set is_active = false where id = v_owner_device;
   update public.license_devices set is_active = true, security_token = v_non_owner_security where id = v_non_owner_device;
-  update public.license_admin_sessions
-  set revoked_at = null, expires_at = now() + interval '1 hour'
-  where id = v_non_owner_session;
+  delete from public.license_admin_sessions where id = v_non_owner_session;
+  insert into public.license_admin_sessions(
+    id, license_id, admin_user_id, device_id, session_token_hash, expires_at
+  ) values (
+    v_non_owner_session, v_license_id, v_non_owner, v_non_owner_device,
+    extensions.crypt(v_non_owner_token, extensions.gen_salt('bf', 4)),
+    now() + interval '1 hour'
+  );
   begin
     perform public.pos_list_post_downgrade_cash_sessions(
       v_license_key, v_non_owner_fingerprint, v_non_owner_security, v_non_owner_token
