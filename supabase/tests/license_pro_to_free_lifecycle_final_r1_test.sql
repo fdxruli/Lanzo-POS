@@ -371,7 +371,7 @@ begin
     );
     raise exception 'FINAL_LIFECYCLE_CROSS_TENANT_CLOSE_ACCEPTED';
   exception when others then
-    if sqlerrm <> 'POST_DOWNGRADE_CASH_NOT_ELIGIBLE' then raise; end if;
+    if sqlerrm <> 'CASH_SESSION_NOT_FOUND' then raise; end if;
   end;
 
   -- Cash stays open and all counted/expected/difference/movement data stays intact until explicit owner action.
