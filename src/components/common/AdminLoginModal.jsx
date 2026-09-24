@@ -10,13 +10,25 @@ import {
 } from '../../hooks/usePostDowngradeCashPending';
 import './AdminAuthModal.css';
 
+const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
+  INVALID_ADMIN_CREDENTIALS: 'Usuario o contraseña incorrectos.',
+  INVALID_CREDENTIALS: 'Usuario o contraseña incorrectos.',
+  ONLINE_REQUIRED: 'Necesitas internet para completar esta acción.',
+  ADMIN_LOGIN_RATE_LIMITED: 'Se realizaron demasiados intentos. Espera un momento y vuelve a intentar.',
+  LICENSE_NOT_ACTIVE: 'Esta licencia no está activa. Revisa su estado antes de continuar.',
+  DEVICE_LIMIT_REACHED: 'Se alcanzó el límite de dispositivos de esta licencia.',
+  DEVICE_MODE_ADMIN_NOT_ALLOWED: 'Este dispositivo no está habilitado para el acceso del propietario.',
+  FREE_DEVICE_TAKEOVER_NOT_ALLOWED: 'No se pudo recuperar este dispositivo con el cambio de plan actual. Inicia sesión nuevamente.',
+  FREE_DEVICE_TAKEOVER_REQUIRED: 'Confirma el cambio para usar este dispositivo.',
+  ADMIN_SESSION_REQUIRED: 'Inicia sesión nuevamente para continuar.',
+  ADMIN_SESSION_INVALID: 'La sesión administrativa ya no es válida. Inicia sesión nuevamente.'
+});
+
 const describeLoginError = (error, result = null) => {
   const code = result?.code || error?.code || null;
   const classification = classifyDatabaseError(error || result);
 
-  if (code === 'INVALID_ADMIN_CREDENTIALS' || code === 'INVALID_CREDENTIALS') {
-    return 'Usuario o contraseña incorrectos.';
-  }
+  if (SAFE_AUTH_ERROR_MESSAGES[code]) return SAFE_AUTH_ERROR_MESSAGES[code];
   if (code === 'DB_BLOCKED' || classification.code === 'DB_BLOCKED') {
     return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo y vuelve a intentarlo.';
   }
@@ -36,7 +48,7 @@ const describeLoginError = (error, result = null) => {
   if (!navigator.onLine || /network|fetch|Failed to fetch/i.test(error?.message || result?.message || '')) {
     return 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo nuevamente.';
   }
-  return result?.message || error?.message || 'No se pudo iniciar sesión. Puedes volver a intentarlo.';
+  return 'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.';
 };
 
 export default function AdminLoginModal() {
