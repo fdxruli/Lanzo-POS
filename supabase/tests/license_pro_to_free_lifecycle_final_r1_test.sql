@@ -290,6 +290,23 @@ begin
   v_takeover_security := v_retry->>'device_security_token';
   v_takeover_session := v_retry->>'admin_session_token';
 
+  -- Simulate the fact that lifecycle cycles occur in separate production
+  -- transactions while keeping this certification file rollback-only. license_events
+  -- defaults triggered_at to transaction-stable now(), so move cycle-1 transition
+  -- evidence into the past before the synthetic upgrade/cycle-2 sequence.
+  update public.license_events
+  set triggered_at = now() - interval '2 days'
+  where license_key = v_license_key
+    and (
+      (event_type = 'PLAN_CHANGED'
+        and metadata->>'source' = 'licenses_update_trigger'
+        and metadata->>'to_plan' = 'free_trial')
+      or (event_type = 'LICENSE_UPDATE'
+        and metadata->>'source' = 'enforce_license_plan_limits_after_change'
+        and metadata->>'plan' = 'free_trial')
+      or event_type in ('PLAN_EXPIRED_DOWNGRADED_TO_FREE','FREE_PRIMARY_DEVICE_TAKEOVER')
+    );
+
   -- The displaced pre-downgrade device/session/token no longer has authority.
   v_result := public.verify_admin_session(
     v_license_key, v_fp_a, 'final-a-token-' || v_suffix, v_session_a->>'session_token'
