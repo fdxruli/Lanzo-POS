@@ -21,7 +21,8 @@ const emptySnapshot = () => ({
 
 let snapshot = emptySnapshot();
 let inFlight = null;
-let takeoverCompleted = false;
+let requestGeneration = 0;
+let takeoverCompletedScopeKey = null;
 const listeners = new Set();
 
 const emit = (next) => {
@@ -29,17 +30,26 @@ const emit = (next) => {
   listeners.forEach((listener) => listener());
 };
 
+const invalidateRequests = () => {
+  requestGeneration += 1;
+  inFlight = null;
+};
+
+const resetRuntime = () => {
+  invalidateRequests();
+  takeoverCompletedScopeKey = null;
+  emit(emptySnapshot());
+};
+
 const subscribe = (listener) => {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) resetRuntime();
+  };
 };
 
 const getSnapshot = () => snapshot;
-
-const resetRuntime = () => {
-  inFlight = null;
-  emit(emptySnapshot());
-};
 
 const normalizePlanCode = (licenseDetails = {}) => String(
   licenseDetails?.plan_code ||
@@ -60,6 +70,24 @@ const isOwnerRequired = (resultOrError) => (
   resultOrError?.code === OWNER_ONLY_CODE
 );
 
+export const buildPostDowngradeCashScopeKey = ({
+  licenseKey,
+  adminUser = null,
+  username = null
+} = {}) => {
+  const normalizedLicenseKey = String(licenseKey || '').trim();
+  const actorIdentity = String(
+    adminUser?.username ||
+    username ||
+    adminUser?.id ||
+    ''
+  ).trim().toLowerCase();
+
+  return normalizedLicenseKey && actorIdentity
+    ? `${normalizedLicenseKey}:${actorIdentity}`
+    : null;
+};
+
 const loadPending = async ({
   scopeKey,
   licenseKey,
@@ -67,13 +95,22 @@ const loadPending = async ({
   force = false
 }) => {
   if (!scopeKey || !licenseKey) {
-    if (snapshot.scopeKey !== null || snapshot.status !== 'idle') resetRuntime();
+    if (
+      snapshot.scopeKey !== null ||
+      snapshot.status !== 'idle' ||
+      inFlight ||
+      takeoverCompletedScopeKey
+    ) {
+      resetRuntime();
+    }
     return snapshot;
   }
 
   const sameScope = snapshot.scopeKey === scopeKey;
 
   if (!online) {
+    invalidateRequests();
+
     if (
       sameScope &&
       ['success', 'offline_known', 'error'].includes(snapshot.status) &&
@@ -103,6 +140,8 @@ const loadPending = async ({
   if (inFlight?.scopeKey === scopeKey) return inFlight.promise;
 
   const previous = sameScope ? snapshot : emptySnapshot();
+  const generation = ++requestGeneration;
+
   emit({
     ...previous,
     scopeKey,
@@ -111,9 +150,16 @@ const loadPending = async ({
     online: true
   });
 
+  const isCurrentRequest = () => (
+    generation === requestGeneration &&
+    snapshot.scopeKey === scopeKey
+  );
+
   const promise = (async () => {
     try {
       const result = await postDowngradeCashReconciliation.list({ licenseKey });
+
+      if (!isCurrentRequest()) return snapshot;
 
       if (result?.success === false) {
         if (isOwnerRequired(result)) {
@@ -153,6 +199,8 @@ const loadPending = async ({
       });
       return snapshot;
     } catch (error) {
+      if (!isCurrentRequest()) return snapshot;
+
       if (isOwnerRequired(error)) {
         emit({
           ...emptySnapshot(),
@@ -172,26 +220,38 @@ const loadPending = async ({
       });
       return snapshot;
     } finally {
-      if (inFlight?.scopeKey === scopeKey) inFlight = null;
+      if (inFlight?.generation === generation) inFlight = null;
     }
   })();
 
-  inFlight = { scopeKey, promise };
+  inFlight = { scopeKey, generation, promise };
   return promise;
 };
 
-export const markFreeDeviceTakeoverCompleted = () => {
-  takeoverCompleted = true;
+export const markFreeDeviceTakeoverCompleted = ({
+  licenseKey,
+  adminUser = null,
+  username = null
+} = {}) => {
+  takeoverCompletedScopeKey = buildPostDowngradeCashScopeKey({
+    licenseKey,
+    adminUser,
+    username
+  });
 };
 
-export const consumeFreeDeviceTakeoverCompleted = () => {
-  const value = takeoverCompleted;
-  takeoverCompleted = false;
-  return value;
+export const consumeFreeDeviceTakeoverCompleted = (scopeKey) => {
+  if (!scopeKey) return false;
+
+  const completed = takeoverCompletedScopeKey === scopeKey;
+  // A recovery signal belongs to exactly one authenticated tenant/owner scope.
+  // Observing a different valid scope invalidates the old transient rather than
+  // letting it survive a tenant or actor switch.
+  if (takeoverCompletedScopeKey) takeoverCompletedScopeKey = null;
+  return completed;
 };
 
 export const resetPostDowngradeCashPendingRuntime = () => {
-  takeoverCompleted = false;
   resetRuntime();
 };
 
@@ -219,7 +279,7 @@ export default function usePostDowngradeCashPending() {
   );
   const scopeKey = useMemo(() => (
     eligible
-      ? `${licenseKey}:${currentAdminUser?.id || currentAdminUser?.username || 'owner'}`
+      ? buildPostDowngradeCashScopeKey({ licenseKey, adminUser: currentAdminUser })
       : null
   ), [currentAdminUser?.id, currentAdminUser?.username, eligible, licenseKey]);
 
@@ -237,7 +297,14 @@ export default function usePostDowngradeCashPending() {
 
   useEffect(() => {
     if (!eligible || !scopeKey) {
-      if (runtimeSnapshot.scopeKey) resetRuntime();
+      if (
+        runtimeSnapshot.scopeKey ||
+        runtimeSnapshot.status !== 'idle' ||
+        inFlight ||
+        takeoverCompletedScopeKey
+      ) {
+        resetRuntime();
+      }
       return;
     }
 
@@ -247,7 +314,7 @@ export default function usePostDowngradeCashPending() {
       online,
       force: false
     });
-  }, [eligible, licenseKey, online, runtimeSnapshot.scopeKey, scopeKey]);
+  }, [eligible, licenseKey, online, runtimeSnapshot.scopeKey, runtimeSnapshot.status, scopeKey]);
 
   const refresh = useCallback(() => {
     if (!eligible || !scopeKey) return Promise.resolve(emptySnapshot());
