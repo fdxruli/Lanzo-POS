@@ -127,6 +127,41 @@ begin
   set closed_at = v_historical_opened + interval '4 hours'
   where id = 'cash-closed-history-' || v_suffix;
 
+  -- Canonical cloud opening proof: the real Cloud Cash RPC records both an
+  -- OPENED audit event and a sync event only after assert_cloud_cash_sync_enabled.
+  perform private.record_pos_cash_event(
+    v_license_id, 'cash-owner-history-' || v_suffix, 'OPENED',
+    v_original_device, null, 'Historical owner',
+    jsonb_build_object('actor_key', 'admin:' || v_owner::text)
+  );
+  perform private.record_pos_sync_event(
+    v_license_id, 'cash_session', 'cash-owner-history-' || v_suffix, 'open',
+    v_original_device, null, 'open-owner-' || v_suffix,
+    jsonb_build_object('cash_session_id', 'cash-owner-history-' || v_suffix), 1
+  );
+
+  perform private.record_pos_cash_event(
+    v_license_id, 'cash-staff-history-' || v_suffix, 'OPENED',
+    v_historical_staff_device, v_staff, 'Historical Staff',
+    jsonb_build_object('actor_key', 'staff:' || v_staff::text)
+  );
+  perform private.record_pos_sync_event(
+    v_license_id, 'cash_session', 'cash-staff-history-' || v_suffix, 'open',
+    v_historical_staff_device, v_staff, 'open-staff-' || v_suffix,
+    jsonb_build_object('cash_session_id', 'cash-staff-history-' || v_suffix), 1
+  );
+
+  perform private.record_pos_cash_event(
+    v_license_id, 'cash-upgrade-history-' || v_suffix, 'OPENED',
+    v_original_device, null, 'Upgrade pending cash',
+    jsonb_build_object('actor_key', 'admin:' || v_owner::text)
+  );
+  perform private.record_pos_sync_event(
+    v_license_id, 'cash_session', 'cash-upgrade-history-' || v_suffix, 'open',
+    v_original_device, null, 'open-upgrade-' || v_suffix,
+    jsonb_build_object('cash_session_id', 'cash-upgrade-history-' || v_suffix), 1
+  );
+
   -- A feature-only license update after the PRO plan transition but before a
   -- later cash opening makes historical Cloud Cash entitlement ambiguous.
   insert into public.license_events(license_key, event_type, triggered_at, metadata)
