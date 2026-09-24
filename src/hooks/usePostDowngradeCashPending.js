@@ -377,6 +377,7 @@ export default function usePostDowngradeCashPending() {
 
   return {
     ...scopedSnapshot,
+    scopeKey,
     eligible: scopedEligible,
     takeoverCompleted: Boolean(
       scopeKey &&
