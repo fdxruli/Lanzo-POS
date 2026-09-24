@@ -122,7 +122,11 @@ export default function AdminLoginModal() {
     setTakeoverRequired(false);
     setPassword('');
     setError('');
-    window.requestAnimationFrame(() => usernameRef.current?.focus());
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => usernameRef.current?.focus());
+    } else {
+      usernameRef.current?.focus();
+    }
   };
 
   return (
