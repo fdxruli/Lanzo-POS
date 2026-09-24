@@ -82,6 +82,7 @@ vi.mock('../../components/caja/sections', () => ({
   ) : null,
   CajaOpeningPanel: () => null,
   CajaLegacyCashTransition: () => null,
+  CajaPostDowngradeReconciliationPanel: () => null,
   FinancialDiagnosticsPanel: () => null,
   CajaSectionTabs: () => null
 }));
