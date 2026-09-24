@@ -164,3 +164,71 @@
         background-color: var(--scrollbar-thumb-hover);
     }
 }
+
+
+/* PRO -> Local recovery summary. Kept outside page content so the owner can
+   discover historical cash work without forcing navigation. */
+.post-downgrade-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: calc(100% - 24px);
+    max-width: 1120px;
+    margin: 10px auto 0;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--card-background, var(--background-color));
+    box-sizing: border-box;
+}
+
+.post-downgrade-banner__icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    margin-top: 2px;
+}
+
+.post-downgrade-banner__content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.post-downgrade-banner__content p {
+    margin: 4px 0 0;
+    overflow-wrap: anywhere;
+}
+
+.post-downgrade-banner__hint {
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+.post-downgrade-banner__actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .post-downgrade-banner {
+        width: calc(100% - 16px);
+        margin-top: 8px;
+        padding: 12px;
+        flex-wrap: wrap;
+    }
+
+    .post-downgrade-banner__content {
+        flex-basis: calc(100% - 40px);
+    }
+
+    .post-downgrade-banner__actions {
+        width: 100%;
+        padding-left: 34px;
+    }
+
+    .post-downgrade-banner__actions .ui-button {
+        max-width: 100%;
+        white-space: normal;
+    }
+}
